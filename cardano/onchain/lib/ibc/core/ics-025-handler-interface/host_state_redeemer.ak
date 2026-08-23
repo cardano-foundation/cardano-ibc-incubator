@@ -1,4 +1,5 @@
 use aiken/crypto.{VerificationKeyHash}
+use cardano/transaction.{OutputReference}
 use ibc/core/ics_025_handler_interface/host_state.{ModuleRegistration}
 
 pub type HostStateRedeemer {
@@ -130,4 +131,19 @@ pub type HostStateRedeemer {
   // Reclaim one fully settled registered module during shutdown. The committed
   // `ports/{port_id}` leaf is intentionally retained as immutable history.
   ReclaimModule { port_id: ByteArray }
+  // Accumulate one safe-sized deployment reference-script inventory batch
+  // against the complete inventory precommitment supplied in every batch.
+  RegisterReferenceScripts {
+    target_count: Int,
+    target_root: ByteArray,
+    // Exact inventory members folded by this batch. This excludes the
+    // already-registered Host reference UTxO when it is reused only to supply
+    // the Host validator witness in later registration transactions.
+    batch_out_refs: List<OutputReference>,
+  }
+  // Reclaim one or more registered reference-script UTxOs after shutdown.
+  ReclaimReferenceScripts { predecessor_root: ByteArray }
+  // Convert a completed negative registration accumulator to its positive live
+  // inventory. Appended to preserve all prior constructor indexes.
+  FinalizeReferenceScriptRegistration
 }

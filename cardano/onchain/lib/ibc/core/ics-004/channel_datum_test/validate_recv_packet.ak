@@ -72,6 +72,7 @@ fn setup_unordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) 
       port_id: "port-1",
       token: mock_auth_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let output_channel_datum =
@@ -139,6 +140,7 @@ fn setup_ordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       port_id: "port-1",
       token: mock_auth_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let output_channel_datum =

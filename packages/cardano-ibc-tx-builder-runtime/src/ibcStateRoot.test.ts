@@ -54,6 +54,7 @@ function channelDatum() {
   return {
     port: Buffer.from("transfer").toString("hex"),
     lifecycle: "ChannelActive",
+    voucher_supply: 0n,
     state: {
       channel: {
         state: "Close",

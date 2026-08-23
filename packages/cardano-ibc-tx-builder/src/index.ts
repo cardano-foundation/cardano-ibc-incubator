@@ -48,6 +48,7 @@ export type Packet = {
 export type ChannelDatumLike = {
   port: string;
   lifecycle: 'ChannelActive' | { Abandoning: { not_before: bigint } };
+  voucher_supply: bigint;
   state: {
     next_sequence_send: bigint;
     packet_commitment: Map<bigint, string>;
@@ -329,8 +330,20 @@ export async function buildUnsignedSendPacketTx(
     'transferIBCModuleRedeemer',
   );
 
+  const updatedVoucherSupply = isVoucher
+    ? context.channelDatum.voucher_supply - sendPacketOperator.token.amount
+    : context.channelDatum.voucher_supply;
+  if (updatedVoucherSupply < 0n) {
+    const voucherSupplyError =
+      deps.failedPrecondition ?? deps.invalidArgument;
+    throw voucherSupplyError(
+      `Channel ${sendPacketOperator.sourceChannel} voucher supply would become negative`,
+    );
+  }
+
   const updatedChannelDatum: ChannelDatumLike = {
     ...context.channelDatum,
+    voucher_supply: updatedVoucherSupply,
     state: {
       ...context.channelDatum.state,
       next_sequence_send: context.channelDatum.state.next_sequence_send + 1n,

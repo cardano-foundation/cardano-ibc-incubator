@@ -218,6 +218,7 @@ fn check_recv_packet_with_timeout(
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -352,6 +353,9 @@ fn check_recv_packet_with_timeout(
             nft_policy: host_nft_policy,
             deployer,
             shutdown: Active,
+            live_reference_script_count: Some(0),
+            reference_script_inventory_root: empty_ibc_state_root,
+            reference_script_registration: None,
           },
         ),
         reference_script: None,
@@ -368,6 +372,9 @@ fn check_recv_packet_with_timeout(
           nft_policy: host_nft_policy,
           deployer,
           shutdown: Active,
+          live_reference_script_count: Some(0),
+          reference_script_inventory_root: empty_ibc_state_root,
+          reference_script_registration: None,
         },
       ),
     }
@@ -649,6 +656,7 @@ fn check_recv_packet_with_timeout(
         "lifecycle reclamation policy",
         "lifecycle operational policy",
         "lifecycle packet policy",
+        "reference validator script hash",
         None,
         host_state_redeemer,
         host_input.output_reference,
@@ -788,6 +796,7 @@ test recv_packet_fails_when_channel_is_closed() fail {
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -890,6 +899,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
       port_id: "port-100",
       token: channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let updated_channel_datum =
@@ -979,6 +989,9 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
             nft_policy: host_state_nft_policy_id,
             deployer: #"00000000000000000000000000000000000000000000000000000000",
             shutdown: Active,
+            live_reference_script_count: Some(0),
+            reference_script_inventory_root: empty_ibc_state_root,
+            reference_script_registration: None,
           },
         ),
         reference_script: None,

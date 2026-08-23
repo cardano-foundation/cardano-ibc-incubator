@@ -11,7 +11,8 @@ use ibc/auth.{AuthToken}
 use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnHostStateSeal}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, ModuleRegistration, ShuttingDown,
-  host_state_token_name, retired_port_marker,
+  empty_reference_script_inventory_root, host_state_token_name,
+  retired_port_marker,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{ReclaimModule}
 use ibc/core/ics_025_handler_interface/lifecycle_marker.{
@@ -118,6 +119,9 @@ fn host_input() -> Input {
             initiated_at: 1_000,
             grace_period_end: 5_000,
           },
+          live_reference_script_count: Some(0),
+          reference_script_inventory_root: empty_reference_script_inventory_root,
+          reference_script_registration: None,
         },
       ),
       reference_script: None,

@@ -899,7 +899,8 @@ jobs:
             -m 'transfer_escrow_shard_retirement.{retire_zero_balance_escrow_shard_spend_succeeds}' \
             -m 'transfer_escrow_shard_retirement.{retire_zero_balance_escrow_shard_mint_succeeds}' \
             -m 'terminal_module_reclaim.{transfer_module_reclaim_pays_settled_root_to_deployer}' \
-            -m 'reference_validator.{reference_validator_reclaim_succeeds_after_proof_window}' \
+            -m 'reference_validator.{intermediate_reference_reclaim_batch_remains_available}' \
+            -m 'reference_validator.{final_reference_reclaim_atomically_burns_the_host_anchor}' \
             -m 'host_state_nft.{burn_final_accepts_sealed_anchor_after_proof_window}' \
             > ../../aiken-check.json
 

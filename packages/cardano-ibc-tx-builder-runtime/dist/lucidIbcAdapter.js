@@ -55,6 +55,14 @@ async function encodeHostStateDatum(hostStateDatum, Lucid) {
         port_token: RegisteredAuthTokenSchema,
         module_token: RegisteredAuthTokenSchema,
     });
+    const ReferenceScriptRegistrationSchema = Data.Object({
+        target_count: Data.Integer(),
+        target_root: Data.Bytes(),
+        last_out_ref: Data.Object({
+            transaction_id: Data.Bytes(),
+            output_index: Data.Integer(),
+        }),
+    });
     const HostStateStateSchema = Data.Object({
         version: Data.Integer(),
         ibc_state_root: Data.Bytes(),
@@ -86,6 +94,9 @@ async function encodeHostStateDatum(hostStateDatum, Lucid) {
                 }),
             }),
         ]),
+        live_reference_script_count: Data.Nullable(Data.Integer()),
+        reference_script_inventory_root: Data.Bytes(),
+        reference_script_registration: Data.Nullable(ReferenceScriptRegistrationSchema),
     });
     return Data.to(hostStateDatum, HostStateDatumSchema, { canonical: true });
 }
@@ -100,6 +111,14 @@ async function decodeHostStateDatum(encoded, Lucid) {
         port_token: RegisteredAuthTokenSchema,
         module_token: RegisteredAuthTokenSchema,
     });
+    const ReferenceScriptRegistrationSchema = Data.Object({
+        target_count: Data.Integer(),
+        target_root: Data.Bytes(),
+        last_out_ref: Data.Object({
+            transaction_id: Data.Bytes(),
+            output_index: Data.Integer(),
+        }),
+    });
     const HostStateStateSchema = Data.Object({
         version: Data.Integer(),
         ibc_state_root: Data.Bytes(),
@@ -131,6 +150,9 @@ async function decodeHostStateDatum(encoded, Lucid) {
                 }),
             }),
         ]),
+        live_reference_script_count: Data.Nullable(Data.Integer()),
+        reference_script_inventory_root: Data.Bytes(),
+        reference_script_registration: Data.Nullable(ReferenceScriptRegistrationSchema),
     });
     return Data.from(encoded, HostStateDatumSchema);
 }
@@ -296,6 +318,7 @@ async function decodeChannelDatum(encoded, Lucid) {
             Data.Literal('ChannelActive'),
             Data.Object({ Abandoning: Data.Object({ not_before: Data.Integer() }) }),
         ]),
+        voucher_supply: Data.Integer(),
     });
     return Data.from(encoded, ChannelDatumSchema);
 }
@@ -355,6 +378,7 @@ async function encodeChannelDatum(channelDatum, Lucid) {
                 Data.Literal('ChannelActive'),
                 Data.Object({ Abandoning: Data.Object({ not_before: Data.Integer() }) }),
             ]),
+            voucher_supply: Data.Integer(),
         });
         return Data.to(channelDatum, ChannelDatumSchema);
     }
@@ -435,6 +459,7 @@ async function encodeChannelDatum(channelDatum, Lucid) {
         channelDatum.lifecycle === 'ChannelActive'
             ? constrData(0, [])
             : constrData(1, [intData(channelDatum.lifecycle.Abandoning.not_before)]),
+        intData(channelDatum.voucher_supply),
     ]);
     return channelDatumData.to_cbor_hex();
 }
@@ -526,6 +551,10 @@ async function encodeHostStateRedeemer(data, Lucid) {
         port_token: RegisteredAuthTokenSchema,
         module_token: RegisteredAuthTokenSchema,
     });
+    const OutputReferenceSchema = Data.Object({
+        transaction_id: Data.Bytes(),
+        output_index: Data.Integer(),
+    });
     const HostStateRedeemerSchema = Data.Enum([
         Data.Object({ CreateClient: CreateClientSchema }),
         Data.Object({ CreateConnection: CreateConnectionSchema }),
@@ -588,6 +617,19 @@ async function encodeHostStateRedeemer(data, Lucid) {
         Data.Object({
             ReclaimModule: Data.Object({ port_id: Data.Bytes() }),
         }),
+        Data.Object({
+            RegisterReferenceScripts: Data.Object({
+                target_count: Data.Integer(),
+                target_root: Data.Bytes(),
+                batch_out_refs: Data.Array(OutputReferenceSchema),
+            }),
+        }),
+        Data.Object({
+            ReclaimReferenceScripts: Data.Object({
+                predecessor_root: Data.Bytes(),
+            }),
+        }),
+        Data.Literal('FinalizeReferenceScriptRegistration'),
     ]);
     return Data.to(data, HostStateRedeemerSchema, { canonical: true });
 }

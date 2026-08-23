@@ -1162,7 +1162,8 @@ export class PacketService {
   ): Promise<{ unsigned_tx: { type_url: string; value: Uint8Array } }> {
     try {
       await this.refreshWalletContext(operator.signer, 'retireTransferEscrowShard');
-      const { unsignedTx, validFromTime, validToTime } = await this.buildUnsignedRetireTransferEscrowShardTx(operator);
+      const { unsignedTx, validFromTime, validToTime, pendingTreeUpdate } =
+        await this.buildUnsignedRetireTransferEscrowShardTx(operator);
       const { unsignedTxBytes } = await this.txOperationRunnerService.run({
         operationName: 'retireTransferEscrowShard',
         unsignedTx,
@@ -1178,6 +1179,7 @@ export class PacketService {
           localUPLCEval: false,
           setCollateral: TRANSACTION_SET_COLLATERAL,
         },
+        pendingTreeUpdate,
       });
       return { unsigned_tx: { type_url: '', value: unsignedTxBytes } };
     } catch (error) {
@@ -1191,6 +1193,7 @@ export class PacketService {
     unsignedTx: TxBuilder;
     validFromTime: number;
     validToTime: number;
+    pendingTreeUpdate: PendingTreeUpdate;
   }> {
     const channelSequence = parseChannelSequence(operator.channelId);
     const [channelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(channelSequence);
@@ -1306,6 +1309,14 @@ export class PacketService {
       }),
       validFromTime,
       validToTime,
+      // Escrow retirement updates HostState's version/time but leaves the IBC
+      // commitment root unchanged. Register that root-neutral transition so
+      // SubmitSignedTx can still verify and finalize the confirmed transaction.
+      pendingTreeUpdate: {
+        expectedNewRoot: hostStateDatum.state.ibc_state_root,
+        commit: () => undefined,
+        persistTreeSnapshot: false,
+      },
     };
   }
 
@@ -2236,6 +2247,7 @@ export class PacketService {
 
           const updatedChannelDatum: ChannelDatum = {
             ...channelDatum,
+            voucher_supply: channelDatum.voucher_supply + transferAmount,
             state: {
               ...channelDatum.state,
               next_sequence_recv: nextSequenceRecv,
@@ -2415,9 +2427,16 @@ export class PacketService {
     }
     const packetSequence: bigint = timeoutPacketOperator.packet.sequence;
     const packet: Packet = timeoutPacketOperator.packet;
+    const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
+    const voucherHasPrefix = this._hasVoucherPrefix(
+      timeoutPacketOperator.fungibleTokenPacketData.denom,
+      convertHex2String(packet.source_port),
+      convertHex2String(packet.source_channel),
+    );
     // update channel datum
     const updatedChannelDatum: ChannelDatum = {
       ...channelDatum,
+      voucher_supply: voucherHasPrefix ? channelDatum.voucher_supply + transferAmount : channelDatum.voucher_supply,
       state: {
         ...channelDatum.state,
         packet_commitment: deleteSortMap(channelDatum.state.packet_commitment, packetSequence),
@@ -2435,7 +2454,6 @@ export class PacketService {
     const transferModuleAddress = this.getTransferModuleAddress();
     const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(this.getTransferModuleIdentifier());
     const spendChannelAddress = this.getSpendChannelAddress();
-    const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
     const senderPublicKeyHash = timeoutPacketOperator.fungibleTokenPacketData.sender;
     const denom = mapLovelaceDenom(timeoutPacketOperator.fungibleTokenPacketData.denom, 'packet_to_asset');
     const spendTransferModuleRedeemer: TransferIBCModuleRedeemer = {
@@ -2479,12 +2497,6 @@ export class PacketService {
       spendTransferModuleRedeemer,
       'transferIBCModuleRedeemer',
     );
-    const voucherHasPrefix = this._hasVoucherPrefix(
-      timeoutPacketOperator.fungibleTokenPacketData.denom,
-      convertHex2String(packet.source_port),
-      convertHex2String(packet.source_channel),
-    );
-
     const deploymentConfig = this.configService.get('deployment');
     const timeoutPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.timeout_packet.scriptHash;
     const verifyProofPolicyId = deploymentConfig.validators.verifyProof.scriptHash;
@@ -3334,6 +3346,7 @@ export class PacketService {
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
       ...channelDatum,
+      voucher_supply: channelDatum.voucher_supply + voucherRefundAmount,
       state: {
         ...channelDatum.state,
         packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
@@ -4167,9 +4180,6 @@ export class PacketService {
 
   public async prepareTransferChannelNoLiveShards(channelId: string): Promise<TransferChannelNoLiveShardsWitness> {
     const snapshot = await this.inspectTransferEscrowShardRegistry(channelId);
-    if (snapshot.moduleDatum.voucher_supply !== 0n) {
-      throw new GrpcFailedPreconditionException('Transfer channels cannot be reclaimed while voucher supply remains');
-    }
     if ((snapshot.channelLiveCounts.get(channelId) ?? 0n) !== 0n) {
       throw new GrpcFailedPreconditionException(
         `Channel ${convertHex2String(channelId)} still owns live transfer escrow shards`,

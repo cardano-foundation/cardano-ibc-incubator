@@ -1,10 +1,11 @@
 use aiken/builtin
+use aiken/collection/list
 use aiken/crypto
 use aiken/fuzz
 use aiken/primitive/bytearray
 use aiken/primitive/string
 use cardano/address.{from_script, from_verification_key}
-use cardano/assets.{PolicyId, from_asset}
+use cardano/assets.{PolicyId, ada_asset_name, ada_policy_id, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
@@ -27,12 +28,19 @@ use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement
+use ibc/core/ics_004/types/channel.{Channel}
+use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as channel_keys
+use ibc/core/ics_004/types/order as channel_order
 use ibc/core/ics_004/types/packet.{Packet}
+use ibc/core/ics_004/types/state as channel_state
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, ModuleDataV1, ModuleOperatorV1, OnAcknowledgementPacket,
   OnRecvPacket, OnTimeoutPacket, Operator,
@@ -43,6 +51,8 @@ use ibc/testing/fuzz_dsl
 use ibc/utils/string as string_utils
 use minting_voucher
 use trace_registry as trace_registry_validator
+
+const transfer_port_id = "transfer"
 
 type MockData {
   module_token: AuthToken,
@@ -67,6 +77,10 @@ type FirstSeenVoucherFixture {
 }
 
 fn prepare_mock_data() -> MockData {
+  prepare_mock_data_with_supply(1000)
+}
+
+fn prepare_mock_data_with_supply(voucher_supply: Int) -> MockData {
   let module_token =
     AuthToken { policy_id: "module token policy id", name: "module token name" }
 
@@ -78,12 +92,13 @@ fn prepare_mock_data() -> MockData {
       },
       output: Output {
         address: from_script("spend module output address"),
-        value: from_asset(module_token.policy_id, module_token.name, 1),
+        value: from_asset(module_token.policy_id, module_token.name, 1)
+          |> add(ada_policy_id, ada_asset_name, 2_000_000),
         datum: InlineDatum(
           TransferModuleDatum {
             escrow_shard_registry_root: empty_escrow_shard_registry_root,
             live_escrow_shard_count: 0,
-            voucher_supply: 1000,
+            voucher_supply,
           },
         ),
         reference_script: None,
@@ -105,11 +120,21 @@ fn prepare_mock_data() -> MockData {
 }
 
 fn make_module_output(mock_data: MockData, voucher_delta: Int) -> Output {
+  make_module_output_with_lovelace_delta(mock_data, voucher_delta, 0)
+}
+
+fn make_module_output_with_lovelace_delta(
+  mock_data: MockData,
+  voucher_delta: Int,
+  lovelace_delta: Int,
+) -> Output {
   let module_output = mock_data.module_input.output
   expect InlineDatum(raw_datum) = module_output.datum
   expect datum: TransferModuleDatum = raw_datum
   Output {
     ..module_output,
+    value: module_output.value
+      |> add(ada_policy_id, ada_asset_name, lovelace_delta),
     datum: InlineDatum(
       TransferModuleDatum {
         ..datum,
@@ -123,6 +148,20 @@ fn make_channel_input(
   channel_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
   channel_id: ByteArray,
+) -> Input {
+  make_channel_input_with_supply(
+    channel_minting_policy_id,
+    host_state_nft_policy_id,
+    channel_id,
+    1000,
+  )
+}
+
+fn make_channel_input_with_supply(
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
+  channel_id: ByteArray,
+  voucher_supply: Int,
 ) -> Input {
   let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let host_state_nft =
@@ -145,9 +184,70 @@ fn make_channel_input(
     output: Output {
       address: from_script("channel script hash"),
       value: from_asset(channel_minting_policy_id, channel_token_name, 1),
-      datum: NoDatum,
+      datum: InlineDatum(
+        ChannelDatum {
+          state: ChannelDatumState {
+            channel: Channel {
+              state: channel_state.Open,
+              ordering: channel_order.Unordered,
+              counterparty: ChannelCounterparty {
+                port_id: "counterparty",
+                channel_id: "channel-1",
+              },
+              connection_hops: ["connection-0"],
+              version: "ics20-1",
+            },
+            next_sequence_send: 1,
+            next_sequence_recv: 1,
+            next_sequence_ack: 1,
+            packet_commitment: [],
+            packet_receipt: [],
+            packet_acknowledgement: [],
+            minimum_receive_proof_height: Height {
+              revision_number: 0,
+              revision_height: 0,
+            },
+            maximum_receive_proof_height: Height {
+              revision_number: 0,
+              revision_height: 0,
+            },
+          },
+          port_id: "transfer",
+          token: AuthToken {
+            policy_id: channel_minting_policy_id,
+            name: channel_token_name,
+          },
+          lifecycle: ChannelActive,
+          voucher_supply,
+        },
+      ),
       reference_script: None,
     },
+  }
+}
+
+fn make_channel_output(channel_input: Input, voucher_delta: Int) -> Output {
+  make_channel_output_with_lovelace_delta(channel_input, voucher_delta, 0)
+}
+
+fn make_channel_output_with_lovelace_delta(
+  channel_input: Input,
+  voucher_delta: Int,
+  lovelace_delta: Int,
+) -> Output {
+  let input_output = channel_input.output
+  expect InlineDatum(raw_datum) = input_output.datum
+  expect datum: ChannelDatum = raw_datum
+  Output {
+    ..input_output,
+    value: input_output.value
+      |> add(ada_policy_id, ada_asset_name, lovelace_delta),
+    datum: InlineDatum(
+      ChannelDatum {
+        ..datum,
+        voucher_supply: datum.voucher_supply + voucher_delta,
+      },
+    ),
   }
 }
 
@@ -440,12 +540,25 @@ fn first_seen_voucher_fixture(
   metadata_output: Output,
   mutation: fuzz_dsl.Mutation,
 ) -> FirstSeenVoucherFixture {
-  let mock_data = prepare_mock_data()
+  first_seen_voucher_fixture_with_supply_and_amount(
+    metadata_output,
+    mutation,
+    1000,
+    100,
+  )
+}
+
+fn first_seen_voucher_fixture_with_supply_and_amount(
+  metadata_output: Output,
+  mutation: fuzz_dsl.Mutation,
+  initial_supply: Int,
+  transfer_amount: Int,
+) -> FirstSeenVoucherFixture {
+  let mock_data = prepare_mock_data_with_supply(initial_supply)
   let packet_source_port = "transfer"
   let packet_source_channel = "channel-1"
   let packet_dest_port = "port-99"
   let packet_dest_channel = "channel-99"
-  let transfer_amount = 100
   let receiver =
     #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
   let ftpd =
@@ -582,6 +695,7 @@ fn first_seen_voucher_fixture(
         metadata_output,
         updated_shard_output,
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers,
       mint,
@@ -654,6 +768,7 @@ fn run_first_seen_voucher_mint_transition(
           fixture.mock_data.voucher_metadata_script_hash,
           fixture.mock_data.channel_minting_policy_id,
           fixture.mock_data.host_state_nft_policy_id,
+          transfer_port_id,
           fixture.redeemer,
           fixture.mock_data.voucher_minting_policy_id,
           fixture.transaction,
@@ -678,6 +793,80 @@ fn run_first_seen_voucher_mint_tx(
           fixture.transaction,
         ),
       )
+}
+
+fn first_seen_channel_input(fixture: FirstSeenVoucherFixture) -> Input {
+  expect [channel_input] =
+    list.filter(
+      fixture.transaction.inputs,
+      fn(input) { input.output.address == from_script("channel script hash") },
+    )
+  channel_input
+}
+
+fn mutate_first_seen_channel_thread(
+  fixture: FirstSeenVoucherFixture,
+  channel_input: Input,
+  channel_output: Output,
+  mutation: fuzz_dsl.Mutation,
+) -> FirstSeenVoucherFixture {
+  let updated_transaction =
+    Transaction {
+      ..fixture.transaction,
+      inputs: list.map(
+        fixture.transaction.inputs,
+        fn(input) {
+          if input.output.address == from_script("channel script hash") {
+            channel_input
+          } else {
+            input
+          }
+        },
+      ),
+      outputs: list.map(
+        fixture.transaction.outputs,
+        fn(output) {
+          if output.address == from_script("channel script hash") {
+            channel_output
+          } else {
+            output
+          }
+        },
+      ),
+    }
+
+  FirstSeenVoucherFixture {
+    ..fixture,
+    transaction: updated_transaction,
+    mutation,
+  }
+}
+
+fn mutate_first_seen_module_output(
+  fixture: FirstSeenVoucherFixture,
+  module_output: Output,
+  mutation: fuzz_dsl.Mutation,
+) -> FirstSeenVoucherFixture {
+  let updated_transaction =
+    Transaction {
+      ..fixture.transaction,
+      outputs: list.map(
+        fixture.transaction.outputs,
+        fn(output) {
+          if output |> auth.contain_auth_token(fixture.mock_data.module_token) {
+            module_output
+          } else {
+            output
+          }
+        },
+      ),
+    }
+
+  FirstSeenVoucherFixture {
+    ..fixture,
+    transaction: updated_transaction,
+    mutation,
+  }
 }
 
 fn first_seen_metadata_datum_with(
@@ -730,6 +919,168 @@ test prop_tx_first_seen_voucher_mint_couples_registry_append(
   )
     |> run_first_seen_voucher_mint_tx
     |> fuzz_dsl.assert_protocol_valid
+}
+
+test voucher_mint_accepts_exact_channel_delta_with_lovelace_change() {
+  let fixture =
+    first_seen_voucher_fixture(
+      canonical_first_seen_metadata_output(),
+      fuzz_dsl.no_mutation(),
+    )
+  let channel_input = first_seen_channel_input(fixture)
+
+  mutate_first_seen_channel_thread(
+    fixture,
+    channel_input,
+    make_channel_output_with_lovelace_delta(channel_input, 100, 2_000_000),
+    fuzz_dsl.mutation("channel_min_ada_changed"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test voucher_mint_accepts_module_min_ada_top_up_across_23_to_24_supply() {
+  let fixture =
+    first_seen_voucher_fixture_with_supply_and_amount(
+      canonical_first_seen_metadata_output(),
+      fuzz_dsl.no_mutation(),
+      23,
+      1,
+    )
+
+  mutate_first_seen_module_output(
+    fixture,
+    make_module_output_with_lovelace_delta(fixture.mock_data, 1, 500_000),
+    fuzz_dsl.mutation("module_min_ada_increased_at_cbor_width_boundary"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test voucher_mint_rejects_module_lovelace_decrease() {
+  let fixture =
+    first_seen_voucher_fixture_with_supply_and_amount(
+      canonical_first_seen_metadata_output(),
+      fuzz_dsl.no_mutation(),
+      23,
+      1,
+    )
+
+  mutate_first_seen_module_output(
+    fixture,
+    make_module_output_with_lovelace_delta(fixture.mock_data, 1, -1),
+    fuzz_dsl.mutation("module_lovelace_decreased"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test voucher_mint_rejects_module_non_ada_asset_change() {
+  let fixture =
+    first_seen_voucher_fixture_with_supply_and_amount(
+      canonical_first_seen_metadata_output(),
+      fuzz_dsl.no_mutation(),
+      23,
+      1,
+    )
+  let module_output =
+    make_module_output(fixture.mock_data, 1)
+      |> fn(output) {
+          Output {
+            ..output,
+            value: output.value |> add("foreign policy", "foreign token", 1),
+          }
+        }
+
+  mutate_first_seen_module_output(
+    fixture,
+    module_output,
+    fuzz_dsl.mutation("module_non_ada_asset_changed"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test voucher_mint_rejects_wrong_channel_delta() {
+  let fixture =
+    first_seen_voucher_fixture(
+      canonical_first_seen_metadata_output(),
+      fuzz_dsl.no_mutation(),
+    )
+  let channel_input = first_seen_channel_input(fixture)
+
+  mutate_first_seen_channel_thread(
+    fixture,
+    channel_input,
+    make_channel_output(channel_input, 99),
+    fuzz_dsl.mutation("wrong_channel_voucher_delta"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test voucher_mint_rejects_wrong_channel_thread() {
+  let fixture =
+    first_seen_voucher_fixture(
+      canonical_first_seen_metadata_output(),
+      fuzz_dsl.no_mutation(),
+    )
+  let channel_input = first_seen_channel_input(fixture)
+  let wrong_channel_input =
+    make_channel_input(
+      fixture.mock_data.channel_minting_policy_id,
+      fixture.mock_data.host_state_nft_policy_id,
+      "channel-98",
+    )
+  expect InlineDatum(wrong_raw_datum) = wrong_channel_input.output.datum
+  expect wrong_datum: ChannelDatum = wrong_raw_datum
+  let channel_output = make_channel_output(channel_input, 100)
+  expect InlineDatum(output_raw_datum) = channel_output.datum
+  expect output_datum: ChannelDatum = output_raw_datum
+  let wrong_channel_output =
+    Output {
+      ..channel_output,
+      datum: InlineDatum(
+        ChannelDatum { ..output_datum, token: wrong_datum.token },
+      ),
+    }
+
+  mutate_first_seen_channel_thread(
+    fixture,
+    channel_input,
+    wrong_channel_output,
+    fuzz_dsl.mutation("wrong_channel_thread"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test voucher_mint_rejects_foreign_port_channel() {
+  let fixture =
+    first_seen_voucher_fixture(
+      canonical_first_seen_metadata_output(),
+      fuzz_dsl.no_mutation(),
+    )
+  let channel_input = first_seen_channel_input(fixture)
+  expect InlineDatum(raw_datum) = channel_input.output.datum
+  expect datum: ChannelDatum = raw_datum
+  let foreign_input =
+    Input {
+      ..channel_input,
+      output: Output {
+        ..channel_input.output,
+        datum: InlineDatum(ChannelDatum { ..datum, port_id: "foreign-port" }),
+      },
+    }
+
+  mutate_first_seen_channel_thread(
+    fixture,
+    foreign_input,
+    make_channel_output(foreign_input, 100),
+    fuzz_dsl.mutation("foreign_port_channel"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
 }
 
 test prop_tx_first_seen_voucher_mint_rejects_wrong_metadata_registry_coupled(
@@ -1122,6 +1473,7 @@ test test_mint_voucher() {
         voucher_output,
         metadata_output,
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers,
       mint,
@@ -1133,6 +1485,7 @@ test test_mint_voucher() {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1267,6 +1620,7 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
         voucher_output,
         metadata_output,
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers: [
         Pair(purpose, mint_voucher_redeemer_in_data),
@@ -1292,6 +1646,7 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1451,6 +1806,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
         voucher_output,
         metadata_output,
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers,
       mint,
@@ -1462,6 +1818,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1551,6 +1908,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
           reference_script: None,
         },
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -1575,10 +1933,107 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
   )
+}
+
+fn validate_burn_voucher_channel_supply(
+  channel_supply: Int,
+  channel_delta: Int,
+) -> Bool {
+  let mock_data = prepare_mock_data()
+  let packet_source_port = "port-99"
+  let packet_source_channel = "channel-99"
+  let transfer_amount = 100
+  let prefixed_denom =
+    transfer_coin.get_denom_prefix(packet_source_port, packet_source_channel)
+      |> bytearray.concat("ibc/usdt")
+  let packet_data =
+    FungibleTokenPacketData {
+      denom: prefixed_denom,
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender: "cardano sender verification key",
+      receiver: "cosmos address",
+      memo: "",
+    }
+  let voucher_redeemer =
+    BurnVoucher {
+      packet_source_port,
+      packet_source_channel,
+      data: packet_data,
+      module_token: mock_data.module_token,
+    }
+  let module_redeemer: Redeemer =
+    Operator(
+      ModuleOperatorV1(
+        Transfer { channel_id: packet_source_channel, data: packet_data },
+      ),
+    )
+  let channel_input =
+    make_channel_input_with_supply(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_source_channel,
+      channel_supply,
+    )
+  let channel_redeemer: Redeemer =
+    SendPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        "transfer",
+        "channel-1",
+        fungible_token_packet_data.get_bytes(packet_data),
+      ),
+    }
+  let token_name = voucher_asset_name.voucher_user_token_name(packet_data.denom)
+  let voucher_redeemer_data: Redeemer = voucher_redeemer
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input, channel_input],
+      outputs: [
+        make_module_output(mock_data, 0 - transfer_amount),
+        make_channel_output(channel_input, channel_delta),
+      ],
+      redeemers: [
+        Pair(Mint(mock_data.voucher_minting_policy_id), voucher_redeemer_data),
+        Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+        Pair(Spend(channel_input.output_reference), channel_redeemer),
+      ],
+      mint: from_asset(
+        mock_data.voucher_minting_policy_id,
+        token_name,
+        0 - transfer_amount,
+      ),
+    }
+
+  minting_voucher.mint_voucher.mint(
+    mock_data.module_token,
+    mock_data.directory_auth_token,
+    mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
+    transfer_port_id,
+    voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
+}
+
+test burn_voucher_accepts_exact_channel_delta() {
+  validate_burn_voucher_channel_supply(100, -100)
+}
+
+test burn_voucher_rejects_wrong_channel_delta() fail {
+  validate_burn_voucher_channel_supply(100, -99)
+}
+
+test burn_voucher_rejects_channel_supply_underflow() fail {
+  validate_burn_voucher_channel_supply(50, -100)
 }
 
 test test_burn_voucher() {
@@ -1642,7 +2097,10 @@ test test_burn_voucher() {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
-      outputs: [make_module_output(mock_data, 0 - transfer_amount)],
+      outputs: [
+        make_module_output(mock_data, 0 - transfer_amount),
+        make_channel_output(channel_input, 0 - transfer_amount),
+      ],
       redeemers: [
         Pair(
           Mint(mock_data.voucher_minting_policy_id),
@@ -1670,6 +2128,7 @@ test test_burn_voucher() {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1734,7 +2193,10 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
-      outputs: [make_module_output(mock_data, 0 - transfer_amount)],
+      outputs: [
+        make_module_output(mock_data, 0 - transfer_amount),
+        make_channel_output(channel_input, 0 - transfer_amount),
+      ],
       redeemers: [
         Pair(
           Mint(mock_data.voucher_minting_policy_id),
@@ -1762,6 +2224,7 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1865,6 +2328,7 @@ test test_refund_voucher() {
           reference_script: None,
         },
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -1889,6 +2353,7 @@ test test_refund_voucher() {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1996,6 +2461,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
           reference_script: None,
         },
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -2020,6 +2486,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -2123,6 +2590,7 @@ test test_refund_voucher_fails_with_wrong_metadata_mapping() fail {
           reference_script: None,
         },
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -2147,6 +2615,7 @@ test test_refund_voucher_fails_with_wrong_metadata_mapping() fail {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -2258,6 +2727,7 @@ test test_refund_voucher_fail() fail {
           reference_script: None,
         },
         make_module_output(mock_data, transfer_amount),
+        make_channel_output(channel_input, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -2282,6 +2752,7 @@ test test_refund_voucher_fail() fail {
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    transfer_port_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,

@@ -23,9 +23,108 @@ import {
   validatorToAddress,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
-import { AuthToken, OutputReference } from "../types/index.ts";
+import {
+  AuthToken,
+  OutputReference,
+  OutputReferenceSchema,
+} from "../types/index.ts";
 
 export const PORT_TOKEN_DOMAIN = "cardano-ibc/port-token/v1";
+export const EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT = "00".repeat(32);
+export const REFERENCE_SCRIPT_INPUT_BYTE_BUDGET = 180_000;
+export const REFERENCE_SCRIPT_INPUT_COUNT_LIMIT = 20;
+export const MAX_REFERENCE_SCRIPT_INVENTORY_COUNT = 128;
+const REFERENCE_SCRIPT_INVENTORY_DOMAIN = fromText(
+  "ibc-reference-script-v1",
+);
+
+const ReferenceScriptIdentitySchema = Data.Object({
+  output_reference: OutputReferenceSchema,
+  reference_script_hash: Data.Bytes(),
+});
+type ReferenceScriptIdentity = Data.Static<
+  typeof ReferenceScriptIdentitySchema
+>;
+const ReferenceScriptIdentity =
+  ReferenceScriptIdentitySchema as unknown as ReferenceScriptIdentity;
+
+export type ReferenceScriptInventoryEntry =
+  & Pick<
+    UTxO,
+    "txHash" | "outputIndex"
+  >
+  & {
+    scriptHash: ScriptHash;
+  };
+
+export type ReferenceScriptManifestEntry = ReferenceScriptInventoryEntry & {
+  predecessorRoot: string;
+  resultingRoot: string;
+  registrationBatchIndex: number;
+};
+
+export const compareReferenceScriptInventoryEntries = (
+  left: Pick<UTxO, "txHash" | "outputIndex">,
+  right: Pick<UTxO, "txHash" | "outputIndex">,
+): number => {
+  if (left.txHash < right.txHash) return -1;
+  if (left.txHash > right.txHash) return 1;
+  return left.outputIndex - right.outputIndex;
+};
+
+export const referenceScriptInventoryEntry = (
+  utxo: UTxO,
+): ReferenceScriptInventoryEntry => {
+  if (!utxo.scriptRef) {
+    throw new Error(
+      `Reference output ${utxo.txHash}#${utxo.outputIndex} has no reference script`,
+    );
+  }
+  return {
+    txHash: utxo.txHash,
+    outputIndex: utxo.outputIndex,
+    scriptHash: validatorToScriptHash(utxo.scriptRef),
+  };
+};
+
+export const referenceScriptIdentityCbor = (
+  entry: ReferenceScriptInventoryEntry,
+): string => {
+  const identity: ReferenceScriptIdentity = {
+    output_reference: {
+      transaction_id: entry.txHash,
+      output_index: BigInt(entry.outputIndex),
+    },
+    reference_script_hash: entry.scriptHash,
+  };
+  // Aiken's native cbor.serialise() uses indefinite constructor lists. Keep
+  // this identity preimage non-canonical even though transaction datums and
+  // redeemers use canonical encodings elsewhere.
+  return Data.to(identity, ReferenceScriptIdentity, { canonical: false });
+};
+
+export const appendReferenceScriptInventoryEntry = (
+  previousRoot: string,
+  entry: ReferenceScriptInventoryEntry,
+): string => {
+  if (!/^[0-9a-f]{64}$/.test(previousRoot)) {
+    throw new Error("Reference-script inventory root must be 32-byte hex");
+  }
+  const preimage = fromHex(
+    REFERENCE_SCRIPT_INVENTORY_DOMAIN + previousRoot +
+      referenceScriptIdentityCbor(entry),
+  );
+  return toHex(blake2b(preimage, { dkLen: 32 }));
+};
+
+export const foldReferenceScriptInventory = (
+  entries: ReferenceScriptInventoryEntry[],
+  previousRoot = EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT,
+): string =>
+  entries.reduce(
+    (root, entry) => appendReferenceScriptInventoryEntry(root, entry),
+    previousRoot,
+  );
 
 /** Derive the capability-token name from hex-encoded UTF-8 port bytes using Aiken's exact preimage. */
 export const generatePortTokenName = (portId: string): string => {
@@ -805,6 +904,18 @@ type Tokens = "mock";
 export type DeploymentTemplate = {
   schemaVersion: 6;
   deployedAt: string;
+  /**
+   * Complete, exact inventory of the reference-script outputs created by this
+   * deployment. Shutdown refuses to burn HostState unless every entry is
+   * authoritatively confirmed spent.
+   */
+  referenceOutRefs: ReferenceScriptManifestEntry[];
+  referenceScriptInventoryRoot: string;
+  referenceValidator: {
+    script: string;
+    scriptHash: string;
+    address: string;
+  };
   validators: {
     spendClient: {
       title: string;

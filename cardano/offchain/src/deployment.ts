@@ -15,14 +15,22 @@ import {
 } from "@lucid-evolution/lucid";
 import {
   awaitWalletTx,
+  compareReferenceScriptInventoryEntries,
   DeploymentTemplate,
+  EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT,
+  foldReferenceScriptInventory,
   formatTimestamp,
   generateIdentifierTokenName,
   generatePortTokenName,
   getLiveWalletUtxos,
   isRetryableOgmiosTransportError,
+  MAX_REFERENCE_SCRIPT_INVENTORY_COUNT,
   readValidator,
   recordDeploymentTx,
+  REFERENCE_SCRIPT_INPUT_BYTE_BUDGET,
+  REFERENCE_SCRIPT_INPUT_COUNT_LIMIT,
+  referenceScriptInventoryEntry,
+  type ReferenceScriptManifestEntry,
   resetDeploymentCostReport,
   submitTx,
 } from "./utils.ts";
@@ -116,6 +124,71 @@ const EMPTY_HASH = "00".repeat(32);
 
 export const GENERIC_MODULE_SPEND_VALIDATOR_TITLE =
   "spending_mock_module.spend_mock_module.spend";
+
+export const readMintVoucherValidator = (
+  lucid: LucidEvolution,
+  parameters: {
+    moduleToken: AuthToken;
+    directoryAuthToken: AuthToken;
+    voucherMetadataScriptHash: ScriptHash;
+    channelMintingPolicyId: PolicyId;
+    hostStateNftPolicyId: PolicyId;
+    portId: string;
+  },
+) =>
+  readValidator(
+    "minting_voucher.mint_voucher.mint",
+    lucid,
+    [
+      parameters.moduleToken,
+      parameters.directoryAuthToken,
+      parameters.voucherMetadataScriptHash,
+      parameters.channelMintingPolicyId,
+      parameters.hostStateNftPolicyId,
+      parameters.portId,
+    ],
+    Data.Tuple([
+      AuthTokenSchema,
+      AuthTokenSchema,
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [
+      AuthToken,
+      AuthToken,
+      string,
+      string,
+      string,
+      string,
+    ],
+  );
+
+export const readMintLifecyclePacketMarkerValidator = (
+  lucid: LucidEvolution,
+  parameters: {
+    hostStateNftPolicyId: PolicyId;
+    spendChannelScriptHash: ScriptHash;
+    mintChannelSttPolicyId: PolicyId;
+    voucherMintingPolicyId: PolicyId;
+  },
+) =>
+  readValidator(
+    "minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint",
+    lucid,
+    [
+      parameters.hostStateNftPolicyId,
+      parameters.spendChannelScriptHash,
+      parameters.mintChannelSttPolicyId,
+      parameters.voucherMintingPolicyId,
+    ],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [string, string, string, string],
+  );
 
 const concatBytes = (...parts: Uint8Array[]): Uint8Array => {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
@@ -300,6 +373,11 @@ export const createDeployment = async (
     ? walletAddress
     : undefined;
   if (deploymentWalletAddress) {
+    const resumedDeployment = await resumeReferenceRegistrationJournal(
+      lucid,
+      deployerPaymentKeyHash,
+    );
+    if (resumedDeployment) return resumedDeployment;
     await resetDeploymentCostReport(
       deploymentWalletAddress,
       mode,
@@ -430,6 +508,17 @@ export const createDeployment = async (
       Data.Tuple([OutputReferenceSchema]) as unknown as [OutputReference],
     );
 
+  const [
+    referenceValidator,
+    referenceValidatorScriptHash,
+    referenceValidatorAddress,
+  ] = await readValidator(
+    "reference_validator.refer_only.else",
+    lucid,
+    [mintHostStateNFTPolicyId],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+
   const [verifyProofValidator, verifyProofPolicyId] = await readValidator(
     "verifying_proof.verify_proof.mint",
     lucid,
@@ -551,6 +640,60 @@ export const createDeployment = async (
   );
   referredValidators.push(mintChannelSttValidator);
 
+  // The voucher policy has no dependency on the packet marker, so construct
+  // it first and bind the packet marker to its exact policy id. This prevents
+  // packet transitions from changing per-channel voucher supply unless the
+  // deployment's voucher policy is present in the same transaction.
+  const [mintIdentifierValidator] = await readValidator(
+    "minting_identifier.minting_identifier.mint",
+    lucid,
+  );
+  const mintIdentifierPolicyId = validatorToScriptHash(
+    mintIdentifierValidator,
+  );
+  const transferModuleOutputReference = buildOutputReference(
+    transferModuleNonceUtxo,
+  );
+  const transferModuleIdentifierToken: AuthToken = {
+    policy_id: mintIdentifierPolicyId,
+    name: await generateIdentifierTokenName(transferModuleOutputReference),
+  };
+  const traceRegistryDirectoryNonce =
+    traceRegistryNonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
+  if (!traceRegistryDirectoryNonce) {
+    throw new Error(
+      "Missing reserved nonce UTxO for trace registry directory.",
+    );
+  }
+  const traceRegistryDirectoryAuthToken: AuthToken = {
+    policy_id: mintIdentifierPolicyId,
+    name: await generateIdentifierTokenName(
+      buildOutputReference(traceRegistryDirectoryNonce),
+    ),
+  };
+  const [, voucherMetadataScriptHash, voucherMetadataAddress] =
+    await readValidator(
+      "voucher_metadata.voucher_metadata.else",
+      lucid,
+    );
+  const transferPortId = fromText(TRANSFER_MODULE_PORT);
+  const [mintVoucherValidator, mintVoucherPolicyId] = readMintVoucherValidator(
+    lucid,
+    {
+      moduleToken: transferModuleIdentifierToken,
+      directoryAuthToken: traceRegistryDirectoryAuthToken,
+      voucherMetadataScriptHash,
+      channelMintingPolicyId: mintChannelSttPolicyId,
+      hostStateNftPolicyId: mintHostStateNFTPolicyId,
+      portId: transferPortId,
+    },
+  );
+  const mintVoucher = {
+    validator: mintVoucherValidator,
+    policyId: mintVoucherPolicyId,
+  };
+  const voucherMetadata = { address: voucherMetadataAddress };
+
   const [
     mintLifecycleCreationMarkerValidator,
     mintLifecycleCreationMarkerPolicyId,
@@ -625,21 +768,15 @@ export const createDeployment = async (
   const [
     mintLifecyclePacketMarkerValidator,
     mintLifecyclePacketMarkerPolicyId,
-  ] = await readValidator(
-    "minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint",
-    lucid,
-    [
-      mintHostStateNFTPolicyId,
-      spendingChannel.base.hash,
-      mintChannelSttPolicyId,
-    ],
-    Data.Tuple([
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [string, string, string],
-  );
+  ] = readMintLifecyclePacketMarkerValidator(lucid, {
+    hostStateNftPolicyId: mintHostStateNFTPolicyId,
+    spendChannelScriptHash: spendingChannel.base.hash,
+    mintChannelSttPolicyId: mintChannelSttPolicyId,
+    voucherMintingPolicyId: mintVoucherPolicyId,
+  });
   referredValidators.push(
+    mintIdentifierValidator,
+    mintVoucherValidator,
     mintLifecycleCreationMarkerValidator,
     mintLifecycleReclamationMarkerValidator,
     mintLifecycleOperationalMarkerValidator,
@@ -672,16 +809,10 @@ export const createDeployment = async (
     mintLifecycleOperationalMarkerPolicyId,
     mintLifecyclePacketMarkerPolicyId,
     deployerPaymentKeyHash,
+    referenceValidatorScriptHash,
   );
   referredValidators.push(hostStateStt.validator);
   const hostStateTree = new DeploymentIbcTree();
-
-  // load mint identifier validator
-  const [mintIdentifierValidator] = await readValidator(
-    "minting_identifier.minting_identifier.mint",
-    lucid,
-  );
-  referredValidators.push(mintIdentifierValidator);
 
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   const bootstrapRefUtxosInfo = await createReferenceUtxos(
@@ -720,25 +851,9 @@ export const createDeployment = async (
     ),
   };
 
-  const traceRegistryDirectoryNonce =
-    traceRegistryNonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
-  if (!traceRegistryDirectoryNonce) {
-    throw new Error(
-      "Missing reserved nonce UTxO for trace registry directory.",
-    );
-  }
-  const traceRegistryDirectoryAuthToken: AuthToken = {
-    policy_id: validatorToScriptHash(mintIdentifierValidator),
-    name: await generateIdentifierTokenName(
-      buildOutputReference(traceRegistryDirectoryNonce),
-    ),
-  };
-
   const {
     identifierTokenUnit: transferModuleIdentifier,
     mintTransferEscrowShard,
-    mintVoucher,
-    voucherMetadata,
     spendTransferModule,
   } = await deployTransferModule(
     lucid,
@@ -751,14 +866,14 @@ export const createDeployment = async (
     hostStateNFT,
     mintLifecycleReclamationMarkerPolicyId,
     mintLifecycleOperationalMarkerPolicyId,
-    traceRegistryDirectoryAuthToken,
+    transferModuleIdentifierToken,
+    mintVoucher,
     transferModuleNonceUtxo,
     bootstrapReferenceScripts,
   );
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   referredValidators.push(
     mintTransferEscrowShard.validator,
-    mintVoucher.validator,
     spendTransferModule.validator,
   );
   const traceRegistryBenchmarkVoucher = await loadTraceRegistryBenchmarkVoucher(
@@ -836,6 +951,20 @@ export const createDeployment = async (
   };
   await setSpendableWalletUtxos(0);
 
+  const referenceRegistrationPlan = buildReferenceScriptRegistrationPlan(
+    Object.values(refUtxosInfo),
+    hostStateStt.scriptHash,
+  );
+  const referenceOutRefs = referenceRegistrationPlan.entries;
+  const referenceScriptInventoryRoot = referenceRegistrationPlan.targetRoot;
+  assertTerminalReclamationScriptsFit(
+    hostStateStt.validator,
+    referenceValidator,
+    mintHostStateNFTValidator,
+    lucid.config().protocolParameters?.maxTxSize ?? 16_384,
+    "terminal HostState/reference-script reclamation preflight",
+  );
+
   const [mockTokenPolicyId, mockTokenName] = await mintMockToken(lucid);
 
   const spendChannelRefValidator = Object.entries(
@@ -859,6 +988,13 @@ export const createDeployment = async (
   const deploymentInfo: DeploymentTemplate = {
     schemaVersion: 6,
     deployedAt,
+    referenceOutRefs,
+    referenceScriptInventoryRoot,
+    referenceValidator: {
+      script: referenceValidator.script,
+      scriptHash: referenceValidatorScriptHash,
+      address: referenceValidatorAddress,
+    },
     validators: {
       spendClient: {
         title: "spending_client.spend_client.spend",
@@ -1045,18 +1181,30 @@ export const createDeployment = async (
     },
   };
 
-  if (mode !== undefined && mode != EMULATOR_ENV) {
-    const jsonConfig = JSON.stringify(deploymentInfo);
-
-    const folder = "./deployments";
-    await ensureDir(folder);
-
-    const filePath = folder + "/handler_" +
-      formatTimestamp(Date.parse(deployedAt)) + ".json";
-
-    await Deno.writeTextFile(filePath, jsonConfig);
-    await Deno.writeTextFile(folder + "/handler.json", jsonConfig);
-    console.log("Deploy info saved to:", filePath);
+  let journal: ReferenceRegistrationJournal | undefined;
+  if (deploymentReportEnabled) {
+    journal = buildReferenceRegistrationJournal(
+      deploymentInfo,
+      referenceRegistrationPlan,
+    );
+    // The complete target is durably committed before the first Register tx.
+    await persistReferenceRegistrationJournal(journal);
+  }
+  await registerReferenceScripts(
+    lucid,
+    hostStateStt,
+    hostStateNFT,
+    referenceRegistrationPlan,
+    deployerPaymentKeyHash,
+    referenceValidatorScriptHash,
+  );
+  if (journal) {
+    await persistReferenceRegistrationJournal({
+      ...journal,
+      status: "finalized",
+    });
+    await publishDeploymentInfo(deploymentInfo);
+    await archiveReferenceRegistrationJournal(deploymentInfo);
   }
 
   return deploymentInfo;
@@ -1073,6 +1221,10 @@ const REFERENCE_UTXO_ADOPTION_TIMEOUT_MS = 60_000;
 const REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS = 5_000;
 const DEPLOYMENT_COLLATERAL_LOVELACE = 5_000_000n;
 const DEPLOYMENT_MAX_COLLATERAL_INPUTS = 3;
+const DEPLOYMENT_TX_VALIDITY_WINDOW_MS = 10 * 60 * 1000;
+const FINAL_ATTACHED_SCRIPT_HEADROOM_BYTES = 2_000;
+const DEFAULT_REFERENCE_REGISTRATION_JOURNAL_PATH =
+  "./deployments/reference-registration-draft.json";
 
 type ReferenceValidatorBatch = {
   validators: Script[];
@@ -1247,6 +1399,1109 @@ export const buildReferenceValidatorBatches = (
   }
 
   return batches;
+};
+
+export const uniqueReferenceValidators = (
+  validators: Script[],
+): Script[] => [...new Map(
+  validators.map((validator) => [
+    validatorToScriptHash(validator),
+    validator,
+  ]),
+).values()];
+
+export const uniqueReferenceUtxos = (utxos: UTxO[]): UTxO[] => {
+  const byOutRef = new Map<string, UTxO>();
+  const outRefByScriptHash = new Map<string, string>();
+  const scriptHashByOutRef = new Map<string, string>();
+  for (const utxo of utxos) {
+    if (!utxo.scriptRef) {
+      throw new Error(
+        `Reference inventory output ${
+          utxoRefKey(utxo)
+        } has no reference script`,
+      );
+    }
+    const outRef = utxoRefKey(utxo);
+    const scriptHash = validatorToScriptHash(utxo.scriptRef);
+    const existingScriptHash = scriptHashByOutRef.get(outRef);
+    if (
+      existingScriptHash !== undefined && existingScriptHash !== scriptHash
+    ) {
+      throw new Error(
+        `Reference output ${outRef} is assigned to distinct scripts ${existingScriptHash} and ${scriptHash}`,
+      );
+    }
+    const existingOutRef = outRefByScriptHash.get(scriptHash);
+    if (existingOutRef !== undefined && existingOutRef !== outRef) {
+      throw new Error(
+        `Reference script ${scriptHash} has distinct outputs ${existingOutRef} and ${outRef}`,
+      );
+    }
+    scriptHashByOutRef.set(outRef, scriptHash);
+    outRefByScriptHash.set(scriptHash, outRef);
+    byOutRef.set(outRef, utxo);
+  }
+  if (byOutRef.size === 0) {
+    throw new Error("Deployment must create at least one reference script");
+  }
+  return [...byOutRef.values()];
+};
+
+export const buildReferenceRegistrationBatches = (
+  utxos: UTxO[],
+  hostStateScriptHash: ScriptHash,
+  scriptByteBudget = REFERENCE_SCRIPT_INPUT_BYTE_BUDGET,
+  inputLimit = REFERENCE_SCRIPT_INPUT_COUNT_LIMIT,
+): UTxO[][] => {
+  if (!Number.isSafeInteger(scriptByteBudget) || scriptByteBudget <= 0) {
+    throw new Error(
+      "Reference registration script-byte budget must be a positive safe integer",
+    );
+  }
+  if (!Number.isSafeInteger(inputLimit) || inputLimit <= 0) {
+    throw new Error(
+      "Reference registration input limit must be a positive safe integer",
+    );
+  }
+
+  const exactReferences = uniqueReferenceUtxos(utxos);
+  if (exactReferences.length > MAX_REFERENCE_SCRIPT_INVENTORY_COUNT) {
+    throw new Error(
+      `Reference inventory contains ${exactReferences.length} scripts, exceeding the consensus maximum ${MAX_REFERENCE_SCRIPT_INVENTORY_COUNT}`,
+    );
+  }
+  const hostReferences = exactReferences.filter((utxo) =>
+    validatorToScriptHash(utxo.scriptRef!) === hostStateScriptHash
+  );
+  if (hostReferences.length !== 1) {
+    throw new Error(
+      `Reference inventory must contain exactly one HostState STT script ${hostStateScriptHash}`,
+    );
+  }
+  if (exactReferences.length < 2) {
+    throw new Error(
+      "Reference inventory must contain the HostState STT and at least one other script",
+    );
+  }
+  const hostReference = hostReferences[0];
+  const hostReferenceKey = utxoRefKey(hostReference);
+  const hostScriptBytes = hostReference.scriptRef!.script.length / 2;
+  const orderedReferences = [
+    hostReference,
+    ...exactReferences.filter((utxo) => utxoRefKey(utxo) !== hostReferenceKey)
+      .sort(compareReferenceScriptInventoryEntries),
+  ];
+  const batches: UTxO[][] = [];
+  let currentBatch: UTxO[] = [];
+  let currentScriptBytes = 0;
+  let batchIndex = 0;
+  for (const utxo of orderedReferences) {
+    const scriptBytes = utxo.scriptRef!.script.length / 2;
+    if (!Number.isSafeInteger(scriptBytes) || scriptBytes <= 0) {
+      throw new Error(
+        `Reference inventory output ${utxoRefKey(utxo)} has an invalid script`,
+      );
+    }
+    const batchScriptByteBudget = batchIndex === 0
+      ? scriptByteBudget
+      : scriptByteBudget - hostScriptBytes;
+    const batchInputLimit = batchIndex === 0 ? inputLimit : inputLimit - 1;
+    if (batchScriptByteBudget <= 0 || batchInputLimit <= 0) {
+      throw new Error(
+        "HostState reference witness leaves no safe registration capacity",
+      );
+    }
+    if (scriptBytes > batchScriptByteBudget) {
+      throw new Error(
+        `Reference inventory output ${
+          utxoRefKey(utxo)
+        } contains ${scriptBytes} script bytes, exceeding the ${batchScriptByteBudget}-byte registration budget after reserving the HostState witness`,
+      );
+    }
+    if (
+      currentBatch.length > 0 &&
+      (currentBatch.length >= batchInputLimit ||
+        currentScriptBytes + scriptBytes > batchScriptByteBudget)
+    ) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentScriptBytes = 0;
+      batchIndex += 1;
+      const nextScriptByteBudget = scriptByteBudget - hostScriptBytes;
+      const nextInputLimit = inputLimit - 1;
+      if (
+        nextScriptByteBudget <= 0 || nextInputLimit <= 0 ||
+        scriptBytes > nextScriptByteBudget
+      ) {
+        throw new Error(
+          `Reference inventory output ${
+            utxoRefKey(utxo)
+          } cannot fit beside the HostState reference witness`,
+        );
+      }
+    }
+    currentBatch.push(utxo);
+    currentScriptBytes += scriptBytes;
+  }
+  if (currentBatch.length > 0) batches.push(currentBatch);
+  if (batches[0]?.length < 2) {
+    throw new Error(
+      "The first reference registration batch must contain HostState STT and at least one non-Host script",
+    );
+  }
+  return batches;
+};
+
+export type ReferenceScriptRegistrationPlan = {
+  batches: UTxO[][];
+  entries: ReferenceScriptManifestEntry[];
+  targetRoot: string;
+};
+
+export const buildReferenceScriptRegistrationPlan = (
+  utxos: UTxO[],
+  hostStateScriptHash: ScriptHash,
+  scriptByteBudget = REFERENCE_SCRIPT_INPUT_BYTE_BUDGET,
+  inputLimit = REFERENCE_SCRIPT_INPUT_COUNT_LIMIT,
+): ReferenceScriptRegistrationPlan => {
+  const batches = buildReferenceRegistrationBatches(
+    utxos,
+    hostStateScriptHash,
+    scriptByteBudget,
+    inputLimit,
+  );
+  let currentRoot = EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT;
+  const entries: ReferenceScriptManifestEntry[] = [];
+  for (const [registrationBatchIndex, batch] of batches.entries()) {
+    for (const utxo of batch) {
+      const identity = referenceScriptInventoryEntry(utxo);
+      const predecessorRoot = currentRoot;
+      currentRoot = foldReferenceScriptInventory([identity], currentRoot);
+      entries.push({
+        ...identity,
+        predecessorRoot,
+        resultingRoot: currentRoot,
+        registrationBatchIndex,
+      });
+    }
+  }
+  return { batches, entries, targetRoot: currentRoot };
+};
+
+export type ReferenceScriptRegistrationProgress = {
+  registeredCount: number;
+  finalized: boolean;
+};
+
+export const readReferenceScriptRegistrationProgress = (
+  datum: HostStateDatum,
+  plan: ReferenceScriptRegistrationPlan,
+): ReferenceScriptRegistrationProgress => {
+  const count = datum.live_reference_script_count;
+  if (count === null) {
+    if (
+      datum.reference_script_inventory_root !==
+        EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT ||
+      datum.reference_script_registration !== null
+    ) {
+      throw new Error(
+        "Unregistered HostState has non-empty reference registration state",
+      );
+    }
+    return { registeredCount: 0, finalized: false };
+  }
+  if (count === 0n) {
+    throw new Error("Deployment cannot register an empty reference inventory");
+  }
+  const registration = datum.reference_script_registration;
+  if (
+    registration === null ||
+    registration.target_count !== BigInt(plan.entries.length) ||
+    registration.target_root !== plan.targetRoot
+  ) {
+    throw new Error(
+      "HostState reference registration target does not match the local deployment inventory",
+    );
+  }
+  const absoluteCount = count < 0n ? -count : count;
+  const registeredCount = Number(absoluteCount);
+  if (
+    !Number.isSafeInteger(registeredCount) || registeredCount < 1 ||
+    registeredCount > plan.entries.length
+  ) {
+    throw new Error("HostState reference registration count is invalid");
+  }
+  const lastEntry = plan.entries[registeredCount - 1];
+  if (
+    datum.reference_script_inventory_root !== lastEntry.resultingRoot ||
+    registration.last_out_ref.transaction_id !== lastEntry.txHash ||
+    registration.last_out_ref.output_index !== BigInt(lastEntry.outputIndex)
+  ) {
+    throw new Error(
+      "HostState reference registration root/last out-ref does not match the local deployment inventory",
+    );
+  }
+  const nextEntry = plan.entries[registeredCount];
+  if (
+    nextEntry !== undefined &&
+    nextEntry.registrationBatchIndex === lastEntry.registrationBatchIndex
+  ) {
+    throw new Error(
+      "HostState reference registration stopped inside a persisted batch",
+    );
+  }
+  if (count > 0n) {
+    if (
+      registeredCount !== plan.entries.length ||
+      datum.reference_script_inventory_root !== plan.targetRoot
+    ) {
+      throw new Error(
+        "Finalized HostState reference registration does not match its full target",
+      );
+    }
+    return { registeredCount, finalized: true };
+  }
+  return { registeredCount, finalized: false };
+};
+
+type SerializedReferenceUtxo =
+  & Pick<
+    UTxO,
+    "txHash" | "outputIndex" | "address" | "datum" | "datumHash" | "scriptRef"
+  >
+  & {
+    assets: Record<string, string>;
+  };
+
+export type ReferenceRegistrationJournal = {
+  schemaVersion: 1;
+  status: "registering" | "finalized";
+  createdAt: string;
+  deployment: DeploymentTemplate;
+  targetCount: number;
+  targetRoot: string;
+  referenceUtxos: SerializedReferenceUtxo[];
+};
+
+export type ParsedReferenceRegistrationJournal = {
+  journal: ReferenceRegistrationJournal;
+  plan: ReferenceScriptRegistrationPlan;
+};
+
+const serializeReferenceUtxo = (utxo: UTxO): SerializedReferenceUtxo => ({
+  txHash: utxo.txHash,
+  outputIndex: utxo.outputIndex,
+  address: utxo.address,
+  assets: Object.fromEntries(
+    Object.entries(utxo.assets).map(([unit, amount]) => [
+      unit,
+      amount.toString(),
+    ]),
+  ),
+  datum: utxo.datum,
+  datumHash: utxo.datumHash,
+  scriptRef: utxo.scriptRef,
+});
+
+const deserializeReferenceUtxo = (value: unknown, index: number): UTxO => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`Reference registration journal UTxO ${index} is invalid`);
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.txHash !== "string" ||
+    !/^[0-9a-f]{64}$/.test(record.txHash) ||
+    !Number.isSafeInteger(record.outputIndex) ||
+    (record.outputIndex as number) < 0 ||
+    typeof record.address !== "string" || record.address.length === 0 ||
+    typeof record.assets !== "object" || record.assets === null ||
+    Array.isArray(record.assets) ||
+    typeof record.scriptRef !== "object" || record.scriptRef === null
+  ) {
+    throw new Error(`Reference registration journal UTxO ${index} is invalid`);
+  }
+  const scriptRef = record.scriptRef as Record<string, unknown>;
+  if (
+    scriptRef.type !== "PlutusV3" ||
+    typeof scriptRef.script !== "string" ||
+    !/^(?:[0-9a-f]{2})+$/.test(scriptRef.script)
+  ) {
+    throw new Error(
+      `Reference registration journal UTxO ${index} has an invalid script`,
+    );
+  }
+  const assets = Object.fromEntries(
+    Object.entries(record.assets as Record<string, unknown>).map(
+      ([unit, amount]) => {
+        if (typeof amount !== "string" || !/^[0-9]+$/.test(amount)) {
+          throw new Error(
+            `Reference registration journal UTxO ${index} has invalid assets`,
+          );
+        }
+        return [unit, BigInt(amount)];
+      },
+    ),
+  );
+  return {
+    txHash: record.txHash,
+    outputIndex: record.outputIndex as number,
+    address: record.address,
+    assets,
+    datum: typeof record.datum === "string" ? record.datum : undefined,
+    datumHash: typeof record.datumHash === "string"
+      ? record.datumHash
+      : undefined,
+    scriptRef: {
+      type: "PlutusV3",
+      script: scriptRef.script,
+    },
+  };
+};
+
+const manifestEntriesEqual = (
+  left: ReferenceScriptManifestEntry[],
+  right: ReferenceScriptManifestEntry[],
+): boolean =>
+  left.length === right.length && left.every((entry, index) => {
+    const other = right[index];
+    return entry.txHash === other.txHash &&
+      entry.outputIndex === other.outputIndex &&
+      entry.scriptHash === other.scriptHash &&
+      entry.predecessorRoot === other.predecessorRoot &&
+      entry.resultingRoot === other.resultingRoot &&
+      entry.registrationBatchIndex === other.registrationBatchIndex;
+  });
+
+export const buildReferenceRegistrationJournal = (
+  deployment: DeploymentTemplate,
+  plan: ReferenceScriptRegistrationPlan,
+): ReferenceRegistrationJournal => {
+  if (
+    deployment.referenceScriptInventoryRoot !== plan.targetRoot ||
+    !manifestEntriesEqual(deployment.referenceOutRefs, plan.entries)
+  ) {
+    throw new Error(
+      "Cannot journal a deployment that differs from its registration plan",
+    );
+  }
+  return {
+    schemaVersion: 1,
+    status: "registering",
+    createdAt: new Date().toISOString(),
+    deployment,
+    targetCount: plan.entries.length,
+    targetRoot: plan.targetRoot,
+    referenceUtxos: plan.batches.flat().map(serializeReferenceUtxo),
+  };
+};
+
+const assertReferenceRegistrationValidatorArtifact = (
+  script: string,
+  scriptHash: string,
+  address: string,
+  label: string,
+): SpendingValidator => {
+  const validator: SpendingValidator = { type: "PlutusV3", script };
+  let derivedScriptHash: string;
+  try {
+    derivedScriptHash = validatorToScriptHash(validator);
+  } catch {
+    throw new Error(`${label} script is invalid`);
+  }
+  if (derivedScriptHash !== scriptHash) {
+    throw new Error(`${label} hash is invalid`);
+  }
+  let paymentCredential;
+  try {
+    paymentCredential = getAddressDetails(address).paymentCredential;
+  } catch {
+    throw new Error(`${label} address is invalid`);
+  }
+  if (
+    paymentCredential?.type !== "Script" ||
+    paymentCredential.hash !== scriptHash
+  ) {
+    throw new Error(`${label} address does not match its script hash`);
+  }
+  return validator;
+};
+
+export const parseReferenceRegistrationJournal = (
+  raw: unknown,
+): ParsedReferenceRegistrationJournal => {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error("Reference registration journal must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  if (
+    record.schemaVersion !== 1 ||
+    (record.status !== "registering" && record.status !== "finalized") ||
+    typeof record.createdAt !== "string" ||
+    !Number.isFinite(Date.parse(record.createdAt)) ||
+    !Number.isSafeInteger(record.targetCount) ||
+    (record.targetCount as number) <= 0 ||
+    typeof record.targetRoot !== "string" ||
+    !/^[0-9a-f]{64}$/.test(record.targetRoot) ||
+    !Array.isArray(record.referenceUtxos) ||
+    typeof record.deployment !== "object" || record.deployment === null
+  ) {
+    throw new Error("Reference registration journal metadata is invalid");
+  }
+  const deployment = record.deployment as DeploymentTemplate;
+  if (
+    !Array.isArray(deployment.referenceOutRefs) ||
+    deployment.referenceScriptInventoryRoot !== record.targetRoot ||
+    typeof deployment.hostStateNFT?.policyId !== "string" ||
+    typeof deployment.hostStateNFT?.name !== "string" ||
+    typeof deployment.hostStateNFT?.script !== "string" ||
+    typeof deployment.referenceValidator?.script !== "string" ||
+    typeof deployment.referenceValidator?.scriptHash !== "string" ||
+    typeof deployment.referenceValidator?.address !== "string" ||
+    typeof deployment.validators?.hostStateStt?.script !== "string" ||
+    typeof deployment.validators?.hostStateStt?.scriptHash !== "string" ||
+    typeof deployment.validators?.hostStateStt?.address !== "string"
+  ) {
+    throw new Error(
+      "Reference registration journal deployment identity is invalid",
+    );
+  }
+  assertReferenceRegistrationValidatorArtifact(
+    deployment.referenceValidator.script,
+    deployment.referenceValidator.scriptHash,
+    deployment.referenceValidator.address,
+    "Reference registration journal reference validator",
+  );
+  assertReferenceRegistrationValidatorArtifact(
+    deployment.validators.hostStateStt.script,
+    deployment.validators.hostStateStt.scriptHash,
+    deployment.validators.hostStateStt.address,
+    "Reference registration journal HostState validator",
+  );
+  const referenceUtxos = record.referenceUtxos.map(deserializeReferenceUtxo);
+  const plan = buildReferenceScriptRegistrationPlan(
+    referenceUtxos,
+    deployment.validators.hostStateStt.scriptHash,
+  );
+  if (
+    plan.entries.length !== record.targetCount ||
+    plan.targetRoot !== record.targetRoot ||
+    !manifestEntriesEqual(deployment.referenceOutRefs, plan.entries)
+  ) {
+    throw new Error(
+      "Reference registration journal does not match its canonical inventory",
+    );
+  }
+  return {
+    journal: {
+      schemaVersion: 1,
+      status: record.status,
+      createdAt: record.createdAt,
+      deployment,
+      targetCount: record.targetCount as number,
+      targetRoot: record.targetRoot,
+      referenceUtxos: record.referenceUtxos as SerializedReferenceUtxo[],
+    },
+    plan,
+  };
+};
+
+export function assertAttachedValidatorBatchFits(
+  validators: Script[],
+  maxTxSize: number,
+  label: string,
+): void {
+  const scriptBytes = validators.reduce(
+    (total, validator) => total + validator.script.length / 2,
+    0,
+  );
+  const scriptBudget = maxTxSize - FINAL_ATTACHED_SCRIPT_HEADROOM_BYTES;
+  if (scriptBytes > scriptBudget) {
+    throw new Error(
+      `${label}: attached scripts require ${scriptBytes} bytes, exceeding the ${scriptBudget}-byte script budget for maxTxSize ${maxTxSize}`,
+    );
+  }
+}
+
+export function assertTerminalReclamationScriptsFit(
+  hostStateValidator: Script,
+  referenceValidator: Script,
+  hostStateNftPolicy: Script,
+  maxTxSize: number,
+  label: string,
+): void {
+  if (hostStateValidator.script.length === 0) {
+    throw new Error(`${label} has an empty HostState validator`);
+  }
+  // The terminal Host reference is a normal input carrying this same script.
+  // Lucid/CML needs Host attached to resolve the credential, but omits it from
+  // the witness set. Only these two scripts consume serialized tx space.
+  assertAttachedValidatorBatchFits(
+    [referenceValidator, hostStateNftPolicy],
+    maxTxSize,
+    label,
+  );
+}
+
+export function buildReferenceRegistrationBatchHostDatum(
+  currentDatum: HostStateDatum,
+  batch: ReferenceScriptManifestEntry[],
+  targetCount: number,
+  targetRoot: string,
+  updateTime: number,
+): HostStateDatum {
+  if (batch.length === 0) {
+    throw new Error(
+      "Reference registration batch must contain at least one identity",
+    );
+  }
+  if (!Number.isSafeInteger(targetCount) || targetCount <= 0) {
+    throw new Error("Reference registration target count must be positive");
+  }
+  if (
+    !/^[0-9a-f]{64}$/.test(targetRoot) ||
+    targetRoot === EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT
+  ) {
+    throw new Error(
+      "Reference registration target root must be non-empty 32-byte hex",
+    );
+  }
+  const currentCount = currentDatum.live_reference_script_count;
+  if (currentCount !== null && currentCount >= 0n) {
+    throw new Error(
+      "HostState reference-script registration is already finalized",
+    );
+  }
+  const currentRegistration = currentDatum.reference_script_registration;
+  if (currentCount === null) {
+    if (
+      currentDatum.reference_script_inventory_root !==
+        EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT || currentRegistration !== null
+    ) {
+      throw new Error(
+        "Unregistered HostState must have an empty reference inventory root and no registration metadata",
+      );
+    }
+    if (batch.length < 2) {
+      throw new Error(
+        "The first reference registration batch must contain HostState STT and at least one non-Host script",
+      );
+    }
+  } else {
+    if (
+      currentRegistration === null ||
+      currentRegistration.target_count !== BigInt(targetCount) ||
+      currentRegistration.target_root !== targetRoot
+    ) {
+      throw new Error(
+        "In-progress HostState reference registration target does not match the deployment inventory",
+      );
+    }
+    const previousOutRef = {
+      txHash: currentRegistration.last_out_ref.transaction_id,
+      outputIndex: Number(currentRegistration.last_out_ref.output_index),
+    };
+    if (
+      !Number.isSafeInteger(previousOutRef.outputIndex) ||
+      compareReferenceScriptInventoryEntries(previousOutRef, batch[0]) >= 0
+    ) {
+      throw new Error(
+        "Reference registration batches must advance in canonical out-ref order",
+      );
+    }
+  }
+  const canonicalTailStart = currentCount === null ? 1 : 0;
+  for (let index = canonicalTailStart + 1; index < batch.length; index += 1) {
+    if (
+      compareReferenceScriptInventoryEntries(
+        batch[index - 1],
+        batch[index],
+      ) >= 0
+    ) {
+      throw new Error(
+        "Non-Host reference registration entries must be in strict canonical out-ref order",
+      );
+    }
+  }
+  if (
+    batch[0].predecessorRoot !== currentDatum.reference_script_inventory_root
+  ) {
+    throw new Error(
+      "Reference registration batch predecessor does not match HostState",
+    );
+  }
+  let expectedRoot = currentDatum.reference_script_inventory_root;
+  for (const entry of batch) {
+    if (entry.predecessorRoot !== expectedRoot) {
+      throw new Error("Reference registration manifest chain is discontinuous");
+    }
+    expectedRoot = foldReferenceScriptInventory([entry], expectedRoot);
+    if (entry.resultingRoot !== expectedRoot) {
+      throw new Error("Reference registration manifest entry root is invalid");
+    }
+  }
+  const accumulatedCount = currentCount === null ? 0n : -currentCount;
+  const nextAccumulatedCount = accumulatedCount + BigInt(batch.length);
+  if (nextAccumulatedCount > BigInt(targetCount)) {
+    throw new Error("Reference registration batch exceeds its target count");
+  }
+  if (
+    !Number.isSafeInteger(updateTime) ||
+    BigInt(updateTime) <= currentDatum.state.last_update_time
+  ) {
+    throw new Error(
+      "Reference registration time must increase HostState last_update_time",
+    );
+  }
+  return {
+    ...currentDatum,
+    state: {
+      ...currentDatum.state,
+      version: currentDatum.state.version + 1n,
+      last_update_time: BigInt(updateTime),
+    },
+    live_reference_script_count: -nextAccumulatedCount,
+    reference_script_inventory_root: expectedRoot,
+    reference_script_registration: {
+      target_count: BigInt(targetCount),
+      target_root: targetRoot,
+      last_out_ref: {
+        transaction_id: batch.at(-1)!.txHash,
+        output_index: BigInt(batch.at(-1)!.outputIndex),
+      },
+    },
+  };
+}
+
+export function buildFinalizedReferenceHostDatum(
+  currentDatum: HostStateDatum,
+  updateTime: number,
+): HostStateDatum {
+  const currentCount = currentDatum.live_reference_script_count;
+  if (currentCount === null || currentCount >= 0n) {
+    throw new Error(
+      "HostState reference-script registration is not incomplete",
+    );
+  }
+  const registration = currentDatum.reference_script_registration;
+  if (
+    registration === null ||
+    -currentCount !== registration.target_count ||
+    currentDatum.reference_script_inventory_root !== registration.target_root
+  ) {
+    throw new Error(
+      "HostState reference-script registration has not reached its precommitted target",
+    );
+  }
+  if (
+    !Number.isSafeInteger(updateTime) ||
+    BigInt(updateTime) <= currentDatum.state.last_update_time
+  ) {
+    throw new Error(
+      "Reference registration finalization time must increase HostState last_update_time",
+    );
+  }
+  return {
+    ...currentDatum,
+    state: {
+      ...currentDatum.state,
+      version: currentDatum.state.version + 1n,
+      last_update_time: BigInt(updateTime),
+    },
+    live_reference_script_count: -currentCount,
+  };
+}
+
+async function registerReferenceScripts(
+  lucid: LucidEvolution,
+  hostStateStt: {
+    validator: SpendingValidator;
+    scriptHash: ScriptHash;
+    address: string;
+  },
+  hostStateNFT: AuthToken & { script: string },
+  plan: ReferenceScriptRegistrationPlan,
+  deployerPaymentKeyHash: string,
+  referenceValidatorScriptHash: string,
+): Promise<void> {
+  const exactReferences = uniqueReferenceUtxos(plan.batches.flat());
+  if (
+    exactReferences.length !== plan.entries.length ||
+    foldReferenceScriptInventory(
+        exactReferences.map(referenceScriptInventoryEntry),
+      ) !== plan.targetRoot
+  ) {
+    throw new Error(
+      "Reference registration plan does not match its exact UTxO inventory",
+    );
+  }
+  for (const utxo of exactReferences) {
+    const credential = getAddressDetails(utxo.address).paymentCredential;
+    if (
+      credential?.type !== "Script" ||
+      credential.hash !== referenceValidatorScriptHash
+    ) {
+      throw new Error(
+        `Reference inventory output ${
+          utxoRefKey(utxo)
+        } is not locked by the deployment reference validator`,
+      );
+    }
+  }
+  if (
+    !exactReferences.some((utxo) =>
+      utxo.scriptRef != null &&
+      validatorToScriptHash(utxo.scriptRef) === hostStateStt.scriptHash
+    )
+  ) {
+    throw new Error("Reference inventory does not contain the HostState STT");
+  }
+  const hostStateReferenceUtxo = exactReferences[0];
+  if (
+    !hostStateReferenceUtxo.scriptRef ||
+    validatorToScriptHash(hostStateReferenceUtxo.scriptRef) !==
+      hostStateStt.scriptHash
+  ) {
+    throw new Error(
+      "Reference registration plan must place the HostState STT first",
+    );
+  }
+
+  const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
+  const initialHostUtxo = await lucid.utxoByUnit(hostStateUnit);
+  if (!initialHostUtxo.datum) {
+    throw new Error(
+      `HostState UTxO ${utxoRefKey(initialHostUtxo)} has no inline datum`,
+    );
+  }
+  const initialDatum = Data.from(initialHostUtxo.datum, HostStateDatum);
+  if (initialDatum.deployer !== deployerPaymentKeyHash) {
+    throw new Error(
+      "Reference registration journal does not belong to the selected deployment wallet",
+    );
+  }
+  const initialProgress = readReferenceScriptRegistrationProgress(
+    initialDatum,
+    plan,
+  );
+  if (initialProgress.finalized) return;
+
+  let registeredCount = initialProgress.registeredCount;
+  for (const [index, batch] of plan.batches.entries()) {
+    const batchStartOffset = plan.batches.slice(0, index).reduce(
+      (count, previousBatch) => count + previousBatch.length,
+      0,
+    );
+    const batchEndOffset = batchStartOffset + batch.length;
+    if (batchEndOffset <= registeredCount) continue;
+    if (batchStartOffset !== registeredCount) {
+      throw new Error(
+        `Cannot resume reference registration inside batch ${index + 1}`,
+      );
+    }
+    const batchEntries = plan.entries.slice(
+      batchStartOffset,
+      batchEndOffset,
+    );
+    const hostUtxo = await lucid.utxoByUnit(hostStateUnit);
+    if (!hostUtxo.datum) {
+      throw new Error(
+        `HostState UTxO ${utxoRefKey(hostUtxo)} has no inline datum`,
+      );
+    }
+    const currentDatum = Data.from(hostUtxo.datum, HostStateDatum);
+    if (currentDatum.deployer !== deployerPaymentKeyHash) {
+      throw new Error("HostState deployer changed during registration");
+    }
+    const currentProgress = readReferenceScriptRegistrationProgress(
+      currentDatum,
+      plan,
+    );
+    if (
+      currentProgress.finalized ||
+      currentProgress.registeredCount !== registeredCount
+    ) {
+      throw new Error(
+        `HostState reference registration changed unexpectedly before batch ${
+          index + 1
+        }`,
+      );
+    }
+    const currentLastUpdate = Number(currentDatum.state.last_update_time);
+    if (!Number.isSafeInteger(currentLastUpdate)) {
+      throw new Error("HostState last_update_time is not a safe integer");
+    }
+    const validFrom = Math.max(Date.now(), currentLastUpdate + 1);
+    const updatedDatum = buildReferenceRegistrationBatchHostDatum(
+      currentDatum,
+      batchEntries,
+      plan.entries.length,
+      plan.targetRoot,
+      validFrom,
+    );
+    const batchStart = registeredCount + 1;
+    const batchEnd = registeredCount + batch.length;
+    const referenceInputs = index === 0
+      ? batch
+      : [hostStateReferenceUtxo, ...batch];
+    await submitTx(
+      () =>
+        lucid
+          .newTx()
+          // The first inventory member carries HostState STT. Later batches
+          // reuse it solely as a witness; batch_out_refs prevents re-counting.
+          .readFrom(referenceInputs)
+          .collectFrom(
+            [hostUtxo],
+            Data.to(
+              {
+                RegisterReferenceScripts: {
+                  target_count: BigInt(plan.entries.length),
+                  target_root: plan.targetRoot,
+                  batch_out_refs: batch.map((utxo) => ({
+                    transaction_id: utxo.txHash,
+                    output_index: BigInt(utxo.outputIndex),
+                  })),
+                },
+              },
+              HostStateRedeemer,
+              { canonical: true },
+            ),
+          )
+          .pay.ToContract(
+            hostStateStt.address,
+            {
+              kind: "inline",
+              value: Data.to(updatedDatum, HostStateDatum, {
+                canonical: true,
+              }),
+            },
+            hostUtxo.assets,
+          )
+          .addSignerKey(deployerPaymentKeyHash)
+          .validFrom(validFrom)
+          .validTo(validFrom + DEPLOYMENT_TX_VALIDITY_WINDOW_MS),
+      lucid,
+      `RegisterReferenceScripts ${batchStart}-${batchEnd}`,
+    );
+    registeredCount = batchEndOffset;
+  }
+
+  const hostUtxo = await lucid.utxoByUnit(hostStateUnit);
+  if (!hostUtxo.datum) {
+    throw new Error(
+      `HostState UTxO ${utxoRefKey(hostUtxo)} has no inline datum`,
+    );
+  }
+  const currentDatum = Data.from(hostUtxo.datum, HostStateDatum);
+  const currentProgress = readReferenceScriptRegistrationProgress(
+    currentDatum,
+    plan,
+  );
+  if (
+    currentProgress.finalized ||
+    currentProgress.registeredCount !== exactReferences.length
+  ) {
+    throw new Error(
+      `HostState did not reach its complete precommitted reference inventory before finalization`,
+    );
+  }
+  const currentLastUpdate = Number(currentDatum.state.last_update_time);
+  if (!Number.isSafeInteger(currentLastUpdate)) {
+    throw new Error("HostState last_update_time is not a safe integer");
+  }
+  const validFrom = Math.max(Date.now(), currentLastUpdate + 1);
+  const updatedDatum = buildFinalizedReferenceHostDatum(
+    currentDatum,
+    validFrom,
+  );
+  await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .readFrom([hostStateReferenceUtxo])
+        .collectFrom(
+          [hostUtxo],
+          Data.to(
+            "FinalizeReferenceScriptRegistration",
+            HostStateRedeemer,
+            { canonical: true },
+          ),
+        )
+        .pay.ToContract(
+          hostStateStt.address,
+          {
+            kind: "inline",
+            value: Data.to(updatedDatum, HostStateDatum, { canonical: true }),
+          },
+          hostUtxo.assets,
+        )
+        .addSignerKey(deployerPaymentKeyHash)
+        .validFrom(validFrom)
+        .validTo(validFrom + DEPLOYMENT_TX_VALIDITY_WINDOW_MS),
+    lucid,
+    "FinalizeReferenceScriptRegistration",
+  );
+
+  const finalizedHostUtxo = await lucid.utxoByUnit(hostStateUnit);
+  if (!finalizedHostUtxo.datum) {
+    throw new Error(
+      `HostState UTxO ${utxoRefKey(finalizedHostUtxo)} has no inline datum`,
+    );
+  }
+  const finalizedProgress = readReferenceScriptRegistrationProgress(
+    Data.from(finalizedHostUtxo.datum, HostStateDatum),
+    plan,
+  );
+  if (!finalizedProgress.finalized) {
+    throw new Error(
+      "HostState reference registration finalization was not observed",
+    );
+  }
+}
+
+const referenceRegistrationJournalPath = (): string =>
+  Deno.env.get("REFERENCE_REGISTRATION_JOURNAL_PATH")?.trim() ||
+  DEFAULT_REFERENCE_REGISTRATION_JOURNAL_PATH;
+
+const ensureParentDirectory = async (filePath: string): Promise<void> => {
+  const separatorIndex = Math.max(
+    filePath.lastIndexOf("/"),
+    filePath.lastIndexOf("\\"),
+  );
+  if (separatorIndex > 0) {
+    await ensureDir(filePath.slice(0, separatorIndex));
+  }
+};
+
+const writeTextFileAtomically = async (
+  filePath: string,
+  contents: string,
+): Promise<void> => {
+  await ensureParentDirectory(filePath);
+  const temporaryPath = `${filePath}.tmp-${crypto.randomUUID()}`;
+  try {
+    await Deno.writeTextFile(temporaryPath, contents);
+    await Deno.rename(temporaryPath, filePath);
+  } catch (error) {
+    await Deno.remove(temporaryPath).catch(() => undefined);
+    throw error;
+  }
+};
+
+const persistReferenceRegistrationJournal = async (
+  journal: ReferenceRegistrationJournal,
+): Promise<void> => {
+  await writeTextFileAtomically(
+    referenceRegistrationJournalPath(),
+    `${JSON.stringify(journal, null, 2)}\n`,
+  );
+};
+
+const loadReferenceRegistrationJournal = async (): Promise<
+  ParsedReferenceRegistrationJournal | undefined
+> => {
+  const path = referenceRegistrationJournalPath();
+  const contents = await Deno.readTextFile(path).catch((error) => {
+    if (error instanceof Deno.errors.NotFound) return undefined;
+    throw error;
+  });
+  return contents === undefined
+    ? undefined
+    : parseReferenceRegistrationJournal(JSON.parse(contents));
+};
+
+const publishDeploymentInfo = async (
+  deployment: DeploymentTemplate,
+): Promise<string> => {
+  const folder = "./deployments";
+  await ensureDir(folder);
+  const filePath = `${folder}/handler_${
+    formatTimestamp(Date.parse(deployment.deployedAt))
+  }.json`;
+  const jsonConfig = `${JSON.stringify(deployment)}\n`;
+  await writeTextFileAtomically(filePath, jsonConfig);
+  await writeTextFileAtomically(`${folder}/handler.json`, jsonConfig);
+  console.log("Deploy info saved to:", filePath);
+  return filePath;
+};
+
+const archiveReferenceRegistrationJournal = async (
+  deployment: DeploymentTemplate,
+): Promise<void> => {
+  const sourcePath = referenceRegistrationJournalPath();
+  const archivePath = `${sourcePath}.completed-${
+    formatTimestamp(Date.parse(deployment.deployedAt))
+  }-${crypto.randomUUID()}`;
+  await Deno.rename(sourcePath, archivePath);
+};
+
+const resumeReferenceRegistrationJournal = async (
+  lucid: LucidEvolution,
+  deployerPaymentKeyHash: string,
+): Promise<DeploymentTemplate | undefined> => {
+  const loaded = await loadReferenceRegistrationJournal();
+  if (!loaded) return undefined;
+  const { journal, plan } = loaded;
+  const deployment = journal.deployment;
+  const hostStateNFT = deployment.hostStateNFT!;
+  const referenceValidator: SpendingValidator = {
+    type: "PlutusV3",
+    script: deployment.referenceValidator.script,
+  };
+  const referenceValidatorScriptHash = deployment.referenceValidator.scriptHash;
+  const hostStateStt = deployment.validators.hostStateStt;
+  const hostStateValidator: SpendingValidator = {
+    type: "PlutusV3",
+    script: hostStateStt.script,
+  };
+  assertReferenceRegistrationValidatorArtifact(
+    hostStateStt.script,
+    hostStateStt.scriptHash,
+    hostStateStt.address,
+    "Reference registration journal HostState validator",
+  );
+  const hostStateNftPolicy: MintingPolicy = {
+    type: "PlutusV3",
+    script: hostStateNFT.script,
+  };
+  if (validatorToScriptHash(hostStateNftPolicy) !== hostStateNFT.policyId) {
+    throw new Error(
+      "Reference registration journal HostState NFT policy hash is invalid",
+    );
+  }
+  assertTerminalReclamationScriptsFit(
+    hostStateValidator,
+    referenceValidator,
+    hostStateNftPolicy,
+    lucid.config().protocolParameters?.maxTxSize ?? 16_384,
+    "resumed final reference-script reclamation preflight",
+  );
+  await registerReferenceScripts(
+    lucid,
+    {
+      validator: hostStateValidator,
+      scriptHash: hostStateStt.scriptHash,
+      address: hostStateStt.address,
+    },
+    {
+      policy_id: hostStateNFT.policyId,
+      name: hostStateNFT.name,
+      script: hostStateNFT.script,
+    },
+    plan,
+    deployerPaymentKeyHash,
+    referenceValidatorScriptHash,
+  );
+  if (journal.status !== "finalized") {
+    await persistReferenceRegistrationJournal({
+      ...journal,
+      status: "finalized",
+    });
+  }
+  await publishDeploymentInfo(deployment);
+  await archiveReferenceRegistrationJournal(deployment);
+  return deployment;
 };
 
 export type ReferenceValidatorSizeReportEntry = {
@@ -1432,6 +2687,8 @@ async function createReferenceUtxos(
   try {
     console.log("Create reference utxos starting ...");
 
+    const uniqueValidators = uniqueReferenceValidators(referredValidators);
+
     const [, , referenceAddress] = await readValidator(
       "reference_validator.refer_only.else",
       lucid,
@@ -1441,11 +2698,11 @@ async function createReferenceUtxos(
     const walletAddress = await lucid.wallet().address();
 
     const maxTxSize = lucid.config().protocolParameters?.maxTxSize ?? 16_384;
-    logReferenceValidatorSizeReport(referredValidators, maxTxSize);
-    assertReferenceValidatorsFit(referredValidators, maxTxSize);
+    logReferenceValidatorSizeReport(uniqueValidators, maxTxSize);
+    assertReferenceValidatorsFit(uniqueValidators, maxTxSize);
 
     const initialBatches = buildReferenceValidatorBatches(
-      referredValidators,
+      uniqueValidators,
       maxTxSize,
     );
     const safeMaxTxSize = referenceTxSafeMaxSize(maxTxSize);
@@ -1454,7 +2711,7 @@ async function createReferenceUtxos(
       "Submitting",
       initialBatches.length,
       "reference transactions for",
-      referredValidators.length,
+      uniqueValidators.length,
       "validators ...",
     );
 
@@ -1844,7 +3101,11 @@ const deployTransferModule = async (
   hostStateNFT: AuthToken,
   mintLifecycleReclamationMarkerPolicyId: string,
   mintLifecycleOperationalMarkerPolicyId: string,
-  traceRegistryDirectoryAuthToken: AuthToken,
+  identifierToken: AuthToken,
+  mintVoucher: {
+    validator: MintingPolicy;
+    policyId: PolicyId;
+  },
   nonceUtxo: UTxO,
   bootstrapReferenceScripts: BootstrapReferenceScripts,
 ) => {
@@ -1856,40 +3117,19 @@ const deployTransferModule = async (
   const identifierTokenName = await generateIdentifierTokenName(
     outputReference,
   );
-  const identifierToken: AuthToken = {
-    policy_id: mintIdentifierPolicyId,
-    name: identifierTokenName,
-  };
-  const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
-  const [, voucherMetadataScriptHash, voucherMetadataAddress] =
-    await readValidator(
-      "voucher_metadata.voucher_metadata.else",
-      lucid,
+  if (
+    identifierToken.policy_id !== mintIdentifierPolicyId ||
+    identifierToken.name !== identifierTokenName
+  ) {
+    throw new Error(
+      "Precomputed transfer module identifier does not match its nonce UTxO.",
     );
-  const [mintVoucherValidator, mintVoucherPolicyId] = await readValidator(
-    "minting_voucher.mint_voucher.mint",
-    lucid,
-    [
-      identifierToken,
-      traceRegistryDirectoryAuthToken,
-      voucherMetadataScriptHash,
-      mintChannelPolicyId,
-      hostStateNFT.policy_id,
-    ],
-    Data.Tuple([
-      AuthTokenSchema,
-      AuthTokenSchema,
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [
-      AuthToken,
-      AuthToken,
-      string,
-      string,
-      string,
-    ],
-  );
+  }
+  const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
+  const {
+    validator: mintVoucherValidator,
+    policyId: mintVoucherPolicyId,
+  } = mintVoucher;
 
   // NOTE: IBC port identifiers are part of on-chain commitment paths and are exchanged
   // over IBC. For the transfer module we use the canonical Cosmos port ID so Hermes can
@@ -2067,16 +3307,9 @@ const deployTransferModule = async (
 
   return {
     identifierTokenUnit,
-    mintVoucher: {
-      validator: mintVoucherValidator,
-      policyId: mintVoucherPolicyId,
-    },
     mintTransferEscrowShard: {
       validator: mintTransferEscrowShardValidator,
       policyId: mintTransferEscrowShardPolicyId,
-    },
-    voucherMetadata: {
-      address: voucherMetadataAddress,
     },
     spendTransferModule: {
       validator: spendTransferModuleValidator,
@@ -2509,6 +3742,7 @@ const deployHostState = async (
   mintLifecycleOperationalMarkerPolicyId: string,
   mintLifecyclePacketMarkerPolicyId: string,
   deployerPaymentKeyHash: string,
+  referenceValidatorScriptHash: string,
 ) => {
   console.log("Deploy HostState (STT Architecture)");
 
@@ -2535,6 +3769,7 @@ const deployHostState = async (
   // 4) `spend_channel_script_hash` (used to locate the created channel output when enforcing root correctness)
   // 5-7) the canonical client/connection/channel minting policies.
   // 8-11) the creation, cleanup, normal-update, and packet authorization policies.
+  // 12) the reference validator whose authenticated outputs are counted.
   const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] =
     await readValidator(
       "host_state_stt.host_state_stt.spend",
@@ -2551,6 +3786,7 @@ const deployHostState = async (
         mintLifecycleReclamationMarkerPolicyId,
         mintLifecycleOperationalMarkerPolicyId,
         mintLifecyclePacketMarkerPolicyId,
+        referenceValidatorScriptHash,
       ],
       Data.Tuple([
         Data.Bytes(),
@@ -2564,7 +3800,9 @@ const deployHostState = async (
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
+        Data.Bytes(),
       ]) as unknown as [
+        string,
         string,
         string,
         string,
@@ -2604,6 +3842,9 @@ const deployHostState = async (
     nft_policy: mintHostStateNFTPolicyId,
     deployer: deployerPaymentKeyHash,
     shutdown: "Active",
+    live_reference_script_count: null,
+    reference_script_inventory_root: EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT,
+    reference_script_registration: null,
   };
 
   // Create and send tx to mint NFT and create HostState UTXO

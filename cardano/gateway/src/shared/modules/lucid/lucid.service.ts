@@ -815,6 +815,10 @@ export class LucidService implements OnModuleInit {
             port_token: RegisteredAuthTokenSchema,
             module_token: RegisteredAuthTokenSchema,
           });
+          const OutputReferenceSchema = LucidData.Object({
+            transaction_id: LucidData.Bytes(),
+            output_index: LucidData.Integer(),
+          });
           const HostStateRedeemerSchema = LucidData.Enum([
             LucidData.Object({ CreateClient: CreateClientSchema }),
             LucidData.Object({ CreateConnection: CreateConnectionSchema }),
@@ -881,6 +885,19 @@ export class LucidService implements OnModuleInit {
                 port_id: LucidData.Bytes(),
               }),
             }),
+            LucidData.Object({
+              RegisterReferenceScripts: LucidData.Object({
+                target_count: LucidData.Integer(),
+                target_root: LucidData.Bytes(),
+                batch_out_refs: LucidData.Array(OutputReferenceSchema),
+              }),
+            }),
+            LucidData.Object({
+              ReclaimReferenceScripts: LucidData.Object({
+                predecessor_root: LucidData.Bytes(),
+              }),
+            }),
+            LucidData.Literal('FinalizeReferenceScriptRegistration'),
           ]);
           return LucidData.to(data as any, HostStateRedeemerSchema as any, {
             canonical: true,

@@ -67,8 +67,16 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
             },
         ],
     }, 'transferIBCModuleRedeemer');
+    const updatedVoucherSupply = isVoucher
+        ? context.channelDatum.voucher_supply - sendPacketOperator.token.amount
+        : context.channelDatum.voucher_supply;
+    if (updatedVoucherSupply < 0n) {
+        const voucherSupplyError = deps.failedPrecondition ?? deps.invalidArgument;
+        throw voucherSupplyError(`Channel ${sendPacketOperator.sourceChannel} voucher supply would become negative`);
+    }
     const updatedChannelDatum = {
         ...context.channelDatum,
+        voucher_supply: updatedVoucherSupply,
         state: {
             ...context.channelDatum.state,
             next_sequence_send: context.channelDatum.state.next_sequence_send + 1n,

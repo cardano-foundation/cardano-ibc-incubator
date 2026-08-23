@@ -37,6 +37,7 @@ fn setup() -> (ChannelDatum, ChannelDatum) {
       port_id: "port-1",
       token: mock_auth_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let output_channel_datum =

@@ -100,21 +100,28 @@ describe('LucidService transfer lifecycle codecs', () => {
   });
 
   it('appends module lifecycle operations without shifting HostState constructors', async () => {
-    const reclaim = await service.encode(
-      { ReclaimHostState: { reclaim_to: 'aa' } },
+    const reclaim = await service.encode({ ReclaimHostState: { reclaim_to: 'aa' } }, 'host_state_redeemer');
+    const updateModule = await service.encode({ UpdateModuleState: { port_id: 'bb' } }, 'host_state_redeemer');
+    const reclaimModule = await service.encode({ ReclaimModule: { port_id: 'cc' } }, 'host_state_redeemer');
+    const registerReferences = await service.encode(
+      {
+        RegisterReferenceScripts: {
+          target_count: 28n,
+          target_root: '44'.repeat(32),
+          batch_out_refs: [{ transaction_id: '66'.repeat(32), output_index: 7n }],
+        },
+      },
       'host_state_redeemer',
     );
-    const updateModule = await service.encode(
-      { UpdateModuleState: { port_id: 'bb' } },
-      'host_state_redeemer',
-    );
-    const reclaimModule = await service.encode(
-      { ReclaimModule: { port_id: 'cc' } },
+    const reclaimReferences = await service.encode(
+      { ReclaimReferenceScripts: { predecessor_root: '55'.repeat(32) } },
       'host_state_redeemer',
     );
 
     expect(reclaim).toMatch(/^d9050b81/);
     expect(updateModule).toMatch(/^d9050c81/);
     expect(reclaimModule).toMatch(/^d9050d81/);
+    expect(registerReferences).toBe(`d9050e83181c5820${'44'.repeat(32)}81d879825820${'66'.repeat(32)}07`);
+    expect(reclaimReferences).toBe(`d9050f815820${'55'.repeat(32)}`);
   });
 });

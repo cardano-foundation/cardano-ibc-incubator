@@ -97,6 +97,7 @@ fn base_datum(ordering: Order, next_sequence_send: Int) -> ChannelDatum {
     port_id: "port-1",
     token: mock_token(),
     lifecycle: ChannelActive,
+    voucher_supply: 0,
   }
 }
 
@@ -502,6 +503,92 @@ test prop_packet_send_accepts_valid_near_context(_seed via fuzz.int()) {
     |> build_send_packet_fixture
     |> run_send_packet_transition
     |> fuzz_dsl.assert_protocol_valid
+}
+
+test packet_transitions_allow_nonnegative_voucher_supply_delta() {
+  let send_packet = base_packet(11)
+  let send_input =
+    ChannelDatum { ..base_datum(Unordered, 11), voucher_supply: 20 }
+  let send_successor =
+    ChannelDatum {
+      ..send_output(
+        send_input,
+        send_packet,
+        packet_mod.commit_packet(send_packet),
+      ),
+      voucher_supply: 15,
+    }
+
+  let recv_packet =
+    Packet {
+      ..base_packet(7),
+      source_port: "bank",
+      source_channel: "channel-90",
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+    }
+  let recv_input =
+    ChannelDatum { ..base_datum(Unordered, 1), voucher_supply: 20 }
+  let recv_successor =
+    ChannelDatum {
+      ..recv_output(recv_input, recv_packet, "recv-ack"),
+      voucher_supply: 25,
+    }
+
+  let (terminal_base, terminal_packet) = packet_with_commitment(Unordered)
+  let terminal_input = ChannelDatum { ..terminal_base, voucher_supply: 20 }
+  let ack_successor =
+    ChannelDatum {
+      ..ack_output(terminal_input, terminal_packet),
+      voucher_supply: 25,
+    }
+  let timeout_successor =
+    ChannelDatum {
+      ..timeout_output(terminal_input, terminal_packet),
+      voucher_supply: 25,
+    }
+
+  and {
+    channel_datum_mod.validate_send_packet(
+      send_input,
+      send_successor,
+      send_packet,
+      packet_mod.commit_packet(send_packet),
+    ),
+    channel_datum_mod.validate_recv_packet(
+      recv_input,
+      recv_successor,
+      recv_packet,
+      "recv-ack",
+      height_mod.zero_height(),
+    ),
+    channel_datum_mod.validate_acknowledge_packet(
+      terminal_input,
+      ack_successor,
+      terminal_packet,
+    ),
+    channel_datum_mod.validate_timeout_packet(
+      terminal_input,
+      timeout_successor,
+      terminal_packet,
+    ),
+  }
+}
+
+test packet_transition_rejects_negative_voucher_supply() fail {
+  let packet = base_packet(11)
+  let input_datum = base_datum(Unordered, packet.sequence)
+  let output_datum =
+    ChannelDatum {
+      ..send_output(input_datum, packet, packet_mod.commit_packet(packet)),
+      voucher_supply: -1,
+    }
+  channel_datum_mod.validate_send_packet(
+    input_datum,
+    output_datum,
+    packet,
+    packet_mod.commit_packet(packet),
+  )
 }
 
 test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {

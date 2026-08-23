@@ -22,6 +22,8 @@ pub type ChannelDatum {
   port_id: ByteArray,
   token: AuthToken,
   lifecycle: ChannelLifecycle,
+  /// Outstanding voucher principal attributable to this channel.
+  voucher_supply: Int,
 }
 
 pub type ChannelDatumState {
@@ -60,7 +62,7 @@ pub fn validate_chan_open_init(
   datum: ChannelDatum,
   auth_token: AuthToken,
 ) -> Bool {
-  let ChannelDatum { state, port_id, token, lifecycle } = datum
+  let ChannelDatum { state, port_id, token, lifecycle, voucher_supply } = datum
 
   let ChannelDatumState {
     channel,
@@ -79,6 +81,7 @@ pub fn validate_chan_open_init(
     channel.validate_basic(channel),
     token == auth_token,
     lifecycle == ChannelActive,
+    voucher_supply == 0,
     chan_state == channel_state.Init,
     counterparty.channel_id == "",
     and {
@@ -101,7 +104,7 @@ pub fn validate_chan_open_try(
   datum: ChannelDatum,
   auth_token: AuthToken,
 ) -> Bool {
-  let ChannelDatum { state, port_id, token, lifecycle } = datum
+  let ChannelDatum { state, port_id, token, lifecycle, voucher_supply } = datum
 
   let ChannelDatumState {
     channel,
@@ -121,6 +124,7 @@ pub fn validate_chan_open_try(
     channel.validate_basic(channel),
     token == auth_token,
     lifecycle == ChannelActive,
+    voucher_supply == 0,
     chan_state == channel_state.TryOpen,
     counterparty.channel_id != "",
     and {
@@ -174,6 +178,7 @@ pub fn validate_chan_open_ack(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
     expected_datum == output_datum,
   }
 }
@@ -199,6 +204,7 @@ pub fn validate_chan_open_confirm(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
     expected_datum == output_datum,
   }
 }
@@ -221,6 +227,7 @@ pub fn validate_chan_close_init(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
     expected_datum == output_datum,
   }
 }
@@ -243,6 +250,7 @@ pub fn validate_chan_close_confirm(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
     expected_datum == output_datum,
   }
 }
@@ -281,6 +289,7 @@ pub fn validate_recv_packet(
   let expected_datum =
     ChannelDatum {
       ..input_datum,
+      voucher_supply: output_datum.voucher_supply,
       state: ChannelDatumState {
         ..input_datum.state,
         next_sequence_recv: expected_next_sequence_recv,
@@ -304,6 +313,8 @@ pub fn validate_recv_packet(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
+    output_datum.voucher_supply >= 0,
     input_datum.state.channel.state == channel_state.Open,
     valid_sequence,
     height_mod.compare(
@@ -353,6 +364,7 @@ pub fn validate_prune_packet_history(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
     or {
       input_datum.state.channel.state == channel_state.Open,
       input_datum.state.channel.state == channel_state.Closed,
@@ -402,6 +414,7 @@ pub fn validate_send_packet(
   let expected_datum =
     ChannelDatum {
       ..input_datum,
+      voucher_supply: output_datum.voucher_supply,
       state: ChannelDatumState {
         ..input_datum.state,
         next_sequence_send: input_datum.state.next_sequence_send + 1,
@@ -416,6 +429,8 @@ pub fn validate_send_packet(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
+    output_datum.voucher_supply >= 0,
     input_datum.state.channel.state == channel_state.Open,
     packet_entry_count(input_datum.state) < max_packet_entries_per_channel,
     expected_datum == cloned_output_datum,
@@ -437,6 +452,7 @@ pub fn validate_timeout_packet(
   let expected_datum =
     ChannelDatum {
       ..input_datum,
+      voucher_supply: output_datum.voucher_supply,
       state: ChannelDatumState {
         ..input_datum.state,
         channel: Channel {
@@ -452,6 +468,8 @@ pub fn validate_timeout_packet(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
+    output_datum.voucher_supply >= 0,
     or {
       input_datum.state.channel.state == channel_state.Open,
       input_datum.state.channel.state == channel_state.Closed,
@@ -475,6 +493,7 @@ pub fn validate_acknowledge_packet(
   let expected_datum =
     ChannelDatum {
       ..input_datum,
+      voucher_supply: output_datum.voucher_supply,
       state: ChannelDatumState {
         ..input_datum.state,
         packet_commitment: pairs.delete_first(
@@ -487,6 +506,8 @@ pub fn validate_acknowledge_packet(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
+    output_datum.voucher_supply >= 0,
     or {
       input_datum.state.channel.state == channel_state.Open,
       input_datum.state.channel.state == channel_state.Closed,
@@ -510,6 +531,7 @@ pub fn validate_begin_abandonment(
 
   and {
     input_datum.lifecycle == ChannelActive,
+    input_datum.voucher_supply >= 0,
     or {
       input_state == channel_state.Init,
       input_state == channel_state.TryOpen,
@@ -542,8 +564,11 @@ pub fn is_abandoned_and_drained(datum: ChannelDatum, valid_from: Int) -> Bool {
 }
 
 pub fn is_reclaimable(datum: ChannelDatum, valid_from: Int) -> Bool {
-  or {
-    is_closed_and_drained(datum),
-    is_abandoned_and_drained(datum, valid_from),
+  and {
+    datum.voucher_supply >= 0,
+    or {
+      is_closed_and_drained(datum),
+      is_abandoned_and_drained(datum, valid_from),
+    },
   }
 }

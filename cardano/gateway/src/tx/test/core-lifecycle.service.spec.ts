@@ -21,6 +21,13 @@ describe('CoreLifecycleService', () => {
     nft_policy: '33'.repeat(28),
     deployer: signerHash,
     shutdown: 'Active',
+    live_reference_script_count: 28n,
+    reference_script_inventory_root: '44'.repeat(32),
+    reference_script_registration: {
+      target_count: 28n,
+      target_root: '44'.repeat(32),
+      last_out_ref: { transaction_id: '55'.repeat(32), output_index: 0n },
+    },
   } as const;
   const connectionDatum = {
     state: {
@@ -80,11 +87,13 @@ describe('CoreLifecycleService', () => {
     jest.spyOn(service as any, 'computeValidityWindow').mockResolvedValue({
       currentLedgerTime: 2_000,
       validFromTime: 1_900,
-      validToTime: 3_000,
+      validToSlot: 3,
+      ledgerValidToTime: 3_000,
+      validToTime: 3_999,
     });
   });
 
-  it('uses the fixed delay and deployer signer for connection retirement', async () => {
+  it("uses the ledger upper bound, not Lucid's enclosing-slot timestamp, for connection retirement", async () => {
     await expect(
       service.beginConnectionRetirement({
         signer: 'addr_test1deployer',
@@ -94,12 +103,65 @@ describe('CoreLifecycleService', () => {
 
     const builderDto = lucidService.createUnsignedBeginConnectionRetirementTransaction.mock.calls[0][0];
     expect(builderDto.signerKeyHash).toBe(signerHash);
-    expect(builderDto.encodedConnectionRedeemer).toContain('604801900');
-    expect(builderDto.encodedUpdatedConnectionDatum).toContain('604801900');
+    expect(builderDto.encodedConnectionRedeemer).toContain('604803000');
+    expect(builderDto.encodedUpdatedConnectionDatum).toContain('604803000');
     const encodedHost = lucidService.encode.mock.calls.find(([, type]: [unknown, string]) => type === 'host_state')[0];
     expect(encodedHost.state.version).toBe(8n);
     expect(encodedHost.state.ibc_state_root).toBe(hostDatum.state.ibc_state_root);
     expect(runner.run.mock.calls[0][0].pendingTreeUpdate.expectedNewRoot).toBe(hostDatum.state.ibc_state_root);
+  });
+
+  it('anchors channel abandonment to the upper validity bound', async () => {
+    const channelDatum = {
+      state: {
+        channel: {
+          state: 'Init',
+          ordering: 'Unordered',
+          counterparty: { port_id: '', channel_id: '' },
+          connection_hops: [],
+          version: '',
+        },
+        next_sequence_send: 1n,
+        next_sequence_recv: 1n,
+        next_sequence_ack: 1n,
+        packet_commitment: new Map(),
+        packet_receipt: new Map(),
+        packet_acknowledgement: new Map(),
+        minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+        maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+      },
+      port: Buffer.from('transfer').toString('hex'),
+      token: { policyId: 'cc'.repeat(28), name: 'dd'.repeat(32) },
+      lifecycle: 'ChannelActive',
+      voucher_supply: 0n,
+    } as const;
+    const channelTokenUnit = channelDatum.token.policyId + channelDatum.token.name;
+    lucidService.getChannelTokenUnit = jest
+      .fn()
+      .mockReturnValue([channelDatum.token.policyId, channelDatum.token.name]);
+    lucidService.findUtxoByUnit.mockResolvedValue({
+      txHash: 'channel',
+      outputIndex: 0,
+      datum: 'channel-datum',
+      assets: { [channelTokenUnit]: 1n },
+    });
+    lucidService.decodeDatum.mockImplementation(async (datum: string) =>
+      datum === 'host-datum' ? hostDatum : channelDatum,
+    );
+    lucidService.createUnsignedBeginChannelAbandonmentTransaction = jest.fn().mockReturnValue({ id: 'tx-builder' });
+
+    await expect(
+      service.beginChannelAbandonment({
+        signer: 'addr_test1deployer',
+        port_id: 'transfer',
+        channel_id: 'channel-0',
+      }),
+    ).resolves.toEqual({ unsigned_tx: { type_url: '', value: new Uint8Array([1, 2, 3]) } });
+
+    const builderDto = lucidService.createUnsignedBeginChannelAbandonmentTransaction.mock.calls[0][0];
+    expect(builderDto.signerKeyHash).toBe(signerHash);
+    expect(builderDto.encodedChannelRedeemer).toContain('604803000');
+    expect(builderDto.encodedUpdatedChannelDatum).toContain('604803000');
   });
 
   it('rejects retirement when the signer is not the HostState deployer', async () => {
@@ -113,6 +175,64 @@ describe('CoreLifecycleService', () => {
     ).rejects.toThrow(/deployer authority/i);
     expect(lucidService.createUnsignedBeginConnectionRetirementTransaction).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [1n, /outstanding voucher units/i],
+    [0n, /exactly one connection hop/i],
+  ])(
+    'uses this channel liability for reclaim eligibility (voucher_supply=%s)',
+    async (voucherSupply, expectedError) => {
+      const liveHostDatum = {
+        ...hostDatum,
+        state: { ...hostDatum.state, live_channel_count: 1n },
+      };
+      const channelDatum = {
+        state: {
+          channel: {
+            state: 'Close',
+            ordering: 'Unordered',
+            counterparty: { port_id: '', channel_id: '' },
+            connection_hops: [],
+            version: '',
+          },
+          next_sequence_send: 1n,
+          next_sequence_recv: 1n,
+          next_sequence_ack: 1n,
+          packet_commitment: new Map(),
+          packet_receipt: new Map(),
+          packet_acknowledgement: new Map(),
+          minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+          maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+        },
+        port: Buffer.from('transfer').toString('hex'),
+        token: { policyId: 'cc'.repeat(28), name: 'dd'.repeat(32) },
+        lifecycle: 'ChannelActive',
+        voucher_supply: voucherSupply,
+      } as const;
+      const channelTokenUnit = channelDatum.token.policyId + channelDatum.token.name;
+      lucidService.getChannelTokenUnit = jest
+        .fn()
+        .mockReturnValue([channelDatum.token.policyId, channelDatum.token.name]);
+      lucidService.findUtxoByUnit.mockResolvedValue({
+        txHash: 'channel',
+        outputIndex: 0,
+        datum: 'channel-datum',
+        assets: { [channelTokenUnit]: 1n },
+      });
+      lucidService.decodeDatum.mockImplementation(async (datum: string) =>
+        datum === 'host-datum' ? liveHostDatum : channelDatum,
+      );
+      jest.spyOn(service as any, 'ensureTreeAligned').mockResolvedValue(undefined);
+
+      await expect(
+        service.reclaimChannel({
+          signer: 'addr_test1deployer',
+          port_id: 'transfer',
+          channel_id: 'channel-0',
+        }),
+      ).rejects.toThrow(expectedError);
+    },
+  );
 
   it('fails closed when the indexed object does not carry its datum auth token', async () => {
     lucidService.findUtxoByUnit.mockResolvedValue({

@@ -138,6 +138,7 @@ fn check(mutation: Mutation) -> Bool {
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
   let valid_output_datum =
     ChannelDatum {

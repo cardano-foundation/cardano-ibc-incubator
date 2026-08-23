@@ -117,6 +117,7 @@ describe('PacketService denom regression coverage', () => {
 
     const channelDatum = {
       port: convertString2Hex('transfer'),
+      voucher_supply: 50n,
       state: {
         channel: {
           state: 'Open',
@@ -225,6 +226,8 @@ describe('PacketService denom regression coverage', () => {
     expect(transferModuleCall).toBeDefined();
     const transferModuleDenomHex = transferModuleCall?.[0]?.Callback?.[0]?.OnSendPacket?.data?.ModuleDataV1?.[0]?.denom;
     expect(transferModuleDenomHex).toBe(convertString2Hex(canonicalDenom));
+    const updatedChannel = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'channel')?.[0];
+    expect(updatedChannel.voucher_supply).toBe(40n);
   });
 });
 
@@ -326,6 +329,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     const packetSequence = 9n;
     const channelDatum = {
       port: convertString2Hex('transfer'),
+      voucher_supply: 7n,
       state: {
         channel: {
           state: 'Open',
@@ -428,6 +432,10 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
 
     expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledWith(expectedVoucherDenomHash, canonicalDenom);
+    const updatedChannel = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'channel')?.[0];
+    expect(updatedChannel.voucher_supply).toBe(17n);
+    const hostUpdate = (service as any).buildHostStateUpdateForHandlePacket as jest.Mock;
+    expect(hostUpdate.mock.calls[0][1].voucher_supply).toBe(17n);
   });
 
   it('maps packet denom hex(lovelace) back to lovelace asset unit in acknowledgement unescrow', async () => {
@@ -545,6 +553,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     const packetSequence = 9n;
     const channelDatum = {
       port: convertString2Hex('transfer'),
+      voucher_supply: 7n,
       state: {
         channel: {
           state: 'Open',
@@ -646,9 +655,11 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     expect(refreshWalletContextSpy).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketMintTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
+    const updatedChannel = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'channel')?.[0];
+    expect(updatedChannel.voucher_supply).toBe(7n);
   });
 
-  it('maps unwrapped voucher denom hex(lovelace) to lovelace asset unit in recv unescrow', async () => {
+  it('preserves liability on recv unescrow and increments it on recv voucher mint', async () => {
     const loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -770,6 +781,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     };
     const channelDatum = {
       port: convertString2Hex('transfer'),
+      voucher_supply: 7n,
       state: {
         channel: {
           state: 'Open',
@@ -832,6 +844,13 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       if (type === 'channel') return channelDatum;
       if (type === 'connection') return connectionDatum;
       if (type === 'client') return clientDatum;
+      if (type === 'transferModule') {
+        return {
+          escrow_shard_registry_root: '00'.repeat(32),
+          live_escrow_shard_count: 0n,
+          voucher_supply: 20n,
+        };
+      }
       return {};
     });
 
@@ -882,5 +901,49 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       revisionHeight: 0n,
     });
     expect(encodedChannelDatum.state.maximum_receive_proof_height).toEqual(proofHeight);
+    expect(encodedChannelDatum.voucher_supply).toBe(7n);
+
+    lucidServiceMock.findUtxoByUnit
+      .mockResolvedValueOnce({ txHash: 'channel-2', outputIndex: 0, datum: 'channel-datum', assets: {} })
+      .mockResolvedValueOnce({ txHash: 'connection-2', outputIndex: 0, datum: 'connection-datum', assets: {} })
+      .mockResolvedValueOnce({ txHash: 'client-2', outputIndex: 0, datum: 'client-datum', assets: {} })
+      .mockResolvedValueOnce({
+        txHash: 'transfer-module-2',
+        outputIndex: 0,
+        datum: 'transfer-module-datum',
+        assets: { [TRANSFER_MODULE_IDENTIFIER]: 1n },
+      });
+
+    await service.buildUnsignedRecvPacketTx(
+      {
+        channelId: 'channel-7',
+        packetSequence: packetSequence + 1n,
+        packetData: convertString2Hex(
+          JSON.stringify({
+            denom: 'uatom',
+            amount: '10',
+            sender: 'sender-credential',
+            receiver: 'receiver-credential',
+            memo: '',
+          }),
+        ),
+        proofCommitment: { proofs: [] } as any,
+        proofHeight,
+        timeoutHeight: {
+          revisionNumber: 0n,
+          revisionHeight: 0n,
+        },
+        timeoutTimestamp: 0n,
+      },
+      'addr_test1operator',
+    );
+
+    expect(lucidServiceMock.createUnsignedRecvPacketMintTx).toHaveBeenCalledTimes(1);
+    const mintedChannelDatum = lucidServiceMock.encode.mock.calls
+      .filter((call: unknown[]) => call[1] === 'channel')
+      .at(-1)?.[0];
+    expect(mintedChannelDatum.voucher_supply).toBe(17n);
+    const hostUpdate = (service as any).buildHostStateUpdateForHandlePacket as jest.Mock;
+    expect(hostUpdate.mock.calls.at(-1)?.[1].voucher_supply).toBe(17n);
   });
 });

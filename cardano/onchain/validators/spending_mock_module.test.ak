@@ -52,6 +52,9 @@ fn host_state_datum(shutdown: ShutdownState) -> HostStateDatum {
     nft_policy: host_state_nft_policy_id(),
     deployer: #"00000000000000000000000000000000000000000000000000000000",
     shutdown,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
   }
 }
 

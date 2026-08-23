@@ -64,15 +64,18 @@ use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, ModuleRegistration, Sealed, ShutdownState,
-  ShuttingDown, empty_ibc_state_root, host_state_token_name, max_bound_ports,
+  Active, HostState, HostStateDatum, ModuleRegistration, ReferenceScriptIdentity,
+  ReferenceScriptRegistration, Sealed, ShutdownState, ShuttingDown,
+  append_reference_script_identities, empty_ibc_state_root,
+  empty_reference_script_inventory_root, host_state_token_name, max_bound_ports,
   retired_port_marker, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
-  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer,
-  PruneTerminalClient, ReclaimChannel, ReclaimClient, ReclaimConnection,
-  ReclaimHostState, ReclaimModule, SealShutdown, UpdateChannel, UpdateClient,
+  FinalizeReferenceScriptRegistration, FinalizeShutdown, HandlePacket, Heartbeat,
+  HostStateRedeemer, PruneTerminalClient, ReclaimChannel, ReclaimClient,
+  ReclaimConnection, ReclaimHostState, ReclaimModule, ReclaimReferenceScripts,
+  RegisterReferenceScripts, SealShutdown, UpdateChannel, UpdateClient,
   UpdateConnection, UpdateModuleState,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
@@ -85,6 +88,7 @@ use ibc/core/ics_025_handler_interface/lifecycle_marker.{
 use ibc/core/ics_025_handler_interface/reclamation
 use ibc/testing/fuzz_dsl
 use ibc/utils/bits
+use ibc/utils/validator_utils
 use minting_lifecycle_creation_marker
 use minting_lifecycle_marker
 use minting_lifecycle_operational_marker
@@ -142,6 +146,13 @@ fn test_module_script_hash() -> crypto.Hash<crypto.Blake2b_224, crypto.Script> {
   #"915f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b379"
 }
 
+fn test_reference_script_hash() -> crypto.Hash<
+  crypto.Blake2b_224,
+  crypto.Script,
+> {
+  #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+
 fn test_module_output(registration: ModuleRegistration) -> Output {
   Output {
     address: Address(Script(registration.module_script_hash), None),
@@ -189,6 +200,9 @@ fn test_host_state_datum(
     nft_policy,
     deployer: trusted_deployer,
     shutdown: Active,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
   }
 }
 
@@ -197,7 +211,15 @@ fn test_host_state_datum_with_shutdown(
   nft_policy: PolicyId,
   shutdown: ShutdownState,
 ) -> HostStateDatum {
-  HostStateDatum { state, nft_policy, deployer: trusted_deployer, shutdown }
+  HostStateDatum {
+    state,
+    nft_policy,
+    deployer: trusted_deployer,
+    shutdown,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
+  }
 }
 
 fn test_channel_token() -> AuthToken {
@@ -242,6 +264,7 @@ fn test_channel_datum(
     port_id: "transfer",
     token: test_channel_token(),
     lifecycle: ChannelActive,
+    voucher_supply: 0,
   }
 }
 
@@ -526,6 +549,10 @@ fn test_lifecycle_packet_policy() -> PolicyId {
   #"f777ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca757"
 }
 
+fn test_voucher_policy() -> PolicyId {
+  #"a877ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca758"
+}
+
 fn test_host_script_hash() -> crypto.Hash<crypto.Blake2b_224, crypto.Script> {
   #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
 }
@@ -790,6 +817,7 @@ fn validate_delegated_marker(
         test_nft_policy(),
         test_channel_script_hash(),
         channel_policy,
+        test_voucher_policy(),
         AuthorizePacket,
         test_lifecycle_packet_policy(),
         transaction,
@@ -846,6 +874,7 @@ fn spend_host_state_with_expected_policies(
       test_lifecycle_reclamation_policy(),
       test_lifecycle_operational_policy(),
       test_lifecycle_packet_policy(),
+      test_reference_script_hash(),
       None,
       redeemer,
       test_host_ref(),
@@ -885,6 +914,7 @@ fn spend_host_state_with_signatories(
       test_lifecycle_reclamation_policy(),
       test_lifecycle_operational_policy(),
       test_lifecycle_packet_policy(),
+      test_reference_script_hash(),
       None,
       redeemer,
       test_host_ref(),
@@ -907,8 +937,26 @@ fn spend_host_state_with_channel_redeemer(
   inputs: List<Input>,
   outputs: List<Output>,
 ) -> Bool {
+  spend_host_state_with_channel_redeemer_and_voucher_action(
+    redeemer,
+    channel_redeemer,
+    channel_input,
+    inputs,
+    outputs,
+    False,
+  )
+}
+
+fn spend_host_state_with_channel_redeemer_and_voucher_action(
+  redeemer: HostStateRedeemer,
+  channel_redeemer: SpendChannelRedeemer,
+  channel_input: Input,
+  inputs: List<Input>,
+  outputs: List<Output>,
+  voucher_action: Bool,
+) -> Bool {
   let channel_redeemer_data: Redeemer = channel_redeemer
-  let transaction =
+  let marked_transaction =
     with_lifecycle_marker(
       redeemer,
       Transaction {
@@ -920,6 +968,16 @@ fn spend_host_state_with_channel_redeemer(
         ],
       },
     )
+  let transaction =
+    if voucher_action {
+      Transaction {
+        ..marked_transaction,
+        mint: marked_transaction.mint
+          |> add(test_voucher_policy(), "voucher", 1),
+      }
+    } else {
+      marked_transaction
+    }
   and {
     host_state_stt.host_state_stt.spend(
       test_nft_policy(),
@@ -933,6 +991,7 @@ fn spend_host_state_with_channel_redeemer(
       test_lifecycle_reclamation_policy(),
       test_lifecycle_operational_policy(),
       test_lifecycle_packet_policy(),
+      test_reference_script_hash(),
       None,
       redeemer,
       test_host_ref(),
@@ -1318,6 +1377,7 @@ fn test_channel_datum_full(
     port_id: "transfer",
     token: test_channel_token(),
     lifecycle: ChannelActive,
+    voucher_supply: 0,
   }
 }
 
@@ -2999,6 +3059,7 @@ fn host_state_reclaim_abandoned_channel_fixture(
       test_lifecycle_reclamation_policy(),
       test_lifecycle_operational_policy(),
       test_lifecycle_packet_policy(),
+      test_reference_script_hash(),
       None,
       host_redeemer,
       test_host_ref(),
@@ -3118,6 +3179,7 @@ test budget_precomputed_host_create_connection() {
       test_lifecycle_reclamation_policy(),
       test_lifecycle_operational_policy(),
       test_lifecycle_packet_policy(),
+      test_reference_script_hash(),
       None,
       host_redeemer,
       test_host_ref(),
@@ -3347,6 +3409,7 @@ test budget_precomputed_host_reclaim_abandoned_channel() {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     ReclaimChannel {
       reclaim_to: trusted_deployer,
@@ -3445,6 +3508,7 @@ test budget_precomputed_host_reclaim_closed_channel() {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     ReclaimChannel {
       reclaim_to: trusted_deployer,
@@ -3578,6 +3642,119 @@ test prop_host_update_client_rejects_wrong_redeemer(seed via fuzz.int()) fail {
     [test_host_input(old_state), test_client_input(input_client_datum)],
     [test_host_output(new_state), test_client_output(output_client_datum)],
   )
+}
+
+fn validate_shutdown_update_client(valid_from: Int, valid_to: Int) -> Bool {
+  // Keep the client active at both tested boundaries so rejection at the
+  // cutoff can only come from the HostState shutdown rule.
+  let seed = 600_000_000_000
+  let grace_period_end = 600_001
+  let siblings = full_empty_siblings()
+  let input_client_datum = test_misbehaviour_client_datum(seed)
+  let output_client_datum = test_updated_client_datum(seed)
+  let old_root = test_committed_client_root(input_client_datum, siblings)
+  let new_root =
+    test_update_client_root(
+      old_root,
+      input_client_datum,
+      output_client_datum,
+      siblings,
+    )
+  let old_state = test_host_state(old_root, 0)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+  let shutdown = ShuttingDown { initiated_at: -10, grace_period_end }
+  let host_input =
+    Input {
+      output_reference: test_host_ref(),
+      output: Output {
+        address: Address(Script(test_host_script_hash()), None),
+        value: from_asset(test_nft_policy(), host_state_token_name, 1),
+        datum: InlineDatum(
+          test_host_state_datum_with_shutdown(
+            old_state,
+            test_nft_policy(),
+            shutdown,
+          ),
+        ),
+        reference_script: None,
+      },
+    }
+  let host_output =
+    Output {
+      ..host_input.output,
+      datum: InlineDatum(
+        test_host_state_datum_with_shutdown(
+          new_state,
+          test_nft_policy(),
+          shutdown,
+        ),
+      ),
+    }
+  let redeemer: HostStateRedeemer =
+    UpdateClient {
+      client_state_siblings: siblings,
+      consensus_state_siblings: siblings,
+      removed_consensus_state_siblings: [],
+    }
+  let marked =
+    with_lifecycle_marker(
+      redeemer,
+      Transaction {
+        ..placeholder,
+        inputs: [host_input, test_client_input(input_client_datum)],
+        outputs: [host_output, test_client_output(output_client_datum)],
+      },
+    )
+  let transaction =
+    Transaction {
+      ..marked,
+      validity_range: interval.between(valid_from, valid_to),
+    }
+
+  and {
+    host_state_stt.host_state_stt.spend(
+      test_nft_policy(),
+      test_client_script_hash(),
+      test_connection_script_hash(),
+      test_channel_script_hash(),
+      test_client_token().policy_id,
+      test_connection_token().policy_id,
+      test_channel_token().policy_id,
+      test_lifecycle_creation_policy(),
+      test_lifecycle_reclamation_policy(),
+      test_lifecycle_operational_policy(),
+      test_lifecycle_packet_policy(),
+      test_reference_script_hash(),
+      None,
+      redeemer,
+      test_host_ref(),
+      transaction,
+    ),
+    validate_delegated_marker(
+      redeemer,
+      transaction,
+      test_client_token().policy_id,
+      test_connection_token().policy_id,
+      test_channel_token().policy_id,
+    ),
+  }
+}
+
+test host_state_update_client_is_allowed_before_shutdown_cutoff() {
+  validate_shutdown_update_client(0, 600_000)
+}
+
+test host_state_update_client_accepts_sixty_second_backdating_plus_ten_minutes() {
+  validate_shutdown_update_client(-60_000, 600_000)
+}
+
+test host_state_update_client_is_rejected_at_shutdown_cutoff() fail {
+  validate_shutdown_update_client(0, 600_001)
 }
 
 test prop_host_update_connection_accepts_exact_root(seed via fuzz.int()) {
@@ -3988,6 +4165,92 @@ test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
     ),
   )
     |> fuzz_dsl.assert_valid
+}
+
+fn validate_packet_marker_voucher_supply_guard(
+  voucher_delta: Int,
+  voucher_action: Bool,
+) -> Bool {
+  let sequence = 1
+  let packet = test_packet(sequence)
+  let siblings = full_empty_siblings()
+  let commitment = packet_mod.commit_packet(packet)
+  let next_sequence_send_key =
+    packet_keys.next_sequence_send_path("transfer", "channel-0")
+  let old_root =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      next_sequence_send_key,
+      "",
+      cbor.serialise(sequence),
+      siblings,
+    )
+  let commitment_key =
+    packet_keys.packet_commitment_path("transfer", "channel-0", sequence)
+  let commitment_siblings =
+    siblings_after_single_insert(
+      next_sequence_send_key,
+      cbor.serialise(sequence + 1),
+      commitment_key,
+    )
+  let input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      sequence,
+      1,
+      1,
+      [],
+      [],
+      [],
+    )
+  let output_channel_datum =
+    ChannelDatum {
+      ..test_channel_datum_full(
+        test_channel(channel_state.Open),
+        sequence + 1,
+        1,
+        1,
+        [Pair(sequence, commitment)],
+        [],
+        [],
+      ),
+      voucher_supply: input_channel_datum.voucher_supply + voucher_delta,
+    }
+  let new_root =
+    test_handle_packet_send_root(
+      old_root,
+      sequence,
+      commitment,
+      siblings,
+      commitment_siblings,
+    )
+  let old_state = test_host_state(old_root, 0)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+
+  spend_host_state_with_channel_redeemer_and_voucher_action(
+    handle_packet_redeemer([], siblings, [], [], commitment_siblings, [], []),
+    SendPacket { packet },
+    test_channel_input_full(input_channel_datum),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+    voucher_action,
+  )
+}
+
+test packet_marker_rejects_channel_voucher_supply_change_without_voucher_action() fail {
+  validate_packet_marker_voucher_supply_guard(1, False)
+}
+
+test packet_marker_allows_channel_voucher_supply_change_with_voucher_action() {
+  validate_packet_marker_voucher_supply_guard(1, True)
 }
 
 test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
@@ -5331,6 +5594,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       test_lifecycle_reclamation_policy(),
       test_lifecycle_operational_policy(),
       test_lifecycle_packet_policy(),
+      test_reference_script_hash(),
       None,
       redeemer,
       input_ref,
@@ -5442,6 +5706,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     redeemer,
     input_ref,
@@ -5561,6 +5826,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     redeemer,
     input_ref,
@@ -5673,6 +5939,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     redeemer,
     input_ref,
@@ -5752,6 +6019,7 @@ test host_state_bind_port_fails_if_output_missing() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     redeemer,
     input_ref,
@@ -5790,10 +6058,45 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
     }
 
   let grace_period_end = 5000
+  let target_root =
+    #"1111111111111111111111111111111111111111111111111111111111111111"
   let input_ref =
     OutputReference {
       transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
       output_index: 0,
+    }
+  let old_datum =
+    HostStateDatum {
+      ..test_host_state_datum(old_state, nft_policy),
+      live_reference_script_count: Some(3),
+      reference_script_inventory_root: target_root,
+      reference_script_registration: Some(
+        ReferenceScriptRegistration {
+          target_count: 3,
+          target_root,
+          last_out_ref: test_object_ref(3),
+        },
+      ),
+    }
+  let new_datum =
+    HostStateDatum {
+      ..test_host_state_datum_with_shutdown(
+        new_state,
+        nft_policy,
+        ShuttingDown {
+          initiated_at: new_state.last_update_time,
+          grace_period_end,
+        },
+      ),
+      live_reference_script_count: Some(3),
+      reference_script_inventory_root: target_root,
+      reference_script_registration: Some(
+        ReferenceScriptRegistration {
+          target_count: 3,
+          target_root,
+          last_out_ref: test_object_ref(3),
+        },
+      ),
     }
 
   let host_input =
@@ -5802,7 +6105,7 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
       Output {
         address,
         value: from_asset(nft_policy, host_state_token_name, 1),
-        datum: InlineDatum(test_host_state_datum(old_state, nft_policy)),
+        datum: InlineDatum(old_datum),
         reference_script: None,
       },
     )
@@ -5811,16 +6114,7 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
     Output {
       address,
       value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: InlineDatum(
-        test_host_state_datum_with_shutdown(
-          new_state,
-          nft_policy,
-          ShuttingDown {
-            initiated_at: new_state.last_update_time,
-            grace_period_end,
-          },
-        ),
-      ),
+      datum: InlineDatum(new_datum),
       reference_script: None,
     }
 
@@ -5830,6 +6124,7 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
       inputs: [host_input],
       outputs: [host_output],
       extra_signatories: [trusted_deployer],
+      validity_range: interval.between(1_000, 2_000),
     }
 
   let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
@@ -5846,6 +6141,7 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     redeemer,
     input_ref,
@@ -5919,7 +6215,12 @@ test host_state_enter_shutdown_fails_without_deployer_signature() fail {
     }
 
   let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [host_output],
+      validity_range: interval.between(1_000, 2_000),
+    }
 
   let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
 
@@ -5935,6 +6236,7 @@ test host_state_enter_shutdown_fails_without_deployer_signature() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     redeemer,
     input_ref,
@@ -6022,6 +6324,7 @@ test host_state_legacy_finalize_shutdown_is_rejected_after_grace_period() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     FinalizeShutdown,
     input_ref,
@@ -6109,6 +6412,7 @@ test host_state_finalize_shutdown_fails_before_grace_period() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     FinalizeShutdown,
     input_ref,
@@ -6119,6 +6423,9 @@ test host_state_finalize_shutdown_fails_before_grace_period() fail {
 fn validate_seal_shutdown_fixture(
   live_client_count: Int,
   bound_port: Pairs<ByteArray, ModuleRegistration>,
+  valid_from: Int,
+  valid_to: Int,
+  sealed_at: Int,
 ) -> Bool {
   let grace_period_end = 5_000
   let old_state =
@@ -6133,7 +6440,7 @@ fn validate_seal_shutdown_fixture(
     HostState {
       ..old_state,
       version: old_state.version + 1,
-      last_update_time: grace_period_end,
+      last_update_time: sealed_at,
     }
   let old_datum =
     test_host_state_datum_with_shutdown(
@@ -6149,8 +6456,8 @@ fn validate_seal_shutdown_fixture(
       new_state,
       test_nft_policy(),
       Sealed {
-        sealed_at: grace_period_end,
-        proof_window_end: reclamation.proof_window_end(grace_period_end),
+        sealed_at,
+        proof_window_end: reclamation.proof_window_end(sealed_at),
       },
     )
   let host_input =
@@ -6178,6 +6485,7 @@ fn validate_seal_shutdown_fixture(
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     SealShutdown,
     test_host_ref(),
@@ -6186,17 +6494,33 @@ fn validate_seal_shutdown_fixture(
       inputs: [host_input],
       outputs: [host_output],
       extra_signatories: [trusted_deployer],
-      validity_range: interval.after(grace_period_end),
+      validity_range: interval.between(valid_from, valid_to),
     },
   )
 }
 
 test host_state_seals_fully_drained_shutdown_for_fixed_proof_window() {
-  validate_seal_shutdown_fixture(0, [])
+  let valid_from = 5_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width
+  validate_seal_shutdown_fixture(0, [], valid_from, valid_to, valid_to)
 }
 
 test host_state_seal_rejects_remaining_live_objects() fail {
-  validate_seal_shutdown_fixture(1, [])
+  validate_seal_shutdown_fixture(1, [], 5_000, 6_000, 6_000)
+}
+
+test host_state_seal_rejects_a_lower_bound_backdated_timestamp() fail {
+  validate_seal_shutdown_fixture(0, [], 5_000, 6_000, 5_000)
+}
+
+test host_state_seal_rejects_a_validity_interval_starting_before_grace() fail {
+  validate_seal_shutdown_fixture(0, [], 4_999, 5_999, 5_999)
+}
+
+test host_state_seal_rejects_a_wide_validity_interval() fail {
+  let valid_from = 5_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width + 1
+  validate_seal_shutdown_fixture(0, [], valid_from, valid_to, valid_to)
 }
 
 type ReclaimModuleFixture {
@@ -6338,6 +6662,7 @@ fn validate_reclaim_module_fixture(fixture: ReclaimModuleFixture) -> Bool {
       test_lifecycle_reclamation_policy(),
       test_lifecycle_operational_policy(),
       test_lifecycle_packet_policy(),
+      test_reference_script_hash(),
       None,
       host_redeemer,
       test_host_ref(),
@@ -6496,12 +6821,21 @@ test host_state_seal_accepts_retired_registration_markers() {
   validate_seal_shutdown_fixture(
     0,
     [Pair(retired_port_marker("transfer"), registration)],
+    5_000,
+    6_000,
+    6_000,
   )
 }
 
 test host_state_seal_rejects_active_registration() fail {
   let registration = test_module_registration(test_module_script_hash())
-  validate_seal_shutdown_fixture(0, [Pair("transfer", registration)])
+  validate_seal_shutdown_fixture(
+    0,
+    [Pair("transfer", registration)],
+    5_000,
+    6_000,
+    6_000,
+  )
 }
 
 test host_state_seal_rejects_malformed_retired_registration_marker() fail {
@@ -6509,6 +6843,9 @@ test host_state_seal_rejects_malformed_retired_registration_marker() fail {
   validate_seal_shutdown_fixture(
     0,
     [Pair(retired_port_marker("bad/port"), registration)],
+    5_000,
+    6_000,
+    6_000,
   )
 }
 
@@ -6603,6 +6940,7 @@ fn validate_update_module_state_fixture(
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     UpdateModuleState { port_id: requested_port_id },
     test_host_ref(),
@@ -6800,12 +7138,29 @@ fn validate_final_host_reclaim(
       version: 2,
       last_update_time: sealed_at,
     }
-  let datum =
-    test_host_state_datum_with_shutdown(
-      state,
-      test_nft_policy(),
-      Sealed { sealed_at, proof_window_end },
+  let terminal_identity = inventory_host_reference_identity()
+  let terminal_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [terminal_identity],
     )
+  let datum =
+    HostStateDatum {
+      ..test_host_state_datum_with_shutdown(
+        state,
+        test_nft_policy(),
+        Sealed { sealed_at, proof_window_end },
+      ),
+      live_reference_script_count: Some(1),
+      reference_script_inventory_root: terminal_root,
+      reference_script_registration: Some(
+        ReferenceScriptRegistration {
+          target_count: 1,
+          target_root: terminal_root,
+          last_out_ref: terminal_identity.output_reference,
+        },
+      ),
+    }
   let host_input =
     Input {
       output_reference: test_host_ref(),
@@ -6847,12 +7202,13 @@ fn validate_final_host_reclaim(
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     ReclaimHostState { reclaim_to: trusted_deployer },
     test_host_ref(),
     Transaction {
       ..placeholder,
-      inputs: [host_input],
+      inputs: [host_input, inventory_host_reference_input()],
       outputs: [
         Output {
           address: from_verification_key(trusted_deployer),
@@ -7006,6 +7362,7 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     redeemer,
     host_ref,
@@ -7150,6 +7507,7 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
     test_lifecycle_reclamation_policy(),
     test_lifecycle_operational_policy(),
     test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
     None,
     redeemer,
     host_ref,
@@ -7356,5 +7714,929 @@ test host_state_heartbeat_rejects_shutdown_state() fail {
     [host_input],
     [host_output],
     [trusted_deployer],
+  )
+}
+
+fn inventory_datum(
+  count: Option<Int>,
+  shutdown: ShutdownState,
+  version: Int,
+) -> HostStateDatum {
+  HostStateDatum {
+    state: HostState {
+      version,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: version,
+      live_client_count: 0,
+      live_connection_count: 0,
+      live_channel_count: 0,
+    },
+    nft_policy: test_nft_policy(),
+    deployer: trusted_deployer,
+    shutdown,
+    live_reference_script_count: count,
+    reference_script_inventory_root: empty_reference_script_inventory_root,
+    reference_script_registration: None,
+  }
+}
+
+fn inventory_host_input(datum: HostStateDatum) -> Input {
+  Input(
+    test_host_ref(),
+    Output {
+      address: Address(Script(test_host_script_hash()), None),
+      value: from_asset(test_nft_policy(), host_state_token_name, 1),
+      datum: InlineDatum(datum),
+      reference_script: None,
+    },
+  )
+}
+
+fn inventory_host_output(datum: HostStateDatum) -> Output {
+  Output { ..inventory_host_input(datum).output, datum: InlineDatum(datum) }
+}
+
+fn inventory_reference_input(
+  index: Int,
+  script_hash: crypto.Hash<crypto.Blake2b_224, crypto.Script>,
+  has_reference_script: Bool,
+) -> Input {
+  Input(
+    test_object_ref(index),
+    Output {
+      address: Address(Script(script_hash), None),
+      value: assets.from_lovelace(2_000_000),
+      datum: NoDatum,
+      reference_script: if has_reference_script {
+        Some(script_hash)
+      } else {
+        None
+      },
+    },
+  )
+}
+
+fn inventory_reference_input_with_script_hash(
+  index: Int,
+  reference_script_hash: crypto.Hash<crypto.Blake2b_224, crypto.Script>,
+) -> Input {
+  let input =
+    inventory_reference_input(index, test_reference_script_hash(), True)
+  Input {
+    ..input,
+    output: Output {
+      ..input.output,
+      reference_script: Some(reference_script_hash),
+    },
+  }
+}
+
+fn spend_inventory_transition(
+  old_datum: HostStateDatum,
+  new_datum: HostStateDatum,
+  redeemer: HostStateRedeemer,
+  reference_inputs: List<Input>,
+  ordinary_reference_script_inputs: List<Input>,
+  extra_outputs: List<Output>,
+  signers: List<crypto.VerificationKeyHash>,
+  valid_from: Int,
+) -> Bool {
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [
+        inventory_host_input(old_datum),
+        ..ordinary_reference_script_inputs
+      ],
+      reference_inputs,
+      outputs: [inventory_host_output(new_datum), ..extra_outputs],
+      extra_signatories: signers,
+      validity_range: interval.after(valid_from),
+    }
+
+  host_state_stt.host_state_stt.spend(
+    test_nft_policy(),
+    test_client_script_hash(),
+    test_connection_script_hash(),
+    test_channel_script_hash(),
+    test_client_token().policy_id,
+    test_connection_token().policy_id,
+    test_channel_token().policy_id,
+    test_lifecycle_creation_policy(),
+    test_lifecycle_reclamation_policy(),
+    test_lifecycle_operational_policy(),
+    test_lifecycle_packet_policy(),
+    test_reference_script_hash(),
+    None,
+    redeemer,
+    test_host_ref(),
+    transaction,
+  )
+}
+
+fn inventory_identity(
+  index: Int,
+  script_hash: crypto.Hash<crypto.Blake2b_224, crypto.Script>,
+) -> ReferenceScriptIdentity {
+  ReferenceScriptIdentity {
+    output_reference: test_object_ref(index),
+    reference_script_hash: script_hash,
+  }
+}
+
+fn inventory_host_reference_identity() -> ReferenceScriptIdentity {
+  inventory_identity(9, test_host_script_hash())
+}
+
+fn inventory_host_reference_input() -> Input {
+  inventory_reference_input_with_script_hash(9, test_host_script_hash())
+}
+
+fn register_reference_scripts(
+  target_count: Int,
+  target_root: ByteArray,
+  batch_out_refs: List<OutputReference>,
+) -> HostStateRedeemer {
+  RegisterReferenceScripts { target_count, target_root, batch_out_refs }
+}
+
+fn registered_inventory_datum(
+  count: Int,
+  current_root: ByteArray,
+  target_count: Int,
+  target_root: ByteArray,
+  last_out_ref: OutputReference,
+  shutdown: ShutdownState,
+  version: Int,
+) -> HostStateDatum {
+  HostStateDatum {
+    ..inventory_datum(Some(count), shutdown, version),
+    reference_script_inventory_root: current_root,
+    reference_script_registration: Some(
+      ReferenceScriptRegistration { target_count, target_root, last_out_ref },
+    ),
+  }
+}
+
+test host_state_registers_reference_inventory_in_safe_batches_then_finalizes() {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let id_2 = inventory_identity(2, test_reference_script_hash())
+  let id_3 = inventory_identity(3, test_reference_script_hash())
+  let first_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      first_root,
+      [id_2, id_3],
+    )
+  let target_count = 4
+  let initial = inventory_datum(None, Active, 0)
+  let first_batch =
+    registered_inventory_datum(
+      -2,
+      first_root,
+      target_count,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    )
+  let complete =
+    registered_inventory_datum(
+      -4,
+      target_root,
+      target_count,
+      target_root,
+      test_object_ref(3),
+      Active,
+      2,
+    )
+  let finalized =
+    registered_inventory_datum(
+      4,
+      target_root,
+      target_count,
+      target_root,
+      test_object_ref(3),
+      Active,
+      3,
+    )
+
+  and {
+    spend_inventory_transition(
+      initial,
+      first_batch,
+      register_reference_scripts(
+        target_count,
+        target_root,
+        [test_object_ref(9), test_object_ref(1)],
+      ),
+      [
+        inventory_reference_input(1, test_reference_script_hash(), True),
+        inventory_host_reference_input(),
+      ],
+      [],
+      [],
+      [trusted_deployer],
+      0,
+    ),
+    spend_inventory_transition(
+      first_batch,
+      complete,
+      register_reference_scripts(
+        target_count,
+        target_root,
+        [test_object_ref(2), test_object_ref(3)],
+      ),
+      [
+        inventory_reference_input(3, test_reference_script_hash(), True),
+        inventory_host_reference_input(),
+        inventory_reference_input(2, test_reference_script_hash(), True),
+      ],
+      [],
+      [],
+      [trusted_deployer],
+      0,
+    ),
+    spend_inventory_transition(
+      complete,
+      finalized,
+      FinalizeReferenceScriptRegistration,
+      [inventory_host_reference_input()],
+      [],
+      [],
+      [trusted_deployer],
+      0,
+    ),
+  }
+}
+
+test host_state_registration_rejects_early_finalize() fail {
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let id_2 = inventory_identity(2, test_reference_script_hash())
+  let first_root =
+    append_reference_script_identities(
+      empty_reference_script_inventory_root,
+      [id_1],
+    )
+  let target_root = append_reference_script_identities(first_root, [id_2])
+  let partial =
+    registered_inventory_datum(
+      -1,
+      first_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    )
+  let forged_final =
+    registered_inventory_datum(
+      1,
+      first_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      2,
+    )
+  spend_inventory_transition(
+    partial,
+    forged_final,
+    FinalizeReferenceScriptRegistration,
+    [],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_rejects_a_forged_batch_count() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  spend_inventory_transition(
+    inventory_datum(None, Active, 0),
+    registered_inventory_datum(
+      -3,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    ),
+    register_reference_scripts(
+      2,
+      target_root,
+      [test_object_ref(9), test_object_ref(1)],
+    ),
+    [
+      inventory_host_reference_input(),
+      inventory_reference_input(1, test_reference_script_hash(), True),
+    ],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_rejects_non_script_or_wrong_validator_inputs() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  spend_inventory_transition(
+    inventory_datum(None, Active, 0),
+    registered_inventory_datum(
+      -2,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    ),
+    register_reference_scripts(
+      2,
+      target_root,
+      [test_object_ref(9), test_object_ref(1)],
+    ),
+    [
+      inventory_host_reference_input(),
+      inventory_reference_input(1, test_reference_script_hash(), False),
+      inventory_reference_input(2, test_module_script_hash(), True),
+    ],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_rejects_duplicate_batch_outrefs() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  spend_inventory_transition(
+    inventory_datum(None, Active, 0),
+    registered_inventory_datum(
+      -2,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    ),
+    register_reference_scripts(
+      2,
+      target_root,
+      [test_object_ref(9), test_object_ref(1), test_object_ref(1)],
+    ),
+    [
+      inventory_host_reference_input(),
+      inventory_reference_input(1, test_reference_script_hash(), True),
+    ],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_rejects_a_missing_selected_witness() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  spend_inventory_transition(
+    inventory_datum(None, Active, 0),
+    registered_inventory_datum(
+      -2,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    ),
+    register_reference_scripts(
+      2,
+      target_root,
+      [test_object_ref(9), test_object_ref(1)],
+    ),
+    [inventory_host_reference_input()],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_rejects_an_unselected_extra_witness() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  spend_inventory_transition(
+    inventory_datum(None, Active, 0),
+    registered_inventory_datum(
+      -2,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    ),
+    register_reference_scripts(
+      2,
+      target_root,
+      [test_object_ref(9), test_object_ref(1)],
+    ),
+    [
+      inventory_host_reference_input(),
+      inventory_reference_input(1, test_reference_script_hash(), True),
+      inventory_reference_input(2, test_reference_script_hash(), True),
+    ],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_requires_host_first_and_a_non_host_tail() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  spend_inventory_transition(
+    inventory_datum(None, Active, 0),
+    registered_inventory_datum(
+      -2,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    ),
+    register_reference_scripts(
+      2,
+      target_root,
+      [test_object_ref(1), test_object_ref(9)],
+    ),
+    [
+      inventory_host_reference_input(),
+      inventory_reference_input(1, test_reference_script_hash(), True),
+    ],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_rejects_a_host_only_first_batch() fail {
+  let host_id = inventory_host_reference_identity()
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id],
+    )
+  spend_inventory_transition(
+    inventory_datum(None, Active, 0),
+    registered_inventory_datum(
+      -1,
+      target_root,
+      1,
+      target_root,
+      test_object_ref(9),
+      Active,
+      1,
+    ),
+    register_reference_scripts(1, target_root, [test_object_ref(9)]),
+    [inventory_host_reference_input()],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_rejects_a_lower_outref_in_a_later_batch() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let id_2 = inventory_identity(2, test_reference_script_hash())
+  let first_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_2],
+    )
+  let target_root = append_reference_script_identities(first_root, [id_1])
+  let partial =
+    registered_inventory_datum(
+      -2,
+      first_root,
+      3,
+      target_root,
+      test_object_ref(2),
+      Active,
+      1,
+    )
+  let forged_complete =
+    registered_inventory_datum(
+      -3,
+      target_root,
+      3,
+      target_root,
+      test_object_ref(1),
+      Active,
+      2,
+    )
+  spend_inventory_transition(
+    partial,
+    forged_complete,
+    register_reference_scripts(3, target_root, [test_object_ref(1)]),
+    [
+      inventory_host_reference_input(),
+      inventory_reference_input(1, test_reference_script_hash(), True),
+    ],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_registration_requires_the_deployer_signature() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  spend_inventory_transition(
+    inventory_datum(None, Active, 0),
+    registered_inventory_datum(
+      -2,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    ),
+    register_reference_scripts(
+      2,
+      target_root,
+      [test_object_ref(9), test_object_ref(1)],
+    ),
+    [
+      inventory_host_reference_input(),
+      inventory_reference_input(1, test_reference_script_hash(), True),
+    ],
+    [],
+    [],
+    [],
+    0,
+  )
+}
+
+test host_state_registration_cannot_resume_after_finalization() fail {
+  let host_id = inventory_host_reference_identity()
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let id_2 = inventory_identity(2, test_reference_script_hash())
+  let target_root =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id, id_1],
+    )
+  let forged_root = append_reference_script_identities(target_root, [id_2])
+  spend_inventory_transition(
+    registered_inventory_datum(
+      2,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(1),
+      Active,
+      1,
+    ),
+    registered_inventory_datum(
+      3,
+      forged_root,
+      2,
+      target_root,
+      test_object_ref(2),
+      Active,
+      2,
+    ),
+    register_reference_scripts(2, target_root, [test_object_ref(2)]),
+    [
+      inventory_host_reference_input(),
+      inventory_reference_input(2, test_reference_script_hash(), True),
+    ],
+    [],
+    [],
+    [trusted_deployer],
+    0,
+  )
+}
+
+test host_state_reference_reclaim_reserves_the_host_for_atomic_finalization() {
+  let host_id = inventory_host_reference_identity()
+  let id_2 = inventory_identity(2, test_reference_script_hash())
+  let id_3 = inventory_identity(3, test_reference_script_hash())
+  let root_after_first =
+    host_state.fold_reference_script_identities_in_order(
+      empty_reference_script_inventory_root,
+      [host_id],
+    )
+  let target_root =
+    append_reference_script_identities(root_after_first, [id_2, id_3])
+  let shutdown = Sealed { sealed_at: 1_000, proof_window_end: 2_000 }
+  let old =
+    registered_inventory_datum(
+      3,
+      target_root,
+      3,
+      target_root,
+      test_object_ref(3),
+      shutdown,
+      3,
+    )
+  let intermediate =
+    registered_inventory_datum(
+      1,
+      root_after_first,
+      3,
+      target_root,
+      test_object_ref(3),
+      shutdown,
+      4,
+    )
+  let final =
+    registered_inventory_datum(
+      0,
+      empty_reference_script_inventory_root,
+      3,
+      target_root,
+      test_object_ref(3),
+      shutdown,
+      5,
+    )
+  and {
+    spend_inventory_transition(
+      old,
+      intermediate,
+      ReclaimReferenceScripts { predecessor_root: root_after_first },
+      [],
+      [
+        inventory_reference_input(3, test_reference_script_hash(), True),
+        inventory_reference_input(2, test_reference_script_hash(), True),
+      ],
+      [],
+      [trusted_deployer],
+      2_000,
+    ),
+    !spend_inventory_transition(
+      intermediate,
+      final,
+      ReclaimReferenceScripts {
+        predecessor_root: empty_reference_script_inventory_root,
+      },
+      [],
+      [inventory_host_reference_input()],
+      [],
+      [trusted_deployer],
+      2_000,
+    ),
+  }
+}
+
+fn validate_bad_reference_suffix(
+  inputs: List<Input>,
+  predecessor_root: ByteArray,
+) -> Bool {
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let id_2 = inventory_identity(2, test_reference_script_hash())
+  let id_3 = inventory_identity(3, test_reference_script_hash())
+  let root_after_first =
+    append_reference_script_identities(
+      empty_reference_script_inventory_root,
+      [id_1],
+    )
+  let target_root =
+    append_reference_script_identities(root_after_first, [id_2, id_3])
+  let shutdown = Sealed { sealed_at: 1_000, proof_window_end: 2_000 }
+  spend_inventory_transition(
+    registered_inventory_datum(
+      3,
+      target_root,
+      3,
+      target_root,
+      test_object_ref(3),
+      shutdown,
+      3,
+    ),
+    registered_inventory_datum(
+      1,
+      predecessor_root,
+      3,
+      target_root,
+      test_object_ref(3),
+      shutdown,
+      4,
+    ),
+    ReclaimReferenceScripts { predecessor_root },
+    [],
+    inputs,
+    [],
+    [trusted_deployer],
+    2_000,
+  )
+}
+
+test host_state_reference_reclaim_rejects_wrong_outref() fail {
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let root_after_first =
+    append_reference_script_identities(
+      empty_reference_script_inventory_root,
+      [id_1],
+    )
+  validate_bad_reference_suffix(
+    [
+      inventory_reference_input(2, test_reference_script_hash(), True),
+      inventory_reference_input(4, test_reference_script_hash(), True),
+    ],
+    root_after_first,
+  )
+}
+
+test host_state_reference_reclaim_rejects_wrong_script_hash() fail {
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let root_after_first =
+    append_reference_script_identities(
+      empty_reference_script_inventory_root,
+      [id_1],
+    )
+  validate_bad_reference_suffix(
+    [
+      inventory_reference_input(2, test_reference_script_hash(), True),
+      inventory_reference_input_with_script_hash(3, test_module_script_hash()),
+    ],
+    root_after_first,
+  )
+}
+
+test host_state_reference_reclaim_rejects_omitted_input() fail {
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let root_after_first =
+    append_reference_script_identities(
+      empty_reference_script_inventory_root,
+      [id_1],
+    )
+  validate_bad_reference_suffix(
+    [inventory_reference_input(2, test_reference_script_hash(), True)],
+    root_after_first,
+  )
+}
+
+test host_state_reference_reclaim_rejects_extra_input() fail {
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let root_after_first =
+    append_reference_script_identities(
+      empty_reference_script_inventory_root,
+      [id_1],
+    )
+  validate_bad_reference_suffix(
+    [
+      inventory_reference_input(2, test_reference_script_hash(), True),
+      inventory_reference_input(3, test_reference_script_hash(), True),
+      inventory_reference_input(4, test_reference_script_hash(), True),
+    ],
+    root_after_first,
+  )
+}
+
+test host_state_reference_reclaim_rejects_wrong_predecessor() fail {
+  validate_bad_reference_suffix(
+    [
+      inventory_reference_input(2, test_reference_script_hash(), True),
+      inventory_reference_input(3, test_reference_script_hash(), True),
+    ],
+    #"4444444444444444444444444444444444444444444444444444444444444444",
+  )
+}
+
+test host_state_reference_reclaim_rejects_recreated_validator_outputs() fail {
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let root_after_first =
+    append_reference_script_identities(
+      empty_reference_script_inventory_root,
+      [id_1],
+    )
+  let id_2 = inventory_identity(2, test_reference_script_hash())
+  let target_root = append_reference_script_identities(root_after_first, [id_2])
+  let shutdown = Sealed { sealed_at: 1_000, proof_window_end: 2_000 }
+  let recreated =
+    inventory_reference_input(9, test_reference_script_hash(), True).output
+  spend_inventory_transition(
+    registered_inventory_datum(
+      2,
+      target_root,
+      2,
+      target_root,
+      test_object_ref(2),
+      shutdown,
+      2,
+    ),
+    registered_inventory_datum(
+      1,
+      root_after_first,
+      2,
+      target_root,
+      test_object_ref(2),
+      shutdown,
+      3,
+    ),
+    ReclaimReferenceScripts { predecessor_root: root_after_first },
+    [],
+    [inventory_reference_input(2, test_reference_script_hash(), True)],
+    [recreated],
+    [trusted_deployer],
+    2_000,
+  )
+}
+
+test host_state_reference_reclaim_rejects_before_the_proof_window() fail {
+  let id_1 = inventory_identity(1, test_reference_script_hash())
+  let target_root =
+    append_reference_script_identities(
+      empty_reference_script_inventory_root,
+      [id_1],
+    )
+  let shutdown = Sealed { sealed_at: 1_000, proof_window_end: 2_000 }
+  spend_inventory_transition(
+    registered_inventory_datum(
+      1,
+      target_root,
+      1,
+      target_root,
+      test_object_ref(1),
+      shutdown,
+      1,
+    ),
+    registered_inventory_datum(
+      0,
+      empty_reference_script_inventory_root,
+      1,
+      target_root,
+      test_object_ref(1),
+      shutdown,
+      2,
+    ),
+    ReclaimReferenceScripts {
+      predecessor_root: empty_reference_script_inventory_root,
+    },
+    [],
+    [inventory_reference_input(1, test_reference_script_hash(), True)],
+    [],
+    [trusted_deployer],
+    1_999,
   )
 }

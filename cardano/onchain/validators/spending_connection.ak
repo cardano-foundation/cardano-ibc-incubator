@@ -215,7 +215,8 @@ validator spend_connection(
 
         expect host_state_redeemer.BeginConnectionRetirement = host_redeemer
         let host_datum = validator_utils.get_host_state_datum(host_input)
-        let valid_from = validator_utils.get_tx_valid_from(validity_range)
+        let (_, valid_to) =
+          validator_utils.get_bounded_lifecycle_validity(validity_range)
         let updated_datum =
           connection_continuation(spent_output, outputs, datum.token)
 
@@ -224,7 +225,7 @@ validator spend_connection(
           connection_datum.validate_begin_retirement(
             datum,
             updated_datum,
-            valid_from,
+            valid_to,
             not_before,
           ),
         }

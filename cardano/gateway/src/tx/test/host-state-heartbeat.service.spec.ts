@@ -32,6 +32,13 @@ describe('HostStateHeartbeatService', () => {
     nft_policy: '22'.repeat(28),
     deployer: '33'.repeat(28),
     shutdown: 'Active',
+    live_reference_script_count: 28n,
+    reference_script_inventory_root: '44'.repeat(32),
+    reference_script_registration: {
+      target_count: 28n,
+      target_root: '44'.repeat(32),
+      last_out_ref: { transaction_id: '55'.repeat(32), output_index: 0n },
+    },
   } as const;
 
   let lucidService: any;

@@ -3,6 +3,8 @@ import * as path from 'node:path';
 
 import * as Lucid from '@lucid-evolution/lucid';
 
+import { buildVoucherCip68Metadata, encodeVoucherCip68MetadataDatum } from '@shared/helpers/cip68-voucher-metadata';
+import { splitFullDenomTrace } from '@shared/helpers/denom-trace';
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { encodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import {
@@ -15,6 +17,11 @@ import {
   encodeTraceRegistryRedeemer,
   TRACE_REGISTRY_LIMITS,
 } from '@shared/types/trace-registry';
+import {
+  buildIbcDenomHashFromFullDenom,
+  buildVoucherDenomHashFromFullDenom,
+  buildVoucherUserTokenNameFromDenomHash,
+} from '@shared/helpers/voucher-asset';
 
 type BlueprintValidator = {
   title: string;
@@ -395,6 +402,41 @@ function traceDirectoryDatum(archivedCount: number): string {
   );
 }
 
+function maximumVoucherMetadataDatum(): string {
+  // Every Cardano-minted voucher has at least the canonical transfer/channel-0
+  // prefix. Filling the remaining protocol allowance with one base-denom
+  // segment maximizes the repeated name, ticker, baseDenom, fullDenom, and
+  // description fields in the immutable CIP-68 datum.
+  const prefix = 'transfer/channel-0/';
+  const baseDenom = 'x'.repeat(TRACE_REGISTRY_LIMITS.maxFullDenomBytes - Buffer.byteLength(prefix));
+  const fullDenom = `${prefix}${baseDenom}`;
+  if (Buffer.byteLength(fullDenom) !== TRACE_REGISTRY_LIMITS.maxFullDenomBytes) {
+    throw new Error('Maximum voucher metadata fixture does not fill the full-denom byte limit');
+  }
+
+  const trace = splitFullDenomTrace(fullDenom);
+  const voucherDenomHash = buildVoucherDenomHashFromFullDenom(fullDenom);
+  return encodeVoucherCip68MetadataDatum(
+    buildVoucherCip68Metadata({
+      ...trace,
+      fullDenom,
+      voucherTokenName: buildVoucherUserTokenNameFromDenomHash(voucherDenomHash),
+      voucherPolicyId: hexOfBytes(28, 'ab'),
+      ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
+    }),
+    Lucid,
+  );
+}
+
+const MAXIMUM_VOUCHER_METADATA_DATUM = maximumVoucherMetadataDatum();
+const MAXIMUM_VOUCHER_METADATA_DATUM_BYTES = byteLength(MAXIMUM_VOUCHER_METADATA_DATUM);
+const EXPECTED_MAXIMUM_VOUCHER_METADATA_DATUM_BYTES = 1_614;
+if (MAXIMUM_VOUCHER_METADATA_DATUM_BYTES !== EXPECTED_MAXIMUM_VOUCHER_METADATA_DATUM_BYTES) {
+  throw new Error(
+    `Maximum voucher metadata datum changed from ${EXPECTED_MAXIMUM_VOUCHER_METADATA_DATUM_BYTES} to ${MAXIMUM_VOUCHER_METADATA_DATUM_BYTES} bytes; review the transaction budget fixture`,
+  );
+}
+
 function lifecycleAndShutdownScenarios(): ScenarioInput[] {
   return [
     {
@@ -601,22 +643,26 @@ function lifecycleAndShutdownScenarios(): ScenarioInput[] {
       extraBytes: TX_REFERENCE_INPUT_BYTES,
       aikenTests: Array.from(
         { length: 10 },
-        () => 'reference_validator.test.reference_validator_reclaim_succeeds_after_proof_window',
+        () => 'reference_validator.test.intermediate_reference_reclaim_batch_remains_available',
       ),
     },
     {
       name: 'Final HostState reclaim and NFT burn',
-      inputCount: 1,
+      inputCount: 2,
       outputCount: 2,
       mintPolicyCount: 1,
       referenceScriptTitles: [],
-      inlineScriptTitles: ['host_state_stt.host_state_stt.spend', 'host_state_nft.host_state_nft.mint'],
+      // The terminal Host reference is consumed as a normal input and provides
+      // the Host spending witness. Only the reference validator that spends
+      // that input and the Host NFT burn policy are carried in the witness set.
+      inlineScriptTitles: ['reference_validator.refer_only.else', 'host_state_nft.host_state_nft.mint'],
       redeemers: [dataBytes('HostState reclaim redeemer', 64), dataBytes('HostState NFT burn redeemer', 64)],
       datums: [],
       largestProofPayloadBytes: 0,
       extraBytes: 300,
       aikenTests: [
         'host_state_stt.test.host_state_final_reclaim_burns_sealed_anchor_after_proof_window',
+        'reference_validator.test.final_reference_reclaim_atomically_burns_the_host_anchor',
         'host_state_nft.test.burn_final_accepts_sealed_anchor_after_proof_window',
       ],
     },
@@ -1074,7 +1120,7 @@ async function buildScenarios(
       ],
       datums: [
         dataBytes('max encoded shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes),
-        dataBytes('CIP-68 voucher metadata datum', 900),
+        sized('max CIP-68 voucher metadata datum', MAXIMUM_VOUCHER_METADATA_DATUM),
       ],
       largestProofPayloadBytes: 0,
       aikenTests: [

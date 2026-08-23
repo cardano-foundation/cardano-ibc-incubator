@@ -150,7 +150,9 @@ export class SubmissionService {
     pending.commit();
 
     // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
-    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return confirmedRoot;
+    if (pending.persistTreeSnapshot === false || process.env.IBC_TREE_CACHE_ENABLED === 'false') {
+      return confirmedRoot;
+    }
     try {
       await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
         CURRENT_IBC_TREE_CACHE_ID,

@@ -21,6 +21,7 @@ type ChannelStateLike = {
 type ChannelDatumLike = {
   state: ChannelStateLike;
   port: string;
+  voucher_supply: bigint;
 };
 
 type StateRootResult = {

@@ -282,11 +282,14 @@ describe('PacketService escrow shard registry lookup', () => {
     await expect(fundedService.prepareTransferChannelNoLiveShards(CHANNEL_ID)).rejects.toThrow(
       /still owns live transfer escrow shards/,
     );
+  });
 
-    const outstandingVoucherService = createService(jest.fn().mockResolvedValue([rootUtxo('00'.repeat(32), 0n, 1n)]));
-    await expect(outstandingVoucherService.prepareTransferChannelNoLiveShards(CHANNEL_ID)).rejects.toThrow(
-      /voucher supply remains/,
-    );
+  it('does not use unrelated global voucher supply as a channel reclaim gate', async () => {
+    const outstandingVoucherService = createService(jest.fn().mockResolvedValue([rootUtxo('00'.repeat(32), 0n, 99n)]));
+
+    await expect(outstandingVoucherService.prepareTransferChannelNoLiveShards(CHANNEL_ID)).resolves.toMatchObject({
+      transferModuleUtxo: expect.objectContaining({ datum: encodedModuleDatum('00'.repeat(32), 0n, 99n) }),
+    });
   });
 
   it('rejects duplicate and malformed shard holders', async () => {

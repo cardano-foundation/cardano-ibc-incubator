@@ -39,6 +39,7 @@ fn channel_datum(state, counterparty_channel_id: ByteArray) -> ChannelDatum {
     port_id: "port-1",
     token: mock_token(),
     lifecycle: ChannelActive,
+    voucher_supply: 0,
   }
 }
 

@@ -132,9 +132,12 @@ fn validate_handle_packet(
   commitment_siblings: List<ByteArray>,
   receipt_siblings: List<ByteArray>,
   acknowledgement_siblings: List<ByteArray>,
+  voucher_policy_is_used: Bool,
 ) -> Bool {
   let (input, input_datum, output_datum) =
     channel_thread(inputs, outputs, policy, script_hash)
+  expect
+    voucher_policy_is_used || output_datum.voucher_supply == input_datum.voucher_supply
   expect Some(raw) = pairs.get_first(redeemers, Spend(input.output_reference))
   expect redeemer: SpendChannelRedeemer = raw
   let id = channel_id(output_datum.token.name)
@@ -317,6 +320,7 @@ validator mint_lifecycle_packet_marker(
   host_policy: PolicyId,
   channel_script_hash: Hash<Blake2b_224, Script>,
   channel_policy: PolicyId,
+  voucher_minting_policy_id: PolicyId,
 ) {
   mint(
     redeemer: LifecyclePacketMarkerRedeemer,
@@ -364,6 +368,7 @@ validator mint_lifecycle_packet_marker(
       packet_commitment_siblings,
       packet_receipt_siblings,
       packet_acknowledgement_siblings,
+      !(mint |> tokens(voucher_minting_policy_id) |> dict.is_empty),
     )
   }
 

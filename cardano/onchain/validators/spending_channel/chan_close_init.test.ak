@@ -47,6 +47,7 @@ test chan_close_init_succeed() {
       port_id: fake_data.port_id,
       token: fake_data.channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =

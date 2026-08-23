@@ -210,7 +210,9 @@ export class CoreLifecycleService {
     if (connectionDatum.lifecycle !== 'ConnectionActive') {
       throw new GrpcFailedPreconditionException(`Connection ${connectionId} is already retiring`);
     }
-    const notBefore = BigInt(validity.validFromTime) + LIFECYCLE_DELAY_MS;
+    // The validators anchor safety delays to the finite upper validity bound,
+    // preventing an old lower bound from creating an already-expired delay.
+    const notBefore = BigInt(validity.ledgerValidToTime) + LIFECYCLE_DELAY_MS;
     const updatedConnection: ConnectionDatum = {
       ...connectionDatum,
       lifecycle: { Retiring: { not_before: notBefore } },
@@ -329,7 +331,9 @@ export class CoreLifecycleService {
     ) {
       throw new GrpcFailedPreconditionException(`Channel ${portId}/${channelId} is not an active incomplete handshake`);
     }
-    const notBefore = BigInt(validity.validFromTime) + LIFECYCLE_DELAY_MS;
+    // The validators anchor safety delays to the finite upper validity bound,
+    // preventing an old lower bound from creating an already-expired delay.
+    const notBefore = BigInt(validity.ledgerValidToTime) + LIFECYCLE_DELAY_MS;
     const updatedChannel: ChannelDatum = {
       ...channelDatum,
       lifecycle: { Abandoning: { not_before: notBefore } },
@@ -376,6 +380,11 @@ export class CoreLifecycleService {
     );
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
     this.assertChannelIdentity(channelDatum, portId, channelTokenUnit, channelId, channelUtxo);
+    if (channelDatum.voucher_supply !== 0n) {
+      throw new GrpcFailedPreconditionException(
+        `Channel ${portId}/${channelId} still has ${channelDatum.voucher_supply} outstanding voucher units`,
+      );
+    }
     const packetStateCount =
       channelDatum.state.packet_commitment.size +
       channelDatum.state.packet_receipt.size +

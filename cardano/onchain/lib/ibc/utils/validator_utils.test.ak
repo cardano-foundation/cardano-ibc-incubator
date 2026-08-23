@@ -145,6 +145,55 @@ test test_get_tx_valid_to_failed_with_upper_bound_is_infinity() fail {
   validator_utils.get_tx_valid_to(mock_validity_range) == expected_valid_to
 }
 
+test bounded_lifecycle_validity_accepts_the_exact_maximum_width() {
+  let valid_from = 1_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width
+  validator_utils.get_bounded_lifecycle_validity(
+    Interval {
+      lower_bound: IntervalBound {
+        bound_type: Finite(valid_from),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        bound_type: Finite(valid_to),
+        is_inclusive: False,
+      },
+    },
+  ) == (valid_from, valid_to)
+}
+
+test bounded_lifecycle_validity_rejects_a_wider_interval() fail {
+  let valid_from = 1_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width + 1
+  validator_utils.get_bounded_lifecycle_validity(
+    Interval {
+      lower_bound: IntervalBound {
+        bound_type: Finite(valid_from),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        bound_type: Finite(valid_to),
+        is_inclusive: False,
+      },
+    },
+  ) == (valid_from, valid_to)
+}
+
+test bounded_lifecycle_validity_rejects_a_reversed_interval() fail {
+  validator_utils.get_bounded_lifecycle_validity(
+    Interval {
+      lower_bound: IntervalBound {
+        bound_type: Finite(2_000),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        bound_type: Finite(1_000),
+        is_inclusive: False,
+      },
+    },
+  ) == (2_000, 1_000)
+}
+
 // Test for successfully getting inline datum from an output
 test get_inline_datum_succeed() {
   let datum = InlineDatum(hash_sample)
@@ -316,6 +365,9 @@ fn setup_extract_module_redeemer() -> (
       nft_policy: host_state_nft_policy_id,
       deployer: "mock deployer key hash",
       shutdown: Active,
+      live_reference_script_count: Some(0),
+      reference_script_inventory_root: empty_ibc_state_root,
+      reference_script_registration: None,
     }
   let host_state_input =
     Input {

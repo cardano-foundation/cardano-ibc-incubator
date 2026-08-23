@@ -1,4 +1,5 @@
 import { Data } from "@lucid-evolution/lucid";
+import { OutputReferenceSchema } from "./OutputReference.ts";
 import { AuthTokenSchema } from "./AuthToken.ts";
 
 export const ModuleRegistrationSchema = Data.Object({
@@ -56,12 +57,30 @@ export const HostStateSchema = Data.Object({
 export type HostState = Data.Static<typeof HostStateSchema>;
 export const HostState = HostStateSchema as unknown as HostState;
 
+export const ReferenceScriptRegistrationSchema = Data.Object({
+  target_count: Data.Integer(),
+  target_root: Data.Bytes(),
+  last_out_ref: OutputReferenceSchema,
+});
+export type ReferenceScriptRegistration = Data.Static<
+  typeof ReferenceScriptRegistrationSchema
+>;
+export const ReferenceScriptRegistration =
+  ReferenceScriptRegistrationSchema as unknown as ReferenceScriptRegistration;
+
 // HostStateDatum wraps the state with the NFT policy for verification
 export const HostStateDatumSchema = Data.Object({
   state: HostStateSchema,
   nft_policy: Data.Bytes(), // Policy ID of the IBC Host State NFT
   deployer: Data.Bytes(),
   shutdown: ShutdownStateSchema,
+  // Null is permitted only during deployment, before the complete reference
+  // inventory has been registered against HostState.
+  live_reference_script_count: Data.Nullable(Data.Integer()),
+  reference_script_inventory_root: Data.Bytes(),
+  reference_script_registration: Data.Nullable(
+    ReferenceScriptRegistrationSchema,
+  ),
 });
 
 export type HostStateDatum = Data.Static<typeof HostStateDatumSchema>;

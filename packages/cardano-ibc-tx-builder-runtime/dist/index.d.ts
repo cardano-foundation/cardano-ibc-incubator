@@ -6,7 +6,9 @@ export declare const OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = 10000;
 type RefUtxo = {
     txHash: string;
     outputIndex: number;
+    scriptHash?: string;
 };
+export declare function computeReferenceScriptInventoryRoot(references: RefUtxo[]): string;
 type AuthToken = {
     policyId: string;
     name: string;
@@ -45,8 +47,16 @@ type DeploymentTraceRegistry = {
         name: string;
     };
 };
+type DeploymentReferenceValidator = {
+    script: string;
+    scriptHash: string;
+    address: string;
+};
 type DeploymentConfig = {
     deployedAt: string;
+    referenceOutRefs: RefUtxo[];
+    referenceScriptInventoryRoot: string;
+    referenceValidator: DeploymentReferenceValidator;
     hostStateNFT: AuthToken & {
         script: string;
     };
@@ -55,6 +65,7 @@ type DeploymentConfig = {
         spendClient: DeploymentValidator;
         spendConnection: DeploymentValidator;
         spendChannel: DeploymentSpendChannelValidator;
+        spendMockModule?: DeploymentValidator;
         spendTraceRegistry?: DeploymentValidator;
         spendTransferModule: DeploymentValidator;
         mintIdentifier: DeploymentValidator;
@@ -69,10 +80,15 @@ type DeploymentConfig = {
         mintVoucher: DeploymentValidator;
         mintTransferEscrowShard: DeploymentValidator;
         mintPort: DeploymentValidator;
+        mintTraceRegistryBenchmarkVoucher?: DeploymentValidator;
+        voucherMetadata?: {
+            address: string;
+        };
     };
     modules: {
         transfer: DeploymentModule;
         mock?: DeploymentModule;
+        icq?: DeploymentModule;
     };
     traceRegistry?: DeploymentTraceRegistry;
 };
@@ -86,6 +102,17 @@ type BridgeManifest = {
         policy_id: string;
         token_name: string;
         script: string;
+    };
+    reference_out_refs: Array<{
+        tx_hash: string;
+        output_index: number | bigint | string;
+        script_hash?: string;
+    }>;
+    reference_script_inventory_root: string;
+    reference_validator: {
+        script: string;
+        script_hash: string;
+        address: string;
     };
     validators: {
         host_state_stt: {
@@ -183,6 +210,14 @@ type BridgeManifest = {
                         output_index: number;
                     };
                 };
+            };
+        };
+        spend_mock_module?: {
+            script_hash: string;
+            address: string;
+            ref_utxo: {
+                tx_hash: string;
+                output_index: number;
             };
         };
         spend_trace_registry?: {
@@ -297,6 +332,17 @@ type BridgeManifest = {
                 output_index: number;
             };
         };
+        mint_trace_registry_benchmark_voucher?: {
+            script_hash: string;
+            address: string;
+            ref_utxo: {
+                tx_hash: string;
+                output_index: number;
+            };
+        };
+        voucher_metadata?: {
+            address: string;
+        };
     };
     modules: {
         transfer: {
@@ -304,6 +350,10 @@ type BridgeManifest = {
             address: string;
         };
         mock?: {
+            identifier: string;
+            address: string;
+        };
+        icq?: {
             identifier: string;
             address: string;
         };

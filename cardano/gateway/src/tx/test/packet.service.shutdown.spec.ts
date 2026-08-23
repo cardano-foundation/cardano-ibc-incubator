@@ -24,6 +24,13 @@ describe('PacketService shutdown packet rules', () => {
             grace_period_end: 2_000n,
           },
         },
+        live_reference_script_count: 28n,
+        reference_script_inventory_root: '44'.repeat(32),
+        reference_script_registration: {
+          target_count: 28n,
+          target_root: '44'.repeat(32),
+          last_out_ref: { transaction_id: '55'.repeat(32), output_index: 0n },
+        },
       }),
     };
     const service = new PacketService(

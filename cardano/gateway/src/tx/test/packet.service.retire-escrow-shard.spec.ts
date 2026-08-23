@@ -1,12 +1,16 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DenomTraceService } from '../../query/services/denom-trace.service';
+import { IbcTreePendingUpdatesService } from '../../shared/services/ibc-tree-pending-updates.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { PacketService } from '../packet.service';
+import { SubmissionService } from '../submission.service';
+import { TxOperationRunnerService } from '../tx-operation-runner.service';
 
 const channelDatum = (state = 'Close') => ({
   port: Buffer.from('transfer').toString('hex'),
   lifecycle: 'ChannelActive',
+  voucher_supply: 0n,
   state: {
     channel: { state },
     packet_commitment: new Map(),
@@ -44,6 +48,13 @@ function createService(state = 'Close') {
     nft_policy: '22'.repeat(28),
     deployer: '33'.repeat(28),
     shutdown: 'Active',
+    live_reference_script_count: 28n,
+    reference_script_inventory_root: '44'.repeat(32),
+    reference_script_registration: {
+      target_count: 28n,
+      target_root: '44'.repeat(32),
+      last_out_ref: { transaction_id: '55'.repeat(32), output_index: 0n },
+    },
   };
   const channelUtxo = {
     txHash: 'channel',
@@ -58,16 +69,19 @@ function createService(state = 'Close') {
     assets: {},
   };
   const unsignedTx = { kind: 'retire-tx' };
+  const txOperationRunnerService = {
+    run: jest.fn().mockResolvedValue({ unsignedTxBytes: new Uint8Array([1, 2, 3]) }),
+  };
   const lucidService = {
     getChannelTokenUnit: jest.fn().mockReturnValue(['channel-policy', 'channel-name']),
     findUtxoByUnit: jest.fn().mockResolvedValue(channelUtxo),
     findUtxoAtHostStateNFT: jest.fn().mockResolvedValue(hostStateUtxo),
-    decodeDatum: jest.fn().mockImplementation(async (_datum: string, codec: string) =>
-      codec === 'host_state' ? hostDatum : channelDatum(state)
-    ),
-    encode: jest.fn().mockImplementation(async (_value: unknown, codec: string) =>
-      `encoded:${codec}`
-    ),
+    decodeDatum: jest
+      .fn()
+      .mockImplementation(async (_datum: string, codec: string) =>
+        codec === 'host_state' ? hostDatum : channelDatum(state),
+      ),
+    encode: jest.fn().mockImplementation(async (_value: unknown, codec: string) => `encoded:${codec}`),
     createUnsignedRetireTransferEscrowShardTx: jest.fn().mockReturnValue(unsignedTx),
   };
   const service = new PacketService(
@@ -79,7 +93,7 @@ function createService(state = 'Close') {
     } as unknown as ConfigService,
     lucidService as unknown as LucidService,
     {} as DenomTraceService,
-    {} as any,
+    txOperationRunnerService as any,
     {} as any,
     {} as any,
   );
@@ -105,7 +119,16 @@ function createService(state = 'Close') {
     encodedUpdatedTransferModuleDatum: 'updated-module',
     encodedShardDatum: 'shard-datum',
   });
-  return { service, lucidService, channelUtxo, hostStateUtxo, unsignedTx, hostDatum, portToken };
+  return {
+    service,
+    lucidService,
+    channelUtxo,
+    hostStateUtxo,
+    unsignedTx,
+    hostDatum,
+    portToken,
+    txOperationRunnerService,
+  };
 }
 
 describe('PacketService escrow shard retirement builder', () => {
@@ -122,6 +145,11 @@ describe('PacketService escrow shard retirement builder', () => {
       unsignedTx,
       validFromTime: 1_000,
       validToTime: 2_000,
+      pendingTreeUpdate: {
+        expectedNewRoot: hostDatum.state.ibc_state_root,
+        commit: expect.any(Function),
+        persistTreeSnapshot: false,
+      },
     });
     expect(lucidService.encode).toHaveBeenCalledWith(
       {
@@ -172,5 +200,65 @@ describe('PacketService escrow shard retirement builder', () => {
       }),
     ).rejects.toThrow(/not terminal, drained, and reclaimable/);
     expect(service.prepareTransferEscrowShardRetirement).not.toHaveBeenCalled();
+  });
+
+  it('registers and commits the root-neutral update through the signed submission flow', async () => {
+    const { service, lucidService, hostDatum } = createService();
+    const pendingUpdates = new IbcTreePendingUpdatesService();
+    const registerSpy = jest.spyOn(pendingUpdates, 'register');
+    const completedTx = {
+      toCBOR: jest.fn().mockReturnValue('retire-cbor'),
+      toHash: jest.fn().mockReturnValue('retire-tx-hash'),
+    };
+    const txBuilder = {
+      validFrom: jest.fn().mockReturnThis(),
+      validTo: jest.fn().mockReturnThis(),
+      complete: jest.fn().mockResolvedValue(completedTx),
+    };
+    lucidService.createUnsignedRetireTransferEscrowShardTx.mockReturnValue(txBuilder);
+    Object.assign(lucidService, {
+      beginWalletSelectionScope: jest.fn().mockReturnValue(1),
+      assertWalletSelectionScopeSatisfied: jest.fn(),
+      endWalletSelectionScope: jest.fn(),
+    });
+    const operationRunner = new TxOperationRunnerService(
+      lucidService as any,
+      { selectWalletFromAddressWithRetry: jest.fn().mockResolvedValue(undefined) } as any,
+      { register: jest.fn(), registerByExpectedRoot: jest.fn() } as any,
+      pendingUpdates,
+    );
+    (service as any).txOperationRunnerService = operationRunner;
+    jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
+
+    await service.retireTransferEscrowShard({
+      channelId: 'channel-7',
+      denom: Buffer.from('lovelace').toString('hex'),
+      signer: 'addr_test1operator',
+    });
+
+    expect(registerSpy).toHaveBeenCalledWith(
+      'retire-tx-hash',
+      expect.objectContaining({
+        expectedNewRoot: hostDatum.state.ibc_state_root,
+        persistTreeSnapshot: false,
+      }),
+    );
+    const registeredUpdate = registerSpy.mock.calls[0][1];
+    const commitSpy = jest.spyOn(registeredUpdate, 'commit');
+    const treeCache = { saveAliases: jest.fn() };
+    const submissionService = new SubmissionService(
+      { LucidImporter: {} } as any,
+      {} as any,
+      {} as any,
+      pendingUpdates,
+      treeCache as any,
+      {} as any,
+      {} as any,
+    );
+    jest.spyOn(submissionService as any, 'readConfirmedTxRoot').mockResolvedValue(hostDatum.state.ibc_state_root);
+    await (submissionService as any).applyPendingIbcTreeUpdate('retire-cbor', 'retire-tx-hash', 1234n);
+
+    expect(commitSpy).toHaveBeenCalledTimes(1);
+    expect(treeCache.saveAliases).not.toHaveBeenCalled();
   });
 });

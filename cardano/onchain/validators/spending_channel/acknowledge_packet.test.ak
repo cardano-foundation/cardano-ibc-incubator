@@ -100,6 +100,7 @@ fn check_acknowledge_packet(
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let input_channel_datum = test_utils.send_packet(packet, input_channel_datum)

@@ -64,6 +64,7 @@ fn check_chan_close_confirm(module_redeemer: Redeemer) {
       port_id: fake_data.port_id,
       token: fake_data.channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =

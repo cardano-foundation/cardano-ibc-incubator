@@ -112,6 +112,9 @@ fn host_state_datum(
     nft_policy,
     deployer: #"00000000000000000000000000000000000000000000000000000000",
     shutdown,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
   }
 }
 
@@ -130,6 +133,29 @@ fn module_output_with_voucher_delta(
       },
     ),
   }
+}
+
+fn channel_output_with_voucher_delta(
+  output: Output,
+  voucher_delta: Int,
+) -> Output {
+  expect InlineDatum(raw_datum) = output.datum
+  expect datum: ChannelDatum = raw_datum
+  Output {
+    ..output,
+    datum: InlineDatum(
+      ChannelDatum {
+        ..datum,
+        voucher_supply: datum.voucher_supply + voucher_delta,
+      },
+    ),
+  }
+}
+
+fn channel_output_with_port(output: Output, port_id: ByteArray) -> Output {
+  expect InlineDatum(raw_datum) = output.datum
+  expect datum: ChannelDatum = raw_datum
+  Output { ..output, datum: InlineDatum(ChannelDatum { ..datum, port_id }) }
 }
 
 fn setup() -> MockData {
@@ -248,6 +274,7 @@ fn setup() -> MockData {
       port_id,
       token: channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let output_channel_datum =
@@ -689,6 +716,7 @@ type SendCallbackMutation {
   WrongTypedPacketData
   WrongSendCommitment
   MovedModuleCredential
+  MutatedChannelVoucherSupply
 }
 
 fn native_send_escrow_fixture(
@@ -700,7 +728,7 @@ fn native_send_escrow_fixture(
   let transfer_amount = 1234
   let receiver = mock.cardano_public_key_hash
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
-  let source_port = "port-0"
+  let source_port = mock.port_id
   let source_channel = "channel-0"
   let denom = "6c6f76656c616365"
   let shard_token_name =
@@ -723,7 +751,16 @@ fn native_send_escrow_fixture(
       _ -> module_output_with_registered_shard(mock.module_output)
     }
   let outputs =
-    [module_output, escrow_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output,
+      escrow_output,
+      if callback_mutation == MutatedChannelVoucherSupply {
+        channel_output_with_voucher_delta(mock.channel_output, 1)
+      } else {
+        mock.channel_output
+      },
+      mock.host_state_output,
+    ]
   let (ftpd, packet) =
     build_packet(
       denom,
@@ -898,7 +935,7 @@ fn timeout_unescrow_fixture(
       receiver_output,
       mock.host_state_output,
     ]
-  let source_port = "port-0"
+  let source_port = mock.port_id
   let source_channel = "channel-0"
   let denom = "6c6f76656c616365"
   let escrow_input =
@@ -1096,18 +1133,32 @@ fn ack_success_fixture(
 fn voucher_send_burn_fixture(
   mutation: fuzz_dsl.Mutation,
   target_another_module: Bool,
+  foreign_channel_port: Bool,
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let transfer_amount = 1234
   let receiver = mock.cardano_public_key_hash
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let channel_port =
+    if foreign_channel_port {
+      "foreign-module"
+    } else {
+      mock.port_id
+    }
+  let channel_input =
+    Input {
+      ..mock.channel_input,
+      output: channel_output_with_port(mock.channel_input.output, channel_port),
+    }
+  let channel_output =
+    channel_output_with_port(mock.channel_output, channel_port)
+  let inputs = [mock.module_input, channel_input, mock.host_state_input]
   let outputs =
     [
       module_output_with_voucher_delta(mock.module_output, 0 - transfer_amount),
-      mock.channel_output,
+      channel_output,
       mock.host_state_output,
     ]
-  let source_port = mock.port_id
+  let source_port = channel_port
   let source_channel = mock.channel_id
   let denom =
     transfer_coin.get_denom_prefix(source_port, source_channel)
@@ -1150,7 +1201,7 @@ fn voucher_send_burn_fixture(
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Spend(channel_input.output_reference), channel_redeemer),
       Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
     ]
   let transaction =
@@ -1172,6 +1223,7 @@ fn voucher_send_burn_fixture(
 
 fn voucher_recv_sink_fixture(
   mutation: fuzz_dsl.Mutation,
+  foreign_destination_port: Bool,
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
@@ -1182,6 +1234,12 @@ fn voucher_recv_sink_fixture(
       mock.host_state_output,
     ]
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
+  let destination_port =
+    if foreign_destination_port {
+      "foreign-module"
+    } else {
+      mock.port_id
+    }
   let (ftpd, packet) =
     build_packet(
       "atom",
@@ -1190,7 +1248,7 @@ fn voucher_recv_sink_fixture(
       mock.cardano_public_key_hash,
       "port-0",
       "channel-0",
-      mock.port_id,
+      destination_port,
       mock.channel_id,
     )
   let module_redeemer: Redeemer =
@@ -1347,24 +1405,6 @@ test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
     |> fuzz_dsl.assert_protocol_valid
 }
 
-test transfer_send_rejects_mismatched_typed_packet_data() fail {
-  native_send_escrow_fixture(
-    1234,
-    fuzz_dsl.mutation("wrong_typed_packet_data"),
-    WrongTypedPacketData,
-  )
-    |> fuzz_dsl.assert_protocol_valid
-}
-
-test transfer_send_rejects_mismatched_packet_commitment() fail {
-  native_send_escrow_fixture(
-    1234,
-    fuzz_dsl.mutation("wrong_packet_commitment"),
-    WrongSendCommitment,
-  )
-    |> fuzz_dsl.assert_protocol_valid
-}
-
 test transfer_module_rejects_moving_registered_port_credential() fail {
   native_send_escrow_fixture(
     1234,
@@ -1420,12 +1460,17 @@ test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
 
   // Sending a voucher back toward its source burns voucher supply rather than
   // increasing native escrow.
-  voucher_send_burn_fixture(fuzz_dsl.no_mutation(), False)
+  voucher_send_burn_fixture(fuzz_dsl.no_mutation(), False, False)
     |> fuzz_dsl.assert_protocol_valid
 }
 
 test transfer_module_rejects_voucher_action_for_another_module_root() fail {
-  voucher_send_burn_fixture(fuzz_dsl.no_mutation(), True)
+  voucher_send_burn_fixture(fuzz_dsl.no_mutation(), True, False)
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test transfer_module_rejects_voucher_action_for_foreign_port_channel() fail {
+  voucher_send_burn_fixture(fuzz_dsl.no_mutation(), False, True)
     |> fuzz_dsl.assert_protocol_valid
 }
 
@@ -1433,7 +1478,12 @@ test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) 
   fuzz.label(@"regression.contract.transfer.recv_sink.mints_voucher_exactly")
 
   // Sink-chain receive creates voucher supply only for the packet amount.
-  voucher_recv_sink_fixture(fuzz_dsl.no_mutation())
+  voucher_recv_sink_fixture(fuzz_dsl.no_mutation(), False)
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test transfer_module_rejects_recv_for_foreign_destination_port() fail {
+  voucher_recv_sink_fixture(fuzz_dsl.no_mutation(), True)
     |> fuzz_dsl.assert_protocol_valid
 }
 
@@ -2119,7 +2169,7 @@ test transfer_escrow_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange redeemers=========================
-  let source_port = "port-0"
+  let source_port = mock.port_id
   let source_channel = "channel-0"
 
   // lovelace
@@ -2224,7 +2274,7 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
   let inputs =
     [mock.module_input, mock.channel_input, shutdown_host_state_input]
 
-  let source_port = "port-0"
+  let source_port = mock.port_id
   let source_channel = "channel-0"
   let denom = "6c6f76656c616365"
   let shard_token_name =
@@ -2329,7 +2379,7 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
       transfer_amount,
       mock.cosmos_address,
       receiver,
-      "port-0",
+      mock.port_id,
       "channel-0",
       mock.port_id,
       mock.channel_id,
@@ -2410,7 +2460,7 @@ test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
       transfer_amount,
       mock.cosmos_address,
       receiver,
-      "port-0",
+      mock.port_id,
       "channel-0",
       mock.port_id,
       mock.channel_id,
@@ -2796,7 +2846,7 @@ test on_timeout_packet_unescrow_succeed() {
     ]
 
   //==========================arrange redeemers=========================
-  let source_port = "port-0"
+  let source_port = mock.port_id
   let source_channel = "channel-0"
 
   // lovelace
@@ -2928,7 +2978,7 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
       transfer_amount,
       sender,
       mock.cosmos_address,
-      "port-0",
+      mock.port_id,
       "channel-0",
       mock.port_id,
       mock.channel_id,
@@ -3312,7 +3362,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     ]
 
   //==========================arrange redeemers=========================
-  let source_port = "port-0"
+  let source_port = mock.port_id
   let source_channel = "channel-0"
 
   // lovelace
@@ -3595,7 +3645,7 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
   let transfer_amount = 15_000_000
   let receiver = mock.cardano_public_key_hash
 
-  let source_port = "port-0"
+  let source_port = mock.port_id
   let source_channel = "channel-0"
   let denom = native_asset_denom()
   let token_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"

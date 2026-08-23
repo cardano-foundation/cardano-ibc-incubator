@@ -167,6 +167,9 @@ fn host_datum() -> HostStateDatum {
     nft_policy: host_policy,
     deployer,
     shutdown: Active,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
   }
 }
 
@@ -209,6 +212,7 @@ fn channel_datum(state: ChannelState) -> ChannelDatum {
     port_id,
     token: channel_token(),
     lifecycle: ChannelActive,
+    voucher_supply: 0,
   }
 }
 
@@ -500,17 +504,22 @@ fn lifecycle_host_thread(
 }
 
 fn transfer_channel_reclaim_transaction(
-  voucher_supply: Int,
+  global_voucher_supply: Int,
+  channel_voucher_supply: Int,
   channel_has_live_shard: Bool,
   marker_redeemer: LifecycleMarkerRedeemer,
 ) -> Transaction {
-  let datum = channel_datum(Closed)
+  let datum =
+    ChannelDatum {
+      ..channel_datum(Closed),
+      voucher_supply: channel_voucher_supply,
+    }
   let (old_root, send_siblings, ack_siblings) =
     closed_channel_reclaim_commitment(datum)
   let (host_input, host_successor) =
     lifecycle_host_thread(old_root, empty_ibc_state_root)
   let module_datum =
-    transfer_module_datum(voucher_supply, channel_has_live_shard)
+    transfer_module_datum(global_voucher_supply, channel_has_live_shard)
   let module_input = transfer_module_input(module_datum)
   let host_redeemer_data: Redeemer =
     host_redeemer.ReclaimChannel {
@@ -558,13 +567,15 @@ fn transfer_channel_reclaim_transaction(
 }
 
 fn validate_transfer_channel_marker(
-  voucher_supply: Int,
+  global_voucher_supply: Int,
+  channel_voucher_supply: Int,
   channel_has_live_shard: Bool,
   marker_redeemer: LifecycleMarkerRedeemer,
 ) -> Bool {
   let transaction =
     transfer_channel_reclaim_transaction(
-      voucher_supply,
+      global_voucher_supply,
+      channel_voucher_supply,
       channel_has_live_shard,
       marker_redeemer,
     )
@@ -763,19 +774,24 @@ fn transfer_channel_marker() -> LifecycleMarkerRedeemer {
 }
 
 test transfer_channel_reclaim_marker_accepts_settled_channel() {
-  validate_transfer_channel_marker(0, False, transfer_channel_marker())
+  validate_transfer_channel_marker(0, 0, False, transfer_channel_marker())
 }
 
-test transfer_channel_reclaim_marker_rejects_nonzero_voucher_supply() fail {
-  validate_transfer_channel_marker(1, False, transfer_channel_marker())
+test transfer_channel_reclaim_marker_accepts_unrelated_voucher_supply() {
+  validate_transfer_channel_marker(1, 0, False, transfer_channel_marker())
+}
+
+test transfer_channel_reclaim_marker_rejects_own_voucher_supply() fail {
+  validate_transfer_channel_marker(0, 1, False, transfer_channel_marker())
 }
 
 test transfer_channel_reclaim_marker_rejects_live_channel_shard_count() fail {
-  validate_transfer_channel_marker(0, True, transfer_channel_marker())
+  validate_transfer_channel_marker(0, 0, True, transfer_channel_marker())
 }
 
 test transfer_channel_reclaim_marker_rejects_wrong_authenticated_target() fail {
   validate_transfer_channel_marker(
+    0,
     0,
     False,
     AuthorizeTransferChannelReclaim {
@@ -810,11 +826,13 @@ test abandoned_channel_reclaim_rejects_before_deadline() fail {
 
 fn validate_begin_abandonment(
   has_deployer_signature: Bool,
+  valid_from: Int,
+  valid_to: Int,
+  deadline_anchor: Int,
   delay_adjustment: Int,
 ) -> Bool {
-  let valid_from = 1_000
   let not_before =
-    reclamation.channel_abandonment_not_before(valid_from) + delay_adjustment
+    reclamation.channel_abandonment_not_before(deadline_anchor) + delay_adjustment
   let input_datum = channel_datum(Init)
   let output_datum =
     ChannelDatum { ..input_datum, lifecycle: Abandoning { not_before } }
@@ -830,7 +848,7 @@ fn validate_begin_abandonment(
           datum: InlineDatum(output_datum),
         },
       ],
-      validity_range: interval.after(valid_from),
+      validity_range: interval.between(valid_from, valid_to),
       extra_signatories: if has_deployer_signature {
         [deployer]
       } else {
@@ -858,13 +876,25 @@ fn validate_begin_abandonment(
 }
 
 test channel_abandonment_accepts_fixed_delay_and_deployer_signature() {
-  validate_begin_abandonment(True, 0)
+  let valid_from = 1_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width
+  validate_begin_abandonment(True, valid_from, valid_to, valid_to, 0)
 }
 
 test channel_abandonment_rejects_missing_deployer_signature() fail {
-  validate_begin_abandonment(False, 0)
+  validate_begin_abandonment(False, 1_000, 2_000, 2_000, 0)
 }
 
 test channel_abandonment_rejects_caller_selected_delay() fail {
-  validate_begin_abandonment(True, 1)
+  validate_begin_abandonment(True, 1_000, 2_000, 2_000, 1)
+}
+
+test channel_abandonment_rejects_a_lower_bound_backdated_deadline() fail {
+  validate_begin_abandonment(True, 1_000, 2_000, 1_000, 0)
+}
+
+test channel_abandonment_rejects_a_wide_validity_interval() fail {
+  let valid_from = 1_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width + 1
+  validate_begin_abandonment(True, valid_from, valid_to, valid_to, 0)
 }

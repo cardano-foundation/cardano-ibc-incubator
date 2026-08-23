@@ -268,13 +268,34 @@ describe('IBC module and textual-port codecs', () => {
       nft_policy: '66'.repeat(28),
       deployer: '77'.repeat(28),
       shutdown: 'Active',
+      live_reference_script_count: 28n,
+      reference_script_inventory_root: '88'.repeat(32),
+      reference_script_registration: {
+        target_count: 28n,
+        target_root: '88'.repeat(32),
+        last_out_ref: {
+          transaction_id: '99'.repeat(32),
+          output_index: 3n,
+        },
+      },
     };
 
-    const encoded = await adapter.encode(datum, 'host_state');
-    assert.deepEqual(await adapter.decodeDatum(encoded, 'host_state'), datum);
+    for (const liveReferenceScriptCount of [28n, null]) {
+      const expected =
+        liveReferenceScriptCount === null
+          ? {
+              ...datum,
+              live_reference_script_count: null,
+              reference_script_inventory_root: '00'.repeat(32),
+              reference_script_registration: null,
+            }
+          : datum;
+      const encoded = await adapter.encode(expected, 'host_state');
+      assert.deepEqual(await adapter.decodeDatum(encoded, 'host_state'), expected);
+    }
   });
 
-  it('round-trips the appended Channel lifecycle field through the manual CML encoder', async () => {
+  it('round-trips appended Channel lifecycle and voucher supply through the manual CML encoder', async () => {
     const datum = {
       state: {
         channel: {
@@ -302,6 +323,7 @@ describe('IBC module and textual-port codecs', () => {
       port: Buffer.from('transfer').toString('hex'),
       token: { policyId: '44'.repeat(28), name: '55' },
       lifecycle: { Abandoning: { not_before: 123n } },
+      voucher_supply: 19n,
     };
 
     const encoded = await adapter.encode(datum, 'channel');
@@ -364,7 +386,7 @@ describe('IBC module and textual-port codecs', () => {
     assert.deepEqual(await adapter.decodeDatum(encoded, 'connection'), connection);
   });
 
-  it('preserves HostState redeemer constructor indices through ReclaimModule', async () => {
+  it('preserves HostState redeemer constructor indices and appends reference lifecycle operations', async () => {
     const createClient = await adapter.encode(
       {
         CreateClient: {
@@ -387,10 +409,34 @@ describe('IBC module and textual-port codecs', () => {
       { ReclaimModule: { port_id: 'cc' } },
       'host_state_redeemer',
     );
+    const registerReferences = await adapter.encode(
+      {
+        RegisterReferenceScripts: {
+          target_count: 28n,
+          target_root: '44'.repeat(32),
+          batch_out_refs: [{ transaction_id: '66'.repeat(32), output_index: 7n }],
+        },
+      },
+      'host_state_redeemer',
+    );
+    const reclaimReferences = await adapter.encode(
+      { ReclaimReferenceScripts: { predecessor_root: '55'.repeat(32) } },
+      'host_state_redeemer',
+    );
+    const finalizeReferences = await adapter.encode(
+      'FinalizeReferenceScriptRegistration',
+      'host_state_redeemer',
+    );
 
     assert.match(createClient, /^d87983/);
     assert.match(reclaimHostState, /^d9050b81/);
     assert.match(updateModuleState, /^d9050c81/);
     assert.match(reclaimModule, /^d9050d81/);
+    assert.equal(
+      registerReferences,
+      `d9050e83181c5820${'44'.repeat(32)}81d879825820${'66'.repeat(32)}07`,
+    );
+    assert.equal(reclaimReferences, `d9050f815820${'55'.repeat(32)}`);
+    assert.equal(finalizeReferences, 'd9051080');
   });
 });

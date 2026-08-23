@@ -265,6 +265,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       port_id: mock.port_id,
       token: mock.channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
   let output_channel_datum =
     ChannelDatum {
@@ -497,6 +498,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       "lifecycle reclamation policy",
       "lifecycle operational policy",
       "lifecycle packet policy",
+      "reference validator script hash",
       None,
       host_redeemer,
       host_input.output_reference,

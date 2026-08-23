@@ -21,15 +21,12 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta as transfer_value_delta
 use ibc/auth.{AuthToken}
-use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
-use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/packet.{Packet}
-use ibc/core/ics_004/types/packet as packet_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleCallback, IBCModuleOperator, IBCModulePacketData,
   IBCModuleRedeemer, ModuleDataV1, ModuleOperatorV1, OnAcknowledgementPacket,
@@ -143,6 +140,7 @@ validator spend_transfer_module(
               transaction,
               spend,
               host_state_input,
+              port_id,
               port_token,
               transfer_escrow_shard_policy_id,
               channel_minting_policy_id,
@@ -174,18 +172,8 @@ fn module_callback(
   let Transaction { outputs, redeemers, inputs, mint, .. } = transaction
 
   when cb is {
-    OnSendPacket { channel_id, packet_data, packet_commitment, data } -> {
+    OnSendPacket { channel_id, data, .. } -> {
       let transfer_data = decode_transfer_packet_data(data)
-      expect
-        exact_send_callback_matches(
-          transaction,
-          host_state_nft,
-          channel_minting_policy_id,
-          channel_id,
-          packet_data,
-          packet_commitment,
-        )
-
       module_operator(
         Transfer { channel_id, data: transfer_data },
         host_state_nft,
@@ -193,6 +181,7 @@ fn module_callback(
         transaction,
         spend,
         host_state_input,
+        port_id,
         port_token,
         shard_policy_id,
         channel_minting_policy_id,
@@ -311,14 +300,10 @@ fn module_callback(
       validate_unchanged_module_root(spent_input, spend)
     OnChanReclaim { .. } | OnHostStateSeal -> False
     OnRecvPacket { channel_id, packet_data, acknowledgement, data } -> {
-      trace @"spend_transfer_module: Callback.OnRecvPacket branch"
-
       expect transfer_ibc_module.validate_on_chan_recv_packet(acknowledgement)
-      trace @"spend_transfer_module: acknowledgement is valid"
 
       let data = decode_transfer_packet_data(data)
       expect fungible_token_packet_data.validate_basic(data)
-      trace @"spend_transfer_module: redeemer data is valid"
 
       expect Some(channel_redeemer) =
         transfer_channel_callback.extract_channel_redeemer(
@@ -329,11 +314,10 @@ fn module_callback(
           channel_id,
         )
       expect RecvPacket { packet, .. } = channel_redeemer
-      trace @"spend_transfer_module: channel redeemer is valid"
+      expect packet.destination_port == port_id
 
       expect packet_data == packet.data
       expect fungible_token_packet_data.get_bytes(data) == packet.data
-      trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
       if transfer_coin.receiver_chain_is_source(
         packet.source_port,
@@ -356,14 +340,11 @@ fn module_callback(
 
         expect Some(escrowed_token_unit) =
           string_utils.hex_string_to_bytes(unprefixed_denom)
-        trace @"spend_transfer_module: demon convert to token unit valid"
 
         let (escrowed_token_policy_id, escrowed_token_name) =
           validator_utils.extract_token_unit(escrowed_token_unit)
-        trace @"spend_transfer_module: extract escrowed token valid"
 
         expect Some(transfer_amount) = int.from_utf8(data.amount)
-        trace @"spend_transfer_module: transfer amount is valid"
 
         let expected_escrow_value_difference =
           assets.from_asset(
@@ -392,64 +373,17 @@ fn module_callback(
           string_utils.hex_string_to_bytes(data.receiver)
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
-        trace @"spend_transfer_module: start channel logic for transfer module"
-        expect channel_keys.is_valid_channel_id(channel_id)
-
-        let channel_sequence =
-          channel_keys.parse_channel_id_sequence(channel_id)
-
-        let channel_token_name =
-          auth.generate_token_name(
-            host_state_nft,
-            channel_keys.channel_prefix,
-            channel_sequence,
-          )
-
-        let channel_token =
-          AuthToken {
-            policy_id: channel_minting_policy_id,
-            name: channel_token_name,
-          }
-
-        trace @"spend_transfer_module: locating channel inputs and outputs"
-        expect Some(_) =
-          list.find(
-            inputs,
-            fn(input) { input.output |> auth.contain_auth_token(channel_token) },
-          )
-
-        expect Some(channel_output) =
-          list.find(
-            outputs,
-            fn(output) { auth.contain_auth_token(output, channel_token) },
-          )
-
-        expect updated_channel_datum: ChannelDatum =
-          validator_utils.get_inline_datum(channel_output)
-
-        trace @"spend_transfer_module: extracted datums from channel inputs and outputs"
-
-        let channel_id_from_sequence =
-          channel_keys.format_channel_identifier(channel_sequence)
-
         // The mandatory RecvPacket marker validates the complete channel
-        // successor, including the acknowledgement and receive proof heights.
-        // This callback independently owns the transfer-value effects and the
-        // exact channel-token binding, so repeating that datum transition here
-        // would add no protocol-level protection.
+        // input/successor thread and packet transition. This callback owns the
+        // transfer-value effect and payout.
         expect Some(payout_output) =
           list.find(
             transaction.outputs,
             fn(output) { output.address == receiver_address },
           )
 
-        let derived_channel_sequence =
-          auth.extract_token_sequence(updated_channel_datum.token.name)
-
         and {
           valid_transfer_amount?,
-          (channel_id_from_sequence == channel_id)?,
-          (derived_channel_sequence == channel_sequence)?,
           (quantity_of(
             payout_output.value,
             escrowed_token_policy_id,
@@ -458,8 +392,6 @@ fn module_callback(
         }
       } else {
         // Non-source receive mints vouchers.
-        trace @"mint_voucher: tx mint voucher token"
-
         // The voucher policy owns the exact module-supply transition. Its
         // policy id and packet redeemer are still bound here, so the policy is
         // necessarily executed for this non-zero mint.
@@ -468,8 +400,6 @@ fn module_callback(
       }
     }
     OnTimeoutPacket { channel_id, packet_data, data } -> {
-      trace @"spend_transfer_module: Callback.OnTimeoutPacket branch"
-
       expect Some(channel_redeemer) =
         transfer_channel_callback.extract_channel_redeemer(
           inputs,
@@ -479,7 +409,7 @@ fn module_callback(
           channel_id,
         )
       expect TimeoutPacket { packet, .. } = channel_redeemer
-      trace @"spend_transfer_module: channel redeemer is valid"
+      expect packet.source_port == port_id
 
       expect packet_data == packet.data
       let data = decode_transfer_packet_data(data)
@@ -503,8 +433,6 @@ fn module_callback(
       }
     }
     OnAcknowledgementPacket { channel_id, packet_data, acknowledgement, data } -> {
-      trace @"spend_transfer_module: Callback.OnAcknowledgementPacket branch"
-
       expect Some(channel_redeemer) =
         transfer_channel_callback.extract_channel_redeemer(
           inputs,
@@ -515,7 +443,7 @@ fn module_callback(
         )
       expect AcknowledgePacket { packet, acknowledgement: channel_ack, .. } =
         channel_redeemer
-      trace @"spend_transfer_module: channel redeemer is valid"
+      expect packet.source_port == port_id
 
       expect packet_data == packet.data
       let tf_data = decode_transfer_packet_data(data)
@@ -566,31 +494,6 @@ fn validate_unchanged_module_root(
   )
 }
 
-fn exact_send_callback_matches(
-  transaction: Transaction,
-  host_state_nft: AuthToken,
-  channel_minting_policy_id: PolicyId,
-  channel_id: ByteArray,
-  packet_data: ByteArray,
-  packet_commitment: ByteArray,
-) -> Bool {
-  let Transaction { inputs, redeemers, .. } = transaction
-  expect Some(channel_redeemer) =
-    transfer_channel_callback.extract_channel_redeemer(
-      inputs,
-      redeemers,
-      channel_minting_policy_id,
-      host_state_nft,
-      channel_id,
-    )
-  expect SendPacket { packet } = channel_redeemer
-
-  and {
-    packet_data == packet.data,
-    packet_commitment == packet_mod.commit_packet(packet),
-  }
-}
-
 fn module_operator(
   op: TransferModuleRedeemer,
   host_state_nft: AuthToken,
@@ -598,6 +501,7 @@ fn module_operator(
   transaction: Transaction,
   spend: TransferModuleSpend,
   host_state_input: Input,
+  port_id: ByteArray,
   port_token: AuthToken,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
@@ -607,10 +511,7 @@ fn module_operator(
 
   when op is {
     Transfer { channel_id, data } -> {
-      trace @"spend_transfer_module: Operator.Transfer branch"
-
       expect fungible_token_packet_data.validate_basic(data)
-      trace @"spend_transfer_module: redeemer data is valid"
 
       expect Some(channel_redeemer) =
         transfer_channel_callback.extract_channel_redeemer(
@@ -621,10 +522,9 @@ fn module_operator(
           channel_id,
         )
       expect SendPacket { packet } = channel_redeemer
-      trace @"spend_transfer_module: channel redeemer is valid"
+      expect packet.source_port == port_id
 
       expect fungible_token_packet_data.get_bytes(data) == packet.data
-      trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
       if transfer_coin.sender_chain_is_source(
         packet.source_port,
@@ -637,18 +537,14 @@ fn module_operator(
 
         // Sending from the source chain locks native value in escrow.
         expect !voucher_policy_is_used(mint, voucher_minting_policy_id)
-        trace @"spend_transfer_module: tx not mint voucher token"
 
         expect Some(escrowed_token_unit) =
           string_utils.hex_string_to_bytes(data.denom)
-        trace @"spend_transfer_module: demon convert to token unit valid"
 
         let (escrowed_token_policy_id, escrowed_token_name) =
           validator_utils.extract_token_unit(escrowed_token_unit)
-        trace @"spend_transfer_module: extract escrowed token valid"
 
         expect Some(transfer_amount) = int.from_utf8(data.amount)
-        trace @"spend_transfer_module: transfer amount is valid"
 
         let expected_escrow_value_difference =
           assets.from_asset(

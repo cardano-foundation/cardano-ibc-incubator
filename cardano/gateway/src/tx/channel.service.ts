@@ -603,6 +603,7 @@ export class ChannelService {
       port: convertString2Hex(channelOpenInitOperator.port_id),
       token: channelToken,
       lifecycle: 'ChannelActive',
+      voucher_supply: 0n,
     };
 
     const {
@@ -657,10 +658,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
     const unsignedChannelOpenInitParams: UnsignedChannelOpenInitDto = {
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -777,6 +775,7 @@ export class ChannelService {
       port: convertString2Hex(channelOpenTryOperator.port_id),
       token: channelToken,
       lifecycle: 'ChannelActive',
+      voucher_supply: 0n,
     };
 
     const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings } =
@@ -827,10 +826,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
     return this.lucidService.createUnsignedChannelOpenTryTransaction({
       moduleKey: moduleConfig.key,
       hostStateUtxo,
@@ -1052,10 +1048,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
     const unsignedChannelOpenAckParams: UnsignedChannelOpenAckDto = {
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -1271,10 +1264,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
     const unsignedChannelOpenConfirmParams: UnsignedChannelOpenConfirmDto = {
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -1413,10 +1403,7 @@ export class ChannelService {
       ],
     };
 
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
 
     const spendChannelRedeemer: SpendChannelRedeemer = 'ChanCloseInit';
     const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
@@ -1618,10 +1605,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
 
     const unsignedChannelCloseConfirmParams: UnsignedChannelCloseConfirmDto = {
       hostStateUtxo,

@@ -44,6 +44,7 @@ fn input_datum() -> ChannelDatum {
     port_id: "transfer",
     token: AuthToken { policy_id: "policy", name: "channel token" },
     lifecycle: ChannelActive,
+    voucher_supply: 0,
   }
 }
 

@@ -1,7 +1,61 @@
+import { blake2b } from '@noble/hashes/blake2b';
+import { Data, fromHex, fromText, getAddressDetails, toHex, validatorToScriptHash } from '@lucid-evolution/lucid';
+
 type RefUtxo = {
   txHash: string;
   outputIndex: number;
+  scriptHash?: string;
 };
+
+const EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT = '00'.repeat(32);
+const REFERENCE_SCRIPT_INVENTORY_DOMAIN = fromText('ibc-reference-script-v1');
+const MAX_REFERENCE_SCRIPT_INVENTORY_SIZE = 128;
+const ReferenceScriptIdentitySchema = Data.Object({
+  output_reference: Data.Object({
+    transaction_id: Data.Bytes(),
+    output_index: Data.Integer(),
+  }),
+  reference_script_hash: Data.Bytes(),
+});
+
+function compareReferenceScriptEntries(left: RefUtxo, right: RefUtxo): number {
+  if (left.txHash < right.txHash) return -1;
+  if (left.txHash > right.txHash) return 1;
+  return left.outputIndex - right.outputIndex;
+}
+
+export function computeReferenceScriptInventoryRoot(references: RefUtxo[]): string {
+  let root = EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT;
+  for (const [index, reference] of references.entries()) {
+    assert(
+      /^[0-9a-f]{64}$/.test(reference.txHash),
+      `Invalid bridge config: "referenceOutRefs[${index}].txHash" must be 32-byte lowercase hex`,
+    );
+    assert(
+      /^[0-9a-f]{56}$/.test(reference.scriptHash ?? ''),
+      `Invalid bridge config: "referenceOutRefs[${index}].scriptHash" must be 28-byte lowercase hex`,
+    );
+    // Aiken's on-chain `cbor.serialise` uses indefinite constructor arrays.
+    // Lucid's non-canonical mode emits that exact deterministic PlutusData form.
+    const identityCbor = Data.to(
+      {
+        output_reference: {
+          transaction_id: reference.txHash,
+          output_index: BigInt(reference.outputIndex),
+        },
+        reference_script_hash: reference.scriptHash,
+      },
+      ReferenceScriptIdentitySchema as any,
+      { canonical: false },
+    );
+    root = toHex(
+      blake2b(fromHex(REFERENCE_SCRIPT_INVENTORY_DOMAIN + root + identityCbor), {
+        dkLen: 32,
+      }),
+    );
+  }
+  return root;
+}
 
 type AuthToken = {
   policyId: string;
@@ -20,6 +74,12 @@ type DeploymentValidator = {
 };
 
 type DeploymentVoucherMetadata = {
+  address: string;
+};
+
+type DeploymentReferenceValidator = {
+  script: string;
+  scriptHash: string;
   address: string;
 };
 
@@ -56,6 +116,9 @@ type DeploymentTraceRegistry = {
 export type DeploymentConfig = {
   schemaVersion: 6;
   deployedAt: string;
+  referenceOutRefs: RefUtxo[];
+  referenceScriptInventoryRoot: string;
+  referenceValidator: DeploymentReferenceValidator;
   hostStateNFT: AuthToken & { script: string };
   validators: {
     hostStateStt: DeploymentValidator;
@@ -77,6 +140,7 @@ export type DeploymentConfig = {
     mintVoucher: DeploymentValidator;
     mintTransferEscrowShard: DeploymentValidator;
     mintPort: DeploymentValidator;
+    mintTraceRegistryBenchmarkVoucher?: DeploymentValidator;
     voucherMetadata?: DeploymentVoucherMetadata;
   };
   modules: {
@@ -90,6 +154,7 @@ export type DeploymentConfig = {
 type BridgeManifestRefUtxo = {
   tx_hash: string;
   output_index: number;
+  script_hash?: string;
 };
 
 type BridgeManifestAuthToken = {
@@ -110,6 +175,12 @@ type BridgeManifestValidator = {
 };
 
 type BridgeManifestVoucherMetadata = {
+  address: string;
+};
+
+type BridgeManifestReferenceValidator = {
+  script: string;
+  script_hash: string;
   address: string;
 };
 
@@ -156,6 +227,9 @@ export type BridgeManifest = {
     network: string;
   };
   host_state_nft: BridgeManifestAuthToken;
+  reference_out_refs: BridgeManifestRefUtxo[];
+  reference_script_inventory_root: string;
+  reference_validator: BridgeManifestReferenceValidator;
   validators: {
     host_state_stt: BridgeManifestValidator;
     spend_client: BridgeManifestValidator;
@@ -176,6 +250,7 @@ export type BridgeManifest = {
     mint_voucher: BridgeManifestValidator;
     mint_transfer_escrow_shard: BridgeManifestValidator;
     mint_port: BridgeManifestValidator;
+    mint_trace_registry_benchmark_voucher?: BridgeManifestValidator;
     // The runtime only needs the target script address for the immutable
     // CIP-68 metadata output. We intentionally do not expose ref_utxo or
     // script_hash here because they are not consumed after deployment.
@@ -234,11 +309,20 @@ function requireNonEmptyString(value: unknown, path: string): string {
 }
 
 function requireNonNegativeInteger(value: unknown, path: string): number {
+  // JSON manifests use numbers, while generated protobuf decoders expose uint64 as bigint/string.
+  let normalized: number | undefined;
+  if (typeof value === 'number') {
+    normalized = value;
+  } else if (typeof value === 'bigint') {
+    normalized = Number(value);
+  } else if (typeof value === 'string' && /^\d+$/.test(value)) {
+    normalized = Number(value);
+  }
   assert(
-    typeof value === 'number' && Number.isInteger(value) && value >= 0,
+    normalized !== undefined && Number.isSafeInteger(normalized) && normalized >= 0,
     `Invalid bridge config: "${path}" must be a non-negative integer`,
   );
-  return value;
+  return normalized;
 }
 
 function requireIsoTimestamp(value: unknown, path: string): string {
@@ -247,11 +331,77 @@ function requireIsoTimestamp(value: unknown, path: string): string {
   return timestamp;
 }
 
+function requireInventoryRoot(value: unknown, path: string): string {
+  const root = requireNonEmptyString(value, path);
+  assert(/^[0-9a-f]{64}$/.test(root), `Invalid bridge config: "${path}" must be 32-byte lowercase hex`);
+  return root;
+}
+
+function assertReferenceValidatorArtifact(
+  artifact: DeploymentReferenceValidator,
+  path: string,
+): DeploymentReferenceValidator {
+  let computedScriptHash: string;
+  try {
+    computedScriptHash = validatorToScriptHash({ type: 'PlutusV3', script: artifact.script });
+  } catch {
+    throw new Error(`Invalid bridge config: "${path}.script" must be a serialized Plutus V3 script`);
+  }
+  assert(
+    computedScriptHash === artifact.scriptHash,
+    `Invalid bridge config: "${path}.scriptHash" does not match its script`,
+  );
+
+  let paymentCredential;
+  try {
+    paymentCredential = getAddressDetails(artifact.address).paymentCredential;
+  } catch {
+    throw new Error(`Invalid bridge config: "${path}.address" must be a valid Cardano address`);
+  }
+  assert(
+    paymentCredential?.type === 'Script' && paymentCredential.hash === artifact.scriptHash,
+    `Invalid bridge config: "${path}.address" does not match its script hash`,
+  );
+  return artifact;
+}
+
+function requireDeploymentReferenceValidator(value: unknown, path: string): DeploymentReferenceValidator {
+  const validator = requireObject(value, path);
+  return assertReferenceValidatorArtifact(
+    {
+      script: requireNonEmptyString(validator.script, `${path}.script`),
+      scriptHash: requireNonEmptyString(validator.scriptHash, `${path}.scriptHash`),
+      address: requireNonEmptyString(validator.address, `${path}.address`),
+    },
+    path,
+  );
+}
+
+function requireManifestReferenceValidator(value: unknown, path: string): BridgeManifestReferenceValidator {
+  const validator = requireObject(value, path);
+  const normalized = assertReferenceValidatorArtifact(
+    {
+      script: requireNonEmptyString(validator.script, `${path}.script`),
+      scriptHash: requireNonEmptyString(validator.script_hash, `${path}.script_hash`),
+      address: requireNonEmptyString(validator.address, `${path}.address`),
+    },
+    path,
+  );
+  return {
+    script: normalized.script,
+    script_hash: normalized.scriptHash,
+    address: normalized.address,
+  };
+}
+
 function requireRefUtxo(value: unknown, path: string): RefUtxo {
   const refUtxo = requireObject(value, path);
   return {
     txHash: requireNonEmptyString(refUtxo.txHash, `${path}.txHash`),
     outputIndex: requireNonNegativeInteger(refUtxo.outputIndex, `${path}.outputIndex`),
+    ...(refUtxo.scriptHash === undefined
+      ? {}
+      : { scriptHash: requireNonEmptyString(refUtxo.scriptHash, `${path}.scriptHash`) }),
   };
 }
 
@@ -260,7 +410,111 @@ function requireManifestRefUtxo(value: unknown, path: string): BridgeManifestRef
   return {
     tx_hash: requireNonEmptyString(refUtxo.tx_hash, `${path}.tx_hash`),
     output_index: requireNonNegativeInteger(refUtxo.output_index, `${path}.output_index`),
+    ...(refUtxo.script_hash === undefined
+      ? {}
+      : { script_hash: requireNonEmptyString(refUtxo.script_hash, `${path}.script_hash`) }),
   };
+}
+
+function requireReferenceOutRefs(value: unknown, path: string): RefUtxo[] {
+  assert(Array.isArray(value) && value.length > 0, `Invalid bridge config: "${path}" must be a non-empty array`);
+  assert(
+    value.length <= MAX_REFERENCE_SCRIPT_INVENTORY_SIZE,
+    `Invalid bridge config: "${path}" cannot contain more than ${MAX_REFERENCE_SCRIPT_INVENTORY_SIZE} outputs`,
+  );
+  const seen = new Set<string>();
+  return value.map((entry, index) => {
+    const refUtxo = requireRefUtxo(entry, `${path}[${index}]`);
+    assert(
+      refUtxo.scriptHash !== undefined,
+      `Invalid bridge config: "${path}[${index}].scriptHash" must be a non-empty string`,
+    );
+    const key = `${refUtxo.txHash}#${refUtxo.outputIndex}`;
+    assert(!seen.has(key), `Invalid bridge config: "${path}" contains duplicate output ${key}`);
+    seen.add(key);
+    return refUtxo;
+  });
+}
+
+function requireManifestReferenceOutRefs(value: unknown, path: string): BridgeManifestRefUtxo[] {
+  assert(Array.isArray(value) && value.length > 0, `Invalid bridge config: "${path}" must be a non-empty array`);
+  assert(
+    value.length <= MAX_REFERENCE_SCRIPT_INVENTORY_SIZE,
+    `Invalid bridge config: "${path}" cannot contain more than ${MAX_REFERENCE_SCRIPT_INVENTORY_SIZE} outputs`,
+  );
+  const seen = new Set<string>();
+  return value.map((entry, index) => {
+    const refUtxo = requireManifestRefUtxo(entry, `${path}[${index}]`);
+    assert(
+      refUtxo.script_hash !== undefined,
+      `Invalid bridge config: "${path}[${index}].script_hash" must be a non-empty string`,
+    );
+    const key = `${refUtxo.tx_hash}#${refUtxo.output_index}`;
+    assert(!seen.has(key), `Invalid bridge config: "${path}" contains duplicate output ${key}`);
+    seen.add(key);
+    return refUtxo;
+  });
+}
+
+function assertDeploymentReferenceInventory(deployment: DeploymentConfig): void {
+  const inventory = new Map(
+    deployment.referenceOutRefs.map((ref) => [`${ref.txHash}#${ref.outputIndex}`, ref.scriptHash]),
+  );
+  const discovered = new Set<string>();
+  const scriptByReference = new Map<string, string>();
+  const referenceByScript = new Map<string, string>();
+
+  const visit = (value: unknown, path: string): void => {
+    if (!value || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    if (record.refUtxo && typeof record.scriptHash === 'string') {
+      const refUtxo = record.refUtxo as RefUtxo;
+      const key = `${refUtxo.txHash}#${refUtxo.outputIndex}`;
+      const existingScript = scriptByReference.get(key);
+      const existingReference = referenceByScript.get(record.scriptHash);
+      assert(
+        existingScript === undefined || existingScript === record.scriptHash,
+        `Invalid bridge config: reference output ${key} is assigned to distinct script hashes`,
+      );
+      assert(
+        existingReference === undefined || existingReference === key,
+        `Invalid bridge config: script hash at "${path}" is assigned to distinct reference outputs`,
+      );
+      scriptByReference.set(key, record.scriptHash);
+      referenceByScript.set(record.scriptHash, key);
+      discovered.add(key);
+    }
+    Object.entries(record).forEach(([name, child]) => visit(child, `${path}.${name}`));
+  };
+  visit(deployment.validators, 'validators');
+
+  const omitted = [...discovered].filter((key) => !inventory.has(key));
+  const unbound = [...inventory.keys()].filter((key) => !discovered.has(key));
+  const mismatched = [...scriptByReference].filter(([key, scriptHash]) => inventory.get(key) !== scriptHash);
+  assert(
+    omitted.length === 0 && unbound.length === 0 && mismatched.length === 0,
+    `Invalid bridge config: reference inventory does not exactly match validator references ` +
+      `(omitted=${omitted.join(',') || 'none'}, unbound=${unbound.join(',') || 'none'}, ` +
+      `script-mismatch=${mismatched.map(([key]) => key).join(',') || 'none'})`,
+  );
+  const hostReference = deployment.validators.hostStateStt.refUtxo;
+  const firstReference = deployment.referenceOutRefs[0];
+  assert(
+    firstReference.txHash === hostReference.txHash &&
+      firstReference.outputIndex === hostReference.outputIndex &&
+      firstReference.scriptHash === deployment.validators.hostStateStt.scriptHash,
+    'Invalid bridge config: "referenceOutRefs[0]" must be the HostState reference script',
+  );
+  for (let index = 2; index < deployment.referenceOutRefs.length; index += 1) {
+    assert(
+      compareReferenceScriptEntries(deployment.referenceOutRefs[index - 1], deployment.referenceOutRefs[index]) < 0,
+      'Invalid bridge config: non-HostState "referenceOutRefs" must be in canonical output-reference order',
+    );
+  }
+  assert(
+    computeReferenceScriptInventoryRoot(deployment.referenceOutRefs) === deployment.referenceScriptInventoryRoot,
+    'Invalid bridge config: referenceScriptInventoryRoot does not match referenceOutRefs',
+  );
 }
 
 function requireAuthToken(value: unknown, path: string): AuthToken {
@@ -273,35 +527,87 @@ function requireAuthToken(value: unknown, path: string): AuthToken {
 
 function requireHostStateNft(value: unknown, path: string): AuthToken & { script: string } {
   const authToken = requireObject(value, path);
-  return {
+  const normalized = {
     ...requireAuthToken(value, path),
     script: requireNonEmptyString(authToken.script, `${path}.script`),
   };
+  let computedPolicyId: string;
+  try {
+    computedPolicyId = validatorToScriptHash({ type: 'PlutusV3', script: normalized.script });
+  } catch {
+    throw new Error(`Invalid bridge config: "${path}.script" must be a serialized Plutus V3 script`);
+  }
+  assert(
+    computedPolicyId === normalized.policyId,
+    `Invalid bridge config: "${path}.policyId" does not match its script`,
+  );
+  return normalized;
 }
 
 function requireManifestAuthToken(value: unknown, path: string): BridgeManifestAuthToken {
   const authToken = requireObject(value, path);
-  return {
+  const normalized = {
     policy_id: requireNonEmptyString(authToken.policy_id, `${path}.policy_id`),
     token_name: requireNonEmptyString(authToken.token_name, `${path}.token_name`),
     script: requireNonEmptyString(authToken.script, `${path}.script`),
   };
+  let computedPolicyId: string;
+  try {
+    computedPolicyId = validatorToScriptHash({ type: 'PlutusV3', script: normalized.script });
+  } catch {
+    throw new Error(`Invalid bridge config: "${path}.script" must be a serialized Plutus V3 script`);
+  }
+  assert(
+    computedPolicyId === normalized.policy_id,
+    `Invalid bridge config: "${path}.policy_id" does not match its script`,
+  );
+  return normalized;
 }
 
-function requireDeploymentValidator(value: unknown, path: string): DeploymentValidator {
+function assertValidatorAddressMatchesScriptHash(address: string, scriptHash: string, path: string): string {
+  if (address.length === 0) {
+    return address;
+  }
+
+  let paymentCredential;
+  try {
+    paymentCredential = getAddressDetails(address).paymentCredential;
+  } catch {
+    throw new Error(`Invalid bridge config: "${path}.address" must be a valid Cardano address`);
+  }
+  assert(
+    paymentCredential?.type === 'Script' && paymentCredential.hash === scriptHash,
+    `Invalid bridge config: "${path}.address" does not match its script hash`,
+  );
+  return address;
+}
+
+function requireDeploymentValidator(value: unknown, path: string, requiredAddress: boolean): DeploymentValidator {
   const validator = requireObject(value, path);
+  const scriptHash = requireNonEmptyString(validator.scriptHash, `${path}.scriptHash`);
+  const address = requiredAddress
+    ? requireNonEmptyString(validator.address, `${path}.address`)
+    : typeof validator.address === 'string'
+      ? validator.address
+      : '';
   return {
-    scriptHash: requireNonEmptyString(validator.scriptHash, `${path}.scriptHash`),
-    address: typeof validator.address === 'string' ? validator.address : '',
+    scriptHash,
+    address: assertValidatorAddressMatchesScriptHash(address, scriptHash, path),
     refUtxo: requireRefUtxo(validator.refUtxo, `${path}.refUtxo`),
   };
 }
 
-function requireManifestValidator(value: unknown, path: string): BridgeManifestValidator {
+function requireManifestValidator(value: unknown, path: string, requiredAddress: boolean): BridgeManifestValidator {
   const validator = requireObject(value, path);
+  const scriptHash = requireNonEmptyString(validator.script_hash, `${path}.script_hash`);
+  const address = requiredAddress
+    ? requireNonEmptyString(validator.address, `${path}.address`)
+    : typeof validator.address === 'string'
+      ? validator.address
+      : '';
   return {
-    script_hash: requireNonEmptyString(validator.script_hash, `${path}.script_hash`),
-    address: typeof validator.address === 'string' ? validator.address : '',
+    script_hash: scriptHash,
+    address: assertValidatorAddressMatchesScriptHash(address, scriptHash, path),
     ref_utxo: requireManifestRefUtxo(validator.ref_utxo, `${path}.ref_utxo`),
   };
 }
@@ -341,7 +647,7 @@ function requireDeploymentSpendChannelValidator(value: unknown, path: string): D
   const refValidator = requireObject(validator.refValidator, `${path}.refValidator`);
 
   return {
-    ...requireDeploymentValidator(validator, path),
+    ...requireDeploymentValidator(validator, path, true),
     refValidator: {
       acknowledge_packet: requireDeploymentRefValidator(
         refValidator.acknowledge_packet,
@@ -376,7 +682,7 @@ function requireManifestSpendChannelValidator(value: unknown, path: string): Bri
   const refValidator = requireObject(validator.ref_validator, `${path}.ref_validator`);
 
   return {
-    ...requireManifestValidator(validator, path),
+    ...requireManifestValidator(validator, path, true),
     ref_validator: {
       acknowledge_packet: requireManifestRefValidator(
         refValidator.acknowledge_packet,
@@ -450,6 +756,52 @@ function requireManifestTraceRegistry(value: unknown, path: string): BridgeManif
   };
 }
 
+function assertDeploymentAddressBindings(deployment: DeploymentConfig): void {
+  const assertModuleBinding = (
+    moduleAddress: string,
+    validator: DeploymentValidator | undefined,
+    modulePath: string,
+    validatorPath: string,
+  ) => {
+    assert(validator, `Invalid bridge config: "${validatorPath}" is required when "${modulePath}" is present`);
+    assert(
+      moduleAddress === validator.address,
+      `Invalid bridge config: "${modulePath}.address" does not match "${validatorPath}.address"`,
+    );
+  };
+
+  assertModuleBinding(
+    deployment.modules.transfer.address,
+    deployment.validators.spendTransferModule,
+    'modules.transfer',
+    'validators.spendTransferModule',
+  );
+  if (deployment.modules.mock) {
+    assertModuleBinding(
+      deployment.modules.mock.address,
+      deployment.validators.spendMockModule,
+      'modules.mock',
+      'validators.spendMockModule',
+    );
+  }
+  if (deployment.modules.icq) {
+    assertModuleBinding(
+      deployment.modules.icq.address,
+      deployment.validators.spendMockModule,
+      'modules.icq',
+      'validators.spendMockModule',
+    );
+  }
+  if (deployment.traceRegistry) {
+    assertModuleBinding(
+      deployment.traceRegistry.address,
+      deployment.validators.spendTraceRegistry,
+      'traceRegistry',
+      'validators.spendTraceRegistry',
+    );
+  }
+}
+
 function requireCardanoIdentity(value: BridgeManifestCardanoIdentity): BridgeManifestCardanoIdentity {
   return {
     chain_id: requireNonEmptyString(value.chain_id, 'cardano.chain_id'),
@@ -482,6 +834,7 @@ function deploymentRefUtxoToManifest(refUtxo: RefUtxo): BridgeManifestRefUtxo {
   return {
     tx_hash: refUtxo.txHash,
     output_index: refUtxo.outputIndex,
+    ...(refUtxo.scriptHash === undefined ? {} : { script_hash: refUtxo.scriptHash }),
   };
 }
 
@@ -489,6 +842,7 @@ function manifestRefUtxoToDeployment(refUtxo: BridgeManifestRefUtxo): RefUtxo {
   return {
     txHash: refUtxo.tx_hash,
     outputIndex: refUtxo.output_index,
+    ...(refUtxo.script_hash === undefined ? {} : { scriptHash: refUtxo.script_hash }),
   };
 }
 
@@ -516,6 +870,26 @@ function deploymentVoucherMetadataToManifest(validator: DeploymentVoucherMetadat
 
 function manifestVoucherMetadataToDeployment(validator: BridgeManifestVoucherMetadata): DeploymentVoucherMetadata {
   return {
+    address: validator.address,
+  };
+}
+
+function deploymentReferenceValidatorToManifest(
+  validator: DeploymentReferenceValidator,
+): BridgeManifestReferenceValidator {
+  return {
+    script: validator.script,
+    script_hash: validator.scriptHash,
+    address: validator.address,
+  };
+}
+
+function manifestReferenceValidatorToDeployment(
+  validator: BridgeManifestReferenceValidator,
+): DeploymentReferenceValidator {
+  return {
+    script: validator.script,
+    scriptHash: validator.script_hash,
     address: validator.address,
   };
 }
@@ -599,54 +973,85 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   const validators = requireObject(deploymentAny.validators, 'validators');
   const modules = requireObject(deploymentAny.modules, 'modules');
 
-  return {
+  const normalized: DeploymentConfig = {
     schemaVersion: requireNonNegativeInteger(deploymentAny.schemaVersion, 'schemaVersion') as 6,
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
+    referenceOutRefs: requireReferenceOutRefs(deploymentAny.referenceOutRefs, 'referenceOutRefs'),
+    referenceScriptInventoryRoot: requireInventoryRoot(
+      deploymentAny.referenceScriptInventoryRoot,
+      'referenceScriptInventoryRoot',
+    ),
+    referenceValidator: requireDeploymentReferenceValidator(deploymentAny.referenceValidator, 'referenceValidator'),
     hostStateNFT: requireHostStateNft(deploymentAny.hostStateNFT, 'hostStateNFT'),
     validators: {
-      hostStateStt: requireDeploymentValidator(validators.hostStateStt, 'validators.hostStateStt'),
-      spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
-      spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection'),
+      hostStateStt: requireDeploymentValidator(validators.hostStateStt, 'validators.hostStateStt', true),
+      spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient', true),
+      spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection', true),
       spendChannel: requireDeploymentSpendChannelValidator(validators.spendChannel, 'validators.spendChannel'),
       ...(validators.spendMockModule
-        ? { spendMockModule: requireDeploymentValidator(validators.spendMockModule, 'validators.spendMockModule') }
+        ? {
+            spendMockModule: requireDeploymentValidator(validators.spendMockModule, 'validators.spendMockModule', true),
+          }
         : {}),
       ...(validators.spendTraceRegistry
         ? {
             spendTraceRegistry: requireDeploymentValidator(
               validators.spendTraceRegistry,
               'validators.spendTraceRegistry',
+              true,
             ),
           }
         : {}),
-      spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
-      mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier'),
-      verifyProof: requireDeploymentValidator(validators.verifyProof, 'validators.verifyProof'),
-      mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt'),
-      mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
-      mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
+      spendTransferModule: requireDeploymentValidator(
+        validators.spendTransferModule,
+        'validators.spendTransferModule',
+        true,
+      ),
+      mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier', false),
+      verifyProof: requireDeploymentValidator(validators.verifyProof, 'validators.verifyProof', false),
+      mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt', false),
+      mintConnectionStt: requireDeploymentValidator(
+        validators.mintConnectionStt,
+        'validators.mintConnectionStt',
+        false,
+      ),
+      mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt', false),
       mintLifecycleCreationMarker: requireDeploymentValidator(
         validators.mintLifecycleCreationMarker,
         'validators.mintLifecycleCreationMarker',
+        false,
       ),
       mintLifecycleReclamationMarker: requireDeploymentValidator(
         validators.mintLifecycleReclamationMarker,
         'validators.mintLifecycleReclamationMarker',
+        false,
       ),
       mintLifecycleOperationalMarker: requireDeploymentValidator(
         validators.mintLifecycleOperationalMarker,
         'validators.mintLifecycleOperationalMarker',
+        false,
       ),
       mintLifecyclePacketMarker: requireDeploymentValidator(
         validators.mintLifecyclePacketMarker,
         'validators.mintLifecyclePacketMarker',
+        false,
       ),
-      mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
+      mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher', false),
       mintTransferEscrowShard: requireDeploymentValidator(
         validators.mintTransferEscrowShard,
         'validators.mintTransferEscrowShard',
+        false,
       ),
-      mintPort: requireDeploymentValidator(validators.mintPort, 'validators.mintPort'),
+      mintPort: requireDeploymentValidator(validators.mintPort, 'validators.mintPort', false),
+      ...(validators.mintTraceRegistryBenchmarkVoucher
+        ? {
+            mintTraceRegistryBenchmarkVoucher: requireDeploymentValidator(
+              validators.mintTraceRegistryBenchmarkVoucher,
+              'validators.mintTraceRegistryBenchmarkVoucher',
+              false,
+            ),
+          }
+        : {}),
       ...(validators.voucherMetadata
         ? {
             voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata'),
@@ -662,6 +1067,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       ? { traceRegistry: requireDeploymentTraceRegistry(deploymentAny.traceRegistry, 'traceRegistry') }
       : {}),
   };
+  assertDeploymentAddressBindings(normalized);
+  assertDeploymentReferenceInventory(normalized);
+  return normalized;
 }
 
 export function normalizeHandlerJsonDeploymentConfig(
@@ -682,6 +1090,9 @@ export function normalizeHandlerJsonDeploymentConfig(
       deployed_at: normalizedDeployment.deployedAt,
       cardano: normalizedCardano,
       host_state_nft: deploymentAuthTokenToManifest(normalizedDeployment.hostStateNFT),
+      reference_out_refs: normalizedDeployment.referenceOutRefs.map(deploymentRefUtxoToManifest),
+      reference_script_inventory_root: normalizedDeployment.referenceScriptInventoryRoot,
+      reference_validator: deploymentReferenceValidatorToManifest(normalizedDeployment.referenceValidator),
       validators: {
         host_state_stt: deploymentValidatorToManifest(normalizedDeployment.validators.hostStateStt),
         spend_client: deploymentValidatorToManifest(normalizedDeployment.validators.spendClient),
@@ -718,6 +1129,13 @@ export function normalizeHandlerJsonDeploymentConfig(
           normalizedDeployment.validators.mintTransferEscrowShard,
         ),
         mint_port: deploymentValidatorToManifest(normalizedDeployment.validators.mintPort),
+        ...(normalizedDeployment.validators.mintTraceRegistryBenchmarkVoucher
+          ? {
+              mint_trace_registry_benchmark_voucher: deploymentValidatorToManifest(
+                normalizedDeployment.validators.mintTraceRegistryBenchmarkVoucher,
+              ),
+            }
+          : {}),
         ...(normalizedDeployment.validators.voucherMetadata
           ? {
               voucher_metadata: deploymentVoucherMetadataToManifest(normalizedDeployment.validators.voucherMetadata),
@@ -752,53 +1170,85 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity,
     ),
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
+    reference_out_refs: requireManifestReferenceOutRefs(manifestAny.reference_out_refs, 'reference_out_refs'),
+    reference_script_inventory_root: requireInventoryRoot(
+      manifestAny.reference_script_inventory_root,
+      'reference_script_inventory_root',
+    ),
+    reference_validator: requireManifestReferenceValidator(manifestAny.reference_validator, 'reference_validator'),
     validators: {
-      host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
-      spend_client: requireManifestValidator(validators.spend_client, 'validators.spend_client'),
-      spend_connection: requireManifestValidator(validators.spend_connection, 'validators.spend_connection'),
+      host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt', true),
+      spend_client: requireManifestValidator(validators.spend_client, 'validators.spend_client', true),
+      spend_connection: requireManifestValidator(validators.spend_connection, 'validators.spend_connection', true),
       spend_channel: requireManifestSpendChannelValidator(validators.spend_channel, 'validators.spend_channel'),
       ...(validators.spend_mock_module
-        ? { spend_mock_module: requireManifestValidator(validators.spend_mock_module, 'validators.spend_mock_module') }
+        ? {
+            spend_mock_module: requireManifestValidator(
+              validators.spend_mock_module,
+              'validators.spend_mock_module',
+              true,
+            ),
+          }
         : {}),
       ...(validators.spend_trace_registry
         ? {
             spend_trace_registry: requireManifestValidator(
               validators.spend_trace_registry,
               'validators.spend_trace_registry',
+              true,
             ),
           }
         : {}),
       spend_transfer_module: requireManifestValidator(
         validators.spend_transfer_module,
         'validators.spend_transfer_module',
+        true,
       ),
-      mint_identifier: requireManifestValidator(validators.mint_identifier, 'validators.mint_identifier'),
-      verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof'),
-      mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
-      mint_connection_stt: requireManifestValidator(validators.mint_connection_stt, 'validators.mint_connection_stt'),
-      mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt'),
+      mint_identifier: requireManifestValidator(validators.mint_identifier, 'validators.mint_identifier', false),
+      verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof', false),
+      mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt', false),
+      mint_connection_stt: requireManifestValidator(
+        validators.mint_connection_stt,
+        'validators.mint_connection_stt',
+        false,
+      ),
+      mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt', false),
       mint_lifecycle_creation_marker: requireManifestValidator(
         validators.mint_lifecycle_creation_marker,
         'validators.mint_lifecycle_creation_marker',
+        false,
       ),
       mint_lifecycle_reclamation_marker: requireManifestValidator(
         validators.mint_lifecycle_reclamation_marker,
         'validators.mint_lifecycle_reclamation_marker',
+        false,
       ),
       mint_lifecycle_operational_marker: requireManifestValidator(
         validators.mint_lifecycle_operational_marker,
         'validators.mint_lifecycle_operational_marker',
+        false,
       ),
       mint_lifecycle_packet_marker: requireManifestValidator(
         validators.mint_lifecycle_packet_marker,
         'validators.mint_lifecycle_packet_marker',
+        false,
       ),
-      mint_voucher: requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher'),
+      mint_voucher: requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher', false),
       mint_transfer_escrow_shard: requireManifestValidator(
         validators.mint_transfer_escrow_shard,
         'validators.mint_transfer_escrow_shard',
+        false,
       ),
-      mint_port: requireManifestValidator(validators.mint_port, 'validators.mint_port'),
+      mint_port: requireManifestValidator(validators.mint_port, 'validators.mint_port', false),
+      ...(validators.mint_trace_registry_benchmark_voucher
+        ? {
+            mint_trace_registry_benchmark_voucher: requireManifestValidator(
+              validators.mint_trace_registry_benchmark_voucher,
+              'validators.mint_trace_registry_benchmark_voucher',
+              false,
+            ),
+          }
+        : {}),
       ...(validators.voucher_metadata
         ? {
             voucher_metadata: requireManifestVoucherMetadata(
@@ -820,65 +1270,76 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
 
   assert(bridgeManifest.schema_version === 6, 'Invalid bridge config: "schema_version" must be 6');
 
-  return {
-    bridgeManifest,
-    deployment: {
-      schemaVersion: 6,
-      deployedAt: bridgeManifest.deployed_at,
-      hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
-      validators: {
-        hostStateStt: manifestValidatorToDeployment(bridgeManifest.validators.host_state_stt),
-        spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
-        spendConnection: manifestValidatorToDeployment(bridgeManifest.validators.spend_connection),
-        spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
-        ...(bridgeManifest.validators.spend_mock_module
-          ? { spendMockModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_mock_module) }
-          : {}),
-        ...(bridgeManifest.validators.spend_trace_registry
-          ? {
-              spendTraceRegistry: manifestValidatorToDeployment(bridgeManifest.validators.spend_trace_registry),
-            }
-          : {}),
-        spendTransferModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_transfer_module),
-        mintIdentifier: manifestValidatorToDeployment(bridgeManifest.validators.mint_identifier),
-        verifyProof: manifestValidatorToDeployment(bridgeManifest.validators.verify_proof),
-        mintClientStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_client_stt),
-        mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
-        mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),
-        mintLifecycleCreationMarker: manifestValidatorToDeployment(
-          bridgeManifest.validators.mint_lifecycle_creation_marker,
-        ),
-        mintLifecycleReclamationMarker: manifestValidatorToDeployment(
-          bridgeManifest.validators.mint_lifecycle_reclamation_marker,
-        ),
-        mintLifecycleOperationalMarker: manifestValidatorToDeployment(
-          bridgeManifest.validators.mint_lifecycle_operational_marker,
-        ),
-        mintLifecyclePacketMarker: manifestValidatorToDeployment(
-          bridgeManifest.validators.mint_lifecycle_packet_marker,
-        ),
-        mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
-        mintTransferEscrowShard: manifestValidatorToDeployment(bridgeManifest.validators.mint_transfer_escrow_shard),
-        mintPort: manifestValidatorToDeployment(bridgeManifest.validators.mint_port),
-        ...(bridgeManifest.validators.voucher_metadata
-          ? {
-              voucherMetadata: manifestVoucherMetadataToDeployment(bridgeManifest.validators.voucher_metadata),
-            }
-          : {}),
-      },
-      modules: {
-        transfer: requireDeploymentModule(bridgeManifest.modules.transfer, 'modules.transfer'),
-        ...(bridgeManifest.modules.mock
-          ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') }
-          : {}),
-        ...(bridgeManifest.modules.icq
-          ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') }
-          : {}),
-      },
-      ...(bridgeManifest.trace_registry
-        ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
+  const deployment: DeploymentConfig = {
+    schemaVersion: 6,
+    deployedAt: bridgeManifest.deployed_at,
+    referenceOutRefs: bridgeManifest.reference_out_refs.map(manifestRefUtxoToDeployment),
+    referenceScriptInventoryRoot: bridgeManifest.reference_script_inventory_root,
+    referenceValidator: manifestReferenceValidatorToDeployment(bridgeManifest.reference_validator),
+    hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
+    validators: {
+      hostStateStt: manifestValidatorToDeployment(bridgeManifest.validators.host_state_stt),
+      spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
+      spendConnection: manifestValidatorToDeployment(bridgeManifest.validators.spend_connection),
+      spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
+      ...(bridgeManifest.validators.spend_mock_module
+        ? { spendMockModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_mock_module) }
+        : {}),
+      ...(bridgeManifest.validators.spend_trace_registry
+        ? {
+            spendTraceRegistry: manifestValidatorToDeployment(bridgeManifest.validators.spend_trace_registry),
+          }
+        : {}),
+      spendTransferModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_transfer_module),
+      mintIdentifier: manifestValidatorToDeployment(bridgeManifest.validators.mint_identifier),
+      verifyProof: manifestValidatorToDeployment(bridgeManifest.validators.verify_proof),
+      mintClientStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_client_stt),
+      mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
+      mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),
+      mintLifecycleCreationMarker: manifestValidatorToDeployment(
+        bridgeManifest.validators.mint_lifecycle_creation_marker,
+      ),
+      mintLifecycleReclamationMarker: manifestValidatorToDeployment(
+        bridgeManifest.validators.mint_lifecycle_reclamation_marker,
+      ),
+      mintLifecycleOperationalMarker: manifestValidatorToDeployment(
+        bridgeManifest.validators.mint_lifecycle_operational_marker,
+      ),
+      mintLifecyclePacketMarker: manifestValidatorToDeployment(bridgeManifest.validators.mint_lifecycle_packet_marker),
+      mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
+      mintTransferEscrowShard: manifestValidatorToDeployment(bridgeManifest.validators.mint_transfer_escrow_shard),
+      mintPort: manifestValidatorToDeployment(bridgeManifest.validators.mint_port),
+      ...(bridgeManifest.validators.mint_trace_registry_benchmark_voucher
+        ? {
+            mintTraceRegistryBenchmarkVoucher: manifestValidatorToDeployment(
+              bridgeManifest.validators.mint_trace_registry_benchmark_voucher,
+            ),
+          }
+        : {}),
+      ...(bridgeManifest.validators.voucher_metadata
+        ? {
+            voucherMetadata: manifestVoucherMetadataToDeployment(bridgeManifest.validators.voucher_metadata),
+          }
         : {}),
     },
+    modules: {
+      transfer: requireDeploymentModule(bridgeManifest.modules.transfer, 'modules.transfer'),
+      ...(bridgeManifest.modules.mock
+        ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') }
+        : {}),
+      ...(bridgeManifest.modules.icq
+        ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') }
+        : {}),
+    },
+    ...(bridgeManifest.trace_registry
+      ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
+      : {}),
+  };
+  assertDeploymentAddressBindings(deployment);
+  assertDeploymentReferenceInventory(deployment);
+  return {
+    bridgeManifest,
+    deployment,
   };
 }
 

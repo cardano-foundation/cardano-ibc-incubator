@@ -6,6 +6,15 @@ type ModuleRegistration = {
   module_token: { policy_id: string; name: string };
 };
 
+type ReferenceScriptRegistration = {
+  target_count: bigint;
+  target_root: string;
+  last_out_ref: {
+    transaction_id: string;
+    output_index: bigint;
+  };
+};
+
 export type HostStateDatum = {
   state: {
     version: bigint;
@@ -21,20 +30,33 @@ export type HostStateDatum = {
   };
   nft_policy: string;
   deployer: string;
-  shutdown: 'Active' | {
-    ShuttingDown: {
-      initiated_at: bigint;
-      grace_period_end: bigint;
-    };
-  } | {
-    Sealed: {
-      sealed_at: bigint;
-      proof_window_end: bigint;
-    };
-  };
+  shutdown:
+    | 'Active'
+    | {
+        ShuttingDown: {
+          initiated_at: bigint;
+          grace_period_end: bigint;
+        };
+      }
+    | {
+        Sealed: {
+          sealed_at: bigint;
+          proof_window_end: bigint;
+        };
+      };
+  // None exists only during deployment, before the complete reference-script
+  // inventory is registered. Some(n) is the authenticated number still live.
+  live_reference_script_count: bigint | null;
+  // Hash-chain commitment to the exact output references and script hashes.
+  reference_script_inventory_root: string;
+  // Frozen full-inventory target plus the last canonical output registered.
+  reference_script_registration: ReferenceScriptRegistration | null;
 };
 
-export async function encodeHostStateDatum(hostStateDatum: HostStateDatum, Lucid: typeof import('@lucid-evolution/lucid')) {
+export async function encodeHostStateDatum(
+  hostStateDatum: HostStateDatum,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
   const { Data } = Lucid;
 
   const AuthTokenSchema = Data.Object({
@@ -45,6 +67,14 @@ export async function encodeHostStateDatum(hostStateDatum: HostStateDatum, Lucid
     module_script_hash: Data.Bytes(),
     port_token: AuthTokenSchema,
     module_token: AuthTokenSchema,
+  });
+  const ReferenceScriptRegistrationSchema = Data.Object({
+    target_count: Data.Integer(),
+    target_root: Data.Bytes(),
+    last_out_ref: Data.Object({
+      transaction_id: Data.Bytes(),
+      output_index: Data.Integer(),
+    }),
   });
 
   const HostStateStateSchema = Data.Object({
@@ -78,6 +108,9 @@ export async function encodeHostStateDatum(hostStateDatum: HostStateDatum, Lucid
         }),
       }),
     ]),
+    live_reference_script_count: Data.Nullable(Data.Integer()),
+    reference_script_inventory_root: Data.Bytes(),
+    reference_script_registration: Data.Nullable(ReferenceScriptRegistrationSchema),
   });
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
   const THostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;
@@ -96,6 +129,14 @@ export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof
     port_token: AuthTokenSchema,
     module_token: AuthTokenSchema,
   });
+  const ReferenceScriptRegistrationSchema = Data.Object({
+    target_count: Data.Integer(),
+    target_root: Data.Bytes(),
+    last_out_ref: Data.Object({
+      transaction_id: Data.Bytes(),
+      output_index: Data.Integer(),
+    }),
+  });
   const HostStateStateSchema = Data.Object({
     version: Data.Integer(),
     ibc_state_root: Data.Bytes(),
@@ -127,6 +168,9 @@ export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof
         }),
       }),
     ]),
+    live_reference_script_count: Data.Nullable(Data.Integer()),
+    reference_script_inventory_root: Data.Bytes(),
+    reference_script_registration: Data.Nullable(ReferenceScriptRegistrationSchema),
   });
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
   const THostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;

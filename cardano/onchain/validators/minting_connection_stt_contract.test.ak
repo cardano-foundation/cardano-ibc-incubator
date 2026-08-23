@@ -259,6 +259,9 @@ fn host_state_datum(
     nft_policy,
     deployer: trusted_deployer,
     shutdown: Active,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
   }
 }
 
@@ -597,6 +600,7 @@ fn run_conn_open_try_transition(
           lifecycle_reclamation_policy,
           lifecycle_operational_policy,
           lifecycle_packet_policy,
+          "reference validator script hash",
           None,
           fixture.host_redeemer,
           fixture.host_input.output_reference,

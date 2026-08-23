@@ -51,6 +51,7 @@ function baseContext(): LoadedSendPacketContext {
     channelDatum: {
       port: 'transfer',
       lifecycle: 'ChannelActive',
+      voucher_supply: 500n,
       state: {
         next_sequence_send: 4n,
         packet_commitment: new Map([[1n, 'previous']]),
@@ -95,6 +96,11 @@ function baseContext(): LoadedSendPacketContext {
 
 function createDeps(overrides: Partial<SendPacketBuildDependencies> = {}) {
   const encodedValues: Array<{ value: unknown; kind: string }> = [];
+  const hostStateUpdates: Array<{
+    input: LoadedSendPacketContext['channelDatum'];
+    output: LoadedSendPacketContext['channelDatum'];
+    channelId: string;
+  }> = [];
   let capturedEscrow: UnsignedSendPacketEscrowTxInput | undefined;
   let capturedBurn: UnsignedSendPacketBurnTxInput | undefined;
   const findTransferEscrowShardCalls: Array<{
@@ -105,13 +111,16 @@ function createDeps(overrides: Partial<SendPacketBuildDependencies> = {}) {
   }> = [];
   const deps: SendPacketBuildDependencies = {
     loadContext: async () => baseContext(),
-    buildHostStateUpdate: async () => ({
-      hostStateUtxo: utxo('host-state', 0),
-      encodedHostStateRedeemer: 'host-state-redeemer',
-      encodedUpdatedHostStateDatum: 'host-state-datum',
-      newRoot: 'new-root',
-      commit: () => undefined,
-    }),
+    buildHostStateUpdate: async (input, output, channelId) => {
+      hostStateUpdates.push({ input, output, channelId });
+      return {
+        hostStateUtxo: utxo('host-state', 0),
+        encodedHostStateRedeemer: 'host-state-redeemer',
+        encodedUpdatedHostStateDatum: 'host-state-datum',
+        newRoot: 'new-root',
+        commit: () => undefined,
+      };
+    },
     resolveIbcDenomHash: async () => null,
     commitPacket: () => 'packet-commitment',
     encode: async (value, kind) => {
@@ -163,6 +172,7 @@ function createDeps(overrides: Partial<SendPacketBuildDependencies> = {}) {
     findTransferEscrowShardCalls,
     getCapturedEscrow: () => capturedEscrow,
     getCapturedBurn: () => capturedBurn,
+    getHostStateUpdates: () => hostStateUpdates,
   };
 }
 
@@ -177,6 +187,11 @@ describe('send-packet denom mapping', () => {
     assert.equal(captured.denomToken, 'lovelace');
     assert.equal(captured.transferAmount, 123n);
     assert.equal(result.pendingTreeUpdate.expectedNewRoot, 'new-root');
+    const encodedChannel = harness.encodedValues.find(
+      (entry) => entry.kind === 'channel',
+    )?.value as LoadedSendPacketContext['channelDatum'];
+    assert.equal(encodedChannel.voucher_supply, 500n);
+    assert.equal(harness.getHostStateUpdates()[0].output.voucher_supply, 500n);
     assert.equal(harness.findTransferEscrowShardCalls.length, 1);
     assert.deepEqual(harness.findTransferEscrowShardCalls[0], {
       channelId: Buffer.from('channel-7').toString('hex'),
@@ -291,6 +306,11 @@ describe('send-packet denom mapping', () => {
     assert.ok(captured);
     assert.equal(captured.denomToken, `ibc/${ibcHash}`);
     assert.equal(captured.transferAmount, 456n);
+    const encodedChannel = harness.encodedValues.find(
+      (entry) => entry.kind === 'channel',
+    )?.value as LoadedSendPacketContext['channelDatum'];
+    assert.equal(encodedChannel.voucher_supply, 44n);
+    assert.equal(harness.getHostStateUpdates()[0].output.voucher_supply, 44n);
     assert.equal(captured.walletUtxos?.length, 2);
     assert.equal(captured.voucherTokenUnit, requestedUnit);
     assert.ok(captured.encodedSpendTransferModuleRedeemer);
@@ -339,6 +359,30 @@ describe('send-packet denom mapping', () => {
       /not found in denom traces/,
     );
     assert.equal(harness.getCapturedEscrow(), undefined);
+    assert.equal(harness.getCapturedBurn(), undefined);
+  });
+
+  it('rejects a voucher burn that exceeds this channel liability', async () => {
+    const context = baseContext();
+    context.channelDatum.voucher_supply = 5n;
+    const harness = createDeps({
+      loadContext: async () => context,
+      resolveIbcDenomHash: async () => ({
+        path: 'transfer/channel-7',
+        baseDenom: 'uatom',
+      }),
+    });
+
+    await assert.rejects(
+      () =>
+        buildUnsignedSendPacketTx(
+          baseOperator({
+            token: { denom: `ibc/${'d'.repeat(64)}`, amount: 6n },
+          }),
+          harness.deps,
+        ),
+      /voucher supply would become negative/,
+    );
     assert.equal(harness.getCapturedBurn(), undefined);
   });
 

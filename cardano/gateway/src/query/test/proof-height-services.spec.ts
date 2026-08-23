@@ -108,6 +108,7 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}): ChannelDatum
       name: 'channel-token',
     },
     lifecycle: 'ChannelActive' as const,
+    voucher_supply: 0n,
   } as ChannelDatum;
 }
 
@@ -631,9 +632,9 @@ describe('proof-bearing services with historical query heights', () => {
       deps.kupoService,
     );
 
-    await expect(
-      service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'bank' } as any),
-    ).rejects.toThrow('Invalid port, found port transfer instead of bank in datum');
+    await expect(service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'bank' } as any)).rejects.toThrow(
+      'Invalid port, found port transfer instead of bank in datum',
+    );
 
     expect(getCurrentTree).not.toHaveBeenCalled();
   });

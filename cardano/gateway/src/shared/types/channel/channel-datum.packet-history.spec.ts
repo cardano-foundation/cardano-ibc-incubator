@@ -3,8 +3,8 @@ import { ChannelDatum, decodeChannelDatum, encodeChannelDatum } from './channel-
 import { ChannelState } from './state';
 import { Order } from './order';
 
-describe('ChannelDatum packet-history heights', () => {
-  it('round-trips both appended proof heights without changing packet maps', async () => {
+describe('ChannelDatum appended fields', () => {
+  it('round-trips proof heights and voucher supply without changing packet maps', async () => {
     const datum: ChannelDatum = {
       state: {
         channel: {
@@ -29,6 +29,7 @@ describe('ChannelDatum packet-history heights', () => {
       port: Buffer.from('transfer').toString('hex'),
       token: { policyId: '11'.repeat(28), name: '22' },
       lifecycle: 'ChannelActive',
+      voucher_supply: 12n,
     };
 
     const encoded = await encodeChannelDatum(datum, Lucid);

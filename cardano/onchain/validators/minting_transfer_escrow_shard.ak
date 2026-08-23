@@ -188,7 +188,13 @@ fn validate_create_escrow_shard(
     new_datum.escrow_shard_registry_root == expected_registry_root,
     new_datum.live_escrow_shard_count == old_datum.live_escrow_shard_count + 1,
     new_datum.voucher_supply == old_datum.voucher_supply,
-    module_state_output.value == module_state_input.output.value,
+    assets.match_assets(
+      module_state_output.value,
+      module_state_input.output.value,
+    ),
+    assets.lovelace_of(module_state_output.value) >= assets.lovelace_of(
+      module_state_input.output.value,
+    ),
     escrow_shard_value_is_canonical(
       created_output,
       transfer_escrow_shard_policy_id,

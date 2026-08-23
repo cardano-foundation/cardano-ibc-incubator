@@ -90,6 +90,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
       port: toHex('transfer'),
       token: { policyId: '51'.repeat(28), name: '52' },
       lifecycle: 'ChannelActive',
+      voucher_supply: 0n,
     };
 
     const liveTree = new ICS23MerkleTree();

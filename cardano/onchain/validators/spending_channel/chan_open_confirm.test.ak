@@ -66,6 +66,7 @@ test succeed_chan_open_confirm() {
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =

@@ -1,5 +1,6 @@
 import { Data } from "@lucid-evolution/lucid";
 import { ModuleRegistrationSchema } from "./HostState.ts";
+import { OutputReferenceSchema } from "./OutputReference.ts";
 
 const SiblingHashesSchema = Data.Array(Data.Bytes());
 
@@ -110,6 +111,19 @@ export const HostStateRedeemerSchema = Data.Enum([
   Data.Object({
     ReclaimModule: Data.Object({ port_id: Data.Bytes() }),
   }),
+  Data.Object({
+    RegisterReferenceScripts: Data.Object({
+      target_count: Data.Integer(),
+      target_root: Data.Bytes(),
+      batch_out_refs: Data.Array(OutputReferenceSchema),
+    }),
+  }),
+  Data.Object({
+    ReclaimReferenceScripts: Data.Object({
+      predecessor_root: Data.Bytes(),
+    }),
+  }),
+  Data.Literal("FinalizeReferenceScriptRegistration"),
 ]);
 
 export type HostStateRedeemer = Data.Static<typeof HostStateRedeemerSchema>;

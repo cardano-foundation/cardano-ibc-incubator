@@ -72,6 +72,7 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       port_id: "port-1",
       token: mock_auth_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let output_channel_datum =
@@ -90,6 +91,7 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       port_id: "port-1",
       token: mock_auth_token,
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   (input_channel_datum, output_channel_datum, packet, commitment)
@@ -124,6 +126,7 @@ test succeed() {
         name: #"5217438dba7f0c1bedaeae4c467cbd01ff45d62c239b722031",
       },
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let output_datum_2 =
@@ -159,6 +162,7 @@ test succeed() {
         name: #"5217438dba7f0c1bedaeae4c467cbd01ff45d62c239b722031",
       },
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let packet_2 =

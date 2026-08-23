@@ -446,6 +446,7 @@ fn validate_reclaim_channel(
         module_input,
         registration,
         outputs,
+        datum.voucher_supply,
         channel_id,
         channel_live_escrow_shard_count_siblings,
       )
@@ -459,6 +460,7 @@ fn validate_transfer_channel_reclaim(
   module_input: Input,
   registration: ModuleRegistration,
   outputs: List<Output>,
+  channel_voucher_supply: Int,
   channel_id: ByteArray,
   siblings: List<ByteArray>,
 ) -> Bool {
@@ -477,9 +479,9 @@ fn validate_transfer_channel_reclaim(
   expect output_datum: TransferModuleDatum =
     validator_utils.get_inline_datum(module_output)
   and {
+    channel_voucher_supply == 0,
     output_datum == datum,
     datum.live_escrow_shard_count >= 0,
-    datum.voucher_supply == 0,
     ibc_state_commitment.apply_update(
       datum.escrow_shard_registry_root,
       transfer_escrow_shard.channel_live_shard_count_key(channel_id),

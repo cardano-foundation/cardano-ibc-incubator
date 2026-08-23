@@ -99,7 +99,8 @@ fn setup() -> MockData {
           transfer_port_token.policy_id,
           transfer_port_token.name,
           1,
-        ),
+        )
+          |> add(ada_policy_id, ada_asset_name, 2_000_000),
         datum: NoDatum,
         reference_script: None,
       },
@@ -215,6 +216,81 @@ fn create_transaction(mock: MockData, root_is_reference: Bool) -> Transaction {
     full_empty_siblings(),
     first_channel_count_siblings(),
   )
+}
+
+fn validate_module_value_transition_at_count_boundary(
+  lovelace_delta: Int,
+  mutate_non_ada: Bool,
+) -> Bool {
+  let mock = setup()
+  let transaction = create_transaction(mock, False)
+  expect [base_module_output, created_output] = transaction.outputs
+  expect InlineDatum(raw_new_datum) = base_module_output.datum
+  expect new_datum: TransferModuleDatum = raw_new_datum
+  let module_input =
+    Input {
+      ..mock.module_input,
+      output: Output {
+        ..mock.module_input.output,
+        datum: InlineDatum(
+          TransferModuleDatum {
+            escrow_shard_registry_root: empty_escrow_shard_registry_root,
+            live_escrow_shard_count: 23,
+            voucher_supply: 0,
+          },
+        ),
+      },
+    }
+  let module_output =
+    Output {
+      ..base_module_output,
+      value: module_input.output.value
+        |> add(ada_policy_id, ada_asset_name, lovelace_delta)
+        |> add(
+            "foreign asset policy",
+            "foreign asset name",
+            if mutate_non_ada {
+              1
+            } else {
+              0
+            },
+          ),
+      datum: InlineDatum(
+        TransferModuleDatum { ..new_datum, live_escrow_shard_count: 24 },
+      ),
+    }
+  let updated_transaction =
+    Transaction {
+      ..transaction,
+      inputs: [module_input],
+      outputs: [module_output, created_output],
+    }
+  expect Some(redeemer) =
+    updated_transaction.redeemers
+      |> pairs.get_first(Mint(mock.transfer_escrow_shard_policy_id))
+  expect decoded_redeemer: TransferEscrowShardRedeemer = redeemer
+
+  minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint(
+    mock.transfer_port_token,
+    mock.transfer_port_id,
+    mock.channel_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    decoded_redeemer,
+    mock.transfer_escrow_shard_policy_id,
+    updated_transaction,
+  )
+}
+
+test create_shard_accepts_module_min_ada_top_up_at_count_23_to_24() {
+  validate_module_value_transition_at_count_boundary(500_000, False)
+}
+
+test create_shard_rejects_module_lovelace_decrease_at_count_23_to_24() fail {
+  validate_module_value_transition_at_count_boundary(-1, False)
+}
+
+test create_shard_rejects_module_non_ada_asset_mutation_at_count_23_to_24() fail {
+  validate_module_value_transition_at_count_boundary(0, True)
 }
 
 test create_transfer_escrow_shard_succeeds() {

@@ -151,7 +151,8 @@ validator spend_channel(
             validator_utils.ExpectBeginChannelAbandonment,
           )
         let host_datum = validator_utils.get_host_state_datum(host_input)
-        let valid_from = validator_utils.get_tx_valid_from(validity_range)
+        let (_, valid_to) =
+          validator_utils.get_bounded_lifecycle_validity(validity_range)
         let updated_datum =
           validate_output_datum(spent_output, outputs, datum.token)
 
@@ -160,7 +161,7 @@ validator spend_channel(
           channel_datum.validate_begin_abandonment(
             datum,
             updated_datum,
-            valid_from,
+            valid_to,
             not_before,
           ),
         }

@@ -39,6 +39,7 @@ export type ChannelDatumLike = {
             not_before: bigint;
         };
     };
+    voucher_supply: bigint;
     state: {
         next_sequence_send: bigint;
         packet_commitment: Map<bigint, string>;

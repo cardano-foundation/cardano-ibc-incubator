@@ -94,3 +94,13 @@ test active_client_cannot_use_terminal_prune() {
 test final_reclaim_shape_rejects_more_than_latest() {
   !client_reclamation.has_exactly_latest_consensus_state(client_datum(True, 3))
 }
+
+test a_client_without_post_cutoff_updates_eventually_becomes_reclaimable() {
+  let cutoff = 1
+  let input = client_datum(False, 1)
+  and {
+    !client_reclamation.is_terminal_at(input, cutoff - 1),
+    client_reclamation.is_terminal_at(input, cutoff),
+    client_reclamation.has_exactly_latest_consensus_state(input),
+  }
+}

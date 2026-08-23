@@ -7,7 +7,9 @@ import {
   getAddressDetails,
   Kupmios,
   type LucidEvolution,
+  type TxBuilder,
   type UTxO,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import {
   applySingleCborEncoding,
@@ -27,8 +29,14 @@ import {
 } from "../src/external_cardano.ts";
 import { buildLucidWithCompatibleProtocolParameters } from "../src/protocol_parameters.ts";
 import {
+  compareReferenceScriptInventoryEntries,
   type DeploymentTemplate,
-  readValidator,
+  EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT,
+  foldReferenceScriptInventory,
+  MAX_REFERENCE_SCRIPT_INVENTORY_COUNT,
+  REFERENCE_SCRIPT_INPUT_BYTE_BUDGET,
+  REFERENCE_SCRIPT_INPUT_COUNT_LIMIT,
+  type ReferenceScriptManifestEntry,
   submitTx,
 } from "../src/utils.ts";
 import {
@@ -53,11 +61,14 @@ type ScriptArgs = {
   batchSize: number;
 };
 
+type DeploymentReference = Pick<UTxO, "txHash" | "outputIndex">;
+
 const DEFAULT_HANDLER_JSON_PATH = "./deployments/handler.json";
 const DEFAULT_REFERENCE_RECLAIM_BATCH_SIZE = 10;
 const DEFAULT_KUPMIOS_SUBMIT_TIMEOUT_MS = 60000;
 const TX_VALIDITY_WINDOW_MS = 10 * 60 * 1000;
 const HOST_STATE_PROOF_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const OGMIOS_UTXO_QUERY_BATCH_SIZE = 50;
 const RETIRED_MODULE_PORT_PREFIX = "00";
 const VALID_PORT_PUNCTUATION = new Set([
   0x5f,
@@ -171,6 +182,222 @@ function ledgerAlignedValidFrom(
   );
 }
 
+export function lifecycleTransitionTiming(validFrom: number): {
+  validFrom: number;
+  validTo: number;
+  proofWindowEnd: number;
+} {
+  const validTo = validFrom + TX_VALIDITY_WINDOW_MS;
+  const proofWindowEnd = validTo + HOST_STATE_PROOF_WINDOW_MS;
+  if (
+    !Number.isSafeInteger(validFrom) ||
+    !Number.isSafeInteger(validTo) ||
+    !Number.isSafeInteger(proofWindowEnd)
+  ) {
+    throw new Error(
+      "Lifecycle validity and proof-window times must be safe integers",
+    );
+  }
+  return { validFrom, validTo, proofWindowEnd };
+}
+
+export function buildShutdownEntryDatum(
+  currentDatum: HostStateDatumType,
+  initiatedAt: number,
+  gracePeriodEnd: number,
+): HostStateDatumType {
+  return {
+    ...currentDatum,
+    state: {
+      ...currentDatum.state,
+      version: currentDatum.state.version + 1n,
+      last_update_time: BigInt(initiatedAt),
+    },
+    shutdown: {
+      ShuttingDown: {
+        initiated_at: BigInt(initiatedAt),
+        grace_period_end: BigInt(gracePeriodEnd),
+      },
+    },
+  };
+}
+
+export function buildSealedHostDatum(
+  currentDatum: HostStateDatumType,
+  sealedAt: number,
+  proofWindowEnd: number,
+): HostStateDatumType {
+  return {
+    ...currentDatum,
+    state: {
+      ...currentDatum.state,
+      version: currentDatum.state.version + 1n,
+      last_update_time: BigInt(sealedAt),
+    },
+    shutdown: {
+      Sealed: {
+        sealed_at: BigInt(sealedAt),
+        proof_window_end: BigInt(proofWindowEnd),
+      },
+    },
+  };
+}
+
+export function requireRegisteredReferenceCount(
+  datum: HostStateDatumType,
+): bigint {
+  const count = datum.live_reference_script_count;
+  if (count === null) {
+    throw new Error(
+      "HostState reference-script count is not registered; refusing an unauthenticated shutdown",
+    );
+  }
+  if (count < 0n) {
+    throw new Error(
+      `HostState reference-script registration is incomplete (${count}); refusing shutdown until deployment finalizes it`,
+    );
+  }
+  return count;
+}
+
+export function requireAuthenticatedReferenceInventory(
+  deployment: DeploymentTemplate,
+  datum: HostStateDatumType,
+): {
+  liveCount: number;
+  inventory: ReferenceScriptManifestEntry[];
+} {
+  const inventory = deploymentReferenceOutRefs(deployment);
+  const count = requireRegisteredReferenceCount(datum);
+  const liveCount = Number(count);
+  if (
+    !Number.isSafeInteger(liveCount) || liveCount < 0 ||
+    liveCount > inventory.length
+  ) {
+    throw new Error(
+      `HostState reference-script count ${count} is outside the deployment inventory`,
+    );
+  }
+  const registration = datum.reference_script_registration;
+  const finalEntry = inventory.at(-1)!;
+  if (
+    registration === null ||
+    registration.target_count !== BigInt(inventory.length) ||
+    registration.target_root !== deployment.referenceScriptInventoryRoot ||
+    registration.last_out_ref.transaction_id !== finalEntry.txHash ||
+    registration.last_out_ref.output_index !== BigInt(finalEntry.outputIndex)
+  ) {
+    throw new Error(
+      "HostState reference registration metadata does not match handler.json",
+    );
+  }
+  const expectedRoot = liveCount === 0
+    ? EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT
+    : inventory[liveCount - 1].resultingRoot;
+  if (datum.reference_script_inventory_root !== expectedRoot) {
+    throw new Error(
+      `HostState reference inventory root does not match its authenticated ${liveCount}-entry prefix`,
+    );
+  }
+  return { liveCount, inventory };
+}
+
+export function requireLiveReferenceInventoryPrefix(
+  inventory: ReferenceScriptManifestEntry[],
+  liveCount: number,
+  liveUtxos: UTxO[],
+): UTxO[] {
+  const expected = inventory.slice(0, liveCount);
+  const liveByOutRef = new Map(
+    liveUtxos.map((utxo) => [
+      `${utxo.txHash}#${utxo.outputIndex}`,
+      utxo,
+    ]),
+  );
+  if (liveByOutRef.size !== liveUtxos.length) {
+    throw new Error("Provider returned duplicate reference-script outputs");
+  }
+  if (liveUtxos.length !== expected.length) {
+    throw new Error(
+      `HostState authenticates ${expected.length} live reference scripts, but the providers found ${liveUtxos.length}`,
+    );
+  }
+  return expected.map((entry) => {
+    const key = `${entry.txHash}#${entry.outputIndex}`;
+    const utxo = liveByOutRef.get(key);
+    if (!utxo) {
+      throw new Error(
+        `Live reference outputs are not the authenticated inventory prefix; missing ${key}`,
+      );
+    }
+    if (
+      !utxo.scriptRef ||
+      validatorToScriptHash(utxo.scriptRef) !== entry.scriptHash
+    ) {
+      throw new Error(
+        `Live reference output ${key} does not contain its authenticated script ${entry.scriptHash}`,
+      );
+    }
+    return utxo;
+  });
+}
+
+export function buildReclaimedReferenceHostDatum(
+  currentDatum: HostStateDatumType,
+  reclaimedEntries: ReferenceScriptManifestEntry[],
+  predecessorRoot: string,
+  updateTime: number,
+): HostStateDatumType {
+  if (reclaimedEntries.length === 0) {
+    throw new Error("Reference reclamation batch must not be empty");
+  }
+  const currentCount = requireRegisteredReferenceCount(currentDatum);
+  if (BigInt(reclaimedEntries.length) >= currentCount) {
+    throw new Error(
+      `Cannot reclaim ${reclaimedEntries.length} reference scripts from remaining count ${currentCount}; the terminal HostState witness must remain`,
+    );
+  }
+  if (predecessorRoot === EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT) {
+    throw new Error(
+      "Ordinary reference reclamation cannot remove the terminal HostState witness",
+    );
+  }
+  let expectedRoot = predecessorRoot;
+  for (const entry of reclaimedEntries) {
+    if (entry.predecessorRoot !== expectedRoot) {
+      throw new Error("Reference reclamation suffix chain is discontinuous");
+    }
+    expectedRoot = foldReferenceScriptInventory([entry], expectedRoot);
+    if (entry.resultingRoot !== expectedRoot) {
+      throw new Error("Reference reclamation manifest entry root is invalid");
+    }
+  }
+  if (expectedRoot !== currentDatum.reference_script_inventory_root) {
+    throw new Error(
+      "Reference reclamation batch is not a suffix of the current authenticated inventory",
+    );
+  }
+  if (
+    !Number.isSafeInteger(updateTime) ||
+    BigInt(updateTime) <= currentDatum.state.last_update_time
+  ) {
+    throw new Error(
+      "Reference reclamation time must increase HostState last_update_time",
+    );
+  }
+  return {
+    ...currentDatum,
+    state: {
+      ...currentDatum.state,
+      version: currentDatum.state.version + 1n,
+      last_update_time: BigInt(updateTime),
+    },
+    live_reference_script_count: currentCount -
+      BigInt(reclaimedEntries.length),
+    reference_script_inventory_root: predecessorRoot,
+  };
+}
+
 export function requireKupoPatternCoverage(
   response: unknown,
   pattern: string,
@@ -191,6 +418,104 @@ function toJson(value: unknown): string {
     value,
     (_key, entry) => typeof entry === "bigint" ? entry.toString() : entry,
     2,
+  );
+}
+
+export function selectReferenceReclaimSuffix(
+  inventory: ReferenceScriptManifestEntry[],
+  liveUtxosInInventoryOrder: UTxO[],
+  countLimit: number,
+  scriptByteBudget = REFERENCE_SCRIPT_INPUT_BYTE_BUDGET,
+  reservedScriptBytes = 0,
+  minimumRemaining = 0,
+): {
+  entries: ReferenceScriptManifestEntry[];
+  utxos: UTxO[];
+  predecessorRoot: string;
+} {
+  if (!Number.isSafeInteger(countLimit) || countLimit <= 0) {
+    throw new Error("Reference reclamation count limit must be positive");
+  }
+  if (
+    !Number.isSafeInteger(scriptByteBudget) || scriptByteBudget <= 0 ||
+    !Number.isSafeInteger(reservedScriptBytes) || reservedScriptBytes < 0 ||
+    reservedScriptBytes >= scriptByteBudget
+  ) {
+    throw new Error("Reference reclamation script-byte budget is invalid");
+  }
+  if (inventory.length !== liveUtxosInInventoryOrder.length) {
+    throw new Error(
+      "Reference reclamation inventory and live UTxO prefix lengths differ",
+    );
+  }
+  if (
+    !Number.isSafeInteger(minimumRemaining) || minimumRemaining < 0 ||
+    minimumRemaining >= inventory.length
+  ) {
+    throw new Error("Reference reclamation minimum remaining count is invalid");
+  }
+
+  const availableScriptBytes = scriptByteBudget - reservedScriptBytes;
+  let start = inventory.length;
+  let selectedScriptBytes = 0;
+  while (
+    start > minimumRemaining && inventory.length - start < countLimit
+  ) {
+    const candidate = liveUtxosInInventoryOrder[start - 1];
+    if (!candidate.scriptRef) {
+      throw new Error(
+        `Reference output ${candidate.txHash}#${candidate.outputIndex} has no reference script`,
+      );
+    }
+    const candidateScriptBytes = candidate.scriptRef.script.length / 2;
+    if (
+      !Number.isSafeInteger(candidateScriptBytes) ||
+      candidateScriptBytes <= 0
+    ) {
+      throw new Error("Reference reclamation encountered an invalid script");
+    }
+    if (candidateScriptBytes > availableScriptBytes) {
+      if (start === inventory.length) {
+        throw new Error(
+          `Reference output ${candidate.txHash}#${candidate.outputIndex} contains ${candidateScriptBytes} script bytes, exceeding the ${availableScriptBytes}-byte reclamation budget`,
+        );
+      }
+      break;
+    }
+    if (selectedScriptBytes + candidateScriptBytes > availableScriptBytes) {
+      break;
+    }
+    selectedScriptBytes += candidateScriptBytes;
+    start -= 1;
+  }
+  if (start === inventory.length) {
+    throw new Error("Reference reclamation could not select a safe suffix");
+  }
+  return {
+    entries: inventory.slice(start),
+    utxos: liveUtxosInInventoryOrder.slice(start),
+    predecessorRoot: start === 0
+      ? EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT
+      : inventory[start - 1].resultingRoot,
+  };
+}
+
+export function redactManagedCredentials(
+  value: string,
+  secrets: string[] = [
+    Deno.env.get("KUPO_API_KEY")?.trim() ?? "",
+    Deno.env.get("OGMIOS_API_KEY")?.trim() ?? "",
+  ],
+): string {
+  let redacted = value;
+  for (const secret of secrets) {
+    if (secret.length > 0) {
+      redacted = redacted.replaceAll(secret, "[REDACTED]");
+    }
+  }
+  return redacted.replace(
+    /([?&](?:api[_-]?key|token|key)=)[^&\s]+/gi,
+    "$1[REDACTED]",
   );
 }
 
@@ -347,6 +672,40 @@ class KupmiosWithExtendedSubmitTimeout extends Kupmios {
       redeemer_tag: item.validator.purpose,
     }));
   }
+
+  async getNodeLiveOutRefs(
+    outRefs: DeploymentReference[],
+  ): Promise<DeploymentReference[]> {
+    const liveReferences = new Map<string, DeploymentReference>();
+    for (
+      let index = 0;
+      index < outRefs.length;
+      index += OGMIOS_UTXO_QUERY_BATCH_SIZE
+    ) {
+      const batch = outRefs.slice(index, index + OGMIOS_UTXO_QUERY_BATCH_SIZE);
+      const response = await queryOgmiosJsonRpc(
+        this.#ogmiosUrl,
+        "queryLedgerState/utxo",
+        {
+          outputReferences: batch.map((reference) => ({
+            transaction: { id: reference.txHash },
+            index: reference.outputIndex,
+          })),
+        },
+        20_000,
+        3,
+      );
+      for (
+        const reference of parseOgmiosLiveReferenceOutRefs(response, batch)
+      ) {
+        liveReferences.set(
+          `${reference.txHash}#${reference.outputIndex}`,
+          reference,
+        );
+      }
+    }
+    return [...liveReferences.values()];
+  }
 }
 
 class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
@@ -414,7 +773,11 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
 
         const stderr = new TextDecoder().decode(output.stderr).trim();
         if (!output.success) {
-          lastError = new Error(stderr || `curl failed for ${variant.url}`);
+          lastError = new Error(
+            redactManagedCredentials(
+              stderr || `curl failed for ${variant.url}`,
+            ),
+          );
           continue;
         }
 
@@ -431,9 +794,11 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
 
         const headerNames = Object.keys(variant.headers ?? {});
         lastError = new Error(
-          `${status} GET ${variant.url} (headers=${
-            headerNames.join(",") || "none"
-          }): ${body || stderr}`,
+          redactManagedCredentials(
+            `${status} GET ${variant.url} (headers=${
+              headerNames.join(",") || "none"
+            }): ${body || stderr}`,
+          ),
         );
 
         if (status < 500 && status !== 401 && status !== 429) {
@@ -790,47 +1155,267 @@ type ReclaimableHostStateNft = {
   script: string;
 };
 
-const REQUIRED_LIFECYCLE_POLICIES = [
-  ["mintLifecycleCreationMarker", "creation"],
-  ["mintLifecycleReclamationMarker", "reclamation"],
-  ["mintLifecycleOperationalMarker", "operational"],
-  ["mintLifecyclePacketMarker", "packet"],
+const REQUIRED_REFERENCE_VALIDATORS = [
+  "spendClient",
+  "spendConnection",
+  "spendChannel",
+  "spendTransferModule",
+  "spendMockModule",
+  "mintIdentifier",
+  "spendTraceRegistry",
+  "mintVoucher",
+  "mintTransferEscrowShard",
+  "mintPort",
+  "verifyProof",
+  "hostStateStt",
+  "mintClientStt",
+  "mintConnectionStt",
+  "mintChannelStt",
+  "mintLifecycleCreationMarker",
+  "mintLifecycleReclamationMarker",
+  "mintLifecycleOperationalMarker",
+  "mintLifecyclePacketMarker",
 ] as const;
 
-function requireLifecyclePolicyReferences(
-  validators: DeploymentTemplate["validators"] | undefined,
+const REQUIRED_CHANNEL_REFERENCE_VALIDATORS = [
+  "chan_open_ack",
+  "chan_open_confirm",
+  "chan_close_init",
+  "chan_close_confirm",
+  "recv_packet",
+  "send_packet",
+  "timeout_packet",
+  "acknowledge_packet",
+  "prune_packet_history",
+] as const;
+
+const OPTIONAL_REFERENCE_VALIDATORS = [
+  "mintTraceRegistryBenchmarkVoucher",
+] as const;
+
+const ADDRESS_BEARING_REFERENCE_VALIDATORS = new Set<string>([
+  "spendClient",
+  "spendConnection",
+  "spendChannel",
+  "spendTransferModule",
+  "spendMockModule",
+  "spendTraceRegistry",
+  "hostStateStt",
+]);
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireHex(value: unknown, label: string, bytes?: number): string {
+  if (
+    typeof value !== "string" ||
+    !/^(?:[0-9a-f]{2})+$/.test(value) ||
+    (bytes !== undefined && value.length !== bytes * 2)
+  ) {
+    throw new Error(`${label} must be valid lowercase hexadecimal data`);
+  }
+  return value;
+}
+
+function requireReferenceOutRef(
+  value: unknown,
+  label: string,
+): DeploymentReference {
+  const ref = requireRecord(value, label);
+  const txHash = requireHex(ref.txHash, `${label}.txHash`, 32);
+  if (
+    !Number.isSafeInteger(ref.outputIndex) ||
+    (ref.outputIndex as number) < 0
+  ) {
+    throw new Error(`${label}.outputIndex must be a non-negative safe integer`);
+  }
+  return { txHash, outputIndex: ref.outputIndex as number };
+}
+
+function requireReferenceScriptManifestEntry(
+  value: unknown,
+  label: string,
+): ReferenceScriptManifestEntry {
+  const record = requireRecord(value, label);
+  const reference = requireReferenceOutRef(record, label);
+  const scriptHash = requireHex(record.scriptHash, `${label}.scriptHash`, 28);
+  const predecessorRoot = requireHex(
+    record.predecessorRoot,
+    `${label}.predecessorRoot`,
+    32,
+  );
+  const resultingRoot = requireHex(
+    record.resultingRoot,
+    `${label}.resultingRoot`,
+    32,
+  );
+  if (
+    !Number.isSafeInteger(record.registrationBatchIndex) ||
+    (record.registrationBatchIndex as number) < 0
+  ) {
+    throw new Error(
+      `${label}.registrationBatchIndex must be a non-negative safe integer`,
+    );
+  }
+  return {
+    ...reference,
+    scriptHash,
+    predecessorRoot,
+    resultingRoot,
+    registrationBatchIndex: record.registrationBatchIndex as number,
+  };
+}
+
+function requireReferenceValidator(
+  value: unknown,
+  label: string,
+  topLevel: boolean,
+  addressRequired = false,
 ): void {
-  for (const [name, label] of REQUIRED_LIFECYCLE_POLICIES) {
-    const validator = validators?.[name];
-    if (!validator) {
-      throw new Error(
-        `schema-v6 handler.json does not contain the lifecycle ${label} policy`,
-      );
+  const validator = requireRecord(value, label);
+  const script = requireHex(validator.script, `${label}.script`);
+  const scriptHash = requireHex(
+    validator.scriptHash,
+    `${label}.scriptHash`,
+    28,
+  );
+  let derivedScriptHash: string;
+  try {
+    derivedScriptHash = validatorToScriptHash({
+      type: "PlutusV3",
+      script,
+    });
+  } catch {
+    throw new Error(`${label}.script is not a valid Plutus V3 script`);
+  }
+  if (derivedScriptHash !== scriptHash) {
+    throw new Error(`${label}.scriptHash does not match its script`);
+  }
+  requireReferenceOutRef(validator.refUtxo, `${label}.refUtxo`);
+  if (topLevel) {
+    if (typeof validator.title !== "string" || validator.title.length === 0) {
+      throw new Error(`${label}.title must be a non-empty string`);
+    }
+    if (typeof validator.address !== "string") {
+      throw new Error(`${label}.address must be a string`);
+    }
+    if (validator.address.length === 0) {
+      if (addressRequired) {
+        throw new Error(`${label}.address must be a non-empty string`);
+      }
+      return;
+    }
+    let paymentCredential;
+    try {
+      paymentCredential = getAddressDetails(validator.address)
+        .paymentCredential;
+    } catch {
+      throw new Error(`${label}.address is invalid`);
     }
     if (
-      typeof validator.scriptHash !== "string" ||
-      !/^[0-9a-f]{56}$/.test(validator.scriptHash)
+      paymentCredential?.type !== "Script" ||
+      paymentCredential.hash !== scriptHash
     ) {
-      throw new Error(
-        `schema-v6 lifecycle ${label} policy does not contain a valid policy id`,
-      );
-    }
-    if (
-      !validator.refUtxo ||
-      typeof validator.refUtxo.txHash !== "string" ||
-      !/^[0-9a-f]{64}$/.test(validator.refUtxo.txHash) ||
-      !Number.isSafeInteger(validator.refUtxo.outputIndex) ||
-      validator.refUtxo.outputIndex < 0
-    ) {
-      throw new Error(
-        `schema-v6 lifecycle ${label} policy does not contain a valid reference output`,
-      );
+      throw new Error(`${label}.address does not match its script hash`);
     }
   }
 }
 
+function requireReferenceValidatorArtifact(value: unknown): void {
+  const artifact = requireRecord(
+    value,
+    "schema-v6 referenceValidator artifact",
+  );
+  const script = requireHex(
+    artifact.script,
+    "schema-v6 referenceValidator.script",
+  );
+  const scriptHash = requireHex(
+    artifact.scriptHash,
+    "schema-v6 referenceValidator.scriptHash",
+    28,
+  );
+  if (
+    validatorToScriptHash({ type: "PlutusV3", script }) !== scriptHash
+  ) {
+    throw new Error(
+      "schema-v6 referenceValidator.scriptHash does not match its script",
+    );
+  }
+  if (typeof artifact.address !== "string" || artifact.address.length === 0) {
+    throw new Error(
+      "schema-v6 referenceValidator.address must be a non-empty string",
+    );
+  }
+  let paymentCredential;
+  try {
+    paymentCredential = getAddressDetails(artifact.address).paymentCredential;
+  } catch {
+    throw new Error("schema-v6 referenceValidator.address is invalid");
+  }
+  if (
+    paymentCredential?.type !== "Script" ||
+    paymentCredential.hash !== scriptHash
+  ) {
+    throw new Error(
+      "schema-v6 referenceValidator.address does not match its script hash",
+    );
+  }
+}
+
+function requireInjectiveReferenceBindings(validators: unknown): void {
+  const referenceToScript = new Map<string, string>();
+  const scriptToReference = new Map<string, string>();
+
+  const visit = (value: unknown, path: string): void => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    if (record.refUtxo !== undefined) {
+      const scriptHash = requireHex(
+        record.scriptHash,
+        `${path}.scriptHash`,
+        28,
+      );
+      const reference = requireReferenceOutRef(
+        record.refUtxo,
+        `${path}.refUtxo`,
+      );
+      const referenceKey = `${reference.txHash}#${reference.outputIndex}`;
+      const existingScript = referenceToScript.get(referenceKey);
+      if (existingScript !== undefined && existingScript !== scriptHash) {
+        throw new Error(
+          `reference output ${referenceKey} is assigned to distinct script hashes ${existingScript} and ${scriptHash}`,
+        );
+      }
+      const existingReference = scriptToReference.get(scriptHash);
+      if (
+        existingReference !== undefined && existingReference !== referenceKey
+      ) {
+        throw new Error(
+          `script hash ${scriptHash} is assigned to distinct reference outputs ${existingReference} and ${referenceKey}`,
+        );
+      }
+      referenceToScript.set(referenceKey, scriptHash);
+      scriptToReference.set(scriptHash, referenceKey);
+    }
+
+    for (const [name, child] of Object.entries(record)) {
+      visit(child, `${path}.${name}`);
+    }
+  };
+
+  visit(validators, "validators");
+}
+
 export function parseDeployment(raw: unknown): DeploymentTemplate {
-  const deployment = raw as Partial<DeploymentTemplate> & {
+  const rawDeployment = requireRecord(raw, "handler.json");
+  const deployment = rawDeployment as Partial<DeploymentTemplate> & {
     hostStateNFT?: Partial<ReclaimableHostStateNft>;
   };
   if (deployment.schemaVersion !== 6) {
@@ -839,22 +1424,110 @@ export function parseDeployment(raw: unknown): DeploymentTemplate {
     );
   }
   if (
-    !deployment.hostStateNFT?.policyId ||
-    !deployment.hostStateNFT.name ||
-    !deployment.hostStateNFT.script
+    typeof deployment.deployedAt !== "string" ||
+    !Number.isFinite(Date.parse(deployment.deployedAt))
+  ) {
+    throw new Error(
+      "schema-v6 handler.json must contain a valid deployedAt timestamp",
+    );
+  }
+  if (
+    typeof deployment.hostStateNFT !== "object" ||
+    deployment.hostStateNFT === null
   ) {
     throw new Error(
       "schema-v6 handler.json must contain the HostState policy id, token name, and minting script",
     );
   }
-  if (!deployment.validators?.hostStateStt) {
-    throw new Error("handler.json does not contain the HostState validator");
+  const hostStatePolicyId = requireHex(
+    deployment.hostStateNFT.policyId,
+    "schema-v6 HostState policy id",
+    28,
+  );
+  requireHex(
+    deployment.hostStateNFT.name,
+    "schema-v6 HostState token name",
+  );
+  const hostStateScript = requireHex(
+    deployment.hostStateNFT.script,
+    "schema-v6 HostState minting script",
+  );
+  if (
+    validatorToScriptHash({ type: "PlutusV3", script: hostStateScript }) !==
+      hostStatePolicyId
+  ) {
+    throw new Error(
+      "schema-v6 HostState policy id does not match its minting script",
+    );
   }
-  requireLifecyclePolicyReferences(deployment.validators);
-  return deployment as DeploymentTemplate;
-}
+  requireReferenceValidatorArtifact(deployment.referenceValidator);
 
-type DeploymentReference = Pick<UTxO, "txHash" | "outputIndex">;
+  const validators = requireRecord(
+    deployment.validators,
+    "schema-v6 handler.json validators",
+  );
+  for (const name of REQUIRED_REFERENCE_VALIDATORS) {
+    requireReferenceValidator(
+      validators[name],
+      `schema-v6 validator ${name}`,
+      true,
+      ADDRESS_BEARING_REFERENCE_VALIDATORS.has(name),
+    );
+  }
+  for (const name of OPTIONAL_REFERENCE_VALIDATORS) {
+    if (validators[name] !== undefined) {
+      requireReferenceValidator(
+        validators[name],
+        `schema-v6 validator ${name}`,
+        true,
+        ADDRESS_BEARING_REFERENCE_VALIDATORS.has(name),
+      );
+    }
+  }
+
+  const spendChannel = requireRecord(
+    validators.spendChannel,
+    "schema-v6 validator spendChannel",
+  );
+  const channelReferences = requireRecord(
+    spendChannel.refValidator,
+    "schema-v6 validator spendChannel.refValidator",
+  );
+  const expectedChannelReferences = new Set<string>(
+    REQUIRED_CHANNEL_REFERENCE_VALIDATORS,
+  );
+  for (const name of REQUIRED_CHANNEL_REFERENCE_VALIDATORS) {
+    requireReferenceValidator(
+      channelReferences[name],
+      `schema-v6 channel reference validator ${name}`,
+      false,
+    );
+  }
+  for (const name of Object.keys(channelReferences)) {
+    if (!expectedChannelReferences.has(name)) {
+      throw new Error(
+        `schema-v6 handler.json contains unknown channel reference validator ${name}`,
+      );
+    }
+  }
+
+  const voucherMetadata = requireRecord(
+    validators.voucherMetadata,
+    "schema-v6 validator voucherMetadata",
+  );
+  if (
+    typeof voucherMetadata.address !== "string" ||
+    voucherMetadata.address.length === 0
+  ) {
+    throw new Error(
+      "schema-v6 validator voucherMetadata.address must be a non-empty string",
+    );
+  }
+
+  const parsed = deployment as DeploymentTemplate;
+  deploymentReferenceOutRefs(parsed);
+  return parsed;
+}
 
 /**
  * Return the exact reference outputs created by this deployment. The reference
@@ -863,53 +1536,303 @@ type DeploymentReference = Pick<UTxO, "txHash" | "outputIndex">;
  */
 export function deploymentReferenceOutRefs(
   deployment: DeploymentTemplate,
-): DeploymentReference[] {
-  const references = new Map<string, DeploymentReference>();
+): ReferenceScriptManifestEntry[] {
+  requireInjectiveReferenceBindings(deployment.validators);
+  if (!Array.isArray(deployment.referenceOutRefs)) {
+    throw new Error(
+      "schema-v6 handler.json must contain the complete referenceOutRefs inventory",
+    );
+  }
+  const hostStateValidator = requireRecord(
+    deployment.validators.hostStateStt,
+    "schema-v6 validator hostStateStt",
+  );
+  const hostStateReference = requireReferenceOutRef(
+    hostStateValidator.refUtxo,
+    "schema-v6 validator hostStateStt.refUtxo",
+  );
+  const hostStateReferenceKey =
+    `${hostStateReference.txHash}#${hostStateReference.outputIndex}`;
+  const hostStateScriptHash = requireHex(
+    hostStateValidator.scriptHash,
+    "schema-v6 validator hostStateStt.scriptHash",
+    28,
+  );
+  const inventory = new Map<string, ReferenceScriptManifestEntry>();
+  let currentRoot = EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT;
+  let previousEntry: ReferenceScriptManifestEntry | undefined;
+  for (const [index, rawReference] of deployment.referenceOutRefs.entries()) {
+    const reference = requireReferenceScriptManifestEntry(
+      rawReference,
+      `referenceOutRefs[${index}]`,
+    );
+    const key = `${reference.txHash}#${reference.outputIndex}`;
+    if (inventory.has(key)) {
+      throw new Error(`referenceOutRefs contains duplicate output ${key}`);
+    }
+    if (
+      index === 0 &&
+      (key !== hostStateReferenceKey ||
+        reference.scriptHash !== hostStateScriptHash)
+    ) {
+      throw new Error(
+        "referenceOutRefs must place the exact HostState STT reference first",
+      );
+    }
+    if (
+      index > 1 && previousEntry !== undefined &&
+      compareReferenceScriptInventoryEntries(previousEntry, reference) >= 0
+    ) {
+      throw new Error(
+        "non-Host referenceOutRefs must be in strict canonical out-ref order",
+      );
+    }
+    const validBatchIndex = previousEntry === undefined
+      ? reference.registrationBatchIndex === 0
+      : reference.registrationBatchIndex ===
+          previousEntry.registrationBatchIndex ||
+        reference.registrationBatchIndex ===
+          previousEntry.registrationBatchIndex + 1;
+    if (!validBatchIndex) {
+      throw new Error(
+        "referenceOutRefs registration batch indexes must be contiguous",
+      );
+    }
+    if (reference.predecessorRoot !== currentRoot) {
+      throw new Error(
+        `referenceOutRefs[${index}] predecessor root does not match the inventory chain`,
+      );
+    }
+    currentRoot = foldReferenceScriptInventory([reference], currentRoot);
+    if (reference.resultingRoot !== currentRoot) {
+      throw new Error(
+        `referenceOutRefs[${index}] resulting root does not match its identity`,
+      );
+    }
+    inventory.set(key, reference);
+    previousEntry = reference;
+  }
+  if (inventory.size === 0) {
+    throw new Error("referenceOutRefs must contain at least one output");
+  }
+  const inventoryEntries = [...inventory.values()];
+  if (
+    inventoryEntries.length < 2 ||
+    inventoryEntries[0].registrationBatchIndex !== 0 ||
+    inventoryEntries[1].registrationBatchIndex !== 0
+  ) {
+    throw new Error(
+      "The first registration batch must contain HostState STT and at least one non-Host reference",
+    );
+  }
+  if (inventory.size > MAX_REFERENCE_SCRIPT_INVENTORY_COUNT) {
+    throw new Error(
+      `referenceOutRefs exceeds the consensus maximum ${MAX_REFERENCE_SCRIPT_INVENTORY_COUNT}`,
+    );
+  }
+
+  const publishedRoot = requireHex(
+    deployment.referenceScriptInventoryRoot,
+    "referenceScriptInventoryRoot",
+    32,
+  );
+  if (
+    publishedRoot === EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT ||
+    publishedRoot !== currentRoot
+  ) {
+    throw new Error(
+      "referenceScriptInventoryRoot does not match the Host-first referenceOutRefs chain",
+    );
+  }
+
+  const discovered = new Map<
+    string,
+    DeploymentReference & { scriptHash: string; script: string }
+  >();
 
   const visit = (value: unknown): void => {
     if (typeof value !== "object" || value === null) return;
     const record = value as Record<string, unknown>;
     const refUtxo = record.refUtxo;
     if (typeof refUtxo === "object" && refUtxo !== null) {
-      const candidate = refUtxo as Record<string, unknown>;
-      if (
-        typeof candidate.txHash !== "string" ||
-        !Number.isSafeInteger(candidate.outputIndex) ||
-        (candidate.outputIndex as number) < 0
-      ) {
-        throw new Error(
-          "handler.json contains an invalid reference-script out-ref",
-        );
-      }
-      const reference = {
-        txHash: candidate.txHash,
-        outputIndex: candidate.outputIndex as number,
-      };
-      references.set(
+      const reference = requireReferenceOutRef(
+        refUtxo,
+        "handler.json reference-script out-ref",
+      );
+      const scriptHash = requireHex(
+        record.scriptHash,
+        "handler.json reference-script hash",
+        28,
+      );
+      discovered.set(
         `${reference.txHash}#${reference.outputIndex}`,
-        reference,
+        {
+          ...reference,
+          scriptHash,
+          script: requireHex(
+            record.script,
+            "handler.json reference script",
+          ),
+        },
       );
     }
     for (const child of Object.values(record)) visit(child);
   };
 
   visit(deployment.validators);
-  if (references.size === 0) {
+  if (discovered.size === 0) {
     throw new Error(
       "handler.json contains no deployment reference-script out-refs",
     );
   }
-  return [...references.values()];
+  const omittedFromInventory = [...discovered.keys()].filter((key) =>
+    !inventory.has(key)
+  );
+  const missingFromHandler = [...inventory.keys()].filter((key) =>
+    !discovered.has(key)
+  );
+  if (omittedFromInventory.length > 0 || missingFromHandler.length > 0) {
+    throw new Error(
+      `referenceOutRefs does not exactly match validator references` +
+        ` (omitted=${omittedFromInventory.join(",") || "none"},` +
+        ` unbound=${missingFromHandler.join(",") || "none"})`,
+    );
+  }
+  for (const [key, reference] of inventory) {
+    if (discovered.get(key)?.scriptHash !== reference.scriptHash) {
+      throw new Error(
+        `referenceOutRefs scriptHash for ${key} does not match its validator binding`,
+      );
+    }
+  }
+  const batchSizes = new Map<number, { count: number; scriptBytes: number }>();
+  for (const [key, reference] of inventory) {
+    const current = batchSizes.get(reference.registrationBatchIndex) ?? {
+      count: 0,
+      scriptBytes: 0,
+    };
+    const script = discovered.get(key)!.script;
+    batchSizes.set(reference.registrationBatchIndex, {
+      count: current.count + 1,
+      scriptBytes: current.scriptBytes + script.length / 2,
+    });
+  }
+  const hostScriptBytes = discovered.get(hostStateReferenceKey)!.script.length /
+    2;
+  for (const [batchIndex, size] of batchSizes) {
+    const witnessCount = batchIndex === 0 ? 0 : 1;
+    const witnessScriptBytes = batchIndex === 0 ? 0 : hostScriptBytes;
+    if (
+      size.count + witnessCount > REFERENCE_SCRIPT_INPUT_COUNT_LIMIT ||
+      size.scriptBytes + witnessScriptBytes >
+        REFERENCE_SCRIPT_INPUT_BYTE_BUDGET
+    ) {
+      throw new Error(
+        `referenceOutRefs registration batch ${batchIndex} exceeds its safe count/script-byte budget including the HostState witness`,
+      );
+    }
+  }
+  return inventoryEntries;
 }
 
-function isDeploymentReferenceUtxo(
-  utxo: UTxO,
-  references: DeploymentReference[],
-): boolean {
-  return references.some((reference) =>
-    reference.txHash === utxo.txHash &&
-    reference.outputIndex === utxo.outputIndex
+export function parseOgmiosLiveReferenceOutRefs(
+  response: unknown,
+  requestedReferences: DeploymentReference[],
+): DeploymentReference[] {
+  const responseRecord = requireRecord(
+    response,
+    "Ogmios queryLedgerState/utxo response",
   );
+  if (!Array.isArray(responseRecord.result)) {
+    throw new Error(
+      "Ogmios queryLedgerState/utxo response does not contain a result array",
+    );
+  }
+
+  const requested = new Set(
+    requestedReferences.map((reference) =>
+      `${reference.txHash}#${reference.outputIndex}`
+    ),
+  );
+  const live = new Map<string, DeploymentReference>();
+  for (const [index, rawOutput] of responseRecord.result.entries()) {
+    const output = requireRecord(
+      rawOutput,
+      `Ogmios queryLedgerState/utxo result[${index}]`,
+    );
+    const transaction = requireRecord(
+      output.transaction,
+      `Ogmios queryLedgerState/utxo result[${index}].transaction`,
+    );
+    const reference = requireReferenceOutRef(
+      { txHash: transaction.id, outputIndex: output.index },
+      `Ogmios queryLedgerState/utxo result[${index}]`,
+    );
+    const key = `${reference.txHash}#${reference.outputIndex}`;
+    if (!requested.has(key)) {
+      throw new Error(
+        `Ogmios returned unrequested reference output ${key}`,
+      );
+    }
+    live.set(key, reference);
+  }
+  return [...live.values()];
+}
+
+export function reconcileReferenceUtxoViews(
+  referenceValidatorAddress: string,
+  references: DeploymentReference[],
+  kupoUtxos: UTxO[],
+  nodeLiveReferences: DeploymentReference[],
+): UTxO[] {
+  const expected = new Set(
+    references.map((reference) =>
+      `${reference.txHash}#${reference.outputIndex}`
+    ),
+  );
+  const nodeLive = new Set<string>();
+  for (const reference of nodeLiveReferences) {
+    const key = `${reference.txHash}#${reference.outputIndex}`;
+    if (!expected.has(key)) {
+      throw new Error(`Ogmios returned unexpected reference output ${key}`);
+    }
+    nodeLive.add(key);
+  }
+
+  const kupoLive = new Map<string, UTxO>();
+  for (const utxo of kupoUtxos) {
+    const key = `${utxo.txHash}#${utxo.outputIndex}`;
+    if (!expected.has(key) || utxo.address !== referenceValidatorAddress) {
+      throw new Error(
+        `Kupo returned unexpected reference-script UTxO ${key}`,
+      );
+    }
+    kupoLive.set(key, utxo);
+  }
+
+  const missingFromKupo = [...nodeLive].filter((key) => !kupoLive.has(key));
+  if (missingFromKupo.length > 0) {
+    throw new Error(
+      `Kupo omitted reference output(s) that Ogmios reports live: ${
+        missingFromKupo.join(",")
+      }; refusing to treat incomplete indexer history as proof they were spent`,
+    );
+  }
+  const staleInKupo = [...kupoLive.keys()].filter((key) => !nodeLive.has(key));
+  if (staleInKupo.length > 0) {
+    throw new Error(
+      `Kupo reports reference output(s) that Ogmios reports spent: ${
+        staleInKupo.join(",")
+      }; wait for the providers to agree before continuing`,
+    );
+  }
+
+  return references.flatMap((reference) => {
+    const utxo = kupoLive.get(
+      `${reference.txHash}#${reference.outputIndex}`,
+    );
+    return utxo ? [utxo] : [];
+  });
 }
 
 async function getLiveDeploymentReferenceUtxos(
@@ -924,18 +1847,16 @@ async function getLiveDeploymentReferenceUtxos(
     );
   }
   await provider.requirePatternCoverage(referenceValidatorAddress);
-  const liveReferences = await lucid.utxosByOutRef(references);
-  for (const utxo of liveReferences) {
-    if (
-      !isDeploymentReferenceUtxo(utxo, references) ||
-      utxo.address !== referenceValidatorAddress
-    ) {
-      throw new Error(
-        `Reference-script query returned unexpected UTxO ${utxo.txHash}#${utxo.outputIndex}`,
-      );
-    }
-  }
-  return liveReferences;
+  const [kupoUtxos, nodeLiveReferences] = await Promise.all([
+    lucid.utxosByOutRef(references),
+    provider.getNodeLiveOutRefs(references),
+  ]);
+  return reconcileReferenceUtxoViews(
+    referenceValidatorAddress,
+    references,
+    kupoUtxos,
+    nodeLiveReferences,
+  );
 }
 
 async function loadDeployment(path: string): Promise<DeploymentTemplate> {
@@ -1061,17 +1982,21 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
   const walletAddress = await lucid.wallet().address();
   const hostUtxo = await getHostStateUtxo(lucid, deployment);
   const hostDatum = decodeHostStateDatum(hostUtxo);
-  const [, , referenceValidatorAddress] = await readValidator(
-    "reference_validator.refer_only.else",
-    lucid,
-    [deployment.hostStateNFT!.policyId],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
-  );
+  const referenceValidatorAddress = deployment.referenceValidator.address;
   const deploymentReferences = deploymentReferenceOutRefs(deployment);
   const referenceScriptUtxos = await getLiveDeploymentReferenceUtxos(
     lucid,
     referenceValidatorAddress,
     deploymentReferences,
+  );
+  const { liveCount, inventory } = requireAuthenticatedReferenceInventory(
+    deployment,
+    hostDatum,
+  );
+  requireLiveReferenceInventoryPrefix(
+    inventory,
+    liveCount,
+    referenceScriptUtxos,
   );
 
   console.log(toJson({
@@ -1080,6 +2005,7 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
       unit: hostStateUnit(deployment),
       utxo: `${hostUtxo.txHash}#${hostUtxo.outputIndex}`,
       shutdown: hostDatum.shutdown,
+      liveReferenceScriptCount: liveCount,
     },
     referenceScripts: {
       address: referenceValidatorAddress,
@@ -1099,11 +2025,22 @@ async function enterShutdown(
   if (currentDatum.shutdown !== "Active") {
     throw new Error("HostState is already shutting down");
   }
-
-  const now = ledgerAlignedValidFrom(lucid, Date.now());
-  if (gracePeriodEnd <= now) {
+  const { liveCount, inventory } = requireAuthenticatedReferenceInventory(
+    deployment,
+    currentDatum,
+  );
+  if (liveCount !== inventory.length) {
     throw new Error(
-      `grace period end ${gracePeriodEnd} must be after current time ${now}`,
+      "HostState does not retain its complete registered reference inventory; refusing to enter shutdown",
+    );
+  }
+
+  const { validFrom, validTo } = lifecycleTransitionTiming(
+    ledgerAlignedValidFrom(lucid, Date.now()),
+  );
+  if (gracePeriodEnd <= validTo) {
+    throw new Error(
+      `grace period end ${gracePeriodEnd} must be after the transaction upper validity bound ${validTo}`,
     );
   }
 
@@ -1112,20 +2049,11 @@ async function enterShutdown(
   if (signerKeyHash !== currentDatum.deployer) {
     throw new Error("The selected wallet is not the HostState deployer");
   }
-  const updatedDatum: HostStateDatumType = {
-    ...currentDatum,
-    state: {
-      ...currentDatum.state,
-      version: currentDatum.state.version + 1n,
-      last_update_time: BigInt(now),
-    },
-    shutdown: {
-      ShuttingDown: {
-        initiated_at: BigInt(now),
-        grace_period_end: BigInt(gracePeriodEnd),
-      },
-    },
-  };
+  const updatedDatum = buildShutdownEntryDatum(
+    currentDatum,
+    validTo,
+    gracePeriodEnd,
+  );
   const redeemer: HostStateRedeemerType = {
     EnterShutdown: { grace_period_end: BigInt(gracePeriodEnd) },
   };
@@ -1152,15 +2080,15 @@ async function enterShutdown(
           hostUtxo.assets,
         )
         .addSignerKey(signerKeyHash)
-        .validFrom(now)
-        .validTo(now + TX_VALIDITY_WINDOW_MS),
+        .validFrom(validFrom)
+        .validTo(validTo),
     lucid,
     "EnterDeploymentShutdown",
   );
 
   console.log(toJson({
     txHash,
-    initiatedAt: now,
+    initiatedAt: validTo,
     gracePeriodEnd,
   }));
 }
@@ -1404,21 +2332,12 @@ async function sealShutdown(
     lucid,
     normalizeUtxo(deployment.validators.hostStateStt.refUtxo),
   );
-  const proofWindowEnd = validFrom + HOST_STATE_PROOF_WINDOW_MS;
-  const updatedDatum: HostStateDatumType = {
-    ...currentDatum,
-    state: {
-      ...currentDatum.state,
-      version: currentDatum.state.version + 1n,
-      last_update_time: BigInt(validFrom),
-    },
-    shutdown: {
-      Sealed: {
-        sealed_at: BigInt(validFrom),
-        proof_window_end: BigInt(proofWindowEnd),
-      },
-    },
-  };
+  const { validTo, proofWindowEnd } = lifecycleTransitionTiming(validFrom);
+  const updatedDatum = buildSealedHostDatum(
+    currentDatum,
+    validTo,
+    proofWindowEnd,
+  );
   const txHash = await submitTx(
     () =>
       lucid
@@ -1438,7 +2357,7 @@ async function sealShutdown(
         )
         .addSignerKey(signerKeyHash)
         .validFrom(validFrom)
-        .validTo(validFrom + TX_VALIDITY_WINDOW_MS),
+        .validTo(validTo),
     lucid,
     "SealDeploymentShutdown",
   );
@@ -1446,7 +2365,7 @@ async function sealShutdown(
   console.log(toJson({
     txHash,
     moduleTxHashes: reclaimedModules.txHashes,
-    sealedAt: validFrom,
+    sealedAt: validTo,
     proofWindowEnd,
     reclaimedModules: reclaimedModules.portIds,
   }));
@@ -1459,63 +2378,195 @@ async function reclaimReferenceScripts(
 ) {
   const walletAddress = await lucid.wallet().address();
   const signerKeyHash = deployerPaymentKeyHash(walletAddress);
-  const hostUtxo = await getHostStateUtxo(lucid, deployment);
-  const hostDatum = decodeHostStateDatum(hostUtxo);
-  if (signerKeyHash !== hostDatum.deployer) {
+  const initialHostUtxo = await getHostStateUtxo(lucid, deployment);
+  const initialHostDatum = decodeHostStateDatum(initialHostUtxo);
+  if (signerKeyHash !== initialHostDatum.deployer) {
     throw new Error("The selected wallet is not the HostState deployer");
   }
-  const proofWindowEnd = requireProofWindowEnd(hostDatum);
-  const validFrom = ledgerAlignedValidFrom(
-    lucid,
-    requireGracePeriodElapsed(proofWindowEnd),
-  );
+  requireGracePeriodElapsed(requireProofWindowEnd(initialHostDatum));
+  requireAuthenticatedReferenceInventory(deployment, initialHostDatum);
 
-  const [referenceValidator, , referenceValidatorAddress] = await readValidator(
-    "reference_validator.refer_only.else",
-    lucid,
-    [deployment.hostStateNFT!.policyId],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
-  );
+  const referenceValidator = {
+    type: "PlutusV3" as const,
+    script: deployment.referenceValidator.script,
+  };
+  const referenceValidatorAddress = deployment.referenceValidator.address;
   const deploymentReferences = deploymentReferenceOutRefs(deployment);
-  const referenceScriptUtxos = await getLiveDeploymentReferenceUtxos(
-    lucid,
-    referenceValidatorAddress,
-    deploymentReferences,
-  );
-
-  if (referenceScriptUtxos.length === 0) {
-    console.log("No reclaimable reference-script UTxOs found.");
-    return;
-  }
-
+  const hostStateReference = deployment.validators.hostStateStt.refUtxo;
+  const hostStateReferenceKey =
+    `${hostStateReference.txHash}#${hostStateReference.outputIndex}`;
   const txHashes: string[] = [];
-  for (
-    let index = 0;
-    index < referenceScriptUtxos.length;
-    index += batchSize
-  ) {
-    const batch = referenceScriptUtxos.slice(index, index + batchSize);
+  let reclaimedUtxos = 0;
+  while (true) {
+    const hostUtxo = await getHostStateUtxo(lucid, deployment);
+    const currentDatum = decodeHostStateDatum(hostUtxo);
+    if (signerKeyHash !== currentDatum.deployer) {
+      throw new Error("The selected wallet is not the HostState deployer");
+    }
+    const proofWindowEnd = requireProofWindowEnd(currentDatum);
+    const { liveCount, inventory } = requireAuthenticatedReferenceInventory(
+      deployment,
+      currentDatum,
+    );
+    // The first authenticated entry is the HostState STT witness. It must be
+    // left for the atomic terminal HostState/NFT/reference-output burn.
+    if (liveCount === 1) break;
+    if (liveCount < 1) {
+      throw new Error(
+        "HostState has no terminal reference witness; refusing an unrecoverable shutdown path",
+      );
+    }
+    const providerUtxos = await getLiveDeploymentReferenceUtxos(
+      lucid,
+      referenceValidatorAddress,
+      deploymentReferences,
+    );
+    const liveUtxos = requireLiveReferenceInventoryPrefix(
+      inventory,
+      liveCount,
+      providerUtxos,
+    );
+    const liveInventory = inventory.slice(0, liveCount);
+    const hostStateReferenceUtxo = liveUtxos[0];
+    if (
+      `${hostStateReferenceUtxo.txHash}#${hostStateReferenceUtxo.outputIndex}` !==
+        hostStateReferenceKey || !hostStateReferenceUtxo.scriptRef
+    ) {
+      throw new Error(
+        "Authenticated HostState reference witness is not live at the first inventory position",
+      );
+    }
+    const hostReferenceScriptBytes =
+      hostStateReferenceUtxo.scriptRef.script.length / 2;
+    const batch = selectReferenceReclaimSuffix(
+      liveInventory,
+      liveUtxos,
+      Math.min(batchSize, REFERENCE_SCRIPT_INPUT_COUNT_LIMIT - 1),
+      REFERENCE_SCRIPT_INPUT_BYTE_BUDGET,
+      hostReferenceScriptBytes,
+      1,
+    );
+    const currentLastUpdate = requireSafeTimestamp(
+      currentDatum.state.last_update_time,
+      "HostState last_update_time",
+    );
+    const validFrom = ledgerAlignedValidFrom(
+      lucid,
+      Math.max(Date.now(), proofWindowEnd, currentLastUpdate + 1),
+    );
+    const updatedDatum = buildReclaimedReferenceHostDatum(
+      currentDatum,
+      batch.entries,
+      batch.predecessorRoot,
+      validFrom,
+    );
     const txHash = await submitTx(
-      () =>
-        lucid
+      () => {
+        const tx = lucid
           .newTx()
-          .readFrom([hostUtxo])
-          .attach.SpendingValidator(referenceValidator)
-          .collectFrom(batch, Data.void())
+          .readFrom([hostStateReferenceUtxo])
+          .attach.SpendingValidator(referenceValidator);
+        return tx
+          .collectFrom(
+            [hostUtxo],
+            Data.to(
+              {
+                ReclaimReferenceScripts: {
+                  predecessor_root: batch.predecessorRoot,
+                },
+              },
+              HostStateRedeemer,
+              { canonical: true },
+            ),
+          )
+          .collectFrom(batch.utxos, Data.void())
+          .pay.ToContract(
+            deployment.validators.hostStateStt.address,
+            {
+              kind: "inline",
+              value: Data.to(updatedDatum, HostStateDatum, {
+                canonical: true,
+              }),
+            },
+            hostUtxo.assets,
+          )
           .addSignerKey(signerKeyHash)
           .validFrom(validFrom)
-          .validTo(validFrom + TX_VALIDITY_WINDOW_MS),
+          .validTo(validFrom + TX_VALIDITY_WINDOW_MS);
+      },
       lucid,
-      `ReclaimReferenceScripts ${index + 1}-${index + batch.length}`,
+      `ReclaimReferenceScripts ${
+        liveCount - batch.utxos.length + 1
+      }-${liveCount}`,
     );
     txHashes.push(txHash);
+    reclaimedUtxos += batch.utxos.length;
   }
 
+  if (txHashes.length === 0) {
+    console.log(
+      "Only the terminal HostState reference-script UTxO remains; finalize shutdown to reclaim it atomically.",
+    );
+    return;
+  }
   console.log(toJson({
-    reclaimedUtxos: referenceScriptUtxos.length,
+    reclaimedUtxos,
     batchSize,
     txHashes,
   }));
+}
+
+export function buildTerminalShutdownTx(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+  hostUtxo: UTxO,
+  terminalHostReference: UTxO,
+  signerKeyHash: string,
+  reclaimAddress: string,
+  validFrom: number,
+): TxBuilder {
+  const hostStateNFT = deployment.hostStateNFT as ReclaimableHostStateNft;
+  const unit = hostStateUnit(deployment);
+  const hostRedeemer: HostStateRedeemerType = {
+    ReclaimHostState: { reclaim_to: signerKeyHash },
+  };
+  const nftRedeemer = Data.to(
+    { BurnFinal: { reclaim_to: signerKeyHash } },
+    HostStateNftRedeemer,
+    { canonical: true },
+  );
+  // The validator requires one exact ADA-only payout for the Host reserve.
+  // Any unrelated tokens donated to HostState are left for Lucid to place in
+  // a separate change output, so they cannot block finalization.
+  const reclaimedAssets = { lovelace: hostUtxo.assets.lovelace ?? 0n };
+
+  return lucid
+    .newTx()
+    // Register the Host script with Lucid/CML. Because terminalHostReference
+    // carries the same script and is a normal input, CML omits the large Host
+    // script from the witness set without adding a conflicting reference input.
+    .attach.SpendingValidator({
+      type: "PlutusV3",
+      script: deployment.validators.hostStateStt.script,
+    })
+    .attach.SpendingValidator({
+      type: "PlutusV3",
+      script: deployment.referenceValidator.script,
+    })
+    .collectFrom(
+      [hostUtxo],
+      Data.to(hostRedeemer, HostStateRedeemer, { canonical: true }),
+    )
+    .collectFrom([terminalHostReference], Data.void())
+    .attach.MintingPolicy({
+      type: "PlutusV3",
+      script: hostStateNFT.script,
+    })
+    .mintAssets({ [unit]: -1n }, nftRedeemer)
+    .pay.ToAddress(reclaimAddress, reclaimedAssets)
+    .addSignerKey(signerKeyHash)
+    .validFrom(validFrom)
+    .validTo(validFrom + TX_VALIDITY_WINDOW_MS);
 }
 
 async function finalizeShutdown(
@@ -1533,12 +2584,18 @@ async function finalizeShutdown(
   if (signerKeyHash !== hostDatum.deployer) {
     throw new Error("The selected wallet is not the HostState deployer");
   }
+  const { liveCount: liveReferenceScriptCount, inventory } =
+    requireAuthenticatedReferenceInventory(deployment, hostDatum);
+  if (liveReferenceScriptCount !== 1) {
+    throw new Error(
+      `HostState must authenticate only its terminal reference script before finalization; found ${liveReferenceScriptCount}`,
+    );
+  }
   const proofWindowEnd = requireProofWindowEnd(hostDatum);
   const validFrom = ledgerAlignedValidFrom(
     lucid,
     requireGracePeriodElapsed(proofWindowEnd),
   );
-  const hostStateNFT = deployment.hostStateNFT as ReclaimableHostStateNft;
   const unit = hostStateUnit(deployment);
   if (hostUtxo.assets[unit] !== 1n) {
     throw new Error(
@@ -1546,58 +2603,39 @@ async function finalizeShutdown(
     );
   }
 
-  const [, , referenceValidatorAddress] = await readValidator(
-    "reference_validator.refer_only.else",
-    lucid,
-    [hostStateNFT.policyId],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
-  );
+  const referenceValidatorAddress = deployment.referenceValidator.address;
   const deploymentReferences = deploymentReferenceOutRefs(deployment);
   const remainingReferenceScripts = await getLiveDeploymentReferenceUtxos(
     lucid,
     referenceValidatorAddress,
     deploymentReferences,
   );
-  if (remainingReferenceScripts.length > 0) {
+  const [terminalHostReference] = requireLiveReferenceInventoryPrefix(
+    inventory,
+    1,
+    remainingReferenceScripts,
+  );
+  const expectedHostReference = deployment.validators.hostStateStt.refUtxo;
+  if (
+    terminalHostReference.txHash !== expectedHostReference.txHash ||
+    terminalHostReference.outputIndex !== expectedHostReference.outputIndex
+  ) {
     throw new Error(
-      `${remainingReferenceScripts.length} reference-script UTxO(s) remain; reclaim them before finalizing shutdown`,
+      "The sole terminal reference output is not the authenticated HostState STT witness",
     );
   }
 
-  const hostRedeemer: HostStateRedeemerType = {
-    ReclaimHostState: { reclaim_to: signerKeyHash },
-  };
-  const nftRedeemer = Data.to(
-    { BurnFinal: { reclaim_to: signerKeyHash } },
-    HostStateNftRedeemer,
-    { canonical: true },
-  );
-  // The validator requires one exact ADA-only payout for the Host reserve.
-  // Any unrelated tokens donated to HostState are left for Lucid to place in
-  // a separate change output, so they cannot block finalization.
-  const reclaimedAssets = { lovelace: hostUtxo.assets.lovelace ?? 0n };
-
   const txHash = await submitTx(
     () =>
-      lucid
-        .newTx()
-        .attach.SpendingValidator({
-          type: "PlutusV3",
-          script: deployment.validators.hostStateStt.script,
-        })
-        .collectFrom(
-          [hostUtxo],
-          Data.to(hostRedeemer, HostStateRedeemer, { canonical: true }),
-        )
-        .attach.MintingPolicy({
-          type: "PlutusV3",
-          script: hostStateNFT.script,
-        })
-        .mintAssets({ [unit]: -1n }, nftRedeemer)
-        .pay.ToAddress(reclaimAddress, reclaimedAssets)
-        .addSignerKey(signerKeyHash)
-        .validFrom(validFrom)
-        .validTo(validFrom + TX_VALIDITY_WINDOW_MS),
+      buildTerminalShutdownTx(
+        lucid,
+        deployment,
+        hostUtxo,
+        terminalHostReference,
+        signerKeyHash,
+        reclaimAddress,
+        validFrom,
+      ),
     lucid,
     "FinalizeDeploymentShutdown",
   );
@@ -1636,7 +2674,9 @@ if (import.meta.main) {
   main().catch((error) => {
     console.error(
       `shutdown-deployment failed: ${
-        error instanceof Error ? error.message : String(error)
+        redactManagedCredentials(
+          error instanceof Error ? error.message : String(error),
+        )
       }`,
     );
     Deno.exit(1);

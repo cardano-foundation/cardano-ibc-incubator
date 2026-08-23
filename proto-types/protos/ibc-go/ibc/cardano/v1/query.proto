@@ -66,6 +66,15 @@ message BridgeManifest {
   BridgeManifestAuthToken host_state_nft = 4;
   BridgeManifestValidators validators = 6;
   BridgeManifestModules modules = 7;
+  BridgeManifestTraceRegistry trace_registry = 9;
+  // Exact, deduplicated inventory of every reference-script output created by
+  // this deployment. Operators use it to prove shutdown reclamation is complete.
+  repeated BridgeManifestRefUtxo reference_out_refs = 10;
+  // Full, canonical inventory commitment recorded by HostState at launch.
+  string reference_script_inventory_root = 11;
+  // The exact parameterized validator needed to spend reference-script outputs
+  // during shutdown. Persisting it keeps reclamation independent of later builds.
+  BridgeManifestReferenceValidator reference_validator = 12;
 }
 
 message BridgeManifestCardanoInfo {
@@ -77,11 +86,22 @@ message BridgeManifestCardanoInfo {
 message BridgeManifestAuthToken {
   string policy_id = 1;
   string token_name = 2;
+  // Serialized HostState minting policy required for the final deployment burn.
+  string script = 3;
 }
 
 message BridgeManifestRefUtxo {
   string tx_hash = 1;
   uint64 output_index = 2;
+  // Present for top-level inventory entries; omitted where this message is
+  // nested under a validator that already carries its script hash.
+  optional string script_hash = 3;
+}
+
+message BridgeManifestReferenceValidator {
+  string script = 1;
+  string script_hash = 2;
+  string address = 3;
 }
 
 message BridgeManifestValidator {
@@ -129,6 +149,17 @@ message BridgeManifestValidators {
   BridgeManifestValidator mint_lifecycle_reclamation_marker = 13;
   BridgeManifestValidator mint_lifecycle_operational_marker = 14;
   BridgeManifestValidator mint_lifecycle_packet_marker = 15;
+  BridgeManifestValidator spend_mock_module = 16;
+  BridgeManifestValidator spend_trace_registry = 17;
+  BridgeManifestValidator mint_identifier = 18;
+  BridgeManifestValidator mint_transfer_escrow_shard = 19;
+  BridgeManifestValidator mint_port = 20;
+  BridgeManifestVoucherMetadata voucher_metadata = 21;
+  BridgeManifestValidator mint_trace_registry_benchmark_voucher = 22;
+}
+
+message BridgeManifestVoucherMetadata {
+  string address = 1;
 }
 
 message BridgeManifestModule {
@@ -139,4 +170,16 @@ message BridgeManifestModule {
 message BridgeManifestModules {
   BridgeManifestModule transfer = 2;
   BridgeManifestModule mock = 3;
+  BridgeManifestModule icq = 4;
+}
+
+message BridgeManifestTraceRegistryShard {
+  string policy_id = 1;
+  string token_name = 2;
+}
+
+message BridgeManifestTraceRegistry {
+  string address = 1;
+  string shard_policy_id = 2;
+  BridgeManifestTraceRegistryShard directory = 3;
 }

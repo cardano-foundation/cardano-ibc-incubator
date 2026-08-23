@@ -60,12 +60,13 @@ function encodedModuleDatum(
 function moduleRoot(
   root?: string,
   liveCount = root === undefined ? 0n : 1n,
+  voucherSupply = 0n,
 ): UTxO {
   return utxo(
     'module-root',
     0,
     { lovelace: 5_000_000n, [TRANSFER_MODULE_IDENTIFIER]: 1n },
-    root === undefined ? undefined : encodedModuleDatum(root, liveCount),
+    root === undefined ? undefined : encodedModuleDatum(root, liveCount, voucherSupply),
   );
 }
 
@@ -367,7 +368,9 @@ describe('transfer escrow shard registry lookup', () => {
     const retired = shard('retired-for-proof', 0, 0n);
     const witness = await proveTransferChannelHasNoLiveShards(
       dependencies(
-        async () => [moduleRoot(retiredTree.getRoot(), 0n)],
+        // Voucher liabilities elsewhere in the transfer module do not belong
+        // to this drained channel and must not block its reclamation proof.
+        async () => [moduleRoot(retiredTree.getRoot(), 0n, 7n)],
         {
           findLatestShardHistory: async () => [
             { ...retired, shardTokenUnit: SHARD_TOKEN_UNIT, spent: true },

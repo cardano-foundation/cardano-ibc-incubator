@@ -309,6 +309,9 @@ pub fn setup() -> MockData {
       nft_policy: host_state_nft_policy_id,
       deployer: "mock deployer key hash",
       shutdown: Active,
+      live_reference_script_count: Some(0),
+      reference_script_inventory_root: empty_ibc_state_root,
+      reference_script_registration: None,
     }
   let host_state_input =
     Input {

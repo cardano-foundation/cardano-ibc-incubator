@@ -30,6 +30,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_redeemer
 use ibc/core/ics_025_handler_interface/reclamation
+use ibc/utils/validator_utils
 use minting_client_stt
 use minting_connection_stt
 use spending_client
@@ -101,6 +102,9 @@ fn host_datum() -> HostStateDatum {
     nft_policy: host_policy,
     deployer,
     shutdown: Active,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
   }
 }
 
@@ -356,9 +360,15 @@ test connection_reclaim_rejects_a_live_child_channel() fail {
     |> validate_connection_reclaim(datum)
 }
 
-fn validate_begin_retirement(has_deployer_signature: Bool) -> Bool {
-  let valid_from = 1_000
-  let not_before = reclamation.connection_retirement_not_before(valid_from)
+fn validate_begin_retirement(
+  has_deployer_signature: Bool,
+  valid_from: Int,
+  valid_to: Int,
+  deadline_anchor: Int,
+  delay_adjustment: Int,
+) -> Bool {
+  let not_before =
+    reclamation.connection_retirement_not_before(deadline_anchor) + delay_adjustment
   let input_datum = connection_datum(ConnectionActive, 1)
   let output_datum =
     ConnectionDatum { ..input_datum, lifecycle: Retiring { not_before } }
@@ -374,7 +384,7 @@ fn validate_begin_retirement(has_deployer_signature: Bool) -> Bool {
           datum: InlineDatum(output_datum),
         },
       ],
-      validity_range: interval.after(valid_from),
+      validity_range: interval.between(valid_from, valid_to),
       extra_signatories: if has_deployer_signature {
         [deployer]
       } else {
@@ -395,11 +405,27 @@ fn validate_begin_retirement(has_deployer_signature: Bool) -> Bool {
 }
 
 test connection_retirement_accepts_the_fixed_delay_and_deployer_signature() {
-  validate_begin_retirement(True)
+  let valid_from = 1_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width
+  validate_begin_retirement(True, valid_from, valid_to, valid_to, 0)
 }
 
 test connection_retirement_rejects_a_missing_deployer_signature() fail {
-  validate_begin_retirement(False)
+  validate_begin_retirement(False, 1_000, 2_000, 2_000, 0)
+}
+
+test connection_retirement_rejects_a_lower_bound_backdated_deadline() fail {
+  validate_begin_retirement(True, 1_000, 2_000, 1_000, 0)
+}
+
+test connection_retirement_rejects_a_caller_selected_delay() fail {
+  validate_begin_retirement(True, 1_000, 2_000, 2_000, 1)
+}
+
+test connection_retirement_rejects_a_wide_validity_interval() fail {
+  let valid_from = 1_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width + 1
+  validate_begin_retirement(True, valid_from, valid_to, valid_to, 0)
 }
 
 test connection_decrement_channel_count_accepts_reclaim_channel_companion() {

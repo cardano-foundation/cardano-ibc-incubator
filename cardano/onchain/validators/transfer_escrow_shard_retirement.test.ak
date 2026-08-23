@@ -316,6 +316,7 @@ fn channel_input(state: ChannelState) -> Input {
       port_id,
       token: channel_token(),
       lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
   Input {
     output_reference: channel_ref,

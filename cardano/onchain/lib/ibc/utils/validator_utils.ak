@@ -44,6 +44,13 @@ pub type ExpectedHostStateRedeemer {
 type PosixTime =
   Int
 
+/// Lifecycle transitions that start a safety delay use the transaction's
+/// upper validity bound as their authenticated timestamp. Keeping the whole
+/// interval short prevents an old lower bound from backdating that timestamp.
+/// Ten minutes plus one slot boundary matches the longest transaction window
+/// used by the builders while remaining negligible beside the seven-day delays.
+pub const max_lifecycle_validity_width: Int = 601_000
+
 pub fn get_inline_datum(output: Output) -> Data {
   expect InlineDatum(data) = output.datum
   data
@@ -178,6 +185,21 @@ pub fn get_tx_valid_from(validity_range: ValidityRange) -> PosixTime {
   } else {
     fail @"Lower bound is not inclusive"
   }
+}
+
+/// Return a finite, ordered lifecycle validity interval whose width is capped.
+/// The lower bound must be inclusive because Cardano's `validFrom` is the
+/// earliest instant at which the transition may take effect. The upper bound
+/// is deliberately accepted with either inclusivity because Lucid represents
+/// `validTo` as an exclusive bound.
+pub fn get_bounded_lifecycle_validity(
+  validity_range: ValidityRange,
+) -> (PosixTime, PosixTime) {
+  let valid_from = get_tx_valid_from(validity_range)
+  let valid_to = get_tx_valid_to(validity_range)
+  expect valid_to >= valid_from
+  expect valid_to - valid_from <= max_lifecycle_validity_width
+  (valid_from, valid_to)
 }
 
 /// Resolve a module witness through the exact port's immutable HostState registration and require its capability UTxO to be spent.

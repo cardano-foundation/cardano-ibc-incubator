@@ -18,9 +18,13 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{VerificationKeyHash}
 use cardano/assets.{PolicyId, tokens}
-use cardano/transaction.{Input, OutputReference, Spend, Transaction, find_input}
+use cardano/transaction.{
+  InlineDatum, Input, OutputReference, Spend, Transaction, find_input,
+}
 use ibc/auth.{AuthToken}
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  HostStateDatum, host_state_token_name, is_initialized_valid,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   HostStateRedeemer, ReclaimHostState,
 }
@@ -52,19 +56,29 @@ fn validate_utxo_consumed(
 /// 3. Burning is allowed only for the typed, sealed final-reclaim transition
 validator host_state_nft(utxo_ref: OutputReference) {
   mint(redeemer: NFTRedeemer, policy_id: PolicyId, transaction: Transaction) {
-    let Transaction { inputs, mint, redeemers, .. } = transaction
+    let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
 
     when redeemer is {
       MintInitial -> {
         // The designated UTxO makes the initial mint unique.
         expect validate_utxo_consumed(inputs, utxo_ref)
         let own_minted = tokens(mint, policy_id)
+        expect [host_output] =
+          list.filter(
+            outputs,
+            fn(output) {
+              assets.has_nft(output.value, policy_id, host_state_token_name)
+            },
+          )
+        expect InlineDatum(raw_host_datum) = host_output.datum
+        expect host_datum: HostStateDatum = raw_host_datum
         and {
           dict.size(own_minted) == 1,
           when dict.get(own_minted, host_state_token_name) is {
             Some(quantity) -> quantity == 1
             None -> False
           },
+          is_initialized_valid(host_datum, policy_id),
         }
       }
       BurnFinal { reclaim_to } -> {
