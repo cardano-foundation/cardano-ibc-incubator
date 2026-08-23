@@ -129,8 +129,9 @@ describe('IBC state root recovery after packet-history pruning', () => {
       state: {
         ibc_state_root: liveTree.getRoot(),
         version: 12n,
-        bound_port: new Map(),
+        bound_port: [],
       },
+      control: { port_registry: new Map(), shutdown: 'Active' },
     };
     const clientUtxo = {
       datum: 'client-datum',

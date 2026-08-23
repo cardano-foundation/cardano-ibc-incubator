@@ -135,22 +135,25 @@ async function encodeHostStateDatum(
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
+    bound_port: Data.Array(Data.Integer()),
     last_update_time: Data.Integer(),
   });
   const HostStateDatumSchema = Data.Object({
     state: HostStateStateSchema,
     nft_policy: Data.Bytes(),
     deployer: Data.Bytes(),
-    shutdown: Data.Enum([
-      Data.Literal('Active'),
-      Data.Object({
-        ShuttingDown: Data.Object({
-          initiated_at: Data.Integer(),
-          grace_period_end: Data.Integer(),
+    control: Data.Object({
+      port_registry: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
+      shutdown: Data.Enum([
+        Data.Literal('Active'),
+        Data.Object({
+          ShuttingDown: Data.Object({
+            initiated_at: Data.Integer(),
+            grace_period_end: Data.Integer(),
+          }),
         }),
-      }),
-    ]),
+      ]),
+    }),
   });
   return Data.to(hostStateDatum, HostStateDatumSchema as any, { canonical: true });
 }
@@ -175,22 +178,25 @@ async function decodeHostStateDatum(
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
+    bound_port: Data.Array(Data.Integer()),
     last_update_time: Data.Integer(),
   });
   const HostStateDatumSchema = Data.Object({
     state: HostStateStateSchema,
     nft_policy: Data.Bytes(),
     deployer: Data.Bytes(),
-    shutdown: Data.Enum([
-      Data.Literal('Active'),
-      Data.Object({
-        ShuttingDown: Data.Object({
-          initiated_at: Data.Integer(),
-          grace_period_end: Data.Integer(),
+    control: Data.Object({
+      port_registry: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
+      shutdown: Data.Enum([
+        Data.Literal('Active'),
+        Data.Object({
+          ShuttingDown: Data.Object({
+            initiated_at: Data.Integer(),
+            grace_period_end: Data.Integer(),
+          }),
         }),
-      }),
-    ]),
+      ]),
+    }),
   });
   return Data.from(encoded, HostStateDatumSchema as any);
 }

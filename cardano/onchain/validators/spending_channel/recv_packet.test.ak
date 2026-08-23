@@ -53,8 +53,8 @@ use ibc/core/ics_023_vector_commitments/merkle.{
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, ModuleRegistration, empty_ibc_state_root,
-  host_state_token_name,
+  Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
+  empty_ibc_state_root, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
@@ -347,7 +347,7 @@ fn check_recv_packet_with_timeout(
             state: old_host_state,
             nft_policy: host_nft_policy,
             deployer,
-            shutdown: Active,
+            control: registered_host_datum.control,
           },
         ),
         reference_script: None,
@@ -361,7 +361,7 @@ fn check_recv_packet_with_timeout(
           state: new_host_state,
           nft_policy: host_nft_policy,
           deployer,
-          shutdown: Active,
+          control: registered_host_datum.control,
         },
       ),
     }
@@ -948,14 +948,17 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
               next_client_sequence: 0,
               next_connection_sequence: 0,
               next_channel_sequence: 0,
-              bound_port: [
-                Pair(input_channel_datum.port_id, module_registration),
-              ],
+              bound_port: [],
               last_update_time: 0,
             },
             nft_policy: host_state_nft_policy_id,
             deployer: #"00000000000000000000000000000000000000000000000000000000",
-            shutdown: Active,
+            control: HostStateControl {
+              port_registry: [
+                Pair(input_channel_datum.port_id, module_registration),
+              ],
+              shutdown: Active,
+            },
           },
         ),
         reference_script: None,

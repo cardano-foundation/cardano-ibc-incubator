@@ -1,0 +1,22 @@
+module github.com/cardano-foundation/cardano-ibc-incubator/tests/injective-light-client-compat
+
+go 1.22
+
+require github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.3
+
+replace github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core => github.com/InjectiveLabs/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.0.0-20260708114507-110e3155016b
+
+require (
+	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/blinklabs-io/gouroboros v0.89.1 // indirect
+	github.com/cosmos/gogoproto v1.7.0 // indirect
+	github.com/cosmos/ics23/go v0.11.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/jinzhu/copier v0.4.0 // indirect
+	github.com/utxorpc/go-codegen v0.5.1 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
+	golang.org/x/crypto v0.27.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
+)

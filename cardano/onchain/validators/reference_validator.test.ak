@@ -5,8 +5,8 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostState, HostStateDatum, ShuttingDown, empty_ibc_state_root,
-  host_state_token_name,
+  HostState, HostStateControl, HostStateDatum, ShuttingDown,
+  empty_ibc_state_root, host_state_token_name,
 }
 use reference_validator
 
@@ -32,9 +32,12 @@ fn shutdown_host_state_datum(
     state,
     nft_policy,
     deployer: trusted_deployer,
-    shutdown: ShuttingDown {
-      initiated_at: state.last_update_time,
-      grace_period_end,
+    control: HostStateControl {
+      port_registry: [],
+      shutdown: ShuttingDown {
+        initiated_at: state.last_update_time,
+        grace_period_end,
+      },
     },
   }
 }

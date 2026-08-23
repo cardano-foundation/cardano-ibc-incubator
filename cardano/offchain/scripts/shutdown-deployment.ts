@@ -713,10 +713,10 @@ function decodeHostStateDatum(utxo: UTxO): HostStateDatumType {
 }
 
 function shutdownGracePeriodEnd(datum: HostStateDatumType): bigint | undefined {
-  if (datum.shutdown === "Active") {
+  if (datum.control.shutdown === "Active") {
     return undefined;
   }
-  return datum.shutdown.ShuttingDown.grace_period_end;
+  return datum.control.shutdown.ShuttingDown.grace_period_end;
 }
 
 function requireShutdownGracePeriodEnd(datum: HostStateDatumType): number {
@@ -761,7 +761,7 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
     hostState: {
       unit: hostStateUnit(deployment),
       utxo: `${hostUtxo.txHash}#${hostUtxo.outputIndex}`,
-      shutdown: hostDatum.shutdown,
+      shutdown: hostDatum.control.shutdown,
     },
     referenceScripts: {
       address: referenceValidatorAddress,
@@ -777,7 +777,7 @@ async function enterShutdown(
 ) {
   const hostUtxo = await getHostStateUtxo(lucid, deployment);
   const currentDatum = decodeHostStateDatum(hostUtxo);
-  if (currentDatum.shutdown !== "Active") {
+  if (currentDatum.control.shutdown !== "Active") {
     throw new Error("HostState is already shutting down");
   }
 
@@ -797,10 +797,13 @@ async function enterShutdown(
       version: currentDatum.state.version + 1n,
       last_update_time: BigInt(now),
     },
-    shutdown: {
-      ShuttingDown: {
-        initiated_at: BigInt(now),
-        grace_period_end: BigInt(gracePeriodEnd),
+    control: {
+      ...currentDatum.control,
+      shutdown: {
+        ShuttingDown: {
+          initiated_at: BigInt(now),
+          grace_period_end: BigInt(gracePeriodEnd),
+        },
       },
     },
   };

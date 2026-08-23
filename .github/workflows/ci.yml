@@ -952,6 +952,8 @@ jobs:
             path: cosmos/cardano-probabilistic-light-client-v8
           - name: core
             path: cosmos/cardano-probabilistic-light-client-core
+          - name: injective-light-client-compat
+            path: tests/injective-light-client-compat
 
     defaults:
       run:

@@ -904,7 +904,7 @@ export async function rebuildTreeFromChain(
     //
     // Each value commits the immutable module credential and exact capability
     // tokens registered for the port.
-    const boundPorts = hostStateDatum.state.bound_port ?? new Map();
+    const boundPorts = hostStateDatum.control.port_registry ?? new Map();
     if (boundPorts.size > 0) {
       for (const [portIdHex, registration] of boundPorts.entries()) {
         // Datum keys are hex-encoded UTF-8 and must be decoded before rebuilding textual paths.

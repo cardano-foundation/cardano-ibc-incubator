@@ -71,7 +71,7 @@ export class HostStateHeartbeatService {
       return this.statusResponse(context, false);
     }
 
-    if (context.hostStateDatum.shutdown !== 'Active') {
+    if (context.hostStateDatum.control.shutdown !== 'Active') {
       throw new GrpcFailedPreconditionException(
         'HostState heartbeat is disabled while the bridge is shutting down',
       );

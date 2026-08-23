@@ -223,12 +223,15 @@ describe('IBC module and textual-port codecs', () => {
         next_client_sequence: 0n,
         next_connection_sequence: 0n,
         next_channel_sequence: 0n,
-        bound_port: new Map([[portId, registration]]),
+        bound_port: [],
         last_update_time: 0n,
       },
       nft_policy: '66'.repeat(28),
       deployer: '77'.repeat(28),
-      shutdown: 'Active',
+      control: {
+        port_registry: new Map([[portId, registration]]),
+        shutdown: 'Active',
+      },
     };
 
     const encoded = await adapter.encode(datum, 'host_state');
