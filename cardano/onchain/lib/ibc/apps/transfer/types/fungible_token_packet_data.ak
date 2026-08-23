@@ -88,6 +88,57 @@ pub fn get_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
     |> concat("}")
 }
 
+/// ibc-go v10 Classic switched ICS-20 packet serialization from sorted JSON
+/// keys to Go struct-field order. Keep the established v8 encoding above for
+/// Cardano-originated packets, while accepting the v10 key ordering used by
+/// compatible Cosmos chains.
+pub fn get_v10_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
+  let FungibleTokenPacketData { amount, denom, memo, receiver, sender } = ftpd
+
+  let memo =
+    bytearray.foldr(
+      memo,
+      #"",
+      fn(byte, acc) {
+        if byte == 34 {
+          bytearray.push(acc, 34) |> bytearray.push(92)
+        } else {
+          bytearray.push(acc, byte)
+        }
+      },
+    )
+
+  #[]
+    |> concat("{")
+    |> concat(get_json("denom", denom))
+    |> concat(",")
+    |> concat(get_json("amount", amount))
+    |> concat(",")
+    |> concat(get_json("sender", sender))
+    |> concat(",")
+    |> concat(get_json("receiver", receiver))
+    |> concat(
+        if length(memo) == 0 {
+          ""
+        } else {
+          #[]
+            |> concat(",")
+            |> concat(get_json("memo", memo))
+        },
+      )
+    |> concat("}")
+}
+
+pub fn matches_bytes(
+  ftpd: FungibleTokenPacketData,
+  packet_data: ByteArray,
+) -> Bool {
+  or {
+    get_bytes(ftpd) == packet_data,
+    get_v10_bytes(ftpd) == packet_data,
+  }
+}
+
 fn get_json(key: ByteArray, value: ByteArray) -> ByteArray {
   #[]
     |> concat("\"")

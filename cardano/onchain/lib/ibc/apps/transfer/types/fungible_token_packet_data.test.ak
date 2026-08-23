@@ -57,6 +57,13 @@ fn assert_get_bytes(ftpd: FungibleTokenPacketData, expected: ByteArray) -> Bool 
   ftpd_mod.get_bytes(ftpd) == expected
 }
 
+fn assert_get_v10_bytes(
+  ftpd: FungibleTokenPacketData,
+  expected: ByteArray,
+) -> Bool {
+  ftpd_mod.get_v10_bytes(ftpd) == expected
+}
+
 test test_get_bytes_without_memo() {
   assert_get_bytes(
     FungibleTokenPacketData {
@@ -81,6 +88,49 @@ test test_get_bytes_with_memo() {
     },
     "{\"amount\":\"100\",\"denom\":\"transfer/gaiachannel/atom\",\"memo\":\"memo\",\"receiver\":\"cosmos1w3jhxarpv3j8yvs7f9y7g\",\"sender\":\"cosmos1xqp8p6zm8rs5dwswp6j59nelhvyxy4j9ls0tk0\"}",
   )
+}
+
+test test_get_v10_bytes_without_memo() {
+  assert_get_v10_bytes(
+    FungibleTokenPacketData {
+      denom: "transfer/gaiachannel/atom",
+      amount: "100",
+      sender: "cosmos1xqp8p6zm8rs5dwswp6j59nelhvyxy4j9ls0tk0",
+      receiver: "cosmos1w3jhxarpv3j8yvs7f9y7g",
+      memo: "",
+    },
+    "{\"denom\":\"transfer/gaiachannel/atom\",\"amount\":\"100\",\"sender\":\"cosmos1xqp8p6zm8rs5dwswp6j59nelhvyxy4j9ls0tk0\",\"receiver\":\"cosmos1w3jhxarpv3j8yvs7f9y7g\"}",
+  )
+}
+
+test test_get_v10_bytes_with_memo() {
+  assert_get_v10_bytes(
+    FungibleTokenPacketData {
+      denom: "transfer/gaiachannel/atom",
+      amount: "100",
+      sender: "cosmos1xqp8p6zm8rs5dwswp6j59nelhvyxy4j9ls0tk0",
+      receiver: "cosmos1w3jhxarpv3j8yvs7f9y7g",
+      memo: "memo",
+    },
+    "{\"denom\":\"transfer/gaiachannel/atom\",\"amount\":\"100\",\"sender\":\"cosmos1xqp8p6zm8rs5dwswp6j59nelhvyxy4j9ls0tk0\",\"receiver\":\"cosmos1w3jhxarpv3j8yvs7f9y7g\",\"memo\":\"memo\"}",
+  )
+}
+
+test matches_v8_and_v10_classic_wire_bytes() {
+  let packet =
+    FungibleTokenPacketData {
+      denom: "utest",
+      amount: "12345",
+      sender: "cosmos1sender",
+      receiver: "cardano-receiver",
+      memo: "",
+    }
+
+  and {
+    ftpd_mod.matches_bytes(packet, ftpd_mod.get_bytes(packet)),
+    ftpd_mod.matches_bytes(packet, ftpd_mod.get_v10_bytes(packet)),
+    !ftpd_mod.matches_bytes(packet, "different packet data"),
+  }
 }
 
 test test_get_bytes_with_large_amount() {
