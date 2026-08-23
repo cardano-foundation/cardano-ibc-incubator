@@ -11,6 +11,8 @@ const aikenInfrastructurePaths = new Set([
   'scripts/ci/aiken-fuzz-required-labels.json',
   'scripts/ci/check-aiken-fuzz-coverage.mjs',
   'scripts/ci/check-aiken-fuzz-imports.sh',
+  'scripts/ci/check-aiken-wire-schema.mjs',
+  'scripts/ci/check-aiken-wire-schema.test.mjs',
   'scripts/ci/check-generated-artifacts-clean.sh',
   'scripts/ci/detect-aiken-semantic-changes.mjs',
   'scripts/ci/detect-aiken-semantic-changes.test.mjs',

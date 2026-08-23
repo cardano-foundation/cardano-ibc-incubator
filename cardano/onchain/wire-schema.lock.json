@@ -1,0 +1,784 @@
+{
+  "formatVersion": 1,
+  "wireSchemaVersion": 1,
+  "source": "cardano/onchain/plutus.json",
+  "schemaFingerprint": "sha256:49d10144fa135485025d67d003fdade89d743266802cab665b7127d097938a63",
+  "roots": [
+    "ibc/core/ics_025_handler_interface/host_state/HostStateDatum",
+    "ibc/client/ics_007_tendermint_client/client_state/ClientState",
+    "ibc/client/ics_007_tendermint_client/consensus_state/ConsensusState",
+    "ibc/core/ics_003_connection_semantics/types/connection_end/ConnectionEnd",
+    "ibc/core/ics_004/types/channel/Channel"
+  ],
+  "definitions": {
+    "Bool": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "False",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "name": "True",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    },
+    "ByteArray": {
+      "type": "bytes"
+    },
+    "Int": {
+      "type": "integer"
+    },
+    "List<ByteArray>": {
+      "type": "list",
+      "items": {
+        "ref": "ByteArray"
+      }
+    },
+    "List<Int>": {
+      "type": "list",
+      "items": {
+        "ref": "Int"
+      }
+    },
+    "List<ibc/core/ics_003_connection_semantics/types/version/Version>": {
+      "type": "list",
+      "items": {
+        "ref": "ibc/core/ics_003_connection_semantics/types/version/Version"
+      }
+    },
+    "List<ibc/core/ics_023_vector_commitments/ics23/proofs/ProofSpec>": {
+      "type": "list",
+      "items": {
+        "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/ProofSpec"
+      }
+    },
+    "Pairs<ByteArray,ibc/core/ics_025_handler_interface/host_state/ModuleRegistration>": {
+      "type": "map",
+      "keys": {
+        "ref": "ByteArray"
+      },
+      "values": {
+        "ref": "ibc/core/ics_025_handler_interface/host_state/ModuleRegistration"
+      }
+    },
+    "aiken/crypto/VerificationKeyHash": {
+      "type": "bytes"
+    },
+    "cardano/assets/AssetName": {
+      "type": "bytes"
+    },
+    "cardano/assets/PolicyId": {
+      "type": "bytes"
+    },
+    "ibc/auth/AuthToken": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "AuthToken",
+          "index": 0,
+          "fields": [
+            {
+              "name": "policy_id",
+              "type": {
+                "ref": "cardano/assets/PolicyId"
+              }
+            },
+            {
+              "name": "name",
+              "type": {
+                "ref": "cardano/assets/AssetName"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/client/ics_007_tendermint_client/client_state/ClientState": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "ClientState",
+          "index": 0,
+          "fields": [
+            {
+              "name": "chain_id",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "trust_level",
+              "type": {
+                "ref": "ibc/client/ics_007_tendermint_client/types/unchecked_rational/UncheckedRational"
+              }
+            },
+            {
+              "name": "trusting_period",
+              "type": {
+                "ref": "ibc/utils/time/Duration"
+              }
+            },
+            {
+              "name": "unbonding_period",
+              "type": {
+                "ref": "ibc/utils/time/Duration"
+              }
+            },
+            {
+              "name": "max_clock_drift",
+              "type": {
+                "ref": "ibc/utils/time/Duration"
+              }
+            },
+            {
+              "name": "frozen_height",
+              "type": {
+                "ref": "ibc/client/ics_007_tendermint_client/height/Height"
+              }
+            },
+            {
+              "name": "latest_height",
+              "type": {
+                "ref": "ibc/client/ics_007_tendermint_client/height/Height"
+              }
+            },
+            {
+              "name": "proof_specs",
+              "type": {
+                "ref": "List<ibc/core/ics_023_vector_commitments/ics23/proofs/ProofSpec>"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/client/ics_007_tendermint_client/consensus_state/ConsensusState": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "ConsensusState",
+          "index": 0,
+          "fields": [
+            {
+              "name": "timestamp",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "next_validators_hash",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "root",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/merkle/MerkleRoot"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/client/ics_007_tendermint_client/height/Height": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "Height",
+          "index": 0,
+          "fields": [
+            {
+              "name": "revision_number",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "revision_height",
+              "type": {
+                "ref": "Int"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/client/ics_007_tendermint_client/types/unchecked_rational/UncheckedRational": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "UncheckedRational",
+          "index": 0,
+          "fields": [
+            {
+              "name": "numerator",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "denominator",
+              "type": {
+                "ref": "Int"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_003_connection_semantics/types/connection_end/ConnectionEnd": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "ConnectionEnd",
+          "index": 0,
+          "fields": [
+            {
+              "name": "client_id",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "versions",
+              "type": {
+                "ref": "List<ibc/core/ics_003_connection_semantics/types/version/Version>"
+              }
+            },
+            {
+              "name": "state",
+              "type": {
+                "ref": "ibc/core/ics_003_connection_semantics/types/state/State"
+              }
+            },
+            {
+              "name": "counterparty",
+              "type": {
+                "ref": "ibc/core/ics_003_connection_semantics/types/counterparty/Counterparty"
+              }
+            },
+            {
+              "name": "delay_period",
+              "type": {
+                "ref": "Int"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_003_connection_semantics/types/counterparty/Counterparty": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "Counterparty",
+          "index": 0,
+          "fields": [
+            {
+              "name": "client_id",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "connection_id",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "prefix",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/merkle_prefix/MerklePrefix"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_003_connection_semantics/types/state/State": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "Uninitialized",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "name": "Init",
+          "index": 1,
+          "fields": []
+        },
+        {
+          "name": "TryOpen",
+          "index": 2,
+          "fields": []
+        },
+        {
+          "name": "Open",
+          "index": 3,
+          "fields": []
+        }
+      ]
+    },
+    "ibc/core/ics_003_connection_semantics/types/version/Version": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "Version",
+          "index": 0,
+          "fields": [
+            {
+              "name": "identifier",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "features",
+              "type": {
+                "ref": "List<ByteArray>"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_004/types/channel/Channel": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "Channel",
+          "index": 0,
+          "fields": [
+            {
+              "name": "state",
+              "type": {
+                "ref": "ibc/core/ics_004/types/state/ChannelState"
+              }
+            },
+            {
+              "name": "ordering",
+              "type": {
+                "ref": "ibc/core/ics_004/types/order/Order"
+              }
+            },
+            {
+              "name": "counterparty",
+              "type": {
+                "ref": "ibc/core/ics_004/types/counterparty/ChannelCounterparty"
+              }
+            },
+            {
+              "name": "connection_hops",
+              "type": {
+                "ref": "List<ByteArray>"
+              }
+            },
+            {
+              "name": "version",
+              "type": {
+                "ref": "ByteArray"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_004/types/counterparty/ChannelCounterparty": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "ChannelCounterparty",
+          "index": 0,
+          "fields": [
+            {
+              "name": "port_id",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "channel_id",
+              "type": {
+                "ref": "ByteArray"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_004/types/order/Order": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "None",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "name": "Unordered",
+          "index": 1,
+          "fields": []
+        },
+        {
+          "name": "Ordered",
+          "index": 2,
+          "fields": []
+        }
+      ]
+    },
+    "ibc/core/ics_004/types/state/ChannelState": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "Uninitialized",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "name": "Init",
+          "index": 1,
+          "fields": []
+        },
+        {
+          "name": "TryOpen",
+          "index": 2,
+          "fields": []
+        },
+        {
+          "name": "Open",
+          "index": 3,
+          "fields": []
+        },
+        {
+          "name": "Closed",
+          "index": 4,
+          "fields": []
+        }
+      ]
+    },
+    "ibc/core/ics_023_vector_commitments/ics23/proofs/HashOp": {
+      "type": "integer"
+    },
+    "ibc/core/ics_023_vector_commitments/ics23/proofs/InnerSpec": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "InnerSpec",
+          "index": 0,
+          "fields": [
+            {
+              "name": "child_order",
+              "type": {
+                "ref": "List<Int>"
+              }
+            },
+            {
+              "name": "child_size",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "min_prefix_length",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "max_prefix_length",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "empty_child",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "hash",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/HashOp"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_023_vector_commitments/ics23/proofs/LeafOp": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "LeafOp",
+          "index": 0,
+          "fields": [
+            {
+              "name": "hash",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/HashOp"
+              }
+            },
+            {
+              "name": "prehash_key",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/HashOp"
+              }
+            },
+            {
+              "name": "prehash_value",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/HashOp"
+              }
+            },
+            {
+              "name": "length",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/LengthOp"
+              }
+            },
+            {
+              "name": "prefix",
+              "type": {
+                "ref": "ByteArray"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_023_vector_commitments/ics23/proofs/LengthOp": {
+      "type": "integer"
+    },
+    "ibc/core/ics_023_vector_commitments/ics23/proofs/ProofSpec": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "ProofSpec",
+          "index": 0,
+          "fields": [
+            {
+              "name": "leaf_spec",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/LeafOp"
+              }
+            },
+            {
+              "name": "inner_spec",
+              "type": {
+                "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/InnerSpec"
+              }
+            },
+            {
+              "name": "max_depth",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "min_depth",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "prehash_key_before_comparison",
+              "type": {
+                "ref": "Bool"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_023_vector_commitments/merkle/MerkleRoot": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "MerkleRoot",
+          "index": 0,
+          "fields": [
+            {
+              "name": "hash",
+              "type": {
+                "ref": "ByteArray"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_023_vector_commitments/merkle_prefix/MerklePrefix": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "MerklePrefix",
+          "index": 0,
+          "fields": [
+            {
+              "name": "key_prefix",
+              "type": {
+                "ref": "ByteArray"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_025_handler_interface/host_state/HostState": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "HostState",
+          "index": 0,
+          "fields": [
+            {
+              "name": "version",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "ibc_state_root",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "next_client_sequence",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "next_connection_sequence",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "next_channel_sequence",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "bound_port",
+              "type": {
+                "ref": "Pairs<ByteArray,ibc/core/ics_025_handler_interface/host_state/ModuleRegistration>"
+              }
+            },
+            {
+              "name": "last_update_time",
+              "type": {
+                "ref": "Int"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_025_handler_interface/host_state/HostStateDatum": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "HostStateDatum",
+          "index": 0,
+          "fields": [
+            {
+              "name": "state",
+              "type": {
+                "ref": "ibc/core/ics_025_handler_interface/host_state/HostState"
+              }
+            },
+            {
+              "name": "nft_policy",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "deployer",
+              "type": {
+                "ref": "aiken/crypto/VerificationKeyHash"
+              }
+            },
+            {
+              "name": "shutdown",
+              "type": {
+                "ref": "ibc/core/ics_025_handler_interface/host_state/ShutdownState"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_025_handler_interface/host_state/ModuleRegistration": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "ModuleRegistration",
+          "index": 0,
+          "fields": [
+            {
+              "name": "module_script_hash",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "port_token",
+              "type": {
+                "ref": "ibc/auth/AuthToken"
+              }
+            },
+            {
+              "name": "module_token",
+              "type": {
+                "ref": "ibc/auth/AuthToken"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_025_handler_interface/host_state/ShutdownState": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "Active",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "name": "ShuttingDown",
+          "index": 1,
+          "fields": [
+            {
+              "name": "initiated_at",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "grace_period_end",
+              "type": {
+                "ref": "Int"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/utils/time/Duration": {
+      "type": "integer"
+    }
+  }
+}

@@ -46,6 +46,9 @@ jobs:
       - name: Test Aiken change detector
         run: node --test scripts/ci/detect-aiken-semantic-changes.test.mjs
 
+      - name: Test Aiken wire schema lock
+        run: node --test scripts/ci/check-aiken-wire-schema.test.mjs
+
       - name: Detect Aiken-relevant changes
         id: detect
         env:
@@ -903,6 +906,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -926,6 +931,12 @@ jobs:
         if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         working-directory: cardano/onchain
         run: aiken build --deny
+
+      - name: Check Aiken wire schema lock
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
+        env:
+          WIRE_SCHEMA_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: node scripts/ci/check-aiken-wire-schema.mjs check --base-ref "${WIRE_SCHEMA_BASE_REF}"
 
       - name: Check generated artifacts
         run: scripts/ci/check-generated-artifacts-clean.sh
