@@ -354,6 +354,16 @@ func TestNormalizeEpochContextsRejectsConflictingDuplicateEpoch(t *testing.T) {
 	require.ErrorContains(t, err, "conflicting epoch context for epoch 7")
 }
 
+func TestNormalizeEpochContextsRejectsConflictingFirstRegistrationSlot(t *testing.T) {
+	cs := newProbabilisticTestClientState()
+	first := cloneEpochContext(mustCurrentTestEpochContext(t, cs))
+	second := cloneEpochContext(first)
+	second.StakeDistribution[0].FirstRegistrationSlot++
+
+	_, err := normalizeEpochContexts([]*EpochContext{first, second})
+	require.ErrorContains(t, err, "conflicting epoch context for epoch 7")
+}
+
 func TestMergeEpochContextsAllowsCandidateForStoredEpoch(t *testing.T) {
 	cs := newProbabilisticTestClientState()
 	stored := cloneEpochContext(mustCurrentTestEpochContext(t, cs))
@@ -390,6 +400,28 @@ func TestCheckForMisbehaviourDetectsConflictingEpochContext(t *testing.T) {
 	header.NewEpochContext.StakeDistribution[0].Stake++
 
 	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
+}
+
+func TestFirstRegistrationSlotConflictFreezesClient(t *testing.T) {
+	cdc := newProbabilisticTestCodec()
+	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-misbehaviour-registration-slot")
+
+	cs := newProbabilisticTestClientState()
+	setClientState(clientStore, cdc, cs)
+	header := newVerifiedTestHeader(t)
+	header.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, cs))
+	cutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive()
+	require.NoError(t, err)
+	require.Greater(t, cutoffSlot, header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot)
+	header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot = cutoffSlot
+
+	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
+	cs.UpdateStateOnMisbehaviour(ctx, cdc, clientStore, header)
+
+	frozen, found := getClientState(clientStore, cdc)
+	require.True(t, found)
+	require.True(t, frozen.FrozenHeight.EQ(FrozenHeight))
+	require.Equal(t, exported.Frozen, frozen.Status(ctx, clientStore, cdc))
 }
 
 func TestCheckForMisbehaviourIgnoresMatchingEpochContext(t *testing.T) {
@@ -434,6 +466,18 @@ func TestCheckForMisbehaviourDetectsConflictingEpochContextsInMisbehaviourMessag
 	header1.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, cs))
 	header2.NewEpochContext = cloneEpochContext(header1.NewEpochContext)
 	header2.NewEpochContext.StakeDistribution[0].Stake++
+
+	msg := NewMisbehaviour("08-cardano-probabilistic-0", header1, header2)
+	require.True(t, cs.CheckForMisbehaviour(sdk.Context{}, nil, nil, msg))
+}
+
+func TestCheckForMisbehaviourDetectsFirstRegistrationSlotConflictBetweenHeaders(t *testing.T) {
+	cs := newProbabilisticTestClientState()
+	header1 := newVerifiedTestHeader(t)
+	header2 := newVerifiedTestHeader(t)
+	header1.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, cs))
+	header2.NewEpochContext = cloneEpochContext(header1.NewEpochContext)
+	header2.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot++
 
 	msg := NewMisbehaviour("08-cardano-probabilistic-0", header1, header2)
 	require.True(t, cs.CheckForMisbehaviour(sdk.Context{}, nil, nil, msg))
