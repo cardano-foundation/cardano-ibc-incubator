@@ -91,8 +91,12 @@ validator acknowledge_packet(
 
     expect [connection_id] = cur_channel.connection_hops
 
-    let is_cur_chan_open = cur_channel.state == chan_state_mod.Open
-    trace @"acknowledge_packet: channel state is open"
+    // Closing a channel stops new packets, but existing outbound commitments
+    // still need to be acknowledged so the channel can be drained and
+    // reclaimed safely.
+    let is_cur_chan_settleable =
+      cur_channel.state == chan_state_mod.Open || cur_channel.state == chan_state_mod.Closed
+    trace @"acknowledge_packet: channel can settle existing commitments"
 
     let valid_packet = and {
         packet.source_port == port_id,
@@ -179,7 +183,7 @@ validator acknowledge_packet(
       auth.contain_auth_token(updated_output, datum.token),
       is_connection_state_open,
       is_client_status_active,
-      is_cur_chan_open,
+      is_cur_chan_settleable,
       valid_packet,
       valid_commitment,
       is_packet_acknowledged,

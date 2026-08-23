@@ -8,8 +8,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{PrunePacketHistory}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -33,11 +34,16 @@ type Mutation {
   AtCapacity
   WrongProofPath
   WrongSequence
+  MissingAbsenceProofRedeemer
   MissingReceipt
   MissingAcknowledgement
   FloorAboveProof
   MaximumAboveProof
-  OrderedChannel
+  ClosedUnordered
+  OrderedOpen
+  OrderedClosed
+  HandshakeChannel
+  OrderedReceiptMutation
   UnrelatedCommitmentMutation
 }
 
@@ -62,10 +68,19 @@ fn check(mutation: Mutation) -> Bool {
       MaximumAboveProof -> Height { revision_number: 1, revision_height: 14 }
       _ -> Height { revision_number: 1, revision_height: 10 }
     }
+  let is_ordered =
+    mutation == OrderedOpen || mutation == OrderedClosed || mutation == OrderedReceiptMutation
   let ordering =
+    if is_ordered {
+      channel_order_mod.Ordered
+    } else {
+      channel_order_mod.Unordered
+    }
+  let channel_state =
     when mutation is {
-      OrderedChannel -> channel_order_mod.Ordered
-      _ -> channel_order_mod.Unordered
+      ClosedUnordered | OrderedClosed -> channel_state_mod.Closed
+      HandshakeChannel -> channel_state_mod.Init
+      _ -> channel_state_mod.Open
     }
   let receipts =
     when mutation is {
@@ -76,6 +91,7 @@ fn check(mutation: Mutation) -> Bool {
           receipt,
         )
       MissingReceipt -> []
+      OrderedOpen | OrderedClosed | OrderedReceiptMutation -> []
       _ -> [Pair(sequence, receipt)]
     }
   let acknowledgements =
@@ -97,7 +113,7 @@ fn check(mutation: Mutation) -> Bool {
 
   let channel =
     Channel {
-      state: channel_state_mod.Open,
+      state: channel_state,
       ordering,
       counterparty: ChannelCounterparty {
         port_id: "port-1",
@@ -121,13 +137,19 @@ fn check(mutation: Mutation) -> Bool {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
   let valid_output_datum =
     ChannelDatum {
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
-        packet_receipt: pairs.delete_first(receipts, sequence),
+        packet_receipt: if is_ordered {
+          receipts
+        } else {
+          pairs.delete_first(receipts, sequence)
+        },
         packet_acknowledgement: pairs.delete_first(acknowledgements, sequence),
         minimum_receive_proof_height: proof_height,
       },
@@ -140,6 +162,14 @@ fn check(mutation: Mutation) -> Bool {
           state: ChannelDatumState {
             ..valid_output_datum.state,
             packet_commitment: [],
+          },
+        }
+      OrderedReceiptMutation ->
+        ChannelDatum {
+          ..valid_output_datum,
+          state: ChannelDatumState {
+            ..valid_output_datum.state,
+            packet_receipt: [Pair(99, "unexpected ordered receipt")],
           },
         }
       _ -> valid_output_datum
@@ -210,11 +240,18 @@ fn check(mutation: Mutation) -> Bool {
     }
   let marker_redeemer: Redeemer = mock_data.channel_token
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(channel_input.output_reference), channel_redeemer),
-      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
-      Pair(Mint(mock_data.prune_packet_history_policy_id), marker_redeemer),
-    ]
+    if mutation == MissingAbsenceProofRedeemer {
+      [
+        Pair(Spend(channel_input.output_reference), channel_redeemer),
+        Pair(Mint(mock_data.prune_packet_history_policy_id), marker_redeemer),
+      ]
+    } else {
+      [
+        Pair(Spend(channel_input.output_reference), channel_redeemer),
+        Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+        Pair(Mint(mock_data.prune_packet_history_policy_id), marker_redeemer),
+      ]
+    }
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -252,6 +289,10 @@ test prune_packet_history_rejects_wrong_sequence() {
   !check(WrongSequence)
 }
 
+test prune_packet_history_requires_source_commitment_absence_proof() fail {
+  check(MissingAbsenceProofRedeemer)
+}
+
 test prune_packet_history_rejects_missing_local_receipt() {
   !check(MissingReceipt)
 }
@@ -268,8 +309,24 @@ test prune_packet_history_rejects_proof_below_receive_high_water() {
   !check(MaximumAboveProof)
 }
 
-test prune_packet_history_rejects_ordered_channel() {
-  !check(OrderedChannel)
+test prune_packet_history_accepts_ordered_acknowledgement_only() {
+  check(OrderedOpen)
+}
+
+test prune_packet_history_accepts_closed_unordered_channel() {
+  check(ClosedUnordered)
+}
+
+test prune_packet_history_accepts_closed_ordered_channel() {
+  check(OrderedClosed)
+}
+
+test prune_packet_history_rejects_handshake_channel() {
+  !check(HandshakeChannel)
+}
+
+test prune_packet_history_rejects_ordered_receipt_mutation() {
+  !check(OrderedReceiptMutation)
 }
 
 test prune_packet_history_rejects_unrelated_commitment_mutation() {

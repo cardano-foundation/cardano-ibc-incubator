@@ -1,7 +1,10 @@
 import { hashBlake2b224 } from './hex';
+import { Data } from '@lucid-evolution/lucid';
 
 const TRANSFER_ESCROW_SHARD_DOMAIN = 'cardano-ibc/transfer-escrow-shard/v1';
 const TRANSFER_ESCROW_SHARD_REGISTRY_PREFIX = 'escrowShards/';
+const TRANSFER_ESCROW_SHARD_CHANNEL_COUNT_PREFIX = 'escrowShardCounts/';
+export const TRANSFER_ESCROW_SHARD_RETIRED_VALUE = Buffer.from([2]);
 export const TRANSFER_ESCROW_SHARD_REGISTERED_VALUE = Buffer.from([1]);
 
 const UINT32_MAX = 0xffff_ffff;
@@ -41,6 +44,21 @@ export function transferEscrowShardRegistryKey(shardTokenName: string): string {
     throw new Error('Escrow shard token name must be a 28-byte hexadecimal string');
   }
   return `${TRANSFER_ESCROW_SHARD_REGISTRY_PREFIX}${shardTokenName.toLowerCase()}`;
+}
+
+export function transferEscrowShardChannelLiveCountKey(channelId: string): string {
+  const channelBytes = decodeHexBytes(channelId, 'channelId');
+  return `${TRANSFER_ESCROW_SHARD_CHANNEL_COUNT_PREFIX}${channelBytes.toString('hex')}`;
+}
+
+export function transferEscrowShardCountValue(count: bigint): Buffer {
+  if (count < 0n) {
+    throw new Error('Escrow shard count cannot be negative');
+  }
+  return Buffer.from(
+    Data.to(count as any, Data.Integer(), { canonical: true }),
+    'hex',
+  );
 }
 
 export function escrowDenomTokenFromPacketDenom(packetDenomHex: string): string {

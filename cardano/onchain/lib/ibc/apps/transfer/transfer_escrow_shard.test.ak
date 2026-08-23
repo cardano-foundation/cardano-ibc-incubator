@@ -24,3 +24,15 @@ test shard_token_name_frames_formerly_ambiguous_boundaries() {
     transfer_escrow_shard.shard_token_name("channel-123", token_unit_suffix())
   first != second
 }
+
+test shard_lifecycle_values_are_stable_and_distinct() {
+  and {
+    transfer_escrow_shard.live_shard_value == #"01",
+    transfer_escrow_shard.retired_shard_value == #"02",
+    transfer_escrow_shard.live_shard_value != transfer_escrow_shard.retired_shard_value,
+  }
+}
+
+test channel_live_shard_count_key_uses_canonical_hex_channel_id() {
+  transfer_escrow_shard.channel_live_shard_count_key("channel-1") == "escrowShardCounts/6368616e6e656c2d31"
+}

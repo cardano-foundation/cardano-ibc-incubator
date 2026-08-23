@@ -69,7 +69,14 @@ export type IBCModuleCallback<TModuleData = Data> =
         packet_commitment: string;
         data: IBCModulePacketData<TModuleData>;
       };
-    };
+    }
+  | {
+      OnChanReclaim: {
+        channel_id: string;
+        channel_live_escrow_shard_count_siblings: string[];
+      };
+    }
+  | 'OnHostStateSeal';
 
 // As with ModuleDataV1, the operator is opaque core Data. The application that
 // owns the module output is responsible for decoding and validating it.
@@ -190,6 +197,13 @@ function ibcModuleRedeemerSchema(
         data: IBCModulePacketDataSchema,
       }),
     }),
+    Data.Object({
+      OnChanReclaim: Data.Object({
+        channel_id: Data.Bytes(),
+        channel_live_escrow_shard_count_siblings: Data.Array(Data.Bytes()),
+      }),
+    }),
+    Data.Literal('OnHostStateSeal'),
   ]);
 
   const IBCModuleOperatorSchema = Data.Enum([

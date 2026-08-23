@@ -42,6 +42,8 @@ class ChannelDatumMockBuilder {
         policyId: 'e1597bf17341dbdaf9df6b78bddaeef7927367a162c1decb8ee524f4',
         name: '72ecb81086ac8ac39d25ede0ddbc24eab0ae7ee3239b722030',
       },
+      lifecycle: 'ChannelActive',
+      voucher_supply: 0n,
     };
   }
   withChannelState(state: string): ChannelDatumMockBuilder {

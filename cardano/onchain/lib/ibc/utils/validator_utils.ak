@@ -1,10 +1,11 @@
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
+use aiken/crypto.{VerificationKeyHash}
 use aiken/interval.{Finite}
 use aiken/option
 use aiken/primitive/bytearray
-use cardano/address.{Script}
+use cardano/address.{Script, from_verification_key}
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
 }
@@ -30,10 +31,25 @@ pub type ExpectedHostStateRedeemer {
   ExpectUpdateConnection
   ExpectUpdateChannel
   ExpectHandlePacket
+  ExpectPruneTerminalClient
+  ExpectIncrementChannelCount
+  ExpectDecrementChannelCount
+  ExpectBeginConnectionRetirement
+  ExpectBeginChannelAbandonment
+  ExpectReclaimChannel { reclaim_to: VerificationKeyHash }
+  ExpectReclaimConnection { reclaim_to: VerificationKeyHash }
+  ExpectReclaimClient { reclaim_to: VerificationKeyHash }
 }
 
 type PosixTime =
   Int
+
+/// Lifecycle transitions that start a safety delay use the transaction's
+/// upper validity bound as their authenticated timestamp. Keeping the whole
+/// interval short prevents an old lower bound from backdating that timestamp.
+/// Ten minutes plus one slot boundary matches the longest transaction window
+/// used by the builders while remaining negligible beside the seven-day delays.
+pub const max_lifecycle_validity_width: Int = 601_000
 
 pub fn get_inline_datum(output: Output) -> Data {
   expect InlineDatum(data) = output.datum
@@ -67,6 +83,89 @@ pub fn quantity_token_input(
     |> quantity_token_output(policy_id, asset_name)
 }
 
+/// Require the reclaimed UTxO's entire ADA balance to be paid to the cleanup
+/// submitter. Fees therefore come from ordinary wallet inputs rather than from
+/// protocol state, and the otherwise stranded minimum ADA becomes an explicit
+/// permissionless cleanup bounty.
+pub fn pays_reclamation_bounty(
+  spent_output: Output,
+  outputs: List<Output>,
+  reclaim_to: VerificationKeyHash,
+) -> Bool {
+  let reclaim_address = from_verification_key(reclaim_to)
+  let paid_lovelace =
+    list.foldl(
+      outputs,
+      0,
+      fn(output, total) {
+        if output.address == reclaim_address {
+          total + assets.lovelace_of(output.value)
+        } else {
+          total
+        }
+      },
+    )
+
+  paid_lovelace >= assets.lovelace_of(spent_output.value)
+}
+
+/// Require the terminal HostState's lovelace to be accounted for by one
+/// ADA-only payout. In particular, a capability-token payout from a module root
+/// being reclaimed in the same transaction cannot also satisfy this check.
+pub fn pays_exact_ada_only_reclamation_bounty(
+  spent_output: Output,
+  outputs: List<Output>,
+  reclaim_to: VerificationKeyHash,
+) -> Bool {
+  let reclaim_address = from_verification_key(reclaim_to)
+  let expected_value =
+    assets.from_lovelace(assets.lovelace_of(spent_output.value))
+
+  expect [_] =
+    list.filter(
+      outputs,
+      fn(output) {
+        output.address == reclaim_address && output.value == expected_value
+      },
+    )
+  True
+}
+
+/// Reclaim a settled registered module root during HostState sealing without
+/// burning its capability tokens. The exact input value moves to one enterprise
+/// output, and no output at the module script may retain either capability.
+pub fn validate_terminal_module_root_payout(
+  spent_output: Output,
+  outputs: List<Output>,
+  port_token: AuthToken,
+  module_token: AuthToken,
+  deployer: VerificationKeyHash,
+) -> Bool {
+  expect
+    auth.contains_only_auth_tokens(spent_output, [port_token, module_token])
+  trace @"terminal module reclaim: authenticated capability root"
+  let reclaim_address = from_verification_key(deployer)
+  expect [payout] =
+    list.filter(
+      outputs,
+      fn(output) {
+        output.address == reclaim_address && output.value == spent_output.value
+      },
+    )
+  trace @"terminal module reclaim: found exact deployer payout"
+
+  and {
+    auth.contains_only_auth_tokens(payout, [port_token, module_token]),
+    !list.any(
+      outputs,
+      fn(output) { output.address == spent_output.address && or {
+          auth.contain_auth_token(output, port_token),
+          auth.contain_auth_token(output, module_token),
+        } },
+    ),
+  }
+}
+
 pub fn get_tx_valid_to(validity_range: ValidityRange) -> PosixTime {
   let upper_bound = validity_range.upper_bound
 
@@ -86,6 +185,21 @@ pub fn get_tx_valid_from(validity_range: ValidityRange) -> PosixTime {
   } else {
     fail @"Lower bound is not inclusive"
   }
+}
+
+/// Return a finite, ordered lifecycle validity interval whose width is capped.
+/// The lower bound must be inclusive because Cardano's `validFrom` is the
+/// earliest instant at which the transition may take effect. The upper bound
+/// is deliberately accepted with either inclusivity because Lucid represents
+/// `validTo` as an exclusive bound.
+pub fn get_bounded_lifecycle_validity(
+  validity_range: ValidityRange,
+) -> (PosixTime, PosixTime) {
+  let valid_from = get_tx_valid_from(validity_range)
+  let valid_to = get_tx_valid_to(validity_range)
+  expect valid_to >= valid_from
+  expect valid_to - valid_from <= max_lifecycle_validity_width
+  (valid_from, valid_to)
 }
 
 /// Resolve a module witness through the exact port's immutable HostState registration and require its capability UTxO to be spent.
@@ -600,6 +714,51 @@ fn host_state_redeemer_matches(
         host_state_redeemer.HandlePacket { .. } -> True
         _ -> False
       }
+    ExpectPruneTerminalClient ->
+      when redeemer is {
+        host_state_redeemer.PruneTerminalClient { .. } -> True
+        _ -> False
+      }
+    ExpectIncrementChannelCount ->
+      when redeemer is {
+        host_state_redeemer.CreateChannel { .. } -> True
+        _ -> False
+      }
+    ExpectDecrementChannelCount ->
+      when redeemer is {
+        host_state_redeemer.ReclaimChannel { .. } -> True
+        _ -> False
+      }
+    ExpectBeginConnectionRetirement ->
+      when redeemer is {
+        host_state_redeemer.BeginConnectionRetirement -> True
+        _ -> False
+      }
+    ExpectBeginChannelAbandonment ->
+      when redeemer is {
+        host_state_redeemer.BeginChannelAbandonment -> True
+        _ -> False
+      }
+    ExpectReclaimChannel { reclaim_to } ->
+      when redeemer is {
+        host_state_redeemer.ReclaimChannel { reclaim_to: actual_reclaim_to, .. } ->
+          actual_reclaim_to == reclaim_to
+        _ -> False
+      }
+    ExpectReclaimConnection { reclaim_to } ->
+      when redeemer is {
+        host_state_redeemer.ReclaimConnection {
+          reclaim_to: actual_reclaim_to,
+          ..
+        } -> actual_reclaim_to == reclaim_to
+        _ -> False
+      }
+    ExpectReclaimClient { reclaim_to } ->
+      when redeemer is {
+        host_state_redeemer.ReclaimClient { reclaim_to: actual_reclaim_to, .. } ->
+          actual_reclaim_to == reclaim_to
+        _ -> False
+      }
   }
 }
 
@@ -621,6 +780,27 @@ pub fn require_host_state_redeemer(
   expect host_state_redeemer_matches(host_redeemer, expected)?
 
   (host_input, host_output)
+}
+
+/// Require the authenticated HostState thread to reclaim the named registered
+/// module. Terminal module-root cleanup is intentionally bounded to one module
+/// per HostState transition before `SealShutdown`.
+pub fn require_host_state_module_reclaim(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  host_state_nft_policy_id: PolicyId,
+) -> (Input, Output, ByteArray) {
+  let (host_input, host_output) =
+    require_host_state_thread(inputs, outputs, host_state_nft_policy_id)
+
+  expect Some(spent_host_state_redeemer) =
+    pairs.get_first(redeemers, Spend(host_input.output_reference))
+  expect host_redeemer: host_state_redeemer.HostStateRedeemer =
+    spent_host_state_redeemer
+  expect host_state_redeemer.ReclaimModule { port_id } = host_redeemer
+
+  (host_input, host_output, port_id)
 }
 
 pub fn get_host_state_datum(input: Input) -> HostStateDatum {

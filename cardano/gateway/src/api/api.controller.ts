@@ -16,6 +16,10 @@ import {
   MsgtransferDto,
   PlanTransferRouteDto,
   PrunePacketHistoryDto,
+  ClientLifecycleDto,
+  ConnectionLifecycleDto,
+  ChannelLifecycleDto,
+  TransferEscrowShardLifecycleDto,
 } from './api.dto';
 import {
   CheqdDidDocIcqRequestDto,
@@ -39,6 +43,7 @@ import { QueryService } from '~@/query/services/query.service';
 import { CheqdIcqService } from './cheqd-icq.service';
 import { parseVoucherAssetName } from '../shared/helpers/voucher-asset';
 import { validateAndFormatPrunePacketHistoryParams } from '../tx/helper/packet.validate';
+import { CoreLifecycleService } from '../tx/core-lifecycle.service';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -82,6 +87,7 @@ export class ApiController {
     private readonly bridgeManifestService: BridgeManifestService,
     private readonly queryService: QueryService,
     private readonly cheqdIcqService: CheqdIcqService,
+    private readonly coreLifecycleService: CoreLifecycleService,
   ) {}
 
   @Get('channels')
@@ -179,6 +185,56 @@ export class ApiController {
       }),
     );
     return this.serializeUnsignedTxResponse(response);
+  }
+
+  @Post('lifecycle/clients/prune-terminal')
+  @HttpCode(200)
+  async pruneTerminalClient(@Body() dto: ClientLifecycleDto) {
+    return this.serializeUnsignedTxResponse(await this.coreLifecycleService.pruneTerminalClient(dto));
+  }
+
+  @Post('lifecycle/clients/reclaim')
+  @HttpCode(200)
+  async reclaimClient(@Body() dto: ClientLifecycleDto) {
+    return this.serializeUnsignedTxResponse(await this.coreLifecycleService.reclaimClient(dto));
+  }
+
+  @Post('lifecycle/connections/begin-retirement')
+  @HttpCode(200)
+  async beginConnectionRetirement(@Body() dto: ConnectionLifecycleDto) {
+    return this.serializeUnsignedTxResponse(await this.coreLifecycleService.beginConnectionRetirement(dto));
+  }
+
+  @Post('lifecycle/connections/reclaim')
+  @HttpCode(200)
+  async reclaimConnection(@Body() dto: ConnectionLifecycleDto) {
+    return this.serializeUnsignedTxResponse(await this.coreLifecycleService.reclaimConnection(dto));
+  }
+
+  @Post('lifecycle/channels/begin-abandonment')
+  @HttpCode(200)
+  async beginChannelAbandonment(@Body() dto: ChannelLifecycleDto) {
+    return this.serializeUnsignedTxResponse(await this.coreLifecycleService.beginChannelAbandonment(dto));
+  }
+
+  @Post('lifecycle/channels/reclaim')
+  @HttpCode(200)
+  async reclaimChannel(@Body() dto: ChannelLifecycleDto) {
+    return this.serializeUnsignedTxResponse(await this.coreLifecycleService.reclaimChannel(dto));
+  }
+
+  @Post('lifecycle/transfer/escrow-shards/retire')
+  @HttpCode(200)
+  async retireTransferEscrowShard(
+    @Body() dto: TransferEscrowShardLifecycleDto,
+  ) {
+    return this.serializeUnsignedTxResponse(
+      await this.packetService.retireTransferEscrowShard({
+        signer: dto.signer,
+        channelId: dto.channel_id,
+        denom: dto.denom,
+      }),
+    );
   }
 
   @Post('icq/cheqd/did-doc')
@@ -383,10 +439,7 @@ export class ApiController {
   }
 
   @Get('cardano/channels/:channelId/health')
-  async getCardanoChannelHealth(
-    @Param('channelId') channelId: string,
-    @Query('port_id') portId = 'transfer',
-  ) {
+  async getCardanoChannelHealth(@Param('channelId') channelId: string, @Query('port_id') portId = 'transfer') {
     return this.channelService.getChannelHealth(channelId, portId);
   }
 

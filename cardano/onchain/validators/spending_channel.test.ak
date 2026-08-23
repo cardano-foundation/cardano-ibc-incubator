@@ -17,14 +17,17 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/connection_datum.{
+  ConnectionActive, ConnectionDatum,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys_mod
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
   ChanOpenConfirm, PrunePacketHistory, RecvPacket, SendPacket,
@@ -100,12 +103,18 @@ fn host_state_datum(
       next_client_sequence: 0,
       next_connection_sequence: 0,
       next_channel_sequence: 0,
+      live_client_count: 0,
+      live_connection_count: 0,
+      live_channel_count: 0,
       bound_port: [],
       last_update_time: 0,
     },
     nft_policy,
     deployer: #"00000000000000000000000000000000000000000000000000000000",
     shutdown,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
   }
 }
 
@@ -170,6 +179,8 @@ fn setup() -> MockData {
         delay_period: 0,
       },
       token: AuthToken { name: "", policy_id: "" },
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
     }
 
   let connection_id = "connection-134"
@@ -462,6 +473,8 @@ fn check_prune_spending_channel(
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
   let output_channel_datum =
     ChannelDatum {
@@ -691,6 +704,8 @@ fn send_packet_spending_channel_tx_with_witness(
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
@@ -954,6 +969,8 @@ test chan_open_ack_succeed() {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -1006,6 +1023,8 @@ test chan_open_ack_succeed() {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_output =
@@ -1191,6 +1210,8 @@ test chan_open_confirm_succeed() {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -1414,6 +1435,8 @@ test recv_packet_succeed() {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -1680,6 +1703,8 @@ test send_packet_succeed() {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -1810,6 +1835,8 @@ test timeout_packet_succeed() {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let input_channel_datum = send_packet(packet, input_channel_datum)
@@ -2086,6 +2113,8 @@ test acknowledge_packet_succeed() {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let input_channel_datum = send_packet(packet, input_channel_datum)
@@ -2335,6 +2364,8 @@ test chan_close_init_succeed() {
       },
       port_id: "port-0",
       token: fake_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -2429,6 +2460,8 @@ test chan_close_init_fails_without_closed_channel_continuation() fail {
       },
       port_id: "port-0",
       token: fake_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -2503,6 +2536,8 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
       },
       port_id: "port-0",
       token: fake_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =
@@ -2573,6 +2608,8 @@ test chan_close_confirm_succeed() {
       },
       port_id: "port-0",
       token: fake_data.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let channel_input =

@@ -3,6 +3,8 @@ import { Injectable } from '@nestjs/common';
 export type PendingTreeUpdate = {
   expectedNewRoot: string;
   commit: () => void;
+  /** False for HostState transitions that verify but do not mutate the IBC tree. */
+  persistTreeSnapshot?: boolean;
 };
 
 @Injectable()
@@ -27,14 +29,19 @@ export class IbcTreePendingUpdatesService {
   takeByExpectedRoot(expectedNewRoot: string): PendingTreeUpdate | undefined {
     if (!expectedNewRoot) return undefined;
     // Hash-based lookup can miss when external signers alter final body shape.
-    // Root matching remains strict because expectedNewRoot is derived from the
-    // exact in-memory tree mutation we prepared before signing.
+    // A root is a safe fallback identity only when it selects exactly one
+    // pending transaction. Root-neutral HostState operations can legitimately
+    // share a root, so never guess (or remove either record) when it is
+    // ambiguous.
+    const matches: Array<[string, PendingTreeUpdate]> = [];
     for (const [key, update] of this.pendingByTxHash.entries()) {
       if (update.expectedNewRoot === expectedNewRoot) {
-        this.pendingByTxHash.delete(key);
-        return update;
+        matches.push([key, update]);
       }
     }
-    return undefined;
+    if (matches.length !== 1) return undefined;
+    const [key, update] = matches[0];
+    this.pendingByTxHash.delete(key);
+    return update;
   }
 }

@@ -47,6 +47,8 @@ export type Packet = {
 
 export type ChannelDatumLike = {
   port: string;
+  lifecycle: 'ChannelActive' | { Abandoning: { not_before: bigint } };
+  voucher_supply: bigint;
   state: {
     next_sequence_send: bigint;
     packet_commitment: Map<bigint, string>;
@@ -68,6 +70,8 @@ export type ConnectionDatumLike = {
   state: {
     client_id: string;
   };
+  live_channel_count: bigint;
+  lifecycle: 'ConnectionActive' | { Retiring: { not_before: bigint } };
 };
 
 export type LoadedSendPacketContext = {
@@ -85,6 +89,7 @@ export type LoadedSendPacketContext = {
     transferEscrowShardPolicyId: string;
     spendChannelAddress: string;
     transferModuleAddress: string;
+    transferModuleIdentifier: string;
   };
 };
 
@@ -127,6 +132,7 @@ export type UnsignedSendPacketBurnTxInput = {
   channelTokenUnit: string;
   encodedMintVoucherRedeemer: string;
   encodedSpendTransferModuleRedeemer: string;
+  encodedUpdatedTransferModuleDatum: string;
   transferModuleReferenceUtxo: UTxO;
   transferAmount: bigint;
   constructedAddress: string;
@@ -183,6 +189,8 @@ export type TransferEscrowShardLookup =
       encodedDatum: string;
       shardTokenUnit: string;
       registrySiblings: string[];
+      oldChannelLiveEscrowShardCount: bigint;
+      channelLiveEscrowShardCountSiblings: string[];
       encodedUpdatedTransferModuleDatum: string;
     };
 
@@ -214,6 +222,10 @@ export type SendPacketBuildDependencies = {
     denomToken: string,
     requiredAmount?: bigint,
   ) => Promise<TransferEscrowShardLookup>;
+  buildTransferModuleVoucherSupplyUpdate: (
+    transferModuleUtxo: UTxO,
+    voucherDelta: bigint,
+  ) => Promise<string>;
   createUnsignedSendPacketBurnTx: (
     dto: UnsignedSendPacketBurnTxInput,
   ) => TxBuilder;
@@ -318,8 +330,20 @@ export async function buildUnsignedSendPacketTx(
     'transferIBCModuleRedeemer',
   );
 
+  const updatedVoucherSupply = isVoucher
+    ? context.channelDatum.voucher_supply - sendPacketOperator.token.amount
+    : context.channelDatum.voucher_supply;
+  if (updatedVoucherSupply < 0n) {
+    const voucherSupplyError =
+      deps.failedPrecondition ?? deps.invalidArgument;
+    throw voucherSupplyError(
+      `Channel ${sendPacketOperator.sourceChannel} voucher supply would become negative`,
+    );
+  }
+
   const updatedChannelDatum: ChannelDatumLike = {
     ...context.channelDatum,
+    voucher_supply: updatedVoucherSupply,
     state: {
       ...context.channelDatum.state,
       next_sequence_send: context.channelDatum.state.next_sequence_send + 1n,
@@ -344,12 +368,20 @@ export async function buildUnsignedSendPacketTx(
   );
 
   if (isVoucher) {
+    const transferModuleIdentifier = context.deployment.transferModuleIdentifier;
+    if (!/^[0-9a-f]{56}(?:[0-9a-f]{2}){0,32}$/i.test(transferModuleIdentifier)) {
+      throw new Error('Transfer module identifier is not a canonical Cardano asset unit');
+    }
     const encodedMintVoucherRedeemer = await deps.encode(
       {
         BurnVoucher: {
           packet_source_port: packet.source_port,
           packet_source_channel: packet.source_channel,
           data: fungibleTokenPacketData,
+          module_token: {
+            policy_id: transferModuleIdentifier.slice(0, 56),
+            name: transferModuleIdentifier.slice(56),
+          },
         },
       },
       'mintVoucherRedeemer',
@@ -384,6 +416,11 @@ export async function buildUnsignedSendPacketTx(
       encodedUpdatedHostStateDatum,
       encodedMintVoucherRedeemer,
       encodedSpendTransferModuleRedeemer,
+      encodedUpdatedTransferModuleDatum:
+        await deps.buildTransferModuleVoucherSupplyUpdate(
+          context.transferModuleReferenceUtxo,
+          -sendPacketOperator.token.amount,
+        ),
       transferModuleReferenceUtxo: context.transferModuleReferenceUtxo,
       encodedSpendChannelRedeemer,
       encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
@@ -434,6 +471,7 @@ export async function buildUnsignedSendPacketTx(
     convertStringToHex(sendPacketOperator.sourceChannel),
     convertStringToHex(packetDenom),
     denomToken,
+    sendPacketOperator.token.amount,
   );
 
   const unsignedTx = deps.createUnsignedSendPacketEscrowTx({
@@ -450,11 +488,15 @@ export async function buildUnsignedSendPacketTx(
       ? undefined
       : await deps.encode(
           {
-            CreateEscrowShard: {
+            CreateEscrowShardV2: {
               channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
               denom: convertStringToHex(packetDenom),
               data: fungibleTokenPacketData,
               registry_siblings: transferEscrowShard.registrySiblings,
+              old_channel_live_escrow_shard_count:
+                transferEscrowShard.oldChannelLiveEscrowShardCount,
+              channel_live_escrow_shard_count_siblings:
+                transferEscrowShard.channelLiveEscrowShardCountSiblings,
             },
           },
           'transferEscrowShardRedeemer',

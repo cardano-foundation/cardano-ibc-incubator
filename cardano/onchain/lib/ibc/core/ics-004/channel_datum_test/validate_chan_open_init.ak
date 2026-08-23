@@ -1,7 +1,8 @@
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Unordered}
@@ -35,6 +36,8 @@ fn setup() -> (ChannelDatum, AuthToken) {
       },
       port_id: "port-1",
       token: mock_auth_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   (mock_channel_datum, mock_auth_token)
@@ -43,6 +46,14 @@ fn setup() -> (ChannelDatum, AuthToken) {
 test succeed() {
   let (chan_datum, auth_token) = setup()
   channel_datum_mod.validate_chan_open_init(chan_datum, auth_token)
+}
+
+test fail_if_initial_voucher_supply_is_nonzero() fail {
+  let (chan_datum, auth_token) = setup()
+  channel_datum_mod.validate_chan_open_init(
+    ChannelDatum { ..chan_datum, voucher_supply: 1 },
+    auth_token,
+  )
 }
 
 test fail_if_channel_validate_basic_invalid() fail {

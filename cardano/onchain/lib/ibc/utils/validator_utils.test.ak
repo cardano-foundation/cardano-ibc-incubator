@@ -18,7 +18,9 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/connection_datum.{
+  ConnectionActive, ConnectionDatum,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
@@ -141,6 +143,55 @@ test test_get_tx_valid_to_failed_with_upper_bound_is_infinity() fail {
       },
     }
   validator_utils.get_tx_valid_to(mock_validity_range) == expected_valid_to
+}
+
+test bounded_lifecycle_validity_accepts_the_exact_maximum_width() {
+  let valid_from = 1_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width
+  validator_utils.get_bounded_lifecycle_validity(
+    Interval {
+      lower_bound: IntervalBound {
+        bound_type: Finite(valid_from),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        bound_type: Finite(valid_to),
+        is_inclusive: False,
+      },
+    },
+  ) == (valid_from, valid_to)
+}
+
+test bounded_lifecycle_validity_rejects_a_wider_interval() fail {
+  let valid_from = 1_000
+  let valid_to = valid_from + validator_utils.max_lifecycle_validity_width + 1
+  validator_utils.get_bounded_lifecycle_validity(
+    Interval {
+      lower_bound: IntervalBound {
+        bound_type: Finite(valid_from),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        bound_type: Finite(valid_to),
+        is_inclusive: False,
+      },
+    },
+  ) == (valid_from, valid_to)
+}
+
+test bounded_lifecycle_validity_rejects_a_reversed_interval() fail {
+  validator_utils.get_bounded_lifecycle_validity(
+    Interval {
+      lower_bound: IntervalBound {
+        bound_type: Finite(2_000),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        bound_type: Finite(1_000),
+        is_inclusive: False,
+      },
+    },
+  ) == (2_000, 1_000)
 }
 
 // Test for successfully getting inline datum from an output
@@ -307,10 +358,16 @@ fn setup_extract_module_redeemer() -> (
         next_channel_sequence: 0,
         bound_port: [Pair(port_id, registration)],
         last_update_time: 0,
+        live_client_count: 0,
+        live_connection_count: 0,
+        live_channel_count: 0,
       },
       nft_policy: host_state_nft_policy_id,
       deployer: "mock deployer key hash",
       shutdown: Active,
+      live_reference_script_count: Some(0),
+      reference_script_inventory_root: empty_ibc_state_root,
+      reference_script_registration: None,
     }
   let host_state_input =
     Input {
@@ -1043,6 +1100,8 @@ fn setup_validate_referred_connection() -> (
         delay_period: 1,
       },
       token: connection_token,
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
     }
 
   let connection_output =

@@ -1,5 +1,17 @@
 import crypto from 'crypto';
-import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import {
+  Data,
+  fromHex,
+  fromText,
+  getAddressDetails,
+  toHex,
+  validatorToScriptHash,
+  type LucidEvolution,
+  type Network,
+  type TxBuilder,
+  type UTxO,
+} from '@lucid-evolution/lucid';
+import { blake2b } from '@noble/hashes/blake2b';
 import {
   buildUnsignedSendPacketTx,
   type SendPacketOperator,
@@ -9,12 +21,26 @@ import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
+import { fetchLatestTransferEscrowShardHistory } from './kupoHistory';
 import {
   findTransferEscrowShard as findTransferEscrowShardFromRegistry,
 } from './transferEscrowShard';
 
 export { AsyncMutex } from './asyncMutex';
-export { transferEscrowShardTokenName } from './transferEscrowShard';
+export {
+  TRANSFER_ESCROW_SHARD_LIVE_VALUE,
+  TRANSFER_ESCROW_SHARD_RETIRED_VALUE,
+  prepareTransferEscrowShardRetirement,
+  proveTransferChannelHasNoLiveShards,
+  transferEscrowShardChannelLiveCountKey,
+  transferEscrowShardCountValue,
+  transferEscrowShardTokenName,
+} from './transferEscrowShard';
+export {
+  computeRootWithOrderedUpdates,
+  type OrderedStateRootResult,
+  type OrderedStateRootUpdate,
+} from './ibcStateRoot';
 
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
@@ -47,10 +73,61 @@ const TRANSIENT_STARTUP_ERROR_MARKERS = [
   'fetch failed',
 ];
 
+const EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT = '00'.repeat(32);
+const REFERENCE_SCRIPT_INVENTORY_DOMAIN = fromText('ibc-reference-script-v1');
+const MAX_REFERENCE_SCRIPT_INVENTORY_SIZE = 128;
+const ReferenceScriptIdentitySchema = Data.Object({
+  output_reference: Data.Object({
+    transaction_id: Data.Bytes(),
+    output_index: Data.Integer(),
+  }),
+  reference_script_hash: Data.Bytes(),
+});
+
 type RefUtxo = {
   txHash: string;
   outputIndex: number;
+  scriptHash?: string;
 };
+
+function compareReferenceScriptEntries(left: RefUtxo, right: RefUtxo): number {
+  if (left.txHash < right.txHash) return -1;
+  if (left.txHash > right.txHash) return 1;
+  return left.outputIndex - right.outputIndex;
+}
+
+export function computeReferenceScriptInventoryRoot(references: RefUtxo[]): string {
+  let root = EMPTY_REFERENCE_SCRIPT_INVENTORY_ROOT;
+  for (const [index, reference] of references.entries()) {
+    if (!/^[0-9a-f]{64}$/.test(reference.txHash)) {
+      throw new Error(`Invalid bridge manifest: reference_out_refs[${index}].tx_hash must be 32-byte lowercase hex`);
+    }
+    if (!/^[0-9a-f]{56}$/.test(reference.scriptHash ?? '')) {
+      throw new Error(
+        `Invalid bridge manifest: reference_out_refs[${index}].script_hash must be 28-byte lowercase hex`,
+      );
+    }
+    // Match Aiken's deterministic `cbor.serialise` representation, whose
+    // constructor field arrays are indefinite-length.
+    const identityCbor = Data.to(
+      {
+        output_reference: {
+          transaction_id: reference.txHash,
+          output_index: BigInt(reference.outputIndex),
+        },
+        reference_script_hash: reference.scriptHash,
+      },
+      ReferenceScriptIdentitySchema as any,
+      { canonical: false },
+    );
+    root = toHex(
+      blake2b(fromHex(REFERENCE_SCRIPT_INVENTORY_DOMAIN + root + identityCbor), {
+        dkLen: 32,
+      }),
+    );
+  }
+  return root;
+}
 
 type AuthToken = {
   policyId: string;
@@ -96,14 +173,24 @@ type DeploymentTraceRegistry = {
   };
 };
 
+type DeploymentReferenceValidator = {
+  script: string;
+  scriptHash: string;
+  address: string;
+};
+
 type DeploymentConfig = {
   deployedAt: string;
-  hostStateNFT: AuthToken;
+  referenceOutRefs: RefUtxo[];
+  referenceScriptInventoryRoot: string;
+  referenceValidator: DeploymentReferenceValidator;
+  hostStateNFT: AuthToken & { script: string };
   validators: {
     hostStateStt: DeploymentValidator;
     spendClient: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
+    spendMockModule?: DeploymentValidator;
     spendTraceRegistry?: DeploymentValidator;
     spendTransferModule: DeploymentValidator;
     mintIdentifier: DeploymentValidator;
@@ -111,13 +198,20 @@ type DeploymentConfig = {
     mintClientStt: DeploymentValidator;
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
+    mintLifecycleCreationMarker: DeploymentValidator;
+    mintLifecycleReclamationMarker: DeploymentValidator;
+    mintLifecycleOperationalMarker: DeploymentValidator;
+    mintLifecyclePacketMarker: DeploymentValidator;
     mintVoucher: DeploymentValidator;
     mintTransferEscrowShard: DeploymentValidator;
     mintPort: DeploymentValidator;
+    mintTraceRegistryBenchmarkVoucher?: DeploymentValidator;
+    voucherMetadata?: { address: string };
   };
   modules: {
     transfer: DeploymentModule;
     mock?: DeploymentModule;
+    icq?: DeploymentModule;
   };
   traceRegistry?: DeploymentTraceRegistry;
 };
@@ -131,6 +225,18 @@ type BridgeManifest = {
   host_state_nft: {
     policy_id: string;
     token_name: string;
+    script: string;
+  };
+  reference_out_refs: Array<{
+    tx_hash: string;
+    output_index: number | bigint | string;
+    script_hash?: string;
+  }>;
+  reference_script_inventory_root: string;
+  reference_validator: {
+    script: string;
+    script_hash: string;
+    address: string;
   };
   validators: {
     host_state_stt: {
@@ -191,6 +297,11 @@ type BridgeManifest = {
         };
       };
     };
+    spend_mock_module?: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
     spend_trace_registry?: {
       script_hash: string;
       address: string;
@@ -226,6 +337,26 @@ type BridgeManifest = {
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
     };
+    mint_lifecycle_creation_marker: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_lifecycle_reclamation_marker: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_lifecycle_operational_marker: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_lifecycle_packet_marker: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
     mint_voucher: {
       script_hash: string;
       address: string;
@@ -241,10 +372,17 @@ type BridgeManifest = {
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
     };
+    mint_trace_registry_benchmark_voucher?: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    voucher_metadata?: { address: string };
   };
   modules: {
     transfer: { identifier: string; address: string };
     mock?: { identifier: string; address: string };
+    icq?: { identifier: string; address: string };
   };
   trace_registry?: {
     address: string;
@@ -339,7 +477,9 @@ type BuilderContext = {
   logger: RuntimeLogger;
   cardanoNetwork: Network;
   ogmiosEndpoint: string;
+  kupoEndpoint: string;
   kupmiosHeaders?: KupmiosAuthHeaders;
+  fetchImpl: typeof fetch;
   traceRegistryClient: ReturnType<typeof createTraceRegistryClient>;
 };
 
@@ -352,6 +492,7 @@ type KupoLikeService = {
   queryAllClientUtxos(): Promise<UTxO[]>;
   queryAllConnectionUtxos(): Promise<UTxO[]>;
   queryAllChannelUtxos(): Promise<UTxO[]>;
+  queryLatestChannelUtxosFromHistory(): Promise<any[]>;
 };
 
 function defaultLogger(scope: string): RuntimeLogger {
@@ -430,42 +571,289 @@ function describeFetchFailure(error: unknown): string {
   return String(error);
 }
 
-function mapRefUtxo(refUtxo: { tx_hash: string; output_index: number }): RefUtxo {
+function mapRefUtxo(refUtxo: {
+  tx_hash: string;
+  output_index: number | bigint | string;
+  script_hash?: string;
+}): RefUtxo {
+  const outputIndex = Number(refUtxo.output_index);
+  if (!Number.isSafeInteger(outputIndex) || outputIndex < 0) {
+    throw new Error('Invalid bridge manifest: ref_utxo.output_index must be a non-negative integer');
+  }
   return {
     txHash: refUtxo.tx_hash,
-    outputIndex: refUtxo.output_index,
+    outputIndex,
+    ...(refUtxo.script_hash === undefined ? {} : { scriptHash: refUtxo.script_hash }),
   };
 }
 
-function mapValidator(validator: { script_hash: string; address: string; ref_utxo: { tx_hash: string; output_index: number } }): DeploymentValidator {
+function mapReferenceOutRefs(
+  references: Array<{
+    tx_hash: string;
+    output_index: number | bigint | string;
+    script_hash?: string;
+  }> | undefined,
+): RefUtxo[] {
+  if (!Array.isArray(references) || references.length === 0) {
+    throw new Error('Invalid bridge manifest: reference_out_refs must be a non-empty array');
+  }
+  if (references.length > MAX_REFERENCE_SCRIPT_INVENTORY_SIZE) {
+    throw new Error(
+      `Invalid bridge manifest: reference_out_refs cannot contain more than ${MAX_REFERENCE_SCRIPT_INVENTORY_SIZE} outputs`,
+    );
+  }
+  const seen = new Set<string>();
+  return references.map((reference) => {
+    const mapped = mapRefUtxo(reference);
+    if (typeof mapped.scriptHash !== 'string' || mapped.scriptHash.length === 0) {
+      throw new Error('Invalid bridge manifest: reference_out_refs[].script_hash is required');
+    }
+    const key = `${mapped.txHash}#${mapped.outputIndex}`;
+    if (seen.has(key)) {
+      throw new Error(`Invalid bridge manifest: reference_out_refs contains duplicate output ${key}`);
+    }
+    seen.add(key);
+    return mapped;
+  });
+}
+
+function mapReferenceValidator(
+  validator: BridgeManifest['reference_validator'] | undefined,
+): DeploymentReferenceValidator {
+  if (!validator || typeof validator !== 'object') {
+    throw new Error('Invalid bridge manifest: reference_validator is required');
+  }
+  if (typeof validator.script !== 'string' || validator.script.length === 0) {
+    throw new Error('Invalid bridge manifest: reference_validator.script is required');
+  }
+  if (typeof validator.script_hash !== 'string' || validator.script_hash.length === 0) {
+    throw new Error('Invalid bridge manifest: reference_validator.script_hash is required');
+  }
+  if (typeof validator.address !== 'string' || validator.address.length === 0) {
+    throw new Error('Invalid bridge manifest: reference_validator.address is required');
+  }
+
+  let computedScriptHash: string;
+  try {
+    computedScriptHash = validatorToScriptHash({ type: 'PlutusV3', script: validator.script });
+  } catch {
+    throw new Error('Invalid bridge manifest: reference_validator.script must be a serialized Plutus V3 script');
+  }
+  if (computedScriptHash !== validator.script_hash) {
+    throw new Error('Invalid bridge manifest: reference_validator.script_hash does not match its script');
+  }
+
+  let paymentCredential;
+  try {
+    paymentCredential = getAddressDetails(validator.address).paymentCredential;
+  } catch {
+    throw new Error('Invalid bridge manifest: reference_validator.address must be a valid Cardano address');
+  }
+  if (paymentCredential?.type !== 'Script' || paymentCredential.hash !== validator.script_hash) {
+    throw new Error('Invalid bridge manifest: reference_validator.address does not match its script hash');
+  }
+
   return {
+    script: validator.script,
     scriptHash: validator.script_hash,
     address: validator.address,
+  };
+}
+
+function assertManifestReferenceInventory(referenceOutRefs: RefUtxo[], validators: unknown): void {
+  const inventory = new Map(referenceOutRefs.map((ref) => [`${ref.txHash}#${ref.outputIndex}`, ref.scriptHash]));
+  const discovered = new Set<string>();
+  const scriptByReference = new Map<string, string>();
+  const referenceByScript = new Map<string, string>();
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    if (record.ref_utxo && typeof record.script_hash === 'string') {
+      const ref = mapRefUtxo(
+        record.ref_utxo as { tx_hash: string; output_index: number | bigint | string },
+      );
+      const key = `${ref.txHash}#${ref.outputIndex}`;
+      const existingScript = scriptByReference.get(key);
+      const existingReference = referenceByScript.get(record.script_hash);
+      if (existingScript !== undefined && existingScript !== record.script_hash) {
+        throw new Error(`Invalid bridge manifest: reference output ${key} has distinct script hashes`);
+      }
+      if (existingReference !== undefined && existingReference !== key) {
+        throw new Error(`Invalid bridge manifest: script hash has distinct reference outputs`);
+      }
+      scriptByReference.set(key, record.script_hash);
+      referenceByScript.set(record.script_hash, key);
+      discovered.add(key);
+    }
+    Object.values(record).forEach(visit);
+  };
+  visit(validators);
+
+  const omitted = [...discovered].filter((key) => !inventory.has(key));
+  const unbound = [...inventory.keys()].filter((key) => !discovered.has(key));
+  const mismatched = [...scriptByReference].filter(([key, scriptHash]) => inventory.get(key) !== scriptHash);
+  if (omitted.length > 0 || unbound.length > 0 || mismatched.length > 0) {
+    throw new Error(
+      `Invalid bridge manifest: reference inventory does not exactly match validator references ` +
+        `(omitted=${omitted.join(',') || 'none'}, unbound=${unbound.join(',') || 'none'}, ` +
+        `script-mismatch=${mismatched.map(([key]) => key).join(',') || 'none'})`,
+    );
+  }
+
+  const validatorRecord = validators as Record<string, unknown>;
+  const hostState = validatorRecord.host_state_stt as
+    | { script_hash?: unknown; ref_utxo?: { tx_hash: string; output_index: number | bigint | string } }
+    | undefined;
+  const hostReference = hostState?.ref_utxo ? mapRefUtxo(hostState.ref_utxo) : undefined;
+  const firstReference = referenceOutRefs[0];
+  if (
+    !hostReference ||
+    firstReference.txHash !== hostReference.txHash ||
+    firstReference.outputIndex !== hostReference.outputIndex ||
+    firstReference.scriptHash !== hostState?.script_hash
+  ) {
+    throw new Error('Invalid bridge manifest: reference_out_refs[0] must be the HostState reference script');
+  }
+  for (let index = 2; index < referenceOutRefs.length; index += 1) {
+    if (compareReferenceScriptEntries(referenceOutRefs[index - 1], referenceOutRefs[index]) >= 0) {
+      throw new Error(
+        'Invalid bridge manifest: non-HostState reference_out_refs must be in canonical output-reference order',
+      );
+    }
+  }
+}
+
+function mapValidator(
+  validator: { script_hash: string; address: string; ref_utxo: { tx_hash: string; output_index: number } } | undefined,
+  label: string,
+  requiredAddress: boolean,
+): DeploymentValidator {
+  if (!validator) {
+    throw new Error(`Invalid bridge manifest: ${label} is required`);
+  }
+  const address = typeof validator.address === 'string' ? validator.address : '';
+  if (requiredAddress && address.length === 0) {
+    throw new Error(`Invalid bridge manifest: ${label}.address is required`);
+  }
+  if (address.length > 0) {
+    let paymentCredential;
+    try {
+      paymentCredential = getAddressDetails(address).paymentCredential;
+    } catch {
+      throw new Error(`Invalid bridge manifest: ${label}.address must be a valid Cardano address`);
+    }
+    if (paymentCredential?.type !== 'Script' || paymentCredential.hash !== validator.script_hash) {
+      throw new Error(`Invalid bridge manifest: ${label}.address does not match its script hash`);
+    }
+  }
+  return {
+    scriptHash: validator.script_hash,
+    address,
     refUtxo: mapRefUtxo(validator.ref_utxo),
   };
 }
 
-function normalizeBridgeManifest(manifest: BridgeManifest): {
+function assertDeploymentAddressBindings(deployment: DeploymentConfig): void {
+  const assertModuleBinding = (
+    moduleAddress: string,
+    validator: DeploymentValidator | undefined,
+    modulePath: string,
+    validatorPath: string,
+  ) => {
+    if (!validator) {
+      throw new Error(`Invalid bridge manifest: ${validatorPath} is required when ${modulePath} is present`);
+    }
+    if (moduleAddress !== validator.address) {
+      throw new Error(`Invalid bridge manifest: ${modulePath}.address does not match ${validatorPath}.address`);
+    }
+  };
+
+  assertModuleBinding(
+    deployment.modules.transfer.address,
+    deployment.validators.spendTransferModule,
+    'modules.transfer',
+    'validators.spend_transfer_module',
+  );
+  if (deployment.modules.mock) {
+    assertModuleBinding(
+      deployment.modules.mock.address,
+      deployment.validators.spendMockModule,
+      'modules.mock',
+      'validators.spend_mock_module',
+    );
+  }
+  if (deployment.modules.icq) {
+    assertModuleBinding(
+      deployment.modules.icq.address,
+      deployment.validators.spendMockModule,
+      'modules.icq',
+      'validators.spend_mock_module',
+    );
+  }
+  if (deployment.traceRegistry) {
+    assertModuleBinding(
+      deployment.traceRegistry.address,
+      deployment.validators.spendTraceRegistry,
+      'trace_registry',
+      'validators.spend_trace_registry',
+    );
+  }
+}
+
+export function normalizeBridgeManifest(manifest: BridgeManifest): {
   deployment: DeploymentConfig;
   bridgeManifest: BridgeManifest;
 } {
-  if (manifest.schema_version !== 4) {
-    throw new Error('Unsupported bridge manifest schema_version: expected 4');
+  if (manifest.schema_version !== 6) {
+    throw new Error('Unsupported bridge manifest schema_version: expected 6');
   }
-  return {
-    bridgeManifest: manifest,
-    deployment: {
+  if (
+    typeof manifest.host_state_nft?.script !== 'string' ||
+    manifest.host_state_nft.script.length === 0
+  ) {
+    throw new Error('Invalid bridge manifest: host_state_nft.script is required');
+  }
+  let computedHostStatePolicyId: string;
+  try {
+    computedHostStatePolicyId = validatorToScriptHash({
+      type: 'PlutusV3',
+      script: manifest.host_state_nft.script,
+    });
+  } catch {
+    throw new Error('Invalid bridge manifest: host_state_nft.script must be a serialized Plutus V3 script');
+  }
+  if (computedHostStatePolicyId !== manifest.host_state_nft.policy_id) {
+    throw new Error('Invalid bridge manifest: host_state_nft.policy_id does not match its script');
+  }
+  const referenceOutRefs = mapReferenceOutRefs(manifest.reference_out_refs);
+  const referenceValidator = mapReferenceValidator(manifest.reference_validator);
+  if (
+    typeof manifest.reference_script_inventory_root !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(manifest.reference_script_inventory_root)
+  ) {
+    throw new Error('Invalid bridge manifest: reference_script_inventory_root must be 32-byte lowercase hex');
+  }
+  assertManifestReferenceInventory(referenceOutRefs, manifest.validators);
+  const computedInventoryRoot = computeReferenceScriptInventoryRoot(referenceOutRefs);
+  if (computedInventoryRoot !== manifest.reference_script_inventory_root) {
+    throw new Error('Invalid bridge manifest: reference_script_inventory_root does not match reference_out_refs');
+  }
+  const deployment: DeploymentConfig = {
       deployedAt: manifest.deployed_at,
+      referenceOutRefs,
+      referenceScriptInventoryRoot: manifest.reference_script_inventory_root,
+      referenceValidator,
       hostStateNFT: {
         policyId: manifest.host_state_nft.policy_id,
         name: manifest.host_state_nft.token_name,
+        script: manifest.host_state_nft.script,
       },
       validators: {
-        hostStateStt: mapValidator(manifest.validators.host_state_stt),
-        spendClient: mapValidator(manifest.validators.spend_client),
-        spendConnection: mapValidator(manifest.validators.spend_connection),
+        hostStateStt: mapValidator(manifest.validators.host_state_stt, 'validators.host_state_stt', true),
+        spendClient: mapValidator(manifest.validators.spend_client, 'validators.spend_client', true),
+        spendConnection: mapValidator(manifest.validators.spend_connection, 'validators.spend_connection', true),
         spendChannel: {
-          ...mapValidator(manifest.validators.spend_channel),
+          ...mapValidator(manifest.validators.spend_channel, 'validators.spend_channel', true),
           refValidator: {
             acknowledge_packet: {
               scriptHash: manifest.validators.spend_channel.ref_validator.acknowledge_packet.script_hash,
@@ -507,24 +895,82 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
             },
           },
         },
-        ...(manifest.validators.spend_trace_registry
+        ...(manifest.validators.spend_mock_module
           ? {
-              spendTraceRegistry: mapValidator(manifest.validators.spend_trace_registry),
+              spendMockModule: mapValidator(
+                manifest.validators.spend_mock_module,
+                'validators.spend_mock_module',
+                true,
+              ),
             }
           : {}),
-        spendTransferModule: mapValidator(manifest.validators.spend_transfer_module),
-        mintIdentifier: mapValidator(manifest.validators.mint_identifier),
-        verifyProof: mapValidator(manifest.validators.verify_proof),
-        mintClientStt: mapValidator(manifest.validators.mint_client_stt),
-        mintConnectionStt: mapValidator(manifest.validators.mint_connection_stt),
-        mintChannelStt: mapValidator(manifest.validators.mint_channel_stt),
-        mintVoucher: mapValidator(manifest.validators.mint_voucher),
-        mintTransferEscrowShard: mapValidator(manifest.validators.mint_transfer_escrow_shard),
-        mintPort: mapValidator(manifest.validators.mint_port),
+        ...(manifest.validators.spend_trace_registry
+          ? {
+              spendTraceRegistry: mapValidator(
+                manifest.validators.spend_trace_registry,
+                'validators.spend_trace_registry',
+                true,
+              ),
+            }
+          : {}),
+        spendTransferModule: mapValidator(
+          manifest.validators.spend_transfer_module,
+          'validators.spend_transfer_module',
+          true,
+        ),
+        mintIdentifier: mapValidator(manifest.validators.mint_identifier, 'validators.mint_identifier', false),
+        verifyProof: mapValidator(manifest.validators.verify_proof, 'validators.verify_proof', false),
+        mintClientStt: mapValidator(manifest.validators.mint_client_stt, 'validators.mint_client_stt', false),
+        mintConnectionStt: mapValidator(
+          manifest.validators.mint_connection_stt,
+          'validators.mint_connection_stt',
+          false,
+        ),
+        mintChannelStt: mapValidator(manifest.validators.mint_channel_stt, 'validators.mint_channel_stt', false),
+        mintLifecycleCreationMarker: mapValidator(
+          manifest.validators.mint_lifecycle_creation_marker,
+          'validators.mint_lifecycle_creation_marker',
+          false,
+        ),
+        mintLifecycleReclamationMarker: mapValidator(
+          manifest.validators.mint_lifecycle_reclamation_marker,
+          'validators.mint_lifecycle_reclamation_marker',
+          false,
+        ),
+        mintLifecycleOperationalMarker: mapValidator(
+          manifest.validators.mint_lifecycle_operational_marker,
+          'validators.mint_lifecycle_operational_marker',
+          false,
+        ),
+        mintLifecyclePacketMarker: mapValidator(
+          manifest.validators.mint_lifecycle_packet_marker,
+          'validators.mint_lifecycle_packet_marker',
+          false,
+        ),
+        mintVoucher: mapValidator(manifest.validators.mint_voucher, 'validators.mint_voucher', false),
+        mintTransferEscrowShard: mapValidator(
+          manifest.validators.mint_transfer_escrow_shard,
+          'validators.mint_transfer_escrow_shard',
+          false,
+        ),
+        mintPort: mapValidator(manifest.validators.mint_port, 'validators.mint_port', false),
+        ...(manifest.validators.mint_trace_registry_benchmark_voucher
+          ? {
+              mintTraceRegistryBenchmarkVoucher: mapValidator(
+                manifest.validators.mint_trace_registry_benchmark_voucher,
+                'validators.mint_trace_registry_benchmark_voucher',
+                false,
+              ),
+            }
+          : {}),
+        ...(manifest.validators.voucher_metadata
+          ? { voucherMetadata: { address: manifest.validators.voucher_metadata.address } }
+          : {}),
       },
       modules: {
         transfer: manifest.modules.transfer,
         ...(manifest.modules.mock ? { mock: manifest.modules.mock } : {}),
+        ...(manifest.modules.icq ? { icq: manifest.modules.icq } : {}),
       },
       ...(manifest.trace_registry
         ? {
@@ -538,7 +984,11 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
             },
           }
         : {}),
-    },
+  };
+  assertDeploymentAddressBindings(deployment);
+  return {
+    bridgeManifest: manifest,
+    deployment,
   };
 }
 
@@ -1371,7 +1821,13 @@ class RuntimeKupoService implements KupoLikeService {
   private readonly connectionAddress: string;
   private readonly channelAddress: string;
 
-  constructor(private readonly lucidService: LucidIbcAdapter, deployment: DeploymentConfig) {
+  constructor(
+    private readonly lucidService: LucidIbcAdapter,
+    deployment: DeploymentConfig,
+    private readonly kupoEndpoint: string,
+    private readonly headers: Record<string, string> | undefined,
+    private readonly fetchImpl: typeof fetch,
+  ) {
     this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
     this.connectionTokenPrefix = deployment.validators.mintConnectionStt.scriptHash;
     this.channelTokenPrefix = deployment.validators.mintChannelStt.scriptHash;
@@ -1391,8 +1847,14 @@ class RuntimeKupoService implements KupoLikeService {
     try {
       const utxos = await this.lucidService.findUtxoAt(address);
       return utxos.filter((utxo) => this.getMatchingAssetNames(utxo, policyId).length > 0);
-    } catch {
-      return [];
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === `Unable to find UTxO at ${address}`
+      ) {
+        return [];
+      }
+      throw error;
     }
   }
 
@@ -1406,6 +1868,21 @@ class RuntimeKupoService implements KupoLikeService {
 
   async queryAllChannelUtxos(): Promise<UTxO[]> {
     return this.queryUtxosAtAddressByPolicy(this.channelAddress, this.channelTokenPrefix);
+  }
+
+  async queryLatestChannelUtxosFromHistory(): Promise<any[]> {
+    const outputs = await fetchLatestTransferEscrowShardHistory({
+      kupoEndpoint: this.kupoEndpoint,
+      address: this.channelAddress,
+      policyId: this.channelTokenPrefix,
+      headers: this.headers,
+      fetchImpl: this.fetchImpl,
+    });
+    return outputs.map((output) => ({
+      ...output,
+      spentAt: output.spent ? {} : null,
+      authToken: { unit: output.shardTokenUnit },
+    }));
   }
 }
 
@@ -1433,7 +1910,7 @@ async function findTransferEscrowShard(
   channelId: string,
   packetDenom: string,
   denomToken: string,
-  requiredAmount?: bigint,
+  principalDelta?: bigint,
 ) {
   const deployment = context.deployment;
   return findTransferEscrowShardFromRegistry(
@@ -1442,24 +1919,35 @@ async function findTransferEscrowShard(
       transferModuleIdentifier: deployment.modules.transfer.identifier,
       shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
       findUtxosAt: (address) => context.lucidService.findUtxoAt(address),
+      findLatestShardHistory: (address, policyId) =>
+        fetchLatestTransferEscrowShardHistory({
+          kupoEndpoint: context.kupoEndpoint,
+          address,
+          policyId,
+          headers: context.kupmiosHeaders?.kupoHeader,
+          fetchImpl: context.fetchImpl,
+        }),
       encodeTransferEscrowDatum: (datum) =>
         context.lucidService.encode(datum, 'transferEscrow'),
       decodeTransferEscrowDatum: (encodedDatum) =>
         context.lucidService.decodeDatum<{
           channel_id: string;
           denom: string;
+          escrowed_amount: bigint;
         }>(encodedDatum, 'transferEscrow'),
       encodeTransferModuleDatum: (datum) =>
         context.lucidService.encode(datum, 'transferModule'),
       decodeTransferModuleDatum: (encodedDatum) =>
         context.lucidService.decodeDatum<{
           escrow_shard_registry_root: string;
+          live_escrow_shard_count: bigint;
+          voucher_supply: bigint;
         }>(encodedDatum, 'transferModule'),
     },
     channelId,
     packetDenom,
     denomToken,
-    requiredAmount,
+    principalDelta,
   );
 }
 
@@ -1599,7 +2087,13 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     const lucidService = new LucidIbcAdapter(lucidImporter, lucid, deployment);
     await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
-    const kupoService = new RuntimeKupoService(lucidService, deployment);
+    const kupoService = new RuntimeKupoService(
+      lucidService,
+      deployment,
+      kupoEndpoint,
+      kupmiosHeaders?.kupoHeader,
+      config.fetchImpl ?? fetch,
+    );
     initTreeServices(kupoService, lucidService);
     await timed(logger, '[context]', 'rebuild IBC state tree', () => rebuildTreeFromChain(kupoService, lucidService));
 
@@ -1611,7 +2105,9 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       logger,
       cardanoNetwork,
       ogmiosEndpoint,
+      kupoEndpoint,
       kupmiosHeaders,
+      fetchImpl: config.fetchImpl ?? fetch,
       traceRegistryClient,
     };
   }
@@ -1726,6 +2222,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
                   deployment.validators.mintTransferEscrowShard.scriptHash,
                 spendChannelAddress,
                 transferModuleAddress: deployment.modules.transfer.address,
+                transferModuleIdentifier: deployment.modules.transfer.identifier,
               },
             };
           } finally {
@@ -1749,9 +2246,27 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
         encode: (value, kind) => context.lucidService.encode(value, kind as never),
         findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
         tryFindUtxosAt: getWalletUtxos,
-        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+        buildTransferModuleVoucherSupplyUpdate: async (moduleUtxo, voucherDelta) => {
+          if (!moduleUtxo.datum) {
+            throw new Error('Transfer module datum is required for voucher supply accounting');
+          }
+          const datum = await context.lucidService.decodeDatum<{
+            escrow_shard_registry_root: string;
+            live_escrow_shard_count: bigint;
+            voucher_supply: bigint;
+          }>(moduleUtxo.datum, 'transferModule');
+          const voucherSupply = datum.voucher_supply + voucherDelta;
+          if (voucherSupply < 0n) {
+            throw new Error('Voucher supply update would become negative');
+          }
+          return context.lucidService.encode(
+            { ...datum, voucher_supply: voucherSupply },
+            'transferModule',
+          );
+        },
+        findTransferEscrowShard: (channelId, packetDenom, denomToken, principalDelta) =>
           timed(logger, scope, 'find transfer escrow shard', () =>
-            findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount),
+            findTransferEscrowShard(context, channelId, packetDenom, denomToken, principalDelta),
           ),
         createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
         createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),

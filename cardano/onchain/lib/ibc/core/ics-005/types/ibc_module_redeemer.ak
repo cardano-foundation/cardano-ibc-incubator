@@ -42,6 +42,11 @@ pub type IBCModuleCallback {
     packet_commitment: ByteArray,
     data: IBCModulePacketData,
   }
+  OnChanReclaim {
+    channel_id: ByteArray,
+    channel_live_escrow_shard_count_siblings: List<ByteArray>,
+  }
+  OnHostStateSeal
 }
 
 pub type IBCModuleOperator {

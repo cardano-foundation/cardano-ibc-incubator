@@ -7,7 +7,13 @@ export type TransferModuleRedeemer =
         data: FungibleTokenPacketDatum;
       };
     }
-  | 'OtherTransferOp';
+  | 'OtherTransferOp'
+  | {
+      ReclaimEscrowShard: {
+        channel_id: string;
+        denom: string;
+      };
+    };
 
 export function transferModuleRedeemerSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
@@ -19,6 +25,12 @@ export function transferModuleRedeemerSchema(Lucid: typeof import('@lucid-evolut
       }),
     }),
     Data.Literal('OtherTransferOp'),
+    Data.Object({
+      ReclaimEscrowShard: Data.Object({
+        channel_id: Data.Bytes(),
+        denom: Data.Bytes(),
+      }),
+    }),
   ]);
 }
 

@@ -13,6 +13,7 @@ import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 import { QueryService } from '~@/query/services/query.service';
+import { CoreLifecycleService } from '~@/tx/core-lifecycle.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
@@ -24,6 +25,7 @@ describe('ApiController (modern)', () => {
   let packetServiceMock: {
     sendPacket: jest.Mock;
     prunePacketHistory: jest.Mock;
+    retireTransferEscrowShard: jest.Mock;
   };
   let denomTraceServiceMock: {
     findByHash: jest.Mock;
@@ -48,6 +50,7 @@ describe('ApiController (modern)', () => {
     queryPacketEventsByTxHash: jest.Mock;
     queryPacketEventsByPacket: jest.Mock;
   };
+  let coreLifecycleServiceMock: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     // API controller tests assert request/response shaping only.
@@ -60,6 +63,7 @@ describe('ApiController (modern)', () => {
     packetServiceMock = {
       sendPacket: jest.fn(),
       prunePacketHistory: jest.fn(),
+      retireTransferEscrowShard: jest.fn(),
     };
     denomTraceServiceMock = {
       findByHash: jest.fn(),
@@ -84,6 +88,14 @@ describe('ApiController (modern)', () => {
       queryPacketEventsByTxHash: jest.fn(),
       queryPacketEventsByPacket: jest.fn(),
     };
+    coreLifecycleServiceMock = {
+      pruneTerminalClient: jest.fn(),
+      reclaimClient: jest.fn(),
+      beginConnectionRetirement: jest.fn(),
+      reclaimConnection: jest.fn(),
+      beginChannelAbandonment: jest.fn(),
+      reclaimChannel: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ApiController],
@@ -96,6 +108,7 @@ describe('ApiController (modern)', () => {
         { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
         { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
         { provide: QueryService, useValue: queryServiceMock },
+        { provide: CoreLifecycleService, useValue: coreLifecycleServiceMock },
       ],
     }).compile();
 
@@ -247,6 +260,44 @@ describe('ApiController (modern)', () => {
     });
   });
 
+  it.each([
+    ['pruneTerminalClient', { signer: 'addr_test1signer', client_id: '07-tendermint-1' }],
+    ['reclaimClient', { signer: 'addr_test1signer', client_id: '07-tendermint-1' }],
+    ['beginConnectionRetirement', { signer: 'addr_test1signer', connection_id: 'connection-1' }],
+    ['reclaimConnection', { signer: 'addr_test1signer', connection_id: 'connection-1' }],
+    ['beginChannelAbandonment', { signer: 'addr_test1signer', port_id: 'transfer', channel_id: 'channel-1' }],
+    ['reclaimChannel', { signer: 'addr_test1signer', port_id: 'transfer', channel_id: 'channel-1' }],
+  ])('exposes lifecycle builder %s through HTTP', async (method, request) => {
+    coreLifecycleServiceMock[method].mockResolvedValue({
+      unsigned_tx: { type_url: '', value: new Uint8Array([1, 2, 3]) },
+    });
+
+    const response = await (controller as any)[method](request);
+
+    expect(coreLifecycleServiceMock[method]).toHaveBeenCalledWith(request);
+    expect(response.unsigned_tx.value).toBe(Buffer.from([1, 2, 3]).toString('base64'));
+  });
+
+  it('exposes transfer escrow shard retirement through HTTP', async () => {
+    packetServiceMock.retireTransferEscrowShard.mockResolvedValue({
+      unsigned_tx: { type_url: '', value: new Uint8Array([4, 5, 6]) },
+    });
+    const response = await controller.retireTransferEscrowShard({
+      signer: 'addr_test1signer',
+      channel_id: 'channel-7',
+      denom: '6c6f76656c616365',
+    });
+
+    expect(packetServiceMock.retireTransferEscrowShard).toHaveBeenCalledWith({
+      signer: 'addr_test1signer',
+      channelId: 'channel-7',
+      denom: '6c6f76656c616365',
+    });
+    expect(response.unsigned_tx.value).toBe(
+      Buffer.from([4, 5, 6]).toString('base64'),
+    );
+  });
+
   it('delegates cheqd DidDoc ICQ tx building to CheqdIcqService', async () => {
     cheqdIcqServiceMock.buildDidDocQuery.mockResolvedValue({
       query_path: '/cheqd.did.v2.Query/DidDoc',
@@ -373,12 +424,12 @@ describe('ApiController (modern)', () => {
 
   it('returns the public bridge manifest', async () => {
     bridgeManifestServiceMock.getBridgeManifest.mockReturnValue({
-      schema_version: 4,
+      schema_version: 6,
       deployment_id: 'cardano-devnet:policy.token',
     });
 
     await expect(controller.getBridgeManifest()).resolves.toEqual({
-      schema_version: 4,
+      schema_version: 6,
       deployment_id: 'cardano-devnet:policy.token',
     });
     expect(bridgeManifestServiceMock.getBridgeManifest).toHaveBeenCalledWith();

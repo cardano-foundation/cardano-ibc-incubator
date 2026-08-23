@@ -2,14 +2,17 @@
 
 use aiken/collection/list
 use aiken/collection/pairs
-use aiken/crypto.{Blake2b_224, Hash, Script}
+use aiken/crypto.{Blake2b_224, Hash, Script, VerificationKeyHash}
+use cardano/address
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
   InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
-use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
+use ibc/client/ics_007_tendermint_client/client_redeemer.{
+  BurnClient, MintClient, MintClientRedeemer, ReclaimClient, SpendClientRedeemer,
+}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
@@ -50,75 +53,137 @@ fn spent_host_state_for_create_client(
   }
 }
 
+fn validate_client_burn(
+  spend_client_script_hash: Hash<Blake2b_224, Script>,
+  host_state_nft_policy_id: PolicyId,
+  client_mint_policy_id: PolicyId,
+  token: AuthToken,
+  reclaim_to: VerificationKeyHash,
+  transaction: Transaction,
+) -> Bool {
+  let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
+  expect token.policy_id == client_mint_policy_id
+  expect [client_input] =
+    list.filter(
+      inputs,
+      fn(input) {
+        input.output.address.payment_credential == address.Script(
+          spend_client_script_hash,
+        ) && auth.contain_auth_token(input.output, token)
+      },
+    )
+  expect Some(client_spend_redeemer) =
+    pairs.get_first(redeemers, Spend(client_input.output_reference))
+  expect ReclaimClient { reclaim_to: spend_reclaim_to }: SpendClientRedeemer =
+    client_spend_redeemer
+
+  let (host_input, _) =
+    validator_utils.require_host_state_thread(
+      inputs,
+      outputs,
+      host_state_nft_policy_id,
+    )
+  expect Some(host_spend_redeemer) =
+    pairs.get_first(redeemers, Spend(host_input.output_reference))
+  expect host_state_redeemer.ReclaimClient { reclaim_to: host_reclaim_to, .. }: HostStateRedeemer =
+    host_spend_redeemer
+
+  and {
+    spend_reclaim_to == reclaim_to,
+    host_reclaim_to == reclaim_to,
+    auth.burn_auth_token(mint, token),
+    validator_utils.no_output_contains_auth_token(outputs, token),
+  }
+}
+
 validator mint_client_stt(
   spend_client_script_hash: Hash<Blake2b_224, Script>,
   host_state_nft_policy_id: PolicyId,
 ) {
   mint(
-    _redeemer: MintClientRedeemer,
+    redeemer: MintClientRedeemer,
     client_mint_policy_id: PolicyId,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, outputs, mint, validity_range, redeemers, .. } =
-      transaction
+    when redeemer is {
+      BurnClient { token, reclaim_to } ->
+        validate_client_burn(
+          spend_client_script_hash,
+          host_state_nft_policy_id,
+          client_mint_policy_id,
+          token,
+          reclaim_to,
+          transaction,
+        )
+      MintClient -> {
+        let Transaction { inputs, outputs, mint, validity_range, redeemers, .. } =
+          transaction
 
-    expect Some(host_state_input) =
-      find_host_state_input(inputs, host_state_nft_policy_id)
+        expect Some(host_state_input) =
+          find_host_state_input(inputs, host_state_nft_policy_id)
 
-    expect InlineDatum(datum) = host_state_input.output.datum
-    expect host_state_datum: HostStateDatum = datum
-    let client_id_sequence = host_state_datum.state.next_client_sequence
+        expect InlineDatum(datum) = host_state_input.output.datum
+        expect host_state_datum: HostStateDatum = datum
+        let client_id_sequence = host_state_datum.state.next_client_sequence
 
-    // Generate client token name using the HostState NFT as base token
-    let host_state_nft =
-      AuthToken {
-        policy_id: host_state_nft_policy_id,
-        name: host_state_token_name,
+        // Generate client token name using the HostState NFT as base token
+        let host_state_nft =
+          AuthToken {
+            policy_id: host_state_nft_policy_id,
+            name: host_state_token_name,
+          }
+        let id_str = string_utils.int_to_string(client_id_sequence)
+        let client_token_name =
+          auth.generate_token_name(host_state_nft, client_prefix, id_str)
+        let client_token =
+          AuthToken {
+            policy_id: client_mint_policy_id,
+            name: client_token_name,
+          }
+
+        expect [client_output] =
+          transaction.find_script_outputs(outputs, spend_client_script_hash)
+
+        expect client_output_datum: ClientDatum =
+          validator_utils.get_inline_datum(client_output)
+        let valid_output_datum =
+          client_output_datum
+            |> client_datum.is_initialized_valid(client_token)
+
+        let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
+        let tx_valid_from = validator_utils.get_tx_valid_from(validity_range)
+        let processed_time = tx_valid_from * 1_000_000
+        let processed_height =
+          client_datum.processed_height_from_time(processed_time)
+        let latest_height =
+          client_state.get_latest_height(client_output_datum.state.client_state)
+        expect Some(datum_processed_time) =
+          pairs.get_first(
+            client_output_datum.state.processed_times,
+            latest_height,
+          )
+        expect Some(datum_processed_height) =
+          pairs.get_first(
+            client_output_datum.state.processed_heights,
+            latest_height,
+          )
+        let is_state_active =
+          client_state.status(
+            client_output_datum.state.client_state,
+            tx_valid_to * 1_000_000,
+            client_output_datum.state.consensus_states,
+          ) == Active
+
+        and {
+          auth.mint_auth_token(mint, client_token)?,
+          auth.contains_only_auth_tokens(client_output, [client_token])?,
+          valid_output_datum?,
+          datum_processed_time == processed_time,
+          datum_processed_height == processed_height,
+          is_state_active?,
+          spent_host_state_for_create_client(redeemers, host_state_input)?,
+        }
       }
-    let id_str = string_utils.int_to_string(client_id_sequence)
-    let client_token_name =
-      auth.generate_token_name(host_state_nft, client_prefix, id_str)
-    let client_token =
-      AuthToken { policy_id: client_mint_policy_id, name: client_token_name }
-
-    expect [client_output] =
-      transaction.find_script_outputs(outputs, spend_client_script_hash)
-
-    expect client_output_datum: ClientDatum =
-      validator_utils.get_inline_datum(client_output)
-    let valid_output_datum =
-      client_output_datum
-        |> client_datum.is_initialized_valid(client_token)
-
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-    let tx_valid_from = validator_utils.get_tx_valid_from(validity_range)
-    let processed_time = tx_valid_from * 1_000_000
-    let processed_height =
-      client_datum.processed_height_from_time(processed_time)
-    let latest_height =
-      client_state.get_latest_height(client_output_datum.state.client_state)
-    expect Some(datum_processed_time) =
-      pairs.get_first(client_output_datum.state.processed_times, latest_height)
-    expect Some(datum_processed_height) =
-      pairs.get_first(
-        client_output_datum.state.processed_heights,
-        latest_height,
-      )
-    let is_state_active =
-      client_state.status(
-        client_output_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_output_datum.state.consensus_states,
-      ) == Active
-
-    and {
-      auth.mint_auth_token(mint, client_token)?,
-      auth.contains_only_auth_tokens(client_output, [client_token])?,
-      valid_output_datum?,
-      datum_processed_time == processed_time,
-      datum_processed_height == processed_height,
-      is_state_active?,
-      spent_host_state_for_create_client(redeemers, host_state_input)?,
     }
   }
 

@@ -1,8 +1,9 @@
+use aiken/builtin
 use aiken/cbor
 use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, from_asset}
+use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
   Spend, Transaction, placeholder,
@@ -21,7 +22,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/keys as client_id_keys
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum} as connection_datum
+use ibc/core/ics_003_connection_semantics/connection_datum.{
+  ConnectionActive, ConnectionDatum,
+} as connection_datum
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
   ConnOpenTry, MintConnectionRedeemer,
 }
@@ -41,12 +44,24 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   CreateConnection, HostStateRedeemer,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/core/ics_025_handler_interface/lifecycle_marker.{AuthorizeCreation}
+use ibc/core/ics_025_handler_interface/reclamation
 use ibc/testing/fuzz_dsl
+use ibc/utils/bits
 use ibc/utils/validator_utils
 use minting_connection_stt
+use minting_lifecycle_creation_marker
 
 const trusted_deployer =
   #"00000000000000000000000000000000000000000000000000000000"
+
+const lifecycle_creation_policy = "lifecycle creation policy"
+
+const lifecycle_reclamation_policy = "lifecycle reclamation policy"
+
+const lifecycle_operational_policy = "lifecycle operational policy"
+
+const lifecycle_packet_policy = "lifecycle packet policy"
 
 type ConnOpenTryFixture {
   ConnOpenTryFixture {
@@ -81,6 +96,103 @@ fn full_empty_siblings() -> List<ByteArray> {
   repeat_bytearray(
     ibc_state_commitment.empty_hash,
     ibc_state_commitment.merkle_depth_bits,
+  )
+}
+
+fn key_bit(key_hash: ByteArray, depth: Int) -> Int {
+  let byte_index = 7 - depth / 8
+  let bit_in_byte = depth % 8
+  bits.shr(builtin.index_bytearray(key_hash, byte_index), bit_in_byte) % 2
+}
+
+fn last_different_key_bit(
+  first_hash: ByteArray,
+  second_hash: ByteArray,
+  depth: Int,
+  last_difference: Int,
+) -> Int {
+  if depth == ibc_state_commitment.merkle_depth_bits {
+    expect last_difference >= 0
+    last_difference
+  } else {
+    last_different_key_bit(
+      first_hash,
+      second_hash,
+      depth + 1,
+      if key_bit(first_hash, depth) != key_bit(second_hash, depth) {
+        depth
+      } else {
+        last_difference
+      },
+    )
+  }
+}
+
+fn raise_single_leaf(
+  key_hash: ByteArray,
+  current: ByteArray,
+  depth: Int,
+  target_depth: Int,
+) -> ByteArray {
+  if depth == target_depth {
+    current
+  } else {
+    raise_single_leaf(
+      key_hash,
+      if key_bit(key_hash, depth) == 0 {
+        ibc_state_commitment.inner_hash(
+          current,
+          ibc_state_commitment.empty_hash,
+        )
+      } else {
+        ibc_state_commitment.inner_hash(
+          ibc_state_commitment.empty_hash,
+          current,
+        )
+      },
+      depth + 1,
+      target_depth,
+    )
+  }
+}
+
+fn single_sibling_list(
+  depth: Int,
+  sibling_depth: Int,
+  sibling: ByteArray,
+) -> List<ByteArray> {
+  if depth == ibc_state_commitment.merkle_depth_bits {
+    []
+  } else {
+    [
+      if depth == sibling_depth {
+        sibling
+      } else {
+        ibc_state_commitment.empty_hash
+      },
+      ..single_sibling_list(depth + 1, sibling_depth, sibling)
+    ]
+  }
+}
+
+fn siblings_after_single_insert(
+  existing_key: ByteArray,
+  existing_value: ByteArray,
+  target_key: ByteArray,
+) -> List<ByteArray> {
+  let existing_key_hash = builtin.sha2_256(existing_key)
+  let target_key_hash = builtin.sha2_256(target_key)
+  let divergence =
+    last_different_key_bit(existing_key_hash, target_key_hash, 0, -1)
+  let existing_leaf =
+    ibc_state_commitment.leaf_hash(
+      existing_key_hash,
+      ibc_state_commitment.value_hash(existing_value),
+    )
+  single_sibling_list(
+    0,
+    divergence,
+    raise_single_leaf(existing_key_hash, existing_leaf, 0, divergence),
   )
 }
 
@@ -140,10 +252,16 @@ fn host_state_datum(
       next_channel_sequence: 0,
       bound_port: [],
       last_update_time: 0,
+      live_client_count: 1,
+      live_connection_count: next_connection_sequence,
+      live_channel_count: 0,
     },
     nft_policy,
     deployer: trusted_deployer,
     shutdown: Active,
+    live_reference_script_count: Some(0),
+    reference_script_inventory_root: empty_ibc_state_root,
+    reference_script_registration: None,
   }
 }
 
@@ -319,17 +437,54 @@ fn build_conn_open_try_fixture(
       delay_period: 0,
     }
   let connection_datum =
-    ConnectionDatum { state: connection, token: connection_token }
+    ConnectionDatum {
+      state: connection,
+      token: connection_token,
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
+    }
+  let client_connection_count_key =
+    reclamation.client_connection_count_path(connection.client_id)
+  let old_client_connection_count = reclamation.encode_count(0)
+  let old_host_root =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      client_connection_count_key,
+      "",
+      old_client_connection_count,
+      full_empty_siblings(),
+    )
   let old_host_datum =
-    host_state_datum(host_state_nft_policy_id, 0, empty_ibc_state_root, 0)
-  let connection_siblings = full_empty_siblings()
-  let new_host_root =
+    host_state_datum(host_state_nft_policy_id, 0, old_host_root, 0)
+  let connection_key = host_connection_keys.connection_path("connection-0")
+  let connection_value = cbor.serialise(connection)
+  let connection_siblings =
+    siblings_after_single_insert(
+      client_connection_count_key,
+      old_client_connection_count,
+      connection_key,
+    )
+  let root_after_connection =
     ibc_state_commitment.apply_update(
       old_host_datum.state.ibc_state_root,
-      host_connection_keys.connection_path("connection-0"),
+      connection_key,
       "",
-      cbor.serialise(connection),
+      connection_value,
       connection_siblings,
+    )
+  let client_connection_count_siblings =
+    siblings_after_single_insert(
+      connection_key,
+      connection_value,
+      client_connection_count_key,
+    )
+  let new_host_root =
+    ibc_state_commitment.apply_update(
+      root_after_connection,
+      client_connection_count_key,
+      old_client_connection_count,
+      reclamation.encode_count(1),
+      client_connection_count_siblings,
     )
   let new_host_datum =
     host_state_datum(host_state_nft_policy_id, 1, new_host_root, 1)
@@ -356,14 +511,23 @@ fn build_conn_open_try_fixture(
       proof_height,
     }
   let host_redeemer: HostStateRedeemer =
-    CreateConnection { connection_siblings }
+    CreateConnection {
+      connection_siblings,
+      client_connection_count: 0,
+      client_connection_count_siblings,
+    }
   let connection_output =
     connection_output(
       spend_connection_script_hash,
       connection_token,
       connection_datum,
     )
-  let host_output = host_state_output(host_state_nft_policy_id, new_host_datum)
+  let host_output =
+    Output {
+      ..host_state_output(host_state_nft_policy_id, new_host_datum),
+      value: host_state_output(host_state_nft_policy_id, new_host_datum).value
+        |> add(lifecycle_creation_policy, "ibc_lifecycle", 1),
+    }
   let host_redeemer_data: Redeemer = host_redeemer
   let connection_redeemer_data: Redeemer = redeemer
   let proof_redeemer_data: Redeemer = proof_redeemer
@@ -379,7 +543,8 @@ fn build_conn_open_try_fixture(
       inputs: [host_input],
       reference_inputs: [client_input],
       outputs: [host_output, connection_output],
-      mint: from_asset(connection_minting_policy_id, connection_token.name, 1),
+      mint: from_asset(connection_minting_policy_id, connection_token.name, 1)
+        |> add(lifecycle_creation_policy, "ibc_lifecycle", 1),
       redeemers,
       validity_range: interval.before(1_000),
     }
@@ -428,9 +593,29 @@ fn run_conn_open_try_transition(
           "client script hash",
           fixture.spend_connection_script_hash,
           "channel script hash",
+          fixture.client_minting_policy_id,
+          fixture.connection_minting_policy_id,
+          "channel minting policy id",
+          lifecycle_creation_policy,
+          lifecycle_reclamation_policy,
+          lifecycle_operational_policy,
+          lifecycle_packet_policy,
+          "reference validator script hash",
           None,
           fixture.host_redeemer,
           fixture.host_input.output_reference,
+          fixture.transaction,
+        ),
+      )
+    |> fuzz_dsl.with_protocol_validator_check(
+        "minting_lifecycle_creation_marker.create_connection",
+        minting_lifecycle_creation_marker.mint_lifecycle_creation_marker.mint(
+          fixture.host_state_nft_policy_id,
+          fixture.client_minting_policy_id,
+          fixture.connection_minting_policy_id,
+          "channel minting policy id",
+          AuthorizeCreation,
+          lifecycle_creation_policy,
           fixture.transaction,
         ),
       )
@@ -441,6 +626,61 @@ fn run_conn_open_try_transition(
           fixture.connection_token,
         ),
       )
+}
+
+fn validate_creation_marker(
+  connection_policy: PolicyId,
+  duplicate_connection_output: Bool,
+) -> Bool {
+  let fixture =
+    build_conn_open_try_fixture(
+      "client-state",
+      "client-state",
+      fuzz_dsl.no_mutation(),
+    )
+  expect [host_output, connection_output] = fixture.transaction.outputs
+  let transaction =
+    if duplicate_connection_output {
+      Transaction {
+        ..fixture.transaction,
+        outputs: [host_output, connection_output, connection_output],
+      }
+    } else {
+      fixture.transaction
+    }
+  minting_lifecycle_creation_marker.mint_lifecycle_creation_marker.mint(
+    fixture.host_state_nft_policy_id,
+    fixture.client_minting_policy_id,
+    connection_policy,
+    "channel minting policy id",
+    AuthorizeCreation,
+    lifecycle_creation_policy,
+    transaction,
+  )
+}
+
+test lifecycle_creation_marker_accepts_create_connection() {
+  let fixture =
+    build_conn_open_try_fixture(
+      "client-state",
+      "client-state",
+      fuzz_dsl.no_mutation(),
+    )
+  validate_creation_marker(fixture.connection_minting_policy_id, False)
+}
+
+test lifecycle_creation_marker_rejects_forged_connection_policy() fail {
+  validate_creation_marker("forged connection policy", False)
+}
+
+test lifecycle_creation_marker_rejects_extra_connection_output() fail {
+  let fixture =
+    build_conn_open_try_fixture(
+      "client-state",
+      "client-state",
+      fuzz_dsl.no_mutation(),
+    )
+  validate_creation_marker(fixture.connection_minting_policy_id, True)
 }
 
 test prop_tx_conn_open_try_accepts_valid_full_transition(_seed via fuzz.int()) {

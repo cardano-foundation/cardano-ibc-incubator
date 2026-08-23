@@ -2,8 +2,9 @@ use aiken/collection/pairs
 use aiken/primitive/int
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Ordered, Unordered}
@@ -70,6 +71,8 @@ fn setup_unordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) 
       },
       port_id: "port-1",
       token: mock_auth_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let output_channel_datum =
@@ -136,6 +139,8 @@ fn setup_ordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       },
       port_id: "port-1",
       token: mock_auth_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
 
   let output_channel_datum =

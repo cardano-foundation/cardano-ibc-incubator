@@ -187,11 +187,9 @@ pub fn extract_channel_redeemer(
       inputs,
       fn(input) { input.output |> auth.contain_auth_token(channel_token) },
     )
-
   expect Some(spend_channel_redeemer) =
     pairs.get_first(redeemers, Spend(channel_input.output_reference))
   expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
-
   Some(spend_channel_redeemer)
 }
 

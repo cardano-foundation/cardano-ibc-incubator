@@ -55,6 +55,14 @@ async function encodeHostStateDatum(hostStateDatum, Lucid) {
         port_token: RegisteredAuthTokenSchema,
         module_token: RegisteredAuthTokenSchema,
     });
+    const ReferenceScriptRegistrationSchema = Data.Object({
+        target_count: Data.Integer(),
+        target_root: Data.Bytes(),
+        last_out_ref: Data.Object({
+            transaction_id: Data.Bytes(),
+            output_index: Data.Integer(),
+        }),
+    });
     const HostStateStateSchema = Data.Object({
         version: Data.Integer(),
         ibc_state_root: Data.Bytes(),
@@ -63,6 +71,9 @@ async function encodeHostStateDatum(hostStateDatum, Lucid) {
         next_channel_sequence: Data.Integer(),
         bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
         last_update_time: Data.Integer(),
+        live_client_count: Data.Integer(),
+        live_connection_count: Data.Integer(),
+        live_channel_count: Data.Integer(),
     });
     const HostStateDatumSchema = Data.Object({
         state: HostStateStateSchema,
@@ -76,7 +87,16 @@ async function encodeHostStateDatum(hostStateDatum, Lucid) {
                     grace_period_end: Data.Integer(),
                 }),
             }),
+            Data.Object({
+                Sealed: Data.Object({
+                    sealed_at: Data.Integer(),
+                    proof_window_end: Data.Integer(),
+                }),
+            }),
         ]),
+        live_reference_script_count: Data.Nullable(Data.Integer()),
+        reference_script_inventory_root: Data.Bytes(),
+        reference_script_registration: Data.Nullable(ReferenceScriptRegistrationSchema),
     });
     return Data.to(hostStateDatum, HostStateDatumSchema, { canonical: true });
 }
@@ -91,6 +111,14 @@ async function decodeHostStateDatum(encoded, Lucid) {
         port_token: RegisteredAuthTokenSchema,
         module_token: RegisteredAuthTokenSchema,
     });
+    const ReferenceScriptRegistrationSchema = Data.Object({
+        target_count: Data.Integer(),
+        target_root: Data.Bytes(),
+        last_out_ref: Data.Object({
+            transaction_id: Data.Bytes(),
+            output_index: Data.Integer(),
+        }),
+    });
     const HostStateStateSchema = Data.Object({
         version: Data.Integer(),
         ibc_state_root: Data.Bytes(),
@@ -99,6 +127,9 @@ async function decodeHostStateDatum(encoded, Lucid) {
         next_channel_sequence: Data.Integer(),
         bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
         last_update_time: Data.Integer(),
+        live_client_count: Data.Integer(),
+        live_connection_count: Data.Integer(),
+        live_channel_count: Data.Integer(),
     });
     const HostStateDatumSchema = Data.Object({
         state: HostStateStateSchema,
@@ -112,7 +143,16 @@ async function decodeHostStateDatum(encoded, Lucid) {
                     grace_period_end: Data.Integer(),
                 }),
             }),
+            Data.Object({
+                Sealed: Data.Object({
+                    sealed_at: Data.Integer(),
+                    proof_window_end: Data.Integer(),
+                }),
+            }),
         ]),
+        live_reference_script_count: Data.Nullable(Data.Integer()),
+        reference_script_inventory_root: Data.Bytes(),
+        reference_script_registration: Data.Nullable(ReferenceScriptRegistrationSchema),
     });
     return Data.from(encoded, HostStateDatumSchema);
 }
@@ -216,6 +256,11 @@ async function decodeConnectionDatum(encoded, Lucid) {
     const ConnectionDatumSchema = Data.Object({
         state: ConnectionEndSchema,
         token: AuthTokenSchema,
+        live_channel_count: Data.Integer(),
+        lifecycle: Data.Enum([
+            Data.Literal('ConnectionActive'),
+            Data.Object({ Retiring: Data.Object({ not_before: Data.Integer() }) }),
+        ]),
     });
     return Data.from(encoded, ConnectionDatumSchema);
 }
@@ -269,6 +314,11 @@ async function decodeChannelDatum(encoded, Lucid) {
         state: ChannelDatumStateSchema,
         port: Data.Bytes(),
         token: AuthTokenSchema,
+        lifecycle: Data.Enum([
+            Data.Literal('ChannelActive'),
+            Data.Object({ Abandoning: Data.Object({ not_before: Data.Integer() }) }),
+        ]),
+        voucher_supply: Data.Integer(),
     });
     return Data.from(encoded, ChannelDatumSchema);
 }
@@ -324,6 +374,11 @@ async function encodeChannelDatum(channelDatum, Lucid) {
             state: ChannelDatumStateSchema,
             port: Data.Bytes(),
             token: AuthTokenSchema,
+            lifecycle: Data.Enum([
+                Data.Literal('ChannelActive'),
+                Data.Object({ Abandoning: Data.Object({ not_before: Data.Integer() }) }),
+            ]),
+            voucher_supply: Data.Integer(),
         });
         return Data.to(channelDatum, ChannelDatumSchema);
     }
@@ -401,6 +456,10 @@ async function encodeChannelDatum(channelDatum, Lucid) {
         stateData,
         bytesData(channelDatum.port),
         tokenData,
+        channelDatum.lifecycle === 'ChannelActive'
+            ? constrData(0, [])
+            : constrData(1, [intData(channelDatum.lifecycle.Abandoning.not_before)]),
+        intData(channelDatum.voucher_supply),
     ]);
     return channelDatumData.to_cbor_hex();
 }
@@ -412,6 +471,7 @@ function encodeTransferEscrowDatum(transferEscrowDatum, Lucid) {
     const TransferEscrowDatumSchema = Data.Object({
         channel_id: Data.Bytes(),
         denom: Data.Bytes(),
+        escrowed_amount: Data.Integer(),
     });
     return Data.to(transferEscrowDatum, TransferEscrowDatumSchema, { canonical: true });
 }
@@ -420,17 +480,26 @@ function decodeTransferEscrowDatum(encoded, Lucid) {
     const TransferEscrowDatumSchema = Data.Object({
         channel_id: Data.Bytes(),
         denom: Data.Bytes(),
+        escrowed_amount: Data.Integer(),
     });
     return Data.from(encoded, TransferEscrowDatumSchema);
 }
 function encodeTransferModuleDatum(datum, Lucid) {
     const { Data } = Lucid;
-    const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+    const schema = Data.Object({
+        escrow_shard_registry_root: Data.Bytes(),
+        live_escrow_shard_count: Data.Integer(),
+        voucher_supply: Data.Integer(),
+    });
     return Data.to(datum, schema, { canonical: true });
 }
 function decodeTransferModuleDatum(encoded, Lucid) {
     const { Data } = Lucid;
-    const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+    const schema = Data.Object({
+        escrow_shard_registry_root: Data.Bytes(),
+        live_escrow_shard_count: Data.Integer(),
+        voucher_supply: Data.Integer(),
+    });
     return Data.from(encoded, schema);
 }
 async function encodeHostStateRedeemer(data, Lucid) {
@@ -440,8 +509,14 @@ async function encodeHostStateRedeemer(data, Lucid) {
     const CreateClientSchema = Data.Object({
         client_state_siblings: SiblingHashesSchema,
         consensus_state_siblings: SiblingHashesSchema,
+        client_connection_count_siblings: SiblingHashesSchema,
     });
     const CreateConnectionSchema = Data.Object({
+        connection_siblings: SiblingHashesSchema,
+        client_connection_count: Data.Integer(),
+        client_connection_count_siblings: SiblingHashesSchema,
+    });
+    const UpdateConnectionSchema = Data.Object({
         connection_siblings: SiblingHashesSchema,
     });
     const CreateChannelSchema = Data.Object({
@@ -476,6 +551,10 @@ async function encodeHostStateRedeemer(data, Lucid) {
         port_token: RegisteredAuthTokenSchema,
         module_token: RegisteredAuthTokenSchema,
     });
+    const OutputReferenceSchema = Data.Object({
+        transaction_id: Data.Bytes(),
+        output_index: Data.Integer(),
+    });
     const HostStateRedeemerSchema = Data.Enum([
         Data.Object({ CreateClient: CreateClientSchema }),
         Data.Object({ CreateConnection: CreateConnectionSchema }),
@@ -488,9 +567,69 @@ async function encodeHostStateRedeemer(data, Lucid) {
             }),
         }),
         Data.Object({ UpdateClient: UpdateClientSchema }),
-        Data.Object({ UpdateConnection: CreateConnectionSchema }),
+        Data.Object({ UpdateConnection: UpdateConnectionSchema }),
         Data.Object({ UpdateChannel: UpdateChannelSchema }),
         Data.Object({ HandlePacket: HandlePacketSchema }),
+        Data.Object({
+            EnterShutdown: Data.Object({ grace_period_end: Data.Integer() }),
+        }),
+        Data.Literal('FinalizeShutdown'),
+        Data.Literal('Heartbeat'),
+        Data.Object({
+            PruneTerminalClient: Data.Object({
+                removed_consensus_state_siblings: SiblingHashesListSchema,
+            }),
+        }),
+        Data.Literal('BeginConnectionRetirement'),
+        Data.Literal('BeginChannelAbandonment'),
+        Data.Object({
+            ReclaimChannel: Data.Object({
+                reclaim_to: Data.Bytes(),
+                channel_siblings: SiblingHashesSchema,
+                next_sequence_send_siblings: SiblingHashesSchema,
+                next_sequence_recv_siblings: SiblingHashesSchema,
+                next_sequence_ack_siblings: SiblingHashesSchema,
+            }),
+        }),
+        Data.Object({
+            ReclaimConnection: Data.Object({
+                reclaim_to: Data.Bytes(),
+                connection_siblings: SiblingHashesSchema,
+                client_connection_count: Data.Integer(),
+                client_connection_count_siblings: SiblingHashesSchema,
+            }),
+        }),
+        Data.Object({
+            ReclaimClient: Data.Object({
+                reclaim_to: Data.Bytes(),
+                client_state_siblings: SiblingHashesSchema,
+                consensus_state_siblings: SiblingHashesSchema,
+                client_connection_count_siblings: SiblingHashesSchema,
+            }),
+        }),
+        Data.Literal('SealShutdown'),
+        Data.Object({
+            ReclaimHostState: Data.Object({ reclaim_to: Data.Bytes() }),
+        }),
+        Data.Object({
+            UpdateModuleState: Data.Object({ port_id: Data.Bytes() }),
+        }),
+        Data.Object({
+            ReclaimModule: Data.Object({ port_id: Data.Bytes() }),
+        }),
+        Data.Object({
+            RegisterReferenceScripts: Data.Object({
+                target_count: Data.Integer(),
+                target_root: Data.Bytes(),
+                batch_out_refs: Data.Array(OutputReferenceSchema),
+            }),
+        }),
+        Data.Object({
+            ReclaimReferenceScripts: Data.Object({
+                predecessor_root: Data.Bytes(),
+            }),
+        }),
+        Data.Literal('FinalizeReferenceScriptRegistration'),
     ]);
     return Data.to(data, HostStateRedeemerSchema, { canonical: true });
 }
@@ -682,6 +821,13 @@ function ibcModuleRedeemerSchema(Lucid, moduleDataSchema, moduleOperatorSchema) 
                 data: IBCModulePacketData,
             }),
         }),
+        Data.Object({
+            OnChanReclaim: Data.Object({
+                channel_id: Data.Bytes(),
+                channel_live_escrow_shard_count_siblings: Data.Array(Data.Bytes()),
+            }),
+        }),
+        Data.Literal('OnHostStateSeal'),
     ]);
     const IBCModuleOperatorSchema = Data.Enum([
         Data.Object({
@@ -722,6 +868,12 @@ async function encodeTransferIbcModuleRedeemer(data, Lucid) {
             }),
         }),
         Data.Literal('OtherTransferOp'),
+        Data.Object({
+            ReclaimEscrowShard: Data.Object({
+                channel_id: Data.Bytes(),
+                denom: Data.Bytes(),
+            }),
+        }),
     ]);
     const schema = ibcModuleRedeemerSchema(Lucid, FungibleTokenPacketDatumSchema, TransferModuleRedeemerSchema);
     return Data.to(data, schema, { canonical: true });
@@ -735,6 +887,10 @@ function encodeMintVoucherRedeemer(data, Lucid) {
         receiver: Data.Bytes(),
         memo: Data.Bytes(),
     });
+    const AuthTokenSchema = Data.Object({
+        policy_id: Data.Bytes(),
+        name: Data.Bytes(),
+    });
     const MintVoucherRedeemerSchema = Data.Enum([
         Data.Object({
             MintVoucher: Data.Object({
@@ -743,6 +899,7 @@ function encodeMintVoucherRedeemer(data, Lucid) {
                 packet_dest_port: Data.Bytes(),
                 packet_dest_channel: Data.Bytes(),
                 data: FungibleTokenPacketDatumSchema,
+                module_token: AuthTokenSchema,
             }),
         }),
         Data.Object({
@@ -750,6 +907,7 @@ function encodeMintVoucherRedeemer(data, Lucid) {
                 packet_source_port: Data.Bytes(),
                 packet_source_channel: Data.Bytes(),
                 data: FungibleTokenPacketDatumSchema,
+                module_token: AuthTokenSchema,
             }),
         }),
         Data.Object({
@@ -758,6 +916,7 @@ function encodeMintVoucherRedeemer(data, Lucid) {
                 packet_source_channel: Data.Bytes(),
                 data: FungibleTokenPacketDatumSchema,
                 acknowledgement: Data.Nullable((0, acknowledgementCodec_1.acknowledgementSchema)(Lucid)),
+                module_token: AuthTokenSchema,
             }),
         }),
     ]);
@@ -780,14 +939,41 @@ function encodeTransferEscrowShardRedeemer(data, Lucid) {
         receiver: Data.Bytes(),
         memo: Data.Bytes(),
     });
-    const TransferEscrowShardRedeemerSchema = Data.Object({
-        channel_id: Data.Bytes(),
-        denom: Data.Bytes(),
-        data: FungibleTokenPacketDatumSchema,
-        registry_siblings: Data.Array(Data.Bytes()),
+    const AuthTokenSchema = Data.Object({
+        policy_id: Data.Bytes(),
+        name: Data.Bytes(),
     });
-    // Lucid encodes Aiken's sole constructor from its fields, not a one-member enum.
-    return Data.to(data.CreateEscrowShard, TransferEscrowShardRedeemerSchema, {
+    const TransferEscrowShardRedeemerSchema = Data.Enum([
+        Data.Object({
+            CreateEscrowShard: Data.Object({
+                channel_id: Data.Bytes(),
+                denom: Data.Bytes(),
+                data: FungibleTokenPacketDatumSchema,
+                registry_siblings: Data.Array(Data.Bytes()),
+            }),
+        }),
+        Data.Object({
+            CreateEscrowShardV2: Data.Object({
+                channel_id: Data.Bytes(),
+                denom: Data.Bytes(),
+                data: FungibleTokenPacketDatumSchema,
+                registry_siblings: Data.Array(Data.Bytes()),
+                old_channel_live_escrow_shard_count: Data.Integer(),
+                channel_live_escrow_shard_count_siblings: Data.Array(Data.Bytes()),
+            }),
+        }),
+        Data.Object({
+            RetireEscrowShard: Data.Object({
+                channel_id: Data.Bytes(),
+                denom: Data.Bytes(),
+                registry_siblings: Data.Array(Data.Bytes()),
+                old_channel_live_escrow_shard_count: Data.Integer(),
+                channel_live_escrow_shard_count_siblings: Data.Array(Data.Bytes()),
+                transfer_port_token: AuthTokenSchema,
+            }),
+        }),
+    ]);
+    return Data.to(data, TransferEscrowShardRedeemerSchema, {
         canonical: true,
     });
 }
@@ -817,6 +1003,7 @@ class LucidIbcAdapter {
             mintVoucher: this.deployment.validators.mintVoucher.refUtxo,
             mintPort: this.deployment.validators.mintPort.refUtxo,
             mintTransferEscrowShard: this.deployment.validators.mintTransferEscrowShard.refUtxo,
+            mintLifecyclePacketMarker: this.deployment.validators.mintLifecyclePacketMarker.refUtxo,
         };
         const entries = await Promise.all(Object.entries(outRefs).map(async ([label, outRef]) => {
             const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
@@ -1081,12 +1268,29 @@ class LucidIbcAdapter {
         }
         return tx.pay.ToContract(transferModuleAddress, { kind: 'inline', value: encodedTransferEscrowDatum }, updatedAssets);
     }
+    hostStateContinuationAssets(hostStateUtxo, mintedMarkerUnit) {
+        const hostStateUnit = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
+        const assets = {
+            ...hostStateUtxo.assets,
+            [hostStateUnit]: 1n,
+        };
+        if (mintedMarkerUnit) {
+            assets[mintedMarkerUnit] = (assets[mintedMarkerUnit] ?? 0n) + 1n;
+        }
+        return assets;
+    }
+    authorizePacketHostTransition(tx) {
+        const markerUnit = this.deployment.validators.mintLifecyclePacketMarker.scriptHash +
+            Buffer.from('ibc_lifecycle').toString('hex');
+        tx.readFrom([this.referenceScripts.mintLifecyclePacketMarker])
+            .mintAssets({ [markerUnit]: 1n }, 'd87980');
+        return markerUnit;
+    }
     createUnsignedSendPacketEscrowTx(dto) {
         const hostStateAddress = this.deployment.validators.hostStateStt.address;
         if (!hostStateAddress) {
             throw new Error('Host state script address is missing from deployment config');
         }
-        const hostStateNFT = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
         const hostStateUtxoWithRawDatum = {
             ...dto.hostStateUtxo,
             datum: dto.hostStateUtxo.datum,
@@ -1096,6 +1300,7 @@ class LucidIbcAdapter {
             throw new Error('Sender wallet UTxOs are required for escrow send packet');
         }
         const tx = this.lucid.newTx();
+        const packetMarkerUnit = this.authorizePacketHostTransition(tx);
         tx.readFrom([
             this.referenceScripts.spendChannel,
             this.referenceScripts.spendTransferModule,
@@ -1106,7 +1311,7 @@ class LucidIbcAdapter {
             .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
             .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
             .readFrom([dto.connectionUTxO, dto.clientUTxO])
-            .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, { [hostStateNFT]: 1n })
+            .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, this.hostStateContinuationAssets(hostStateUtxoWithRawDatum, packetMarkerUnit))
             .pay.ToContract(dto.spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
             .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
         if (dto.transferEscrowUtxo) {
@@ -1138,26 +1343,29 @@ class LucidIbcAdapter {
         if (!spendChannelAddress) {
             throw new Error('Spend channel script address is missing from deployment config');
         }
-        const hostStateNFT = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
         const hostStateUtxoWithRawDatum = {
             ...dto.hostStateUtxo,
             datum: dto.hostStateUtxo.datum,
             datumHash: undefined,
         };
         const tx = this.lucid.newTx();
+        const packetMarkerUnit = this.authorizePacketHostTransition(tx);
         tx.readFrom([
             this.referenceScripts.spendChannel,
+            this.referenceScripts.spendTransferModule,
             this.referenceScripts.mintVoucher,
             this.referenceScripts.sendPacket,
             this.referenceScripts.hostStateStt,
         ])
             .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
             .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
+            .collectFrom([dto.transferModuleReferenceUtxo], dto.encodedSpendTransferModuleRedeemer)
             .collectFrom([dto.senderVoucherTokenUtxo])
             .readFrom([dto.connectionUTxO, dto.clientUTxO])
             .mintAssets({ [dto.voucherTokenUnit]: -BigInt(dto.transferAmount) }, dto.encodedMintVoucherRedeemer)
-            .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, { [hostStateNFT]: 1n })
+            .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, this.hostStateContinuationAssets(hostStateUtxoWithRawDatum, packetMarkerUnit))
             .pay.ToContract(spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
+            .pay.ToContract(this.deployment.modules.transfer.address, { kind: 'inline', value: dto.encodedUpdatedTransferModuleDatum }, dto.transferModuleReferenceUtxo.assets)
             .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
         return tx;
     }

@@ -9,6 +9,8 @@ import { State as ConnectionState } from '../types/connection/state';
 import { ICS23MerkleTree } from './ics23-merkle-tree';
 import {
   computeRootWithHandlePacketUpdate,
+  clientConnectionCountPath,
+  encodeDependencyCount,
   getCurrentTree,
   rebuildTreeFromChain,
   setCurrentTree,
@@ -61,6 +63,8 @@ describe('IBC state root recovery after packet-history pruning', () => {
         delay_period: 0n,
       },
       token: { policyId: '41'.repeat(28), name: '42' },
+      live_channel_count: 1n,
+      lifecycle: 'ConnectionActive',
     };
     const channelDatum: ChannelDatum = {
       state: {
@@ -85,6 +89,8 @@ describe('IBC state root recovery after packet-history pruning', () => {
       },
       port: toHex('transfer'),
       token: { policyId: '51'.repeat(28), name: '52' },
+      lifecycle: 'ChannelActive',
+      voucher_supply: 0n,
     };
 
     const liveTree = new ICS23MerkleTree();
@@ -103,6 +109,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
       'connections/connection-0',
       Buffer.from(await encodeConnectionEndValue(connectionDatum.state, Lucid), 'hex'),
     );
+    liveTree.set(clientConnectionCountPath('07-tendermint-0'), encodeDependencyCount(1n));
     liveTree.set(
       'channelEnds/ports/transfer/channels/channel-0',
       Buffer.from(await encodeChannelEndValue(channelDatum.state.channel, Lucid), 'hex'),
@@ -148,6 +155,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
       queryAllClientUtxos: jest.fn().mockResolvedValue([clientUtxo]),
       queryAllConnectionUtxos: jest.fn().mockResolvedValue([connectionUtxo]),
       queryAllChannelUtxos: jest.fn().mockResolvedValue([channelUtxo]),
+      queryLatestChannelUtxosFromHistory: jest.fn().mockResolvedValue([]),
     };
     const lucidService = {
       LucidImporter: Lucid,

@@ -53,7 +53,7 @@ describe('tx-builder runtime serialization', () => {
     );
   });
 
-  it('encodes the one-constructor escrow shard redeemer as the Aiken wire type', async () => {
+  it('preserves V1 and appends V2/retire escrow shard constructor indices', async () => {
     const adapter = new LucidIbcAdapter(
       LucidImporter,
       {} as never,
@@ -88,6 +88,42 @@ describe('tx-builder runtime serialization', () => {
         '00'.repeat(32),
       ].join(''),
     );
+
+    const createV2 = await adapter.encode(
+      {
+        CreateEscrowShardV2: {
+          channel_id: '00',
+          denom: '01',
+          data: {
+            denom: '01',
+            amount: '31',
+            sender: '02',
+            receiver: '03',
+            memo: '',
+          },
+          registry_siblings: [],
+          old_channel_live_escrow_shard_count: 0n,
+          channel_live_escrow_shard_count_siblings: [],
+        },
+      },
+      'transferEscrowShardRedeemer',
+    );
+    const retire = await adapter.encode(
+      {
+        RetireEscrowShard: {
+          channel_id: '00',
+          denom: '01',
+          registry_siblings: [],
+          old_channel_live_escrow_shard_count: 1n,
+          channel_live_escrow_shard_count_siblings: [],
+          transfer_port_token: { policy_id: '11'.repeat(28), name: 'aa' },
+        },
+      },
+      'transferEscrowShardRedeemer',
+    );
+
+    assert.match(createV2, /^d87a86/);
+    assert.match(retire, /^d87b86/);
   });
 
   it('runs queued operations one at a time in submission order', async () => {
@@ -225,13 +261,182 @@ describe('IBC module and textual-port codecs', () => {
         next_channel_sequence: 0n,
         bound_port: new Map([[portId, registration]]),
         last_update_time: 0n,
+        live_client_count: 0n,
+        live_connection_count: 0n,
+        live_channel_count: 0n,
       },
       nft_policy: '66'.repeat(28),
       deployer: '77'.repeat(28),
       shutdown: 'Active',
+      live_reference_script_count: 28n,
+      reference_script_inventory_root: '88'.repeat(32),
+      reference_script_registration: {
+        target_count: 28n,
+        target_root: '88'.repeat(32),
+        last_out_ref: {
+          transaction_id: '99'.repeat(32),
+          output_index: 3n,
+        },
+      },
     };
 
-    const encoded = await adapter.encode(datum, 'host_state');
-    assert.deepEqual(await adapter.decodeDatum(encoded, 'host_state'), datum);
+    for (const liveReferenceScriptCount of [28n, null]) {
+      const expected =
+        liveReferenceScriptCount === null
+          ? {
+              ...datum,
+              live_reference_script_count: null,
+              reference_script_inventory_root: '00'.repeat(32),
+              reference_script_registration: null,
+            }
+          : datum;
+      const encoded = await adapter.encode(expected, 'host_state');
+      assert.deepEqual(await adapter.decodeDatum(encoded, 'host_state'), expected);
+    }
+  });
+
+  it('round-trips appended Channel lifecycle and voucher supply through the manual CML encoder', async () => {
+    const datum = {
+      state: {
+        channel: {
+          state: 'Close',
+          ordering: 'Ordered',
+          counterparty: { port_id: 'aa', channel_id: 'bb' },
+          connection_hops: ['cc'],
+          version: 'dd',
+        },
+        next_sequence_send: 7n,
+        next_sequence_recv: 8n,
+        next_sequence_ack: 9n,
+        packet_commitment: new Map([[1n, '11']]),
+        packet_receipt: new Map([[2n, '22']]),
+        packet_acknowledgement: new Map([[3n, '33']]),
+        minimum_receive_proof_height: {
+          revisionNumber: 0n,
+          revisionHeight: 4n,
+        },
+        maximum_receive_proof_height: {
+          revisionNumber: 0n,
+          revisionHeight: 5n,
+        },
+      },
+      port: Buffer.from('transfer').toString('hex'),
+      token: { policyId: '44'.repeat(28), name: '55' },
+      lifecycle: { Abandoning: { not_before: 123n } },
+      voucher_supply: 19n,
+    };
+
+    const encoded = await adapter.encode(datum, 'channel');
+    assert.deepEqual(await adapter.decodeDatum(encoded, 'channel'), datum);
+  });
+
+  it('decodes Connection dependency counts and lifecycle without dropping fields', async () => {
+    const { Data } = LucidImporter;
+    const connection = {
+      state: {
+        client_id: Buffer.from('07-tendermint-0').toString('hex'),
+        versions: [{ identifier: '01', features: ['02'] }],
+        state: 'Open',
+        counterparty: {
+          client_id: '03',
+          connection_id: '04',
+          prefix: { key_prefix: '05' },
+        },
+        delay_period: 6n,
+      },
+      token: { policyId: '66'.repeat(28), name: '77' },
+      live_channel_count: 2n,
+      lifecycle: { Retiring: { not_before: 456n } },
+    };
+    const versionSchema = Data.Object({
+      identifier: Data.Bytes(),
+      features: Data.Array(Data.Bytes()),
+    });
+    const encoded = Data.to(
+      connection as never,
+      Data.Object({
+        state: Data.Object({
+          client_id: Data.Bytes(),
+          versions: Data.Array(versionSchema),
+          state: Data.Enum([
+            Data.Literal('Uninitialized'),
+            Data.Literal('Init'),
+            Data.Literal('TryOpen'),
+            Data.Literal('Open'),
+          ]),
+          counterparty: Data.Object({
+            client_id: Data.Bytes(),
+            connection_id: Data.Bytes(),
+            prefix: Data.Object({ key_prefix: Data.Bytes() }),
+          }),
+          delay_period: Data.Integer(),
+        }),
+        token: Data.Object({
+          policyId: Data.Bytes(),
+          name: Data.Bytes(),
+        }),
+        live_channel_count: Data.Integer(),
+        lifecycle: Data.Enum([
+          Data.Literal('ConnectionActive'),
+          Data.Object({ Retiring: Data.Object({ not_before: Data.Integer() }) }),
+        ]),
+      }) as never,
+    );
+
+    assert.deepEqual(await adapter.decodeDatum(encoded, 'connection'), connection);
+  });
+
+  it('preserves HostState redeemer constructor indices and appends reference lifecycle operations', async () => {
+    const createClient = await adapter.encode(
+      {
+        CreateClient: {
+          client_state_siblings: [],
+          consensus_state_siblings: [],
+          client_connection_count_siblings: [],
+        },
+      },
+      'host_state_redeemer',
+    );
+    const reclaimHostState = await adapter.encode(
+      { ReclaimHostState: { reclaim_to: 'aa' } },
+      'host_state_redeemer',
+    );
+    const updateModuleState = await adapter.encode(
+      { UpdateModuleState: { port_id: 'bb' } },
+      'host_state_redeemer',
+    );
+    const reclaimModule = await adapter.encode(
+      { ReclaimModule: { port_id: 'cc' } },
+      'host_state_redeemer',
+    );
+    const registerReferences = await adapter.encode(
+      {
+        RegisterReferenceScripts: {
+          target_count: 28n,
+          target_root: '44'.repeat(32),
+          batch_out_refs: [{ transaction_id: '66'.repeat(32), output_index: 7n }],
+        },
+      },
+      'host_state_redeemer',
+    );
+    const reclaimReferences = await adapter.encode(
+      { ReclaimReferenceScripts: { predecessor_root: '55'.repeat(32) } },
+      'host_state_redeemer',
+    );
+    const finalizeReferences = await adapter.encode(
+      'FinalizeReferenceScriptRegistration',
+      'host_state_redeemer',
+    );
+
+    assert.match(createClient, /^d87983/);
+    assert.match(reclaimHostState, /^d9050b81/);
+    assert.match(updateModuleState, /^d9050c81/);
+    assert.match(reclaimModule, /^d9050d81/);
+    assert.equal(
+      registerReferences,
+      `d9050e83181c5820${'44'.repeat(32)}81d879825820${'66'.repeat(32)}07`,
+    );
+    assert.equal(reclaimReferences, `d9050f815820${'55'.repeat(32)}`);
+    assert.equal(finalizeReferences, 'd9051080');
   });
 });

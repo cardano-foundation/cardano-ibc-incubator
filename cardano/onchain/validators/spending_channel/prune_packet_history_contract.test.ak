@@ -15,7 +15,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+}
 use ibc/core/ics_004/channel_redeemer.{PrunePacketHistory, SpendChannelRedeemer}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -262,6 +264,8 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       },
       port_id: mock.port_id,
       token: mock.channel_token,
+      lifecycle: ChannelActive,
+      voucher_supply: 0,
     }
   let output_channel_datum =
     ChannelDatum {
@@ -359,6 +363,8 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
   let host_output =
     Output {
       ..mock.host_state_input.output,
+      value: mock.host_state_input.output.value
+        |> add("lifecycle packet policy", "ibc_lifecycle", 1),
       datum: InlineDatum(new_host_datum),
     }
 
@@ -449,7 +455,8 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       redeemers,
       validity_range: interval.between(0, 1_577_923_295_000),
       mint: from_asset(mock.prune_packet_history_policy_id, "", 1)
-        |> add(mock.verify_proof_policy_id, "", 1),
+        |> add(mock.verify_proof_policy_id, "", 1)
+        |> add("lifecycle packet policy", "ibc_lifecycle", 1),
     }
 
   let marker_valid =
@@ -484,6 +491,14 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       "unused client script hash",
       "unused connection script hash",
       "mock spend channel script hash",
+      mock.client_minting_policy_id,
+      mock.connection_minting_policy_id,
+      mock.channel_token.policy_id,
+      "lifecycle creation policy",
+      "lifecycle reclamation policy",
+      "lifecycle operational policy",
+      "lifecycle packet policy",
+      "reference validator script hash",
       None,
       host_redeemer,
       host_input.output_reference,

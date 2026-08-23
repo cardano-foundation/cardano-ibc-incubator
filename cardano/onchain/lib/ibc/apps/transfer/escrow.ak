@@ -15,6 +15,16 @@ pub type TransferModuleSpend {
   EscrowShard { datum: TransferEscrowDatum, updated_output: Option<Output> }
 }
 
+pub fn same_escrow_identity(
+  left: TransferEscrowDatum,
+  right: TransferEscrowDatum,
+) -> Bool {
+  and {
+    left.channel_id == right.channel_id,
+    left.denom == right.denom,
+  }
+}
+
 pub fn has_module_state_tokens(
   output: Output,
   port_token: AuthToken,
@@ -32,7 +42,8 @@ fn escrow_output_matches(
   datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
 ) -> Bool {
-  // Shard successors keep the script address and exact `{channel_id, denom}` datum.
+  // Shard successors keep the script address and immutable `{channel_id, denom}`
+  // identity. Their logical principal is expected to change on packet updates.
   // Check the derived NFT first so unrelated inline datums cannot abort shard lookup.
   if output.address != address || !escrow_shard_has_nft(
     output,
@@ -44,7 +55,7 @@ fn escrow_output_matches(
     when output.datum is {
       InlineDatum(data) -> {
         expect output_datum: TransferEscrowDatum = data
-        output_datum == datum
+        same_escrow_identity(output_datum, datum)
       }
       _ -> False
     }
@@ -126,7 +137,15 @@ pub fn transfer_escrow_datum(
   channel_id: ByteArray,
   denom: ByteArray,
 ) -> TransferEscrowDatum {
-  TransferEscrowDatum { channel_id, denom }
+  transfer_escrow_datum_with_amount(channel_id, denom, 0)
+}
+
+pub fn transfer_escrow_datum_with_amount(
+  channel_id: ByteArray,
+  denom: ByteArray,
+  escrowed_amount: Int,
+) -> TransferEscrowDatum {
+  TransferEscrowDatum { channel_id, denom, escrowed_amount }
 }
 
 pub fn escrow_shard_token_name(datum: TransferEscrowDatum) -> ByteArray {
@@ -188,7 +207,16 @@ fn escrow_value_is_single_asset(
         ),
       )
     }
-  assets.match_assets(output.value, expected_non_lovelace)
+  and {
+    datum.escrowed_amount >= 0,
+    assets.match_assets(output.value, expected_non_lovelace),
+    if escrowed_token_unit == "lovelace" {
+      // Physical lovelace also carries the shard's minimum-UTxO reserve.
+      escrowed_quantity >= datum.escrowed_amount
+    } else {
+      escrowed_quantity == datum.escrowed_amount
+    },
+  }
 }
 
 fn validate_created_escrow_shard(
@@ -208,28 +236,18 @@ fn validate_created_escrow_shard(
         escrow_output_matches(output, address, datum, shard_policy_id)
       },
     )
-  let (escrowed_token_policy_id, escrowed_token_name) =
-    validator_utils.extract_token_unit(escrowed_token_unit)
-  let created_quantity =
-    quantity_of(
-      created_output.value,
-      escrowed_token_policy_id,
-      escrowed_token_name,
-    )
+  expect created_datum: TransferEscrowDatum =
+    validator_utils.get_inline_datum(created_output)
   and {
+    same_escrow_identity(created_datum, datum),
+    created_datum.escrowed_amount == transfer_amount,
     quantity_of(mint, shard_policy_id, escrow_shard_token_name(datum)) == 1,
     escrow_value_is_single_asset(
       created_output,
-      datum,
+      created_datum,
       shard_policy_id,
       escrowed_token_unit,
     )?,
-    if escrowed_token_unit == "lovelace" {
-      // Lovelace shards may carry extra ADA for minimum-UTxO requirements.
-      created_quantity >= transfer_amount
-    } else {
-      created_quantity == transfer_amount
-    },
   }
 }
 
@@ -239,19 +257,14 @@ fn validate_escrow_shard_update(
   expected_datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
   mint: Value,
+  principal_delta: Int,
   expected_value_difference: Value,
   escrowed_token_unit: ByteArray,
 ) -> Bool {
   expect EscrowShard { datum, updated_output } = spend
-  expect datum == expected_datum
+  expect same_escrow_identity(datum, expected_datum)
 
-  let (escrowed_token_policy_id, escrowed_token_name) =
-    validator_utils.extract_token_unit(escrowed_token_unit)
-  let expected_output =
-    spent_input.output.value
-      |> assets.merge(expected_value_difference)
-  let expected_escrow_quantity =
-    quantity_of(expected_output, escrowed_token_policy_id, escrowed_token_name)
+  let expected_escrowed_amount = datum.escrowed_amount + principal_delta
   let shard_token_name = escrow_shard_token_name(expected_datum)
   let shard_mint_quantity = quantity_of(mint, shard_policy_id, shard_token_name)
 
@@ -260,15 +273,20 @@ fn validate_escrow_shard_update(
     escrow_shard_has_nft(spent_input.output, expected_datum, shard_policy_id)?,
     escrow_value_is_single_asset(
       spent_input.output,
-      expected_datum,
+      datum,
       shard_policy_id,
       escrowed_token_unit,
     )?,
-    // The signed value delta models send as positive and refund/unescrow as negative.
-    if expected_escrow_quantity >= 0 {
+    // The signed principal delta models send as positive and refund/unescrow as
+    // negative. Physical ADA is deliberately not used as the logical balance.
+    if expected_escrowed_amount >= 0 {
       // Empty and non-empty shards both retain their successor and NFT.
       expect Some(output) = updated_output
+      expect output_datum: TransferEscrowDatum =
+        validator_utils.get_inline_datum(output)
       and {
+        same_escrow_identity(output_datum, datum),
+        output_datum.escrowed_amount == expected_escrowed_amount,
         shard_mint_quantity == 0,
         value_delta.validate_output_amount(
           spent_input,
@@ -277,7 +295,7 @@ fn validate_escrow_shard_update(
         )?,
         escrow_value_is_single_asset(
           output,
-          expected_datum,
+          output_datum,
           shard_policy_id,
           escrowed_token_unit,
         )?,
@@ -294,17 +312,21 @@ fn validate_matching_escrow_input_update(
   datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
   mint: Value,
+  principal_delta: Int,
   expected_value_difference: Value,
   escrowed_token_unit: ByteArray,
 ) -> Bool {
   let updated_output =
     find_escrow_output(outputs, escrow_input.output, datum, shard_policy_id)
+  expect input_datum: TransferEscrowDatum =
+    validator_utils.get_inline_datum(escrow_input.output)
   validate_escrow_shard_update(
     escrow_input,
-    EscrowShard { datum, updated_output },
+    EscrowShard { datum: input_datum, updated_output },
     datum,
     shard_policy_id,
     mint,
+    principal_delta,
     expected_value_difference,
     escrowed_token_unit,
   )
@@ -361,6 +383,7 @@ pub fn validate_module_escrow_transition(
               datum,
               shard_policy_id,
               mint,
+              transfer_amount,
               expected_value_difference,
               escrowed_token_unit,
             )
@@ -386,6 +409,7 @@ pub fn validate_module_escrow_transition(
         datum,
         shard_policy_id,
         mint,
+        transfer_amount,
         expected_value_difference,
         escrowed_token_unit,
       )

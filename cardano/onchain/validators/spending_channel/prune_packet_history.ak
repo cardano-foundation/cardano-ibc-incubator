@@ -22,7 +22,7 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof} as merkle
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
 
-/// Permissionlessly remove a finalized unordered receipt/acknowledgement pair.
+/// Permissionlessly remove finalized receive history.
 ///
 /// The counterparty non-membership proof establishes that the source packet
 /// commitment has already been resolved. The channel transition advances its
@@ -109,8 +109,8 @@ validator prune_packet_history(
     and {
       channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
-      channel.state == channel_state_mod.Open,
-      channel.ordering == channel_order_mod.Unordered,
+      channel.state == channel_state_mod.Open || channel.state == channel_state_mod.Closed,
+      channel.ordering == channel_order_mod.Unordered || channel.ordering == channel_order_mod.Ordered,
       connection_datum.state.state == connection_state_mod.Open,
       client_state_mod.status(
         client_datum.state.client_state,

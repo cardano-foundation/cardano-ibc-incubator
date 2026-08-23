@@ -6,8 +6,9 @@ use cardano/assets as assets
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Spend}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{SendPacket, SpendChannelRedeemer}
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement.{Acknowledgement}
@@ -95,6 +96,8 @@ fn base_datum(ordering: Order, next_sequence_send: Int) -> ChannelDatum {
     },
     port_id: "port-1",
     token: mock_token(),
+    lifecycle: ChannelActive,
+    voucher_supply: 0,
   }
 }
 
@@ -454,7 +457,7 @@ fn timeout_output(input_datum: ChannelDatum, packet: Packet) -> ChannelDatum {
     if input_datum.state.channel.ordering == Ordered {
       Closed
     } else {
-      Open
+      input_datum.state.channel.state
     }
 
   ChannelDatum {
@@ -500,6 +503,92 @@ test prop_packet_send_accepts_valid_near_context(_seed via fuzz.int()) {
     |> build_send_packet_fixture
     |> run_send_packet_transition
     |> fuzz_dsl.assert_protocol_valid
+}
+
+test packet_transitions_allow_nonnegative_voucher_supply_delta() {
+  let send_packet = base_packet(11)
+  let send_input =
+    ChannelDatum { ..base_datum(Unordered, 11), voucher_supply: 20 }
+  let send_successor =
+    ChannelDatum {
+      ..send_output(
+        send_input,
+        send_packet,
+        packet_mod.commit_packet(send_packet),
+      ),
+      voucher_supply: 15,
+    }
+
+  let recv_packet =
+    Packet {
+      ..base_packet(7),
+      source_port: "bank",
+      source_channel: "channel-90",
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+    }
+  let recv_input =
+    ChannelDatum { ..base_datum(Unordered, 1), voucher_supply: 20 }
+  let recv_successor =
+    ChannelDatum {
+      ..recv_output(recv_input, recv_packet, "recv-ack"),
+      voucher_supply: 25,
+    }
+
+  let (terminal_base, terminal_packet) = packet_with_commitment(Unordered)
+  let terminal_input = ChannelDatum { ..terminal_base, voucher_supply: 20 }
+  let ack_successor =
+    ChannelDatum {
+      ..ack_output(terminal_input, terminal_packet),
+      voucher_supply: 25,
+    }
+  let timeout_successor =
+    ChannelDatum {
+      ..timeout_output(terminal_input, terminal_packet),
+      voucher_supply: 25,
+    }
+
+  and {
+    channel_datum_mod.validate_send_packet(
+      send_input,
+      send_successor,
+      send_packet,
+      packet_mod.commit_packet(send_packet),
+    ),
+    channel_datum_mod.validate_recv_packet(
+      recv_input,
+      recv_successor,
+      recv_packet,
+      "recv-ack",
+      height_mod.zero_height(),
+    ),
+    channel_datum_mod.validate_acknowledge_packet(
+      terminal_input,
+      ack_successor,
+      terminal_packet,
+    ),
+    channel_datum_mod.validate_timeout_packet(
+      terminal_input,
+      timeout_successor,
+      terminal_packet,
+    ),
+  }
+}
+
+test packet_transition_rejects_negative_voucher_supply() fail {
+  let packet = base_packet(11)
+  let input_datum = base_datum(Unordered, packet.sequence)
+  let output_datum =
+    ChannelDatum {
+      ..send_output(input_datum, packet, packet_mod.commit_packet(packet)),
+      voucher_supply: -1,
+    }
+  channel_datum_mod.validate_send_packet(
+    input_datum,
+    output_datum,
+    packet,
+    packet_mod.commit_packet(packet),
+  )
 }
 
 test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {
@@ -697,6 +786,38 @@ test prop_packet_recv_accepts_valid_receipt(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_protocol_valid
 }
 
+test prop_packet_recv_rejects_closed_channel(_seed via fuzz.int()) {
+  fuzz.label(@"regression.unit.packet.recv.invalid_closed_channel")
+
+  let packet =
+    Packet {
+      ..base_packet(11),
+      source_port: "bank",
+      source_channel: "channel-90",
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+    }
+  let base = base_datum(Unordered, 1)
+  let input_datum =
+    ChannelDatum {
+      ..base,
+      state: ChannelDatumState {
+        ..base.state,
+        channel: Channel { ..base.state.channel, state: Closed },
+      },
+    }
+  let ack = "ack-commitment"
+
+  run_recv_packet_transition(
+    input_datum,
+    recv_output(input_datum, packet, ack),
+    packet,
+    ack,
+    fuzz_dsl.mutation("closed_channel"),
+  )
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
 test prop_packet_recv_rejects_duplicate_receipt(_seed via fuzz.int()) {
   fuzz.label(@"regression.unit.packet.recv.invalid_duplicate_receipt")
 
@@ -759,6 +880,31 @@ test prop_packet_send_rejects_commitment_capacity_overflow(_seed via fuzz.int())
       packet,
       commitment,
       channel_redeemer: SendPacket { packet },
+    },
+  )
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_packet_send_rejects_closed_channel(_seed via fuzz.int()) {
+  fuzz.label(@"regression.unit.packet.send.invalid_closed_channel")
+
+  let packet = base_packet(11)
+  let fixture = build_send_packet_fixture(packet)
+  let closed_input =
+    ChannelDatum {
+      ..fixture.input_datum,
+      state: ChannelDatumState {
+        ..fixture.input_datum.state,
+        channel: Channel { ..fixture.input_datum.state.channel, state: Closed },
+      },
+    }
+
+  run_send_packet_transition(
+    SendPacketFixture {
+      ..fixture,
+      mutation: fuzz_dsl.mutation("closed_channel"),
+      input_datum: closed_input,
+      output_datum: send_output(closed_input, packet, fixture.commitment),
     },
   )
     |> fuzz_dsl.assert_protocol_rejected
@@ -837,6 +983,31 @@ test prop_packet_ack_accepts_error_ack(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_protocol_valid
 }
 
+test prop_packet_ack_accepts_closed_channel(_seed via fuzz.int()) {
+  fuzz.label(@"regression.unit.packet.ack.valid_closed_channel")
+
+  let (open_input, packet) = packet_with_commitment(Unordered)
+  let input_datum =
+    ChannelDatum {
+      ..open_input,
+      state: ChannelDatumState {
+        ..open_input.state,
+        channel: Channel { ..open_input.state.channel, state: Closed },
+      },
+    }
+  let ack = acknowledgement_mod.new_result_acknowledgement("ok")
+
+  run_ack_packet_transition(
+    input_datum,
+    ack_output(input_datum, packet),
+    packet,
+    ack,
+    acknowledgement_mod.marshal_json(ack),
+    fuzz_dsl.no_mutation(),
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
 test prop_packet_ack_rejects_wrong_ack_bytes(_seed via fuzz.int()) {
   fuzz.label(@"regression.unit.packet.ack.invalid_wrong_ack_bytes")
 
@@ -880,6 +1051,69 @@ test prop_packet_timeout_accepts_ordered(_seed via fuzz.int()) {
     fuzz_dsl.no_mutation(),
   )
     |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_packet_timeout_accepts_closed_unordered_without_reopening(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"regression.unit.packet.timeout.valid_closed_unordered")
+
+  let (open_input, packet) = packet_with_commitment(Unordered)
+  let input_datum =
+    ChannelDatum {
+      ..open_input,
+      state: ChannelDatumState {
+        ..open_input.state,
+        channel: Channel { ..open_input.state.channel, state: Closed },
+      },
+    }
+  let output_datum = timeout_output(input_datum, packet)
+
+  and {
+    output_datum.state.channel.state == Closed,
+    run_timeout_packet_transition(
+      input_datum,
+      output_datum,
+      packet,
+      100,
+      fuzz_dsl.no_mutation(),
+    )
+      |> fuzz_dsl.assert_protocol_valid,
+  }
+}
+
+test prop_packet_timeout_rejects_reopening_closed_unordered(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"regression.unit.packet.timeout.invalid_reopen_closed")
+
+  let (open_input, packet) = packet_with_commitment(Unordered)
+  let input_datum =
+    ChannelDatum {
+      ..open_input,
+      state: ChannelDatumState {
+        ..open_input.state,
+        channel: Channel { ..open_input.state.channel, state: Closed },
+      },
+    }
+  let valid_output = timeout_output(input_datum, packet)
+  let reopening_output =
+    ChannelDatum {
+      ..valid_output,
+      state: ChannelDatumState {
+        ..valid_output.state,
+        channel: Channel { ..valid_output.state.channel, state: Open },
+      },
+    }
+
+  run_timeout_packet_transition(
+    input_datum,
+    reopening_output,
+    packet,
+    100,
+    fuzz_dsl.mutation("reopen_closed_channel"),
+  )
+    |> fuzz_dsl.assert_protocol_rejected
 }
 
 test prop_packet_timeout_rejects_before_timeout(_seed via fuzz.int()) {

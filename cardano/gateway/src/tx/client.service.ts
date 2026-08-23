@@ -799,7 +799,13 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
+    const {
+      newRoot,
+      clientStateSiblings,
+      consensusStateSiblings,
+      clientConnectionCountSiblings,
+      commit,
+    } =
       computeRootWithCreateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         clientId,
@@ -819,6 +825,7 @@ export class ClientService {
         ...hostStateDatum.state,
         version: hostStateDatum.state.version + 1n,
         next_client_sequence: hostStateDatum.state.next_client_sequence + 1n,
+        live_client_count: hostStateDatum.state.live_client_count + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
@@ -853,6 +860,7 @@ export class ClientService {
       CreateClient: {
         client_state_siblings: clientStateSiblings,
         consensus_state_siblings: consensusStateSiblings,
+        client_connection_count_siblings: clientConnectionCountSiblings,
       },
     };
 

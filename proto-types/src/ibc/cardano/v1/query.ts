@@ -81,6 +81,21 @@ export interface BridgeManifest {
   host_state_nft?: BridgeManifestAuthToken;
   validators?: BridgeManifestValidators;
   modules?: BridgeManifestModules;
+  trace_registry?: BridgeManifestTraceRegistry;
+  /**
+   * Exact, deduplicated inventory of every reference-script output created by
+   * this deployment. Operators use it to prove shutdown reclamation is complete.
+   */
+  reference_out_refs: BridgeManifestRefUtxo[];
+  /**
+   * Full, canonical inventory commitment recorded by HostState at launch.
+   */
+  reference_script_inventory_root: string;
+  /**
+   * The exact parameterized validator needed to spend reference-script outputs
+   * during shutdown. Persisting it keeps reclamation independent of later builds.
+   */
+  reference_validator?: BridgeManifestReferenceValidator;
 }
 /**
  * @name BridgeManifestCardanoInfo
@@ -100,6 +115,10 @@ export interface BridgeManifestCardanoInfo {
 export interface BridgeManifestAuthToken {
   policy_id: string;
   token_name: string;
+  /**
+   * Serialized HostState minting policy required for the final deployment burn.
+   */
+  script: string;
 }
 /**
  * @name BridgeManifestRefUtxo
@@ -109,6 +128,21 @@ export interface BridgeManifestAuthToken {
 export interface BridgeManifestRefUtxo {
   tx_hash: string;
   output_index: bigint;
+  /**
+   * Present for top-level inventory entries; omitted where this message is
+   * nested under a validator that already carries its script hash.
+   */
+  script_hash?: string;
+}
+/**
+ * @name BridgeManifestReferenceValidator
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BridgeManifestReferenceValidator
+ */
+export interface BridgeManifestReferenceValidator {
+  script: string;
+  script_hash: string;
+  address: string;
 }
 /**
  * @name BridgeManifestValidator
@@ -172,6 +206,25 @@ export interface BridgeManifestValidators {
   mint_connection_stt?: BridgeManifestValidator;
   mint_channel_stt?: BridgeManifestValidator;
   mint_voucher?: BridgeManifestValidator;
+  mint_lifecycle_creation_marker?: BridgeManifestValidator;
+  mint_lifecycle_reclamation_marker?: BridgeManifestValidator;
+  mint_lifecycle_operational_marker?: BridgeManifestValidator;
+  mint_lifecycle_packet_marker?: BridgeManifestValidator;
+  spend_mock_module?: BridgeManifestValidator;
+  spend_trace_registry?: BridgeManifestValidator;
+  mint_identifier?: BridgeManifestValidator;
+  mint_transfer_escrow_shard?: BridgeManifestValidator;
+  mint_port?: BridgeManifestValidator;
+  voucher_metadata?: BridgeManifestVoucherMetadata;
+  mint_trace_registry_benchmark_voucher?: BridgeManifestValidator;
+}
+/**
+ * @name BridgeManifestVoucherMetadata
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BridgeManifestVoucherMetadata
+ */
+export interface BridgeManifestVoucherMetadata {
+  address: string;
 }
 /**
  * @name BridgeManifestModule
@@ -190,6 +243,26 @@ export interface BridgeManifestModule {
 export interface BridgeManifestModules {
   transfer?: BridgeManifestModule;
   mock?: BridgeManifestModule;
+  icq?: BridgeManifestModule;
+}
+/**
+ * @name BridgeManifestTraceRegistryShard
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BridgeManifestTraceRegistryShard
+ */
+export interface BridgeManifestTraceRegistryShard {
+  policy_id: string;
+  token_name: string;
+}
+/**
+ * @name BridgeManifestTraceRegistry
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BridgeManifestTraceRegistry
+ */
+export interface BridgeManifestTraceRegistry {
+  address: string;
+  shard_policy_id: string;
+  directory?: BridgeManifestTraceRegistryShard;
 }
 function createBaseQueryEventsRequest(): QueryEventsRequest {
   return {
@@ -501,6 +574,10 @@ function createBaseBridgeManifest(): BridgeManifest {
     host_state_nft: undefined,
     validators: undefined,
     modules: undefined,
+    trace_registry: undefined,
+    reference_out_refs: [],
+    reference_script_inventory_root: "",
+    reference_validator: undefined,
   };
 }
 /**
@@ -532,6 +609,18 @@ export const BridgeManifest = {
     if (message.modules !== undefined) {
       BridgeManifestModules.encode(message.modules, writer.uint32(58).fork()).ldelim();
     }
+    if (message.trace_registry !== undefined) {
+      BridgeManifestTraceRegistry.encode(message.trace_registry, writer.uint32(74).fork()).ldelim();
+    }
+    for (const v of message.reference_out_refs) {
+      BridgeManifestRefUtxo.encode(v!, writer.uint32(82).fork()).ldelim();
+    }
+    if (message.reference_script_inventory_root !== "") {
+      writer.uint32(90).string(message.reference_script_inventory_root);
+    }
+    if (message.reference_validator !== undefined) {
+      BridgeManifestReferenceValidator.encode(message.reference_validator, writer.uint32(98).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifest {
@@ -562,6 +651,18 @@ export const BridgeManifest = {
         case 7:
           message.modules = BridgeManifestModules.decode(reader, reader.uint32());
           break;
+        case 9:
+          message.trace_registry = BridgeManifestTraceRegistry.decode(reader, reader.uint32());
+          break;
+        case 10:
+          message.reference_out_refs.push(BridgeManifestRefUtxo.decode(reader, reader.uint32()));
+          break;
+        case 11:
+          message.reference_script_inventory_root = reader.string();
+          break;
+        case 12:
+          message.reference_validator = BridgeManifestReferenceValidator.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -579,6 +680,14 @@ export const BridgeManifest = {
       obj.host_state_nft = BridgeManifestAuthToken.fromJSON(object.host_state_nft);
     if (isSet(object.validators)) obj.validators = BridgeManifestValidators.fromJSON(object.validators);
     if (isSet(object.modules)) obj.modules = BridgeManifestModules.fromJSON(object.modules);
+    if (isSet(object.trace_registry))
+      obj.trace_registry = BridgeManifestTraceRegistry.fromJSON(object.trace_registry);
+    if (Array.isArray(object?.reference_out_refs))
+      obj.reference_out_refs = object.reference_out_refs.map((e: any) => BridgeManifestRefUtxo.fromJSON(e));
+    if (isSet(object.reference_script_inventory_root))
+      obj.reference_script_inventory_root = String(object.reference_script_inventory_root);
+    if (isSet(object.reference_validator))
+      obj.reference_validator = BridgeManifestReferenceValidator.fromJSON(object.reference_validator);
     return obj;
   },
   toJSON(message: BridgeManifest): unknown {
@@ -596,6 +705,23 @@ export const BridgeManifest = {
       (obj.validators = message.validators ? BridgeManifestValidators.toJSON(message.validators) : undefined);
     message.modules !== undefined &&
       (obj.modules = message.modules ? BridgeManifestModules.toJSON(message.modules) : undefined);
+    message.trace_registry !== undefined &&
+      (obj.trace_registry = message.trace_registry
+        ? BridgeManifestTraceRegistry.toJSON(message.trace_registry)
+        : undefined);
+    if (message.reference_out_refs) {
+      obj.reference_out_refs = message.reference_out_refs.map((e) =>
+        e ? BridgeManifestRefUtxo.toJSON(e) : undefined,
+      );
+    } else {
+      obj.reference_out_refs = [];
+    }
+    message.reference_script_inventory_root !== undefined &&
+      (obj.reference_script_inventory_root = message.reference_script_inventory_root);
+    message.reference_validator !== undefined &&
+      (obj.reference_validator = message.reference_validator
+        ? BridgeManifestReferenceValidator.toJSON(message.reference_validator)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifest>, I>>(object: I): BridgeManifest {
@@ -614,6 +740,15 @@ export const BridgeManifest = {
     }
     if (object.modules !== undefined && object.modules !== null) {
       message.modules = BridgeManifestModules.fromPartial(object.modules);
+    }
+    if (object.trace_registry !== undefined && object.trace_registry !== null) {
+      message.trace_registry = BridgeManifestTraceRegistry.fromPartial(object.trace_registry);
+    }
+    message.reference_out_refs =
+      object.reference_out_refs?.map((e) => BridgeManifestRefUtxo.fromPartial(e)) || [];
+    message.reference_script_inventory_root = object.reference_script_inventory_root ?? "";
+    if (object.reference_validator !== undefined && object.reference_validator !== null) {
+      message.reference_validator = BridgeManifestReferenceValidator.fromPartial(object.reference_validator);
     }
     return message;
   },
@@ -698,6 +833,7 @@ function createBaseBridgeManifestAuthToken(): BridgeManifestAuthToken {
   return {
     policy_id: "",
     token_name: "",
+    script: "",
   };
 }
 /**
@@ -714,6 +850,9 @@ export const BridgeManifestAuthToken = {
     if (message.token_name !== "") {
       writer.uint32(18).string(message.token_name);
     }
+    if (message.script !== "") {
+      writer.uint32(26).string(message.script);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestAuthToken {
@@ -729,6 +868,9 @@ export const BridgeManifestAuthToken = {
         case 2:
           message.token_name = reader.string();
           break;
+        case 3:
+          message.script = reader.string();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -740,18 +882,21 @@ export const BridgeManifestAuthToken = {
     const obj = createBaseBridgeManifestAuthToken();
     if (isSet(object.policy_id)) obj.policy_id = String(object.policy_id);
     if (isSet(object.token_name)) obj.token_name = String(object.token_name);
+    if (isSet(object.script)) obj.script = String(object.script);
     return obj;
   },
   toJSON(message: BridgeManifestAuthToken): unknown {
     const obj: any = {};
     message.policy_id !== undefined && (obj.policy_id = message.policy_id);
     message.token_name !== undefined && (obj.token_name = message.token_name);
+    message.script !== undefined && (obj.script = message.script);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifestAuthToken>, I>>(object: I): BridgeManifestAuthToken {
     const message = createBaseBridgeManifestAuthToken();
     message.policy_id = object.policy_id ?? "";
     message.token_name = object.token_name ?? "";
+    message.script = object.script ?? "";
     return message;
   },
 };
@@ -759,6 +904,7 @@ function createBaseBridgeManifestRefUtxo(): BridgeManifestRefUtxo {
   return {
     tx_hash: "",
     output_index: BigInt(0),
+    script_hash: undefined,
   };
 }
 /**
@@ -775,6 +921,9 @@ export const BridgeManifestRefUtxo = {
     if (message.output_index !== BigInt(0)) {
       writer.uint32(16).uint64(message.output_index);
     }
+    if (message.script_hash !== undefined) {
+      writer.uint32(26).string(message.script_hash);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestRefUtxo {
@@ -790,6 +939,9 @@ export const BridgeManifestRefUtxo = {
         case 2:
           message.output_index = reader.uint64();
           break;
+        case 3:
+          message.script_hash = reader.string();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -801,12 +953,14 @@ export const BridgeManifestRefUtxo = {
     const obj = createBaseBridgeManifestRefUtxo();
     if (isSet(object.tx_hash)) obj.tx_hash = String(object.tx_hash);
     if (isSet(object.output_index)) obj.output_index = BigInt(object.output_index.toString());
+    if (isSet(object.script_hash)) obj.script_hash = String(object.script_hash);
     return obj;
   },
   toJSON(message: BridgeManifestRefUtxo): unknown {
     const obj: any = {};
     message.tx_hash !== undefined && (obj.tx_hash = message.tx_hash);
     message.output_index !== undefined && (obj.output_index = (message.output_index || BigInt(0)).toString());
+    message.script_hash !== undefined && (obj.script_hash = message.script_hash);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifestRefUtxo>, I>>(object: I): BridgeManifestRefUtxo {
@@ -815,6 +969,83 @@ export const BridgeManifestRefUtxo = {
     if (object.output_index !== undefined && object.output_index !== null) {
       message.output_index = BigInt(object.output_index.toString());
     }
+    message.script_hash = object.script_hash ?? undefined;
+    return message;
+  },
+};
+function createBaseBridgeManifestReferenceValidator(): BridgeManifestReferenceValidator {
+  return {
+    script: "",
+    script_hash: "",
+    address: "",
+  };
+}
+/**
+ * @name BridgeManifestReferenceValidator
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BridgeManifestReferenceValidator
+ */
+export const BridgeManifestReferenceValidator = {
+  typeUrl: "/ibc.cardano.v1.BridgeManifestReferenceValidator",
+  encode(
+    message: BridgeManifestReferenceValidator,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
+    if (message.script !== "") {
+      writer.uint32(10).string(message.script);
+    }
+    if (message.script_hash !== "") {
+      writer.uint32(18).string(message.script_hash);
+    }
+    if (message.address !== "") {
+      writer.uint32(26).string(message.address);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestReferenceValidator {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBridgeManifestReferenceValidator();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.script = reader.string();
+          break;
+        case 2:
+          message.script_hash = reader.string();
+          break;
+        case 3:
+          message.address = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BridgeManifestReferenceValidator {
+    const obj = createBaseBridgeManifestReferenceValidator();
+    if (isSet(object.script)) obj.script = String(object.script);
+    if (isSet(object.script_hash)) obj.script_hash = String(object.script_hash);
+    if (isSet(object.address)) obj.address = String(object.address);
+    return obj;
+  },
+  toJSON(message: BridgeManifestReferenceValidator): unknown {
+    const obj: any = {};
+    message.script !== undefined && (obj.script = message.script);
+    message.script_hash !== undefined && (obj.script_hash = message.script_hash);
+    message.address !== undefined && (obj.address = message.address);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BridgeManifestReferenceValidator>, I>>(
+    object: I,
+  ): BridgeManifestReferenceValidator {
+    const message = createBaseBridgeManifestReferenceValidator();
+    message.script = object.script ?? "";
+    message.script_hash = object.script_hash ?? "";
+    message.address = object.address ?? "";
     return message;
   },
 };
@@ -1261,6 +1492,17 @@ function createBaseBridgeManifestValidators(): BridgeManifestValidators {
     mint_connection_stt: undefined,
     mint_channel_stt: undefined,
     mint_voucher: undefined,
+    mint_lifecycle_creation_marker: undefined,
+    mint_lifecycle_reclamation_marker: undefined,
+    mint_lifecycle_operational_marker: undefined,
+    mint_lifecycle_packet_marker: undefined,
+    spend_mock_module: undefined,
+    spend_trace_registry: undefined,
+    mint_identifier: undefined,
+    mint_transfer_escrow_shard: undefined,
+    mint_port: undefined,
+    voucher_metadata: undefined,
+    mint_trace_registry_benchmark_voucher: undefined,
   };
 }
 /**
@@ -1301,6 +1543,54 @@ export const BridgeManifestValidators = {
     if (message.mint_voucher !== undefined) {
       BridgeManifestValidator.encode(message.mint_voucher, writer.uint32(90).fork()).ldelim();
     }
+    if (message.mint_lifecycle_creation_marker !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_lifecycle_creation_marker,
+        writer.uint32(98).fork(),
+      ).ldelim();
+    }
+    if (message.mint_lifecycle_reclamation_marker !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_lifecycle_reclamation_marker,
+        writer.uint32(106).fork(),
+      ).ldelim();
+    }
+    if (message.mint_lifecycle_operational_marker !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_lifecycle_operational_marker,
+        writer.uint32(114).fork(),
+      ).ldelim();
+    }
+    if (message.mint_lifecycle_packet_marker !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_lifecycle_packet_marker,
+        writer.uint32(122).fork(),
+      ).ldelim();
+    }
+    if (message.spend_mock_module !== undefined) {
+      BridgeManifestValidator.encode(message.spend_mock_module, writer.uint32(130).fork()).ldelim();
+    }
+    if (message.spend_trace_registry !== undefined) {
+      BridgeManifestValidator.encode(message.spend_trace_registry, writer.uint32(138).fork()).ldelim();
+    }
+    if (message.mint_identifier !== undefined) {
+      BridgeManifestValidator.encode(message.mint_identifier, writer.uint32(146).fork()).ldelim();
+    }
+    if (message.mint_transfer_escrow_shard !== undefined) {
+      BridgeManifestValidator.encode(message.mint_transfer_escrow_shard, writer.uint32(154).fork()).ldelim();
+    }
+    if (message.mint_port !== undefined) {
+      BridgeManifestValidator.encode(message.mint_port, writer.uint32(162).fork()).ldelim();
+    }
+    if (message.voucher_metadata !== undefined) {
+      BridgeManifestVoucherMetadata.encode(message.voucher_metadata, writer.uint32(170).fork()).ldelim();
+    }
+    if (message.mint_trace_registry_benchmark_voucher !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_trace_registry_benchmark_voucher,
+        writer.uint32(178).fork(),
+      ).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestValidators {
@@ -1340,6 +1630,42 @@ export const BridgeManifestValidators = {
         case 11:
           message.mint_voucher = BridgeManifestValidator.decode(reader, reader.uint32());
           break;
+        case 12:
+          message.mint_lifecycle_creation_marker = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 13:
+          message.mint_lifecycle_reclamation_marker = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 14:
+          message.mint_lifecycle_operational_marker = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 15:
+          message.mint_lifecycle_packet_marker = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 16:
+          message.spend_mock_module = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 17:
+          message.spend_trace_registry = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 18:
+          message.mint_identifier = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 19:
+          message.mint_transfer_escrow_shard = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 20:
+          message.mint_port = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 21:
+          message.voucher_metadata = BridgeManifestVoucherMetadata.decode(reader, reader.uint32());
+          break;
+        case 22:
+          message.mint_trace_registry_benchmark_voucher = BridgeManifestValidator.decode(
+            reader,
+            reader.uint32(),
+          );
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1366,6 +1692,37 @@ export const BridgeManifestValidators = {
     if (isSet(object.mint_channel_stt))
       obj.mint_channel_stt = BridgeManifestValidator.fromJSON(object.mint_channel_stt);
     if (isSet(object.mint_voucher)) obj.mint_voucher = BridgeManifestValidator.fromJSON(object.mint_voucher);
+    if (isSet(object.mint_lifecycle_creation_marker))
+      obj.mint_lifecycle_creation_marker = BridgeManifestValidator.fromJSON(
+        object.mint_lifecycle_creation_marker,
+      );
+    if (isSet(object.mint_lifecycle_reclamation_marker))
+      obj.mint_lifecycle_reclamation_marker = BridgeManifestValidator.fromJSON(
+        object.mint_lifecycle_reclamation_marker,
+      );
+    if (isSet(object.mint_lifecycle_operational_marker))
+      obj.mint_lifecycle_operational_marker = BridgeManifestValidator.fromJSON(
+        object.mint_lifecycle_operational_marker,
+      );
+    if (isSet(object.mint_lifecycle_packet_marker))
+      obj.mint_lifecycle_packet_marker = BridgeManifestValidator.fromJSON(
+        object.mint_lifecycle_packet_marker,
+      );
+    if (isSet(object.spend_mock_module))
+      obj.spend_mock_module = BridgeManifestValidator.fromJSON(object.spend_mock_module);
+    if (isSet(object.spend_trace_registry))
+      obj.spend_trace_registry = BridgeManifestValidator.fromJSON(object.spend_trace_registry);
+    if (isSet(object.mint_identifier))
+      obj.mint_identifier = BridgeManifestValidator.fromJSON(object.mint_identifier);
+    if (isSet(object.mint_transfer_escrow_shard))
+      obj.mint_transfer_escrow_shard = BridgeManifestValidator.fromJSON(object.mint_transfer_escrow_shard);
+    if (isSet(object.mint_port)) obj.mint_port = BridgeManifestValidator.fromJSON(object.mint_port);
+    if (isSet(object.voucher_metadata))
+      obj.voucher_metadata = BridgeManifestVoucherMetadata.fromJSON(object.voucher_metadata);
+    if (isSet(object.mint_trace_registry_benchmark_voucher))
+      obj.mint_trace_registry_benchmark_voucher = BridgeManifestValidator.fromJSON(
+        object.mint_trace_registry_benchmark_voucher,
+      );
     return obj;
   },
   toJSON(message: BridgeManifestValidators): unknown {
@@ -1410,6 +1767,48 @@ export const BridgeManifestValidators = {
       (obj.mint_voucher = message.mint_voucher
         ? BridgeManifestValidator.toJSON(message.mint_voucher)
         : undefined);
+    message.mint_lifecycle_creation_marker !== undefined &&
+      (obj.mint_lifecycle_creation_marker = message.mint_lifecycle_creation_marker
+        ? BridgeManifestValidator.toJSON(message.mint_lifecycle_creation_marker)
+        : undefined);
+    message.mint_lifecycle_reclamation_marker !== undefined &&
+      (obj.mint_lifecycle_reclamation_marker = message.mint_lifecycle_reclamation_marker
+        ? BridgeManifestValidator.toJSON(message.mint_lifecycle_reclamation_marker)
+        : undefined);
+    message.mint_lifecycle_operational_marker !== undefined &&
+      (obj.mint_lifecycle_operational_marker = message.mint_lifecycle_operational_marker
+        ? BridgeManifestValidator.toJSON(message.mint_lifecycle_operational_marker)
+        : undefined);
+    message.mint_lifecycle_packet_marker !== undefined &&
+      (obj.mint_lifecycle_packet_marker = message.mint_lifecycle_packet_marker
+        ? BridgeManifestValidator.toJSON(message.mint_lifecycle_packet_marker)
+        : undefined);
+    message.spend_mock_module !== undefined &&
+      (obj.spend_mock_module = message.spend_mock_module
+        ? BridgeManifestValidator.toJSON(message.spend_mock_module)
+        : undefined);
+    message.spend_trace_registry !== undefined &&
+      (obj.spend_trace_registry = message.spend_trace_registry
+        ? BridgeManifestValidator.toJSON(message.spend_trace_registry)
+        : undefined);
+    message.mint_identifier !== undefined &&
+      (obj.mint_identifier = message.mint_identifier
+        ? BridgeManifestValidator.toJSON(message.mint_identifier)
+        : undefined);
+    message.mint_transfer_escrow_shard !== undefined &&
+      (obj.mint_transfer_escrow_shard = message.mint_transfer_escrow_shard
+        ? BridgeManifestValidator.toJSON(message.mint_transfer_escrow_shard)
+        : undefined);
+    message.mint_port !== undefined &&
+      (obj.mint_port = message.mint_port ? BridgeManifestValidator.toJSON(message.mint_port) : undefined);
+    message.voucher_metadata !== undefined &&
+      (obj.voucher_metadata = message.voucher_metadata
+        ? BridgeManifestVoucherMetadata.toJSON(message.voucher_metadata)
+        : undefined);
+    message.mint_trace_registry_benchmark_voucher !== undefined &&
+      (obj.mint_trace_registry_benchmark_voucher = message.mint_trace_registry_benchmark_voucher
+        ? BridgeManifestValidator.toJSON(message.mint_trace_registry_benchmark_voucher)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifestValidators>, I>>(
@@ -1446,6 +1845,116 @@ export const BridgeManifestValidators = {
     if (object.mint_voucher !== undefined && object.mint_voucher !== null) {
       message.mint_voucher = BridgeManifestValidator.fromPartial(object.mint_voucher);
     }
+    if (
+      object.mint_lifecycle_creation_marker !== undefined &&
+      object.mint_lifecycle_creation_marker !== null
+    ) {
+      message.mint_lifecycle_creation_marker = BridgeManifestValidator.fromPartial(
+        object.mint_lifecycle_creation_marker,
+      );
+    }
+    if (
+      object.mint_lifecycle_reclamation_marker !== undefined &&
+      object.mint_lifecycle_reclamation_marker !== null
+    ) {
+      message.mint_lifecycle_reclamation_marker = BridgeManifestValidator.fromPartial(
+        object.mint_lifecycle_reclamation_marker,
+      );
+    }
+    if (
+      object.mint_lifecycle_operational_marker !== undefined &&
+      object.mint_lifecycle_operational_marker !== null
+    ) {
+      message.mint_lifecycle_operational_marker = BridgeManifestValidator.fromPartial(
+        object.mint_lifecycle_operational_marker,
+      );
+    }
+    if (object.mint_lifecycle_packet_marker !== undefined && object.mint_lifecycle_packet_marker !== null) {
+      message.mint_lifecycle_packet_marker = BridgeManifestValidator.fromPartial(
+        object.mint_lifecycle_packet_marker,
+      );
+    }
+    if (object.spend_mock_module !== undefined && object.spend_mock_module !== null) {
+      message.spend_mock_module = BridgeManifestValidator.fromPartial(object.spend_mock_module);
+    }
+    if (object.spend_trace_registry !== undefined && object.spend_trace_registry !== null) {
+      message.spend_trace_registry = BridgeManifestValidator.fromPartial(object.spend_trace_registry);
+    }
+    if (object.mint_identifier !== undefined && object.mint_identifier !== null) {
+      message.mint_identifier = BridgeManifestValidator.fromPartial(object.mint_identifier);
+    }
+    if (object.mint_transfer_escrow_shard !== undefined && object.mint_transfer_escrow_shard !== null) {
+      message.mint_transfer_escrow_shard = BridgeManifestValidator.fromPartial(
+        object.mint_transfer_escrow_shard,
+      );
+    }
+    if (object.mint_port !== undefined && object.mint_port !== null) {
+      message.mint_port = BridgeManifestValidator.fromPartial(object.mint_port);
+    }
+    if (object.voucher_metadata !== undefined && object.voucher_metadata !== null) {
+      message.voucher_metadata = BridgeManifestVoucherMetadata.fromPartial(object.voucher_metadata);
+    }
+    if (
+      object.mint_trace_registry_benchmark_voucher !== undefined &&
+      object.mint_trace_registry_benchmark_voucher !== null
+    ) {
+      message.mint_trace_registry_benchmark_voucher = BridgeManifestValidator.fromPartial(
+        object.mint_trace_registry_benchmark_voucher,
+      );
+    }
+    return message;
+  },
+};
+function createBaseBridgeManifestVoucherMetadata(): BridgeManifestVoucherMetadata {
+  return {
+    address: "",
+  };
+}
+/**
+ * @name BridgeManifestVoucherMetadata
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BridgeManifestVoucherMetadata
+ */
+export const BridgeManifestVoucherMetadata = {
+  typeUrl: "/ibc.cardano.v1.BridgeManifestVoucherMetadata",
+  encode(message: BridgeManifestVoucherMetadata, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.address !== "") {
+      writer.uint32(10).string(message.address);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestVoucherMetadata {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBridgeManifestVoucherMetadata();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.address = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BridgeManifestVoucherMetadata {
+    const obj = createBaseBridgeManifestVoucherMetadata();
+    if (isSet(object.address)) obj.address = String(object.address);
+    return obj;
+  },
+  toJSON(message: BridgeManifestVoucherMetadata): unknown {
+    const obj: any = {};
+    message.address !== undefined && (obj.address = message.address);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BridgeManifestVoucherMetadata>, I>>(
+    object: I,
+  ): BridgeManifestVoucherMetadata {
+    const message = createBaseBridgeManifestVoucherMetadata();
+    message.address = object.address ?? "";
     return message;
   },
 };
@@ -1514,6 +2023,7 @@ function createBaseBridgeManifestModules(): BridgeManifestModules {
   return {
     transfer: undefined,
     mock: undefined,
+    icq: undefined,
   };
 }
 /**
@@ -1530,6 +2040,9 @@ export const BridgeManifestModules = {
     if (message.mock !== undefined) {
       BridgeManifestModule.encode(message.mock, writer.uint32(26).fork()).ldelim();
     }
+    if (message.icq !== undefined) {
+      BridgeManifestModule.encode(message.icq, writer.uint32(34).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestModules {
@@ -1545,6 +2058,9 @@ export const BridgeManifestModules = {
         case 3:
           message.mock = BridgeManifestModule.decode(reader, reader.uint32());
           break;
+        case 4:
+          message.icq = BridgeManifestModule.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1556,6 +2072,7 @@ export const BridgeManifestModules = {
     const obj = createBaseBridgeManifestModules();
     if (isSet(object.transfer)) obj.transfer = BridgeManifestModule.fromJSON(object.transfer);
     if (isSet(object.mock)) obj.mock = BridgeManifestModule.fromJSON(object.mock);
+    if (isSet(object.icq)) obj.icq = BridgeManifestModule.fromJSON(object.icq);
     return obj;
   },
   toJSON(message: BridgeManifestModules): unknown {
@@ -1564,6 +2081,8 @@ export const BridgeManifestModules = {
       (obj.transfer = message.transfer ? BridgeManifestModule.toJSON(message.transfer) : undefined);
     message.mock !== undefined &&
       (obj.mock = message.mock ? BridgeManifestModule.toJSON(message.mock) : undefined);
+    message.icq !== undefined &&
+      (obj.icq = message.icq ? BridgeManifestModule.toJSON(message.icq) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifestModules>, I>>(object: I): BridgeManifestModules {
@@ -1573,6 +2092,153 @@ export const BridgeManifestModules = {
     }
     if (object.mock !== undefined && object.mock !== null) {
       message.mock = BridgeManifestModule.fromPartial(object.mock);
+    }
+    if (object.icq !== undefined && object.icq !== null) {
+      message.icq = BridgeManifestModule.fromPartial(object.icq);
+    }
+    return message;
+  },
+};
+function createBaseBridgeManifestTraceRegistryShard(): BridgeManifestTraceRegistryShard {
+  return {
+    policy_id: "",
+    token_name: "",
+  };
+}
+/**
+ * @name BridgeManifestTraceRegistryShard
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BridgeManifestTraceRegistryShard
+ */
+export const BridgeManifestTraceRegistryShard = {
+  typeUrl: "/ibc.cardano.v1.BridgeManifestTraceRegistryShard",
+  encode(
+    message: BridgeManifestTraceRegistryShard,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
+    if (message.policy_id !== "") {
+      writer.uint32(10).string(message.policy_id);
+    }
+    if (message.token_name !== "") {
+      writer.uint32(18).string(message.token_name);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestTraceRegistryShard {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBridgeManifestTraceRegistryShard();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.policy_id = reader.string();
+          break;
+        case 2:
+          message.token_name = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BridgeManifestTraceRegistryShard {
+    const obj = createBaseBridgeManifestTraceRegistryShard();
+    if (isSet(object.policy_id)) obj.policy_id = String(object.policy_id);
+    if (isSet(object.token_name)) obj.token_name = String(object.token_name);
+    return obj;
+  },
+  toJSON(message: BridgeManifestTraceRegistryShard): unknown {
+    const obj: any = {};
+    message.policy_id !== undefined && (obj.policy_id = message.policy_id);
+    message.token_name !== undefined && (obj.token_name = message.token_name);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BridgeManifestTraceRegistryShard>, I>>(
+    object: I,
+  ): BridgeManifestTraceRegistryShard {
+    const message = createBaseBridgeManifestTraceRegistryShard();
+    message.policy_id = object.policy_id ?? "";
+    message.token_name = object.token_name ?? "";
+    return message;
+  },
+};
+function createBaseBridgeManifestTraceRegistry(): BridgeManifestTraceRegistry {
+  return {
+    address: "",
+    shard_policy_id: "",
+    directory: undefined,
+  };
+}
+/**
+ * @name BridgeManifestTraceRegistry
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BridgeManifestTraceRegistry
+ */
+export const BridgeManifestTraceRegistry = {
+  typeUrl: "/ibc.cardano.v1.BridgeManifestTraceRegistry",
+  encode(message: BridgeManifestTraceRegistry, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.address !== "") {
+      writer.uint32(10).string(message.address);
+    }
+    if (message.shard_policy_id !== "") {
+      writer.uint32(18).string(message.shard_policy_id);
+    }
+    if (message.directory !== undefined) {
+      BridgeManifestTraceRegistryShard.encode(message.directory, writer.uint32(26).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestTraceRegistry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBridgeManifestTraceRegistry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.address = reader.string();
+          break;
+        case 2:
+          message.shard_policy_id = reader.string();
+          break;
+        case 3:
+          message.directory = BridgeManifestTraceRegistryShard.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BridgeManifestTraceRegistry {
+    const obj = createBaseBridgeManifestTraceRegistry();
+    if (isSet(object.address)) obj.address = String(object.address);
+    if (isSet(object.shard_policy_id)) obj.shard_policy_id = String(object.shard_policy_id);
+    if (isSet(object.directory)) obj.directory = BridgeManifestTraceRegistryShard.fromJSON(object.directory);
+    return obj;
+  },
+  toJSON(message: BridgeManifestTraceRegistry): unknown {
+    const obj: any = {};
+    message.address !== undefined && (obj.address = message.address);
+    message.shard_policy_id !== undefined && (obj.shard_policy_id = message.shard_policy_id);
+    message.directory !== undefined &&
+      (obj.directory = message.directory
+        ? BridgeManifestTraceRegistryShard.toJSON(message.directory)
+        : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BridgeManifestTraceRegistry>, I>>(
+    object: I,
+  ): BridgeManifestTraceRegistry {
+    const message = createBaseBridgeManifestTraceRegistry();
+    message.address = object.address ?? "";
+    message.shard_policy_id = object.shard_policy_id ?? "";
+    if (object.directory !== undefined && object.directory !== null) {
+      message.directory = BridgeManifestTraceRegistryShard.fromPartial(object.directory);
     }
     return message;
   },

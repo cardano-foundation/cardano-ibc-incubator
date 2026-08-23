@@ -1,15 +1,12 @@
 use aiken/collection/list
-use aiken/collection/pairs
 use aiken/primitive/int
 use cardano/address.{from_verification_key}
 use cardano/assets.{PolicyId, Value, quantity_of}
-use cardano/transaction.{Input, Mint, Output, Redeemer, ScriptPurpose}
+use cardano/transaction.{Input, Output}
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/escrow.{TransferModuleSpend}
-use ibc/apps/transfer/mint_voucher_redeemer.{MintVoucherRedeemer, RefundVoucher}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
-use ibc/apps/transfer/value_delta
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
@@ -18,7 +15,6 @@ pub fn validate_refund_packet_token(
   voucher_minting_policy_id: PolicyId,
   inputs: List<Input>,
   outputs: List<Output>,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
   spent_input: Input,
   spend: TransferModuleSpend,
   shard_policy_id: PolicyId,
@@ -33,7 +29,7 @@ pub fn validate_refund_packet_token(
   ) {
     // Source-side packets locked native funds, so timeout/ack-error refunds
     // release escrow back to the original sender address.
-    expect None = pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
+    expect !list.has(assets.policies(mint), voucher_minting_policy_id)
 
     expect Some(escrowed_token_unit) =
       string_utils.hex_string_to_bytes(data.denom)
@@ -128,23 +124,12 @@ pub fn validate_refund_packet_token(
     }
   } else {
     // Sink-side packets burned vouchers on send, so refunds remint the voucher.
-    expect Some(mint_voucher_redeemer) =
-      pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
-    expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
-    expect RefundVoucher { packet_source_port, packet_source_channel, .. } =
-      mint_voucher_redeemer
     trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
 
-    let updated_output = transfer_escrow.expect_module_state(spend)
-
-    and {
-      value_delta.validate_output_amount(
-        spent_input,
-        updated_output,
-        assets.zero,
-      )?,
-      (packet_source_port == packet.source_port)?,
-      (packet_source_channel == packet.source_channel)?,
-    }
+    // The voucher policy validates the exact module datum/value transition.
+    // This application invocation must still be the module root rather than an
+    // unrelated escrow shard co-spent in the same transaction.
+    expect transfer_escrow.ModuleState { .. } = spend
+    list.has(assets.policies(mint), voucher_minting_policy_id)
   }
 }

@@ -19,9 +19,11 @@ use ibc/apps/transfer/trace_registry.{
 }
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
+use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
 use ibc/auth.{AuthToken}
+use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
@@ -33,11 +35,12 @@ use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 validator mint_voucher(
-  _module_token: AuthToken,
+  module_token: AuthToken,
   directory_auth_token: AuthToken,
   voucher_metadata_script_hash: crypto.ScriptHash,
   channel_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
+  port_id: ByteArray,
 ) {
   mint(
     redeemer: MintVoucherRedeemer,
@@ -54,8 +57,10 @@ validator mint_voucher(
         packet_dest_port,
         packet_dest_channel,
         data,
+        module_token: target_module_token,
       } -> {
         trace @"mint_voucher: MintVoucher branch"
+        expect target_module_token == module_token
 
         // Validate the voucher mint against the spent RecvPacket channel UTxO.
         expect fungible_token_packet_data.validate_basic(data)
@@ -148,6 +153,21 @@ validator mint_voucher(
         and {
           valid_receiver?,
           valid_minted_tokens?,
+          validate_voucher_supply_transition(
+            inputs,
+            outputs,
+            module_token,
+            transfer_amount,
+          )?,
+          validate_channel_voucher_supply_transition(
+            inputs,
+            outputs,
+            channel_minting_policy_id,
+            host_state_nft_policy_id,
+            packet_dest_channel,
+            transfer_amount,
+            port_id,
+          )?,
           metadata_output_valid(
             outputs,
             prefixed_denom,
@@ -165,8 +185,14 @@ validator mint_voucher(
           )?,
         }
       }
-      BurnVoucher { packet_source_port, packet_source_channel, data } -> {
+      BurnVoucher {
+        packet_source_port,
+        packet_source_channel,
+        data,
+        module_token: target_module_token,
+      } -> {
         trace @"mint_voucher: MintVoucher branch"
+        expect target_module_token == module_token
 
         // Validate the voucher burn against the spent SendPacket channel UTxO.
         expect fungible_token_packet_data.validate_basic(data)
@@ -205,6 +231,21 @@ validator mint_voucher(
         and {
           valid_sender,
           valid_minted_tokens,
+          validate_voucher_supply_transition(
+            inputs,
+            outputs,
+            module_token,
+            0 - transfer_amount,
+          ),
+          validate_channel_voucher_supply_transition(
+            inputs,
+            outputs,
+            channel_minting_policy_id,
+            host_state_nft_policy_id,
+            packet_source_channel,
+            0 - transfer_amount,
+            port_id,
+          ),
         }
       }
       RefundVoucher {
@@ -212,8 +253,10 @@ validator mint_voucher(
         packet_source_channel,
         data,
         acknowledgement,
+        module_token: target_module_token,
       } -> {
         trace @"mint_voucher: RefundVoucher branch"
+        expect target_module_token == module_token
 
         // Voucher refunds are authorized by timeout or ack-error channel spends.
         expect fungible_token_packet_data.validate_basic(data)
@@ -341,6 +384,21 @@ validator mint_voucher(
           outputs_token - inputs_token == transfer_amount,
           valid_minted_tokens,
           valid_sender,
+          validate_voucher_supply_transition(
+            inputs,
+            outputs,
+            module_token,
+            transfer_amount,
+          ),
+          validate_channel_voucher_supply_transition(
+            inputs,
+            outputs,
+            channel_minting_policy_id,
+            host_state_nft_policy_id,
+            packet_source_channel,
+            transfer_amount,
+            port_id,
+          ),
           metadata_output_valid(
             outputs,
             data.denom,
@@ -360,6 +418,85 @@ validator mint_voucher(
   }
 }
 
+fn validate_voucher_supply_transition(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  module_token: AuthToken,
+  voucher_delta: Int,
+) -> Bool {
+  expect [module_input] =
+    list.filter(
+      inputs,
+      fn(input) { input.output |> auth.contain_auth_token(module_token) },
+    )
+  expect [module_output] =
+    list.filter(
+      outputs,
+      fn(output) { output |> auth.contain_auth_token(module_token) },
+    )
+  expect input_datum: TransferModuleDatum =
+    validator_utils.get_inline_datum(module_input.output)
+  expect output_datum: TransferModuleDatum =
+    validator_utils.get_inline_datum(module_output)
+
+  and {
+    module_output.address == module_input.output.address,
+    assets.match_assets(module_output.value, module_input.output.value),
+    assets.lovelace_of(module_output.value) >= assets.lovelace_of(
+      module_input.output.value,
+    ),
+    input_datum.live_escrow_shard_count >= 0,
+    input_datum.voucher_supply >= 0,
+    output_datum.escrow_shard_registry_root == input_datum.escrow_shard_registry_root,
+    output_datum.live_escrow_shard_count == input_datum.live_escrow_shard_count,
+    output_datum.voucher_supply == input_datum.voucher_supply + voucher_delta,
+    output_datum.voucher_supply >= 0,
+  }
+}
+
+fn validate_channel_voucher_supply_transition(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
+  channel_id: ByteArray,
+  voucher_delta: Int,
+  port_id: ByteArray,
+) -> Bool {
+  let channel_token =
+    channel_auth_token(
+      channel_minting_policy_id,
+      host_state_nft_policy_id,
+      channel_id,
+    )
+  expect [channel_input] =
+    list.filter(
+      inputs,
+      fn(input) { input.output |> auth.contain_auth_token(channel_token) },
+    )
+  expect [channel_output] =
+    list.filter(
+      outputs,
+      fn(output) { output |> auth.contain_auth_token(channel_token) },
+    )
+  expect input_datum: ChannelDatum =
+    validator_utils.get_inline_datum(channel_input.output)
+  expect output_datum: ChannelDatum =
+    validator_utils.get_inline_datum(channel_output)
+
+  and {
+    channel_output.address == channel_input.output.address,
+    assets.match_assets(channel_output.value, channel_input.output.value),
+    input_datum.token == channel_token,
+    output_datum.token == channel_token,
+    input_datum.port_id == port_id,
+    output_datum.port_id == port_id,
+    input_datum.voucher_supply >= 0,
+    output_datum.voucher_supply == input_datum.voucher_supply + voucher_delta,
+    output_datum.voucher_supply >= 0,
+  }
+}
+
 type TraceRegistryCompleteness {
   ExistingMapping
   FirstSeenMapping
@@ -372,9 +509,32 @@ fn extract_channel_redeemer(
   host_state_nft_policy_id: PolicyId,
   channel_id: ByteArray,
 ) -> Option<SpendChannelRedeemer> {
-  expect channel_keys.is_valid_channel_id(channel_id)
+  let channel_token =
+    channel_auth_token(
+      channel_minting_policy_id,
+      host_state_nft_policy_id,
+      channel_id,
+    )
+  expect [channel_input] =
+    list.filter(
+      inputs,
+      fn(input) { input.output |> auth.contain_auth_token(channel_token) },
+    )
 
-  // Reconstruct the channel auth token from the public channel id.
+  expect Some(spend_channel_redeemer) =
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
+  expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
+
+  // Branches pattern-match this typed packet witness.
+  Some(spend_channel_redeemer)
+}
+
+fn channel_auth_token(
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
+  channel_id: ByteArray,
+) -> AuthToken {
+  expect channel_keys.is_valid_channel_id(channel_id)
   let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let host_state_nft =
     AuthToken {
@@ -387,20 +547,8 @@ fn extract_channel_redeemer(
       channel_keys.channel_prefix,
       channel_sequence,
     )
-  let channel_token =
-    AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
-  expect Some(channel_input) =
-    list.find(
-      inputs,
-      fn(input) { input.output |> auth.contain_auth_token(channel_token) },
-    )
 
-  expect Some(spend_channel_redeemer) =
-    pairs.get_first(redeemers, Spend(channel_input.output_reference))
-  expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
-
-  // Branches pattern-match this typed packet witness.
-  Some(spend_channel_redeemer)
+  AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
 }
 
 // Every positive voucher mint must prove registry completeness in the same tx.

@@ -6,6 +6,8 @@ export type UnsignedChannelOpenInitDto = {
   hostStateUtxo: UTxO;
   encodedHostStateRedeemer: string;
   connectionUtxo: UTxO;
+  encodedSpendConnectionRedeemer: string;
+  encodedUpdatedConnectionDatum: string;
   clientUtxo: UTxO;
   moduleKey: GatewayModuleKey;
   moduleUtxo: UTxO;
