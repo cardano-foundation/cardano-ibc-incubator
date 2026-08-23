@@ -1,0 +1,108 @@
+name: cardano-ibc-cosmos-profiles
+
+x-common-environment: &common-environment
+  SIMD_HOME: /var/lib/simd
+  COSMOS_VALIDATOR_MNEMONIC: bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort
+  COSMOS_RELAYER_MNEMONIC: sketch mountain erode window enact net enrich smoke claim kangaroo another visual write meat latin bacon pulp similar forum guilt father state erase bright
+  COSMOS_DEMO_MNEMONIC: mix around destroy web fever address comfort vendor tank sudden abstract cabin acoustic attitude peasant hospital vendor harsh void current shield couple barrel suspect
+  COSMOS_GENESIS_ACCOUNT_BALANCE: 100000000000stake,100000000000utest
+  COSMOS_GENTX_AMOUNT: 500000000stake
+  COSMOS_MINIMUM_GAS_PRICES: 0.0025stake
+  COSMOS_GENESIS_TIME: "2025-12-31T23:59:00Z"
+
+x-common-service: &common-service
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://127.0.0.1:26657/status"]
+    interval: 3s
+    timeout: 2s
+    retries: 40
+    start_period: 5s
+
+services:
+  v8-classic:
+    <<: *common-service
+    profiles: ["v8-classic"]
+    image: local:cardano-ibc-v8-classic
+    build:
+      context: ../..
+      dockerfile: chains/cosmos/Dockerfile
+      args:
+        GO_IMAGE: golang:1.21-alpine3.18
+        PROFILE: v8-classic
+        IBC_GO_MAJOR: "8"
+        IBC_GO_VERSION: 8.7.0
+        IBC_GO_REF: v8.7.0
+        IBC_GO_COMMIT: 53eaba19375dab0145509af101dbce193284ec5d
+        IBC_SEMANTICS: classic
+    environment:
+      <<: *common-environment
+      COSMOS_PROFILE: v8-classic
+      COSMOS_IBC_SEMANTICS: classic
+      COSMOS_CHAIN_ID: v8-classic-1
+      COSMOS_MONIKER: cardano-ibc-v8-classic
+    volumes:
+      - ${COSMOS_PROFILES_STATE_DIR:-${HOME}/.caribic/cosmos-profiles}/v8-classic:/var/lib/simd
+    ports:
+      - "26756:26656"
+      - "26757:26657"
+      - "9100:9090"
+      - "1327:1317"
+
+  v10-classic:
+    <<: *common-service
+    profiles: ["v10-classic"]
+    image: local:cardano-ibc-v10-classic
+    build:
+      context: ../..
+      dockerfile: chains/cosmos/Dockerfile
+      args:
+        GO_IMAGE: golang:1.23.8-alpine
+        PROFILE: v10-classic
+        IBC_GO_MAJOR: "10"
+        IBC_GO_VERSION: 10.2.0
+        IBC_GO_REF: v10.2.0
+        IBC_GO_COMMIT: e120ef5d4778c3e659ce57b59f028b250be5bb2e
+        IBC_SEMANTICS: classic
+    environment:
+      <<: *common-environment
+      COSMOS_PROFILE: v10-classic
+      COSMOS_IBC_SEMANTICS: classic
+      COSMOS_CHAIN_ID: v10-classic-1
+      COSMOS_MONIKER: cardano-ibc-v10-classic
+    volumes:
+      - ${COSMOS_PROFILES_STATE_DIR:-${HOME}/.caribic/cosmos-profiles}/v10-classic:/var/lib/simd
+    ports:
+      - "26856:26656"
+      - "26857:26657"
+      - "9110:9090"
+      - "1338:1317"
+
+  v10-v2:
+    <<: *common-service
+    profiles: ["v10-v2"]
+    image: local:cardano-ibc-v10-v2
+    build:
+      context: ../..
+      dockerfile: chains/cosmos/Dockerfile
+      args:
+        GO_IMAGE: golang:1.23.8-alpine
+        PROFILE: v10-v2
+        IBC_GO_MAJOR: "10"
+        IBC_GO_VERSION: 10.2.0
+        IBC_GO_REF: v10.2.0
+        IBC_GO_COMMIT: e120ef5d4778c3e659ce57b59f028b250be5bb2e
+        IBC_SEMANTICS: v2
+    environment:
+      <<: *common-environment
+      COSMOS_PROFILE: v10-v2
+      COSMOS_IBC_SEMANTICS: v2
+      COSMOS_CHAIN_ID: v10-v2-1
+      COSMOS_MONIKER: cardano-ibc-v10-v2
+    volumes:
+      - ${COSMOS_PROFILES_STATE_DIR:-${HOME}/.caribic/cosmos-profiles}/v10-v2:/var/lib/simd
+    ports:
+      - "26956:26656"
+      - "26957:26657"
+      - "9120:9090"
+      - "1347:1317"

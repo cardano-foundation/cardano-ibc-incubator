@@ -98,6 +98,8 @@ enum BenchmarkCommand {
 enum TransferRouteChainArg {
     /// Core Cardano chain currently selected by `caribic start --network`
     Cardano,
+    /// Local pinned ibc-go compatibility chain selected with --to-network
+    Cosmos,
     /// Injective optional chain
     Injective,
     /// Osmosis optional chain
@@ -237,7 +239,7 @@ enum Commands {
         #[command(subcommand)]
         command: SetupCommand,
     },
-    /// Starts a demo preset. Usage: `caribic demo token-swap --chain osmosis --network local`
+    /// Starts a demo preset. Usage: `caribic demo token-swap --chain cosmos --network v8-classic`
     Demo {
         #[arg(value_enum)]
         use_case: DemoType,
@@ -304,7 +306,7 @@ enum KeysCommand {
 enum ChainCommand {
     /// Start an optional chain adapter
     Start {
-        /// Chain identifier (for example: osmosis, cheqd, injective)
+        /// Chain identifier (for example: cosmos, osmosis, cheqd, injective)
         #[arg(long)]
         chain: String,
         /// Optional network profile (for example: local, testnet)
@@ -316,7 +318,7 @@ enum ChainCommand {
     },
     /// Stop an optional chain adapter
     Stop {
-        /// Chain identifier (for example: osmosis, cheqd, injective)
+        /// Chain identifier (for example: cosmos, osmosis, cheqd, injective)
         #[arg(long)]
         chain: String,
         /// Optional network profile (for example: local, testnet)
@@ -328,7 +330,7 @@ enum ChainCommand {
     },
     /// Check health for an optional chain adapter
     Health {
-        /// Chain identifier (for example: osmosis, cheqd, injective)
+        /// Chain identifier (for example: cosmos, osmosis, cheqd, injective)
         #[arg(long)]
         chain: String,
         /// Optional network profile (for example: local, testnet)

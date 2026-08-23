@@ -9,7 +9,6 @@ fi
 
 CHAIN_DIR="$1"
 REPO_ROOT="$2"
-SOURCE_CLIENT_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client-v8"
 SOURCE_CORE_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client-core"
 
 if [ ! -f "${CHAIN_DIR}/go.mod" ]; then
@@ -17,22 +16,13 @@ if [ ! -f "${CHAIN_DIR}/go.mod" ]; then
   exit 1
 fi
 
-if [ ! -d "${SOURCE_CLIENT_DIR}" ]; then
-  echo "[cardano-light-client-patch] missing source client module at ${SOURCE_CLIENT_DIR}" >&2
-  exit 1
-fi
 if [ ! -d "${SOURCE_CORE_DIR}" ]; then
   echo "[cardano-light-client-patch] missing source client core module at ${SOURCE_CORE_DIR}" >&2
   exit 1
 fi
 
 MODULE_PATH="$(awk '/^module / { print $2; exit }' "${CHAIN_DIR}/go.mod")"
-SOURCE_MODULE_PATH="$(awk '/^module / { print $2; exit }' "${SOURCE_CLIENT_DIR}/go.mod")"
 SOURCE_CORE_MODULE_PATH="$(awk '/^module / { print $2; exit }' "${SOURCE_CORE_DIR}/go.mod")"
-if [ -z "${SOURCE_MODULE_PATH}" ]; then
-  echo "[cardano-light-client-patch] could not detect source module path in ${SOURCE_CLIENT_DIR}/go.mod" >&2
-  exit 1
-fi
 if [ -z "${SOURCE_CORE_MODULE_PATH}" ]; then
   echo "[cardano-light-client-patch] could not detect source core module path in ${SOURCE_CORE_DIR}/go.mod" >&2
   exit 1
@@ -52,21 +42,58 @@ if [ -z "${IBC_GO_MAJOR}" ]; then
   exit 1
 fi
 
-if [ "${IBC_GO_MAJOR}" != "8" ]; then
-  echo "[cardano-light-client-patch] unsupported local patch target ibc-go/v${IBC_GO_MAJOR}; currently implemented for local ibc-go/v8 appchains" >&2
+case "${IBC_GO_MAJOR}" in
+  8|10)
+    SOURCE_CLIENT_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client-v${IBC_GO_MAJOR}"
+    ;;
+  *)
+    echo "[cardano-light-client-patch] unsupported local patch target ibc-go/v${IBC_GO_MAJOR}; expected v8 or v10" >&2
+    exit 1
+    ;;
+esac
+
+if [ ! -d "${SOURCE_CLIENT_DIR}" ]; then
+  echo "[cardano-light-client-patch] missing source client module at ${SOURCE_CLIENT_DIR}" >&2
+  exit 1
+fi
+
+SOURCE_MODULE_PATH="$(awk '/^module / { print $2; exit }' "${SOURCE_CLIENT_DIR}/go.mod")"
+if [ -z "${SOURCE_MODULE_PATH}" ]; then
+  echo "[cardano-light-client-patch] could not detect source module path in ${SOURCE_CLIENT_DIR}/go.mod" >&2
   exit 1
 fi
 
 case "${MODULE_PATH}" in
   github.com/osmosis-labs/osmosis/*)
+    if [ "${IBC_GO_MAJOR}" != "8" ]; then
+      echo "[cardano-light-client-patch] Osmosis patching currently supports ibc-go/v8 only" >&2
+      exit 1
+    fi
     CLIENT_REL_DIR="x/cardano-probabilistic-light-client"
     APP_FILE="${CHAIN_DIR}/app/keepers/modules.go"
     APP_KIND="osmosis"
     ;;
   github.com/InjectiveLabs/injective-core)
+    if [ "${IBC_GO_MAJOR}" != "8" ]; then
+      echo "[cardano-light-client-patch] Injective patching currently supports ibc-go/v8 only" >&2
+      exit 1
+    fi
     CLIENT_REL_DIR="injective-chain/modules/cardano-probabilistic-light-client"
     APP_FILE="${CHAIN_DIR}/injective-chain/app/app.go"
     APP_KIND="injective"
+    ;;
+  github.com/cosmos/ibc-go/v8)
+    CLIENT_REL_DIR="testing/simapp/cardano-probabilistic-light-client"
+    APP_FILE="${CHAIN_DIR}/testing/simapp/app.go"
+    APP_KIND="ibc-go-simapp"
+    ;;
+  github.com/cosmos/ibc-go/v10)
+    CLIENT_REL_DIR="testing/simapp/cardano-probabilistic-light-client"
+    # Since v10 the runnable simd application is a nested Go module. Patching
+    # testing/simapp alone compiles the client package but does not wire it into
+    # the binary produced by `make build`.
+    APP_FILE="${CHAIN_DIR}/simapp/app.go"
+    APP_KIND="ibc-go-simapp"
     ;;
   *)
     echo "[cardano-light-client-patch] unsupported local app module path ${MODULE_PATH}" >&2
@@ -77,7 +104,7 @@ esac
 CLIENT_DIR="${CHAIN_DIR}/${CLIENT_REL_DIR}"
 CLIENT_IMPORT="${MODULE_PATH}/${CLIENT_REL_DIR}"
 
-echo "[cardano-light-client-patch] generating ${CLIENT_IMPORT} from ibc-go/v8 probabilistic client"
+echo "[cardano-light-client-patch] generating ${CLIENT_IMPORT} from ibc-go/v${IBC_GO_MAJOR} probabilistic client"
 rm -rf "${CLIENT_DIR}"
 mkdir -p "${CLIENT_DIR}"
 
@@ -130,6 +157,54 @@ elif [ "${APP_KIND}" = "injective" ]; then
   fi
   if ! grep -q 'cardanoprobabilistic.NewAppModule()' "${APP_FILE}"; then
     perl -0pi -e 's#(\t\tibctm\.NewAppModule\(\),\n)#${1}\t\tcardanoprobabilistic.NewAppModule(),\n#' "${APP_FILE}"
+  fi
+elif [ "${APP_KIND}" = "ibc-go-simapp" ]; then
+  if ! grep -q "${CLIENT_IMPORT}" "${APP_FILE}"; then
+    perl -0pi -e "s#(ibctm \"github.com/cosmos/ibc-go/v${IBC_GO_MAJOR}/modules/light-clients/07-tendermint\"\n)#\$1\tcardanoprobabilistic \"${CLIENT_IMPORT}\"\n#" "${APP_FILE}"
+  fi
+
+  if [ "${IBC_GO_MAJOR}" = "8" ]; then
+    if ! grep -q 'cardanoprobabilistic.NewAppModule()' "${APP_FILE}"; then
+      perl -0pi -e 's#(\t\tibctm\.NewAppModule\(\),\n)#${1}\t\tcardanoprobabilistic.NewAppModule(),\n#' "${APP_FILE}"
+    fi
+  else
+    # ibc-go v10 constructs its tx decoder before the module manager is
+    # assembled. Register the Cardano concrete protobuf types explicitly so
+    # MsgCreateClient can unpack them during CheckTx/simulation.
+    if ! grep -q 'cardanoprobabilistic.RegisterInterfaces(interfaceRegistry)' "${APP_FILE}"; then
+      perl -0pi -e 's#(\tstd\.RegisterInterfaces\(interfaceRegistry\)\n)#$1\tcardanoprobabilistic.RegisterInterfaces(interfaceRegistry)\n#' "${APP_FILE}"
+    fi
+    if ! grep -q 'cardanoLightClientModule := cardanoprobabilistic.NewLightClientModule' "${APP_FILE}"; then
+      perl -0pi -e 's#(\tclientKeeper\.AddRoute\(ibctm\.ModuleName, &tmLightClientModule\)\n)#$1\n\tcardanoLightClientModule := cardanoprobabilistic.NewLightClientModule(appCodec, storeProvider)\n\tclientKeeper.AddRoute(cardanoprobabilistic.ModuleName, \&cardanoLightClientModule)\n#' "${APP_FILE}"
+    fi
+    if ! grep -q 'cardanoprobabilistic.NewAppModule(cardanoLightClientModule)' "${APP_FILE}"; then
+      perl -0pi -e 's#(\t\tibctm\.NewAppModule\(tmLightClientModule\),\n)#${1}\t\tcardanoprobabilistic.NewAppModule(cardanoLightClientModule),\n#' "${APP_FILE}"
+    fi
+  fi
+fi
+
+if [ "${APP_KIND}" = "ibc-go-simapp" ]; then
+  if [ "${IBC_GO_MAJOR}" = "8" ]; then
+    REQUIRED_MARKERS="${CLIENT_IMPORT}
+cardanoprobabilistic.NewAppModule()"
+  else
+    REQUIRED_MARKERS="${CLIENT_IMPORT}
+cardanoLightClientModule := cardanoprobabilistic.NewLightClientModule
+clientKeeper.AddRoute(cardanoprobabilistic.ModuleName
+cardanoprobabilistic.NewAppModule(cardanoLightClientModule)"
+  fi
+
+  printf '%s\n' "${REQUIRED_MARKERS}" | while IFS= read -r required_marker; do
+    if ! grep -q "${required_marker}" "${APP_FILE}"; then
+      echo "[cardano-light-client-patch] failed to wire '${required_marker}' into ${APP_FILE}" >&2
+      exit 1
+    fi
+  done
+
+  if [ "${IBC_GO_MAJOR}" = "10" ] \
+    && ! grep -q 'cardanoprobabilistic.RegisterInterfaces(interfaceRegistry)' "${APP_FILE}"; then
+    echo "[cardano-light-client-patch] failed to register Cardano protobuf interfaces in ${APP_FILE}" >&2
+    exit 1
   fi
 fi
 

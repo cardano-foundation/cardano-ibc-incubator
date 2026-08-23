@@ -1,0 +1,64 @@
+version: 1
+
+# All upstream sources are pinned by both release tag and immutable commit. The
+# Docker build verifies that the tag resolves to the expected commit before it
+# compiles simd with this repository's Cardano light client.
+profiles:
+  v8-classic:
+    ibc_go:
+      version: 8.7.0
+      ref: v8.7.0
+      commit: 53eaba19375dab0145509af101dbce193284ec5d
+      go_image: golang:1.21-alpine3.18
+    semantics: classic
+    chain_id: v8-classic-1
+    image: local:cardano-ibc-v8-classic
+    service: v8-classic
+    endpoints:
+      rpc: http://127.0.0.1:26757
+      grpc: http://127.0.0.1:9100
+      rest: http://127.0.0.1:1327
+    compatibility_test: enabled
+
+  v10-classic:
+    ibc_go:
+      version: 10.2.0
+      ref: v10.2.0
+      commit: e120ef5d4778c3e659ce57b59f028b250be5bb2e
+      go_image: golang:1.23.8-alpine
+    semantics: classic
+    chain_id: v10-classic-1
+    image: local:cardano-ibc-v10-classic
+    service: v10-classic
+    endpoints:
+      rpc: http://127.0.0.1:26857
+      grpc: http://127.0.0.1:9110
+      rest: http://127.0.0.1:1338
+    compatibility_test: enabled
+
+  v10-v2:
+    ibc_go:
+      version: 10.2.0
+      ref: v10.2.0
+      commit: e120ef5d4778c3e659ce57b59f028b250be5bb2e
+      go_image: golang:1.23.8-alpine
+    semantics: v2
+    chain_id: v10-v2-1
+    image: local:cardano-ibc-v10-v2
+    service: v10-v2
+    endpoints:
+      rpc: http://127.0.0.1:26957
+      grpc: http://127.0.0.1:9120
+      rest: http://127.0.0.1:1347
+    compatibility_test: deferred
+
+accounts:
+  validator:
+    mnemonic: bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort
+    balance: 100000000000stake,100000000000utest
+  relayer:
+    mnemonic: sketch mountain erode window enact net enrich smoke claim kangaroo another visual write meat latin bacon pulp similar forum guilt father state erase bright
+    balance: 100000000000stake,100000000000utest
+  demo:
+    mnemonic: mix around destroy web fever address comfort vendor tank sudden abstract cabin acoustic attitude peasant hospital vendor harsh void current shield couple barrel suspect
+    balance: 100000000000stake,100000000000utest

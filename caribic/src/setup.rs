@@ -1113,10 +1113,11 @@ fn generate_additional_local_spo_data(
     workspace_dir: &Path,
     additional_spo_count: usize,
 ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let generation_nonce = Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let temp_dir = workspace_dir.join(format!(
         "caribic-local-spo-{}-{}",
         std::process::id(),
-        Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        generation_nonce
     ));
     fs::create_dir_all(&temp_dir).map_err(|error| {
         format!(
@@ -1129,17 +1130,25 @@ fn generate_additional_local_spo_data(
     let delegated_supply = LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE
         .checked_mul(additional_spo_count as u64)
         .ok_or("Failed to compute delegated supply for local SPO generation")?;
-    let mount_arg = format!("{}:/out", temp_dir.display());
     let pools_arg = additional_spo_count.to_string();
     let delegated_supply_arg = delegated_supply.to_string();
+    let generator_container = format!(
+        "caribic-local-spo-generator-{}-{}",
+        std::process::id(),
+        generation_nonce
+    );
+    let docker = DockerCli::new(Path::new("."));
 
-    let output = DockerCli::new(Path::new("."))
+    // Generate into the container filesystem and copy the completed assets out. On
+    // Docker Desktop for macOS, cardano-cli's ownership hardening fails on bind
+    // mounts with `setFdOwnerAndGroup: permission denied` even when the container
+    // runs as root.
+    docker
         .raw_output(
             [
-                "run",
-                "--rm",
-                "-v",
-                mount_arg.as_str(),
+                "create",
+                "--name",
+                generator_container.as_str(),
                 LOCAL_CARDANO_NODE_IMAGE,
                 "cli",
                 "latest",
@@ -1160,16 +1169,34 @@ fn generate_additional_local_spo_data(
             ]
             .as_slice(),
         )
-        .map_err(|error| format!("Failed to generate additional local SPO data: {}", error))?;
+        .map_err(|error| {
+            let _ = fs::remove_dir_all(&temp_dir);
+            format!("Failed to create additional local SPO generator: {}", error)
+        })?;
 
-    if !output.status.success() {
+    if let Err(error) =
+        docker.raw_output(["start", "--attach", generator_container.as_str()].as_slice())
+    {
+        let _ = docker
+            .raw_output_allow_failure(["rm", "--force", generator_container.as_str()].as_slice());
         let _ = fs::remove_dir_all(&temp_dir);
-        return Err(format!(
-            "Failed to generate additional local SPO data:\nstdout: {}\nstderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        return Err(format!("Failed to generate additional local SPO data: {}", error).into());
+    }
+
+    let copy_source = format!("{}:/out/.", generator_container);
+    let copy_result = docker.raw_output(
+        [
+            "cp",
+            copy_source.as_str(),
+            temp_dir.to_string_lossy().as_ref(),
+        ]
+        .as_slice(),
+    );
+    let _ =
+        docker.raw_output_allow_failure(["rm", "--force", generator_container.as_str()].as_slice());
+    if let Err(error) = copy_result {
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(format!("Failed to copy additional local SPO data: {}", error).into());
     }
 
     Ok(temp_dir)
@@ -2390,6 +2417,11 @@ fn write_gateway_env_for_network(
                     "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT",
                     LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT,
                 ),
+                // A local block is produced every second, while each handshake
+                // transaction waits for the stability depth. Keep a complete
+                // connection/channel handshake within one root-bearing update;
+                // public networks retain the conservative checkpoint default.
+                ("CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS", "128"),
                 ("CARDANO_EPOCH_LENGTH", LOCAL_CARDANO_EPOCH_LENGTH),
                 ("CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS", "315360000"),
             ];

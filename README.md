@@ -36,7 +36,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 | --- | --- | --- |
 | Local devnet stack | Active | Managed through `caribic` with Cardano, Hermes, Kupo, Ogmios, and Yaci-backed history services |
 | Core IBC semantics | Active | Implements clients, connections, channels, packets, acknowledgements, and timeouts |
-| ICS-20 transfer path | Active for local direct routes | Local Cardano-to-Osmosis and Cardano-to-Injective routes use direct channels; target chains still need the Cardano light client patched in locally |
+| ICS-20 transfer path | Active for local direct routes | Local Cardano-to-Osmosis, Cardano-to-Injective, and pinned ibc-go v8/v10 Classic profiles use direct channels; IBC v2 route testing is deferred |
 | Historical query backend | Active | Uses `Yaci Store + Bridge Projection` rather than a generic `db-sync` query surface |
 | Public network integrations | Pre-production | Select paths exist for public testnets and external Cardano services, but the operating model is still evolving |
 | Mithril light client and local setup | Deprecated / disabled | Not maintained for new deployments; source is retained only for historical reference and type compatibility |
@@ -61,7 +61,7 @@ The repository is organized around these main areas:
 - `proto-types`: Shared protobuf contracts and generated TypeScript bindings, including the [dormant VesselOracle integration contract](docs/vesseloracle.md).
 - `relayer`: A [Hermes](https://hermes.informal.systems/) fork with a native Cardano `ChainEndpoint` implementation.
 - `caribic`: The CLI for configuring, starting, stopping, and testing the local bridge stack.
-- `chains`: Managed Cardano and counterparty-chain runtime configuration.
+- `chains`: Managed Cardano and counterparty-chain runtime configuration, including the [pinned ibc-go compatibility profiles](chains/cosmos/README.md).
 - `dapps`: Optional swap and explorer frontends.
 - `packages` and `proto-types`: Shared application packages and generated protocol bindings.
 - `docs`, `studies`, and `manifests`: Design documentation, analysis, and tracked deployment artifacts.
@@ -263,6 +263,33 @@ caribic start bridge
 > [!IMPORTANT]
 > Cosmos chains must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano-probabilistic`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
 
+Three reproducible local profiles are available through the `cosmos` chain
+adapter:
+
+| Profile | Chain ID | Semantics | Current compatibility testing |
+| --- | --- | --- | --- |
+| `v8-classic` | `v8-classic-1` | IBC Classic | Enabled |
+| `v10-classic` | `v10-classic-1` | IBC Classic | Enabled |
+| `v10-v2` | `v10-v2-1` | IBC v2 | Deferred |
+
+Here, Classic identifies the IBC v1 and ICS-20 v1 workflow, not identical packet
+bytes or ibc-go integration APIs. The v8 and v10 Classic profiles exercise the
+same protocol flow while exposing version-specific APIs and JSON packet
+encoding.
+See [Classic compatibility across v8 and v10](chains/cosmos/README.md#classic-compatibility-across-v8-and-v10)
+for the relevant JSON ordering and protobuf namespace differences.
+
+Select any lifecycle profile explicitly:
+
+```sh
+caribic chain start --chain cosmos --network v8-classic
+caribic chain health --chain cosmos --network v8-classic
+caribic chain stop --chain cosmos --network v8-classic
+```
+
+See [Local Cosmos compatibility profiles](chains/cosmos/README.md) for pinned
+commits, endpoints, deterministic accounts, and direct Docker commands.
+
 ### Stopping the services
 
 To stop the services:
@@ -287,6 +314,8 @@ The reusable transfer route setup command targets the selected chain directly:
 ```sh
 caribic setup route --from cardano --to osmosis --to-network local
 caribic setup route --from cardano --to injective --to-network local
+caribic setup route --from cardano --to cosmos --to-network v8-classic
+caribic setup route --from cardano --to cosmos --to-network v10-classic
 ```
 
 ## Demo: Cross-chain token swap
@@ -310,6 +339,20 @@ caribic chain start --chain injective --network local
 caribic setup route --from cardano --to injective --to-network local
 caribic demo token-swap --chain injective --network local
 ```
+
+For either pinned Classic compatibility profile:
+
+```sh
+caribic start --clean
+caribic chain start --chain cosmos --network v8-classic
+caribic setup route --from cardano --to cosmos --to-network v8-classic
+caribic demo token-swap --chain cosmos --network v8-classic
+```
+
+Replace `v8-classic` with `v10-classic` throughout to test v10 Classic.
+`v10-v2` is selectable for chain lifecycle commands, while its route and
+token-swap compatibility tests deliberately fail fast with a deferred-testing
+message until the IBC v2 phase begins.
 
 If client creation fails with an unsupported client type, the selected target chain still needs the Cardano light client registered and allowed before direct routing can work.
 
