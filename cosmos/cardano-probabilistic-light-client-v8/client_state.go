@@ -62,9 +62,14 @@ func (cs ClientState) Status(ctx sdk.Context, clientStore storetypes.KVStore, cd
 	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return exported.Frozen
 	}
-	if !cs.OperationalCertificateStateInitialized ||
-		cs.MaxKesEvolutions == 0 ||
-		cs.MaxKesEvolutions > maxSupportedKesEvolutions {
+	effectiveCheckpointHeight := cs.effectiveCheckpointHeight()
+	if cs.MaxKesEvolutions == 0 ||
+		cs.MaxKesEvolutions > maxSupportedKesEvolutions ||
+		cs.OperationalCertificateCounterHistoryStartHeight == nil ||
+		cs.OperationalCertificateCounterHistoryStartHeight.IsZero() ||
+		effectiveCheckpointHeight == nil ||
+		effectiveCheckpointHeight.IsZero() ||
+		cs.OperationalCertificateCounterHistoryStartHeight.GT(effectiveCheckpointHeight) {
 		return exported.Expired
 	}
 	if cs.LatestHeight == nil {
@@ -113,17 +118,12 @@ func (cs ClientState) Validate() error {
 	if cs.SlotsPerKesPeriod == 0 {
 		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "slots_per_kes_period must be greater than zero")
 	}
-	if !cs.hasLegacyOperationalCertificateState() {
-		if !cs.OperationalCertificateStateInitialized {
-			return errorsmod.Wrap(clienttypes.ErrInvalidClient, "operational certificate state must be initialized")
-		}
-		if cs.MaxKesEvolutions == 0 || cs.MaxKesEvolutions > maxSupportedKesEvolutions {
-			return errorsmod.Wrapf(
-				clienttypes.ErrInvalidClient,
-				"max_kes_evolutions must be between 1 and %d",
-				maxSupportedKesEvolutions,
-			)
-		}
+	if cs.MaxKesEvolutions == 0 || cs.MaxKesEvolutions > maxSupportedKesEvolutions {
+		return errorsmod.Wrapf(
+			clienttypes.ErrInvalidClient,
+			"max_kes_evolutions must be between 1 and %d",
+			maxSupportedKesEvolutions,
+		)
 	}
 	if err := cs.validateCheckpointFields(); err != nil {
 		return err
@@ -144,16 +144,15 @@ func (cs ClientState) Validate() error {
 
 func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	return &ClientState{
-		ChainId:                                cs.ChainId,
-		LatestHeight:                           cs.LatestHeight,
-		UpgradePath:                            append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:                   append([]byte(nil), cs.HostStateNftPolicyId...),
-		HostStateNftTokenName:                  append([]byte(nil), cs.HostStateNftTokenName...),
-		SystemStartUnixNs:                      cs.SystemStartUnixNs,
-		SlotLengthNs:                           cs.SlotLengthNs,
-		SlotsPerKesPeriod:                      cs.SlotsPerKesPeriod,
-		MaxKesEvolutions:                       cs.MaxKesEvolutions,
-		OperationalCertificateStateInitialized: cs.OperationalCertificateStateInitialized,
+		ChainId:               cs.ChainId,
+		LatestHeight:          cs.LatestHeight,
+		UpgradePath:           append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:  append([]byte(nil), cs.HostStateNftPolicyId...),
+		HostStateNftTokenName: append([]byte(nil), cs.HostStateNftTokenName...),
+		SystemStartUnixNs:     cs.SystemStartUnixNs,
+		SlotLengthNs:          cs.SlotLengthNs,
+		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
+		MaxKesEvolutions:      cs.MaxKesEvolutions,
 	}
 }
 

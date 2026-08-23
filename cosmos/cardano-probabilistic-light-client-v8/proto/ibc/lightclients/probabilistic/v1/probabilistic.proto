@@ -70,12 +70,9 @@ message ClientState {
   uint64 max_kes_evolutions = 22;
   // Operational-certificate counters at latest_checkpoint_height.
   repeated OperationalCertificateCounter latest_checkpoint_operational_certificate_counters = 23;
-  // Distinguishes an authenticated empty counter snapshot from legacy state
-  // that predates operational-certificate validation.
-  bool operational_certificate_state_initialized = 24;
   // Oldest height whose counter state can be reconstructed from the current
   // snapshot and the light client's private rollback history.
-  Height operational_certificate_counter_history_start_height = 25;
+  Height operational_certificate_counter_history_start_height = 24;
 }
 
 message ConsensusState {
@@ -88,7 +85,6 @@ message ConsensusState {
   uint64 unique_pools_count = 5;
   uint64 unique_stake_bps = 6;
   uint64 security_score_bps = 7;
-  bool operational_certificate_state_initialized = 8;
 }
 
 message Misbehaviour {
