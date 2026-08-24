@@ -514,6 +514,104 @@ func TestVerifyHostStateTxIncludedInAnchorBlockRejectsMissingTx(t *testing.T) {
 	require.ErrorContains(t, err, "not found in authenticated anchor block")
 }
 
+func TestHostStateExtractionRejectsPhase2InvalidTransaction(t *testing.T) {
+	fixtureHex, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/babbage_host_state_tx_validity_block.hex")
+	require.NoError(t, err)
+	blockCbor, err := hex.DecodeString(strings.TrimSpace(string(fixtureHex)))
+	require.NoError(t, err)
+	decodedBlock, err := decodeLedgerBlock(blockCbor)
+	require.NoError(t, err)
+	require.Len(t, decodedBlock.Transactions(), 2)
+	transactions := decodedBlock.Transactions()
+	require.False(t, transactions[0].IsValid())
+	require.True(t, transactions[1].IsValid())
+
+	epochNonce := bytes.Repeat([]byte{0x55}, 32)
+	_, _, vrfKey, err := buildBlockVerificationArtifacts(decodedBlock)
+	require.NoError(t, err)
+	vrfKeyHash := blake2b.Sum256(vrfKey)
+	clientState := newProbabilisticTestClientState()
+	clientState.SystemStartUnixNs = 1
+	clientState.SlotLengthNs = 1
+	clientState.SlotsPerKesPeriod = 100
+	clientState.HostStateNftPolicyId = bytes.Repeat([]byte{0x24}, 28)
+	clientState.HostStateNftTokenName = []byte("host-state")
+	epochContext := &EpochContext{
+		Epoch:                 7,
+		EpochNonce:            epochNonce,
+		SlotsPerKesPeriod:     100,
+		EpochStartSlot:        decodedBlock.SlotNumber(),
+		EpochEndSlotExclusive: decodedBlock.SlotNumber() + 1,
+		StakeDistribution: []*StakeDistributionEntry{{
+			PoolId:     decodedBlock.IssuerVkey().PoolId(),
+			Stake:      1,
+			VrfKeyHash: vrfKeyHash[:],
+		}},
+	}
+	anchorBlock := &ProbabilisticBlock{
+		Height:    NewHeight(0, decodedBlock.BlockNumber()),
+		Hash:      decodedBlock.Hash(),
+		Slot:      decodedBlock.SlotNumber(),
+		Epoch:     epochContext.Epoch,
+		Timestamp: 1 + decodedBlock.SlotNumber(),
+		BlockCbor: blockCbor,
+	}
+	_, err = clientState.authenticateProbabilisticBlock(
+		anchorBlock,
+		"anchor",
+		[]*EpochContext{epochContext},
+		map[string]uint64{},
+		true,
+	)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name         string
+		transaction  ledger.Transaction
+		invalid      bool
+		expectedRoot []byte
+	}{
+		{
+			name:        "phase-2-invalid target",
+			transaction: transactions[0],
+			invalid:     true,
+		},
+		{
+			name:         "valid control",
+			transaction:  transactions[1],
+			expectedRoot: bytes.Repeat([]byte{0x43}, 32),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			header := &ProbabilisticHeader{
+				AnchorBlock:     anchorBlock,
+				HostStateTxHash: tc.transaction.Hash(),
+			}
+			_, authenticationErr := clientState.authenticateHeaderBlocksWithContexts(
+				header,
+				[]*EpochContext{epochContext},
+				map[string]uint64{},
+			)
+			root, rootErr := clientState.ExtractIbcStateRootFromHostStateTx(header)
+
+			if tc.invalid {
+				require.ErrorContains(t, authenticationErr, "phase-2 invalid")
+				require.ErrorIs(t, authenticationErr, ErrInvalidHostStateCommitment)
+				require.ErrorContains(t, rootErr, "phase-2 invalid")
+				require.ErrorIs(t, rootErr, ErrInvalidHostStateCommitment)
+				require.Nil(t, root)
+				return
+			}
+
+			require.NoError(t, authenticationErr)
+			require.NoError(t, rootErr)
+			require.Equal(t, tc.expectedRoot, root)
+		})
+	}
+}
+
 func TestVerifyHeaderRejectsMissingTrustedConsensus(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	_, clientStore := newProbabilisticTestClientStore(t, "probabilistic-missing-trusted")
