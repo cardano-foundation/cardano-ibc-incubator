@@ -180,6 +180,7 @@ run_demo() {
     DEMO_SETTLEMENT_TIMEOUT_SECONDS="5" \
     DEMO_COMMAND_TIMEOUT_SECONDS="5" \
     DEMO_QUERY_TIMEOUT_SECONDS="5" \
+    COSMOS_DEMO_DIRECTION="${COSMOS_DEMO_DIRECTION:-round-trip}" \
     FAKE_STATE_DIR="$FAKE_STATE_DIR" \
     FAKE_HERMES_LOG="$FAKE_HERMES_LOG" \
     FAKE_FAIL_UPDATE="${FAKE_FAIL_UPDATE:-0}" \
@@ -222,6 +223,32 @@ if grep -qF -- "--packet-data-query-height" "$FAKE_HERMES_LOG"; then
   echo "The demo pinned an event query to a proof height." >&2
   exit 1
 fi
+
+FAKE_STATE_DIR="$test_dir/forward-only-state"
+FAKE_HERMES_LOG="$test_dir/forward-only.log"
+COSMOS_DEMO_DIRECTION=cardano-to-cosmos
+mkdir -p "$FAKE_STATE_DIR"
+forward_only_output="$(run_demo 2>&1)"
+grep -qF "Direct Cardano-to-v8-classic Classic transfer completed." <<<"$forward_only_output"
+[[ ! -f "$FAKE_STATE_DIR/cardano-commitment" ]]
+[[ ! -f "$FAKE_STATE_DIR/cosmos-commitment" ]]
+if grep -qF "tx ft-transfer --src-chain v8-classic-1" "$FAKE_HERMES_LOG"; then
+  echo "The Cardano-only demo unexpectedly submitted a return transfer." >&2
+  exit 1
+fi
+unset COSMOS_DEMO_DIRECTION
+
+FAKE_STATE_DIR="$test_dir/invalid-direction-state"
+FAKE_HERMES_LOG="$test_dir/invalid-direction.log"
+COSMOS_DEMO_DIRECTION=sideways
+mkdir -p "$FAKE_STATE_DIR"
+if invalid_direction_output="$(run_demo 2>&1)"; then
+  echo "The demo unexpectedly accepted an invalid transfer direction." >&2
+  exit 1
+fi
+grep -qF "Unsupported COSMOS_DEMO_DIRECTION 'sideways'" <<<"$invalid_direction_output"
+[[ ! -s "$FAKE_HERMES_LOG" ]]
+unset COSMOS_DEMO_DIRECTION
 
 FAKE_STATE_DIR="$test_dir/update-failure-state"
 FAKE_HERMES_LOG="$test_dir/update-failure.log"

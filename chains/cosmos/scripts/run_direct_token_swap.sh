@@ -394,6 +394,15 @@ POLL_INTERVAL_SECONDS="${DEMO_POLL_INTERVAL_SECONDS:-5}"
 SETTLEMENT_TIMEOUT_SECONDS="${DEMO_SETTLEMENT_TIMEOUT_SECONDS:-1800}"
 COMMAND_TIMEOUT_SECONDS="${DEMO_COMMAND_TIMEOUT_SECONDS:-1800}"
 QUERY_TIMEOUT_SECONDS="${DEMO_QUERY_TIMEOUT_SECONDS:-60}"
+DEMO_DIRECTION="${COSMOS_DEMO_DIRECTION:-round-trip}"
+
+case "$DEMO_DIRECTION" in
+  round-trip|cardano-to-cosmos) ;;
+  *)
+    echo "Unsupported COSMOS_DEMO_DIRECTION '$DEMO_DIRECTION'; expected round-trip or cardano-to-cosmos." >&2
+    exit 1
+    ;;
+esac
 
 require_value "$CARDANO_COSMOS_CHANNEL_ID" "CARDANO_COSMOS_CHANNEL_ID is required."
 require_value "$COSMOS_CARDANO_CHANNEL_ID" "COSMOS_CARDANO_CHANNEL_ID is required."
@@ -402,7 +411,7 @@ require_value "$COSMOS_CARDANO_CHANNEL_ID" "COSMOS_CARDANO_CHANNEL_ID is require
   exit 1
 }
 
-CARDANO_SEND_DENOM="$(jq -r '.tokens.mock // empty' "$HANDLER_JSON" | head -n 1)"
+CARDANO_SEND_DENOM="${CARDANO_SEND_DENOM:-$(jq -r '.tokens.mock // empty' "$HANDLER_JSON" | head -n 1)}"
 require_value "$CARDANO_SEND_DENOM" "Could not resolve the Cardano mock token denom from handler.json."
 
 key_output="$("$HERMES_BIN" keys list --chain "$COSMOS_CHAIN_ID" 2>&1)" || {
@@ -459,41 +468,43 @@ wait_for_commitment_absent \
   "$CARDANO_COSMOS_CHANNEL_ID" \
   "$forward_sequence"
 
-echo "Submitting ${COSMOS_PROFILE} -> Cardano Classic return transfer..."
-return_transfer="$(submit_transfer \
-  "$COSMOS_CHAIN_ID" \
-  "$CARDANO_CHAIN_ID" \
-  "$COSMOS_CARDANO_CHANNEL_ID" \
-  "$COSMOS_RETURN_AMOUNT" \
-  "$COSMOS_RETURN_DENOM" \
-  "$CARDANO_RECEIVER")"
-return_sequence="$(jq -r '.sequence' <<<"$return_transfer")"
-wait_for_commitment \
-  "$COSMOS_CHAIN_ID" \
-  "$COSMOS_CARDANO_CHANNEL_ID" \
-  "$return_sequence" >/dev/null
+if [[ "$DEMO_DIRECTION" == "round-trip" ]]; then
+  echo "Submitting ${COSMOS_PROFILE} -> Cardano Classic return transfer..."
+  return_transfer="$(submit_transfer \
+    "$COSMOS_CHAIN_ID" \
+    "$CARDANO_CHAIN_ID" \
+    "$COSMOS_CARDANO_CHANNEL_ID" \
+    "$COSMOS_RETURN_AMOUNT" \
+    "$COSMOS_RETURN_DENOM" \
+    "$CARDANO_RECEIVER")"
+  return_sequence="$(jq -r '.sequence' <<<"$return_transfer")"
+  wait_for_commitment \
+    "$COSMOS_CHAIN_ID" \
+    "$COSMOS_CARDANO_CHANNEL_ID" \
+    "$return_sequence" >/dev/null
 
-relay_receive \
-  "$COSMOS_CHAIN_ID" \
-  "$CARDANO_CHAIN_ID" \
-  "$COSMOS_CARDANO_CHANNEL_ID" \
-  "$return_sequence"
-return_ack="$(wait_for_acknowledgement_proof \
-  "$CARDANO_CHAIN_ID" \
-  "$CARDANO_COSMOS_CHANNEL_ID" \
-  "$return_sequence")"
-return_ack_height="$(jq -r '.height.revision_height' <<<"$return_ack")"
+  relay_receive \
+    "$COSMOS_CHAIN_ID" \
+    "$CARDANO_CHAIN_ID" \
+    "$COSMOS_CARDANO_CHANNEL_ID" \
+    "$return_sequence"
+  return_ack="$(wait_for_acknowledgement_proof \
+    "$CARDANO_CHAIN_ID" \
+    "$CARDANO_COSMOS_CHANNEL_ID" \
+    "$return_sequence")"
+  return_ack_height="$(jq -r '.height.revision_height' <<<"$return_ack")"
 
-catch_up_cardano_client "$return_ack_height"
-relay_acknowledgement \
-  "$CARDANO_CHAIN_ID" \
-  "$COSMOS_CHAIN_ID" \
-  "$CARDANO_COSMOS_CHANNEL_ID" \
-  "$return_sequence"
-wait_for_commitment_absent \
-  "$COSMOS_CHAIN_ID" \
-  "$COSMOS_CARDANO_CHANNEL_ID" \
-  "$return_sequence"
+  catch_up_cardano_client "$return_ack_height"
+  relay_acknowledgement \
+    "$CARDANO_CHAIN_ID" \
+    "$COSMOS_CHAIN_ID" \
+    "$CARDANO_COSMOS_CHANNEL_ID" \
+    "$return_sequence"
+  wait_for_commitment_absent \
+    "$COSMOS_CHAIN_ID" \
+    "$COSMOS_CARDANO_CHANNEL_ID" \
+    "$return_sequence"
+fi
 
 assert_commitments_match \
   "$CARDANO_CHAIN_ID" \
@@ -504,4 +515,8 @@ assert_commitments_match \
   "$COSMOS_CARDANO_CHANNEL_ID" \
   "$BASELINE_COSMOS_SEQUENCES"
 
-echo "Direct Cardano-to-${COSMOS_PROFILE} Classic compatibility demo completed."
+if [[ "$DEMO_DIRECTION" == "round-trip" ]]; then
+  echo "Direct Cardano-to-${COSMOS_PROFILE} Classic compatibility demo completed."
+else
+  echo "Direct Cardano-to-${COSMOS_PROFILE} Classic transfer completed."
+fi

@@ -134,6 +134,34 @@ caribic chain health --chain cosmos --network v10-v2
 IBC v2 route/channel creation and transfer assertions are intentionally left
 for the later v2 compatibility phase.
 
+## Classic probabilistic-client recovery test
+
+The focused recovery test uses the real ibc-go governance route and must start
+from a newly created Classic profile. A normal profile start recreates genesis
+with test-oriented deposit and voting periods; a stateful profile may retain
+older governance parameters or an open route backed by a different client.
+
+```sh
+caribic start --clean
+caribic chain start --chain cosmos --network v8-classic
+caribic test --light-client recover-client \
+  --chain cosmos \
+  --network v8-classic
+```
+
+Use a separate clean run with `v10-classic` for the equivalent ibc-go v10
+Classic path. `--light-client` without a value selects `recover-client`, and
+the command defaults to `cosmos` and `v8-classic`. The `v10-v2` profile is
+rejected because Cardano/Hermes IBC v2 recovery testing is deferred with the
+rest of the v2 route flow.
+
+The test creates and expires a real short-lived subject client, keeps a
+compatible substitute active at a strictly newer Cardano checkpoint, passes a
+recovery proposal, and continues over the subject's original connection and
+channel. It does not fabricate a freeze. The full sequence and the separate
+Injective operator procedure are documented in the
+[probabilistic-client recovery runbook](../../docs/probabilistic-client-recovery.md).
+
 ## Classic profile smoke test
 
 The reproducibility smoke test builds both supported Classic images from clean

@@ -215,9 +215,56 @@ to make sure all the services are healthy, then
   caribic test
   ```
 
-### What it tests
+### Focused probabilistic-client recovery test
 
-The test suite is ordered and will **skip** later tests if prerequisites are not met, for example if no direct channel exists or if a known limitation is hit.
+`caribic test --light-client` runs the live `recover-client` scenario separately
+from the legacy numbered suite. It requires a clean local Cardano stack and a
+fresh Classic Cosmos profile; do not retain an old profile with
+`--chain-flag stateful=true`.
+
+```sh
+caribic start --clean
+caribic chain start --chain cosmos --network v8-classic
+caribic test --light-client recover-client \
+  --chain cosmos \
+  --network v8-classic
+```
+
+The value may be omitted (`--light-client` means `recover-client`), and the
+default target is `cosmos` with `v8-classic`. Select `v10-classic` to run the
+same Classic recovery semantics through the ibc-go v10 API. `v10-v2` is
+rejected until the Cardano/Hermes IBC v2 route adapter is available.
+
+The scenario creates a subject client and a route that uses it, relays a packet,
+allows the subject to expire naturally, and recovers the original subject ID
+from an active, strictly newer substitute through the real governance path. It
+then verifies the original connection and channel ends, outstanding commitment
+sequence lists, Cosmos channel counters, voucher balance, and denomination
+trace are unchanged. It also preserves a live timed-packet commitment and its
+Cosmos sender/escrow balances across recovery. A post-recovery packet drives an
+ordinary update and membership proof before that timeout exercises
+non-membership over the original route. The test never fabricates misbehaviour
+merely to make an active client recoverable. The local command does not
+independently query the Cardano escrow UTxO; the operator runbook treats that as
+a required production snapshot.
+
+This is a destructive local test: it creates clients, a connection, a channel,
+transfers, and a governance proposal, temporarily restarts the Gateway, and
+briefly owns Hermes packet delivery. See the
+[probabilistic-client recovery runbook](../docs/probabilistic-client-recovery.md)
+for its exact assertions, compatibility rules, and the separate Injective
+operator procedure.
+
+Let the command finish so it can restore the Gateway configuration and restart
+Hermes. If the process is forcibly interrupted, restore
+`CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS` in `cardano/gateway/.env` (the standard
+local value is `315360000`), recreate the Gateway app with
+`docker compose -f cardano/gateway/docker-compose.yml up -d --force-recreate app`,
+and run `caribic start relayer --network local` before continuing.
+
+### What the numbered suite tests
+
+The legacy numbered suite is ordered and will **skip** later tests if prerequisites are not met, for example if no direct channel exists or if a known limitation is hit.
 
 - **Test 1**: validates required services are running, including Cardano, Gateway, Hermes, and the selected local target chain.
 - **Test 2**: runs the Hermes-native `health-check` to confirm Hermes can connect to the Gateway gRPC endpoint and the direct counterparty chain.
@@ -423,7 +470,7 @@ The Injective-side Cardano client can only be updated with headers whose size an
   done
   ```
 
-  Catch-up updates outgrow the transport limits quickly. In the July 24, 2026 failure documented in [#552](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/552), an update spanning Cardano heights 4,970,800 to 4,971,057 encoded to 3,073,891 bytes — below Injective's 4,194,304-byte (4 MiB) consensus block limit, but rejected by the tested public nodes because it exceeded their effective 1,048,576-byte per-transaction mempool limit (a 541-block gap has produced a 4.27MB update, beyond even the consensus cap). The amount of downtime before this happens varies with witness sizes and available HostState anchors; when no valid intermediate anchor exists the client is permanently un-updatable and recovery requires a new client, connection, and channel (`caribic setup route` reuses an existing channel, so a rebuild currently requires driving `hermes create client` / `create connection` / `create channel` manually). Stuck packets refund via timeout proofs on Cardano, which only need the Cardano-side Tendermint client.
+  Catch-up updates outgrow the transport limits quickly. In the July 24, 2026 failure documented in [#552](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/552), an update spanning Cardano heights 4,970,800 to 4,971,057 encoded to 3,073,891 bytes — below Injective's 4,194,304-byte (4 MiB) consensus block limit, but rejected by the tested public nodes because it exceeded their effective 1,048,576-byte per-transaction mempool limit (a 541-block gap has produced a 4.27MB update, beyond even the consensus cap). The amount of downtime before this happens varies with witness sizes and available HostState anchors. Once the client is genuinely expired, a compatible active substitute can recover the original client ID through governance and preserve the existing route; see the [recovery runbook](../docs/probabilistic-client-recovery.md). If no compatible substitute can be built, recovery still requires a new client, connection, and channel (`caribic setup route` reuses an existing channel, so a rebuild currently requires driving `hermes create client` / `create connection` / `create channel` manually). Stuck packets refund via timeout proofs on Cardano, which only need the Cardano-side Tendermint client.
 - Anything that pauses the host pauses the refresh loop: laptop sleep, a stopped Gateway container, or a crashed relayer all have the same effect. On macOS, run `caffeinate -dims` while testing, or host the Gateway + Yaci + Hermes stack on an always-on machine for multi-day use.
 - The tracked Hermes profile for `injective-888` uses `max_tx_size = 1000000` and `max_gas = 60000000`; the defaults (~205KB / 15M gas) reject even routine ~100-block refresh updates.
 
