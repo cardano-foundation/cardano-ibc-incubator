@@ -36,6 +36,7 @@ const sharedSourceFiles = [
   "probabilistic.pb.go",
   "proposal_handle.go",
   "proposal_handle_test.go",
+  "stake_bps_test.go",
   "store.go",
   "update.go",
   "upgrade.go",

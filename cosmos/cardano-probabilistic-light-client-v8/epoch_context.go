@@ -101,6 +101,9 @@ func validateEpochContext(ctx *EpochContext) error {
 			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "duplicate epoch %d stake distribution pool id %s", ctx.Epoch, entry.PoolId)
 		}
 		seenPools[poolKey] = struct{}{}
+		if ^uint64(0)-totalStake < entry.Stake {
+			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution total overflows uint64", ctx.Epoch)
+		}
 		totalStake += entry.Stake
 	}
 	if totalStake == 0 {
