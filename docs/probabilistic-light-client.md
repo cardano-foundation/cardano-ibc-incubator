@@ -194,6 +194,37 @@ Client creation still starts from one epoch context, but updates are no longer s
 
 An accepted epoch context is canonical for that epoch. Later headers may repeat the same epoch context, but a different context for an already-known epoch is treated as misbehaviour and freezes the client. This does not make the first accepted epoch context cryptographically authenticated; it changes the failure mode so that contradictory observer views cannot silently replace or coexist with the stored stake context.
 
+## Substitute-Client Recovery
+
+An expired or frozen probabilistic client can be recovered from a compatible,
+active substitute through the ibc-go authority and governance path. Recovery
+updates the original subject client ID; it does not point the connection at the
+substitute. Existing connection and channel identifiers, packet state, ICS-20
+escrow, and voucher denominations therefore remain unchanged.
+
+The concrete protobuf client type must match. The subject and substitute must
+also have the same upgrade path, HostState NFT policy ID and token name, Cardano
+system start, slot length, slots per KES period, and maximum KES evolutions. The
+substitute checkpoint must be strictly newer, its latest consensus and delay
+metadata must be present, and its operational-certificate counters may not
+regress. Recovery cannot be used to cross client types or move a route to a
+different HostState NFT deployment.
+
+The recovery handler installs the substitute's latest consensus state,
+processed time and height, consensus iteration entry, checkpoint cursor, epoch
+context, chain ID, trusting period, and operational-certificate counter snapshot
+on the subject. The first ordinary update after recovery is an important
+verification step: it proves that the copied checkpoint, epoch, and certificate
+state can authenticate a new Cardano header rather than only returning an
+active status.
+
+See the [probabilistic-client recovery runbook](./probabilistic-client-recovery.md)
+for the local v8/v10 Classic test, its membership and non-membership assertions,
+and the Injective-oriented operating procedure. Recovery is valid after genuine
+expiry or a freeze caused by independently verified cryptographic
+misbehaviour. Misbehaviour must never be fabricated simply to make an active
+client recoverable.
+
 ## HostState Root Authentication
 
 Just like the Mithril path, this client is **not** verifying arbitrary Cardano state directly. It is verifying a Cardano IBC-specific commitment architecture centered around the HostState UTxO.

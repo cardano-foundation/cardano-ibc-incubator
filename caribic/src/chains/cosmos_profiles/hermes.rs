@@ -168,4 +168,14 @@ mod tests {
             assert!(profile.max_tx_size < LOCAL_SIMD_MAX_TX_BYTES);
         }
     }
+
+    #[test]
+    fn local_profiles_keep_governance_fast_enough_for_recovery_tests() {
+        let setup_script = include_str!("../../../../chains/cosmos/scripts/setup_profile.sh");
+
+        assert!(setup_script.contains("COSMOS_GOV_VOTING_PERIOD:-30s"));
+        assert!(setup_script.contains("COSMOS_GOV_MAX_DEPOSIT_PERIOD:-60s"));
+        assert!(setup_script.contains(".app_state.gov.params.voting_period"));
+        assert!(setup_script.contains(".app_state.gov.params.max_deposit_period"));
+    }
 }

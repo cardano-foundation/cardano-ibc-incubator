@@ -79,6 +79,51 @@ func TestLightClientModuleUpdateStateOnMisbehaviourEmitsFrozenEvent(t *testing.T
 	require.Equal(t, "misbehaviour", eventAttributeValue(t, event, AttributeKeyReason))
 }
 
+func TestLightClientModuleRecoverClientUsesPrefixedClientStores(t *testing.T) {
+	ctx, subjectStore, module, subjectClientID := newProbabilisticTestModule(t, "probabilistic-recovery-module")
+	cdc := newProbabilisticTestCodec()
+	substituteClientID := ModuleName + "-1"
+	substituteStore := module.storeProvider.ClientStore(ctx, substituteClientID)
+
+	subject := newProbabilisticTestClientState()
+	subject.FrozenHeight = NewHeight(0, 5)
+	subject.setLatestCheckpoint(subject.LatestHeight, "subject-hash-10", subject.CurrentEpoch)
+	setClientState(subjectStore, cdc, subject)
+
+	substitute := newProbabilisticTestClientState()
+	substitute.LatestHeight = NewHeight(0, 20)
+	substitute.setLatestCheckpoint(substitute.LatestHeight, "substitute-hash-20", substitute.CurrentEpoch)
+	setClientState(substituteStore, cdc, substitute)
+	setConsensusState(
+		substituteStore,
+		cdc,
+		newProbabilisticTestConsensusState("substitute-hash-20"),
+		substitute.LatestHeight,
+	)
+	setConsensusMetadataWithValues(
+		substituteStore,
+		substitute.LatestHeight,
+		clienttypes.NewHeight(0, 50),
+		123456789,
+	)
+
+	require.NoError(t, module.RecoverClient(ctx, subjectClientID, substituteClientID))
+
+	recovered, found := getClientState(subjectStore, cdc)
+	require.True(t, found)
+	require.True(t, recovered.LatestHeight.EQ(substitute.LatestHeight))
+	require.True(t, recovered.FrozenHeight.IsZero())
+	_, found = GetConsensusState(subjectStore, cdc, substitute.LatestHeight)
+	require.True(t, found)
+	processedHeight, found := GetProcessedHeight(subjectStore, substitute.LatestHeight)
+	require.True(t, found)
+	require.Equal(t, clienttypes.NewHeight(0, 50).String(), processedHeight.String())
+	processedTime, found := GetProcessedTime(subjectStore, substitute.LatestHeight)
+	require.True(t, found)
+	require.EqualValues(t, 123456789, processedTime)
+	require.NotEmpty(t, subjectStore.Get(IterationKey(substitute.LatestHeight)))
+}
+
 func newProbabilisticTestModule(t *testing.T, keyName string) (sdk.Context, storetypes.KVStore, LightClientModule, string) {
 	t.Helper()
 

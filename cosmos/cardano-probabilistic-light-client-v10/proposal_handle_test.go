@@ -51,15 +51,42 @@ func TestIsMatchingClientStateRejectsStaticParameterMismatch(t *testing.T) {
 		mutate func(*ClientState)
 	}{
 		{
+			name: "upgrade path",
+			mutate: func(substitute *ClientState) {
+				substitute.UpgradePath = []string{"upgrade", "upgradedIBCState"}
+			},
+		},
+		{
+			name: "host state policy",
+			mutate: func(substitute *ClientState) {
+				substitute.HostStateNftPolicyId = bytes.Repeat([]byte{0x09}, 28)
+			},
+		},
+		{
 			name: "host state token",
 			mutate: func(substitute *ClientState) {
 				substitute.HostStateNftTokenName = []byte("different-host-state")
 			},
 		},
 		{
+			name: "system start",
+			mutate: func(substitute *ClientState) {
+				substitute.SystemStartUnixNs++
+			},
+		},
+		{
+			name: "slot length",
+			mutate: func(substitute *ClientState) {
+				substitute.SlotLengthNs++
+			},
+		},
+		{
 			name: "slots per KES period",
 			mutate: func(substitute *ClientState) {
 				substitute.SlotsPerKesPeriod++
+				for _, context := range substitute.EpochContexts {
+					context.SlotsPerKesPeriod++
+				}
 			},
 		},
 		{
@@ -76,11 +103,16 @@ func TestIsMatchingClientStateRejectsStaticParameterMismatch(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			cdc := newProbabilisticTestCodec()
+			ctx, subjectStore := newProbabilisticTestClientStore(t, "probabilistic-invariant-subject")
+			_, substituteStore := newProbabilisticTestClientStore(t, "probabilistic-invariant-substitute")
 			subject := newProbabilisticTestClientState()
 			substitute := newProbabilisticTestClientState()
 			tc.mutate(substitute)
 
 			require.False(t, IsMatchingClientState(*subject, *substitute))
+			err := subject.CheckSubstituteAndUpdateState(ctx, cdc, subjectStore, substituteStore, substitute)
+			require.ErrorContains(t, err, "subject client state does not match substitute client state")
 		})
 	}
 }
@@ -185,6 +217,74 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	processedTime, found := GetProcessedTime(subjectStore, substitute.LatestHeight)
 	require.True(t, found)
 	require.EqualValues(t, 123456789, processedTime)
+	require.NotEmpty(t, subjectStore.Get(IterationKey(substitute.LatestHeight)))
+}
+
+func TestCheckSubstituteAndUpdateStateRequiresLatestSubstituteMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		key           func(*ClientState) []byte
+		expectedError string
+	}{
+		{
+			name: "consensus state",
+			key: func(substitute *ClientState) []byte {
+				return consensusStateKey(substitute.LatestHeight)
+			},
+			expectedError: "unable to retrieve latest consensus state",
+		},
+		{
+			name: "processed height",
+			key: func(substitute *ClientState) []byte {
+				return ProcessedHeightKey(substitute.LatestHeight)
+			},
+			expectedError: "unable to retrieve processed height",
+		},
+		{
+			name: "processed time",
+			key: func(substitute *ClientState) []byte {
+				return ProcessedTimeKey(substitute.LatestHeight)
+			},
+			expectedError: "unable to retrieve processed time",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cdc := newProbabilisticTestCodec()
+			ctx, subjectStore := newProbabilisticTestClientStore(t, "probabilistic-metadata-subject")
+			_, substituteStore := newProbabilisticTestClientStore(t, "probabilistic-metadata-substitute")
+
+			subject := newProbabilisticTestClientState()
+			subject.FrozenHeight = NewHeight(0, 5)
+			subject.setLatestCheckpoint(subject.LatestHeight, "subject-hash-10", subject.CurrentEpoch)
+			setClientState(subjectStore, cdc, subject)
+
+			substitute := newProbabilisticTestClientState()
+			substitute.LatestHeight = NewHeight(0, 20)
+			substitute.setLatestCheckpoint(substitute.LatestHeight, "substitute-hash-20", substitute.CurrentEpoch)
+			setClientState(substituteStore, cdc, substitute)
+			setConsensusState(
+				substituteStore,
+				cdc,
+				newProbabilisticTestConsensusState("substitute-hash-20"),
+				substitute.LatestHeight,
+			)
+			setConsensusMetadataWithValues(
+				substituteStore,
+				substitute.LatestHeight,
+				clienttypes.NewHeight(0, 50),
+				123456789,
+			)
+			substituteStore.Delete(tc.key(substitute))
+
+			err := subject.CheckSubstituteAndUpdateState(ctx, cdc, subjectStore, substituteStore, substitute)
+			require.ErrorContains(t, err, tc.expectedError)
+
+			unchanged, found := getClientState(subjectStore, cdc)
+			require.True(t, found)
+			require.Equal(t, subject.LatestHeight, unchanged.LatestHeight)
+			require.Equal(t, subject.FrozenHeight, unchanged.FrozenHeight)
+		})
+	}
 }
 
 func TestCheckSubstituteAndUpdateStateRejectsOperationalCertificateCounterRegression(t *testing.T) {

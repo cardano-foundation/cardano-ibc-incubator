@@ -98,6 +98,27 @@ pub fn setup_transfer_route(
     source: RouteEndpoint,
     destination: RouteEndpoint,
 ) -> Result<TransferRouteSetup, String> {
+    setup_transfer_route_with_reuse(project_root_path, source, destination, true)
+}
+
+/// Creates a route whose Cosmos-hosted Cardano client is guaranteed to be new.
+///
+/// Focused client lifecycle tests use this to avoid accidentally exercising an older client,
+/// connection, or channel left behind by a previous run.
+pub fn setup_fresh_transfer_route(
+    project_root_path: &Path,
+    source: RouteEndpoint,
+    destination: RouteEndpoint,
+) -> Result<TransferRouteSetup, String> {
+    setup_transfer_route_with_reuse(project_root_path, source, destination, false)
+}
+
+fn setup_transfer_route_with_reuse(
+    project_root_path: &Path,
+    source: RouteEndpoint,
+    destination: RouteEndpoint,
+    allow_reuse: bool,
+) -> Result<TransferRouteSetup, String> {
     if source.chain != RouteChain::Cardano {
         return Err(format!(
             "Only Cardano-sourced token-transfer routes are currently supported, got '{}'.",
@@ -140,6 +161,7 @@ pub fn setup_transfer_route(
         destination.chain,
         destination_network,
         destination_chain_id,
+        allow_reuse,
     )?;
 
     Ok(TransferRouteSetup {
@@ -156,6 +178,7 @@ fn ensure_direct_transfer_channel(
     destination_chain: RouteChain,
     destination_network: &str,
     destination_chain_id: &str,
+    allow_reuse: bool,
 ) -> Result<TransferChannelPair, String> {
     let cardano_chain_id = cardano_chain_id();
     let cardano_port_id = cardano_message_port_id();
@@ -166,6 +189,13 @@ fn ensure_direct_transfer_channel(
         destination_chain_id,
         TRANSFER_PORT_ID,
     )? {
+        if !allow_reuse {
+            return Err(format!(
+                "Focused light-client tests require a fresh route, but {} transfer channel '{}' already exists. Restart both the local Cardano network and Cosmos profile from clean state, then retry.",
+                destination_chain.display_name(),
+                existing_open_channel_pair.b_channel_id
+            ));
+        }
         logger::log(&format!(
             "PASS: Reusing Cardano<->{} transfer channel ({})",
             destination_chain.display_name(),
@@ -191,6 +221,12 @@ fn ensure_direct_transfer_channel(
     if let Some(existing_open_connection_id) =
         query_direct_open_connection(cardano_chain_id.as_str(), destination_chain_id)?
     {
+        if !allow_reuse {
+            return Err(format!(
+                "Focused light-client tests require a fresh route, but {} connection '{}' already exists. Restart both the local Cardano network and Cosmos profile from clean state, then retry.",
+                destination_chain.display_name(), existing_open_connection_id
+            ));
+        }
         logger::verbose(&format!(
             "Found existing open Cardano<->{} connection {}; creating transfer channel on it",
             destination_chain.display_name(),

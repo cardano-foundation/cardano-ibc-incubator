@@ -13,6 +13,7 @@ mod commands;
 mod config;
 mod demos;
 mod install;
+mod light_client_test;
 mod logger;
 mod process;
 mod route_setup;
@@ -26,6 +27,12 @@ mod utils;
 enum DemoType {
     /// Starts the token-swap demo preset using a running bridge plus selected chain/network
     TokenSwap,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LightClientTest {
+    /// Recover an expired probabilistic client through the ibc-go governance authority path
+    RecoverClient,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -260,8 +267,23 @@ enum Commands {
     /// Prerequisites: All services must be running. Use 'caribic start' first.
     Test {
         /// Optional test selector (examples: "9-12", "6", "5,9-12")
-        #[arg(long)]
+        #[arg(long, conflicts_with = "light_client")]
         tests: Option<String>,
+        /// Run a focused live light-client scenario (defaults to recover-client when omitted)
+        #[arg(
+            long,
+            value_enum,
+            num_args = 0..=1,
+            default_missing_value = "recover-client",
+            conflicts_with = "tests"
+        )]
+        light_client: Option<LightClientTest>,
+        /// Chain hosting the Cardano light client (focused tests currently require cosmos)
+        #[arg(long, value_enum, requires = "light_client")]
+        chain: Option<start::OptionalChainId>,
+        /// Local Cosmos compatibility profile (v8-classic or v10-classic)
+        #[arg(long, requires = "light_client")]
+        network: Option<String>,
     },
 }
 
@@ -426,12 +448,32 @@ async fn main() {
                 commands::run_denom_registry_benchmark(project_root_path, bucket, inserts)
             }
         },
-        Commands::Test { tests } => {
-            let test_result = commands::run_tests(project_root_path, tests.as_deref()).await;
+        Commands::Test {
+            tests,
+            light_client,
+            chain,
+            network,
+        } => {
+            let failure_context = if light_client.is_some() {
+                "Focused light-client test"
+            } else {
+                "Integration tests"
+            };
+            let test_result = if let Some(light_client_test) = light_client {
+                commands::run_light_client_test(
+                    project_root_path,
+                    light_client_test,
+                    chain,
+                    network.as_deref(),
+                )
+                .await
+            } else {
+                commands::run_tests(project_root_path, tests.as_deref()).await
+            };
             match test_result {
                 Ok(_) => Ok(()),
                 Err(error) => {
-                    logger::error(&format!("Integration tests failed: {}", error));
+                    logger::error(&format!("{failure_context} failed: {error}"));
                     Err(error)
                 }
             }
@@ -442,5 +484,53 @@ async fn main() {
     if let Err(error) = command_result {
         logger::error(&error);
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn light_client_flag_defaults_to_recover_client() {
+        let args = Args::try_parse_from([
+            "caribic",
+            "test",
+            "--light-client",
+            "--chain",
+            "cosmos",
+            "--network",
+            "v10-classic",
+        ])
+        .expect("focused light-client arguments should parse");
+
+        match args.command {
+            Commands::Test {
+                tests,
+                light_client,
+                chain,
+                network,
+            } => {
+                assert!(tests.is_none());
+                assert_eq!(light_client, Some(LightClientTest::RecoverClient));
+                assert_eq!(chain, Some(start::OptionalChainId::Cosmos));
+                assert_eq!(network.as_deref(), Some("v10-classic"));
+            }
+            _ => panic!("expected test command"),
+        }
+    }
+
+    #[test]
+    fn numbered_and_light_client_selectors_conflict() {
+        let result = Args::try_parse_from(["caribic", "test", "--tests", "9-13", "--light-client"]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn light_client_network_requires_the_focused_mode() {
+        let result = Args::try_parse_from(["caribic", "test", "--network", "v8-classic"]);
+
+        assert!(result.is_err());
     }
 }

@@ -1,9 +1,21 @@
 use std::path::Path;
 
 use crate::{
-    logger,
+    light_client_test, logger,
+    start::OptionalChainId,
     test::{self, TestResults},
+    LightClientTest,
 };
+
+/// Runs a focused live light-client scenario independently of the legacy numbered suite.
+pub async fn run_light_client_test(
+    project_root_path: &Path,
+    scenario: LightClientTest,
+    chain: Option<OptionalChainId>,
+    network: Option<&str>,
+) -> Result<(), String> {
+    light_client_test::run(project_root_path, scenario, chain, network).await
+}
 
 /// Runs integration tests and returns an error if any test fails.
 pub async fn run_tests(project_root_path: &Path, tests: Option<&str>) -> Result<(), String> {
