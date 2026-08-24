@@ -68,6 +68,28 @@ const defaultEpochLength = (networkMagic?: string): number => {
   }
 };
 
+const positiveSafeIntegerEnv = (name: string, fallback: number): number => {
+  const rawValue = process.env[name];
+  if (rawValue === undefined || rawValue.trim() === '') {
+    return fallback;
+  }
+  const value = Number(rawValue);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive safe integer`);
+  }
+  return value;
+};
+
+const maxGoDurationSeconds = 9_223_372_036;
+
+const positiveGoDurationSecondsEnv = (name: string, fallback: number): number => {
+  const value = positiveSafeIntegerEnv(name, fallback);
+  if (value > maxGoDurationSeconds) {
+    throw new Error(`${name} must not exceed ${maxGoDurationSeconds.toString()} seconds`);
+  }
+  return value;
+};
+
 interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
@@ -90,6 +112,7 @@ interface Config {
   cardanoNetwork: Network;
   cardanoEpochLength: number;
   cardanoClientTrustingPeriodSeconds: number;
+  cardanoClientMaxClockDriftSeconds: number;
   cardanoStabilityCheckpointMaxBridgeBlocks: number;
   cardanoStabilityCheckpointMaxHeaderBytes: number;
   cardanoEpochParamsEndpoint?: string;
@@ -131,6 +154,10 @@ export default (): Partial<Config> => {
       process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
     ),
     cardanoClientTrustingPeriodSeconds: Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400),
+    cardanoClientMaxClockDriftSeconds: positiveGoDurationSecondsEnv(
+      'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS',
+      10,
+    ),
     cardanoStabilityCheckpointMaxBridgeBlocks: Number(
       process.env.CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS || 32,
     ),

@@ -1137,7 +1137,7 @@ func TestCheckpointCursorDoesNotCreateConsensusStateOrRenewTrust(t *testing.T) {
 	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-checkpoint-trust")
 	clientState := newProbabilisticTestClientState()
 	clientState.TrustingPeriod = time.Second
-	clientState.setLatestCheckpoint(NewHeight(0, 20), "checkpoint-block-hash", 8)
+	setTestCheckpoint(t, clientState, NewHeight(0, 20), "checkpoint-block-hash", 8, 20)
 	clientState.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
 		{PoolId: bytes.Repeat([]byte{0x23}, 28), SequenceNumber: 4},
 	}
@@ -1169,13 +1169,13 @@ func TestTrustedBlockStateReconstructsHistoricalCounterSnapshot(t *testing.T) {
 	}
 	initialConsensus := newProbabilisticTestConsensusState("historical-block-hash")
 	setConsensusState(clientStore, cdc, initialConsensus, NewHeight(0, 10))
-	clientState.setLatestCheckpoint(NewHeight(0, 10), "historical-block-hash", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 10), "historical-block-hash", 7, 10)
 	require.NoError(t, clientState.persistOperationalCertificateCounterSnapshot(
 		clientStore,
 		NewHeight(0, 12),
 		[]*OperationalCertificateCounter{{PoolId: poolID, SequenceNumber: 9}},
 	))
-	clientState.setLatestCheckpoint(NewHeight(0, 12), "latest-block-hash", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 12), "latest-block-hash", 7, 12)
 
 	trustedBlock, err := clientState.trustedBlockStateAtHeight(clientStore, cdc, NewHeight(0, 10))
 	require.NoError(t, err)
@@ -1187,7 +1187,7 @@ func TestOperationalCertificateCounterHistoryRollsBackMultipleUpdates(t *testing
 	clientState := newProbabilisticTestClientState()
 	poolA := bytes.Repeat([]byte{0x25}, 28)
 	poolB := bytes.Repeat([]byte{0x26}, 28)
-	clientState.setLatestCheckpoint(NewHeight(0, 10), "block-10", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 10), "block-10", 7, 10)
 	clientState.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
 		{PoolId: poolA, SequenceNumber: 7},
 	}
@@ -1200,7 +1200,7 @@ func TestOperationalCertificateCounterHistoryRollsBackMultipleUpdates(t *testing
 			{PoolId: poolB, SequenceNumber: 3},
 		},
 	))
-	clientState.setLatestCheckpoint(NewHeight(0, 12), "block-12", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 12), "block-12", 7, 12)
 	require.NoError(t, clientState.persistOperationalCertificateCounterSnapshot(
 		clientStore,
 		NewHeight(0, 15),
@@ -1209,7 +1209,7 @@ func TestOperationalCertificateCounterHistoryRollsBackMultipleUpdates(t *testing
 			{PoolId: poolB, SequenceNumber: 3},
 		},
 	))
-	clientState.setLatestCheckpoint(NewHeight(0, 15), "block-15", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 15), "block-15", 7, 15)
 
 	poolAKey := hex.EncodeToString(poolA)
 	poolBKey := hex.EncodeToString(poolB)
@@ -1242,7 +1242,7 @@ func TestOperationalCertificateCounterHistoryCompactsToOldestUsableConsensus(t *
 	_, clientStore := newProbabilisticTestClientStore(t, "probabilistic-counter-history-compaction")
 	clientState := newProbabilisticTestClientState()
 	poolID := bytes.Repeat([]byte{0x26}, 28)
-	clientState.setLatestCheckpoint(NewHeight(0, 10), "block-10", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 10), "block-10", 7, 10)
 	clientState.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
 		{PoolId: poolID, SequenceNumber: 7},
 	}
@@ -1251,13 +1251,13 @@ func TestOperationalCertificateCounterHistoryCompactsToOldestUsableConsensus(t *
 		NewHeight(0, 12),
 		[]*OperationalCertificateCounter{{PoolId: poolID, SequenceNumber: 9}},
 	))
-	clientState.setLatestCheckpoint(NewHeight(0, 12), "block-12", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 12), "block-12", 7, 12)
 	require.NoError(t, clientState.persistOperationalCertificateCounterSnapshot(
 		clientStore,
 		NewHeight(0, 15),
 		[]*OperationalCertificateCounter{{PoolId: poolID, SequenceNumber: 11}},
 	))
-	clientState.setLatestCheckpoint(NewHeight(0, 15), "block-15", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 15), "block-15", 7, 15)
 	setConsensusState(clientStore, cdc, newProbabilisticTestConsensusState("block-12"), NewHeight(0, 12))
 	SetIterationKey(clientStore, NewHeight(0, 12))
 
@@ -1293,7 +1293,7 @@ func TestExportMetadataPreservesConsensusAndOperationalCertificateMetadata(t *te
 		NewHeight(0, 12),
 		[]*OperationalCertificateCounter{{PoolId: poolID, SequenceNumber: 6}},
 	))
-	clientState.setLatestCheckpoint(NewHeight(0, 12), "block-12", 7)
+	setTestCheckpoint(t, clientState, NewHeight(0, 12), "block-12", 7, 12)
 
 	metadata := clientState.ExportMetadata(clientStore)
 	require.Len(t, metadata, 5)
@@ -1350,9 +1350,11 @@ func TestPersistCheckpointAdvancesCursorWithoutAdvancingIbcRoot(t *testing.T) {
 	epochContexts := mustTestEpochContexts(t, clientState)
 	authenticatedHeader := &authenticatedProbabilisticHeader{
 		anchorBlock: &authenticatedProbabilisticBlock{
-			height: 20,
-			hash:   "checkpoint-block-hash",
-			epoch:  7,
+			height:    20,
+			hash:      "checkpoint-block-hash",
+			epoch:     7,
+			slot:      20,
+			timestamp: clientState.SystemStartUnixNs + 20*clientState.SlotLengthNs,
 		},
 		anchorOperationalCertificateCounters: []*OperationalCertificateCounter{
 			{PoolId: bytes.Repeat([]byte{0x24}, 28), SequenceNumber: 5},
@@ -1365,7 +1367,26 @@ func TestPersistCheckpointAdvancesCursorWithoutAdvancingIbcRoot(t *testing.T) {
 	require.Equal(t, uint64(10), stored.LatestHeight.RevisionHeight)
 	require.Equal(t, uint64(20), stored.LatestCheckpointHeight.RevisionHeight)
 	require.Equal(t, "checkpoint-block-hash", stored.LatestCheckpointBlockHash)
+	require.Equal(t, uint64(20), stored.LatestCheckpointSlot)
+	require.Equal(
+		t,
+		clientState.SystemStartUnixNs+20*clientState.SlotLengthNs,
+		stored.LatestCheckpointTimestamp,
+	)
 	require.Equal(t, authenticatedHeader.anchorOperationalCertificateCounters, stored.LatestCheckpointOperationalCertificateCounters)
+
+	reloadedTrustedBlock, err := stored.latestTrustedBlockState(clientStore, cdc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(20), reloadedTrustedBlock.slot)
+	equalSlotHeader := &authenticatedProbabilisticHeader{
+		anchorBlock: newAuthenticatedTemporalTestBlock(t, stored, 21, 20),
+	}
+	err = stored.verifyHeaderTemporalContinuity(
+		temporalTestContext(t, stored, 100),
+		equalSlotHeader,
+		reloadedTrustedBlock,
+	)
+	require.ErrorContains(t, err, "must be greater than previous authenticated slot")
 
 	_, rootConsensusFound := GetConsensusState(clientStore, cdc, NewHeight(0, 10))
 	_, checkpointConsensusFound := GetConsensusState(clientStore, cdc, NewHeight(0, 20))
@@ -1410,12 +1431,13 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 	checkpoints := []struct {
 		height          uint64
 		epoch           uint64
+		slot            uint64
 		hash            string
 		newEpochContext *EpochContext
 	}{
-		{height: 101, epoch: 303, hash: "checkpoint-303", newEpochContext: nil},
-		{height: 102, epoch: 304, hash: "checkpoint-304-rollover", newEpochContext: epoch304},
-		{height: 103, epoch: 304, hash: "checkpoint-304-resume", newEpochContext: nil},
+		{height: 101, epoch: 303, slot: 100, hash: "checkpoint-303", newEpochContext: nil},
+		{height: 102, epoch: 304, slot: 1_000, hash: "checkpoint-304-rollover", newEpochContext: epoch304},
+		{height: 103, epoch: 304, slot: 1_100, hash: "checkpoint-304-resume", newEpochContext: nil},
 	}
 
 	for _, checkpoint := range checkpoints {
@@ -1432,10 +1454,12 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 
 		authenticatedHeader := &authenticatedProbabilisticHeader{
 			anchorBlock: &authenticatedProbabilisticBlock{
-				height:   checkpoint.height,
-				hash:     checkpoint.hash,
-				prevHash: trustedBlock.blockHash,
-				epoch:    checkpoint.epoch,
+				height:    checkpoint.height,
+				hash:      checkpoint.hash,
+				prevHash:  trustedBlock.blockHash,
+				epoch:     checkpoint.epoch,
+				slot:      checkpoint.slot,
+				timestamp: clientState.SystemStartUnixNs + checkpoint.slot*clientState.SlotLengthNs,
 			},
 		}
 		require.NoError(t, verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader))
@@ -1489,10 +1513,12 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 
 	finalAuthenticatedHeader := &authenticatedProbabilisticHeader{
 		anchorBlock: &authenticatedProbabilisticBlock{
-			height:   104,
-			hash:     "host-state-epoch-305",
-			prevHash: trustedBlock.blockHash,
-			epoch:    305,
+			height:    104,
+			hash:      "host-state-epoch-305",
+			prevHash:  trustedBlock.blockHash,
+			epoch:     305,
+			slot:      2_000,
+			timestamp: clientState.SystemStartUnixNs + 2_000*clientState.SlotLengthNs,
 		},
 	}
 	require.NoError(t, verifyHeaderEpochTransition(finalHeader, trustedBlock, finalAuthenticatedHeader))
@@ -1572,6 +1598,7 @@ func newProbabilisticTestClientState() *ClientState {
 		EpochNonce:             bytes.Clone(epochNonce),
 		SlotsPerKesPeriod:      129600,
 		MaxKesEvolutions:       62,
+		MaxClockDrift:          time.Minute,
 		OperationalCertificateCounterHistoryStartHeight: NewHeight(0, 10),
 		CurrentEpochStartSlot:                           0,
 		CurrentEpochEndSlotExclusive:                    1_000_000,
@@ -1588,6 +1615,20 @@ func newProbabilisticTestClientState() *ClientState {
 			},
 		},
 	}
+}
+
+func setTestCheckpoint(
+	t testing.TB,
+	clientState *ClientState,
+	height *Height,
+	hash string,
+	epoch uint64,
+	slot uint64,
+) {
+	t.Helper()
+	timestamp, err := clientState.DeriveTimestampFromSlot(slot)
+	require.NoError(t, err)
+	clientState.setLatestCheckpoint(height, hash, epoch, slot, timestamp)
 }
 
 func newProbabilisticTestConsensusState(acceptedBlockHash string) *ConsensusState {

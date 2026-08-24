@@ -79,6 +79,7 @@ describe('QueryService stability anchor contract', () => {
         if (key === 'cardanoLightClientMode') return 'stake-weighted-stability';
         if (key === 'cardanoChainId') return 'cardano-devnet';
         if (key === 'cardanoNetwork') return 'Preview';
+        if (key === 'cardanoClientMaxClockDriftSeconds') return 17;
         if (key === 'deployment') {
           return {
             hostStateNFT: {
@@ -254,6 +255,9 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.latest_checkpoint_height).toEqual(clientState.latest_height);
     expect(clientState.latest_checkpoint_block_hash).toBe('anchor-hash');
     expect(clientState.latest_checkpoint_epoch).toBe(7n);
+    expect(clientState.latest_checkpoint_slot).toBe(1000n);
+    expect(clientState.latest_checkpoint_timestamp).toBe(timestampForSlot(1000n));
+    expect(clientState.max_clock_drift).toEqual({ seconds: 17n, nanos: 0 });
     expect(clientState.max_kes_evolutions).toBe(62n);
     expect(clientState.operational_certificate_counter_history_start_height).toEqual(clientState.latest_height);
     expect(

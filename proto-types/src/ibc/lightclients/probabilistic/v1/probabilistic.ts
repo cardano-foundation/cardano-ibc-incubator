@@ -84,6 +84,18 @@ export interface ClientState {
    * snapshot and the light client's private rollback history.
    */
   operational_certificate_counter_history_start_height?: Height;
+  /**
+   * Maximum amount by which an authenticated Cardano block may be ahead of
+   * the Cosmos host chain's current block time.
+   */
+  max_clock_drift: Duration;
+  /**
+   * Slot and derived Unix-nanosecond timestamp of latest_checkpoint_height.
+   * Both are retained because rootless checkpoints do not create an IBC
+   * consensus state.
+   */
+  latest_checkpoint_slot: bigint;
+  latest_checkpoint_timestamp: bigint;
 }
 /**
  * @name ConsensusState
@@ -526,6 +538,9 @@ function createBaseClientState(): ClientState {
     max_kes_evolutions: BigInt(0),
     latest_checkpoint_operational_certificate_counters: [],
     operational_certificate_counter_history_start_height: undefined,
+    max_clock_drift: Duration.fromPartial({}),
+    latest_checkpoint_slot: BigInt(0),
+    latest_checkpoint_timestamp: BigInt(0),
   };
 }
 /**
@@ -604,6 +619,15 @@ export const ClientState = {
         message.operational_certificate_counter_history_start_height,
         writer.uint32(194).fork(),
       ).ldelim();
+    }
+    if (message.max_clock_drift !== undefined) {
+      Duration.encode(message.max_clock_drift, writer.uint32(218).fork()).ldelim();
+    }
+    if (message.latest_checkpoint_slot !== BigInt(0)) {
+      writer.uint32(224).uint64(message.latest_checkpoint_slot);
+    }
+    if (message.latest_checkpoint_timestamp !== BigInt(0)) {
+      writer.uint32(232).uint64(message.latest_checkpoint_timestamp);
     }
     return writer;
   },
@@ -685,6 +709,15 @@ export const ClientState = {
             reader.uint32(),
           );
           break;
+        case 27:
+          message.max_clock_drift = Duration.decode(reader, reader.uint32());
+          break;
+        case 28:
+          message.latest_checkpoint_slot = reader.uint64();
+          break;
+        case 29:
+          message.latest_checkpoint_timestamp = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -738,6 +771,11 @@ export const ClientState = {
       obj.operational_certificate_counter_history_start_height = Height.fromJSON(
         object.operational_certificate_counter_history_start_height,
       );
+    if (isSet(object.max_clock_drift)) obj.max_clock_drift = Duration.fromJSON(object.max_clock_drift);
+    if (isSet(object.latest_checkpoint_slot))
+      obj.latest_checkpoint_slot = BigInt(object.latest_checkpoint_slot.toString());
+    if (isSet(object.latest_checkpoint_timestamp))
+      obj.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -817,6 +855,12 @@ export const ClientState = {
         message.operational_certificate_counter_history_start_height
           ? Height.toJSON(message.operational_certificate_counter_history_start_height)
           : undefined);
+    message.max_clock_drift !== undefined &&
+      (obj.max_clock_drift = message.max_clock_drift ? Duration.toJSON(message.max_clock_drift) : undefined);
+    message.latest_checkpoint_slot !== undefined &&
+      (obj.latest_checkpoint_slot = (message.latest_checkpoint_slot || BigInt(0)).toString());
+    message.latest_checkpoint_timestamp !== undefined &&
+      (obj.latest_checkpoint_timestamp = (message.latest_checkpoint_timestamp || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -880,6 +924,15 @@ export const ClientState = {
       message.operational_certificate_counter_history_start_height = Height.fromPartial(
         object.operational_certificate_counter_history_start_height,
       );
+    }
+    if (object.max_clock_drift !== undefined && object.max_clock_drift !== null) {
+      message.max_clock_drift = Duration.fromPartial(object.max_clock_drift);
+    }
+    if (object.latest_checkpoint_slot !== undefined && object.latest_checkpoint_slot !== null) {
+      message.latest_checkpoint_slot = BigInt(object.latest_checkpoint_slot.toString());
+    }
+    if (object.latest_checkpoint_timestamp !== undefined && object.latest_checkpoint_timestamp !== null) {
+      message.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
     }
     return message;
   },
