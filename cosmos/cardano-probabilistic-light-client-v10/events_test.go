@@ -62,8 +62,16 @@ func TestLightClientModuleUpdateStateOnMisbehaviourEmitsFrozenEvent(t *testing.T
 
 	clientState := newProbabilisticTestClientState()
 	setClientState(clientStore, cdc, clientState)
+	header := newVerifiedTestHeader(t)
+	header.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, clientState))
+	header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot++
+	require.True(t, module.CheckForMisbehaviour(ctx, clientID, header))
 
-	module.UpdateStateOnMisbehaviour(ctx, clientID, nil)
+	module.UpdateStateOnMisbehaviour(ctx, clientID, header)
+
+	frozen, found := getClientState(clientStore, cdc)
+	require.True(t, found)
+	require.True(t, frozen.FrozenHeight.EQ(FrozenHeight))
 
 	event := findEventByType(t, ctx.EventManager().Events(), EventTypeProbabilisticClientFrozen)
 	require.Equal(t, clientID, eventAttributeValue(t, event, AttributeKeyClientID))

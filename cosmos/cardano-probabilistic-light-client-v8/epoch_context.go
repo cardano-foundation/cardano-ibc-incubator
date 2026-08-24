@@ -215,6 +215,7 @@ func epochContextsEqual(left, right *EpochContext) bool {
 		rightEntry := rightByPool[strings.ToLower(leftEntry.PoolId)]
 		if rightEntry == nil ||
 			leftEntry.Stake != rightEntry.Stake ||
+			leftEntry.FirstRegistrationSlot != rightEntry.FirstRegistrationSlot ||
 			!bytes.Equal(leftEntry.VrfKeyHash, rightEntry.VrfKeyHash) {
 			return false
 		}

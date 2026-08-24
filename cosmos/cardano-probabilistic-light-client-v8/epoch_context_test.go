@@ -24,3 +24,18 @@ func TestEpochContextForSlotPrefersLatestMatchingEpoch(t *testing.T) {
 		t.Fatalf("expected epoch 3, got %d", match.Epoch)
 	}
 }
+
+func TestEpochContextsEqualIncludesFirstRegistrationSlot(t *testing.T) {
+	clientState := newProbabilisticTestClientState()
+	left := cloneEpochContext(mustCurrentTestEpochContext(t, clientState))
+	right := cloneEpochContext(left)
+
+	if !epochContextsEqual(left, right) {
+		t.Fatal("expected identical epoch contexts to match")
+	}
+
+	right.StakeDistribution[0].FirstRegistrationSlot++
+	if epochContextsEqual(left, right) {
+		t.Fatal("expected registration-slot change to conflict")
+	}
+}
