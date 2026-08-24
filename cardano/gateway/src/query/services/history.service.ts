@@ -40,6 +40,8 @@ export type HistoryStakeDistributionEntry = {
   poolId: string;
   stake: bigint;
   vrfKeyHash: string;
+  relativeStakeNumerator: bigint;
+  relativeStakeDenominator: bigint;
   firstRegistrationSlot?: bigint | null;
 };
 
@@ -47,6 +49,8 @@ export type HistoryEpochVerificationContext = {
   epochNonce: string;
   slotsPerKesPeriod: number;
   maxKesEvolutions: number;
+  activeSlotCoefficientNumerator: bigint;
+  activeSlotCoefficientDenominator: bigint;
   currentEpochStartSlot: bigint;
   currentEpochEndSlotExclusive: bigint;
 };

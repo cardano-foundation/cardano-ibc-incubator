@@ -98,14 +98,37 @@ describe('stability-evidence', () => {
   ];
 
   const epochStakeDistribution = [
-    { poolId: 'pool-a', stake: 500n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
-    { poolId: 'pool-b', stake: 300n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
-    { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
+    {
+      poolId: 'pool-a',
+      stake: 500n,
+      relativeStakeNumerator: 500n,
+      relativeStakeDenominator: 1000n,
+      vrfKeyHash: 'aa'.repeat(32),
+      firstRegistrationSlot: 1n,
+    },
+    {
+      poolId: 'pool-b',
+      stake: 300n,
+      relativeStakeNumerator: 300n,
+      relativeStakeDenominator: 1000n,
+      vrfKeyHash: 'bb'.repeat(32),
+      firstRegistrationSlot: 1n,
+    },
+    {
+      poolId: 'pool-c',
+      stake: 200n,
+      relativeStakeNumerator: 200n,
+      relativeStakeDenominator: 1000n,
+      vrfKeyHash: 'cc'.repeat(32),
+      firstRegistrationSlot: 1n,
+    },
   ];
 
   const epochVerificationContext = {
     epochNonce: '11'.repeat(32),
     slotsPerKesPeriod: 129600,
+    activeSlotCoefficientNumerator: 1n,
+    activeSlotCoefficientDenominator: 20n,
     maxKesEvolutions: 62,
     currentEpochStartSlot: 900n,
     currentEpochEndSlotExclusive: 1200n,

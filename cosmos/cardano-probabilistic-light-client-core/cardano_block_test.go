@@ -247,12 +247,12 @@ func TestVerifyNativeBlockAndHeaderCheckOperationalCertificateBeforeKes(t *testi
 	header.Body.OpCert.Signature[0] ^= 0xff
 	block := &ledger.BabbageBlock{Header: header}
 
-	_, _, err := VerifyNativeHeader(header, make([]byte, 32), 100, 4)
+	_, _, err := VerifyNativeHeader(header, make([]byte, 32), 100, 4, fullStakePraosParameters())
 	if err == nil || !strings.Contains(err.Error(), "cold-key signature is invalid") {
 		t.Fatalf("expected invalid header operational certificate error, got %v", err)
 	}
 
-	_, _, err = VerifyNativeBlock(block, make([]byte, 32), 100, 4)
+	_, _, err = VerifyNativeBlock(block, make([]byte, 32), 100, 4, fullStakePraosParameters())
 	if err == nil || !strings.Contains(err.Error(), "cold-key signature is invalid") {
 		t.Fatalf("expected invalid operational certificate error, got %v", err)
 	}
@@ -263,7 +263,7 @@ func TestVerifyNativeBlockReturnsErrorForMalformedKesSignature(t *testing.T) {
 	header.Signature = []byte{0x01}
 	block := &ledger.BabbageBlock{Header: header}
 
-	valid, result, err := VerifyNativeBlock(block, make([]byte, 32), 100, 4)
+	valid, result, err := VerifyNativeBlock(block, make([]byte, 32), 100, 4, fullStakePraosParameters())
 	if err == nil || !strings.Contains(err.Error(), "native block verification panicked") {
 		t.Fatalf("expected recovered malformed KES signature error, got %v", err)
 	}
@@ -284,6 +284,8 @@ func TestVerifyNativeBlockAndHeaderAcceptRealMainnetBabbageAndConwayBlocks(t *te
 		epochNonce         string
 		wantHeight         uint64
 		wantSequenceNumber uint64
+		leaderParameters   PraosLeaderEligibilityParameters
+		testLowStake       bool
 	}{
 		{
 			name:               "Babbage",
@@ -291,6 +293,13 @@ func TestVerifyNativeBlockAndHeaderAcceptRealMainnetBabbageAndConwayBlocks(t *te
 			epochNonce:         "53606952e39eadd5eea559be517f9741c9538073e987ec1b7a6c7a05db6195d3",
 			wantHeight:         7_981_223,
 			wantSequenceNumber: 8,
+			leaderParameters: PraosLeaderEligibilityParameters{
+				StakeNumerator:        4_178_103_721_131,
+				StakeDenominator:      5_019_556_879_197_493,
+				ActiveSlotNumerator:   1,
+				ActiveSlotDenominator: 20,
+			},
+			testLowStake: true,
 		},
 		{
 			name:               "Conway",
@@ -298,6 +307,7 @@ func TestVerifyNativeBlockAndHeaderAcceptRealMainnetBabbageAndConwayBlocks(t *te
 			epochNonce:         "2479be89e3ed9eeb4f4e4e11f6851f3dfc460e68b67ae5f663676dbeb30d9831",
 			wantHeight:         12_069_665,
 			wantSequenceNumber: 24,
+			leaderParameters:   fullStakePraosParameters(),
 		},
 	}
 
@@ -320,7 +330,7 @@ func TestVerifyNativeBlockAndHeaderAcceptRealMainnetBabbageAndConwayBlocks(t *te
 				t.Fatalf("decode ledger block: %v", err)
 			}
 
-			valid, result, err := VerifyNativeBlock(block, epochNonce, 129600, 62)
+			valid, result, err := VerifyNativeBlock(block, epochNonce, 129600, 62, tc.leaderParameters)
 			if err != nil {
 				t.Fatalf("verify native block: %v", err)
 			}
@@ -342,7 +352,13 @@ func TestVerifyNativeBlockAndHeaderAcceptRealMainnetBabbageAndConwayBlocks(t *te
 			if err != nil {
 				t.Fatalf("get native header: %v", err)
 			}
-			headerValid, headerResult, err := VerifyNativeHeader(header, epochNonce, 129600, 62)
+			headerValid, headerResult, err := VerifyNativeHeader(
+				header,
+				epochNonce,
+				129600,
+				62,
+				tc.leaderParameters,
+			)
 			if err != nil {
 				t.Fatalf("verify native header: %v", err)
 			}
@@ -358,6 +374,21 @@ func TestVerifyNativeBlockAndHeaderAcceptRealMainnetBabbageAndConwayBlocks(t *te
 			}
 			if !bytes.Equal(headerResult.VrfKey, result.VrfKey) {
 				t.Fatal("full block and compact header returned different VRF keys")
+			}
+
+			if tc.testLowStake {
+				lowStakeParameters := tc.leaderParameters
+				lowStakeParameters.StakeNumerator = 1
+				lowStakeParameters.StakeDenominator = 1_000_000_000_000
+
+				valid, _, err = VerifyNativeBlock(block, epochNonce, 129600, 62, lowStakeParameters)
+				if err == nil || !strings.Contains(err.Error(), "Praos leadership threshold not met") {
+					t.Fatalf("expected low-stake full block to fail the Praos threshold, got valid=%t err=%v", valid, err)
+				}
+				headerValid, _, err = VerifyNativeHeader(header, epochNonce, 129600, 62, lowStakeParameters)
+				if err == nil || !strings.Contains(err.Error(), "Praos leadership threshold not met") {
+					t.Fatalf("expected low-stake compact header to fail the Praos threshold, got valid=%t err=%v", headerValid, err)
+				}
 			}
 		})
 	}
@@ -378,7 +409,13 @@ func TestAuthenticatedHostStateFixtureRejectsPhase2InvalidTarget(t *testing.T) {
 		t.Fatalf("decode HostState validity block: %v", err)
 	}
 
-	valid, result, err := VerifyNativeBlock(block, epochNonce, 100, 62)
+	alwaysEligibleLeaderParameters := PraosLeaderEligibilityParameters{
+		StakeNumerator:        1,
+		StakeDenominator:      1,
+		ActiveSlotNumerator:   1,
+		ActiveSlotDenominator: 1,
+	}
+	valid, result, err := VerifyNativeBlock(block, epochNonce, 100, 62, alwaysEligibleLeaderParameters)
 	if err != nil {
 		t.Fatalf("verify HostState validity block: %v", err)
 	}
@@ -392,7 +429,7 @@ func TestAuthenticatedHostStateFixtureRejectsPhase2InvalidTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract HostState fixture header: %v", err)
 	}
-	headerValid, _, err := VerifyNativeHeader(header, epochNonce, 100, 62)
+	headerValid, _, err := VerifyNativeHeader(header, epochNonce, 100, 62, alwaysEligibleLeaderParameters)
 	if err != nil {
 		t.Fatalf("verify HostState fixture header: %v", err)
 	}
@@ -625,6 +662,15 @@ func rawBodyHash(fields rawBlockBodyFields) [32]byte {
 	serialized = append(serialized, transactionMetadataSetHash[:]...)
 	serialized = append(serialized, invalidTransactionsHash[:]...)
 	return blake2b.Sum256(serialized)
+}
+
+func fullStakePraosParameters() PraosLeaderEligibilityParameters {
+	return PraosLeaderEligibilityParameters{
+		StakeNumerator:        1,
+		StakeDenominator:      1,
+		ActiveSlotNumerator:   1,
+		ActiveSlotDenominator: 20,
+	}
 }
 
 func signedOperationalCertificateHeader(

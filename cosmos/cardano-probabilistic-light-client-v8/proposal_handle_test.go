@@ -117,6 +117,14 @@ func TestIsMatchingClientStateRejectsStaticParameterMismatch(t *testing.T) {
 	}
 }
 
+func TestIsMatchingClientStateRejectsActiveSlotCoefficientMismatch(t *testing.T) {
+	subject := newProbabilisticTestClientState()
+	substitute := newProbabilisticTestClientState()
+	substitute.ActiveSlotCoefficientNumerator = 2
+
+	require.False(t, IsMatchingClientState(*subject, *substitute))
+}
+
 func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
 	clientState := newProbabilisticTestClientState()
 	clientState.EpochContexts = []*EpochContext{
@@ -137,6 +145,8 @@ func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
 	require.Zero(t, zeroed.CurrentEpochEndSlotExclusive)
 	require.Equal(t, clientState.SystemStartUnixNs, zeroed.SystemStartUnixNs)
 	require.Equal(t, clientState.SlotLengthNs, zeroed.SlotLengthNs)
+	require.Equal(t, clientState.ActiveSlotCoefficientNumerator, zeroed.ActiveSlotCoefficientNumerator)
+	require.Equal(t, clientState.ActiveSlotCoefficientDenominator, zeroed.ActiveSlotCoefficientDenominator)
 	require.Zero(t, zeroed.MaxClockDrift)
 	require.Zero(t, zeroed.LatestCheckpointSlot)
 	require.Zero(t, zeroed.LatestCheckpointTimestamp)
@@ -255,17 +265,19 @@ func TestCheckSubstituteAndUpdateStateRequiresLatestSubstituteMetadata(t *testin
 
 			subject := newProbabilisticTestClientState()
 			subject.FrozenHeight = NewHeight(0, 5)
-			subject.setLatestCheckpoint(subject.LatestHeight, "subject-hash-10", subject.CurrentEpoch)
+			setTestCheckpoint(t, subject, subject.LatestHeight, "subject-hash-10", subject.CurrentEpoch, 10)
 			setClientState(subjectStore, cdc, subject)
 
 			substitute := newProbabilisticTestClientState()
 			substitute.LatestHeight = NewHeight(0, 20)
-			substitute.setLatestCheckpoint(substitute.LatestHeight, "substitute-hash-20", substitute.CurrentEpoch)
+			setTestCheckpoint(t, substitute, substitute.LatestHeight, "substitute-hash-20", substitute.CurrentEpoch, 20)
 			setClientState(substituteStore, cdc, substitute)
+			consensusState := newProbabilisticTestConsensusState("substitute-hash-20")
+			consensusState.Timestamp = substitute.LatestCheckpointTimestamp
 			setConsensusState(
 				substituteStore,
 				cdc,
-				newProbabilisticTestConsensusState("substitute-hash-20"),
+				consensusState,
 				substitute.LatestHeight,
 			)
 			setConsensusMetadataWithValues(
@@ -505,9 +517,11 @@ func makeRecoveryEpochContext(epoch, startSlot, endSlot uint64, seed byte) *Epoc
 		SlotsPerKesPeriod:     129600,
 		StakeDistribution: []*StakeDistributionEntry{
 			{
-				PoolId:     "pool-a",
-				Stake:      10_000,
-				VrfKeyHash: bytes.Repeat([]byte{seed + 1}, 32),
+				PoolId:                   "pool-a",
+				Stake:                    10_000,
+				VrfKeyHash:               bytes.Repeat([]byte{seed + 1}, 32),
+				RelativeStakeNumerator:   1,
+				RelativeStakeDenominator: 1,
 			},
 		},
 	}

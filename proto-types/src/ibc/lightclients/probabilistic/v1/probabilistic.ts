@@ -22,6 +22,12 @@ export interface StakeDistributionEntry {
   stake: bigint;
   vrf_key_hash: Uint8Array;
   first_registration_slot: bigint;
+  /**
+   * Exact relative active stake used for Praos leader eligibility. The
+   * existing stake field remains the weight used by settlement scoring.
+   */
+  relative_stake_numerator: bigint;
+  relative_stake_denominator: bigint;
 }
 /**
  * @name EpochContext
@@ -84,6 +90,11 @@ export interface ClientState {
    * snapshot and the light client's private rollback history.
    */
   operational_certificate_counter_history_start_height?: Height;
+  /**
+   * Shelley-genesis activeSlotsCoefficient, kept as an exact rational.
+   */
+  active_slot_coefficient_numerator: bigint;
+  active_slot_coefficient_denominator: bigint;
   /**
    * Maximum amount by which an authenticated Cardano block may be ahead of
    * the Cosmos host chain's current block time.
@@ -238,6 +249,8 @@ function createBaseStakeDistributionEntry(): StakeDistributionEntry {
     stake: BigInt(0),
     vrf_key_hash: new Uint8Array(),
     first_registration_slot: BigInt(0),
+    relative_stake_numerator: BigInt(0),
+    relative_stake_denominator: BigInt(0),
   };
 }
 /**
@@ -260,6 +273,12 @@ export const StakeDistributionEntry = {
     if (message.first_registration_slot !== BigInt(0)) {
       writer.uint32(32).uint64(message.first_registration_slot);
     }
+    if (message.relative_stake_numerator !== BigInt(0)) {
+      writer.uint32(40).uint64(message.relative_stake_numerator);
+    }
+    if (message.relative_stake_denominator !== BigInt(0)) {
+      writer.uint32(48).uint64(message.relative_stake_denominator);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): StakeDistributionEntry {
@@ -281,6 +300,12 @@ export const StakeDistributionEntry = {
         case 4:
           message.first_registration_slot = reader.uint64();
           break;
+        case 5:
+          message.relative_stake_numerator = reader.uint64();
+          break;
+        case 6:
+          message.relative_stake_denominator = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -295,6 +320,10 @@ export const StakeDistributionEntry = {
     if (isSet(object.vrf_key_hash)) obj.vrf_key_hash = bytesFromBase64(object.vrf_key_hash);
     if (isSet(object.first_registration_slot))
       obj.first_registration_slot = BigInt(object.first_registration_slot.toString());
+    if (isSet(object.relative_stake_numerator))
+      obj.relative_stake_numerator = BigInt(object.relative_stake_numerator.toString());
+    if (isSet(object.relative_stake_denominator))
+      obj.relative_stake_denominator = BigInt(object.relative_stake_denominator.toString());
     return obj;
   },
   toJSON(message: StakeDistributionEntry): unknown {
@@ -307,6 +336,10 @@ export const StakeDistributionEntry = {
       ));
     message.first_registration_slot !== undefined &&
       (obj.first_registration_slot = (message.first_registration_slot || BigInt(0)).toString());
+    message.relative_stake_numerator !== undefined &&
+      (obj.relative_stake_numerator = (message.relative_stake_numerator || BigInt(0)).toString());
+    message.relative_stake_denominator !== undefined &&
+      (obj.relative_stake_denominator = (message.relative_stake_denominator || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<StakeDistributionEntry>, I>>(object: I): StakeDistributionEntry {
@@ -318,6 +351,12 @@ export const StakeDistributionEntry = {
     message.vrf_key_hash = object.vrf_key_hash ?? new Uint8Array();
     if (object.first_registration_slot !== undefined && object.first_registration_slot !== null) {
       message.first_registration_slot = BigInt(object.first_registration_slot.toString());
+    }
+    if (object.relative_stake_numerator !== undefined && object.relative_stake_numerator !== null) {
+      message.relative_stake_numerator = BigInt(object.relative_stake_numerator.toString());
+    }
+    if (object.relative_stake_denominator !== undefined && object.relative_stake_denominator !== null) {
+      message.relative_stake_denominator = BigInt(object.relative_stake_denominator.toString());
     }
     return message;
   },
@@ -538,6 +577,8 @@ function createBaseClientState(): ClientState {
     max_kes_evolutions: BigInt(0),
     latest_checkpoint_operational_certificate_counters: [],
     operational_certificate_counter_history_start_height: undefined,
+    active_slot_coefficient_numerator: BigInt(0),
+    active_slot_coefficient_denominator: BigInt(0),
     max_clock_drift: Duration.fromPartial({}),
     latest_checkpoint_slot: BigInt(0),
     latest_checkpoint_timestamp: BigInt(0),
@@ -619,6 +660,12 @@ export const ClientState = {
         message.operational_certificate_counter_history_start_height,
         writer.uint32(194).fork(),
       ).ldelim();
+    }
+    if (message.active_slot_coefficient_numerator !== BigInt(0)) {
+      writer.uint32(200).uint64(message.active_slot_coefficient_numerator);
+    }
+    if (message.active_slot_coefficient_denominator !== BigInt(0)) {
+      writer.uint32(208).uint64(message.active_slot_coefficient_denominator);
     }
     if (message.max_clock_drift !== undefined) {
       Duration.encode(message.max_clock_drift, writer.uint32(218).fork()).ldelim();
@@ -709,6 +756,12 @@ export const ClientState = {
             reader.uint32(),
           );
           break;
+        case 25:
+          message.active_slot_coefficient_numerator = reader.uint64();
+          break;
+        case 26:
+          message.active_slot_coefficient_denominator = reader.uint64();
+          break;
         case 27:
           message.max_clock_drift = Duration.decode(reader, reader.uint32());
           break;
@@ -771,6 +824,10 @@ export const ClientState = {
       obj.operational_certificate_counter_history_start_height = Height.fromJSON(
         object.operational_certificate_counter_history_start_height,
       );
+    if (isSet(object.active_slot_coefficient_numerator))
+      obj.active_slot_coefficient_numerator = BigInt(object.active_slot_coefficient_numerator.toString());
+    if (isSet(object.active_slot_coefficient_denominator))
+      obj.active_slot_coefficient_denominator = BigInt(object.active_slot_coefficient_denominator.toString());
     if (isSet(object.max_clock_drift)) obj.max_clock_drift = Duration.fromJSON(object.max_clock_drift);
     if (isSet(object.latest_checkpoint_slot))
       obj.latest_checkpoint_slot = BigInt(object.latest_checkpoint_slot.toString());
@@ -855,6 +912,14 @@ export const ClientState = {
         message.operational_certificate_counter_history_start_height
           ? Height.toJSON(message.operational_certificate_counter_history_start_height)
           : undefined);
+    message.active_slot_coefficient_numerator !== undefined &&
+      (obj.active_slot_coefficient_numerator = (
+        message.active_slot_coefficient_numerator || BigInt(0)
+      ).toString());
+    message.active_slot_coefficient_denominator !== undefined &&
+      (obj.active_slot_coefficient_denominator = (
+        message.active_slot_coefficient_denominator || BigInt(0)
+      ).toString());
     message.max_clock_drift !== undefined &&
       (obj.max_clock_drift = message.max_clock_drift ? Duration.toJSON(message.max_clock_drift) : undefined);
     message.latest_checkpoint_slot !== undefined &&
@@ -923,6 +988,20 @@ export const ClientState = {
     ) {
       message.operational_certificate_counter_history_start_height = Height.fromPartial(
         object.operational_certificate_counter_history_start_height,
+      );
+    }
+    if (
+      object.active_slot_coefficient_numerator !== undefined &&
+      object.active_slot_coefficient_numerator !== null
+    ) {
+      message.active_slot_coefficient_numerator = BigInt(object.active_slot_coefficient_numerator.toString());
+    }
+    if (
+      object.active_slot_coefficient_denominator !== undefined &&
+      object.active_slot_coefficient_denominator !== null
+    ) {
+      message.active_slot_coefficient_denominator = BigInt(
+        object.active_slot_coefficient_denominator.toString(),
       );
     }
     if (object.max_clock_drift !== undefined && object.max_clock_drift !== null) {

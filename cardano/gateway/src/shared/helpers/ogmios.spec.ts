@@ -55,6 +55,7 @@ jest.mock('ws', () => {
 import {
   parseOperationalCertificateCounters,
   parseShelleyGenesisConfig,
+  parseStakeDistributionRows,
   queryOperationalCertificateCountersAtPoint,
 } from './ogmios';
 
@@ -70,13 +71,60 @@ describe('Ogmios stability verification parsing', () => {
     expect(
       parseShelleyGenesisConfig({
         era: 'shelley',
+        activeSlotsCoefficient: '1/20',
         slotsPerKesPeriod: 129600,
         maxKesEvolutions: 62,
       }),
     ).toEqual({
       slotsPerKesPeriod: 129600,
       maxKesEvolutions: 62,
+      activeSlotCoefficientNumerator: 1n,
+      activeSlotCoefficientDenominator: 20n,
     });
+  });
+
+  it('keeps exact relative stake separately from the rounded scoring weight', () => {
+    const [entry] = parseStakeDistributionRows(
+      {},
+      {
+        pool1issuer: {
+          stake: '4178103721131/5019556879197493',
+          vrf: 'a7'.repeat(32),
+        },
+      },
+    );
+
+    expect(entry.relativeStakeNumerator).toBe(4_178_103_721_131n);
+    expect(entry.relativeStakeDenominator).toBe(5_019_556_879_197_493n);
+    expect(entry.stake).toBe(832_365_052n);
+  });
+
+  it.each(['0/20', '21/20', '0.05', '1/0', '18446744073709551616/18446744073709551616'])(
+    'rejects invalid active-slot coefficient %s',
+    (activeSlotsCoefficient) => {
+      expect(() =>
+        parseShelleyGenesisConfig({
+          era: 'shelley',
+          activeSlotsCoefficient,
+          slotsPerKesPeriod: 129600,
+          maxKesEvolutions: 62,
+        }),
+      ).toThrow('invalid activeSlotsCoefficient');
+    },
+  );
+
+  it('rejects a relative-stake fraction outside protobuf uint64 bounds', () => {
+    expect(() =>
+      parseStakeDistributionRows(
+        {},
+        {
+          pool1issuer: {
+            stake: '1/18446744073709551616',
+            vrf: 'a7'.repeat(32),
+          },
+        },
+      ),
+    ).toThrow('invalid live stake fraction');
   });
 
   it.each([

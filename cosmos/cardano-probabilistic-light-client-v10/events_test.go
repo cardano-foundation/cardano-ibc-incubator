@@ -87,17 +87,19 @@ func TestLightClientModuleRecoverClientUsesPrefixedClientStores(t *testing.T) {
 
 	subject := newProbabilisticTestClientState()
 	subject.FrozenHeight = NewHeight(0, 5)
-	subject.setLatestCheckpoint(subject.LatestHeight, "subject-hash-10", subject.CurrentEpoch)
+	setTestCheckpoint(t, subject, subject.LatestHeight, "subject-hash-10", subject.CurrentEpoch, 10)
 	setClientState(subjectStore, cdc, subject)
 
 	substitute := newProbabilisticTestClientState()
 	substitute.LatestHeight = NewHeight(0, 20)
-	substitute.setLatestCheckpoint(substitute.LatestHeight, "substitute-hash-20", substitute.CurrentEpoch)
+	setTestCheckpoint(t, substitute, substitute.LatestHeight, "substitute-hash-20", substitute.CurrentEpoch, 20)
 	setClientState(substituteStore, cdc, substitute)
+	consensusState := newProbabilisticTestConsensusState("substitute-hash-20")
+	consensusState.Timestamp = substitute.LatestCheckpointTimestamp
 	setConsensusState(
 		substituteStore,
 		cdc,
-		newProbabilisticTestConsensusState("substitute-hash-20"),
+		consensusState,
 		substitute.LatestHeight,
 	)
 	setConsensusMetadataWithValues(

@@ -136,6 +136,15 @@ func (cs ClientState) Validate() error {
 			maxSupportedKesEvolutions,
 		)
 	}
+	if cs.ActiveSlotCoefficientNumerator == 0 {
+		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "active_slot_coefficient_numerator must be greater than zero")
+	}
+	if cs.ActiveSlotCoefficientDenominator == 0 {
+		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "active_slot_coefficient_denominator must be greater than zero")
+	}
+	if cs.ActiveSlotCoefficientNumerator > cs.ActiveSlotCoefficientDenominator {
+		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "active slot coefficient must not exceed one")
+	}
 	if err := cs.validateCheckpointFields(); err != nil {
 		return err
 	}
@@ -155,15 +164,17 @@ func (cs ClientState) Validate() error {
 
 func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	return &ClientState{
-		ChainId:               cs.ChainId,
-		LatestHeight:          cs.LatestHeight,
-		UpgradePath:           append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:  append([]byte(nil), cs.HostStateNftPolicyId...),
-		HostStateNftTokenName: append([]byte(nil), cs.HostStateNftTokenName...),
-		SystemStartUnixNs:     cs.SystemStartUnixNs,
-		SlotLengthNs:          cs.SlotLengthNs,
-		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
-		MaxKesEvolutions:      cs.MaxKesEvolutions,
+		ChainId:                          cs.ChainId,
+		LatestHeight:                     cs.LatestHeight,
+		UpgradePath:                      append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:             append([]byte(nil), cs.HostStateNftPolicyId...),
+		HostStateNftTokenName:            append([]byte(nil), cs.HostStateNftTokenName...),
+		SystemStartUnixNs:                cs.SystemStartUnixNs,
+		SlotLengthNs:                     cs.SlotLengthNs,
+		SlotsPerKesPeriod:                cs.SlotsPerKesPeriod,
+		MaxKesEvolutions:                 cs.MaxKesEvolutions,
+		ActiveSlotCoefficientNumerator:   cs.ActiveSlotCoefficientNumerator,
+		ActiveSlotCoefficientDenominator: cs.ActiveSlotCoefficientDenominator,
 	}
 }
 

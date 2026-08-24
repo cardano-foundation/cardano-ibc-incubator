@@ -142,16 +142,20 @@ func TestStakeAggregationRejectsTotalOverflowBeforeItCanFailOpen(t *testing.T) {
 		EpochEndSlotExclusive: 2,
 		StakeDistribution: []*StakeDistributionEntry{
 			{
-				PoolId:                "pool-max",
-				Stake:                 maxStakeUint64,
-				VrfKeyHash:            make([]byte, 32),
-				FirstRegistrationSlot: 1,
+				PoolId:                   "pool-max",
+				Stake:                    maxStakeUint64,
+				VrfKeyHash:               make([]byte, 32),
+				FirstRegistrationSlot:    1,
+				RelativeStakeNumerator:   1,
+				RelativeStakeDenominator: 2,
 			},
 			{
-				PoolId:                "pool-overflow",
-				Stake:                 2,
-				VrfKeyHash:            make([]byte, 32),
-				FirstRegistrationSlot: 1,
+				PoolId:                   "pool-overflow",
+				Stake:                    2,
+				VrfKeyHash:               make([]byte, 32),
+				FirstRegistrationSlot:    1,
+				RelativeStakeNumerator:   1,
+				RelativeStakeDenominator: 2,
 			},
 		},
 	}

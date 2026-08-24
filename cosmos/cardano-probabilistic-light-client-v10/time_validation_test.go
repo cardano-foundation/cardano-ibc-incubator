@@ -498,10 +498,12 @@ func newTemporalVerifierEpochContext(epoch, startSlot, endSlot uint64, seed byte
 	stakeDistribution := make([]*StakeDistributionEntry, 0, DefaultThresholdUniquePools)
 	for index := uint64(0); index < DefaultThresholdUniquePools; index++ {
 		stakeDistribution = append(stakeDistribution, &StakeDistributionEntry{
-			PoolId:                fmt.Sprintf("pool-%c", 'a'+rune(index)),
-			Stake:                 1_000,
-			VrfKeyHash:            bytes.Repeat([]byte{seed + byte(index) + 1}, 32),
-			FirstRegistrationSlot: 1,
+			PoolId:                   fmt.Sprintf("pool-%c", 'a'+rune(index)),
+			Stake:                    1_000,
+			VrfKeyHash:               bytes.Repeat([]byte{seed + byte(index) + 1}, 32),
+			FirstRegistrationSlot:    1,
+			RelativeStakeNumerator:   1,
+			RelativeStakeDenominator: DefaultThresholdUniquePools,
 		})
 	}
 	return &EpochContext{

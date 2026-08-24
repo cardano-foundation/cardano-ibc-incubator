@@ -2,6 +2,7 @@ package probabilistic
 
 import (
 	"bytes"
+	"math/big"
 	"slices"
 	"strings"
 
@@ -30,10 +31,12 @@ func cloneEpochContext(ctx *EpochContext) *EpochContext {
 				continue
 			}
 			cloned.StakeDistribution = append(cloned.StakeDistribution, &StakeDistributionEntry{
-				PoolId:                entry.PoolId,
-				Stake:                 entry.Stake,
-				VrfKeyHash:            bytes.Clone(entry.VrfKeyHash),
-				FirstRegistrationSlot: entry.FirstRegistrationSlot,
+				PoolId:                   entry.PoolId,
+				Stake:                    entry.Stake,
+				VrfKeyHash:               bytes.Clone(entry.VrfKeyHash),
+				FirstRegistrationSlot:    entry.FirstRegistrationSlot,
+				RelativeStakeNumerator:   entry.RelativeStakeNumerator,
+				RelativeStakeDenominator: entry.RelativeStakeDenominator,
 			})
 		}
 	}
@@ -58,10 +61,12 @@ func cloneStakeDistributionEntries(entries []*StakeDistributionEntry) []*StakeDi
 			continue
 		}
 		cloned = append(cloned, &StakeDistributionEntry{
-			PoolId:                entry.PoolId,
-			Stake:                 entry.Stake,
-			VrfKeyHash:            bytes.Clone(entry.VrfKeyHash),
-			FirstRegistrationSlot: entry.FirstRegistrationSlot,
+			PoolId:                   entry.PoolId,
+			Stake:                    entry.Stake,
+			VrfKeyHash:               bytes.Clone(entry.VrfKeyHash),
+			FirstRegistrationSlot:    entry.FirstRegistrationSlot,
+			RelativeStakeNumerator:   entry.RelativeStakeNumerator,
+			RelativeStakeDenominator: entry.RelativeStakeDenominator,
 		})
 	}
 	return cloned
@@ -85,6 +90,7 @@ func validateEpochContext(ctx *EpochContext) error {
 	}
 
 	totalStake := uint64(0)
+	totalRelativeStake := new(big.Rat)
 	seenPools := make(map[string]struct{}, len(ctx.StakeDistribution))
 	for _, entry := range ctx.StakeDistribution {
 		if entry == nil {
@@ -96,6 +102,15 @@ func validateEpochContext(ctx *EpochContext) error {
 		if len(entry.VrfKeyHash) != 32 {
 			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d vrf_key_hash for pool %s must be 32 bytes", ctx.Epoch, entry.PoolId)
 		}
+		if entry.RelativeStakeNumerator == 0 {
+			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d relative stake numerator for pool %s must be greater than zero", ctx.Epoch, entry.PoolId)
+		}
+		if entry.RelativeStakeDenominator == 0 {
+			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d relative stake denominator for pool %s must be greater than zero", ctx.Epoch, entry.PoolId)
+		}
+		if entry.RelativeStakeNumerator > entry.RelativeStakeDenominator {
+			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d relative stake for pool %s must not exceed one", ctx.Epoch, entry.PoolId)
+		}
 		poolKey := strings.ToLower(entry.PoolId)
 		if _, exists := seenPools[poolKey]; exists {
 			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "duplicate epoch %d stake distribution pool id %s", ctx.Epoch, entry.PoolId)
@@ -105,9 +120,16 @@ func validateEpochContext(ctx *EpochContext) error {
 			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution total overflows uint64", ctx.Epoch)
 		}
 		totalStake += entry.Stake
+		totalRelativeStake.Add(totalRelativeStake, new(big.Rat).SetFrac(
+			new(big.Int).SetUint64(entry.RelativeStakeNumerator),
+			new(big.Int).SetUint64(entry.RelativeStakeDenominator),
+		))
 	}
 	if totalStake == 0 {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must have positive total stake", ctx.Epoch)
+	}
+	if totalRelativeStake.Cmp(big.NewRat(1, 1)) != 0 {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d relative stake fractions must sum to one", ctx.Epoch)
 	}
 
 	return nil
@@ -244,6 +266,8 @@ func epochContextsEqual(left, right *EpochContext) bool {
 		if rightEntry == nil ||
 			leftEntry.Stake != rightEntry.Stake ||
 			leftEntry.FirstRegistrationSlot != rightEntry.FirstRegistrationSlot ||
+			leftEntry.RelativeStakeNumerator != rightEntry.RelativeStakeNumerator ||
+			leftEntry.RelativeStakeDenominator != rightEntry.RelativeStakeDenominator ||
 			!bytes.Equal(leftEntry.VrfKeyHash, rightEntry.VrfKeyHash) {
 			return false
 		}

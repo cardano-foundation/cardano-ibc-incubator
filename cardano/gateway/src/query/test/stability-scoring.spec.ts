@@ -52,18 +52,24 @@ describe('stability-scoring', () => {
       {
         poolId: 'pool-a',
         stake: 500n,
+        relativeStakeNumerator: 500n,
+        relativeStakeDenominator: 1000n,
         vrfKeyHash: 'aa'.repeat(32),
         firstRegistrationSlot: 1n,
       },
       {
         poolId: 'pool-b',
         stake: 300n,
+        relativeStakeNumerator: 300n,
+        relativeStakeDenominator: 1000n,
         vrfKeyHash: 'bb'.repeat(32),
         firstRegistrationSlot: 1n,
       },
       {
         poolId: 'pool-c',
         stake: 200n,
+        relativeStakeNumerator: 200n,
+        relativeStakeDenominator: 1000n,
         vrfKeyHash: 'cc'.repeat(32),
         firstRegistrationSlot: 1n,
       },
@@ -95,18 +101,24 @@ describe('stability-scoring', () => {
       {
         poolId: 'pool-a',
         stake: 400n,
+        relativeStakeNumerator: 400n,
+        relativeStakeDenominator: 1000n,
         vrfKeyHash: 'aa'.repeat(32),
         firstRegistrationSlot: 1n,
       },
       {
         poolId: 'pool-b',
         stake: 200n,
+        relativeStakeNumerator: 200n,
+        relativeStakeDenominator: 1000n,
         vrfKeyHash: 'bb'.repeat(32),
         firstRegistrationSlot: 1n,
       },
       {
         poolId: 'pool-c',
         stake: 400n,
+        relativeStakeNumerator: 400n,
+        relativeStakeDenominator: 1000n,
         vrfKeyHash: 'cc'.repeat(32),
         firstRegistrationSlot: 1n,
       },
@@ -139,18 +151,24 @@ describe('stability-scoring', () => {
       {
         poolId: 'pool-a',
         stake: 2n,
+        relativeStakeNumerator: 2n,
+        relativeStakeDenominator: 6n,
         vrfKeyHash: 'aa'.repeat(32),
         firstRegistrationSlot: 1n,
       },
       {
         poolId: 'pool-b',
         stake: 2n,
+        relativeStakeNumerator: 2n,
+        relativeStakeDenominator: 6n,
         vrfKeyHash: 'bb'.repeat(32),
         firstRegistrationSlot: 1n,
       },
       {
         poolId: 'pool-c',
         stake: 2n,
+        relativeStakeNumerator: 2n,
+        relativeStakeDenominator: 6n,
         vrfKeyHash: 'cc'.repeat(32),
         firstRegistrationSlot: 1n,
       },
@@ -195,12 +213,16 @@ describe('stability-scoring', () => {
       {
         poolId: 'pool-a',
         stake: 500n,
+        relativeStakeNumerator: 500n,
+        relativeStakeDenominator: 1000n,
         vrfKeyHash: 'aa'.repeat(32),
         firstRegistrationSlot: 1n,
       },
       {
         poolId: 'pool-b',
         stake: 500n,
+        relativeStakeNumerator: 500n,
+        relativeStakeDenominator: 1000n,
         vrfKeyHash: 'bb'.repeat(32),
         firstRegistrationSlot: poolRegistrationCutoffSlot,
       },
@@ -223,7 +245,13 @@ describe('stability-scoring', () => {
 
     const descendants = [makeBlock(601, 'anchor', 'pool-a')];
     const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
-      { poolId: 'pool-a', stake: 1000n, vrfKeyHash: 'aa'.repeat(32) },
+      {
+        poolId: 'pool-a',
+        stake: 1000n,
+        relativeStakeNumerator: 1n,
+        relativeStakeDenominator: 1n,
+        vrfKeyHash: 'aa'.repeat(32),
+      },
     ];
 
     expect(() =>
