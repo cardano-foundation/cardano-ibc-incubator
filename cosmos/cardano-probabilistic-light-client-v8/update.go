@@ -3,6 +3,7 @@ package probabilistic
 import (
 	"fmt"
 	"math"
+	"math/bits"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -384,7 +385,15 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 			continue
 		}
 		stakeByPool[strings.ToLower(entry.PoolId)] = entry
-		totalActiveStake += entry.Stake
+		nextTotalActiveStake, ok := checkedAddStake(totalActiveStake, entry.Stake)
+		if !ok {
+			return 0, 0, 0, errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"epoch %d stake distribution total overflows uint64",
+				epochContext.Epoch,
+			)
+		}
+		totalActiveStake = nextTotalActiveStake
 	}
 	if totalActiveStake == 0 {
 		return 0, 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must have positive total stake", epochContext.Epoch)
@@ -432,7 +441,14 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 				}
 				if eligible {
 					qualifiedUniquePools++
-					qualifiedUniqueStake += entry.Stake
+					nextQualifiedUniqueStake, ok := checkedAddStake(qualifiedUniqueStake, entry.Stake)
+					if !ok {
+						return 0, 0, 0, errorsmod.Wrap(
+							ErrInvalidUniqueStake,
+							"qualified unique stake total overflows uint64",
+						)
+					}
+					qualifiedUniqueStake = nextQualifiedUniqueStake
 				}
 			}
 		}
@@ -441,11 +457,15 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		prevHeight = block.height
 	}
 
-	qualifiedUniqueStakeBps := uint64(0)
-	qualifiedUniqueStakeBps = min((qualifiedUniqueStake*10_000)/totalActiveStake, 10_000)
+	qualifiedUniqueStakeBps := minBps(qualifiedUniqueStake, totalActiveStake)
 
 	score := cs.computeSecurityScore(uint64(len(header.descendantBlocks)), qualifiedUniquePools, qualifiedUniqueStakeBps)
 	return qualifiedUniquePools, qualifiedUniqueStakeBps, score, nil
+}
+
+func checkedAddStake(current, addition uint64) (uint64, bool) {
+	sum, carry := bits.Add64(current, addition, 0)
+	return sum, carry == 0
 }
 
 func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
@@ -502,7 +522,12 @@ func minBps(value, target uint64) uint64 {
 	if value >= target {
 		return 10_000
 	}
-	return (value * 10_000) / target
+
+	// value is below target, so the quotient is below 10,000 and fits in
+	// uint64. Div64 therefore receives a high word smaller than its divisor.
+	high, low := bits.Mul64(value, 10_000)
+	quotient, _ := bits.Div64(high, low, target)
+	return quotient
 }
 
 func min(a, b uint64) uint64 {
