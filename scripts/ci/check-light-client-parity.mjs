@@ -32,6 +32,7 @@ const sharedSourceFiles = [
   "keys.go",
   "misbehaviour_handle.go",
   "misbehavour.go",
+  "payload_size_test.go",
   "probabilistic.pb.go",
   "proposal_handle.go",
   "proposal_handle_test.go",

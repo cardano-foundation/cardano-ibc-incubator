@@ -26,6 +26,7 @@ import {
   ClientState as ClientStateProbabilistic,
   ConsensusState as ConsensusStateProbabilistic,
   EpochContext as ProbabilisticEpochContext,
+  OperationalCertificateCounter,
   ProbabilisticBlock,
   ProbabilisticHeader,
   StakeDistributionEntry,
@@ -105,6 +106,7 @@ import { validQueryClientStateParam, validQueryConsensusStateParam } from '../he
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { getNanoseconds } from '../../shared/helpers/time';
+import { operationalCertificatePoolIdBytes } from '../../shared/helpers/ogmios';
 import { doubleToFraction } from '../../shared/helpers/number';
 import {
   normalizeMithrilStakeDistribution,
@@ -489,6 +491,10 @@ export class QueryService {
       throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
     }
 
+    const operationalCertificateCounters = this.toStabilityOperationalCertificateCounters(
+      await this.historyService.findOperationalCertificateCountersAtBlock(stabilityEvidence.anchorBlock),
+    );
+
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const hostStateRootBytes = Buffer.from(hostStateDatum.state.ibc_state_root, 'hex');
     const stabilitySlotTiming = this.getStabilitySlotTiming(stabilityEvidence.anchorBlock);
@@ -532,6 +538,12 @@ export class QueryService {
       },
       latest_checkpoint_block_hash: stabilityEvidence.anchorBlock.hash,
       latest_checkpoint_epoch: BigInt(stabilityEvidence.anchorEpoch),
+      max_kes_evolutions: BigInt(stabilityEvidence.epochVerificationContext.maxKesEvolutions),
+      latest_checkpoint_operational_certificate_counters: operationalCertificateCounters,
+      operational_certificate_counter_history_start_height: {
+        revision_number: 0n,
+        revision_height: BigInt(stabilityEvidence.anchorHeight),
+      },
     };
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
@@ -1157,7 +1169,11 @@ export class QueryService {
             }
 
             const recvPacket = spendRedeemer['RecvPacket']?.packet as Packet | undefined;
-            if (recvPacket && !hasWriteAckEvent && channelDatumDecoded.state.packet_acknowledgement.has(recvPacket.sequence)) {
+            if (
+              recvPacket &&
+              !hasWriteAckEvent &&
+              channelDatumDecoded.state.packet_acknowledgement.has(recvPacket.sequence)
+            ) {
               const writeAckTxsResult = normalizeTxsResultFromRecvPacketSuccessAcknowledgement(
                 spendRedeemer,
                 channelDatumDecoded,
@@ -1836,10 +1852,7 @@ export class QueryService {
     }
     const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(BigInt(trustedHeight), BigInt(height));
 
-    const stabilityHeader = await this.buildBoundedStabilityHeader(
-      effectiveTrustedHeight,
-      BigInt(height),
-    );
+    const stabilityHeader = await this.buildBoundedStabilityHeader(effectiveTrustedHeight, BigInt(height));
 
     return {
       header: {
@@ -1943,6 +1956,18 @@ export class QueryService {
     const blockWitnessByHeight = new Map<number, Buffer>(
       requestedBlocks.map((block, index) => [block.height, blockWitnesses[index]]),
     );
+    const headerWitnessBlocks = isCheckpoint
+      ? requestedBlocks
+      : [...stabilityEvidence.bridgeBlocks, ...stabilityEvidence.descendantBlocks];
+    const headerWitnessByHeight = new Map<number, Buffer>(
+      headerWitnessBlocks.map((block) => {
+        const blockCbor = blockWitnessByHeight.get(block.height);
+        if (!blockCbor) {
+          throw new GrpcInternalException(`Missing Cardano block witness at height ${block.height}`);
+        }
+        return [block.height, this.miniProtocalsService.extractBlockHeaderCbor(blockCbor, block.hash)];
+      }),
+    );
 
     const newEpochContext =
       stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
@@ -1960,13 +1985,14 @@ export class QueryService {
       },
       anchor_block: this.toStabilityBlock(
         stabilityEvidence.anchorBlock,
-        blockWitnessByHeight.get(stabilityEvidence.anchorBlock.height),
+        isCheckpoint ? undefined : blockWitnessByHeight.get(stabilityEvidence.anchorBlock.height),
+        isCheckpoint ? headerWitnessByHeight.get(stabilityEvidence.anchorBlock.height) : undefined,
       ),
       bridge_blocks: stabilityEvidence.bridgeBlocks.map((block) =>
-        this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
+        this.toStabilityBlock(block, undefined, headerWitnessByHeight.get(block.height)),
       ),
       descendant_blocks: stabilityEvidence.descendantBlocks.map((block) =>
-        this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
+        this.toStabilityBlock(block, undefined, headerWitnessByHeight.get(block.height)),
       ),
       host_state_tx_hash: hostStateUtxo?.txHash ?? '',
       host_state_tx_output_index: hostStateUtxo?.outputIndex ?? 0,
@@ -2127,6 +2153,7 @@ export class QueryService {
     verificationContext: {
       epochNonce: string;
       slotsPerKesPeriod: number;
+      maxKesEvolutions: number;
       currentEpochStartSlot: bigint;
       currentEpochEndSlotExclusive: bigint;
     },
@@ -2148,7 +2175,31 @@ export class QueryService {
     };
   }
 
-  private toStabilityBlock(block: HistoryBlock, blockCbor?: Buffer): ProbabilisticBlock {
+  private toStabilityOperationalCertificateCounters(counters: Map<string, bigint>): OperationalCertificateCounter[] {
+    if (!(counters instanceof Map)) {
+      throw new GrpcInternalException(
+        'IBC infrastructure error: operational certificate counter snapshot is unavailable',
+      );
+    }
+
+    return [...counters.entries()]
+      .filter(([, sequenceNumber]) => sequenceNumber !== 0n)
+      .map(([poolId, sequenceNumber]) => ({
+        poolId,
+        poolIdBytes: operationalCertificatePoolIdBytes(poolId),
+        sequenceNumber,
+      }))
+      .sort((left, right) => Buffer.compare(left.poolIdBytes, right.poolIdBytes))
+      .map(({ poolId, poolIdBytes, sequenceNumber }) => ({
+        pool_id: poolIdBytes,
+        sequence_number: this.toProtoUint64(
+          sequenceNumber,
+          `operational_certificate_counters[${poolId}].sequence_number`,
+        ),
+      }));
+  }
+
+  private toStabilityBlock(block: HistoryBlock, blockCbor?: Buffer, headerCbor?: Buffer): ProbabilisticBlock {
     return {
       height: {
         revision_number: 0n,
@@ -2158,7 +2209,8 @@ export class QueryService {
       hash: block.hash,
       epoch: BigInt(block.epochNo),
       timestamp: block.timestampUnixNs,
-      block_cbor: blockCbor,
+      block_cbor: blockCbor ?? new Uint8Array(),
+      header_cbor: headerCbor ?? new Uint8Array(),
     };
   }
 

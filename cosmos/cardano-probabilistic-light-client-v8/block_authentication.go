@@ -2,6 +2,7 @@ package probabilistic
 
 import (
 	"bytes"
+	"encoding/hex"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -12,19 +13,22 @@ import (
 )
 
 type authenticatedProbabilisticBlock struct {
-	height     uint64
-	slot       uint64
-	hash       string
-	prevHash   string
-	epoch      uint64
-	timestamp  uint64
-	slotLeader string
+	height                               uint64
+	slot                                 uint64
+	hash                                 string
+	prevHash                             string
+	bodyHash                             string
+	epoch                                uint64
+	timestamp                            uint64
+	slotLeader                           string
+	operationalCertificateSequenceNumber uint64
 }
 
 type authenticatedProbabilisticHeader struct {
-	anchorBlock      *authenticatedProbabilisticBlock
-	bridgeBlocks     []*authenticatedProbabilisticBlock
-	descendantBlocks []*authenticatedProbabilisticBlock
+	anchorBlock                          *authenticatedProbabilisticBlock
+	bridgeBlocks                         []*authenticatedProbabilisticBlock
+	descendantBlocks                     []*authenticatedProbabilisticBlock
+	anchorOperationalCertificateCounters []*OperationalCertificateCounter
 }
 
 func (cs *ClientState) authenticateHeaderBlocks(header *ProbabilisticHeader) (*authenticatedProbabilisticHeader, error) {
@@ -36,31 +40,53 @@ func (cs *ClientState) authenticateHeaderBlocks(header *ProbabilisticHeader) (*a
 	if err != nil {
 		return nil, err
 	}
-	return cs.authenticateHeaderBlocksWithContexts(header, epochContexts)
+	trustedCounters, err := operationalCertificateCounterMap(cs.LatestCheckpointOperationalCertificateCounters)
+	if err != nil {
+		return nil, err
+	}
+	return cs.authenticateHeaderBlocksWithContexts(header, epochContexts, trustedCounters)
 }
 
-func (cs *ClientState) authenticateHeaderBlocksWithContexts(header *ProbabilisticHeader, epochContexts []*EpochContext) (*authenticatedProbabilisticHeader, error) {
+func (cs *ClientState) authenticateHeaderBlocksWithContexts(
+	header *ProbabilisticHeader,
+	epochContexts []*EpochContext,
+	trustedCounters map[string]uint64,
+) (*authenticatedProbabilisticHeader, error) {
 	if header == nil {
 		return nil, errorsmod.Wrap(ErrInvalidHeader, "probabilistic header missing")
 	}
-
-	anchorBlock, err := cs.authenticateProbabilisticBlock(header.AnchorBlock, "anchor", epochContexts)
-	if err != nil {
+	if err := cs.validateEpochContextParameters(epochContexts); err != nil {
 		return nil, err
+	}
+	counters := make(map[string]uint64, len(trustedCounters))
+	for poolID, sequenceNumber := range trustedCounters {
+		counters[strings.ToLower(poolID)] = sequenceNumber
 	}
 
 	bridgeBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.BridgeBlocks))
 	for _, block := range header.BridgeBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts)
+		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts, counters, false)
 		if authErr != nil {
 			return nil, authErr
 		}
 		bridgeBlocks = append(bridgeBlocks, authenticatedBlock)
 	}
 
+	anchorBlock, err := cs.authenticateProbabilisticBlock(
+		header.AnchorBlock,
+		"anchor",
+		epochContexts,
+		counters,
+		!header.IsCheckpoint,
+	)
+	if err != nil {
+		return nil, err
+	}
+	anchorCounters := operationalCertificateCountersFromMap(counters)
+
 	descendantBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.DescendantBlocks))
 	for _, block := range header.DescendantBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "descendant", epochContexts)
+		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "descendant", epochContexts, counters, false)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -74,57 +100,98 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(header *Probabilisti
 	}
 
 	return &authenticatedProbabilisticHeader{
-		anchorBlock:      anchorBlock,
-		bridgeBlocks:     bridgeBlocks,
-		descendantBlocks: descendantBlocks,
+		anchorBlock:                          anchorBlock,
+		bridgeBlocks:                         bridgeBlocks,
+		descendantBlocks:                     descendantBlocks,
+		anchorOperationalCertificateCounters: anchorCounters,
 	}, nil
 }
 
-func (cs *ClientState) authenticateProbabilisticBlock(block *ProbabilisticBlock, label string, epochContexts []*EpochContext) (*authenticatedProbabilisticBlock, error) {
+func (cs *ClientState) authenticateProbabilisticBlock(
+	block *ProbabilisticBlock,
+	label string,
+	epochContexts []*EpochContext,
+	operationalCertificateCounters map[string]uint64,
+	requireFullBlock bool,
+) (*authenticatedProbabilisticBlock, error) {
 	if block == nil || block.Height == nil {
 		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing height", label)
 	}
-	if len(block.BlockCbor) == 0 {
-		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing block_cbor", label)
+	hasFullBlock := len(block.BlockCbor) > 0
+	hasHeader := len(block.HeaderCbor) > 0
+	if hasFullBlock && hasHeader {
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block cannot contain both block_cbor and header_cbor", label)
+	}
+	if requireFullBlock && !hasFullBlock {
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block requires full block_cbor", label)
+	}
+	if !hasFullBlock && !hasHeader {
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing block_cbor or header_cbor", label)
 	}
 
-	decodedBlock, err := decodeLedgerBlock(block.BlockCbor)
-	if err != nil {
-		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to decode %s block: %v", label, err)
+	var decodedBlock ledger.Block
+	var decodedHeader ledger.BlockHeader
+	var rawHeader *ledger.BabbageBlockHeader
+	if hasFullBlock {
+		var err error
+		decodedBlock, err = decodeLedgerBlock(block.BlockCbor)
+		if err != nil {
+			return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to decode %s block: %v", label, err)
+		}
+		decodedHeader = decodedBlock
+	} else {
+		var err error
+		rawHeader, err = probabilisticcore.DecodeLedgerHeader(block.HeaderCbor)
+		if err != nil {
+			return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to decode %s header: %v", label, err)
+		}
+		decodedHeader = rawHeader
 	}
 
-	if !strings.EqualFold(decodedBlock.Hash(), block.Hash) {
+	if !strings.EqualFold(decodedHeader.Hash(), block.Hash) {
 		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block hash mismatch: got %s expected %s",
 			label,
 			block.Hash,
-			decodedBlock.Hash(),
+			decodedHeader.Hash(),
 		)
 	}
-	decodedPrevHash, err := blockPrevHash(decodedBlock)
-	if err != nil {
-		return nil, err
+	var decodedPrevHash string
+	var decodedBodyHash string
+	if decodedBlock != nil {
+		var err error
+		decodedPrevHash, err = blockPrevHash(decodedBlock)
+		if err != nil {
+			return nil, err
+		}
+		decodedBodyHash, err = probabilisticcore.BlockBodyHash(decodedBlock)
+		if err != nil {
+			return nil, errorsmod.Wrap(ErrInvalidAcceptedBlock, err.Error())
+		}
+	} else {
+		decodedPrevHash = probabilisticcore.HeaderPrevHash(rawHeader)
+		decodedBodyHash = probabilisticcore.HeaderBodyHash(rawHeader)
 	}
-	if decodedBlock.BlockNumber() != block.Height.RevisionHeight {
+	if decodedHeader.BlockNumber() != block.Height.RevisionHeight {
 		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block height mismatch: got %d expected %d",
 			label,
 			block.Height.RevisionHeight,
-			decodedBlock.BlockNumber(),
+			decodedHeader.BlockNumber(),
 		)
 	}
-	if decodedBlock.SlotNumber() != block.Slot {
+	if decodedHeader.SlotNumber() != block.Slot {
 		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block slot mismatch: got %d expected %d",
 			label,
 			block.Slot,
-			decodedBlock.SlotNumber(),
+			decodedHeader.SlotNumber(),
 		)
 	}
-	expectedTimestamp, err := cs.DeriveTimestampFromSlot(block.Slot)
+	expectedTimestamp, err := cs.DeriveTimestampFromSlot(decodedHeader.SlotNumber())
 	if err != nil {
 		return nil, err
 	}
@@ -137,13 +204,13 @@ func (cs *ClientState) authenticateProbabilisticBlock(block *ProbabilisticBlock,
 			expectedTimestamp,
 		)
 	}
-	epochContext := epochContextForSlot(epochContexts, decodedBlock.SlotNumber())
+	epochContext := epochContextForSlot(epochContexts, decodedHeader.SlotNumber())
 	if epochContext == nil {
 		return nil, errorsmod.Wrapf(
 			ErrInvalidCurrentEpoch,
 			"%s block slot %d outside available epoch context bounds",
 			label,
-			decodedBlock.SlotNumber(),
+			decodedHeader.SlotNumber(),
 		)
 	}
 	if block.Epoch != epochContext.Epoch {
@@ -155,18 +222,24 @@ func (cs *ClientState) authenticateProbabilisticBlock(block *ProbabilisticBlock,
 			epochContext.Epoch,
 		)
 	}
-	if err := verifySlotWithinEpochContext(decodedBlock.SlotNumber(), epochContext, label); err != nil {
+	if err := verifySlotWithinEpochContext(decodedHeader.SlotNumber(), epochContext, label); err != nil {
 		return nil, err
 	}
 
-	decodedPoolID, decodedVrfKeyHash, err := cs.verifyNativeProbabilisticBlock(decodedBlock, label, epochContext)
-	if err != nil {
-		return nil, err
-	}
-
+	decodedPoolID := decodedHeader.IssuerVkey().PoolId()
 	stakeEntry, err := findStakeDistributionEntryInContext(epochContext, decodedPoolID)
 	if err != nil {
 		return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block issuer %s is not trusted for epoch %d", label, decodedPoolID, epochContext.Epoch)
+	}
+	var decodedVrfKeyHash []byte
+	var sequenceNumber uint64
+	if decodedBlock != nil {
+		decodedVrfKeyHash, sequenceNumber, err = cs.verifyNativeProbabilisticBlock(decodedBlock, label, epochContext)
+	} else {
+		decodedVrfKeyHash, sequenceNumber, err = cs.verifyNativeProbabilisticHeader(rawHeader, label, epochContext)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if !bytes.Equal(stakeEntry.VrfKeyHash, decodedVrfKeyHash) {
 		return nil, errorsmod.Wrapf(
@@ -176,43 +249,104 @@ func (cs *ClientState) authenticateProbabilisticBlock(block *ProbabilisticBlock,
 			decodedPoolID,
 		)
 	}
+	if err := advanceOperationalCertificateCounter(
+		operationalCertificateCounters,
+		decodedHeader.IssuerVkey().Hash().Bytes(),
+		sequenceNumber,
+	); err != nil {
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block: %v", label, err)
+	}
 
 	return &authenticatedProbabilisticBlock{
-		height:     decodedBlock.BlockNumber(),
-		slot:       decodedBlock.SlotNumber(),
-		hash:       decodedBlock.Hash(),
-		prevHash:   decodedPrevHash,
-		epoch:      epochContext.Epoch,
-		timestamp:  expectedTimestamp,
-		slotLeader: decodedPoolID,
+		height:                               decodedHeader.BlockNumber(),
+		slot:                                 decodedHeader.SlotNumber(),
+		hash:                                 decodedHeader.Hash(),
+		prevHash:                             decodedPrevHash,
+		bodyHash:                             decodedBodyHash,
+		epoch:                                epochContext.Epoch,
+		timestamp:                            expectedTimestamp,
+		slotLeader:                           decodedPoolID,
+		operationalCertificateSequenceNumber: sequenceNumber,
 	}, nil
+}
+
+func advanceOperationalCertificateCounter(counters map[string]uint64, poolID []byte, sequenceNumber uint64) error {
+	if len(poolID) != 28 {
+		return errorsmod.Wrapf(
+			ErrInvalidAcceptedBlock,
+			"operational certificate pool id must be 28 bytes, got %d",
+			len(poolID),
+		)
+	}
+	poolKey := hex.EncodeToString(poolID)
+	previousSequenceNumber := counters[poolKey]
+	if sequenceNumber < previousSequenceNumber {
+		return errorsmod.Wrapf(
+			ErrInvalidAcceptedBlock,
+			"operational certificate sequence number %d for pool %s is older than authenticated counter %d",
+			sequenceNumber,
+			poolKey,
+			previousSequenceNumber,
+		)
+	}
+	counters[poolKey] = sequenceNumber
+	return nil
+}
+
+func (cs *ClientState) verifyNativeProbabilisticHeader(
+	header *ledger.BabbageBlockHeader,
+	label string,
+	epochContext *EpochContext,
+) (vrfKeyHash []byte, sequenceNumber uint64, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification panicked for %s header: %v", label, recovered)
+		}
+	}()
+
+	isValid, result, verifyErr := probabilisticcore.VerifyNativeHeader(
+		header,
+		epochContext.EpochNonce,
+		cs.SlotsPerKesPeriod,
+		cs.MaxKesEvolutions,
+	)
+	if verifyErr != nil {
+		return nil, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s header: %v", label, verifyErr)
+	}
+	if !isValid {
+		return nil, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s header failed native Cardano verification", label)
+	}
+
+	vrfKeyHashBytes := blake2b.Sum256(result.VrfKey)
+	return vrfKeyHashBytes[:], result.OperationalCertificateSequenceNumber, nil
 }
 
 func (cs *ClientState) verifyNativeProbabilisticBlock(
 	decodedBlock ledger.Block,
 	label string,
 	epochContext *EpochContext,
-) (poolID string, vrfKeyHash []byte, err error) {
+) (vrfKeyHash []byte, sequenceNumber uint64, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification panicked for %s block: %v", label, recovered)
 		}
 	}()
 
-	isValid, vrfKeyBytes, verifyErr := probabilisticcore.VerifyNativeBlock(
+	isValid, result, verifyErr := probabilisticcore.VerifyNativeBlock(
 		decodedBlock,
 		epochContext.EpochNonce,
-		int(epochContext.SlotsPerKesPeriod),
+		cs.SlotsPerKesPeriod,
+		cs.MaxKesEvolutions,
 	)
 	if verifyErr != nil {
-		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s block: %v", label, verifyErr)
+		return nil, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s block: %v", label, verifyErr)
 	}
 	if !isValid {
-		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block failed native Cardano verification", label)
+		return nil, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block failed native Cardano verification", label)
 	}
 
-	vrfKeyHashBytes := blake2b.Sum256(vrfKeyBytes)
-	return decodedBlock.IssuerVkey().PoolId(), vrfKeyHashBytes[:], nil
+	vrfKeyHashBytes := blake2b.Sum256(result.VrfKey)
+	return vrfKeyHashBytes[:], result.OperationalCertificateSequenceNumber, nil
 }
 
 func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string, []byte, error) {

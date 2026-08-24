@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import {
   assertStabilityThresholds,
   computeStabilityMetrics,
@@ -20,6 +22,18 @@ describe('stability-scoring', () => {
     epochNo: 1,
     timestampUnixNs: BigInt(height) * 1_000_000_000n,
     slotLeader,
+  });
+
+  it('keeps one stability threshold of local rollback headroom after an anchor is accepted', () => {
+    const shelleyGenesis = JSON.parse(
+      readFileSync(resolve(__dirname, '../../../../../chains/cardano/config/devnet/genesis-shelley.json'), 'utf8'),
+    ) as { securityParam: number };
+    const byronGenesis = JSON.parse(
+      readFileSync(resolve(__dirname, '../../../../../chains/cardano/config/devnet/genesis-byron.json'), 'utf8'),
+    ) as { protocolConsts: { k: number } };
+
+    expect(byronGenesis.protocolConsts.k).toBe(shelleyGenesis.securityParam);
+    expect(BigInt(shelleyGenesis.securityParam) >= getStabilityPolicy().threshold_depth * 2n).toBe(true);
   });
 
   it('computes qualified pool stake and score from epoch stake distribution', () => {

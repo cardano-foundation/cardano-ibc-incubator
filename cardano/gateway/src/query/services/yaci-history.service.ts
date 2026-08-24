@@ -9,6 +9,7 @@ import {
   queryCurrentEpochStakeDistribution,
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
+  queryOperationalCertificateCountersAtPoint,
 } from "../../shared/helpers/ogmios";
 import { LucidService } from "../../shared/modules/lucid/lucid.service";
 import { UtxoDto } from "../dtos/utxo.dto";
@@ -533,10 +534,29 @@ export class YaciHistoryService implements HistoryService {
       verificationContext: {
         epochNonce: epochContext.epochNonce,
         slotsPerKesPeriod: epochContext.slotsPerKesPeriod,
+        maxKesEvolutions: epochContext.maxKesEvolutions,
         currentEpochStartSlot: slotBounds.currentEpochStartSlot,
         currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
       },
     };
+  }
+
+  async findOperationalCertificateCountersAtBlock(
+    block: HistoryBlock,
+  ): Promise<Map<string, bigint>> {
+    const ogmiosEndpoint = this.configService.get<string>("ogmiosEndpoint");
+    if (!ogmiosEndpoint) {
+      throw new Error(
+        "Ogmios endpoint is required to query operational certificate counters",
+      );
+    }
+
+    // Counter state is height-sensitive. Never substitute another point, even
+    // within the same epoch, because that could move the anti-rollback baseline.
+    return queryOperationalCertificateCountersAtPoint(ogmiosEndpoint, {
+      slot: block.slotNo,
+      hash: block.hash,
+    });
   }
 
   private async findCurrentEpochStakeSnapshot(
@@ -966,6 +986,7 @@ export class YaciHistoryService implements HistoryService {
       verificationContext: {
         epochNonce: verificationContext.epochNonce,
         slotsPerKesPeriod: verificationContext.slotsPerKesPeriod,
+        maxKesEvolutions: verificationContext.maxKesEvolutions,
         currentEpochStartSlot: slotBounds.currentEpochStartSlot,
         currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
       },
@@ -1266,6 +1287,7 @@ export class YaciHistoryService implements HistoryService {
       verificationContext: {
         epochNonce: verificationContext.epochNonce,
         slotsPerKesPeriod: verificationContext.slotsPerKesPeriod,
+        maxKesEvolutions: verificationContext.maxKesEvolutions,
         currentEpochStartSlot: slotBounds.currentEpochStartSlot,
         currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
       },
@@ -1984,6 +2006,7 @@ export class YaciHistoryService implements HistoryService {
     return {
       epochNonce: "",
       slotsPerKesPeriod: 0,
+      maxKesEvolutions: 0,
       currentEpochStartSlot: startSlot,
       currentEpochEndSlotExclusive,
     };

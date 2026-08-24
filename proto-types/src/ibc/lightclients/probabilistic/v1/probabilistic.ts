@@ -37,6 +37,15 @@ export interface EpochContext {
   epoch_end_slot_exclusive: bigint;
 }
 /**
+ * @name OperationalCertificateCounter
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.OperationalCertificateCounter
+ */
+export interface OperationalCertificateCounter {
+  pool_id: Uint8Array;
+  sequence_number: bigint;
+}
+/**
  * @name ClientState
  * @package ibc.lightclients.probabilistic.v1
  * @see proto type: ibc.lightclients.probabilistic.v1.ClientState
@@ -65,6 +74,16 @@ export interface ClientState {
   latest_checkpoint_height?: Height;
   latest_checkpoint_block_hash: string;
   latest_checkpoint_epoch: bigint;
+  max_kes_evolutions: bigint;
+  /**
+   * Operational-certificate counters at latest_checkpoint_height.
+   */
+  latest_checkpoint_operational_certificate_counters: OperationalCertificateCounter[];
+  /**
+   * Oldest height whose counter state can be reconstructed from the current
+   * snapshot and the light client's private rollback history.
+   */
+  operational_certificate_counter_history_start_height?: Height;
 }
 /**
  * @name ConsensusState
@@ -104,7 +123,16 @@ export interface ProbabilisticBlock {
   hash: string;
   epoch: bigint;
   timestamp: bigint;
+  /**
+   * Full block CBOR. A root-bearing anchor requires this representation so
+   * its HostState transaction can be authenticated against the signed body.
+   */
   block_cbor: Uint8Array;
+  /**
+   * Raw Cardano header CBOR. This compact representation is sufficient for
+   * bridge blocks, descendant blocks, and rootless checkpoint anchors.
+   */
+  header_cbor: Uint8Array;
 }
 /**
  * @name ProbabilisticHeader
@@ -407,6 +435,73 @@ export const EpochContext = {
     return message;
   },
 };
+function createBaseOperationalCertificateCounter(): OperationalCertificateCounter {
+  return {
+    pool_id: new Uint8Array(),
+    sequence_number: BigInt(0),
+  };
+}
+/**
+ * @name OperationalCertificateCounter
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.OperationalCertificateCounter
+ */
+export const OperationalCertificateCounter = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.OperationalCertificateCounter",
+  encode(message: OperationalCertificateCounter, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.pool_id.length !== 0) {
+      writer.uint32(10).bytes(message.pool_id);
+    }
+    if (message.sequence_number !== BigInt(0)) {
+      writer.uint32(16).uint64(message.sequence_number);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): OperationalCertificateCounter {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseOperationalCertificateCounter();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.pool_id = reader.bytes();
+          break;
+        case 2:
+          message.sequence_number = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): OperationalCertificateCounter {
+    const obj = createBaseOperationalCertificateCounter();
+    if (isSet(object.pool_id)) obj.pool_id = bytesFromBase64(object.pool_id);
+    if (isSet(object.sequence_number)) obj.sequence_number = BigInt(object.sequence_number.toString());
+    return obj;
+  },
+  toJSON(message: OperationalCertificateCounter): unknown {
+    const obj: any = {};
+    message.pool_id !== undefined &&
+      (obj.pool_id = base64FromBytes(message.pool_id !== undefined ? message.pool_id : new Uint8Array()));
+    message.sequence_number !== undefined &&
+      (obj.sequence_number = (message.sequence_number || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<OperationalCertificateCounter>, I>>(
+    object: I,
+  ): OperationalCertificateCounter {
+    const message = createBaseOperationalCertificateCounter();
+    message.pool_id = object.pool_id ?? new Uint8Array();
+    if (object.sequence_number !== undefined && object.sequence_number !== null) {
+      message.sequence_number = BigInt(object.sequence_number.toString());
+    }
+    return message;
+  },
+};
 function createBaseClientState(): ClientState {
   return {
     chain_id: "",
@@ -428,6 +523,9 @@ function createBaseClientState(): ClientState {
     latest_checkpoint_height: undefined,
     latest_checkpoint_block_hash: "",
     latest_checkpoint_epoch: BigInt(0),
+    max_kes_evolutions: BigInt(0),
+    latest_checkpoint_operational_certificate_counters: [],
+    operational_certificate_counter_history_start_height: undefined,
   };
 }
 /**
@@ -495,6 +593,18 @@ export const ClientState = {
     if (message.latest_checkpoint_epoch !== BigInt(0)) {
       writer.uint32(168).uint64(message.latest_checkpoint_epoch);
     }
+    if (message.max_kes_evolutions !== BigInt(0)) {
+      writer.uint32(176).uint64(message.max_kes_evolutions);
+    }
+    for (const v of message.latest_checkpoint_operational_certificate_counters) {
+      OperationalCertificateCounter.encode(v!, writer.uint32(186).fork()).ldelim();
+    }
+    if (message.operational_certificate_counter_history_start_height !== undefined) {
+      Height.encode(
+        message.operational_certificate_counter_history_start_height,
+        writer.uint32(194).fork(),
+      ).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ClientState {
@@ -561,6 +671,20 @@ export const ClientState = {
         case 21:
           message.latest_checkpoint_epoch = reader.uint64();
           break;
+        case 22:
+          message.max_kes_evolutions = reader.uint64();
+          break;
+        case 23:
+          message.latest_checkpoint_operational_certificate_counters.push(
+            OperationalCertificateCounter.decode(reader, reader.uint32()),
+          );
+          break;
+        case 24:
+          message.operational_certificate_counter_history_start_height = Height.decode(
+            reader,
+            reader.uint32(),
+          );
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -603,6 +727,17 @@ export const ClientState = {
       obj.latest_checkpoint_block_hash = String(object.latest_checkpoint_block_hash);
     if (isSet(object.latest_checkpoint_epoch))
       obj.latest_checkpoint_epoch = BigInt(object.latest_checkpoint_epoch.toString());
+    if (isSet(object.max_kes_evolutions))
+      obj.max_kes_evolutions = BigInt(object.max_kes_evolutions.toString());
+    if (Array.isArray(object?.latest_checkpoint_operational_certificate_counters))
+      obj.latest_checkpoint_operational_certificate_counters =
+        object.latest_checkpoint_operational_certificate_counters.map((e: any) =>
+          OperationalCertificateCounter.fromJSON(e),
+        );
+    if (isSet(object.operational_certificate_counter_history_start_height))
+      obj.operational_certificate_counter_history_start_height = Height.fromJSON(
+        object.operational_certificate_counter_history_start_height,
+      );
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -667,6 +802,21 @@ export const ClientState = {
       (obj.latest_checkpoint_block_hash = message.latest_checkpoint_block_hash);
     message.latest_checkpoint_epoch !== undefined &&
       (obj.latest_checkpoint_epoch = (message.latest_checkpoint_epoch || BigInt(0)).toString());
+    message.max_kes_evolutions !== undefined &&
+      (obj.max_kes_evolutions = (message.max_kes_evolutions || BigInt(0)).toString());
+    if (message.latest_checkpoint_operational_certificate_counters) {
+      obj.latest_checkpoint_operational_certificate_counters =
+        message.latest_checkpoint_operational_certificate_counters.map((e) =>
+          e ? OperationalCertificateCounter.toJSON(e) : undefined,
+        );
+    } else {
+      obj.latest_checkpoint_operational_certificate_counters = [];
+    }
+    message.operational_certificate_counter_history_start_height !== undefined &&
+      (obj.operational_certificate_counter_history_start_height =
+        message.operational_certificate_counter_history_start_height
+          ? Height.toJSON(message.operational_certificate_counter_history_start_height)
+          : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -715,6 +865,21 @@ export const ClientState = {
     message.latest_checkpoint_block_hash = object.latest_checkpoint_block_hash ?? "";
     if (object.latest_checkpoint_epoch !== undefined && object.latest_checkpoint_epoch !== null) {
       message.latest_checkpoint_epoch = BigInt(object.latest_checkpoint_epoch.toString());
+    }
+    if (object.max_kes_evolutions !== undefined && object.max_kes_evolutions !== null) {
+      message.max_kes_evolutions = BigInt(object.max_kes_evolutions.toString());
+    }
+    message.latest_checkpoint_operational_certificate_counters =
+      object.latest_checkpoint_operational_certificate_counters?.map((e) =>
+        OperationalCertificateCounter.fromPartial(e),
+      ) || [];
+    if (
+      object.operational_certificate_counter_history_start_height !== undefined &&
+      object.operational_certificate_counter_history_start_height !== null
+    ) {
+      message.operational_certificate_counter_history_start_height = Height.fromPartial(
+        object.operational_certificate_counter_history_start_height,
+      );
     }
     return message;
   },
@@ -940,6 +1105,7 @@ function createBaseProbabilisticBlock(): ProbabilisticBlock {
     epoch: BigInt(0),
     timestamp: BigInt(0),
     block_cbor: new Uint8Array(),
+    header_cbor: new Uint8Array(),
   };
 }
 /**
@@ -968,6 +1134,9 @@ export const ProbabilisticBlock = {
     if (message.block_cbor.length !== 0) {
       writer.uint32(74).bytes(message.block_cbor);
     }
+    if (message.header_cbor.length !== 0) {
+      writer.uint32(82).bytes(message.header_cbor);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ProbabilisticBlock {
@@ -995,6 +1164,9 @@ export const ProbabilisticBlock = {
         case 9:
           message.block_cbor = reader.bytes();
           break;
+        case 10:
+          message.header_cbor = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1010,6 +1182,7 @@ export const ProbabilisticBlock = {
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
     if (isSet(object.timestamp)) obj.timestamp = BigInt(object.timestamp.toString());
     if (isSet(object.block_cbor)) obj.block_cbor = bytesFromBase64(object.block_cbor);
+    if (isSet(object.header_cbor)) obj.header_cbor = bytesFromBase64(object.header_cbor);
     return obj;
   },
   toJSON(message: ProbabilisticBlock): unknown {
@@ -1022,6 +1195,10 @@ export const ProbabilisticBlock = {
     message.block_cbor !== undefined &&
       (obj.block_cbor = base64FromBytes(
         message.block_cbor !== undefined ? message.block_cbor : new Uint8Array(),
+      ));
+    message.header_cbor !== undefined &&
+      (obj.header_cbor = base64FromBytes(
+        message.header_cbor !== undefined ? message.header_cbor : new Uint8Array(),
       ));
     return obj;
   },
@@ -1041,6 +1218,7 @@ export const ProbabilisticBlock = {
       message.timestamp = BigInt(object.timestamp.toString());
     }
     message.block_cbor = object.block_cbor ?? new Uint8Array();
+    message.header_cbor = object.header_cbor ?? new Uint8Array();
     return message;
   },
 };

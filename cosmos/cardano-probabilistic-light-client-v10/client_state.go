@@ -1,6 +1,7 @@
 package probabilistic
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"strings"
@@ -15,10 +16,13 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypesv2 "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types/v2"
+	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v10/modules/core/exported"
 )
 
 var _ exported.ClientState = (*ClientState)(nil)
+
+const maxSupportedKesEvolutions = uint64(1 << 6)
 
 func NewClientState(
 	chainID string,
@@ -57,6 +61,16 @@ func (ClientState) GetTimestampAtHeight(
 func (cs ClientState) Status(ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec) exported.Status {
 	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return exported.Frozen
+	}
+	effectiveCheckpointHeight := cs.effectiveCheckpointHeight()
+	if cs.MaxKesEvolutions == 0 ||
+		cs.MaxKesEvolutions > maxSupportedKesEvolutions ||
+		cs.OperationalCertificateCounterHistoryStartHeight == nil ||
+		cs.OperationalCertificateCounterHistoryStartHeight.IsZero() ||
+		effectiveCheckpointHeight == nil ||
+		effectiveCheckpointHeight.IsZero() ||
+		cs.OperationalCertificateCounterHistoryStartHeight.GT(effectiveCheckpointHeight) {
+		return exported.Expired
 	}
 	if cs.LatestHeight == nil {
 		return exported.Expired
@@ -101,6 +115,16 @@ func (cs ClientState) Validate() error {
 	if cs.SlotLengthNs == 0 {
 		return errorsmod.Wrapf(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
 	}
+	if cs.SlotsPerKesPeriod == 0 {
+		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "slots_per_kes_period must be greater than zero")
+	}
+	if cs.MaxKesEvolutions == 0 || cs.MaxKesEvolutions > maxSupportedKesEvolutions {
+		return errorsmod.Wrapf(
+			clienttypes.ErrInvalidClient,
+			"max_kes_evolutions must be between 1 and %d",
+			maxSupportedKesEvolutions,
+		)
+	}
 	if err := cs.validateCheckpointFields(); err != nil {
 		return err
 	}
@@ -127,6 +151,8 @@ func (cs ClientState) ZeroCustomFields() exported.ClientState {
 		HostStateNftTokenName: append([]byte(nil), cs.HostStateNftTokenName...),
 		SystemStartUnixNs:     cs.SystemStartUnixNs,
 		SlotLengthNs:          cs.SlotLengthNs,
+		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
+		MaxKesEvolutions:      cs.MaxKesEvolutions,
 	}
 }
 
@@ -161,8 +187,28 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	return nil
 }
 
-func (ClientState) ExportMetadata(storetypes.KVStore) []exported.GenesisMetadata {
-	return nil
+func (ClientState) ExportMetadata(store storetypes.KVStore) []exported.GenesisMetadata {
+	iterator := store.Iterator(nil, nil)
+	defer iterator.Close()
+
+	consensusStatePrefix := append([]byte(host.KeyConsensusStatePrefix), '/')
+	metadata := make([]exported.GenesisMetadata, 0)
+	for ; iterator.Valid(); iterator.Next() {
+		key := iterator.Key()
+		if bytes.Equal(key, host.ClientStateKey()) ||
+			(bytes.HasPrefix(key, consensusStatePrefix) &&
+				!bytes.Contains(key[len(consensusStatePrefix):], []byte{'/'})) {
+			continue
+		}
+		metadata = append(metadata, clienttypes.NewGenesisMetadata(
+			bytes.Clone(key),
+			bytes.Clone(iterator.Value()),
+		))
+	}
+	if len(metadata) == 0 {
+		return nil
+	}
+	return metadata
 }
 
 func (cs ClientState) GetLatestHeight() exported.Height {

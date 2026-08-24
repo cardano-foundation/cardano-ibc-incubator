@@ -33,11 +33,18 @@ message EpochContext {
   uint64 epoch_end_slot_exclusive = 6;
 }
 
+message OperationalCertificateCounter {
+  option (gogoproto.goproto_getters) = false;
+
+  bytes pool_id = 1;
+  uint64 sequence_number = 2;
+}
+
 message ClientState {
   option (gogoproto.goproto_getters) = false;
 
-  reserved 6;
-  reserved "heuristic_params";
+  reserved 6, 18;
+  reserved "heuristic_params", "pool_registration_cutoff_slot_exclusive";
 
   string chain_id = 1;
   Height latest_height = 2;
@@ -60,6 +67,12 @@ message ClientState {
   Height latest_checkpoint_height = 19;
   string latest_checkpoint_block_hash = 20;
   uint64 latest_checkpoint_epoch = 21;
+  uint64 max_kes_evolutions = 22;
+  // Operational-certificate counters at latest_checkpoint_height.
+  repeated OperationalCertificateCounter latest_checkpoint_operational_certificate_counters = 23;
+  // Oldest height whose counter state can be reconstructed from the current
+  // snapshot and the light client's private rollback history.
+  Height operational_certificate_counter_history_start_height = 24;
 }
 
 message ConsensusState {
@@ -93,7 +106,12 @@ message ProbabilisticBlock {
   uint64 timestamp = 6;
   reserved 7;
   reserved 8;
+  // Full block CBOR. A root-bearing anchor requires this representation so
+  // its HostState transaction can be authenticated against the signed body.
   bytes block_cbor = 9;
+  // Raw Cardano header CBOR. This compact representation is sufficient for
+  // bridge blocks, descendant blocks, and rootless checkpoint anchors.
+  bytes header_cbor = 10;
 }
 
 message ProbabilisticHeader {

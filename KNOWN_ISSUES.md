@@ -108,6 +108,8 @@ ICS-31 cross-chain queries are a work in progress for Cardano, but will need to 
 
 Standard IBC client upgrade is not currently supported for the Cardano light client. The probabilistic Cardano light clients reject `VerifyUpgradeAndUpdateState`.
 
+Operational-certificate validation adds information that must be present when a client is created: the certificate number currently in use by each Cardano stake pool and the network limit on a block-signing key's lifetime. Cardano IBC is not live today, so there are no deployed clients or routes to migrate for this change. The first deployment must create every client with this information from its initial Cardano checkpoint. Before allowing the Gateway to create those clients, deploy the upgraded Cosmos light-client code and use Ogmios v6.12.0 or newer.
+
 This may be a target for further development.
 
 ## Denom Display in Wallets + CIP-26 Token Metadata Registry
