@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"reflect"
 	"strings"
+	"time"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
@@ -23,6 +24,7 @@ type recoveryInvariantClientState struct {
 	SlotLengthNs          uint64
 	SlotsPerKesPeriod     uint64
 	MaxKesEvolutions      uint64
+	MaxClockDrift         time.Duration
 }
 
 func (cs ClientState) CheckSubstituteAndUpdateState(
@@ -56,6 +58,28 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 			subjectCheckpointHeight,
 		)
 	}
+	subjectCheckpointSlot, subjectCheckpointTimestamp, err := cs.recoveryCheckpointTemporalCursor(subjectClientStore, cdc)
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidClient, err.Error())
+	}
+	substituteCheckpointSlot, substituteCheckpointTimestamp, err := substituteClientState.recoveryCheckpointTemporalCursor(
+		substituteClientStore,
+		cdc,
+	)
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
+	if substituteCheckpointSlot <= subjectCheckpointSlot ||
+		substituteCheckpointTimestamp <= subjectCheckpointTimestamp {
+		return errorsmod.Wrapf(
+			clienttypes.ErrInvalidSubstitute,
+			"substitute Cardano checkpoint slot/time (%d, %d) must be later than subject checkpoint slot/time (%d, %d)",
+			substituteCheckpointSlot,
+			substituteCheckpointTimestamp,
+			subjectCheckpointSlot,
+			subjectCheckpointTimestamp,
+		)
+	}
 	height := substituteClientState.LatestHeight
 	consensusState, found := GetConsensusState(substituteClientStore, cdc, height)
 	if !found {
@@ -67,7 +91,8 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	if substituteClientState.LatestCheckpointHeight != nil &&
 		substituteClientState.LatestCheckpointHeight.EQ(height) &&
 		(!strings.EqualFold(substituteClientState.LatestCheckpointBlockHash, consensusState.AcceptedBlockHash) ||
-			substituteClientState.LatestCheckpointEpoch != consensusState.AcceptedEpoch) {
+			substituteClientState.LatestCheckpointEpoch != consensusState.AcceptedEpoch ||
+			substituteCheckpointTimestamp != consensusState.Timestamp) {
 		return errorsmod.Wrap(
 			clienttypes.ErrInvalidSubstitute,
 			"substitute checkpoint cursor does not match its latest consensus state",
@@ -100,9 +125,21 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 			substituteClientState.LatestCheckpointHeight,
 			substituteClientState.LatestCheckpointBlockHash,
 			substituteClientState.LatestCheckpointEpoch,
+			substituteCheckpointSlot,
+			substituteCheckpointTimestamp,
 		)
 	} else {
-		cs.setLatestCheckpoint(height, consensusState.AcceptedBlockHash, consensusState.AcceptedEpoch)
+		slot, err := cs.DeriveSlotFromTimestamp(consensusState.Timestamp)
+		if err != nil {
+			return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+		}
+		cs.setLatestCheckpoint(
+			height,
+			consensusState.AcceptedBlockHash,
+			consensusState.AcceptedEpoch,
+			slot,
+			consensusState.Timestamp,
+		)
 	}
 	cs.LatestCheckpointOperationalCertificateCounters = cloneOperationalCertificateCounters(
 		substituteClientState.LatestCheckpointOperationalCertificateCounters,
@@ -114,6 +151,7 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	cs.ChainId = substituteClientState.ChainId
 	cs.TrustingPeriod = substituteClientState.TrustingPeriod
 	cs.MaxKesEvolutions = substituteClientState.MaxKesEvolutions
+	cs.MaxClockDrift = substituteClientState.MaxClockDrift
 	if err := syncCurrentEpochFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
 	}
@@ -156,6 +194,35 @@ func (cs ClientState) effectiveCheckpointHeight() *Height {
 	return cs.LatestHeight
 }
 
+func (cs ClientState) recoveryCheckpointTemporalCursor(
+	clientStore storetypes.KVStore,
+	cdc codec.BinaryCodec,
+) (uint64, uint64, error) {
+	if cs.LatestCheckpointTimestamp != 0 {
+		return cs.LatestCheckpointSlot, cs.LatestCheckpointTimestamp, nil
+	}
+	checkpointHeight := cs.effectiveCheckpointHeight()
+	if checkpointHeight == nil || cs.LatestHeight == nil || !checkpointHeight.EQ(cs.LatestHeight) {
+		return 0, 0, errorsmod.Wrap(
+			ErrInvalidTimestamp,
+			"checkpoint timestamp is missing; pre-upgrade rootless checkpoints require an app-state migration",
+		)
+	}
+	consensusState, found := GetConsensusState(clientStore, cdc, checkpointHeight)
+	if !found {
+		return 0, 0, errorsmod.Wrapf(
+			clienttypes.ErrConsensusStateNotFound,
+			"height (%s)",
+			checkpointHeight.String(),
+		)
+	}
+	slot, err := cs.DeriveSlotFromTimestamp(consensusState.Timestamp)
+	if err != nil {
+		return 0, 0, err
+	}
+	return slot, consensusState.Timestamp, nil
+}
+
 func IsMatchingClientState(subject, substitute ClientState) bool {
 	return reflect.DeepEqual(
 		recoveryInvariantProjection(subject),
@@ -172,5 +239,6 @@ func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 		SlotLengthNs:          cs.SlotLengthNs,
 		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
 		MaxKesEvolutions:      cs.MaxKesEvolutions,
+		MaxClockDrift:         cs.MaxClockDrift,
 	}
 }

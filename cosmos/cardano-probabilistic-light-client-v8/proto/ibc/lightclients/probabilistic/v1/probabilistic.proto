@@ -73,6 +73,14 @@ message ClientState {
   // Oldest height whose counter state can be reconstructed from the current
   // snapshot and the light client's private rollback history.
   Height operational_certificate_counter_history_start_height = 24;
+  // Maximum amount by which an authenticated Cardano block may be ahead of
+  // the Cosmos host chain's current block time.
+  google.protobuf.Duration max_clock_drift = 27 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  // Slot and derived Unix-nanosecond timestamp of latest_checkpoint_height.
+  // Both are retained because rootless checkpoints do not create an IBC
+  // consensus state.
+  uint64 latest_checkpoint_slot = 28;
+  uint64 latest_checkpoint_timestamp = 29;
 }
 
 message ConsensusState {

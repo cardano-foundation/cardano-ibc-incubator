@@ -29,11 +29,21 @@ func (cs ClientState) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCode
 	return false
 }
 
-func (cs *ClientState) verifyMisbehaviour(_ sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec, misbehaviour *Misbehaviour) error {
-	if err := cs.verifyHeaderAgainstTrustedState(clientStore, cdc, misbehaviour.ProbabilisticHeader1); err != nil {
+func (cs *ClientState) verifyMisbehaviour(ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec, misbehaviour *Misbehaviour) error {
+	return cs.verifyMisbehaviourWithAuthenticator(ctx, clientStore, cdc, misbehaviour, nil)
+}
+
+func (cs *ClientState) verifyMisbehaviourWithAuthenticator(
+	ctx sdk.Context,
+	clientStore storetypes.KVStore,
+	cdc codec.BinaryCodec,
+	misbehaviour *Misbehaviour,
+	authenticateHeader headerAuthenticator,
+) error {
+	if err := cs.verifyHeaderAgainstTrustedStateWithAuthenticator(ctx, clientStore, cdc, misbehaviour.ProbabilisticHeader1, authenticateHeader); err != nil {
 		return errorsmod.Wrap(err, "verifying ProbabilisticHeader1 in Misbehaviour failed")
 	}
-	if err := cs.verifyHeaderAgainstTrustedState(clientStore, cdc, misbehaviour.ProbabilisticHeader2); err != nil {
+	if err := cs.verifyHeaderAgainstTrustedStateWithAuthenticator(ctx, clientStore, cdc, misbehaviour.ProbabilisticHeader2, authenticateHeader); err != nil {
 		return errorsmod.Wrap(err, "verifying ProbabilisticHeader2 in Misbehaviour failed")
 	}
 	if !headersConflict(misbehaviour.ProbabilisticHeader1, misbehaviour.ProbabilisticHeader2) &&
