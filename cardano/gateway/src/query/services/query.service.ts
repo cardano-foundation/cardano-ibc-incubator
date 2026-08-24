@@ -519,6 +519,10 @@ export class QueryService {
         seconds: BigInt(this.configService.get<number>('cardanoClientTrustingPeriodSeconds') ?? 86_400),
         nanos: 0,
       },
+      max_clock_drift: {
+        seconds: BigInt(this.configService.get<number>('cardanoClientMaxClockDriftSeconds') ?? 10),
+        nanos: 0,
+      },
       upgrade_path: [],
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
@@ -540,6 +544,8 @@ export class QueryService {
       },
       latest_checkpoint_block_hash: stabilityEvidence.anchorBlock.hash,
       latest_checkpoint_epoch: BigInt(stabilityEvidence.anchorEpoch),
+      latest_checkpoint_slot: stabilityEvidence.anchorBlock.slotNo,
+      latest_checkpoint_timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       max_kes_evolutions: BigInt(stabilityEvidence.epochVerificationContext.maxKesEvolutions),
       latest_checkpoint_operational_certificate_counters: operationalCertificateCounters,
       operational_certificate_counter_history_start_height: {

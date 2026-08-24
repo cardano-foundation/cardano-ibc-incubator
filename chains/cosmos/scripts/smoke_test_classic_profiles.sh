@@ -119,6 +119,15 @@ test_profile() {
       and (.allowed_clients | index("08-cardano-probabilistic")) != null
   ' >/dev/null <<<"$client_params"
 
+  local governance_params
+  governance_params="$(docker compose -p "$project_name" -f "$compose_file" \
+    --profile "$profile" exec -T "$profile" \
+    jq -c '.app_state.gov.params' /var/lib/simd/config/genesis.json)"
+  jq -e '
+    .voting_period == "30s"
+      and .max_deposit_period == "60s"
+  ' >/dev/null <<<"$governance_params"
+
   assert_funded_account "$profile" "$relayer_address"
   assert_funded_account "$profile" "$demo_address"
 

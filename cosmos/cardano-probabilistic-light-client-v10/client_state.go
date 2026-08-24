@@ -29,6 +29,7 @@ func NewClientState(
 	latestHeight *Height,
 	currentEpoch uint64,
 	trustingPeriod time.Duration,
+	maxClockDrift time.Duration,
 	upgradePath []string,
 ) *ClientState {
 	zeroHeight := ZeroHeight()
@@ -38,6 +39,7 @@ func NewClientState(
 		FrozenHeight:   zeroHeight,
 		CurrentEpoch:   currentEpoch,
 		TrustingPeriod: trustingPeriod,
+		MaxClockDrift:  maxClockDrift,
 		UpgradePath:    upgradePath,
 	}
 }
@@ -61,6 +63,12 @@ func (ClientState) GetTimestampAtHeight(
 func (cs ClientState) Status(ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec) exported.Status {
 	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return exported.Frozen
+	}
+	if cs.MaxClockDrift <= 0 {
+		return exported.Expired
+	}
+	if err := cs.validateCheckpointFields(); err != nil {
+		return exported.Expired
 	}
 	effectiveCheckpointHeight := cs.effectiveCheckpointHeight()
 	if cs.MaxKesEvolutions == 0 ||
@@ -102,6 +110,9 @@ func (cs ClientState) Validate() error {
 	}
 	if cs.TrustingPeriod <= 0 {
 		return errorsmod.Wrap(ErrInvalidTrustingPeriod, "trusting period must be greater than zero")
+	}
+	if cs.MaxClockDrift <= 0 {
+		return errorsmod.Wrap(ErrInvalidMaxClockDrift, "max clock drift must be greater than zero")
 	}
 	if len(cs.HostStateNftPolicyId) != 28 {
 		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "host_state_nft_policy_id must be 28 bytes")
@@ -178,6 +189,32 @@ func (cs ClientState) DeriveTimestampFromSlot(slot uint64) (uint64, error) {
 		return 0, errorsmod.Wrapf(ErrInvalidTimestamp, "slot-derived timestamp overflows uint64 for slot %d", slot)
 	}
 	return cs.SystemStartUnixNs + slot*cs.SlotLengthNs, nil
+}
+
+func (cs ClientState) DeriveSlotFromTimestamp(timestamp uint64) (uint64, error) {
+	if cs.SystemStartUnixNs == 0 {
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
+	}
+	if cs.SlotLengthNs == 0 {
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
+	}
+	if timestamp < cs.SystemStartUnixNs {
+		return 0, errorsmod.Wrapf(
+			ErrInvalidTimestamp,
+			"timestamp %d is before system start %d",
+			timestamp,
+			cs.SystemStartUnixNs,
+		)
+	}
+	delta := timestamp - cs.SystemStartUnixNs
+	if delta%cs.SlotLengthNs != 0 {
+		return 0, errorsmod.Wrapf(
+			ErrInvalidTimestamp,
+			"timestamp %d does not fall on a Cardano slot boundary",
+			timestamp,
+		)
+	}
+	return delta / cs.SlotLengthNs, nil
 }
 
 func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, consState exported.ConsensusState) error {

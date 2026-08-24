@@ -36,7 +36,10 @@ const sharedSourceFiles = [
   "probabilistic.pb.go",
   "proposal_handle.go",
   "proposal_handle_test.go",
+  "stake_bps_test.go",
   "store.go",
+  "time_validation.go",
+  "time_validation_test.go",
   "update.go",
   "upgrade.go",
   "verifier_test.go",
@@ -279,6 +282,11 @@ function assertPublicIdentity() {
 
   const v8Generated = read(path.join(v8Dir, "probabilistic.pb.go"));
   const v10Generated = read(path.join(v10Dir, "probabilistic.pb.go"));
+  if (v8Generated === v10Generated) {
+    throw new Error(
+      "v8 and v10 generated protobufs are identical; regenerate each file from its version-specific go_package",
+    );
+  }
   for (const typeUrl of expectedTypeUrls) {
     const messageName = typeUrl.slice(typeUrl.lastIndexOf(".") + 1);
     const protoName = typeUrl.slice(1);

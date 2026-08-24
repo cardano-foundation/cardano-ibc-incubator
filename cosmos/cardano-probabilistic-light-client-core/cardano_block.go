@@ -747,22 +747,65 @@ func cloneRawMessage(raw fxcbor.RawMessage) []byte {
 }
 
 func ExtractHostStateTxBodyCborFromAnchorBlock(anchorBlockCbor []byte, hostStateTxHash string) ([]byte, error) {
-	decodedBlock, err := DecodeLedgerBlock(anchorBlockCbor)
+	tx, _, err := findValidHostStateTransaction(anchorBlockCbor, hostStateTxHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode anchor block: %w", err)
+		return nil, err
 	}
 
-	for _, tx := range decodedBlock.Transactions() {
+	txBodyCbor, err := ExtractTransactionBodyCbor(tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode host state tx body: %w", err)
+	}
+	return txBodyCbor, nil
+}
+
+func findValidHostStateTransaction(
+	anchorBlockCbor []byte,
+	hostStateTxHash string,
+) (ledger.Transaction, int, error) {
+	if hostStateTxHash == "" {
+		return nil, 0, fmt.Errorf("missing HostState transaction hash")
+	}
+	decodedBlock, err := DecodeLedgerBlock(anchorBlockCbor)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to decode anchor block: %w", err)
+	}
+
+	for txIndex, tx := range decodedBlock.Transactions() {
 		if strings.EqualFold(tx.Hash(), hostStateTxHash) {
-			txBodyCbor, bodyErr := ExtractTransactionBodyCbor(tx)
-			if bodyErr != nil {
-				return nil, fmt.Errorf("failed to decode host state tx body: %w", bodyErr)
+			if transactionIndexIsInvalid(decodedBlock, uint(txIndex)) || !tx.IsValid() {
+				return nil, 0, fmt.Errorf(
+					"host state tx %s at block index %d is phase-2 invalid",
+					hostStateTxHash,
+					txIndex,
+				)
 			}
-			return txBodyCbor, nil
+			return tx, txIndex, nil
 		}
 	}
 
-	return nil, fmt.Errorf("host state tx %s not found in authenticated anchor block", hostStateTxHash)
+	return nil, 0, fmt.Errorf("host state tx %s not found in authenticated anchor block", hostStateTxHash)
+}
+
+func transactionIndexIsInvalid(decodedBlock ledger.Block, txIndex uint) bool {
+	var invalidTransactions []uint
+	switch block := decodedBlock.(type) {
+	case *rawBabbageBlock:
+		invalidTransactions = block.InvalidTransactions
+	case *rawConwayBlock:
+		invalidTransactions = block.InvalidTransactions
+	case *ledger.BabbageBlock:
+		invalidTransactions = block.InvalidTransactions
+	case *ledger.ConwayBlock:
+		invalidTransactions = block.InvalidTransactions
+	}
+
+	for _, invalidTxIndex := range invalidTransactions {
+		if invalidTxIndex == txIndex {
+			return true
+		}
+	}
+	return false
 }
 
 func ExtractTransactionBodyCbor(tx ledger.Transaction) ([]byte, error) {

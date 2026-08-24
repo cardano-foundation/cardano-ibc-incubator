@@ -55,6 +55,59 @@ func ExtractIbcStateRootFromHostStateDatum(datumCbor []byte, expectedNftPolicyId
 	return datum.State.IbcStateRoot, nil
 }
 
+func ExtractIbcStateRootFromAnchorBlock(
+	anchorBlockCbor []byte,
+	txHash string,
+	outputIndex uint32,
+	hostStateNftPolicyId []byte,
+	hostStateNftTokenName []byte,
+) ([]byte, error) {
+	tx, _, err := findValidHostStateTransaction(anchorBlockCbor, txHash)
+	if err != nil {
+		return nil, err
+	}
+	return extractIbcStateRootFromTransaction(
+		tx,
+		txHash,
+		outputIndex,
+		hostStateNftPolicyId,
+		hostStateNftTokenName,
+	)
+}
+
+func extractIbcStateRootFromTransaction(
+	tx ledger.Transaction,
+	txHash string,
+	outputIndex uint32,
+	hostStateNftPolicyId []byte,
+	hostStateNftTokenName []byte,
+) ([]byte, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("missing HostState transaction")
+	}
+	if txHash == "" {
+		return nil, fmt.Errorf("missing HostState transaction hash in header")
+	}
+	if !strings.EqualFold(tx.Hash(), txHash) {
+		return nil, fmt.Errorf("HostState transaction hash mismatch")
+	}
+	if !tx.IsValid() {
+		return nil, fmt.Errorf("HostState transaction is phase-2 invalid")
+	}
+
+	return extractIbcStateRootFromOutputs(
+		tx.Produced(),
+		outputIndex,
+		hostStateNftPolicyId,
+		hostStateNftTokenName,
+	)
+}
+
+// ExtractIbcStateRootFromTransactionBody validates only the transaction body.
+//
+// Deprecated: Transaction-body CBOR does not contain the block's phase-2
+// validity flag. Consensus verification must use
+// ExtractIbcStateRootFromAnchorBlock instead.
 func ExtractIbcStateRootFromTransactionBody(
 	txBodyCbor []byte,
 	txHash string,
@@ -77,7 +130,20 @@ func ExtractIbcStateRootFromTransactionBody(
 		return nil, fmt.Errorf("HostState tx body hash mismatch")
 	}
 
-	outputs := txBody.Outputs()
+	return extractIbcStateRootFromOutputs(
+		txBody.Outputs(),
+		outputIndex,
+		hostStateNftPolicyId,
+		hostStateNftTokenName,
+	)
+}
+
+func extractIbcStateRootFromOutputs(
+	outputs []ledger.TransactionOutput,
+	outputIndex uint32,
+	hostStateNftPolicyId []byte,
+	hostStateNftTokenName []byte,
+) ([]byte, error) {
 	idx := int(outputIndex)
 	if idx < 0 || idx >= len(outputs) {
 		return nil, fmt.Errorf("HostState output index out of range")

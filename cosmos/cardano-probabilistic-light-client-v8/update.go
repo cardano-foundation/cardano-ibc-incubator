@@ -3,6 +3,7 @@ package probabilistic
 import (
 	"fmt"
 	"math"
+	"math/bits"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -32,28 +33,60 @@ func (cs *ClientState) VerifyClientMessage(
 
 type headerVerificationMode struct {
 	enforceForwardUpdate bool
+	authenticateHeader   headerAuthenticator
 }
 
+// headerAuthenticator is an internal seam for testing the checks that run
+// after cryptographic authentication. A nil value always selects the real
+// Cardano block authenticator.
+type headerAuthenticator func(
+	header *ProbabilisticHeader,
+	epochContexts []*EpochContext,
+	trustedCounters map[string]uint64,
+) (*authenticatedProbabilisticHeader, error)
+
 func (cs *ClientState) verifyHeader(
-	_ sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
+	ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
 	header *ProbabilisticHeader,
 ) error {
-	return cs.verifyHeaderWithMode(clientStore, cdc, header, headerVerificationMode{
+	return cs.verifyHeaderWithAuthenticator(ctx, clientStore, cdc, header, nil)
+}
+
+func (cs *ClientState) verifyHeaderWithAuthenticator(
+	ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
+	header *ProbabilisticHeader,
+	authenticateHeader headerAuthenticator,
+) error {
+	return cs.verifyHeaderWithMode(ctx, clientStore, cdc, header, headerVerificationMode{
 		enforceForwardUpdate: true,
+		authenticateHeader:   authenticateHeader,
 	})
 }
 
 func (cs *ClientState) verifyHeaderAgainstTrustedState(
+	ctx sdk.Context,
 	clientStore storetypes.KVStore,
 	cdc codec.BinaryCodec,
 	header *ProbabilisticHeader,
 ) error {
-	return cs.verifyHeaderWithMode(clientStore, cdc, header, headerVerificationMode{
+	return cs.verifyHeaderAgainstTrustedStateWithAuthenticator(ctx, clientStore, cdc, header, nil)
+}
+
+func (cs *ClientState) verifyHeaderAgainstTrustedStateWithAuthenticator(
+	ctx sdk.Context,
+	clientStore storetypes.KVStore,
+	cdc codec.BinaryCodec,
+	header *ProbabilisticHeader,
+	authenticateHeader headerAuthenticator,
+) error {
+	return cs.verifyHeaderWithMode(ctx, clientStore, cdc, header, headerVerificationMode{
 		enforceForwardUpdate: false,
+		authenticateHeader:   authenticateHeader,
 	})
 }
 
 func (cs *ClientState) verifyHeaderWithMode(
+	ctx sdk.Context,
 	clientStore storetypes.KVStore,
 	cdc codec.BinaryCodec,
 	header *ProbabilisticHeader,
@@ -117,7 +150,11 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return err
 	}
 
-	authenticatedHeader, err := cs.authenticateHeaderBlocksWithContexts(
+	authenticateHeader := mode.authenticateHeader
+	if authenticateHeader == nil {
+		authenticateHeader = cs.authenticateHeaderBlocksWithContexts
+	}
+	authenticatedHeader, err := authenticateHeader(
 		header,
 		epochContexts,
 		trustedBlock.operationalCertificateCounters,
@@ -131,6 +168,9 @@ func (cs *ClientState) verifyHeaderWithMode(
 	}
 
 	if err := verifyBridgeContinuity(authenticatedHeader, trustedBlock); err != nil {
+		return err
+	}
+	if err := cs.verifyHeaderTemporalContinuity(ctx, authenticatedHeader, trustedBlock); err != nil {
 		return err
 	}
 
@@ -345,7 +385,15 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 			continue
 		}
 		stakeByPool[strings.ToLower(entry.PoolId)] = entry
-		totalActiveStake += entry.Stake
+		nextTotalActiveStake, ok := checkedAddStake(totalActiveStake, entry.Stake)
+		if !ok {
+			return 0, 0, 0, errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"epoch %d stake distribution total overflows uint64",
+				epochContext.Epoch,
+			)
+		}
+		totalActiveStake = nextTotalActiveStake
 	}
 	if totalActiveStake == 0 {
 		return 0, 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must have positive total stake", epochContext.Epoch)
@@ -393,7 +441,14 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 				}
 				if eligible {
 					qualifiedUniquePools++
-					qualifiedUniqueStake += entry.Stake
+					nextQualifiedUniqueStake, ok := checkedAddStake(qualifiedUniqueStake, entry.Stake)
+					if !ok {
+						return 0, 0, 0, errorsmod.Wrap(
+							ErrInvalidUniqueStake,
+							"qualified unique stake total overflows uint64",
+						)
+					}
+					qualifiedUniqueStake = nextQualifiedUniqueStake
 				}
 			}
 		}
@@ -402,11 +457,15 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		prevHeight = block.height
 	}
 
-	qualifiedUniqueStakeBps := uint64(0)
-	qualifiedUniqueStakeBps = min((qualifiedUniqueStake*10_000)/totalActiveStake, 10_000)
+	qualifiedUniqueStakeBps := minBps(qualifiedUniqueStake, totalActiveStake)
 
 	score := cs.computeSecurityScore(uint64(len(header.descendantBlocks)), qualifiedUniquePools, qualifiedUniqueStakeBps)
 	return qualifiedUniquePools, qualifiedUniqueStakeBps, score, nil
+}
+
+func checkedAddStake(current, addition uint64) (uint64, bool) {
+	sum, carry := bits.Add64(current, addition, 0)
+	return sum, carry == 0
 }
 
 func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
@@ -463,7 +522,12 @@ func minBps(value, target uint64) uint64 {
 	if value >= target {
 		return 10_000
 	}
-	return (value * 10_000) / target
+
+	// value is below target, so the quotient is below 10,000 and fits in
+	// uint64. Div64 therefore receives a high word smaller than its divisor.
+	high, low := bits.Mul64(value, 10_000)
+	quotient, _ := bits.Div64(high, low, target)
+	return quotient
 }
 
 func min(a, b uint64) uint64 {
@@ -530,19 +594,16 @@ func (cs *ClientState) UpdateState(
 	if err != nil {
 		panic(fmt.Errorf("failed to recompute probabilistic metrics from verified ProbabilisticHeader: %w", err))
 	}
-	consensusTimestamp := authenticatedHeader.anchorBlock.timestamp
-
-	newConsensusState := &ConsensusState{
-		Timestamp:         consensusTimestamp,
-		IbcStateRoot:      ibcStateRoot,
-		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
-		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,
-		UniquePoolsCount:  qualifiedUniquePools,
-		UniqueStakeBps:    qualifiedUniqueStakeBps,
-		SecurityScoreBps:  securityScoreBps,
-	}
-
-	setConsensusState(clientStore, cdc, newConsensusState, header.GetHeight())
+	setAuthenticatedConsensusState(
+		clientStore,
+		cdc,
+		header.GetHeight(),
+		authenticatedHeader,
+		ibcStateRoot,
+		qualifiedUniquePools,
+		qualifiedUniqueStakeBps,
+		securityScoreBps,
+	)
 	setConsensusMetadata(ctx, clientStore, header.GetHeight())
 	clientStore.Set(ProbabilisticScoreKey(height.RevisionHeight), sdk.Uint64ToBigEndian(securityScoreBps))
 	clientStore.Set(UniquePoolsKey(height.RevisionHeight), sdk.Uint64ToBigEndian(qualifiedUniquePools))
@@ -563,12 +624,39 @@ func (cs *ClientState) UpdateState(
 	); err != nil {
 		panic(fmt.Errorf("failed to persist operational certificate counter state: %w", err))
 	}
-	cs.setLatestCheckpoint(height, authenticatedHeader.anchorBlock.hash, authenticatedHeader.anchorBlock.epoch)
+	cs.setLatestCheckpoint(
+		height,
+		authenticatedHeader.anchorBlock.hash,
+		authenticatedHeader.anchorBlock.epoch,
+		authenticatedHeader.anchorBlock.slot,
+		authenticatedHeader.anchorBlock.timestamp,
+	)
 	if err := cs.compactOperationalCertificateCounterHistory(clientStore, cdc); err != nil {
 		panic(fmt.Errorf("failed to compact operational certificate counter history: %w", err))
 	}
 	setClientState(clientStore, cdc, cs)
 	return []exported.Height{height}
+}
+
+func setAuthenticatedConsensusState(
+	clientStore storetypes.KVStore,
+	cdc codec.BinaryCodec,
+	height exported.Height,
+	authenticatedHeader *authenticatedProbabilisticHeader,
+	ibcStateRoot []byte,
+	qualifiedUniquePools uint64,
+	qualifiedUniqueStakeBps uint64,
+	securityScoreBps uint64,
+) {
+	setConsensusState(clientStore, cdc, &ConsensusState{
+		Timestamp:         authenticatedHeader.anchorBlock.timestamp,
+		IbcStateRoot:      ibcStateRoot,
+		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
+		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,
+		UniquePoolsCount:  qualifiedUniquePools,
+		UniqueStakeBps:    qualifiedUniqueStakeBps,
+		SecurityScoreBps:  securityScoreBps,
+	}, height)
 }
 
 func (cs ClientState) pruneOldestConsensusState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore) {

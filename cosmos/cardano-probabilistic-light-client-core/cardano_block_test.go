@@ -394,6 +394,147 @@ func TestVerifyNativeBlockAndHeaderAcceptRealMainnetBabbageAndConwayBlocks(t *te
 	}
 }
 
+func TestAuthenticatedHostStateFixtureRejectsPhase2InvalidTarget(t *testing.T) {
+	fixtureHex, err := os.ReadFile("testdata/babbage_host_state_tx_validity_block.hex")
+	if err != nil {
+		t.Fatalf("read HostState validity fixture: %v", err)
+	}
+	blockCbor, err := hex.DecodeString(strings.TrimSpace(string(fixtureHex)))
+	if err != nil {
+		t.Fatalf("decode HostState validity fixture: %v", err)
+	}
+	epochNonce := bytes.Repeat([]byte{0x55}, 32)
+	block, err := DecodeLedgerBlock(blockCbor)
+	if err != nil {
+		t.Fatalf("decode HostState validity block: %v", err)
+	}
+
+	alwaysEligibleLeaderParameters := PraosLeaderEligibilityParameters{
+		StakeNumerator:        1,
+		StakeDenominator:      1,
+		ActiveSlotNumerator:   1,
+		ActiveSlotDenominator: 1,
+	}
+	valid, result, err := VerifyNativeBlock(block, epochNonce, 100, 62, alwaysEligibleLeaderParameters)
+	if err != nil {
+		t.Fatalf("verify HostState validity block: %v", err)
+	}
+	if !valid {
+		t.Fatal("expected HostState validity block to pass native authentication")
+	}
+	if result.OperationalCertificateSequenceNumber != 0 {
+		t.Fatalf("operational certificate sequence: got %d want 0", result.OperationalCertificateSequenceNumber)
+	}
+	header, err := nativeBabbageHeader(block)
+	if err != nil {
+		t.Fatalf("extract HostState fixture header: %v", err)
+	}
+	headerValid, _, err := VerifyNativeHeader(header, epochNonce, 100, 62, alwaysEligibleLeaderParameters)
+	if err != nil {
+		t.Fatalf("verify HostState fixture header: %v", err)
+	}
+	if !headerValid {
+		t.Fatal("expected HostState fixture header to pass native authentication")
+	}
+
+	transactions := block.Transactions()
+	if len(transactions) != 2 {
+		t.Fatalf("transaction count: got %d want 2", len(transactions))
+	}
+	if transactions[0].IsValid() {
+		t.Fatal("expected transaction zero to be phase-2 invalid")
+	}
+	if !transactions[1].IsValid() {
+		t.Fatal("expected transaction one to be valid")
+	}
+	if got, want := transactions[0].Hash(), "3e9ffe7e260c65730f2b1f9795faa55d18b104f432781806b85f19bc299eca8b"; got != want {
+		t.Fatalf("invalid transaction hash: got %s want %s", got, want)
+	}
+	if got, want := transactions[1].Hash(), "fa257a312429d9d354114f1a5932f137445acd48aac6045e66ffd3c4d6328207"; got != want {
+		t.Fatalf("valid transaction hash: got %s want %s", got, want)
+	}
+
+	policyID := bytes.Repeat([]byte{0x24}, 28)
+	tokenName := []byte("host-state")
+	produced := transactions[0].Produced()
+	if len(produced) != 1 {
+		t.Fatalf("invalid transaction produced output count: got %d want 1 collateral return", len(produced))
+	}
+	collateralRoot, err := extractIbcStateRootFromOutputs(produced, 0, policyID, tokenName)
+	if err != nil {
+		t.Fatalf("extract collateral-return root: %v", err)
+	}
+	if want := bytes.Repeat([]byte{0x99}, 32); !bytes.Equal(collateralRoot, want) {
+		t.Fatalf("collateral-return root: got %x want %x", collateralRoot, want)
+	}
+	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, transactions[0].Hash()); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
+		t.Fatalf("expected invalid transaction body rejection, got %v", err)
+	}
+	if _, err := ExtractIbcStateRootFromAnchorBlock(blockCbor, transactions[0].Hash(), 0, policyID, tokenName); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
+		t.Fatalf("expected invalid transaction root rejection, got %v", err)
+	}
+	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, transactions[1].Hash()); err != nil {
+		t.Fatalf("extract valid transaction body: %v", err)
+	}
+	root, err := ExtractIbcStateRootFromAnchorBlock(blockCbor, transactions[1].Hash(), 0, policyID, tokenName)
+	if err != nil {
+		t.Fatalf("extract valid transaction root: %v", err)
+	}
+	if want := bytes.Repeat([]byte{0x43}, 32); !bytes.Equal(root, want) {
+		t.Fatalf("valid transaction root: got %x want %x", root, want)
+	}
+}
+
+func TestConwayHostStateTargetRespectsInvalidTransactionIndex(t *testing.T) {
+	body := ledger.ConwayTransactionBody{TxDonation: 1}
+	body.TxFee = 1
+	encodeBlock := func(invalidTransactions []uint) []byte {
+		blockCbor, err := cbor.Encode(&ledger.ConwayBlock{
+			Header:                 &ledger.ConwayBlockHeader{},
+			TransactionBodies:      []ledger.ConwayTransactionBody{body},
+			TransactionWitnessSets: []ledger.BabbageTransactionWitnessSet{{}},
+			TransactionMetadataSet: map[uint]*cbor.LazyValue{},
+			InvalidTransactions:    invalidTransactions,
+		})
+		if err != nil {
+			t.Fatalf("encode Conway block: %v", err)
+		}
+		return blockCbor
+	}
+
+	blockCbor := encodeBlock([]uint{})
+	block, err := DecodeLedgerBlock(blockCbor)
+	if err != nil {
+		t.Fatalf("decode Conway block: %v", err)
+	}
+	if _, ok := block.(*rawConwayBlock); !ok {
+		t.Fatalf("decoded Conway fixture as %T", block)
+	}
+	transactions := block.Transactions()
+	if len(transactions) == 0 {
+		t.Fatal("Conway fixture has no transactions")
+	}
+	targetHash := transactions[0].Hash()
+	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, targetHash); err != nil {
+		t.Fatalf("extract valid Conway transaction body: %v", err)
+	}
+
+	invalidBlockCbor := encodeBlock([]uint{0})
+	invalidBlock, err := DecodeLedgerBlock(invalidBlockCbor)
+	if err != nil {
+		t.Fatalf("decode Conway invalid-transaction fixture: %v", err)
+	}
+	if _, ok := invalidBlock.(*rawConwayBlock); !ok {
+		t.Fatalf("decoded invalid Conway fixture as %T", invalidBlock)
+	}
+	if invalidBlock.Transactions()[0].IsValid() {
+		t.Fatal("expected Conway transaction zero to be phase-2 invalid")
+	}
+	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(invalidBlockCbor, targetHash); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
+		t.Fatalf("expected invalid Conway transaction rejection, got %v", err)
+	}
+}
+
 func TestDecodeLedgerHeaderRequiresExactInput(t *testing.T) {
 	original := &ledger.BabbageBlockHeader{}
 	original.Body.BlockNumber = 42

@@ -25,6 +25,8 @@ type trustedBlockState struct {
 	height                         *Height
 	blockHash                      string
 	epoch                          uint64
+	slot                           uint64
+	timestamp                      uint64
 	operationalCertificateCounters map[string]uint64
 }
 
@@ -386,8 +388,9 @@ func (cs ClientState) validateCheckpointFields() error {
 		return errorsmod.Wrap(clienttypes.ErrInvalidClient, "operational certificate counter history start height must be present")
 	}
 	if cs.LatestCheckpointHeight == nil || cs.LatestCheckpointHeight.IsZero() {
-		if cs.LatestCheckpointBlockHash != "" || cs.LatestCheckpointEpoch != 0 {
-			return errorsmod.Wrap(ErrInvalidHeaderHeight, "checkpoint hash and epoch require a checkpoint height")
+		if cs.LatestCheckpointBlockHash != "" || cs.LatestCheckpointEpoch != 0 ||
+			cs.LatestCheckpointSlot != 0 || cs.LatestCheckpointTimestamp != 0 {
+			return errorsmod.Wrap(ErrInvalidHeaderHeight, "checkpoint hash, epoch, slot, and timestamp require a checkpoint height")
 		}
 		if cs.LatestHeight == nil || cs.LatestHeight.IsZero() {
 			return errorsmod.Wrap(ErrInvalidHeaderHeight, "latest height must be present")
@@ -410,6 +413,30 @@ func (cs ClientState) validateCheckpointFields() error {
 	}
 	if strings.TrimSpace(cs.LatestCheckpointBlockHash) == "" {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "checkpoint block hash cannot be empty")
+	}
+	if cs.LatestCheckpointTimestamp == 0 {
+		if cs.LatestCheckpointSlot != 0 || !cs.LatestCheckpointHeight.EQ(cs.LatestHeight) {
+			return errorsmod.Wrap(
+				ErrInvalidTimestamp,
+				"checkpoint timestamp is missing; pre-upgrade rootless checkpoints require an app-state migration",
+			)
+		}
+		// Legacy root-bearing cursors recover their slot from the stored
+		// consensus timestamp when verification loads the trusted state.
+	} else {
+		expectedTimestamp, err := cs.DeriveTimestampFromSlot(cs.LatestCheckpointSlot)
+		if err != nil {
+			return err
+		}
+		if cs.LatestCheckpointTimestamp != expectedTimestamp {
+			return errorsmod.Wrapf(
+				ErrInvalidTimestamp,
+				"checkpoint timestamp %d does not match slot %d timestamp %d",
+				cs.LatestCheckpointTimestamp,
+				cs.LatestCheckpointSlot,
+				expectedTimestamp,
+			)
+		}
 	}
 	if cs.OperationalCertificateCounterHistoryStartHeight.GT(cs.LatestCheckpointHeight) {
 		return errorsmod.Wrap(ErrInvalidHeaderHeight, "operational certificate counter history cannot start after the latest checkpoint")
@@ -445,10 +472,31 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 		if err != nil {
 			return nil, err
 		}
+		checkpointSlot := cs.LatestCheckpointSlot
+		checkpointTimestamp := cs.LatestCheckpointTimestamp
+		if checkpointTimestamp == 0 {
+			if cs.LatestHeight == nil || !height.EQ(cs.LatestHeight) {
+				return nil, errorsmod.Wrap(
+					ErrInvalidTimestamp,
+					"checkpoint timestamp is missing; pre-upgrade rootless checkpoints require an app-state migration",
+				)
+			}
+			consensusState, found := GetConsensusState(clientStore, cdc, height)
+			if !found {
+				return nil, errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height.String())
+			}
+			checkpointSlot, err = cs.DeriveSlotFromTimestamp(consensusState.Timestamp)
+			if err != nil {
+				return nil, errorsmod.Wrap(err, "legacy checkpoint consensus timestamp is not a valid Cardano slot time")
+			}
+			checkpointTimestamp = consensusState.Timestamp
+		}
 		state := &trustedBlockState{
 			height:                         NewHeight(height.RevisionNumber, height.RevisionHeight),
 			blockHash:                      cs.LatestCheckpointBlockHash,
 			epoch:                          cs.LatestCheckpointEpoch,
+			slot:                           checkpointSlot,
+			timestamp:                      checkpointTimestamp,
 			operationalCertificateCounters: counters,
 		}
 		if cs.LatestHeight != nil && height.EQ(cs.LatestHeight) {
@@ -457,7 +505,8 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 				return nil, errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height.String())
 			}
 			if !strings.EqualFold(state.blockHash, consensusState.AcceptedBlockHash) ||
-				state.epoch != consensusState.AcceptedEpoch {
+				state.epoch != consensusState.AcceptedEpoch ||
+				state.timestamp != consensusState.Timestamp {
 				return nil, errorsmod.Wrap(
 					ErrInvalidAcceptedBlock,
 					"checkpoint cursor at latest consensus height does not match the stored consensus state",
@@ -479,18 +528,32 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 	if err != nil {
 		return nil, err
 	}
+	slot, err := cs.DeriveSlotFromTimestamp(consensusState.Timestamp)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "trusted consensus timestamp is not a valid Cardano slot time")
+	}
 	return &trustedBlockState{
 		height:                         NewHeight(height.RevisionNumber, height.RevisionHeight),
 		blockHash:                      consensusState.AcceptedBlockHash,
 		epoch:                          consensusState.AcceptedEpoch,
+		slot:                           slot,
+		timestamp:                      consensusState.Timestamp,
 		operationalCertificateCounters: counters,
 	}, nil
 }
 
-func (cs *ClientState) setLatestCheckpoint(height *Height, blockHash string, epoch uint64) {
+func (cs *ClientState) setLatestCheckpoint(
+	height *Height,
+	blockHash string,
+	epoch uint64,
+	slot uint64,
+	timestamp uint64,
+) {
 	cs.LatestCheckpointHeight = NewHeight(height.RevisionNumber, height.RevisionHeight)
 	cs.LatestCheckpointBlockHash = blockHash
 	cs.LatestCheckpointEpoch = epoch
+	cs.LatestCheckpointSlot = slot
+	cs.LatestCheckpointTimestamp = timestamp
 }
 
 func (cs *ClientState) initializeCheckpoint(consensusState *ConsensusState) error {
@@ -509,13 +572,25 @@ func (cs *ClientState) initializeCheckpoint(consensusState *ConsensusState) erro
 			"initial operational certificate counter history must start at the initial client height",
 		)
 	}
+	initialSlot, err := cs.DeriveSlotFromTimestamp(consensusState.Timestamp)
+	if err != nil {
+		return errorsmod.Wrap(err, "initial consensus timestamp is not a valid Cardano slot time")
+	}
 	if cs.LatestCheckpointHeight == nil || cs.LatestCheckpointHeight.IsZero() {
-		cs.setLatestCheckpoint(cs.LatestHeight, consensusState.AcceptedBlockHash, consensusState.AcceptedEpoch)
+		cs.setLatestCheckpoint(
+			cs.LatestHeight,
+			consensusState.AcceptedBlockHash,
+			consensusState.AcceptedEpoch,
+			initialSlot,
+			consensusState.Timestamp,
+		)
 		return nil
 	}
 	if !cs.LatestCheckpointHeight.EQ(cs.LatestHeight) ||
 		!strings.EqualFold(cs.LatestCheckpointBlockHash, consensusState.AcceptedBlockHash) ||
-		cs.LatestCheckpointEpoch != consensusState.AcceptedEpoch {
+		cs.LatestCheckpointEpoch != consensusState.AcceptedEpoch ||
+		cs.LatestCheckpointSlot != initialSlot ||
+		cs.LatestCheckpointTimestamp != consensusState.Timestamp {
 		return errorsmod.Wrap(
 			clienttypes.ErrInvalidClient,
 			"initial checkpoint cursor must match the initial consensus state",
@@ -549,7 +624,7 @@ func (cs *ClientState) persistCheckpoint(
 	); err != nil {
 		return err
 	}
-	cs.setLatestCheckpoint(anchorHeight, anchor.hash, anchor.epoch)
+	cs.setLatestCheckpoint(anchorHeight, anchor.hash, anchor.epoch, anchor.slot, anchor.timestamp)
 	setClientState(clientStore, cdc, cs)
 	return nil
 }

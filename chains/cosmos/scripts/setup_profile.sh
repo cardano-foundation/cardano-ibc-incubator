@@ -15,6 +15,8 @@ GENTX_AMOUNT="${COSMOS_GENTX_AMOUNT:-500000000stake}"
 MINIMUM_GAS_PRICES="${COSMOS_MINIMUM_GAS_PRICES:-0.0025stake}"
 GENESIS_TIME="${COSMOS_GENESIS_TIME:-2025-12-31T23:59:00Z}"
 MAX_TX_BYTES="${COSMOS_MAX_TX_BYTES:-1048576}"
+GOV_VOTING_PERIOD="${COSMOS_GOV_VOTING_PERIOD:-30s}"
+GOV_MAX_DEPOSIT_PERIOD="${COSMOS_GOV_MAX_DEPOSIT_PERIOD:-60s}"
 
 GENESIS_FILE="${SIMD_HOME}/config/genesis.json"
 CONFIG_FILE="${SIMD_HOME}/config/config.toml"
@@ -80,9 +82,13 @@ if [ ! -f "${GENESIS_FILE}" ]; then
   tmp_genesis="$(mktemp)"
   jq \
     --arg genesis_time "${GENESIS_TIME}" \
+    --arg gov_voting_period "${GOV_VOTING_PERIOD}" \
+    --arg gov_max_deposit_period "${GOV_MAX_DEPOSIT_PERIOD}" \
     '.genesis_time = $genesis_time
       | .consensus.params.block.max_gas = "100000000"
       | .app_state.ibc.client_genesis.params.allowed_clients = ["07-tendermint", "08-cardano-probabilistic"]
+      | .app_state.gov.params.voting_period = $gov_voting_period
+      | .app_state.gov.params.max_deposit_period = $gov_max_deposit_period
       | .app_state.bank.denom_metadata = [{
           "description": "Deterministic token for Cardano IBC compatibility tests",
           "denom_units": [

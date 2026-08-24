@@ -19,4 +19,5 @@ var (
 	ErrInvalidHostStateCommitment = errorsmod.Register(ModuleName, 16, "invalid host state commitment evidence")
 	ErrInvalidTimestamp           = errorsmod.Register(ModuleName, 17, "invalid timestamp")
 	ErrNotImplemented             = errorsmod.Register(ModuleName, 18, "not implemented")
+	ErrInvalidMaxClockDrift       = errorsmod.Register(ModuleName, 19, "invalid max clock drift")
 )
