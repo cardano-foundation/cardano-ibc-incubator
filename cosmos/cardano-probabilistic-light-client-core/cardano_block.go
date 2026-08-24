@@ -73,6 +73,41 @@ func DecodeLedgerBlock(blockCbor []byte) (ledger.Block, error) {
 	return nil, fmt.Errorf("%w; raw block fallback failed: %v", err, fallbackErr)
 }
 
+// DecodeLedgerHeader decodes the exact signed Praos header used by both
+// Babbage and Conway blocks. Cardano does not include the surrounding era in
+// the header itself, and both eras share this header layout.
+func DecodeLedgerHeader(headerCbor []byte) (*ledger.BabbageBlockHeader, error) {
+	var header ledger.BabbageBlockHeader
+	decodedBytes, err := cbor.Decode(headerCbor, &header)
+	if err != nil {
+		return nil, fmt.Errorf("Cardano block header decode error: %w", err)
+	}
+	if decodedBytes != len(headerCbor) {
+		return nil, fmt.Errorf(
+			"Cardano block header contains trailing bytes: decoded %d of %d",
+			decodedBytes,
+			len(headerCbor),
+		)
+	}
+	return &header, nil
+}
+
+func HeaderPrevHash(header *ledger.BabbageBlockHeader) string {
+	return header.Body.PrevHash.String()
+}
+
+func HeaderBodyHash(header *ledger.BabbageBlockHeader) string {
+	return header.Body.BlockBodyHash.String()
+}
+
+func BlockBodyHash(decodedBlock ledger.Block) (string, error) {
+	header, err := nativeBabbageHeader(decodedBlock)
+	if err != nil {
+		return "", err
+	}
+	return HeaderBodyHash(header), nil
+}
+
 func wrapRawBodyFields(decodedBlock ledger.Block, bodyFields rawBlockBodyFields) ledger.Block {
 	switch block := decodedBlock.(type) {
 	case *ledger.BabbageBlock:
@@ -165,6 +200,50 @@ func VerifyNativeBlock(
 		return false, NativeBlockVerificationResult{}, err
 	}
 
+	isHeaderValid, result, err := verifyNativeHeader(
+		header,
+		epochNonce,
+		slotsPerKesPeriod,
+		maxKesEvolutions,
+	)
+	if err != nil {
+		return false, NativeBlockVerificationResult{}, err
+	}
+
+	isBodyValid, err := verifyNativeBlockBody(decodedBlock, header.Body.BlockBodyHash.String())
+	if err != nil {
+		return false, NativeBlockVerificationResult{}, err
+	}
+
+	return isHeaderValid && isBodyValid, result, nil
+}
+
+// VerifyNativeHeader authenticates the signed Cardano header without requiring
+// the body preimage. The signed body hash remains available through
+// HeaderBodyHash, while callers that consume body data must use VerifyNativeBlock.
+func VerifyNativeHeader(
+	header *ledger.BabbageBlockHeader,
+	epochNonce []byte,
+	slotsPerKesPeriod uint64,
+	maxKesEvolutions uint64,
+) (valid bool, result NativeBlockVerificationResult, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			valid = false
+			result = NativeBlockVerificationResult{}
+			err = fmt.Errorf("native header verification panicked: %v", recovered)
+		}
+	}()
+
+	return verifyNativeHeader(header, epochNonce, slotsPerKesPeriod, maxKesEvolutions)
+}
+
+func verifyNativeHeader(
+	header *ledger.BabbageBlockHeader,
+	epochNonce []byte,
+	slotsPerKesPeriod uint64,
+	maxKesEvolutions uint64,
+) (bool, NativeBlockVerificationResult, error) {
 	opCertSequenceNumber, err := verifyOperationalCertificate(
 		header,
 		slotsPerKesPeriod,
@@ -200,12 +279,7 @@ func VerifyNativeBlock(
 	}
 	isVrfValid := bytes.Equal(output, vrfOutputBytes)
 
-	isBodyValid, err := verifyNativeBlockBody(decodedBlock, header.Body.BlockBodyHash.String())
-	if err != nil {
-		return false, NativeBlockVerificationResult{}, err
-	}
-
-	return isKesValid && isVrfValid && isBodyValid, NativeBlockVerificationResult{
+	return isKesValid && isVrfValid, NativeBlockVerificationResult{
 		VrfKey:                               vrfKeyBytes,
 		OperationalCertificateSequenceNumber: opCertSequenceNumber,
 	}, nil

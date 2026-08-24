@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cbor, LazyCborArray } from '@harmoniclabs/cbor';
+import { blake2b } from '@noble/hashes/blake2b';
 import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
 import {
   BlockFetchClient,
@@ -51,6 +53,25 @@ export class MiniProtocalsService {
   async fetchBlockCbor(block: Pick<HistoryBlock, 'hash' | 'slotNo'>): Promise<Buffer> {
     const [result] = await this.fetchBlocksCbor([block]);
     return result;
+  }
+
+  extractBlockHeaderCbor(blockCbor: Uint8Array, expectedBlockHash: string): Buffer {
+    try {
+      const { parsed, offset } = Cbor.parseLazyWithOffset(blockCbor);
+      if (!(parsed instanceof LazyCborArray) || parsed.array.length !== 5 || offset !== blockCbor.length) {
+        throw new Error('expected one complete five-field Cardano block');
+      }
+
+      const headerCbor = Buffer.from(parsed.array[0]);
+      const actualBlockHash = Buffer.from(blake2b(headerCbor, { dkLen: 32 })).toString('hex');
+      if (actualBlockHash.toLowerCase() !== expectedBlockHash.toLowerCase()) {
+        throw new Error(`header hash ${actualBlockHash} does not match requested block ${expectedBlockHash}`);
+      }
+      return headerCbor;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to extract authenticated Cardano block header: ${message}`);
+    }
   }
 
   async fetchBlocksCbor(blocks: Array<Pick<HistoryBlock, 'hash' | 'slotNo'>>): Promise<Buffer[]> {

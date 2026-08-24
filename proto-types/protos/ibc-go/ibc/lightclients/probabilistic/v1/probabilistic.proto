@@ -106,7 +106,12 @@ message ProbabilisticBlock {
   uint64 timestamp = 6;
   reserved 7;
   reserved 8;
+  // Full block CBOR. A root-bearing anchor requires this representation so
+  // its HostState transaction can be authenticated against the signed body.
   bytes block_cbor = 9;
+  // Raw Cardano header CBOR. This compact representation is sufficient for
+  // bridge blocks, descendant blocks, and rootless checkpoint anchors.
+  bytes header_cbor = 10;
 }
 
 message ProbabilisticHeader {

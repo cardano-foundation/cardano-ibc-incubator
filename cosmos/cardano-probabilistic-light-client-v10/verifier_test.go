@@ -24,6 +24,7 @@ import (
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -190,6 +191,7 @@ func TestAuthenticateRealBabbageBlockEnforcesOperationalCertificateCounter(t *te
 		"anchor",
 		[]*EpochContext{epochContext},
 		map[string]uint64{poolKey: 9},
+		true,
 	)
 	require.ErrorContains(t, err, "older than authenticated counter 9")
 
@@ -199,6 +201,7 @@ func TestAuthenticateRealBabbageBlockEnforcesOperationalCertificateCounter(t *te
 		"anchor",
 		[]*EpochContext{epochContext},
 		counters,
+		true,
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(8), authenticated.operationalCertificateSequenceNumber)
@@ -248,7 +251,7 @@ func TestAuthenticateProbabilisticBlockRejectsMismatchedClaims(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			block := cloneTestProbabilisticBlock(valid)
 			tc.mutate(block)
-			_, err := cs.authenticateProbabilisticBlock(block, "anchor", mustTestEpochContexts(t, cs), map[string]uint64{})
+			_, err := cs.authenticateProbabilisticBlock(block, "anchor", mustTestEpochContexts(t, cs), map[string]uint64{}, true)
 			require.ErrorContains(t, err, tc.want)
 		})
 	}
@@ -260,9 +263,245 @@ func TestAuthenticateProbabilisticBlockDoesNotMutateInput(t *testing.T) {
 	block.Hash = "deadbeef"
 	clone := cloneTestProbabilisticBlock(block)
 
-	_, err := cs.authenticateProbabilisticBlock(block, "anchor", mustTestEpochContexts(t, cs), map[string]uint64{})
+	_, err := cs.authenticateProbabilisticBlock(block, "anchor", mustTestEpochContexts(t, cs), map[string]uint64{}, true)
 	require.Error(t, err)
 	require.Equal(t, clone, block)
+}
+
+func TestValidateProbabilisticBlockWitnessEnforcesRoles(t *testing.T) {
+	testCases := []struct {
+		name             string
+		block            *ProbabilisticBlock
+		requireFullBlock bool
+		wantErr          string
+	}{
+		{name: "root accepts full block", block: &ProbabilisticBlock{BlockCbor: []byte{0x01}}, requireFullBlock: true},
+		{name: "non-root accepts legacy full block", block: &ProbabilisticBlock{BlockCbor: []byte{0x01}}},
+		{name: "non-root accepts compact header", block: &ProbabilisticBlock{HeaderCbor: []byte{0x01}}},
+		{name: "root rejects compact header", block: &ProbabilisticBlock{HeaderCbor: []byte{0x01}}, requireFullBlock: true, wantErr: "requires full block_cbor"},
+		{name: "rejects missing witness", block: &ProbabilisticBlock{}, wantErr: "must contain block_cbor or header_cbor"},
+		{name: "rejects ambiguous witness", block: &ProbabilisticBlock{BlockCbor: []byte{0x01}, HeaderCbor: []byte{0x02}}, wantErr: "cannot contain both"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateProbabilisticBlockWitness(tc.block, "test", tc.requireFullBlock)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestAuthenticateBabbageHeaderWitnessMatchesLegacyFullBlock(t *testing.T) {
+	fixture := loadBabbageWitnessFixture(t)
+	poolKey := hex.EncodeToString(fixture.decodedHeader.IssuerVkey().Hash().Bytes())
+	fullCounters := map[string]uint64{}
+
+	full, err := fixture.clientState.authenticateProbabilisticBlock(
+		fixture.block,
+		"bridge",
+		[]*EpochContext{fixture.epochContext},
+		fullCounters,
+		false,
+	)
+	require.NoError(t, err)
+	require.Equal(t, uint64(8), full.operationalCertificateSequenceNumber)
+	require.Equal(t, uint64(8), fullCounters[poolKey])
+
+	compactBlock := cloneTestProbabilisticBlock(fixture.block)
+	compactBlock.BlockCbor = nil
+	compactBlock.HeaderCbor = bytes.Clone(fixture.headerCbor)
+	compactCounters := map[string]uint64{}
+	compact, err := fixture.clientState.authenticateProbabilisticBlock(
+		compactBlock,
+		"bridge",
+		[]*EpochContext{fixture.epochContext},
+		compactCounters,
+		false,
+	)
+	require.NoError(t, err)
+	require.Equal(t, full, compact)
+	require.Equal(t, probabilisticcore.HeaderBodyHash(fixture.decodedHeader), compact.bodyHash)
+	require.Equal(t, uint64(8), compact.operationalCertificateSequenceNumber)
+	require.Equal(t, uint64(8), compactCounters[poolKey])
+
+	_, err = fixture.clientState.authenticateProbabilisticBlock(
+		compactBlock,
+		"bridge",
+		[]*EpochContext{fixture.epochContext},
+		map[string]uint64{poolKey: 9},
+		false,
+	)
+	require.ErrorContains(t, err, "older than authenticated counter 9")
+
+	_, err = fixture.clientState.authenticateProbabilisticBlock(
+		compactBlock,
+		"anchor",
+		[]*EpochContext{fixture.epochContext},
+		map[string]uint64{},
+		true,
+	)
+	require.ErrorContains(t, err, "requires full block_cbor")
+}
+
+func TestAuthenticateBabbageHeaderWitnessRejectsMutations(t *testing.T) {
+	fixture := loadBabbageWitnessFixture(t)
+	compactBlock := cloneTestProbabilisticBlock(fixture.block)
+	compactBlock.BlockCbor = nil
+	compactBlock.HeaderCbor = bytes.Clone(fixture.headerCbor)
+
+	wrongSlot := cloneTestProbabilisticBlock(compactBlock)
+	wrongSlot.Slot++
+	_, err := fixture.clientState.authenticateProbabilisticBlock(
+		wrongSlot,
+		"bridge",
+		[]*EpochContext{fixture.epochContext},
+		map[string]uint64{},
+		false,
+	)
+	require.ErrorContains(t, err, "block slot mismatch")
+
+	mutatedHeader := bytes.Clone(fixture.headerCbor)
+	bodyHashOffset := bytes.Index(mutatedHeader, fixture.decodedHeader.Body.BlockBodyHash.Bytes())
+	require.NotEqual(t, -1, bodyHashOffset)
+	mutatedHeader[bodyHashOffset] ^= 0x01
+	decodedMutatedHeader, err := probabilisticcore.DecodeLedgerHeader(mutatedHeader)
+	require.NoError(t, err)
+	compactBlock.HeaderCbor = mutatedHeader
+	compactBlock.Hash = decodedMutatedHeader.Hash()
+	_, err = fixture.clientState.authenticateProbabilisticBlock(
+		compactBlock,
+		"bridge",
+		[]*EpochContext{fixture.epochContext},
+		map[string]uint64{},
+		false,
+	)
+	require.ErrorContains(t, err, "header failed native Cardano verification")
+
+	mutatedCertificate := bytes.Clone(fixture.headerCbor)
+	signatureOffset := bytes.Index(mutatedCertificate, fixture.decodedHeader.Body.OpCert.Signature)
+	require.NotEqual(t, -1, signatureOffset)
+	mutatedCertificate[signatureOffset] ^= 0x01
+	decodedMutatedCertificate, err := probabilisticcore.DecodeLedgerHeader(mutatedCertificate)
+	require.NoError(t, err)
+	compactBlock = cloneTestProbabilisticBlock(fixture.block)
+	compactBlock.BlockCbor = nil
+	compactBlock.HeaderCbor = mutatedCertificate
+	compactBlock.Hash = decodedMutatedCertificate.Hash()
+	_, err = fixture.clientState.authenticateProbabilisticBlock(
+		compactBlock,
+		"bridge",
+		[]*EpochContext{fixture.epochContext},
+		map[string]uint64{},
+		false,
+	)
+	require.ErrorContains(t, err, "operational certificate cold-key signature is invalid")
+}
+
+func BenchmarkAuthenticateBabbageWitness(b *testing.B) {
+	fixture := loadBabbageWitnessFixture(b)
+	poolKey := hex.EncodeToString(fixture.decodedHeader.IssuerVkey().Hash().Bytes())
+	compactBlock := cloneTestProbabilisticBlock(fixture.block)
+	compactBlock.BlockCbor = nil
+	compactBlock.HeaderCbor = bytes.Clone(fixture.headerCbor)
+
+	benchmarks := []struct {
+		name  string
+		block *ProbabilisticBlock
+		size  int
+	}{
+		{name: "legacy_full_block", block: fixture.block, size: len(fixture.block.BlockCbor)},
+		{name: "header_only", block: compactBlock, size: len(compactBlock.HeaderCbor)},
+	}
+
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(benchmark.size))
+			for b.Loop() {
+				counters := map[string]uint64{poolKey: 8}
+				authenticated, err := fixture.clientState.authenticateProbabilisticBlock(
+					benchmark.block,
+					"bridge",
+					[]*EpochContext{fixture.epochContext},
+					counters,
+					false,
+				)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if authenticated.operationalCertificateSequenceNumber != 8 || counters[poolKey] != 8 {
+					b.Fatalf(
+						"unexpected operational certificate result: sequence=%d counter=%d",
+						authenticated.operationalCertificateSequenceNumber,
+						counters[poolKey],
+					)
+				}
+			}
+		})
+	}
+}
+
+type babbageWitnessFixture struct {
+	clientState   *ClientState
+	epochContext  *EpochContext
+	block         *ProbabilisticBlock
+	headerCbor    []byte
+	decodedHeader *ledger.BabbageBlockHeader
+}
+
+func loadBabbageWitnessFixture(t testing.TB) babbageWitnessFixture {
+	t.Helper()
+
+	fixtureHex, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/babbage_block.hex")
+	require.NoError(t, err)
+	blockCbor, err := hex.DecodeString(strings.Join(strings.Fields(string(fixtureHex)), ""))
+	require.NoError(t, err)
+	decodedBlock, err := decodeLedgerBlock(blockCbor)
+	require.NoError(t, err)
+	headerHex, _, vrfKey, err := buildBlockVerificationArtifacts(decodedBlock)
+	require.NoError(t, err)
+	headerCbor, err := hex.DecodeString(headerHex)
+	require.NoError(t, err)
+	decodedHeader, err := probabilisticcore.DecodeLedgerHeader(headerCbor)
+	require.NoError(t, err)
+	epochNonce, err := hex.DecodeString("53606952e39eadd5eea559be517f9741c9538073e987ec1b7a6c7a05db6195d3")
+	require.NoError(t, err)
+	vrfKeyHash := blake2b.Sum256(vrfKey)
+
+	clientState := newProbabilisticTestClientState()
+	clientState.SystemStartUnixNs = 1
+	clientState.SlotLengthNs = 1
+	epochContext := &EpochContext{
+		Epoch:                 7,
+		EpochNonce:            epochNonce,
+		SlotsPerKesPeriod:     129600,
+		EpochStartSlot:        decodedBlock.SlotNumber(),
+		EpochEndSlotExclusive: decodedBlock.SlotNumber() + 1,
+		StakeDistribution: []*StakeDistributionEntry{{
+			PoolId:     decodedBlock.IssuerVkey().PoolId(),
+			Stake:      1,
+			VrfKeyHash: vrfKeyHash[:],
+		}},
+	}
+	block := &ProbabilisticBlock{
+		Height:    NewHeight(0, decodedBlock.BlockNumber()),
+		Hash:      decodedBlock.Hash(),
+		Slot:      decodedBlock.SlotNumber(),
+		Epoch:     epochContext.Epoch,
+		Timestamp: 1 + decodedBlock.SlotNumber(),
+		BlockCbor: blockCbor,
+	}
+	return babbageWitnessFixture{
+		clientState:   clientState,
+		epochContext:  epochContext,
+		block:         block,
+		headerCbor:    headerCbor,
+		decodedHeader: decodedHeader,
+	}
 }
 
 func TestVerifyHostStateTxIncludedInAnchorBlockRejectsMissingTx(t *testing.T) {
@@ -1433,6 +1672,9 @@ func cloneTestProbabilisticBlock(block *ProbabilisticBlock) *ProbabilisticBlock 
 	}
 	if block.BlockCbor != nil {
 		clone.BlockCbor = append([]byte(nil), block.BlockCbor...)
+	}
+	if block.HeaderCbor != nil {
+		clone.HeaderCbor = append([]byte(nil), block.HeaderCbor...)
 	}
 	return &clone
 }

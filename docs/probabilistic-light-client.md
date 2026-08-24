@@ -163,7 +163,7 @@ The important thing to notice is that the header does **not** try to prove arbit
 
 The header no longer carries relayed score metrics or a relayed HostState transaction body. The verifier recomputes the probabilistic metrics locally for storage/telemetry, and it recovers the HostState transaction body directly from the authenticated anchor block witness before extracting `ibc_state_root`. On an adjacent epoch rollover update, the header also carries the authenticated epoch context for the new anchor epoch so the client can continue on the same client ID without operational redeployment.
 
-Each relayed `ProbabilisticBlock` now also carries raw `block_cbor`. The verifier decodes that raw Cardano block witness and cross-checks the claimed block hash, previous hash, height, slot, and issuer pool identity before it accepts the bridge or descendant window as the basis for scoring.
+Each relayed `ProbabilisticBlock` carries the evidence its role needs. A root-bearing `anchor_block` carries full `block_cbor` so the verifier can authenticate the HostState transaction against the signed block body, while `bridge_blocks`, `descendant_blocks`, and rootless checkpoint anchors carry compact `header_cbor`. The verifier derives the signed block metadata from that evidence and cross-checks the claimed block hash, previous hash, height, slot, and issuer pool identity before accepting the update.
 
 ### Latest Height
 
