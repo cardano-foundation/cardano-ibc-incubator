@@ -21,6 +21,13 @@ type NativeBlockVerificationResult struct {
 	OperationalCertificateSequenceNumber uint64
 }
 
+type PraosLeaderEligibilityParameters struct {
+	StakeNumerator        uint64
+	StakeDenominator      uint64
+	ActiveSlotNumerator   uint64
+	ActiveSlotDenominator uint64
+}
+
 type rawBlockBodyFields struct {
 	transactionBodies      []byte
 	transactionWitnessSets []byte
@@ -186,6 +193,7 @@ func VerifyNativeBlock(
 	epochNonce []byte,
 	slotsPerKesPeriod uint64,
 	maxKesEvolutions uint64,
+	leaderParameters PraosLeaderEligibilityParameters,
 ) (valid bool, result NativeBlockVerificationResult, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -205,6 +213,7 @@ func VerifyNativeBlock(
 		epochNonce,
 		slotsPerKesPeriod,
 		maxKesEvolutions,
+		leaderParameters,
 	)
 	if err != nil {
 		return false, NativeBlockVerificationResult{}, err
@@ -226,6 +235,7 @@ func VerifyNativeHeader(
 	epochNonce []byte,
 	slotsPerKesPeriod uint64,
 	maxKesEvolutions uint64,
+	leaderParameters PraosLeaderEligibilityParameters,
 ) (valid bool, result NativeBlockVerificationResult, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -235,7 +245,7 @@ func VerifyNativeHeader(
 		}
 	}()
 
-	return verifyNativeHeader(header, epochNonce, slotsPerKesPeriod, maxKesEvolutions)
+	return verifyNativeHeader(header, epochNonce, slotsPerKesPeriod, maxKesEvolutions, leaderParameters)
 }
 
 func verifyNativeHeader(
@@ -243,6 +253,7 @@ func verifyNativeHeader(
 	epochNonce []byte,
 	slotsPerKesPeriod uint64,
 	maxKesEvolutions uint64,
+	leaderParameters PraosLeaderEligibilityParameters,
 ) (bool, NativeBlockVerificationResult, error) {
 	opCertSequenceNumber, err := verifyOperationalCertificate(
 		header,
@@ -278,8 +289,25 @@ func verifyNativeHeader(
 		return false, NativeBlockVerificationResult{}, fmt.Errorf("VRF invalid: %w", err)
 	}
 	isVrfValid := bytes.Equal(output, vrfOutputBytes)
+	if !isVrfValid {
+		return false, NativeBlockVerificationResult{}, nil
+	}
 
-	return isKesValid && isVrfValid, NativeBlockVerificationResult{
+	isLeaderEligible, err := IsPraosLeaderEligible(
+		vrfOutputBytes,
+		leaderParameters.StakeNumerator,
+		leaderParameters.StakeDenominator,
+		leaderParameters.ActiveSlotNumerator,
+		leaderParameters.ActiveSlotDenominator,
+	)
+	if err != nil {
+		return false, NativeBlockVerificationResult{}, fmt.Errorf("Praos leader eligibility invalid: %w", err)
+	}
+	if !isLeaderEligible {
+		return false, NativeBlockVerificationResult{}, fmt.Errorf("Praos leadership threshold not met")
+	}
+
+	return isKesValid, NativeBlockVerificationResult{
 		VrfKey:                               vrfKeyBytes,
 		OperationalCertificateSequenceNumber: opCertSequenceNumber,
 	}, nil

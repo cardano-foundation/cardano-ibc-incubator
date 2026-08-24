@@ -4,6 +4,7 @@ import { resolveManagedOgmiosWsEndpoint, resolveManagedOgmiosWsOptions } from '.
 
 type OgmiosShelleyGenesisConfig = {
   era?: unknown;
+  activeSlotsCoefficient?: unknown;
   slotsPerKesPeriod?: unknown;
   maxKesEvolutions?: unknown;
 };
@@ -13,6 +14,8 @@ type OgmiosCurrentEpochVerificationData = {
   epochNonce: string;
   slotsPerKesPeriod: number;
   maxKesEvolutions: number;
+  activeSlotCoefficientNumerator: bigint;
+  activeSlotCoefficientDenominator: bigint;
 };
 
 type OgmiosStakePool = {
@@ -33,6 +36,8 @@ type OgmiosCurrentEpochStakeDistributionEntry = {
   poolId: string;
   stake: bigint;
   vrfKeyHash: string;
+  relativeStakeNumerator: bigint;
+  relativeStakeDenominator: bigint;
 };
 
 type OgmiosLedgerPoint = {
@@ -51,6 +56,8 @@ type OgmiosSession = {
 type OgmiosShelleyGenesisVerificationConfig = {
   slotsPerKesPeriod: number;
   maxKesEvolutions: number;
+  activeSlotCoefficientNumerator: bigint;
+  activeSlotCoefficientDenominator: bigint;
 };
 
 type OgmiosOperationalCertificateCounters = Map<string, bigint>;
@@ -216,9 +223,17 @@ const parseShelleyGenesisConfig = (config: OgmiosShelleyGenesisConfig): OgmiosSh
     throw new Error('Ogmios returned invalid maxKesEvolutions');
   }
 
+  const activeSlotCoefficient = parseUnitIntervalFraction(
+    config.activeSlotsCoefficient,
+    'activeSlotsCoefficient',
+    false,
+  );
+
   return {
     slotsPerKesPeriod: parsePositiveInteger(config.slotsPerKesPeriod, 'slotsPerKesPeriod'),
     maxKesEvolutions,
+    activeSlotCoefficientNumerator: activeSlotCoefficient.numerator,
+    activeSlotCoefficientDenominator: activeSlotCoefficient.denominator,
   };
 };
 
@@ -278,33 +293,42 @@ const operationalCertificatePoolIdBytes = (poolId: string): Buffer => {
   }
 };
 
-const parseStakeFraction = (value: unknown): { numerator: bigint; denominator: bigint } => {
+const parseUnitIntervalFraction = (
+  value: unknown,
+  field: string,
+  allowZero: boolean,
+): { numerator: bigint; denominator: bigint } => {
   if (typeof value !== 'string') {
-    throw new Error('Ogmios returned an invalid live stake fraction');
+    throw new Error(`Ogmios returned an invalid ${field}`);
   }
 
   const parts = value.split('/');
-  if (parts.length !== 2) {
-    throw new Error('Ogmios returned an invalid live stake fraction');
+  if (parts.length !== 2 || !parts.every((part) => /^\d+$/.test(part))) {
+    throw new Error(`Ogmios returned an invalid ${field}`);
   }
 
   const numerator = BigInt(parts[0]);
   const denominator = BigInt(parts[1]);
-  if (numerator < 0n || denominator <= 0n) {
-    throw new Error('Ogmios returned an invalid live stake fraction');
+  if (
+    denominator <= 0n ||
+    numerator > denominator ||
+    numerator > MAX_UINT64 ||
+    denominator > MAX_UINT64 ||
+    (!allowZero && numerator === 0n)
+  ) {
+    throw new Error(`Ogmios returned an invalid ${field}`);
   }
 
   return { numerator, denominator };
 };
 
+const parseStakeFraction = (value: unknown): { numerator: bigint; denominator: bigint } =>
+  parseUnitIntervalFraction(value, 'live stake fraction', true);
+
 const stakeFractionToWeight = (numerator: bigint, denominator: bigint): bigint => {
   if (numerator === 0n) {
     return 0n;
   }
-  if (numerator > denominator) {
-    throw new Error('Ogmios returned an invalid live stake fraction');
-  }
-
   const rounded = (numerator * STAKE_DISTRIBUTION_WEIGHT_SCALE + denominator / 2n) / denominator;
   return rounded > 0n ? rounded : 1n;
 };
@@ -350,6 +374,8 @@ const parseStakeDistributionRows = (
       poolId: row.poolId,
       stake: stakeFractionToWeight(row.numerator, row.denominator),
       vrfKeyHash: row.vrfKeyHash,
+      relativeStakeNumerator: row.numerator,
+      relativeStakeDenominator: row.denominator,
     }))
     .filter((row) => row.stake > 0n);
 };
@@ -527,6 +553,8 @@ const queryEpochContextAtPoint = async (
       epochNonce: parseEpochNonce(epochNonce),
       slotsPerKesPeriod: genesisVerificationConfig.slotsPerKesPeriod,
       maxKesEvolutions: genesisVerificationConfig.maxKesEvolutions,
+      activeSlotCoefficientNumerator: genesisVerificationConfig.activeSlotCoefficientNumerator,
+      activeSlotCoefficientDenominator: genesisVerificationConfig.activeSlotCoefficientDenominator,
       stakeDistribution: parseStakeDistributionRows(stakePools, liveStakeDistribution),
     };
   });
@@ -557,6 +585,8 @@ const queryCurrentEpochVerificationData = async (
     epochNonce: parseEpochNonce(epochNonce),
     slotsPerKesPeriod: genesisVerificationConfig.slotsPerKesPeriod,
     maxKesEvolutions: genesisVerificationConfig.maxKesEvolutions,
+    activeSlotCoefficientNumerator: genesisVerificationConfig.activeSlotCoefficientNumerator,
+    activeSlotCoefficientDenominator: genesisVerificationConfig.activeSlotCoefficientDenominator,
   };
 };
 
@@ -576,6 +606,7 @@ export {
   operationalCertificatePoolIdBytes,
   parseOperationalCertificateCounters,
   parseShelleyGenesisConfig,
+  parseStakeDistributionRows,
   queryCurrentEpochStakeDistribution,
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,

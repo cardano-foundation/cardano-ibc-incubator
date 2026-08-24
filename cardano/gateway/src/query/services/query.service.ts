@@ -532,6 +532,8 @@ export class QueryService {
       system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
       epoch_contexts: [currentEpochContext],
+      active_slot_coefficient_numerator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientNumerator,
+      active_slot_coefficient_denominator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientDenominator,
       latest_checkpoint_height: {
         revision_number: 0n,
         revision_height: stabilityEvidence.anchorHeight,
@@ -2148,6 +2150,8 @@ export class QueryService {
       poolId: string;
       stake: bigint;
       vrfKeyHash: string;
+      relativeStakeNumerator: bigint;
+      relativeStakeDenominator: bigint;
       firstRegistrationSlot?: bigint | null;
     }>,
     verificationContext: {
@@ -2166,6 +2170,14 @@ export class QueryService {
           stake: this.toProtoUint64(entry.stake, `stake_distribution[${entry.poolId}].stake`),
           vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'),
           first_registration_slot: entry.firstRegistrationSlot ?? 0n,
+          relative_stake_numerator: this.toProtoUint64(
+            entry.relativeStakeNumerator,
+            `stake_distribution[${entry.poolId}].relative_stake_numerator`,
+          ),
+          relative_stake_denominator: this.toProtoUint64(
+            entry.relativeStakeDenominator,
+            `stake_distribution[${entry.poolId}].relative_stake_denominator`,
+          ),
         }),
       ),
       epoch_nonce: Buffer.from(verificationContext.epochNonce, 'hex'),

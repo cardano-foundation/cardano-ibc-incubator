@@ -127,15 +127,52 @@ describe('QueryService stability anchor contract', () => {
       findEpochContextAtBlock: jest.fn().mockResolvedValue({
         epoch: 7,
         stakeDistribution: [
-          { poolId: 'pool-a', stake: 200n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
-          { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
-          { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
-          { poolId: 'pool-d', stake: 200n, vrfKeyHash: 'dd'.repeat(32), firstRegistrationSlot: 1n },
-          { poolId: 'pool-e', stake: 200n, vrfKeyHash: 'ee'.repeat(32), firstRegistrationSlot: 1n },
+          {
+            poolId: 'pool-a',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'aa'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
+          {
+            poolId: 'pool-b',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'bb'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
+          {
+            poolId: 'pool-c',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'cc'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
+          {
+            poolId: 'pool-d',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'dd'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
+          {
+            poolId: 'pool-e',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'ee'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
         ],
         verificationContext: {
           epochNonce: '11'.repeat(32),
           slotsPerKesPeriod: 129600,
+          activeSlotCoefficientNumerator: 1n,
+          activeSlotCoefficientDenominator: 20n,
           maxKesEvolutions: 62,
           currentEpochStartSlot: 900n,
           currentEpochEndSlotExclusive: 3000n,
@@ -247,6 +284,10 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.epoch_nonce).toEqual(clientState.epoch_contexts[0].epoch_nonce);
     expect(clientState.epoch_stake_distribution).toEqual(clientState.epoch_contexts[0].stake_distribution);
     expect(clientState.slots_per_kes_period).toBe(129600n);
+    expect(clientState.active_slot_coefficient_numerator).toBe(1n);
+    expect(clientState.active_slot_coefficient_denominator).toBe(20n);
+    expect(clientState.epoch_contexts[0].stake_distribution[0].relative_stake_numerator).toBe(1n);
+    expect(clientState.epoch_contexts[0].stake_distribution[0].relative_stake_denominator).toBe(5n);
     expect(clientState.current_epoch_start_slot).toBe(900n);
     expect(clientState.current_epoch_end_slot_exclusive).toBe(3000n);
     expect(clientState.system_start_unix_ns).toBe(STABILITY_SLOT_ORIGIN_NS);
@@ -426,15 +467,52 @@ describe('QueryService stability anchor contract', () => {
       return {
         epoch,
         stakeDistribution: [
-          { poolId: 'pool-a', stake: 200n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
-          { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
-          { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
-          { poolId: 'pool-d', stake: 200n, vrfKeyHash: 'dd'.repeat(32), firstRegistrationSlot: 1n },
-          { poolId: 'pool-e', stake: 200n, vrfKeyHash: 'ee'.repeat(32), firstRegistrationSlot: 1n },
+          {
+            poolId: 'pool-a',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'aa'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
+          {
+            poolId: 'pool-b',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'bb'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
+          {
+            poolId: 'pool-c',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'cc'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
+          {
+            poolId: 'pool-d',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'dd'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
+          {
+            poolId: 'pool-e',
+            stake: 200n,
+            relativeStakeNumerator: 1n,
+            relativeStakeDenominator: 5n,
+            vrfKeyHash: 'ee'.repeat(32),
+            firstRegistrationSlot: 1n,
+          },
         ],
         verificationContext: {
           epochNonce: epoch.toString(16).padStart(64, '0'),
           slotsPerKesPeriod: 129600,
+          activeSlotCoefficientNumerator: 1n,
+          activeSlotCoefficientDenominator: 20n,
           maxKesEvolutions: 62,
           currentEpochStartSlot,
           currentEpochEndSlotExclusive,

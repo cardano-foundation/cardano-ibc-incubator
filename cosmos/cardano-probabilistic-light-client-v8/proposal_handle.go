@@ -16,13 +16,15 @@ import (
 )
 
 type recoveryInvariantClientState struct {
-	UpgradePath           []string
-	HostStateNftPolicyId  []byte
-	HostStateNftTokenName []byte
-	SystemStartUnixNs     uint64
-	SlotLengthNs          uint64
-	SlotsPerKesPeriod     uint64
-	MaxKesEvolutions      uint64
+	UpgradePath                      []string
+	HostStateNftPolicyId             []byte
+	HostStateNftTokenName            []byte
+	SystemStartUnixNs                uint64
+	SlotLengthNs                     uint64
+	SlotsPerKesPeriod                uint64
+	MaxKesEvolutions                 uint64
+	ActiveSlotCoefficientNumerator   uint64
+	ActiveSlotCoefficientDenominator uint64
 }
 
 func (cs ClientState) CheckSubstituteAndUpdateState(
@@ -114,6 +116,8 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	cs.ChainId = substituteClientState.ChainId
 	cs.TrustingPeriod = substituteClientState.TrustingPeriod
 	cs.MaxKesEvolutions = substituteClientState.MaxKesEvolutions
+	cs.ActiveSlotCoefficientNumerator = substituteClientState.ActiveSlotCoefficientNumerator
+	cs.ActiveSlotCoefficientDenominator = substituteClientState.ActiveSlotCoefficientDenominator
 	if err := syncCurrentEpochFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
 	}
@@ -165,12 +169,14 @@ func IsMatchingClientState(subject, substitute ClientState) bool {
 
 func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 	return recoveryInvariantClientState{
-		UpgradePath:           append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:  bytes.Clone(cs.HostStateNftPolicyId),
-		HostStateNftTokenName: bytes.Clone(cs.HostStateNftTokenName),
-		SystemStartUnixNs:     cs.SystemStartUnixNs,
-		SlotLengthNs:          cs.SlotLengthNs,
-		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
-		MaxKesEvolutions:      cs.MaxKesEvolutions,
+		UpgradePath:                      append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:             bytes.Clone(cs.HostStateNftPolicyId),
+		HostStateNftTokenName:            bytes.Clone(cs.HostStateNftTokenName),
+		SystemStartUnixNs:                cs.SystemStartUnixNs,
+		SlotLengthNs:                     cs.SlotLengthNs,
+		SlotsPerKesPeriod:                cs.SlotsPerKesPeriod,
+		MaxKesEvolutions:                 cs.MaxKesEvolutions,
+		ActiveSlotCoefficientNumerator:   cs.ActiveSlotCoefficientNumerator,
+		ActiveSlotCoefficientDenominator: cs.ActiveSlotCoefficientDenominator,
 	}
 }

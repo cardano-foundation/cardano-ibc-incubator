@@ -516,6 +516,8 @@ export class YaciHistoryService implements HistoryService {
         poolId: normalizePoolId(entry.poolId),
         stake: entry.stake,
         vrfKeyHash: normalizeHex(entry.vrfKeyHash),
+        relativeStakeNumerator: entry.relativeStakeNumerator,
+        relativeStakeDenominator: entry.relativeStakeDenominator,
       }));
     const stakeDistribution = await this.findCurrentEpochStakeSnapshot(
       block,
@@ -535,6 +537,10 @@ export class YaciHistoryService implements HistoryService {
         epochNonce: epochContext.epochNonce,
         slotsPerKesPeriod: epochContext.slotsPerKesPeriod,
         maxKesEvolutions: epochContext.maxKesEvolutions,
+        activeSlotCoefficientNumerator:
+          epochContext.activeSlotCoefficientNumerator,
+        activeSlotCoefficientDenominator:
+          epochContext.activeSlotCoefficientDenominator,
         currentEpochStartSlot: slotBounds.currentEpochStartSlot,
         currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
       },
@@ -701,7 +707,13 @@ export class YaciHistoryService implements HistoryService {
             `Current epoch VRF key hash unavailable for pool ${poolId} in epoch ${block.epochNo}`,
           );
         }
-        return { poolId, stake, vrfKeyHash };
+        return {
+          poolId,
+          stake,
+          vrfKeyHash,
+          relativeStakeNumerator: stake,
+          relativeStakeDenominator: totalActiveStake,
+        };
       });
   }
 
@@ -955,6 +967,8 @@ export class YaciHistoryService implements HistoryService {
         stake,
         vrfKeyHash: registration.vrfKeyHash,
         firstRegistrationSlot: registration.firstRegistrationSlot,
+        relativeStakeNumerator: stake,
+        relativeStakeDenominator: epochInfo.totalActiveStake,
       };
     });
     const producerStake = stakeDistribution.reduce(
@@ -977,6 +991,8 @@ export class YaciHistoryService implements HistoryService {
         stake: unproducedStake,
         vrfKeyHash: "00".repeat(32),
         firstRegistrationSlot: 1n,
+        relativeStakeNumerator: unproducedStake,
+        relativeStakeDenominator: epochInfo.totalActiveStake,
       });
     }
 
@@ -987,6 +1003,10 @@ export class YaciHistoryService implements HistoryService {
         epochNonce: verificationContext.epochNonce,
         slotsPerKesPeriod: verificationContext.slotsPerKesPeriod,
         maxKesEvolutions: verificationContext.maxKesEvolutions,
+        activeSlotCoefficientNumerator:
+          verificationContext.activeSlotCoefficientNumerator,
+        activeSlotCoefficientDenominator:
+          verificationContext.activeSlotCoefficientDenominator,
         currentEpochStartSlot: slotBounds.currentEpochStartSlot,
         currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
       },
@@ -1273,6 +1293,8 @@ export class YaciHistoryService implements HistoryService {
         poolId: normalizePoolId(entry.poolId),
         stake: entry.stake,
         vrfKeyHash: normalizeHex(entry.vrfKeyHash),
+        relativeStakeNumerator: entry.relativeStakeNumerator,
+        relativeStakeDenominator: entry.relativeStakeDenominator,
       }));
     const firstRegistrationSlots = await this.findKnownPoolRegistrationSlots(
       stakeDistribution.map((entry) => entry.poolId),
@@ -1288,6 +1310,10 @@ export class YaciHistoryService implements HistoryService {
         epochNonce: verificationContext.epochNonce,
         slotsPerKesPeriod: verificationContext.slotsPerKesPeriod,
         maxKesEvolutions: verificationContext.maxKesEvolutions,
+        activeSlotCoefficientNumerator:
+          verificationContext.activeSlotCoefficientNumerator,
+        activeSlotCoefficientDenominator:
+          verificationContext.activeSlotCoefficientDenominator,
         currentEpochStartSlot: slotBounds.currentEpochStartSlot,
         currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
       },
@@ -1967,7 +1993,12 @@ export class YaciHistoryService implements HistoryService {
 
   private async findEpochSlotBounds(
     epoch: number,
-  ): Promise<HistoryEpochVerificationContext | null> {
+  ): Promise<
+    Pick<
+      HistoryEpochVerificationContext,
+      "currentEpochStartSlot" | "currentEpochEndSlotExclusive"
+    > | null
+  > {
     const startSlotQuery = `
       SELECT MIN(slot) AS start_slot
       FROM block
@@ -2004,9 +2035,6 @@ export class YaciHistoryService implements HistoryService {
     }
 
     return {
-      epochNonce: "",
-      slotsPerKesPeriod: 0,
-      maxKesEvolutions: 0,
       currentEpochStartSlot: startSlot,
       currentEpochEndSlotExclusive,
     };

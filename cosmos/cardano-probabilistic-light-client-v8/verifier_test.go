@@ -126,10 +126,12 @@ func TestInitialStateWithFourThousandPoolsStaysBelowOneMegabyte(t *testing.T) {
 		vrfKeyHash := make([]byte, 32)
 		binary.BigEndian.PutUint32(vrfKeyHash[28:], index)
 		stakeDistribution = append(stakeDistribution, &StakeDistributionEntry{
-			PoolId:                hex.EncodeToString(poolID),
-			Stake:                 1,
-			VrfKeyHash:            vrfKeyHash,
-			FirstRegistrationSlot: 1,
+			PoolId:                   hex.EncodeToString(poolID),
+			Stake:                    1,
+			VrfKeyHash:               vrfKeyHash,
+			FirstRegistrationSlot:    1,
+			RelativeStakeNumerator:   1,
+			RelativeStakeDenominator: 4_000,
 		})
 		counters = append(counters, &OperationalCertificateCounter{
 			PoolId:         poolID,
@@ -171,9 +173,11 @@ func TestAuthenticateRealBabbageBlockEnforcesOperationalCertificateCounter(t *te
 		EpochStartSlot:        decodedBlock.SlotNumber(),
 		EpochEndSlotExclusive: decodedBlock.SlotNumber() + 1,
 		StakeDistribution: []*StakeDistributionEntry{{
-			PoolId:     decodedBlock.IssuerVkey().PoolId(),
-			Stake:      1,
-			VrfKeyHash: vrfKeyHash[:],
+			PoolId:                   decodedBlock.IssuerVkey().PoolId(),
+			Stake:                    1,
+			VrfKeyHash:               vrfKeyHash[:],
+			RelativeStakeNumerator:   4_178_103_721_131,
+			RelativeStakeDenominator: 5_019_556_879_197_493,
 		}},
 	}
 	block := &ProbabilisticBlock{
@@ -482,9 +486,11 @@ func loadBabbageWitnessFixture(t testing.TB) babbageWitnessFixture {
 		EpochStartSlot:        decodedBlock.SlotNumber(),
 		EpochEndSlotExclusive: decodedBlock.SlotNumber() + 1,
 		StakeDistribution: []*StakeDistributionEntry{{
-			PoolId:     decodedBlock.IssuerVkey().PoolId(),
-			Stake:      1,
-			VrfKeyHash: vrfKeyHash[:],
+			PoolId:                   decodedBlock.IssuerVkey().PoolId(),
+			Stake:                    1,
+			VrfKeyHash:               vrfKeyHash[:],
+			RelativeStakeNumerator:   4_178_103_721_131,
+			RelativeStakeDenominator: 5_019_556_879_197_493,
 		}},
 	}
 	block := &ProbabilisticBlock{
@@ -1553,25 +1559,29 @@ func newProbabilisticTestClientState() *ClientState {
 	zeroHeight := ZeroHeight()
 	epochStakeDistribution := []*StakeDistributionEntry{
 		{
-			PoolId:                "pool-a",
-			Stake:                 10_000,
-			VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
-			FirstRegistrationSlot: 1,
+			PoolId:                   "pool-a",
+			Stake:                    10_000,
+			VrfKeyHash:               bytes.Repeat([]byte{0x02}, 32),
+			FirstRegistrationSlot:    1,
+			RelativeStakeNumerator:   1,
+			RelativeStakeDenominator: 1,
 		},
 	}
 	epochNonce := bytes.Repeat([]byte{0x03}, 32)
 	return &ClientState{
-		ChainId:                "cardano-test",
-		LatestHeight:           &Height{RevisionHeight: 10},
-		FrozenHeight:           zeroHeight,
-		CurrentEpoch:           7,
-		TrustingPeriod:         24 * time.Hour,
-		HostStateNftPolicyId:   bytes.Repeat([]byte{0x01}, 28),
-		HostStateNftTokenName:  []byte("host-state"),
-		EpochStakeDistribution: cloneStakeDistributionEntries(epochStakeDistribution),
-		EpochNonce:             bytes.Clone(epochNonce),
-		SlotsPerKesPeriod:      129600,
-		MaxKesEvolutions:       62,
+		ChainId:                          "cardano-test",
+		LatestHeight:                     &Height{RevisionHeight: 10},
+		FrozenHeight:                     zeroHeight,
+		CurrentEpoch:                     7,
+		TrustingPeriod:                   24 * time.Hour,
+		HostStateNftPolicyId:             bytes.Repeat([]byte{0x01}, 28),
+		HostStateNftTokenName:            []byte("host-state"),
+		EpochStakeDistribution:           cloneStakeDistributionEntries(epochStakeDistribution),
+		EpochNonce:                       bytes.Clone(epochNonce),
+		SlotsPerKesPeriod:                129600,
+		MaxKesEvolutions:                 62,
+		ActiveSlotCoefficientNumerator:   1,
+		ActiveSlotCoefficientDenominator: 20,
 		OperationalCertificateCounterHistoryStartHeight: NewHeight(0, 10),
 		CurrentEpochStartSlot:                           0,
 		CurrentEpochEndSlotExclusive:                    1_000_000,

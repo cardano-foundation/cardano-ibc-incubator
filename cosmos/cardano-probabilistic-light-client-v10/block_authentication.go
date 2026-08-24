@@ -234,9 +234,9 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	var decodedVrfKeyHash []byte
 	var sequenceNumber uint64
 	if decodedBlock != nil {
-		decodedVrfKeyHash, sequenceNumber, err = cs.verifyNativeProbabilisticBlock(decodedBlock, label, epochContext)
+		decodedVrfKeyHash, sequenceNumber, err = cs.verifyNativeProbabilisticBlock(decodedBlock, label, epochContext, stakeEntry)
 	} else {
-		decodedVrfKeyHash, sequenceNumber, err = cs.verifyNativeProbabilisticHeader(rawHeader, label, epochContext)
+		decodedVrfKeyHash, sequenceNumber, err = cs.verifyNativeProbabilisticHeader(rawHeader, label, epochContext, stakeEntry)
 	}
 	if err != nil {
 		return nil, err
@@ -297,6 +297,7 @@ func (cs *ClientState) verifyNativeProbabilisticHeader(
 	header *ledger.BabbageBlockHeader,
 	label string,
 	epochContext *EpochContext,
+	stakeEntry *StakeDistributionEntry,
 ) (vrfKeyHash []byte, sequenceNumber uint64, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -309,6 +310,7 @@ func (cs *ClientState) verifyNativeProbabilisticHeader(
 		epochContext.EpochNonce,
 		cs.SlotsPerKesPeriod,
 		cs.MaxKesEvolutions,
+		cs.praosLeaderEligibilityParameters(stakeEntry),
 	)
 	if verifyErr != nil {
 		return nil, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s header: %v", label, verifyErr)
@@ -325,6 +327,7 @@ func (cs *ClientState) verifyNativeProbabilisticBlock(
 	decodedBlock ledger.Block,
 	label string,
 	epochContext *EpochContext,
+	stakeEntry *StakeDistributionEntry,
 ) (vrfKeyHash []byte, sequenceNumber uint64, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -337,6 +340,7 @@ func (cs *ClientState) verifyNativeProbabilisticBlock(
 		epochContext.EpochNonce,
 		cs.SlotsPerKesPeriod,
 		cs.MaxKesEvolutions,
+		cs.praosLeaderEligibilityParameters(stakeEntry),
 	)
 	if verifyErr != nil {
 		return nil, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s block: %v", label, verifyErr)
@@ -347,6 +351,17 @@ func (cs *ClientState) verifyNativeProbabilisticBlock(
 
 	vrfKeyHashBytes := blake2b.Sum256(result.VrfKey)
 	return vrfKeyHashBytes[:], result.OperationalCertificateSequenceNumber, nil
+}
+
+func (cs *ClientState) praosLeaderEligibilityParameters(
+	stakeEntry *StakeDistributionEntry,
+) probabilisticcore.PraosLeaderEligibilityParameters {
+	return probabilisticcore.PraosLeaderEligibilityParameters{
+		StakeNumerator:        stakeEntry.RelativeStakeNumerator,
+		StakeDenominator:      stakeEntry.RelativeStakeDenominator,
+		ActiveSlotNumerator:   cs.ActiveSlotCoefficientNumerator,
+		ActiveSlotDenominator: cs.ActiveSlotCoefficientDenominator,
+	}
 }
 
 func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string, []byte, error) {

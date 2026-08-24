@@ -15,6 +15,25 @@ jest.mock('../../shared/helpers/ogmios', () => ({
   queryOperationalCertificateCountersAtPoint: jest.fn(),
 }));
 
+const exactStake = (stake: bigint, totalStake: bigint = stake) => ({
+  stake,
+  relativeStakeNumerator: stake,
+  relativeStakeDenominator: totalStake,
+});
+
+const activeSlotCoefficient = {
+  activeSlotCoefficientNumerator: 1n,
+  activeSlotCoefficientDenominator: 20n,
+};
+
+const defaultVerificationData = {
+  currentEpoch: 7,
+  epochNonce: '11'.repeat(32),
+  slotsPerKesPeriod: 129600,
+  ...activeSlotCoefficient,
+  maxKesEvolutions: 62,
+};
+
 describe('YaciHistoryService', () => {
   let service: YaciHistoryService;
   let configServiceMock: { get: jest.Mock };
@@ -61,12 +80,7 @@ describe('YaciHistoryService', () => {
     entityManagerMock = {
       query: jest.fn().mockResolvedValue([]),
     };
-    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
-    });
+    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue(defaultVerificationData);
     (queryCurrentEpochStakeDistribution as jest.Mock).mockResolvedValue([]);
 
     service = new YaciHistoryService(
@@ -90,14 +104,11 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
+      ...defaultVerificationData,
       stakeDistribution: [
         {
           poolId: 'pool1ogmiospool',
-          stake: 900n,
+          ...exactStake(900n),
           vrfKeyHash: '0x' + 'AA'.repeat(32),
         },
       ],
@@ -108,7 +119,7 @@ describe('YaciHistoryService', () => {
       stakeDistribution: [
         {
           poolId: 'pool1ogmiospool',
-          stake: 900n,
+          ...exactStake(900n),
           vrfKeyHash: 'aa'.repeat(32),
           firstRegistrationSlot: null,
         },
@@ -116,6 +127,7 @@ describe('YaciHistoryService', () => {
       verificationContext: {
         epochNonce: '11'.repeat(32),
         slotsPerKesPeriod: 129600,
+        ...activeSlotCoefficient,
         maxKesEvolutions: 62,
         currentEpochStartSlot: 1000n,
         currentEpochEndSlotExclusive: 1200n,
@@ -173,14 +185,11 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce([{ pool_id: 'pool1cachedpool', first_registration_slot: '42' }]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
+      ...defaultVerificationData,
       stakeDistribution: [
         {
           poolId: 'pool1cachedpool',
-          stake: 900n,
+          ...exactStake(900n),
           vrfKeyHash: 'aa'.repeat(32),
         },
       ],
@@ -207,19 +216,16 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
+      ...defaultVerificationData,
       stakeDistribution: [
         {
           poolId: 'pool1assumedpoola',
-          stake: 500n,
+          ...exactStake(500n, 900n),
           vrfKeyHash: 'aa'.repeat(32),
         },
         {
           poolId: 'pool1assumedpoolb',
-          stake: 400n,
+          ...exactStake(400n, 900n),
           vrfKeyHash: 'bb'.repeat(32),
         },
       ],
@@ -248,14 +254,11 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce([{ pool_id: 'pool1localpool', first_registration_slot: '77' }])
       .mockResolvedValueOnce(undefined);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
+      ...defaultVerificationData,
       stakeDistribution: [
         {
           poolId: 'pool1localpool',
-          stake: 900n,
+          ...exactStake(900n),
           vrfKeyHash: 'aa'.repeat(32),
         },
       ],
@@ -339,14 +342,11 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
+      ...defaultVerificationData,
       stakeDistribution: [
         {
           poolId: 'pool1externalpool',
-          stake: 900n,
+          ...exactStake(900n),
           vrfKeyHash: 'aa'.repeat(32),
         },
       ],
@@ -414,10 +414,9 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce([{ start_slot: '1000' }])
       .mockResolvedValueOnce([{ start_slot: '1200' }]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      ...defaultVerificationData,
       currentEpoch: 8,
       epochNonce: '22'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
       stakeDistribution: [],
     });
 
@@ -541,14 +540,12 @@ describe('YaciHistoryService', () => {
   it('falls back to configured epoch length when the next epoch start slot is unavailable', async () => {
     entityManagerMock.query.mockResolvedValueOnce([{ start_slot: '0' }]).mockResolvedValueOnce([{ start_slot: null }]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
+      ...defaultVerificationData,
       epochNonce: '33'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
       stakeDistribution: [
         {
           poolId: 'pool1fallbackpool',
-          stake: 1000n,
+          ...exactStake(1000n),
           vrfKeyHash: 'bb'.repeat(32),
           firstRegistrationSlot: null,
         },
@@ -560,7 +557,7 @@ describe('YaciHistoryService', () => {
       stakeDistribution: [
         {
           poolId: 'pool1fallbackpool',
-          stake: 1000n,
+          ...exactStake(1000n),
           vrfKeyHash: 'bb'.repeat(32),
           firstRegistrationSlot: null,
         },
@@ -568,6 +565,7 @@ describe('YaciHistoryService', () => {
       verificationContext: {
         epochNonce: '33'.repeat(32),
         slotsPerKesPeriod: 129600,
+        ...activeSlotCoefficient,
         maxKesEvolutions: 62,
         currentEpochStartSlot: 0n,
         currentEpochEndSlotExclusive: 432000n,
@@ -593,14 +591,12 @@ describe('YaciHistoryService', () => {
     (queryEpochContextAtPoint as jest.Mock)
       .mockRejectedValueOnce(new Error('Failed to acquire requested point. Target point is too old.'))
       .mockResolvedValueOnce({
-        currentEpoch: 7,
+        ...defaultVerificationData,
         epochNonce: '44'.repeat(32),
-        slotsPerKesPeriod: 129600,
-        maxKesEvolutions: 62,
         stakeDistribution: [
           {
             poolId: 'pool1retrypool',
-            stake: 123n,
+            ...exactStake(123n),
             vrfKeyHash: 'cc'.repeat(32),
           },
         ],
@@ -611,7 +607,7 @@ describe('YaciHistoryService', () => {
       stakeDistribution: [
         {
           poolId: 'pool1retrypool',
-          stake: 123n,
+          ...exactStake(123n),
           vrfKeyHash: 'cc'.repeat(32),
           firstRegistrationSlot: null,
         },
@@ -619,6 +615,7 @@ describe('YaciHistoryService', () => {
       verificationContext: {
         epochNonce: '44'.repeat(32),
         slotsPerKesPeriod: 129600,
+        ...activeSlotCoefficient,
         maxKesEvolutions: 62,
         currentEpochStartSlot: 1000n,
         currentEpochEndSlotExclusive: 1200n,
@@ -681,10 +678,8 @@ describe('YaciHistoryService', () => {
       new Error('Failed to acquire requested point. Target point is too old.'),
     );
     (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+      ...defaultVerificationData,
       currentEpoch: 9,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
     });
     (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
       if (url.pathname.endsWith('/epoch_params')) {
@@ -740,19 +735,19 @@ describe('YaciHistoryService', () => {
       stakeDistribution: [
         {
           poolId: 'pool1historicala',
-          stake: 600n,
+          ...exactStake(600n, 1000n),
           vrfKeyHash: 'aa'.repeat(32),
           firstRegistrationSlot: 1100n,
         },
         {
           poolId: 'pool1historicalb',
-          stake: 300n,
+          ...exactStake(300n, 1000n),
           vrfKeyHash: 'bb'.repeat(32),
           firstRegistrationSlot: 1100n,
         },
         {
           poolId: '__historical_unproduced_stake__:7',
-          stake: 100n,
+          ...exactStake(100n, 1000n),
           vrfKeyHash: '00'.repeat(32),
           firstRegistrationSlot: 1n,
         },
@@ -760,6 +755,7 @@ describe('YaciHistoryService', () => {
       verificationContext: {
         epochNonce: '11'.repeat(32),
         slotsPerKesPeriod: 129600,
+        ...activeSlotCoefficient,
         maxKesEvolutions: 62,
         currentEpochStartSlot: 1000n,
         currentEpochEndSlotExclusive: 1200n,
@@ -799,14 +795,11 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
       query: jest.fn().mockResolvedValue([]),
     };
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      maxKesEvolutions: 62,
+      ...defaultVerificationData,
       stakeDistribution: [
         {
           poolId: 'pool1active',
-          stake: 50n,
+          ...exactStake(50n),
           vrfKeyHash: 'aa'.repeat(32),
         },
       ],
@@ -881,13 +874,13 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
       stakeDistribution: [
         {
           poolId: 'pool1active',
-          stake: 600n,
+          ...exactStake(600n, 1000n),
           vrfKeyHash: 'aa'.repeat(32),
           firstRegistrationSlot: 41n,
         },
         {
           poolId: 'pool1retired',
-          stake: 400n,
+          ...exactStake(400n, 1000n),
           vrfKeyHash: 'bb'.repeat(32),
           firstRegistrationSlot: 42n,
         },
@@ -895,6 +888,7 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
       verificationContext: {
         epochNonce: '11'.repeat(32),
         slotsPerKesPeriod: 129600,
+        ...activeSlotCoefficient,
         maxKesEvolutions: 62,
         currentEpochStartSlot: 1000n,
         currentEpochEndSlotExclusive: 1200n,
