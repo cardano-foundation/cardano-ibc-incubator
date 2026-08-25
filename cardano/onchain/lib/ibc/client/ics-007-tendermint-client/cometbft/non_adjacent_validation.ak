@@ -5,11 +5,11 @@ use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{
-  block_id_flag_commit, precommit_type,
+  block_id_flag_commit,
 }
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
-use ibc/client/ics_007_tendermint_client/cometbft/vote.{Vote}
+use ibc/client/ics_007_tendermint_client/cometbft/vote
 
 type IndexedValidator {
   trusted_validator: Validator,
@@ -42,12 +42,19 @@ pub fn verify_commit_light_trusting(
   expect rational.denominator(trust_level) != 0
   expect !list.is_empty(commit.signatures)
 
+  let
+    validator_index,
+    total_voting_power,
+  <- make_validator_index(vals.validators)
   let voting_power_needed =
-    validator_set.total_voting_power(vals) * rational.numerator(trust_level) / rational.denominator(
+    total_voting_power * rational.numerator(trust_level) / rational.denominator(
       trust_level,
     )
-  let validator_index = make_validator_index(vals.validators)
-  let (tallied_voting_power, _seen_bits, partial_passed) =
+  let
+    tallied_voting_power,
+    _seen_bits,
+    partial_passed,
+  <-
     verify_commit_signatures(
       chain_id,
       commit,
@@ -55,36 +62,51 @@ pub fn verify_commit_light_trusting(
       voting_power_needed,
       commit.signatures,
       cached_vote_sign_bytes,
-      0,
     )
-
   partial_passed || tallied_voting_power > voting_power_needed
 }
 
 fn index_validators(
   validators: List<Validator>,
   seen_bit: Int,
-) -> List<IndexedValidator> {
+  return: fn(List<IndexedValidator>, Int, Int) -> result,
+) -> result {
   when validators is {
-    [] -> []
-    [trusted_val, ..rest] ->
-      [
-        IndexedValidator { trusted_validator: trusted_val, seen_bit },
-        ..index_validators(rest, seen_bit * 2)
-      ]
+    [] -> return([], 0, 0)
+    [trusted_val, ..rest] -> {
+      let
+        indexed_rest,
+        total_voting_power,
+        count,
+      <- index_validators(rest, seen_bit * 2)
+      return(
+        [
+          IndexedValidator { trusted_validator: trusted_val, seen_bit },
+          ..indexed_rest
+        ],
+        trusted_val.voting_power + total_voting_power,
+        count + 1,
+      )
+    }
   }
 }
 
-fn make_validator_index(validators: List<Validator>) -> ValidatorIndex {
-  let validator_count = list.length(validators)
-  let sorted =
-    validators
-      |> index_validators(1)
-      |> merge_sort(validator_count, compare_indexed_validators)
-  let (validator_index, remaining) =
-    validator_index_from_sorted(sorted, list.length(sorted))
+fn make_validator_index(
+  validators: List<Validator>,
+  return: fn(ValidatorIndex, Int) -> result,
+) -> result {
+  let
+    indexed_validators,
+    total_voting_power,
+    validator_count,
+  <- index_validators(validators, 1)
+  let sorted = sort_indexed_validators(indexed_validators, validator_count)
+  let
+    validator_index,
+    remaining,
+  <- validator_index_from_sorted(sorted, validator_count)
   expect list.is_empty(remaining)
-  validator_index
+  return(validator_index, total_voting_power)
 }
 
 /// Build a height-balanced tree in one pass over sorted entries. Returning the
@@ -92,16 +114,19 @@ fn make_validator_index(validators: List<Validator>) -> ValidatorIndex {
 fn validator_index_from_sorted(
   entries: List<IndexedValidator>,
   count: Int,
-) -> (ValidatorIndex, List<IndexedValidator>) {
+  return: fn(ValidatorIndex, List<IndexedValidator>) -> result,
+) -> result {
   if count <= 0 {
-    (EmptyValidatorIndex, entries)
+    return(EmptyValidatorIndex, entries)
   } else {
     let left_count = count / 2
-    let (left, after_left) = validator_index_from_sorted(entries, left_count)
+    let left, after_left <- validator_index_from_sorted(entries, left_count)
     expect [entry, ..after_entry] = after_left
-    let (right, remaining) =
-      validator_index_from_sorted(after_entry, count - left_count - 1)
-    (ValidatorIndexNode { left, entry, right }, remaining)
+    let
+      right,
+      remaining,
+    <- validator_index_from_sorted(after_entry, count - left_count - 1)
+    return(ValidatorIndexNode { left, entry, right }, remaining)
   }
 }
 
@@ -135,10 +160,10 @@ fn verify_commit_signatures(
   voting_power_needed: Int,
   signatures: List<CommitSig>,
   cached_vote_sign_bytes: Option<List<ByteArray>>,
-  original_index: Int,
-) -> (Int, Int, Bool) {
+  return: fn(Int, Int, Bool) -> result,
+) -> result {
   when signatures is {
-    [] -> (0, 0, False)
+    [] -> return(0, 0, False)
     [commit_sig, ..rest] -> {
       // Consume supplied cache entries over every slot for index alignment.
       // Missing bytes matter only for a matched commit reached before quorum.
@@ -151,7 +176,11 @@ fn verify_commit_signatures(
             }
           None -> (None, None)
         }
-      let acc =
+      let
+        tallied_voting_power,
+        seen_bits,
+        partial_passed,
+      <-
         verify_commit_signatures(
           chain_id,
           commit,
@@ -159,18 +188,17 @@ fn verify_commit_signatures(
           voting_power_needed,
           rest,
           remaining_cache,
-          original_index + 1,
         )
 
-      if commit_sig.block_id_flag != block_id_flag_commit || acc.3rd {
-        acc
+      if commit_sig.block_id_flag != block_id_flag_commit || partial_passed {
+        return(tallied_voting_power, seen_bits, partial_passed)
       } else {
         when
           lookup_validator(validator_index, commit_sig.validator_address)
         is {
-          None -> acc
+          None -> return(tallied_voting_power, seen_bits, partial_passed)
           Some(indexed_val) -> {
-            expect acc.2nd / indexed_val.seen_bit % 2 == 0
+            expect seen_bits / indexed_val.seen_bit % 2 == 0
 
             let vote_sign_bytes =
               when cached_for_this_signature is {
@@ -179,10 +207,9 @@ fn verify_commit_signatures(
                   when cached_vote_sign_bytes is {
                     Some(_) -> fail
                     None ->
-                      vote_sign_bytes_for_commit_sig(
+                      vote.vote_sign_bytes_for_commit_sig(
                         commit,
                         chain_id,
-                        original_index,
                         commit_sig,
                       )
                   }
@@ -196,44 +223,19 @@ fn verify_commit_signatures(
               )
 
             let new_tallied_voting_power =
-              acc.1st + indexed_val.trusted_validator.voting_power
-            let new_seen_bits = acc.2nd + indexed_val.seen_bit
+              tallied_voting_power + indexed_val.trusted_validator.voting_power
+            let new_seen_bits = seen_bits + indexed_val.seen_bit
 
             if new_tallied_voting_power > voting_power_needed {
-              (new_tallied_voting_power, new_seen_bits, True)
+              return(new_tallied_voting_power, new_seen_bits, True)
             } else {
-              (new_tallied_voting_power, new_seen_bits, False)
+              return(new_tallied_voting_power, new_seen_bits, False)
             }
           }
         }
       }
     }
   }
-}
-
-// The adjacent-verification patch exposes the same construction in `vote.ak`;
-// integration can replace this local helper without changing the index.
-fn vote_sign_bytes_for_commit_sig(
-  commit: Commit,
-  chain_id: ByteArray,
-  validator_position: Int,
-  commit_sig: CommitSig,
-) -> ByteArray {
-  vote.vote_sign_bytes(
-    chain_id,
-    Vote {
-      vote_type: precommit_type,
-      height: commit.height,
-      round: commit.round,
-      block_id: commit.block_id,
-      timestamp: commit_sig.timestamp,
-      validator_address: commit_sig.validator_address,
-      validator_index: validator_position,
-      signature: commit_sig.signature,
-      extension: #"",
-      extension_signature: #"",
-    },
-  )
 }
 
 fn compare_indexed_validators(
@@ -246,41 +248,37 @@ fn compare_indexed_validators(
   )
 }
 
-/// Stdlib `list.sort` is insertion sort. This stable merge sort splits
-/// contiguous halves so equal addresses retain original wire order.
-fn merge_sort(
-  items: List<a>,
+/// Keep index construction O(v log v). Stdlib `list.sort` is insertion sort.
+fn sort_indexed_validators(
+  items: List<IndexedValidator>,
   count: Int,
-  compare: fn(a, a) -> Ordering,
-) -> List<a> {
+) -> List<IndexedValidator> {
   if count <= 1 {
     items
   } else {
     let left_count = count / 2
     let (left, right) = list.span(items, left_count)
-    merge_sorted(
-      merge_sort(left, left_count, compare),
-      merge_sort(right, count - left_count, compare),
-      compare,
+    merge_indexed_validators(
+      sort_indexed_validators(left, left_count),
+      sort_indexed_validators(right, count - left_count),
     )
   }
 }
 
-fn merge_sorted(
-  left: List<a>,
-  right: List<a>,
-  compare: fn(a, a) -> Ordering,
-) -> List<a> {
+fn merge_indexed_validators(
+  left: List<IndexedValidator>,
+  right: List<IndexedValidator>,
+) -> List<IndexedValidator> {
   when left is {
     [] -> right
     [left_head, ..left_tail] ->
       when right is {
         [] -> left
         [right_head, ..right_tail] ->
-          if compare(left_head, right_head) == Greater {
-            [right_head, ..merge_sorted(left, right_tail, compare)]
+          if compare_indexed_validators(left_head, right_head) == Greater {
+            [right_head, ..merge_indexed_validators(left, right_tail)]
           } else {
-            [left_head, ..merge_sorted(left_tail, right, compare)]
+            [left_head, ..merge_indexed_validators(left_tail, right)]
           }
       }
   }

@@ -247,3 +247,19 @@ test linear_verifier_rejects_a_missing_signature_slot() fail {
     None,
   )
 }
+
+/// Scaling guard for the lockstep traversal. Repeating one valid validator and
+/// signature isolates traversal cost; it is not a valid Tendermint set fixture.
+test linear_verifier_handles_45_signature_slots() {
+  expect [first_validator, ..] = validators()
+  expect [first_signature, ..] = commit_signatures()
+  let test_commit = commit(list.repeat(first_signature, 45))
+
+  adjacent_validation.verify_commit_single(
+    chain_id,
+    list.repeat(first_validator, 45),
+    test_commit,
+    30,
+    None,
+  )
+}

@@ -85,13 +85,13 @@ pub fn verify_non_adjacent(
   trust_level: Rational,
 ) -> Bool {
   let list_vote_sign_bytes =
-    list.indexed_map(
+    list.map(
       untrusted_header.commit.signatures,
-      fn(idx, _sig) {
-        vote.vote_sign_bytes_for_commit(
+      fn(commit_sig) {
+        vote.vote_sign_bytes_for_commit_sig(
           untrusted_header.commit,
           trusted_header.header.chain_id,
-          idx,
+          commit_sig,
         )
       },
     )

@@ -64,6 +64,8 @@ test test_validator_set_hash_function() {
   hash(not_null_validator_set) == #"f4317dc3e1d3989be7e6d9a687a6a903e1c0678d7122ed6e8f3af725a0726962"
 }
 
+/// Hash-only scaling fixture. Repetition keeps the vector compact; it is not a
+/// valid Tendermint validator set because validator identities must be unique.
 test test_validator_set_hash_45_validators() {
   let val =
     Validator {

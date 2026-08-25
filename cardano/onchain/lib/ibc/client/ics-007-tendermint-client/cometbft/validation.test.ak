@@ -12,6 +12,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/constants.{
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
+use ibc/client/ics_007_tendermint_client/cometbft/vote
 
 const chain_id = "testchain2-1"
 
@@ -98,11 +99,61 @@ fn one_third() -> rational.Rational {
   trust_level
 }
 
+fn three_quarters() -> rational.Rational {
+  expect Some(trust_level) = rational.new(3, 4)
+  trust_level
+}
+
+fn vote_bytes_for(commit: Commit) -> List<ByteArray> {
+  list.map(
+    commit.signatures,
+    fn(commit_sig) {
+      vote.vote_sign_bytes_for_commit_sig(commit, chain_id, commit_sig)
+    },
+  )
+}
+
 test trusting_commit_accepts_valid_overlap() {
   validation.verify_commit_light_trusting(
     chain_id,
     validator_set(),
     commit_with(commit_signatures()),
+    one_third(),
+    None,
+  )
+}
+
+test trusting_commit_accepts_reordered_trusted_validators() {
+  expect [first, second, third, fourth] = validators()
+  let reordered = [fourth, second, first, third]
+  let test_commit = commit_with(commit_signatures())
+
+  validation.verify_commit_light_trusting(
+    chain_id,
+    ValidatorSet {
+      validators: reordered,
+      proposer: fourth,
+      total_voting_power: 4,
+    },
+    test_commit,
+    three_quarters(),
+    Some(vote_bytes_for(test_commit)),
+  )
+}
+
+test trusting_commit_selects_first_wire_entry_for_duplicate_address() {
+  expect [first, second, ..] = validators()
+  expect [first_signature, ..] = commit_signatures()
+  let duplicate_address = Validator { ..second, address: first.address }
+
+  validation.verify_commit_light_trusting(
+    chain_id,
+    ValidatorSet {
+      validators: [first, duplicate_address],
+      proposer: first,
+      total_voting_power: 2,
+    },
+    commit_with([first_signature]),
     one_third(),
     None,
   )
@@ -163,6 +214,62 @@ test trusting_commit_rejects_duplicate_before_threshold() fail {
     commit_with([absent, absent, fourth, fourth]),
     one_third(),
     None,
+  )
+}
+
+test trusting_commit_skips_duplicate_after_reverse_quorum() {
+  expect [_first, _second, third, fourth] = commit_signatures()
+  let absent =
+    CommitSig {
+      block_id_flag: block_id_flag_absent,
+      validator_address: #"",
+      timestamp: 0,
+      signature: #"",
+    }
+
+  validation.verify_commit_light_trusting(
+    chain_id,
+    validator_set(),
+    commit_with([fourth, absent, third, fourth]),
+    one_third(),
+    None,
+  )
+}
+
+test trusting_commit_allows_truncated_cache_for_unneeded_slots() {
+  expect [first, second, _third, _fourth] = commit_signatures()
+  let absent =
+    CommitSig {
+      block_id_flag: block_id_flag_absent,
+      validator_address: #"",
+      timestamp: 0,
+      signature: #"",
+    }
+  let unknown = unknown_commit_signature(1)
+  let test_commit = commit_with([first, second, unknown, absent])
+  let full_cache = vote_bytes_for(test_commit)
+  expect [first_bytes, second_bytes, ..] = full_cache
+
+  validation.verify_commit_light_trusting(
+    chain_id,
+    validator_set(),
+    test_commit,
+    one_third(),
+    Some([first_bytes, second_bytes]),
+  )
+}
+
+test trusting_commit_rejects_truncated_cache_for_needed_slot() fail {
+  let test_commit = commit_with(commit_signatures())
+  let full_cache = vote_bytes_for(test_commit)
+  expect [first_bytes, second_bytes, third_bytes, ..] = full_cache
+
+  validation.verify_commit_light_trusting(
+    chain_id,
+    validator_set(),
+    test_commit,
+    one_third(),
+    Some([first_bytes, second_bytes, third_bytes]),
   )
 }
 

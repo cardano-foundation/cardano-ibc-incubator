@@ -82,9 +82,16 @@ pub fn vote_sign_bytes_for_commit(
 pub fn vote_sign_bytes_for_commit_sig(
   commit: Commit,
   chain_id: ByteArray,
-  val_idx: Int,
   commit_sig: CommitSig,
 ) -> ByteArray {
-  let v = vote_for_commit_sig(commit, val_idx, commit_sig)
-  vote_sign_bytes(chain_id, v)
+  canonical_pb.marshal_delimited_for_vote(
+    CanonicalVoteProto {
+      v_type: precommit_type,
+      height: commit.height,
+      round: commit.round,
+      block_id: canonical.canonicalize_block_id(commit.block_id),
+      timestamp: commit_sig.timestamp,
+      chain_id,
+    },
+  )
 }

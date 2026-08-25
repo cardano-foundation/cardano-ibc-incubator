@@ -1,7 +1,5 @@
-use aiken/builtin
 use aiken/collection/list
 use aiken/math/rational.{Rational}
-use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/adjacent_validation
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
@@ -11,7 +9,6 @@ use ibc/client/ics_007_tendermint_client/cometbft/constants.{
 }
 use ibc/client/ics_007_tendermint_client/cometbft/non_adjacent_validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
-use ibc/client/ics_007_tendermint_client/cometbft/vote
 
 pub fn verify_commit_light(
   chain_id: ByteArray,
@@ -85,82 +82,6 @@ fn verify_basic_vals_and_commit(
 fn should_batch_verify(_vals: ValidatorSet, _commit: Commit) -> Bool {
   // list.length(commit.signatures) >= batch_verify_threshold && batch.supports_batch_verifier(vals.get_proposer().pubkey) 
   False
-}
-
-/// Single Verification
-/// Note: Default to using verify_ed25519_signature to verify the validator operator's signature
-fn verify_commit_single(
-  chain_id: ByteArray,
-  vals: ValidatorSet,
-  commit: Commit,
-  voting_power_needed: Int,
-  ignore_sig: fn(CommitSig) -> Bool,
-  count_sig: fn(CommitSig) -> Bool,
-  count_all_signatures: Bool,
-  lock_up_by_index: Bool,
-  list_vote_sign_bytes: Option<List<ByteArray>>,
-) -> Bool {
-  let (tallied_voting_power, _seen_vals, partial_passed) =
-    list.indexed_foldr(
-      commit.signatures,
-      (0, [], False),
-      fn(idx, commit_sig, acc) {
-        if ignore_sig(commit_sig) || acc.3rd {
-          acc
-        } else {
-          let found_val =
-            if lock_up_by_index {
-              list.at(vals.validators, idx)
-                |> option.map(fn(val) { (val, acc.2nd) })
-            } else {
-              validator_set.get_by_address(vals, commit_sig.validator_address)
-                |> option.map(
-                    fn(result) {
-                      expect !list.has(acc.2nd, result)
-
-                      (result, [result, ..acc.2nd])
-                    },
-                  )
-            }
-
-          when found_val is {
-            Some((val, seen_vals)) -> {
-              let vote_sign_bytes =
-                when list_vote_sign_bytes is {
-                  Some(list_vote_sign_bytes) -> {
-                    expect Some(bz) = list.at(list_vote_sign_bytes, idx)
-                    bz
-                  }
-                  None -> vote.vote_sign_bytes_for_commit(commit, chain_id, idx)
-                }
-
-              expect
-                builtin.verify_ed25519_signature(
-                  val.pubkey,
-                  vote_sign_bytes,
-                  commit_sig.signature,
-                )
-
-              let new_tallied_voting_power =
-                if count_sig(commit_sig) {
-                  acc.1st + val.voting_power
-                } else {
-                  acc.1st
-                }
-
-              if !count_all_signatures && new_tallied_voting_power > voting_power_needed {
-                (new_tallied_voting_power, seen_vals, True)
-              } else {
-                (new_tallied_voting_power, seen_vals, False)
-              }
-            }
-            None -> acc
-          }
-        }
-      },
-    )
-
-  partial_passed || tallied_voting_power > voting_power_needed
 }
 
 /// Batch verification

@@ -17,17 +17,18 @@ pub fn verify_commit_single(
   voting_power_needed: Int,
   list_vote_sign_bytes: Option<List<ByteArray>>,
 ) -> Bool {
-  let (tallied_voting_power, partial_passed) =
+  let
+    tallied_voting_power,
+    partial_passed,
+  <-
     verify_from_right(
       chain_id,
       validators,
       commit.signatures,
       commit,
       voting_power_needed,
-      0,
       list_vote_sign_bytes,
     )
-
   partial_passed || tallied_voting_power > voting_power_needed
 }
 
@@ -40,13 +41,13 @@ fn verify_from_right(
   signatures: List<CommitSig>,
   commit: Commit,
   voting_power_needed: Int,
-  validator_index: Int,
   list_vote_sign_bytes: Option<List<ByteArray>>,
-) -> (Int, Bool) {
+  return: fn(Int, Bool) -> result,
+) -> result {
   when validators is {
     [] -> {
       expect signatures == []
-      (0, False)
+      return(0, False)
     }
     [current_validator, ..remaining_validators] ->
       when signatures is {
@@ -60,19 +61,21 @@ fn verify_from_right(
                 (Some(vote_sign_bytes), Some(remaining))
             }
 
-          let acc =
+          let
+            tallied_voting_power,
+            partial_passed,
+          <-
             verify_from_right(
               chain_id,
               remaining_validators,
               remaining_signatures,
               commit,
               voting_power_needed,
-              validator_index + 1,
               remaining_vote_sign_bytes,
             )
 
-          if current_signature.block_id_flag != block_id_flag_commit || acc.2nd {
-            acc
+          if current_signature.block_id_flag != block_id_flag_commit || partial_passed {
+            return(tallied_voting_power, partial_passed)
           } else {
             let vote_sign_bytes =
               when list_vote_sign_bytes is {
@@ -84,7 +87,6 @@ fn verify_from_right(
                   vote.vote_sign_bytes_for_commit_sig(
                     commit,
                     chain_id,
-                    validator_index,
                     current_signature,
                   )
               }
@@ -97,12 +99,12 @@ fn verify_from_right(
               )
 
             let new_tallied_voting_power =
-              acc.1st + current_validator.voting_power
+              tallied_voting_power + current_validator.voting_power
 
             if new_tallied_voting_power > voting_power_needed {
-              (new_tallied_voting_power, True)
+              return(new_tallied_voting_power, True)
             } else {
-              (new_tallied_voting_power, False)
+              return(new_tallied_voting_power, False)
             }
           }
         }
