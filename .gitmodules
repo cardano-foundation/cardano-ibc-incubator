@@ -1,4 +1,4 @@
 [submodule "relayer"]
 	path = relayer
 	url = https://github.com/cardano-foundation/hermes-relayer.git
-	branch = master
+	branch = main
