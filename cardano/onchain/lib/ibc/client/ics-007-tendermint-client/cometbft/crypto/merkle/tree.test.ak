@@ -27,3 +27,7 @@ test test_hash_from_byte_slices_sha2_256() {
         fn(case) { tree.hash_from_byte_slices_sha2_256(case.1st) == case.2nd },
       )
 }
+
+test test_hash_from_45_byte_slices_sha2_256() {
+  tree.hash_from_byte_slices_sha2_256(list.repeat(#[1, 2, 3], 45)) == #"6fb4a248c599ee5201e6fd8d7e232478858730366800b06f1b8ab6b6469ff44c"
+}

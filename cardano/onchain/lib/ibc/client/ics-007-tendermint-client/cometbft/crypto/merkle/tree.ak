@@ -1,6 +1,5 @@
 use aiken/collection/list
 use aiken/math
-use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/hash
 use ibc/utils/bits
 
@@ -10,13 +9,27 @@ pub fn hash_from_byte_slices_sha2_256(items: List<ByteArray>) -> ByteArray {
   let len = list.length(items)
   when len is {
     0 -> hash.empty_hash()
-    1 -> hash.leaf_hash_opt_sha2_256(list.at(items, 0) |> option.or_else(#""))
-    _n -> {
+    _ -> hash_non_empty(items, len).1st
+  }
+}
+
+/// Hash exactly `len` items and return the unconsumed tail. Threading the tail
+/// through the recursion preserves the RFC-6962 split without repeatedly
+/// measuring and copying sublists.
+fn hash_non_empty(
+  items: List<ByteArray>,
+  len: Int,
+) -> (ByteArray, List<ByteArray>) {
+  when len is {
+    1 -> {
+      expect [item, ..rest] = items
+      (hash.leaf_hash_opt_sha2_256(item), rest)
+    }
+    _ -> {
       let k = get_split_point(len)
-      let left = hash_from_byte_slices_sha2_256(items |> list.slice(0, k - 1))
-      let right =
-        hash_from_byte_slices_sha2_256(items |> list.slice(k, len - 1))
-      hash.inner_hash_opt_sha2_256(left, right)
+      let (left_hash, after_left) = hash_non_empty(items, k)
+      let (right_hash, rest) = hash_non_empty(after_left, len - k)
+      (hash.inner_hash_opt_sha2_256(left_hash, right_hash), rest)
     }
   }
 }
