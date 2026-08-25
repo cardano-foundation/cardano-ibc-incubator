@@ -2,7 +2,7 @@
 
 ## Current Target
 
-The extracted module currently targets Cosmos SDK `v0.53.0` and `ibc-go/v10.2.0`. It uses the `ibc-go/v10` light-client module route:
+The extracted module currently targets Cosmos SDK `v0.53.3` and `ibc-go/v10.2.0`. It uses the `ibc-go/v10` light-client module route:
 
 ```go
 clientKeeper.AddRoute(probabilistic.ModuleName, &probabilisticLightClientModule)
@@ -27,4 +27,4 @@ This document assumes the target chain uses `ibc-go/v10`. The exact port still d
 
 ## Temporal State Compatibility
 
-New clients must set a positive `max_clock_drift` and must initialize `latest_checkpoint_slot` and `latest_checkpoint_timestamp` from the same authenticated Cardano anchor as `latest_checkpoint_height`. There are no live Cardano IBC client deployments today, so this does not require a production-state migration. If an existing development or test chain is retained, its stored protobuf still decodes, but `max_clock_drift` is zero and the client fails closed until an app-state migration assigns a value. After that value is set, a root-bearing legacy checkpoint can recover its missing slot from its stored consensus timestamp. A legacy rootless checkpoint has no consensus state at its checkpoint height, so the migration must also populate its slot and timestamp. The Gateway's new-client response supplies all three fields for fresh clients. Standard IBC client upgrades remain unsupported, so retained development or test state must be migrated by the host app or recreated.
+New clients must set a positive `max_clock_drift` and must initialize `latest_checkpoint_slot` and `latest_checkpoint_timestamp` from the same authenticated Cardano anchor as `latest_checkpoint_height`. Before upgrading, a host chain must audit its stored Cardano client states. Legacy protobuf state still decodes, but `max_clock_drift` is zero and the client fails closed until an app-state migration assigns a value. After that value is set, a root-bearing legacy checkpoint can recover its missing slot from its stored consensus timestamp. A legacy rootless checkpoint has no consensus state at its checkpoint height, so the migration must also populate its slot and timestamp. The Gateway's new-client response supplies all three fields for fresh clients. Standard IBC client upgrades remain unsupported, so existing state must be migrated by the host app or the affected clients, connections, and channels must be recreated.
