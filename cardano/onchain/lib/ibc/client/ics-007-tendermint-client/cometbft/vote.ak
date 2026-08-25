@@ -1,6 +1,7 @@
 use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/canonical
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{precommit_type}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/canonical_pb.{
@@ -28,6 +29,14 @@ pub fn validate_basic(_vote: Vote) -> Bool {
 
 pub fn get_vote(commit: Commit, val_idx: Int) -> Vote {
   expect Some(commit_sig) = list.at(commit.signatures, val_idx)
+  vote_for_commit_sig(commit, val_idx, commit_sig)
+}
+
+fn vote_for_commit_sig(
+  commit: Commit,
+  val_idx: Int,
+  commit_sig: CommitSig,
+) -> Vote {
   Vote {
     vote_type: precommit_type,
     height: commit.height,
@@ -64,5 +73,18 @@ pub fn vote_sign_bytes_for_commit(
   val_idx: Int,
 ) -> ByteArray {
   let v = get_vote(commit, val_idx)
+  vote_sign_bytes(chain_id, v)
+}
+
+/// Build the canonical vote bytes from a signature already selected while
+/// traversing a commit. This avoids looking the same signature up by index a
+/// second time.
+pub fn vote_sign_bytes_for_commit_sig(
+  commit: Commit,
+  chain_id: ByteArray,
+  val_idx: Int,
+  commit_sig: CommitSig,
+) -> ByteArray {
+  let v = vote_for_commit_sig(commit, val_idx, commit_sig)
   vote_sign_bytes(chain_id, v)
 }

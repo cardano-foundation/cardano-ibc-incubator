@@ -2,6 +2,7 @@ use aiken/builtin
 use aiken/collection/list
 use aiken/math/rational.{Rational}
 use aiken/option
+use ibc/client/ics_007_tendermint_client/cometbft/adjacent_validation
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
@@ -22,12 +23,11 @@ pub fn verify_commit_light(
   expect verify_basic_vals_and_commit(vals, commit, height, block_id)
   let voting_power_needed = validator_set.total_voting_power(vals) * 2 / 3
 
-  let ignore =
-    fn(c: CommitSig) -> Bool { c.block_id_flag != block_id_flag_commit }
-  let count =
-    fn(_c: CommitSig) -> Bool { True }
-
   if should_batch_verify(vals, commit) {
+    let ignore =
+      fn(c: CommitSig) -> Bool { c.block_id_flag != block_id_flag_commit }
+    let count =
+      fn(_c: CommitSig) -> Bool { True }
     verify_commit_batch(
       chain_id,
       vals,
@@ -39,15 +39,11 @@ pub fn verify_commit_light(
       True,
     )
   } else {
-    verify_commit_single(
+    adjacent_validation.verify_commit_single(
       chain_id,
-      vals,
+      vals.validators,
       commit,
       voting_power_needed,
-      ignore,
-      count,
-      False,
-      True,
       list_vote_sign_bytes,
     )
   }
