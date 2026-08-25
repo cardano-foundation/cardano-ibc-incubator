@@ -275,12 +275,48 @@ query_client_state() {
     --chain "$COSMOS_CHAIN_ID" \
     --client "$client_id")" || return $?
   jq -ce '
+    def valid_relative_stake:
+      type == "object"
+      and (.relative_stake_numerator | type) == "number"
+      and .relative_stake_numerator > 0
+      and (.relative_stake_numerator | floor) == .relative_stake_numerator
+      and (.relative_stake_denominator | type) == "number"
+      and .relative_stake_denominator >= .relative_stake_numerator
+      and (.relative_stake_denominator | floor) == .relative_stake_denominator;
     if type == "object"
       and (.latest_height.revision_height | type) == "number"
       and (.latest_checkpoint_height.revision_height | type) == "number"
       and (.trusting_period | type) == "object"
       and (.trusting_period.secs | type) == "number"
       and (.trusting_period.nanos | type) == "number"
+      and (.active_slot_coefficient_numerator | type) == "number"
+      and .active_slot_coefficient_numerator > 0
+      and (.active_slot_coefficient_denominator | type) == "number"
+      and .active_slot_coefficient_denominator >= .active_slot_coefficient_numerator
+      and (.epoch_stake_distribution | type) == "array"
+      and (.epoch_stake_distribution | length) > 0
+      and all(.epoch_stake_distribution[]; valid_relative_stake)
+      and (.epoch_contexts | type) == "array"
+      and (.epoch_contexts | length) > 0
+      and all(.epoch_contexts[];
+        (.stake_distribution | type) == "array"
+        and (.stake_distribution | length) > 0
+        and all(.stake_distribution[]; valid_relative_stake)
+      )
+      and (.max_clock_drift | type) == "object"
+      and (.max_clock_drift.secs | type) == "number"
+      and .max_clock_drift.secs >= 0
+      and (.max_clock_drift.secs | floor) == .max_clock_drift.secs
+      and (.max_clock_drift.nanos | type) == "number"
+      and .max_clock_drift.nanos >= 0
+      and .max_clock_drift.nanos < 1000000000
+      and (.max_clock_drift.nanos | floor) == .max_clock_drift.nanos
+      and ((.max_clock_drift.secs > 0) or (.max_clock_drift.nanos > 0))
+      and (.latest_checkpoint_slot | type) == "number"
+      and .latest_checkpoint_slot >= 0
+      and (.latest_checkpoint_slot | floor) == .latest_checkpoint_slot
+      and (.latest_checkpoint_timestamp | type) == "number"
+      and .latest_checkpoint_timestamp > 0
     then .
     else error("invalid probabilistic client state")
     end
@@ -314,7 +350,10 @@ client_recovery_invariants() {
     system_start_unix_ns,
     slot_length_ns,
     slots_per_kes_period,
-    max_kes_evolutions
+    max_kes_evolutions,
+    active_slot_coefficient_numerator,
+    active_slot_coefficient_denominator,
+    max_clock_drift
   }' <<<"$1"
 }
 
@@ -332,7 +371,12 @@ client_recovered_projection() {
     latest_checkpoint_height,
     latest_checkpoint_block_hash,
     latest_checkpoint_epoch,
+    latest_checkpoint_slot,
+    latest_checkpoint_timestamp,
     max_kes_evolutions,
+    active_slot_coefficient_numerator,
+    active_slot_coefficient_denominator,
+    max_clock_drift,
     latest_checkpoint_operational_certificate_counters
   }' <<<"$1"
 }

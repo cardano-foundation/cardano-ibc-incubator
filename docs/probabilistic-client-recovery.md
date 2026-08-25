@@ -18,7 +18,9 @@ must agree on every field that defines the Cardano verification environment:
 - upgrade path;
 - HostState NFT policy ID and token name;
 - Cardano system start and slot length;
-- slots per KES period and maximum KES evolutions.
+- slots per KES period and maximum KES evolutions;
+- the active-slot coefficient numerator and denominator; and
+- maximum clock drift.
 
 The substitute's Cardano checkpoint must be strictly newer than the subject's
 checkpoint. Its latest consensus state, processed time, and processed height
@@ -128,7 +130,7 @@ channel setup.
 
 The focused command covers the live positive path. The repository's v8 and v10
 Go tests assert the store-state copy and reconstruction rules described above,
-all seven invariant mismatches, an insufficient checkpoint, missing consensus
+all ten invariant mismatches, an insufficient checkpoint, missing consensus
 metadata, and operational-certificate regression. The active-subject,
 inactive-substitute, concrete-type, and unauthorized-signer gates are enforced
 by the ibc-go keeper/authority layer; dedicated app-level fixtures for those

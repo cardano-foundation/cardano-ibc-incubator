@@ -194,6 +194,17 @@ Client creation still starts from one epoch context, but updates are no longer s
 
 An accepted epoch context is canonical for that epoch. Later headers may repeat the same epoch context, but a different context for an already-known epoch is treated as misbehaviour and freezes the client. This does not make the first accepted epoch context cryptographically authenticated; it changes the failure mode so that contradictory observer views cannot silently replace or coexist with the stored stake context.
 
+The static local Caribic devnet explicitly sets
+`CARDANO_STABILITY_ASSUME_STATIC_STAKE=1`. With that opt-in, Gateway normalizes
+the Ogmios 6.12 live fractions across the positive-stake pool set because Ogmios
+reports each pool relative to total ledger stake, including stake that is not
+delegated to a pool. This gives the local Praos check active delegated stake,
+but it is not an epoch-frozen leader-election snapshot. The flag is only safe
+for a static local devnet and is removed when Caribic configures a public
+network. Public deployments use the configured current-epoch and historical
+stake snapshot sources and must not enable this fallback when delegations can
+change.
+
 ## Substitute-Client Recovery
 
 An expired or frozen probabilistic client can be recovered from a compatible,
@@ -204,7 +215,8 @@ escrow, and voucher denominations therefore remain unchanged.
 
 The concrete protobuf client type must match. The subject and substitute must
 also have the same upgrade path, HostState NFT policy ID and token name, Cardano
-system start, slot length, slots per KES period, and maximum KES evolutions. The
+system start, slot length, slots per KES period, maximum KES evolutions,
+active-slot coefficient, and maximum clock drift. The
 substitute checkpoint must be strictly newer, its latest consensus and delay
 metadata must be present, and its operational-certificate counters may not
 regress. Recovery cannot be used to cross client types or move a route to a
