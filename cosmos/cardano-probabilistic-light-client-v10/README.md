@@ -27,7 +27,7 @@ github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic
 This initial module targets:
 
 ```text
-github.com/cosmos/cosmos-sdk v0.53.0
+github.com/cosmos/cosmos-sdk v0.53.3
 github.com/cosmos/ibc-go/v10 v10.2.0
 ```
 
@@ -61,12 +61,12 @@ The chain's IBC client params must allow `08-cardano-probabilistic`. If the para
 Because this is a nested Go module, release tags must be prefixed with the module directory:
 
 ```text
-cosmos/cardano-probabilistic-light-client-v10/v0.1.3
-cosmos/cardano-probabilistic-light-client-core/v0.1.4
+cosmos/cardano-probabilistic-light-client-v10/v0.1.4
+cosmos/cardano-probabilistic-light-client-core/v0.1.5
 ```
 
 Consumers can then require it with:
 
 ```sh
-go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10@v0.1.3
+go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10@v0.1.4
 ```
