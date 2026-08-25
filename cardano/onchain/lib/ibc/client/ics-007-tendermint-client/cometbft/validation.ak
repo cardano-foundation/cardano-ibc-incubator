@@ -9,6 +9,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{
   block_id_flag_commit,
 }
+use ibc/client/ics_007_tendermint_client/cometbft/non_adjacent_validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/cometbft/vote
 
@@ -56,41 +57,13 @@ pub fn verify_commit_light_trusting(
   trust_level: Rational,
   list_vote_sign_bytes: Option<List<ByteArray>>,
 ) -> Bool {
-  expect !list.is_empty(vals.validators)
-  expect rational.denominator(trust_level) != 0
-  expect !list.is_empty(commit.signatures)
-  let voting_power_needed =
-    validator_set.total_voting_power(vals) * rational.numerator(trust_level) / rational.denominator(
-      trust_level,
-    )
-  let ignore =
-    fn(c: CommitSig) -> Bool { c.block_id_flag != block_id_flag_commit }
-  let count =
-    fn(_c: CommitSig) -> Bool { True }
-  if should_batch_verify(vals, commit) {
-    verify_commit_batch(
-      chain_id,
-      vals,
-      commit,
-      voting_power_needed,
-      ignore,
-      count,
-      False,
-      False,
-    )
-  } else {
-    verify_commit_single(
-      chain_id,
-      vals,
-      commit,
-      voting_power_needed,
-      ignore,
-      count,
-      False,
-      False,
-      list_vote_sign_bytes,
-    )
-  }
+  non_adjacent_validation.verify_commit_light_trusting(
+    chain_id,
+    vals,
+    commit,
+    trust_level,
+    list_vote_sign_bytes,
+  )
 }
 
 fn verify_basic_vals_and_commit(
