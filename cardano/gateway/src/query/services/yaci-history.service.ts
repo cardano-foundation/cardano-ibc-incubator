@@ -463,6 +463,7 @@ export class YaciHistoryService implements HistoryService {
           hash: pointBlock.hash,
         },
         epochNonce,
+        process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE === "1",
       );
 
     let epochContext;
@@ -523,6 +524,23 @@ export class YaciHistoryService implements HistoryService {
       block,
       ogmiosStakeDistribution,
     );
+    if (stakeDistribution === null) {
+      const historicalStakeEndpoint = this.configService.get<string>(
+        "cardanoEpochParamsEndpoint",
+      )?.replace(/\/+$/, "");
+      if (!historicalStakeEndpoint) {
+        throw new Error(
+          `Historical stake-distribution endpoint unavailable for completed epoch ${block.epochNo}`,
+        );
+      }
+      return this.findHistoricalEpochContextFallback(
+        block,
+        slotBounds,
+        ogmiosEndpoint,
+        epochNonce,
+        historicalStakeEndpoint,
+      );
+    }
     const firstRegistrationSlots = await this.findKnownPoolRegistrationSlots(
       stakeDistribution.map((entry) => entry.poolId),
     );
@@ -568,7 +586,7 @@ export class YaciHistoryService implements HistoryService {
   private async findCurrentEpochStakeSnapshot(
     block: HistoryBlock,
     ogmiosStakeDistribution: HistoryStakeDistributionEntry[],
-  ): Promise<HistoryStakeDistributionEntry[]> {
+  ): Promise<HistoryStakeDistributionEntry[] | null> {
     const cardanoNetwork = this.configService.get<string>("cardanoNetwork");
     const isPublicNetwork = cardanoNetwork === "Preprod" ||
       cardanoNetwork === "Preview" || cardanoNetwork === "Mainnet";
@@ -592,10 +610,16 @@ export class YaciHistoryService implements HistoryService {
     }
 
     const tipEpoch = await this.fetchKoiosTipEpoch(endpoint);
-    if (tipEpoch !== block.epochNo) {
-      // pool_list exposes the current epoch's Set snapshot. Historical points
-      // continue through the existing point-in-time or completed-epoch paths.
-      return ogmiosStakeDistribution;
+    if (tipEpoch < block.epochNo) {
+      throw new Error(
+        `Koios tip epoch ${tipEpoch} is behind requested block epoch ${block.epochNo}; refusing live Ogmios stake fallback`,
+      );
+    }
+    if (tipEpoch > block.epochNo) {
+      // The requested epoch is complete. Ogmios liveStakeDistribution is a
+      // current-ledger wallet distribution, not the epoch's Praos Set snapshot.
+      // Signal the caller to use the completed-epoch reconstruction instead.
+      return null;
     }
 
     const lookup = this.buildCurrentEpochStakeSnapshot(
@@ -821,7 +845,9 @@ export class YaciHistoryService implements HistoryService {
     }
 
     if (
-      process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT !== undefined
+      process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT !==
+        undefined &&
+      process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE === "1"
     ) {
       return this.findLocalStalePointEpochContextFallback(
         block,
@@ -1285,7 +1311,10 @@ export class YaciHistoryService implements HistoryService {
   ): Promise<HistoryEpochContextAtBlock> {
     const [verificationContext, currentStakeDistribution] = await Promise.all([
       queryCurrentEpochVerificationData(ogmiosEndpoint, epochNonce),
-      queryCurrentEpochStakeDistribution(ogmiosEndpoint),
+      queryCurrentEpochStakeDistribution(
+        ogmiosEndpoint,
+        process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE === "1",
+      ),
     ]);
 
     const stakeDistribution: HistoryStakeDistributionEntry[] =

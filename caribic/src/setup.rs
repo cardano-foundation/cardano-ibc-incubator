@@ -24,6 +24,7 @@ const LOCAL_CARDANO_NODE_IMAGE: &str = "cardano-node-local-clock:10.1.4-3";
 const LOCAL_STABILITY_SPO_COUNT: usize = 5;
 const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
 const LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT: &str = "1";
+const LOCAL_STABILITY_ASSUME_STATIC_STAKE: &str = "1";
 const LOCAL_CARDANO_EPOCH_LENGTH: &str = "5000";
 const LOCAL_CARDANO_SYSTEM_START: &str = "2025-12-31T23:59:00Z";
 const LOCAL_CARDANO_START_TIME_SECONDS: i64 = 1_767_225_540;
@@ -2417,6 +2418,10 @@ fn write_gateway_env_for_network(
                     "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT",
                     LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT,
                 ),
+                (
+                    "CARDANO_STABILITY_ASSUME_STATIC_STAKE",
+                    LOCAL_STABILITY_ASSUME_STATIC_STAKE,
+                ),
                 // A local block is produced every second, while each handshake
                 // transaction waits for the stability depth. Keep a complete
                 // connection/channel handshake within one root-bearing update;
@@ -2439,13 +2444,14 @@ fn write_gateway_env_for_network(
             )?;
         }
         config::CoreCardanoNetwork::Preprod | config::CoreCardanoNetwork::Preview => {
-            // This flag permits deliberately approximate local-dev fallbacks. It must
+            // These flags permit deliberately approximate local-dev fallbacks. They must
             // never survive a switch to a public testnet, where historical epoch
             // evidence is reconstructed from the configured public data provider.
             remove_env_var(
                 &gateway_env,
                 "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT",
             )?;
+            remove_env_var(&gateway_env, "CARDANO_STABILITY_ASSUME_STATIC_STAKE")?;
             let epoch_length = network.epoch_length().to_string();
             let preprod_kupo_mode = resolve_preprod_kupo_mode(&gateway_env)?;
             set_or_append_env_var(
@@ -3046,12 +3052,14 @@ mod tests {
         ));
         fs::write(
             &env_path,
-            "CARDANO_RUNTIME_NETWORK=preprod\nCARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT=1\nOGMIOS_ENDPOINT=https://example.com\n",
+            "CARDANO_RUNTIME_NETWORK=preprod\nCARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT=1\nCARDANO_STABILITY_ASSUME_STATIC_STAKE=1\nOGMIOS_ENDPOINT=https://example.com\n",
         )
         .expect("temporary env should be writable");
 
         remove_env_var(&env_path, "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT")
             .expect("local-only flag removal should succeed");
+        remove_env_var(&env_path, "CARDANO_STABILITY_ASSUME_STATIC_STAKE")
+            .expect("static-stake flag removal should succeed");
 
         assert_eq!(
             fs::read_to_string(&env_path).expect("temporary env should be readable"),
