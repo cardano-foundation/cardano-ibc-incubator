@@ -94,6 +94,7 @@ describe('YaciHistoryService', () => {
     jest.useRealTimers();
     jest.resetAllMocks();
     delete process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
+    delete process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE;
     delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
   });
 
@@ -141,6 +142,7 @@ describe('YaciHistoryService', () => {
         hash: 'ab'.repeat(32),
       },
       '11'.repeat(32),
+      false,
     );
     expect(global.fetch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -203,12 +205,12 @@ describe('YaciHistoryService', () => {
         },
       ],
     });
-
     expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v1/pool_updates');
   });
 
-  it('uses the configured local registration-slot assumption for every unresolved stake pool', async () => {
+  it('uses explicit local registration-slot and static-stake assumptions together', async () => {
     process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
+    process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE = '1';
     entityManagerMock.query
       .mockResolvedValueOnce([{ start_slot: '1000' }])
       .mockResolvedValueOnce([{ start_slot: '1200' }])
@@ -243,6 +245,15 @@ describe('YaciHistoryService', () => {
         },
       ],
     });
+    expect(queryEpochContextAtPoint).toHaveBeenCalledWith(
+      'ws://ogmios.local',
+      {
+        slot: 1100n,
+        hash: 'ab'.repeat(32),
+      },
+      '11'.repeat(32),
+      true,
+    );
   });
 
   it('caches first registration slots discovered from local Yaci tables', async () => {
@@ -630,6 +641,7 @@ describe('YaciHistoryService', () => {
         hash: 'ab'.repeat(32),
       },
       '11'.repeat(32),
+      false,
     );
     expect(queryEpochContextAtPoint).toHaveBeenNthCalledWith(
       2,
@@ -639,6 +651,7 @@ describe('YaciHistoryService', () => {
         hash: 'ef'.repeat(32),
       },
       '11'.repeat(32),
+      false,
     );
   });
 
@@ -766,6 +779,237 @@ describe('YaciHistoryService', () => {
   });
 });
 
+describe('YaciHistoryService stake snapshot source selection', () => {
+  let service: YaciHistoryService;
+  let configServiceMock: { get: jest.Mock };
+  let entityManagerMock: { query: jest.Mock };
+
+  const block = {
+    height: 100,
+    hash: 'ab'.repeat(32),
+    prevHash: 'cd'.repeat(32),
+    slotNo: 1100n,
+    epochNo: 7,
+    timestampUnixNs: 1_000_000_000n,
+    slotLeader: 'pool1anchorpool',
+  };
+
+  const configureNetwork = (network?: 'Preprod') => {
+    configServiceMock.get.mockImplementation((key: string) => {
+      if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
+      if (key === 'cardanoNetwork') return network;
+      if (key === 'cardanoChainId') {
+        return network ? 'cardano-preprod' : 'cardano-devnet';
+      }
+      if (key === 'cardanoChainNetworkMagic') return network ? 1 : 42;
+      if (key === 'cardanoEpochParamsEndpoint') {
+        return 'https://preprod.koios.rest/api/v1';
+      }
+      if (key === 'cardanoPoolRegistrationHistoryEndpoint') {
+        return network ? 'https://preprod.koios.rest/api/v1' : undefined;
+      }
+      if (key === 'cardanoEpochLength') return 432000;
+      return undefined;
+    });
+  };
+
+  beforeEach(() => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+    });
+    configServiceMock = { get: jest.fn() };
+    configureNetwork();
+    entityManagerMock = { query: jest.fn().mockResolvedValue([]) };
+    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue(defaultVerificationData);
+    (queryCurrentEpochStakeDistribution as jest.Mock).mockResolvedValue([]);
+    service = new YaciHistoryService(
+      configServiceMock as unknown as ConfigService,
+      {} as any,
+      entityManagerMock as unknown as EntityManager,
+    );
+  });
+
+  afterEach(() => {
+    jest.resetAllMocks();
+    delete process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
+    delete process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE;
+    delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
+  });
+
+  it('does not use the local stale-point fallback from a registration-slot assumption alone', async () => {
+    process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValue([]);
+    (queryEpochContextAtPoint as jest.Mock).mockRejectedValue(
+      new Error('Failed to acquire requested point. Target point is too old.'),
+    );
+
+    await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
+      'no historical stake-distribution fallback is configured',
+    );
+    expect(queryEpochContextAtPoint).toHaveBeenCalledWith(
+      'ws://ogmios.local',
+      { slot: 1100n, hash: 'ab'.repeat(32) },
+      '11'.repeat(32),
+      false,
+    );
+    expect(queryCurrentEpochStakeDistribution).not.toHaveBeenCalled();
+  });
+
+  it('uses the local stale-point fallback only with both static-stake and registration-slot assumptions', async () => {
+    process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
+    process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE = '1';
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValue([]);
+    (queryEpochContextAtPoint as jest.Mock).mockRejectedValue(
+      new Error('Failed to acquire requested point. Target point is too old.'),
+    );
+    (queryCurrentEpochStakeDistribution as jest.Mock).mockResolvedValue([
+      {
+        poolId: 'pool1static',
+        ...exactStake(1n),
+        vrfKeyHash: 'aa'.repeat(32),
+      },
+    ]);
+
+    await expect(service.findEpochContextAtBlock(block)).resolves.toMatchObject({
+      epoch: 7,
+      stakeDistribution: [
+        {
+          poolId: 'pool1static',
+          firstRegistrationSlot: 1n,
+        },
+      ],
+    });
+    expect(queryCurrentEpochStakeDistribution).toHaveBeenCalledWith('ws://ogmios.local', true);
+  });
+
+  it('reconstructs a completed public epoch instead of returning an acquired live distribution', async () => {
+    configureNetwork('Preprod');
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce([
+        {
+          block_count: '20',
+          pool_ids: ['pool1historicala'],
+        },
+      ]);
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      ...defaultVerificationData,
+      stakeDistribution: [
+        {
+          poolId: 'pool1liveonly',
+          ...exactStake(9n, 56n),
+          vrfKeyHash: 'cc'.repeat(32),
+        },
+      ],
+    });
+    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+      ...defaultVerificationData,
+      currentEpoch: 9,
+    });
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
+      if (url.pathname.endsWith('/epoch_params')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+        };
+      }
+      if (url.pathname.endsWith('/tip')) {
+        return { ok: true, json: async () => [{ epoch_no: 9 }] };
+      }
+      if (url.pathname.endsWith('/epoch_info')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, active_stake: '1000', blk_count: 20 }],
+        };
+      }
+      if (url.pathname.endsWith('/pool_history')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, active_stake: '600' }],
+        };
+      }
+      if (url.pathname.endsWith('/pool_updates')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              pool_id_bech32: 'pool1historicala',
+              active_epoch_no: 1,
+              vrf_key_hash: 'aa'.repeat(32),
+              update_type: 'registration',
+              block_time: 1,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected fetch URL ${url.toString()}`);
+    });
+
+    const context = await service.findEpochContextAtBlock(block);
+
+    expect(context?.stakeDistribution).toEqual([
+      {
+        poolId: 'pool1historicala',
+        ...exactStake(600n, 1000n),
+        vrfKeyHash: 'aa'.repeat(32),
+        firstRegistrationSlot: 1100n,
+      },
+      {
+        poolId: '__historical_unproduced_stake__:7',
+        ...exactStake(400n, 1000n),
+        vrfKeyHash: '00'.repeat(32),
+        firstRegistrationSlot: 1n,
+      },
+    ]);
+    expect(context?.stakeDistribution).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ poolId: 'pool1liveonly' })]),
+    );
+    expect(queryEpochContextAtPoint).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when the public snapshot source tip is behind the requested block epoch', async () => {
+    configureNetwork('Preprod');
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }]);
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      ...defaultVerificationData,
+      stakeDistribution: [
+        {
+          poolId: 'pool1liveonly',
+          ...exactStake(9n, 56n),
+          vrfKeyHash: 'cc'.repeat(32),
+        },
+      ],
+    });
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
+      if (url.pathname.endsWith('/epoch_params')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+        };
+      }
+      if (url.pathname.endsWith('/tip')) {
+        return { ok: true, json: async () => [{ epoch_no: 6 }] };
+      }
+      throw new Error(`Unexpected fetch URL ${url.toString()}`);
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
+      'Koios tip epoch 6 is behind requested block epoch 7; refusing live Ogmios stake fallback',
+    );
+    expect(entityManagerMock.query).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('YaciHistoryService current epoch stake snapshots', () => {
   let service: YaciHistoryService;
   let entityManagerMock: { query: jest.Mock };
@@ -785,8 +1029,12 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
         if (key === 'cardanoNetwork') return 'Preprod';
-        if (key === 'cardanoEpochParamsEndpoint') return 'https://preprod.koios.rest/api/v1';
-        if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
+        if (key === 'cardanoEpochParamsEndpoint') {
+          return 'https://preprod.koios.rest/api/v1';
+        }
+        if (key === 'cardanoPoolRegistrationHistoryEndpoint') {
+          return 'https://preprod.koios.rest/api/v1';
+        }
         if (key === 'cardanoEpochLength') return 432000;
         return undefined;
       }),
@@ -918,7 +1166,12 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
       if (url.pathname.endsWith('/pool_list')) {
         return {
           ok: true,
-          json: async () => [{ pool_id_bech32: 'pool1active', active_stake: '600' }],
+          json: async () => [
+            {
+              pool_id_bech32: 'pool1active',
+              active_stake: '600',
+            },
+          ],
         };
       }
       if (url.pathname.endsWith('/epoch_info')) {

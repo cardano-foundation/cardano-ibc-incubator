@@ -96,6 +96,18 @@ func TestIsMatchingClientStateRejectsStaticParameterMismatch(t *testing.T) {
 			},
 		},
 		{
+			name: "active slot coefficient numerator",
+			mutate: func(substitute *ClientState) {
+				substitute.ActiveSlotCoefficientNumerator++
+			},
+		},
+		{
+			name: "active slot coefficient denominator",
+			mutate: func(substitute *ClientState) {
+				substitute.ActiveSlotCoefficientDenominator++
+			},
+		},
+		{
 			name: "max clock drift",
 			mutate: func(substitute *ClientState) {
 				substitute.MaxClockDrift++
@@ -115,14 +127,6 @@ func TestIsMatchingClientStateRejectsStaticParameterMismatch(t *testing.T) {
 			require.ErrorContains(t, err, "subject client state does not match substitute client state")
 		})
 	}
-}
-
-func TestIsMatchingClientStateRejectsActiveSlotCoefficientMismatch(t *testing.T) {
-	subject := newProbabilisticTestClientState()
-	substitute := newProbabilisticTestClientState()
-	substitute.ActiveSlotCoefficientNumerator = 2
-
-	require.False(t, IsMatchingClientState(*subject, *substitute))
 }
 
 func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {

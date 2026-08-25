@@ -333,6 +333,31 @@ const stakeFractionToWeight = (numerator: bigint, denominator: bigint): bigint =
   return rounded > 0n ? rounded : 1n;
 };
 
+const greatestCommonDivisor = (left: bigint, right: bigint): bigint => {
+  let a = left < 0n ? -left : left;
+  let b = right < 0n ? -right : right;
+  while (b !== 0n) {
+    [a, b] = [b, a % b];
+  }
+  return a;
+};
+
+const addFractions = (
+  left: { numerator: bigint; denominator: bigint },
+  right: { numerator: bigint; denominator: bigint },
+): { numerator: bigint; denominator: bigint } => {
+  const denominatorGcd = greatestCommonDivisor(left.denominator, right.denominator);
+  const leftScale = right.denominator / denominatorGcd;
+  const rightScale = left.denominator / denominatorGcd;
+  const numerator = left.numerator * leftScale + right.numerator * rightScale;
+  const denominator = left.denominator * leftScale;
+  const fractionGcd = greatestCommonDivisor(numerator, denominator);
+  return {
+    numerator: numerator / fractionGcd,
+    denominator: denominator / fractionGcd,
+  };
+};
+
 const parseStakePoolId = (poolId: string): string => {
   if (!poolId.startsWith('pool1')) {
     throw new Error(`Ogmios returned an invalid stake pool id: ${poolId}`);
@@ -343,6 +368,7 @@ const parseStakePoolId = (poolId: string): string => {
 const parseStakeDistributionRows = (
   stakePools: OgmiosStakePools,
   liveStakeDistribution: OgmiosLiveStakeDistribution,
+  normalizeToActiveStake = false,
 ): OgmiosCurrentEpochStakeDistributionEntry[] => {
   const rows = Object.entries(liveStakeDistribution).map(([poolId, entry]) => {
     const normalizedPoolId = parseStakePoolId(poolId);
@@ -369,15 +395,54 @@ const parseStakeDistributionRows = (
     return [];
   }
 
-  return rows
-    .map((row) => ({
+  const positiveStakeRows = rows.filter((row) => row.numerator > 0n);
+  if (positiveStakeRows.length === 0) {
+    return [];
+  }
+
+  if (!normalizeToActiveStake) {
+    return positiveStakeRows.map((row) => ({
       poolId: row.poolId,
       stake: stakeFractionToWeight(row.numerator, row.denominator),
       vrfKeyHash: row.vrfKeyHash,
       relativeStakeNumerator: row.numerator,
       relativeStakeDenominator: row.denominator,
-    }))
-    .filter((row) => row.stake > 0n);
+    }));
+  }
+
+  const totalRelativeStake = positiveStakeRows.reduce((total, row) => addFractions(total, row), {
+    numerator: 0n,
+    denominator: 1n,
+  });
+  if (totalRelativeStake.numerator > totalRelativeStake.denominator) {
+    throw new Error('Ogmios live stake fractions exceed one');
+  }
+
+  // Ogmios 6.12 reports each pool's live stake against all ledger stake, which
+  // can include undelegated stake. Praos leader eligibility instead uses the
+  // pool's share of the active, delegated stake. Normalize the exact rational
+  // values as a group; renormalizing each rounded scoring weight would lose
+  // the precision required by native header verification. This converts the
+  // explicitly opted-in static-devnet fallback only; a live distribution is
+  // not an epoch-frozen one and must not be used this way on dynamic networks.
+  return positiveStakeRows.map((row) => {
+    const numerator = row.numerator * totalRelativeStake.denominator;
+    const denominator = row.denominator * totalRelativeStake.numerator;
+    const fractionGcd = greatestCommonDivisor(numerator, denominator);
+    const relativeStakeNumerator = numerator / fractionGcd;
+    const relativeStakeDenominator = denominator / fractionGcd;
+    if (relativeStakeNumerator > MAX_UINT64 || relativeStakeDenominator > MAX_UINT64) {
+      throw new Error(`Ogmios normalized live stake fraction for pool ${row.poolId} exceeds protobuf uint64 bounds`);
+    }
+
+    return {
+      poolId: row.poolId,
+      stake: stakeFractionToWeight(relativeStakeNumerator, relativeStakeDenominator),
+      vrfKeyHash: row.vrfKeyHash,
+      relativeStakeNumerator,
+      relativeStakeDenominator,
+    };
+  });
 };
 
 const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSocket; session: OgmiosSession }> => {
@@ -533,6 +598,7 @@ const queryEpochContextAtPoint = async (
   ogmiosUrl: string,
   point: OgmiosLedgerPoint,
   epochNonce: string,
+  normalizeToActiveStake = false,
 ): Promise<OgmiosEpochContextAtPoint> => {
   return withAcquiredLedgerState(ogmiosUrl, point, async (session) => {
     const currentEpoch = await session.request<unknown>('queryLedgerState/epoch', {});
@@ -555,7 +621,7 @@ const queryEpochContextAtPoint = async (
       maxKesEvolutions: genesisVerificationConfig.maxKesEvolutions,
       activeSlotCoefficientNumerator: genesisVerificationConfig.activeSlotCoefficientNumerator,
       activeSlotCoefficientDenominator: genesisVerificationConfig.activeSlotCoefficientDenominator,
-      stakeDistribution: parseStakeDistributionRows(stakePools, liveStakeDistribution),
+      stakeDistribution: parseStakeDistributionRows(stakePools, liveStakeDistribution, normalizeToActiveStake),
     };
   });
 };
@@ -592,13 +658,14 @@ const queryCurrentEpochVerificationData = async (
 
 const queryCurrentEpochStakeDistribution = async (
   ogmiosUrl: string,
+  normalizeToActiveStake = false,
 ): Promise<OgmiosCurrentEpochStakeDistributionEntry[]> => {
   const [stakePools, liveStakeDistribution] = await Promise.all([
     ogmiosRequest<OgmiosStakePools>(ogmiosUrl, 'queryLedgerState/stakePools', {}),
     ogmiosRequest<OgmiosLiveStakeDistribution>(ogmiosUrl, 'queryLedgerState/liveStakeDistribution', {}),
   ]);
 
-  return parseStakeDistributionRows(stakePools, liveStakeDistribution);
+  return parseStakeDistributionRows(stakePools, liveStakeDistribution, normalizeToActiveStake);
 };
 
 export {

@@ -99,6 +99,76 @@ describe('Ogmios stability verification parsing', () => {
     expect(entry.stake).toBe(832_365_052n);
   });
 
+  it('normalizes positive-stake pools over delegated stake for Praos leader verification', () => {
+    const entries = parseStakeDistributionRows(
+      {},
+      {
+        pool1alpha: { stake: '9/56', vrf: 'a1'.repeat(32) },
+        pool1beta: { stake: '9/56', vrf: 'b2'.repeat(32) },
+        pool1gamma: { stake: '5/28', vrf: 'c3'.repeat(32) },
+        pool1delta: { stake: '9/56', vrf: 'd4'.repeat(32) },
+        pool1epsilon: { stake: '9/56', vrf: 'e5'.repeat(32) },
+      },
+      true,
+    );
+
+    expect(entries.map((entry) => [entry.relativeStakeNumerator, entry.relativeStakeDenominator])).toEqual([
+      [9n, 46n],
+      [9n, 46n],
+      [5n, 23n],
+      [9n, 46n],
+      [9n, 46n],
+    ]);
+    expect(entries.map((entry) => entry.stake)).toEqual([
+      195_652_173_913n,
+      195_652_173_913n,
+      217_391_304_348n,
+      195_652_173_913n,
+      195_652_173_913n,
+    ]);
+  });
+
+  it('does not add an unassigned entry when exact pool fractions already sum to one', () => {
+    const entries = parseStakeDistributionRows(
+      {},
+      {
+        pool1alpha: { stake: '1/2', vrf: 'a1'.repeat(32) },
+        pool1beta: { stake: '1/2', vrf: 'b2'.repeat(32) },
+      },
+      true,
+    );
+
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => [entry.relativeStakeNumerator, entry.relativeStakeDenominator])).toEqual([
+      [1n, 2n],
+      [1n, 2n],
+    ]);
+  });
+
+  it('does not turn an all-zero pool map into synthetic stake', () => {
+    expect(
+      parseStakeDistributionRows(
+        {},
+        {
+          pool1alpha: { stake: '0/1', vrf: 'a1'.repeat(32) },
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects live pool fractions whose exact sum exceeds one', () => {
+    expect(() =>
+      parseStakeDistributionRows(
+        {},
+        {
+          pool1alpha: { stake: '3/4', vrf: 'a1'.repeat(32) },
+          pool1beta: { stake: '3/4', vrf: 'b2'.repeat(32) },
+        },
+        true,
+      ),
+    ).toThrow('live stake fractions exceed one');
+  });
+
   it.each(['0/20', '21/20', '0.05', '1/0', '18446744073709551616/18446744073709551616'])(
     'rejects invalid active-slot coefficient %s',
     (activeSlotsCoefficient) => {

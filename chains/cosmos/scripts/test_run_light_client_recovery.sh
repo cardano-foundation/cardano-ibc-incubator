@@ -54,8 +54,14 @@ emit_client_state() {
     checkpoint=130
   fi
 
-  printf '{"chain_id":"cardano-devnet","latest_height":{"revision_number":0,"revision_height":%s},"frozen_height":null,"current_epoch":%s,"trusting_period":{"secs":%s,"nanos":0},"upgrade_path":[],"host_state_nft_policy_id":[1,2,3],"host_state_nft_token_name":[4,5],"epoch_stake_distribution":[{"pool_id":"pool","stake":100}],"epoch_nonce":[9,9],"slots_per_kes_period":20,"current_epoch_start_slot":100,"current_epoch_end_slot_exclusive":200,"system_start_unix_ns":1000000000,"slot_length_ns":1000000000,"epoch_contexts":[{"epoch":%s}],"latest_checkpoint_height":{"revision_number":0,"revision_height":%s},"latest_checkpoint_block_hash":"hash-%s","latest_checkpoint_epoch":%s,"max_kes_evolutions":62,"latest_checkpoint_operational_certificate_counters":[{"pool_id":"pool","sequence_number":1}],"operational_certificate_counter_history_start_height":{"revision_number":0,"revision_height":%s}}' \
-    "$latest" "$epoch" "$trusting" "$epoch" "$checkpoint" "$checkpoint" "$epoch" "$checkpoint"
+  {
+    printf '{"chain_id":"cardano-devnet","latest_height":{"revision_number":0,"revision_height":%s},"frozen_height":null,"current_epoch":%s,"trusting_period":{"secs":%s,"nanos":0},"upgrade_path":[],"host_state_nft_policy_id":[1,2,3],"host_state_nft_token_name":[4,5],"epoch_stake_distribution":[{"pool_id":"pool","stake":100,"relative_stake_numerator":1,"relative_stake_denominator":1}],"epoch_nonce":[9,9],"slots_per_kes_period":20,"current_epoch_start_slot":100,"current_epoch_end_slot_exclusive":200,"system_start_unix_ns":1000000000,"slot_length_ns":1000000000,"epoch_contexts":[{"epoch":%s,"stake_distribution":[{"pool_id":"pool","stake":100,"relative_stake_numerator":1,"relative_stake_denominator":1}]}],"latest_checkpoint_height":{"revision_number":0,"revision_height":%s},"latest_checkpoint_block_hash":"hash-%s","latest_checkpoint_epoch":%s,"max_kes_evolutions":62,"latest_checkpoint_operational_certificate_counters":[{"pool_id":"pool","sequence_number":1}],"operational_certificate_counter_history_start_height":{"revision_number":0,"revision_height":%s},"active_slot_coefficient_numerator":1,"active_slot_coefficient_denominator":20,"max_clock_drift":{"secs":5,"nanos":0},"latest_checkpoint_slot":%s,"latest_checkpoint_timestamp":%s000000000}' \
+      "$latest" "$epoch" "$trusting" "$epoch" "$checkpoint" "$checkpoint" "$epoch" "$checkpoint" "$checkpoint" "$((checkpoint + 1))"
+  } | if [[ "${FAKE_MISSING_RELATIVE_STAKE:-0}" == "1" ]]; then
+    jq -c 'del(.epoch_stake_distribution[0].relative_stake_numerator, .epoch_contexts[0].stake_distribution[0].relative_stake_denominator)'
+  else
+    cat
+  fi
 }
 
 fake_hermes() {
@@ -374,6 +380,7 @@ run_recovery() {
     FAKE_FAIL_PROPOSAL="${FAKE_FAIL_PROPOSAL:-0}" \
     FAKE_FAIL_TIMEOUT="${FAKE_FAIL_TIMEOUT:-0}" \
     FAKE_MALFORMED_CLIENTS="${FAKE_MALFORMED_CLIENTS:-0}" \
+    FAKE_MISSING_RELATIVE_STAKE="${FAKE_MISSING_RELATIVE_STAKE:-0}" \
     FAKE_UNKNOWN_SUBSTITUTE_UPDATE="${FAKE_UNKNOWN_SUBSTITUTE_UPDATE:-0}" \
     FAKE_HANG_SIMD="${FAKE_HANG_SIMD:-0}" \
     FAKE_LATE_MARKER="${FAKE_LATE_MARKER:-}" \
@@ -451,6 +458,21 @@ if grep -qF "simd tx ibc client recover-client" "$FAKE_EVENT_LOG"; then
   exit 1
 fi
 unset FAKE_UNKNOWN_SUBSTITUTE_UPDATE
+
+FAKE_STATE_DIR="$test_dir/missing-relative-stake-state"
+FAKE_EVENT_LOG="$test_dir/missing-relative-stake.log"
+FAKE_MISSING_RELATIVE_STAKE=1
+mkdir -p "$FAKE_STATE_DIR"
+if missing_relative_stake_output="$(run_recovery v8-classic v8-classic-1 2>&1)"; then
+  echo "Recovery unexpectedly accepted client state without exact relative stake." >&2
+  exit 1
+fi
+grep -qF "invalid probabilistic client state" <<<"$missing_relative_stake_output"
+if grep -qF "create client" "$FAKE_EVENT_LOG"; then
+  echo "Recovery created a substitute after incomplete relative-stake state." >&2
+  exit 1
+fi
+unset FAKE_MISSING_RELATIVE_STAKE
 
 FAKE_STATE_DIR="$test_dir/timeout-failure-state"
 FAKE_EVENT_LOG="$test_dir/timeout-failure.log"
