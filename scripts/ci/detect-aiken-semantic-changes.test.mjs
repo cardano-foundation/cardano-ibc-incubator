@@ -260,6 +260,49 @@ test('classifies modified comments as trivia and source additions as relevant', 
         .aikenRelevantChanged,
       true,
     );
+
+    const capacityFixtureDir = join(
+      repo,
+      'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity',
+    );
+    mkdirSync(capacityFixtureDir, { recursive: true });
+    writeFileSync(
+      join(capacityFixtureDir, 'manifest.json'),
+      '{"chainId":"injective-1"}\n',
+    );
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'change capacity fixture'], {
+      cwd: repo,
+    });
+    const capacityFixtureChanged = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repo,
+      encoding: 'utf8',
+    }).trim();
+    assert.equal(
+      classifyAikenChanges(repo, budgetHelperChanged, capacityFixtureChanged)
+        .aikenRelevantChanged,
+      true,
+    );
+
+    const lucidServiceDir = join(repo, 'cardano/gateway/src/shared/modules/lucid');
+    mkdirSync(lucidServiceDir, { recursive: true });
+    writeFileSync(
+      join(lucidServiceDir, 'lucid.service.ts'),
+      'export const encode = () => "00";\n',
+    );
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'change capacity encoder'], {
+      cwd: repo,
+    });
+    const capacityEncoderChanged = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repo,
+      encoding: 'utf8',
+    }).trim();
+    assert.equal(
+      classifyAikenChanges(repo, capacityFixtureChanged, capacityEncoderChanged)
+        .aikenRelevantChanged,
+      true,
+    );
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

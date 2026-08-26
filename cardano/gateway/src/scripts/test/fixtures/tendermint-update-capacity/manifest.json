@@ -1,0 +1,278 @@
+{
+  "chain_id": "injective-1",
+  "fixture": "injective-tendermint-update-capacity",
+  "generator": {
+    "cometbft_reference_version": "v0.38.21",
+    "mode": "committed sources are offline inputs; --refresh is explicit",
+    "path": "cardano/gateway/src/scripts/test/generate-injective-tendermint-capacity-fixture.ts"
+  },
+  "provenance": {
+    "captured_at": "2026-08-26T14:09:06.258Z",
+    "cross_provider_checks": [
+      {
+        "block_id_hash": "9b81141d99528dbf7829c77f6374113628b9017c873872a345a38cd8674dcef5",
+        "height": "180315900",
+        "providers": [
+          {
+            "block_id_hash": "9b81141d99528dbf7829c77f6374113628b9017c873872a345a38cd8674dcef5",
+            "name": "Injective official sentry",
+            "url": "https://sentry.tm.injective.network/commit?height=180315900",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "9b81141d99528dbf7829c77f6374113628b9017c873872a345a38cd8674dcef5",
+            "name": "Polkachu",
+            "url": "https://injective-rpc.polkachu.com/commit?height=180315900",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "9b81141d99528dbf7829c77f6374113628b9017c873872a345a38cd8674dcef5",
+            "name": "PublicNode",
+            "url": "https://injective-rpc.publicnode.com/commit?height=180315900",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          }
+        ],
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      },
+      {
+        "block_id_hash": "1a3159a8568679be80288f694ff0ef738dc68744182d6026b579c7c6552cee07",
+        "height": "180315901",
+        "providers": [
+          {
+            "block_id_hash": "1a3159a8568679be80288f694ff0ef738dc68744182d6026b579c7c6552cee07",
+            "name": "Injective official sentry",
+            "url": "https://sentry.tm.injective.network/commit?height=180315901",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "1a3159a8568679be80288f694ff0ef738dc68744182d6026b579c7c6552cee07",
+            "name": "Polkachu",
+            "url": "https://injective-rpc.polkachu.com/commit?height=180315901",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "1a3159a8568679be80288f694ff0ef738dc68744182d6026b579c7c6552cee07",
+            "name": "PublicNode",
+            "url": "https://injective-rpc.publicnode.com/commit?height=180315901",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          }
+        ],
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      },
+      {
+        "block_id_hash": "aed68949c7bb43f18609f3a61cc9dee184168432d87a75834b431716371e0f08",
+        "height": "180315953",
+        "providers": [
+          {
+            "block_id_hash": "aed68949c7bb43f18609f3a61cc9dee184168432d87a75834b431716371e0f08",
+            "name": "Injective official sentry",
+            "url": "https://sentry.tm.injective.network/commit?height=180315953",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "aed68949c7bb43f18609f3a61cc9dee184168432d87a75834b431716371e0f08",
+            "name": "Polkachu",
+            "url": "https://injective-rpc.polkachu.com/commit?height=180315953",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "aed68949c7bb43f18609f3a61cc9dee184168432d87a75834b431716371e0f08",
+            "name": "PublicNode",
+            "url": "https://injective-rpc.publicnode.com/commit?height=180315953",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          }
+        ],
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      },
+      {
+        "block_id_hash": "c0feeec7cb4e1d515625641026b123abeebc1e576417cd2cde980f9031615fec",
+        "height": "180315954",
+        "providers": [
+          {
+            "block_id_hash": "c0feeec7cb4e1d515625641026b123abeebc1e576417cd2cde980f9031615fec",
+            "name": "Injective official sentry",
+            "url": "https://sentry.tm.injective.network/commit?height=180315954",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "c0feeec7cb4e1d515625641026b123abeebc1e576417cd2cde980f9031615fec",
+            "name": "Polkachu",
+            "url": "https://injective-rpc.polkachu.com/commit?height=180315954",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "c0feeec7cb4e1d515625641026b123abeebc1e576417cd2cde980f9031615fec",
+            "name": "PublicNode",
+            "url": "https://injective-rpc.publicnode.com/commit?height=180315954",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          }
+        ],
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      },
+      {
+        "block_id_hash": "af36c392a51a79660814261c518b74ee71b6a420acb846aeb202974aab1daa72",
+        "height": "180315956",
+        "providers": [
+          {
+            "block_id_hash": "af36c392a51a79660814261c518b74ee71b6a420acb846aeb202974aab1daa72",
+            "name": "Injective official sentry",
+            "url": "https://sentry.tm.injective.network/commit?height=180315956",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "af36c392a51a79660814261c518b74ee71b6a420acb846aeb202974aab1daa72",
+            "name": "Polkachu",
+            "url": "https://injective-rpc.polkachu.com/commit?height=180315956",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "af36c392a51a79660814261c518b74ee71b6a420acb846aeb202974aab1daa72",
+            "name": "PublicNode",
+            "url": "https://injective-rpc.publicnode.com/commit?height=180315956",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          }
+        ],
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      },
+      {
+        "block_id_hash": "833a1fd25418ee422115f1a90816161af3241daecf838d467a8f5753c6a2ee99",
+        "height": "180315957",
+        "providers": [
+          {
+            "block_id_hash": "833a1fd25418ee422115f1a90816161af3241daecf838d467a8f5753c6a2ee99",
+            "name": "Injective official sentry",
+            "url": "https://sentry.tm.injective.network/commit?height=180315957",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "833a1fd25418ee422115f1a90816161af3241daecf838d467a8f5753c6a2ee99",
+            "name": "Polkachu",
+            "url": "https://injective-rpc.polkachu.com/commit?height=180315957",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          },
+          {
+            "block_id_hash": "833a1fd25418ee422115f1a90816161af3241daecf838d467a8f5753c6a2ee99",
+            "name": "PublicNode",
+            "url": "https://injective-rpc.publicnode.com/commit?height=180315957",
+            "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+          }
+        ],
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      }
+    ],
+    "primary_rpc": "https://sentry.tm.injective.network"
+  },
+  "schema_version": 1,
+  "sources": [
+    {
+      "file": "source/commit-180315900.json",
+      "height": "180315900",
+      "kind": "commit",
+      "sha256": "c27778865e4db1d3656adad9fabb3e2a18e5513014f9aa14c0f305c919e014eb",
+      "url": "https://sentry.tm.injective.network/commit?height=180315900"
+    },
+    {
+      "file": "source/commit-180315901.json",
+      "height": "180315901",
+      "kind": "commit",
+      "sha256": "1d50300596795c2c096686dfe5a9ab25fc3670998b64c986dddc158f996b2473",
+      "url": "https://sentry.tm.injective.network/commit?height=180315901"
+    },
+    {
+      "file": "source/commit-180315953.json",
+      "height": "180315953",
+      "kind": "commit",
+      "sha256": "e8e4dcf9d7d041843ab2c9fa345644ab7a48354186e95f20c120d479f588d43c",
+      "url": "https://sentry.tm.injective.network/commit?height=180315953"
+    },
+    {
+      "file": "source/commit-180315954.json",
+      "height": "180315954",
+      "kind": "commit",
+      "sha256": "b679c876dccb02d91820e9dd6f7f49ceb661e80dff39c28c8d0d3015c7dcdf4b",
+      "url": "https://sentry.tm.injective.network/commit?height=180315954"
+    },
+    {
+      "file": "source/commit-180315956.json",
+      "height": "180315956",
+      "kind": "commit",
+      "sha256": "732024c7d25207931d35683779dd5063b03425015de55b3f0bff80de6d8a5619",
+      "url": "https://sentry.tm.injective.network/commit?height=180315956"
+    },
+    {
+      "file": "source/commit-180315957.json",
+      "height": "180315957",
+      "kind": "commit",
+      "sha256": "51db001835d9156ee7e43bba37268a60ea2dcd5be9b91766d617a46ae2afcae0",
+      "url": "https://sentry.tm.injective.network/commit?height=180315957"
+    },
+    {
+      "file": "source/validators-180315901.json",
+      "height": "180315901",
+      "kind": "validators",
+      "sha256": "14b0486be2217e24bb5800a022cc876d5d2f404b3a6b4d60e7fc55298fc77c2d",
+      "url": "https://sentry.tm.injective.network/validators?height=180315901&page=1&per_page=100"
+    },
+    {
+      "file": "source/validators-180315954.json",
+      "height": "180315954",
+      "kind": "validators",
+      "sha256": "e34addc69cf794e1a8769d80286ca6072d6d821bdbed8465bff585b9ae757414",
+      "url": "https://sentry.tm.injective.network/validators?height=180315954&page=1&per_page=100"
+    },
+    {
+      "file": "source/validators-180315957.json",
+      "height": "180315957",
+      "kind": "validators",
+      "sha256": "ce496c3ac2f1095c6dab93d9927109a2bc513a0092c1e6e8f710138ef4f4d058",
+      "url": "https://sentry.tm.injective.network/validators?height=180315957&page=1&per_page=100"
+    }
+  ],
+  "validated_invariants": {
+    "adjacent_successor_validator_sets_match": true,
+    "commit_and_nil_signatures_verify": true,
+    "expected_total_voting_power": "58207795",
+    "expected_validator_count": 45,
+    "header_hashes_match_commit_block_ids": true,
+    "scenario_observations": {
+      "adjacent_all_signed": {
+        "absent_vote_count": 0,
+        "block_id_hash": "833a1fd25418ee422115f1a90816161af3241daecf838d467a8f5753c6a2ee99",
+        "commit_vote_count": 45,
+        "commit_voting_power": "58207795",
+        "nil_vote_count": 0,
+        "signature_count": 45,
+        "total_voting_power": "58207795",
+        "trusted_overlap_voting_power": "58207795",
+        "validator_count": 45,
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      },
+      "adjacent_mixed": {
+        "absent_vote_count": 1,
+        "block_id_hash": "c0feeec7cb4e1d515625641026b123abeebc1e576417cd2cde980f9031615fec",
+        "commit_vote_count": 43,
+        "commit_voting_power": "53519935",
+        "nil_vote_count": 1,
+        "signature_count": 45,
+        "total_voting_power": "58207795",
+        "trusted_overlap_voting_power": "53519935",
+        "validator_count": 45,
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      },
+      "non_adjacent_mixed": {
+        "absent_vote_count": 1,
+        "block_id_hash": "c0feeec7cb4e1d515625641026b123abeebc1e576417cd2cde980f9031615fec",
+        "commit_vote_count": 43,
+        "commit_voting_power": "53519935",
+        "nil_vote_count": 1,
+        "signature_count": 45,
+        "total_voting_power": "58207795",
+        "trusted_overlap_voting_power": "53519935",
+        "validator_count": 45,
+        "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+      }
+    },
+    "validator_addresses_match_public_keys": true,
+    "validator_hash": "85e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9b"
+  }
+}

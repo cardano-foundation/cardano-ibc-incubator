@@ -768,6 +768,23 @@ fn test_updated_client_datum(seed: Int) -> ClientDatum {
   }
 }
 
+fn test_updated_client_datum_with_consensus_insert(seed: Int) -> ClientDatum {
+  let old_height = test_height(1)
+  let new_height = test_height(2)
+  ClientDatum {
+    state: ClientDatumState {
+      client_state: test_client_state(new_height),
+      consensus_states: [
+        Pair(new_height, test_consensus_state(seed + 1)),
+        Pair(old_height, test_consensus_state(seed)),
+      ],
+      processed_times: [Pair(new_height, 1), Pair(old_height, 0)],
+      processed_heights: [Pair(new_height, 1), Pair(old_height, 0)],
+    },
+    token: test_client_token(),
+  }
+}
+
 fn test_client_input(datum: ClientDatum) -> Input {
   let token = test_client_token()
   Input(
@@ -1167,6 +1184,102 @@ test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
     ),
   )
     |> fuzz_dsl.assert_valid
+}
+
+/// Deterministic companion for the Tendermint UpdateClient capacity report.
+///
+/// Keep this as a unit test (rather than a property test) so `aiken check`
+/// emits stable execution units for the complete 64-level client-state and
+/// consensus-state root transition. Consensus-state removals are deliberately
+/// empty: issue #613 measures validator-set capacity independently of the
+/// pruning growth tracked by issue #557.
+test host_update_client_capacity_minimum_history_succeeds() {
+  let seed = 613
+  let input_client_datum = test_client_datum(1, seed)
+  let output_client_datum =
+    test_updated_client_datum_with_consensus_insert(seed)
+  let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
+  let old_consensus_key =
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+  let new_consensus_key =
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "2")
+  let old_client_state_value =
+    cbor.serialise(input_client_datum.state.client_state)
+  let new_client_state_value =
+    cbor.serialise(output_client_datum.state.client_state)
+  let old_consensus_value = cbor.serialise(test_consensus_state(seed))
+  let new_consensus_value = cbor.serialise(test_consensus_state(seed + 1))
+  let empty_siblings = full_empty_siblings()
+  let root_after_initial_client =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      client_state_key,
+      "",
+      old_client_state_value,
+      empty_siblings,
+    )
+  let initial_consensus_siblings =
+    siblings_after_single_insert(
+      client_state_key,
+      old_client_state_value,
+      old_consensus_key,
+    )
+  let old_root =
+    ibc_state_commitment.apply_update(
+      root_after_initial_client,
+      old_consensus_key,
+      "",
+      old_consensus_value,
+      initial_consensus_siblings,
+    )
+  let client_state_siblings =
+    siblings_after_single_insert(
+      old_consensus_key,
+      old_consensus_value,
+      client_state_key,
+    )
+  let root_after_client_update =
+    test_update_client_root(
+      old_root,
+      input_client_datum,
+      output_client_datum,
+      client_state_siblings,
+    )
+  let consensus_state_siblings =
+    siblings_after_two_inserts(
+      client_state_key,
+      new_client_state_value,
+      old_consensus_key,
+      old_consensus_value,
+      new_consensus_key,
+    )
+  let new_root =
+    ibc_state_commitment.apply_update(
+      root_after_client_update,
+      new_consensus_key,
+      "",
+      new_consensus_value,
+      consensus_state_siblings,
+    )
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+  let redeemer: HostStateRedeemer =
+    UpdateClient {
+      client_state_siblings,
+      consensus_state_siblings,
+      removed_consensus_state_siblings: [],
+    }
+
+  spend_host_state(
+    redeemer,
+    [test_host_input(old_state), test_client_input(input_client_datum)],
+    [test_host_output(new_state), test_client_output(output_client_datum)],
+  )
 }
 
 test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {

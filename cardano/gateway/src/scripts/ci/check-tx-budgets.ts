@@ -16,6 +16,12 @@ import {
   TRACE_REGISTRY_LIMITS,
 } from '@shared/types/trace-registry';
 
+import {
+  analyzeCapacityScenario,
+  formatCapacityReport,
+  loadNormalizedCapacityFixture,
+} from './tendermint-update-capacity';
+
 type BlueprintValidator = {
   title: string;
   compiledCode: string;
@@ -89,6 +95,22 @@ const TX_OUTPUT_BYTES = 80;
 const TX_MINT_POLICY_BYTES = 45;
 const TX_REFERENCE_INPUT_BYTES = 44;
 const REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES = 200;
+
+const CAPACITY_HOST_STATE_AIKEN_TEST = 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds';
+const CAPACITY_SCENARIOS = [
+  {
+    fixtureName: 'adjacent_all_signed',
+    aikenTest: 'spending_client_capacity.test.update_client_capacity_adjacent_all_signed_45_succeeds',
+  },
+  {
+    fixtureName: 'adjacent_mixed',
+    aikenTest: 'spending_client_capacity.test.update_client_capacity_adjacent_mixed_45_succeeds',
+  },
+  {
+    fixtureName: 'non_adjacent_mixed',
+    aikenTest: 'spending_client_capacity.test.update_client_capacity_non_adjacent_mixed_45_succeeds',
+  },
+] as const;
 
 function readIntegerEnv(name: string, fallback: number): number {
   const value = process.env[name]?.trim();
@@ -734,9 +756,7 @@ async function buildScenarios(
       ],
       datums: [dataBytes('max encoded shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes)],
       largestProofPayloadBytes: 0,
-      aikenTests: [
-        'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
-      ],
+      aikenTests: ['trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit'],
       extraBytes: (1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket) * TX_REFERENCE_INPUT_BYTES,
     },
     {
@@ -792,8 +812,7 @@ async function buildScenarios(
         'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
         'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
       ],
-      extraBytes:
-        (TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1) * TX_REFERENCE_INPUT_BYTES,
+      extraBytes: (TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1) * TX_REFERENCE_INPUT_BYTES,
     },
     {
       name: 'First-seen voucher mint + CIP-68 metadata',
@@ -846,6 +865,31 @@ async function buildScenarios(
       exUnits: sumExUnits(aikenTests, scenario.aikenTests),
     };
   });
+}
+
+async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
+  const fixture = loadNormalizedCapacityFixture();
+  const hostState = requiredAikenTestUnits(aikenTests, CAPACITY_HOST_STATE_AIKEN_TEST);
+
+  return Promise.all(
+    CAPACITY_SCENARIOS.map(async ({ fixtureName, aikenTest }) => {
+      const scenario = fixture.scenarios[fixtureName];
+      if (!scenario) {
+        throw new Error(`Missing normalized Tendermint capacity scenario: ${fixtureName}`);
+      }
+      const spendClient = requiredAikenTestUnits(aikenTests, aikenTest);
+      const artifact = await analyzeCapacityScenario(
+        fixtureName,
+        scenario,
+        {
+          hostState: { mem: BigInt(hostState.mem), steps: BigInt(hostState.steps) },
+          spendClient: { mem: BigInt(spendClient.mem), steps: BigInt(spendClient.steps) },
+        },
+        'aiken-unit-tests',
+      );
+      return artifact.report;
+    }),
+  );
 }
 
 function printReport(reports: ScenarioReport[], maxTxSize: number): void {
@@ -919,8 +963,11 @@ async function main() {
   const aikenCheckReport = readJson<AikenCheckReport>(aikenCheckJsonPath);
   const aikenTests = toAikenTestMap(aikenCheckReport);
   const reports = await buildScenarios(validators, aikenTests);
+  const capacityReports = await buildCapacityReports(aikenTests);
 
   printReport(reports, maxTxSize);
+  console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
+  console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
 
   const failures = checkBudgets(reports, maxTxSize, txHeadroomBytes, maxTxExMem, maxTxExSteps, exUnitHeadroomBps);
 
