@@ -879,12 +879,22 @@ jobs:
             -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_at_entry_limit}' \
             -m 'minting_voucher.{test_mint_voucher}' \
             -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
+            -m 'host_state_stt.{host_update_client_capacity_minimum_history_succeeds}' \
+            -m 'spending_client_capacity.{update_client_capacity_adjacent_all_signed_45_succeeds}' \
+            -m 'spending_client_capacity.{update_client_capacity_adjacent_mixed_45_succeeds}' \
+            -m 'spending_client_capacity.{update_client_capacity_non_adjacent_mixed_45_succeeds}' \
             -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
             -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
             > ../../aiken-check.json
 
       - name: Install gateway dependencies
         run: npm ci --prefix cardano/gateway --legacy-peer-deps
+
+      - name: Check frozen Tendermint capacity fixture
+        run: npm run --prefix cardano/gateway check:tendermint-update-capacity-fixture
+
+      - name: Check generated Aiken capacity fixture
+        run: npm run --prefix cardano/gateway check:tendermint-update-capacity-aiken
 
       - name: Check transaction size and ex-unit budgets
         env:

@@ -18,9 +18,13 @@ const aikenInfrastructurePaths = new Set([
   'scripts/ci/detect-aiken-semantic-changes.test.mjs',
   'scripts/ci/merge-aiken-check-reports.mjs',
   'cardano/gateway/src/scripts/ci/check-tx-budgets.ts',
+  'cardano/gateway/src/scripts/ci/tendermint-update-capacity.ts',
+  'cardano/gateway/src/scripts/test/generate-injective-tendermint-capacity-fixture.ts',
+  'cardano/gateway/src/scripts/test/generate-tendermint-update-capacity-aiken.ts',
   'cardano/gateway/package-lock.json',
   'cardano/gateway/package.json',
   'cardano/gateway/src/shared/helpers/hex.ts',
+  'cardano/gateway/src/shared/modules/lucid/lucid.service.ts',
   'cardano/gateway/tsconfig.json',
 ]);
 
@@ -29,6 +33,9 @@ function isAikenInfrastructurePath(path) {
     path.startsWith('.github/actions/') ||
     path.startsWith('.github/workflows/') ||
     path.startsWith('cardano/gateway/src/shared/types/') ||
+    path.startsWith(
+      'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/',
+    ) ||
     aikenInfrastructurePaths.has(path)
   );
 }

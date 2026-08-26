@@ -14,6 +14,12 @@ import { type Height } from '@shared/types/height';
 export const CARDANO_MAX_TX_SIZE_BYTES = 16_384;
 export const CARDANO_TX_SIZE_HEADROOM_BYTES = 750;
 export const CARDANO_SAFE_TX_SIZE_BYTES = CARDANO_MAX_TX_SIZE_BYTES - CARDANO_TX_SIZE_HEADROOM_BYTES;
+export const CARDANO_MAX_TX_EX_MEM = 140_000_000n;
+export const CARDANO_MAX_TX_EX_STEPS = 100_000_000_000n;
+export const CARDANO_SAFE_TX_EX_MEM = 133_000_000n;
+export const CARDANO_SAFE_TX_EX_STEPS = 95_000_000_000n;
+
+const CLIENT_MAX_CLOCK_DRIFT_NS = 10_000_000_000n;
 
 export const DEFAULT_NORMALIZED_FIXTURE_PATH = path.resolve(
   __dirname,
@@ -25,7 +31,7 @@ export const DEFAULT_NORMALIZED_FIXTURE_PATH = path.resolve(
  * completed transaction. They are not the result of evaluating either script.
  */
 export const STRUCTURAL_PLACEHOLDER_EX_UNITS = {
-  hostState: { mem: 10_000_000n, steps: 3_000_000_000n },
+  hostState: { mem: 10_000_000n, steps: 5_000_000_000n },
   spendClient: { mem: 10_000_000n, steps: 5_000_000_000n },
 } as const;
 
@@ -113,7 +119,7 @@ export type NormalizedConsensusState = {
 export type NormalizedCapacityScenario = {
   header: NormalizedHeader;
   trusted_consensus_state: NormalizedConsensusState;
-  observed?: Record<string, unknown>;
+  observations?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -156,8 +162,10 @@ export type CapacityTransactionShape = {
 
 export type CapacityScenarioReport = {
   scenario: string;
-  classification: 'structural-signed-candidate';
+  classification: 'structural-signed-lower-bound';
   ledgerEvaluated: false;
+  providerCompleted: false;
+  balanced: false;
   exUnitsSource: ExUnitsSource;
   validatorCount: number;
   trustedValidatorCount: number;
@@ -166,7 +174,8 @@ export type CapacityScenarioReport = {
   absentSlots: number;
   nilSlots: number;
   adjacent: boolean;
-  retainedHistory: 1;
+  inputConsensusStates: 1;
+  outputConsensusStates: 2;
   removedConsensusStates: 0;
   unsignedBytes: number;
   signedBytes: number;
@@ -179,6 +188,8 @@ export type CapacityScenarioReport = {
     hostState: { mem: string; steps: string };
     spendClient: { mem: string; steps: string };
     total: { mem: string; steps: string };
+    absoluteMargin: { mem: string; steps: string };
+    safeMargin: { mem: string; steps: string };
   };
 };
 
@@ -314,7 +325,7 @@ export function loadNormalizedCapacityFixture(filePath = DEFAULT_NORMALIZED_FIXT
   return JSON.parse(fs.readFileSync(filePath, 'utf8')) as NormalizedCapacityFixture;
 }
 
-function retainedConsensusStates(header: Header): Array<[Height, ConsensusState]> {
+function outputConsensusStates(header: Header, trustedConsensusState: ConsensusState): Array<[Height, ConsensusState]> {
   const revisionNumber = header.trustedHeight.revisionNumber;
   const newHeight: Height = {
     revisionNumber,
@@ -325,18 +336,29 @@ function retainedConsensusStates(header: Header): Array<[Height, ConsensusState]
     next_validators_hash: header.signedHeader.header.nextValidatorsHash,
     root: { hash: header.signedHeader.header.appHash },
   };
-  return [[newHeight, newConsensusState]];
+  return [
+    [newHeight, newConsensusState],
+    [header.trustedHeight, trustedConsensusState],
+  ];
 }
 
 async function encodeRepresentativeDatums(
   header: Header,
-  _trustedConsensusState: ConsensusState,
+  trustedConsensusState: ConsensusState,
 ): Promise<{ updatedClientDatum: string; updatedHostStateDatum: string }> {
-  // Keep the output at the minimum valid history so this benchmark isolates
-  // validator/commit capacity from consensus-state pruning costs.
-  const states = retainedConsensusStates(header);
-  const processedTimes = new Map(states.map(([height, state]) => [height, state.timestamp]));
-  const processedHeights = new Map(states.map(([height]) => [height, height.revisionHeight]));
+  // Start with one unexpired trusted state and retain it when prepending the
+  // target state. This is the smallest valid no-pruning UpdateClient output.
+  const states = outputConsensusStates(header, trustedConsensusState);
+  const txValidFromNs =
+    ((header.signedHeader.header.time - CLIENT_MAX_CLOCK_DRIFT_NS) / 1_000_000n + 1_000n) * 1_000_000n;
+  const processedTimes = new Map<Height, bigint>([
+    [states[0][0], txValidFromNs],
+    [states[1][0], 0n],
+  ]);
+  const processedHeights = new Map<Height, bigint>([
+    [states[0][0], txValidFromNs / 4_000_000_000n],
+    [states[1][0], 0n],
+  ]);
   const clientDatum: ClientDatum = {
     state: {
       clientState: {
@@ -344,7 +366,7 @@ async function encodeRepresentativeDatums(
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 1_209_600_000_000_000n,
         unbondingPeriod: 1_814_400_000_000_000n,
-        maxClockDrift: 600_000_000_000n,
+        maxClockDrift: CLIENT_MAX_CLOCK_DRIFT_NS,
         frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
         latestHeight: {
           revisionNumber: header.trustedHeight.revisionNumber,
@@ -367,7 +389,7 @@ async function encodeRepresentativeDatums(
       next_connection_sequence: 1n,
       next_channel_sequence: 1n,
       bound_port: [],
-      last_update_time: header.signedHeader.header.time / 1_000_000n,
+      last_update_time: txValidFromNs / 1_000_000n,
     },
     nft_policy: HOST_STATE_POLICY_ID,
     deployer: 'f6'.repeat(28),
@@ -595,8 +617,10 @@ export async function analyzeCapacityScenario(
     encoded: { spendClientRedeemer, hostStateRedeemer, updatedClientDatum, updatedHostStateDatum },
     report: {
       scenario: scenarioName,
-      classification: 'structural-signed-candidate',
+      classification: 'structural-signed-lower-bound',
       ledgerEvaluated: false,
+      providerCompleted: false,
+      balanced: false,
       exUnitsSource,
       validatorCount: header.validatorSet.validators.length,
       trustedValidatorCount: header.trustedValidators.validators.length,
@@ -605,7 +629,8 @@ export async function analyzeCapacityScenario(
       absentSlots: signatures.filter((signature) => signature.block_id_flag === 1n).length,
       nilSlots: signatures.filter((signature) => signature.block_id_flag === 3n).length,
       adjacent: header.signedHeader.header.height === header.trustedHeight.revisionHeight + 1n,
-      retainedHistory: 1,
+      inputConsensusStates: 1,
+      outputConsensusStates: 2,
       removedConsensusStates: 0,
       unsignedBytes,
       signedBytes,
@@ -618,6 +643,14 @@ export async function analyzeCapacityScenario(
         hostState: { mem: exUnits.hostState.mem.toString(), steps: exUnits.hostState.steps.toString() },
         spendClient: { mem: exUnits.spendClient.mem.toString(), steps: exUnits.spendClient.steps.toString() },
         total: { mem: totalExUnits.mem.toString(), steps: totalExUnits.steps.toString() },
+        absoluteMargin: {
+          mem: (CARDANO_MAX_TX_EX_MEM - totalExUnits.mem).toString(),
+          steps: (CARDANO_MAX_TX_EX_STEPS - totalExUnits.steps).toString(),
+        },
+        safeMargin: {
+          mem: (CARDANO_SAFE_TX_EX_MEM - totalExUnits.mem).toString(),
+          steps: (CARDANO_SAFE_TX_EX_STEPS - totalExUnits.steps).toString(),
+        },
       },
     },
   };
@@ -655,11 +688,11 @@ export async function renderAikenFixtureModule(fixturePath = DEFAULT_NORMALIZED_
     const trustedConsensusState = normalizedConsensusStateToGateway(scenario.trusted_consensus_state);
     const redeemer = await encodeSpendClientRedeemer({ UpdateClient: { msg: { HeaderCase: [header] } } }, Lucid);
     declarations.push(
-      `pub const ${name}_spend_client_redeemer_cbor: ByteArray = #"${redeemer}"`,
+      `pub const ${name}_spend_client_redeemer_cbor: ByteArray =\n  #"${redeemer}"`,
       `pub const ${name}_trusted_timestamp: Int = ${trustedConsensusState.timestamp}`,
-      `pub const ${name}_trusted_app_hash: ByteArray = #"${trustedConsensusState.root.hash}"`,
-      `pub const ${name}_trusted_validator_set_hash: ByteArray = #"${trustedConsensusState.next_validators_hash}"`,
-      `pub const ${name}_header_app_hash: ByteArray = #"${header.signedHeader.header.appHash}"`,
+      `pub const ${name}_trusted_app_hash: ByteArray =\n  #"${trustedConsensusState.root.hash}"`,
+      `pub const ${name}_trusted_validator_set_hash: ByteArray =\n  #"${trustedConsensusState.next_validators_hash}"`,
+      `pub const ${name}_header_app_hash: ByteArray =\n  #"${header.signedHeader.header.appHash}"`,
     );
   }
 
@@ -674,15 +707,16 @@ export async function renderAikenFixtureModule(fixturePath = DEFAULT_NORMALIZED_
 
 export function formatCapacityReport(report: CapacityScenarioReport): string {
   return [
-    `${report.scenario} (${report.classification}; ledger-evaluated=${report.ledgerEvaluated})`,
+    `${report.scenario} (${report.classification}; ledger-evaluated=${report.ledgerEvaluated}; provider-completed=${report.providerCompleted}; balanced=${report.balanced})`,
     `  validators: current=${report.validatorCount} trusted=${report.trustedValidatorCount}`,
     `  commit slots: total=${report.commitSlots} commit=${report.committingSlots} absent=${report.absentSlots} nil=${report.nilSlots}`,
-    `  consensus history: retained=${report.retainedHistory} removed=${report.removedConsensusStates}`,
+    `  consensus history: input=${report.inputConsensusStates} output=${report.outputConsensusStates} removed=${report.removedConsensusStates}`,
     `  exact CBOR: unsigned=${report.unsignedBytes} signed=${report.signedBytes} signing-overhead=${report.signingOverheadBytes}`,
     `  size margins: absolute=${report.absoluteSizeMarginBytes} safe=${report.safeSizeMarginBytes}`,
     `  payload bytes: spend-client=${report.payloads.spendClientRedeemerBytes} host-state=${report.payloads.hostStateRedeemerBytes} client-datum=${report.payloads.updatedClientDatumBytes} host-datum=${report.payloads.updatedHostStateDatumBytes} total=${report.payloads.totalBytes}`,
     `  shape: regular-inputs=${report.shape.regularInputs} script-inputs=${report.shape.scriptInputs} collateral=${report.shape.collateralInputs} references=${report.shape.referenceInputs} inline-outputs=${report.shape.inlineDatumOutputs} spend-redeemers=${report.shape.spendRedeemers} vkeys=${report.shape.vkeyWitnesses}`,
-    `  script ex-units (${report.exUnitsSource}; ledger-evaluated=${report.ledgerEvaluated}): mem=${report.scriptExUnits.total.mem} steps=${report.scriptExUnits.total.steps}`,
+    `  script ex-units (${report.exUnitsSource}; ledger-evaluated=${report.ledgerEvaluated}): host-state=${report.scriptExUnits.hostState.mem}/${report.scriptExUnits.hostState.steps} spend-client=${report.scriptExUnits.spendClient.mem}/${report.scriptExUnits.spendClient.steps} total=${report.scriptExUnits.total.mem}/${report.scriptExUnits.total.steps}`,
+    `  ex-unit margins: absolute=${report.scriptExUnits.absoluteMargin.mem}/${report.scriptExUnits.absoluteMargin.steps} safe=${report.scriptExUnits.safeMargin.mem}/${report.scriptExUnits.safeMargin.steps}`,
   ].join('\n');
 }
 
