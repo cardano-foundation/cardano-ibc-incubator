@@ -828,7 +828,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cardano/gateway/package-lock.json
+          cache-dependency-path: |
+            cardano/gateway/package-lock.json
+            proto-types/package-lock.json
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -886,6 +888,11 @@ jobs:
             -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
             -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
             > ../../aiken-check.json
+
+      - name: Build proto types
+        run: |
+          npm ci --prefix proto-types
+          npm run --prefix proto-types build
 
       - name: Install gateway dependencies
         run: npm ci --prefix cardano/gateway --legacy-peer-deps
