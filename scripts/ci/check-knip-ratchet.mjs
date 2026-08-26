@@ -89,7 +89,6 @@ const allowed = new Set([
   'gateway:src/shared/modules/lucid/dtos/packet/fragments.ts:types:WithMockModuleSpend',
   'gateway:src/shared/modules/lucid/dtos/packet/fragments.ts:types:WithMockModuleUtxo',
   'gateway:src/shared/modules/lucid/dtos/packet/fragments.ts:types:WithPolicyId',
-  'gateway:src/shared/modules/lucid/lucid.service.ts:types:CodecType',
   'gateway:src/shared/modules/mithril/dtos/get-certificate-by-hash.dto.ts:exports:CertificateDetailMetadata',
   'gateway:src/shared/modules/mithril/dtos/get-certificate-by-hash.dto.ts:exports:SignerDetail',
   'gateway:src/shared/modules/mithril/dtos/get-registerd-signers-for-epoch.dto.ts:exports:RegistrationDTO',
