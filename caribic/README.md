@@ -1,5 +1,9 @@
 # Caribic
 
+Local chain capacity is pinned to dated public-network snapshots. See
+[Caribic network limits](../docs/caribic-network-limits.md) for the exact
+values, modeled networks, and clean-state requirement.
+
 `caribic` is a local CLI used to bootstrap, run, and validate the Cardano <-> IBC bridge demo environment in this repo. For those familiar with Hermes, caribic cli also wraps that interface with equivalent commands that allow manual interaction with the relayer. The expected workflow is that keys would be addded to hermes via caribic, i.e, either you can enter via I/O when prompted, or refer to a mnemonic file as prompted, but there is no need to manually configure hermes. 
 
 > [!WARNING]
@@ -472,7 +476,7 @@ The Injective-side Cardano client can only be updated with headers whose size an
 
   Catch-up updates outgrow the transport limits quickly. In the July 24, 2026 failure documented in [#552](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/552), an update spanning Cardano heights 4,970,800 to 4,971,057 encoded to 3,073,891 bytes — below Injective's 4,194,304-byte (4 MiB) consensus block limit, but rejected by the tested public nodes because it exceeded their effective 1,048,576-byte per-transaction mempool limit (a 541-block gap has produced a 4.27MB update, beyond even the consensus cap). The amount of downtime before this happens varies with witness sizes and available HostState anchors. Once the client is genuinely expired, a compatible active substitute can recover the original client ID through governance and preserve the existing route; see the [recovery runbook](../docs/probabilistic-client-recovery.md). If no compatible substitute can be built, recovery still requires a new client, connection, and channel (`caribic setup route` reuses an existing channel, so a rebuild currently requires driving `hermes create client` / `create connection` / `create channel` manually). Stuck packets refund via timeout proofs on Cardano, which only need the Cardano-side Tendermint client.
 - Anything that pauses the host pauses the refresh loop: laptop sleep, a stopped Gateway container, or a crashed relayer all have the same effect. On macOS, run `caffeinate -dims` while testing, or host the Gateway + Yaci + Hermes stack on an always-on machine for multi-day use.
-- The tracked Hermes profile for `injective-888` uses `max_tx_size = 1000000` and `max_gas = 60000000`; the defaults (~205KB / 15M gas) reject even routine ~100-block refresh updates.
+- The tracked Hermes profile for `injective-888` uses `max_tx_size = 1000000` and `max_gas = 75000000`, matching Injective's current per-transaction gas ceiling; the older defaults (~205KB / 15M gas) reject even routine ~100-block refresh updates.
 
 What survives a spin-down: the contract deployment (`manifests/preprod/`), all keys, the Yaci history volume, and — within its 10-day trusting period — the Cardano-side Tendermint client, which catches up with a single header regardless of gap. What does not: the Injective-side client, and with it the connection and channel. To restart after downtime:
 

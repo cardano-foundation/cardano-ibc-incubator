@@ -35,14 +35,14 @@ vote flags, voting power, and block/validator hashes.
 The project evaluates both Cardano's absolute transaction limit and its safer
 CI limit:
 
-| Limit                            |                 Value |
-| -------------------------------- | --------------------: |
-| Cardano `maxTxSize`              |          16,384 bytes |
-| Project signing/headroom reserve |             750 bytes |
-| Project safe signed size         |          15,634 bytes |
-| Transaction memory               |     140,000,000 units |
-| Transaction CPU                  | 100,000,000,000 steps |
-| Project ex-unit reserve          |                    5% |
+| Limit                            |                Value |
+| -------------------------------- | -------------------: |
+| Cardano `maxTxSize`              |         16,384 bytes |
+| Project signing/headroom reserve |            750 bytes |
+| Project safe signed size         |         15,634 bytes |
+| Transaction memory               |     16,500,000 units |
+| Transaction CPU                  | 10,000,000,000 steps |
+| Project ex-unit reserve          |                   5% |
 
 ## Results
 
@@ -54,20 +54,21 @@ validator unit contexts and are summed for the two spending scripts rather
 than being extracted from a completed transaction. Every generated report
 prints these qualifications.
 
-The execution-unit figures below were measured on `main` at `904e9345`, before
-the optimizations in PR #657. CI recomputes them for every relevant Aiken or
-encoder change; the serialized-size result is independent of those verifier
-optimizations.
+The execution-unit figures below were measured on `main` at `2c1c8c1f` and
+include the verifier optimizations in PR #657. CI recomputes them for every
+relevant Aiken or encoder change; the serialized-size result is independent of
+those verifier optimizations.
 
-| Scenario                               | Signed bytes | Absolute margin | Safe margin |      Memory |            CPU |
-| -------------------------------------- | -----------: | --------------: | ----------: | ----------: | -------------: |
-| Adjacent, all 45 commits               |       16,791 |            -407 |      -1,157 |  90,008,711 | 29,240,603,426 |
-| Adjacent, 43 commit + absent + nil     |       16,698 |            -314 |      -1,064 |  89,631,086 | 29,067,348,964 |
-| Non-adjacent, 43 commit + absent + nil |       16,698 |            -314 |      -1,064 | 104,219,365 | 36,032,895,382 |
+| Scenario                               | Signed bytes | Absolute margin | Safe margin |     Memory |            CPU |
+| -------------------------------------- | -----------: | --------------: | ----------: | ---------: | -------------: |
+| Adjacent, all 45 commits               |       16,791 |            -407 |      -1,157 | 72,091,542 | 23,675,599,153 |
+| Adjacent, 43 commit + absent + nil     |       16,698 |            -314 |      -1,064 | 71,866,206 | 23,551,367,592 |
+| Non-adjacent, 43 commit + absent + nil |       16,698 |            -314 |      -1,064 | 80,979,625 | 28,348,286,191 |
 
 Even the smallest candidate is 314 bytes over Cardano's absolute transaction
-limit before provider completion can add anything. Execution units remain
-within the project's 5% reserve; serialized size is the binding constraint.
+limit before provider completion can add anything. Every measured scenario
+also exceeds Cardano mainnet's transaction memory and CPU limits. Transaction
+size and execution cost are both binding constraints.
 
 ## Interpretation
 

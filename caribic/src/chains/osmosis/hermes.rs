@@ -4,6 +4,7 @@ use crate::chains::hermes_support::{
     self, HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
     HermesTrustThreshold,
 };
+use crate::chains::network_limits::{HERMES_CONSERVATIVE_MAX_TX_SIZE, OSMOSIS_MAX_TX_GAS};
 use crate::chains::osmosis::config as osmosis_config;
 use crate::process::hermes::HermesCli;
 
@@ -47,14 +48,14 @@ fn testnet_chain_profile() -> HermesCosmosChainProfile {
         address_type: Some(HermesAddressType::Cosmos),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: 15_000_000,
+        max_gas: OSMOSIS_MAX_TX_GAS,
         gas_price: HermesGasPrice {
             price: "0.1",
             denom: "uosmo",
         },
         gas_multiplier: "2.0",
         max_msg_num: 20,
-        max_tx_size: 209_715,
+        max_tx_size: HERMES_CONSERVATIVE_MAX_TX_SIZE,
         clock_drift: "20s",
         max_block_time: "10s",
         trusting_period: "10days",
@@ -119,14 +120,14 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
         address_type: Some(HermesAddressType::Cosmos),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: 15_000_000,
+        max_gas: OSMOSIS_MAX_TX_GAS,
         gas_price: HermesGasPrice {
             price: "0.1",
             denom: "uosmo",
         },
         gas_multiplier: "2.0",
         max_msg_num: 20,
-        max_tx_size: 209_715,
+        max_tx_size: HERMES_CONSERVATIVE_MAX_TX_SIZE,
         // The local Cardano devnet runs on a fixed backdated clock so stake
         // registration cutoffs remain deterministic. Local Cosmos chains use
         // wall-clock CometBFT timestamps, so local handshakes need enough
@@ -151,4 +152,17 @@ fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<std::path::PathBuf,
                 .to_string()
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn osmosis_profiles_use_network_gas_and_project_size_caps() {
+        for profile in [local_chain_profile(), testnet_chain_profile()] {
+            assert_eq!(profile.max_gas, OSMOSIS_MAX_TX_GAS);
+            assert_eq!(profile.max_tx_size, HERMES_CONSERVATIVE_MAX_TX_SIZE);
+        }
+    }
 }

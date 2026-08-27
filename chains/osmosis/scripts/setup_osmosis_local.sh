@@ -1,11 +1,25 @@
 #!/bin/sh
+set -eu
 
 CHAIN_ID=localosmosis
 OSMOSIS_HOME=$HOME/.osmosisd
 CONFIG_FOLDER=$OSMOSIS_HOME/config
-MONIKER=val
+MONIKER='val'
 STATE='false'
 LOCAL_GENESIS_TIME="${OSMOSIS_LOCAL_GENESIS_TIME:-2025-12-31T23:59:00Z}"
+
+# Osmosis mainnet capacity snapshot, observed 2026-08-27.
+BLOCK_MAX_BYTES=3000000
+BLOCK_MAX_GAS=300000000
+EVIDENCE_MAX_AGE_NUM_BLOCKS=100000
+EVIDENCE_MAX_AGE_DURATION=172800000000000
+EVIDENCE_MAX_BYTES=1048576
+STAKING_UNBONDING_TIME=1209600s
+STAKING_MAX_VALIDATORS=70
+STAKING_MAX_ENTRIES=7
+STAKING_HISTORICAL_ENTRIES=10000
+MEMPOOL_MAX_TX_BYTES=1048576
+RPC_MAX_BODY_BYTES=4000000
 
 MNEMONIC="bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort"
 POOLSMNEMONIC="traffic cool olive pottery elegant innocent aisle dial genuine install shy uncle ride federal soon shift flight program cave famous provide cute pole struggle"
@@ -14,6 +28,7 @@ while getopts s flag
 do
     case "${flag}" in
         s) STATE='true';;
+        *) exit 2;;
     esac
 done
 
@@ -39,8 +54,19 @@ edit_genesis () {
     # Cardano probabilistic clients are not immediately expired on creation.
     dasel put -t string -f $GENESIS '.genesis_time' -v "$LOCAL_GENESIS_TIME"
 
+    # Match the current Osmosis mainnet consensus and validator-set envelope.
+    dasel put -t string -f $GENESIS '.consensus.params.block.max_bytes' -v "$BLOCK_MAX_BYTES"
+    dasel put -t string -f $GENESIS '.consensus.params.block.max_gas' -v "$BLOCK_MAX_GAS"
+    dasel put -t string -f $GENESIS '.consensus.params.evidence.max_age_num_blocks' -v "$EVIDENCE_MAX_AGE_NUM_BLOCKS"
+    dasel put -t string -f $GENESIS '.consensus.params.evidence.max_age_duration' -v "$EVIDENCE_MAX_AGE_DURATION"
+    dasel put -t string -f $GENESIS '.consensus.params.evidence.max_bytes' -v "$EVIDENCE_MAX_BYTES"
+
     # Update staking module
     dasel put -t string -f $GENESIS '.app_state.staking.params.bond_denom' -v 'uosmo'
+    dasel put -t string -f $GENESIS '.app_state.staking.params.unbonding_time' -v "$STAKING_UNBONDING_TIME"
+    dasel put -t int -f $GENESIS '.app_state.staking.params.max_validators' -v "$STAKING_MAX_VALIDATORS"
+    dasel put -t int -f $GENESIS '.app_state.staking.params.max_entries' -v "$STAKING_MAX_ENTRIES"
+    dasel put -t int -f $GENESIS '.app_state.staking.params.historical_entries' -v "$STAKING_HISTORICAL_ENTRIES"
     # dasel put -t string -f $GENESIS '.app_state.staking.params.unbonding_time' -v '240s'
 
     # Update bank module
@@ -64,23 +90,25 @@ edit_genesis () {
     dasel put -t string -f $GENESIS '.app_state.crisis.constant_fee.denom' -v 'uosmo'
 
     # Update gov module
-    # dasel put -t string -f $GENESIS '.app_state.gov.voting_params.voting_period' -v '60s'
+    dasel put -t string -f $GENESIS '.app_state.gov.voting_params.voting_period' -v '60s'
+    dasel put -t string -f $GENESIS '.app_state.gov.params.voting_period' -v '60s'
+    dasel put -t string -f $GENESIS '.app_state.gov.params.expedited_voting_period' -v '30s'
     dasel put -t string -f $GENESIS '.app_state.gov.params.min_deposit.[0].denom' -v 'uosmo'
 
     # Update epochs module
-    # dasel put -t string -f $GENESIS '.app_state.epochs.epochs.[1].duration' -v "60s"
+    dasel put -t string -f $GENESIS '.app_state.epochs.epochs.[1].duration' -v "60s"
 
     # Update poolincentives module
-    # dasel put -t string -f $GENESIS '.app_state.poolincentives.lockable_durations.[0]' -v "120s"
-    # dasel put -t string -f $GENESIS '.app_state.poolincentives.lockable_durations.[1]' -v "180s"
-    # dasel put -t string -f $GENESIS '.app_state.poolincentives.lockable_durations.[2]' -v "240s"
+    dasel put -t string -f $GENESIS '.app_state.poolincentives.lockable_durations.[0]' -v "120s"
+    dasel put -t string -f $GENESIS '.app_state.poolincentives.lockable_durations.[1]' -v "180s"
+    dasel put -t string -f $GENESIS '.app_state.poolincentives.lockable_durations.[2]' -v "240s"
     dasel put -t string -f $GENESIS '.app_state.poolincentives.params.minted_denom' -v "uosmo"
 
     # Update incentives module
-    # dasel put -t string -f $GENESIS '.app_state.incentives.lockable_durations.[0]' -v "1s"
-    # dasel put -t string -f $GENESIS '.app_state.incentives.lockable_durations.[1]' -v "120s"
-    # dasel put -t string -f $GENESIS '.app_state.incentives.lockable_durations.[2]' -v "180s"
-    # dasel put -t string -f $GENESIS '.app_state.incentives.lockable_durations.[3]' -v "240s"
+    dasel put -t string -f $GENESIS '.app_state.incentives.lockable_durations.[0]' -v "1s"
+    dasel put -t string -f $GENESIS '.app_state.incentives.lockable_durations.[1]' -v "120s"
+    dasel put -t string -f $GENESIS '.app_state.incentives.lockable_durations.[2]' -v "180s"
+    dasel put -t string -f $GENESIS '.app_state.incentives.lockable_durations.[3]' -v "240s"
     dasel put -t string -f $GENESIS '.app_state.incentives.params.distr_epoch_identifier' -v "hour"
 
     # Update mint module
@@ -135,6 +163,7 @@ edit_config () {
     # To make the change enabled locally, make sure to add 'EXPOSE 6060' to the root Dockerfile
     # and rebuild the image.
     dasel put -t string -f $CONFIG_FOLDER/config.toml '.rpc.pprof_laddr' -v "0.0.0.0:6060"
+
 }
 
 enable_cors () {
@@ -163,13 +192,13 @@ enable_cors () {
 
 run_with_retries() {
   cmd=$1
-  success_msg=$2
+  success_msg=${2:-command successful}
 
   substring='code: 0'
   COUNTER=0
 
   while [ $COUNTER -lt 15 ]; do
-    string=$(eval $cmd 2>&1)
+    string=$(eval "$cmd" 2>&1) || true
     echo $string
 
     if [ "$string" != "${string%"$substring"*}" ]; then
@@ -211,7 +240,7 @@ create_concentrated_pool_positions () {
     done
 }
 
-if [[ ! -d $CONFIG_FOLDER ]]
+if [ ! -d "$CONFIG_FOLDER" ]
 then
     echo $MNEMONIC | osmosisd init -o --chain-id=$CHAIN_ID --home $OSMOSIS_HOME --recover $MONIKER
     install_prerequisites
@@ -222,9 +251,22 @@ then
     enable_cors
 fi
 
+# Config TOML survives stateful restarts, so enforce the node-local limit on
+# every start rather than only when genesis is first generated.
+sed -i "s/^max_tx_bytes = .*/max_tx_bytes = $MEMPOOL_MAX_TX_BYTES/" "$CONFIG_FOLDER/config.toml"
+grep -q "^max_tx_bytes = $MEMPOOL_MAX_TX_BYTES$" "$CONFIG_FOLDER/config.toml" || {
+    echo "Could not configure max_tx_bytes in $CONFIG_FOLDER/config.toml" >&2
+    exit 1
+}
+sed -i "s/^max_body_bytes = .*/max_body_bytes = $RPC_MAX_BODY_BYTES/" "$CONFIG_FOLDER/config.toml"
+grep -q "^max_body_bytes = $RPC_MAX_BODY_BYTES$" "$CONFIG_FOLDER/config.toml" || {
+    echo "Could not configure max_body_bytes in $CONFIG_FOLDER/config.toml" >&2
+    exit 1
+}
+
 osmosisd start --home $OSMOSIS_HOME &
 
-if [[ $STATE == 'true' ]]
+if [ "$STATE" = 'true' ]
 then
     echo "Creating pools"
 

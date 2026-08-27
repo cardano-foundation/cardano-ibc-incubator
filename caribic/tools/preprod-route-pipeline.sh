@@ -25,8 +25,9 @@ for i, b in enumerate(blocks):
     if 'injective-888' in b:
         if 'max_tx_size = 209715' in b:
             blocks[i] = b.replace('max_tx_size = 209715', 'max_tx_size = 1000000'); changed = True
-        if 'max_gas = 15000000' in b:
-            blocks[i] = blocks[i].replace('max_gas = 15000000', 'max_gas = 60000000'); changed = True
+        for stale_max_gas in ('max_gas = 9000000', 'max_gas = 15000000', 'max_gas = 60000000'):
+            if stale_max_gas in blocks[i]:
+                blocks[i] = blocks[i].replace(stale_max_gas, 'max_gas = 75000000'); changed = True
 s = '[[chains]]'.join(blocks)
 open(p, 'w').write(s)
 print('hermes config verified' + (' (patched)' if changed else ''))

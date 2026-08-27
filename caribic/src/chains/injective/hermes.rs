@@ -5,6 +5,7 @@ use crate::chains::hermes_support::{
     self, HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
     HermesTrustThreshold,
 };
+use crate::chains::network_limits::{HERMES_CONSERVATIVE_MAX_TX_SIZE, INJECTIVE_MAX_TX_GAS};
 use crate::process::hermes::HermesCli;
 
 const INJECTIVE_ETH_HD_PATH: &str = "m/44'/60'/0'/0/0";
@@ -65,14 +66,14 @@ fn testnet_chain_profile() -> HermesCosmosChainProfile {
         }),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: 60_000_000,
+        max_gas: INJECTIVE_MAX_TX_GAS,
         gas_price: HermesGasPrice {
             price: "500000000",
             denom: "inj",
         },
         gas_multiplier: "1.8",
         max_msg_num: 20,
-        max_tx_size: 1_000_000,
+        max_tx_size: HERMES_CONSERVATIVE_MAX_TX_SIZE,
         clock_drift: "20s",
         max_block_time: "10s",
         trusting_period: "10days",
@@ -103,14 +104,14 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
         }),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: 15_000_000,
+        max_gas: INJECTIVE_MAX_TX_GAS,
         gas_price: HermesGasPrice {
             price: "500000000",
             denom: "inj",
         },
         gas_multiplier: "1.8",
         max_msg_num: 20,
-        max_tx_size: 209_715,
+        max_tx_size: HERMES_CONSERVATIVE_MAX_TX_SIZE,
         // The local Cardano devnet runs on a fixed backdated clock so stake
         // registration cutoffs remain deterministic. Local Cosmos chains use
         // wall-clock CometBFT timestamps, so local handshakes need enough
@@ -199,4 +200,17 @@ fn resolve_local_hermes_binary(search_root: &Path) -> Result<std::path::PathBuf,
                 .to_string()
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn injective_profiles_use_network_gas_and_project_size_caps() {
+        for profile in [local_chain_profile(), testnet_chain_profile()] {
+            assert_eq!(profile.max_gas, INJECTIVE_MAX_TX_GAS);
+            assert_eq!(profile.max_tx_size, HERMES_CONSERVATIVE_MAX_TX_SIZE);
+        }
+    }
 }
