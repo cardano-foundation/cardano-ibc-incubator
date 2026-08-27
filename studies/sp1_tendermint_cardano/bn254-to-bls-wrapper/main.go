@@ -1,0 +1,667 @@
+package main
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/consensys/gnark-crypto/ecc"
+	bls12381curve "github.com/consensys/gnark-crypto/ecc/bls12-381"
+	bn254curve "github.com/consensys/gnark-crypto/ecc/bn254"
+	"github.com/consensys/gnark/backend"
+	"github.com/consensys/gnark/backend/groth16"
+	groth16bls12381 "github.com/consensys/gnark/backend/groth16/bls12-381"
+	groth16bn254 "github.com/consensys/gnark/backend/groth16/bn254"
+	"github.com/consensys/gnark/backend/witness"
+	"github.com/consensys/gnark/debug"
+	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/std/algebra/emulated/sw_bn254"
+	"github.com/consensys/gnark/std/math/emulated"
+	stdgroth16 "github.com/consensys/gnark/std/recursion/groth16"
+)
+
+// This is sp1-verifier 6.1.0's groth16_vk.bin, encoded as hex so this study is
+// self-contained. SHA-256: 4388a21c687fdd5f218d7e3d13190cac4c5355818d3605fd5fb811df468ee696.
+const sp1Groth16VKHex = "e1c7d728a5fd961fc179ec5eab938f564deba5b271e1c90c2c29a79648418fc182e78e216b27cb2b30abd22d17fb65b747ad8050d18e543498522d01a2c3fe79dc3c9339849225980c7d3f824f80d19e2a9c2554b6ab2160fa9635528f693fc00d964538da2653f2e62499571e6c78afb8909d3ea8107f306bd6928253680a3a998e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c21800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6edd7e00b2ca4f62668135017ed8a68894e104ac26dfd9bf376634b42af9e5ae50e91b7e9276171bb0efd647fc63e38bbfba3076f20daca8cd52bcc7284d9b1c6eb1723616533dd6ae53502c9c506a81f23f543d68750b5133ebfbe1f4746b3b01100000006acd6bf7f164af0b6b0bbbe0fdcb06ee0c1ba07f8e6eb2f9f3943a90cb1d402908f5460f3b7221705435e745da21e276536379c0113c13c4255e7ae101f1e90bf8b0ae6e491bc04c544da9e8cd4857d201b4cfa0222dbe96aac97f044fdf1c922c97c875a6ebd0999b06e7267ff3d8a6bf859bb9635abae07cb6b3534ba409a839807204ddcd27506ba72e17b55227b0bf310136ecb40c74acd52f3ccfbcba9f7808c7b7c98d78c07a2c4be5f6be7082ba41021611f9a2dfc016f8bbb37d36bee0000000000000000"
+
+// This is sp1-verifier 6.1.0's independently fixed VK_ROOT_BYTES value, not
+// a value learned from the proof being wrapped.
+const sp1VKRootHex = "002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f25352"
+
+const cardanoCommitmentHashDomain = "cardano-ibc:gnark-bsb22:v1:"
+
+type fixtureJSON struct {
+	UpdateClientVKey string `json:"updateClientVkey"`
+	UpdateMsg        string `json:"updateMsg"`
+}
+
+type fixtureData struct {
+	programVKey      []byte
+	publicValues     []byte
+	proof            []byte
+	publicInputs     [5]*big.Int
+	expectedVKRoot   *big.Int
+	programVKeyLabel string
+}
+
+// publicInputShape is not the circuit SP1 proved. It only gives gnark the five
+// public-wire shapes needed by its recursive Groth16 verifier.
+type publicInputShape struct {
+	ProgramVKey        frontend.Variable `gnark:",public"`
+	PublicValuesDigest frontend.Variable `gnark:",public"`
+	ExitCode           frontend.Variable `gnark:",public"`
+	VKRoot             frontend.Variable `gnark:",public"`
+	Nonce              frontend.Variable `gnark:",public"`
+}
+
+func (*publicInputShape) Define(frontend.API) error { return nil }
+
+type outerCircuit struct {
+	Proof        stdgroth16.Proof[sw_bn254.G1Affine, sw_bn254.G2Affine]
+	InnerWitness stdgroth16.Witness[sw_bn254.ScalarField]
+
+	// Only the two values the Cardano validator must bind are public in the
+	// outer proof. exitCode and vkRoot are constrained below; nonce stays private.
+	ProgramVKey        frontend.Variable `gnark:",public"`
+	PublicValuesDigest frontend.Variable `gnark:",public"`
+
+	vk             stdgroth16.VerifyingKey[sw_bn254.G1Affine, sw_bn254.G2Affine, sw_bn254.GTEl] `gnark:"-"`
+	expectedVKRoot *big.Int                                                                     `gnark:"-"`
+}
+
+func (c *outerCircuit) Define(api frontend.API) error {
+	if len(c.InnerWitness.Public) != 5 {
+		return fmt.Errorf("expected five SP1 public inputs, got %d", len(c.InnerWitness.Public))
+	}
+
+	field, err := emulated.NewField[sw_bn254.ScalarField](api)
+	if err != nil {
+		return fmt.Errorf("create BN254 scalar field emulator: %w", err)
+	}
+	for i := range c.InnerWitness.Public {
+		field.AssertIsInRange(&c.InnerWitness.Public[i])
+	}
+
+	programVKey := field.FromBits(api.ToBinary(c.ProgramVKey, 254)...)
+	publicValuesDigest := field.FromBits(api.ToBinary(c.PublicValuesDigest, 254)...)
+	field.AssertIsInRange(programVKey)
+	field.AssertIsInRange(publicValuesDigest)
+	field.AssertIsEqual(&c.InnerWitness.Public[0], programVKey)
+	field.AssertIsEqual(&c.InnerWitness.Public[1], publicValuesDigest)
+	field.AssertIsEqual(&c.InnerWitness.Public[2], field.Zero())
+	field.AssertIsEqual(&c.InnerWitness.Public[3], field.NewElement(c.expectedVKRoot))
+
+	verifier, err := stdgroth16.NewVerifier[
+		sw_bn254.ScalarField,
+		sw_bn254.G1Affine,
+		sw_bn254.G2Affine,
+		sw_bn254.GTEl,
+	](api)
+	if err != nil {
+		return fmt.Errorf("create in-circuit BN254 Groth16 verifier: %w", err)
+	}
+	return verifier.AssertProof(c.vk, c.Proof, c.InnerWitness, stdgroth16.WithCompleteArithmetic())
+}
+
+type cardanoProofJSON struct {
+	A                     string   `json:"a"`
+	B                     string   `json:"b"`
+	C                     string   `json:"c"`
+	Commitments           []string `json:"commitments"`
+	CommitmentPoK         string   `json:"commitment_pok"`
+	CommitmentHashScalars []string `json:"commitment_hash_scalars"`
+}
+
+type cardanoCommitmentVKJSON struct {
+	G         string `json:"g"`
+	GSigmaNeg string `json:"g_sigma_neg"`
+}
+
+type cardanoVKJSON struct {
+	AlphaG1                      string                    `json:"alpha_g1"`
+	BetaG2                       string                    `json:"beta_g2"`
+	GammaG2                      string                    `json:"gamma_g2"`
+	DeltaG2                      string                    `json:"delta_g2"`
+	IC                           []string                  `json:"ic"`
+	NPublic                      int                       `json:"n_public"`
+	CommitmentKeys               []cardanoCommitmentVKJSON `json:"commitment_keys"`
+	PublicAndCommitmentCommitted [][]int                   `json:"public_and_commitment_committed"`
+	CommitmentHashDomain         string                    `json:"commitment_hash_domain"`
+}
+
+func main() {
+	var (
+		fixturePath = flag.String("fixture", "../fixtures/update_client_fixture-groth16.json", "Eureka update-client Groth16 fixture")
+		prove       = flag.Bool("prove", false, "run insecure development setup, outer proof generation, and verification")
+		outDir      = flag.String("out", "", "optional directory for Cardano-formatted proof and VK artifacts")
+	)
+	flag.Parse()
+
+	if err := run(*fixturePath, *prove, *outDir); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}
+
+func run(fixturePath string, doProve bool, outDir string) error {
+	fixture, err := loadFixture(fixturePath)
+	if err != nil {
+		return err
+	}
+	if outDir != "" {
+		if err := writePublicValuesArtifacts(outDir, fixture.publicValues); err != nil {
+			return err
+		}
+	}
+	innerVK, err := loadSP1VerifyingKey()
+	if err != nil {
+		return err
+	}
+	innerProof, err := loadSP1Proof(fixture.proof)
+	if err != nil {
+		return err
+	}
+	innerWitness, err := newInnerWitness(fixture.publicInputs)
+	if err != nil {
+		return err
+	}
+	innerPublicWitness, err := innerWitness.Public()
+	if err != nil {
+		return fmt.Errorf("extract SP1 public witness: %w", err)
+	}
+	if err := groth16.Verify(innerProof, innerVK, innerPublicWitness); err != nil {
+		return fmt.Errorf("native verification of Eureka SP1 proof: %w", err)
+	}
+	fmt.Println("inner_native_verified: true")
+
+	innerShape, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &publicInputShape{})
+	if err != nil {
+		return fmt.Errorf("compile five-public-input shape: %w", err)
+	}
+	circuitVK, err := stdgroth16.ValueOfVerifyingKey[
+		sw_bn254.G1Affine,
+		sw_bn254.G2Affine,
+		sw_bn254.GTEl,
+	](innerVK)
+	if err != nil {
+		return fmt.Errorf("convert SP1 verification key: %w", err)
+	}
+	circuitProof, err := stdgroth16.ValueOfProof[sw_bn254.G1Affine, sw_bn254.G2Affine](innerProof)
+	if err != nil {
+		return fmt.Errorf("convert SP1 proof: %w", err)
+	}
+	circuitWitness, err := stdgroth16.ValueOfWitness[sw_bn254.ScalarField](innerWitness)
+	if err != nil {
+		return fmt.Errorf("convert SP1 public witness: %w", err)
+	}
+
+	outerTemplate := &outerCircuit{
+		Proof:          stdgroth16.PlaceholderProof[sw_bn254.G1Affine, sw_bn254.G2Affine](innerShape),
+		InnerWitness:   stdgroth16.PlaceholderWitness[sw_bn254.ScalarField](innerShape),
+		vk:             circuitVK,
+		expectedVKRoot: fixture.expectedVKRoot,
+	}
+	outerAssignment := &outerCircuit{
+		Proof:              circuitProof,
+		InnerWitness:       circuitWitness,
+		ProgramVKey:        fixture.publicInputs[0],
+		PublicValuesDigest: fixture.publicInputs[1],
+		vk:                 circuitVK,
+		expectedVKRoot:     fixture.expectedVKRoot,
+	}
+
+	started := time.Now()
+	outerCCS, err := frontend.Compile(ecc.BLS12_381.ScalarField(), r1cs.NewBuilder, outerTemplate)
+	if err != nil {
+		return fmt.Errorf("compile BLS12-381 outer circuit: %w", err)
+	}
+	fmt.Printf("outer_compile_seconds: %.3f\n", time.Since(started).Seconds())
+	fmt.Printf("outer_constraints: %d\n", outerCCS.GetNbConstraints())
+	fmt.Printf("outer_public_variables_including_one_wire: %d\n", outerCCS.GetNbPublicVariables())
+	fmt.Printf("outer_secret_variables: %d\n", outerCCS.GetNbSecretVariables())
+	fmt.Printf("outer_internal_variables: %d\n", outerCCS.GetNbInternalVariables())
+	nbCommitments := len(outerCCS.GetCommitments().CommitmentIndexes())
+	fmt.Printf("outer_commitments: %d\n", nbCommitments)
+
+	outerWitness, err := frontend.NewWitness(outerAssignment, ecc.BLS12_381.ScalarField())
+	if err != nil {
+		return fmt.Errorf("create BLS12-381 outer witness: %w", err)
+	}
+	if nbCommitments == 0 || debug.Debug {
+		started = time.Now()
+		if _, err := outerCCS.Solve(outerWitness); err != nil {
+			return fmt.Errorf("solve BLS12-381 outer circuit: %w", err)
+		}
+		fmt.Printf("outer_solve_seconds: %.3f\n", time.Since(started).Seconds())
+		fmt.Println("outer_constraints_satisfied: true")
+	} else {
+		fmt.Println("outer_direct_solve_skipped: gnark commitment hint is populated by Groth16 Prove")
+	}
+
+	if !doProve {
+		return nil
+	}
+
+	started = time.Now()
+	outerPK, outerVK, err := groth16.Setup(outerCCS)
+	if err != nil {
+		return fmt.Errorf("development Groth16 setup: %w", err)
+	}
+	fmt.Printf("outer_setup_seconds: %.3f\n", time.Since(started).Seconds())
+
+	started = time.Now()
+	outerProof, err := groth16.Prove(
+		outerCCS,
+		outerPK,
+		outerWitness,
+		backend.WithProverHashToFieldFunction(newCardanoCommitmentHasher()),
+	)
+	if err != nil {
+		return fmt.Errorf("create BLS12-381 outer proof: %w", err)
+	}
+	fmt.Printf("outer_prove_seconds: %.3f\n", time.Since(started).Seconds())
+
+	outerPublicWitness, err := outerWitness.Public()
+	if err != nil {
+		return fmt.Errorf("extract BLS12-381 public witness: %w", err)
+	}
+	started = time.Now()
+	if err := groth16.Verify(
+		outerProof,
+		outerVK,
+		outerPublicWitness,
+		backend.WithVerifierHashToFieldFunction(newCardanoCommitmentHasher()),
+	); err != nil {
+		return fmt.Errorf("verify BLS12-381 outer proof: %w", err)
+	}
+	fmt.Printf("outer_verify_seconds: %.3f\n", time.Since(started).Seconds())
+	fmt.Println("outer_bls12_381_verified: true")
+
+	proofBytes, proofJSON, vkJSON, err := cardanoArtifacts(outerProof, outerVK)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("cardano_extended_proof_bytes: %d\n", len(proofBytes))
+	fmt.Printf("cardano_vk_ic_points: %d\n", len(vkJSON.IC))
+
+	if outDir != "" {
+		if err := writeArtifacts(outDir, proofBytes, proofJSON, vkJSON, fixture.publicInputs[:2]); err != nil {
+			return err
+		}
+		fmt.Printf("artifacts: %s\n", outDir)
+	}
+	return nil
+}
+
+func loadFixture(path string) (*fixtureData, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read fixture: %w", err)
+	}
+	var fixture fixtureJSON
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		return nil, fmt.Errorf("decode fixture JSON: %w", err)
+	}
+	encoded, err := decodeHex(fixture.UpdateMsg)
+	if err != nil {
+		return nil, fmt.Errorf("decode updateMsg: %w", err)
+	}
+	programVKey, publicValues, proof, err := decodeUpdateMessage(encoded)
+	if err != nil {
+		return nil, err
+	}
+	if got := "0x" + hex.EncodeToString(programVKey); got != fixture.UpdateClientVKey {
+		return nil, fmt.Errorf("program vkey mismatch: ABI has %s, metadata has %s", got, fixture.UpdateClientVKey)
+	}
+	if len(proof) != 356 {
+		return nil, fmt.Errorf("expected 356-byte SP1 Groth16 proof, got %d", len(proof))
+	}
+	vkBytes, err := hex.DecodeString(sp1Groth16VKHex)
+	if err != nil {
+		return nil, fmt.Errorf("decode embedded SP1 verification key: %w", err)
+	}
+	vkHash := sha256.Sum256(vkBytes)
+	if !bytes.Equal(proof[:4], vkHash[:4]) {
+		return nil, fmt.Errorf("SP1 proof verification-key prefix is %x, expected %x", proof[:4], vkHash[:4])
+	}
+	expectedVKRoot, err := hex.DecodeString(sp1VKRootHex)
+	if err != nil {
+		return nil, fmt.Errorf("decode fixed SP1 verification-key root: %w", err)
+	}
+	if !bytes.Equal(proof[36:68], expectedVKRoot) {
+		return nil, fmt.Errorf("SP1 proof verification-key root is %x, expected %x", proof[36:68], expectedVKRoot)
+	}
+	digest := sha256.Sum256(publicValues)
+	digest[0] &= 0x1f
+	inputs := [5]*big.Int{
+		new(big.Int).SetBytes(programVKey),
+		new(big.Int).SetBytes(digest[:]),
+		new(big.Int).SetBytes(proof[4:36]),
+		new(big.Int).SetBytes(proof[36:68]),
+		new(big.Int).SetBytes(proof[68:100]),
+	}
+	return &fixtureData{
+		programVKey:      programVKey,
+		publicValues:     publicValues,
+		proof:            proof,
+		publicInputs:     inputs,
+		expectedVKRoot:   new(big.Int).SetBytes(expectedVKRoot),
+		programVKeyLabel: fixture.UpdateClientVKey,
+	}, nil
+}
+
+func decodeUpdateMessage(encoded []byte) ([]byte, []byte, []byte, error) {
+	root, err := abiOffset(encoded, 0, 0)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("decode MsgUpdateClient offset: %w", err)
+	}
+	sp1Proof, err := abiOffset(encoded, root, root)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("decode SP1Proof offset: %w", err)
+	}
+	if sp1Proof+96 > len(encoded) {
+		return nil, nil, nil, errors.New("SP1Proof tuple is truncated")
+	}
+	programVKey := append([]byte(nil), encoded[sp1Proof:sp1Proof+32]...)
+	publicValuesOffset, err := abiOffset(encoded, sp1Proof+32, sp1Proof)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("decode publicValues offset: %w", err)
+	}
+	proofOffset, err := abiOffset(encoded, sp1Proof+64, sp1Proof)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("decode proof offset: %w", err)
+	}
+	publicValues, err := abiBytes(encoded, publicValuesOffset)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("decode publicValues: %w", err)
+	}
+	proof, err := abiBytes(encoded, proofOffset)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("decode proof: %w", err)
+	}
+	return programVKey, publicValues, proof, nil
+}
+
+func abiOffset(encoded []byte, wordOffset, base int) (int, error) {
+	if wordOffset < 0 || wordOffset+32 > len(encoded) {
+		return 0, errors.New("offset word is out of bounds")
+	}
+	value := new(big.Int).SetBytes(encoded[wordOffset : wordOffset+32])
+	if !value.IsInt64() {
+		return 0, errors.New("offset does not fit int64")
+	}
+	offset := value.Int64()
+	if offset < 0 || offset > int64(len(encoded)) {
+		return 0, errors.New("offset is out of bounds")
+	}
+	absolute := int64(base) + offset
+	if absolute < 0 || absolute > int64(len(encoded)) {
+		return 0, errors.New("absolute offset is out of bounds")
+	}
+	return int(absolute), nil
+}
+
+func abiBytes(encoded []byte, offset int) ([]byte, error) {
+	if offset < 0 || offset+32 > len(encoded) {
+		return nil, errors.New("byte-array length word is out of bounds")
+	}
+	length := new(big.Int).SetBytes(encoded[offset : offset+32])
+	if !length.IsInt64() {
+		return nil, errors.New("byte-array length does not fit int64")
+	}
+	start := offset + 32
+	end := int64(start) + length.Int64()
+	if end < int64(start) || end > int64(len(encoded)) {
+		return nil, errors.New("byte array is truncated")
+	}
+	return append([]byte(nil), encoded[start:int(end)]...), nil
+}
+
+func loadSP1VerifyingKey() (groth16.VerifyingKey, error) {
+	raw, err := hex.DecodeString(sp1Groth16VKHex)
+	if err != nil {
+		return nil, fmt.Errorf("decode embedded SP1 verification key: %w", err)
+	}
+	vk := groth16.NewVerifyingKey(ecc.BN254)
+	read, err := vk.ReadFrom(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse SP1 verification key: %w", err)
+	}
+	if read != int64(len(raw)) {
+		return nil, fmt.Errorf("SP1 verification key consumed %d of %d bytes", read, len(raw))
+	}
+	return vk, nil
+}
+
+func loadSP1Proof(fullProof []byte) (groth16.Proof, error) {
+	if len(fullProof) != 356 {
+		return nil, fmt.Errorf("expected 356-byte full SP1 proof, got %d", len(fullProof))
+	}
+	raw := fullProof[100:]
+	decoder := bn254curve.NewDecoder(bytes.NewReader(raw))
+	proof := &groth16bn254.Proof{}
+	if err := decoder.Decode(&proof.Ar); err != nil {
+		return nil, fmt.Errorf("decode proof A: %w", err)
+	}
+	if err := decoder.Decode(&proof.Bs); err != nil {
+		return nil, fmt.Errorf("decode proof B: %w", err)
+	}
+	if err := decoder.Decode(&proof.Krs); err != nil {
+		return nil, fmt.Errorf("decode proof C: %w", err)
+	}
+	if decoder.BytesRead() != int64(len(raw)) {
+		return nil, fmt.Errorf("SP1 raw proof consumed %d of %d bytes", decoder.BytesRead(), len(raw))
+	}
+	return proof, nil
+}
+
+func newInnerWitness(inputs [5]*big.Int) (witness.Witness, error) {
+	assignment := &publicInputShape{
+		ProgramVKey:        inputs[0],
+		PublicValuesDigest: inputs[1],
+		ExitCode:           inputs[2],
+		VKRoot:             inputs[3],
+		Nonce:              inputs[4],
+	}
+	w, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
+	if err != nil {
+		return nil, fmt.Errorf("create SP1 public witness: %w", err)
+	}
+	return w, nil
+}
+
+// decodeHex accepts the 0x-prefixed strings used in the Eureka fixture.
+func decodeHex(value string) ([]byte, error) {
+	if len(value) >= 2 && value[:2] == "0x" {
+		value = value[2:]
+	}
+	return hex.DecodeString(value)
+}
+
+// cardanoCommitmentHasher is the Fiat-Shamir hash used for gnark's BSB22
+// commitment wire in the outer proof. gnark passes an uncompressed BLS12-381
+// G1 commitment followed by zero or more fixed-width public scalars. Replacing
+// the point with its canonical compressed encoding lets Plutus reproduce the
+// transcript from the proof with bls12_381_G1_compress.
+type cardanoCommitmentHasher struct {
+	data []byte
+}
+
+func newCardanoCommitmentHasher() *cardanoCommitmentHasher {
+	return &cardanoCommitmentHasher{}
+}
+
+func (h *cardanoCommitmentHasher) Write(p []byte) (int, error) {
+	h.data = append(h.data, p...)
+	return len(p), nil
+}
+
+func (h *cardanoCommitmentHasher) Sum(prefix []byte) []byte {
+	digest, err := cardanoCommitmentDigest(h.data)
+	if err != nil {
+		panic(err)
+	}
+	return append(prefix, digest[:]...)
+}
+
+func (h *cardanoCommitmentHasher) Reset()       { h.data = h.data[:0] }
+func (*cardanoCommitmentHasher) Size() int      { return sha256.Size }
+func (*cardanoCommitmentHasher) BlockSize() int { return sha256.BlockSize }
+
+func cardanoCommitmentDigest(serialized []byte) ([sha256.Size]byte, error) {
+	if len(serialized) < bls12381curve.SizeOfG1AffineUncompressed {
+		return [sha256.Size]byte{}, fmt.Errorf(
+			"commitment transcript has %d bytes, need at least %d",
+			len(serialized),
+			bls12381curve.SizeOfG1AffineUncompressed,
+		)
+	}
+	var point bls12381curve.G1Affine
+	read, err := point.SetBytes(serialized[:bls12381curve.SizeOfG1AffineUncompressed])
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("decode uncompressed BLS12-381 commitment: %w", err)
+	}
+	if read != bls12381curve.SizeOfG1AffineUncompressed {
+		return [sha256.Size]byte{}, fmt.Errorf("commitment decoder consumed %d bytes", read)
+	}
+	compressed := point.Bytes()
+	hasher := sha256.New()
+	_, _ = hasher.Write([]byte(cardanoCommitmentHashDomain))
+	_, _ = hasher.Write(compressed[:])
+	_, _ = hasher.Write(serialized[bls12381curve.SizeOfG1AffineUncompressed:])
+	var digest [sha256.Size]byte
+	copy(digest[:], hasher.Sum(nil))
+	// 253 bits is below the BLS12-381 scalar modulus, so no modular reduction
+	// or non-native arithmetic is needed in Plutus.
+	digest[0] &= 0x1f
+	return digest, nil
+}
+
+func cardanoArtifacts(proof groth16.Proof, vk groth16.VerifyingKey) ([]byte, cardanoProofJSON, cardanoVKJSON, error) {
+	p, ok := proof.(*groth16bls12381.Proof)
+	if !ok {
+		return nil, cardanoProofJSON{}, cardanoVKJSON{}, fmt.Errorf("expected BLS12-381 proof, got %T", proof)
+	}
+	v, ok := vk.(*groth16bls12381.VerifyingKey)
+	if !ok {
+		return nil, cardanoProofJSON{}, cardanoVKJSON{}, fmt.Errorf("expected BLS12-381 verification key, got %T", vk)
+	}
+	a := p.Ar.Bytes()
+	b := p.Bs.Bytes()
+	c := p.Krs.Bytes()
+	proofBytes := make([]byte, 0, len(a)+len(b)+len(c))
+	proofBytes = append(proofBytes, a[:]...)
+	proofBytes = append(proofBytes, b[:]...)
+	proofBytes = append(proofBytes, c[:]...)
+	commitments := make([]string, len(p.Commitments))
+	commitmentHashScalars := make([]string, len(p.Commitments))
+	for i := range p.Commitments {
+		if len(v.PublicAndCommitmentCommitted[i]) != 0 {
+			return nil, cardanoProofJSON{}, cardanoVKJSON{}, fmt.Errorf(
+				"artifact export does not yet serialize commitment %d's public transcript fields",
+				i,
+			)
+		}
+		point := p.Commitments[i].Bytes()
+		proofBytes = append(proofBytes, point[:]...)
+		commitments[i] = hex.EncodeToString(point[:])
+		digest, err := cardanoCommitmentDigest(p.Commitments[i].Marshal())
+		if err != nil {
+			return nil, cardanoProofJSON{}, cardanoVKJSON{}, fmt.Errorf("hash commitment %d: %w", i, err)
+		}
+		commitmentHashScalars[i] = hex.EncodeToString(digest[:])
+	}
+	commitmentPoK := p.CommitmentPok.Bytes()
+	if len(p.Commitments) > 0 {
+		proofBytes = append(proofBytes, commitmentPoK[:]...)
+	}
+	proofJSON := cardanoProofJSON{
+		A:                     hex.EncodeToString(a[:]),
+		B:                     hex.EncodeToString(b[:]),
+		C:                     hex.EncodeToString(c[:]),
+		Commitments:           commitments,
+		CommitmentPoK:         hex.EncodeToString(commitmentPoK[:]),
+		CommitmentHashScalars: commitmentHashScalars,
+	}
+	alpha := v.G1.Alpha.Bytes()
+	beta := v.G2.Beta.Bytes()
+	gamma := v.G2.Gamma.Bytes()
+	delta := v.G2.Delta.Bytes()
+	vkJSON := cardanoVKJSON{
+		AlphaG1:                      hex.EncodeToString(alpha[:]),
+		BetaG2:                       hex.EncodeToString(beta[:]),
+		GammaG2:                      hex.EncodeToString(gamma[:]),
+		DeltaG2:                      hex.EncodeToString(delta[:]),
+		IC:                           make([]string, len(v.G1.K)),
+		NPublic:                      len(v.G1.K) - len(v.CommitmentKeys) - 1,
+		CommitmentKeys:               make([]cardanoCommitmentVKJSON, len(v.CommitmentKeys)),
+		PublicAndCommitmentCommitted: v.PublicAndCommitmentCommitted,
+		CommitmentHashDomain:         cardanoCommitmentHashDomain,
+	}
+	for i := range v.G1.K {
+		point := v.G1.K[i].Bytes()
+		vkJSON.IC[i] = hex.EncodeToString(point[:])
+	}
+	for i := range v.CommitmentKeys {
+		g := v.CommitmentKeys[i].G.Bytes()
+		gSigmaNeg := v.CommitmentKeys[i].GSigmaNeg.Bytes()
+		vkJSON.CommitmentKeys[i] = cardanoCommitmentVKJSON{
+			G:         hex.EncodeToString(g[:]),
+			GSigmaNeg: hex.EncodeToString(gSigmaNeg[:]),
+		}
+	}
+	return proofBytes, proofJSON, vkJSON, nil
+}
+
+func writeArtifacts(outDir string, proofBytes []byte, proof cardanoProofJSON, vk cardanoVKJSON, publicInputs []*big.Int) error {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fmt.Errorf("create artifact directory: %w", err)
+	}
+	inputs := make([]string, 0, len(publicInputs)+1)
+	inputs = append(inputs, "1")
+	for _, input := range publicInputs {
+		inputs = append(inputs, input.String())
+	}
+	files := map[string]any{
+		"proof.json":            proof,
+		"verification_key.json": vk,
+		"public_inputs.json":    inputs,
+	}
+	for name, value := range files {
+		encoded, err := json.MarshalIndent(value, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode %s: %w", name, err)
+		}
+		encoded = append(encoded, '\n')
+		if err := os.WriteFile(filepath.Join(outDir, name), encoded, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", name, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "proof.bin"), proofBytes, 0o644); err != nil {
+		return fmt.Errorf("write proof.bin: %w", err)
+	}
+	return nil
+}
+
+func writePublicValuesArtifacts(outDir string, publicValues []byte) error {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fmt.Errorf("create artifact directory: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "public_values.bin"), publicValues, 0o644); err != nil {
+		return fmt.Errorf("write public_values.bin: %w", err)
+	}
+	hexValue := append([]byte(hex.EncodeToString(publicValues)), '\n')
+	if err := os.WriteFile(filepath.Join(outDir, "public_values.hex"), hexValue, 0o644); err != nil {
+		return fmt.Errorf("write public_values.hex: %w", err)
+	}
+	return nil
+}

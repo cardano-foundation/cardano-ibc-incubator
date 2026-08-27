@@ -1,0 +1,39 @@
+{
+  "eureka": {
+    "repository": "https://github.com/cosmos/ibc-contracts",
+    "fixtureCommit": "60f6575adf0b3202c86940a80a9e2230b3bd6107",
+    "programRelease": "sp1-programs-v2.0.0",
+    "programReleaseCommit": "ef25a661a8be156d4908956e1055ca40cd67adb7",
+    "updateClientElf": {
+      "url": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-update-client",
+      "sha256": "6a6a40df2b1339455de7b238fdf3e914f4c2f99e85b8fc4abb65fb1664f42270"
+    },
+    "sp1Version": "6.1.0"
+  },
+  "cardanoGroth16Verifier": {
+    "repository": "https://github.com/cardano-foundation/bls",
+    "commit": "24bd7e3a1f9f57b1d43b7bebdc37446dc559eb40",
+    "curve": "BLS12-381",
+    "aikenVersion": "1.1.21",
+    "wrappedProofExecutionUnits": {
+      "memory": 62385,
+      "cpu": 3380262907
+    }
+  },
+  "recursiveWrapper": {
+    "gnarkVersion": "0.14.0",
+    "gnarkCryptoVersion": "0.19.2",
+    "constraints": 1192065,
+    "proofBytes": 288,
+    "commitmentHashDomain": "cardano-ibc:gnark-bsb22:v1:",
+    "developmentSetup": true,
+    "artifacts": {
+      "proof.bin": "0c0c6904797050f46de551b96422ff2d801e8a6e1eef6b31d311889e91090066",
+      "proof.json": "99581c6a0f865a76512a7d609ae2e296e71d9cceb83431abebf30b00e3283195",
+      "public_inputs.json": "1d2426e8f51e8d49e1196d6d2655979394f6e8dc9a325bbb667b4ca212fec723",
+      "public_values.bin": "b0964b25f1b1680f9eb3044629edbab71d1a15e61270f8ff1fecddc7ab894afc",
+      "public_values.hex": "07e92d50b4aa956eecf22f72b6a5d8fdafcbaaab3ca634fc52640ce00bfb1ae8",
+      "verification_key.json": "4e9473da0c2b76313040b80cc83157257a701b4f80c60598fd136bf9ebdc2d1d"
+    }
+  }
+}

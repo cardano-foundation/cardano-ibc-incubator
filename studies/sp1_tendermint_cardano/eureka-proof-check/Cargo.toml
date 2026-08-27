@@ -1,0 +1,14 @@
+[package]
+name = "eureka-sp1-proof-check"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+alloy-sol-types = "=1.5.2"
+anyhow = "1"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sp1-verifier = "=6.1.0"

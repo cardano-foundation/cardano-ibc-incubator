@@ -1,0 +1,13 @@
+name = "cardano-foundation/sp1-tendermint-cardano-verifier-prototype"
+version = "0.0.0"
+compiler = "v1.1.21"
+plutus = "v3"
+license = "Apache-2.0"
+description = "Feasibility test for verifying a succinct Tendermint proof on Cardano"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "v3.1.0"
+source = "github"
+
+[config]
