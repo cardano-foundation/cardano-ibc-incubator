@@ -25,3 +25,8 @@ export const ATTRIBUTE_KEY_CLIENT = {
 export const CLIENT_ID_PREFIX = '07-tendermint';
 
 export const MAX_CONSENSUS_STATE_SIZE = 300;
+
+// Proof updates compare retained client history on Cardano. Ten states keep
+// the complete three-script transaction within the mainnet execution budget.
+// The direct Tendermint path keeps the existing 300-state limit above.
+export const MAX_SP1_CONSENSUS_STATE_SIZE = 10;

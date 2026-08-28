@@ -9,6 +9,16 @@ type DeploymentConfig = {
       scriptHash: string;
       address: string;
     };
+    tendermintProof?: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo?: {
+        txHash: string;
+        outputIndex: number;
+      };
+    };
     mintClient: {
       title: string;
       script: string;
@@ -90,6 +100,14 @@ const positiveGoDurationSecondsEnv = (name: string, fallback: number): number =>
   return value;
 };
 
+const tendermintUpdateClientMode = (): 'direct' | 'sp1' => {
+  const value = process.env.TENDERMINT_UPDATE_CLIENT_MODE || 'direct';
+  if (value !== 'direct' && value !== 'sp1') {
+    throw new Error('TENDERMINT_UPDATE_CLIENT_MODE must be direct or sp1');
+  }
+  return value;
+};
+
 interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
@@ -118,6 +136,9 @@ interface Config {
   cardanoEpochParamsEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
   cardanoKoiosApiKey?: string;
+  sp1TendermintProverEndpoint?: string;
+  sp1TendermintProverTimeoutMs: number;
+  tendermintUpdateClientMode: 'direct' | 'sp1';
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
@@ -170,6 +191,9 @@ export default (): Partial<Config> => {
       process.env.CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC),
     cardanoKoiosApiKey:
       process.env.CARDANO_KOIOS_API_KEY || process.env.CARIBIC_KOIOS_API_KEY || process.env.KOIOS_API_KEY,
+    sp1TendermintProverEndpoint: process.env.SP1_TENDERMINT_PROVER_ENDPOINT,
+    sp1TendermintProverTimeoutMs: positiveSafeIntegerEnv('SP1_TENDERMINT_PROVER_TIMEOUT_MS', 7_200_000),
+    tendermintUpdateClientMode: tendermintUpdateClientMode(),
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,

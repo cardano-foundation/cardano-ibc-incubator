@@ -2,6 +2,7 @@ import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   credentialToAddress,
+  credentialToRewardAddress,
   getAddressDetails,
   type LucidEvolution,
   TxBuilder,
@@ -188,6 +189,7 @@ type ReferenceScripts = {
   mintIdentifier: UTxO;
   spendConnection: UTxO;
   spendClient: UTxO;
+  tendermintProof?: UTxO;
   spendMockModule?: UTxO;
   spendTransferModule: UTxO;
   verifyProof: UTxO;
@@ -231,6 +233,7 @@ export class LucidService implements OnModuleInit {
       spendTraceRegistry: deploymentConfig.validators.spendTraceRegistry
         ?.refUtxo,
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
+      tendermintProof: deploymentConfig.validators.tendermintProof?.refUtxo,
       spendMockModule: deploymentConfig.validators.spendMockModule?.refUtxo,
       spendTransferModule:
         deploymentConfig.validators.spendTransferModule.refUtxo,
@@ -946,6 +949,7 @@ export class LucidService implements OnModuleInit {
     encodedNewClientDatum: string,
     clientTokenUnit: string,
     _constructedAddress: string,
+    encodedTendermintProofRedeemer?: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
@@ -960,10 +964,18 @@ export class LucidService implements OnModuleInit {
       datumHash: undefined,
     };
 
-    tx.readFrom([
+    const referenceScripts = [
       this.referenceScripts.hostStateStt,
       this.referenceScripts.spendClient,
-    ])
+    ];
+    if (encodedTendermintProofRedeemer) {
+      if (!this.referenceScripts.tendermintProof) {
+        throw new Error('Missing Tendermint proof-validator reference script');
+      }
+      referenceScripts.push(this.referenceScripts.tendermintProof);
+    }
+
+    tx.readFrom(referenceScripts)
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
       .pay.ToContract(
@@ -980,6 +992,21 @@ export class LucidService implements OnModuleInit {
           [clientTokenUnit]: 1n,
         },
       );
+
+    if (encodedTendermintProofRedeemer) {
+      const proofValidator = deploymentConfig.validators.tendermintProof;
+      if (!proofValidator?.scriptHash) {
+        throw new Error('Missing Tendermint proof-validator deployment');
+      }
+      tx.withdraw(
+        credentialToRewardAddress(this.lucid.config().network, {
+          type: 'Script',
+          hash: proofValidator.scriptHash,
+        }),
+        0n,
+        encodedTendermintProofRedeemer,
+      );
+    }
 
     return tx;
   }

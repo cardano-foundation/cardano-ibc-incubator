@@ -72,10 +72,23 @@ size and execution cost are both binding constraints.
 
 ## Interpretation
 
-These measurements establish the current boundary; they do not choose or
-enforce a validator-count ceiling. A follow-up design must reconcile the
-supported limit with Injective, introduce any required compact transaction
-representation, add matching on-chain and Gateway guards, and test the chosen
-limit and limit-plus-one. Explicit two-header misbehaviour evidence requires a
-separate capacity result because its payload shape is materially larger than a
-normal update.
+These measurements remain the regression boundary for the direct ICS-07 path.
+They do not show that the standard is wrong or establish a validator-count
+ceiling. They show that carrying the standard Tendermint header, validator sets,
+and signatures into a Cardano transaction does not fit for Injective's current
+validator set.
+
+The SP1 path removes that validator-dependent Cardano payload. The released IBC
+Eureka program verifies the same header off-chain and the Cardano transaction
+carries a 288-byte proof. Aiken verifies that fixed-size proof and binds its
+output to the client and HostState transitions. The same program executed a
+generated 200-validator update without chain-specific code, although that case
+has only been mock-proved and has not been timed with the production prover.
+
+Validator count therefore affects prover work, not Cardano transaction size or
+proof-verification cost. Consensus-state history is still a separate Cardano
+cost because the client datum and HostState commitment transition grow with the
+number of retained states. Proof-based clients therefore retain at most 10
+consensus states. CI requires the complete 10-state transition to fit and checks
+that 11, 25, and 50-state inputs are rejected. The direct ICS-07 path keeps its
+existing 300-state limit.

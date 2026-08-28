@@ -29,6 +29,7 @@ function buildHandlerJsonDeployment() {
     validators: {
       hostStateStt: buildValidator('hostStateStt'),
       spendClient: buildValidator('spendClient'),
+      tendermintProof: buildValidator('tendermintProof'),
       spendConnection: buildValidator('spendConnection'),
       spendChannel: {
         ...buildValidator('spendChannel'),
@@ -106,6 +107,11 @@ describe('bridge manifest normalization', () => {
     });
     expect(loaded.bridgeManifest.validators.voucher_metadata).toEqual({
       address: 'voucher-metadata-address',
+    });
+    expect(loaded.bridgeManifest.validators.tendermint_proof).toEqual({
+      script_hash: 'tendermintProof-hash',
+      address: 'tendermintProof-address',
+      ref_utxo: { tx_hash: 'tendermintProof-tx', output_index: 1 },
     });
 
     expect(loaded.deployment.validators.spendChannel.refValidator.chan_open_ack.scriptHash).toBe('open-ack-hash');

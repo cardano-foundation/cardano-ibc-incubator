@@ -1,13 +1,19 @@
 use alloy_sol_types::{sol, SolValue};
-use anyhow::{ensure, Context};
+use anyhow::{bail, ensure, Context};
 use ibc_proto::ibc::{
     core::client::v1::Height as ProtoHeight, lightclients::tendermint::v1::Header as ProtoHeader,
 };
 use prost::Message;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sp1_sdk::{Elf, ProveRequest, Prover, ProverClient, SP1ProofMode, SP1Stdin};
-use std::{env, fs, path::Path};
+use sp1_sdk::{
+    Elf, HashableKey, ProveRequest, Prover, ProverClient, ProvingKey, SP1ProofMode, SP1Stdin,
+};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    time::Instant,
+};
 use tendermint::{hash::Hash, validator::Set, AppHash, Time};
 use tendermint_rpc::endpoint::{commit, validators};
 use tendermint_testgen::{
@@ -94,6 +100,10 @@ fn make_client_state(chain_id: &str, revision_height: u64) -> ClientState {
     }
 }
 
+fn ceil_to_millisecond(timestamp_nanos: u128) -> u128 {
+    timestamp_nanos.div_ceil(1_000_000) * 1_000_000
+}
+
 fn injective_case(source: &Path) -> anyhow::Result<Case> {
     let trusted: commit::Response = rpc_result(&source.join("commit-180315956.json"))?;
     let target: commit::Response = rpc_result(&source.join("commit-180315957.json"))?;
@@ -124,7 +134,9 @@ fn injective_case(source: &Path) -> anyhow::Result<Case> {
         client_state: make_client_state("injective-1", 180_315_956),
         trusted_consensus_state,
         proposed_header,
-        time: target.signed_header.header.time.unix_timestamp_nanos() as u128 + 1_000_000_000,
+        time: ceil_to_millisecond(
+            target.signed_header.header.time.unix_timestamp_nanos() as u128 + 1_000_000_000,
+        ),
         expected_trusted_height: 180_315_956,
         expected_new_height: 180_315_957,
         expected_root: "0f403709014e662d28bdce5bdf6ec9456f4a30ec9cec24ee422006a7096efb97",
@@ -214,14 +226,155 @@ async fn run_case(elf: &[u8], case: &Case) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn prove_cpu_case(elf: &[u8], case: &Case, output_root: &Path) -> anyhow::Result<()> {
+    println!("case={}", case.name);
+    println!("validators={}", case.validators);
+    ensure!(
+        case.time.is_multiple_of(1_000_000),
+        "proof time must align with Cardano's millisecond validity bound"
+    );
+    println!("proof_time_nanos={}", case.time);
+    println!("cardano_tx_valid_to_millis={}", case.time / 1_000_000);
+    println!("stage=initialize_cpu_prover");
+    let cpu = ProverClient::builder().cpu().build().await;
+
+    println!("stage=setup");
+    let started = Instant::now();
+    let proving_key = cpu
+        .setup(Elf::from(elf.to_vec()))
+        .await
+        .context("set up released Eureka ELF")?;
+    let setup_seconds = started.elapsed().as_secs_f64();
+    let program_vkey = proving_key.verifying_key().bytes32();
+    println!("setup_seconds={setup_seconds:.3}");
+    println!("program_vkey={program_vkey}");
+
+    println!("stage=execute");
+    let started = Instant::now();
+    let (executed_public_values, report) = cpu
+        .execute(Elf::from(elf.to_vec()), stdin(case))
+        .await
+        .context("execute released Eureka ELF before proving")?;
+    let execute_seconds = started.elapsed().as_secs_f64();
+    let output = UpdateClientOutput::abi_decode(executed_public_values.as_slice())?;
+    ensure!(output.trustedHeight.revisionHeight == case.expected_trusted_height);
+    ensure!(output.newHeight.revisionHeight == case.expected_new_height);
+    ensure!(hex::encode(output.newConsensusState.root) == case.expected_root);
+    ensure!(executed_public_values.as_slice().len() == 768);
+    println!("execute_seconds={execute_seconds:.3}");
+    println!("instructions={}", report.total_instruction_count());
+    println!("syscalls={}", report.total_syscall_count());
+
+    println!("stage=prove_groth16");
+    let started = Instant::now();
+    let proof = cpu
+        .prove(&proving_key, stdin(case))
+        .mode(SP1ProofMode::Groth16)
+        .await
+        .context("generate real SP1 Groth16 proof")?;
+    let prove_seconds = started.elapsed().as_secs_f64();
+    ensure!(
+        proof.public_values.as_slice() == executed_public_values.as_slice(),
+        "proof and direct execution public values disagree"
+    );
+    let groth16_bytes = proof.bytes();
+    ensure!(
+        !groth16_bytes.is_empty(),
+        "SP1 returned an empty/mock proof"
+    );
+    println!("prove_seconds={prove_seconds:.3}");
+    println!("groth16_proof_bytes={}", groth16_bytes.len());
+
+    println!("stage=verify");
+    let started = Instant::now();
+    cpu.verify(&proof, proving_key.verifying_key(), None)
+        .context("verify generated SP1 Groth16 proof")?;
+    let verify_seconds = started.elapsed().as_secs_f64();
+    println!("verify_seconds={verify_seconds:.3}");
+
+    let output_dir = output_root.join(case.name);
+    fs::create_dir_all(&output_dir)
+        .with_context(|| format!("create output directory {}", output_dir.display()))?;
+    let bundle_path = output_dir.join("proof.bundle.bin");
+    proof
+        .save(&bundle_path)
+        .with_context(|| format!("save proof bundle {}", bundle_path.display()))?;
+    fs::write(output_dir.join("proof.groth16.bin"), &groth16_bytes)?;
+    fs::write(
+        output_dir.join("proof.groth16.hex"),
+        format!("{}\n", hex::encode(&groth16_bytes)),
+    )?;
+    fs::write(
+        output_dir.join("public_values.bin"),
+        proof.public_values.as_slice(),
+    )?;
+    fs::write(
+        output_dir.join("public_values.hex"),
+        format!("{}\n", hex::encode(proof.public_values.as_slice())),
+    )?;
+    fs::write(
+        output_dir.join("program_vkey.txt"),
+        format!("{program_vkey}\n"),
+    )?;
+    let bundle_bytes = fs::metadata(&bundle_path)?.len();
+    let metrics = serde_json::json!({
+        "case": case.name,
+        "validators": case.validators,
+        "eureka_tag": EUREKA_TAG,
+        "eureka_commit": EUREKA_COMMIT,
+        "elf_sha256": ELF_SHA256,
+        "sp1_version": proof.sp1_version,
+        "program_vkey": program_vkey,
+        "instructions": report.total_instruction_count(),
+        "syscalls": report.total_syscall_count(),
+        "public_values_bytes": proof.public_values.as_slice().len(),
+        "groth16_proof_bytes": groth16_bytes.len(),
+        "proof_bundle_bytes": bundle_bytes,
+        "groth16_proof_sha256": hex::encode(Sha256::digest(&groth16_bytes)),
+        "public_values_sha256": hex::encode(Sha256::digest(proof.public_values.as_slice())),
+        "setup_seconds": setup_seconds,
+        "execute_seconds": execute_seconds,
+        "prove_seconds": prove_seconds,
+        "verify_seconds": verify_seconds,
+    });
+    fs::write(
+        output_dir.join("metrics.json"),
+        format!("{}\n", serde_json::to_string_pretty(&metrics)?),
+    )?;
+    println!("proof_bundle_bytes={bundle_bytes}");
+    println!("artifacts={}", output_dir.display());
+    println!("stage=complete");
+    println!();
+    Ok(())
+}
+
+fn selected_cases(selection: &str, source: &Path) -> anyhow::Result<Vec<Case>> {
+    match selection {
+        "injective-45" => Ok(vec![injective_case(source)?]),
+        "synthetic-200" => Ok(vec![synthetic_200_case()?]),
+        "all" => Ok(vec![injective_case(source)?, synthetic_200_case()?]),
+        _ => bail!("unknown case {selection:?}; expected injective-45, synthetic-200, or all"),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let elf_path = env::args()
-        .nth(1)
-        .context("usage: eureka-guest-runner <ELF> <fixture-source>")?;
-    let source_path = env::args()
-        .nth(2)
+    sp1_sdk::utils::setup_logger();
+    let mut args = env::args().skip(1);
+    let elf_path = args.next().context(
+        "usage: eureka-guest-runner <ELF> <fixture-source> [check|prove-cpu] \
+         [injective-45|synthetic-200|all] [output-directory]",
+    )?;
+    let source_path = args
+        .next()
         .context("missing Injective fixture source directory")?;
+    let command = args.next().unwrap_or_else(|| "check".to_owned());
+    let selection = args.next().unwrap_or_else(|| "all".to_owned());
+    let output_root = PathBuf::from(
+        args.next()
+            .unwrap_or_else(|| "artifacts-production".to_owned()),
+    );
+    ensure!(args.next().is_none(), "too many command-line arguments");
     let elf = fs::read(&elf_path).with_context(|| format!("read {elf_path}"))?;
     let digest = hex::encode(Sha256::digest(&elf));
     ensure!(
@@ -232,8 +385,16 @@ async fn main() -> anyhow::Result<()> {
     println!("eureka_tag={EUREKA_TAG}");
     println!("eureka_commit={EUREKA_COMMIT}");
     println!("elf_sha256={digest}");
+    println!("command={command}");
+    println!("selection={selection}");
     println!();
-    run_case(&elf, &injective_case(Path::new(&source_path))?).await?;
-    run_case(&elf, &synthetic_200_case()?).await?;
+    let cases = selected_cases(&selection, Path::new(&source_path))?;
+    for case in cases {
+        match command.as_str() {
+            "check" => run_case(&elf, &case).await?,
+            "prove-cpu" => prove_cpu_case(&elf, &case, &output_root).await?,
+            _ => bail!("unknown command {command:?}; expected check or prove-cpu"),
+        }
+    }
     Ok(())
 }

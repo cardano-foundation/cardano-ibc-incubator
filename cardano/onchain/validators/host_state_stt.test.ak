@@ -22,6 +22,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/proof_update/production_fixture as proof_fixture
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
@@ -785,6 +786,19 @@ fn test_updated_client_datum_with_consensus_insert(seed: Int) -> ClientDatum {
   }
 }
 
+fn test_frozen_client_datum(input: ClientDatum) -> ClientDatum {
+  ClientDatum {
+    ..input,
+    state: ClientDatumState {
+      ..input.state,
+      client_state: ClientState {
+        ..input.state.client_state,
+        frozen_height: test_height(1),
+      },
+    },
+  }
+}
+
 fn test_client_input(datum: ClientDatum) -> Input {
   let token = test_client_token()
   Input(
@@ -1186,6 +1200,324 @@ test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
+type ProofLimitHostFixture {
+  old_state: HostState,
+  new_state: HostState,
+  input_client_datum: ClientDatum,
+  output_client_datum: ClientDatum,
+  redeemer: HostStateRedeemer,
+}
+
+type ReferenceCommitmentLeaf {
+  path: Int,
+  hash: ByteArray,
+}
+
+fn reference_commitment_leaf(
+  key: ByteArray,
+  value: ByteArray,
+) -> ReferenceCommitmentLeaf {
+  let key_hash = builtin.sha2_256(key)
+  ReferenceCommitmentLeaf {
+    path: key_hash |> bytearray.take(8) |> bytearray.to_int_big_endian(),
+    hash: ibc_state_commitment.leaf_hash(
+      key_hash,
+      ibc_state_commitment.value_hash(value),
+    ),
+  }
+}
+
+fn reference_commitment_root(
+  leaves: List<ReferenceCommitmentLeaf>,
+  divisor: Int,
+) -> ByteArray {
+  when leaves is {
+    [] -> empty_ibc_state_root
+    _ ->
+      if divisor == 0 {
+        expect [ReferenceCommitmentLeaf { hash, .. }] = leaves
+        hash
+      } else {
+        let (right, left) =
+          list.partition(leaves, fn(leaf) { leaf.path / divisor % 2 == 1 })
+        ibc_state_commitment.inner_hash(
+          reference_commitment_root(left, divisor / 2),
+          reference_commitment_root(right, divisor / 2),
+        )
+      }
+  }
+}
+
+const proof_limit_old_root =
+  #"9fa8d4c5af3a4ed96d7328d5e03bbf698e07471a3a74032ea3223d80718ed004"
+
+const proof_limit_root_after_client =
+  #"d8c72c2c13eda0f2f156cb93077ae6b9ae07e6261c4d5c8a695310fe05267035"
+
+const proof_limit_root_after_removal =
+  #"5329616dc37e703d7b16a967f31ddcfd8e4f9188c82568188bbea87b93a88fd6"
+
+const proof_limit_new_root =
+  #"8617161ede90b9a14ad490df7253e109f5fba3e59868077bb060d4d647e0191d"
+
+fn proof_limit_zero_prefix(count: Int, tail: List<ByteArray>) -> List<ByteArray> {
+  list.concat(repeat_bytearray(empty_ibc_state_root, count), tail)
+}
+
+fn proof_limit_client_state_siblings() -> List<ByteArray> {
+  proof_limit_zero_prefix(
+    61,
+    [
+      #"d8bf3c5f4416fd49f5526b0f54e0cea4321f8d40bb5789a7453a1275dce8ace4",
+      #"175ecc7714061513af6ab57d76dc8e5d147c955e428fa1aa1c373a5085074987",
+      #"639bca05107139a60c1451015831a543f68a2a0c7fcb701be2a3dee5d693e687",
+    ],
+  )
+}
+
+fn proof_limit_removed_consensus_state_siblings() -> List<ByteArray> {
+  proof_limit_zero_prefix(
+    56,
+    [
+      #"43fc9eaf83fca41b31cf0b27d1935f0945a6ad84fae23513e2d75f52f8c974d2",
+      ..proof_limit_zero_prefix(
+        2,
+        [
+          #"aadb81a6addce5b6b5dead68693e895e5fcbb61cbe98403eabf49994ba2ecf97",
+          empty_ibc_state_root,
+          #"346ab36d65b2cd8a17419b3f1c32a5d4798625d2d396b11e81967242c203ded0",
+          #"54c1f3eab6fab7f90b3f8828a3afeccac5083e8ff0c8d5abdd40e526fb232375",
+          #"421b0278d58890fa68d0b2487eef535fa8690688f386d3da67901a1f25d84c01",
+        ],
+      )
+    ],
+  )
+}
+
+fn proof_limit_consensus_state_siblings() -> List<ByteArray> {
+  proof_limit_zero_prefix(
+    59,
+    [
+      #"75f0cbf314f64ad8ef7baf5f001d954aa829c892c79e971d0675f9cfc71c017c",
+      empty_ibc_state_root,
+      #"50045fec01351b47a0a4afd0ce428cae5ad2d03a83cb15949e2794e70e49a6dc",
+      #"175ecc7714061513af6ab57d76dc8e5d147c955e428fa1aa1c373a5085074987",
+      #"8fd6cb61e02238ff7ab9a9d3657b47e27599377c95c291e6dd34084cb22fdea6",
+    ],
+  )
+}
+
+fn proof_limit_input_client_datum(seed: Int) -> ClientDatum {
+  ClientDatum {
+    state: ClientDatumState {
+      client_state: test_client_state(test_height(10)),
+      consensus_states: [
+        Pair(test_height(10), test_consensus_state(seed + 10)),
+        Pair(test_height(9), test_consensus_state(seed + 9)),
+        Pair(test_height(8), test_consensus_state(seed + 8)),
+        Pair(test_height(7), test_consensus_state(seed + 7)),
+        Pair(test_height(6), test_consensus_state(seed + 6)),
+        Pair(test_height(5), test_consensus_state(seed + 5)),
+        Pair(test_height(4), test_consensus_state(seed + 4)),
+        Pair(test_height(3), test_consensus_state(seed + 3)),
+        Pair(test_height(2), test_consensus_state(seed + 2)),
+        Pair(test_height(1), test_consensus_state(seed + 1)),
+      ],
+      processed_times: [
+        Pair(test_height(10), 0),
+        Pair(test_height(9), 0),
+        Pair(test_height(8), 0),
+        Pair(test_height(7), 0),
+        Pair(test_height(6), 0),
+        Pair(test_height(5), 0),
+        Pair(test_height(4), 0),
+        Pair(test_height(3), 0),
+        Pair(test_height(2), 0),
+        Pair(test_height(1), 0),
+      ],
+      processed_heights: [
+        Pair(test_height(10), 0),
+        Pair(test_height(9), 0),
+        Pair(test_height(8), 0),
+        Pair(test_height(7), 0),
+        Pair(test_height(6), 0),
+        Pair(test_height(5), 0),
+        Pair(test_height(4), 0),
+        Pair(test_height(3), 0),
+        Pair(test_height(2), 0),
+        Pair(test_height(1), 0),
+      ],
+    },
+    token: test_client_token(),
+  }
+}
+
+fn proof_limit_output_client_datum(seed: Int) -> ClientDatum {
+  ClientDatum {
+    state: ClientDatumState {
+      client_state: test_client_state(test_height(11)),
+      consensus_states: [
+        Pair(test_height(11), test_consensus_state(seed + 11)),
+        Pair(test_height(10), test_consensus_state(seed + 10)),
+        Pair(test_height(9), test_consensus_state(seed + 9)),
+        Pair(test_height(8), test_consensus_state(seed + 8)),
+        Pair(test_height(7), test_consensus_state(seed + 7)),
+        Pair(test_height(6), test_consensus_state(seed + 6)),
+        Pair(test_height(5), test_consensus_state(seed + 5)),
+        Pair(test_height(4), test_consensus_state(seed + 4)),
+        Pair(test_height(3), test_consensus_state(seed + 3)),
+        Pair(test_height(2), test_consensus_state(seed + 2)),
+      ],
+      processed_times: [
+        Pair(test_height(11), 1),
+        Pair(test_height(10), 0),
+        Pair(test_height(9), 0),
+        Pair(test_height(8), 0),
+        Pair(test_height(7), 0),
+        Pair(test_height(6), 0),
+        Pair(test_height(5), 0),
+        Pair(test_height(4), 0),
+        Pair(test_height(3), 0),
+        Pair(test_height(2), 0),
+      ],
+      processed_heights: [
+        Pair(test_height(11), 1),
+        Pair(test_height(10), 0),
+        Pair(test_height(9), 0),
+        Pair(test_height(8), 0),
+        Pair(test_height(7), 0),
+        Pair(test_height(6), 0),
+        Pair(test_height(5), 0),
+        Pair(test_height(4), 0),
+        Pair(test_height(3), 0),
+        Pair(test_height(2), 0),
+      ],
+    },
+    token: test_client_token(),
+  }
+}
+
+fn proof_limit_host_fixture(seed: Int) -> ProofLimitHostFixture {
+  let input_client_datum = proof_limit_input_client_datum(seed)
+  let output_client_datum = proof_limit_output_client_datum(seed)
+  let client_state_siblings = proof_limit_client_state_siblings()
+  let removed_consensus_state_siblings =
+    proof_limit_removed_consensus_state_siblings()
+  let consensus_state_siblings = proof_limit_consensus_state_siblings()
+  let old_state = test_host_state(proof_limit_old_root, seed)
+  ProofLimitHostFixture {
+    old_state,
+    new_state: HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: proof_limit_new_root,
+    },
+    input_client_datum,
+    output_client_datum,
+    redeemer: UpdateClient {
+      client_state_siblings,
+      consensus_state_siblings,
+      removed_consensus_state_siblings: [removed_consensus_state_siblings],
+    },
+  }
+}
+
+test host_update_client_proof_limit_10_fixture_is_well_formed() {
+  let fixture = proof_limit_host_fixture(613)
+  list.length(fixture.input_client_datum.state.consensus_states) == 10 && list.length(
+    fixture.output_client_datum.state.consensus_states,
+  ) == 10
+}
+
+test host_update_client_proof_limit_10_old_root_commits_all_states() {
+  let fixture = proof_limit_host_fixture(613)
+  let consensus_states = fixture.input_client_datum.state.consensus_states
+  let leaves =
+    [
+      reference_commitment_leaf(
+        client_keys.full_client_state_path("07-tendermint-0"),
+        cbor.serialise(fixture.input_client_datum.state.client_state),
+      ),
+      ..list.map(
+        consensus_states,
+        fn(pair) {
+          reference_commitment_leaf(
+            client_keys.full_client_consensus_state_path(
+              "07-tendermint-0",
+              pair.1st.revision_height
+                |> string.from_int
+                |> string.to_bytearray,
+            ),
+            cbor.serialise(pair.2nd),
+          )
+        },
+      )
+    ]
+
+  list.length(consensus_states) == 10 && reference_commitment_root(
+    leaves,
+    9_223_372_036_854_775_808,
+  ) == proof_limit_old_root
+}
+
+test host_update_client_proof_limit_10_precomputed_transition_is_exact() {
+  let fixture = proof_limit_host_fixture(613)
+  let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
+  let removed_consensus_key =
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+  let new_consensus_key =
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "11")
+  let root_after_client =
+    ibc_state_commitment.apply_update(
+      proof_limit_old_root,
+      client_state_key,
+      cbor.serialise(fixture.input_client_datum.state.client_state),
+      cbor.serialise(fixture.output_client_datum.state.client_state),
+      proof_limit_client_state_siblings(),
+    )
+  let root_after_removal =
+    ibc_state_commitment.apply_update(
+      root_after_client,
+      removed_consensus_key,
+      cbor.serialise(test_consensus_state(614)),
+      "",
+      proof_limit_removed_consensus_state_siblings(),
+    )
+  let new_root =
+    ibc_state_commitment.apply_update(
+      root_after_removal,
+      new_consensus_key,
+      "",
+      cbor.serialise(test_consensus_state(624)),
+      proof_limit_consensus_state_siblings(),
+    )
+  and {
+    root_after_client == proof_limit_root_after_client,
+    root_after_removal == proof_limit_root_after_removal,
+    ibc_state_commitment.compute_root(
+      removed_consensus_key,
+      empty_ibc_state_root,
+      proof_limit_removed_consensus_state_siblings(),
+    ) == proof_limit_root_after_removal,
+    new_root == proof_limit_new_root,
+  }
+}
+
+test host_update_client_proof_limit_10_with_one_removal_succeeds() {
+  let fixture = proof_limit_host_fixture(613)
+  spend_host_state(
+    fixture.redeemer,
+    [
+      test_host_input(fixture.old_state),
+      test_client_input(fixture.input_client_datum),
+    ],
+    [
+      test_host_output(fixture.new_state),
+      test_client_output(fixture.output_client_datum),
+    ],
+  )
+}
+
 /// Deterministic companion for the Tendermint UpdateClient capacity report.
 ///
 /// Keep this as a unit test (rather than a property test) so `aiken check`
@@ -1272,6 +1604,178 @@ test host_update_client_capacity_minimum_history_succeeds() {
     UpdateClient {
       client_state_siblings,
       consensus_state_siblings,
+      removed_consensus_state_siblings: [],
+    }
+
+  spend_host_state(
+    redeemer,
+    [test_host_input(old_state), test_client_input(input_client_datum)],
+    [test_host_output(new_state), test_client_output(output_client_datum)],
+  )
+}
+
+/// A two-header proof freezes the client without inserting or deleting a
+/// consensus state. This is the HostState half of that exact transaction.
+test host_update_client_proof_misbehaviour_freeze_minimum_history_succeeds() {
+  let seed = 613
+  let input_client_datum = test_client_datum(1, seed)
+  let output_client_datum = test_frozen_client_datum(input_client_datum)
+  let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
+  let consensus_key =
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+  let old_client_state_value =
+    cbor.serialise(input_client_datum.state.client_state)
+  let new_client_state_value =
+    cbor.serialise(output_client_datum.state.client_state)
+  let consensus_value = cbor.serialise(test_consensus_state(seed))
+  let empty_siblings = full_empty_siblings()
+  let root_after_client =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      client_state_key,
+      "",
+      old_client_state_value,
+      empty_siblings,
+    )
+  let consensus_siblings =
+    siblings_after_single_insert(
+      client_state_key,
+      old_client_state_value,
+      consensus_key,
+    )
+  let old_root =
+    ibc_state_commitment.apply_update(
+      root_after_client,
+      consensus_key,
+      "",
+      consensus_value,
+      consensus_siblings,
+    )
+  let client_state_siblings =
+    siblings_after_single_insert(
+      consensus_key,
+      consensus_value,
+      client_state_key,
+    )
+  let new_root =
+    ibc_state_commitment.apply_update(
+      old_root,
+      client_state_key,
+      old_client_state_value,
+      new_client_state_value,
+      client_state_siblings,
+    )
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+  let redeemer: HostStateRedeemer =
+    UpdateClient {
+      client_state_siblings,
+      consensus_state_siblings: [],
+      removed_consensus_state_siblings: [],
+    }
+
+  spend_host_state(
+    redeemer,
+    [test_host_input(old_state), test_client_input(input_client_datum)],
+    [test_host_output(new_state), test_client_output(output_client_datum)],
+  )
+}
+
+const released_misbehaviour_old_root =
+  #"9e766909d2f01d99511629692d7db96b8a7fa32b512e009599362d6fb84441db"
+
+const released_misbehaviour_new_root =
+  #"886887a000437c2929143aa853b94e76b527d049ca368300851370230e1d3822"
+
+fn released_misbehaviour_client_state_siblings() -> List<ByteArray> {
+  proof_limit_zero_prefix(
+    61,
+    [
+      #"2dfedba764e156bea1fa937833d400d85e735f5f7027adf8bb240bbeb856febf",
+      empty_ibc_state_root,
+      #"93bb51767b4f9b5e5cae4c840584881bb81de0ea7a55f067f63b6565a638bfbf",
+    ],
+  )
+}
+
+fn released_misbehaviour_input_client_datum() -> ClientDatum {
+  let output = proof_fixture.misbehaviour_output()
+  let latest_consensus_state =
+    ConsensusState {
+      ..output.trusted_consensus_state_1,
+      timestamp: output.trusted_consensus_state_1.timestamp + 1,
+    }
+  let latest_processed_time =
+    output.trusted_consensus_state_1.timestamp + 1_000_000_000
+  ClientDatum {
+    state: ClientDatumState {
+      client_state: output.client_state,
+      consensus_states: [
+        Pair(output.client_state.latest_height, latest_consensus_state),
+        Pair(output.trusted_height_1, output.trusted_consensus_state_1),
+      ],
+      processed_times: [
+        Pair(output.client_state.latest_height, latest_processed_time),
+        Pair(output.trusted_height_1, 0),
+      ],
+      processed_heights: [
+        Pair(
+          output.client_state.latest_height,
+          latest_processed_time / 4_000_000_000,
+        ),
+        Pair(output.trusted_height_1, 0),
+      ],
+    },
+    token: test_client_token(),
+  }
+}
+
+fn released_misbehaviour_output_client_datum() -> ClientDatum {
+  let input = released_misbehaviour_input_client_datum()
+  ClientDatum {
+    ..input,
+    state: ClientDatumState {
+      ..input.state,
+      client_state: ClientState {
+        ..input.state.client_state,
+        frozen_height: Height { revision_number: 0, revision_height: 1 },
+      },
+    },
+  }
+}
+
+test host_update_client_proof_misbehaviour_released_freeze_is_exact() {
+  let input = released_misbehaviour_input_client_datum()
+  let output = released_misbehaviour_output_client_datum()
+  ibc_state_commitment.apply_update(
+    released_misbehaviour_old_root,
+    client_keys.full_client_state_path("07-tendermint-0"),
+    cbor.serialise(input.state.client_state),
+    cbor.serialise(output.state.client_state),
+    released_misbehaviour_client_state_siblings(),
+  ) == released_misbehaviour_new_root
+}
+
+test host_update_client_proof_misbehaviour_released_freeze_succeeds() {
+  let seed = 613
+  let input_client_datum = released_misbehaviour_input_client_datum()
+  let output_client_datum = released_misbehaviour_output_client_datum()
+  let old_state = test_host_state(released_misbehaviour_old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: released_misbehaviour_new_root,
+    }
+  let redeemer: HostStateRedeemer =
+    UpdateClient {
+      client_state_siblings: released_misbehaviour_client_state_siblings(),
+      consensus_state_siblings: [],
       removed_consensus_state_siblings: [],
     }
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	groth16bls12381 "github.com/consensys/gnark/backend/groth16/bls12-381"
 	groth16bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	"github.com/consensys/gnark/backend/witness"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/debug"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -138,21 +140,49 @@ type cardanoVKJSON struct {
 	CommitmentHashDomain         string                    `json:"commitment_hash_domain"`
 }
 
+type serializedWriter interface {
+	WriteTo(io.Writer) (int64, error)
+}
+
+type serializedReader interface {
+	ReadFrom(io.Reader) (int64, error)
+}
+
+type keyFileMetadata struct {
+	Bytes  int64  `json:"bytes"`
+	SHA256 string `json:"sha256"`
+}
+
+type outerKeyMetadata struct {
+	Curve            string                     `json:"curve"`
+	DevelopmentSetup bool                       `json:"development_setup"`
+	Constraints      int                        `json:"constraints"`
+	Files            map[string]keyFileMetadata `json:"files"`
+}
+
 func main() {
 	var (
 		fixturePath = flag.String("fixture", "../fixtures/update_client_fixture-groth16.json", "Eureka update-client Groth16 fixture")
-		prove       = flag.Bool("prove", false, "run insecure development setup, outer proof generation, and verification")
+		prove       = flag.Bool("prove", false, "generate and verify an outer proof using a fixed key directory")
+		keyDir      = flag.String("key-dir", "", "gitignored directory containing the fixed outer CCS, proving key, and verifying key")
+		setupKeys   = flag.Bool("setup-keys", false, "create the fixed development keys; refuses to overwrite existing key files")
 		outDir      = flag.String("out", "", "optional directory for Cardano-formatted proof and VK artifacts")
 	)
 	flag.Parse()
 
-	if err := run(*fixturePath, *prove, *outDir); err != nil {
+	if err := run(*fixturePath, *prove, *keyDir, *setupKeys, *outDir); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(fixturePath string, doProve bool, outDir string) error {
+func run(fixturePath string, doProve bool, keyDir string, setupKeys bool, outDir string) error {
+	if setupKeys && !doProve {
+		return errors.New("-setup-keys requires -prove")
+	}
+	if doProve && keyDir == "" {
+		return errors.New("-prove requires -key-dir so proofs reuse a stable outer verifying key")
+	}
 	fixture, err := loadFixture(fixturePath)
 	if err != nil {
 		return err
@@ -251,12 +281,10 @@ func run(fixturePath string, doProve bool, outDir string) error {
 		return nil
 	}
 
-	started = time.Now()
-	outerPK, outerVK, err := groth16.Setup(outerCCS)
+	outerCCS, outerPK, outerVK, err := fixedOuterKeys(outerCCS, keyDir, setupKeys)
 	if err != nil {
-		return fmt.Errorf("development Groth16 setup: %w", err)
+		return err
 	}
-	fmt.Printf("outer_setup_seconds: %.3f\n", time.Since(started).Seconds())
 
 	started = time.Now()
 	outerProof, err := groth16.Prove(
@@ -298,6 +326,225 @@ func run(fixturePath string, doProve bool, outDir string) error {
 			return err
 		}
 		fmt.Printf("artifacts: %s\n", outDir)
+	}
+	return nil
+}
+
+func fixedOuterKeys(
+	compiledCCS constraint.ConstraintSystem,
+	keyDir string,
+	setup bool,
+) (constraint.ConstraintSystem, groth16.ProvingKey, groth16.VerifyingKey, error) {
+	const (
+		ccsName       = "outer.r1cs"
+		provingName   = "outer.pk"
+		verifyingName = "outer.vk"
+		metadataName  = "manifest.json"
+	)
+	paths := map[string]string{
+		ccsName:       filepath.Join(keyDir, ccsName),
+		provingName:   filepath.Join(keyDir, provingName),
+		verifyingName: filepath.Join(keyDir, verifyingName),
+	}
+
+	if setup {
+		for name, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				return nil, nil, nil, fmt.Errorf("refusing to overwrite existing fixed key file %s", path)
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, nil, nil, fmt.Errorf("inspect fixed key file %s: %w", name, err)
+			}
+		}
+		// These are public proving artifacts, not setup randomness. The prover
+		// container runs as an unprivileged uid and must be able to read the
+		// bind-mounted directory created by the host provisioning command.
+		if err := os.MkdirAll(keyDir, 0o755); err != nil {
+			return nil, nil, nil, fmt.Errorf("create fixed key directory: %w", err)
+		}
+		if err := os.Chmod(keyDir, 0o755); err != nil {
+			return nil, nil, nil, fmt.Errorf("make fixed key directory container-readable: %w", err)
+		}
+
+		started := time.Now()
+		outerPK, outerVK, err := groth16.Setup(compiledCCS)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("development Groth16 setup: %w", err)
+		}
+		fmt.Printf("outer_setup_seconds: %.3f\n", time.Since(started).Seconds())
+
+		started = time.Now()
+		if err := writeSerialized(paths[ccsName], compiledCCS, 0o644); err != nil {
+			return nil, nil, nil, fmt.Errorf("persist outer constraint system: %w", err)
+		}
+		if err := writeSerialized(paths[provingName], outerPK, 0o644); err != nil {
+			return nil, nil, nil, fmt.Errorf("persist outer proving key: %w", err)
+		}
+		if err := writeSerialized(paths[verifyingName], outerVK, 0o644); err != nil {
+			return nil, nil, nil, fmt.Errorf("persist outer verifying key: %w", err)
+		}
+		fmt.Printf("outer_key_write_seconds: %.3f\n", time.Since(started).Seconds())
+		if err := writeOuterKeyMetadata(
+			filepath.Join(keyDir, metadataName),
+			compiledCCS.GetNbConstraints(),
+			paths,
+		); err != nil {
+			return nil, nil, nil, err
+		}
+		if err := reportOuterKeyFiles("setup", paths); err != nil {
+			return nil, nil, nil, err
+		}
+		return compiledCCS, outerPK, outerVK, nil
+	}
+
+	started := time.Now()
+	outerCCS := groth16.NewCS(ecc.BLS12_381)
+	outerPK := groth16.NewProvingKey(ecc.BLS12_381)
+	outerVK := groth16.NewVerifyingKey(ecc.BLS12_381)
+	if err := readSerialized(paths[ccsName], outerCCS); err != nil {
+		return nil, nil, nil, fmt.Errorf("load fixed outer constraint system: %w", err)
+	}
+	if err := readSerialized(paths[provingName], outerPK); err != nil {
+		return nil, nil, nil, fmt.Errorf("load fixed outer proving key: %w", err)
+	}
+	if err := readSerialized(paths[verifyingName], outerVK); err != nil {
+		return nil, nil, nil, fmt.Errorf("load fixed outer verifying key: %w", err)
+	}
+	fmt.Printf("outer_key_load_seconds: %.3f\n", time.Since(started).Seconds())
+
+	compiledHash, err := serializedSHA256(compiledCCS)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("hash compiled outer constraint system: %w", err)
+	}
+	loadedHash, err := serializedSHA256(outerCCS)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("hash fixed outer constraint system: %w", err)
+	}
+	if loadedHash != compiledHash {
+		return nil, nil, nil, fmt.Errorf(
+			"fixed outer constraint system hash %s does not match compiled circuit %s",
+			loadedHash,
+			compiledHash,
+		)
+	}
+	if err := reportOuterKeyFiles("load", paths); err != nil {
+		return nil, nil, nil, err
+	}
+	return outerCCS, outerPK, outerVK, nil
+}
+
+func writeSerialized(path string, value serializedWriter, mode os.FileMode) error {
+	directory := filepath.Dir(path)
+	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	complete := false
+	defer func() {
+		_ = temporary.Close()
+		if !complete {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(mode); err != nil {
+		return err
+	}
+	if _, err := value.WriteTo(temporary); err != nil {
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	complete = true
+	return nil
+}
+
+func readSerialized(path string, value serializedReader) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	read, err := value.ReadFrom(file)
+	if err != nil {
+		return err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if read != info.Size() {
+		return fmt.Errorf("decoder consumed %d of %d bytes", read, info.Size())
+	}
+	return nil
+}
+
+func serializedSHA256(value serializedWriter) (string, error) {
+	digest := sha256.New()
+	if _, err := value.WriteTo(digest); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func fileMetadata(path string) (keyFileMetadata, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return keyFileMetadata{}, err
+	}
+	defer file.Close()
+	digest := sha256.New()
+	bytesWritten, err := io.Copy(digest, file)
+	if err != nil {
+		return keyFileMetadata{}, err
+	}
+	return keyFileMetadata{Bytes: bytesWritten, SHA256: hex.EncodeToString(digest.Sum(nil))}, nil
+}
+
+func reportOuterKeyFiles(mode string, paths map[string]string) error {
+	fmt.Printf("outer_key_mode: %s\n", mode)
+	for _, name := range []string{"outer.r1cs", "outer.pk", "outer.vk"} {
+		metadata, err := fileMetadata(paths[name])
+		if err != nil {
+			return fmt.Errorf("hash fixed key file %s: %w", paths[name], err)
+		}
+		fmt.Printf("outer_key_%s_bytes: %d\n", name, metadata.Bytes)
+		fmt.Printf("outer_key_%s_sha256: %s\n", name, metadata.SHA256)
+	}
+	return nil
+}
+
+func writeOuterKeyMetadata(path string, constraints int, paths map[string]string) error {
+	files := make(map[string]keyFileMetadata, len(paths))
+	for name, keyPath := range paths {
+		metadata, err := fileMetadata(keyPath)
+		if err != nil {
+			return fmt.Errorf("hash fixed key file %s: %w", keyPath, err)
+		}
+		files[name] = metadata
+	}
+	metadata := outerKeyMetadata{
+		Curve:            "bls12-381",
+		DevelopmentSetup: true,
+		Constraints:      constraints,
+		Files:            files,
+	}
+	encoded, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode fixed key manifest: %w", err)
+	}
+	encoded = append(encoded, '\n')
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		return fmt.Errorf("write fixed key manifest: %w", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		return fmt.Errorf("make fixed key manifest container-readable: %w", err)
 	}
 	return nil
 }
@@ -644,6 +891,9 @@ func writeArtifacts(outDir string, proofBytes []byte, proof cardanoProofJSON, vk
 		encoded = append(encoded, '\n')
 		if err := os.WriteFile(filepath.Join(outDir, name), encoded, 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", name, err)
+		}
+		if err := os.Chmod(filepath.Join(outDir, name), 0o644); err != nil {
+			return fmt.Errorf("make %s container-readable: %w", name, err)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(outDir, "proof.bin"), proofBytes, 0o644); err != nil {

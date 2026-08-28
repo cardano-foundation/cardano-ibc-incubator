@@ -5,10 +5,12 @@ import * as Lucid from '@lucid-evolution/lucid';
 
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { encodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
+import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import {
   encodeMintConnectionRedeemer,
   encodeSpendConnectionRedeemer,
 } from '@shared/types/connection/connection-redeemer';
+import { encodeTendermintProofRedeemer } from '@shared/types/tendermint-proof-redeemer';
 import { encodeVerifyProofRedeemer } from '@shared/types/connection/verify-proof-redeemer';
 import {
   encodeTraceRegistryDatum,
@@ -93,8 +95,22 @@ const TX_OUTPUT_BYTES = 80;
 const TX_MINT_POLICY_BYTES = 45;
 const TX_REFERENCE_INPUT_BYTES = 44;
 const REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES = 200;
+// Applying the two script-hash parameters currently adds 73 bytes to the
+// largest reference script. Keep a larger allowance for this deployment gate.
+const REFERENCE_SCRIPT_PARAMETER_ALLOWANCE_BYTES = 150;
 
-const CAPACITY_HOST_STATE_AIKEN_TEST = 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds';
+const DIRECT_CAPACITY_HOST_STATE_AIKEN_TEST =
+  'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds';
+const PROOF_UPDATE_AIKEN_TESTS = [
+  'host_state_stt.test.host_update_client_proof_limit_10_with_one_removal_succeeds',
+  'ibc/client/ics_007_tendermint_client/proof_update/state.test.proof_transaction_at_10_consensus_state_limit_succeeds',
+  'spending_client.test.proof_update_budget_gate_succeeds',
+] as const;
+const PROOF_MISBEHAVIOUR_AIKEN_TESTS = [
+  'host_state_stt.test.host_update_client_proof_misbehaviour_released_freeze_succeeds',
+  'ibc/client/ics_007_tendermint_client/proof_update/state.test.full_transaction_accepts_exact_released_misbehaviour_proof',
+  'spending_client.test.proof_update_budget_gate_succeeds',
+] as const;
 const CAPACITY_SCENARIOS = [
   {
     fixtureName: 'adjacent_all_signed',
@@ -425,6 +441,7 @@ async function buildScenarios(
     'spending_connection.spend_connection.spend',
     'spending_transfer_module.spend_transfer_module.spend',
     'trace_registry.spend_trace_registry.spend',
+    'withdraw_tendermint_update.verify_tendermint_update.withdraw',
     'spending_channel/acknowledge_packet.acknowledge_packet.mint',
     'spending_channel/chan_open_ack.chan_open_ack.mint',
     'spending_channel/prune_packet_history.prune_packet_history.mint',
@@ -448,7 +465,87 @@ async function buildScenarios(
       datums: [dataBytes('reference datum', 0)],
       largestProofPayloadBytes: 0,
       aikenTests: [],
-      unsignedBytesOverride: largestReferenceScript.bytes + REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES,
+      unsignedBytesOverride:
+        largestReferenceScript.bytes +
+        REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES +
+        REFERENCE_SCRIPT_PARAMETER_ALLOWANCE_BYTES,
+    },
+    {
+      id: 'sp1_tendermint_update_at_history_limit',
+      name: 'SP1 Tendermint UpdateClient at the 10-state history limit',
+      inputCount: 3,
+      outputCount: 2,
+      mintPolicyCount: 0,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_client.spend_client.spend',
+        'withdraw_tendermint_update.verify_tendermint_update.withdraw',
+      ],
+      redeemers: [
+        // At the ten-state limit the Host update carries three complete
+        // 64-level witnesses: update the client, add one state, remove one.
+        dataBytes('host state UpdateClient redeemer', 7_000),
+        sized('spend client UpdateClientProof', await encodeSpendClientRedeemer('UpdateClientProof', Lucid)),
+        sized(
+          'Tendermint proof withdrawal',
+          encodeTendermintProofRedeemer(
+            {
+              Update: {
+                client_input_ref: { transaction_id: hexOfBytes(32, '11'), output_index: 1n },
+                trusted_height: { revisionNumber: 0n, revisionHeight: 10n },
+                new_height: { revisionNumber: 0n, revisionHeight: 11n },
+                new_consensus_state: {
+                  timestamp: 123_000_000_000n,
+                  next_validators_hash: hexOfBytes(32, '22'),
+                  root: { hash: hexOfBytes(32, '33') },
+                },
+                proof_time: 124_000_000_000n,
+                proof: hexOfBytes(288, '44'),
+              },
+            },
+            Lucid,
+          ),
+        ),
+      ],
+      datums: [dataBytes('updated host state datum', 1_000), dataBytes('updated 10-state client datum', 1_500)],
+      largestProofPayloadBytes: 288,
+      aikenTests: [...PROOF_UPDATE_AIKEN_TESTS],
+    },
+    {
+      id: 'sp1_tendermint_released_misbehaviour',
+      name: 'SP1 Tendermint released two-header misbehaviour proof',
+      inputCount: 3,
+      outputCount: 2,
+      mintPolicyCount: 0,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_client.spend_client.spend',
+        'withdraw_tendermint_update.verify_tendermint_update.withdraw',
+      ],
+      redeemers: [
+        // Freezing changes only the committed client state, so HostState
+        // carries one complete 64-level witness.
+        dataBytes('host state misbehaviour redeemer', 2_400),
+        sized('spend client UpdateClientProof', await encodeSpendClientRedeemer('UpdateClientProof', Lucid)),
+        sized(
+          'Tendermint misbehaviour proof withdrawal',
+          encodeTendermintProofRedeemer(
+            {
+              Misbehaviour: {
+                client_input_ref: { transaction_id: hexOfBytes(32, '55'), output_index: 1n },
+                trusted_height_1: { revisionNumber: 0n, revisionHeight: 1n },
+                trusted_height_2: { revisionNumber: 0n, revisionHeight: 1n },
+                proof_time: 1_000_003_600_000_000_000n,
+                proof: hexOfBytes(288, '66'),
+              },
+            },
+            Lucid,
+          ),
+        ),
+      ],
+      datums: [dataBytes('updated host state datum', 1_000), dataBytes('frozen client datum', 1_000)],
+      largestProofPayloadBytes: 288,
+      aikenTests: [...PROOF_MISBEHAVIOUR_AIKEN_TESTS],
     },
     {
       id: 'bind_port_at_global_cap',
@@ -880,7 +977,7 @@ async function buildScenarios(
 
 async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
   const fixture = loadNormalizedCapacityFixture();
-  const hostState = requiredAikenTestUnits(aikenTests, CAPACITY_HOST_STATE_AIKEN_TEST);
+  const hostState = requiredAikenTestUnits(aikenTests, DIRECT_CAPACITY_HOST_STATE_AIKEN_TEST);
 
   return Promise.all(
     CAPACITY_SCENARIOS.map(async ({ fixtureName, aikenTest }) => {

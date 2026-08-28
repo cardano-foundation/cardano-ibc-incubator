@@ -6,3 +6,4 @@ export * from "./TransferEscrowShardRedeemer.ts";
 export * from "./TransferModuleDatum.ts";
 export * from "./OutputReference.ts";
 export * from "./TraceRegistry.ts";
+export * from "./TendermintProofVerificationKey.ts";

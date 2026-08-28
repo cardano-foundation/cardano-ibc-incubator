@@ -6,5 +6,5 @@ pub type MintClientRedeemer {
 
 pub type SpendClientRedeemer {
   UpdateClient { msg: ClientMessage }
-  Other
+  UpdateClientProof
 }

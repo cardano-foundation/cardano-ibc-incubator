@@ -12,6 +12,7 @@ import {
   TransferIBCModuleRedeemer,
 } from './apps/transfer/transfer-ibc-module-redeemer';
 import { decodeIBCModuleRedeemer, encodeIBCModuleRedeemer } from './port/ibc_module_redeemer';
+import { decodeSpendClientRedeemer, encodeSpendClientRedeemer } from './client-redeemer';
 
 const EMPTY_PROOF = { proofs: [] } as const;
 const HEIGHT = { revisionNumber: 0n, revisionHeight: 11n } as const;
@@ -30,6 +31,15 @@ const PACKET = {
 const MITHRIL_CLIENT_STATE_HEX = 'aabbccdd';
 
 describe('Redeemer encoding regression', () => {
+  it('uses the rejected legacy constructor slot for proof-based UpdateClient', async () => {
+    const redeemer = 'UpdateClientProof' as const;
+
+    const encoded = await encodeSpendClientRedeemer(redeemer, Lucid);
+
+    expect(encoded).toBe('d87a80');
+    expect(decodeSpendClientRedeemer(encoded, Lucid)).toEqual(redeemer);
+  });
+
   it('keeps MintChannel redeemer encoding stable', async () => {
     const encoded = await encodeMintChannelRedeemer(
       {

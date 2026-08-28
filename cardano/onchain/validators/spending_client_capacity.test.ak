@@ -34,6 +34,9 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use spending_client
 
+const mock_proof_validator_hash =
+  #"11111111111111111111111111111111111111111111111111111111"
+
 type MockData {
   host_state_nft_policy_id: PolicyId,
   host_state_input: Input,
@@ -227,6 +230,7 @@ fn check_update_client_capacity(
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    mock_proof_validator_hash,
     Some(client_datum),
     redeemer,
     mock.output_reference,

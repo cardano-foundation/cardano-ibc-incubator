@@ -4,12 +4,12 @@ import { ClientMessage } from './msgs/client-message';
 type MintClientRedeemer = 'MintClient';
 
 export type SpendClientRedeemer =
-  | 'Other'
   | {
       UpdateClient: {
         msg: ClientMessage;
       };
-    };
+    }
+  | 'UpdateClientProof';
 
 export function decodeMintClientRedeemer(
   mintClientRedeemer: string,
@@ -121,7 +121,7 @@ export async function encodeSpendClientRedeemer(
     Data.Object({
       UpdateClient: Data.Object({ msg: ClientMessageSchema }),
     }),
-    Data.Literal('Other'),
+    Data.Literal('UpdateClientProof'),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;
@@ -214,7 +214,7 @@ export function decodeSpendClientRedeemer(
     Data.Object({
       UpdateClient: Data.Object({ msg: ClientMessageSchema }),
     }),
-    Data.Literal('Other'),
+    Data.Literal('UpdateClientProof'),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;

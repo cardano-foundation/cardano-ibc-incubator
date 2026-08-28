@@ -8,6 +8,10 @@
       "url": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-update-client",
       "sha256": "6a6a40df2b1339455de7b238fdf3e914f4c2f99e85b8fc4abb65fb1664f42270"
     },
+    "misbehaviourElf": {
+      "url": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-misbehaviour",
+      "sha256": "6ec141ebb604565dfb7669f8482bd3eacc57ae35158ba3931f1c20f78f7bf921"
+    },
     "sp1Version": "6.1.0"
   },
   "cardanoGroth16Verifier": {
@@ -34,6 +38,75 @@
       "public_values.bin": "b0964b25f1b1680f9eb3044629edbab71d1a15e61270f8ff1fecddc7ab894afc",
       "public_values.hex": "07e92d50b4aa956eecf22f72b6a5d8fdafcbaaab3ca634fc52640ce00bfb1ae8",
       "verification_key.json": "4e9473da0c2b76313040b80cc83157257a701b4f80c60598fd136bf9ebdc2d1d"
+    }
+  },
+  "proverService": {
+    "program": "sp1-ics07-tendermint-update-client-v2.0.0",
+    "programVkey": "00d38536f65ab10e7eff0895b1b9f7cf12f89691631742bb487fe090027e0e6d",
+    "httpPath": "/v1/tendermint/update-client/proof",
+    "misbehaviour": {
+      "program": "sp1-ics07-tendermint-misbehaviour-v2.0.0",
+      "programVkey": "0010008da4267c2e85d02616e853379e3c937c03a271b5b005f479cff09ccfcb",
+      "httpPath": "/v1/tendermint/misbehaviour/proof"
+    },
+    "stableDevelopmentSetup": {
+      "constraints": 1192065,
+      "setupSeconds": 216.715,
+      "filesNotCommitted": {
+        "outer.r1cs": {
+          "bytes": 62355655,
+          "sha256": "e56e08438f85b4e6c5cff9faa3cd42cf3307859b106a7e1cb6ba9f8c813c2512"
+        },
+        "outer.pk": {
+          "bytes": 505324081,
+          "sha256": "6e2193c290385ad7582594066c7c88a9ed50f3584a31ffad72b9e3f5d419ca9d"
+        },
+        "outer.vk": {
+          "bytes": 832,
+          "sha256": "dcf014ab0fec55883fc7922595119f51f77dcc6596d6ff148311ba03e53abf1e"
+        }
+      },
+      "trackedPublicVerificationKey": {
+        "path": "prover-service/artifacts/wrapper_verification_key.json",
+        "bytes": 1766,
+        "sha256": "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037"
+      }
+    },
+    "injective45Regression": {
+      "validators": 45,
+      "sp1ProveSeconds": 590.383017625,
+      "sp1PeakResidentBytes": 8985001984,
+      "proofTimeNanos": "1787752048403000000",
+      "publicValues": {
+        "path": "prover-service/artifacts/injective-45/public_values.bin",
+        "bytes": 768,
+        "sha256": "4a7114908b8dab0e72c5fd1441afc49c2b9266e04efabf7639d1f53643ae2462"
+      },
+      "wrappedProof": {
+        "path": "prover-service/artifacts/injective-45/wrapped_proof.bin",
+        "bytes": 288,
+        "sha256": "ec5fe188500102c2e974c842257178305365ecf09809effca4a83b1e2629a464"
+      }
+    },
+    "misbehaviourDoubleSignRegression": {
+      "validators": 2,
+      "scenario": "test-chain-0 deterministic double-sign",
+      "evidenceSha256": "bfc567b28ed5326f0c9b384a1015c60006d7b32b289d5e534f3f250f2db89a3a",
+      "proofTimeNanos": "1000003600000000000",
+      "releasePipelineSeconds": 765.06,
+      "preWrapperPipelineSecondsApprox": 623,
+      "outerWrapperSecondsApprox": 142,
+      "maximumResidentBytes": 8208957440,
+      "publicValues": {
+        "path": "prover-service/artifacts/misbehaviour-double-sign-2/public_values.bin",
+        "bytes": 768,
+        "sha256": "1d7e7545afa75466ce623cd1b66250d4cb7d9ba642fc16d441676d7c888c541a"
+      },
+      "wrappedProof": {
+        "path": "prover-service/artifacts/misbehaviour-double-sign-2/wrapped_proof.bin",
+        "bytes": 288,
+        "sha256": "67070bc3eef265a14c887209a21ae84575ca219fd399050bcbb739381c2988c6"
+      }
     }
   }
 }

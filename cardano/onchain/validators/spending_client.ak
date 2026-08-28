@@ -1,5 +1,8 @@
+use aiken/builtin
 use aiken/collection/list
 use aiken/collection/pairs
+use aiken/crypto.{ScriptHash}
+use cardano/address.{Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Input, OutputReference, Spend, Transaction}
 use ibc/auth
@@ -7,7 +10,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  Other, SpendClientRedeemer, UpdateClient,
+  SpendClientRedeemer, UpdateClient, UpdateClientProof,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle as misbehaviour_handle_mod
@@ -15,7 +18,6 @@ use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/update as update_mod
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
-use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/utils/tx_time.{TxTime} as tx_time_mod
 use ibc/utils/validator_utils
 
@@ -31,15 +33,24 @@ fn find_host_state_input(
   )
 }
 
-validator spend_client(host_state_nft_policy_id: PolicyId) {
+validator spend_client(
+  host_state_nft_policy_id: PolicyId,
+  proof_validator_hash: ScriptHash,
+) {
   spend(
     datum: Option<ClientDatum>,
     redeemer: SpendClientRedeemer,
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { outputs, inputs, validity_range, redeemers, .. } =
-      transaction
+    let Transaction {
+      outputs,
+      inputs,
+      withdrawals,
+      validity_range,
+      redeemers,
+      ..
+    } = transaction
 
     // Any client state update must be committed into the HostState root in the
     // same transaction, using the HostState branch that commits client keys.
@@ -47,18 +58,21 @@ validator spend_client(host_state_nft_policy_id: PolicyId) {
       find_host_state_input(inputs, host_state_nft_policy_id)
     expect Some(spent_host_state_redeemer) =
       pairs.get_first(redeemers, Spend(host_input.output_reference))
-    expect host_state_redeemer.UpdateClient { .. }: host_state_redeemer.HostStateRedeemer =
-      spent_host_state_redeemer
+    // HostStateRedeemer.UpdateClient is constructor 4 with exactly three
+    // witness fields. HostState itself decodes and validates those witnesses.
+    let Pair(host_redeemer_tag, host_redeemer_fields) =
+      builtin.un_constr_data(spent_host_state_redeemer)
+    expect host_redeemer_tag == 4
+    expect [_, _, _] = host_redeemer_fields
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
 
     //========================valid input=======================
-    // input contains client token
     expect Some(datum) = datum
-    expect auth.contain_auth_token(spent_output, datum.token)
 
     //========================valid output=======================
+    // This also requires the input to contain the client token.
     let updated_output =
       validator_utils.find_unique_continuation_output(
         spent_output,
@@ -123,7 +137,8 @@ validator spend_client(host_state_nft_policy_id: PolicyId) {
         }
       }
 
-      Other -> False
+      UpdateClientProof ->
+        pairs.get_first(withdrawals, Script(proof_validator_hash)) == Some(0)
     }
   }
 

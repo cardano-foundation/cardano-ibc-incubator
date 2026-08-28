@@ -1,3 +1,6 @@
 /.cache/
+/artifacts-production/
+/artifacts-production-aligned/
+/attempt-logs/
 /target/
 !Cargo.lock

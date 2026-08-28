@@ -59,6 +59,7 @@ export type DeploymentConfig = {
   validators: {
     hostStateStt: DeploymentValidator;
     spendClient: DeploymentValidator;
+    tendermintProof?: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
     spendMockModule?: DeploymentValidator;
@@ -153,6 +154,7 @@ export type BridgeManifest = {
   validators: {
     host_state_stt: BridgeManifestValidator;
     spend_client: BridgeManifestValidator;
+    tendermint_proof?: BridgeManifestValidator;
     spend_connection: BridgeManifestValidator;
     spend_channel: BridgeManifestSpendChannelValidator;
     spend_mock_module?: BridgeManifestValidator;
@@ -578,6 +580,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
     validators: {
       hostStateStt: requireDeploymentValidator(validators.hostStateStt, 'validators.hostStateStt'),
       spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
+      ...(validators.tendermintProof
+        ? { tendermintProof: requireDeploymentValidator(validators.tendermintProof, 'validators.tendermintProof') }
+        : {}),
       spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection'),
       spendChannel: requireDeploymentSpendChannelValidator(validators.spendChannel, 'validators.spendChannel'),
       ...(validators.spendMockModule
@@ -633,6 +638,9 @@ export function normalizeHandlerJsonDeploymentConfig(
       validators: {
         host_state_stt: deploymentValidatorToManifest(normalizedDeployment.validators.hostStateStt),
         spend_client: deploymentValidatorToManifest(normalizedDeployment.validators.spendClient),
+        ...(normalizedDeployment.validators.tendermintProof
+          ? { tendermint_proof: deploymentValidatorToManifest(normalizedDeployment.validators.tendermintProof) }
+          : {}),
         spend_connection: deploymentValidatorToManifest(normalizedDeployment.validators.spendConnection),
         spend_channel: deploymentSpendChannelToManifest(normalizedDeployment.validators.spendChannel),
         ...(normalizedDeployment.validators.spendMockModule
@@ -689,6 +697,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     validators: {
       host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
       spend_client: requireManifestValidator(validators.spend_client, 'validators.spend_client'),
+      ...(validators.tendermint_proof
+        ? { tendermint_proof: requireManifestValidator(validators.tendermint_proof, 'validators.tendermint_proof') }
+        : {}),
       spend_connection: requireManifestValidator(validators.spend_connection, 'validators.spend_connection'),
       spend_channel: requireManifestSpendChannelValidator(validators.spend_channel, 'validators.spend_channel'),
       ...(validators.spend_mock_module
@@ -741,6 +752,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       validators: {
         hostStateStt: manifestValidatorToDeployment(bridgeManifest.validators.host_state_stt),
         spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
+        ...(bridgeManifest.validators.tendermint_proof
+          ? { tendermintProof: manifestValidatorToDeployment(bridgeManifest.validators.tendermint_proof) }
+          : {}),
         spendConnection: manifestValidatorToDeployment(bridgeManifest.validators.spend_connection),
         spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
         ...(bridgeManifest.validators.spend_mock_module

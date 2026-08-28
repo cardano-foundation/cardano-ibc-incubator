@@ -60,6 +60,8 @@ import { convertHex2String } from './hex';
 export interface StateRootResult {
   /** The computed new root hash (64-character hex string) */
   newRoot: string;
+  /** Exact speculative tree that produces newRoot, for crash-safe pending updates. */
+  treeSnapshot: ICS23MerkleTree;
   /** Call this ONLY after the transaction is confirmed on-chain */
   commit: () => void;
 }
@@ -260,6 +262,7 @@ export function computeRootWithCreateClientUpdate(
 
   return {
     newRoot,
+    treeSnapshot: speculativeTree,
     clientStateSiblings,
     consensusStateSiblings,
     commit: () => {
@@ -351,6 +354,7 @@ export function computeRootWithUpdateClientUpdate(
 
   return {
     newRoot,
+    treeSnapshot: speculativeTree,
     clientStateSiblings,
     consensusStateSiblings,
     removedConsensusStateSiblings,
@@ -382,6 +386,7 @@ export function computeRootWithCreateConnectionUpdate(
 
   return {
     newRoot,
+    treeSnapshot: speculativeTree,
     connectionSiblings,
     commit: () => {
       currentTree = speculativeTree;
@@ -431,6 +436,7 @@ export function computeRootWithCreateChannelUpdate(
 
   return {
     newRoot,
+    treeSnapshot: speculativeTree,
     channelSiblings,
     nextSequenceSendSiblings,
     nextSequenceRecvSiblings,
@@ -466,6 +472,7 @@ export function computeRootWithUpdateChannelUpdate(
 
   return {
     newRoot,
+    treeSnapshot: speculativeTree,
     channelSiblings,
     commit: () => {
       currentTree = speculativeTree;
@@ -640,6 +647,7 @@ export async function computeRootWithHandlePacketUpdate(
 
   return {
     newRoot,
+    treeSnapshot: speculativeTree,
     channelSiblings,
     nextSequenceSendSiblings,
     nextSequenceRecvSiblings,
@@ -691,6 +699,7 @@ export function computeRootWithPrunePacketHistoryUpdate(
   const newRoot = speculativeTree.getRoot();
   return {
     newRoot,
+    treeSnapshot: speculativeTree,
     packetReceiptSiblings,
     packetAcknowledgementSiblings,
     commit: () => {
@@ -726,6 +735,7 @@ export function computeRootWithPortBind(
 
   return {
     newRoot,
+    treeSnapshot: speculativeTree,
     portSiblings,
     commit: () => {
       currentTree = speculativeTree;

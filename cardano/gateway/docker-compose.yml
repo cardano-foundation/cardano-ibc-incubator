@@ -35,6 +35,18 @@ services:
     env_file:
       - .env
 
+  sp1-tendermint-prover:
+    profiles: ["sp1"]
+    container_name: sp1-tendermint-prover
+    build:
+      context: ../../studies/sp1_tendermint_cardano
+      dockerfile: prover-service/Dockerfile
+    restart: unless-stopped
+    networks:
+      - cardano_network
+    volumes:
+      - ${CARDANO_BLS_WRAPPER_KEYS_HOST_PATH:-../../studies/sp1_tendermint_cardano/prover-service/keys-local}:/var/lib/cardano-ibc-wrapper:ro
+
 networks:
   cardano_network:
     external: true

@@ -1,0 +1,5 @@
+/target/
+/keys-local/
+/artifacts-local/
+/.cache/
+!Cargo.lock

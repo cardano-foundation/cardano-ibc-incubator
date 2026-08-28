@@ -1,0 +1,45 @@
+{
+  "case": "injective-45",
+  "validators": 45,
+  "program": "sp1-ics07-tendermint-update-client-v2.0.0",
+  "programVkey": "00d38536f65ab10e7eff0895b1b9f7cf12f89691631742bb487fe090027e0e6d",
+  "eurekaRelease": "sp1-programs-v2.0.0",
+  "eurekaCommit": "ef25a661a8be156d4908956e1055ca40cd67adb7",
+  "eurekaElfSha256": "6a6a40df2b1339455de7b238fdf3e914f4c2f99e85b8fc4abb65fb1664f42270",
+  "sp1Version": "6.1.0",
+  "proofTimeNanos": "1787752048403000000",
+  "trustedHeight": {
+    "revisionNumber": "1",
+    "revisionHeight": "180315956"
+  },
+  "newHeight": {
+    "revisionNumber": "1",
+    "revisionHeight": "180315957"
+  },
+  "sp1Proof": {
+    "bytes": 356,
+    "sha256": "59e8bee4675acaff55fbfbf4d9aa5c495596112223268b8e89babbf5f64d4b8f",
+    "proveSeconds": 590.383017625
+  },
+  "publicValues": {
+    "path": "public_values.bin",
+    "bytes": 768,
+    "sha256": "4a7114908b8dab0e72c5fd1441afc49c2b9266e04efabf7639d1f53643ae2462"
+  },
+  "wrappedProof": {
+    "path": "wrapped_proof.bin",
+    "bytes": 288,
+    "sha256": "ec5fe188500102c2e974c842257178305365ecf09809effca4a83b1e2629a464"
+  },
+  "wrapperPublicVkey": {
+    "path": "../wrapper_verification_key.json",
+    "sha256": "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037"
+  },
+  "wrapperSetup": {
+    "developmentSetup": true,
+    "constraints": 1192065,
+    "r1csSha256": "e56e08438f85b4e6c5cff9faa3cd42cf3307859b106a7e1cb6ba9f8c813c2512",
+    "provingKeySha256": "6e2193c290385ad7582594066c7c88a9ed50f3584a31ffad72b9e3f5d419ca9d",
+    "rawVerificationKeySha256": "dcf014ab0fec55883fc7922595119f51f77dcc6596d6ff148311ba03e53abf1e"
+  }
+}

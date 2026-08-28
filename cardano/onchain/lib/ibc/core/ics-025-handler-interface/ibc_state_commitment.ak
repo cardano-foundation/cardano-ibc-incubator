@@ -29,7 +29,6 @@
 
 use aiken/builtin
 use aiken/primitive/bytearray
-use ibc/utils/bits
 
 /// Number of bits taken from `sha256(key)` to define the path.
 ///
@@ -90,11 +89,20 @@ pub fn leaf_hash(key_hash: ByteArray, value_hash: ByteArray) -> ByteArray {
 pub fn inner_hash(left: ByteArray, right: ByteArray) -> ByteArray {
   expect bytearray.length(left) == hash_size_bytes
   expect bytearray.length(right) == hash_size_bytes
+  inner_hash_unchecked(left, right, empty_hash)
+}
+
+/// Hash children that were already validated or produced by this module.
+fn inner_hash_unchecked(
+  left: ByteArray,
+  right: ByteArray,
+  zero_hash: ByteArray,
+) -> ByteArray {
   // Special-case an entirely empty subtree.
   //
   // If both children are empty, the parent is empty too.
-  if left == empty_hash && right == empty_hash {
-    empty_hash
+  if left == zero_hash && right == zero_hash {
+    zero_hash
   } else {
     builtin.append_bytearray(#[1], left)
       |> builtin.append_bytearray(right)
@@ -102,21 +110,29 @@ pub fn inner_hash(left: ByteArray, right: ByteArray) -> ByteArray {
   }
 }
 
-/// Read a single bit from a hash, using a stable and well-defined bit order.
-///
-/// We interpret the first 8 bytes of `sha256(key)` as a 64-bit big-endian number.
-/// `bit_index = 0` reads the least significant bit of that number.
-fn bit_at(hash: ByteArray, bit_index: Int) -> Int {
-  // `merkle_depth_bits` is at most 64, so we only look at the first 8 bytes.
-  //
-  // We count bytes from the end of that 8-byte segment so that bit 0 starts at
-  // the least significant end (byte 7, bit 0).
-  let byte_index = 7 - bit_index / 8
-  let bit_in_byte = bit_index % 8
+/// Hash an inner node when at least one child is known to be non-empty.
+fn inner_hash_nonempty(left: ByteArray, right: ByteArray) -> ByteArray {
+  builtin.append_bytearray(#[1], left)
+    |> builtin.append_bytearray(right)
+    |> builtin.sha2_256()
+}
 
-  let byte = builtin.index_bytearray(hash, byte_index)
-  // Shift the selected bit down to position 0 and mask it to 0/1.
-  bits.shr(byte, bit_in_byte) % 2
+/// Hash a leaf whose raw value is known to be non-empty.
+fn leaf_hash_nonempty(key_hash: ByteArray, value: ByteArray) -> ByteArray {
+  builtin.append_bytearray(#[0], key_hash)
+    |> builtin.append_bytearray(builtin.sha2_256(value))
+    |> builtin.sha2_256()
+}
+
+/// Interpret the 64-bit path prefix using the tree's existing bit order.
+/// Dividing this integer by two at each level avoids repeated byte indexing
+/// and power-of-two shifts. Prefix 2 is an unambiguous terminal sentinel;
+/// prefix 3 additionally marks that the committed old root is the second root.
+fn path_bits(key_hash: ByteArray) -> Int {
+  key_hash
+    |> bytearray.take(8)
+    |> builtin.cons_bytearray(2, _)
+    |> bytearray.to_int_big_endian()
 }
 
 /// Compute a root from:
@@ -130,34 +146,32 @@ pub fn compute_root(
 ) -> ByteArray {
   expect bytearray.length(leaf) == hash_size_bytes
   let key_hash = builtin.sha2_256(key)
-  compute_root_go(key_hash, leaf, siblings, 0)
+  compute_root_go(path_bits(key_hash), leaf, siblings)
 }
 
 fn compute_root_go(
-  key_hash: ByteArray,
+  remaining_path: Int,
   current: ByteArray,
   siblings: List<ByteArray>,
-  depth: Int,
 ) -> ByteArray {
-  if depth == merkle_depth_bits {
-    // Require exactly `merkle_depth_bits` sibling hashes, no more and no less.
+  if remaining_path == 2 {
     expect siblings == []
     current
   } else {
     expect [sibling, ..rest] = siblings
     expect bytearray.length(sibling) == hash_size_bytes
 
-    let direction_bit = bit_at(key_hash, depth)
+    let direction_bit = remaining_path % 2
     let next =
       if direction_bit == 0 {
         // 0 means "current node is on the left".
-        inner_hash(current, sibling)
+        inner_hash_unchecked(current, sibling, empty_hash)
       } else {
         // 1 means "current node is on the right".
-        inner_hash(sibling, current)
+        inner_hash_unchecked(sibling, current, empty_hash)
       }
 
-    compute_root_go(key_hash, next, rest, depth + 1)
+    compute_root_go(remaining_path / 2, next, rest)
   }
 }
 
@@ -177,11 +191,84 @@ pub fn apply_update(
   expect bytearray.length(old_root) == hash_size_bytes
 
   let key_hash = builtin.sha2_256(key)
+  let path = path_bits(key_hash)
+  let zero_hash = builtin.replicate_byte(hash_size_bytes, 0)
+  let computed_new_root =
+    if new_value == #"" {
+      expect old_value != #""
+      compute_sparse_update_roots(
+        path + 18446744073709551616,
+        zero_hash,
+        leaf_hash_nonempty(key_hash, old_value),
+        siblings,
+        old_root,
+        zero_hash,
+      )
+    } else {
+      let new_leaf = leaf_hash_nonempty(key_hash, new_value)
+      if old_value == #"" {
+        compute_sparse_update_roots(
+          path,
+          zero_hash,
+          new_leaf,
+          siblings,
+          old_root,
+          zero_hash,
+        )
+      } else {
+        compute_sparse_update_roots(
+          path,
+          leaf_hash_nonempty(key_hash, old_value),
+          new_leaf,
+          siblings,
+          old_root,
+          zero_hash,
+        )
+      }
+    }
 
-  let old_leaf = leaf_hash(key_hash, value_hash(old_value))
-  let computed_old_root = compute_root(key, old_leaf, siblings)
-  expect computed_old_root == old_root
+  computed_new_root
+}
 
-  let new_leaf = leaf_hash(key_hash, value_hash(new_value))
-  compute_root(key, new_leaf, siblings)
+/// Recompute both roots in one pass. The first side may propagate an empty
+/// subtree; the second side is always known to be non-empty.
+fn compute_sparse_update_roots(
+  remaining_path: Int,
+  sparse_current: ByteArray,
+  nonempty_current: ByteArray,
+  siblings: List<ByteArray>,
+  old_root: ByteArray,
+  zero_hash: ByteArray,
+) -> ByteArray {
+  when siblings is {
+    [] ->
+      if remaining_path == 2 {
+        expect sparse_current == old_root
+        nonempty_current
+      } else {
+        expect remaining_path == 3
+        expect nonempty_current == old_root
+        sparse_current
+      }
+    [sibling, ..rest] ->
+      if remaining_path % 2 == 0 {
+        compute_sparse_update_roots(
+          remaining_path / 2,
+          inner_hash_unchecked(sparse_current, sibling, zero_hash),
+          inner_hash_nonempty(nonempty_current, sibling),
+          rest,
+          old_root,
+          zero_hash,
+        )
+      } else {
+        compute_sparse_update_roots(
+          remaining_path / 2,
+          inner_hash_unchecked(sibling, sparse_current, zero_hash),
+          inner_hash_nonempty(sibling, nonempty_current),
+          rest,
+          old_root,
+          zero_hash,
+        )
+      }
+  }
 }

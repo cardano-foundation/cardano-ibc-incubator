@@ -7,7 +7,11 @@ import {
 import headerMockBuilder from '../../../tx/test/mock/header';
 import { clientDatumMockBuilder } from '../../../tx/test/mock/client-datum';
 
-import { checkForMisbehaviour, TENDERMINT_MISBEHAVIOUR_TYPE_URL } from './misbehaviour';
+import {
+  checkForMisbehaviour,
+  checkHeaderForMisbehaviour,
+  TENDERMINT_MISBEHAVIOUR_TYPE_URL,
+} from './misbehaviour';
 
 function header(height: bigint, seconds: bigint, blockHash: number): Header {
   return headerMockBuilder
@@ -60,5 +64,58 @@ describe('checkForMisbehaviour', () => {
     const any = misbehaviourAny(header(3n, 30n, 1), header(3n, 30n, 1));
 
     expect(checkForMisbehaviour(any, clientDatum)).toBe(false);
+  });
+});
+
+describe('checkHeaderForMisbehaviour', () => {
+  const consensusState = (timestamp: bigint, marker: string) => ({
+    timestamp,
+    next_validators_hash: marker.padStart(64, '0'),
+    root: { hash: marker.padStart(64, '0') },
+  });
+
+  it('flags a conflicting stored consensus state at the same full height', () => {
+    const clientDatum = clientDatumMockBuilder.build();
+    clientDatum.state.consensusStates = new Map([
+      [{ revisionNumber: 1n, revisionHeight: 10n }, consensusState(10n, '01')],
+    ]);
+
+    expect(
+      checkHeaderForMisbehaviour(
+        clientDatum,
+        { revisionNumber: 1n, revisionHeight: 10n },
+        consensusState(10n, '02'),
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a non-increasing timestamp at a new height', () => {
+    const clientDatum = clientDatumMockBuilder.build();
+    clientDatum.state.consensusStates = new Map([
+      [{ revisionNumber: 1n, revisionHeight: 10n }, consensusState(20n, '01')],
+    ]);
+
+    expect(
+      checkHeaderForMisbehaviour(
+        clientDatum,
+        { revisionNumber: 1n, revisionHeight: 11n },
+        consensusState(20n, '02'),
+      ),
+    ).toBe(true);
+  });
+
+  it('accepts a new state with a strictly increasing timestamp', () => {
+    const clientDatum = clientDatumMockBuilder.build();
+    clientDatum.state.consensusStates = new Map([
+      [{ revisionNumber: 1n, revisionHeight: 10n }, consensusState(20n, '01')],
+    ]);
+
+    expect(
+      checkHeaderForMisbehaviour(
+        clientDatum,
+        { revisionNumber: 1n, revisionHeight: 11n },
+        consensusState(21n, '02'),
+      ),
+    ).toBe(false);
   });
 });

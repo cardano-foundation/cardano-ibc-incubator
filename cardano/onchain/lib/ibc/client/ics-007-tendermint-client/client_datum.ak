@@ -39,12 +39,16 @@ pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
   let latest_height = client_state_mod.get_latest_height(client_state)
 
   when consensus_states is {
-    [height_consensus_state] -> and {
-        // TODO: add consensus_state.validate_basic()
-        height_consensus_state.1st == latest_height,
-        pairs.has_key(processed_times, latest_height),
-        pairs.has_key(processed_heights, latest_height),
-        token == auth_token,
+    [Pair(consensus_height, _)] ->
+      when (processed_times, processed_heights) is {
+        ([Pair(time_height, _)], [Pair(processed_height, _)]) -> and {
+            // TODO: add consensus_state.validate_basic()
+            consensus_height == latest_height,
+            time_height == latest_height,
+            processed_height == latest_height,
+            token == auth_token,
+          }
+        _ -> False
       }
     _ -> False
   }
