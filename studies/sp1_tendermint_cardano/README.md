@@ -1,83 +1,136 @@
-# SP1 Tendermint proof on Cardano
+# SP1 Tendermint verifier prototype
 
-This study tests whether Cardano can replace direct Tendermint signature and
-validator-set verification with the SP1 ICS-07 program used by IBC Eureka.
+## Result
+
+This study tests whether Cardano can replace direct Tendermint validator-set
+and signature verification with the SP1 ICS-07 program used by IBC Eureka.
 It is isolated from the production validators and Gateway.
 
-The Tendermint part can be reused. Eureka's released SP1 update-client program
-accepts the real 45-validator Injective fixture and a valid generated
-200-validator adjacent update without any chain-specific code. The 200-validator
-case executes 17,222,743 SP1 instructions. The official Eureka Groth16 fixture
-also verifies locally, and its complete Ethereum update message is 1,376 bytes.
+The same Eureka program handled both a real 45-validator Injective update and
+a valid generated 200-validator adjacent update without chain-specific code. The
+Ethereum proof cannot be submitted directly to Cardano, however, because SP1
+6.1 produces a BN254 proof while Plutus provides native pairing operations for
+BLS12-381. The prototype solves that mismatch with one generic recursive
+wrapper:
 
-The final Ethereum proof cannot be verified unchanged on Cardano. SP1 6.1 wraps
-the computation in a BN254 Groth16 or Plonk proof, while Plutus exposes native
-BLS12-381 pairing operations. The prototype therefore adds a generic recursive
-wrapper. It verifies the unchanged Eureka BN254 proof inside a BLS12-381
-Groth16 circuit and exposes the SP1 program key and authenticated public-output
-digest.
+```text
+ICS-07 header -> Eureka SP1 program -> BN254 proof
+             -> BLS12-381 wrapper -> Aiken verifier
+```
 
-That complete curve bridge works. The outer circuit has 1,192,065 constraints,
-produces a 288-byte proof bundle, and generated the outer proof in 8.864 seconds
-after a 214.810-second development setup. The Aiken verifier accepts that exact
-proof at 62,385 memory units and 3,380,262,907 CPU units, below Cardano's current
-16.5-million-memory and 10-billion-CPU per-transaction limits. It rejects
-changed Eureka public values and a changed commitment proof.
+The wrapper verifies the unchanged Eureka proof and produces a 288-byte proof.
+The isolated Aiken verifier accepts it below Cardano's current per-transaction
+limits. This establishes technical feasibility; it is not a complete Cardano
+transaction or production light-client integration.
 
-The 8.864-second measurement is only the recursive wrapper step. It excludes
-generation of the inner SP1 proof.
+## Measurements
 
-The recursive proof wraps an official Eureka proof for the same released
-update-client program. The 200-validator case has only been run through direct
-SP1 execution and mock proving; generating and timing its production SP1 proof
-is still required. SP1 proof size and Aiken verification cost do not depend on
-the Tendermint validator count.
+The released Eureka guest produced the following results:
 
-## Contents
+| Case | Validators | SP1 instructions | Syscalls | Public output |
+| --- | ---: | ---: | ---: | ---: |
+| Injective | 45 | 2,796,372 | 12,585 | 768 bytes |
+| Generated adjacent update | 200 | 17,222,743 | 107,412 | 768 bytes |
 
-`eureka-guest-runner` executes the released Eureka program against the 45- and
-200-validator cases. `eureka-proof-check` verifies the official Ethereum
-Groth16 fixture with `sp1-verifier` 6.1.0 and rejects changed proof/public-value
-bytes. `cardano-verifier` contains the isolated Aiken verifier for the complete
-gnark proof, including its commitment proof.
-`bn254-to-bls-wrapper` contains the recursive-wrapper experiment.
+The 200-validator case was directly executed and mock-proved. A production SP1
+proof for that case has not yet been generated or timed.
 
-The runner downloads Eureka's released ELF rather than copying or modifying
-the guest. A production host can continue to use Eureka's
-`sp1-ics07-tendermint-prover` package or the Succinct proving network, then pass
-the resulting proof through the Cardano wrapper.
+The recursive-wrapper measurement used the official Eureka Groth16 fixture:
 
-The exact upstream revisions and artifact checksum are recorded in
-`provenance.json`. `CURVE_COMPATIBILITY.md` explains the curve mismatch, and
-`CARDANO_BINDING.md` defines which Cardano state must be bound to a proof.
+| Measurement | Result |
+| --- | ---: |
+| Wrapper proof generation | 8.864 seconds |
+| Cardano proof bundle | 288 bytes |
+| Aiken verification | 62,385 memory / 3,380,262,907 CPU |
 
-## Checks
+The wrapper time excludes inner SP1 proving. Its one-time development setup
+took 214.810 seconds and was an insecure single-process setup without a
+production ceremony. The 288-byte bundle contains the Groth16 proof, one gnark
+commitment, and its proof of knowledge. Proof size and Aiken verification cost
+do not depend on validator count, although SP1 proving work does. Tampered proof
+data is rejected.
+
+## What the proof establishes
+
+The SP1 program verifies the expensive ICS-07 work: Tendermint header and
+validator-set hashes, canonical vote bytes, Ed25519 signatures, voting-power
+thresholds, trusted overlap for skipped-height updates, and time rules.
+
+The wrapper fixes the SP1 Groth16 verification key and recursion key root,
+requires a successful SP1 exit, and exposes the update-client program key plus
+masked SHA-256 of the exact 768-byte `UpdateClientOutput`. The Aiken
+validator must pin the expected keys, recompute that digest, decode the output,
+and bind its trusted and new heights and consensus states to the consumed and
+produced client state, transaction validity interval, processed consensus
+metadata, and corresponding HostState update.
+
+Eureka fixes maximum clock drift at 15 seconds inside this guest. A production
+Cardano validator must additionally apply the configured Cardano client clock
+drift to the proved timestamp. Misbehaviour requires a separate proved
+statement that binds both headers and the frozen client output. Membership and
+combined update-plus-membership also require separate programs and statements;
+they were not tested here.
+
+## Proposed integration
+
+Hermes can continue to submit standard ICS-07 headers. The Gateway, or a prover
+service called by it, would run Eureka's existing SP1 prover and the generic
+curve wrapper, then build a proof-bearing Cardano transaction. The prover is
+not trusted for safety because invalid proofs fail on-chain, but it is a
+liveness dependency.
+
+The Aiken client validator would perform proof verification, Cardano state
+binding, and the existing state transition. Cosmos Go light-client modules do
+not change. The new Aiken script would require a new Cardano deployment.
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `eureka-guest-runner` | Runs the released Eureka program with 45 and 200 validators. |
+| `eureka-proof-check` | Verifies the official SP1 BN254 fixture and rejection cases. |
+| `bn254-to-bls-wrapper` | Builds and tests the recursive curve wrapper. |
+| `cardano-verifier` | Verifies the exact wrapped proof in Aiken. |
+| `fixtures` | Contains the pinned upstream Eureka proof fixture. |
+| `provenance.json` | Records upstream revisions and artifact hashes. |
+
+Run the focused checks with:
 
 ```sh
-cd studies/sp1_tendermint_cardano/eureka-proof-check
+cd studies/sp1_tendermint_cardano/eureka-guest-runner
+./run.sh
+
+cd ../eureka-proof-check
 cargo test --locked
 cargo run --locked --quiet
 
+cd ../bn254-to-bls-wrapper
+go test ./...
+go run .
+
 cd ../cardano-verifier
-aiken check -m 'groth16/gnark_wrapper.{..}' --plain-numbers
+aiken check --deny --plain-numbers
 ```
 
-The guest runner and recursive-wrapper directories contain their own commands
-and prerequisites.
+Generate a new development wrapper proof with
+`go run . -prove -out artifacts-local`; do not overwrite the checked-in test
+artifacts.
 
-## Production boundary
+## Remaining work
 
-A production implementation would keep standard ICS-07 headers at the relayer
-boundary. The Gateway, or a prover service called by it, would produce the SP1
-proof and the BLS12-381 wrapper proof. Hermes and the Cosmos Go light-client
-modules would not verify a new algorithm. The Aiken client validator would pin
-the wrapper verification key, verify the proof, bind its public statement to
-the consumed client/consensus state and transaction interval, then perform the
-existing client and HostState transition.
+Production use requires a real 200-validator SP1 proof and timing result,
+Gateway/prover orchestration, exact Cardano statement encoding, misbehaviour
+support, whole-transaction budget tests, production verification keys and
+setup, and independent review of the wrapper circuit and Aiken verifier.
 
-This would change the Cardano validator hash and require a new deployment. The
-prover is untrusted for safety because invalid proofs fail on-chain, but it is a
-liveness dependency. Production use also requires a reviewed statement codec,
-a production setup ceremony, versioned verification keys, an independent
-circuit review, misbehaviour support, a real 200-validator production proof,
-and complete Gateway transaction benchmarks.
+## Upstream sources
+
+The guest is from [`cosmos/ibc-contracts` release
+`sp1-programs-v2.0.0`](https://github.com/cosmos/ibc-contracts/releases/tag/sp1-programs-v2.0.0),
+commit `ef25a661a8be156d4908956e1055ca40cd67adb7`, using SP1 6.1.0. The
+downloaded ELF is checksum-pinned in `provenance.json`.
+
+The proof fixture is copied from `cosmos/ibc-contracts` commit
+`60f6575adf0b3202c86940a80a9e2230b3bd6107` and retains its Apache-2.0
+license. The Aiken Groth16 verifier is derived from
+[`cardano-foundation/bls`](https://github.com/cardano-foundation/bls/tree/24bd7e3a1f9f57b1d43b7bebdc37446dc559eb40/aiken/groth16).
