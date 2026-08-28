@@ -11,6 +11,7 @@ pub(crate) mod cosmos_node;
 pub mod cosmos_profiles;
 pub(crate) mod hermes_support;
 pub mod injective;
+pub(crate) mod network_limits;
 pub mod osmosis;
 
 pub use cheqd::CHEQD_CHAIN_ADAPTER;

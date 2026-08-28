@@ -119,6 +119,36 @@ test_profile() {
       and (.allowed_clients | index("08-cardano-probabilistic")) != null
   ' >/dev/null <<<"$client_params"
 
+  local consensus_params
+  consensus_params="$(curl --max-time 5 -fsS \
+    "http://127.0.0.1:${rpc_port}/consensus_params")"
+  jq -e '
+    .result.consensus_params.block.max_bytes == "4194304"
+      and .result.consensus_params.block.max_gas == "150000000"
+      and .result.consensus_params.evidence.max_age_num_blocks == "100000"
+      and .result.consensus_params.evidence.max_age_duration == "172800000000000"
+      and .result.consensus_params.evidence.max_bytes == "1048576"
+      and .result.consensus_params.validator.pub_key_types == ["ed25519"]
+  ' >/dev/null <<<"$consensus_params"
+
+  local staking_params
+  staking_params="$(docker compose -p "$project_name" -f "$compose_file" \
+    --profile "$profile" exec -T "$profile" \
+    simd query staking params --home /var/lib/simd -o json)"
+  jq -e '
+    .params.unbonding_time == "1814400s"
+      and .params.max_validators == 45
+      and .params.max_entries == 7
+      and .params.historical_entries == 10000
+  ' >/dev/null <<<"$staking_params"
+
+  local generated_config
+  generated_config="$(docker compose -p "$project_name" -f "$compose_file" \
+    --profile "$profile" exec -T "$profile" \
+    cat /var/lib/simd/config/config.toml)"
+  grep -q '^max_tx_bytes = 1048576$' <<<"$generated_config"
+  grep -q '^max_body_bytes = 4000000$' <<<"$generated_config"
+
   local governance_params
   governance_params="$(docker compose -p "$project_name" -f "$compose_file" \
     --profile "$profile" exec -T "$profile" \

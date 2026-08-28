@@ -7,6 +7,7 @@ use crate::chains::hermes_support::{
     HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
     HermesTrustThreshold,
 };
+use crate::chains::network_limits::{CHEQD_MAX_TX_GAS, HERMES_CONSERVATIVE_MAX_TX_SIZE};
 use crate::process::hermes::HermesCli;
 
 /// Best-effort sync of the local cheqd chain block and deterministic relayer key into Hermes.
@@ -58,14 +59,14 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
         address_type: Some(HermesAddressType::Cosmos),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: 15_000_000,
+        max_gas: CHEQD_MAX_TX_GAS,
         gas_price: HermesGasPrice {
             price: "50",
             denom: "ncheq",
         },
         gas_multiplier: "1.8",
         max_msg_num: 20,
-        max_tx_size: 209_715,
+        max_tx_size: HERMES_CONSERVATIVE_MAX_TX_SIZE,
         clock_drift: "20s",
         max_block_time: "10s",
         trusting_period: "10days",
@@ -164,4 +165,16 @@ fn run_hermes_output(
     HermesCli::new(hermes_binary)
         .output(Some(working_dir), args)
         .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cheqd_profile_uses_network_gas_and_project_size_caps() {
+        let profile = local_chain_profile();
+        assert_eq!(profile.max_gas, CHEQD_MAX_TX_GAS);
+        assert_eq!(profile.max_tx_size, HERMES_CONSERVATIVE_MAX_TX_SIZE);
+    }
 }

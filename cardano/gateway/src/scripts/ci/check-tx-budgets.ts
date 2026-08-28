@@ -21,6 +21,7 @@ import {
   formatCapacityReport,
   loadNormalizedCapacityFixture,
 } from './tendermint-update-capacity';
+import { checkTransactionBudgets, type ExUnits } from './tx-budget-limits';
 
 type BlueprintValidator = {
   title: string;
@@ -44,17 +45,13 @@ type AikenCheckReport = {
   }>;
 };
 
-type ExUnits = {
-  mem: number;
-  steps: number;
-};
-
 type SizedPayload = {
   name: string;
   bytes: number;
 };
 
 type ScenarioInput = {
+  id: string;
   name: string;
   inputCount: number;
   outputCount: number;
@@ -70,6 +67,7 @@ type ScenarioInput = {
 };
 
 type ScenarioReport = {
+  id: string;
   name: string;
   unsignedBytes: number;
   signedBytesEstimate: number;
@@ -85,8 +83,8 @@ const repoRoot = path.resolve(__dirname, '../../../../..');
 const DEFAULT_MAX_TX_SIZE = 16_384;
 const DEFAULT_TX_HEADROOM_BYTES = 750;
 const DEFAULT_SIGNED_WITNESS_ESTIMATE_BYTES = 260;
-const DEFAULT_MAX_TX_EX_MEM = 140_000_000;
-const DEFAULT_MAX_TX_EX_STEPS = 100_000_000_000;
+const DEFAULT_MAX_TX_EX_MEM = 16_500_000;
+const DEFAULT_MAX_TX_EX_STEPS = 10_000_000_000;
 const DEFAULT_EX_UNIT_HEADROOM_BPS = 500;
 
 const TX_BASE_BYTES = 360;
@@ -439,6 +437,7 @@ async function buildScenarios(
 
   const scenarios: ScenarioInput[] = [
     {
+      id: 'reference_script_deployment',
       name: 'reference script deployment',
       inputCount: 1,
       outputCount: 1,
@@ -452,6 +451,7 @@ async function buildScenarios(
       unsignedBytesOverride: largestReferenceScript.bytes + REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES,
     },
     {
+      id: 'bind_port_at_global_cap',
       name: 'BindPort at global cap',
       inputCount: 2,
       outputCount: 2,
@@ -478,6 +478,7 @@ async function buildScenarios(
       ],
     },
     {
+      id: 'conn_open_try',
       name: 'ConnOpenTry',
       inputCount: 2,
       outputCount: 3,
@@ -513,6 +514,7 @@ async function buildScenarios(
       ],
     },
     {
+      id: 'conn_open_ack',
       name: 'ConnOpenAck',
       inputCount: 3,
       outputCount: 3,
@@ -532,6 +534,7 @@ async function buildScenarios(
       aikenTests: ['spending_connection.test.conn_open_ack_succeed'],
     },
     {
+      id: 'send_packet_at_commitment_capacity',
       name: 'First native SendPacket at commitment capacity',
       inputCount: 4,
       outputCount: 4,
@@ -570,6 +573,7 @@ async function buildScenarios(
       ],
     },
     {
+      id: 'recv_packet_at_history_capacity',
       name: 'RecvPacket at history capacity',
       inputCount: 3,
       outputCount: 3,
@@ -610,6 +614,7 @@ async function buildScenarios(
       ],
     },
     {
+      id: 'prune_packet_history_at_capacity',
       name: 'PrunePacketHistory at history capacity',
       // Two spending inputs plus the referenced connection and client UTxOs.
       inputCount: 4,
@@ -656,6 +661,7 @@ async function buildScenarios(
       ],
     },
     {
+      id: 'acknowledge_packet',
       name: 'AcknowledgePacket',
       inputCount: 4,
       outputCount: 3,
@@ -695,6 +701,7 @@ async function buildScenarios(
       ],
     },
     {
+      id: 'timeout_packet',
       name: 'TimeoutPacket',
       inputCount: 4,
       outputCount: 4,
@@ -735,6 +742,7 @@ async function buildScenarios(
       ],
     },
     {
+      id: 'trace_registry_append_at_capacity',
       name: 'Trace registry append at bounded worst-case history',
       inputCount: 2,
       outputCount: 1,
@@ -760,6 +768,7 @@ async function buildScenarios(
       extraBytes: (1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket) * TX_REFERENCE_INPUT_BYTES,
     },
     {
+      id: 'trace_registry_rollover',
       name: 'Trace registry rollover',
       inputCount: 3,
       outputCount: 3,
@@ -815,6 +824,7 @@ async function buildScenarios(
       extraBytes: (TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1) * TX_REFERENCE_INPUT_BYTES,
     },
     {
+      id: 'first_seen_voucher_mint',
       name: 'First-seen voucher mint + CIP-68 metadata',
       inputCount: 3,
       outputCount: 4,
@@ -854,6 +864,7 @@ async function buildScenarios(
   return scenarios.map((scenario) => {
     const unsignedBytes = estimateUnsignedBytes(validators, scenario);
     return {
+      id: scenario.id,
       name: scenario.name,
       unsignedBytes,
       signedBytesEstimate: unsignedBytes + DEFAULT_SIGNED_WITNESS_ESTIMATE_BYTES,
@@ -916,39 +927,6 @@ function formatPayloads(payloads: SizedPayload[]): string {
   return payloads.map((payload) => `${payload.name}=${payload.bytes}`).join(', ');
 }
 
-function checkBudgets(
-  reports: ScenarioReport[],
-  maxTxSize: number,
-  txHeadroomBytes: number,
-  maxTxExMem: number,
-  maxTxExSteps: number,
-  exUnitHeadroomBps: number,
-): string[] {
-  const failures: string[] = [];
-  const safeTxSize = maxTxSize - txHeadroomBytes;
-  const safeMem = Math.floor((maxTxExMem * (10_000 - exUnitHeadroomBps)) / 10_000);
-  const safeSteps = Math.floor((maxTxExSteps * (10_000 - exUnitHeadroomBps)) / 10_000);
-
-  for (const report of reports) {
-    if (report.unsignedBytes > safeTxSize) {
-      failures.push(`${report.name}: unsigned bytes ${report.unsignedBytes} exceed safe budget ${safeTxSize}`);
-    }
-    if (report.signedBytesEstimate > safeTxSize) {
-      failures.push(
-        `${report.name}: signed bytes estimate ${report.signedBytesEstimate} exceeds safe budget ${safeTxSize}`,
-      );
-    }
-    if (report.exUnits.mem > safeMem) {
-      failures.push(`${report.name}: memory ex units ${report.exUnits.mem} exceed safe budget ${safeMem}`);
-    }
-    if (report.exUnits.steps > safeSteps) {
-      failures.push(`${report.name}: CPU steps ${report.exUnits.steps} exceed safe budget ${safeSteps}`);
-    }
-  }
-
-  return failures;
-}
-
 async function main() {
   const maxTxSize = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_SIZE', DEFAULT_MAX_TX_SIZE);
   const txHeadroomBytes = readIntegerEnv('CARDANO_TX_BUDGET_HEADROOM_BYTES', DEFAULT_TX_HEADROOM_BYTES);
@@ -969,7 +947,20 @@ async function main() {
   console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
   console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
 
-  const failures = checkBudgets(reports, maxTxSize, txHeadroomBytes, maxTxExMem, maxTxExSteps, exUnitHeadroomBps);
+  const { failures, knownViolations } = checkTransactionBudgets(reports, {
+    maxTxSize,
+    txHeadroomBytes,
+    maxTxExMem,
+    maxTxExSteps,
+    exUnitHeadroomBps,
+  });
+
+  if (knownViolations.length > 0) {
+    console.log('\nKNOWN EXECUTION-BUDGET VIOLATIONS (regression-ratcheted):');
+    for (const violation of knownViolations) {
+      console.log(`- ${violation}`);
+    }
+  }
 
   if (failures.length > 0) {
     console.error('\nTransaction budget check failed:');
@@ -980,8 +971,13 @@ async function main() {
   }
 
   console.log(
-    `\nTransaction budget check passed with ${txHeadroomBytes} bytes and ${exUnitHeadroomBps / 100}% ex-unit headroom.`,
+    `\nTransaction budget ratchet passed: no scenario exceeded its public-limit budget or recorded overrun ceiling.`,
   );
+  if (knownViolations.length > 0) {
+    console.log(`${knownViolations.length} known execution-limit violations remain and may only decrease.`);
+  } else {
+    console.log(`All scenarios retain ${txHeadroomBytes} bytes and ${exUnitHeadroomBps / 100}% ex-unit headroom.`);
+  }
 }
 
 void main().catch((error) => {

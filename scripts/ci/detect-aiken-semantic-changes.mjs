@@ -19,6 +19,7 @@ const aikenInfrastructurePaths = new Set([
   'scripts/ci/merge-aiken-check-reports.mjs',
   'cardano/gateway/src/scripts/ci/check-tx-budgets.ts',
   'cardano/gateway/src/scripts/ci/tendermint-update-capacity.ts',
+  'cardano/gateway/src/scripts/ci/tx-budget-limits.ts',
   'cardano/gateway/src/scripts/test/generate-injective-tendermint-capacity-fixture.ts',
   'cardano/gateway/src/scripts/test/generate-tendermint-update-capacity-aiken.ts',
   'cardano/gateway/package-lock.json',

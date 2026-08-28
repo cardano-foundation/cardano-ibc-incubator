@@ -34,6 +34,19 @@ app_toml = node_home / "config" / "app.toml"
 config_toml = node_home / "config" / "config.toml"
 genesis_json = node_home / "config" / "genesis.json"
 
+# cheqd mainnet capacity snapshot, observed 2026-08-27.
+BLOCK_MAX_BYTES = '3000000'
+BLOCK_MAX_GAS = '30000000'
+EVIDENCE_MAX_AGE_NUM_BLOCKS = '25920'
+EVIDENCE_MAX_AGE_DURATION = '259200000000000'
+EVIDENCE_MAX_BYTES = '5000'
+STAKING_UNBONDING_TIME = '1210000s'
+STAKING_MAX_VALIDATORS = 125
+STAKING_MAX_ENTRIES = 7
+STAKING_HISTORICAL_ENTRIES = 10000
+MEMPOOL_MAX_TX_BYTES = 1048576
+RPC_MAX_BODY_BYTES = 4000000
+
 app = app_toml.read_text()
 app = re.sub(r'minimum-gas-prices = ".*?"', 'minimum-gas-prices = "50ncheq"', app)
 app = re.sub(r'enable = false', 'enable = true', app, count=1)
@@ -50,6 +63,24 @@ config = re.sub(r'timeout_prevote = "1s"', 'timeout_prevote = "500ms"', config)
 config = re.sub(r'timeout_precommit = "1s"', 'timeout_precommit = "500ms"', config)
 config = re.sub(r'timeout_commit = "5s"', 'timeout_commit = "500ms"', config)
 config = re.sub(r'create_empty_blocks = false', 'create_empty_blocks = true', config)
+config, max_tx_replacements = re.subn(
+    r'^max_tx_bytes = .*$',
+    f'max_tx_bytes = {MEMPOOL_MAX_TX_BYTES}',
+    config,
+    count=1,
+    flags=re.MULTILINE,
+)
+if max_tx_replacements != 1:
+    raise RuntimeError('could not set mempool max_tx_bytes in cheqd config.toml')
+config, rpc_body_replacements = re.subn(
+    r'^max_body_bytes = .*$',
+    f'max_body_bytes = {RPC_MAX_BODY_BYTES}',
+    config,
+    count=1,
+    flags=re.MULTILINE,
+)
+if rpc_body_replacements != 1:
+    raise RuntimeError('could not set RPC max_body_bytes in cheqd config.toml')
 config_toml.write_text(config)
 
 genesis = json.loads(genesis_json.read_text())
@@ -62,6 +93,17 @@ def ensure_object(parent: dict, key: str) -> dict:
     return value
 
 app_state = ensure_object(genesis, 'app_state')
+
+tm_consensus = ensure_object(genesis, 'consensus')
+tm_consensus_params = ensure_object(tm_consensus, 'params')
+tm_block = ensure_object(tm_consensus_params, 'block')
+tm_block['max_bytes'] = BLOCK_MAX_BYTES
+tm_block['max_gas'] = BLOCK_MAX_GAS
+tm_evidence = ensure_object(tm_consensus_params, 'evidence')
+tm_evidence['max_age_num_blocks'] = EVIDENCE_MAX_AGE_NUM_BLOCKS
+tm_evidence['max_age_duration'] = EVIDENCE_MAX_AGE_DURATION
+tm_evidence['max_bytes'] = EVIDENCE_MAX_BYTES
+
 bank = ensure_object(app_state, 'bank')
 auth = ensure_object(app_state, 'auth')
 globalfee = ensure_object(app_state, 'globalfee')
@@ -93,6 +135,10 @@ staking = ensure_object(app_state, 'staking')
 staking_params = ensure_object(staking, 'params')
 if staking_params.get('bond_denom') == 'stake':
     staking_params['bond_denom'] = 'ncheq'
+staking_params['unbonding_time'] = STAKING_UNBONDING_TIME
+staking_params['max_validators'] = STAKING_MAX_VALIDATORS
+staking_params['max_entries'] = STAKING_MAX_ENTRIES
+staking_params['historical_entries'] = STAKING_HISTORICAL_ENTRIES
 
 mint = ensure_object(app_state, 'mint')
 mint_params = ensure_object(mint, 'params')

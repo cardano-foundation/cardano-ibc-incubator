@@ -11,11 +11,11 @@ key_name = 'cheqd-local-relayer'
 address_type = { derivation = 'cosmos' }
 store_prefix = 'ibc'
 default_gas = 5000000
-max_gas = 15000000
+max_gas = 30000000
 gas_price = { price = 50, denom = 'ncheq' }
 gas_multiplier = 1.8
 max_msg_num = 20
-max_tx_size = 209715
+max_tx_size = 1000000
 clock_drift = '20s'
 max_block_time = '10s'
 trusting_period = '10days'
