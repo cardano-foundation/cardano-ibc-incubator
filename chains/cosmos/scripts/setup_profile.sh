@@ -14,19 +14,28 @@ GENESIS_ACCOUNT_BALANCE="${COSMOS_GENESIS_ACCOUNT_BALANCE:-100000000000stake,100
 GENTX_AMOUNT="${COSMOS_GENTX_AMOUNT:-500000000stake}"
 MINIMUM_GAS_PRICES="${COSMOS_MINIMUM_GAS_PRICES:-0.0025stake}"
 GENESIS_TIME="${COSMOS_GENESIS_TIME:-2025-12-31T23:59:00Z}"
-MAX_TX_BYTES="${COSMOS_MAX_TX_BYTES:-1048576}"
+MAX_TX_BYTES=1048576
 GOV_VOTING_PERIOD="${COSMOS_GOV_VOTING_PERIOD:-30s}"
 GOV_MAX_DEPOSIT_PERIOD="${COSMOS_GOV_MAX_DEPOSIT_PERIOD:-60s}"
 
+# The generic ibc-go v8/v10 profiles model Injective's current public capacity
+# envelope. These are fixed snapshots so dependency defaults cannot silently
+# turn the compatibility profiles into unrealistically permissive chains.
+# Stock simd has no Injective txfees ante handler, so the 75M per-transaction
+# gas ceiling is enforced by the generated Hermes profile rather than genesis.
+BLOCK_MAX_BYTES=4194304
+BLOCK_MAX_GAS=150000000
+EVIDENCE_MAX_AGE_NUM_BLOCKS=100000
+EVIDENCE_MAX_AGE_DURATION=172800000000000
+EVIDENCE_MAX_BYTES=1048576
+STAKING_UNBONDING_TIME=1814400s
+STAKING_MAX_VALIDATORS=45
+STAKING_MAX_ENTRIES=7
+STAKING_HISTORICAL_ENTRIES=10000
+RPC_MAX_BODY_BYTES=4000000
+
 GENESIS_FILE="${SIMD_HOME}/config/genesis.json"
 CONFIG_FILE="${SIMD_HOME}/config/config.toml"
-
-case "${MAX_TX_BYTES}" in
-  ''|0|*[!0-9]*)
-    echo "[${PROFILE}] COSMOS_MAX_TX_BYTES must be a positive integer." >&2
-    exit 1
-    ;;
-esac
 
 case "${IBC_SEMANTICS}" in
   classic|v2) ;;
@@ -84,8 +93,25 @@ if [ ! -f "${GENESIS_FILE}" ]; then
     --arg genesis_time "${GENESIS_TIME}" \
     --arg gov_voting_period "${GOV_VOTING_PERIOD}" \
     --arg gov_max_deposit_period "${GOV_MAX_DEPOSIT_PERIOD}" \
+    --arg block_max_bytes "${BLOCK_MAX_BYTES}" \
+    --arg block_max_gas "${BLOCK_MAX_GAS}" \
+    --arg evidence_max_age_num_blocks "${EVIDENCE_MAX_AGE_NUM_BLOCKS}" \
+    --arg evidence_max_age_duration "${EVIDENCE_MAX_AGE_DURATION}" \
+    --arg evidence_max_bytes "${EVIDENCE_MAX_BYTES}" \
+    --arg staking_unbonding_time "${STAKING_UNBONDING_TIME}" \
+    --argjson staking_max_validators "${STAKING_MAX_VALIDATORS}" \
+    --argjson staking_max_entries "${STAKING_MAX_ENTRIES}" \
+    --argjson staking_historical_entries "${STAKING_HISTORICAL_ENTRIES}" \
     '.genesis_time = $genesis_time
-      | .consensus.params.block.max_gas = "100000000"
+      | .consensus.params.block.max_bytes = $block_max_bytes
+      | .consensus.params.block.max_gas = $block_max_gas
+      | .consensus.params.evidence.max_age_num_blocks = $evidence_max_age_num_blocks
+      | .consensus.params.evidence.max_age_duration = $evidence_max_age_duration
+      | .consensus.params.evidence.max_bytes = $evidence_max_bytes
+      | .app_state.staking.params.unbonding_time = $staking_unbonding_time
+      | .app_state.staking.params.max_validators = $staking_max_validators
+      | .app_state.staking.params.max_entries = $staking_max_entries
+      | .app_state.staking.params.historical_entries = $staking_historical_entries
       | .app_state.ibc.client_genesis.params.allowed_clients = ["07-tendermint", "08-cardano-probabilistic"]
       | .app_state.gov.params.voting_period = $gov_voting_period
       | .app_state.gov.params.max_deposit_period = $gov_max_deposit_period
@@ -111,11 +137,43 @@ else
   echo "[${PROFILE}] Reusing chain home at ${SIMD_HOME}."
 fi
 
+# Reject partially initialized or preserved homes whose consensus/staking
+# envelope does not match this profile. Docker restarts must not turn a failed
+# genesis patch into a chain running dependency defaults.
+jq -e \
+  --arg block_max_bytes "${BLOCK_MAX_BYTES}" \
+  --arg block_max_gas "${BLOCK_MAX_GAS}" \
+  --arg evidence_max_age_num_blocks "${EVIDENCE_MAX_AGE_NUM_BLOCKS}" \
+  --arg evidence_max_age_duration "${EVIDENCE_MAX_AGE_DURATION}" \
+  --arg evidence_max_bytes "${EVIDENCE_MAX_BYTES}" \
+  --arg staking_unbonding_time "${STAKING_UNBONDING_TIME}" \
+  --argjson staking_max_validators "${STAKING_MAX_VALIDATORS}" \
+  --argjson staking_max_entries "${STAKING_MAX_ENTRIES}" \
+  --argjson staking_historical_entries "${STAKING_HISTORICAL_ENTRIES}" \
+  '.consensus.params.block.max_bytes == $block_max_bytes
+    and .consensus.params.block.max_gas == $block_max_gas
+    and .consensus.params.evidence.max_age_num_blocks == $evidence_max_age_num_blocks
+    and .consensus.params.evidence.max_age_duration == $evidence_max_age_duration
+    and .consensus.params.evidence.max_bytes == $evidence_max_bytes
+    and .app_state.staking.params.unbonding_time == $staking_unbonding_time
+    and .app_state.staking.params.max_validators == $staking_max_validators
+    and .app_state.staking.params.max_entries == $staking_max_entries
+    and .app_state.staking.params.historical_entries == $staking_historical_entries' \
+  "${GENESIS_FILE}" >/dev/null || {
+  echo "[${PROFILE}] Preserved genesis does not match the pinned Injective capacity snapshot; remove the profile state and regenerate it." >&2
+  exit 1
+}
+
 # Keep the local node and the generated Hermes profile on one explicit limit.
 # Hermes uses 1,000,000 bytes, leaving room below this CometBFT ceiling.
 sed -i "s/^max_tx_bytes = .*/max_tx_bytes = ${MAX_TX_BYTES}/" "${CONFIG_FILE}"
 grep -q "^max_tx_bytes = ${MAX_TX_BYTES}$" "${CONFIG_FILE}" || {
   echo "[${PROFILE}] Could not configure max_tx_bytes in ${CONFIG_FILE}." >&2
+  exit 1
+}
+sed -i "s/^max_body_bytes = .*/max_body_bytes = ${RPC_MAX_BODY_BYTES}/" "${CONFIG_FILE}"
+grep -q "^max_body_bytes = ${RPC_MAX_BODY_BYTES}$" "${CONFIG_FILE}" || {
+  echo "[${PROFILE}] Could not configure max_body_bytes in ${CONFIG_FILE}." >&2
   exit 1
 }
 

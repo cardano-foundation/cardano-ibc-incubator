@@ -261,6 +261,26 @@ test('classifies modified comments as trivia and source additions as relevant', 
       true,
     );
 
+    const txBudgetLimitsDir = join(repo, 'cardano/gateway/src/scripts/ci');
+    mkdirSync(txBudgetLimitsDir, { recursive: true });
+    writeFileSync(
+      join(txBudgetLimitsDir, 'tx-budget-limits.ts'),
+      'export const maxTxExMem = 16500000;\n',
+    );
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'change transaction budget limit'], {
+      cwd: repo,
+    });
+    const txBudgetLimitsChanged = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repo,
+      encoding: 'utf8',
+    }).trim();
+    assert.equal(
+      classifyAikenChanges(repo, budgetHelperChanged, txBudgetLimitsChanged)
+        .aikenRelevantChanged,
+      true,
+    );
+
     const capacityFixtureDir = join(
       repo,
       'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity',
@@ -279,7 +299,7 @@ test('classifies modified comments as trivia and source additions as relevant', 
       encoding: 'utf8',
     }).trim();
     assert.equal(
-      classifyAikenChanges(repo, budgetHelperChanged, capacityFixtureChanged)
+      classifyAikenChanges(repo, txBudgetLimitsChanged, capacityFixtureChanged)
         .aikenRelevantChanged,
       true,
     );

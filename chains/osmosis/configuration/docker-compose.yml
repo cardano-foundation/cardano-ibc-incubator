@@ -13,7 +13,7 @@ services:
       - ../osmosis/tests/localosmosis/scripts/uusdcUionBalancerPool.json:/osmosis/uusdcUionBalancerPool.json
       - ../osmosis/tests/localosmosis/scripts/uwethUusdcStablePool.json:/osmosis/uwethUusdcStablePool.json
       - ../osmosis/tests/localosmosis/scripts/nativeDenomThreeAssetPool.json:/osmosis/nativeDenomThreeAssetPool.json
-      - ../osmosis/tests/localosmosis/scripts/setup.sh:/osmosis/setup.sh
+      - ../scripts/setup_osmosis_local.sh:/osmosis/setup.sh
       - ../osmosis/tests/cl-genesis-positions:/osmosis/cl-genesis-positions
       - $HOME/.osmosisd-local/:/osmosis/.osmosisd/
     entrypoint:
