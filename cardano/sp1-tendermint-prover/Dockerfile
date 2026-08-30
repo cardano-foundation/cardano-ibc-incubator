@@ -1,5 +1,5 @@
 # Build with the repository root as the Docker context.
-FROM golang:1.24-bookworm@sha256:1a6d4452c65dea36aac2e2d606b01b4a029ec90cc1ae53890540ce6173ea77ac AS wrapper-builder
+FROM golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 AS wrapper-builder
 WORKDIR /src
 COPY cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/go.mod cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/go.sum ./
 RUN go mod download
