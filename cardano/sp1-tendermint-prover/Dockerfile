@@ -7,6 +7,8 @@ COPY cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/main.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bn254-to-bls-wrapper .
 
 FROM rust:1.91-bookworm@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33 AS service-builder
+COPY --from=wrapper-builder /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:${PATH}
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential clang libclang-dev libprotobuf-dev pkg-config protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*

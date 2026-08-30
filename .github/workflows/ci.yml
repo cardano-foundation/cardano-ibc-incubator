@@ -1032,6 +1032,12 @@ jobs:
         working-directory: third_party/ibc-eureka/sp1-programs-v2.0.0
         run: sha256sum --check --strict SHA256SUMS
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.7"
+          cache: false
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
