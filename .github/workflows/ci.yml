@@ -1035,7 +1035,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang libclang-dev pkg-config
+          sudo apt-get install -y build-essential clang libclang-dev libprotobuf-dev pkg-config protobuf-compiler
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.91.1
