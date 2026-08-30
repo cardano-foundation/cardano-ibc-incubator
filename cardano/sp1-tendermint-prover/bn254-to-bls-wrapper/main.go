@@ -162,7 +162,7 @@ type outerKeyMetadata struct {
 
 func main() {
 	var (
-		fixturePath = flag.String("fixture", "../fixtures/update_client_fixture-groth16.json", "Eureka update-client Groth16 fixture")
+		fixturePath = flag.String("fixture", "../../../studies/sp1_tendermint_cardano/fixtures/update_client_fixture-groth16.json", "Eureka update-client Groth16 fixture")
 		prove       = flag.Bool("prove", false, "generate and verify an outer proof using a fixed key directory")
 		keyDir      = flag.String("key-dir", "", "gitignored directory containing the fixed outer CCS, proving key, and verifying key")
 		setupKeys   = flag.Bool("setup-keys", false, "create the fixed development keys; refuses to overwrite existing key files")

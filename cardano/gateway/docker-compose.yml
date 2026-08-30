@@ -38,14 +38,15 @@ services:
   sp1-tendermint-prover:
     profiles: ["sp1"]
     container_name: sp1-tendermint-prover
+    image: ${SP1_TENDERMINT_PROVER_IMAGE:-cardano-ibc-sp1-tendermint-prover:local}
     build:
-      context: ../../studies/sp1_tendermint_cardano
-      dockerfile: prover-service/Dockerfile
+      context: ../..
+      dockerfile: cardano/sp1-tendermint-prover/Dockerfile
     restart: unless-stopped
     networks:
       - cardano_network
     volumes:
-      - ${CARDANO_BLS_WRAPPER_KEYS_HOST_PATH:-../../studies/sp1_tendermint_cardano/prover-service/keys-local}:/var/lib/cardano-ibc-wrapper:ro
+      - ${CARDANO_BLS_WRAPPER_KEYS_HOST_PATH:-../sp1-tendermint-prover/keys-local}:/var/lib/cardano-ibc-wrapper:ro
 
 networks:
   cardano_network:

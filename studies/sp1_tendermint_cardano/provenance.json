@@ -6,10 +6,14 @@
     "programReleaseCommit": "ef25a661a8be156d4908956e1055ca40cd67adb7",
     "updateClientElf": {
       "url": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-update-client",
+      "path": "third_party/ibc-eureka/sp1-programs-v2.0.0/sp1-ics07-tendermint-update-client",
+      "bytes": 820056,
       "sha256": "6a6a40df2b1339455de7b238fdf3e914f4c2f99e85b8fc4abb65fb1664f42270"
     },
     "misbehaviourElf": {
       "url": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-misbehaviour",
+      "path": "third_party/ibc-eureka/sp1-programs-v2.0.0/sp1-ics07-tendermint-misbehaviour",
+      "bytes": 833328,
       "sha256": "6ec141ebb604565dfb7669f8482bd3eacc57ae35158ba3931f1c20f78f7bf921"
     },
     "sp1Version": "6.1.0"
@@ -67,7 +71,7 @@
         }
       },
       "trackedPublicVerificationKey": {
-        "path": "prover-service/artifacts/wrapper_verification_key.json",
+        "path": "cardano/sp1-tendermint-prover/artifacts/wrapper_verification_key.json",
         "bytes": 1766,
         "sha256": "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037"
       }
@@ -78,12 +82,12 @@
       "sp1PeakResidentBytes": 8985001984,
       "proofTimeNanos": "1787752048403000000",
       "publicValues": {
-        "path": "prover-service/artifacts/injective-45/public_values.bin",
+        "path": "cardano/sp1-tendermint-prover/artifacts/injective-45/public_values.bin",
         "bytes": 768,
         "sha256": "4a7114908b8dab0e72c5fd1441afc49c2b9266e04efabf7639d1f53643ae2462"
       },
       "wrappedProof": {
-        "path": "prover-service/artifacts/injective-45/wrapped_proof.bin",
+        "path": "cardano/sp1-tendermint-prover/artifacts/injective-45/wrapped_proof.bin",
         "bytes": 288,
         "sha256": "ec5fe188500102c2e974c842257178305365ecf09809effca4a83b1e2629a464"
       }
@@ -98,12 +102,12 @@
       "outerWrapperSecondsApprox": 142,
       "maximumResidentBytes": 8208957440,
       "publicValues": {
-        "path": "prover-service/artifacts/misbehaviour-double-sign-2/public_values.bin",
+        "path": "cardano/sp1-tendermint-prover/artifacts/misbehaviour-double-sign-2/public_values.bin",
         "bytes": 768,
         "sha256": "1d7e7545afa75466ce623cd1b66250d4cb7d9ba642fc16d441676d7c888c541a"
       },
       "wrappedProof": {
-        "path": "prover-service/artifacts/misbehaviour-double-sign-2/wrapped_proof.bin",
+        "path": "cardano/sp1-tendermint-prover/artifacts/misbehaviour-double-sign-2/wrapped_proof.bin",
         "bytes": 288,
         "sha256": "67070bc3eef265a14c887209a21ae84575ca219fd399050bcbb739381c2988c6"
       }

@@ -6,6 +6,21 @@
 !cardano/
 !cardano/gateway/
 !cardano/gateway/**
+!cardano/sp1-tendermint-prover/
+!cardano/sp1-tendermint-prover/Dockerfile
+!cardano/sp1-tendermint-prover/Cargo.toml
+!cardano/sp1-tendermint-prover/Cargo.lock
+!cardano/sp1-tendermint-prover/src/
+!cardano/sp1-tendermint-prover/src/**
+!cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/
+!cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/go.mod
+!cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/go.sum
+!cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/main.go
+
+!third_party/
+!third_party/ibc-eureka/
+!third_party/ibc-eureka/sp1-programs-v2.0.0/
+!third_party/ibc-eureka/sp1-programs-v2.0.0/**
 
 !relayer/
 !relayer/**
@@ -50,6 +65,14 @@
 **/node_modules/**
 **/target
 **/target/**
+**/.cache
+**/.cache/**
+**/keys-local
+**/keys-local/**
+**/artifacts-local
+**/artifacts-local/**
+**/actual-proof-local
+**/actual-proof-local/**
 **/dist
 **/dist/**
 # The Gateway consumes these tracked local packages through file: dependencies,

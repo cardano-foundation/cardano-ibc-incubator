@@ -45,7 +45,7 @@ describe('Eureka UpdateClient ABI', () => {
     const fixture = readFileSync(
       resolve(
         __dirname,
-        '../../../../../studies/sp1_tendermint_cardano/bn254-to-bls-wrapper/artifacts/public_values.bin',
+        '../../../../sp1-tendermint-prover/bn254-to-bls-wrapper/artifacts/public_values.bin',
       ),
     );
 

@@ -988,7 +988,7 @@ jobs:
           - name: injective-light-client-compat
             path: tests/injective-light-client-compat
           - name: sp1-tendermint-wrapper
-            path: studies/sp1_tendermint_cardano/bn254-to-bls-wrapper
+            path: cardano/sp1-tendermint-prover/bn254-to-bls-wrapper
 
     defaults:
       run:
@@ -1028,6 +1028,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify vendored Eureka programs
+        working-directory: third_party/ibc-eureka/sp1-programs-v2.0.0
+        run: sha256sum --check --strict SHA256SUMS
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -1044,19 +1048,19 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            studies/sp1_tendermint_cardano/prover-service/target
-          key: ${{ runner.os }}-cargo-sp1-tendermint-${{ hashFiles('studies/sp1_tendermint_cardano/prover-service/Cargo.lock') }}
+            cardano/sp1-tendermint-prover/target
+          key: ${{ runner.os }}-cargo-sp1-tendermint-v2-${{ hashFiles('cardano/sp1-tendermint-prover/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-sp1-tendermint-
+            ${{ runner.os }}-cargo-sp1-tendermint-v2-
 
       - name: Check formatting
-        run: cargo fmt --manifest-path studies/sp1_tendermint_cardano/prover-service/Cargo.toml -- --check
+        run: cargo fmt --manifest-path cardano/sp1-tendermint-prover/Cargo.toml -- --check
 
       - name: Lint
-        run: cargo clippy --manifest-path studies/sp1_tendermint_cardano/prover-service/Cargo.toml --locked --all-targets -- -D warnings
+        run: cargo clippy --manifest-path cardano/sp1-tendermint-prover/Cargo.toml --locked --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --manifest-path studies/sp1_tendermint_cardano/prover-service/Cargo.toml --locked
+        run: cargo test --manifest-path cardano/sp1-tendermint-prover/Cargo.toml --locked
 
   light-client-parity:
     name: Light Client Parity

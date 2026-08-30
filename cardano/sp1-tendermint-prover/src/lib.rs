@@ -131,19 +131,20 @@ impl Config {
         let path =
             |name: &str, default: PathBuf| env::var_os(name).map(PathBuf::from).unwrap_or(default);
         let wrapper_key_dir = path("CARDANO_BLS_WRAPPER_KEY_DIR", root.join("keys-local"));
+        let eureka_programs = root.join("../../third_party/ibc-eureka/sp1-programs-v2.0.0");
         Ok(Self {
             listen_addr,
             elf_path: path(
                 "SP1_TENDERMINT_ELF",
-                root.join("../eureka-guest-runner/.cache/sp1-ics07-tendermint-update-client"),
+                eureka_programs.join("sp1-ics07-tendermint-update-client"),
             ),
             misbehaviour_elf_path: path(
                 "SP1_TENDERMINT_MISBEHAVIOUR_ELF",
-                root.join(".cache/sp1-ics07-tendermint-misbehaviour"),
+                eureka_programs.join("sp1-ics07-tendermint-misbehaviour"),
             ),
             wrapper_bin: path(
                 "CARDANO_BLS_WRAPPER_BIN",
-                root.join("../bn254-to-bls-wrapper/bn254-to-bls-wrapper"),
+                root.join("bn254-to-bls-wrapper/bn254-to-bls-wrapper"),
             ),
             wrapper_key_dir: wrapper_key_dir.clone(),
             wrapper_public_vk: path(
@@ -1382,6 +1383,22 @@ mod tests {
 
     const TRACKED_REGRESSION_WRAPPER_VK_SHA256: &str =
         "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037";
+
+    #[test]
+    fn vendored_eureka_programs_match_pinned_hashes() {
+        let programs = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../third_party/ibc-eureka")
+            .join(EUREKA_TAG);
+        for (name, expected) in [
+            (
+                "sp1-ics07-tendermint-update-client",
+                UPDATE_CLIENT_ELF_SHA256,
+            ),
+            ("sp1-ics07-tendermint-misbehaviour", MISBEHAVIOUR_ELF_SHA256),
+        ] {
+            assert_eq!(file_sha256(&programs.join(name)).unwrap(), expected);
+        }
+    }
 
     fn request_client_state() -> RequestClientState {
         RequestClientState {

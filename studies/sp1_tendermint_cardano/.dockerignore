@@ -1,7 +1,0 @@
-**/target/
-**/.cache/
-**/keys-local/
-**/artifacts-local/
-bn254-to-bls-wrapper/actual-proof-local/
-bn254-to-bls-wrapper/artifacts/
-eureka-guest-runner/fixtures-generated/

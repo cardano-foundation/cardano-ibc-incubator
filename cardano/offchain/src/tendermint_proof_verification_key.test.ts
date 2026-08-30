@@ -76,7 +76,7 @@ Deno.test("rejects extra wrapper verification-key fields", () => {
 Deno.test("loads the tracked wrapper verification key regression artifact", async () => {
   const verificationKey = await loadTendermintProofVerificationKey(
     new URL(
-      "../../../studies/sp1_tendermint_cardano/prover-service/artifacts/wrapper_verification_key.json",
+      "../../sp1-tendermint-prover/artifacts/wrapper_verification_key.json",
       import.meta.url,
     ),
   );

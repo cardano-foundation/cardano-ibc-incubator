@@ -107,12 +107,12 @@ not a production ceremony. Provision it once before deployment and before
 starting the compose profile:
 
 ```sh
-(cd studies/sp1_tendermint_cardano/bn254-to-bls-wrapper && \
+(cd cardano/sp1-tendermint-prover/bn254-to-bls-wrapper && \
   go run . \
-    -fixture ../fixtures/update_client_fixture-groth16.json \
+    -fixture ../../../studies/sp1_tendermint_cardano/fixtures/update_client_fixture-groth16.json \
     -setup-keys -prove \
-    -key-dir ../prover-service/keys-local \
-    -out ../prover-service/keys-local)
+    -key-dir ../keys-local \
+    -out ../keys-local)
 ```
 
 This writes `outer.r1cs`, `outer.pk`, `outer.vk`, `manifest.json`, and
@@ -129,17 +129,21 @@ checked-in released-key regression proofs, rejection cases, encoders, Gateway
 orchestration, Aiken state transitions, and transaction budgets.
 
 ```sh
-cargo test --manifest-path studies/sp1_tendermint_cardano/prover-service/Cargo.toml --locked
-(cd studies/sp1_tendermint_cardano/bn254-to-bls-wrapper && go test ./...)
+cargo test --manifest-path cardano/sp1-tendermint-prover/Cargo.toml --locked
+(cd cardano/sp1-tendermint-prover/bn254-to-bls-wrapper && go test ./...)
 (cd cardano/onchain && aiken check --deny --plain-numbers)
 (cd cardano/gateway && npm test)
 (cd cardano/offchain && deno test -A)
 ```
 
-The prover image is built with `studies/sp1_tendermint_cardano` as its context.
-It downloads both released Eureka binaries and checks their pinned SHA-256
-values. The image does not contain a wrapper proving or verification key. The
-compose `sp1` profile mounts the deployment-specific setup read-only.
+The production service and wrapper live in `cardano/sp1-tendermint-prover`.
+The prover image is built from the repository root and copies both released
+Eureka binaries from `third_party/ibc-eureka/sp1-programs-v2.0.0` after checking
+their pinned SHA-256 values. It does not require the upstream repository during
+the build or at runtime. The image does not contain a wrapper proving or
+verification key. The compose `sp1` profile mounts the deployment-specific
+setup read-only. Main-branch builds publish the image to GHCR; production
+deployments set `SP1_TENDERMINT_PROVER_IMAGE` to the published digest.
 
 ## Provenance
 
