@@ -14,8 +14,9 @@ service CardanoMsg {
   // current Cardano epoch does not yet contain a HostState anchor.
   rpc BuildHostStateHeartbeat(BuildHostStateHeartbeatRequest) returns (BuildHostStateHeartbeatResponse);
 
-  // PrunePacketHistory builds a Cardano transaction which removes one
-  // finalized unordered packet receipt/acknowledgement pair. Safety is
+  // PrunePacketHistory builds a Cardano transaction which removes finalized
+  // destination packet history: the receipt and acknowledgement on unordered
+  // channels, or only the acknowledgement on ordered channels. Safety is
   // authorized by a counterparty proof that the source commitment is absent.
   rpc PrunePacketHistory(MsgPrunePacketHistory) returns (MsgPrunePacketHistoryResponse);
 

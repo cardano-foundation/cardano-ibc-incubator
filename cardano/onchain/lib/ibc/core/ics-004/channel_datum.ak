@@ -27,14 +27,14 @@ pub type ChannelDatumState {
   packet_acknowledgement: Pairs<Int, ByteArray>,
   /// Old packet-membership proofs below this counterparty height are rejected.
   ///
-  /// This permits finalized unordered receipt/acknowledgement pairs to be
-  /// pruned without making a historical commitment proof replayable.
+  /// This permits finalized packet history to be pruned without making a
+  /// historical commitment proof replayable.
   minimum_receive_proof_height: Height,
   /// Greatest counterparty proof height used by any successful receive.
   ///
   /// Unlike the minimum, this does not reject out-of-order receives. A prune
   /// must reach this high-water mark so its absence proof cannot predate a
-  /// packet whose receipt it deletes.
+  /// packet whose retained history it deletes.
   maximum_receive_proof_height: Height,
 }
 
@@ -47,6 +47,27 @@ pub fn packet_entry_count(state: ChannelDatumState) -> Int {
   list.length(state.packet_commitment) + list.length(state.packet_receipt) + list.length(
     state.packet_acknowledgement,
   )
+}
+
+/// Delete the first entry for `key` and report whether one was removed.
+///
+/// `pairs.delete_first` and `pairs.has_key` each scan the list. Packet pruning
+/// needs both results, so deriving them together avoids a second full scan at
+/// the channel history limit.
+fn delete_first_with_presence(
+  self: Pairs<key, value>,
+  key: key,
+) -> (Bool, Pairs<key, value>) {
+  when self is {
+    [] -> (False, [])
+    [Pair(entry_key, _) as head, ..tail] ->
+      if key == entry_key {
+        (True, tail)
+      } else {
+        let (found, remaining) = delete_first_with_presence(tail, key)
+        (found, [head, ..remaining])
+      }
+  }
 }
 
 pub fn validate_chan_open_init(
@@ -295,36 +316,51 @@ pub fn validate_recv_packet(
 /// Delete finalized inbound packet history without weakening replay protection.
 ///
 /// The operation validator separately proves that the corresponding source
-/// commitment is absent at `proof_height`. Advancing the floor atomically with
-/// both deletions prevents any older membership proof from being used after the
-/// receipt is gone.
+/// commitment is absent at `proof_height`. Unordered channels delete the
+/// receipt and acknowledgement together; ordered channels retain their
+/// monotonic receive sequence and delete only the acknowledgement. Advancing
+/// the floor atomically prevents any older membership proof from being used
+/// after history is removed.
 pub fn validate_prune_packet_history(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,
   sequence: Int,
   proof_height: Height,
 ) -> Bool {
+  let (has_acknowledgement, expected_packet_acknowledgement) =
+    delete_first_with_presence(
+      input_datum.state.packet_acknowledgement,
+      sequence,
+    )
+  let (expected_packet_receipt, valid_ordering_state) =
+    when input_datum.state.channel.ordering is {
+      order.Unordered ->
+        (
+          pairs.delete_first(input_datum.state.packet_receipt, sequence),
+          pairs.has_key(input_datum.state.packet_receipt, sequence),
+        )
+      order.Ordered ->
+        (
+          input_datum.state.packet_receipt,
+          sequence < input_datum.state.next_sequence_recv,
+        )
+      _ -> fail
+    }
+
   let expected_datum =
     ChannelDatum {
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
         minimum_receive_proof_height: proof_height,
-        packet_receipt: pairs.delete_first(
-          input_datum.state.packet_receipt,
-          sequence,
-        ),
-        packet_acknowledgement: pairs.delete_first(
-          input_datum.state.packet_acknowledgement,
-          sequence,
-        ),
+        packet_receipt: expected_packet_receipt,
+        packet_acknowledgement: expected_packet_acknowledgement,
       },
     }
 
   and {
-    input_datum.state.channel.ordering == order.Unordered,
-    pairs.has_key(input_datum.state.packet_receipt, sequence),
-    pairs.has_key(input_datum.state.packet_acknowledgement, sequence),
+    valid_ordering_state,
+    has_acknowledgement,
     height_mod.compare(
       proof_height,
       input_datum.state.minimum_receive_proof_height,

@@ -2728,6 +2728,180 @@ test host_state_prune_packet_history_rejects_wrong_post_receipt_ack_witness() fa
   check_host_prune_packet_history(True, False)
 }
 
+const ordered_prune_capacity_old_root =
+  #"9f09a95a8539dbed96cd9684edeb1035353e49316dcfbcbd8ccd3c51b39166c6"
+
+fn check_host_prune_ordered_packet_history(
+  use_nonempty_receipt_siblings: Bool,
+  at_capacity: Bool,
+) -> Bool {
+  let sequence =
+    if at_capacity {
+      max_packet_entries_per_channel
+    } else {
+      7
+    }
+  let acknowledgement = "acknowledgement commitment"
+  let acknowledgement_key =
+    packet_keys.packet_acknowledgement_path("transfer", "channel-0", sequence)
+  let empty_siblings = full_empty_siblings()
+  let old_root =
+    if at_capacity {
+      // Precomputed from the same key, value, and full 64-level witness below.
+      // Keeping fixture construction outside the measured validator path makes
+      // this test report the validator cost rather than three tree updates.
+      ordered_prune_capacity_old_root
+    } else {
+      ibc_state_commitment.apply_update(
+        empty_ibc_state_root,
+        acknowledgement_key,
+        "",
+        cbor.serialise(acknowledgement),
+        empty_siblings,
+      )
+    }
+  let expected_new_root =
+    if at_capacity {
+      empty_ibc_state_root
+    } else {
+      ibc_state_commitment.apply_update(
+        old_root,
+        acknowledgement_key,
+        cbor.serialise(acknowledgement),
+        "",
+        empty_siblings,
+      )
+    }
+  let acknowledgement_entries =
+    if at_capacity {
+      packet_entries(1, sequence, acknowledgement)
+    } else {
+      [Pair(sequence, acknowledgement)]
+    }
+  expect
+    if at_capacity {
+      list.length(acknowledgement_entries) == max_packet_entries_per_channel
+    } else {
+      True
+    }
+  let ordered_channel =
+    Channel {
+      ..test_channel(channel_state.Open),
+      ordering: channel_order.Ordered,
+    }
+  let base_input_channel_datum =
+    test_channel_datum_full(
+      ordered_channel,
+      1,
+      sequence + 1,
+      1,
+      [],
+      [],
+      acknowledgement_entries,
+    )
+  let input_channel_datum =
+    ChannelDatum {
+      ..base_input_channel_datum,
+      state: ChannelDatumState {
+        ..base_input_channel_datum.state,
+        maximum_receive_proof_height: test_height(10),
+      },
+    }
+  let proof_height = test_height(12)
+  let output_channel_datum =
+    ChannelDatum {
+      ..input_channel_datum,
+      state: ChannelDatumState {
+        ..input_channel_datum.state,
+        packet_acknowledgement: pairs.delete_first(
+          acknowledgement_entries,
+          sequence,
+        ),
+        minimum_receive_proof_height: proof_height,
+      },
+    }
+  let old_state = test_host_state(old_root, 0)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: expected_new_root,
+    }
+  let packet_receipt_siblings =
+    if use_nonempty_receipt_siblings {
+      empty_siblings
+    } else {
+      []
+    }
+  let host_redeemer: HostStateRedeemer =
+    HandlePacket {
+      channel_siblings: [],
+      next_sequence_send_siblings: [],
+      next_sequence_recv_siblings: [],
+      next_sequence_ack_siblings: [],
+      packet_commitment_siblings: [],
+      packet_receipt_siblings,
+      packet_acknowledgement_siblings: empty_siblings,
+    }
+  let channel_redeemer: SpendChannelRedeemer =
+    PruneChannelPacketHistory {
+      sequence,
+      proof_commitment_absence: empty_proof(),
+      proof_height,
+    }
+  let channel_input = test_channel_input_full(input_channel_datum)
+
+  spend_host_state_with_channel_redeemer(
+    host_redeemer,
+    channel_redeemer,
+    channel_input,
+    [test_host_input(old_state), channel_input],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test host_state_ordered_prune_deletes_only_ack_root() {
+  check_host_prune_ordered_packet_history(False, False)
+}
+
+test host_state_ordered_prune_succeeds_at_full_packet_history_capacity() {
+  check_host_prune_ordered_packet_history(False, True)
+}
+
+test host_state_ordered_prune_capacity_root_fixture_matches_derivation() {
+  let sequence = max_packet_entries_per_channel
+  let acknowledgement = "acknowledgement commitment"
+  let acknowledgement_key =
+    packet_keys.packet_acknowledgement_path("transfer", "channel-0", sequence)
+  let empty_siblings = full_empty_siblings()
+  let old_root =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      acknowledgement_key,
+      "",
+      cbor.serialise(acknowledgement),
+      empty_siblings,
+    )
+
+  and {
+    old_root == ordered_prune_capacity_old_root,
+    ibc_state_commitment.apply_update(
+      old_root,
+      acknowledgement_key,
+      cbor.serialise(acknowledgement),
+      "",
+      empty_siblings,
+    ) == empty_ibc_state_root,
+  }
+}
+
+test host_state_ordered_prune_ignores_unused_receipt_witness() {
+  check_host_prune_ordered_packet_history(True, False)
+}
+
 test prop_host_bind_port_rejects_missing_authority(seed via fuzz.int()) fail {
   fuzz.label(@"fuzz.contract.host.bind_port.invalid_unauthorized")
 

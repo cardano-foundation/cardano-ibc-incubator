@@ -702,6 +702,33 @@ fn validate_update_channel_root(
   root_after_channel == new_datum.state.ibc_state_root
 }
 
+/// Load a required packet-map entry, failing closed when it is absent.
+fn required_packet_entry(
+  entries: Pairs<Int, ByteArray>,
+  sequence: Int,
+) -> ByteArray {
+  pairs.expect_get_first(entries, sequence)
+}
+
+fn apply_packet_commitment_deletion(
+  root: ByteArray,
+  channel_datum: ChannelDatum,
+  port_id: ByteArray,
+  channel_id: ByteArray,
+  sequence: Int,
+  siblings: List<ByteArray>,
+) -> ByteArray {
+  let commitment =
+    required_packet_entry(channel_datum.state.packet_commitment, sequence)
+  ibc_state_commitment.apply_update(
+    root,
+    packet_keys.packet_commitment_path(port_id, channel_id, sequence),
+    cbor.serialise(commitment),
+    "",
+    siblings,
+  )
+}
+
 /// Enforce that `ibc_state_root` is updated correctly for packet lifecycle operations.
 ///
 /// In this STT design, packet state lives inside the Channel datum:
@@ -716,25 +743,6 @@ fn validate_update_channel_root(
 /// The channel redeemer identifies the exact keys changed by each canonical
 /// transition. Applying only those operation-specific updates is both stricter
 /// and smaller than rediscovering the same changes by diffing every packet map.
-fn apply_packet_commitment_deletion(
-  root: ByteArray,
-  channel_datum: ChannelDatum,
-  port_id: ByteArray,
-  channel_id: ByteArray,
-  sequence: Int,
-  siblings: List<ByteArray>,
-) -> ByteArray {
-  expect Some(commitment) =
-    pairs.get_first(channel_datum.state.packet_commitment, sequence)
-  ibc_state_commitment.apply_update(
-    root,
-    packet_keys.packet_commitment_path(port_id, channel_id, sequence),
-    cbor.serialise(commitment),
-    "",
-    siblings,
-  )
-}
-
 fn validate_handle_packet_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
@@ -805,8 +813,8 @@ fn validate_handle_packet_root(
         )
       }
       RecvPacket { packet, proof_height, .. } -> {
-        expect Some(acknowledgement) =
-          pairs.get_first(
+        let acknowledgement =
+          required_packet_entry(
             channel_output_datum.state.packet_acknowledgement,
             packet.sequence,
           )
@@ -917,22 +925,33 @@ fn validate_handle_packet_root(
       PruneChannelPacketHistory { sequence, .. } -> {
         // The prune marker validates the complete successor datum and the
         // authenticated absence proof. The HostState side binds that typed
-        // operation to the same sequence and commits its paired deletions.
-        expect Some(receipt) =
-          pairs.get_first(channel_input_datum.state.packet_receipt, sequence)
-        expect Some(acknowledgement) =
-          pairs.get_first(
+        // operation to the same sequence and commits the ordering-specific
+        // deletion: acknowledgement only for ordered channels, or the receipt
+        // and acknowledgement pair for unordered channels.
+        let acknowledgement =
+          required_packet_entry(
             channel_input_datum.state.packet_acknowledgement,
             sequence,
           )
         let receipt_root =
-          ibc_state_commitment.apply_update(
-            old_root,
-            packet_keys.packet_receipt_path(port_id, channel_id, sequence),
-            cbor.serialise(receipt),
-            "",
-            packet_receipt_siblings,
-          )
+          if is_ordered {
+            // Ordered replay protection is the monotonic next_sequence_recv
+            // counter, so receipt state remains unchanged.
+            old_root
+          } else {
+            let receipt =
+              required_packet_entry(
+                channel_input_datum.state.packet_receipt,
+                sequence,
+              )
+            ibc_state_commitment.apply_update(
+              old_root,
+              packet_keys.packet_receipt_path(port_id, channel_id, sequence),
+              cbor.serialise(receipt),
+              "",
+              packet_receipt_siblings,
+            )
+          }
         ibc_state_commitment.apply_update(
           receipt_root,
           packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence),

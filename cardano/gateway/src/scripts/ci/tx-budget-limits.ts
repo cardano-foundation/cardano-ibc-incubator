@@ -30,11 +30,11 @@ const KNOWN_EX_UNIT_OVERRUN_CEILINGS: Readonly<Record<string, Partial<ExUnits>>>
     steps: 18_035_494_695,
   },
   recv_packet_at_history_capacity: {
-    mem: 47_508_992,
-    steps: 14_651_291_183,
+    mem: 47_456_092,
+    steps: 14_633_437_351,
   },
   prune_packet_history_at_capacity: {
-    mem: 27_615_479,
+    mem: 27_573_829,
   },
   trace_registry_rollover: {
     mem: 32_118_256,
