@@ -32,8 +32,15 @@ vote flags, voting power, and block/validator hashes.
 
 ## Limits
 
-The project evaluates both Cardano's absolute transaction limit and its safer
-CI limit:
+The size gate uses Cardano's 16,384-byte transaction limit and keeps 750 bytes
+of project headroom. The repository's local Cardano fixture raises the
+execution limits to 140,000,000 memory units and 100,000,000,000 CPU steps.
+Those are not public-network limits. On 2026-08-26, the Koios epoch-parameter
+endpoints reported 16,500,000 memory units and 10,000,000,000 CPU steps per
+transaction on [mainnet](https://api.koios.rest/api/v1/epoch_params?limit=1&order=epoch_no.desc),
+and 17,500,000 and 10,000,000,000 respectively on
+[preprod](https://preprod.koios.rest/api/v1/epoch_params?limit=1&order=epoch_no.desc)
+and [preview](https://preview.koios.rest/api/v1/epoch_params?limit=1&order=epoch_no.desc).
 
 | Limit                            |                Value |
 | -------------------------------- | -------------------: |
@@ -79,3 +86,68 @@ representation, add matching on-chain and Gateway guards, and test the chosen
 limit and limit-plus-one. Explicit two-header misbehaviour evidence requires a
 separate capacity result because its payload shape is materially larger than a
 normal update.
+
+## Compact reference prototype
+
+The prototype keeps the standard Tendermint header but removes the validator
+set from the update transaction. The Gateway packs the ordered validator public
+keys and voting powers into a separate reference UTxO. The update carries a
+signer bitmap and one signed timestamp and Ed25519 signature for each selected
+validator. Validator addresses and total voting power are derived instead of
+being relayed, and absent and nil commit slots are omitted.
+
+The Aiken prototype has a separate content validator for the packed validator
+data. It enforces the CometBFT ordering, derives each address from its public
+key, rejects duplicate addresses, recomputes total voting power and the
+ordinary CometBFT validator-set hash. The compact update verifier applies the
+strict greater-than-two-thirds quorum. The full adjacent-update test also binds
+the complete Tendermint header hash to the commit, checks the client chain and
+monotonically increasing height, binds the trusted and target validator roots
+to the referenced set, and preserves the existing trusting-period and
+clock-drift bounds.
+
+The structural Gateway measurements are:
+
+| Scenario                    | Signers | Reference datum | Signed bytes | Safe margin |
+| --------------------------- | ------: | --------------: | -----------: | ----------: |
+| Injective, 45 validators    |      15 |     1,907 bytes |        2,833 |      12,801 |
+| Equal-power, 200 validators |     134 |     8,296 bytes |       11,689 |       3,945 |
+| Equal-power, 256 validators |     171 |    10,608 bytes |       14,444 |       1,190 |
+
+For 200 equal-power validators, the full adjacent Aiken verification with 134
+real signatures uses 40,175,516 memory units and 20,391,504,366 CPU steps. When
+the same evaluation also validates the complete referenced validator set, it
+uses 84,026,773 memory units and 35,409,519,082 CPU steps. The Gateway's
+canonical compact-header CBOR is 10,469 bytes; Aiken serializes the same field
+shape in 10,478 bytes because it uses indefinite record field lists.
+
+The Gateway and Aiken 200-validator benchmarks currently use different
+deterministic key generators. Their CBOR field layout is cross-checked, but a
+single shared 200-validator vector is still required before production work.
+
+These results show that the compact 200-validator payload fits by bytes. They
+do not show that it fits in one current Cardano transaction. The 40,175,516
+memory and 20,391,504,366 CPU used by the client verifier alone exceed current
+public-network transaction limits before HostState verification is added. The
+Gateway transactions are unbalanced structural lower bounds, are not provider
+completed or ledger evaluated, and use two all-default HostState paths. The
+production validators do not import the prototype code.
+
+The reference UTxO is not authenticated by the prototype. Production code must
+either validate its complete contents during the client update or require a
+token minted by a validator-set registration policy that performed the same
+validation. Trusting only the root claimed inside an arbitrary reference datum
+would be unsafe. The isolated 200-validator content validation uses 43,625,956
+memory units and 14,981,874,767 CPU steps, so it also exceeds current
+public-network transaction limits and cannot simply be moved into one
+registration transaction.
+
+The next prototype must split validator-set certification and signature
+verification into bounded transactions that produce authenticated receipts, or
+replace those checks with a Cardano-verifiable aggregate proof. The final
+client update would consume those receipts. It must also build and evaluate a
+balanced whole transaction with populated HostState paths, implement
+skipped-height trusted-overlap verification, and handle misbehaviour as
+separately verified headers. Production integration would then require new
+Aiken redeemer branches and Gateway transaction orchestration, but no change to
+the standard Hermes header or the Go light client modules.
