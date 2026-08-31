@@ -51,6 +51,7 @@ const acknowledgement = "acknowledgement commitment"
 
 type Mutation {
   Valid
+  OrderedValid
   VerifyPathSequenceMismatch
 }
 
@@ -230,10 +231,15 @@ fn commitment_absence_proof(
 fn check_composed_prune(mutation: Mutation) -> Bool {
   let mock = setup()
   let proof_height = Height { revision_number: 1, revision_height: 13 }
+  let is_ordered = mutation == OrderedValid
   let channel =
     Channel {
       state: channel_state.Open,
-      ordering: channel_order.Unordered,
+      ordering: if is_ordered {
+        channel_order.Ordered
+      } else {
+        channel_order.Unordered
+      },
       counterparty: ChannelCounterparty {
         port_id: "port-1",
         channel_id: "channel-0",
@@ -246,10 +252,18 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       state: ChannelDatumState {
         channel,
         next_sequence_send: 1,
-        next_sequence_recv: 1,
+        next_sequence_recv: if is_ordered {
+          sequence + 1
+        } else {
+          1
+        },
         next_sequence_ack: 1,
         packet_commitment: [],
-        packet_receipt: [Pair(sequence, "")],
+        packet_receipt: if is_ordered {
+          []
+        } else {
+          [Pair(sequence, "")]
+        },
         packet_acknowledgement: [Pair(sequence, acknowledgement)],
         minimum_receive_proof_height: Height {
           revision_number: 1,
@@ -301,7 +315,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       cbor.serialise(""),
       all_empty_siblings,
     )
-  let old_root =
+  let unordered_old_root =
     ibc_state_commitment.apply_update(
       root_after_receipt_insert,
       acknowledgement_key,
@@ -317,13 +331,13 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
     )
   let root_after_receipt_delete =
     ibc_state_commitment.apply_update(
-      old_root,
+      unordered_old_root,
       receipt_key,
       cbor.serialise(""),
       "",
       receipt_delete_siblings,
     )
-  let new_root =
+  let unordered_new_root =
     ibc_state_commitment.apply_update(
       root_after_receipt_delete,
       acknowledgement_key,
@@ -331,6 +345,28 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       "",
       all_empty_siblings,
     )
+  let ordered_old_root =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      acknowledgement_key,
+      "",
+      cbor.serialise(acknowledgement),
+      all_empty_siblings,
+    )
+  let ordered_new_root =
+    ibc_state_commitment.apply_update(
+      ordered_old_root,
+      acknowledgement_key,
+      cbor.serialise(acknowledgement),
+      "",
+      all_empty_siblings,
+    )
+  let (old_root, new_root, packet_receipt_siblings) =
+    if is_ordered {
+      (ordered_old_root, ordered_new_root, [])
+    } else {
+      (unordered_old_root, unordered_new_root, receipt_delete_siblings)
+    }
 
   expect input_host_datum: HostStateDatum =
     validator_utils.get_inline_datum(mock.host_state_input.output)
@@ -390,7 +426,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
   let verify_sequence =
     when mutation is {
       VerifyPathSequenceMismatch -> sequence + 1
-      Valid -> sequence
+      Valid | OrderedValid -> sequence
     }
   let verify_path: MerklePath =
     merkle.apply_prefix(
@@ -414,7 +450,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       next_sequence_recv_siblings: [],
       next_sequence_ack_siblings: [],
       packet_commitment_siblings: [],
-      packet_receipt_siblings: receipt_delete_siblings,
+      packet_receipt_siblings,
       packet_acknowledgement_siblings: all_empty_siblings,
     }
   let verify_redeemer: VerifyProofRedeemer =
@@ -497,7 +533,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
     )
 
   when mutation is {
-    Valid -> and {
+    Valid | OrderedValid -> and {
         marker_valid?,
         spending_channel_valid?,
         host_state_valid?,
@@ -514,6 +550,10 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
 
 test prune_packet_history_composes_all_real_validators() {
   check_composed_prune(Valid)
+}
+
+test ordered_prune_packet_history_composes_all_real_validators() {
+  check_composed_prune(OrderedValid)
 }
 
 test prune_packet_history_composition_rejects_verify_path_sequence_mismatch() {

@@ -515,18 +515,24 @@ The cleanup transition proves these invariants:
 
 - Packet history remains authoritative on-chain; Gateway or relayer state is
   not needed to recover the live IBC state root.
-- Only an unordered receipt and acknowledgement for the same sequence can be
-  removed, and the corresponding source commitment must be proven absent at an
-  authenticated counterparty height.
+- Only finalized destination history can be removed, and the corresponding
+  source commitment must be proven absent at an authenticated counterparty
+  height. Unordered channels remove the receipt and acknowledgement for the
+  same sequence; ordered channels remove only the acknowledgement and require
+  that the sequence is below `next_sequence_recv`.
 - The prune height cannot precede either the existing replay floor or the
   greatest proof height accepted by any receive on the channel.
-- Pruning advances the replay floor atomically with both Merkle-leaf deletions,
-  so a packet-membership proof from an older height cannot replay the receive.
+- Pruning advances the replay floor atomically with the ordering-specific
+  Merkle-leaf deletion, so a packet-membership proof from an older height cannot
+  replay the receive. Ordered replay is independently prevented by the
+  unchanged monotonic `next_sequence_recv` counter.
 - Ordinary unordered receives may still arrive out of proof-height order above
   the replay floor; the receive high-water mark never becomes a receive-ordering
   requirement.
-- Receipt deletion is applied before acknowledgement deletion, and both sparse
-  Merkle witnesses must produce the exact successor HostState root.
+- Unordered receipt deletion is applied before acknowledgement deletion and
+  both sparse-Merkle witnesses must produce the exact successor HostState root.
+  Ordered pruning preserves the receipt root and supplies only the
+  acknowledgement-deletion witness.
 - No packet commitment or unrelated channel field may change during cleanup,
   and pruning remains executable when the channel datum is at its 64-entry
   bound.

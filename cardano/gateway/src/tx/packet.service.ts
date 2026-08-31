@@ -1038,6 +1038,7 @@ export class PacketService {
       convertHex2String(inputChannelDatum.port),
       channelId,
       sequence,
+      inputChannelDatum.state.channel.ordering,
     );
     const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
@@ -1124,10 +1125,18 @@ export class PacketService {
         `Channel ${pruneOperator.channelId} belongs to port ${convertHex2String(channelDatum.port)}, not ${pruneOperator.portId}`,
       );
     }
-    if (channelDatum.state.channel.ordering !== 'Unordered') {
-      throw new GrpcFailedPreconditionException('Packet history pruning is only valid for unordered channels');
+    const ordering = channelDatum.state.channel.ordering;
+    if (ordering !== 'Unordered' && ordering !== 'Ordered') {
+      throw new GrpcFailedPreconditionException(
+        `Packet history pruning is not valid for channel ordering ${ordering}`,
+      );
     }
-    if (!channelDatum.state.packet_receipt.has(pruneOperator.sequence)) {
+    if (ordering === 'Ordered' && pruneOperator.sequence >= channelDatum.state.next_sequence_recv) {
+      throw new GrpcFailedPreconditionException(
+        `Ordered packet sequence ${pruneOperator.sequence} has not been received on ${pruneOperator.channelId}`,
+      );
+    }
+    if (ordering === 'Unordered' && !channelDatum.state.packet_receipt.has(pruneOperator.sequence)) {
       throw new GrpcFailedPreconditionException(
         `Packet receipt ${pruneOperator.sequence} does not exist on ${pruneOperator.channelId}`,
       );
@@ -1195,7 +1204,10 @@ export class PacketService {
       ...channelDatum,
       state: {
         ...channelDatum.state,
-        packet_receipt: deleteKeySortMap(channelDatum.state.packet_receipt, pruneOperator.sequence),
+        packet_receipt:
+          ordering === 'Unordered'
+            ? deleteKeySortMap(channelDatum.state.packet_receipt, pruneOperator.sequence)
+            : channelDatum.state.packet_receipt,
         packet_acknowledgement: deleteKeySortMap(
           channelDatum.state.packet_acknowledgement,
           pruneOperator.sequence,

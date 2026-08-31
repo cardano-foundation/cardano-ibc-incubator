@@ -657,31 +657,42 @@ export async function computeRootWithHandlePacketUpdate(
 }
 
 /**
- * Delete one finalized unordered packet's receipt and acknowledgement.
+ * Delete one finalized packet's retained destination history.
  *
- * Witness ordering is consensus-critical: the acknowledgement siblings are
- * computed after the receipt has been removed, matching `host_state_stt`.
+ * Unordered channels delete the receipt followed by the acknowledgement.
+ * Ordered channels delete only the acknowledgement because `next_sequence_recv`
+ * provides their replay protection. Witness ordering is consensus-critical:
+ * unordered acknowledgement siblings are computed after the receipt has been
+ * removed, matching `host_state_stt`.
  */
 export function computeRootWithPrunePacketHistoryUpdate(
   oldRoot: string,
   portId: string,
   channelId: string,
   sequence: bigint,
+  ordering: ChannelDatum['state']['channel']['ordering'],
 ): PrunePacketHistoryStateRootResult {
+  if (ordering !== 'Unordered' && ordering !== 'Ordered') {
+    throw new Error(`PrunePacketHistory does not support channel ordering '${ordering}'`);
+  }
+
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
   const sequenceText = sequence.toString();
   const receiptPath = `receipts/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
   const acknowledgementPath = `acks/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
 
-  if (!speculativeTree.get(receiptPath)) {
+  if (ordering === 'Unordered' && !speculativeTree.get(receiptPath)) {
     throw new Error(`PrunePacketHistory expects an existing receipt at '${receiptPath}'`);
   }
   if (!speculativeTree.get(acknowledgementPath)) {
     throw new Error(`PrunePacketHistory expects an existing acknowledgement at '${acknowledgementPath}'`);
   }
 
-  const packetReceiptSiblings = speculativeTree.getSiblings(receiptPath).map((hash) => hash.toString('hex'));
-  speculativeTree.set(receiptPath, Buffer.alloc(0));
+  let packetReceiptSiblings: string[] = [];
+  if (ordering === 'Unordered') {
+    packetReceiptSiblings = speculativeTree.getSiblings(receiptPath).map((hash) => hash.toString('hex'));
+    speculativeTree.set(receiptPath, Buffer.alloc(0));
+  }
 
   const packetAcknowledgementSiblings = speculativeTree
     .getSiblings(acknowledgementPath)

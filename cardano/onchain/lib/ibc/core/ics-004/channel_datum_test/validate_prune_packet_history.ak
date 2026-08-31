@@ -57,6 +57,36 @@ fn expected_output(input: ChannelDatum, proof_height: height_mod.Height) {
   }
 }
 
+fn ordered_input_datum() -> ChannelDatum {
+  let input = input_datum()
+  ChannelDatum {
+    ..input,
+    state: ChannelDatumState {
+      ..input.state,
+      channel: Channel { ..input.state.channel, ordering: Ordered },
+      next_sequence_recv: sequence + 1,
+      packet_receipt: [],
+    },
+  }
+}
+
+fn ordered_expected_output(
+  input: ChannelDatum,
+  proof_height: height_mod.Height,
+) -> ChannelDatum {
+  ChannelDatum {
+    ..input,
+    state: ChannelDatumState {
+      ..input.state,
+      packet_acknowledgement: pairs.delete_first(
+        input.state.packet_acknowledgement,
+        sequence,
+      ),
+      minimum_receive_proof_height: proof_height,
+    },
+  }
+}
+
 test prune_deletes_both_entries_and_advances_only_floor() {
   let input = input_datum()
   let proof_height = height_mod.new_height(1, 12)
@@ -240,21 +270,125 @@ test prune_rejects_wrong_sequence() {
   )
 }
 
-test prune_rejects_ordered_channel() {
-  let input = input_datum()
-  let ordered_input =
+test ordered_prune_deletes_only_ack_and_advances_only_floor() {
+  let ordered_input = ordered_input_datum()
+  let proof_height = height_mod.new_height(1, 12)
+
+  channel_datum_mod.validate_prune_packet_history(
+    ordered_input,
+    ordered_expected_output(ordered_input, proof_height),
+    sequence,
+    proof_height,
+  )
+}
+
+test ordered_prune_works_at_packet_history_capacity() {
+  let base = ordered_input_datum()
+  let acknowledgements =
+    packet_entries(
+      1,
+      channel_datum_mod.max_packet_entries_per_channel,
+      acknowledgement,
+    )
+  let input =
     ChannelDatum {
-      ..input,
+      ..base,
       state: ChannelDatumState {
-        ..input.state,
-        channel: Channel { ..input.state.channel, ordering: Ordered },
+        ..base.state,
+        next_sequence_recv: channel_datum_mod.max_packet_entries_per_channel + 1,
+        packet_commitment: [],
+        packet_acknowledgement: acknowledgements,
       },
     }
   let proof_height = height_mod.new_height(1, 12)
 
+  and {
+    channel_datum_mod.packet_entry_count(input.state) == channel_datum_mod.max_packet_entries_per_channel,
+    channel_datum_mod.validate_prune_packet_history(
+      input,
+      ordered_expected_output(input, proof_height),
+      sequence,
+      proof_height,
+    ),
+  }
+}
+
+test ordered_prune_rejects_missing_acknowledgement() {
+  let input = ordered_input_datum()
+  let invalid_input =
+    ChannelDatum {
+      ..input,
+      state: ChannelDatumState { ..input.state, packet_acknowledgement: [] },
+    }
+  let proof_height = height_mod.new_height(1, 12)
+
   !channel_datum_mod.validate_prune_packet_history(
-    ordered_input,
-    expected_output(ordered_input, proof_height),
+    invalid_input,
+    ordered_expected_output(invalid_input, proof_height),
+    sequence,
+    proof_height,
+  )
+}
+
+test ordered_prune_rejects_sequence_at_receive_boundary() {
+  let input = ordered_input_datum()
+  let invalid_input =
+    ChannelDatum {
+      ..input,
+      state: ChannelDatumState { ..input.state, next_sequence_recv: sequence },
+    }
+  let proof_height = height_mod.new_height(1, 12)
+
+  !channel_datum_mod.validate_prune_packet_history(
+    invalid_input,
+    ordered_expected_output(invalid_input, proof_height),
+    sequence,
+    proof_height,
+  )
+}
+
+test ordered_prune_rejects_receipt_mutation() {
+  let base = ordered_input_datum()
+  let input =
+    ChannelDatum {
+      ..base,
+      state: ChannelDatumState {
+        ..base.state,
+        packet_receipt: [Pair(1, "unrelated receipt")],
+      },
+    }
+  let proof_height = height_mod.new_height(1, 12)
+  let valid_output = ordered_expected_output(input, proof_height)
+  let invalid_output =
+    ChannelDatum {
+      ..valid_output,
+      state: ChannelDatumState { ..valid_output.state, packet_receipt: [] },
+    }
+
+  !channel_datum_mod.validate_prune_packet_history(
+    input,
+    invalid_output,
+    sequence,
+    proof_height,
+  )
+}
+
+test ordered_prune_rejects_sequence_counter_mutation() {
+  let input = ordered_input_datum()
+  let proof_height = height_mod.new_height(1, 12)
+  let valid_output = ordered_expected_output(input, proof_height)
+  let invalid_output =
+    ChannelDatum {
+      ..valid_output,
+      state: ChannelDatumState {
+        ..valid_output.state,
+        next_sequence_recv: valid_output.state.next_sequence_recv + 1,
+      },
+    }
+
+  !channel_datum_mod.validate_prune_packet_history(
+    input,
+    invalid_output,
     sequence,
     proof_height,
   )
@@ -345,6 +479,77 @@ test old_membership_height_cannot_replay_after_prune() {
       packet,
       acknowledgement,
       receive_height,
+    ),
+  }
+}
+
+test ordered_receive_sequence_still_rejects_replay_after_ack_prune() {
+  let base = ordered_input_datum()
+  let packet =
+    Packet {
+      sequence,
+      source_port: base.state.channel.counterparty.port_id,
+      source_channel: base.state.channel.counterparty.channel_id,
+      destination_port: base.port_id,
+      destination_channel: "channel-1",
+      data: "packet data",
+      timeout_height: height_mod.zero_height(),
+      timeout_timestamp: 100,
+    }
+  let before_receive =
+    ChannelDatum {
+      ..base,
+      state: ChannelDatumState {
+        ..base.state,
+        next_sequence_recv: sequence,
+        packet_acknowledgement: [],
+        minimum_receive_proof_height: height_mod.zero_height(),
+        maximum_receive_proof_height: height_mod.zero_height(),
+      },
+    }
+  let receive_height = height_mod.new_height(1, 10)
+  let after_receive =
+    ChannelDatum {
+      ..before_receive,
+      state: ChannelDatumState {
+        ..before_receive.state,
+        next_sequence_recv: sequence + 1,
+        packet_acknowledgement: [Pair(sequence, acknowledgement)],
+        maximum_receive_proof_height: receive_height,
+      },
+    }
+  let prune_height = height_mod.new_height(1, 12)
+  let after_prune = ordered_expected_output(after_receive, prune_height)
+  let replay_successor =
+    ChannelDatum {
+      ..after_prune,
+      state: ChannelDatumState {
+        ..after_prune.state,
+        next_sequence_recv: after_prune.state.next_sequence_recv + 1,
+        packet_acknowledgement: [Pair(sequence, acknowledgement)],
+      },
+    }
+
+  and {
+    channel_datum_mod.validate_recv_packet(
+      before_receive,
+      after_receive,
+      packet,
+      acknowledgement,
+      receive_height,
+    ),
+    channel_datum_mod.validate_prune_packet_history(
+      after_receive,
+      after_prune,
+      sequence,
+      prune_height,
+    ),
+    !channel_datum_mod.validate_recv_packet(
+      after_prune,
+      replay_successor,
+      packet,
+      acknowledgement,
+      prune_height,
     ),
   }
 }

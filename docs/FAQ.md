@@ -37,11 +37,14 @@ resolution path.
 
 ## Why can finalized packet history be pruned without keeping an off-chain copy?
 
-Pruning removes only a finalized receipt and acknowledgement pair from an
-unordered channel; unresolved outbound packet commitments remain on-chain.
-Before allowing deletion, Cardano verifies at a sufficiently new authenticated
-counterparty height that the corresponding source commitment no longer exists,
-then atomically raises the channel's on-chain receive-proof floor so an older
+Pruning removes only finalized destination history: a receipt and
+acknowledgement pair from an unordered channel, or an acknowledgement from an
+ordered channel. Ordered channels do not store receipt entries; their monotonic
+`next_sequence_recv` counter prevents the same sequence from being received
+again. Unresolved outbound packet commitments remain on-chain. Before allowing
+deletion, Cardano verifies at a sufficiently new authenticated counterparty
+height that the corresponding source commitment no longer exists, then
+atomically raises the channel's on-chain receive-proof floor so an older
 membership proof cannot replay the packet.
 
 Packet sequences advance monotonically, so a resolved commitment for that

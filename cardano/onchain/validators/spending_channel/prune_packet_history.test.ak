@@ -37,7 +37,12 @@ type Mutation {
   MissingAcknowledgement
   FloorAboveProof
   MaximumAboveProof
-  OrderedChannel
+  OrderedValid
+  OrderedAtCapacity
+  OrderedMissingAcknowledgement
+  OrderedSequenceAtReceiveBoundary
+  OrderedReceiptMutation
+  OrderedCounterMutation
   UnrelatedCommitmentMutation
 }
 
@@ -52,6 +57,8 @@ fn packet_entries(first: Int, last: Int, value: ByteArray) {
 fn check(mutation: Mutation) -> Bool {
   let mock_data = setup()
   let proof_height = Height { revision_number: 1, revision_height: 13 }
+  let is_ordered =
+    mutation == OrderedValid || mutation == OrderedAtCapacity || mutation == OrderedMissingAcknowledgement || mutation == OrderedSequenceAtReceiveBoundary || mutation == OrderedReceiptMutation || mutation == OrderedCounterMutation
   let floor =
     when mutation is {
       FloorAboveProof -> Height { revision_number: 2, revision_height: 1 }
@@ -63,20 +70,29 @@ fn check(mutation: Mutation) -> Bool {
       _ -> Height { revision_number: 1, revision_height: 10 }
     }
   let ordering =
-    when mutation is {
-      OrderedChannel -> channel_order_mod.Ordered
-      _ -> channel_order_mod.Unordered
+    if is_ordered {
+      channel_order_mod.Ordered
+    } else {
+      channel_order_mod.Unordered
     }
   let receipts =
-    when mutation is {
-      AtCapacity ->
-        packet_entries(
-          1,
-          channel_datum_mod.max_packet_entries_per_channel / 2,
-          receipt,
-        )
-      MissingReceipt -> []
-      _ -> [Pair(sequence, receipt)]
+    if is_ordered {
+      if mutation == OrderedReceiptMutation {
+        [Pair(1, "unrelated receipt")]
+      } else {
+        []
+      }
+    } else {
+      when mutation is {
+        AtCapacity ->
+          packet_entries(
+            1,
+            channel_datum_mod.max_packet_entries_per_channel / 2,
+            receipt,
+          )
+        MissingReceipt -> []
+        _ -> [Pair(sequence, receipt)]
+      }
     }
   let acknowledgements =
     when mutation is {
@@ -86,13 +102,31 @@ fn check(mutation: Mutation) -> Bool {
           channel_datum_mod.max_packet_entries_per_channel / 2,
           acknowledgement,
         )
+      OrderedAtCapacity ->
+        packet_entries(
+          1,
+          channel_datum_mod.max_packet_entries_per_channel,
+          acknowledgement,
+        )
       MissingAcknowledgement -> []
+      OrderedMissingAcknowledgement -> []
       _ -> [Pair(sequence, acknowledgement)]
     }
   let commitments =
     when mutation is {
       AtCapacity -> []
+      OrderedAtCapacity -> []
       _ -> [Pair(1, "unrelated outbound commitment")]
+    }
+  let next_sequence_recv =
+    if mutation == OrderedSequenceAtReceiveBoundary {
+      sequence
+    } else if mutation == OrderedAtCapacity {
+      channel_datum_mod.max_packet_entries_per_channel + 1
+    } else if is_ordered {
+      sequence + 1
+    } else {
+      1
     }
 
   let channel =
@@ -111,7 +145,7 @@ fn check(mutation: Mutation) -> Bool {
       state: ChannelDatumState {
         channel,
         next_sequence_send: 2,
-        next_sequence_recv: 1,
+        next_sequence_recv,
         next_sequence_ack: 1,
         packet_commitment: commitments,
         packet_receipt: receipts,
@@ -127,7 +161,11 @@ fn check(mutation: Mutation) -> Bool {
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
-        packet_receipt: pairs.delete_first(receipts, sequence),
+        packet_receipt: if is_ordered {
+          receipts
+        } else {
+          pairs.delete_first(receipts, sequence)
+        },
         packet_acknowledgement: pairs.delete_first(acknowledgements, sequence),
         minimum_receive_proof_height: proof_height,
       },
@@ -142,13 +180,29 @@ fn check(mutation: Mutation) -> Bool {
             packet_commitment: [],
           },
         }
+      OrderedReceiptMutation ->
+        ChannelDatum {
+          ..valid_output_datum,
+          state: ChannelDatumState {
+            ..valid_output_datum.state,
+            packet_receipt: [],
+          },
+        }
+      OrderedCounterMutation ->
+        ChannelDatum {
+          ..valid_output_datum,
+          state: ChannelDatumState {
+            ..valid_output_datum.state,
+            next_sequence_recv: valid_output_datum.state.next_sequence_recv + 1,
+          },
+        }
       _ -> valid_output_datum
     }
 
   let channel_input =
     test_utils.build_channel_input(input_datum, mock_data.channel_token)
   expect
-    if mutation == AtCapacity {
+    if mutation == AtCapacity || mutation == OrderedAtCapacity {
       channel_datum_mod.packet_entry_count(input_datum.state) == channel_datum_mod.max_packet_entries_per_channel
     } else {
       True
@@ -268,8 +322,28 @@ test prune_packet_history_rejects_proof_below_receive_high_water() {
   !check(MaximumAboveProof)
 }
 
-test prune_packet_history_rejects_ordered_channel() {
-  !check(OrderedChannel)
+test prune_packet_history_accepts_ordered_ack_only_transition() {
+  check(OrderedValid)
+}
+
+test prune_packet_history_accepts_ordered_channel_at_capacity() {
+  check(OrderedAtCapacity)
+}
+
+test prune_packet_history_rejects_missing_ordered_acknowledgement() {
+  !check(OrderedMissingAcknowledgement)
+}
+
+test prune_packet_history_rejects_ordered_sequence_at_receive_boundary() {
+  !check(OrderedSequenceAtReceiveBoundary)
+}
+
+test prune_packet_history_rejects_ordered_receipt_mutation() {
+  !check(OrderedReceiptMutation)
+}
+
+test prune_packet_history_rejects_ordered_counter_mutation() {
+  !check(OrderedCounterMutation)
 }
 
 test prune_packet_history_rejects_unrelated_commitment_mutation() {

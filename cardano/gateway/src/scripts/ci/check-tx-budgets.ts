@@ -145,6 +145,16 @@ function dataBytes(name: string, bytes: number): SizedPayload {
   return sized(name, Lucid.Data.to(hexOfBytes(bytes) as never, Lucid.Data.Bytes(), { canonical: true }));
 }
 
+function orderedPruneHostStateRedeemer(): string {
+  const acknowledgementSiblings = Array.from({ length: 64 }, () => hexOfBytes(32, '00'));
+
+  // HandlePacket is constructor 7 in the wire-locked HostStateRedeemer ABI.
+  // Its seven fields are sparse-Merkle sibling lists in declaration order.
+  return Lucid.Data.to(new Lucid.Constr(7, [[], [], [], [], [], [], acknowledgementSiblings]), undefined, {
+    canonical: true,
+  });
+}
+
 function scriptBytes(validators: Map<string, BlueprintValidator>, title: string): number {
   const validator = validators.get(title);
   if (!validator) {
@@ -615,7 +625,7 @@ async function buildScenarios(
     },
     {
       id: 'prune_packet_history_at_capacity',
-      name: 'PrunePacketHistory at history capacity',
+      name: 'PrunePacketHistory unordered at history capacity',
       // Two spending inputs plus the referenced connection and client UTxOs.
       inputCount: 4,
       outputCount: 2,
@@ -657,6 +667,53 @@ async function buildScenarios(
         'spending_channel.test.prune_packet_history_succeed',
         'spending_channel/prune_packet_history.test.prune_packet_history_succeeds_at_capacity_boundary',
         'host_state_stt.test.host_state_prune_packet_history_succeeds_at_full_packet_history_capacity',
+        'verifying_proof.test.verify_non_membership_succeed',
+      ],
+    },
+    {
+      id: 'prune_packet_history_ordered_at_acknowledgement_capacity',
+      name: 'PrunePacketHistory ordered at acknowledgement capacity',
+      // The input channel retains 64 acknowledgements; the successor datum
+      // contains 63 after deleting the selected finalized sequence.
+      inputCount: 4,
+      outputCount: 2,
+      mintPolicyCount: 2,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_channel.spend_channel.spend',
+        'spending_channel/prune_packet_history.prune_packet_history.mint',
+        'verifying_proof.verify_proof.mint',
+      ],
+      redeemers: [
+        sized(
+          'spend channel PrunePacketHistory',
+          await encodeSpendChannelRedeemer(
+            {
+              PrunePacketHistory: {
+                sequence: PACKET.sequence,
+                proof_commitment_absence: proofPayload(1536) as never,
+                proof_height: HEIGHT,
+              },
+            },
+            Lucid,
+          ),
+        ),
+        dataBytes('prune packet-history marker', 80),
+        sized('verify non-membership proof', verifyProofRedeemer(1536)),
+        // Ordered channels delete only the acknowledgement leaf. The encoded
+        // redeemer has an empty receipt witness and one 64-level ack witness.
+        sized('host state HandlePacket redeemer', orderedPruneHostStateRedeemer()),
+      ],
+      datums: [
+        dataBytes('updated host state datum', 1000),
+        // This conservative bound covers the 63 remaining 32-byte ack hashes.
+        dataBytes('updated ordered channel datum at acknowledgement capacity', 2_800),
+      ],
+      largestProofPayloadBytes: 1536,
+      aikenTests: [
+        'spending_channel.test.prune_packet_history_succeed',
+        'spending_channel/prune_packet_history.test.prune_packet_history_accepts_ordered_channel_at_capacity',
+        'host_state_stt.test.host_state_ordered_prune_succeeds_at_full_packet_history_capacity',
         'verifying_proof.test.verify_non_membership_succeed',
       ],
     },

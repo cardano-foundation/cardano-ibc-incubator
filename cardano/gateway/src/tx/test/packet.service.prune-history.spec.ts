@@ -6,7 +6,7 @@ import { packetCommitmentPath } from '../../shared/helpers/packet-keys';
 const sequence = 7n;
 const proofHeight = { revisionNumber: 0n, revisionHeight: 40n };
 
-function createService() {
+function createService(ordering: 'Unordered' | 'Ordered' | 'None' = 'Unordered') {
   const deployment = {
     validators: {
       spendChannel: {
@@ -23,7 +23,7 @@ function createService() {
     state: {
       channel: {
         state: 'Open',
-        ordering: 'Unordered',
+        ordering,
         counterparty: {
           port_id: convertString2Hex('transfer'),
           channel_id: convertString2Hex('channel-44'),
@@ -32,7 +32,7 @@ function createService() {
         version: convertString2Hex('ics20-1'),
       },
       next_sequence_send: 1n,
-      next_sequence_recv: 1n,
+      next_sequence_recv: ordering === 'Ordered' ? sequence + 1n : 1n,
       next_sequence_ack: 1n,
       packet_commitment: new Map(),
       packet_receipt: new Map([[sequence, '']]),
@@ -174,6 +174,85 @@ describe('PacketService packet-history prune builder', () => {
       }),
     ).rejects.toThrow('below the channel receive high-water mark');
     expect(lucidService.findUtxoByUnit).toHaveBeenCalledTimes(1);
+    expect(lucidService.createUnsignedPrunePacketHistoryTx).not.toHaveBeenCalled();
+  });
+
+  it('deletes only the acknowledgement for an ordered packet and preserves the receipt map', async () => {
+    const { service, lucidService, channelDatum } = createService('Ordered');
+    channelDatum.state.packet_receipt = new Map([[2n, '']]);
+    const originalReceiptMap = channelDatum.state.packet_receipt;
+
+    await service.buildUnsignedPrunePacketHistoryTx({
+      signer: 'addr_test1signer',
+      portId: 'transfer',
+      channelId: 'channel-7',
+      sequence,
+      proofCommitmentAbsence: { proofs: [] },
+      proofHeight,
+    });
+
+    expect((service as any).buildHostStateUpdateForPrunePacketHistory).toHaveBeenCalledWith(
+      channelDatum,
+      'channel-7',
+      sequence,
+    );
+    const updatedDatum = lucidService.encode.mock.calls.find((call: unknown[]) => call[1] === 'channel')[0];
+    expect(updatedDatum.state.packet_receipt).toBe(originalReceiptMap);
+    expect(updatedDatum.state.packet_receipt.has(sequence)).toBe(false);
+    expect(updatedDatum.state.packet_receipt.has(2n)).toBe(true);
+    expect(updatedDatum.state.packet_acknowledgement.has(sequence)).toBe(false);
+    expect(updatedDatum.state.next_sequence_recv).toBe(sequence + 1n);
+    expect(updatedDatum.state.minimum_receive_proof_height).toEqual(proofHeight);
+  });
+
+  it('rejects an ordered sequence that has not yet been received', async () => {
+    const { service, lucidService, channelDatum } = createService('Ordered');
+    channelDatum.state.next_sequence_recv = sequence;
+
+    await expect(
+      service.buildUnsignedPrunePacketHistoryTx({
+        signer: 'addr_test1signer',
+        portId: 'transfer',
+        channelId: 'channel-7',
+        sequence,
+        proofCommitmentAbsence: { proofs: [] },
+        proofHeight,
+      }),
+    ).rejects.toThrow('has not been received');
+    expect(lucidService.findUtxoByUnit).toHaveBeenCalledTimes(1);
+    expect(lucidService.createUnsignedPrunePacketHistoryTx).not.toHaveBeenCalled();
+  });
+
+  it('still requires an acknowledgement for ordered pruning', async () => {
+    const { service, lucidService, channelDatum } = createService('Ordered');
+    channelDatum.state.packet_acknowledgement.clear();
+
+    await expect(
+      service.buildUnsignedPrunePacketHistoryTx({
+        signer: 'addr_test1signer',
+        portId: 'transfer',
+        channelId: 'channel-7',
+        sequence,
+        proofCommitmentAbsence: { proofs: [] },
+        proofHeight,
+      }),
+    ).rejects.toThrow('Packet acknowledgement 7 does not exist');
+    expect(lucidService.createUnsignedPrunePacketHistoryTx).not.toHaveBeenCalled();
+  });
+
+  it('rejects channels without an ordered or unordered mode', async () => {
+    const { service, lucidService } = createService('None');
+
+    await expect(
+      service.buildUnsignedPrunePacketHistoryTx({
+        signer: 'addr_test1signer',
+        portId: 'transfer',
+        channelId: 'channel-7',
+        sequence,
+        proofCommitmentAbsence: { proofs: [] },
+        proofHeight,
+      }),
+    ).rejects.toThrow('not valid for channel ordering None');
     expect(lucidService.createUnsignedPrunePacketHistoryTx).not.toHaveBeenCalled();
   });
 });
