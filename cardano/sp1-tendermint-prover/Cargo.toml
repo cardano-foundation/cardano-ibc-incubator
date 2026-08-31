@@ -18,12 +18,12 @@ prost = "=0.13.5"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.149"
 sha2 = "=0.10.9"
-sp1-sdk = { version = "=6.1.0", default-features = false, features = ["native-gnark"] }
-tempfile = "=3.27.0"
-tokio = { version = "=1.52.1", features = ["macros", "process", "rt-multi-thread", "signal"] }
+sp1-sdk = { version = "=6.1.0", default-features = false, features = ["native-gnark", "network"] }
+tokio = { version = "=1.52.1", features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "time"] }
 tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 
 [dev-dependencies]
 tendermint-proto = "=0.40.4"
+tempfile = "=3.27.0"
 tower = { version = "=0.5.3", features = ["util"] }

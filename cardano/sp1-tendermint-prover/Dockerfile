@@ -32,6 +32,7 @@ RUN mkdir -p /var/lib/cardano-ibc-wrapper \
 
 USER prover
 ENV SP1_TENDERMINT_LISTEN_ADDR=0.0.0.0:8080 \
+    SP1_TENDERMINT_PROVER_BACKEND=cpu \
     SP1_TENDERMINT_ELF=/opt/cardano-ibc/eureka/sp1-programs-v2.0.0/sp1-ics07-tendermint-update-client \
     SP1_TENDERMINT_MISBEHAVIOUR_ELF=/opt/cardano-ibc/eureka/sp1-programs-v2.0.0/sp1-ics07-tendermint-misbehaviour \
     CARDANO_BLS_WRAPPER_BIN=/usr/local/bin/bn254-to-bls-wrapper \

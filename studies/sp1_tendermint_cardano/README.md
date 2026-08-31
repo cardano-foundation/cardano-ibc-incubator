@@ -19,20 +19,25 @@ ICS-07 header or misbehaviour
 ```
 
 The proof size and Aiken proof-verification cost do not grow with the validator
-set. SP1 proving time still does.
+set. SP1 guest and prover work still grow; full proving-time scaling has not
+been measured.
 
 ## How it is integrated
 
 Hermes continues to submit the standard Tendermint `Header` or `Misbehaviour`
-message to the Gateway. When `TENDERMINT_UPDATE_CLIENT_MODE=sp1`, the Gateway
-sends the message and the required trusted state to the internal prover
-service. The service runs the released Eureka program, verifies its result
-locally, wraps the SP1 proof, and returns the Cardano proof and public output.
+message to the Gateway. Each deployment declares either
+`07-tendermint-sp1` or `07-tendermint-direct` and binds that protocol to its
+spend-client script hash. The Gateway checks the client UTxO against that hash.
+For an SP1 client, it sends the message and required trusted state to the
+internal prover service. The service runs the released Eureka program, verifies
+its result locally, wraps the SP1 proof, and returns the Cardano proof and
+public output.
 
 The Gateway then refetches the client UTxO, rejects a stale result, rebuilds the
 transaction against current HostState, and submits a proof-bearing client
-update. The existing direct verification path remains available through
-configuration.
+update. New deployments use the proof-only SP1 validator. Native Aiken
+verification remains a separate legacy deployment for existing direct clients;
+it is not another branch in the new validator.
 
 The Cardano transaction invokes three scripts. HostState applies the existing
 IBC state commitment update. The client validator checks the required state
@@ -49,8 +54,9 @@ attack evidence. Cardano separately rechecks client activity and trusted-state
 expiry against the transaction time.
 
 Deployment publishes the proof validator as a reference script, registers its
-stake credential, includes it in the bridge manifest, and parameterizes the
-client validator with its script hash. The deployment uses the
+stake credential, identifies the deployment as `07-tendermint-sp1` in the
+bridge manifest, and parameterizes the proof-only client validator with the
+proof-validator script hash. The deployment uses the
 `verification_key.json` produced by that deployment's wrapper setup and records
 its SHA-256 and the setup manifest in `handler.json`.
 
@@ -74,12 +80,102 @@ No Cosmos Go light-client module or Hermes change is required.
 The released update program executed a real 45-validator Injective adjacent
 update in 2,796,372 SP1 instructions. Local CPU proof generation took 590.383
 seconds and reached 8.99 GB resident memory. Loading the persisted wrapper
-setup took 136.207 seconds and wrapping took 18.891 seconds.
+setup took 136.207 seconds and wrapping took 18.891 seconds. These are one
+local development observation; hardware details and repeated-run statistics
+were not recorded.
+
+The service now keeps the wrapper process and its 505 MB proving key loaded.
+In one fresh two-request process on the Apple M5 host described below, startup
+to readiness took 134.319 seconds, then the two wraps took 9.775701833 and
+9.61133575 seconds. Total process wall time was 159.22 seconds and peak resident
+memory was recorded as approximately 4.23 GB. The run used Go 1.26.1,
+gnark 0.14.0, and gnark-crypto 0.19.2. This is one observation, not a latency or
+memory distribution. The startup cost is paid once per process, not once per
+header. This makes wrapping a small part of warm-request latency; it does not
+reduce the much larger SP1 proof-construction time.
+
+Reproduce the two-request wrapper run with
+`cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/benchmark-worker.sh`.
+
+A second runner-only measurement used a 16 GB Apple M5 with four performance
+cores, six efficiency cores, macOS 26.4, and Rust 1.91.1. The retained full
+Groth16 observation came from the pre-alignment prototype runner at commit
+`54b5776a8a6a805d5d695801089dd6897174825a`, not the currently attested runner.
+That proof call took 505.846 seconds and the complete process took 526.69
+seconds. Its input predates the current millisecond alignment, so its proof
+timestamp and public-values hash intentionally differ from the current runner
+observations. The following screening runs use cumulative proof modes:
+`Core` stops before recursive reduction, while `Compressed` includes Core and
+recursive reduction but stops before shrink, wrap, and the final Groth16 proof.
+Each row is one verified run of the same Injective fixture, not a statistical
+sample.
+
+| Configuration | Mode | Proof call | Maximum resident memory |
+| --- | --- | ---: | ---: |
+| SP1 defaults, 10 Rayon threads | Core | 58.150 s | 6.78 GB |
+| 16,777,216-entry trace chunks, 10 threads | Core | 56.035 s | 7.89 GB |
+| SP1 defaults, 10 threads | Compressed | 113.332 s | 9.28 GB |
+| 16,777,216-entry trace chunks, 10 threads | Compressed | 118.474 s | 8.31 GB |
+| SP1 defaults, 8 threads | Compressed | 128.726 s | 7.42 GB |
+| Reduced recursion workers, 10 threads | Compressed | 119.914 s | 8.00 GB |
+| Apple-native build with thin LTO, 10 threads | Compressed | 123.536 s | 7.72 GB |
+
+The smaller trace chunks reduced Compressed resident memory by about 10%, but
+made the proof about 4.5% slower. Eight threads, reduced recursion concurrency,
+and the native/LTO build were also slower. SP1's fixed proving-key option was
+not usable: SP1 6.1 reached an unimplemented executor reset and then failed
+with `artifact not found`. The best Compressed result alone is 113.332 seconds,
+before the remaining Groth16 stages, so these local settings cannot reduce the
+current CPU proof below 60 seconds. Reaching that target requires a material
+prover improvement, an SP1 upgrade with compatible circuit and wrapper keys,
+or faster CPU hardware; it is not a matter of enabling more local threads.
+
+The execution cost can be measured without generating a proof or using network
+credits:
+
+```sh
+studies/sp1_tendermint_cardano/eureka-guest-runner/benchmark-cpu.sh \
+  baseline execution all
+```
+
+A single Apple M5 run measured 0.907 seconds, 12,585 syscalls, and an estimated
+3,140,508 PGU for 45 validators. The 200-validator case measured 9.682 seconds,
+107,412 syscalls, and an estimated 19,714,926 PGU. These are local guest
+execution measurements, not proof-generation time or network billing. The
+generated JSON leaves network latency and actual network PGU fields null.
+
+The CPU proof profiles can be rerun separately:
+
+```sh
+studies/sp1_tendermint_cardano/eureka-guest-runner/benchmark-cpu.sh \
+  baseline compressed injective-45
+```
+
+The available profiles are `baseline`, `trace-16m`, `threads-8`,
+`recursion-low`, and `native`; the modes are `execution`, `core`, `compressed`,
+and `groth16`. Every run writes a timestamped directory with its context, log,
+and metrics. CPU proofs remain a manual benchmark and are not run in CI.
+
+The production service selects `cpu` or `network` with
+`SP1_TENDERMINT_PROVER_BACKEND`. CPU is the default and does not make an
+external request. Network mode uses the same SP1 6.1 program and proof format,
+applies explicit proof, auction, gas, cycle, and price limits, and still
+verifies the returned proof locally before wrapping it. No paid network proof
+has been submitted from this branch, so it contains no measured network proof
+latency. Network mode is still experimental: SP1's transport can retry an
+ambiguous submission, and this service does not yet persist the mapping from a
+Gateway request ID to a Succinct request ID across restarts. Retrying after an
+ambiguous failure can therefore pay for a duplicate proof. Within one service
+process, retries reuse the known Succinct request ID and fetch the proof again
+before local verification. A terminal network job remains attached to that
+Gateway request ID until an operator restarts the service; the service does not
+silently submit a replacement paid job.
 
 A generated 200-validator adjacent update executed successfully in 17,222,743
-SP1 instructions and was mock-proved. A production proof for that case has not
-been generated or timed. The measured Cardano proof remains 288 bytes in both
-the transaction encoding and the Aiken tests.
+SP1 instructions and was mock-proved. A full SP1 Groth16 proof was not generated
+or timed. The tracked 45-validator wrapped proof is 288 bytes in both the
+transaction encoding and the Aiken tests. The wrapper format fixes that length,
+but no wrapped proof was generated for the 200-validator case.
 
 The released misbehaviour program also proved deterministic two-validator
 double-sign evidence. The optimized end-to-end run took 765.06 seconds and
@@ -92,9 +188,11 @@ not remove every capacity limit. Client consensus-state history still affects
 the HostState and client transition. Proof-based clients therefore retain at
 most 10 consensus states. The Gateway rejects proof updates when the input
 already exceeds that limit, the on-chain validator enforces the same limit, and
-CI measures the complete transition at 10 states. Existing direct-mode clients
-with more than 10 states cannot switch to proof mode without a separate state
-migration. The direct path keeps its existing 300-state limit.
+CI exercises the isolated transition contexts at the 10-state boundary. A
+completed, provider-evaluated 10-state transaction still needs to be measured.
+A direct client cannot switch protocols in place because its UTxO is locked by
+the legacy validator. The legacy direct protocol keeps its existing 300-state
+limit.
 
 The prover is not trusted for safety because an invalid proof is rejected
 on-chain. It is a liveness and operations dependency. The current compose
@@ -124,7 +222,7 @@ produces a different verification key and requires a new Cardano deployment.
 
 ## Verification
 
-The normal tests do not generate a new SP1 production proof. They verify the
+The normal tests do not generate a fresh SP1 Groth16 proof. They verify the
 checked-in released-key regression proofs, rejection cases, encoders, Gateway
 orchestration, Aiken state transitions, and transaction budgets.
 

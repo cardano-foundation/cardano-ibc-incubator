@@ -114,15 +114,22 @@ export class TendermintProofService implements OnModuleInit {
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit(): void {
-    if (this.configService.get<'direct' | 'sp1'>('tendermintUpdateClientMode') !== 'sp1') {
+    const deployment = this.configService.get<{
+      tendermintClient?: { protocol?: string };
+      validators?: { tendermintProof?: unknown };
+    }>('deployment');
+    const protocol = deployment?.tendermintClient?.protocol;
+    if (protocol === '07-tendermint-direct') {
       return;
     }
-    if (!this.configService.get<string>('sp1TendermintProverEndpoint')) {
-      throw new Error('SP1_TENDERMINT_PROVER_ENDPOINT is required when TENDERMINT_UPDATE_CLIENT_MODE=sp1');
+    if (protocol !== '07-tendermint-sp1') {
+      throw new Error('The bridge deployment must declare a supported tendermintClient.protocol');
     }
-    const deployment = this.configService.get<{ validators?: { tendermintProof?: unknown } }>('deployment');
+    if (!this.configService.get<string>('sp1TendermintProverEndpoint')) {
+      throw new Error('SP1_TENDERMINT_PROVER_ENDPOINT is required for protocol 07-tendermint-sp1');
+    }
     if (!deployment?.validators?.tendermintProof) {
-      throw new Error('The bridge deployment must include validators.tendermintProof in SP1 mode');
+      throw new Error('The bridge deployment must include validators.tendermintProof for protocol 07-tendermint-sp1');
     }
   }
 

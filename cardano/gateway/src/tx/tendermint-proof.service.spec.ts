@@ -75,14 +75,24 @@ describe('TendermintProofService', () => {
     jest.restoreAllMocks();
   });
 
-  it('fails startup when SP1 mode is missing its prover or deployed verifier', () => {
-    expect(() => new TendermintProofService(config({ tendermintUpdateClientMode: 'sp1' })).onModuleInit()).toThrow(
-      'SP1_TENDERMINT_PROVER_ENDPOINT',
-    );
+  it('fails startup when an SP1 deployment is missing its prover or deployed verifier', () => {
+    expect(() =>
+      new TendermintProofService(
+        config({
+          deployment: {
+            tendermintClient: { protocol: '07-tendermint-sp1' },
+            validators: { tendermintProof: {} },
+          },
+        }),
+      ).onModuleInit(),
+    ).toThrow('SP1_TENDERMINT_PROVER_ENDPOINT');
 
     expect(() =>
       new TendermintProofService(
-        config({ tendermintUpdateClientMode: 'sp1', sp1TendermintProverEndpoint: 'http://prover' }),
+        config({
+          sp1TendermintProverEndpoint: 'http://prover',
+          deployment: { tendermintClient: { protocol: '07-tendermint-sp1' }, validators: {} },
+        }),
       ).onModuleInit(),
     ).toThrow('validators.tendermintProof');
   });
@@ -90,9 +100,24 @@ describe('TendermintProofService', () => {
   it('accepts a complete SP1 runtime configuration', () => {
     const service = new TendermintProofService(
       config({
-        tendermintUpdateClientMode: 'sp1',
         sp1TendermintProverEndpoint: 'http://prover',
-        deployment: { validators: { tendermintProof: { scriptHash: '11'.repeat(28) } } },
+        deployment: {
+          tendermintClient: { protocol: '07-tendermint-sp1' },
+          validators: { tendermintProof: { scriptHash: '11'.repeat(28) } },
+        },
+      }),
+    );
+
+    expect(() => service.onModuleInit()).not.toThrow();
+  });
+
+  it('does not require a prover for a normalized legacy direct deployment', () => {
+    const service = new TendermintProofService(
+      config({
+        deployment: {
+          tendermintClient: { protocol: '07-tendermint-direct' },
+          validators: {},
+        },
       }),
     );
 

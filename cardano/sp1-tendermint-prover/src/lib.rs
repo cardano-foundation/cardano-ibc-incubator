@@ -1,6 +1,11 @@
+mod proof_backend;
+mod wrapper_worker;
+
+pub use proof_backend::{BackendKind, NetworkSettings};
+
 use alloy_primitives::{Bytes, FixedBytes};
 use alloy_sol_types::{sol, SolValue};
-use anyhow::{bail, ensure, Context};
+use anyhow::{ensure, Context};
 use async_trait::async_trait;
 use axum::{
     extract::{DefaultBodyLimit, State},
@@ -17,7 +22,7 @@ use prost::Message;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sp1_sdk::{
-    CpuProver, Elf, HashableKey, ProveRequest, Prover, ProverClient, ProvingKey, SP1ProofMode,
+    network::NetworkMode, CpuProver, Elf, HashableKey, Prover, ProverClient, ProvingKey,
     SP1ProvingKey, SP1Stdin,
 };
 use std::{
@@ -26,12 +31,16 @@ use std::{
     io::Read,
     net::SocketAddr,
     path::{Path, PathBuf},
-    process::Command,
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
-use tempfile::TempDir;
 use tokio::sync::Semaphore;
+
+use proof_backend::ProofBackend;
+use wrapper_worker::WrapperWorker;
+
+#[cfg(test)]
+use tempfile::TempDir;
 
 pub const UPDATE_CLIENT_PROGRAM: &str = "sp1-ics07-tendermint-update-client-v2.0.0";
 pub const UPDATE_CLIENT_PROGRAM_VKEY_HEX: &str =
@@ -119,6 +128,10 @@ pub struct Config {
     pub wrapper_bin: PathBuf,
     pub wrapper_key_dir: PathBuf,
     pub wrapper_public_vk: PathBuf,
+    pub prover_backend: BackendKind,
+    pub network: NetworkSettings,
+    pub wrapper_startup_timeout: Duration,
+    pub wrapper_proof_timeout: Duration,
 }
 
 impl Config {
@@ -132,6 +145,34 @@ impl Config {
             |name: &str, default: PathBuf| env::var_os(name).map(PathBuf::from).unwrap_or(default);
         let wrapper_key_dir = path("CARDANO_BLS_WRAPPER_KEY_DIR", root.join("keys-local"));
         let eureka_programs = root.join("../../third_party/ibc-eureka/sp1-programs-v2.0.0");
+        let prover_backend = env::var("SP1_TENDERMINT_PROVER_BACKEND")
+            .unwrap_or_else(|_| "cpu".to_owned())
+            .parse()?;
+        let network_mode = env::var("SP1_TENDERMINT_NETWORK_MODE")
+            .unwrap_or_else(|_| "mainnet".to_owned())
+            .parse::<NetworkMode>()
+            .map_err(anyhow::Error::msg)
+            .context("parse SP1_TENDERMINT_NETWORK_MODE")?;
+        let network_rpc_url = optional_env("NETWORK_RPC_URL");
+        let network_proof_timeout = Duration::from_secs(bounded_env_u64(
+            "SP1_TENDERMINT_NETWORK_PROOF_TIMEOUT_SECS",
+            600,
+            1,
+            3_600,
+        )?);
+        let network_auction_timeout = Duration::from_secs(bounded_env_u64(
+            "SP1_TENDERMINT_NETWORK_AUCTION_TIMEOUT_SECS",
+            30,
+            1,
+            300,
+        )?);
+        let network_min_auction_period_seconds =
+            bounded_env_u64("SP1_TENDERMINT_NETWORK_MIN_AUCTION_PERIOD_SECS", 1, 1, 300)?;
+        let network_max_price_per_pgu = optional_env_u64(
+            "SP1_TENDERMINT_NETWORK_MAX_PRICE_PER_PGU",
+            1,
+            proof_backend::MAX_NETWORK_PRICE_PER_PGU,
+        )?;
         Ok(Self {
             listen_addr,
             elf_path: path(
@@ -151,8 +192,60 @@ impl Config {
                 "CARDANO_BLS_WRAPPER_PUBLIC_VK",
                 wrapper_key_dir.join("verification_key.json"),
             ),
+            prover_backend,
+            network: NetworkSettings {
+                mode: network_mode,
+                rpc_url: network_rpc_url,
+                proof_timeout: network_proof_timeout,
+                auction_timeout: network_auction_timeout,
+                min_auction_period_seconds: network_min_auction_period_seconds,
+                max_price_per_pgu: network_max_price_per_pgu,
+            },
+            wrapper_startup_timeout: Duration::from_secs(bounded_env_u64(
+                "CARDANO_BLS_WRAPPER_STARTUP_TIMEOUT_SECS",
+                600,
+                1,
+                900,
+            )?),
+            wrapper_proof_timeout: Duration::from_secs(bounded_env_u64(
+                "CARDANO_BLS_WRAPPER_PROOF_TIMEOUT_SECS",
+                120,
+                1,
+                300,
+            )?),
         })
     }
+}
+
+fn optional_env(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn bounded_env_u64(name: &str, default: u64, minimum: u64, maximum: u64) -> anyhow::Result<u64> {
+    let Some(raw) = optional_env(name) else {
+        return Ok(default);
+    };
+    parse_bounded_u64(name, &raw, minimum, maximum)
+}
+
+fn optional_env_u64(name: &str, minimum: u64, maximum: u64) -> anyhow::Result<Option<u64>> {
+    optional_env(name)
+        .map(|raw| parse_bounded_u64(name, &raw, minimum, maximum))
+        .transpose()
+}
+
+fn parse_bounded_u64(name: &str, raw: &str, minimum: u64, maximum: u64) -> anyhow::Result<u64> {
+    let value = raw
+        .parse::<u64>()
+        .with_context(|| format!("parse {name}"))?;
+    ensure!(
+        (minimum..=maximum).contains(&value),
+        "{name} must be between {minimum} and {maximum}"
+    );
+    Ok(value)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -225,6 +318,7 @@ pub struct ProveUpdateClientResponse {
 #[serde(rename_all = "camelCase")]
 struct HealthResponse {
     status: &'static str,
+    prover_backend: String,
     program: &'static str,
     program_vkey: &'static str,
     eureka_elf_sha256: &'static str,
@@ -959,17 +1053,17 @@ trait ProofEngine: Send + Sync {
         input: ValidatedMisbehaviourInput,
     ) -> anyhow::Result<ProveUpdateClientResponse>;
     fn wrapper_vk_sha256(&self) -> &str;
+    fn prover_backend(&self) -> &str;
 }
 
 pub struct ProductionEngine {
-    prover: CpuProver,
+    cpu_prover: CpuProver,
+    proof_backend: ProofBackend,
     update_client_proving_key: SP1ProvingKey,
     misbehaviour_proving_key: SP1ProvingKey,
     update_client_elf: Vec<u8>,
     misbehaviour_elf: Vec<u8>,
-    wrapper_bin: PathBuf,
-    wrapper_key_dir: PathBuf,
-    wrapper_public_vk: Vec<u8>,
+    wrapper: WrapperWorker,
     wrapper_vk_sha256: String,
     jobs: Semaphore,
 }
@@ -1039,8 +1133,8 @@ impl ProductionEngine {
             "validated deployment-specific wrapper setup"
         );
 
-        let prover = ProverClient::builder().cpu().build().await;
-        let update_client_proving_key = prover
+        let cpu_prover = ProverClient::builder().cpu().build().await;
+        let update_client_proving_key = cpu_prover
             .setup(Elf::from(update_client_elf.clone()))
             .await
             .context("set up released Eureka update-client ELF")?;
@@ -1053,7 +1147,7 @@ impl ProductionEngine {
             actual_vkey == UPDATE_CLIENT_PROGRAM_VKEY_HEX,
             "released Eureka update-client ELF has unexpected program vkey {actual_vkey}"
         );
-        let misbehaviour_proving_key = prover
+        let misbehaviour_proving_key = cpu_prover
             .setup(Elf::from(misbehaviour_elf.clone()))
             .await
             .context("set up released Eureka misbehaviour ELF")?;
@@ -1067,76 +1161,33 @@ impl ProductionEngine {
             "released Eureka misbehaviour ELF has unexpected program vkey {actual_vkey}"
         );
 
+        let proof_backend =
+            ProofBackend::initialize(config.prover_backend, config.network.clone()).await?;
+        tracing::info!(
+            prover_backend = proof_backend.name(),
+            "starting persistent BLS wrapper worker"
+        );
+        let wrapper = WrapperWorker::start(
+            config.wrapper_bin.clone(),
+            config.wrapper_key_dir.clone(),
+            wrapper_vk_sha256.clone(),
+            config.wrapper_startup_timeout,
+            config.wrapper_proof_timeout,
+        )
+        .await?;
+
         Ok(Self {
-            prover,
+            cpu_prover,
+            proof_backend,
             update_client_proving_key,
             misbehaviour_proving_key,
             update_client_elf,
             misbehaviour_elf,
-            wrapper_bin: config.wrapper_bin.clone(),
-            wrapper_key_dir: config.wrapper_key_dir.clone(),
-            wrapper_public_vk,
+            wrapper,
             wrapper_vk_sha256,
             jobs: Semaphore::new(1),
         })
     }
-}
-
-fn run_wrapper(
-    wrapper_bin: &Path,
-    wrapper_key_dir: &Path,
-    wrapper_public_vk: &[u8],
-    program_vkey: [u8; 32],
-    public_values: Vec<u8>,
-    proof: Vec<u8>,
-) -> anyhow::Result<Vec<u8>> {
-    ensure!(
-        proof.len() == SP1_GROTH16_PROOF_BYTES,
-        "SP1 Groth16 proof is {} bytes, expected {SP1_GROTH16_PROOF_BYTES}",
-        proof.len()
-    );
-    let temp = TempDir::new().context("create wrapper request directory")?;
-    let fixture_path = temp.path().join("update_client_fixture.json");
-    let output_dir = temp.path().join("cardano");
-    fs::write(
-        &fixture_path,
-        serde_json::to_vec(&encode_wrapper_fixture(
-            program_vkey,
-            public_values.clone(),
-            proof,
-        ))?,
-    )?;
-
-    let output = Command::new(wrapper_bin)
-        .arg("-fixture")
-        .arg(&fixture_path)
-        .arg("-prove")
-        .arg("-key-dir")
-        .arg(wrapper_key_dir)
-        .arg("-out")
-        .arg(&output_dir)
-        .output()
-        .with_context(|| format!("run wrapper {}", wrapper_bin.display()))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("wrapper exited {}: {}", output.status, stderr.trim());
-    }
-
-    let wrapped_proof = fs::read(output_dir.join("proof.bin"))?;
-    ensure!(
-        wrapped_proof.len() == WRAPPED_PROOF_BYTES,
-        "wrapper emitted a {}-byte proof",
-        wrapped_proof.len()
-    );
-    ensure!(
-        fs::read(output_dir.join("public_values.bin"))? == public_values,
-        "wrapper changed Eureka public values"
-    );
-    ensure!(
-        fs::read(output_dir.join("verification_key.json"))? == wrapper_public_vk,
-        "wrapper used a different outer verification key than the deployment artifact"
-    );
-    Ok(wrapped_proof)
 }
 
 #[async_trait]
@@ -1147,9 +1198,10 @@ impl ProofEngine for ProductionEngine {
     ) -> anyhow::Result<ProveUpdateClientResponse> {
         let _permit = self.jobs.try_acquire().map_err(|_| ProofWorkerBusy)?;
         tracing::info!(request_id = %input.request_id_hex, "executing Eureka guest");
-        let (executed_public_values, _) = self
-            .prover
+        let (executed_public_values, execution_report) = self
+            .cpu_prover
             .execute(Elf::from(self.update_client_elf.clone()), stdin(&input))
+            .calculate_gas(true)
             .await
             .context("execute released Eureka update-client program")?;
         let public_values = executed_public_values.as_slice().to_vec();
@@ -1158,20 +1210,37 @@ impl ProofEngine for ProductionEngine {
         if derived_request_id != input.request_id {
             return Err(RequestBindingMismatch.into());
         }
+        let instruction_limit = execution_report.total_instruction_count();
+        let gas_limit = execution_report
+            .gas()
+            .context("SP1 preflight did not calculate prover gas")?;
+        tracing::info!(
+            request_id = %input.request_id_hex,
+            instruction_limit,
+            gas_limit,
+            prover_backend = self.proof_backend.name(),
+            "Eureka guest preflight passed"
+        );
 
         tracing::info!(request_id = %input.request_id_hex, "generating SP1 Groth16 proof");
         let started = Instant::now();
         let proof = self
-            .prover
-            .prove(&self.update_client_proving_key, stdin(&input))
-            .mode(SP1ProofMode::Groth16)
+            .proof_backend
+            .prove(
+                &input.request_id_hex,
+                &self.cpu_prover,
+                &self.update_client_proving_key,
+                stdin(&input),
+                instruction_limit,
+                gas_limit,
+            )
             .await
             .context("generate SP1 Groth16 proof")?;
         ensure!(
             proof.public_values.as_slice() == public_values,
             "SP1 proof output differs from preflight execution"
         );
-        self.prover
+        self.cpu_prover
             .verify(&proof, self.update_client_proving_key.verifying_key(), None)
             .context("verify generated SP1 proof")?;
         tracing::info!(
@@ -1180,26 +1249,19 @@ impl ProofEngine for ProductionEngine {
             "SP1 proof verified"
         );
 
-        let proof_bytes = proof.bytes();
-        let wrapper = self.wrapper_bin.clone();
-        let key_dir = self.wrapper_key_dir.clone();
-        let public_vk = self.wrapper_public_vk.clone();
-        let public_values_for_wrapper = public_values.clone();
         let program_vkey = hex::decode(UPDATE_CLIENT_PROGRAM_VKEY_HEX)?
             .try_into()
             .expect("constant update-client program-vkey length");
-        let wrapped_proof = tokio::task::spawn_blocking(move || {
-            run_wrapper(
-                &wrapper,
-                &key_dir,
-                &public_vk,
+        let wrapped_proof = self
+            .wrapper
+            .prove(
+                &input.request_id_hex,
                 program_vkey,
-                public_values_for_wrapper,
-                proof_bytes,
+                public_values.clone(),
+                proof.bytes(),
             )
-        })
-        .await
-        .context("join BLS wrapper task")??;
+            .await
+            .context("wrap SP1 proof for Cardano")?;
 
         Ok(ProveUpdateClientResponse {
             request_id: input.request_id_hex,
@@ -1215,12 +1277,13 @@ impl ProofEngine for ProductionEngine {
     ) -> anyhow::Result<ProveUpdateClientResponse> {
         let _permit = self.jobs.try_acquire().map_err(|_| ProofWorkerBusy)?;
         tracing::info!(request_id = %input.request_id_hex, "executing Eureka misbehaviour guest");
-        let (executed_public_values, _) = self
-            .prover
+        let (executed_public_values, execution_report) = self
+            .cpu_prover
             .execute(
                 Elf::from(self.misbehaviour_elf.clone()),
                 misbehaviour_stdin(&input),
             )
+            .calculate_gas(true)
             .await
             .context("execute released Eureka misbehaviour program")?;
         let public_values = executed_public_values.as_slice().to_vec();
@@ -1229,20 +1292,37 @@ impl ProofEngine for ProductionEngine {
         if derived_request_id != input.request_id {
             return Err(RequestBindingMismatch.into());
         }
+        let instruction_limit = execution_report.total_instruction_count();
+        let gas_limit = execution_report
+            .gas()
+            .context("SP1 misbehaviour preflight did not calculate prover gas")?;
+        tracing::info!(
+            request_id = %input.request_id_hex,
+            instruction_limit,
+            gas_limit,
+            prover_backend = self.proof_backend.name(),
+            "Eureka misbehaviour guest preflight passed"
+        );
 
         tracing::info!(request_id = %input.request_id_hex, "generating SP1 misbehaviour Groth16 proof");
         let started = Instant::now();
         let proof = self
-            .prover
-            .prove(&self.misbehaviour_proving_key, misbehaviour_stdin(&input))
-            .mode(SP1ProofMode::Groth16)
+            .proof_backend
+            .prove(
+                &input.request_id_hex,
+                &self.cpu_prover,
+                &self.misbehaviour_proving_key,
+                misbehaviour_stdin(&input),
+                instruction_limit,
+                gas_limit,
+            )
             .await
             .context("generate SP1 misbehaviour Groth16 proof")?;
         ensure!(
             proof.public_values.as_slice() == public_values,
             "SP1 misbehaviour proof output differs from preflight execution"
         );
-        self.prover
+        self.cpu_prover
             .verify(&proof, self.misbehaviour_proving_key.verifying_key(), None)
             .context("verify generated SP1 misbehaviour proof")?;
         tracing::info!(
@@ -1251,26 +1331,19 @@ impl ProofEngine for ProductionEngine {
             "SP1 misbehaviour proof verified"
         );
 
-        let proof_bytes = proof.bytes();
-        let wrapper = self.wrapper_bin.clone();
-        let key_dir = self.wrapper_key_dir.clone();
-        let public_vk = self.wrapper_public_vk.clone();
-        let public_values_for_wrapper = public_values.clone();
         let program_vkey = hex::decode(MISBEHAVIOUR_PROGRAM_VKEY_HEX)?
             .try_into()
             .expect("constant misbehaviour program-vkey length");
-        let wrapped_proof = tokio::task::spawn_blocking(move || {
-            run_wrapper(
-                &wrapper,
-                &key_dir,
-                &public_vk,
+        let wrapped_proof = self
+            .wrapper
+            .prove(
+                &input.request_id_hex,
                 program_vkey,
-                public_values_for_wrapper,
-                proof_bytes,
+                public_values.clone(),
+                proof.bytes(),
             )
-        })
-        .await
-        .context("join BLS misbehaviour wrapper task")??;
+            .await
+            .context("wrap SP1 misbehaviour proof for Cardano")?;
 
         Ok(ProveUpdateClientResponse {
             request_id: input.request_id_hex,
@@ -1282,6 +1355,10 @@ impl ProofEngine for ProductionEngine {
 
     fn wrapper_vk_sha256(&self) -> &str {
         &self.wrapper_vk_sha256
+    }
+
+    fn prover_backend(&self) -> &str {
+        self.proof_backend.name()
     }
 }
 
@@ -1308,6 +1385,7 @@ fn router(engine: Arc<dyn ProofEngine>) -> Router {
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ready",
+        prover_backend: state.engine.prover_backend().to_owned(),
         program: UPDATE_CLIENT_PROGRAM,
         program_vkey: UPDATE_CLIENT_PROGRAM_VKEY_HEX,
         eureka_elf_sha256: UPDATE_CLIENT_ELF_SHA256,
@@ -1380,6 +1458,14 @@ mod tests {
         Commit as ProtoCommit, Header as TendermintHeader, SignedHeader, ValidatorSet,
     };
     use tower::ServiceExt;
+
+    #[test]
+    fn parses_bounded_prover_configuration_values() {
+        assert_eq!(parse_bounded_u64("LIMIT", "30", 1, 300).unwrap(), 30);
+        assert!(parse_bounded_u64("LIMIT", "0", 1, 300).is_err());
+        assert!(parse_bounded_u64("LIMIT", "301", 1, 300).is_err());
+        assert!(parse_bounded_u64("LIMIT", "not-a-number", 1, 300).is_err());
+    }
 
     const TRACKED_REGRESSION_WRAPPER_VK_SHA256: &str =
         "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037";
@@ -1871,6 +1957,10 @@ mod tests {
         fn wrapper_vk_sha256(&self) -> &str {
             "55"
         }
+
+        fn prover_backend(&self) -> &str {
+            "test"
+        }
     }
 
     #[tokio::test]
@@ -1898,6 +1988,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn health_reports_the_selected_prover_backend() {
+        let response = router(Arc::new(MockEngine))
+            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 4_096)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["proverBackend"], "test");
     }
 
     #[tokio::test]
@@ -1936,6 +2040,10 @@ mod tests {
 
         fn wrapper_vk_sha256(&self) -> &str {
             "55"
+        }
+
+        fn prover_backend(&self) -> &str {
+            "test"
         }
     }
 

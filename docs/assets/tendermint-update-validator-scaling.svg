@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="650" viewBox="0 0 1080 650" role="img" aria-labelledby="chart-title chart-description">
+  <title id="chart-title">Validator-count effect on Cardano transaction encoding</title>
+  <desc id="chart-description">Encoding-only direct transaction sizes are shown at 4, 16, 32, 45, 64, 100, 200 validators. The SP1 guide is 6,041 bytes and validator-independent at this one-to-two-state/field-width boundary because validator data is absent from its Cardano payload. Transaction size can still vary with history and integer widths. Only the 45-validator point uses the real tracked proof and public-transition artifact.</desc>
+  <defs>
+    <pattern id="direct-pattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#9a3412"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#fed7aa" stroke-width="2"/>
+    </pattern>
+    <style>
+      text { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #111827; }
+      .title { font-size: 25px; font-weight: 700; }
+      .subtitle { font-size: 15px; fill: #374151; }
+      .metric { font-size: 17px; font-weight: 700; }
+      .label { font-size: 15px; font-weight: 600; }
+      .value { font-size: 14px; font-variant-numeric: tabular-nums; }
+      .value-light { font-size: 14px; font-variant-numeric: tabular-nums; fill: #ffffff; font-weight: 600; }
+      .axis { font-size: 13px; fill: #4b5563; }
+      .note { font-size: 13px; fill: #374151; }
+      .grid { stroke: #e5e7eb; stroke-width: 1; }
+      .limit { stroke: #111827; stroke-width: 2; stroke-dasharray: 7 5; }
+      .safe { stroke: #6b7280; stroke-width: 2; stroke-dasharray: 2 5; }
+    </style>
+  </defs>
+  <rect width="1080" height="650" fill="#ffffff"/>
+  <text class="title" x="50" y="45">Validator-count effect on Cardano transaction encoding</text>
+  <text class="subtitle" x="50" y="72">SP1 is validator-independent at this one-to-two-state/field-width boundary</text>
+  <line class="grid" x1="105" y1="515.0" x2="1015" y2="515.0"/>
+  <text class="axis" text-anchor="end" x="93" y="520.0">0</text>
+  <line class="grid" x1="105" y1="381.7" x2="1015" y2="381.7"/>
+  <text class="axis" text-anchor="end" x="93" y="386.7">20,000</text>
+  <line class="grid" x1="105" y1="248.3" x2="1015" y2="248.3"/>
+  <text class="axis" text-anchor="end" x="93" y="253.3">40,000</text>
+  <line class="grid" x1="105" y1="115.0" x2="1015" y2="115.0"/>
+  <text class="axis" text-anchor="end" x="93" y="120.0">60,000</text>
+  <line class="safe" x1="105" y1="410.8" x2="1015" y2="410.8"/>
+  <text class="axis" x="765" y="429.8">project safe size 15,634</text>
+  <line class="limit" x1="105" y1="405.8" x2="1015" y2="405.8"/>
+  <text class="axis" x="765" y="398.8">pinned mainnet maxTxSize 16,384</text>
+  <line x1="105" y1="474.7" x2="1015" y2="474.7" stroke="#0369a1" stroke-width="3" stroke-dasharray="10 5"/>
+  <text class="label" fill="#0369a1" text-anchor="end" x="1015" y="464.7">SP1 validator-independent at this boundary: 6,041 bytes</text>
+  <line x1="105.0" y1="467.6" x2="160.7" y2="448.7" stroke="#111827" stroke-width="5" stroke-linecap="round"/>
+  <line x1="160.7" y1="448.7" x2="235.0" y2="423.5" stroke="#111827" stroke-width="5" stroke-linecap="round"/>
+  <line x1="235.0" y1="423.5" x2="295.4" y2="403.1" stroke="#111827" stroke-width="5" stroke-linecap="round"/>
+  <line x1="295.4" y1="403.1" x2="383.6" y2="373.2" stroke="#111827" stroke-width="5" stroke-linecap="round"/>
+  <line x1="383.6" y1="373.2" x2="550.7" y2="316.5" stroke="#111827" stroke-width="5" stroke-linecap="round"/>
+  <line x1="550.7" y1="316.5" x2="1015.0" y2="159.2" stroke="#111827" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="105.0" cy="467.6" r="7" fill="url(#direct-pattern)" stroke="#7c2d12" stroke-width="2"/>
+  <text class="value" text-anchor="middle" x="105.0" y="454.6">7,112</text>
+  <text class="axis" text-anchor="middle" x="105.0" y="543">4</text>
+  <circle cx="160.7" cy="448.7" r="7" fill="url(#direct-pattern)" stroke="#7c2d12" stroke-width="2"/>
+  <text class="value" text-anchor="middle" x="160.7" y="435.7">9,944</text>
+  <text class="axis" text-anchor="middle" x="160.7" y="543">16</text>
+  <circle cx="235.0" cy="423.5" r="7" fill="url(#direct-pattern)" stroke="#7c2d12" stroke-width="2"/>
+  <text class="value" text-anchor="middle" x="235.0" y="410.5">13,723</text>
+  <text class="axis" text-anchor="middle" x="235.0" y="543">32</text>
+  <circle cx="295.4" cy="403.1" r="7" fill="url(#direct-pattern)" stroke="#7c2d12" stroke-width="2"/>
+  <text class="value" text-anchor="middle" x="295.4" y="390.1">16,791</text>
+  <text class="axis" text-anchor="middle" x="295.4" y="543">45</text>
+  <circle cx="383.6" cy="373.2" r="7" fill="url(#direct-pattern)" stroke="#7c2d12" stroke-width="2"/>
+  <text class="value" text-anchor="middle" x="383.6" y="360.2">21,275</text>
+  <text class="axis" text-anchor="middle" x="383.6" y="543">64</text>
+  <circle cx="550.7" cy="316.5" r="7" fill="url(#direct-pattern)" stroke="#7c2d12" stroke-width="2"/>
+  <text class="value" text-anchor="middle" x="550.7" y="303.5">29,771</text>
+  <text class="axis" text-anchor="middle" x="550.7" y="543">100</text>
+  <circle cx="1015.0" cy="159.2" r="7" fill="url(#direct-pattern)" stroke="#7c2d12" stroke-width="2"/>
+  <text class="value" text-anchor="middle" x="1015.0" y="146.2">53,371</text>
+  <text class="axis" text-anchor="middle" x="1015.0" y="543">200</text>
+  <text class="label" text-anchor="middle" x="560" y="573">Tendermint validators</text>
+  <text class="axis" transform="translate(27 345) rotate(-90)" text-anchor="middle">Structural signed bytes</text>
+  <text class="note" x="50" y="597">The resized direct cases preserve production field widths but are not valid Tendermint headers. They measure encoding growth only.</text>
+  <text class="note" x="50" y="620">Do not infer proving latency or a validator-count ceiling from this chart; the generated 200-validator SP1 case was only mock-proved.</text>
+</svg>

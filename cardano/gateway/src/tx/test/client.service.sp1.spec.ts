@@ -18,9 +18,13 @@ import consensusStateTendermintMockBuilder from './mock/consensus-state-tendermi
 import headerMockBuilder from './mock/header';
 import msgUpdateClientMockBuilder from './mock/msg-update-client';
 
+const SPEND_CLIENT_SCRIPT_HASH = 'aa'.repeat(28);
+const SPEND_CLIENT_ADDRESS = 'addr_test1_spend_client';
+
 const firstClientUtxo = {
   txHash: '11'.repeat(32),
   outputIndex: 0,
+  address: SPEND_CLIENT_ADDRESS,
   datum: 'client-datum',
   assets: { client: 1n },
 };
@@ -93,7 +97,10 @@ function misbehaviourUpdate(
     .build();
 }
 
-function makeService(clientDatum: ClientDatum = compatibleClientDatum()) {
+function makeService(
+  clientDatum: ClientDatum = compatibleClientDatum(),
+  protocol: '07-tendermint-sp1' | '07-tendermint-direct' = '07-tendermint-sp1',
+) {
   const logger = {
     log: jest.fn(),
     warn: jest.fn(),
@@ -101,9 +108,17 @@ function makeService(clientDatum: ClientDatum = compatibleClientDatum()) {
   };
   const configService = {
     get: jest.fn((name: string) => {
-      if (name === 'tendermintUpdateClientMode') return 'sp1';
       if (name === 'cardanoNetwork') return 'Preprod';
       if (name === 'ogmiosEndpoint') return 'ws://ogmios';
+      if (name === 'deployment') {
+        return {
+          tendermintClient: { protocol, scriptHash: SPEND_CLIENT_SCRIPT_HASH },
+          validators: {
+            spendClient: { scriptHash: SPEND_CLIENT_SCRIPT_HASH, address: SPEND_CLIENT_ADDRESS },
+            ...(protocol === '07-tendermint-sp1' ? { tendermintProof: { scriptHash: 'bb'.repeat(28) } } : {}),
+          },
+        };
+      }
       return undefined;
     }),
   };
@@ -111,6 +126,7 @@ function makeService(clientDatum: ClientDatum = compatibleClientDatum()) {
     getClientTokenUnit: jest.fn().mockReturnValue('client-unit'),
     findUtxoByUnit: jest.fn(),
     decodeDatum: jest.fn().mockResolvedValue(clientDatum),
+    getPaymentCredential: jest.fn().mockReturnValue({ type: 'Script', hash: SPEND_CLIENT_SCRIPT_HASH }),
     tryFindUtxosAt: jest.fn().mockResolvedValue([
       {
         txHash: 'wallet',
@@ -172,6 +188,17 @@ function prepareProofUpdateBuild(service: ClientService, lucidService: ReturnTyp
 }
 
 describe('ClientService SP1 update orchestration', () => {
+  it('rejects client creation when the configured output address is not the bound spend-client script', async () => {
+    const { service, lucidService } = makeService();
+    lucidService.getPaymentCredential.mockReturnValueOnce({ type: 'Script', hash: 'cc'.repeat(28) });
+    const buildSpy = jest.spyOn(service, 'buildUnsignedCreateClientTx');
+
+    await expect(service.createClient(createClientMessage())).rejects.toThrow(
+      'Configured spend-client address does not use the Tendermint client script declared by the deployment',
+    );
+    expect(buildSpy).not.toHaveBeenCalled();
+  });
+
   it('rejects client creation when the trust level does not fit the Eureka ABI', async () => {
     const { service } = makeService();
     const buildSpy = jest.spyOn(service, 'buildUnsignedCreateClientTx');
@@ -203,10 +230,96 @@ describe('ClientService SP1 update orchestration', () => {
     lucidService.findUtxoByUnit.mockResolvedValueOnce(firstClientUtxo);
 
     await expect(service.updateClient(updateMessage('/example.invalid.Header'))).rejects.toThrow(
-      'Invalid client message',
+      'SP1 Tendermint clients accept only Header or Misbehaviour client messages',
     );
 
     expect(tendermintProofService.proveUpdateClient).not.toHaveBeenCalled();
+  });
+
+  it('rejects a client UTxO locked by a different payment script', async () => {
+    const { service, lucidService, tendermintProofService } = makeService();
+    lucidService.findUtxoByUnit.mockResolvedValueOnce(firstClientUtxo);
+    lucidService.getPaymentCredential
+      .mockReturnValueOnce({ type: 'Script', hash: SPEND_CLIENT_SCRIPT_HASH })
+      .mockReturnValueOnce({ type: 'Script', hash: 'cc'.repeat(28) });
+
+    await expect(service.updateClient(updateMessage())).rejects.toThrow(
+      'Tendermint client UTxO is not locked by the spend-client script declared by this deployment',
+    );
+
+    expect(lucidService.decodeDatum).not.toHaveBeenCalled();
+    expect(tendermintProofService.proveUpdateClient).not.toHaveBeenCalled();
+  });
+
+  it('selects the explicit direct protocol from the script-bound deployment', () => {
+    const { service } = makeService(compatibleClientDatum(), '07-tendermint-direct');
+
+    expect((service as any).clientProtocolForUtxo(firstClientUtxo)).toBe('07-tendermint-direct');
+  });
+
+  it('builds a direct update for a legacy deployment without calling the prover', async () => {
+    const clientDatum = compatibleClientDatum();
+    const { service, lucidService, tendermintProofService } = makeService(clientDatum, '07-tendermint-direct');
+    lucidService.findUtxoByUnit.mockResolvedValueOnce(firstClientUtxo);
+    lucidService.decodeDatum
+      .mockReset()
+      .mockResolvedValueOnce(clientDatum)
+      .mockResolvedValueOnce({
+        state: {
+          version: 1n,
+          ibc_state_root: '00'.repeat(32),
+          next_client_sequence: 2n,
+          next_connection_sequence: 0n,
+          next_channel_sequence: 0n,
+          bound_port: [],
+          last_update_time: 0n,
+        },
+        nft_policy: '55'.repeat(28),
+        deployer: '66'.repeat(28),
+        control: { port_registry: new Map(), shutdown: 'Active' },
+      });
+    lucidService.findUtxoAtHostStateNFT.mockResolvedValue({
+      txHash: '33'.repeat(32),
+      outputIndex: 0,
+      datum: 'host-datum',
+      assets: {},
+    });
+    jest.spyOn(service as any, 'ensureTreeAligned').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'computeTxValidityWindow').mockResolvedValue({
+      currentSlot: 100,
+      currentLedgerTime: 1_000_000,
+      validFromTime: 990_000,
+      validToSlot: 200,
+      validToTime: 1_060_000,
+    });
+    const rootSpy = jest.spyOn(IbcStateRoot, 'computeRootWithUpdateClientUpdate').mockReturnValue({
+      newRoot: 'ab'.repeat(32),
+      clientStateSiblings: [],
+      consensusStateSiblings: [],
+      removedConsensusStateSiblings: [],
+      treeSnapshot: {} as any,
+      commit: jest.fn(),
+    });
+
+    try {
+      await service.updateClient(updateMessage());
+
+      expect(tendermintProofService.proveUpdateClient).not.toHaveBeenCalled();
+      expect(tendermintProofService.proveMisbehaviour).not.toHaveBeenCalled();
+      expect(lucidService.encode).toHaveBeenCalledWith(
+        {
+          UpdateClient: {
+            msg: {
+              HeaderCase: [expect.any(Object)],
+            },
+          },
+        },
+        'spendClientRedeemer',
+      );
+      expect(lucidService.createUnsignedUpdateClientTransaction.mock.calls[0][8]).toBeUndefined();
+    } finally {
+      rootSpy.mockRestore();
+    }
   });
 
   it('rejects clients whose clock drift differs from Eureka v2', async () => {

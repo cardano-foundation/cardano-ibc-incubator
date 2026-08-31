@@ -18,9 +18,11 @@
 .env
 node_modules/
 __pycache__/
+/aiken-check.json
 
 # Rust
 target/
+cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/bn254-to-bls-wrapper
 Cargo.lock
 **/*.rs.bk
 *.pdb

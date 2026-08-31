@@ -66,6 +66,7 @@ import {
 import { buildEurekaMisbehaviourOutput } from '../shared/types/sp1-misbehaviour';
 import { TendermintProofService } from './tendermint-proof.service';
 import { encodeTendermintProofRedeemer } from '../shared/types/tendermint-proof-redeemer';
+import type { DeploymentConfig, TendermintClientProtocol } from '../config/bridge-manifest';
 
 @Injectable()
 export class ClientService {
@@ -76,6 +77,65 @@ export class ClientService {
     private readonly txOperationRunnerService: TxOperationRunnerService,
     private readonly tendermintProofService: TendermintProofService,
   ) {}
+
+  private requireTendermintClientDeployment(): DeploymentConfig {
+    const deployment = this.configService.get<DeploymentConfig>('deployment');
+    const protocol = deployment?.tendermintClient?.protocol;
+    const boundScriptHash = deployment?.tendermintClient?.scriptHash;
+    const spendClientScriptHash = deployment?.validators?.spendClient?.scriptHash;
+    if (protocol !== '07-tendermint-sp1' && protocol !== '07-tendermint-direct') {
+      throw new GrpcInternalException('Bridge deployment has no supported Tendermint client protocol');
+    }
+    if (!boundScriptHash || boundScriptHash !== spendClientScriptHash) {
+      throw new GrpcInternalException(
+        'Bridge deployment Tendermint client script hash does not match validators.spendClient',
+      );
+    }
+    if (protocol === '07-tendermint-sp1' && !deployment.validators.tendermintProof) {
+      throw new GrpcInternalException('Bridge deployment has no Tendermint proof validator');
+    }
+    return deployment;
+  }
+
+  private requireConfiguredSpendClientAddress(deployment: DeploymentConfig): void {
+    const spendClientAddress = deployment.validators.spendClient.address;
+    let paymentCredential: ReturnType<LucidService['getPaymentCredential']>;
+    try {
+      paymentCredential = this.lucidService.getPaymentCredential(spendClientAddress ?? '');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new GrpcInternalException(`Invalid configured spend-client address: ${reason}`);
+    }
+    if (paymentCredential?.type !== 'Script' || paymentCredential.hash !== deployment.tendermintClient.scriptHash) {
+      throw new GrpcInternalException(
+        'Configured spend-client address does not use the Tendermint client script declared by the deployment',
+      );
+    }
+  }
+
+  private createClientProtocol(): TendermintClientProtocol {
+    const deployment = this.requireTendermintClientDeployment();
+    this.requireConfiguredSpendClientAddress(deployment);
+    return deployment.tendermintClient.protocol;
+  }
+
+  private clientProtocolForUtxo(clientUtxo: UTxO): TendermintClientProtocol {
+    const deployment = this.requireTendermintClientDeployment();
+    this.requireConfiguredSpendClientAddress(deployment);
+    let paymentCredential: ReturnType<LucidService['getPaymentCredential']>;
+    try {
+      paymentCredential = this.lucidService.getPaymentCredential(clientUtxo.address);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new GrpcInvalidArgumentException(`Invalid Tendermint client UTxO address: ${reason}`);
+    }
+    if (paymentCredential?.type !== 'Script' || paymentCredential.hash !== deployment.tendermintClient.scriptHash) {
+      throw new GrpcInvalidArgumentException(
+        'Tendermint client UTxO is not locked by the spend-client script declared by this deployment',
+      );
+    }
+    return deployment.tendermintClient.protocol;
+  }
 
   private async refreshWalletContext(address: string, context: string): Promise<void> {
     const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
@@ -160,7 +220,7 @@ export class ClientService {
     try {
       this.logger.log('Create client is processing', 'createClient');
       const { constructedAddress, clientState, consensusState } = validateAndFormatCreateClientParams(data);
-      if (this.configService.get<'direct' | 'sp1'>('tendermintUpdateClientMode') === 'sp1') {
+      if (this.createClientProtocol() === '07-tendermint-sp1') {
         try {
           toEurekaClientState(clientState);
           toEurekaConsensusState('initialConsensusState', consensusState);
@@ -258,15 +318,23 @@ export class ClientService {
       const clientTokenUnit = this.lucidService.getClientTokenUnit(clientId);
       // Find the UTXO for the client token
       const currentClientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+      const protocol = this.clientProtocolForUtxo(currentClientUtxo);
       // Retrieve the current client datum from the UTXO
       const currentClientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(
         currentClientUtxo.datum!,
         'client',
       );
 
-      const usesSp1Mode = this.configService.get<'direct' | 'sp1'>('tendermintUpdateClientMode') === 'sp1';
-      const usesSp1HeaderProof = usesSp1Mode && data.client_message.type_url === TENDERMINT_HEADER_TYPE_URL;
-      const usesSp1MisbehaviourProof = usesSp1Mode && data.client_message.type_url === TENDERMINT_MISBEHAVIOUR_TYPE_URL;
+      const usesSp1Mode = protocol === '07-tendermint-sp1';
+      const isTendermintHeader = data.client_message.type_url === TENDERMINT_HEADER_TYPE_URL;
+      const isTendermintMisbehaviour = data.client_message.type_url === TENDERMINT_MISBEHAVIOUR_TYPE_URL;
+      if (usesSp1Mode && !isTendermintHeader && !isTendermintMisbehaviour) {
+        throw new GrpcInvalidArgumentException(
+          'SP1 Tendermint clients accept only Header or Misbehaviour client messages',
+        );
+      }
+      const usesSp1HeaderProof = usesSp1Mode && isTendermintHeader;
+      const usesSp1MisbehaviourProof = usesSp1Mode && isTendermintMisbehaviour;
       const usesSp1Proof = usesSp1HeaderProof || usesSp1MisbehaviourProof;
 
       if (
@@ -278,10 +346,7 @@ export class ClientService {
         );
       }
 
-      if (
-        usesSp1Proof &&
-        currentClientDatum.state.consensusStates.size > MAX_SP1_CONSENSUS_STATE_SIZE
-      ) {
+      if (usesSp1Proof && currentClientDatum.state.consensusStates.size > MAX_SP1_CONSENSUS_STATE_SIZE) {
         throw new GrpcInvalidArgumentException(
           `Proof-based Tendermint client history exceeds the ${MAX_SP1_CONSENSUS_STATE_SIZE.toString()}-state limit`,
         );
@@ -840,9 +905,7 @@ export class ClientService {
       }
 
       currentConsStateInArray.unshift([newHeight, newConsState]);
-      const historyLimit = updateClientOperator.proof
-        ? MAX_SP1_CONSENSUS_STATE_SIZE
-        : MAX_CONSENSUS_STATE_SIZE;
+      const historyLimit = updateClientOperator.proof ? MAX_SP1_CONSENSUS_STATE_SIZE : MAX_CONSENSUS_STATE_SIZE;
       if (currentConsStateInArray.length > historyLimit) {
         currentConsStateInArray = currentConsStateInArray.slice(0, historyLimit);
       }

@@ -1,3 +1,6 @@
+import { QueryBridgeManifestResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/query';
+
+import { BridgeManifestService } from '../query/services/bridge-manifest.service';
 import {
   DEFAULT_HANDLER_JSON_PATH,
   bridgeManifestsEqual,
@@ -26,6 +29,10 @@ function buildHandlerJsonDeployment() {
       policyId: 'host-policy',
       name: 'host-token',
     },
+    tendermintClient: {
+      protocol: '07-tendermint-sp1',
+      scriptHash: 'spendClient-hash',
+    },
     validators: {
       hostStateStt: buildValidator('hostStateStt'),
       spendClient: buildValidator('spendClient'),
@@ -35,10 +42,16 @@ function buildHandlerJsonDeployment() {
         ...buildValidator('spendChannel'),
         refValidator: {
           acknowledge_packet: { scriptHash: 'ack-hash', refUtxo: { txHash: 'ack-tx', outputIndex: 2 } },
-          chan_close_confirm: { scriptHash: 'close-confirm-hash', refUtxo: { txHash: 'close-confirm-tx', outputIndex: 3 } },
+          chan_close_confirm: {
+            scriptHash: 'close-confirm-hash',
+            refUtxo: { txHash: 'close-confirm-tx', outputIndex: 3 },
+          },
           chan_close_init: { scriptHash: 'close-init-hash', refUtxo: { txHash: 'close-init-tx', outputIndex: 4 } },
           chan_open_ack: { scriptHash: 'open-ack-hash', refUtxo: { txHash: 'open-ack-tx', outputIndex: 5 } },
-          chan_open_confirm: { scriptHash: 'open-confirm-hash', refUtxo: { txHash: 'open-confirm-tx', outputIndex: 6 } },
+          chan_open_confirm: {
+            scriptHash: 'open-confirm-hash',
+            refUtxo: { txHash: 'open-confirm-tx', outputIndex: 6 },
+          },
           recv_packet: { scriptHash: 'recv-hash', refUtxo: { txHash: 'recv-tx', outputIndex: 7 } },
           prune_packet_history: { scriptHash: 'prune-hash', refUtxo: { txHash: 'prune-tx', outputIndex: 10 } },
           send_packet: { scriptHash: 'send-hash', refUtxo: { txHash: 'send-tx', outputIndex: 8 } },
@@ -89,7 +102,7 @@ describe('bridge manifest normalization', () => {
     });
 
     expect(loaded.bridgeManifest).toMatchObject({
-      schema_version: 4,
+      schema_version: 5,
       deployment_id: 'cardano-devnet:host-policy.host-token',
       deployed_at: '2026-04-01T12:34:56.000Z',
       cardano: {
@@ -100,6 +113,10 @@ describe('bridge manifest normalization', () => {
       host_state_nft: {
         policy_id: 'host-policy',
         token_name: 'host-token',
+      },
+      tendermint_client: {
+        protocol: '07-tendermint-sp1',
+        script_hash: 'spendClient-hash',
       },
     });
     expect(loaded.deployment.validators.voucherMetadata).toEqual({
@@ -149,6 +166,54 @@ describe('bridge manifest normalization', () => {
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
   });
 
+  it('preserves the complete SP1 manifest through protobuf encoding', () => {
+    const base = buildHandlerJsonDeployment();
+    const deployment = {
+      ...base,
+      validators: {
+        ...base.validators,
+        spendMockModule: buildValidator('spendMockModule'),
+      },
+      modules: {
+        ...base.modules,
+        icq: {
+          identifier: 'icq-id',
+          address: 'icq-address',
+        },
+      },
+    };
+    const current = normalizeHandlerJsonDeploymentConfig(deployment, {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    const service = new BridgeManifestService({
+      get: jest.fn().mockReturnValue(current.bridgeManifest),
+    } as any);
+
+    const encoded = QueryBridgeManifestResponse.encode(service.getGrpcBridgeManifestResponse()).finish();
+    const decoded = QueryBridgeManifestResponse.decode(encoded);
+    const decodedManifest = JSON.parse(
+      JSON.stringify(decoded.manifest, (_key, value) => (typeof value === 'bigint' ? Number(value) : value)),
+    );
+    const loaded = normalizeBridgeManifestConfig(decodedManifest);
+
+    expect(decoded.manifest?.tendermint_client).toEqual({
+      protocol: '07-tendermint-sp1',
+      script_hash: 'spendClient-hash',
+    });
+    expect(decoded.manifest?.validators?.tendermint_proof?.script_hash).toBe('tendermintProof-hash');
+    expect(decoded.manifest?.validators?.mint_identifier?.script_hash).toBe('mintIdentifier-hash');
+    expect(decoded.manifest?.validators?.mint_transfer_escrow_shard?.script_hash).toBe('mintTransferEscrowShard-hash');
+    expect(decoded.manifest?.validators?.mint_port?.script_hash).toBe('mintPort-hash');
+    expect(decoded.manifest?.validators?.spend_mock_module?.script_hash).toBe('spendMockModule-hash');
+    expect(decoded.manifest?.validators?.spend_trace_registry?.script_hash).toBe('spendTraceRegistry-hash');
+    expect(decoded.manifest?.validators?.voucher_metadata?.address).toBe('voucher-metadata-address');
+    expect(decoded.manifest?.modules?.icq?.identifier).toBe('icq-id');
+    expect(decoded.manifest?.trace_registry?.directory?.token_name).toBe('trace-directory');
+    expect(bridgeManifestsEqual(loaded.bridgeManifest, current.bridgeManifest)).toBe(true);
+  });
+
   it('rejects handler.json files without a deployment timestamp', () => {
     const { deployedAt: _deployedAt, ...legacyHandlerJson } = buildHandlerJsonDeployment();
 
@@ -157,7 +222,7 @@ describe('bridge manifest normalization', () => {
         chain_id: 'cardano-devnet',
         network_magic: 42,
         network: 'Custom',
-      })
+      }),
     ).toThrow('Invalid bridge config: "deployedAt" must be a non-empty string');
   });
 
@@ -175,8 +240,71 @@ describe('bridge manifest normalization', () => {
     );
   });
 
-  it('rejects bridge manifests with an old schema version', () => {
-    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+  it('loads an existing schema 4 manifest as direct and upgrades it to schema 5', () => {
+    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    const { tendermint_client: _tendermintClient, ...manifestWithoutProtocol } = current.bridgeManifest;
+
+    const loaded = normalizeBridgeManifestConfig({
+      ...manifestWithoutProtocol,
+      schema_version: 4,
+    });
+
+    expect(loaded.bridgeManifest.schema_version).toBe(5);
+    expect(loaded.bridgeManifest.tendermint_client).toEqual({
+      protocol: '07-tendermint-direct',
+      script_hash: 'spendClient-hash',
+    });
+    expect(loaded.deployment.tendermintClient).toEqual({
+      protocol: '07-tendermint-direct',
+      scriptHash: 'spendClient-hash',
+    });
+    expect(loaded.deployment.validators.tendermintProof).toBeDefined();
+  });
+
+  it('rejects unsupported bridge manifest schema versions', () => {
+    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(() => normalizeBridgeManifestConfig({ ...current.bridgeManifest, schema_version: 3 })).toThrow(
+      'Invalid bridge config: "schema_version" must be 4 or 5',
+    );
+  });
+
+  it('requires explicit Tendermint protocol metadata in public manifests', () => {
+    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    const { tendermint_client: _tendermintClient, ...manifestWithoutProtocol } = current.bridgeManifest;
+
+    expect(() => normalizeBridgeManifestConfig(manifestWithoutProtocol)).toThrow(
+      'Invalid bridge config: "tendermint_client" must be an object',
+    );
+  });
+
+  it('binds Tendermint protocol metadata to the deployed spend-client script', () => {
+    const deployment = buildHandlerJsonDeployment();
+    deployment.tendermintClient.scriptHash = 'different-spend-client-hash';
+
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig(deployment, {
+        chain_id: 'cardano-devnet',
+        network_magic: 42,
+        network: 'Custom',
+      }),
+    ).toThrow('"tendermintClient.scriptHash" must equal "validators.spendClient.scriptHash"');
+  });
+
+  it('rejects a public manifest whose Tendermint metadata names a different spend-client script', () => {
+    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -184,10 +312,48 @@ describe('bridge manifest normalization', () => {
 
     expect(() =>
       normalizeBridgeManifestConfig({
-        ...legacy.bridgeManifest,
-        schema_version: 3,
+        ...current.bridgeManifest,
+        tendermint_client: {
+          ...current.bridgeManifest.tendermint_client,
+          script_hash: 'different-spend-client-hash',
+        },
       }),
-    ).toThrow('Invalid bridge config: "schema_version" must be 4');
+    ).toThrow('"tendermintClient.scriptHash" must equal "validators.spendClient.scriptHash"');
+  });
+
+  it('requires the proof validator for an SP1 Tendermint deployment', () => {
+    const current = buildHandlerJsonDeployment();
+    const { tendermintProof: _tendermintProof, ...validatorsWithoutProof } = current.validators;
+    const deployment = { ...current, validators: validatorsWithoutProof };
+
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig(deployment, {
+        chain_id: 'cardano-devnet',
+        network_magic: 42,
+        network: 'Custom',
+      }),
+    ).toThrow('"validators.tendermintProof" is required for protocol "07-tendermint-sp1"');
+  });
+
+  it('infers direct protocol for existing metadata-free handler.json files', () => {
+    const current = buildHandlerJsonDeployment();
+    const { tendermintClient: _tendermintClient, ...deployment } = current;
+
+    const loaded = normalizeHandlerJsonDeploymentConfig(deployment, {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(loaded.deployment.tendermintClient).toEqual({
+      protocol: '07-tendermint-direct',
+      scriptHash: 'spendClient-hash',
+    });
+    expect(loaded.bridgeManifest.tendermint_client).toEqual({
+      protocol: '07-tendermint-direct',
+      script_hash: 'spendClient-hash',
+    });
+    expect(loaded.deployment.validators.tendermintProof).toBeDefined();
   });
 
   it('accepts legacy voucher_metadata validator payloads and normalizes them to address-only', () => {
@@ -199,7 +365,7 @@ describe('bridge manifest normalization', () => {
 
     const legacyManifest = {
       ...current.bridgeManifest,
-      schema_version: 4,
+      schema_version: 5,
       validators: {
         ...current.bridgeManifest.validators,
         voucher_metadata: {

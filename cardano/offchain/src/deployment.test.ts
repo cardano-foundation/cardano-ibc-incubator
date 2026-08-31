@@ -66,6 +66,9 @@ Deno.test("SP1 deployment validators expose the pinned parameters", () => {
     "host_state_nft_policy_id",
     "proof_validator_hash",
   ]);
+  assertEquals(parameters("spending_client_legacy.spend_client.spend"), [
+    "host_state_nft_policy_id",
+  ]);
 });
 
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {

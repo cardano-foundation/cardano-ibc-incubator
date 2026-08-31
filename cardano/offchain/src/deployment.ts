@@ -930,6 +930,10 @@ export const createDeployment = async (
 
   const deploymentInfo: DeploymentTemplate = {
     deployedAt,
+    tendermintClient: {
+      protocol: "07-tendermint-sp1",
+      scriptHash: spendClientScriptHash,
+    },
     tendermintProofSetup: {
       verificationKeySha256: tendermintProofSetup.verificationKeySha256,
       ...tendermintProofSetup.setup,

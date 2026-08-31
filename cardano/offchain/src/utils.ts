@@ -802,6 +802,10 @@ type Tokens = "mock";
 
 export type DeploymentTemplate = {
   deployedAt: string;
+  tendermintClient: {
+    protocol: "07-tendermint-sp1" | "07-tendermint-direct";
+    scriptHash: string;
+  };
   tendermintProofSetup: TendermintProofSetupMetadata & {
     verificationKeySha256: string;
   };

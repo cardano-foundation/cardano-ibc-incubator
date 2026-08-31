@@ -884,6 +884,7 @@ jobs:
             -m 'host_state_stt.{host_update_client_capacity_minimum_history_succeeds}' \
             -m 'host_state_stt.{host_update_client_proof_limit_10_with_one_removal_succeeds}' \
             -m 'ibc/client/ics_007_tendermint_client/proof_update/state.{proof_transaction_at_10_consensus_state_limit_succeeds}' \
+            -m 'ibc/client/ics_007_tendermint_client/proof_update/state.{full_transaction_accepts_exact_proof_update}' \
             -m 'host_state_stt.{host_update_client_proof_misbehaviour_released_freeze_succeeds}' \
             -m 'ibc/client/ics_007_tendermint_client/proof_update/state.{full_transaction_accepts_exact_released_misbehaviour_proof}' \
             -m 'spending_client.{proof_update_budget_gate_succeeds}' \
@@ -917,6 +918,9 @@ jobs:
           CARDANO_TX_BUDGET_EX_UNIT_HEADROOM_BPS: 500
           CARDANO_TX_BUDGET_AIKEN_CHECK_JSON: ../../aiken-check.json
         run: npm run --prefix cardano/gateway check:tx-budgets
+
+      - name: Check Tendermint benchmark report
+        run: npm run --prefix cardano/gateway check:tendermint-benchmark-report
 
   generated-artifacts:
     name: Generated Artifacts
