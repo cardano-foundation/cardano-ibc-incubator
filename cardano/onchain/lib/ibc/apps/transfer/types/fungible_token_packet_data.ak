@@ -314,15 +314,12 @@ fn escape_json_bytes(
 }
 
 fn basic_json_escape(byte: Int) -> ByteArray {
-  when byte is {
-    8 -> #"5c62"
-    9 -> #"5c74"
-    10 -> #"5c6e"
-    12 -> #"5c66"
-    13 -> #"5c72"
-    34 -> #"5c22"
-    92 -> #"5c5c"
-    _ -> unicode_control_escape(byte)
+  if byte == 34 || byte == 92 {
+    #[] |> push(byte) |> push(92)
+  } else if byte >= 8 && byte <= 13 && byte != 11 {
+    #[] |> push(at("btn?fr", byte - 8)) |> push(92)
+  } else {
+    unicode_control_escape(byte)
   }
 }
 

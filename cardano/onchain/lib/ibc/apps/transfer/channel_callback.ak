@@ -195,7 +195,7 @@ pub fn extract_channel_redeemer(
   Some(spend_channel_redeemer)
 }
 
-fn channel_auth_token(
+pub fn channel_auth_token(
   channel_minting_policy_id: PolicyId,
   host_state_nft: AuthToken,
   channel_id: ByteArray,

@@ -26,8 +26,8 @@ type BudgetCheckResult = {
 
 const KNOWN_EX_UNIT_OVERRUN_CEILINGS: Readonly<Record<string, Partial<ExUnits>>> = {
   send_packet_at_commitment_capacity: {
-    mem: 52_224_769,
-    steps: 16_384_974_226,
+    mem: 52_060_281,
+    steps: 16_331_867_938,
   },
   recv_packet_at_history_capacity: {
     mem: 47_456_092,
