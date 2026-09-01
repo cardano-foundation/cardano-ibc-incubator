@@ -2,7 +2,6 @@ name: Build and publish Docker images
 
 on:
   push:
-    branches: [main]
     tags:
       - 'gateway/v*.*.*'
       - 'hermes/v*.*.*'
@@ -26,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      components: ${{ steps.select.outputs.components }}
+      images: ${{ steps.select.outputs.images }}
 
     steps:
       - name: Select components from ref
@@ -42,16 +41,27 @@ jobs:
               echo "Examples: gateway/v1.2.3, hermes/v1.13.2, swap-client/v0.2.0-rc.1" >&2
               exit 1
             fi
-            components="[\"${BASH_REMATCH[1]}\"]"
+
+            case "${BASH_REMATCH[1]}" in
+              gateway)
+                images='[{"component":"gateway","version_directory":"cardano/gateway"}]'
+                ;;
+              hermes)
+                images='[{"component":"hermes","version_directory":"relayer/crates/relayer-cli"}]'
+                ;;
+              swap-client)
+                images='[{"component":"swap-client","version_directory":"dapps/ibc-swap/client"}]'
+                ;;
+            esac
           else
-            components='["gateway","hermes","swap-client"]'
+            images='[{"component":"gateway","version_directory":"cardano/gateway"},{"component":"hermes","version_directory":"relayer/crates/relayer-cli"},{"component":"swap-client","version_directory":"dapps/ibc-swap/client"}]'
           fi
 
-          echo "Selected Earthly targets: ${components}"
-          echo "components=${components}" >> "${GITHUB_OUTPUT}"
+          echo "Selected image matrix: ${images}"
+          echo "images=${images}" >> "${GITHUB_OUTPUT}"
 
   build-and-publish:
-    name: Build and publish ${{ matrix.component }}
+    name: Build and publish ${{ matrix.image.component }}
     needs: select-components
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -61,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: ${{ fromJSON(needs.select-components.outputs.components) }}
+        image: ${{ fromJSON(needs.select-components.outputs.images) }}
     env:
       PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.GITLAB_DOCKER_REGISTRY_URL }}
       PRIVATE_DOCKER_REGISTRY_USER: Deploy-Token
@@ -75,56 +85,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Read component version
-        id: component
-        shell: bash
-        env:
-          COMPONENT: ${{ matrix.component }}
-        run: |
-          case "${COMPONENT}" in
-            gateway)
-              version="$(node -p "require('./cardano/gateway/package.json').version")"
-              version_source="cardano/gateway/package.json"
-              ;;
-            hermes)
-              version="$(awk -F'"' '/^version[[:space:]]*=/{ print $2; exit }' relayer/crates/relayer-cli/Cargo.toml)"
-              version_source="relayer/crates/relayer-cli/Cargo.toml"
-              ;;
-            swap-client)
-              version="$(node -p "require('./dapps/ibc-swap/client/package.json').version")"
-              version_source="dapps/ibc-swap/client/package.json"
-              ;;
-            *)
-              echo "Unsupported image component: ${COMPONENT}" >&2
-              exit 1
-              ;;
-          esac
-
-          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
-            echo "${version_source} contains invalid component version '${version}'." >&2
-            exit 1
-          fi
-
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            expected_tag="${COMPONENT}/v${version}"
-            if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
-              echo "Release tag '${GITHUB_REF_NAME}' does not match ${version_source} version ${version}." >&2
-              echo "Expected tag: ${expected_tag}" >&2
-              exit 1
-            fi
-
-            if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
-              echo "Release tags must point to a commit already merged into main." >&2
-              exit 1
-            fi
-          fi
-
-          echo "Using ${COMPONENT} version ${version} from ${version_source}."
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-
       - name: Set up trusted publishing credentials
         id: baseline
-        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@e02adcacc7178585dab0ca362adc83424654b324
+        # TODO: pin the cf-gha-workflows revision containing Cargo.toml version
+        # discovery before merging this workflow.
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@feat/artifact-sub-dir
         with:
           GITHUB_TOKEN: ${{ github.token }}
           PRIVATE_DOCKER_REGISTRY_URL: ${{ env.PRIVATE_DOCKER_REGISTRY_URL }}
@@ -133,45 +98,29 @@ jobs:
           HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
           HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
           DOCKER_REGISTRIES: ${{ secrets.DOCKER_REGISTRIES }}
+          artifact-version-directory: ${{ matrix.image.version_directory }}
 
-      # cf-gha-baseline cannot discover per-component versions at the root of
-      # this monorepo. Recreate its standard tag set with the selected
-      # component's version. On release tags, omit the component prefix because
-      # it is only a matrix selector and '/' is not valid in a Docker tag.
-      - name: Prepare component image tags
-        id: image-tags
-        shell: bash
+      - name: Validate release version
+        if: github.ref_type == 'tag'
         env:
-          COMPONENT_VERSION: ${{ steps.component.outputs.version }}
-          DOCKER_COMMIT_GHRUNID_TAG: ${{ steps.baseline.outputs.DOCKER_COMMIT_GHRUNID_TAG }}
-          DOCKER_COMMIT_TAG: ${{ steps.baseline.outputs.DOCKER_COMMIT_TAG }}
-          DOCKER_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
-          GIT_SHORT_COMMIT: ${{ steps.baseline.outputs.GIT_SHORT_COMMIT }}
-          TRIGGERING_REF: ${{ steps.baseline.outputs.TRIGGERING_REF }}
+          COMPONENT: ${{ matrix.image.component }}
+          COMPONENT_VERSION: ${{ steps.baseline.outputs.GUESSED_ARTIFACT_VERSION }}
         run: |
-          case "${TRIGGERING_REF}" in
-            tag)
-              release_tag="v${COMPONENT_VERSION}"
-              extra_tags="${release_tag} ${release_tag}-${GIT_SHORT_COMMIT} ${release_tag}-${GIT_SHORT_COMMIT}-GHRUN${GITHUB_RUN_ID}"
-              ;;
-            pr|branch)
-              extra_tags="${COMPONENT_VERSION}-${DOCKER_COMMIT_TAG} ${COMPONENT_VERSION}-${DOCKER_COMMIT_GHRUNID_TAG} ${DOCKER_COMMIT_TAG} ${DOCKER_COMMIT_GHRUNID_TAG} ${DOCKER_TAG}"
-              if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-                extra_tags="${extra_tags} latest"
-              fi
-              ;;
-            *)
-              echo "Unsupported triggering ref: ${TRIGGERING_REF}" >&2
-              exit 1
-              ;;
-          esac
+          expected_tag="${COMPONENT}/v${COMPONENT_VERSION}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Release tag '${GITHUB_REF_NAME}' does not match ${COMPONENT} version ${COMPONENT_VERSION}." >&2
+            echo "Expected tag: ${expected_tag}" >&2
+            exit 1
+          fi
 
-          echo "Publishing image tags: ${extra_tags}"
-          echo "extra-tags=${extra_tags}" >> "${GITHUB_OUTPUT}"
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
+            echo "Release tags must point to a commit already merged into main." >&2
+            exit 1
+          fi
 
       - name: Build and publish image
         run: |
-          earthly +${{ matrix.component }} \
+          earthly +${{ matrix.image.component }} \
             --PUSH=true \
             --DOCKER_REGISTRIES="${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}" \
-            --DOCKER_IMAGES_EXTRA_TAGS="${{ steps.image-tags.outputs.extra-tags }}"
+            --DOCKER_IMAGES_EXTRA_TAGS="${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}"
