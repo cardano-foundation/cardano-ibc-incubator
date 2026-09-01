@@ -1,0 +1,82 @@
+[
+  {
+    "name": "ascii_without_memo",
+    "data": {
+      "denom": "transfer/channel-0/uatom",
+      "amount": "12345",
+      "sender": "cosmos1sender",
+      "receiver": "cardano-receiver",
+      "memo": ""
+    }
+  },
+  {
+    "name": "ascii_with_memo",
+    "data": {
+      "denom": "utest",
+      "amount": "7",
+      "sender": "sender",
+      "receiver": "receiver",
+      "memo": "forward to channel-7"
+    }
+  },
+  {
+    "name": "json_string_escapes",
+    "data": {
+      "denom": "u\"quoted\"\\path",
+      "amount": "1\b",
+      "sender": "sender\\line\n\t",
+      "receiver": "receiver\r\f\u0000",
+      "memo": "{\"nested\":\"slash\\quote\"\"}\u0001"
+    }
+  },
+  {
+    "name": "utf8_content",
+    "data": {
+      "denom": "transfer/channel-0/u雪",
+      "amount": "99",
+      "sender": "cosmos1-émetteur",
+      "receiver": "cardano-😀",
+      "memo": "Καλημέρα κόσμε"
+    }
+  },
+  {
+    "name": "go_html_escaping",
+    "data": {
+      "denom": "u<atom>&",
+      "amount": "5",
+      "sender": "sender<&>",
+      "receiver": "receiver>&<",
+      "memo": "<script>&value</script>"
+    }
+  },
+  {
+    "name": "go_line_separator_escaping",
+    "data": {
+      "denom": "uline-separators",
+      "amount": "11",
+      "sender": "sender\u2028one",
+      "receiver": "receiver\u2029two",
+      "memo": "first\u2028second\u2029third"
+    }
+  },
+  {
+    "name": "maximum_packet_bytes",
+    "data": {
+      "denom": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu",
+      "amount": "99999999999999999999999999999999999999999999999999999999999999999999999999999",
+      "sender": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "receiver": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+      "memo": "mmmmmmmmmmmmmmmmmmmmmmmmm"
+    }
+  },
+  {
+    "name": "maximum_go_escaped_packet_bytes",
+    "data": {
+      "denom": "d",
+      "amount": "1",
+      "sender": "s",
+      "receiver": "r",
+      "memo": "<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028\u2029<>&\u2028edge"
+    }
+  }
+]

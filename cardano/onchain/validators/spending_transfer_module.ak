@@ -295,7 +295,6 @@ fn module_callback(
 
       expect packet_data == packet.data
       expect fungible_token_packet_data.matches_bytes(data, packet.data)
-      trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
       if transfer_coin.receiver_chain_is_source(
         packet.source_port,
@@ -588,8 +587,7 @@ fn module_operator(
       expect SendPacket { packet } = channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect fungible_token_packet_data.matches_bytes(data, packet.data)
-      trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
+      expect fungible_token_packet_data.matches_valid_bytes(data, packet.data)
 
       if transfer_coin.sender_chain_is_source(
         packet.source_port,

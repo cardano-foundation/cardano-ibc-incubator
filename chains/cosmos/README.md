@@ -41,6 +41,40 @@ commitments authenticate the exact packet bytes. The Cardano transfer
 validators therefore recognize both key orderings for supported packet values.
 This is a Classic wire-compatibility difference, not an IBC v2 packet format.
 
+### Exact JSON rules
+
+The supported wire profiles are deliberately narrow and versioned:
+
+| Producer | Field order | String escaping |
+| --- | --- | --- |
+| Cardano | `amount`, `denom`, `memo`, `receiver`, `sender` | JavaScript `JSON.stringify` |
+| ibc-go v8.7.0 | `amount`, `denom`, `memo`, `receiver`, `sender` | Go `encoding/json` |
+| ibc-go v10.2.0 | `denom`, `amount`, `sender`, `receiver`, `memo` | Go `encoding/json` |
+
+`denom`, `amount`, `sender`, and `receiver` must be present, non-empty JSON
+strings. `memo` may be omitted or may be a string; an empty memo is represented
+by omitting it. No other fields are accepted. Packet data must be valid UTF-8
+and must exactly match one of the encodings above, including field order and
+escaping. This rejects malformed JSON, byte-order marks, duplicate or unknown
+fields, incorrect field types, extra whitespace, alternate escape spellings,
+and trailing data. The transfer validators then apply the existing semantic
+checks, including a positive integer amount and a valid denomination.
+
+The encoded JSON packet is limited to 512 bytes. Before escaping, `denom`,
+`sender`, and `receiver` are each limited to 256 UTF-8 bytes, `amount` to 78,
+and `memo` to 512. The packet limit still applies after characters expand into
+JSON escapes, so it is normally the tighter bound. A 512-byte ibc-go v10 packet
+uses 13,632,481 memory units and 3,760,997,204 CPU units in the full voucher
+mint validator test, below the repository's 5% safety threshold of 15,675,000
+memory units and 9,500,000,000 CPU units.
+
+The pinned upstream fixtures and their generator live in
+[`tests/ics20-json-vectors`](../../tests/ics20-json-vectors). They call the
+actual `GetBytes()` implementations from the repository's ibc-go v8.7.0 and
+v10.2.0 modules and feed those exact bytes into the Aiken compatibility tests.
+Cardano continues to emit its existing sorted JavaScript encoding; accepting
+the two ibc-go profiles does not change Cardano-originated packet bytes.
+
 There is a similarly easy-to-misread upstream type-name change. The generated
 protobuf name is `ibc.applications.transfer.v2.FungibleTokenPacketData` in the
 pinned v8 source and `ibc.applications.transfer.v1.FungibleTokenPacketData` in

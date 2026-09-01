@@ -2,7 +2,7 @@ import { GrpcFailedPreconditionException, GrpcInvalidArgumentException } from '~
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { decodeMerkleProof } from './helper';
 import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
-import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
+import { convertString2Hex, toHex } from '@shared/helpers/hex';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import {
   MsgAcknowledgement,
@@ -22,7 +22,7 @@ import { MsgPrunePacketHistory } from '@cardano-ibc/proto-types/build/ibc/cardan
 import { isSupportedGatewayPortId } from '@shared/helpers/module-port';
 import { ChannelDatum } from '@shared/types/channel/channel-datum';
 import { Order } from '@shared/types/channel/order';
-import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
+import { decodeIcs20ClassicPacketData, MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
 
 function packetCapacityExhausted(channelDatum: ChannelDatum): GrpcFailedPreconditionException {
   return new GrpcFailedPreconditionException(
@@ -210,7 +210,13 @@ export function validateAndFormatTimeoutPacketParams(data: MsgTimeout): {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  const fungibleTokenPacketData: FungibleTokenPacketDatum = JSON.parse(convertHex2String(toHex(data.packet.data)));
+  let fungibleTokenPacketData: FungibleTokenPacketDatum;
+  try {
+    fungibleTokenPacketData = decodeIcs20ClassicPacketData(data.packet.data).data;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new GrpcInvalidArgumentException(`Invalid ICS-20 packet data: ${message}`);
+  }
   const decodedProofUnreceived: MerkleProof = decodeMerkleProof(data.proof_unreceived);
   // Prepare the timeoutPacketOperator object
   const timeoutPacketOperator: TimeoutPacketOperator = {

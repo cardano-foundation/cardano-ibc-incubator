@@ -935,6 +935,14 @@ jobs:
           cache: npm
           cache-dependency-path: proto-types/package-lock.json
 
+      - name: Setup Go for ICS-20 vectors
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.13"
+          cache-dependency-path: |
+            cosmos/cardano-probabilistic-light-client-v8/go.sum
+            cosmos/cardano-mithril-light-client-v10/go.sum
+
       - name: Setup Aiken
         if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: aiken-lang/setup-aiken@v1
@@ -956,6 +964,9 @@ jobs:
         env:
           WIRE_SCHEMA_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: node scripts/ci/check-aiken-wire-schema.mjs check --base-ref "${WIRE_SCHEMA_BASE_REF}"
+
+      - name: Check pinned ICS-20 JSON vectors
+        run: node tests/ics20-json-vectors/generate.mjs --check
 
       - name: Check generated artifacts
         run: scripts/ci/check-generated-artifacts-clean.sh

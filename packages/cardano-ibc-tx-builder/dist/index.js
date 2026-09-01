@@ -1,8 +1,24 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_PACKET_ENTRIES_PER_CHANNEL = void 0;
 exports.buildUnsignedSendPacketTx = buildUnsignedSendPacketTx;
 const blake2b_1 = require("@noble/hashes/blake2b");
+const ics20_json_codec_1 = require("./ics20-json-codec");
+__exportStar(require("./ics20-json-codec"), exports);
 const LOVELACE = 'lovelace';
 const CIP67_FT_LABEL_HEX = '0014df10';
 exports.MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
@@ -24,19 +40,29 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     const resolvedDenom = await resolvePacketDenomForSend(inputDenom, deps);
     const packetDenom = normalizePacketDenom(resolvedDenom, sendPacketOperator.sourcePort, sendPacketOperator.sourceChannel, deps);
     const isVoucher = hasVoucherPrefix(resolvedDenom, sendPacketOperator.sourcePort, sendPacketOperator.sourceChannel);
+    let packetDataJson;
+    try {
+        packetDataJson = (0, ics20_json_codec_1.stringifyIcs20PacketData)({
+            denom: packetDenom,
+            amount: sendPacketOperator.token.amount.toString(),
+            sender: sendPacketOperator.sender,
+            receiver: sendPacketOperator.receiver,
+            memo: sendPacketOperator.memo,
+        });
+    }
+    catch (error) {
+        if (error instanceof ics20_json_codec_1.Ics20ClassicJsonCodecError) {
+            throw deps.invalidArgument(`Invalid ICS-20 packet data: ${error.message}`);
+        }
+        throw error;
+    }
     const packet = {
         sequence: context.channelDatum.state.next_sequence_send,
         source_port: convertStringToHex(sendPacketOperator.sourcePort),
         source_channel: convertStringToHex(sendPacketOperator.sourceChannel),
         destination_port: context.channelDatum.state.channel.counterparty.port_id,
         destination_channel: context.channelDatum.state.channel.counterparty.channel_id,
-        data: convertStringToHex(stringifyIcs20PacketData({
-            denom: packetDenom,
-            amount: sendPacketOperator.token.amount.toString(),
-            sender: sendPacketOperator.sender,
-            receiver: sendPacketOperator.receiver,
-            memo: sendPacketOperator.memo,
-        })),
+        data: convertStringToHex(packetDataJson),
         timeout_height: sendPacketOperator.timeoutHeight,
         timeout_timestamp: sendPacketOperator.timeoutTimestamp,
     };
@@ -218,20 +244,6 @@ function insertSortMapWithNumberKey(inputMap, newKey, newValue) {
     const updatedMap = new Map(inputMap);
     updatedMap.set(newKey, newValue);
     return new Map(Array.from(updatedMap.entries()).sort(([keyA], [keyB]) => Number(keyA) - Number(keyB)));
-}
-function stringifyIcs20PacketData(packet) {
-    const ordered = {};
-    if (packet.amount)
-        ordered.amount = packet.amount;
-    if (packet.denom)
-        ordered.denom = packet.denom;
-    if (packet.memo)
-        ordered.memo = packet.memo;
-    if (packet.receiver)
-        ordered.receiver = packet.receiver;
-    if (packet.sender)
-        ordered.sender = packet.sender;
-    return JSON.stringify(ordered);
 }
 function convertStringToHex(value) {
     if (!value) {

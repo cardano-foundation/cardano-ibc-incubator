@@ -533,6 +533,37 @@ fn build_packet(
   (ftpd, packet)
 }
 
+// Representative budget cases use prebuilt canonical bytes so fixture
+// construction does not double-charge the off-chain serializer.
+fn build_prebuilt_packet(
+  denom: ByteArray,
+  amount: ByteArray,
+  sender: ByteArray,
+  receiver: ByteArray,
+  source_port: ByteArray,
+  source_channel: ByteArray,
+  destination_port: ByteArray,
+  destination_channel: ByteArray,
+  authenticated_data: ByteArray,
+) -> (FungibleTokenPacketData, Packet) {
+  let ftpd =
+    FungibleTokenPacketData { denom, amount, sender, receiver, memo: "" }
+
+  (
+    ftpd,
+    Packet {
+      sequence: 1,
+      source_port,
+      source_channel,
+      destination_port,
+      destination_channel,
+      data: authenticated_data,
+      timeout_height: height.zero_height(),
+      timeout_timestamp: 1111,
+    },
+  )
+}
+
 fn run_transfer_module_transition(
   mock: MockData,
   transaction: Transaction,
@@ -1936,15 +1967,16 @@ test transfer_escrow_succeed() {
     ]
 
   let (ftpd, packet) =
-    build_packet(
+    build_prebuilt_packet(
       denom,
-      transfer_amount,
+      "1234",
       mock.cosmos_address,
       receiver,
       source_port,
       source_channel,
       mock.port_id,
       mock.channel_id,
+      #"7b22616d6f756e74223a2231323334222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c2273656e646572223a226d6f636b20636f736d6f732061646472657373227d",
     )
 
   let module_redeemer: Redeemer =
@@ -2428,15 +2460,16 @@ test on_timeout_packet_mint_voucher_succeed() {
       |> bytearray.concat("atom")
 
   let (ftpd, packet) =
-    build_packet(
+    build_prebuilt_packet(
       denom,
-      1234,
+      "1234",
       mock.cosmos_address,
       receiver,
       source_port,
       source_channel,
       "port-0",
       "channel-0",
+      #"7b22616d6f756e74223a2231323334222c2264656e6f6d223a22706f72742d312f6368616e6e656c2d302f61746f6d222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c2273656e646572223a226d6f636b20636f736d6f732061646472657373227d",
     )
 
   let packet_data = ModuleDataV1(ftpd)
@@ -2840,15 +2873,16 @@ test on_acknowledgement_packet_result_succeed() {
       |> bytearray.concat("atom")
 
   let (ftpd, packet) =
-    build_packet(
+    build_prebuilt_packet(
       denom,
-      1234,
+      "1234",
       mock.cosmos_address,
       receiver,
       source_port,
       source_channel,
       "port-0",
       "channel-0",
+      #"7b22616d6f756e74223a2231323334222c2264656e6f6d223a22706f72742d312f6368616e6e656c2d302f61746f6d222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c2273656e646572223a226d6f636b20636f736d6f732061646472657373227d",
     )
 
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")

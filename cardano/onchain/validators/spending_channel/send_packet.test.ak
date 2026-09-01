@@ -63,7 +63,10 @@ fn full_empty_siblings() -> List<ByteArray> {
   )
 }
 
-fn check_send_packet(mutation: CallbackMutation) {
+fn check_send_packet_with_data(
+  mutation: CallbackMutation,
+  packet_data: ByteArray,
+) {
   let mock_data = setup()
 
   let transfer_data =
@@ -74,7 +77,6 @@ fn check_send_packet(mutation: CallbackMutation) {
       receiver: "receiver",
       memo: "",
     }
-  let packet_data = fungible_token_packet_data.get_bytes(transfer_data)
   let packet =
     Packet {
       sequence: 1,
@@ -435,8 +437,28 @@ fn check_send_packet(mutation: CallbackMutation) {
   }
 }
 
+fn check_send_packet(mutation: CallbackMutation) {
+  let transfer_data =
+    FungibleTokenPacketData {
+      denom: "6c6f76656c616365",
+      amount: "1000",
+      sender: "sender",
+      receiver: "receiver",
+      memo: "",
+    }
+  check_send_packet_with_data(
+    mutation,
+    fungible_token_packet_data.get_bytes(transfer_data),
+  )
+}
+
 test succeed_send_packet() {
-  check_send_packet(ValidCallback)
+  // Prebuilt canonical bytes keep this representative budget case from
+  // double-charging the serializer that the validator itself exercises.
+  check_send_packet_with_data(
+    ValidCallback,
+    #"7b22616d6f756e74223a2231303030222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a227265636569766572222c2273656e646572223a2273656e646572227d",
+  )
 }
 
 test send_packet_rejects_missing_registered_module() fail {

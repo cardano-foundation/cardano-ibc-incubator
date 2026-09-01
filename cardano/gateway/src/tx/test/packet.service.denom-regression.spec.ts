@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { stringifyIcs20PacketData, type Ics20ClassicPacketData } from '@cardano-ibc/tx-builder';
 import { convertHex2String, convertString2Hex, hashSHA256 } from '@shared/helpers/hex';
 import {
   buildVoucherDenomHashFromFullDenom,
@@ -222,7 +223,13 @@ describe('PacketService denom regression coverage', () => {
 });
 
 describe('PacketService acknowledgement and recv denom regression coverage', () => {
-  it('uses the labeled blake2b_224 voucher token name for acknowledgement-error refund voucher minting', async () => {
+  it.each<[string, (packet: Ics20ClassicPacketData) => string]>([
+    ['Cardano', (packet) => stringifyIcs20PacketData({ ...packet, memo: '<ack>' })],
+    [
+      'ibc-go v10',
+      (packet) => JSON.stringify({ ...packet, memo: '<ack>' }).replace('<ack>', '\\u003cack\\u003e'),
+    ],
+  ])('uses the labeled voucher token name for %s acknowledgement-error refunds', async (_profile, encodePacket) => {
     const loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -375,14 +382,13 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       amount: '10',
       sender: 'sender-credential',
       receiver: 'receiver-credential',
-      memo: '',
     };
 
     await service.buildUnsignedAcknowlegementPacketTx(
       {
         channelId: 'channel-7',
         packetSequence,
-        packetData: convertString2Hex(JSON.stringify(packetData)),
+        packetData: convertString2Hex(encodePacket(packetData)),
         proofHeight,
         proofAcked: { proofs: [] } as any,
         acknowledgement: convertString2Hex(JSON.stringify({ error: 'forwarding failed' })),
@@ -602,7 +608,6 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
             amount: '10',
             sender: 'sender-credential',
             receiver: 'receiver-credential',
-            memo: '',
           }),
         ),
         proofHeight,
@@ -635,7 +640,13 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
   });
 
-  it('maps unwrapped voucher denom hex(lovelace) to lovelace asset unit in recv unescrow', async () => {
+  it.each<[string, (packet: Ics20ClassicPacketData) => string]>([
+    [
+      'ibc-go v8',
+      (packet) => stringifyIcs20PacketData({ ...packet, memo: '<memo>' }).replace('<memo>', '\\u003cmemo\\u003e'),
+    ],
+    ['ibc-go v10', (packet) => JSON.stringify(packet)],
+  ])('maps recv %s packet bytes through voucher unescrow', async (_profile, encodePacket) => {
     const loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -827,12 +838,11 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
         channelId: 'channel-7',
         packetSequence,
         packetData: convertString2Hex(
-          JSON.stringify({
+          encodePacket({
             denom: voucherDenomWithHexLovelaceBase,
             amount: '10',
             sender: 'sender-credential',
             receiver: 'receiver-credential',
-            memo: '',
           }),
         ),
         proofCommitment: { proofs: [] } as any,

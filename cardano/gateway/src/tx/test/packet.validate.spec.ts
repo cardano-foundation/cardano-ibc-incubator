@@ -1,5 +1,6 @@
 import {
   MsgRecvPacket,
+  MsgTimeout,
   MsgTransfer,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import {
@@ -10,12 +11,13 @@ import { normalizeDenomTokenTransfer } from '../helper/helper';
 import {
   validateAndFormatRecvPacketParams,
   validateAndFormatSendPacketParams,
+  validateAndFormatTimeoutPacketParams,
   validateRecvPacketHistoryCapacity,
   validateSendPacketCommitmentCapacity,
 } from '../helper/packet.validate';
 import { ChannelDatum } from '@shared/types/channel/channel-datum';
 import { Order } from '@shared/types/channel/order';
-import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
+import { ICS20_CLASSIC_JSON_LIMITS, MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
 
 function packetEntries(count: number): Map<bigint, string> {
   return new Map<bigint, string>(
@@ -120,6 +122,62 @@ describe('Send packet denom validation', () => {
 
   it('does not allow empty denom normalization in core helpers', () => {
     expect(() => normalizeDenomTokenTransfer('')).toThrow(GrpcInvalidArgumentException);
+  });
+});
+
+describe('Timeout packet ICS-20 JSON validation', () => {
+  const buildMsgTimeout = (packetData: Uint8Array): MsgTimeout => ({
+    packet: {
+      sequence: 1n,
+      source_port: 'transfer',
+      source_channel: 'channel-0',
+      destination_port: 'transfer',
+      destination_channel: 'channel-1',
+      data: packetData,
+      timeout_height: {
+        revision_number: 0n,
+        revision_height: 0n,
+      },
+      timeout_timestamp: 1n,
+    },
+    proof_unreceived: new Uint8Array(),
+    proof_height: { revision_number: 0n, revision_height: 1n },
+    next_sequence_recv: 1n,
+    signer: 'addr_test1qsigner',
+  });
+
+  it.each([
+    ['ibc-go v8', '{"amount":"12","denom":"uatom","receiver":"addr_test1receiver","sender":"cosmos1sender"}'],
+    ['ibc-go v10', '{"denom":"uatom","amount":"12","sender":"cosmos1sender","receiver":"addr_test1receiver"}'],
+  ])('accepts canonical %s packet bytes', (_profile, packetJson) => {
+    const result = validateAndFormatTimeoutPacketParams(buildMsgTimeout(Buffer.from(packetJson, 'utf8')));
+
+    expect(result.timeoutPacketOperator.fungibleTokenPacketData).toEqual({
+      denom: 'uatom',
+      amount: '12',
+      sender: 'cosmos1sender',
+      receiver: 'addr_test1receiver',
+      memo: '',
+    });
+  });
+
+  it.each([
+    ['malformed JSON', Buffer.from('{bad}', 'utf8')],
+    [
+      'unknown fields',
+      Buffer.from('{"denom":"uatom","amount":"12","sender":"sender","receiver":"receiver","extra":"value"}', 'utf8'),
+    ],
+    [
+      'unsupported field order',
+      Buffer.from('{"denom":"uatom","sender":"sender","amount":"12","receiver":"receiver"}', 'utf8'),
+    ],
+    ['invalid UTF-8', new Uint8Array([0xc3, 0x28])],
+    ['oversized packet', new Uint8Array(ICS20_CLASSIC_JSON_LIMITS.packetBytes + 1)],
+  ])('rejects %s', (_case, packetData) => {
+    const validate = () => validateAndFormatTimeoutPacketParams(buildMsgTimeout(packetData));
+
+    expect(validate).toThrow(GrpcInvalidArgumentException);
+    expect(validate).toThrow('Invalid ICS-20 packet data');
   });
 });
 

@@ -1,4 +1,5 @@
 import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+export * from './ics20-json-codec';
 export declare const MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 export type Height = {
     revisionNumber: bigint;

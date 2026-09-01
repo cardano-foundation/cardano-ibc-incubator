@@ -939,7 +939,11 @@ test prop_voucher_first_mint_policy_rejects_wrong_reference_asset(
     |> fuzz_dsl.assert_protocol_rejected
 }
 
-test test_mint_voucher() {
+fn mint_voucher_succeeds(
+  memo: ByteArray,
+  use_v10_profile: Bool,
+  expected_packet_bytes: Int,
+) -> Bool {
   let mock_data = prepare_mock_data()
 
   let packet_source_port = "transfer"
@@ -958,8 +962,19 @@ test test_mint_voucher() {
       amount: string.from_int(transfer_amount) |> string.to_bytearray(),
       sender: "cosmos sender address",
       receiver,
-      memo: "",
+      memo,
     }
+  let authenticated_packet_data =
+    if !use_v10_profile && memo == "" {
+      // Keep off-chain serialization out of the representative validator budget.
+      #"7b22616d6f756e74223a22313030222c2264656e6f6d223a226962632f75736474222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c2273656e646572223a22636f736d6f732073656e6465722061646472657373227d"
+    } else if
+    use_v10_profile {
+      fungible_token_packet_data.get_v10_bytes(ftpd)
+    } else {
+      fungible_token_packet_data.get_bytes(ftpd)
+    }
+  expect bytearray.length(authenticated_packet_data) == expected_packet_bytes
 
   let mint_voucher_redeemer =
     MintVoucher {
@@ -976,7 +991,7 @@ test test_mint_voucher() {
     Callback(
       OnRecvPacket {
         channel_id: packet_dest_channel,
-        packet_data: fungible_token_packet_data.get_bytes(ftpd),
+        packet_data: authenticated_packet_data,
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
         data: packet_data,
       },
@@ -1023,7 +1038,7 @@ test test_mint_voucher() {
         packet_source_channel,
         packet_dest_port,
         packet_dest_channel,
-        fungible_token_packet_data.get_bytes(ftpd),
+        authenticated_packet_data,
       ),
       proof_commitment: mock_proof(),
       proof_height: Height { revision_number: 1, revision_height: 1 },
@@ -1101,6 +1116,19 @@ test test_mint_voucher() {
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
+  )
+}
+
+test test_mint_voucher() {
+  mint_voucher_succeeds("", False, 138)
+}
+
+test test_mint_voucher_maximum_ics20_packet() {
+  // Go renders each `<` as `\\u003c`, making this v10 packet 512 bytes.
+  mint_voucher_succeeds(
+    #"616161613c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+    True,
+    fungible_token_packet_data.max_packet_bytes,
   )
 }
 
