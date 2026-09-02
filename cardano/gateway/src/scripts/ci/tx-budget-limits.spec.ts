@@ -1,4 +1,9 @@
-import { type BudgetLimits, type BudgetScenario, checkTransactionBudgets } from './tx-budget-limits';
+import {
+  addMaxAlternativeExUnits,
+  type BudgetLimits,
+  type BudgetScenario,
+  checkTransactionBudgets,
+} from './tx-budget-limits';
 
 const limits: BudgetLimits = {
   maxTxSize: 16_384,
@@ -20,6 +25,17 @@ function scenario(overrides: Partial<BudgetScenario> = {}): BudgetScenario {
 }
 
 describe('transaction budget limits', () => {
+  it('adds independent memory and CPU maxima for alternative profiles instead of summing them', () => {
+    expect(
+      addMaxAlternativeExUnits({ mem: 100, steps: 1_000 }, [
+        [
+          { mem: 30, steps: 10 },
+          { mem: 20, steps: 40 },
+        ],
+      ]),
+    ).toEqual({ mem: 130, steps: 1_040 });
+  });
+
   it('accepts an ordinary scenario within the public-network limits', () => {
     expect(checkTransactionBudgets([scenario()], limits, {})).toEqual({
       failures: [],
@@ -66,10 +82,62 @@ describe('transaction budget limits', () => {
     expect(result.failures).toEqual(['Scenario: memory ex units 20000000 exceed safe budget 15675000']);
   });
 
-  it('always rejects a transaction-size overrun', () => {
+  it('rejects a transaction-size overrun without an exact ceiling', () => {
     const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_000 })], limits, {});
 
     expect(result.failures).toEqual(['Scenario: signed bytes estimate 16000 exceeds safe budget 15634']);
+  });
+
+  it('ratchets a known transaction-size headroom violation', () => {
+    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_000 })], limits, {
+      scenario: { signedBytesEstimate: 16_000 },
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(result.knownViolations).toEqual([
+      'Scenario: signed bytes estimate 16000 exceed safe budget 15634 with 750-byte reserve (regression ceiling 16000)',
+    ]);
+  });
+
+  it('rejects a transaction-size increase above its recorded ceiling', () => {
+    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_001 })], limits, {
+      scenario: { signedBytesEstimate: 16_000 },
+    });
+
+    expect(result.failures).toEqual([
+      'Scenario: signed bytes estimate 16001 exceed known-overrun ceiling 16000 (safe budget 15634, ledger maximum 16384)',
+    ]);
+  });
+
+  it('requires a transaction-size improvement to lower its ceiling', () => {
+    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 15_999 })], limits, {
+      scenario: { signedBytesEstimate: 16_000 },
+    });
+
+    expect(result.failures).toEqual([
+      'Scenario: signed bytes estimate improved from known-overrun ceiling 16000 to 15999; lower the ceiling to 15999',
+    ]);
+  });
+
+  it('removes a stale size ceiling once the safe budget is met', () => {
+    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 15_634 })], limits, {
+      scenario: { signedBytesEstimate: 16_000 },
+    });
+
+    expect(result.failures).toEqual([
+      'Scenario: signed bytes estimate now fit safe budget 15634; remove stale known-overrun ceiling 16000',
+    ]);
+  });
+
+  it('identifies a ratcheted transaction that exceeds the ledger maximum', () => {
+    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_500 })], limits, {
+      scenario: { signedBytesEstimate: 16_500 },
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(result.knownViolations).toEqual([
+      'Scenario: signed bytes estimate 16500 exceed ledger maximum 16384 (regression ceiling 16500)',
+    ]);
   });
 
   it('rejects stale and orphaned ceilings', () => {

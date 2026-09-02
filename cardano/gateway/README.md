@@ -96,6 +96,8 @@ The Gateway can expose a public bridge manifest at `GET /api/bridge-manifest` an
 
 Manifest schema v4 adds the packet-history-prune reference validator and is intentionally incompatible with older deployments. The pruning replay floor and receive high-water mark extend `ChannelDatum`, so adopting v4 requires a fresh Cardano protocol deployment and new channels rather than reusing v2/v3 script UTxOs.
 
+The strict ICS-20 Classic JSON codec also changes the transfer-module and voucher-policy script hashes. New deployments publish `ics20_packet_codec: "ics20-classic-json-v1"`; older schema-v4 manifests without that field are treated as `legacy-cardano-json`. The Gateway uses this deployment capability for receive, send, acknowledgement, and timeout construction, so packets committed under legacy scripts can still settle after a Gateway upgrade. A deployment adopting the strict codec must publish a newly generated manifest, register the new transfer module, and open new channels against that deployment. Existing module registrations and channels remain tied to the script hashes with which they were created.
+
 ## Historical Backend
 
 The Gateway's historical Cardano reads now go through the Yaci-backed bridge history service.

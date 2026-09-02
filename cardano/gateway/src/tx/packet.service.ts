@@ -32,7 +32,6 @@ import {
   getDenomPrefix,
   insertSortMapWithNumberKey,
   prependToMap,
-  stringifyIcs20PacketData,
 } from '@shared/helpers/helper';
 import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
@@ -113,6 +112,15 @@ import {
   buildUnsignedSendPacketTx as buildUnsignedSendPacketTxWithPackage,
   type SendPacketOperator as SharedSendPacketOperator,
 } from '@cardano-ibc/tx-builder';
+import {
+  ICS20_PACKET_CODEC,
+  type DeploymentConfig,
+  type Ics20PacketCodec,
+} from '../config/bridge-manifest';
+import {
+  decodeIcs20PacketDataForCodec,
+  stringifyIcs20PacketDataForCodec,
+} from '../shared/helpers/ics20-packet-codec';
 import { ICS23MerkleTree } from '@shared/helpers/ics23-merkle-tree';
 import {
   escrowDenomTokenFromPacketDenom,
@@ -152,6 +160,13 @@ export class PacketService {
     private readonly txOperationRunnerService: TxOperationRunnerService,
     private readonly asyncIcqHostService: AsyncIcqHostService,
   ) {}
+
+  private getIcs20PacketCodec(): Ics20PacketCodec {
+    return (
+      this.configService.get<DeploymentConfig>('deployment')?.ics20PacketCodec ??
+      ICS20_PACKET_CODEC.STRICT
+    );
+  }
   /**
    * @param data
    * @returns unsigned_tx
@@ -263,9 +278,7 @@ export class PacketService {
       packetSequence: string;
       packetDataUtf8?: string;
       packetDataHex?: string;
-      reencodedPacketDataUtf8?: string;
-      reencodedPacketDataHex?: string;
-      packetDataMatches?: boolean;
+      packetDataProfiles?: string;
       receiverAddress?: string;
       voucherTokenUnit?: string;
       denomToken?: string;
@@ -300,18 +313,11 @@ export class PacketService {
     }
     if (params.packetDataUtf8 !== undefined) {
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} packet_data match=${params.packetDataMatches ?? false} utf8=${params.packetDataUtf8}`,
+        `[DEBUG recvPacket] ${context} packet_data profiles=${params.packetDataProfiles ?? 'unknown'} utf8=${params.packetDataUtf8}`,
       );
     }
-    if (params.reencodedPacketDataUtf8 !== undefined) {
-      this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} packet_data_reencoded utf8=${params.reencodedPacketDataUtf8}`,
-      );
-    }
-    if (params.packetDataHex !== undefined || params.reencodedPacketDataHex !== undefined) {
-      this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} packet_data_hex incoming=${params.packetDataHex ?? 'n/a'} reencoded=${params.reencodedPacketDataHex ?? 'n/a'}`,
-      );
+    if (params.packetDataHex !== undefined) {
+      this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} packet_data_hex=${params.packetDataHex}`);
     }
     if (params.traceRegistryKind) {
       this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} trace_registry_kind=${params.traceRegistryKind}`);
@@ -1515,7 +1521,10 @@ export class PacketService {
   async timeoutPacket(data: MsgTimeout): Promise<MsgTimeoutResponse> {
     try {
       this.logger.log('timeoutPacket is processing');
-      const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data);
+      const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(
+        data,
+        this.getIcs20PacketCodec(),
+      );
       const buildTimeoutAttempt = async () => {
         await this.refreshWalletContext(constructedAddress, 'timeoutPacketBuilder');
         return this.buildUnsignedTimeoutPacketTx(
@@ -1873,29 +1882,26 @@ export class PacketService {
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
 
-    const stringData = convertHex2String(recvPacketOperator.packetData) || '';
+    let decodedPacketData: ReturnType<typeof decodeIcs20PacketDataForCodec>;
+    try {
+      decodedPacketData = decodeIcs20PacketDataForCodec(
+        Buffer.from(recvPacketOperator.packetData, 'hex'),
+        this.getIcs20PacketCodec(),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Error decoding ICS-20 packet data: ${message}`);
+      throw new GrpcInvalidArgumentException(`Invalid ICS-20 packet data: ${message}`);
+    }
+    const stringData = decodedPacketData.json;
 
     if (stringData.startsWith('{') && stringData.endsWith('}')) {
-      let jsonData: unknown;
-      try {
-        jsonData = JSON.parse(stringData);
-      } catch (error) {
-        this.logger.error('Error in parsing JSON packet data: ' + stringData, error);
-        throw new GrpcInvalidArgumentException(`Invalid JSON packet data: ${error?.message ?? error}`);
-      }
+      const jsonData: unknown = decodedPacketData.data;
 
       if (typeof jsonData === 'object' && jsonData !== null && 'denom' in jsonData && jsonData.denom !== undefined) {
-          // Packet data seems to be ICS-20 related. Build transfer module redeemer.
+          // The shared decoder established that these are canonical ICS-20 packet bytes.
           const fungibleTokenPacketData: FungibleTokenPacketDatum = jsonData as FungibleTokenPacketDatum;
-          const reencodedPacketDataUtf8 = stringifyIcs20PacketData({
-            denom: fungibleTokenPacketData.denom,
-            amount: fungibleTokenPacketData.amount,
-            sender: fungibleTokenPacketData.sender,
-            receiver: fungibleTokenPacketData.receiver,
-            memo: fungibleTokenPacketData.memo,
-          });
-          const reencodedPacketDataHex = convertString2Hex(reencodedPacketDataUtf8);
-          const packetDataMatches = recvPacketOperator.packetData === reencodedPacketDataHex;
+          const packetDataProfiles = decodedPacketData.profiles.join(',');
           const fTokenPacketData: FungibleTokenPacketDatum = {
             denom: convertString2Hex(fungibleTokenPacketData.denom),
             amount: convertString2Hex(fungibleTokenPacketData.amount),
@@ -2038,9 +2044,7 @@ export class PacketService {
               packetSequence: packet.sequence.toString(),
               packetDataUtf8: stringData,
               packetDataHex: recvPacketOperator.packetData,
-              reencodedPacketDataUtf8,
-              reencodedPacketDataHex,
-              packetDataMatches,
+              packetDataProfiles,
               receiverAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.receiver),
               denomToken,
             });
@@ -2159,9 +2163,7 @@ export class PacketService {
                   packetSequence: packet.sequence.toString(),
                   packetDataUtf8: stringData,
                   packetDataHex: recvPacketOperator.packetData,
-                  reencodedPacketDataUtf8,
-                  reencodedPacketDataHex,
-                  packetDataMatches,
+                  packetDataProfiles,
                   receiverAddress,
                   voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
                   traceRegistryKind: initialUpdate.kind,
@@ -2184,9 +2186,7 @@ export class PacketService {
               packetSequence: packet.sequence.toString(),
               packetDataUtf8: stringData,
               packetDataHex: recvPacketOperator.packetData,
-              reencodedPacketDataUtf8,
-              reencodedPacketDataHex,
-              packetDataMatches,
+              packetDataProfiles,
               receiverAddress,
               voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
               traceRegistryKind: traceRegistryUpdate?.kind ?? 'none',
@@ -2510,6 +2510,8 @@ export class PacketService {
     return buildUnsignedSendPacketTxWithPackage(
       sendPacketOperator as SharedSendPacketOperator,
       {
+        stringifyPacketData: (packetData) =>
+          stringifyIcs20PacketDataForCodec(packetData, this.getIcs20PacketCodec()),
         loadContext: async (operator) => {
           const channelSequence: string = operator.sourceChannel.replaceAll(
             `${CHANNEL_ID_PREFIX}-`,
@@ -3010,9 +3012,16 @@ export class PacketService {
       };
     }
 
-    const fungibleTokenPacketData: FungibleTokenPacketDatum = JSON.parse(
-      convertHex2String(ackPacketOperator.packetData),
-    );
+    let fungibleTokenPacketData: FungibleTokenPacketDatum;
+    try {
+      fungibleTokenPacketData = decodeIcs20PacketDataForCodec(
+        Buffer.from(ackPacketOperator.packetData, 'hex'),
+        this.getIcs20PacketCodec(),
+      ).data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new GrpcInvalidArgumentException(`Invalid ICS-20 packet data: ${message}`);
+    }
     const fTokenPacketData: FungibleTokenPacketDatum = {
       denom: convertString2Hex(fungibleTokenPacketData.denom),
       amount: convertString2Hex(fungibleTokenPacketData.amount),

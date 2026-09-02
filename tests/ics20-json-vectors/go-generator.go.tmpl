@@ -1,0 +1,98 @@
+package main
+
+import (
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"runtime/debug"
+
+	transfertypes "__IBC_GO_MODULE__/modules/apps/transfer/types"
+)
+
+const ibcGoModule = "__IBC_GO_MODULE__"
+
+type packetData struct {
+	Denom    string `json:"denom"`
+	Amount   string `json:"amount"`
+	Sender   string `json:"sender"`
+	Receiver string `json:"receiver"`
+	Memo     string `json:"memo"`
+}
+
+type vectorCase struct {
+	Name string     `json:"name"`
+	Data packetData `json:"data"`
+}
+
+type wireVector struct {
+	Name string `json:"name"`
+	JSON string `json:"json"`
+	Hex  string `json:"hex"`
+}
+
+type output struct {
+	Module  string       `json:"module"`
+	Version string       `json:"version"`
+	Vectors []wireVector `json:"vectors"`
+}
+
+func dependencyVersion(module string) (string, error) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", fmt.Errorf("read Go build information")
+	}
+	for _, dependency := range info.Deps {
+		if dependency.Path == module {
+			return dependency.Version, nil
+		}
+	}
+	return "", fmt.Errorf("dependency %q is absent from Go build information", module)
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: ics20-json-vector-generator CASES_JSON")
+		os.Exit(2)
+	}
+
+	casesJSON, err := os.ReadFile(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+	var cases []vectorCase
+	if err := json.Unmarshal(casesJSON, &cases); err != nil {
+		panic(err)
+	}
+
+	version, err := dependencyVersion(ibcGoModule)
+	if err != nil {
+		panic(err)
+	}
+	result := output{
+		Module:  ibcGoModule,
+		Version: version,
+		Vectors: make([]wireVector, 0, len(cases)),
+	}
+	for _, testCase := range cases {
+		data := testCase.Data
+		encoded := transfertypes.NewFungibleTokenPacketData(
+			data.Denom,
+			data.Amount,
+			data.Sender,
+			data.Receiver,
+			data.Memo,
+		).GetBytes()
+		result.Vectors = append(result.Vectors, wireVector{
+			Name: testCase.Name,
+			JSON: string(encoded),
+			Hex:  hex.EncodeToString(encoded),
+		})
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(result); err != nil {
+		panic(err)
+	}
+}

@@ -800,6 +800,7 @@ type Tokens = "mock";
 
 export type DeploymentTemplate = {
   deployedAt: string;
+  ics20PacketCodec: "ics20-classic-json-v1";
   validators: {
     spendClient: {
       title: string;

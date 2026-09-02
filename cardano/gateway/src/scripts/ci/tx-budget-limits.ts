@@ -24,14 +24,32 @@ type BudgetCheckResult = {
   knownViolations: string[];
 };
 
-const KNOWN_EX_UNIT_OVERRUN_CEILINGS: Readonly<Record<string, Partial<ExUnits>>> = {
+type KnownBudgetCeiling = Partial<ExUnits> & Partial<Pick<BudgetScenario, 'unsignedBytes' | 'signedBytesEstimate'>>;
+
+export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<ReadonlyArray<ExUnits>>): ExUnits {
+  return groups.reduce((sum, alternatives) => {
+    if (alternatives.length === 0) {
+      throw new Error('execution-unit max group must contain at least one alternative');
+    }
+    return {
+      mem: sum.mem + Math.max(...alternatives.map(({ mem }) => mem)),
+      steps: sum.steps + Math.max(...alternatives.map(({ steps }) => steps)),
+    };
+  }, common);
+}
+
+const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
+  reference_script_deployment: {
+    unsignedBytes: 15_780,
+    signedBytesEstimate: 16_040,
+  },
   send_packet_at_commitment_capacity: {
-    mem: 57_749_497,
-    steps: 18_035_494_695,
+    mem: 52_064_773,
+    steps: 16_331_979_546,
   },
   recv_packet_at_history_capacity: {
-    mem: 47_456_092,
-    steps: 14_633_437_351,
+    mem: 49_356_343,
+    steps: 15_355_134_504,
   },
   prune_packet_history_at_capacity: {
     mem: 27_573_829,
@@ -40,16 +58,22 @@ const KNOWN_EX_UNIT_OVERRUN_CEILINGS: Readonly<Record<string, Partial<ExUnits>>>
     mem: 32_118_256,
     steps: 12_585_112_433,
   },
+  first_seen_voucher_receive_at_capacity: {
+    unsignedBytes: 20_615,
+    signedBytesEstimate: 20_875,
+    mem: 96_763_049,
+    steps: 31_523_591_002,
+  },
   first_seen_voucher_mint: {
-    mem: 35_511_099,
-    steps: 13_083_237_379,
+    mem: 38_315_184,
+    steps: 13_488_487_490,
   },
 };
 
 export function checkTransactionBudgets(
   reports: BudgetScenario[],
   limits: BudgetLimits,
-  knownCeilings: Readonly<Record<string, Partial<ExUnits>>> = KNOWN_EX_UNIT_OVERRUN_CEILINGS,
+  knownCeilings: Readonly<Record<string, KnownBudgetCeiling>> = KNOWN_BUDGET_OVERRUN_CEILINGS,
 ): BudgetCheckResult {
   const failures: string[] = [];
   const knownViolations: string[] = [];
@@ -105,15 +129,48 @@ export function checkTransactionBudgets(
     );
   };
 
-  for (const report of reports) {
-    if (report.unsignedBytes > safeTxSize) {
-      failures.push(`${report.name}: unsigned bytes ${report.unsignedBytes} exceed safe budget ${safeTxSize}`);
+  const checkSize = (report: BudgetScenario, metric: 'unsignedBytes' | 'signedBytesEstimate', label: string): void => {
+    const actual = report[metric];
+    const knownCeiling = knownCeilings[report.id]?.[metric];
+
+    if (actual <= safeTxSize) {
+      if (knownCeiling !== undefined) {
+        failures.push(
+          `${report.name}: ${label} now fit safe budget ${safeTxSize}; remove stale known-overrun ceiling ${knownCeiling}`,
+        );
+      }
+      return;
     }
-    if (report.signedBytesEstimate > safeTxSize) {
+
+    if (knownCeiling === undefined) {
+      failures.push(`${report.name}: ${label} ${actual} exceeds safe budget ${safeTxSize}`);
+      return;
+    }
+
+    if (actual > knownCeiling) {
       failures.push(
-        `${report.name}: signed bytes estimate ${report.signedBytesEstimate} exceeds safe budget ${safeTxSize}`,
+        `${report.name}: ${label} ${actual} exceed known-overrun ceiling ${knownCeiling} (safe budget ${safeTxSize}, ledger maximum ${limits.maxTxSize})`,
       );
+      return;
     }
+
+    if (actual < knownCeiling) {
+      failures.push(
+        `${report.name}: ${label} improved from known-overrun ceiling ${knownCeiling} to ${actual}; lower the ceiling to ${actual}`,
+      );
+      return;
+    }
+
+    const status =
+      actual > limits.maxTxSize
+        ? `exceed ledger maximum ${limits.maxTxSize}`
+        : `exceed safe budget ${safeTxSize} with ${limits.txHeadroomBytes}-byte reserve`;
+    knownViolations.push(`${report.name}: ${label} ${actual} ${status} (regression ceiling ${knownCeiling})`);
+  };
+
+  for (const report of reports) {
+    checkSize(report, 'unsignedBytes', 'unsigned bytes');
+    checkSize(report, 'signedBytesEstimate', 'signed bytes estimate');
     checkExUnits(report, 'mem', 'memory ex units', safeMem);
     checkExUnits(report, 'steps', 'CPU steps', safeSteps);
   }

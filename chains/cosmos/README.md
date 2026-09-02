@@ -41,6 +41,60 @@ commitments authenticate the exact packet bytes. The Cardano transfer
 validators therefore recognize both key orderings for supported packet values.
 This is a Classic wire-compatibility difference, not an IBC v2 packet format.
 
+### Exact JSON rules
+
+The supported wire profiles are deliberately narrow and versioned:
+
+| Producer | Field order | String escaping |
+| --- | --- | --- |
+| Cardano | `amount`, `denom`, `memo`, `receiver`, `sender` | JavaScript `JSON.stringify` |
+| ibc-go v8.7.0 | `amount`, `denom`, `memo`, `receiver`, `sender` | Go `encoding/json` |
+| ibc-go v10.2.0 | `denom`, `amount`, `sender`, `receiver`, `memo` | Go `encoding/json` |
+| ibc-rs v0.53.0 | `denom`, `amount`, `sender`, `receiver`, `memo` | `serde-json-wasm` 1.0.1 |
+
+`denom`, `amount`, `sender`, and `receiver` must be present, non-empty JSON
+strings. `memo` may be omitted or may be a string; an empty memo is represented
+by omitting it in the Cardano and ibc-go profiles. ibc-rs includes `"memo":""`
+because its `serde-json-wasm` serializer does not omit the empty field. No other
+fields are accepted. Packet data must be valid UTF-8 and must exactly match one
+of the encodings above, including field order and escaping. This rejects
+malformed JSON, byte-order marks, duplicate or unknown fields, incorrect field
+types, extra whitespace, alternate escape spellings, and trailing data. The
+transfer validators then apply the existing semantic checks, including a
+positive integer amount and a valid denomination.
+
+The encoded JSON packet is limited to 512 bytes. Before escaping, `denom`,
+`sender`, and `receiver` are each limited to 256 UTF-8 bytes, `amount` to 78,
+and `memo` to 512. The packet limit still applies after characters expand into
+JSON escapes, so it is normally the tighter bound. This is a codec bound, not
+a claim that every complete receive transaction fits the Cardano limits. The
+v10 budget fixture takes the struct-order late-match path after ibc-rs, while the
+v8 fixture takes the sorted-order late-match path after Cardano. These two cases
+therefore bound all four accepted profiles. The archive fixtures cover both the
+entry-count and encoded-byte bounds across eight archived shards. The most
+expensive 512-byte voucher-policy fixture uses 24,581,062 memory units and
+8,067,527,433 CPU units, while the isolated channel receive fixture uses
+16,697,209 memory units and exceeds the 16,500,000 ledger limit. The
+transaction-budget CI also models the complete first-seen voucher receive path,
+including membership-proof verification, the transfer callback, the voucher
+policy, a registry append with eight archived shards, and full packet histories.
+That model estimates 20,615 unsigned bytes, 20,875 signed bytes, 96,763,049
+memory units, and 31,523,591,002 CPU steps. Its signed estimate exceeds both the
+15,634-byte CI safe budget, which reserves 750 bytes, and the 16,384-byte ledger
+maximum. This additive model exceeds the ledger maximum; actual balanced CBOR
+is not built here. Its execution total also sums isolated Aiken fixtures; it is
+not a ledger evaluation of every validator in one combined transaction. CI
+records the estimate as a regression ceiling and rejects any increase.
+
+The pinned upstream fixtures and their generator live in
+[`tests/ics20-json-vectors`](../../tests/ics20-json-vectors). They call the
+actual `GetBytes()` implementations from the repository's ibc-go v8.7.0 and
+v10.2.0 modules and pin the `dummy_json_packet_data` fixture from ibc-rs
+v0.53.0. The generated vectors feed all supported encodings into the Aiken
+compatibility tests. Cardano continues to emit its existing sorted JavaScript
+encoding; accepting the Cosmos profiles does not change Cardano-originated
+packet bytes.
+
 There is a similarly easy-to-misread upstream type-name change. The generated
 protobuf name is `ibc.applications.transfer.v2.FungibleTokenPacketData` in the
 pinned v8 source and `ibc.applications.transfer.v1.FungibleTokenPacketData` in

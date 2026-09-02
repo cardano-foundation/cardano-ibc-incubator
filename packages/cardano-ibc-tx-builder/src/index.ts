@@ -1,5 +1,11 @@
 import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { blake2b } from '@noble/hashes/blake2b';
+import {
+  Ics20ClassicJsonCodecError,
+  stringifyIcs20PacketData,
+} from './ics20-json-codec';
+
+export * from './ics20-json-codec';
 
 const LOVELACE = 'lovelace';
 const CIP67_FT_LABEL_HEX = '0014df10';
@@ -32,6 +38,28 @@ export type SendPacketOperator = {
   timeoutHeight: Height;
   timeoutTimestamp: bigint;
   memo: string;
+};
+
+export type Ics20PacketDataStringifier = (packetData: {
+  denom: string;
+  amount: string;
+  sender: string;
+  receiver: string;
+  memo?: string;
+}) => string;
+
+// Preserve the exact sorted JSON representation used by deployments created
+// before the strict ICS-20 codec was introduced.
+export const stringifyLegacyIcs20PacketData: Ics20PacketDataStringifier = (
+  packetData,
+) => {
+  const ordered: Record<string, string> = {};
+  if (packetData.amount) ordered.amount = packetData.amount;
+  if (packetData.denom) ordered.denom = packetData.denom;
+  if (packetData.memo) ordered.memo = packetData.memo;
+  if (packetData.receiver) ordered.receiver = packetData.receiver;
+  if (packetData.sender) ordered.sender = packetData.sender;
+  return JSON.stringify(ordered);
 };
 
 export type Packet = {
@@ -199,6 +227,7 @@ export type SendPacketBuildDependencies = {
     denomHash: string,
   ) => Promise<VoucherDenomTrace | null>;
   commitPacket: (packet: Packet) => string;
+  stringifyPacketData?: Ics20PacketDataStringifier;
   encode: (value: unknown, kind: string) => Promise<string>;
   findUtxoAtWithUnit: (address: string, unit: string) => Promise<UTxO>;
   tryFindUtxosAt: (
@@ -263,6 +292,22 @@ export async function buildUnsignedSendPacketTx(
     sendPacketOperator.sourceChannel,
   );
 
+  let packetDataJson: string;
+  try {
+    packetDataJson = (deps.stringifyPacketData ?? stringifyIcs20PacketData)({
+      denom: packetDenom,
+      amount: sendPacketOperator.token.amount.toString(),
+      sender: sendPacketOperator.sender,
+      receiver: sendPacketOperator.receiver,
+      memo: sendPacketOperator.memo,
+    });
+  } catch (error) {
+    if (error instanceof Ics20ClassicJsonCodecError) {
+      throw deps.invalidArgument(`Invalid ICS-20 packet data: ${error.message}`);
+    }
+    throw error;
+  }
+
   const packet: Packet = {
     sequence: context.channelDatum.state.next_sequence_send,
     source_port: convertStringToHex(sendPacketOperator.sourcePort),
@@ -270,15 +315,7 @@ export async function buildUnsignedSendPacketTx(
     destination_port: context.channelDatum.state.channel.counterparty.port_id,
     destination_channel:
       context.channelDatum.state.channel.counterparty.channel_id,
-    data: convertStringToHex(
-      stringifyIcs20PacketData({
-        denom: packetDenom,
-        amount: sendPacketOperator.token.amount.toString(),
-        sender: sendPacketOperator.sender,
-        receiver: sendPacketOperator.receiver,
-        memo: sendPacketOperator.memo,
-      }),
-    ),
+    data: convertStringToHex(packetDataJson),
     timeout_height: sendPacketOperator.timeoutHeight,
     timeout_timestamp: sendPacketOperator.timeoutTimestamp,
   };
@@ -546,24 +583,6 @@ function insertSortMapWithNumberKey<K, V>(
       ([keyA], [keyB]) => Number(keyA) - Number(keyB),
     ),
   );
-}
-
-function stringifyIcs20PacketData(packet: {
-  denom?: string;
-  amount?: string;
-  sender?: string;
-  receiver?: string;
-  memo?: string;
-}): string {
-  const ordered: Record<string, string> = {};
-
-  if (packet.amount) ordered.amount = packet.amount;
-  if (packet.denom) ordered.denom = packet.denom;
-  if (packet.memo) ordered.memo = packet.memo;
-  if (packet.receiver) ordered.receiver = packet.receiver;
-  if (packet.sender) ordered.sender = packet.sender;
-
-  return JSON.stringify(ordered);
 }
 
 function convertStringToHex(value: string): string {

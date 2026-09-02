@@ -745,6 +745,7 @@ export const createDeployment = async (
 
   const deploymentInfo: DeploymentTemplate = {
     deployedAt,
+    ics20PacketCodec: "ics20-classic-json-v1",
     validators: {
       spendClient: {
         title: "spending_client.spend_client.spend",

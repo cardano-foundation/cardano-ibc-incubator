@@ -3,7 +3,9 @@ import * as path from 'node:path';
 
 import * as Lucid from '@lucid-evolution/lucid';
 
+import { encodeAuthToken } from '@shared/types/auth-token';
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
+import { encodeTransferIBCModuleRedeemer } from '@shared/types/apps/transfer/transfer-ibc-module-redeemer';
 import { encodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import {
   encodeMintConnectionRedeemer,
@@ -21,7 +23,7 @@ import {
   formatCapacityReport,
   loadNormalizedCapacityFixture,
 } from './tendermint-update-capacity';
-import { checkTransactionBudgets, type ExUnits } from './tx-budget-limits';
+import { addMaxAlternativeExUnits, checkTransactionBudgets, type ExUnits } from './tx-budget-limits';
 
 type BlueprintValidator = {
   title: string;
@@ -45,15 +47,45 @@ type AikenCheckReport = {
   }>;
 };
 
+type Ics20VectorManifest = {
+  vectors: Array<{
+    name: string;
+    data: {
+      denom: string;
+      amount: string;
+      sender: string;
+      receiver: string;
+      memo: string;
+    };
+    wire: {
+      ibcGoV10: {
+        json: string;
+        hex: string;
+      };
+    };
+  }>;
+};
+
 type SizedPayload = {
   name: string;
   bytes: number;
+};
+
+type AikenTestAlternative = {
+  name: string;
+  tests: string[];
+};
+
+type AikenTestMaxGroup = {
+  name: string;
+  alternatives: AikenTestAlternative[];
 };
 
 type ScenarioInput = {
   id: string;
   name: string;
   inputCount: number;
+  nonScriptReferenceInputCount?: number;
   outputCount: number;
   mintPolicyCount: number;
   referenceScriptTitles: string[];
@@ -62,7 +94,7 @@ type ScenarioInput = {
   datums: SizedPayload[];
   largestProofPayloadBytes: number;
   aikenTests: string[];
-  extraBytes?: number;
+  aikenTestMaxGroups?: AikenTestMaxGroup[];
   unsignedBytesOverride?: number;
 };
 
@@ -74,8 +106,16 @@ type ScenarioReport = {
   redeemers: SizedPayload[];
   datums: SizedPayload[];
   largestProofPayloadBytes: number;
+  inputCount: number;
+  nonScriptReferenceInputCount: number;
+  outputCount: number;
+  mintPolicyCount: number;
   scriptReferenceCount: number;
   inlineScriptCount: number;
+  aikenTestMaxGroups: Array<{
+    name: string;
+    alternatives: Array<{ name: string; exUnits: ExUnits }>;
+  }>;
   exUnits: ExUnits;
 };
 
@@ -198,13 +238,41 @@ function estimateUnsignedBytes(validators: Map<string, BlueprintValidator>, scen
   return (
     TX_BASE_BYTES +
     scenario.inputCount * TX_INPUT_BYTES +
+    (scenario.nonScriptReferenceInputCount ?? 0) * TX_REFERENCE_INPUT_BYTES +
     scenario.outputCount * TX_OUTPUT_BYTES +
     scenario.mintPolicyCount * TX_MINT_POLICY_BYTES +
     scenario.referenceScriptTitles.length * TX_REFERENCE_INPUT_BYTES +
     inlineScriptBytes +
     redeemerBytes +
-    datumBytes +
-    (scenario.extraBytes ?? 0)
+    datumBytes
+  );
+}
+
+function measureAikenTestMaxGroups(
+  aikenTests: Map<string, ExUnits>,
+  groups: AikenTestMaxGroup[],
+): Array<{
+  name: string;
+  alternatives: Array<{ name: string; exUnits: ExUnits }>;
+}> {
+  return groups.map((group) => ({
+    name: group.name,
+    alternatives: group.alternatives.map((alternative) => ({
+      name: alternative.name,
+      exUnits: sumExUnits(aikenTests, alternative.tests),
+    })),
+  }));
+}
+
+function sumScenarioExUnits(
+  common: ExUnits,
+  maxGroups: Array<{
+    alternatives: Array<{ exUnits: ExUnits }>;
+  }>,
+): ExUnits {
+  return addMaxAlternativeExUnits(
+    common,
+    maxGroups.map(({ alternatives }) => alternatives.map(({ exUnits }) => exUnits)),
   );
 }
 
@@ -259,7 +327,26 @@ function proofPayload(bytes: number) {
 const EMPTY_PROOF = { proofs: [] } as const;
 const HEIGHT = { revisionNumber: 0n, revisionHeight: 11n } as const;
 
-const PACKET = {
+type BudgetPacket = {
+  sequence: bigint;
+  source_port: string;
+  source_channel: string;
+  destination_port: string;
+  destination_channel: string;
+  data: string;
+  timeout_height: { revisionNumber: bigint; revisionHeight: bigint };
+  timeout_timestamp: bigint;
+};
+
+type BudgetFungibleTokenPacketData = {
+  denom: string;
+  amount: string;
+  sender: string;
+  receiver: string;
+  memo: string;
+};
+
+const PACKET: BudgetPacket = {
   sequence: 3n,
   source_port: '7472616e73666572',
   source_channel: '6368616e6e656c2d30',
@@ -268,7 +355,58 @@ const PACKET = {
   data: hexOfBytes(256, '06'),
   timeout_height: { revisionNumber: 0n, revisionHeight: 99n },
   timeout_timestamp: 0n,
-} as const;
+};
+
+const DEFAULT_VOUCHER_DATA: BudgetFungibleTokenPacketData = {
+  denom: '756f736d6f',
+  amount: '31303030303030',
+  sender: '6f736d6f3173656e646572',
+  receiver: '616464725f74657374317265636569766572',
+  memo: '',
+};
+
+function utf8Hex(value: string): string {
+  return Buffer.from(value, 'utf8').toString('hex');
+}
+
+function loadMaximumIcs20Packet(): {
+  packet: BudgetPacket;
+  data: BudgetFungibleTokenPacketData;
+} {
+  const manifest = readJson<Ics20VectorManifest>(path.join(repoRoot, 'tests/ics20-json-vectors/vectors.json'));
+  const vector = manifest.vectors.find(({ name }) => name === 'maximum_control_escape_packet_bytes');
+  if (!vector) {
+    throw new Error('Missing maximum_control_escape_packet_bytes ICS-20 vector');
+  }
+
+  const { json, hex } = vector.wire.ibcGoV10;
+  const encoded = Buffer.from(json, 'utf8');
+  if (encoded.byteLength !== 512 || encoded.toString('hex') !== hex) {
+    throw new Error(
+      `maximum_control_escape_packet_bytes.ibcGoV10 must be an exact 512-byte fixture; found ${encoded.byteLength}`,
+    );
+  }
+
+  return {
+    packet: {
+      ...PACKET,
+      source_port: utf8Hex('transfer'),
+      source_channel: utf8Hex('channel-1'),
+      destination_port: utf8Hex('port-99'),
+      destination_channel: utf8Hex('channel-99'),
+      data: hex,
+    },
+    data: {
+      denom: utf8Hex(vector.data.denom),
+      amount: utf8Hex(vector.data.amount),
+      sender: utf8Hex(vector.data.sender),
+      receiver: utf8Hex(vector.data.receiver),
+      memo: utf8Hex(vector.data.memo),
+    },
+  };
+}
+
+const MAXIMUM_ICS20_PACKET = loadMaximumIcs20Packet();
 
 const CLIENT_STATE = {
   chainId: '6f736d6f7369732d31',
@@ -307,23 +445,19 @@ function verifyProofRedeemer(proofBytes: number, valueBytes = 128): string {
   );
 }
 
-function voucherRedeemer(kind: 'MintVoucher' | 'RefundVoucher'): string {
-  const data = {
-    denom: '756f736d6f',
-    amount: '31303030303030',
-    sender: '6f736d6f3173656e646572',
-    receiver: '616464725f74657374317265636569766572',
-    memo: '',
-  };
-
+function voucherRedeemer(
+  kind: 'MintVoucher' | 'RefundVoucher',
+  packet: BudgetPacket = PACKET,
+  data: BudgetFungibleTokenPacketData = DEFAULT_VOUCHER_DATA,
+): string {
   if (kind === 'MintVoucher') {
     return encodeMintVoucherRedeemer(
       {
         MintVoucher: {
-          packet_source_port: PACKET.source_port,
-          packet_source_channel: PACKET.source_channel,
-          packet_dest_port: PACKET.destination_port,
-          packet_dest_channel: PACKET.destination_channel,
+          packet_source_port: packet.source_port,
+          packet_source_channel: packet.source_channel,
+          packet_dest_port: packet.destination_port,
+          packet_dest_channel: packet.destination_channel,
           data,
         },
       },
@@ -334,8 +468,8 @@ function voucherRedeemer(kind: 'MintVoucher' | 'RefundVoucher'): string {
   return encodeMintVoucherRedeemer(
     {
       RefundVoucher: {
-        packet_source_port: PACKET.source_port,
-        packet_source_channel: PACKET.source_channel,
+        packet_source_port: packet.source_port,
+        packet_source_channel: packet.source_channel,
         data,
         acknowledgement: {
           response: {
@@ -345,6 +479,32 @@ function voucherRedeemer(kind: 'MintVoucher' | 'RefundVoucher'): string {
           },
         },
       },
+    },
+    Lucid,
+  );
+}
+
+async function recvTransferModuleRedeemer(packet: BudgetPacket, data: BudgetFungibleTokenPacketData): Promise<string> {
+  return encodeTransferIBCModuleRedeemer(
+    {
+      Callback: [
+        {
+          OnRecvPacket: {
+            channel_id: packet.destination_channel,
+            packet_data: packet.data,
+            acknowledgement: {
+              response: {
+                AcknowledgementResult: {
+                  result: '01',
+                },
+              },
+            },
+            data: {
+              ModuleDataV1: [data],
+            },
+          },
+        },
+      ],
     },
     Lucid,
   );
@@ -417,6 +577,138 @@ function traceDirectoryDatum(archivedCount: number): string {
     },
     Lucid,
   );
+}
+
+async function buildFirstSeenVoucherReceiveAtCapacityScenario(): Promise<ScenarioInput> {
+  return {
+    id: 'first_seen_voucher_receive_at_capacity',
+    name: 'Combined modeled first-seen voucher RecvPacket path at packet and history capacity',
+    // HostState, channel, transfer module, and active trace shard are spent.
+    inputCount: 4,
+    // Connection, client, trace directory, and eight archived trace shards
+    // are read as data-bearing reference inputs in addition to the scripts.
+    nonScriptReferenceInputCount: 3 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket,
+    // HostState, channel, transfer module, trace shard, voucher payout, and
+    // CIP-68 reference-token metadata are all recreated or paid here.
+    outputCount: 6,
+    mintPolicyCount: 3,
+    referenceScriptTitles: [
+      'host_state_stt.host_state_stt.spend',
+      'spending_channel.spend_channel.spend',
+      'spending_transfer_module.spend_transfer_module.spend',
+      'trace_registry.spend_trace_registry.spend',
+      'minting_voucher.mint_voucher.mint',
+      'spending_channel/recv_packet.recv_packet.mint',
+      'verifying_proof.verify_proof.mint',
+    ],
+    redeemers: [
+      sized(
+        'spend channel RecvPacket with 512-byte packet',
+        await encodeSpendChannelRedeemer(
+          {
+            RecvPacket: {
+              packet: MAXIMUM_ICS20_PACKET.packet as never,
+              proof_commitment: proofPayload(1536) as never,
+              proof_height: HEIGHT,
+            },
+          },
+          Lucid,
+        ),
+      ),
+      sized('verify proof', verifyProofRedeemer(1536, 32)),
+      // RecvPacket updates receipt and acknowledgement paths at capacity.
+      dataBytes('host state HandlePacket redeemer', 4_600),
+      sized(
+        'transfer module OnRecvPacket',
+        await recvTransferModuleRedeemer(MAXIMUM_ICS20_PACKET.packet, MAXIMUM_ICS20_PACKET.data),
+      ),
+      sized(
+        'mint voucher with 512-byte packet fields',
+        voucherRedeemer('MintVoucher', MAXIMUM_ICS20_PACKET.packet, MAXIMUM_ICS20_PACKET.data),
+      ),
+      sized(
+        'trace registry InsertTrace',
+        encodeTraceRegistryRedeemer(
+          {
+            InsertTrace: {
+              voucher_hash: hexOfBytes(28, '44'),
+              full_denom: 'port-99/channel-99/ibc/usdt',
+            },
+          },
+          Lucid,
+        ),
+      ),
+      sized(
+        'recv packet policy auth token',
+        encodeAuthToken(
+          {
+            policyId: hexOfBytes(28, '45'),
+            name: hexOfBytes(32, '46'),
+          },
+          Lucid,
+        ),
+      ),
+    ],
+    datums: [
+      dataBytes('updated host state datum', 1000),
+      dataBytes('updated channel datum at history capacity', 2_800),
+      dataBytes('transfer module datum', 32),
+      dataBytes('max encoded trace shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes),
+      dataBytes('CIP-68 voucher metadata datum', 900),
+    ],
+    largestProofPayloadBytes: 1536,
+    aikenTests: [
+      'spending_channel.test.recv_packet_succeed',
+      'spending_channel/recv_packet.test.succeed_recv_packet_maximum_ics20_packet',
+      'ibc/core/ics_004/channel_datum_test/validate_recv_packet.succeed_at_packet_history_capacity',
+      'host_state_stt.test.host_state_handle_packet_recv_succeeds_at_history_capacity',
+      'host_state_stt.test.host_state_handle_packet_acknowledgement_succeeds_at_history_capacity',
+      'verifying_proof.test.verify_membership_succeed',
+    ],
+    // The v10 late match builds and rejects the ibc-rs struct-order candidate
+    // first, while the v8 late match builds and rejects the Cardano
+    // sorted-order candidate first. Pair both profiles with both bounded
+    // archive shapes without charging mutually exclusive paths in one tx.
+    aikenTestMaxGroups: [
+      {
+        name: 'ICS-20 wire profile and archive shape',
+        alternatives: [
+          {
+            name: 'ibc-go v10 late match, archive entry limit',
+            tests: [
+              'spending_transfer_module.test.on_recv_packet_mint_voucher_maximum_ics20_packet_succeed',
+              'minting_voucher.test.test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_at_entry_limit',
+              'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
+            ],
+          },
+          {
+            name: 'ibc-go v10 late match, archive byte limit',
+            tests: [
+              'spending_transfer_module.test.on_recv_packet_mint_voucher_maximum_ics20_packet_succeed',
+              'minting_voucher.test.test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_near_byte_limit',
+              'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_near_byte_limit',
+            ],
+          },
+          {
+            name: 'ibc-go v8 late match, archive entry limit',
+            tests: [
+              'spending_transfer_module.test.on_recv_packet_mint_voucher_maximum_v8_ics20_packet_succeed',
+              'minting_voucher.test.test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_at_entry_limit',
+              'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
+            ],
+          },
+          {
+            name: 'ibc-go v8 late match, archive byte limit',
+            tests: [
+              'spending_transfer_module.test.on_recv_packet_mint_voucher_maximum_v8_ics20_packet_succeed',
+              'minting_voucher.test.test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_near_byte_limit',
+              'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_near_byte_limit',
+            ],
+          },
+        ],
+      },
+    ],
+  };
 }
 
 async function buildScenarios(
@@ -621,6 +913,7 @@ async function buildScenarios(
         'ibc/core/ics_004/channel_datum_test/validate_recv_packet.succeed_at_packet_history_capacity',
         'host_state_stt.test.host_state_handle_packet_recv_succeeds_at_history_capacity',
         'host_state_stt.test.host_state_handle_packet_acknowledgement_succeeds_at_history_capacity',
+        'verifying_proof.test.verify_membership_succeed',
       ],
     },
     {
@@ -811,8 +1104,8 @@ async function buildScenarios(
           encodeTraceRegistryRedeemer(
             {
               InsertTrace: {
-                voucher_hash: hexOfBytes(32, '44'),
-                full_denom: 'transfer/channel-0/uosmo',
+                voucher_hash: hexOfBytes(28, '44'),
+                full_denom: 'port-99/channel-99/ibc/usdt',
               },
             },
             Lucid,
@@ -822,7 +1115,7 @@ async function buildScenarios(
       datums: [dataBytes('max encoded shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes)],
       largestProofPayloadBytes: 0,
       aikenTests: ['trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit'],
-      extraBytes: (1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket) * TX_REFERENCE_INPUT_BYTES,
+      nonScriptReferenceInputCount: 1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket,
     },
     {
       id: 'trace_registry_rollover',
@@ -878,24 +1171,28 @@ async function buildScenarios(
         'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
         'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
       ],
-      extraBytes: (TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1) * TX_REFERENCE_INPUT_BYTES,
+      nonScriptReferenceInputCount: TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1,
     },
+    await buildFirstSeenVoucherReceiveAtCapacityScenario(),
     {
       id: 'first_seen_voucher_mint',
-      name: 'First-seen voucher mint + CIP-68 metadata',
+      name: 'First-seen voucher mint component at packet capacity',
       inputCount: 3,
       outputCount: 4,
       mintPolicyCount: 2,
       referenceScriptTitles: ['minting_voucher.mint_voucher.mint', 'trace_registry.spend_trace_registry.spend'],
       redeemers: [
-        sized('mint voucher', voucherRedeemer('MintVoucher')),
+        sized(
+          'mint voucher with 512-byte packet fields',
+          voucherRedeemer('MintVoucher', MAXIMUM_ICS20_PACKET.packet, MAXIMUM_ICS20_PACKET.data),
+        ),
         sized(
           'trace registry InsertTrace',
           encodeTraceRegistryRedeemer(
             {
               InsertTrace: {
-                voucher_hash: hexOfBytes(32, '44'),
-                full_denom: 'transfer/channel-0/uosmo',
+                voucher_hash: hexOfBytes(28, '44'),
+                full_denom: 'port-99/channel-99/ibc/usdt',
               },
             },
             Lucid,
@@ -907,19 +1204,49 @@ async function buildScenarios(
         dataBytes('CIP-68 voucher metadata datum', 900),
       ],
       largestProofPayloadBytes: 0,
-      aikenTests: [
-        'minting_voucher.test.test_mint_voucher',
-        // One boundary fixture covers the registry validator; the second is a
-        // conservative proxy for the voucher policy's own archive scan.
-        'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
-        'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
+      aikenTests: [],
+      aikenTestMaxGroups: [
+        {
+          name: 'ICS-20 wire profile and archive shape',
+          alternatives: [
+            {
+              name: 'ibc-go v10 late match, archive entry limit',
+              tests: [
+                'minting_voucher.test.test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_at_entry_limit',
+                'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
+              ],
+            },
+            {
+              name: 'ibc-go v10 late match, archive byte limit',
+              tests: [
+                'minting_voucher.test.test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_near_byte_limit',
+                'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_near_byte_limit',
+              ],
+            },
+            {
+              name: 'ibc-go v8 late match, archive entry limit',
+              tests: [
+                'minting_voucher.test.test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_at_entry_limit',
+                'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
+              ],
+            },
+            {
+              name: 'ibc-go v8 late match, archive byte limit',
+              tests: [
+                'minting_voucher.test.test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_near_byte_limit',
+                'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_near_byte_limit',
+              ],
+            },
+          ],
+        },
       ],
-      extraBytes: (1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket) * TX_REFERENCE_INPUT_BYTES,
+      nonScriptReferenceInputCount: 1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket,
     },
   ];
 
   return scenarios.map((scenario) => {
     const unsignedBytes = estimateUnsignedBytes(validators, scenario);
+    const aikenTestMaxGroups = measureAikenTestMaxGroups(aikenTests, scenario.aikenTestMaxGroups ?? []);
     return {
       id: scenario.id,
       name: scenario.name,
@@ -928,9 +1255,14 @@ async function buildScenarios(
       redeemers: scenario.redeemers,
       datums: scenario.datums,
       largestProofPayloadBytes: scenario.largestProofPayloadBytes,
+      inputCount: scenario.inputCount,
+      nonScriptReferenceInputCount: scenario.nonScriptReferenceInputCount ?? 0,
+      outputCount: scenario.outputCount,
+      mintPolicyCount: scenario.mintPolicyCount,
       scriptReferenceCount: scenario.referenceScriptTitles.length,
       inlineScriptCount: scenario.inlineScriptTitles?.length ?? 0,
-      exUnits: sumExUnits(aikenTests, scenario.aikenTests),
+      aikenTestMaxGroups,
+      exUnits: sumScenarioExUnits(sumExUnits(aikenTests, scenario.aikenTests), aikenTestMaxGroups),
     };
   });
 }
@@ -960,20 +1292,32 @@ async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
   );
 }
 
-function printReport(reports: ScenarioReport[], maxTxSize: number): void {
-  console.log(`Cardano transaction budget report (maxTxSize=${maxTxSize})`);
+function printReport(reports: ScenarioReport[], maxTxSize: number, txHeadroomBytes: number): void {
+  const safeTxSize = maxTxSize - txHeadroomBytes;
+  console.log(
+    `Cardano transaction budget report (ledger max=${maxTxSize}, CI safe size=${safeTxSize}, reserve=${txHeadroomBytes})`,
+  );
   for (const report of reports) {
     console.log(`\n${report.name}`);
     console.log(`  unsigned bytes: ${report.unsignedBytes}`);
     console.log(`  signed bytes estimate: ${report.signedBytesEstimate}`);
-    console.log(`  size margin: ${maxTxSize - report.signedBytesEstimate}`);
+    console.log(`  ledger size margin: ${maxTxSize - report.signedBytesEstimate}`);
+    console.log(`  CI reserve margin: ${safeTxSize - report.signedBytesEstimate}`);
     console.log(`  ex units: mem=${report.exUnits.mem} steps=${report.exUnits.steps}`);
     console.log(`  redeemer sizes: ${formatPayloads(report.redeemers)}`);
     console.log(`  datum sizes: ${formatPayloads(report.datums)}`);
     console.log(`  largest proof payload: ${report.largestProofPayloadBytes}`);
     console.log(
-      `  script/reference count: references=${report.scriptReferenceCount} inline=${report.inlineScriptCount}`,
+      `  counts: inputs=${report.inputCount} outputs=${report.outputCount} mint_policies=${report.mintPolicyCount} ` +
+        `reference_scripts=${report.scriptReferenceCount} data_references=${report.nonScriptReferenceInputCount} ` +
+        `inline_scripts=${report.inlineScriptCount}`,
     );
+    for (const group of report.aikenTestMaxGroups) {
+      const alternatives = group.alternatives
+        .map(({ name, exUnits }) => `${name}: mem=${exUnits.mem} steps=${exUnits.steps}`)
+        .join('; ');
+      console.log(`  profile max group ${group.name}: ${alternatives}`);
+    }
   }
 }
 
@@ -1000,7 +1344,7 @@ async function main() {
   const reports = await buildScenarios(validators, aikenTests);
   const capacityReports = await buildCapacityReports(aikenTests);
 
-  printReport(reports, maxTxSize);
+  printReport(reports, maxTxSize, txHeadroomBytes);
   console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
   console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
 
@@ -1013,7 +1357,7 @@ async function main() {
   });
 
   if (knownViolations.length > 0) {
-    console.log('\nKNOWN EXECUTION-BUDGET VIOLATIONS (regression-ratcheted):');
+    console.log('\nKNOWN TRANSACTION-BUDGET VIOLATIONS (regression-ratcheted):');
     for (const violation of knownViolations) {
       console.log(`- ${violation}`);
     }
@@ -1028,10 +1372,10 @@ async function main() {
   }
 
   console.log(
-    `\nTransaction budget ratchet passed: no scenario exceeded its public-limit budget or recorded overrun ceiling.`,
+    '\nTransaction budget ratchet passed: every overrun matches its recorded ceiling and no scenario regressed.',
   );
   if (knownViolations.length > 0) {
-    console.log(`${knownViolations.length} known execution-limit violations remain and may only decrease.`);
+    console.log(`${knownViolations.length} known transaction-limit violations remain and may only decrease.`);
   } else {
     console.log(`All scenarios retain ${txHeadroomBytes} bytes and ${exUnitHeadroomBps / 100}% ex-unit headroom.`);
   }

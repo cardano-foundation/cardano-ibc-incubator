@@ -2,7 +2,7 @@ import { GrpcFailedPreconditionException, GrpcInvalidArgumentException } from '~
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { decodeMerkleProof } from './helper';
 import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
-import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
+import { convertString2Hex, toHex } from '@shared/helpers/hex';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import {
   MsgAcknowledgement,
@@ -23,6 +23,8 @@ import { isSupportedGatewayPortId } from '@shared/helpers/module-port';
 import { ChannelDatum } from '@shared/types/channel/channel-datum';
 import { Order } from '@shared/types/channel/order';
 import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
+import { ICS20_PACKET_CODEC, type Ics20PacketCodec } from '../../config/bridge-manifest';
+import { decodeIcs20PacketDataForCodec } from '../../shared/helpers/ics20-packet-codec';
 
 function packetCapacityExhausted(channelDatum: ChannelDatum): GrpcFailedPreconditionException {
   return new GrpcFailedPreconditionException(
@@ -198,7 +200,10 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
   return sendPacketOperator;
 }
 
-export function validateAndFormatTimeoutPacketParams(data: MsgTimeout): {
+export function validateAndFormatTimeoutPacketParams(
+  data: MsgTimeout,
+  ics20PacketCodec: Ics20PacketCodec = ICS20_PACKET_CODEC.STRICT,
+): {
   constructedAddress: string;
   timeoutPacketOperator: TimeoutPacketOperator;
 } {
@@ -210,7 +215,13 @@ export function validateAndFormatTimeoutPacketParams(data: MsgTimeout): {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  const fungibleTokenPacketData: FungibleTokenPacketDatum = JSON.parse(convertHex2String(toHex(data.packet.data)));
+  let fungibleTokenPacketData: FungibleTokenPacketDatum;
+  try {
+    fungibleTokenPacketData = decodeIcs20PacketDataForCodec(data.packet.data, ics20PacketCodec).data;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new GrpcInvalidArgumentException(`Invalid ICS-20 packet data: ${message}`);
+  }
   const decodedProofUnreceived: MerkleProof = decodeMerkleProof(data.proof_unreceived);
   // Prepare the timeoutPacketOperator object
   const timeoutPacketOperator: TimeoutPacketOperator = {

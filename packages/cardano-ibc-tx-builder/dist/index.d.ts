@@ -1,4 +1,5 @@
 import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+export * from './ics20-json-codec';
 export declare const MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 export type Height = {
     revisionNumber: bigint;
@@ -22,6 +23,14 @@ export type SendPacketOperator = {
     timeoutTimestamp: bigint;
     memo: string;
 };
+export type Ics20PacketDataStringifier = (packetData: {
+    denom: string;
+    amount: string;
+    sender: string;
+    receiver: string;
+    memo?: string;
+}) => string;
+export declare const stringifyLegacyIcs20PacketData: Ics20PacketDataStringifier;
 export type Packet = {
     sequence: bigint;
     source_port: string;
@@ -166,6 +175,7 @@ export type SendPacketBuildDependencies = {
     buildHostStateUpdate: (inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, channelIdForRoot: string) => Promise<HostStateUpdate>;
     resolveIbcDenomHash: (denomHash: string) => Promise<VoucherDenomTrace | null>;
     commitPacket: (packet: Packet) => string;
+    stringifyPacketData?: Ics20PacketDataStringifier;
     encode: (value: unknown, kind: string) => Promise<string>;
     findUtxoAtWithUnit: (address: string, unit: string) => Promise<UTxO>;
     tryFindUtxosAt: (address: string, options: {

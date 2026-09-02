@@ -81,6 +81,7 @@ export interface BridgeManifest {
   host_state_nft?: BridgeManifestAuthToken;
   validators?: BridgeManifestValidators;
   modules?: BridgeManifestModules;
+  ics20_packet_codec: string;
 }
 /**
  * @name BridgeManifestCardanoInfo
@@ -501,6 +502,7 @@ function createBaseBridgeManifest(): BridgeManifest {
     host_state_nft: undefined,
     validators: undefined,
     modules: undefined,
+    ics20_packet_codec: "",
   };
 }
 /**
@@ -532,6 +534,9 @@ export const BridgeManifest = {
     if (message.modules !== undefined) {
       BridgeManifestModules.encode(message.modules, writer.uint32(58).fork()).ldelim();
     }
+    if (message.ics20_packet_codec !== "") {
+      writer.uint32(74).string(message.ics20_packet_codec);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifest {
@@ -562,6 +567,9 @@ export const BridgeManifest = {
         case 7:
           message.modules = BridgeManifestModules.decode(reader, reader.uint32());
           break;
+        case 9:
+          message.ics20_packet_codec = reader.string();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -579,6 +587,7 @@ export const BridgeManifest = {
       obj.host_state_nft = BridgeManifestAuthToken.fromJSON(object.host_state_nft);
     if (isSet(object.validators)) obj.validators = BridgeManifestValidators.fromJSON(object.validators);
     if (isSet(object.modules)) obj.modules = BridgeManifestModules.fromJSON(object.modules);
+    if (isSet(object.ics20_packet_codec)) obj.ics20_packet_codec = String(object.ics20_packet_codec);
     return obj;
   },
   toJSON(message: BridgeManifest): unknown {
@@ -596,6 +605,7 @@ export const BridgeManifest = {
       (obj.validators = message.validators ? BridgeManifestValidators.toJSON(message.validators) : undefined);
     message.modules !== undefined &&
       (obj.modules = message.modules ? BridgeManifestModules.toJSON(message.modules) : undefined);
+    message.ics20_packet_codec !== undefined && (obj.ics20_packet_codec = message.ics20_packet_codec);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifest>, I>>(object: I): BridgeManifest {
@@ -615,6 +625,7 @@ export const BridgeManifest = {
     if (object.modules !== undefined && object.modules !== null) {
       message.modules = BridgeManifestModules.fromPartial(object.modules);
     }
+    message.ics20_packet_codec = object.ics20_packet_codec ?? "";
     return message;
   },
 };

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
   buildUnsignedSendPacketTx,
+  stringifyLegacyIcs20PacketData,
   type SendPacketOperator,
 } from '@cardano-ibc/tx-builder';
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
@@ -98,6 +99,7 @@ type DeploymentTraceRegistry = {
 
 type DeploymentConfig = {
   deployedAt: string;
+  ics20PacketCodec: 'legacy-cardano-json' | 'ics20-classic-json-v1';
   hostStateNFT: AuthToken;
   validators: {
     hostStateStt: DeploymentValidator;
@@ -125,6 +127,7 @@ type DeploymentConfig = {
 type BridgeManifest = {
   schema_version: number;
   deployed_at: string;
+  ics20_packet_codec?: 'legacy-cardano-json' | 'ics20-classic-json-v1';
   cardano: {
     network: string;
   };
@@ -452,10 +455,21 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
   if (manifest.schema_version !== 4) {
     throw new Error('Unsupported bridge manifest schema_version: expected 4');
   }
+  const ics20PacketCodec = manifest.ics20_packet_codec ?? 'legacy-cardano-json';
+  if (
+    ics20PacketCodec !== 'legacy-cardano-json' &&
+    ics20PacketCodec !== 'ics20-classic-json-v1'
+  ) {
+    throw new Error(`Unsupported ICS-20 packet codec: ${String(ics20PacketCodec)}`);
+  }
   return {
-    bridgeManifest: manifest,
+    bridgeManifest: {
+      ...manifest,
+      ics20_packet_codec: ics20PacketCodec,
+    },
     deployment: {
       deployedAt: manifest.deployed_at,
+      ics20PacketCodec,
       hostStateNFT: {
         policyId: manifest.host_state_nft.policy_id,
         name: manifest.host_state_nft.token_name,
@@ -1681,6 +1695,9 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
 
     const { unsignedTx, walletOverride } = await timed(logger, scope, 'build send_packet tx skeleton', () =>
       buildUnsignedSendPacketTx(sendPacketOperator, {
+        ...(context.deployment.ics20PacketCodec === 'legacy-cardano-json'
+          ? { stringifyPacketData: stringifyLegacyIcs20PacketData }
+          : {}),
         loadContext: async (operator) => {
           const loadContextStartedAt = startTimer();
           try {

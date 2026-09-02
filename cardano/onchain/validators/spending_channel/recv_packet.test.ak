@@ -3,6 +3,7 @@ use aiken/cbor
 use aiken/collection/pairs
 use aiken/fuzz
 use aiken/interval
+use aiken/primitive/bytearray
 use cardano/address.{from_script}
 use cardano/assets.{add, from_asset}
 use cardano/transaction.{
@@ -10,6 +11,7 @@ use cardano/transaction.{
   ScriptPurpose, Spend, Transaction,
 }
 use host_state_stt
+use ibc/apps/transfer/types/fungible_token_packet_data
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -178,6 +180,7 @@ fn check_recv_packet_with_timeout(
   match_callback_acknowledgement: Bool,
   preserve_module_binding: Bool,
   compose_host_state: Bool,
+  packet_data: ByteArray,
   timeout_height: Height,
   timeout_timestamp: Int,
 ) -> Bool {
@@ -248,7 +251,7 @@ fn check_recv_packet_with_timeout(
       source_channel: input_channel.counterparty.channel_id,
       destination_port: mock_data.port_id,
       destination_channel: channel_id,
-      data: "mock packet data",
+      data: packet_data,
       timeout_height,
       timeout_timestamp,
     }
@@ -657,6 +660,7 @@ fn check_recv_packet(
     match_callback_acknowledgement,
     preserve_module_binding,
     compose_host_state,
+    "mock packet data",
     Height { revision_number: 0, revision_height: 0 },
     1735689600000000000,
   )
@@ -673,6 +677,7 @@ fn check_recv_packet_timeout(
     True,
     True,
     False,
+    "mock packet data",
     timeout_height,
     timeout_timestamp,
   )
@@ -680,6 +685,25 @@ fn check_recv_packet_timeout(
 
 test succeed_recv_packet() {
   check_recv_packet(True, False, True, True, True, False)
+}
+
+test succeed_recv_packet_maximum_ics20_packet() {
+  let packet_data =
+    #"7b2264656e6f6d223a226962632f75736474222c22616d6f756e74223a22313030222c2273656e646572223a22636f736d6f732073656e6465722061646472657373222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c226d656d6f223a225c753030306261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161227d"
+  expect
+    bytearray.length(packet_data) == fungible_token_packet_data.max_packet_bytes
+
+  check_recv_packet_with_timeout(
+    True,
+    False,
+    True,
+    True,
+    True,
+    False,
+    packet_data,
+    Height { revision_number: 0, revision_height: 0 },
+    1735689600000000000,
+  )
 }
 
 test prop_tx_recv_packet_accepts_atomic_successor_and_callback(

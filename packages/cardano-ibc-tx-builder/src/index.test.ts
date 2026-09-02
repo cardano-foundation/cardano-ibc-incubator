@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
   buildUnsignedSendPacketTx,
+  ICS20_CLASSIC_JSON_LIMITS,
   MAX_PACKET_ENTRIES_PER_CHANNEL,
   type LoadedSendPacketContext,
   type SendPacketBuildDependencies,
@@ -310,6 +311,63 @@ describe('send-packet denom mapping', () => {
     );
     assert.equal(harness.getCapturedEscrow(), undefined);
     assert.equal(harness.getCapturedBurn(), undefined);
+  });
+
+  it('maps oversized outbound packet data to invalid argument', async () => {
+    class InvalidArgumentError extends Error {}
+
+    let invalidArgumentCalls = 0;
+    let packetCommits = 0;
+    const harness = createDeps({
+      invalidArgument: (message) => {
+        invalidArgumentCalls += 1;
+        return new InvalidArgumentError(message);
+      },
+      commitPacket: () => {
+        packetCommits += 1;
+        return 'packet-commitment';
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        buildUnsignedSendPacketTx(
+          baseOperator({
+            memo: 'm'.repeat(ICS20_CLASSIC_JSON_LIMITS.memoBytes),
+          }),
+          harness.deps,
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof InvalidArgumentError);
+        assert.match(error.message, /Invalid ICS-20 packet data/);
+        assert.match(error.message, /exceeds 512 bytes/);
+        return true;
+      },
+    );
+    assert.equal(invalidArgumentCalls, 1);
+    assert.equal(packetCommits, 0);
+    assert.equal(harness.getCapturedEscrow(), undefined);
+    assert.equal(harness.getCapturedBurn(), undefined);
+  });
+
+  it('allows a deployment to supply its legacy packet serializer', async () => {
+    const legacyPacketJson = '{"amount":"123","denom":"legacy"}';
+    const harness = createDeps({
+      stringifyPacketData: () => legacyPacketJson,
+    });
+
+    await buildUnsignedSendPacketTx(
+      baseOperator({ memo: 'm'.repeat(ICS20_CLASSIC_JSON_LIMITS.memoBytes) }),
+      harness.deps,
+    );
+
+    const spendRedeemer = harness.encodedValues.find(
+      (entry) => entry.kind === 'spendChannelRedeemer',
+    )?.value as { SendPacket: { packet: { data: string } } };
+    assert.equal(
+      Buffer.from(spendRedeemer.SendPacket.packet.data, 'hex').toString('utf8'),
+      legacyPacketJson,
+    );
   });
 
   it('rejects sends before full combined packet state reaches the chain', async () => {
