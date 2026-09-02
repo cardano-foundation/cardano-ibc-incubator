@@ -2,63 +2,81 @@ name: Build and publish Docker images
 
 on:
   push:
-    branches: [main]
     tags:
-      - 'v*.*.*'
+      - 'gateway/v*.*.*'
+      - 'hermes/v*.*.*'
+      - 'swap-client/v*.*.*'
   pull_request:
     types: [opened, synchronize, reopened]
 
-# Builds only need repository contents. The trusted publishing job grants its
-# own package permission below instead of exposing it to pull-request code.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# The CF baseline action removes public registries for pull requests and branch
+# builds. Consequently, those events publish only to the configured private
+# registry, while component release tags publish to every configured registry.
 permissions:
   contents: read
 
 jobs:
-  pull-request-build:
-    if: github.event_name == 'pull_request'
+  select-components:
+    name: Select image components
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        service:
-          - hermes
-          - swap-client
+    timeout-minutes: 5
+    outputs:
+      images: ${{ steps.select.outputs.images }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          submodules: recursive
-          persist-credentials: false
-
-      - name: Set up build tools without registry login
-        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@e02adcacc7178585dab0ca362adc83424654b324
-        with:
-          GITHUB_TOKEN: ${{ github.token }}
-          DOCKER_REGISTRIES: ''
-
-      - name: Build image without publishing
+      - name: Select components from ref
+        id: select
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          earthly +${{ matrix.service }} \
-            --PUSH=false \
-            --DOCKER_REGISTRIES="" \
-            --DOCKER_IMAGES_EXTRA_TAGS=""
+          if [[ "${REF_TYPE}" == "tag" ]]; then
+            if [[ ! "${REF_NAME}" =~ ^(gateway|hermes|swap-client)/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+              echo "Image release tags must use <component>/v<semver>." >&2
+              echo "Examples: gateway/v1.2.3, hermes/v1.13.2, swap-client/v0.2.0-rc.1" >&2
+              exit 1
+            fi
 
-  publish:
-    if: github.event_name == 'push'
+            case "${BASH_REMATCH[1]}" in
+              gateway)
+                images='[{"component":"gateway","version_directory":"cardano/gateway"}]'
+                ;;
+              hermes)
+                images='[{"component":"hermes","version_directory":"relayer/crates/relayer-cli"}]'
+                ;;
+              swap-client)
+                images='[{"component":"swap-client","version_directory":"dapps/ibc-swap/client"}]'
+                ;;
+            esac
+          else
+            images='[{"component":"gateway","version_directory":"cardano/gateway"},{"component":"hermes","version_directory":"relayer/crates/relayer-cli"},{"component":"swap-client","version_directory":"dapps/ibc-swap/client"}]'
+          fi
+
+          echo "Selected image matrix: ${images}"
+          echo "images=${images}" >> "${GITHUB_OUTPUT}"
+
+  build-and-publish:
+    name: Build and publish ${{ matrix.image.component }}
+    needs: select-components
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        service:
-          - hermes
-          - swap-client
+        image: ${{ fromJSON(needs.select-components.outputs.images) }}
     env:
       PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.GITLAB_DOCKER_REGISTRY_URL }}
       PRIVATE_DOCKER_REGISTRY_USER: Deploy-Token
       PRIVATE_DOCKER_REGISTRY_PASS: ${{ secrets.GITLAB_PKG_REGISTRY_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -67,21 +85,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Validate release ref
-        if: github.ref_type == 'tag'
-        run: |
-          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
-            echo "Release tags must use semver, for example v1.2.3 or v1.2.3-rc.1."
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
-            echo "Release tags must point to a commit already merged into main."
-            exit 1
-          fi
-
       - name: Set up trusted publishing credentials
         id: baseline
-        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@e02adcacc7178585dab0ca362adc83424654b324
+        # TODO: pin the cf-gha-workflows revision containing Cargo.toml version
+        # discovery before merging this workflow.
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@feat/artifact-sub-dir
         with:
           GITHUB_TOKEN: ${{ github.token }}
           PRIVATE_DOCKER_REGISTRY_URL: ${{ env.PRIVATE_DOCKER_REGISTRY_URL }}
@@ -90,10 +98,29 @@ jobs:
           HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
           HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
           DOCKER_REGISTRIES: ${{ secrets.DOCKER_REGISTRIES }}
+          artifact-version-directory: ${{ matrix.image.version_directory }}
+
+      - name: Validate release version
+        if: github.ref_type == 'tag'
+        env:
+          COMPONENT: ${{ matrix.image.component }}
+          COMPONENT_VERSION: ${{ steps.baseline.outputs.GUESSED_ARTIFACT_VERSION }}
+        run: |
+          expected_tag="${COMPONENT}/v${COMPONENT_VERSION}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Release tag '${GITHUB_REF_NAME}' does not match ${COMPONENT} version ${COMPONENT_VERSION}." >&2
+            echo "Expected tag: ${expected_tag}" >&2
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
+            echo "Release tags must point to a commit already merged into main." >&2
+            exit 1
+          fi
 
       - name: Build and publish image
         run: |
-          earthly +${{ matrix.service }} \
+          earthly +${{ matrix.image.component }} \
             --PUSH=true \
             --DOCKER_REGISTRIES="${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}" \
             --DOCKER_IMAGES_EXTRA_TAGS="${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}"
