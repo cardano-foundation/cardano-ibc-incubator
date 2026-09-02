@@ -640,7 +640,8 @@ fn maximum_escape_packet(memo: ByteArray) -> FungibleTokenPacketData {
     denom: "ibc/usdt",
     amount: "100",
     sender: "cosmos sender address",
-    receiver: "525f6e2b0f8a15a3c95d82c8113b99dfebfe40f124cb2bc71ee99e22",
+    receiver: "525f6e2b0f8a15a3c95d82c8"
+      |> bytearray.concat("113b99dfebfe40f124cb2bc71ee99e22"),
     memo,
   }
 }
