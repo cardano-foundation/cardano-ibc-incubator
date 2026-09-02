@@ -7,9 +7,9 @@ import {
 } from '@cardano-ibc/tx-builder';
 import { ICS20_PACKET_CODEC, type Ics20PacketCodec } from '../../config/bridge-manifest';
 
-export type GatewayIcs20JsonProfile = Ics20ClassicJsonProfile | 'legacy-cardano-json';
+type GatewayIcs20JsonProfile = Ics20ClassicJsonProfile | 'legacy-cardano-json';
 
-export type GatewayDecodedIcs20PacketData = {
+type GatewayDecodedIcs20PacketData = {
   data: Required<Ics20ClassicPacketData>;
   profiles: readonly GatewayIcs20JsonProfile[];
   json: string;

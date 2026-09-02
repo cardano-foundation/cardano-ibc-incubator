@@ -24,8 +24,7 @@ type BudgetCheckResult = {
   knownViolations: string[];
 };
 
-export type KnownBudgetCeiling = Partial<ExUnits> &
-  Partial<Pick<BudgetScenario, 'unsignedBytes' | 'signedBytesEstimate'>>;
+type KnownBudgetCeiling = Partial<ExUnits> & Partial<Pick<BudgetScenario, 'unsignedBytes' | 'signedBytesEstimate'>>;
 
 export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<ReadonlyArray<ExUnits>>): ExUnits {
   return groups.reduce((sum, alternatives) => {
