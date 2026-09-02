@@ -1,4 +1,5 @@
 use aiken/builtin
+use aiken/collection/list
 use aiken/crypto
 use aiken/fuzz
 use aiken/primitive/bytearray
@@ -16,6 +17,7 @@ use ibc/apps/transfer/trace_registry.{
   Directory, InsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
   TraceRegistryRedeemer, TraceRegistryShardDatum, bucket_index_for_hash,
+  entry_is_admissible, max_archived_shards_per_bucket, max_entries_per_shard,
 }
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
@@ -224,6 +226,22 @@ fn make_shard_reference_input_with_output_index(
   full_denom: ByteArray,
   output_index: Int,
 ) -> Input {
+  make_shard_reference_input_with_entries(
+    shard_policy_id,
+    shard_name,
+    bucket_index,
+    [TraceRegistryEntry { voucher_hash, full_denom }],
+    output_index,
+  )
+}
+
+fn make_shard_reference_input_with_entries(
+  shard_policy_id: PolicyId,
+  shard_name: ByteArray,
+  bucket_index: Int,
+  entries: List<TraceRegistryEntry>,
+  output_index: Int,
+) -> Input {
   Input {
     output_reference: OutputReference {
       transaction_id: #"27b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
@@ -233,12 +251,7 @@ fn make_shard_reference_input_with_output_index(
       address: from_script("trace registry script hash"),
       value: from_asset(shard_policy_id, shard_name, 1),
       datum: InlineDatum(
-        Shard(
-          TraceRegistryShardDatum {
-            bucket_index,
-            entries: [TraceRegistryEntry { voucher_hash, full_denom }],
-          },
-        ),
+        Shard(TraceRegistryShardDatum { bucket_index, entries }),
       ),
       reference_script: None,
     },
@@ -944,6 +957,133 @@ fn mint_voucher_succeeds(
   authenticated_packet_data: ByteArray,
   expected_packet_bytes: Int,
 ) -> Bool {
+  mint_voucher_succeeds_with_archive_profile(
+    memo,
+    authenticated_packet_data,
+    expected_packet_bytes,
+    NoArchiveHistory,
+  )
+}
+
+type VoucherArchiveProfile {
+  NoArchiveHistory
+  ArchivesAtEntryLimit
+  ArchivesNearByteLimit
+}
+
+const near_byte_limit_entries_per_shard = 10
+
+fn maximum_archive_names() -> List<ByteArray> {
+  let names =
+    [
+      "archive-0", "archive-1", "archive-2", "archive-3", "archive-4",
+      "archive-5", "archive-6", "archive-7",
+    ]
+  expect list.length(names) == max_archived_shards_per_bucket
+  names
+}
+
+fn short_archive_decoy_entry() -> TraceRegistryEntry {
+  TraceRegistryEntry {
+    voucher_hash: #"3a136c94898983c5024f7899ffad2c26221506aca6b2d1dea403d706",
+    full_denom: "u7",
+  }
+}
+
+fn near_byte_limit_archive_decoy_entry() -> TraceRegistryEntry {
+  TraceRegistryEntry {
+    voucher_hash: #"30d60a79fc0499ac2540f2d4c6a23019a0a032ed9da1c6d5d919bb9c",
+    full_denom: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxe",
+  }
+}
+
+test archive_decoy_entries_are_admissible_and_match_target_bucket() {
+  let target_hash =
+    voucher_asset_name.voucher_denom_hash("port-99/channel-99/ibc/usdt")
+  let short_decoy = short_archive_decoy_entry()
+  let near_byte_limit_decoy = near_byte_limit_archive_decoy_entry()
+
+  and {
+    entry_is_admissible(short_decoy),
+    entry_is_admissible(near_byte_limit_decoy),
+    short_decoy.voucher_hash != target_hash,
+    near_byte_limit_decoy.voucher_hash != target_hash,
+    bucket_index_for_hash(short_decoy.voucher_hash) == bucket_index_for_hash(
+      target_hash,
+    ),
+    bucket_index_for_hash(near_byte_limit_decoy.voucher_hash) == bucket_index_for_hash(
+      target_hash,
+    ),
+  }
+}
+
+fn maximum_archive_reference_inputs(
+  shard_policy_id: PolicyId,
+  bucket_index: Int,
+  shard_names: List<ByteArray>,
+  entries_per_shard: Int,
+  decoy_entry: TraceRegistryEntry,
+) -> List<Input> {
+  shard_names
+    |> list.indexed_map(
+        fn(index, shard_name) {
+          // Mirror the trace-registry capacity fixtures: repeating one
+          // individually admissible, same-bucket decoy isolates the bounded
+          // entry/byte scan workload. It does not model a reachable set of
+          // duplicate mappings.
+          make_shard_reference_input_with_entries(
+            shard_policy_id,
+            shard_name,
+            bucket_index,
+            list.repeat(decoy_entry, entries_per_shard),
+            index + 10,
+          )
+        },
+      )
+}
+
+fn archive_history(
+  profile: VoucherArchiveProfile,
+  shard_policy_id: PolicyId,
+  bucket_index: Int,
+) -> (List<ByteArray>, List<Input>) {
+  when profile is {
+    NoArchiveHistory -> ([], [])
+    ArchivesAtEntryLimit -> {
+      let shard_names = maximum_archive_names()
+      (
+        shard_names,
+        maximum_archive_reference_inputs(
+          shard_policy_id,
+          bucket_index,
+          shard_names,
+          max_entries_per_shard,
+          short_archive_decoy_entry(),
+        ),
+      )
+    }
+    ArchivesNearByteLimit -> {
+      let shard_names = maximum_archive_names()
+      (
+        shard_names,
+        maximum_archive_reference_inputs(
+          shard_policy_id,
+          bucket_index,
+          shard_names,
+          near_byte_limit_entries_per_shard,
+          near_byte_limit_archive_decoy_entry(),
+        ),
+      )
+    }
+  }
+}
+
+fn mint_voucher_succeeds_with_archive_profile(
+  memo: ByteArray,
+  authenticated_packet_data: ByteArray,
+  expected_packet_bytes: Int,
+  archive_profile: VoucherArchiveProfile,
+) -> Bool {
   let mock_data = prepare_mock_data()
 
   let packet_source_port = "transfer"
@@ -1003,11 +1143,18 @@ fn mint_voucher_succeeds(
     )
   let bucket_index = bucket_index_for_hash(voucher_denom_hash)
   let active_shard_name = "active-shard-0a"
+  let (archived_shard_names, archived_shard_reference_inputs) =
+    archive_history(
+      archive_profile,
+      mock_data.directory_auth_token.policy_id,
+      bucket_index,
+    )
   let directory_input =
-    make_directory_input(
+    make_directory_input_with_archived(
       mock_data.directory_auth_token,
       bucket_index,
       active_shard_name,
+      archived_shard_names,
     )
   let active_shard_input =
     make_shard_spend_input(
@@ -1091,7 +1238,7 @@ fn mint_voucher_succeeds(
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
-      reference_inputs: [directory_input],
+      reference_inputs: [directory_input, ..archived_shard_reference_inputs],
       outputs: [voucher_output, metadata_output],
       redeemers,
       mint,
@@ -1120,9 +1267,10 @@ test test_mint_voucher() {
 test test_mint_voucher_maximum_ics20_packet() {
   // The lowercase long control makes the ibc-rs candidate build and reject its
   // uppercase form before the v10 candidate succeeds.
+  let (memo, authenticated_packet_data) = maximum_v10_ics20_packet()
   mint_voucher_succeeds(
-    #"0b61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
-    #"7b2264656e6f6d223a226962632f75736474222c22616d6f756e74223a22313030222c2273656e646572223a22636f736d6f732073656e6465722061646472657373222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c226d656d6f223a225c753030306261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161227d",
+    memo,
+    authenticated_packet_data,
     fungible_token_packet_data.max_packet_bytes,
   )
 }
@@ -1130,10 +1278,65 @@ test test_mint_voucher_maximum_ics20_packet() {
 test test_mint_voucher_maximum_v8_ics20_packet() {
   // A single HTML-safe escape keeps the raw memo long and makes the Cardano
   // candidate fail before the v8 candidate succeeds.
+  let (memo, authenticated_packet_data) = maximum_v8_ics20_packet()
   mint_voucher_succeeds(
+    memo,
+    authenticated_packet_data,
+    fungible_token_packet_data.max_packet_bytes,
+  )
+}
+
+fn maximum_v10_ics20_packet() -> (ByteArray, ByteArray) {
+  (
+    #"0b61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+    #"7b2264656e6f6d223a226962632f75736474222c22616d6f756e74223a22313030222c2273656e646572223a22636f736d6f732073656e6465722061646472657373222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c226d656d6f223a225c753030306261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161227d",
+  )
+}
+
+fn maximum_v8_ics20_packet() -> (ByteArray, ByteArray) {
+  (
     #"3c61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
     #"7b22616d6f756e74223a22313030222c2264656e6f6d223a226962632f75736474222c226d656d6f223a225c753030336361616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c2273656e646572223a22636f736d6f732073656e6465722061646472657373227d",
+  )
+}
+
+test test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_at_entry_limit() {
+  let (memo, authenticated_packet_data) = maximum_v10_ics20_packet()
+  mint_voucher_succeeds_with_archive_profile(
+    memo,
+    authenticated_packet_data,
     fungible_token_packet_data.max_packet_bytes,
+    ArchivesAtEntryLimit,
+  )
+}
+
+test test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_near_byte_limit() {
+  let (memo, authenticated_packet_data) = maximum_v10_ics20_packet()
+  mint_voucher_succeeds_with_archive_profile(
+    memo,
+    authenticated_packet_data,
+    fungible_token_packet_data.max_packet_bytes,
+    ArchivesNearByteLimit,
+  )
+}
+
+test test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_at_entry_limit() {
+  let (memo, authenticated_packet_data) = maximum_v8_ics20_packet()
+  mint_voucher_succeeds_with_archive_profile(
+    memo,
+    authenticated_packet_data,
+    fungible_token_packet_data.max_packet_bytes,
+    ArchivesAtEntryLimit,
+  )
+}
+
+test test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_near_byte_limit() {
+  let (memo, authenticated_packet_data) = maximum_v8_ics20_packet()
+  mint_voucher_succeeds_with_archive_profile(
+    memo,
+    authenticated_packet_data,
+    fungible_token_packet_data.max_packet_bytes,
+    ArchivesNearByteLimit,
   )
 }
 
