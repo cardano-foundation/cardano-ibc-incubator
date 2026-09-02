@@ -26,7 +26,7 @@
       "amount": "1\b",
       "sender": "sender\\line\n\t",
       "receiver": "receiver\r\f\u0000",
-      "memo": "{\"nested\":\"slash\\quote\"\"}\u0001"
+      "memo": "{\"nested\":\"slash\\quote\"\"}\u0001\u000b"
     }
   },
   {
@@ -57,6 +57,16 @@
       "sender": "sender\u2028one",
       "receiver": "receiver\u2029two",
       "memo": "first\u2028second\u2029third"
+    }
+  },
+  {
+    "name": "ibc_rs_v0_53_upstream_fixture",
+    "data": {
+      "denom": "uatom",
+      "amount": "10",
+      "sender": "cosmos1wxeyh7zgn4tctjzs0vtqpc6p5cxq5t2muzl7ng",
+      "receiver": "cosmos1wxeyh7zgn4tctjzs0vtqpc6p5cxq5t2muzl7ng",
+      "memo": ""
     }
   },
   {

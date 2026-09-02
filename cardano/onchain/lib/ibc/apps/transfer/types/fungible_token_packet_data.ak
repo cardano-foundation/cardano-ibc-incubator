@@ -75,10 +75,18 @@ pub fn get_v8_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
 pub fn get_v10_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
   expect packet_fields_valid(ftpd)
   expect fields_are_utf8(ftpd)
-  struct_order_bytes(ftpd)
+  struct_order_bytes(ftpd, True, False)
 }
 
-/// Strictly check the fields, then match one of the three canonical encodings.
+/// Encode the packet exactly as the pinned ibc-rs v0.53 implementation does:
+/// protobuf struct-field order, serde-json-wasm escaping, and an explicit memo.
+pub fn get_ibc_rs_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
+  expect packet_fields_valid(ftpd)
+  expect fields_are_utf8(ftpd)
+  struct_order_bytes(ftpd, False, True)
+}
+
+/// Strictly check the fields, then match one of the canonical encodings.
 /// Validators that already called `validate_basic` may use `matches_valid_bytes`.
 pub fn matches_bytes(
   ftpd: FungibleTokenPacketData,
@@ -96,7 +104,10 @@ pub fn matches_valid_bytes(
     expect _ = builtin.decode_utf8(packet_data)
     // Required fields make the first key an unambiguous profile discriminator.
     if builtin.slice_bytearray(2, 1, packet_data) == "d" {
-      struct_order_bytes(ftpd) == packet_data
+      or {
+        struct_order_bytes(ftpd, False, True) == packet_data,
+        struct_order_bytes(ftpd, True, False) == packet_data,
+      }
     } else {
       or {
         sorted_bytes(ftpd, False) == packet_data,
@@ -152,24 +163,35 @@ fn sorted_bytes(ftpd: FungibleTokenPacketData, go_html_safe: Bool) -> ByteArray 
   let FungibleTokenPacketData { amount, denom, memo, receiver, sender } = ftpd
 
   #""
-    |> append_bounded("{\"amount\":\"", amount, go_html_safe)
-    |> append_bounded("\",\"denom\":\"", denom, go_html_safe)
-    |> append_optional_memo(memo, go_html_safe)
-    |> append_bounded("\",\"receiver\":\"", receiver, go_html_safe)
-    |> append_bounded("\",\"sender\":\"", sender, go_html_safe)
+    |> append_bounded("{\"amount\":\"", amount, go_html_safe, False)
+    |> append_bounded("\",\"denom\":\"", denom, go_html_safe, False)
+    |> append_optional_memo(memo, go_html_safe, False)
+    |> append_bounded("\",\"receiver\":\"", receiver, go_html_safe, False)
+    |> append_bounded("\",\"sender\":\"", sender, go_html_safe, False)
     |> concat("\"}")
 }
 
-fn struct_order_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
+fn struct_order_bytes(
+  ftpd: FungibleTokenPacketData,
+  go_html_safe: Bool,
+  ibc_rs: Bool,
+) -> ByteArray {
   let FungibleTokenPacketData { amount, denom, memo, receiver, sender } = ftpd
 
-  #""
-    |> append_bounded("{\"denom\":\"", denom, True)
-    |> append_bounded("\",\"amount\":\"", amount, True)
-    |> append_bounded("\",\"sender\":\"", sender, True)
-    |> append_bounded("\",\"receiver\":\"", receiver, True)
-    |> append_optional_memo(memo, True)
-    |> concat("\"}")
+  let packet_data =
+    #""
+      |> append_bounded("{\"denom\":\"", denom, go_html_safe, ibc_rs)
+      |> append_bounded("\",\"amount\":\"", amount, go_html_safe, ibc_rs)
+      |> append_bounded("\",\"sender\":\"", sender, go_html_safe, ibc_rs)
+      |> append_bounded("\",\"receiver\":\"", receiver, go_html_safe, ibc_rs)
+
+  if ibc_rs {
+    packet_data
+      |> append_bounded("\",\"memo\":\"", memo, False, True)
+      |> concat("\"}")
+  } else {
+    packet_data |> append_optional_memo(memo, True, False) |> concat("\"}")
+  }
 }
 
 fn append_bounded(
@@ -177,10 +199,11 @@ fn append_bounded(
   prefix: ByteArray,
   value: ByteArray,
   go_html_safe: Bool,
+  uppercase_control_hex: Bool,
 ) -> ByteArray {
   packet_data
     |> concat(prefix)
-    |> concat(escape_json_string(value, go_html_safe))
+    |> concat(escape_json_string(value, go_html_safe, uppercase_control_hex))
     |> require_packet_limit
 }
 
@@ -188,18 +211,36 @@ fn append_optional_memo(
   packet_data: ByteArray,
   memo: ByteArray,
   go_html_safe: Bool,
+  uppercase_control_hex: Bool,
 ) -> ByteArray {
   if memo == "" {
     packet_data
   } else {
-    append_bounded(packet_data, "\",\"memo\":\"", memo, go_html_safe)
+    append_bounded(
+      packet_data,
+      "\",\"memo\":\"",
+      memo,
+      go_html_safe,
+      uppercase_control_hex,
+    )
   }
 }
 
-fn escape_json_string(value: ByteArray, go_html_safe: Bool) -> ByteArray {
+fn escape_json_string(
+  value: ByteArray,
+  go_html_safe: Bool,
+  uppercase_control_hex: Bool,
+) -> ByteArray {
   let value_length = length(value)
   if go_html_safe || !needs_no_basic_escape(value) {
-    escape_json_bytes(value, value_length - 1, value_length, #"", go_html_safe)
+    escape_json_bytes(
+      value,
+      value_length - 1,
+      value_length,
+      #"",
+      go_html_safe,
+      uppercase_control_hex,
+    )
   } else {
     value
   }
@@ -259,6 +300,7 @@ fn escape_json_bytes(
   run_end: Int,
   escaped: ByteArray,
   go_html_safe: Bool,
+  uppercase_control_hex: Bool,
 ) -> ByteArray {
   if cursor < 0 {
     builtin.slice_bytearray(0, run_end, value) |> concat(escaped)
@@ -278,7 +320,14 @@ fn escape_json_bytes(
       }
 
     if !(basic_escape || go_escape || is_line_separator) {
-      escape_json_bytes(value, cursor - 1, run_end, escaped, go_html_safe)
+      escape_json_bytes(
+        value,
+        cursor - 1,
+        run_end,
+        escaped,
+        go_html_safe,
+        uppercase_control_hex,
+      )
     } else {
       let consumed =
         if is_line_separator {
@@ -290,9 +339,9 @@ fn escape_json_bytes(
         if is_line_separator {
           #"5c75323032" |> concat(#[] |> push(byte - 112))
         } else if go_escape {
-          unicode_control_escape(byte)
+          unicode_control_escape(byte, False)
         } else {
-          basic_json_escape(byte)
+          basic_json_escape(byte, uppercase_control_hex)
         }
       let escaped =
         replacement
@@ -308,23 +357,29 @@ fn escape_json_bytes(
         cursor - consumed + 1,
         escaped,
         go_html_safe,
+        uppercase_control_hex,
       )
     }
   }
 }
 
-fn basic_json_escape(byte: Int) -> ByteArray {
+fn basic_json_escape(byte: Int, uppercase_control_hex: Bool) -> ByteArray {
   if byte == 34 || byte == 92 {
     #[] |> push(byte) |> push(92)
   } else if byte >= 8 && byte <= 13 && byte != 11 {
     #[] |> push(at("btn?fr", byte - 8)) |> push(92)
   } else {
-    unicode_control_escape(byte)
+    unicode_control_escape(byte, uppercase_control_hex)
   }
 }
 
-fn unicode_control_escape(byte: Int) -> ByteArray {
-  let hexadecimal = "0123456789abcdef"
+fn unicode_control_escape(byte: Int, uppercase: Bool) -> ByteArray {
+  let hexadecimal =
+    if uppercase {
+      "0123456789ABCDEF"
+    } else {
+      "0123456789abcdef"
+    }
 
   #"5c753030"
     |> concat(

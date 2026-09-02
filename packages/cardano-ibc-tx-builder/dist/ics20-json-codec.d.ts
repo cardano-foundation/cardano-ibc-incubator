@@ -13,7 +13,7 @@ export type Ics20ClassicPacketData = {
     receiver: string;
     memo?: string;
 };
-export type Ics20ClassicJsonProfile = 'cardano-js-sorted' | 'ibc-go-v8-sorted' | 'ibc-go-v10';
+export type Ics20ClassicJsonProfile = 'cardano-js-sorted' | 'ibc-go-v8-sorted' | 'ibc-go-v10' | 'ibc-rs-v0.53';
 export type DecodedIcs20ClassicPacketData = {
     data: Required<Ics20ClassicPacketData>;
     profiles: readonly Ics20ClassicJsonProfile[];
@@ -29,7 +29,8 @@ export declare function stringifyIcs20PacketData(packetData: Ics20ClassicPacketD
 /** Emit Cardano's existing sorted JavaScript JSON representation as UTF-8. */
 export declare function encodeIcs20ClassicPacketData(packetData: Ics20ClassicPacketData): Uint8Array;
 /**
- * Decode only the canonical packet bytes emitted by Cardano, ibc-go v8, or
- * ibc-go v10. More than one profile can match when their bytes are identical.
+ * Decode only the canonical packet bytes emitted by Cardano, ibc-go v8,
+ * ibc-go v10, or ibc-rs v0.53. More than one profile can match when their
+ * bytes are identical.
  */
 export declare function decodeIcs20ClassicPacketData(packetBytes: Uint8Array): DecodedIcs20ClassicPacketData;

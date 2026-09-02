@@ -72,6 +72,13 @@ fn assert_get_v8_bytes(
   ftpd_mod.get_v8_bytes(ftpd) == expected
 }
 
+fn assert_get_ibc_rs_bytes(
+  ftpd: FungibleTokenPacketData,
+  expected: ByteArray,
+) -> Bool {
+  ftpd_mod.get_ibc_rs_bytes(ftpd) == expected
+}
+
 test test_get_bytes_without_memo() {
   assert_get_bytes(
     FungibleTokenPacketData {
@@ -124,6 +131,19 @@ test test_get_v10_bytes_with_memo() {
   )
 }
 
+test test_get_ibc_rs_bytes_includes_empty_memo() {
+  assert_get_ibc_rs_bytes(
+    FungibleTokenPacketData {
+      denom: "uatom",
+      amount: "10",
+      sender: "cosmos1sender",
+      receiver: "cardano-receiver",
+      memo: "",
+    },
+    "{\"denom\":\"uatom\",\"amount\":\"10\",\"sender\":\"cosmos1sender\",\"receiver\":\"cardano-receiver\",\"memo\":\"\"}",
+  )
+}
+
 test matches_v8_and_v10_classic_wire_bytes() {
   let packet =
     FungibleTokenPacketData {
@@ -137,6 +157,7 @@ test matches_v8_and_v10_classic_wire_bytes() {
   and {
     ftpd_mod.matches_bytes(packet, ftpd_mod.get_bytes(packet)),
     ftpd_mod.matches_bytes(packet, ftpd_mod.get_v10_bytes(packet)),
+    ftpd_mod.matches_bytes(packet, ftpd_mod.get_ibc_rs_bytes(packet)),
     !ftpd_mod.matches_bytes(packet, "different packet data"),
   }
 }
@@ -256,6 +277,24 @@ test all_control_characters_use_canonical_lowercase_escapes() {
   }
 }
 
+test ibc_rs_uses_uppercase_hex_for_long_control_escapes() {
+  let packet =
+    FungibleTokenPacketData {
+      amount: "1",
+      denom: "d",
+      memo: #"0b0e1f",
+      receiver: "r",
+      sender: "s",
+    }
+  let expected =
+    "{\"denom\":\"d\",\"amount\":\"1\",\"sender\":\"s\",\"receiver\":\"r\",\"memo\":\"\\u000B\\u000E\\u001F\"}"
+
+  and {
+    assert_get_ibc_rs_bytes(packet, expected),
+    ftpd_mod.matches_bytes(packet, expected),
+  }
+}
+
 test javascript_and_go_profiles_handle_unicode_and_html_differently() {
   let packet =
     FungibleTokenPacketData {
@@ -271,14 +310,18 @@ test javascript_and_go_profiles_handle_unicode_and_html_differently() {
     #"7b22616d6f756e74223a2231222c2264656e6f6d223a22e99baa222c226d656d6f223a225c75303033635c75303033655c75303032365c75323032385c7532303239e29883222c227265636569766572223a2272c3a963657074657572222c2273656e646572223a22e58f91e98081e88085227d"
   let go_struct_order =
     #"7b2264656e6f6d223a22e99baa222c22616d6f756e74223a2231222c2273656e646572223a22e58f91e98081e88085222c227265636569766572223a2272c3a963657074657572222c226d656d6f223a225c75303033635c75303033655c75303032365c75323032385c7532303239e29883227d"
+  let ibc_rs_struct_order =
+    #"7b2264656e6f6d223a22e99baa222c22616d6f756e74223a2231222c2273656e646572223a22e58f91e98081e88085222c227265636569766572223a2272c3a963657074657572222c226d656d6f223a223c3e26e280a8e280a9e29883227d"
 
   and {
     assert_get_bytes(packet, javascript_sorted),
     assert_get_v8_bytes(packet, go_sorted),
     assert_get_v10_bytes(packet, go_struct_order),
+    assert_get_ibc_rs_bytes(packet, ibc_rs_struct_order),
     ftpd_mod.matches_bytes(packet, javascript_sorted),
     ftpd_mod.matches_bytes(packet, go_sorted),
     ftpd_mod.matches_bytes(packet, go_struct_order),
+    ftpd_mod.matches_bytes(packet, ibc_rs_struct_order),
   }
 }
 
@@ -305,6 +348,7 @@ test nearby_unicode_is_not_mistaken_for_a_go_line_separator() {
     ftpd_mod.get_bytes(packet) == sorted,
     ftpd_mod.get_v8_bytes(packet) == sorted,
     ftpd_mod.get_v10_bytes(packet) == struct_order,
+    ftpd_mod.get_ibc_rs_bytes(packet) == struct_order,
     ftpd_mod.matches_bytes(packet, sorted),
     ftpd_mod.matches_bytes(packet, struct_order),
   }
@@ -370,6 +414,7 @@ test escaped_delimiters_cannot_impersonate_another_packet() {
     ftpd_mod.get_bytes(injected) != authenticated,
     ftpd_mod.get_v8_bytes(injected) != authenticated,
     ftpd_mod.get_v10_bytes(injected) != authenticated,
+    ftpd_mod.get_ibc_rs_bytes(injected) != authenticated,
     !ftpd_mod.matches_bytes(injected, authenticated),
   }
 }
@@ -495,14 +540,17 @@ test packet_limit_accepts_exactly_512_encoded_bytes() {
   let cardano_bytes = ftpd_mod.get_bytes(packet)
   let v8_bytes = ftpd_mod.get_v8_bytes(packet)
   let v10_bytes = ftpd_mod.get_v10_bytes(packet)
+  let ibc_rs_bytes = ftpd_mod.get_ibc_rs_bytes(packet)
 
   and {
     bytearray.length(cardano_bytes) == ftpd_mod.max_packet_bytes,
     bytearray.length(v8_bytes) == ftpd_mod.max_packet_bytes,
     bytearray.length(v10_bytes) == ftpd_mod.max_packet_bytes,
+    bytearray.length(ibc_rs_bytes) == ftpd_mod.max_packet_bytes,
     ftpd_mod.matches_bytes(packet, cardano_bytes),
     ftpd_mod.matches_bytes(packet, v8_bytes),
     ftpd_mod.matches_bytes(packet, v10_bytes),
+    ftpd_mod.matches_bytes(packet, ibc_rs_bytes),
   }
 }
 

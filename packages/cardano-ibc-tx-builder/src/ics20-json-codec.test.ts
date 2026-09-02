@@ -15,7 +15,7 @@ import {
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 
-type VectorProfile = 'cardano' | 'ibcGoV8' | 'ibcGoV10';
+type VectorProfile = 'cardano' | 'ibcGoV8' | 'ibcGoV10' | 'ibcRsV053';
 type VectorFixture = {
   vectors: Array<{
     name: string;
@@ -45,11 +45,12 @@ function assertCodecError(action: () => unknown, code: Ics20ClassicJsonCodecErro
 }
 
 describe('ICS-20 Classic JSON canonical profiles', () => {
-  it('matches every pinned Cardano, ibc-go v8.7, and ibc-go v10.2 vector', () => {
+  it('matches every pinned Cardano, ibc-go, and ibc-rs vector', () => {
     const expectedProfiles: Record<VectorProfile, Ics20ClassicJsonProfile> = {
       cardano: 'cardano-js-sorted',
       ibcGoV8: 'ibc-go-v8-sorted',
       ibcGoV10: 'ibc-go-v10',
+      ibcRsV053: 'ibc-rs-v0.53',
     };
 
     for (const vector of vectors.vectors) {
@@ -136,6 +137,31 @@ describe('ICS-20 Classic JSON canonical profiles', () => {
     assert.deepEqual(decoded.profiles, ['ibc-go-v10']);
   });
 
+  it('recognizes the ibc-rs field order and explicit empty memo', () => {
+    const json =
+      '{"denom":"uatom","amount":"10","sender":"cosmos1sender","receiver":"cardano-receiver","memo":""}';
+    const decoded = decodeIcs20ClassicPacketData(utf8(json));
+
+    assert.deepEqual(decoded.data, {
+      denom: 'uatom',
+      amount: '10',
+      sender: 'cosmos1sender',
+      receiver: 'cardano-receiver',
+      memo: '',
+    });
+    assert.deepEqual(decoded.profiles, ['ibc-rs-v0.53']);
+  });
+
+  it('recognizes serde-json-wasm escaping used by ibc-rs v0.53', () => {
+    const json =
+      '{"denom":"a<>&\u2028\u2029b","amount":"12","sender":"sender","receiver":"receiver","memo":"\\u000B"}';
+    const decoded = decodeIcs20ClassicPacketData(utf8(json));
+
+    assert.equal(decoded.data.denom, 'a<>&\u2028\u2029b');
+    assert.equal(decoded.data.memo, '\u000b');
+    assert.deepEqual(decoded.profiles, ['ibc-rs-v0.53']);
+  });
+
   it('handles canonical quote, slash, backslash, and control escaping', () => {
     const packet = basePacket({ memo: '"/\\\b\f\n\r\t\u0000' });
     const json = stringifyIcs20PacketData(packet);
@@ -215,7 +241,7 @@ describe('ICS-20 Classic JSON strict decoding', () => {
     }
   });
 
-  it('rejects non-canonical key order, whitespace, escapes, and empty memo', () => {
+  it('rejects non-canonical key order, whitespace, escapes, and sorted empty memo', () => {
     const nonCanonicalPackets = [
       '{"denom":"uatom","sender":"sender","amount":"12","receiver":"receiver"}',
       `${stringifyIcs20PacketData(basePacket())}\n`,

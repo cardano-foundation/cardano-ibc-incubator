@@ -15,7 +15,11 @@ export type Ics20ClassicPacketData = {
   memo?: string;
 };
 
-export type Ics20ClassicJsonProfile = 'cardano-js-sorted' | 'ibc-go-v8-sorted' | 'ibc-go-v10';
+export type Ics20ClassicJsonProfile =
+  | 'cardano-js-sorted'
+  | 'ibc-go-v8-sorted'
+  | 'ibc-go-v10'
+  | 'ibc-rs-v0.53';
 
 export type DecodedIcs20ClassicPacketData = {
   data: Required<Ics20ClassicPacketData>;
@@ -178,6 +182,51 @@ function stringifyGoPacket(packet: RequiredPacketData, order: readonly PacketFie
   return `{${fields.join(',')}}`;
 }
 
+function quoteIbcRsJsonString(value: string): string {
+  let quoted = '"';
+
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    switch (codePoint) {
+      case 0x08:
+        quoted += '\\b';
+        break;
+      case 0x09:
+        quoted += '\\t';
+        break;
+      case 0x0a:
+        quoted += '\\n';
+        break;
+      case 0x0c:
+        quoted += '\\f';
+        break;
+      case 0x0d:
+        quoted += '\\r';
+        break;
+      case 0x22:
+        quoted += '\\"';
+        break;
+      case 0x5c:
+        quoted += '\\\\';
+        break;
+      default:
+        quoted +=
+          codePoint < 0x20
+            ? `\\u${codePoint.toString(16).toUpperCase().padStart(4, '0')}`
+            : character;
+    }
+  }
+
+  return `${quoted}"`;
+}
+
+function stringifyIbcRsPacket(packet: RequiredPacketData): string {
+  const fields = IBC_GO_V10_ORDER.map(
+    (key) => `${JSON.stringify(key)}:${quoteIbcRsJsonString(packet[key])}`,
+  );
+  return `{${fields.join(',')}}`;
+}
+
 function ensurePacketSize(json: string): void {
   const byteLength = UTF8_ENCODER.encode(json).byteLength;
   if (byteLength > ICS20_CLASSIC_JSON_LIMITS.packetBytes) {
@@ -207,8 +256,9 @@ export function encodeIcs20ClassicPacketData(packetData: Ics20ClassicPacketData)
 }
 
 /**
- * Decode only the canonical packet bytes emitted by Cardano, ibc-go v8, or
- * ibc-go v10. More than one profile can match when their bytes are identical.
+ * Decode only the canonical packet bytes emitted by Cardano, ibc-go v8,
+ * ibc-go v10, or ibc-rs v0.53. More than one profile can match when their
+ * bytes are identical.
  */
 export function decodeIcs20ClassicPacketData(
   packetBytes: Uint8Array,
@@ -242,6 +292,7 @@ export function decodeIcs20ClassicPacketData(
     ['cardano-js-sorted', stringifyCardanoPacket(packet)],
     ['ibc-go-v8-sorted', stringifyGoPacket(packet, CARDANO_AND_IBC_GO_V8_ORDER)],
     ['ibc-go-v10', stringifyGoPacket(packet, IBC_GO_V10_ORDER)],
+    ['ibc-rs-v0.53', stringifyIbcRsPacket(packet)],
   ];
   const profiles = candidates
     .filter(
