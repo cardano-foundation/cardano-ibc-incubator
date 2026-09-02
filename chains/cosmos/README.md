@@ -68,10 +68,23 @@ The encoded JSON packet is limited to 512 bytes. Before escaping, `denom`,
 and `memo` to 512. The packet limit still applies after characters expand into
 JSON escapes, so it is normally the tighter bound. This is a codec bound, not
 a claim that every complete receive transaction fits the Cardano limits. The
-most expensive 512-byte voucher-policy fixture uses 15,185,101 memory units and
-4,329,403,078 CPU units, while the isolated channel receive fixture already
-uses 16,697,209 memory units and exceeds the 16,500,000 ledger limit. The
-complete receive path is tracked explicitly by the transaction-budget CI.
+v10 budget fixture takes the struct-order late-match path after ibc-rs, while the
+v8 fixture takes the sorted-order late-match path after Cardano. These two cases
+therefore bound all four accepted profiles. The archive fixtures cover both the
+entry-count and encoded-byte bounds across eight archived shards. The most
+expensive 512-byte voucher-policy fixture uses 24,581,062 memory units and
+8,067,527,433 CPU units, while the isolated channel receive fixture uses
+16,697,209 memory units and exceeds the 16,500,000 ledger limit. The
+transaction-budget CI also models the complete first-seen voucher receive path,
+including membership-proof verification, the transfer callback, the voucher
+policy, a registry append with eight archived shards, and full packet histories.
+That model estimates 20,615 unsigned bytes, 20,875 signed bytes, 96,763,049
+memory units, and 31,523,591,002 CPU steps. Its signed estimate exceeds both the
+15,634-byte CI safe budget, which reserves 750 bytes, and the 16,384-byte ledger
+maximum. This additive model exceeds the ledger maximum; actual balanced CBOR
+is not built here. Its execution total also sums isolated Aiken fixtures; it is
+not a ledger evaluation of every validator in one combined transaction. CI
+records the estimate as a regression ceiling and rejects any increase.
 
 The pinned upstream fixtures and their generator live in
 [`tests/ics20-json-vectors`](../../tests/ics20-json-vectors). They call the

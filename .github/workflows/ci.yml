@@ -865,6 +865,14 @@ jobs:
             -m 'ibc/core/ics_004/channel_datum_test/validate_recv_packet.{succeed_at_packet_history_capacity}' \
             -m 'host_state_stt.{host_state_handle_packet_recv_succeeds_at_history_capacity}' \
             -m 'host_state_stt.{host_state_handle_packet_acknowledgement_succeeds_at_history_capacity}' \
+            -m 'verifying_proof.{verify_membership_succeed}' \
+            -m 'spending_channel/recv_packet.{succeed_recv_packet_maximum_ics20_packet}' \
+            -m 'spending_transfer_module.{on_recv_packet_mint_voucher_maximum_ics20_packet_succeed}' \
+            -m 'spending_transfer_module.{on_recv_packet_mint_voucher_maximum_v8_ics20_packet_succeed}' \
+            -m 'minting_voucher.{test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_at_entry_limit}' \
+            -m 'minting_voucher.{test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_near_byte_limit}' \
+            -m 'minting_voucher.{test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_at_entry_limit}' \
+            -m 'minting_voucher.{test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_near_byte_limit}' \
             -m 'spending_channel.{prune_packet_history_succeed}' \
             -m 'spending_channel/prune_packet_history.{prune_packet_history_succeeds_at_capacity_boundary}' \
             -m 'spending_channel/prune_packet_history.{prune_packet_history_accepts_ordered_channel_at_capacity}' \
@@ -881,7 +889,7 @@ jobs:
             -m 'trace_registry_rollover.{trace_registry_rollover_insert_succeeds_and_preserves_old_shard}' \
             -m 'trace_registry_rollover.{trace_registry_advance_directory_succeeds_for_valid_rollover}' \
             -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_at_entry_limit}' \
-            -m 'minting_voucher.{test_mint_voucher}' \
+            -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_near_byte_limit}' \
             -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
             -m 'host_state_stt.{host_update_client_capacity_minimum_history_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_adjacent_all_signed_45_succeeds}' \

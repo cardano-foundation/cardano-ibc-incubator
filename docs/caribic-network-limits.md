@@ -74,16 +74,33 @@ different limits; other saved chains may retain their prior ledger parameters.
 Remove preserved state or start Caribic in clean/stateless mode after changing
 branches.
 
-The transaction-budget job checks every legacy transaction-budget scenario
-against the same Cardano limits. Five pre-existing scenarios are already above
-the public execution budget: SendPacket at commitment capacity, RecvPacket at
-history capacity, PrunePacketHistory, trace-registry rollover, and first-seen
-voucher minting. Those exact overruns are explicit regression ceilings: CI
-rejects any increase, requires the ceiling to be lowered after any improvement,
-rejects any new overrun, and requires a stale ceiling to be removed once a
-scenario fits. Local Cardano still rejects the oversized transactions at the
-ledger boundary. The three 45-validator UpdateClient scenarios remain clearly
-marked report-only and are not covered by this ratchet.
+The transaction-budget job checks representative transaction-budget scenarios
+against the same Cardano limits. Seven scenarios currently have recorded
+transaction-budget violations: reference-script deployment, SendPacket at
+commitment capacity, RecvPacket at history capacity, PrunePacketHistory,
+trace-registry rollover, the first-seen voucher component, and the combined
+first-seen voucher receive path. RecvPacket now includes membership-proof
+verification. The combined path also includes the transfer callback, voucher
+policy, registry append with eight archived shards, six outputs, seven reference
+scripts, and the maximum across the v8 and v10 512-byte packet fixtures and the
+archive entry-count and encoded-byte bounds.
+The v10 fixture is the struct-order late-match path after ibc-rs, and the v8
+fixture is the sorted-order late-match path after Cardano. Paying for the failed
+earlier candidate makes these two paths bound all four accepted wire profiles.
+
+The CI size budget is 15,634 bytes: the 16,384-byte ledger maximum less a
+750-byte reserve. Reference-script deployment has a 16,040-byte signed estimate,
+so it is a headroom violation but remains below the ledger maximum. The combined
+receive path's additive model estimates 20,615 unsigned bytes and 20,875 signed
+bytes, which exceeds the ledger maximum. Actual balanced CBOR is not built here,
+so this estimate is not a direct measurement of a submitted transaction. Its
+96,763,049 memory units and 31,523,591,002 CPU steps also sum isolated Aiken
+fixtures; they are not a ledger evaluation of every validator in one combined
+transaction. Each recorded size or execution-unit overrun has an exact
+regression ceiling. CI rejects any increase, requires the ceiling to be lowered
+after any improvement, rejects unrecorded overruns, and requires stale ceilings
+to be removed once a scenario fits. The three 45-validator UpdateClient
+scenarios remain report-only and are not covered by this ratchet.
 
 Sources:
 
