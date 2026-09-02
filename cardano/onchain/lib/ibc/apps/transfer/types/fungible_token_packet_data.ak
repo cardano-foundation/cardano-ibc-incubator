@@ -232,18 +232,48 @@ fn escape_json_string(
   uppercase_control_hex: Bool,
 ) -> ByteArray {
   let value_length = length(value)
-  if go_html_safe || !needs_no_basic_escape(value) {
-    escape_json_bytes(
+  if go_html_safe {
+    if needs_no_go_escape(value) {
+      value
+    } else {
+      escape_go_json_bytes(value, value_length - 1, value_length, #"")
+    }
+  } else if needs_no_basic_escape(value) {
+    value
+  } else {
+    escape_basic_json_bytes(
       value,
       value_length - 1,
       value_length,
       #"",
-      go_html_safe,
       uppercase_control_hex,
     )
-  } else {
-    value
   }
+}
+
+/// Test the common Go JSON path with packed byte operations before falling
+/// back to the recursive escaper. Treating every E2 byte as a possible
+/// U+2028/U+2029 prefix is conservative: false positives only take the slow
+/// path and cannot change the encoded bytes.
+fn needs_no_go_escape(value: ByteArray) -> Bool {
+  let value_length = length(value)
+  and {
+    needs_no_basic_escape(value),
+    has_no_byte(value, value_length, 38),
+    has_no_byte(value, value_length, 60),
+    has_no_byte(value, value_length, 62),
+    has_no_byte(value, value_length, 226),
+  }
+}
+
+fn has_no_byte(value: ByteArray, value_length: Int, byte: Int) -> Bool {
+  has_no_zero_byte(
+    builtin.xor_bytearray(
+      False,
+      value,
+      builtin.replicate_byte(value_length, byte),
+    ),
+  )
 }
 
 fn needs_no_basic_escape(value: ByteArray) -> Bool {
@@ -294,12 +324,13 @@ fn has_no_zero_byte(value: ByteArray) -> Bool {
 
 /// Scan without rebuilding ordinary runs byte-by-byte. A complete safe run is
 /// sliced once, while only JSON metacharacters introduce a new output chunk.
-fn escape_json_bytes(
+/// Keeping the basic and Go variants separate avoids evaluating Go's extra
+/// HTML and line-separator rules on every byte of an ibc-rs string.
+fn escape_basic_json_bytes(
   value: ByteArray,
   cursor: Int,
   run_end: Int,
   escaped: ByteArray,
-  go_html_safe: Bool,
   uppercase_control_hex: Bool,
 ) -> ByteArray {
   if cursor < 0 {
@@ -307,27 +338,56 @@ fn escape_json_bytes(
   } else {
     let byte = at(value, cursor)
     let basic_escape = byte < 32 || byte == 34 || byte == 92
-    let is_line_separator =
-      go_html_safe && cursor >= 2 && byte >= 168 && byte <= 169 && builtin.slice_bytearray(
-        cursor - 2,
-        2,
-        value,
-      ) == #"e280"
-    let go_escape = go_html_safe && or {
-        byte == 38,
-        byte == 60,
-        byte == 62,
-      }
 
-    if !(basic_escape || go_escape || is_line_separator) {
-      escape_json_bytes(
+    if !basic_escape {
+      escape_basic_json_bytes(
         value,
         cursor - 1,
         run_end,
         escaped,
-        go_html_safe,
         uppercase_control_hex,
       )
+    } else {
+      let escaped =
+        basic_json_escape(byte, uppercase_control_hex)
+          |> concat(
+              builtin.slice_bytearray(cursor + 1, run_end - cursor - 1, value),
+            )
+          |> concat(escaped)
+      expect length(escaped) <= max_packet_bytes
+
+      escape_basic_json_bytes(
+        value,
+        cursor - 1,
+        cursor,
+        escaped,
+        uppercase_control_hex,
+      )
+    }
+  }
+}
+
+fn escape_go_json_bytes(
+  value: ByteArray,
+  cursor: Int,
+  run_end: Int,
+  escaped: ByteArray,
+) -> ByteArray {
+  if cursor < 0 {
+    builtin.slice_bytearray(0, run_end, value) |> concat(escaped)
+  } else {
+    let byte = at(value, cursor)
+    let basic_escape = byte < 32 || byte == 34 || byte == 92
+    let is_line_separator =
+      cursor >= 2 && byte >= 168 && byte <= 169 && builtin.slice_bytearray(
+        cursor - 2,
+        2,
+        value,
+      ) == #"e280"
+    let go_escape = byte == 38 || byte == 60 || byte == 62
+
+    if !(basic_escape || go_escape || is_line_separator) {
+      escape_go_json_bytes(value, cursor - 1, run_end, escaped)
     } else {
       let consumed =
         if is_line_separator {
@@ -341,7 +401,7 @@ fn escape_json_bytes(
         } else if go_escape {
           unicode_control_escape(byte, False)
         } else {
-          basic_json_escape(byte, uppercase_control_hex)
+          basic_json_escape(byte, False)
         }
       let escaped =
         replacement
@@ -351,13 +411,11 @@ fn escape_json_bytes(
           |> concat(escaped)
       expect length(escaped) <= max_packet_bytes
 
-      escape_json_bytes(
+      escape_go_json_bytes(
         value,
         cursor - consumed,
         cursor - consumed + 1,
         escaped,
-        go_html_safe,
-        uppercase_control_hex,
       )
     }
   }

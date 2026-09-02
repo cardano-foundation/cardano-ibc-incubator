@@ -22,6 +22,12 @@ const AIKEN_VECTORS_PATH = path.join(
 const FIELD_NAMES = ["denom", "amount", "sender", "receiver", "memo"];
 const MAX_PACKET_BYTES = 512;
 const EXACT_LIMIT_PROFILES = {
+  maximum_control_escape_packet_bytes: [
+    "cardano",
+    "ibcGoV8",
+    "ibcGoV10",
+    "ibcRsV053",
+  ],
   maximum_packet_bytes: ["cardano", "ibcGoV8", "ibcGoV10", "ibcRsV053"],
   maximum_go_escaped_packet_bytes: ["ibcGoV8", "ibcGoV10"],
 };

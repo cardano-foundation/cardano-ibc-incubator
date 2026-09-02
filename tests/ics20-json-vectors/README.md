@@ -24,11 +24,11 @@ The generated file contains the upstream positive vectors. Malformed,
 non-canonical, oversized, and invalid UTF-8 cases are kept in the adjacent
 hand-authored `fungible_token_packet_data.test.ak` suite.
 
-The fixtures also pin the 512-byte packet ceiling. One case reaches exactly
-512 bytes in all three profiles. A second, densely escaped case reaches exactly
-512 bytes in both ibc-go profiles while remaining shorter in Cardano's encoding.
-The generator rejects any case that exceeds the ceiling and verifies those
-boundary lengths during regeneration.
+The fixtures also pin the 512-byte packet ceiling. Ordinary and long-control
+escape cases reach exactly 512 bytes in all four profiles. A densely escaped
+case reaches exactly 512 bytes in both ibc-go profiles while remaining shorter
+in the Cardano and ibc-rs encodings. The generator rejects any case that
+exceeds the ceiling and verifies those boundary lengths during regeneration.
 
 Regenerate and verify the checked-in files with:
 

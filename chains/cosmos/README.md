@@ -66,10 +66,12 @@ positive integer amount and a valid denomination.
 The encoded JSON packet is limited to 512 bytes. Before escaping, `denom`,
 `sender`, and `receiver` are each limited to 256 UTF-8 bytes, `amount` to 78,
 and `memo` to 512. The packet limit still applies after characters expand into
-JSON escapes, so it is normally the tighter bound. A 512-byte ibc-go v10 packet
-uses 13,632,481 memory units and 3,760,997,204 CPU units in the full voucher
-mint validator test, below the repository's 5% safety threshold of 15,675,000
-memory units and 9,500,000,000 CPU units.
+JSON escapes, so it is normally the tighter bound. This is a codec bound, not
+a claim that every complete receive transaction fits the Cardano limits. The
+most expensive 512-byte voucher-policy fixture uses 15,185,101 memory units and
+4,329,403,078 CPU units, while the isolated channel receive fixture already
+uses 16,697,209 memory units and exceeds the 16,500,000 ledger limit. The
+complete receive path is tracked explicitly by the transaction-budget CI.
 
 The pinned upstream fixtures and their generator live in
 [`tests/ics20-json-vectors`](../../tests/ics20-json-vectors). They call the
