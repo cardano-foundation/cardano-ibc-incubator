@@ -142,10 +142,19 @@ function normalizeBridgeManifest(manifest) {
     if (manifest.schema_version !== 4) {
         throw new Error('Unsupported bridge manifest schema_version: expected 4');
     }
+    const ics20PacketCodec = manifest.ics20_packet_codec ?? 'legacy-cardano-json';
+    if (ics20PacketCodec !== 'legacy-cardano-json' &&
+        ics20PacketCodec !== 'ics20-classic-json-v1') {
+        throw new Error(`Unsupported ICS-20 packet codec: ${String(ics20PacketCodec)}`);
+    }
     return {
-        bridgeManifest: manifest,
+        bridgeManifest: {
+            ...manifest,
+            ics20_packet_codec: ics20PacketCodec,
+        },
         deployment: {
             deployedAt: manifest.deployed_at,
+            ics20PacketCodec,
             hostStateNFT: {
                 policyId: manifest.host_state_nft.policy_id,
                 name: manifest.host_state_nft.token_name,
@@ -1139,6 +1148,9 @@ function createTxBuilderRuntime(config) {
         logger.log(`${scope} initial wallet UTxOs selected=${initialWalletUtxos.length}`);
         context.lucidService.selectWalletFromAddress(sendPacketOperator.signer, initialWalletUtxos);
         const { unsignedTx, walletOverride } = await timed(logger, scope, 'build send_packet tx skeleton', () => (0, tx_builder_1.buildUnsignedSendPacketTx)(sendPacketOperator, {
+            ...(context.deployment.ics20PacketCodec === 'legacy-cardano-json'
+                ? { stringifyPacketData: tx_builder_1.stringifyLegacyIcs20PacketData }
+                : {}),
             loadContext: async (operator) => {
                 const loadContextStartedAt = startTimer();
                 try {

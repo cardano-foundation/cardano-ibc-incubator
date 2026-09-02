@@ -110,9 +110,17 @@ import {
 } from '../shared/helpers/voucher-asset';
 import {
   buildUnsignedSendPacketTx as buildUnsignedSendPacketTxWithPackage,
-  decodeIcs20ClassicPacketData,
   type SendPacketOperator as SharedSendPacketOperator,
 } from '@cardano-ibc/tx-builder';
+import {
+  ICS20_PACKET_CODEC,
+  type DeploymentConfig,
+  type Ics20PacketCodec,
+} from '../config/bridge-manifest';
+import {
+  decodeIcs20PacketDataForCodec,
+  stringifyIcs20PacketDataForCodec,
+} from '../shared/helpers/ics20-packet-codec';
 import { ICS23MerkleTree } from '@shared/helpers/ics23-merkle-tree';
 import {
   escrowDenomTokenFromPacketDenom,
@@ -152,6 +160,13 @@ export class PacketService {
     private readonly txOperationRunnerService: TxOperationRunnerService,
     private readonly asyncIcqHostService: AsyncIcqHostService,
   ) {}
+
+  private getIcs20PacketCodec(): Ics20PacketCodec {
+    return (
+      this.configService.get<DeploymentConfig>('deployment')?.ics20PacketCodec ??
+      ICS20_PACKET_CODEC.STRICT
+    );
+  }
   /**
    * @param data
    * @returns unsigned_tx
@@ -1506,7 +1521,10 @@ export class PacketService {
   async timeoutPacket(data: MsgTimeout): Promise<MsgTimeoutResponse> {
     try {
       this.logger.log('timeoutPacket is processing');
-      const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data);
+      const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(
+        data,
+        this.getIcs20PacketCodec(),
+      );
       const buildTimeoutAttempt = async () => {
         await this.refreshWalletContext(constructedAddress, 'timeoutPacketBuilder');
         return this.buildUnsignedTimeoutPacketTx(
@@ -1864,9 +1882,12 @@ export class PacketService {
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
 
-    let decodedPacketData: ReturnType<typeof decodeIcs20ClassicPacketData>;
+    let decodedPacketData: ReturnType<typeof decodeIcs20PacketDataForCodec>;
     try {
-      decodedPacketData = decodeIcs20ClassicPacketData(Buffer.from(recvPacketOperator.packetData, 'hex'));
+      decodedPacketData = decodeIcs20PacketDataForCodec(
+        Buffer.from(recvPacketOperator.packetData, 'hex'),
+        this.getIcs20PacketCodec(),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Error decoding ICS-20 packet data: ${message}`);
@@ -2489,6 +2510,8 @@ export class PacketService {
     return buildUnsignedSendPacketTxWithPackage(
       sendPacketOperator as SharedSendPacketOperator,
       {
+        stringifyPacketData: (packetData) =>
+          stringifyIcs20PacketDataForCodec(packetData, this.getIcs20PacketCodec()),
         loadContext: async (operator) => {
           const channelSequence: string = operator.sourceChannel.replaceAll(
             `${CHANNEL_ID_PREFIX}-`,
@@ -2991,8 +3014,9 @@ export class PacketService {
 
     let fungibleTokenPacketData: FungibleTokenPacketDatum;
     try {
-      fungibleTokenPacketData = decodeIcs20ClassicPacketData(
+      fungibleTokenPacketData = decodeIcs20PacketDataForCodec(
         Buffer.from(ackPacketOperator.packetData, 'hex'),
+        this.getIcs20PacketCodec(),
       ).data;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

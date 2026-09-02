@@ -22,7 +22,9 @@ import { MsgPrunePacketHistory } from '@cardano-ibc/proto-types/build/ibc/cardan
 import { isSupportedGatewayPortId } from '@shared/helpers/module-port';
 import { ChannelDatum } from '@shared/types/channel/channel-datum';
 import { Order } from '@shared/types/channel/order';
-import { decodeIcs20ClassicPacketData, MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
+import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
+import { ICS20_PACKET_CODEC, type Ics20PacketCodec } from '../../config/bridge-manifest';
+import { decodeIcs20PacketDataForCodec } from '../../shared/helpers/ics20-packet-codec';
 
 function packetCapacityExhausted(channelDatum: ChannelDatum): GrpcFailedPreconditionException {
   return new GrpcFailedPreconditionException(
@@ -198,7 +200,10 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
   return sendPacketOperator;
 }
 
-export function validateAndFormatTimeoutPacketParams(data: MsgTimeout): {
+export function validateAndFormatTimeoutPacketParams(
+  data: MsgTimeout,
+  ics20PacketCodec: Ics20PacketCodec = ICS20_PACKET_CODEC.STRICT,
+): {
   constructedAddress: string;
   timeoutPacketOperator: TimeoutPacketOperator;
 } {
@@ -212,7 +217,7 @@ export function validateAndFormatTimeoutPacketParams(data: MsgTimeout): {
     );
   let fungibleTokenPacketData: FungibleTokenPacketDatum;
   try {
-    fungibleTokenPacketData = decodeIcs20ClassicPacketData(data.packet.data).data;
+    fungibleTokenPacketData = decodeIcs20PacketDataForCodec(data.packet.data, ics20PacketCodec).data;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new GrpcInvalidArgumentException(`Invalid ICS-20 packet data: ${message}`);

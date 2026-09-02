@@ -350,6 +350,26 @@ describe('send-packet denom mapping', () => {
     assert.equal(harness.getCapturedBurn(), undefined);
   });
 
+  it('allows a deployment to supply its legacy packet serializer', async () => {
+    const legacyPacketJson = '{"amount":"123","denom":"legacy"}';
+    const harness = createDeps({
+      stringifyPacketData: () => legacyPacketJson,
+    });
+
+    await buildUnsignedSendPacketTx(
+      baseOperator({ memo: 'm'.repeat(ICS20_CLASSIC_JSON_LIMITS.memoBytes) }),
+      harness.deps,
+    );
+
+    const spendRedeemer = harness.encodedValues.find(
+      (entry) => entry.kind === 'spendChannelRedeemer',
+    )?.value as { SendPacket: { packet: { data: string } } };
+    assert.equal(
+      Buffer.from(spendRedeemer.SendPacket.packet.data, 'hex').toString('utf8'),
+      legacyPacketJson,
+    );
+  });
+
   it('rejects sends before full combined packet state reaches the chain', async () => {
     let hostStateBuilds = 0;
     const fullContext = baseContext();

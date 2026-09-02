@@ -40,6 +40,28 @@ export type SendPacketOperator = {
   memo: string;
 };
 
+export type Ics20PacketDataStringifier = (packetData: {
+  denom: string;
+  amount: string;
+  sender: string;
+  receiver: string;
+  memo?: string;
+}) => string;
+
+// Preserve the exact sorted JSON representation used by deployments created
+// before the strict ICS-20 codec was introduced.
+export const stringifyLegacyIcs20PacketData: Ics20PacketDataStringifier = (
+  packetData,
+) => {
+  const ordered: Record<string, string> = {};
+  if (packetData.amount) ordered.amount = packetData.amount;
+  if (packetData.denom) ordered.denom = packetData.denom;
+  if (packetData.memo) ordered.memo = packetData.memo;
+  if (packetData.receiver) ordered.receiver = packetData.receiver;
+  if (packetData.sender) ordered.sender = packetData.sender;
+  return JSON.stringify(ordered);
+};
+
 export type Packet = {
   sequence: bigint;
   source_port: string;
@@ -205,6 +227,7 @@ export type SendPacketBuildDependencies = {
     denomHash: string,
   ) => Promise<VoucherDenomTrace | null>;
   commitPacket: (packet: Packet) => string;
+  stringifyPacketData?: Ics20PacketDataStringifier;
   encode: (value: unknown, kind: string) => Promise<string>;
   findUtxoAtWithUnit: (address: string, unit: string) => Promise<UTxO>;
   tryFindUtxosAt: (
@@ -271,7 +294,7 @@ export async function buildUnsignedSendPacketTx(
 
   let packetDataJson: string;
   try {
-    packetDataJson = stringifyIcs20PacketData({
+    packetDataJson = (deps.stringifyPacketData ?? stringifyIcs20PacketData)({
       denom: packetDenom,
       amount: sendPacketOperator.token.amount.toString(),
       sender: sendPacketOperator.sender,

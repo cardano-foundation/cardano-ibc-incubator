@@ -424,7 +424,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     );
   });
 
-  it('maps packet denom hex(lovelace) back to lovelace asset unit in acknowledgement unescrow', async () => {
+  it('settles an oversized legacy acknowledgement packet and maps hex(lovelace) to lovelace', async () => {
     const loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -436,6 +436,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       get: jest.fn().mockImplementation((key: string) => {
         if (key !== 'deployment') return undefined;
         return {
+          ics20PacketCodec: 'legacy-cardano-json',
           validators: {
             spendChannel: {
               refValidator: {
@@ -608,6 +609,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
             amount: '10',
             sender: 'sender-credential',
             receiver: 'receiver-credential',
+            memo: 'm'.repeat(600),
           }),
         ),
         proofHeight,

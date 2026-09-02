@@ -66,6 +66,7 @@ message BridgeManifest {
   BridgeManifestAuthToken host_state_nft = 4;
   BridgeManifestValidators validators = 6;
   BridgeManifestModules modules = 7;
+  string ics20_packet_codec = 9;
 }
 
 message BridgeManifestCardanoInfo {

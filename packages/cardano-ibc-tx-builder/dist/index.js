@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_PACKET_ENTRIES_PER_CHANNEL = void 0;
+exports.stringifyLegacyIcs20PacketData = exports.MAX_PACKET_ENTRIES_PER_CHANNEL = void 0;
 exports.buildUnsignedSendPacketTx = buildUnsignedSendPacketTx;
 const blake2b_1 = require("@noble/hashes/blake2b");
 const ics20_json_codec_1 = require("./ics20-json-codec");
@@ -26,6 +26,23 @@ const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
 };
+// Preserve the exact sorted JSON representation used by deployments created
+// before the strict ICS-20 codec was introduced.
+const stringifyLegacyIcs20PacketData = (packetData) => {
+    const ordered = {};
+    if (packetData.amount)
+        ordered.amount = packetData.amount;
+    if (packetData.denom)
+        ordered.denom = packetData.denom;
+    if (packetData.memo)
+        ordered.memo = packetData.memo;
+    if (packetData.receiver)
+        ordered.receiver = packetData.receiver;
+    if (packetData.sender)
+        ordered.sender = packetData.sender;
+    return JSON.stringify(ordered);
+};
+exports.stringifyLegacyIcs20PacketData = stringifyLegacyIcs20PacketData;
 async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     const context = await deps.loadContext(sendPacketOperator);
     const retainedPacketEntryCount = context.channelDatum.state.packet_commitment.size +
@@ -42,7 +59,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     const isVoucher = hasVoucherPrefix(resolvedDenom, sendPacketOperator.sourcePort, sendPacketOperator.sourceChannel);
     let packetDataJson;
     try {
-        packetDataJson = (0, ics20_json_codec_1.stringifyIcs20PacketData)({
+        packetDataJson = (deps.stringifyPacketData ?? ics20_json_codec_1.stringifyIcs20PacketData)({
             denom: packetDenom,
             amount: sendPacketOperator.token.amount.toString(),
             sender: sendPacketOperator.sender,

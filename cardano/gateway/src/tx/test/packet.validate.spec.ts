@@ -18,6 +18,8 @@ import {
 import { ChannelDatum } from '@shared/types/channel/channel-datum';
 import { Order } from '@shared/types/channel/order';
 import { ICS20_CLASSIC_JSON_LIMITS, MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
+import { ICS20_PACKET_CODEC } from '../../config/bridge-manifest';
+import { stringifyLegacyIcs20PacketData } from '../../shared/helpers/ics20-packet-codec';
 
 function packetEntries(count: number): Map<bigint, string> {
   return new Map<bigint, string>(
@@ -178,6 +180,23 @@ describe('Timeout packet ICS-20 JSON validation', () => {
 
     expect(validate).toThrow(GrpcInvalidArgumentException);
     expect(validate).toThrow('Invalid ICS-20 packet data');
+  });
+
+  it('allows a legacy deployment to settle a previously committed oversized packet', () => {
+    const packetJson = stringifyLegacyIcs20PacketData({
+      denom: 'uatom',
+      amount: '12',
+      sender: 'cosmos1sender',
+      receiver: 'addr_test1receiver',
+      memo: 'm'.repeat(600),
+    });
+
+    const result = validateAndFormatTimeoutPacketParams(
+      buildMsgTimeout(Buffer.from(packetJson, 'utf8')),
+      ICS20_PACKET_CODEC.LEGACY,
+    );
+
+    expect(result.timeoutPacketOperator.fungibleTokenPacketData.memo).toHaveLength(600);
   });
 });
 

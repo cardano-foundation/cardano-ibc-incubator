@@ -1,5 +1,6 @@
 import {
   DEFAULT_HANDLER_JSON_PATH,
+  ICS20_PACKET_CODEC,
   bridgeManifestsEqual,
   loadBridgeConfigFromEnv,
   normalizeBridgeManifestConfig,
@@ -22,6 +23,7 @@ function buildValidator(name: string) {
 function buildHandlerJsonDeployment() {
   return {
     deployedAt: '2026-04-01T12:34:56.000Z',
+    ics20PacketCodec: ICS20_PACKET_CODEC.STRICT,
     hostStateNFT: {
       policyId: 'host-policy',
       name: 'host-token',
@@ -91,6 +93,7 @@ describe('bridge manifest normalization', () => {
       schema_version: 4,
       deployment_id: 'cardano-devnet:host-policy.host-token',
       deployed_at: '2026-04-01T12:34:56.000Z',
+      ics20_packet_codec: ICS20_PACKET_CODEC.STRICT,
       cardano: {
         chain_id: 'cardano-devnet',
         network_magic: 42,
@@ -141,6 +144,48 @@ describe('bridge manifest normalization', () => {
 
     expect(manifestLoaded.deployment).toEqual(legacy.deployment);
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
+  });
+
+  it('defaults handler files without a codec capability to the legacy validators', () => {
+    const { ics20PacketCodec: _codec, ...legacyHandler } = buildHandlerJsonDeployment();
+
+    const loaded = normalizeHandlerJsonDeploymentConfig(legacyHandler, {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(loaded.deployment.ics20PacketCodec).toBe(ICS20_PACKET_CODEC.LEGACY);
+    expect(loaded.bridgeManifest.ics20_packet_codec).toBe(ICS20_PACKET_CODEC.LEGACY);
+  });
+
+  it('defaults schema-v4 manifests without a codec capability to the legacy validators', () => {
+    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    const { ics20_packet_codec: _codec, ...legacyManifest } = current.bridgeManifest;
+
+    const loaded = normalizeBridgeManifestConfig(legacyManifest);
+
+    expect(loaded.deployment.ics20PacketCodec).toBe(ICS20_PACKET_CODEC.LEGACY);
+    expect(loaded.bridgeManifest.ics20_packet_codec).toBe(ICS20_PACKET_CODEC.LEGACY);
+  });
+
+  it('rejects unknown codec capabilities', () => {
+    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(() =>
+      normalizeBridgeManifestConfig({
+        ...current.bridgeManifest,
+        ics20_packet_codec: 'future-codec',
+      }),
+    ).toThrow('Invalid bridge config: "ics20_packet_codec"');
   });
 
   it('rejects handler.json files without a deployment timestamp', () => {
