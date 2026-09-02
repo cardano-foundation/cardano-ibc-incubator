@@ -120,6 +120,26 @@ sample.
 | Reduced recursion workers, 10 threads | Compressed | 119.914 s | 8.00 GB |
 | Apple-native build with thin LTO, 10 threads | Compressed | 123.536 s | 7.72 GB |
 
+### Apple M5 and AWS CPU comparison
+
+The 45-validator Injective fixture was also run on an AWS `c5a.8xlarge` with
+32 vCPUs (16 AMD EPYC 7R32 cores) and 62 GiB of usable memory. Each result is
+one run.
+
+| Host | Proof mode | Rayon threads | Proof call | Complete process | Peak resident memory |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Apple M5 | Core | 10 | 58.150 s | — | 6.78 GB |
+| AWS `c5a.8xlarge` | Core | 16 | 83.221 s | 108.80 s | 21.8 GiB |
+| AWS `c5a.8xlarge` | Core | 32 | 85.607 s | 109.66 s | 21.8 GiB |
+| Apple M5, older pre-alignment runner | Groth16 | — | 505.846 s | 526.69 s | — |
+| AWS `c5a.8xlarge`, warm circuit cache | Groth16 | 32 | 374.621 s | 401.05 s | 31.0 GiB |
+
+The AWS host reduced the full proof call by about 26%, but it still took 6
+minutes 15 seconds. Its Core phase was slower than the M5, and using 32 threads
+instead of 16 did not help. A cold AWS run took 558.737 seconds for the proof
+and 584.93 seconds overall because it also downloaded the 7.9 GB SP1 circuit
+cache. These are directional single-run results, not a benchmark distribution.
+
 The smaller trace chunks reduced Compressed resident memory by about 10%, but
 made the proof about 4.5% slower. Eight threads, reduced recursion concurrency,
 and the native/LTO build were also slower. SP1's fixed proving-key option was
