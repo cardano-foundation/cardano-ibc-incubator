@@ -1,6 +1,7 @@
 import { ensureDir } from "@std/fs";
 import {
   Constr,
+  credentialToRewardAddress,
   Data,
   fromText,
   getAddressDetails,
@@ -13,6 +14,7 @@ import {
   UTxO,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
+import { queryOgmiosJsonRpc } from "./external_cardano.ts";
 import {
   awaitWalletTx,
   DeploymentTemplate,
@@ -45,10 +47,12 @@ import {
   ModuleRegistration,
   OutputReference,
   OutputReferenceSchema,
+  TendermintProofVerificationKeySchema,
   type TraceRegistryDirectoryDatum,
   type TraceRegistryShardDatum,
   TransferModuleDatum,
 } from "../types/index.ts";
+import { loadConfiguredTendermintProofSetup } from "./tendermint_proof_verification_key.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -116,6 +120,140 @@ const EMPTY_HASH = "00".repeat(32);
 
 export const GENERIC_MODULE_SPEND_VALIDATOR_TITLE =
   "spending_mock_module.spend_mock_module.spend";
+export const TENDERMINT_PROOF_VALIDATOR_TITLE =
+  "withdraw_tendermint_update.verify_tendermint_update.withdraw";
+
+export const tendermintProofRewardAddress = (
+  lucid: LucidEvolution,
+  scriptHash: ScriptHash,
+): string => {
+  const network = lucid.config().network;
+  if (!network) {
+    throw new Error("Cardano network is required for stake registration");
+  }
+  return credentialToRewardAddress(network, {
+    type: "Script",
+    hash: scriptHash,
+  });
+};
+
+export const buildTendermintProofStakeRegistration = (
+  lucid: LucidEvolution,
+  rewardAddress: string,
+  deployerPaymentKeyHash: string,
+) =>
+  lucid
+    .newTx()
+    .register.Stake(rewardAddress)
+    .addSignerKey(deployerPaymentKeyHash);
+
+export const parseRewardAccountRegistration = (
+  result: unknown,
+  scriptHash: string,
+): boolean => {
+  if (result === null) return false;
+
+  // Ogmios 6.13 changed this result from a credential-keyed object to a
+  // list whose entries carry the credential kind and hash. Accept both
+  // shapes because the managed local stack currently uses Ogmios 6.12.
+  if (Array.isArray(result)) {
+    if (result.length === 0) return false;
+    if (result.length !== 1) {
+      throw new Error(
+        `Ogmios reward-account query returned multiple entries for ${scriptHash}`,
+      );
+    }
+    const summary = result[0];
+    if (
+      typeof summary !== "object" ||
+      summary === null ||
+      (summary as Record<string, unknown>).from !== "script" ||
+      (summary as Record<string, unknown>).credential !== scriptHash
+    ) {
+      throw new Error(
+        `Ogmios reward-account query did not return script ${scriptHash}`,
+      );
+    }
+    return true;
+  }
+
+  if (typeof result !== "object") {
+    throw new Error("Ogmios reward-account query returned an invalid result");
+  }
+
+  const summaries = result as Record<string, unknown>;
+  const credentials = Object.keys(summaries);
+  if (credentials.length === 0) return false;
+  if (
+    credentials.length !== 1 ||
+    !Object.prototype.hasOwnProperty.call(summaries, scriptHash) ||
+    summaries[scriptHash] === null
+  ) {
+    throw new Error(
+      `Ogmios reward-account query did not return script ${scriptHash}`,
+    );
+  }
+  return true;
+};
+
+export const isTendermintProofStakeCredentialRegistered = async (
+  rewardAddress: string,
+): Promise<boolean> => {
+  const stakeCredential = getAddressDetails(rewardAddress).stakeCredential;
+  if (!stakeCredential || stakeCredential.type !== "Script") {
+    throw new Error(
+      `Tendermint proof reward address does not contain a script stake credential: ${rewardAddress}`,
+    );
+  }
+
+  const ogmiosUrl = Deno.env.get("OGMIOS_URL")?.trim();
+  if (!ogmiosUrl) {
+    throw new Error(
+      "OGMIOS_URL is required to check Tendermint proof stake registration",
+    );
+  }
+
+  let response: unknown;
+  try {
+    response = await queryOgmiosJsonRpc(
+      ogmiosUrl,
+      "queryLedgerState/rewardAccountSummaries",
+      { scripts: [stakeCredential.hash] },
+      20_000,
+      3,
+    );
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Unable to check Tendermint proof stake registration for ${rewardAddress}: ${reason}`,
+    );
+  }
+
+  if (
+    typeof response !== "object" ||
+    response === null ||
+    !("result" in response)
+  ) {
+    throw new Error(
+      "Ogmios reward-account query returned no result field",
+    );
+  }
+  return parseRewardAccountRegistration(
+    (response as { result: unknown }).result,
+    stakeCredential.hash,
+  );
+};
+
+export const ensureTendermintProofStakeRegistration = async (
+  rewardAddress: string,
+  register: () => Promise<unknown>,
+  isRegistered: (address: string) => Promise<boolean> =
+    isTendermintProofStakeCredentialRegistered,
+): Promise<boolean> => {
+  if (await isRegistered(rewardAddress)) return false;
+  await register();
+  return true;
+};
 
 const concatBytes = (...parts: Uint8Array[]): Uint8Array => {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
@@ -439,6 +577,50 @@ export const createDeployment = async (
   );
   referredValidators.push(verifyProofValidator);
 
+  const tendermintProofSetup = await loadConfiguredTendermintProofSetup();
+  const tendermintProofVerificationKey = tendermintProofSetup.verificationKey;
+  const [
+    tendermintProofValidator,
+    tendermintProofScriptHash,
+  ] = await readValidator(
+    TENDERMINT_PROOF_VALIDATOR_TITLE,
+    lucid,
+    [tendermintProofVerificationKey],
+    Data.Tuple([TendermintProofVerificationKeySchema]) as unknown as [
+      typeof tendermintProofVerificationKey,
+    ],
+  );
+  referredValidators.push(tendermintProofValidator);
+  const tendermintProofAddress = tendermintProofRewardAddress(
+    lucid,
+    tendermintProofScriptHash,
+  );
+
+  // Stake registration does not invoke the script. The required signer keeps
+  // this deployment transaction explicitly authorized by the deployer.
+  const registeredTendermintProofStakeCredential =
+    await ensureTendermintProofStakeRegistration(
+      tendermintProofAddress,
+      () =>
+        submitTx(
+          () =>
+            buildTendermintProofStakeRegistration(
+              lucid,
+              tendermintProofAddress,
+              deployerPaymentKeyHash,
+            ),
+          lucid,
+          "RegisterTendermintProofStakeCredential",
+        ),
+    );
+  if (registeredTendermintProofStakeCredential) {
+    reservedDeploymentRefs = await setSpendableWalletUtxos();
+  } else {
+    console.log(
+      "Tendermint proof stake credential is already registered; skipping registration",
+    );
+  }
+
   // load mint port validator
   const [mintPortValidator, mintPortPolicyId] = await readValidator(
     "minting_port.mint_port.mint",
@@ -449,9 +631,12 @@ export const createDeployment = async (
 
   // load spend client validator
   const [spendClientValidator, spendClientScriptHash, spendClientAddress] =
-    await readValidator("spending_client.spend_client.spend", lucid, [
-      mintHostStateNFTPolicyId,
-    ]);
+    await readValidator(
+      "spending_client.spend_client.spend",
+      lucid,
+      [mintHostStateNFTPolicyId, tendermintProofScriptHash],
+      Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+    );
   referredValidators.push(spendClientValidator);
 
   // STT minting policies derive client/connection/channel token names from the
@@ -745,6 +930,14 @@ export const createDeployment = async (
 
   const deploymentInfo: DeploymentTemplate = {
     deployedAt,
+    tendermintClient: {
+      protocol: "07-tendermint-sp1",
+      scriptHash: spendClientScriptHash,
+    },
+    tendermintProofSetup: {
+      verificationKeySha256: tendermintProofSetup.verificationKeySha256,
+      ...tendermintProofSetup.setup,
+    },
     validators: {
       spendClient: {
         title: "spending_client.spend_client.spend",
@@ -752,6 +945,13 @@ export const createDeployment = async (
         scriptHash: spendClientScriptHash,
         address: spendClientAddress,
         refUtxo: refUtxosInfo[spendClientScriptHash],
+      },
+      tendermintProof: {
+        title: TENDERMINT_PROOF_VALIDATOR_TITLE,
+        script: tendermintProofValidator.script,
+        scriptHash: tendermintProofScriptHash,
+        address: tendermintProofAddress,
+        refUtxo: refUtxosInfo[tendermintProofScriptHash],
       },
       spendConnection: {
         title: "spending_connection.spend_connection.spend",

@@ -71,4 +71,63 @@ describe('QueryService queryEvents', () => {
     expect(queryBlockResultsSpy).toHaveBeenNthCalledWith(1, { height: 6n });
     expect(queryBlockResultsSpy).toHaveBeenNthCalledWith(2, { height: 7n });
   });
+
+  it('replays a persisted proof-update client message without the original header redeemer', async () => {
+    const persistedEvents = [
+      {
+        type: 'update_client',
+        attributes: [
+          { key: 'client_id', value: '07-tendermint-0' },
+          { key: 'client_message_any_hex', value: '0a03616263' },
+        ],
+      },
+    ];
+    const cacheService = {
+      loadTxEventsByConfirmedHash: jest.fn().mockResolvedValue(persistedEvents),
+    };
+    const configService = {
+      get: jest.fn().mockReturnValue({
+        validators: {
+          mintClientStt: { scriptHash: 'mint-client-policy' },
+          spendClient: { address: 'addr_test1client' },
+        },
+        hostStateNFT: { policyId: 'host-policy', name: 'host-name' },
+      }),
+    };
+    const service = new QueryService(
+      { warn: jest.fn() } as unknown as Logger,
+      configService as unknown as ConfigService,
+      {} as LucidService,
+      {} as KupoService,
+      {} as HistoryService,
+      {} as MiniProtocalsService,
+      {} as MithrilService,
+      {} as DenomTraceService,
+      cacheService as any,
+    );
+
+    const result = await (service as any)._parseEventClient([
+      {
+        txHash: 'confirmed-proof-tx',
+        assetsPolicy: 'mint-client-policy',
+        assetsName: '',
+      },
+    ]);
+
+    expect(cacheService.loadTxEventsByConfirmedHash).toHaveBeenCalledWith('confirmed-proof-tx');
+    expect(result).toEqual([
+      {
+        code: 0,
+        events: [
+          {
+            type: 'update_client',
+            event_attribute: [
+              { key: 'client_id', value: '07-tendermint-0', index: true },
+              { key: 'client_message_any_hex', value: '0a03616263', index: true },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
 });

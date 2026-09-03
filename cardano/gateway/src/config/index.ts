@@ -2,12 +2,26 @@ import { Network } from '@lucid-evolution/lucid';
 import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
 type DeploymentConfig = {
+  tendermintClient: {
+    protocol: '07-tendermint-sp1' | '07-tendermint-direct';
+    scriptHash: string;
+  };
   validators: {
     spendClient: {
       title: string;
       script: string;
       scriptHash: string;
       address: string;
+    };
+    tendermintProof?: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo?: {
+        txHash: string;
+        outputIndex: number;
+      };
     };
     mintClient: {
       title: string;
@@ -118,6 +132,8 @@ interface Config {
   cardanoEpochParamsEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
   cardanoKoiosApiKey?: string;
+  sp1TendermintProverEndpoint?: string;
+  sp1TendermintProverTimeoutMs: number;
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
@@ -154,13 +170,8 @@ export default (): Partial<Config> => {
       process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
     ),
     cardanoClientTrustingPeriodSeconds: Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400),
-    cardanoClientMaxClockDriftSeconds: positiveGoDurationSecondsEnv(
-      'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS',
-      10,
-    ),
-    cardanoStabilityCheckpointMaxBridgeBlocks: Number(
-      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS || 32,
-    ),
+    cardanoClientMaxClockDriftSeconds: positiveGoDurationSecondsEnv('CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS', 10),
+    cardanoStabilityCheckpointMaxBridgeBlocks: Number(process.env.CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS || 32),
     cardanoStabilityCheckpointMaxHeaderBytes: Number(
       process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 768 * 1024,
     ),
@@ -170,6 +181,8 @@ export default (): Partial<Config> => {
       process.env.CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC),
     cardanoKoiosApiKey:
       process.env.CARDANO_KOIOS_API_KEY || process.env.CARIBIC_KOIOS_API_KEY || process.env.KOIOS_API_KEY,
+    sp1TendermintProverEndpoint: process.env.SP1_TENDERMINT_PROVER_ENDPOINT,
+    sp1TendermintProverTimeoutMs: positiveSafeIntegerEnv('SP1_TENDERMINT_PROVER_TIMEOUT_MS', 7_200_000),
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,

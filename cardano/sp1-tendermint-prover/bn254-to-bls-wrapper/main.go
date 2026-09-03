@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -21,9 +23,11 @@ import (
 	groth16bls12381 "github.com/consensys/gnark/backend/groth16/bls12-381"
 	groth16bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	"github.com/consensys/gnark/backend/witness"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/debug"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
+	gnarklogger "github.com/consensys/gnark/logger"
 	"github.com/consensys/gnark/std/algebra/emulated/sw_bn254"
 	"github.com/consensys/gnark/std/math/emulated"
 	stdgroth16 "github.com/consensys/gnark/std/recursion/groth16"
@@ -38,6 +42,7 @@ const sp1Groth16VKHex = "e1c7d728a5fd961fc179ec5eab938f564deba5b271e1c90c2c29a79
 const sp1VKRootHex = "002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f25352"
 
 const cardanoCommitmentHashDomain = "cardano-ibc:gnark-bsb22:v1:"
+const workerProtocol = "cardano-ibc-bn254-to-bls-wrapper/v1"
 
 type fixtureJSON struct {
 	UpdateClientVKey string `json:"updateClientVkey"`
@@ -138,21 +143,95 @@ type cardanoVKJSON struct {
 	CommitmentHashDomain         string                    `json:"commitment_hash_domain"`
 }
 
+type serializedWriter interface {
+	WriteTo(io.Writer) (int64, error)
+}
+
+type serializedReader interface {
+	ReadFrom(io.Reader) (int64, error)
+}
+
+type keyFileMetadata struct {
+	Bytes  int64  `json:"bytes"`
+	SHA256 string `json:"sha256"`
+}
+
+type outerKeyMetadata struct {
+	Curve            string                     `json:"curve"`
+	DevelopmentSetup bool                       `json:"development_setup"`
+	Constraints      int                        `json:"constraints"`
+	Files            map[string]keyFileMetadata `json:"files"`
+}
+
+type workerRequest struct {
+	RequestID   string       `json:"requestId,omitempty"`
+	Fixture     *fixtureJSON `json:"fixture,omitempty"`
+	FixturePath string       `json:"fixturePath,omitempty"`
+	OutDir      string       `json:"outDir,omitempty"`
+}
+
+type workerResponse struct {
+	RequestID      string  `json:"requestId,omitempty"`
+	OK             bool    `json:"ok"`
+	WrappedProof   string  `json:"wrappedProof,omitempty"`
+	ProgramVKey    string  `json:"programVkey,omitempty"`
+	PublicValues   string  `json:"publicValues,omitempty"`
+	ElapsedSeconds float64 `json:"elapsedSeconds,omitempty"`
+	Error          string  `json:"error,omitempty"`
+}
+
+type workerReady struct {
+	Ready                 bool   `json:"ready"`
+	Protocol              string `json:"protocol"`
+	VerificationKeySHA256 string `json:"verificationKeySha256"`
+}
+
+type workerProofResult struct {
+	proofBytes []byte
+	fixture    *fixtureData
+	elapsed    time.Duration
+}
+
+type outerWorker struct {
+	innerVK        groth16.VerifyingKey
+	circuitVK      stdgroth16.VerifyingKey[sw_bn254.G1Affine, sw_bn254.G2Affine, sw_bn254.GTEl]
+	expectedVKRoot *big.Int
+	outerCCS       constraint.ConstraintSystem
+	outerPK        groth16.ProvingKey
+	outerVK        groth16.VerifyingKey
+	log            io.Writer
+}
+
 func main() {
 	var (
-		fixturePath = flag.String("fixture", "../fixtures/update_client_fixture-groth16.json", "Eureka update-client Groth16 fixture")
-		prove       = flag.Bool("prove", false, "run insecure development setup, outer proof generation, and verification")
+		fixturePath = flag.String("fixture", "../../../studies/sp1_tendermint_cardano/fixtures/update_client_fixture-groth16.json", "Eureka update-client Groth16 fixture")
+		prove       = flag.Bool("prove", false, "generate and verify an outer proof using a fixed key directory")
+		keyDir      = flag.String("key-dir", "", "gitignored directory containing the fixed outer CCS, proving key, and verifying key")
+		setupKeys   = flag.Bool("setup-keys", false, "create the fixed development keys; refuses to overwrite existing key files")
 		outDir      = flag.String("out", "", "optional directory for Cardano-formatted proof and VK artifacts")
+		workerMode  = flag.Bool("worker", false, "load fixed outer proving artifacts once and serve JSON-lines proof requests on stdin")
 	)
 	flag.Parse()
 
-	if err := run(*fixturePath, *prove, *outDir); err != nil {
+	var err error
+	if *workerMode {
+		err = runWorker(*keyDir, *setupKeys, os.Stdin, os.Stdout, os.Stderr)
+	} else {
+		err = run(*fixturePath, *prove, *keyDir, *setupKeys, *outDir)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(fixturePath string, doProve bool, outDir string) error {
+func run(fixturePath string, doProve bool, keyDir string, setupKeys bool, outDir string) error {
+	if setupKeys && !doProve {
+		return errors.New("-setup-keys requires -prove")
+	}
+	if doProve && keyDir == "" {
+		return errors.New("-prove requires -key-dir so proofs reuse a stable outer verifying key")
+	}
 	fixture, err := loadFixture(fixturePath)
 	if err != nil {
 		return err
@@ -251,12 +330,10 @@ func run(fixturePath string, doProve bool, outDir string) error {
 		return nil
 	}
 
-	started = time.Now()
-	outerPK, outerVK, err := groth16.Setup(outerCCS)
+	outerCCS, outerPK, outerVK, err := fixedOuterKeys(outerCCS, keyDir, setupKeys, os.Stdout)
 	if err != nil {
-		return fmt.Errorf("development Groth16 setup: %w", err)
+		return err
 	}
-	fmt.Printf("outer_setup_seconds: %.3f\n", time.Since(started).Seconds())
 
 	started = time.Now()
 	outerProof, err := groth16.Prove(
@@ -302,6 +379,556 @@ func run(fixturePath string, doProve bool, outDir string) error {
 	return nil
 }
 
+func runWorker(
+	keyDir string,
+	setupKeys bool,
+	input io.Reader,
+	output io.Writer,
+	log io.Writer,
+) error {
+	if setupKeys {
+		return errors.New("-worker cannot be combined with -setup-keys; provision fixed keys with the one-shot CLI first")
+	}
+	if keyDir == "" {
+		return errors.New("-worker requires -key-dir")
+	}
+	// The default gnark logger writes to stdout. Reserve stdout for the
+	// JSON-lines protocol and keep all circuit/prover diagnostics on stderr.
+	gnarklogger.SetOutput(log)
+	worker, err := newOuterWorker(keyDir, log)
+	if err != nil {
+		return err
+	}
+	verificationKey, err := cardanoVerificationKey(worker.outerVK)
+	if err != nil {
+		return err
+	}
+	encodedVerificationKey, err := encodeCardanoVerificationKey(verificationKey)
+	if err != nil {
+		return err
+	}
+	verificationKeySHA256 := sha256.Sum256(encodedVerificationKey)
+	encoder := json.NewEncoder(output)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(workerReady{
+		Ready:                 true,
+		Protocol:              workerProtocol,
+		VerificationKeySHA256: hex.EncodeToString(verificationKeySHA256[:]),
+	}); err != nil {
+		return fmt.Errorf("encode worker readiness: %w", err)
+	}
+	fmt.Fprintln(log, "worker_ready: true")
+	return serveWorker(input, output, worker.prove)
+}
+
+func newOuterWorker(keyDir string, log io.Writer) (*outerWorker, error) {
+	innerVK, err := loadSP1VerifyingKey()
+	if err != nil {
+		return nil, err
+	}
+	innerShape, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &publicInputShape{})
+	if err != nil {
+		return nil, fmt.Errorf("compile five-public-input shape: %w", err)
+	}
+	circuitVK, err := stdgroth16.ValueOfVerifyingKey[
+		sw_bn254.G1Affine,
+		sw_bn254.G2Affine,
+		sw_bn254.GTEl,
+	](innerVK)
+	if err != nil {
+		return nil, fmt.Errorf("convert SP1 verification key: %w", err)
+	}
+	expectedVKRootBytes, err := hex.DecodeString(sp1VKRootHex)
+	if err != nil {
+		return nil, fmt.Errorf("decode fixed SP1 verification-key root: %w", err)
+	}
+	expectedVKRoot := new(big.Int).SetBytes(expectedVKRootBytes)
+	outerTemplate := &outerCircuit{
+		Proof:          stdgroth16.PlaceholderProof[sw_bn254.G1Affine, sw_bn254.G2Affine](innerShape),
+		InnerWitness:   stdgroth16.PlaceholderWitness[sw_bn254.ScalarField](innerShape),
+		vk:             circuitVK,
+		expectedVKRoot: expectedVKRoot,
+	}
+
+	started := time.Now()
+	compiledCCS, err := frontend.Compile(ecc.BLS12_381.ScalarField(), r1cs.NewBuilder, outerTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("compile BLS12-381 outer circuit: %w", err)
+	}
+	fmt.Fprintf(log, "outer_compile_seconds: %.3f\n", time.Since(started).Seconds())
+	fmt.Fprintf(log, "outer_constraints: %d\n", compiledCCS.GetNbConstraints())
+	fmt.Fprintf(log, "outer_public_variables_including_one_wire: %d\n", compiledCCS.GetNbPublicVariables())
+	fmt.Fprintf(log, "outer_secret_variables: %d\n", compiledCCS.GetNbSecretVariables())
+	fmt.Fprintf(log, "outer_internal_variables: %d\n", compiledCCS.GetNbInternalVariables())
+	fmt.Fprintf(log, "outer_commitments: %d\n", len(compiledCCS.GetCommitments().CommitmentIndexes()))
+
+	outerCCS, outerPK, outerVK, err := fixedOuterKeys(compiledCCS, keyDir, false, log)
+	if err != nil {
+		return nil, err
+	}
+	if outerPK.CurveID() != ecc.BLS12_381 {
+		return nil, fmt.Errorf("fixed outer proving key uses %s, expected BLS12-381", outerPK.CurveID())
+	}
+	if outerVK.CurveID() != ecc.BLS12_381 {
+		return nil, fmt.Errorf("fixed outer verification key uses %s, expected BLS12-381", outerVK.CurveID())
+	}
+	if outerVK.NbPublicWitness() != compiledCCS.GetNbPublicVariables() {
+		return nil, fmt.Errorf(
+			"fixed outer verification key has %d public wires including the one wire, compiled circuit has %d",
+			outerVK.NbPublicWitness(),
+			compiledCCS.GetNbPublicVariables(),
+		)
+	}
+	return &outerWorker{
+		innerVK:        innerVK,
+		circuitVK:      circuitVK,
+		expectedVKRoot: expectedVKRoot,
+		outerCCS:       outerCCS,
+		outerPK:        outerPK,
+		outerVK:        outerVK,
+		log:            log,
+	}, nil
+}
+
+func (w *outerWorker) prove(request workerRequest) (workerProofResult, error) {
+	startedTotal := time.Now()
+	fixture, err := loadWorkerFixture(request)
+	if err != nil {
+		return workerProofResult{}, err
+	}
+	if request.OutDir != "" {
+		if err := writePublicValuesArtifacts(request.OutDir, fixture.publicValues); err != nil {
+			return workerProofResult{}, err
+		}
+	}
+
+	innerProof, err := loadSP1Proof(fixture.proof)
+	if err != nil {
+		return workerProofResult{}, err
+	}
+	innerWitness, err := newInnerWitness(fixture.publicInputs)
+	if err != nil {
+		return workerProofResult{}, err
+	}
+	innerPublicWitness, err := innerWitness.Public()
+	if err != nil {
+		return workerProofResult{}, fmt.Errorf("extract SP1 public witness: %w", err)
+	}
+	if err := groth16.Verify(innerProof, w.innerVK, innerPublicWitness); err != nil {
+		return workerProofResult{}, fmt.Errorf("native verification of Eureka SP1 proof: %w", err)
+	}
+	fmt.Fprintln(w.log, "inner_native_verified: true")
+
+	circuitProof, err := stdgroth16.ValueOfProof[sw_bn254.G1Affine, sw_bn254.G2Affine](innerProof)
+	if err != nil {
+		return workerProofResult{}, fmt.Errorf("convert SP1 proof: %w", err)
+	}
+	circuitWitness, err := stdgroth16.ValueOfWitness[sw_bn254.ScalarField](innerWitness)
+	if err != nil {
+		return workerProofResult{}, fmt.Errorf("convert SP1 public witness: %w", err)
+	}
+	outerAssignment := &outerCircuit{
+		Proof:              circuitProof,
+		InnerWitness:       circuitWitness,
+		ProgramVKey:        fixture.publicInputs[0],
+		PublicValuesDigest: fixture.publicInputs[1],
+		vk:                 w.circuitVK,
+		expectedVKRoot:     w.expectedVKRoot,
+	}
+	outerWitness, err := frontend.NewWitness(outerAssignment, ecc.BLS12_381.ScalarField())
+	if err != nil {
+		return workerProofResult{}, fmt.Errorf("create BLS12-381 outer witness: %w", err)
+	}
+
+	started := time.Now()
+	outerProof, err := groth16.Prove(
+		w.outerCCS,
+		w.outerPK,
+		outerWitness,
+		backend.WithProverHashToFieldFunction(newCardanoCommitmentHasher()),
+	)
+	if err != nil {
+		return workerProofResult{}, fmt.Errorf("create BLS12-381 outer proof: %w", err)
+	}
+	fmt.Fprintf(w.log, "outer_prove_seconds: %.3f\n", time.Since(started).Seconds())
+
+	outerPublicWitness, err := outerWitness.Public()
+	if err != nil {
+		return workerProofResult{}, fmt.Errorf("extract BLS12-381 public witness: %w", err)
+	}
+	started = time.Now()
+	if err := groth16.Verify(
+		outerProof,
+		w.outerVK,
+		outerPublicWitness,
+		backend.WithVerifierHashToFieldFunction(newCardanoCommitmentHasher()),
+	); err != nil {
+		return workerProofResult{}, fmt.Errorf("verify BLS12-381 outer proof: %w", err)
+	}
+	fmt.Fprintf(w.log, "outer_verify_seconds: %.3f\n", time.Since(started).Seconds())
+	fmt.Fprintln(w.log, "outer_bls12_381_verified: true")
+
+	proofBytes, proofJSON, vkJSON, err := cardanoArtifacts(outerProof, w.outerVK)
+	if err != nil {
+		return workerProofResult{}, err
+	}
+	fmt.Fprintf(w.log, "cardano_extended_proof_bytes: %d\n", len(proofBytes))
+	fmt.Fprintf(w.log, "cardano_vk_ic_points: %d\n", len(vkJSON.IC))
+	if request.OutDir != "" {
+		if err := writeArtifacts(request.OutDir, proofBytes, proofJSON, vkJSON, fixture.publicInputs[:2]); err != nil {
+			return workerProofResult{}, err
+		}
+		fmt.Fprintf(w.log, "artifacts: %s\n", request.OutDir)
+	}
+	return workerProofResult{
+		proofBytes: proofBytes,
+		fixture:    fixture,
+		elapsed:    time.Since(startedTotal),
+	}, nil
+}
+
+func loadWorkerFixture(request workerRequest) (*fixtureData, error) {
+	if request.Fixture != nil && request.FixturePath != "" {
+		return nil, errors.New("request must provide either fixture or fixturePath, not both")
+	}
+	if request.Fixture != nil {
+		return parseFixture(*request.Fixture)
+	}
+	if request.FixturePath != "" {
+		return loadFixture(request.FixturePath)
+	}
+	return nil, errors.New("request must provide fixture or fixturePath")
+}
+
+func serveWorker(
+	input io.Reader,
+	output io.Writer,
+	handler func(workerRequest) (workerProofResult, error),
+) error {
+	scanner := bufio.NewScanner(input)
+	scanner.Buffer(make([]byte, 64*1024), 32*1024*1024)
+	encoder := json.NewEncoder(output)
+	encoder.SetEscapeHTML(false)
+	for scanner.Scan() {
+		var request workerRequest
+		response := workerResponse{}
+		err := decodeWorkerRequest(scanner.Bytes(), &request)
+		response.RequestID = request.RequestID
+		if err != nil {
+			response.Error = err.Error()
+		} else {
+			result, err := handler(request)
+			if err != nil {
+				response.Error = err.Error()
+			} else {
+				response.OK = true
+				response.WrappedProof = "0x" + hex.EncodeToString(result.proofBytes)
+				response.ProgramVKey = result.fixture.programVKeyLabel
+				response.PublicValues = "0x" + hex.EncodeToString(result.fixture.publicValues)
+				response.ElapsedSeconds = result.elapsed.Seconds()
+			}
+		}
+		if err := encoder.Encode(response); err != nil {
+			return fmt.Errorf("encode worker response: %w", err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read worker request: %w", err)
+	}
+	return nil
+}
+
+func decodeWorkerRequest(line []byte, request *workerRequest) error {
+	if len(bytes.TrimSpace(line)) == 0 {
+		return errors.New("decode worker request: empty line")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(line))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(request); err != nil {
+		return fmt.Errorf("decode worker request: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("decode worker request: multiple JSON values on one line")
+		}
+		return fmt.Errorf("decode worker request: %w", err)
+	}
+	return nil
+}
+
+func fixedOuterKeys(
+	compiledCCS constraint.ConstraintSystem,
+	keyDir string,
+	setup bool,
+	log io.Writer,
+) (constraint.ConstraintSystem, groth16.ProvingKey, groth16.VerifyingKey, error) {
+	const (
+		ccsName       = "outer.r1cs"
+		provingName   = "outer.pk"
+		verifyingName = "outer.vk"
+		metadataName  = "manifest.json"
+	)
+	paths := map[string]string{
+		ccsName:       filepath.Join(keyDir, ccsName),
+		provingName:   filepath.Join(keyDir, provingName),
+		verifyingName: filepath.Join(keyDir, verifyingName),
+	}
+
+	if setup {
+		for name, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				return nil, nil, nil, fmt.Errorf("refusing to overwrite existing fixed key file %s", path)
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, nil, nil, fmt.Errorf("inspect fixed key file %s: %w", name, err)
+			}
+		}
+		// These are public proving artifacts, not setup randomness. The prover
+		// container runs as an unprivileged uid and must be able to read the
+		// bind-mounted directory created by the host provisioning command.
+		if err := os.MkdirAll(keyDir, 0o755); err != nil {
+			return nil, nil, nil, fmt.Errorf("create fixed key directory: %w", err)
+		}
+		if err := os.Chmod(keyDir, 0o755); err != nil {
+			return nil, nil, nil, fmt.Errorf("make fixed key directory container-readable: %w", err)
+		}
+
+		started := time.Now()
+		outerPK, outerVK, err := groth16.Setup(compiledCCS)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("development Groth16 setup: %w", err)
+		}
+		fmt.Fprintf(log, "outer_setup_seconds: %.3f\n", time.Since(started).Seconds())
+
+		started = time.Now()
+		if err := writeSerialized(paths[ccsName], compiledCCS, 0o644); err != nil {
+			return nil, nil, nil, fmt.Errorf("persist outer constraint system: %w", err)
+		}
+		if err := writeSerialized(paths[provingName], outerPK, 0o644); err != nil {
+			return nil, nil, nil, fmt.Errorf("persist outer proving key: %w", err)
+		}
+		if err := writeSerialized(paths[verifyingName], outerVK, 0o644); err != nil {
+			return nil, nil, nil, fmt.Errorf("persist outer verifying key: %w", err)
+		}
+		fmt.Fprintf(log, "outer_key_write_seconds: %.3f\n", time.Since(started).Seconds())
+		if err := writeOuterKeyMetadata(
+			filepath.Join(keyDir, metadataName),
+			compiledCCS.GetNbConstraints(),
+			paths,
+		); err != nil {
+			return nil, nil, nil, err
+		}
+		if err := validateAndReportOuterKeyMetadata(log, "setup", keyDir, compiledCCS.GetNbConstraints(), paths); err != nil {
+			return nil, nil, nil, err
+		}
+		return compiledCCS, outerPK, outerVK, nil
+	}
+
+	started := time.Now()
+	outerCCS := groth16.NewCS(ecc.BLS12_381)
+	outerPK := groth16.NewProvingKey(ecc.BLS12_381)
+	outerVK := groth16.NewVerifyingKey(ecc.BLS12_381)
+	if err := readSerialized(paths[ccsName], outerCCS); err != nil {
+		return nil, nil, nil, fmt.Errorf("load fixed outer constraint system: %w", err)
+	}
+	if err := readSerialized(paths[provingName], outerPK); err != nil {
+		return nil, nil, nil, fmt.Errorf("load fixed outer proving key: %w", err)
+	}
+	if err := readSerialized(paths[verifyingName], outerVK); err != nil {
+		return nil, nil, nil, fmt.Errorf("load fixed outer verifying key: %w", err)
+	}
+	fmt.Fprintf(log, "outer_key_load_seconds: %.3f\n", time.Since(started).Seconds())
+
+	compiledHash, err := serializedSHA256(compiledCCS)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("hash compiled outer constraint system: %w", err)
+	}
+	loadedHash, err := serializedSHA256(outerCCS)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("hash fixed outer constraint system: %w", err)
+	}
+	if loadedHash != compiledHash {
+		return nil, nil, nil, fmt.Errorf(
+			"fixed outer constraint system hash %s does not match compiled circuit %s",
+			loadedHash,
+			compiledHash,
+		)
+	}
+	if err := validateAndReportOuterKeyMetadata(log, "load", keyDir, compiledCCS.GetNbConstraints(), paths); err != nil {
+		return nil, nil, nil, err
+	}
+	return outerCCS, outerPK, outerVK, nil
+}
+
+func writeSerialized(path string, value serializedWriter, mode os.FileMode) error {
+	directory := filepath.Dir(path)
+	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	complete := false
+	defer func() {
+		_ = temporary.Close()
+		if !complete {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(mode); err != nil {
+		return err
+	}
+	if _, err := value.WriteTo(temporary); err != nil {
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	complete = true
+	return nil
+}
+
+func readSerialized(path string, value serializedReader) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	read, err := value.ReadFrom(file)
+	if err != nil {
+		return err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if read != info.Size() {
+		return fmt.Errorf("decoder consumed %d of %d bytes", read, info.Size())
+	}
+	return nil
+}
+
+func serializedSHA256(value serializedWriter) (string, error) {
+	digest := sha256.New()
+	if _, err := value.WriteTo(digest); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func fileMetadata(path string) (keyFileMetadata, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return keyFileMetadata{}, err
+	}
+	defer file.Close()
+	digest := sha256.New()
+	bytesWritten, err := io.Copy(digest, file)
+	if err != nil {
+		return keyFileMetadata{}, err
+	}
+	return keyFileMetadata{Bytes: bytesWritten, SHA256: hex.EncodeToString(digest.Sum(nil))}, nil
+}
+
+func validateAndReportOuterKeyMetadata(
+	log io.Writer,
+	mode string,
+	keyDir string,
+	constraints int,
+	paths map[string]string,
+) error {
+	manifestPath := filepath.Join(keyDir, "manifest.json")
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read fixed key manifest %s: %w", manifestPath, err)
+	}
+	var manifest outerKeyMetadata
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return fmt.Errorf("decode fixed key manifest %s: %w", manifestPath, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("decode fixed key manifest %s: multiple JSON values", manifestPath)
+		}
+		return fmt.Errorf("decode fixed key manifest %s: %w", manifestPath, err)
+	}
+	if manifest.Curve != "bls12-381" {
+		return fmt.Errorf("fixed key manifest curve is %q, expected bls12-381", manifest.Curve)
+	}
+	if manifest.Constraints != constraints {
+		return fmt.Errorf(
+			"fixed key manifest records %d constraints, compiled circuit has %d",
+			manifest.Constraints,
+			constraints,
+		)
+	}
+	if len(manifest.Files) != len(paths) {
+		return fmt.Errorf("fixed key manifest records %d files, expected %d", len(manifest.Files), len(paths))
+	}
+	fmt.Fprintf(log, "outer_key_mode: %s\n", mode)
+	fmt.Fprintln(log, "outer_key_manifest_validated: true")
+	for _, name := range []string{"outer.r1cs", "outer.pk", "outer.vk"} {
+		expected, ok := manifest.Files[name]
+		if !ok {
+			return fmt.Errorf("fixed key manifest is missing %s", name)
+		}
+		actual, err := fileMetadata(paths[name])
+		if err != nil {
+			return fmt.Errorf("hash fixed key file %s: %w", paths[name], err)
+		}
+		if actual != expected {
+			return fmt.Errorf(
+				"fixed key file %s has %d bytes and SHA-256 %s, manifest expects %d bytes and %s",
+				paths[name],
+				actual.Bytes,
+				actual.SHA256,
+				expected.Bytes,
+				expected.SHA256,
+			)
+		}
+		fmt.Fprintf(log, "outer_key_%s_bytes: %d\n", name, actual.Bytes)
+		fmt.Fprintf(log, "outer_key_%s_sha256: %s\n", name, actual.SHA256)
+	}
+	return nil
+}
+
+func writeOuterKeyMetadata(path string, constraints int, paths map[string]string) error {
+	files := make(map[string]keyFileMetadata, len(paths))
+	for name, keyPath := range paths {
+		metadata, err := fileMetadata(keyPath)
+		if err != nil {
+			return fmt.Errorf("hash fixed key file %s: %w", keyPath, err)
+		}
+		files[name] = metadata
+	}
+	metadata := outerKeyMetadata{
+		Curve:            "bls12-381",
+		DevelopmentSetup: true,
+		Constraints:      constraints,
+		Files:            files,
+	}
+	encoded, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode fixed key manifest: %w", err)
+	}
+	encoded = append(encoded, '\n')
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		return fmt.Errorf("write fixed key manifest: %w", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		return fmt.Errorf("make fixed key manifest container-readable: %w", err)
+	}
+	return nil
+}
+
 func loadFixture(path string) (*fixtureData, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -311,6 +938,10 @@ func loadFixture(path string) (*fixtureData, error) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		return nil, fmt.Errorf("decode fixture JSON: %w", err)
 	}
+	return parseFixture(fixture)
+}
+
+func parseFixture(fixture fixtureJSON) (*fixtureData, error) {
 	encoded, err := decodeHex(fixture.UpdateMsg)
 	if err != nil {
 		return nil, fmt.Errorf("decode updateMsg: %w", err)
@@ -592,6 +1223,21 @@ func cardanoArtifacts(proof groth16.Proof, vk groth16.VerifyingKey) ([]byte, car
 		CommitmentPoK:         hex.EncodeToString(commitmentPoK[:]),
 		CommitmentHashScalars: commitmentHashScalars,
 	}
+	vkJSON, err := cardanoVerificationKey(v)
+	if err != nil {
+		return nil, cardanoProofJSON{}, cardanoVKJSON{}, err
+	}
+	return proofBytes, proofJSON, vkJSON, nil
+}
+
+func cardanoVerificationKey(vk groth16.VerifyingKey) (cardanoVKJSON, error) {
+	v, ok := vk.(*groth16bls12381.VerifyingKey)
+	if !ok {
+		return cardanoVKJSON{}, fmt.Errorf("expected BLS12-381 verification key, got %T", vk)
+	}
+	if len(v.G1.K) < len(v.CommitmentKeys)+1 {
+		return cardanoVKJSON{}, errors.New("BLS12-381 verification key has an invalid public-input shape")
+	}
 	alpha := v.G1.Alpha.Bytes()
 	beta := v.G2.Beta.Bytes()
 	gamma := v.G2.Gamma.Bytes()
@@ -619,7 +1265,15 @@ func cardanoArtifacts(proof groth16.Proof, vk groth16.VerifyingKey) ([]byte, car
 			GSigmaNeg: hex.EncodeToString(gSigmaNeg[:]),
 		}
 	}
-	return proofBytes, proofJSON, vkJSON, nil
+	return vkJSON, nil
+}
+
+func encodeCardanoVerificationKey(vk cardanoVKJSON) ([]byte, error) {
+	encoded, err := json.MarshalIndent(vk, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode Cardano verification key: %w", err)
+	}
+	return append(encoded, '\n'), nil
 }
 
 func writeArtifacts(outDir string, proofBytes []byte, proof cardanoProofJSON, vk cardanoVKJSON, publicInputs []*big.Int) error {
@@ -644,6 +1298,9 @@ func writeArtifacts(outDir string, proofBytes []byte, proof cardanoProofJSON, vk
 		encoded = append(encoded, '\n')
 		if err := os.WriteFile(filepath.Join(outDir, name), encoded, 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", name, err)
+		}
+		if err := os.Chmod(filepath.Join(outDir, name), 0o644); err != nil {
+			return fmt.Errorf("make %s container-readable: %w", name, err)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(outDir, "proof.bin"), proofBytes, 0o644); err != nil {

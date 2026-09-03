@@ -1,4 +1,4 @@
-module github.com/cardano-foundation/cardano-ibc-incubator/studies/sp1-tendermint-cardano/bn254-to-bls-wrapper
+module github.com/cardano-foundation/cardano-ibc-incubator/cardano/sp1-tendermint-prover/bn254-to-bls-wrapper
 
 go 1.24.0
 

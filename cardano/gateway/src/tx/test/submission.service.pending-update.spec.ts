@@ -39,7 +39,13 @@ describe('SubmissionService pending update strictness', () => {
       }),
     };
     const txEventsServiceMock = {};
-    const ibcTreeCacheServiceMock = { saveAliases: jest.fn() };
+    const ibcTreeCacheServiceMock = {
+      saveAliases: jest.fn(),
+      bindTxEventsToConfirmedTransaction: jest.fn().mockResolvedValue(false),
+      loadTxEventsByConfirmedHash: jest.fn().mockResolvedValue(null),
+      loadPendingTreeSnapshot: jest.fn().mockResolvedValue(null),
+      deletePendingTreeSnapshot: jest.fn().mockResolvedValue(undefined),
+    };
     const historyServiceMock = { findTxByHash: jest.fn() };
     const queryServiceMock = { queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }) };
 
@@ -61,6 +67,25 @@ describe('SubmissionService pending update strictness', () => {
 
     expect(ibcTreePendingUpdatesServiceMock.take).toHaveBeenCalledWith('abc123');
     expect(ibcTreePendingUpdatesServiceMock.takeByExpectedRoot).toHaveBeenCalledWith('root-at-tx');
+  });
+
+  it('restores an exact pending tree snapshot after a Gateway restart', async () => {
+    const snapshot = { getRoot: () => 'root-at-tx' };
+    const cache = (service as any).ibcTreeCacheService;
+    cache.loadPendingTreeSnapshot.mockResolvedValueOnce({
+      tree: snapshot,
+      root: 'root-at-tx',
+    });
+    jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('root-at-tx');
+
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123', 1234)).resolves.toBe('root-at-tx');
+
+    expect(cache.loadPendingTreeSnapshot).toHaveBeenCalledWith('abc123');
+    expect(cache.saveAliases).toHaveBeenCalledWith(
+      snapshot,
+      expect.arrayContaining(['current', 'root:root-at-tx', 'height:1234']),
+    );
+    expect(cache.deletePendingTreeSnapshot).toHaveBeenCalledWith('abc123');
   });
 
   it('fails hard on confirmed tx root lookup error instead of falling back to current HostState', async () => {

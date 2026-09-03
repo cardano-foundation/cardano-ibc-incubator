@@ -1,0 +1,121 @@
+use aiken/builtin
+use aiken/collection/list
+use aiken/collection/pairs
+use cardano/assets.{PolicyId}
+use cardano/transaction.{Input, OutputReference, Spend, Transaction}
+use ibc/auth
+use ibc/client/ics_007_tendermint_client/client_datum.{
+  ClientDatum, ClientDatumState,
+} as client_datum_mod
+use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
+use ibc/client/ics_007_tendermint_client/legacy_client_redeemer.{
+  LegacySpendClientRedeemer, ProofUpdateDisabled, UpdateClient,
+}
+use ibc/client/ics_007_tendermint_client/misbehaviour_handle as misbehaviour_handle_mod
+use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
+use ibc/client/ics_007_tendermint_client/update as update_mod
+use ibc/core/ics_002_client_semantics/types/client as client_status_mod
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/utils/tx_time.{TxTime} as tx_time_mod
+use ibc/utils/validator_utils
+
+fn find_host_state_input(
+  inputs: List<Input>,
+  nft_policy: PolicyId,
+) -> Option<Input> {
+  list.find(
+    inputs,
+    fn(input) {
+      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
+    },
+  )
+}
+
+/// Legacy protocol entry point. It retains native Aiken Tendermint
+/// verification for explicitly direct deployments and compatibility testing;
+/// new deployments use `spending_client.spend_client`.
+validator spend_client(host_state_nft_policy_id: PolicyId) {
+  spend(
+    datum: Option<ClientDatum>,
+    redeemer: LegacySpendClientRedeemer,
+    spent_output_ref: OutputReference,
+    transaction: Transaction,
+  ) {
+    let Transaction { outputs, inputs, validity_range, redeemers, .. } =
+      transaction
+
+    expect Some(host_input) =
+      find_host_state_input(inputs, host_state_nft_policy_id)
+    expect Some(spent_host_state_redeemer) =
+      pairs.get_first(redeemers, Spend(host_input.output_reference))
+    let Pair(host_redeemer_tag, host_redeemer_fields) =
+      builtin.un_constr_data(spent_host_state_redeemer)
+    expect host_redeemer_tag == 4
+    expect [_, _, _] = host_redeemer_fields
+
+    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+    let spent_output = spent_input.output
+    expect Some(datum) = datum
+
+    let updated_output =
+      validator_utils.find_unique_continuation_output(
+        spent_output,
+        outputs,
+        datum.token,
+      )
+    expect auth.contains_only_auth_tokens(updated_output, [datum.token])
+    expect updated_datum: ClientDatum =
+      validator_utils.get_inline_datum(updated_output)
+
+    when redeemer is {
+      UpdateClient { msg } -> {
+        let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
+        let tx_valid_from = validator_utils.get_tx_valid_from(validity_range)
+
+        expect
+          client_state_mod.status(
+            datum.state.client_state,
+            tx_valid_to * 1_000_000,
+            datum.state.consensus_states,
+          ) == client_status_mod.Active
+
+        let tx_time =
+          TxTime {
+            valid_from: tx_valid_from * 1_000_000,
+            valid_to: tx_valid_to * 1_000_000,
+          }
+        expect
+          update_mod.verify_client_message(
+            datum.state.client_state,
+            tx_time,
+            datum.state.consensus_states,
+            msg,
+          )
+
+        let found_misbehaviour =
+          misbehaviour_handle_mod.check_for_misbehaviour(
+            msg,
+            datum.state.consensus_states,
+          )
+
+        if found_misbehaviour {
+          client_datum_mod.update_state_on_misbehaviour(datum, updated_datum)?
+        } else {
+          expect HeaderCase(header) = msg
+          client_datum_mod.update_state(
+            datum,
+            updated_datum,
+            header,
+            tx_valid_from,
+          )?
+        }
+      }
+
+      ProofUpdateDisabled -> False
+    }
+  }
+
+  else(_) {
+    fail
+  }
+}

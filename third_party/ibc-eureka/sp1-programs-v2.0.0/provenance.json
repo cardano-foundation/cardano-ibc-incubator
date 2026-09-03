@@ -1,0 +1,22 @@
+{
+  "sourceRepository": "https://github.com/cosmos/ibc-contracts",
+  "release": "sp1-programs-v2.0.0",
+  "commit": "ef25a661a8be156d4908956e1055ca40cd67adb7",
+  "retrievedAt": "2026-08-30",
+  "license": "Apache-2.0",
+  "licenseSource": "https://github.com/cosmos/ibc-contracts/blob/ef25a661a8be156d4908956e1055ca40cd67adb7/LICENSE.md",
+  "programs": [
+    {
+      "name": "sp1-ics07-tendermint-update-client",
+      "sourceUrl": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-update-client",
+      "bytes": 820056,
+      "sha256": "6a6a40df2b1339455de7b238fdf3e914f4c2f99e85b8fc4abb65fb1664f42270"
+    },
+    {
+      "name": "sp1-ics07-tendermint-misbehaviour",
+      "sourceUrl": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-misbehaviour",
+      "bytes": 833328,
+      "sha256": "6ec141ebb604565dfb7669f8482bd3eacc57ae35158ba3931f1c20f78f7bf921"
+    }
+  ]
+}

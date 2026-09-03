@@ -23,6 +23,13 @@ type DeploymentVoucherMetadata = {
   address: string;
 };
 
+export type TendermintClientProtocol = '07-tendermint-sp1' | '07-tendermint-direct';
+
+type DeploymentTendermintClient = {
+  protocol: TendermintClientProtocol;
+  scriptHash: string;
+};
+
 type DeploymentSpendChannelValidator = DeploymentValidator & {
   refValidator: {
     acknowledge_packet: DeploymentRefValidator;
@@ -56,9 +63,11 @@ type DeploymentTraceRegistry = {
 export type DeploymentConfig = {
   deployedAt: string;
   hostStateNFT: AuthToken;
+  tendermintClient: DeploymentTendermintClient;
   validators: {
     hostStateStt: DeploymentValidator;
     spendClient: DeploymentValidator;
+    tendermintProof?: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
     spendMockModule?: DeploymentValidator;
@@ -107,6 +116,11 @@ type BridgeManifestVoucherMetadata = {
   address: string;
 };
 
+type BridgeManifestTendermintClient = {
+  protocol: TendermintClientProtocol;
+  script_hash: string;
+};
+
 type BridgeManifestSpendChannelValidator = BridgeManifestValidator & {
   ref_validator: {
     acknowledge_packet: BridgeManifestRefValidator;
@@ -150,9 +164,11 @@ export type BridgeManifest = {
     network: string;
   };
   host_state_nft: BridgeManifestAuthToken;
+  tendermint_client: BridgeManifestTendermintClient;
   validators: {
     host_state_stt: BridgeManifestValidator;
     spend_client: BridgeManifestValidator;
+    tendermint_proof?: BridgeManifestValidator;
     spend_connection: BridgeManifestValidator;
     spend_channel: BridgeManifestSpendChannelValidator;
     spend_mock_module?: BridgeManifestValidator;
@@ -229,6 +245,44 @@ function requireNonNegativeInteger(value: unknown, path: string): number {
     `Invalid bridge config: "${path}" must be a non-negative integer`,
   );
   return value;
+}
+
+function requireTendermintClientProtocol(value: unknown, path: string): TendermintClientProtocol {
+  assert(
+    value === '07-tendermint-sp1' || value === '07-tendermint-direct',
+    `Invalid bridge config: "${path}" must be "07-tendermint-sp1" or "07-tendermint-direct"`,
+  );
+  return value;
+}
+
+function requireDeploymentTendermintClient(value: unknown, path: string): DeploymentTendermintClient {
+  const client = requireObject(value, path);
+  return {
+    protocol: requireTendermintClientProtocol(client.protocol, `${path}.protocol`),
+    scriptHash: requireNonEmptyString(client.scriptHash, `${path}.scriptHash`),
+  };
+}
+
+function requireManifestTendermintClient(value: unknown, path: string): BridgeManifestTendermintClient {
+  const client = requireObject(value, path);
+  return {
+    protocol: requireTendermintClientProtocol(client.protocol, `${path}.protocol`),
+    script_hash: requireNonEmptyString(client.script_hash, `${path}.script_hash`),
+  };
+}
+
+function validateTendermintClientBinding(
+  tendermintClient: DeploymentTendermintClient,
+  validators: { spendClient: DeploymentValidator; tendermintProof?: DeploymentValidator },
+): void {
+  assert(
+    tendermintClient.scriptHash === validators.spendClient.scriptHash,
+    'Invalid bridge config: "tendermintClient.scriptHash" must equal "validators.spendClient.scriptHash"',
+  );
+  assert(
+    tendermintClient.protocol !== '07-tendermint-sp1' || validators.tendermintProof !== undefined,
+    'Invalid bridge config: "validators.tendermintProof" is required for protocol "07-tendermint-sp1"',
+  );
 }
 
 function requireIsoTimestamp(value: unknown, path: string): string {
@@ -332,7 +386,10 @@ function requireDeploymentSpendChannelValidator(value: unknown, path: string): D
         refValidator.chan_close_confirm,
         `${path}.refValidator.chan_close_confirm`,
       ),
-      chan_close_init: requireDeploymentRefValidator(refValidator.chan_close_init, `${path}.refValidator.chan_close_init`),
+      chan_close_init: requireDeploymentRefValidator(
+        refValidator.chan_close_init,
+        `${path}.refValidator.chan_close_init`,
+      ),
       chan_open_ack: requireDeploymentRefValidator(refValidator.chan_open_ack, `${path}.refValidator.chan_open_ack`),
       chan_open_confirm: requireDeploymentRefValidator(
         refValidator.chan_open_confirm,
@@ -364,7 +421,10 @@ function requireManifestSpendChannelValidator(value: unknown, path: string): Bri
         refValidator.chan_close_confirm,
         `${path}.ref_validator.chan_close_confirm`,
       ),
-      chan_close_init: requireManifestRefValidator(refValidator.chan_close_init, `${path}.ref_validator.chan_close_init`),
+      chan_close_init: requireManifestRefValidator(
+        refValidator.chan_close_init,
+        `${path}.ref_validator.chan_close_init`,
+      ),
       chan_open_ack: requireManifestRefValidator(refValidator.chan_open_ack, `${path}.ref_validator.chan_open_ack`),
       chan_open_confirm: requireManifestRefValidator(
         refValidator.chan_open_confirm,
@@ -451,6 +511,20 @@ function manifestAuthTokenToDeployment(authToken: BridgeManifestAuthToken): Auth
   };
 }
 
+function deploymentTendermintClientToManifest(client: DeploymentTendermintClient): BridgeManifestTendermintClient {
+  return {
+    protocol: client.protocol,
+    script_hash: client.scriptHash,
+  };
+}
+
+function manifestTendermintClientToDeployment(client: BridgeManifestTendermintClient): DeploymentTendermintClient {
+  return {
+    protocol: client.protocol,
+    scriptHash: client.script_hash,
+  };
+}
+
 function deploymentRefUtxoToManifest(refUtxo: RefUtxo): BridgeManifestRefUtxo {
   return {
     tx_hash: refUtxo.txHash,
@@ -481,17 +555,13 @@ function manifestValidatorToDeployment(validator: BridgeManifestValidator): Depl
   };
 }
 
-function deploymentVoucherMetadataToManifest(
-  validator: DeploymentVoucherMetadata,
-): BridgeManifestVoucherMetadata {
+function deploymentVoucherMetadataToManifest(validator: DeploymentVoucherMetadata): BridgeManifestVoucherMetadata {
   return {
     address: validator.address,
   };
 }
 
-function manifestVoucherMetadataToDeployment(
-  validator: BridgeManifestVoucherMetadata,
-): DeploymentVoucherMetadata {
+function manifestVoucherMetadataToDeployment(validator: BridgeManifestVoucherMetadata): DeploymentVoucherMetadata {
   return {
     address: validator.address,
   };
@@ -533,7 +603,9 @@ function manifestTraceRegistryToDeployment(traceRegistry: BridgeManifestTraceReg
   };
 }
 
-function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValidator): BridgeManifestSpendChannelValidator {
+function deploymentSpendChannelToManifest(
+  validator: DeploymentSpendChannelValidator,
+): BridgeManifestSpendChannelValidator {
   return {
     ...deploymentValidatorToManifest(validator),
     ref_validator: {
@@ -550,7 +622,9 @@ function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValid
   };
 }
 
-function manifestSpendChannelToDeployment(validator: BridgeManifestSpendChannelValidator): DeploymentSpendChannelValidator {
+function manifestSpendChannelToDeployment(
+  validator: BridgeManifestSpendChannelValidator,
+): DeploymentSpendChannelValidator {
   return {
     ...manifestValidatorToDeployment(validator),
     refValidator: {
@@ -572,36 +646,59 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   const validators = requireObject(deploymentAny.validators, 'validators');
   const modules = requireObject(deploymentAny.modules, 'modules');
 
+  const normalizedValidators: DeploymentConfig['validators'] = {
+    hostStateStt: requireDeploymentValidator(validators.hostStateStt, 'validators.hostStateStt'),
+    spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
+    ...(validators.tendermintProof
+      ? { tendermintProof: requireDeploymentValidator(validators.tendermintProof, 'validators.tendermintProof') }
+      : {}),
+    spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection'),
+    spendChannel: requireDeploymentSpendChannelValidator(validators.spendChannel, 'validators.spendChannel'),
+    ...(validators.spendMockModule
+      ? { spendMockModule: requireDeploymentValidator(validators.spendMockModule, 'validators.spendMockModule') }
+      : {}),
+    ...(validators.spendTraceRegistry
+      ? {
+          spendTraceRegistry: requireDeploymentValidator(
+            validators.spendTraceRegistry,
+            'validators.spendTraceRegistry',
+          ),
+        }
+      : {}),
+    spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
+    mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier'),
+    verifyProof: requireDeploymentValidator(validators.verifyProof, 'validators.verifyProof'),
+    mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt'),
+    mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
+    mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
+    mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
+    mintTransferEscrowShard: requireDeploymentValidator(
+      validators.mintTransferEscrowShard,
+      'validators.mintTransferEscrowShard',
+    ),
+    mintPort: requireDeploymentValidator(validators.mintPort, 'validators.mintPort'),
+    ...(validators.voucherMetadata
+      ? { voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata') }
+      : {}),
+  };
+
+  // Existing handler.json files predate protocol metadata. They used direct
+  // update mode even though the deployment also included the proof validator,
+  // so missing metadata always means the legacy direct protocol.
+  // New SP1 deployments always write an explicit protocol and script binding.
+  const tendermintClient = deploymentAny.tendermintClient
+    ? requireDeploymentTendermintClient(deploymentAny.tendermintClient, 'tendermintClient')
+    : {
+        protocol: '07-tendermint-direct' as const,
+        scriptHash: normalizedValidators.spendClient.scriptHash,
+      };
+  validateTendermintClientBinding(tendermintClient, normalizedValidators);
+
   return {
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
     hostStateNFT: requireAuthToken(deploymentAny.hostStateNFT, 'hostStateNFT'),
-    validators: {
-      hostStateStt: requireDeploymentValidator(validators.hostStateStt, 'validators.hostStateStt'),
-      spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
-      spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection'),
-      spendChannel: requireDeploymentSpendChannelValidator(validators.spendChannel, 'validators.spendChannel'),
-      ...(validators.spendMockModule
-        ? { spendMockModule: requireDeploymentValidator(validators.spendMockModule, 'validators.spendMockModule') }
-        : {}),
-      ...(validators.spendTraceRegistry
-        ? { spendTraceRegistry: requireDeploymentValidator(validators.spendTraceRegistry, 'validators.spendTraceRegistry') }
-        : {}),
-      spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
-      mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier'),
-      verifyProof: requireDeploymentValidator(validators.verifyProof, 'validators.verifyProof'),
-      mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt'),
-      mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
-      mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
-      mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
-      mintTransferEscrowShard: requireDeploymentValidator(
-        validators.mintTransferEscrowShard,
-        'validators.mintTransferEscrowShard',
-      ),
-      mintPort: requireDeploymentValidator(validators.mintPort, 'validators.mintPort'),
-      ...(validators.voucherMetadata
-        ? { voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata') }
-        : {}),
-    },
+    tendermintClient,
+    validators: normalizedValidators,
     modules: {
       transfer: requireDeploymentModule(modules.transfer, 'modules.transfer'),
       ...(modules.mock ? { mock: requireDeploymentModule(modules.mock, 'modules.mock') } : {}),
@@ -625,14 +722,18 @@ export function normalizeHandlerJsonDeploymentConfig(
   return {
     deployment: normalizedDeployment,
     bridgeManifest: {
-      schema_version: 4,
+      schema_version: 5,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
       cardano: normalizedCardano,
       host_state_nft: deploymentAuthTokenToManifest(normalizedDeployment.hostStateNFT),
+      tendermint_client: deploymentTendermintClientToManifest(normalizedDeployment.tendermintClient),
       validators: {
         host_state_stt: deploymentValidatorToManifest(normalizedDeployment.validators.hostStateStt),
         spend_client: deploymentValidatorToManifest(normalizedDeployment.validators.spendClient),
+        ...(normalizedDeployment.validators.tendermintProof
+          ? { tendermint_proof: deploymentValidatorToManifest(normalizedDeployment.validators.tendermintProof) }
+          : {}),
         spend_connection: deploymentValidatorToManifest(normalizedDeployment.validators.spendConnection),
         spend_channel: deploymentSpendChannelToManifest(normalizedDeployment.validators.spendChannel),
         ...(normalizedDeployment.validators.spendMockModule
@@ -676,19 +777,40 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   const manifestAny = requireObject(manifest, 'bridgeManifest');
   const validators = requireObject(manifestAny.validators, 'validators');
   const modules = requireObject(manifestAny.modules, 'modules');
+  const inputSchemaVersion = requireNonNegativeInteger(manifestAny.schema_version, 'schema_version');
+  assert(
+    inputSchemaVersion === 4 || inputSchemaVersion === 5,
+    'Invalid bridge config: "schema_version" must be 4 or 5',
+  );
+  const spendClient = requireManifestValidator(validators.spend_client, 'validators.spend_client');
+  const tendermintClient =
+    inputSchemaVersion === 4
+      ? {
+          protocol: '07-tendermint-direct' as const,
+          script_hash: spendClient.script_hash,
+        }
+      : requireManifestTendermintClient(manifestAny.tendermint_client, 'tendermint_client');
 
   // Manifest startup is the inverse path: validate the public document, then
   // rebuild the internal deployment shape so downstream Gateway code stays
-  // unaware of which bootstrap source was used.
+  // unaware of which bootstrap source was used. Schema 4 predates protocol
+  // metadata and described direct deployments, so it is upgraded in memory to
+  // the canonical schema 5 form with an explicit direct binding.
   const bridgeManifest: BridgeManifest = {
-    schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
+    schema_version: 5,
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
     deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
-    cardano: requireCardanoIdentity(requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity),
+    cardano: requireCardanoIdentity(
+      requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity,
+    ),
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
+    tendermint_client: tendermintClient,
     validators: {
       host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
-      spend_client: requireManifestValidator(validators.spend_client, 'validators.spend_client'),
+      spend_client: spendClient,
+      ...(validators.tendermint_proof
+        ? { tendermint_proof: requireManifestValidator(validators.tendermint_proof, 'validators.tendermint_proof') }
+        : {}),
       spend_connection: requireManifestValidator(validators.spend_connection, 'validators.spend_connection'),
       spend_channel: requireManifestSpendChannelValidator(validators.spend_channel, 'validators.spend_channel'),
       ...(validators.spend_mock_module
@@ -702,7 +824,10 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
             ),
           }
         : {}),
-      spend_transfer_module: requireManifestValidator(validators.spend_transfer_module, 'validators.spend_transfer_module'),
+      spend_transfer_module: requireManifestValidator(
+        validators.spend_transfer_module,
+        'validators.spend_transfer_module',
+      ),
       mint_identifier: requireManifestValidator(validators.mint_identifier, 'validators.mint_identifier'),
       verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof'),
       mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
@@ -715,7 +840,12 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       ),
       mint_port: requireManifestValidator(validators.mint_port, 'validators.mint_port'),
       ...(validators.voucher_metadata
-        ? { voucher_metadata: requireManifestVoucherMetadata(validators.voucher_metadata, 'validators.voucher_metadata') }
+        ? {
+            voucher_metadata: requireManifestVoucherMetadata(
+              validators.voucher_metadata,
+              'validators.voucher_metadata',
+            ),
+          }
         : {}),
     },
     modules: {
@@ -728,19 +858,26 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       : {}),
   };
 
-  assert(
-    bridgeManifest.schema_version === 4,
-    'Invalid bridge config: "schema_version" must be 4',
-  );
+  const deploymentTendermintClient = manifestTendermintClientToDeployment(bridgeManifest.tendermint_client);
+  validateTendermintClientBinding(deploymentTendermintClient, {
+    spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
+    ...(bridgeManifest.validators.tendermint_proof
+      ? { tendermintProof: manifestValidatorToDeployment(bridgeManifest.validators.tendermint_proof) }
+      : {}),
+  });
 
   return {
     bridgeManifest,
     deployment: {
       deployedAt: bridgeManifest.deployed_at,
       hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
+      tendermintClient: deploymentTendermintClient,
       validators: {
         hostStateStt: manifestValidatorToDeployment(bridgeManifest.validators.host_state_stt),
         spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
+        ...(bridgeManifest.validators.tendermint_proof
+          ? { tendermintProof: manifestValidatorToDeployment(bridgeManifest.validators.tendermint_proof) }
+          : {}),
         spendConnection: manifestValidatorToDeployment(bridgeManifest.validators.spend_connection),
         spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
         ...(bridgeManifest.validators.spend_mock_module
@@ -758,9 +895,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
         mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),
         mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
-        mintTransferEscrowShard: manifestValidatorToDeployment(
-          bridgeManifest.validators.mint_transfer_escrow_shard,
-        ),
+        mintTransferEscrowShard: manifestValidatorToDeployment(bridgeManifest.validators.mint_transfer_escrow_shard),
         mintPort: manifestValidatorToDeployment(bridgeManifest.validators.mint_port),
         ...(bridgeManifest.validators.voucher_metadata
           ? {
@@ -770,8 +905,12 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       },
       modules: {
         transfer: requireDeploymentModule(bridgeManifest.modules.transfer, 'modules.transfer'),
-        ...(bridgeManifest.modules.mock ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') } : {}),
-        ...(bridgeManifest.modules.icq ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') } : {}),
+        ...(bridgeManifest.modules.mock
+          ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') }
+          : {}),
+        ...(bridgeManifest.modules.icq
+          ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') }
+          : {}),
       },
       ...(bridgeManifest.trace_registry
         ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
@@ -798,9 +937,7 @@ export function loadBridgeConfigFromEnv(
   // Startup must have a single source of truth. If both are set, we stop early
   // instead of guessing which deployment description should win.
   if (bridgeManifestPath && explicitHandlerPath) {
-    throw new Error(
-      'BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive; set only one startup source',
-    );
+    throw new Error('BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive; set only one startup source');
   }
 
   const cardanoNetworkMagic = Number(env.CARDANO_CHAIN_NETWORK_MAGIC || 42);

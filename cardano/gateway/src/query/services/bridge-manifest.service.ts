@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BridgeManifest } from '../../config/bridge-manifest';
-import {
-  QueryBridgeManifestResponse,
-} from '@cardano-ibc/proto-types/build/ibc/cardano/v1/query';
+import { QueryBridgeManifestResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/query';
 
 @Injectable()
 export class BridgeManifestService {
@@ -34,15 +32,21 @@ export class BridgeManifestService {
           network_magic: BigInt(manifest.cardano.network_magic),
         },
         validators: {
-          ...manifest.validators,
           host_state_stt: this.toGrpcValidator(manifest.validators.host_state_stt),
           spend_client: this.toGrpcValidator(manifest.validators.spend_client),
+          tendermint_proof: manifest.validators.tendermint_proof
+            ? this.toGrpcValidator(manifest.validators.tendermint_proof)
+            : undefined,
           spend_connection: this.toGrpcValidator(manifest.validators.spend_connection),
           spend_channel: {
             ...this.toGrpcValidator(manifest.validators.spend_channel),
             ref_validator: {
-              acknowledge_packet: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.acknowledge_packet),
-              chan_close_confirm: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.chan_close_confirm),
+              acknowledge_packet: this.toGrpcRefValidator(
+                manifest.validators.spend_channel.ref_validator.acknowledge_packet,
+              ),
+              chan_close_confirm: this.toGrpcRefValidator(
+                manifest.validators.spend_channel.ref_validator.chan_close_confirm,
+              ),
               chan_close_init: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.chan_close_init),
               chan_open_ack: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.chan_open_ack),
               chan_open_confirm: this.toGrpcRefValidator(
@@ -56,12 +60,22 @@ export class BridgeManifestService {
               timeout_packet: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.timeout_packet),
             },
           },
+          spend_mock_module: manifest.validators.spend_mock_module
+            ? this.toGrpcValidator(manifest.validators.spend_mock_module)
+            : undefined,
+          spend_trace_registry: manifest.validators.spend_trace_registry
+            ? this.toGrpcValidator(manifest.validators.spend_trace_registry)
+            : undefined,
           spend_transfer_module: this.toGrpcValidator(manifest.validators.spend_transfer_module),
+          mint_identifier: this.toGrpcValidator(manifest.validators.mint_identifier),
           verify_proof: this.toGrpcValidator(manifest.validators.verify_proof),
           mint_client_stt: this.toGrpcValidator(manifest.validators.mint_client_stt),
           mint_connection_stt: this.toGrpcValidator(manifest.validators.mint_connection_stt),
           mint_channel_stt: this.toGrpcValidator(manifest.validators.mint_channel_stt),
           mint_voucher: this.toGrpcValidator(manifest.validators.mint_voucher),
+          mint_transfer_escrow_shard: this.toGrpcValidator(manifest.validators.mint_transfer_escrow_shard),
+          mint_port: this.toGrpcValidator(manifest.validators.mint_port),
+          voucher_metadata: manifest.validators.voucher_metadata,
         },
       },
     };

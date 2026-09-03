@@ -1,8 +1,10 @@
+use aiken/builtin
+use aiken/cbor
 use aiken/collection/list
 use aiken/fuzz
 use aiken/interval
-use cardano/address.{from_script}
-use cardano/assets.{PolicyId, from_asset}
+use cardano/address.{Script, from_script}
+use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -11,7 +13,9 @@ use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
-use ibc/client/ics_007_tendermint_client/client_redeemer.{UpdateClient}
+use ibc/client/ics_007_tendermint_client/client_redeemer.{
+  DirectUpdateDisabled, SpendClientRedeemer, UpdateClientProof,
+}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
   BlockID, PartSetHeader,
@@ -29,11 +33,18 @@ use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/legacy_client_redeemer.{
+  LegacySpendClientRedeemer, ProofUpdateDisabled, UpdateClient,
+}
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
-use spending_client
+use spending_client as spending_client_proof
+use spending_client_legacy as spending_client
+
+const mock_proof_validator_hash =
+  #"11111111111111111111111111111111111111111111111111111111"
 
 type MockData {
   host_state_nft_policy_id: PolicyId,
@@ -1500,6 +1511,29 @@ test prop_client_update_rejects_wrong_host_redeemer(_seed via fuzz.int()) fail {
   )
 }
 
+test client_update_rejects_malformed_update_client_host_redeemer() fail {
+  let mock = setup()
+  let malformed: Redeemer =
+    builtin.constr_data(4, [builtin.list_data([]), builtin.list_data([])])
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock.input, mock.host_state_input],
+      outputs: [mock.host_state_output],
+      redeemers: [
+        Pair(Spend(mock.host_state_input.output_reference), malformed),
+      ],
+    }
+
+  spending_client.spend_client.spend(
+    mock.host_state_nft_policy_id,
+    None,
+    UpdateClient { msg: HeaderCase(header_mod.null_header()) },
+    mock.output_reference,
+    transaction,
+  )
+}
+
 test prop_client_update_rejects_missing_host_state(_seed via fuzz.int()) fail {
   fuzz.label(@"regression.contract.client.update.invalid_missing_host_state")
 
@@ -1518,5 +1552,250 @@ test prop_client_update_rejects_missing_host_state(_seed via fuzz.int()) fail {
     UpdateClient { msg: HeaderCase(header_mod.null_header()) },
     mock.output_reference,
     transaction,
+  )
+}
+
+fn proof_update_client_datum(mock: MockData) -> ClientDatum {
+  let latest_height = Height { revision_number: 1, revision_height: 1 }
+  ClientDatum {
+    state: ClientDatumState {
+      client_state: ClientState {
+        chain_id: #"636861696e2d31",
+        trust_level: unchecked_rational.new(1, 3),
+        trusting_period: 1,
+        unbonding_period: 2,
+        max_clock_drift: 1,
+        frozen_height: Height { revision_number: 0, revision_height: 0 },
+        latest_height,
+        proof_specs: [],
+      },
+      consensus_states: [],
+      processed_times: [],
+      processed_heights: [],
+    },
+    token: mock.client_token,
+  }
+}
+
+fn spend_active_update(
+  mock: MockData,
+  client_datum: ClientDatum,
+  client_output: Output,
+  extra_outputs: List<Output>,
+  withdrawal_amount: Int,
+  redeemer: SpendClientRedeemer,
+) -> Bool {
+  let client_input = update_client_input_datum(client_datum, mock.input)
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [client_input, mock.host_state_input],
+      outputs: [client_output, mock.host_state_output, ..extra_outputs],
+      withdrawals: [Pair(Script(mock_proof_validator_hash), withdrawal_amount)],
+      redeemers: host_state_update_client_redeemers(mock.host_state_input),
+    }
+
+  spending_client_proof.spend_client.spend(
+    mock.host_state_nft_policy_id,
+    mock_proof_validator_hash,
+    Some(client_datum),
+    redeemer,
+    mock.output_reference,
+    transaction,
+  )
+}
+
+fn check_proof_update_withdrawal(withdrawal_amount: Int) -> Bool {
+  let mock = setup()
+  let client_datum = proof_update_client_datum(mock)
+  let client_output =
+    update_client_output_datum(client_datum, mock.input.output)
+  spend_active_update(
+    mock,
+    client_datum,
+    client_output,
+    [],
+    withdrawal_amount,
+    UpdateClientProof,
+  )
+}
+
+test proof_update_redeemer_preserves_constructor_one_encoding() {
+  cbor.serialise(UpdateClientProof) == #"d87a80"
+}
+
+test active_redeemer_decoder_rejects_legacy_direct_tag_zero() fail {
+  let legacy_redeemer: LegacySpendClientRedeemer =
+    UpdateClient { msg: HeaderCase(header_mod.null_header()) }
+  expect Some(data) = cbor.deserialise(cbor.serialise(legacy_redeemer))
+  expect _active_redeemer: SpendClientRedeemer = data
+  True
+}
+
+test legacy_proof_tombstone_preserves_constructor_one_encoding() {
+  cbor.serialise(ProofUpdateDisabled) == #"d87a80"
+}
+
+test proof_update_accepts_pinned_zero_withdrawal() {
+  check_proof_update_withdrawal(0)
+}
+
+test active_client_rejects_disabled_direct_constructor() fail {
+  let mock = setup()
+  let client_datum = proof_update_client_datum(mock)
+  let client_output =
+    update_client_output_datum(client_datum, mock.input.output)
+  spend_active_update(
+    mock,
+    client_datum,
+    client_output,
+    [],
+    0,
+    DirectUpdateDisabled,
+  )
+}
+
+test legacy_client_rejects_disabled_proof_constructor() fail {
+  let mock = setup()
+  let client_datum = proof_update_client_datum(mock)
+  let client_input = update_client_input_datum(client_datum, mock.input)
+  let client_output =
+    update_client_output_datum(client_datum, client_input.output)
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [client_input, mock.host_state_input],
+      outputs: [client_output, mock.host_state_output],
+      redeemers: host_state_update_client_redeemers(mock.host_state_input),
+    }
+
+  spending_client.spend_client.spend(
+    mock.host_state_nft_policy_id,
+    Some(client_datum),
+    ProofUpdateDisabled,
+    mock.output_reference,
+    transaction,
+  )
+}
+
+/// Minimal proof-mode transaction used by the transaction-budget gate. The
+/// proof withdrawal validates the state transition; this validator only pins
+/// that withdrawal and the matching HostState UpdateClient spend.
+test proof_update_budget_gate_succeeds() {
+  let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
+  let host_state_output_reference =
+    OutputReference {
+      transaction_id: #"1111111111111111111111111111111111111111111111111111111111111111",
+      output_index: 0,
+    }
+  let host_state_output =
+    Output {
+      address: from_script("mock host_state_stt_script_hash"),
+      value: from_asset(host_state_nft_policy_id, "ibc_host_state", 1),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    }
+  let host_state_input =
+    Input {
+      output_reference: host_state_output_reference,
+      output: host_state_output,
+    }
+  let client_token =
+    AuthToken { policy_id: "mock policy_id", name: "mock name" }
+  let client_output_reference =
+    OutputReference {
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+      output_index: 0,
+    }
+  let latest_height = Height { revision_number: 1, revision_height: 1 }
+  let client_datum =
+    ClientDatum {
+      state: ClientDatumState {
+        client_state: ClientState {
+          chain_id: #"636861696e2d31",
+          trust_level: unchecked_rational.new(1, 3),
+          trusting_period: 1,
+          unbonding_period: 2,
+          max_clock_drift: 1,
+          frozen_height: Height { revision_number: 0, revision_height: 0 },
+          latest_height,
+          proof_specs: [],
+        },
+        consensus_states: [],
+        processed_times: [],
+        processed_heights: [],
+      },
+      token: client_token,
+    }
+  let client_output =
+    Output {
+      address: from_script("mock spend_client_script_hash"),
+      value: from_asset(client_token.policy_id, client_token.name, 1),
+      datum: InlineDatum(client_datum),
+      reference_script: None,
+    }
+  let client_input =
+    Input { output_reference: client_output_reference, output: client_output }
+  let host_redeemer: Redeemer =
+    host_state_redeemer.UpdateClient {
+      client_state_siblings: [],
+      consensus_state_siblings: [],
+      removed_consensus_state_siblings: [],
+    }
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [client_input, host_state_input],
+      outputs: [client_output, host_state_output],
+      withdrawals: [Pair(Script(mock_proof_validator_hash), 0)],
+      redeemers: [Pair(Spend(host_state_output_reference), host_redeemer)],
+    }
+
+  spending_client_proof.spend_client.spend(
+    host_state_nft_policy_id,
+    mock_proof_validator_hash,
+    Some(client_datum),
+    UpdateClientProof,
+    client_output_reference,
+    transaction,
+  )
+}
+
+test proof_update_rejects_nonzero_withdrawal() {
+  !check_proof_update_withdrawal(1)
+}
+
+test proof_update_rejects_duplicate_continuation_outputs() fail {
+  let mock = setup()
+  let client_datum = proof_update_client_datum(mock)
+  let client_output =
+    update_client_output_datum(client_datum, mock.input.output)
+  spend_active_update(
+    mock,
+    client_datum,
+    client_output,
+    [client_output],
+    0,
+    UpdateClientProof,
+  )
+}
+
+test proof_update_rejects_impure_continuation_output() fail {
+  let mock = setup()
+  let client_datum = proof_update_client_datum(mock)
+  let client_output =
+    update_client_output_datum(client_datum, mock.input.output)
+  let impure_output =
+    Output {
+      ..client_output,
+      value: add(client_output.value, "extra policy", "extra token", 1),
+    }
+  spend_active_update(
+    mock,
+    client_datum,
+    impure_output,
+    [],
+    0,
+    UpdateClientProof,
   )
 }

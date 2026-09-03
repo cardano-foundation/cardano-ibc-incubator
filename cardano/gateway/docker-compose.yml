@@ -35,6 +35,31 @@ services:
     env_file:
       - .env
 
+  sp1-tendermint-prover:
+    profiles: ["sp1"]
+    container_name: sp1-tendermint-prover
+    image: ${SP1_TENDERMINT_PROVER_IMAGE:-cardano-ibc-sp1-tendermint-prover:local}
+    build:
+      context: ../..
+      dockerfile: cardano/sp1-tendermint-prover/Dockerfile
+    restart: unless-stopped
+    networks:
+      - cardano_network
+    environment:
+      SP1_TENDERMINT_PROVER_BACKEND: ${SP1_TENDERMINT_PROVER_BACKEND:-cpu}
+      SP1_TENDERMINT_NETWORK_MODE: ${SP1_TENDERMINT_NETWORK_MODE:-mainnet}
+      SP1_TENDERMINT_NETWORK_PROOF_TIMEOUT_SECS: ${SP1_TENDERMINT_NETWORK_PROOF_TIMEOUT_SECS:-600}
+      SP1_TENDERMINT_NETWORK_AUCTION_TIMEOUT_SECS: ${SP1_TENDERMINT_NETWORK_AUCTION_TIMEOUT_SECS:-30}
+      SP1_TENDERMINT_NETWORK_MIN_AUCTION_PERIOD_SECS: ${SP1_TENDERMINT_NETWORK_MIN_AUCTION_PERIOD_SECS:-1}
+      SP1_TENDERMINT_NETWORK_MAX_PRICE_PER_PGU: ${SP1_TENDERMINT_NETWORK_MAX_PRICE_PER_PGU:-}
+      NETWORK_PRIVATE_KEY: ${NETWORK_PRIVATE_KEY:-}
+      NETWORK_PRIVATE_KEY_FILE: ${NETWORK_PRIVATE_KEY_FILE:-}
+      NETWORK_RPC_URL: ${NETWORK_RPC_URL:-}
+      CARDANO_BLS_WRAPPER_STARTUP_TIMEOUT_SECS: ${CARDANO_BLS_WRAPPER_STARTUP_TIMEOUT_SECS:-600}
+      CARDANO_BLS_WRAPPER_PROOF_TIMEOUT_SECS: ${CARDANO_BLS_WRAPPER_PROOF_TIMEOUT_SECS:-120}
+    volumes:
+      - ${CARDANO_BLS_WRAPPER_KEYS_HOST_PATH:-../sp1-tendermint-prover/keys-local}:/var/lib/cardano-ibc-wrapper:ro
+
 networks:
   cardano_network:
     external: true

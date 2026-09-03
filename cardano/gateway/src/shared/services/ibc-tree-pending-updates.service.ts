@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import type { ICS23MerkleTree } from '../helpers/ics23-merkle-tree';
 
 export type PendingTreeUpdate = {
   expectedNewRoot: string;
   commit: () => void;
+  treeSnapshot?: ICS23MerkleTree;
 };
 
 @Injectable()
@@ -29,12 +31,14 @@ export class IbcTreePendingUpdatesService {
     // Hash-based lookup can miss when external signers alter final body shape.
     // Root matching remains strict because expectedNewRoot is derived from the
     // exact in-memory tree mutation we prepared before signing.
-    for (const [key, update] of this.pendingByTxHash.entries()) {
-      if (update.expectedNewRoot === expectedNewRoot) {
-        this.pendingByTxHash.delete(key);
-        return update;
-      }
+    const matches = [...this.pendingByTxHash.entries()].filter(
+      ([, update]) => update.expectedNewRoot === expectedNewRoot,
+    );
+    if (matches.length !== 1) {
+      return undefined;
     }
-    return undefined;
+    const [key, update] = matches[0];
+    this.pendingByTxHash.delete(key);
+    return update;
   }
 }

@@ -1,0 +1,460 @@
+{
+  "schemaVersion": 2,
+  "benchmarkBoundary": {
+    "fixture": "cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/normalized.json",
+    "scenario": "adjacent_all_signed",
+    "chainId": "injective-1",
+    "trustedHeight": "180315956",
+    "newHeight": "180315957",
+    "validators": 45,
+    "commitSlots": {
+      "commit": 45,
+      "absent": 0,
+      "nil": 0
+    },
+    "consensusHistory": {
+      "input": 1,
+      "output": 2,
+      "removed": 0
+    },
+    "samePublicTransitionForBothPaths": true,
+    "rawHeaderIdentityVerified": false
+  },
+  "protocolParameterSnapshot": {
+    "network": "Cardano mainnet",
+    "epoch": 651,
+    "checkedOn": "2026-08-27",
+    "source": "https://api.koios.rest/api/v1/epoch_params?epoch_no=eq.651",
+    "repositoryRecord": "docs/caribic-network-limits.md"
+  },
+  "limits": {
+    "signedBytes": {
+      "pinnedMainnetMaximum": 16384,
+      "projectSafe": 15634
+    },
+    "memory": {
+      "pinnedMainnetMaximum": 16500000,
+      "projectSafe": 15675000
+    },
+    "cpu": {
+      "pinnedMainnetMaximum": 10000000000,
+      "projectSafe": 9500000000
+    }
+  },
+  "aikenEvaluationContext": {
+    "tool": "Aiken",
+    "version": "1.1.21",
+    "evaluator": "aiken check unit-test evaluator",
+    "currentMainnetCostModelParityVerified": false,
+    "selectedUnitContexts": [
+      {
+        "role": "hostState",
+        "test": "host_state_stt.test.host_update_client_capacity_minimum_history_succeeds",
+        "memory": 13782552,
+        "cpu": 4336798818
+      },
+      {
+        "role": "directClient",
+        "test": "spending_client_capacity.test.update_client_capacity_adjacent_all_signed_45_succeeds",
+        "memory": 43629795,
+        "cpu": 14969997249
+      },
+      {
+        "role": "proofClient",
+        "test": "spending_client.test.proof_update_budget_gate_succeeds",
+        "memory": 333531,
+        "cpu": 109121614
+      },
+      {
+        "role": "tendermintProof",
+        "test": "ibc/client/ics_007_tendermint_client/proof_update/state.test.full_transaction_accepts_exact_proof_update",
+        "memory": 1196375,
+        "cpu": 3791099229
+      }
+    ],
+    "selectedUnitContextsSha256": "8f951cfbb159dc814b4b292e7bb7bbaf755ad08abbaf39d5e63c37090e3b3c90"
+  },
+  "cardanoComparison": [
+    {
+      "id": "direct",
+      "label": "Direct Aiken verification",
+      "signedBytes": 16791,
+      "memory": 57412347,
+      "cpu": 19306796067,
+      "pinnedMainnetSizeMargin": -407,
+      "pinnedMainnetMemoryMargin": -40912347,
+      "pinnedMainnetCpuMargin": -9306796067,
+      "payloads": {
+        "spendClientRedeemerBytes": 11285,
+        "hostStateRedeemerBytes": 4360,
+        "tendermintProofRedeemerBytes": 0,
+        "wrappedProofBytes": 0,
+        "updatedClientDatumBytes": 374,
+        "updatedHostStateDatumBytes": 121,
+        "totalBytes": 16140
+      },
+      "transactionShape": {
+        "regularInputs": 3,
+        "scriptInputs": 2,
+        "collateralInputs": 1,
+        "referenceInputs": 2,
+        "inlineDatumOutputs": 2,
+        "spendRedeemers": 2,
+        "rewardRedeemers": 0,
+        "withdrawals": 0,
+        "vkeyWitnesses": 1
+      },
+      "classification": "structural-signed-lower-bound",
+      "ledgerEvaluated": false,
+      "providerCompleted": false,
+      "balanced": false,
+      "exUnitsSource": "aiken-unit-tests",
+      "exUnitsClassification": "summed-isolated-aiken-unit-context-estimate",
+      "exUnitTests": [
+        "host_state_stt.test.host_update_client_capacity_minimum_history_succeeds",
+        "spending_client_capacity.test.update_client_capacity_adjacent_all_signed_45_succeeds"
+      ]
+    },
+    {
+      "id": "sp1",
+      "label": "SP1 proof verification",
+      "signedBytes": 6041,
+      "memory": 15312458,
+      "cpu": 8237019661,
+      "pinnedMainnetSizeMargin": 10343,
+      "pinnedMainnetMemoryMargin": 1187542,
+      "pinnedMainnetCpuMargin": 1762980339,
+      "payloads": {
+        "spendClientRedeemerBytes": 3,
+        "hostStateRedeemerBytes": 4360,
+        "tendermintProofRedeemerBytes": 451,
+        "wrappedProofBytes": 288,
+        "updatedClientDatumBytes": 374,
+        "updatedHostStateDatumBytes": 121,
+        "totalBytes": 5309
+      },
+      "transactionShape": {
+        "regularInputs": 3,
+        "scriptInputs": 2,
+        "collateralInputs": 1,
+        "referenceInputs": 3,
+        "inlineDatumOutputs": 2,
+        "spendRedeemers": 2,
+        "rewardRedeemers": 1,
+        "withdrawals": 1,
+        "vkeyWitnesses": 1
+      },
+      "classification": "structural-signed-lower-bound",
+      "ledgerEvaluated": false,
+      "providerCompleted": false,
+      "balanced": false,
+      "exUnitsSource": "aiken-unit-tests",
+      "exUnitsClassification": "summed-isolated-aiken-unit-context-estimate",
+      "exUnitTests": [
+        "host_state_stt.test.host_update_client_capacity_minimum_history_succeeds",
+        "spending_client.test.proof_update_budget_gate_succeeds",
+        "ibc/client/ics_007_tendermint_client/proof_update/state.test.full_transaction_accepts_exact_proof_update"
+      ]
+    }
+  ],
+  "validatorScaling": {
+    "classification": "encoding-only-synthetic-resize",
+    "direct": [
+      {
+        "validatorCount": 4,
+        "directSignedBytes": 7112
+      },
+      {
+        "validatorCount": 16,
+        "directSignedBytes": 9944
+      },
+      {
+        "validatorCount": 32,
+        "directSignedBytes": 13723
+      },
+      {
+        "validatorCount": 45,
+        "directSignedBytes": 16791
+      },
+      {
+        "validatorCount": 64,
+        "directSignedBytes": 21275
+      },
+      {
+        "validatorCount": 100,
+        "directSignedBytes": 29771
+      },
+      {
+        "validatorCount": 200,
+        "directSignedBytes": 53371
+      }
+    ],
+    "sp1BoundarySignedBytes": 6041,
+    "qualification": "Resized direct cases preserve production field widths but are not consensus-valid headers. The SP1 line is validator-independent at this one-to-two-state/field-width boundary; transaction size can still vary with history and integer widths. Only its 45-validator point uses the tracked proof and public-transition artifact."
+  },
+  "sp1GuestObservations": [
+    {
+      "id": "injective-45",
+      "fixture": "real Injective adjacent update",
+      "validators": 45,
+      "measuredAtUnixSeconds": 1788136403,
+      "executeSeconds": 0.907410917,
+      "instructions": 2796372,
+      "syscalls": 12585,
+      "localEstimatedPgu": 3140508,
+      "publicValuesSha256": "4a7114908b8dab0e72c5fd1441afc49c2b9266e04efabf7639d1f53643ae2462",
+      "networkProof": {
+        "status": "not_submitted",
+        "requestId": null,
+        "requestToFulfillmentSeconds": null,
+        "gasLimitPgu": null,
+        "gasUsedPgu": null
+      },
+      "proofStatus": "sp1-groth16-proved-and-development-wrapped",
+      "proveSeconds": 590.383017625,
+      "peakResidentBytes": 8985001984,
+      "wrapperKeyLoadSeconds": 136.207,
+      "outerWrapperSeconds": 18.891
+    },
+    {
+      "id": "synthetic-200",
+      "fixture": "generated adjacent update",
+      "validators": 200,
+      "measuredAtUnixSeconds": 1788136432,
+      "executeSeconds": 9.68218875,
+      "instructions": 17222743,
+      "syscalls": 107412,
+      "localEstimatedPgu": 19714926,
+      "publicValuesSha256": "1ed9ae07c6f1d4e82603ba74250763f9fd3687df80dbb248511920fdddbf9670",
+      "networkProof": {
+        "status": "not_submitted",
+        "requestId": null,
+        "requestToFulfillmentSeconds": null,
+        "gasLimitPgu": null,
+        "gasUsedPgu": null
+      },
+      "proofStatus": "executed-and-mock-proved",
+      "proveSeconds": null,
+      "peakResidentBytes": null,
+      "wrapperKeyLoadSeconds": null,
+      "outerWrapperSeconds": null
+    }
+  ],
+  "sp1GuestObservationProvenance": {
+    "source": {
+      "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/src/main.rs",
+      "sha256": "860d586e312df32fb971dc010bd8484c4295a0f5abc79e84e8edb936d2810fcb"
+    },
+    "cpuBenchmarkScript": {
+      "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/benchmark-cpu.sh",
+      "sha256": "bb87f1766669726eceb8fea40bdf4efa2f1757ce6f36574d3ce8f928fbabc92f"
+    },
+    "cargoLock": {
+      "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/Cargo.lock",
+      "sha256": "5bd2661c64618b87ed2e87e2f909ba43166546ed51945ddb1cfcbc62699b1d46"
+    },
+    "cargoManifest": {
+      "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/Cargo.toml",
+      "sha256": "a674bdba54db6009251e19e24dfa70cb4f5c1431c715fe3a1a08c34e04687f82"
+    },
+    "observationsCheckedOn": "2026-08-31",
+    "measurementMethod": "runner-generated-local-execution-metrics-and-manually-recorded-single-run-proof-and-wrapper-observations",
+    "rerunInCi": false,
+    "host": {
+      "model": "Mac17,2",
+      "processor": "Apple M5",
+      "memoryBytes": 17179869184,
+      "performanceCores": 4,
+      "efficiencyCores": 6,
+      "operatingSystem": "macOS 26.4 (25E246)",
+      "rust": "1.91.1"
+    },
+    "executionBenchmark": {
+      "runId": "baseline-execution-20260831T003124Z",
+      "profile": "baseline",
+      "repeatCountPerCase": 1,
+      "rayonThreads": 10,
+      "runnerBinarySha256": "00698f28ab49801790441d621c21e09fbd77f1e7e8e4e027c5515be0ebfd12e9",
+      "processWallSeconds": 105.31,
+      "maximumResidentBytes": 5440585728
+    },
+    "cpuTuning": {
+      "fixture": "injective-45",
+      "repeatCountPerConfiguration": 1,
+      "programVkey": "0x00d38536f65ab10e7eff0895b1b9f7cf12f89691631742bb487fe090027e0e6d",
+      "publicValuesSha256": "4a7114908b8dab0e72c5fd1441afc49c2b9266e04efabf7639d1f53643ae2462",
+      "fullGroth16": {
+        "runnerSource": {
+          "relationship": "pre-alignment-prototype-not-the-current-attested-runner",
+          "commit": "54b5776a8a6a805d5d695801089dd6897174825a",
+          "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/src/main.rs",
+          "sha256": "70ebfcfdbfeffe5c7fd8caa7f10167d7f323cf9a787f780017376f0828de5d6e"
+        },
+        "inputRelationship": "The prototype input predates the current runner's millisecond alignment, so its proof time and public-values hash intentionally differ from the current runner observations.",
+        "proofTimeNanos": "1787752048402288591",
+        "publicValuesSha256": "472b5bc799b3fae373911eadc365e5af5c9d715398369428c4c029e389e311a6",
+        "proveSeconds": 505.846,
+        "processWallSeconds": 526.69
+      },
+      "screeningRuns": [
+        {
+          "profile": "baseline",
+          "mode": "core",
+          "rayonThreads": 10,
+          "proveSeconds": 58.149770208,
+          "maximumResidentBytes": 6783942656
+        },
+        {
+          "profile": "trace-16m",
+          "mode": "core",
+          "rayonThreads": 10,
+          "proveSeconds": 56.034989417,
+          "maximumResidentBytes": 7894614016
+        },
+        {
+          "profile": "trace-16m",
+          "mode": "core",
+          "rayonThreads": 4,
+          "proveSeconds": 79.214465792,
+          "maximumResidentBytes": 7729233920
+        },
+        {
+          "profile": "baseline",
+          "mode": "compressed",
+          "rayonThreads": 10,
+          "proveSeconds": 113.332241333,
+          "maximumResidentBytes": 9282191360
+        },
+        {
+          "profile": "trace-16m",
+          "mode": "compressed",
+          "rayonThreads": 10,
+          "proveSeconds": 118.4740315,
+          "maximumResidentBytes": 8313536512
+        },
+        {
+          "profile": "threads-8",
+          "mode": "compressed",
+          "rayonThreads": 8,
+          "proveSeconds": 128.725613125,
+          "maximumResidentBytes": 7420542976
+        },
+        {
+          "profile": "recursion-low",
+          "mode": "compressed",
+          "rayonThreads": 10,
+          "proveSeconds": 119.913946292,
+          "maximumResidentBytes": 7996817408
+        },
+        {
+          "profile": "native",
+          "mode": "compressed",
+          "rayonThreads": 10,
+          "rustFlags": "-C target-cpu=native",
+          "lto": "thin",
+          "codegenUnits": 1,
+          "proveSeconds": 123.53625275,
+          "maximumResidentBytes": 7717765120
+        }
+      ],
+      "fixedProvingKeyResult": "SP1 6.1 executor reset is unimplemented; proof failed with artifact not found"
+    }
+  },
+  "persistentWrapperObservation": {
+    "classification": "single-local-observation",
+    "runId": "persistent-wrapper-two-request-20260831",
+    "measuredOn": "2026-08-31",
+    "requestCount": 2,
+    "fixture": {
+      "path": "studies/sp1_tendermint_cardano/fixtures/update_client_fixture-groth16.json",
+      "sha256": "1ee25223b8d311a3fb1bde306055ebe95f4d90a4dcabd9b6b775ece3998c99fc"
+    },
+    "benchmarkScript": {
+      "path": "cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/benchmark-worker.sh",
+      "sha256": "bdea3327cff1b4e5586369dd44fb1a78cb75f7fab0f74355b9e9b5b9a206e3f3"
+    },
+    "timings": {
+      "processStartToReadinessSeconds": 134.319,
+      "proofSeconds": [
+        9.775701833,
+        9.61133575
+      ],
+      "processTotalWallSeconds": 159.22
+    },
+    "resources": {
+      "maximumResidentBytesApprox": 4230000000,
+      "measurement": "/usr/bin/time -l",
+      "qualification": "The retained observation recorded peak resident memory as approximately 4.23 GB; the exact byte count was not retained."
+    },
+    "host": {
+      "model": "Mac17,2",
+      "processor": "Apple M5",
+      "memoryBytes": 17179869184,
+      "performanceCores": 4,
+      "efficiencyCores": 6,
+      "operatingSystem": "macOS 26.4 (25E246)",
+      "architecture": "arm64"
+    },
+    "tools": {
+      "go": "go version go1.26.1 darwin/arm64",
+      "gnark": "0.14.0",
+      "gnarkCrypto": "0.19.2"
+    },
+    "verificationKeySha256": "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037"
+  },
+  "implementationSurface": {
+    "method": "Nonblank, non-comment Aiken source lines in the transitive local-import closure; tests and generated fixtures are excluded unless imported by an entry point.",
+    "directReachable": {
+      "files": 78,
+      "sourceLines": 6138
+    },
+    "sp1Reachable": {
+      "files": 72,
+      "sourceLines": 6143
+    },
+    "directOnly": {
+      "files": 14,
+      "sourceLines": 1113
+    },
+    "sp1Only": {
+      "files": 8,
+      "sourceLines": 1118
+    },
+    "shared": {
+      "files": 64,
+      "sourceLines": 5025
+    },
+    "entryPoints": {
+      "direct": [
+        "cardano/onchain/validators/spending_client_legacy.ak"
+      ],
+      "sp1": [
+        "cardano/onchain/validators/spending_client.ak",
+        "cardano/onchain/validators/withdraw_tendermint_update.ak"
+      ]
+    },
+    "unparameterizedBlueprintBytes": {
+      "directClient": 14899,
+      "sp1Client": 2576,
+      "sp1ProofWithdrawal": 7999
+    }
+  },
+  "caveats": [
+    "Signed sizes are deterministic structural lower bounds, not balanced or provider-completed transactions.",
+    "Execution units are sums of isolated Aiken unit contexts, not values extracted from a completed ledger evaluation.",
+    "The Aiken unit-test evaluator and its cost model have not been verified as current-mainnet cost-model parity; execution margins are branch-local estimates.",
+    "The summed SP1 contexts do not all carry the modeled three-input, two-output, three-redeemer transaction; a matched full-transaction ledger evaluation is still required.",
+    "The 10-state SP1 transaction-budget gate uses coarse payload-size placeholders and is intentionally excluded from this matched comparison.",
+    "No fee, confirmation latency, throughput, or infrastructure-cost comparison has been measured.",
+    "No network proof request was submitted for either execution benchmark; network proof latency and actual network PGU use remain unmeasured.",
+    "The 45-validator proving latency and peak memory are one local development observation; hardware metadata and repeated-run statistics were not recorded.",
+    "The persistent-wrapper startup, two proof timings, total wall time, and approximate peak memory are one Apple M5 process observation, not a latency distribution.",
+    "Execution latency and local estimated PGU are single Apple M5 observations. Instructions, syscalls, and local estimated PGU use SP1 6.1.0; CI verifies the pinned runner source, Cargo.toml, and Cargo.lock hashes but does not rerun the guest.",
+    "The synthetic 200-validator case was executed and mock-proved; no full SP1 Groth16 or wrapped proof was generated or timed."
+  ],
+  "sources": {
+    "proofProvenance": "studies/sp1_tendermint_cardano/provenance.json",
+    "aikenExecutionUnits": "generated Aiken JSON supplied through --aiken-report",
+    "generator": "cardano/gateway/src/scripts/ci/generate-tendermint-benchmark-report.ts"
+  }
+}

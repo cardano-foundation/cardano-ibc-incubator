@@ -1230,6 +1230,28 @@ export class QueryService {
         .filter((utxo) => [mintClientScriptHash].includes(utxo.assetsPolicy))
         .map(async (clientUtxo) => {
           const clientId = getIdByTokenName(clientUtxo.assetsName, tokenBase, CLIENT_PREFIX);
+          if (typeof this.ibcTreeCacheService.loadTxEventsByConfirmedHash === 'function') {
+            try {
+              const persistedEvents = await this.ibcTreeCacheService.loadTxEventsByConfirmedHash(clientUtxo.txHash);
+              if (persistedEvents?.length) {
+                return {
+                  code: 0,
+                  events: persistedEvents.map((event) => ({
+                    type: event.type,
+                    event_attribute: event.attributes.map((attribute) => ({
+                      key: attribute.key,
+                      value: attribute.value,
+                      index: true,
+                    })),
+                  })),
+                } as unknown as ResponseDeliverTx;
+              }
+            } catch (error) {
+              this.logger.warn(
+                `Failed to load persisted client event for tx ${clientUtxo.txHash}: ${error?.message ?? error}`,
+              );
+            }
+          }
           let clientDatum: ClientDatum;
           try {
             clientDatum = await decodeClientDatum(clientUtxo.datum, this.lucidService.LucidImporter);

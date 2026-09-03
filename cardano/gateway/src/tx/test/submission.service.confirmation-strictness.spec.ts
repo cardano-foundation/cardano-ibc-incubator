@@ -19,9 +19,14 @@ describe('SubmissionService confirmation strictness regressions', () => {
   };
   let ibcTreePendingUpdatesServiceMock: {
     take: jest.Mock;
+    takeByExpectedRoot: jest.Mock;
   };
   let ibcTreeCacheServiceMock: {
     saveAliases: jest.Mock;
+    bindTxEventsToConfirmedTransaction: jest.Mock;
+    loadTxEventsByConfirmedHash: jest.Mock;
+    loadPendingTreeSnapshot: jest.Mock;
+    deletePendingTreeSnapshot: jest.Mock;
   };
   let historyServiceMock: {
     findTxByHash: jest.Mock;
@@ -66,10 +71,15 @@ describe('SubmissionService confirmation strictness regressions', () => {
 
     ibcTreePendingUpdatesServiceMock = {
       take: jest.fn().mockReturnValue(undefined),
+      takeByExpectedRoot: jest.fn().mockReturnValue(undefined),
     };
 
     ibcTreeCacheServiceMock = {
       saveAliases: jest.fn().mockResolvedValue(undefined),
+      bindTxEventsToConfirmedTransaction: jest.fn().mockResolvedValue(false),
+      loadTxEventsByConfirmedHash: jest.fn().mockResolvedValue(null),
+      loadPendingTreeSnapshot: jest.fn().mockResolvedValue(null),
+      deletePendingTreeSnapshot: jest.fn().mockResolvedValue(undefined),
     };
     historyServiceMock = { findTxByHash: jest.fn() };
     queryServiceMock = { queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }) };
@@ -128,5 +138,30 @@ describe('SubmissionService confirmation strictness regressions', () => {
       expect.anything(),
       expect.arrayContaining(['current', `root:${'ab'.repeat(32)}`, 'height:9999']),
     );
+  });
+
+  it('loads persisted proof events when confirmed-hash binding fails', async () => {
+    const persistedEvents = [
+      {
+        type: 'update_client',
+        attributes: [{ key: 'client_id', value: '07-tendermint-0' }],
+      },
+    ];
+    jest.spyOn(service as any, 'submitToCardano').mockResolvedValueOnce('tx-hash-abc');
+    jest.spyOn(service as any, 'waitForIndexedConfirmation').mockResolvedValueOnce(9999);
+    jest.spyOn(service as any, 'applyPendingIbcTreeUpdate').mockResolvedValueOnce('confirmed-root');
+    ibcTreeCacheServiceMock.bindTxEventsToConfirmedTransaction.mockRejectedValueOnce(
+      new Error('temporary database error'),
+    );
+    ibcTreeCacheServiceMock.loadTxEventsByConfirmedHash.mockResolvedValueOnce(persistedEvents);
+
+    await expect(service.submitSignedTransaction({ signed_tx_cbor: 'deadbeef' } as any)).resolves.toMatchObject({
+      tx_hash: 'tx-hash-abc',
+      height: '0-9999',
+      events: persistedEvents,
+    });
+
+    expect(ibcTreeCacheServiceMock.loadTxEventsByConfirmedHash).toHaveBeenCalledWith('tx-hash-abc');
+    expect(queryServiceMock.queryPacketEventsByTxHash).not.toHaveBeenCalled();
   });
 });

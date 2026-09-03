@@ -1,80 +1,90 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process';
-import { TextDecoder } from 'node:util';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { execFileSync } from "node:child_process";
+import { TextDecoder } from "node:util";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
-const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
 
 const aikenInfrastructurePaths = new Set([
-  'scripts/ci/aiken-fuzz-required-labels.json',
-  'scripts/ci/check-aiken-fuzz-coverage.mjs',
-  'scripts/ci/check-aiken-fuzz-imports.sh',
-  'scripts/ci/check-aiken-wire-schema.mjs',
-  'scripts/ci/check-aiken-wire-schema.test.mjs',
-  'scripts/ci/check-generated-artifacts-clean.sh',
-  'scripts/ci/detect-aiken-semantic-changes.mjs',
-  'scripts/ci/detect-aiken-semantic-changes.test.mjs',
-  'scripts/ci/merge-aiken-check-reports.mjs',
-  'cardano/gateway/src/scripts/ci/check-tx-budgets.ts',
-  'cardano/gateway/src/scripts/ci/tendermint-update-capacity.ts',
-  'cardano/gateway/src/scripts/ci/tx-budget-limits.ts',
-  'cardano/gateway/src/scripts/test/generate-injective-tendermint-capacity-fixture.ts',
-  'cardano/gateway/src/scripts/test/generate-tendermint-update-capacity-aiken.ts',
-  'cardano/gateway/package-lock.json',
-  'cardano/gateway/package.json',
-  'cardano/gateway/src/shared/helpers/hex.ts',
-  'cardano/gateway/src/shared/modules/lucid/lucid.service.ts',
-  'cardano/gateway/tsconfig.json',
+  "scripts/ci/aiken-fuzz-required-labels.json",
+  "scripts/ci/check-aiken-fuzz-coverage.mjs",
+  "scripts/ci/check-aiken-fuzz-imports.sh",
+  "scripts/ci/check-aiken-wire-schema.mjs",
+  "scripts/ci/check-aiken-wire-schema.test.mjs",
+  "scripts/ci/check-generated-artifacts-clean.sh",
+  "scripts/ci/detect-aiken-semantic-changes.mjs",
+  "scripts/ci/detect-aiken-semantic-changes.test.mjs",
+  "scripts/ci/merge-aiken-check-reports.mjs",
+  "cardano/gateway/src/scripts/ci/check-tx-budgets.ts",
+  "cardano/gateway/src/scripts/ci/generate-tendermint-benchmark-report.ts",
+  "cardano/gateway/src/scripts/ci/tendermint-update-capacity.ts",
+  "cardano/gateway/src/scripts/ci/tx-budget-limits.ts",
+  "cardano/gateway/src/scripts/test/generate-injective-tendermint-capacity-fixture.ts",
+  "cardano/gateway/src/scripts/test/generate-tendermint-update-capacity-aiken.ts",
+  "cardano/gateway/package-lock.json",
+  "cardano/gateway/package.json",
+  "cardano/gateway/src/shared/helpers/hex.ts",
+  "cardano/gateway/src/shared/modules/lucid/lucid.service.ts",
+  "cardano/gateway/tsconfig.json",
+  "docs/assets/tendermint-update-benchmark.json",
+  "docs/assets/tendermint-update-budget-comparison.svg",
+  "docs/assets/tendermint-update-validator-scaling.svg",
+  "studies/sp1_tendermint_cardano/eureka-guest-runner/Cargo.lock",
+  "studies/sp1_tendermint_cardano/eureka-guest-runner/Cargo.toml",
+  "studies/sp1_tendermint_cardano/eureka-guest-runner/benchmark-cpu.sh",
+  "studies/sp1_tendermint_cardano/eureka-guest-runner/src/main.rs",
+  "studies/sp1_tendermint_cardano/provenance.json",
 ]);
 
-function isAikenInfrastructurePath(path) {
+export function isAikenInfrastructurePath(path) {
   return (
-    path.startsWith('.github/actions/') ||
-    path.startsWith('.github/workflows/') ||
-    path.startsWith('cardano/gateway/src/shared/types/') ||
+    path.startsWith(".github/actions/") ||
+    path.startsWith(".github/workflows/") ||
+    path.startsWith("cardano/sp1-tendermint-prover/artifacts/injective-45/") ||
+    path.startsWith("cardano/gateway/src/shared/types/") ||
     path.startsWith(
-      'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/',
+      "cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/",
     ) ||
     aikenInfrastructurePaths.has(path)
   );
 }
 
-function runGit(repoRoot, args, encoding = 'utf8') {
-  return execFileSync('git', args, {
+function runGit(repoRoot, args, encoding = "utf8") {
+  return execFileSync("git", args, {
     cwd: repoRoot,
     encoding,
-    stdio: ['ignore', 'pipe', 'ignore'],
+    stdio: ["ignore", "pipe", "ignore"],
   });
 }
 
 function changedPaths(repoRoot, baseRef, headRef) {
   const output = runGit(
     repoRoot,
-    ['diff', '--name-only', '--no-renames', '-z', baseRef, headRef],
-    'buffer',
+    ["diff", "--name-only", "--no-renames", "-z", baseRef, headRef],
+    "buffer",
   );
-  return utf8Decoder.decode(output).split('\0').filter(Boolean);
+  return utf8Decoder.decode(output).split("\0").filter(Boolean);
 }
 
 function readTreeBlob(repoRoot, ref, path) {
-  const entry = runGit(repoRoot, ['ls-tree', '-z', ref, '--', path], 'buffer');
+  const entry = runGit(repoRoot, ["ls-tree", "-z", ref, "--", path], "buffer");
   if (entry.length === 0) {
     return null;
   }
 
   const decodedEntry = utf8Decoder.decode(entry.subarray(0, entry.length - 1));
-  const tabIndex = decodedEntry.indexOf('\t');
+  const tabIndex = decodedEntry.indexOf("\t");
   if (tabIndex < 0) {
     throw new Error(`Could not parse git tree entry for ${path} at ${ref}`);
   }
-  const [mode, type, object] = decodedEntry.slice(0, tabIndex).split(' ');
-  if (mode !== '100644' || type !== 'blob' || !object) {
+  const [mode, type, object] = decodedEntry.slice(0, tabIndex).split(" ");
+  if (mode !== "100644" || type !== "blob" || !object) {
     return { mode, source: null };
   }
 
-  const blob = runGit(repoRoot, ['cat-file', 'blob', object], 'buffer');
+  const blob = runGit(repoRoot, ["cat-file", "blob", object], "buffer");
   return { mode, source: utf8Decoder.decode(blob) };
 }
 
@@ -85,7 +95,7 @@ function readTreeBlob(repoRoot, ref, path) {
  */
 export function aikenSemanticSignature(input) {
   const source = input;
-  let signature = '';
+  let signature = "";
   let pendingSeparator = null;
   let pendingNewlineCount = 0;
   let previousTokenWasDoc = false;
@@ -94,10 +104,11 @@ export function aikenSemanticSignature(input) {
 
   const appendSeparator = () => {
     if (signature.length > 0) {
-      if (pendingSeparator === 'newline') {
-        signature += previousTokenWasDoc && pendingNewlineCount > 1 ? '\n\n' : '\n';
-      } else if (pendingSeparator === 'space') {
-        signature += ' ';
+      if (pendingSeparator === "newline") {
+        signature +=
+          previousTokenWasDoc && pendingNewlineCount > 1 ? "\n\n" : "\n";
+      } else if (pendingSeparator === "space") {
+        signature += " ";
       }
     }
     pendingSeparator = null;
@@ -111,7 +122,7 @@ export function aikenSemanticSignature(input) {
       signature += char;
       if (escaped) {
         escaped = false;
-      } else if (char === '\\') {
+      } else if (char === "\\") {
         escaped = true;
       } else if (char === '"') {
         inLiteral = false;
@@ -119,35 +130,35 @@ export function aikenSemanticSignature(input) {
       continue;
     }
 
-    if (char === ' ' || char === '\t') {
-      pendingSeparator ??= 'space';
+    if (char === " " || char === "\t") {
+      pendingSeparator ??= "space";
       continue;
     }
-    if (char === '\n') {
-      pendingSeparator = 'newline';
+    if (char === "\n") {
+      pendingSeparator = "newline";
       pendingNewlineCount += 1;
       continue;
     }
-    if (char === '\r') {
-      if (source[index + 1] !== '\n') {
-        throw new Error('Aiken source contains a bare carriage return');
+    if (char === "\r") {
+      if (source[index + 1] !== "\n") {
+        throw new Error("Aiken source contains a bare carriage return");
       }
-      pendingSeparator = 'newline';
+      pendingSeparator = "newline";
       pendingNewlineCount += 1;
       index += 1;
       continue;
     }
     if (/\s/u.test(char)) {
-      throw new Error('Aiken source contains unsupported whitespace');
+      throw new Error("Aiken source contains unsupported whitespace");
     }
 
-    if (char === '/' && source[index + 1] === '/') {
+    if (char === "/" && source[index + 1] === "/") {
       let slashCount = 2;
-      while (source[index + slashCount] === '/') {
+      while (source[index + slashCount] === "/") {
         slashCount += 1;
       }
-      const newline = source.indexOf('\n', index);
-      const carriageReturn = source.indexOf('\r', index);
+      const newline = source.indexOf("\n", index);
+      const carriageReturn = source.indexOf("\r", index);
       const lineEnd = [newline, carriageReturn]
         .filter((position) => position >= 0)
         .reduce((first, position) => Math.min(first, position), source.length);
@@ -171,15 +182,15 @@ export function aikenSemanticSignature(input) {
   }
 
   if (inLiteral || escaped) {
-    throw new Error('Aiken source contains an unterminated quoted literal');
+    throw new Error("Aiken source contains an unterminated quoted literal");
   }
 
   return signature;
 }
 
 export function classifyAikenChanges(repoRoot, baseRef, headRef) {
-  runGit(repoRoot, ['rev-parse', '--verify', `${baseRef}^{commit}`]);
-  runGit(repoRoot, ['rev-parse', '--verify', `${headRef}^{commit}`]);
+  runGit(repoRoot, ["rev-parse", "--verify", `${baseRef}^{commit}`]);
+  runGit(repoRoot, ["rev-parse", "--verify", `${headRef}^{commit}`]);
 
   const files = changedPaths(repoRoot, baseRef, headRef);
   const reasons = [];
@@ -190,10 +201,10 @@ export function classifyAikenChanges(repoRoot, baseRef, headRef) {
       reasons.push(`${path} affects Aiken CI`);
       continue;
     }
-    if (!path.startsWith('cardano/onchain/')) {
+    if (!path.startsWith("cardano/onchain/")) {
       continue;
     }
-    if (!path.endsWith('.ak')) {
+    if (!path.endsWith(".ak")) {
       reasons.push(`${path} is a non-source Aiken project change`);
       continue;
     }
@@ -229,13 +240,17 @@ function main() {
   const [baseRef, headRef] = process.argv.slice(2);
   if (!baseRef || !headRef || process.argv.length !== 4) {
     throw new Error(
-      'Usage: node scripts/ci/detect-aiken-semantic-changes.mjs <base-ref> <head-ref>',
+      "Usage: node scripts/ci/detect-aiken-semantic-changes.mjs <base-ref> <head-ref>",
     );
   }
-  console.log(JSON.stringify(classifyAikenChanges(process.cwd(), baseRef, headRef)));
+  console.log(
+    JSON.stringify(classifyAikenChanges(process.cwd(), baseRef, headRef)),
+  );
 }
 
-const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
+const invokedPath = process.argv[1]
+  ? pathToFileURL(resolve(process.argv[1])).href
+  : "";
 if (import.meta.url === invokedPath) {
   try {
     main();

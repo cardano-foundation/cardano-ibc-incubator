@@ -10,13 +10,13 @@ use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
-use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  SpendClientRedeemer, UpdateClient,
-}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/legacy_client_redeemer.{
+  LegacySpendClientRedeemer, UpdateClient,
+}
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/test_fixtures/tendermint_update_capacity.{
   adjacent_all_signed_spend_client_redeemer_cbor,
@@ -32,7 +32,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
-use spending_client
+use spending_client_legacy as spending_client
 
 type MockData {
   host_state_nft_policy_id: PolicyId,
@@ -134,7 +134,7 @@ fn check_update_client_capacity(
 ) -> Bool {
   let mock = setup()
   expect Some(data) = cbor.deserialise(encoded_redeemer)
-  expect redeemer: SpendClientRedeemer = data
+  expect redeemer: LegacySpendClientRedeemer = data
   expect UpdateClient{msg: HeaderCase(header)} = redeemer
 
   let client_state =

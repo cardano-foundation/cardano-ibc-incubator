@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="720" viewBox="0 0 1080 720" role="img" aria-labelledby="chart-title chart-description">
+  <title id="chart-title">Structural size and Aiken context estimates for the matched Injective public transition</title>
+  <desc id="chart-description">For matching public outputs of a real adjacent 45-validator Injective transition at the one-to-two-state boundary, direct verification uses 16,791 signed structural bytes, with summed Aiken contexts of 57,412,347 memory units and 19,306,796,067 CPU steps. SP1 uses 6,041 structural bytes, with summed contexts of 15,312,458 memory units and 8,237,019,661 CPU steps. Limits are guides; the sums are not a full-transaction ledger evaluation.</desc>
+  <defs>
+    <pattern id="direct-pattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#9a3412"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#fed7aa" stroke-width="2"/>
+    </pattern>
+    <style>
+      text { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #111827; }
+      .title { font-size: 25px; font-weight: 700; }
+      .subtitle { font-size: 15px; fill: #374151; }
+      .metric { font-size: 17px; font-weight: 700; }
+      .label { font-size: 15px; font-weight: 600; }
+      .value { font-size: 14px; font-variant-numeric: tabular-nums; }
+      .value-light { font-size: 14px; font-variant-numeric: tabular-nums; fill: #ffffff; font-weight: 600; }
+      .axis { font-size: 13px; fill: #4b5563; }
+      .note { font-size: 13px; fill: #374151; }
+      .grid { stroke: #e5e7eb; stroke-width: 1; }
+      .limit { stroke: #111827; stroke-width: 2; stroke-dasharray: 7 5; }
+      .safe { stroke: #6b7280; stroke-width: 2; stroke-dasharray: 2 5; }
+    </style>
+  </defs>
+  <rect width="1080" height="720" fill="#ffffff"/>
+  <text class="title" x="50" y="45">Structural size and Aiken estimates at the 45-validator boundary</text>
+  <text class="subtitle" x="50" y="72">Matched public transition; one retained consensus state becomes two</text>
+  <rect x="708" y="64" width="18" height="18" fill="url(#direct-pattern)"/>
+  <text class="axis" x="734" y="78">Direct</text>
+  <rect x="815" y="64" width="18" height="18" fill="#0369a1"/>
+  <text class="axis" x="841" y="78">SP1</text>
+  <line class="limit" x1="905" y1="73" x2="929" y2="73"/>
+  <text class="axis" x="937" y="78">pinned mainnet max</text>
+  <text class="metric" x="50" y="126">Signed transaction bytes</text>
+  <line class="grid" x1="250" y1="142" x2="995" y2="142"/>
+  <line class="grid" x1="250" y1="227" x2="995" y2="227"/>
+  <line class="safe" x1="892.3" y1="137" x2="892.3" y2="232"/>
+  <line class="limit" x1="923.1" y1="137" x2="923.1" y2="232"/>
+  <text class="axis" text-anchor="middle" x="892.3" y="251">safe 15,634</text>
+  <text class="axis" text-anchor="middle" x="923.1" y="268">max 16,384</text>
+  <text class="label" text-anchor="end" x="236" y="173">Direct</text>
+  <rect x="250" y="153" width="689.8" height="28" rx="3" fill="url(#direct-pattern)"/>
+  <text class="value-light" text-anchor="end" x="930.8" y="173">16,791 (102.5%) — over limit</text>
+  <text class="label" text-anchor="end" x="236" y="216">SP1</text>
+  <rect x="250" y="196" width="248.2" height="28" rx="3" fill="#0369a1"/>
+  <text class="value" text-anchor="start" x="507.2" y="216">6,041 (36.9%)</text>
+  <text class="metric" x="50" y="304">Memory-unit estimate (summed contexts)</text>
+  <line class="grid" x1="250" y1="320" x2="995" y2="320"/>
+  <line class="grid" x1="250" y1="405" x2="995" y2="405"/>
+  <line class="safe" x1="438.3" y1="315" x2="438.3" y2="410"/>
+  <line class="limit" x1="448.2" y1="315" x2="448.2" y2="410"/>
+  <text class="axis" text-anchor="middle" x="438.3" y="429">safe 15,675,000</text>
+  <text class="axis" text-anchor="middle" x="448.2" y="446">max 16,500,000</text>
+  <text class="label" text-anchor="end" x="236" y="351">Direct</text>
+  <rect x="250" y="331" width="689.8" height="28" rx="3" fill="url(#direct-pattern)"/>
+  <text class="value-light" text-anchor="end" x="930.8" y="351">57,412,347 (348.0%) — sum exceeds limit</text>
+  <text class="label" text-anchor="end" x="236" y="394">SP1</text>
+  <rect x="250" y="374" width="184.0" height="28" rx="3" fill="#0369a1"/>
+  <text class="value" text-anchor="start" x="443.0" y="394">15,312,458 (92.8%)</text>
+  <text class="metric" x="50" y="482">CPU-step estimate (summed contexts)</text>
+  <line class="grid" x1="250" y1="498" x2="995" y2="498"/>
+  <line class="grid" x1="250" y1="583" x2="995" y2="583"/>
+  <line class="safe" x1="589.4" y1="493" x2="589.4" y2="588"/>
+  <line class="limit" x1="607.3" y1="493" x2="607.3" y2="588"/>
+  <text class="axis" text-anchor="middle" x="589.4" y="607">safe 9,500,000,000</text>
+  <text class="axis" text-anchor="middle" x="607.3" y="624">max 10,000,000,000</text>
+  <text class="label" text-anchor="end" x="236" y="529">Direct</text>
+  <rect x="250" y="509" width="689.8" height="28" rx="3" fill="url(#direct-pattern)"/>
+  <text class="value-light" text-anchor="end" x="930.8" y="529">19,306,796,067 (193.1%) — sum exceeds limit</text>
+  <text class="label" text-anchor="end" x="236" y="572">SP1</text>
+  <rect x="250" y="552" width="294.3" height="28" rx="3" fill="#0369a1"/>
+  <text class="value" text-anchor="start" x="553.3" y="572">8,237,019,661 (82.4%)</text>
+  <text class="note" x="50" y="667">Sizes are unbalanced structural lower bounds. Execution units are sums of isolated Aiken unit contexts.</text>
+  <text class="note" x="50" y="690">The sums are not a completed transaction evaluation and do not establish that SP1 fits the safe execution budget.</text>
+</svg>

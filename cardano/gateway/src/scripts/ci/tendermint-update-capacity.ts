@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -6,10 +7,18 @@ import * as Lucid from '@lucid-evolution/lucid';
 import { LucidService, type CodecType } from '@shared/modules/lucid/lucid.service';
 import { encodeClientDatum, type ClientDatum } from '@shared/types/client-datum';
 import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
+import { type ClientState } from '@shared/types/client-state-types';
 import { type ConsensusState } from '@shared/types/consensus-state';
 import { type Header } from '@shared/types/header';
 import { encodeHostStateDatum, type HostStateDatum } from '@shared/types/host-state-datum';
 import { type Height } from '@shared/types/height';
+import {
+  buildEurekaUpdateClientOutput,
+  encodeEurekaUpdateClientOutput,
+  EUREKA_UPDATE_CLIENT_MAX_CLOCK_DRIFT_NS,
+  EUREKA_UPDATE_CLIENT_PROGRAM_VKEY,
+} from '@shared/types/sp1-update-client';
+import { encodeTendermintProofRedeemer } from '@shared/types/tendermint-proof-redeemer';
 
 export const CARDANO_MAX_TX_SIZE_BYTES = 16_384;
 export const CARDANO_TX_SIZE_HEADROOM_BYTES = 750;
@@ -19,11 +28,25 @@ export const CARDANO_MAX_TX_EX_STEPS = 10_000_000_000n;
 export const CARDANO_SAFE_TX_EX_MEM = 15_675_000n;
 export const CARDANO_SAFE_TX_EX_STEPS = 9_500_000_000n;
 
-const CLIENT_MAX_CLOCK_DRIFT_NS = 10_000_000_000n;
+const EUREKA_UPDATE_CLIENT_PROGRAM = 'sp1-ics07-tendermint-update-client-v2.0.0';
 
 export const DEFAULT_NORMALIZED_FIXTURE_PATH = path.resolve(
   __dirname,
   '../test/fixtures/tendermint-update-capacity/normalized.json',
+);
+
+const repoRoot = path.resolve(__dirname, '../../../../..');
+export const DEFAULT_SP1_PROOF_METADATA_PATH = path.join(
+  repoRoot,
+  'cardano/sp1-tendermint-prover/artifacts/injective-45/metadata.json',
+);
+export const DEFAULT_SP1_WRAPPED_PROOF_PATH = path.join(
+  repoRoot,
+  'cardano/sp1-tendermint-prover/artifacts/injective-45/wrapped_proof.bin',
+);
+export const DEFAULT_SP1_PUBLIC_VALUES_PATH = path.join(
+  repoRoot,
+  'cardano/sp1-tendermint-prover/artifacts/injective-45/public_values.bin',
 );
 
 /**
@@ -35,12 +58,18 @@ export const STRUCTURAL_PLACEHOLDER_EX_UNITS = {
   spendClient: { mem: 10_000_000n, steps: 5_000_000_000n },
 } as const;
 
+export const STRUCTURAL_PLACEHOLDER_PROOF_EX_UNITS = {
+  ...STRUCTURAL_PLACEHOLDER_EX_UNITS,
+  tendermintProof: { mem: 10_000_000n, steps: 5_000_000_000n },
+} as const;
+
 const HOST_STATE_POLICY_ID = 'a1'.repeat(28);
 const HOST_STATE_ASSET_NAME = '484f53545f5354415445';
 const CLIENT_POLICY_ID = 'b2'.repeat(28);
 const CLIENT_ASSET_NAME = '43'.repeat(32);
 const HOST_STATE_SCRIPT_HASH = 'c3'.repeat(28);
 const SPEND_CLIENT_SCRIPT_HASH = 'd4'.repeat(28);
+const TENDERMINT_PROOF_SCRIPT_HASH = 'e7'.repeat(28);
 const ZERO_HASH = '00'.repeat(32);
 const HOST_STATE_SIBLINGS = Array.from({ length: 64 }, () => ZERO_HASH);
 
@@ -140,11 +169,23 @@ export type StructuralExUnits = {
   spendClient: { mem: bigint; steps: bigint };
 };
 
+export type ProofStructuralExUnits = StructuralExUnits & {
+  tendermintProof: { mem: bigint; steps: bigint };
+};
+
+export type ProofArtifactPaths = {
+  metadataPath?: string;
+  wrappedProofPath?: string;
+  publicValuesPath?: string;
+};
+
 export type ExUnitsSource = 'structural-placeholder' | 'aiken-unit-tests';
 
 export type CapacityPayloadSizes = {
   spendClientRedeemerBytes: number;
   hostStateRedeemerBytes: number;
+  tendermintProofRedeemerBytes: number;
+  wrappedProofBytes: number;
   updatedClientDatumBytes: number;
   updatedHostStateDatumBytes: number;
   totalBytes: number;
@@ -157,11 +198,14 @@ export type CapacityTransactionShape = {
   referenceInputs: number;
   inlineDatumOutputs: number;
   spendRedeemers: number;
+  rewardRedeemers: number;
+  withdrawals: number;
   vkeyWitnesses: number;
 };
 
 export type CapacityScenarioReport = {
   scenario: string;
+  mode: 'direct' | 'sp1';
   classification: 'structural-signed-lower-bound';
   ledgerEvaluated: false;
   providerCompleted: false;
@@ -187,6 +231,7 @@ export type CapacityScenarioReport = {
   scriptExUnits: {
     hostState: { mem: string; steps: string };
     spendClient: { mem: string; steps: string };
+    tendermintProof?: { mem: string; steps: string };
     total: { mem: string; steps: string };
     absoluteMargin: { mem: string; steps: string };
     safeMargin: { mem: string; steps: string };
@@ -200,6 +245,7 @@ export type CapacityScenarioArtifact = {
   encoded: {
     spendClientRedeemer: string;
     hostStateRedeemer: string;
+    tendermintProofRedeemer?: string;
     updatedClientDatum: string;
     updatedHostStateDatum: string;
   };
@@ -325,6 +371,50 @@ export function loadNormalizedCapacityFixture(filePath = DEFAULT_NORMALIZED_FIXT
   return JSON.parse(fs.readFileSync(filePath, 'utf8')) as NormalizedCapacityFixture;
 }
 
+/**
+ * Resize the real all-signed fixture without claiming to produce a valid
+ * Tendermint header. This preserves the production field widths and is used
+ * only to measure how direct-path CBOR grows with validator count.
+ */
+export function resizeCapacityScenario(
+  scenario: NormalizedCapacityScenario,
+  validatorCount: number,
+): NormalizedCapacityScenario {
+  if (!Number.isSafeInteger(validatorCount) || validatorCount < 1) {
+    throw new Error(`validatorCount must be a positive safe integer; found ${validatorCount}`);
+  }
+
+  const resized = JSON.parse(JSON.stringify(scenario)) as NormalizedCapacityScenario;
+  const sourceValidators = scenario.header.validator_set.validators;
+  const sourceTrustedValidators = scenario.header.trusted_validators.validators;
+  const sourceSignatures = scenario.header.signed_header.commit.signatures;
+  if (sourceValidators.length === 0 || sourceTrustedValidators.length === 0 || sourceSignatures.length === 0) {
+    throw new Error('Cannot resize an empty Tendermint validator fixture');
+  }
+
+  const addressFor = (index: number) => (index + 1).toString(16).padStart(40, '0');
+  const resizeValidatorSet = (set: NormalizedValidatorSet, source: NormalizedValidator[]) => {
+    set.validators = Array.from({ length: validatorCount }, (_, index) => ({
+      ...source[index % source.length],
+      address: addressFor(index),
+    }));
+    set.proposer = { ...set.validators[0] };
+    set.total_voting_power = set.validators
+      .reduce((total, validator) => total + asBigInt(validator.voting_power, 'validator.voting_power'), 0n)
+      .toString();
+  };
+
+  resizeValidatorSet(resized.header.validator_set, sourceValidators);
+  resizeValidatorSet(resized.header.trusted_validators, sourceTrustedValidators);
+  resized.header.signed_header.header.proposer_address = addressFor(0);
+  resized.header.signed_header.commit.signatures = Array.from({ length: validatorCount }, (_, index) => ({
+    ...sourceSignatures[index % sourceSignatures.length],
+    block_id_flag: '2',
+    validator_address: addressFor(index),
+  }));
+  return resized;
+}
+
 function outputConsensusStates(header: Header, trustedConsensusState: ConsensusState): Array<[Height, ConsensusState]> {
   const revisionNumber = header.trustedHeight.revisionNumber;
   const newHeight: Height = {
@@ -342,6 +432,19 @@ function outputConsensusStates(header: Header, trustedConsensusState: ConsensusS
   ];
 }
 
+function representativeInputClientState(header: Header): ClientState {
+  return {
+    chainId: header.signedHeader.header.chainId,
+    trustLevel: { numerator: 1n, denominator: 3n },
+    trustingPeriod: 1_209_600_000_000_000n,
+    unbondingPeriod: 1_814_400_000_000_000n,
+    maxClockDrift: EUREKA_UPDATE_CLIENT_MAX_CLOCK_DRIFT_NS,
+    frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
+    latestHeight: header.trustedHeight,
+    proofSpecs: [],
+  };
+}
+
 async function encodeRepresentativeDatums(
   header: Header,
   trustedConsensusState: ConsensusState,
@@ -350,7 +453,7 @@ async function encodeRepresentativeDatums(
   // target state. This is the smallest valid no-pruning UpdateClient output.
   const states = outputConsensusStates(header, trustedConsensusState);
   const txValidFromNs =
-    ((header.signedHeader.header.time - CLIENT_MAX_CLOCK_DRIFT_NS) / 1_000_000n + 1_000n) * 1_000_000n;
+    ((header.signedHeader.header.time - EUREKA_UPDATE_CLIENT_MAX_CLOCK_DRIFT_NS) / 1_000_000n + 1_000n) * 1_000_000n;
   const processedTimes = new Map<Height, bigint>([
     [states[0][0], txValidFromNs],
     [states[1][0], 0n],
@@ -359,20 +462,12 @@ async function encodeRepresentativeDatums(
     [states[0][0], txValidFromNs / 4_000_000_000n],
     [states[1][0], 0n],
   ]);
+  const inputClientState = representativeInputClientState(header);
   const clientDatum: ClientDatum = {
     state: {
       clientState: {
-        chainId: header.signedHeader.header.chainId,
-        trustLevel: { numerator: 1n, denominator: 3n },
-        trustingPeriod: 1_209_600_000_000_000n,
-        unbondingPeriod: 1_814_400_000_000_000n,
-        maxClockDrift: CLIENT_MAX_CLOCK_DRIFT_NS,
-        frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
-        latestHeight: {
-          revisionNumber: header.trustedHeight.revisionNumber,
-          revisionHeight: header.signedHeader.header.height,
-        },
-        proofSpecs: [],
+        ...inputClientState,
+        latestHeight: states[0][0],
       },
       consensusStates: new Map(states),
       processedTimes,
@@ -426,6 +521,37 @@ function byteLength(hex: string): number {
   return hex.length / 2;
 }
 
+function sha256(value: Buffer): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function encodeExpectedEurekaPublicValues(
+  header: Header,
+  trustedConsensusState: ConsensusState,
+  proofTime: bigint,
+): Buffer {
+  const trustedHeight = header.trustedHeight;
+  const newHeight: Height = {
+    revisionNumber: trustedHeight.revisionNumber,
+    revisionHeight: header.signedHeader.header.height,
+  };
+  const newConsensusState: ConsensusState = {
+    timestamp: header.signedHeader.header.time,
+    next_validators_hash: header.signedHeader.header.nextValidatorsHash,
+    root: { hash: header.signedHeader.header.appHash },
+  };
+  return encodeEurekaUpdateClientOutput(
+    buildEurekaUpdateClientOutput({
+      clientState: representativeInputClientState(header),
+      trustedConsensusState,
+      newConsensusState,
+      time: proofTime,
+      trustedHeight,
+      newHeight,
+    }),
+  );
+}
+
 function txInput(hashByte: string, index = 0n) {
   const CML = Lucid.CML;
   return CML.TransactionInput.new(CML.TransactionHash.from_hex(hashByte.repeat(32)), index);
@@ -469,7 +595,17 @@ function outputList(updatedHostStateDatum: string, updatedClientDatum: string) {
   return outputs;
 }
 
-function buildRedeemers(hostStateRedeemer: string, spendClientRedeemer: string, exUnits: StructuralExUnits) {
+type StructuralProofWitness = {
+  redeemer: string;
+  exUnits: { mem: bigint; steps: bigint };
+};
+
+function buildRedeemers(
+  hostStateRedeemer: string,
+  spendClientRedeemer: string,
+  exUnits: StructuralExUnits,
+  proofWitness?: StructuralProofWitness,
+) {
   const CML = Lucid.CML;
   const map = CML.MapRedeemerKeyToRedeemerVal.new();
   map.insert(
@@ -486,6 +622,15 @@ function buildRedeemers(hostStateRedeemer: string, spendClientRedeemer: string, 
       CML.ExUnits.new(exUnits.spendClient.mem, exUnits.spendClient.steps),
     ),
   );
+  if (proofWitness) {
+    map.insert(
+      CML.RedeemerKey.new(CML.RedeemerTag.Reward, 0n),
+      CML.RedeemerVal.new(
+        CML.PlutusData.from_cbor_hex(proofWitness.redeemer),
+        CML.ExUnits.new(proofWitness.exUnits.mem, proofWitness.exUnits.steps),
+      ),
+    );
+  }
   return CML.Redeemers.new_map_redeemer_key_to_redeemer_val(map);
 }
 
@@ -495,6 +640,7 @@ function buildStructuralTransactions(
   updatedHostStateDatum: string,
   updatedClientDatum: string,
   exUnits: StructuralExUnits,
+  proofWitness?: StructuralProofWitness,
 ) {
   const CML = Lucid.CML;
   // Hash ordering fixes HostState and SpendClient at redeemer indices 0 and 1.
@@ -506,25 +652,35 @@ function buildStructuralTransactions(
   );
   body.set_collateral_inputs(inputList([txInput('44')]));
   body.set_total_collateral(5_000_000n);
-  body.set_reference_inputs(inputList([txInput('55'), txInput('66')]));
+  body.set_reference_inputs(
+    inputList(proofWitness ? [txInput('55'), txInput('66'), txInput('77')] : [txInput('55'), txInput('66')]),
+  );
+  if (proofWitness) {
+    const withdrawals = CML.MapRewardAccountToCoin.new();
+    withdrawals.insert(
+      CML.RewardAddress.new(0, CML.Credential.new_script(CML.ScriptHash.from_hex(TENDERMINT_PROOF_SCRIPT_HASH))),
+      0n,
+    );
+    body.set_withdrawals(withdrawals);
+  }
   body.set_validity_interval_start(120_000_000n);
   body.set_ttl(120_000_600n);
   body.set_network_id(CML.NetworkId.testnet());
 
-  const scriptDataRedeemers = buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits);
+  const scriptDataRedeemers = buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits, proofWitness);
   body.set_script_data_hash(
     CML.hash_script_data(scriptDataRedeemers, Lucid.createCostModels(Lucid.PROTOCOL_PARAMETERS_DEFAULT.costModels)),
   );
 
   const unsignedWitnesses = CML.TransactionWitnessSet.new();
-  unsignedWitnesses.set_redeemers(buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits));
+  unsignedWitnesses.set_redeemers(buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits, proofWitness));
   const unsigned = CML.Transaction.new(body, unsignedWitnesses, true);
 
   const signingKey = CML.PrivateKey.from_normal_bytes(Buffer.alloc(32, 0x42));
   const vkeys = CML.VkeywitnessList.new();
   vkeys.add(CML.make_vkey_witness(CML.hash_transaction(body), signingKey));
   const signedWitnesses = CML.TransactionWitnessSet.new();
-  signedWitnesses.set_redeemers(buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits));
+  signedWitnesses.set_redeemers(buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits, proofWitness));
   signedWitnesses.set_vkeywitnesses(vkeys);
   const signed = CML.Transaction.new(body, signedWitnesses, true);
 
@@ -535,27 +691,36 @@ function inspectShape(transaction: InstanceType<typeof Lucid.CML.Transaction>): 
   const body = transaction.body();
   const witnesses = transaction.witness_set();
   const redeemers = witnesses.redeemers()?.as_map_redeemer_key_to_redeemer_val();
+  const redeemerKeys = redeemers?.keys();
+  const tags = redeemerKeys
+    ? Array.from({ length: redeemerKeys.len() }, (_, index) => redeemerKeys.get(index).tag())
+    : [];
+  const spendRedeemers = tags.filter((tag) => tag === Lucid.CML.RedeemerTag.Spend).length;
   return {
     regularInputs: body.inputs().len(),
-    scriptInputs: 2,
+    scriptInputs: spendRedeemers,
     collateralInputs: body.collateral_inputs()?.len() ?? 0,
     referenceInputs: body.reference_inputs()?.len() ?? 0,
     inlineDatumOutputs: Array.from({ length: body.outputs().len() }, (_, index) => body.outputs().get(index)).filter(
       (output) => output.datum()?.as_datum() !== undefined,
     ).length,
-    spendRedeemers: redeemers?.len() ?? 0,
+    spendRedeemers,
+    rewardRedeemers: tags.filter((tag) => tag === Lucid.CML.RedeemerTag.Reward).length,
+    withdrawals: body.withdrawals()?.len() ?? 0,
     vkeyWitnesses: witnesses.vkeywitnesses()?.len() ?? 0,
   };
 }
 
-function assertCandidateShape(shape: CapacityTransactionShape): void {
+function assertCandidateShape(shape: CapacityTransactionShape, mode: 'direct' | 'sp1'): void {
   const expected: CapacityTransactionShape = {
     regularInputs: 3,
     scriptInputs: 2,
     collateralInputs: 1,
-    referenceInputs: 2,
+    referenceInputs: mode === 'sp1' ? 3 : 2,
     inlineDatumOutputs: 2,
     spendRedeemers: 2,
+    rewardRedeemers: mode === 'sp1' ? 1 : 0,
+    withdrawals: mode === 'sp1' ? 1 : 0,
     vkeyWitnesses: 1,
   };
   for (const key of Object.keys(expected) as Array<keyof CapacityTransactionShape>) {
@@ -591,12 +756,14 @@ export async function analyzeCapacityScenario(
   const unsignedBytes = byteLength(unsignedCbor);
   const signedBytes = byteLength(signedCbor);
   const shape = inspectShape(transactions.signed);
-  assertCandidateShape(shape);
+  assertCandidateShape(shape, 'direct');
 
   const signatures = header.signedHeader.commit.signatures;
   const payloads = {
     spendClientRedeemerBytes: byteLength(spendClientRedeemer),
     hostStateRedeemerBytes: byteLength(hostStateRedeemer),
+    tendermintProofRedeemerBytes: 0,
+    wrappedProofBytes: 0,
     updatedClientDatumBytes: byteLength(updatedClientDatum),
     updatedHostStateDatumBytes: byteLength(updatedHostStateDatum),
     totalBytes: 0,
@@ -617,6 +784,7 @@ export async function analyzeCapacityScenario(
     encoded: { spendClientRedeemer, hostStateRedeemer, updatedClientDatum, updatedHostStateDatum },
     report: {
       scenario: scenarioName,
+      mode: 'direct',
       classification: 'structural-signed-lower-bound',
       ledgerEvaluated: false,
       providerCompleted: false,
@@ -642,6 +810,203 @@ export async function analyzeCapacityScenario(
       scriptExUnits: {
         hostState: { mem: exUnits.hostState.mem.toString(), steps: exUnits.hostState.steps.toString() },
         spendClient: { mem: exUnits.spendClient.mem.toString(), steps: exUnits.spendClient.steps.toString() },
+        total: { mem: totalExUnits.mem.toString(), steps: totalExUnits.steps.toString() },
+        absoluteMargin: {
+          mem: (CARDANO_MAX_TX_EX_MEM - totalExUnits.mem).toString(),
+          steps: (CARDANO_MAX_TX_EX_STEPS - totalExUnits.steps).toString(),
+        },
+        safeMargin: {
+          mem: (CARDANO_SAFE_TX_EX_MEM - totalExUnits.mem).toString(),
+          steps: (CARDANO_SAFE_TX_EX_STEPS - totalExUnits.steps).toString(),
+        },
+      },
+    },
+  };
+}
+
+type Sp1ProofMetadata = {
+  case: string;
+  program: string;
+  programVkey: string;
+  validators: number;
+  proofTimeNanos: JsonInteger;
+  trustedHeight: { revisionNumber: JsonInteger; revisionHeight: JsonInteger };
+  newHeight: { revisionNumber: JsonInteger; revisionHeight: JsonInteger };
+  wrappedProof: { bytes: number; path: string; sha256: string };
+  publicValues: { bytes: number; path: string; sha256: string };
+};
+
+export async function analyzeProofCapacityScenario(
+  scenarioName: string,
+  scenario: NormalizedCapacityScenario,
+  exUnits: ProofStructuralExUnits = STRUCTURAL_PLACEHOLDER_PROOF_EX_UNITS,
+  exUnitsSource: ExUnitsSource = 'structural-placeholder',
+  artifactPaths: ProofArtifactPaths = {},
+): Promise<CapacityScenarioArtifact> {
+  const metadataPath = artifactPaths.metadataPath ?? DEFAULT_SP1_PROOF_METADATA_PATH;
+  const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as Sp1ProofMetadata;
+  const wrappedProofPath =
+    artifactPaths.wrappedProofPath ?? path.resolve(path.dirname(metadataPath), metadata.wrappedProof.path);
+  const publicValuesPath =
+    artifactPaths.publicValuesPath ?? path.resolve(path.dirname(metadataPath), metadata.publicValues.path);
+  const wrappedProof = fs.readFileSync(wrappedProofPath);
+  const publicValues = fs.readFileSync(publicValuesPath);
+  const header = normalizedHeaderToGateway(scenario.header);
+  const trustedConsensusState = normalizedConsensusStateToGateway(scenario.trusted_consensus_state);
+  const trustedHeight = header.trustedHeight;
+  const newHeight: Height = {
+    revisionNumber: trustedHeight.revisionNumber,
+    revisionHeight: header.signedHeader.header.height,
+  };
+
+  if (metadata.case !== 'injective-45') {
+    throw new Error(`Expected the injective-45 SP1 artifact; found ${metadata.case}`);
+  }
+  if (metadata.program !== EUREKA_UPDATE_CLIENT_PROGRAM) {
+    throw new Error(`Expected SP1 program ${EUREKA_UPDATE_CLIENT_PROGRAM}; found ${metadata.program}`);
+  }
+  if (metadata.programVkey !== EUREKA_UPDATE_CLIENT_PROGRAM_VKEY) {
+    throw new Error(`Expected SP1 program vkey ${EUREKA_UPDATE_CLIENT_PROGRAM_VKEY}; found ${metadata.programVkey}`);
+  }
+
+  if (
+    asBigInt(metadata.trustedHeight.revisionNumber, 'metadata.trustedHeight.revisionNumber') !==
+      trustedHeight.revisionNumber ||
+    asBigInt(metadata.trustedHeight.revisionHeight, 'metadata.trustedHeight.revisionHeight') !==
+      trustedHeight.revisionHeight ||
+    asBigInt(metadata.newHeight.revisionNumber, 'metadata.newHeight.revisionNumber') !== newHeight.revisionNumber ||
+    asBigInt(metadata.newHeight.revisionHeight, 'metadata.newHeight.revisionHeight') !== newHeight.revisionHeight
+  ) {
+    throw new Error('The SP1 proof metadata does not match the normalized Tendermint scenario heights');
+  }
+  if (metadata.validators !== header.validatorSet.validators.length) {
+    throw new Error(
+      `The SP1 proof covers ${metadata.validators} validators, but the scenario contains ${header.validatorSet.validators.length}`,
+    );
+  }
+  if (metadata.wrappedProof.bytes !== wrappedProof.length) {
+    throw new Error(
+      `The SP1 wrapped proof metadata declares ${metadata.wrappedProof.bytes} bytes; found ${wrappedProof.length}`,
+    );
+  }
+  const wrappedProofSha256 = sha256(wrappedProof);
+  if (metadata.wrappedProof.sha256 !== wrappedProofSha256) {
+    throw new Error(`The SP1 wrapped proof SHA-256 is ${wrappedProofSha256}; expected ${metadata.wrappedProof.sha256}`);
+  }
+
+  if (metadata.publicValues.bytes !== publicValues.length) {
+    throw new Error(
+      `The SP1 public-values metadata declares ${metadata.publicValues.bytes} bytes; found ${publicValues.length}`,
+    );
+  }
+  const publicValuesSha256 = sha256(publicValues);
+  if (metadata.publicValues.sha256 !== publicValuesSha256) {
+    throw new Error(`The SP1 public-values SHA-256 is ${publicValuesSha256}; expected ${metadata.publicValues.sha256}`);
+  }
+  const proofTime = asBigInt(metadata.proofTimeNanos, 'metadata.proofTimeNanos');
+  const expectedPublicValues = encodeExpectedEurekaPublicValues(header, trustedConsensusState, proofTime);
+  if (!publicValues.equals(expectedPublicValues)) {
+    throw new Error('The tracked SP1 public values do not encode the normalized Tendermint scenario');
+  }
+
+  const spendClientRedeemer = await encodeSpendClientRedeemer('UpdateClientProof', Lucid);
+  const hostStateRedeemer = await encodeHostStateUpdateRedeemer();
+  const tendermintProofRedeemer = encodeTendermintProofRedeemer(
+    {
+      Update: {
+        client_input_ref: { transaction_id: '22'.repeat(32), output_index: 0n },
+        trusted_height: trustedHeight,
+        new_height: newHeight,
+        new_consensus_state: {
+          timestamp: header.signedHeader.header.time,
+          next_validators_hash: header.signedHeader.header.nextValidatorsHash,
+          root: { hash: header.signedHeader.header.appHash },
+        },
+        proof_time: proofTime,
+        proof: wrappedProof.toString('hex'),
+      },
+    },
+    Lucid,
+  );
+  const { updatedClientDatum, updatedHostStateDatum } = await encodeRepresentativeDatums(header, trustedConsensusState);
+  const transactions = buildStructuralTransactions(
+    hostStateRedeemer,
+    spendClientRedeemer,
+    updatedHostStateDatum,
+    updatedClientDatum,
+    exUnits,
+    { redeemer: tendermintProofRedeemer, exUnits: exUnits.tendermintProof },
+  );
+  const unsignedCbor = transactions.unsigned.to_canonical_cbor_hex();
+  const signedCbor = transactions.signed.to_canonical_cbor_hex();
+  const unsignedBytes = byteLength(unsignedCbor);
+  const signedBytes = byteLength(signedCbor);
+  const shape = inspectShape(transactions.signed);
+  assertCandidateShape(shape, 'sp1');
+
+  const signatures = header.signedHeader.commit.signatures;
+  const payloads: CapacityPayloadSizes = {
+    spendClientRedeemerBytes: byteLength(spendClientRedeemer),
+    hostStateRedeemerBytes: byteLength(hostStateRedeemer),
+    tendermintProofRedeemerBytes: byteLength(tendermintProofRedeemer),
+    wrappedProofBytes: wrappedProof.length,
+    updatedClientDatumBytes: byteLength(updatedClientDatum),
+    updatedHostStateDatumBytes: byteLength(updatedHostStateDatum),
+    totalBytes: 0,
+  };
+  payloads.totalBytes =
+    payloads.spendClientRedeemerBytes +
+    payloads.hostStateRedeemerBytes +
+    payloads.tendermintProofRedeemerBytes +
+    payloads.updatedClientDatumBytes +
+    payloads.updatedHostStateDatumBytes;
+  const totalExUnits = {
+    mem: exUnits.hostState.mem + exUnits.spendClient.mem + exUnits.tendermintProof.mem,
+    steps: exUnits.hostState.steps + exUnits.spendClient.steps + exUnits.tendermintProof.steps,
+  };
+
+  return {
+    unsignedCbor,
+    signedCbor,
+    encoded: {
+      spendClientRedeemer,
+      hostStateRedeemer,
+      tendermintProofRedeemer,
+      updatedClientDatum,
+      updatedHostStateDatum,
+    },
+    report: {
+      scenario: scenarioName,
+      mode: 'sp1',
+      classification: 'structural-signed-lower-bound',
+      ledgerEvaluated: false,
+      providerCompleted: false,
+      balanced: false,
+      exUnitsSource,
+      validatorCount: header.validatorSet.validators.length,
+      trustedValidatorCount: header.trustedValidators.validators.length,
+      commitSlots: signatures.length,
+      committingSlots: signatures.filter((signature) => signature.block_id_flag === 2n).length,
+      absentSlots: signatures.filter((signature) => signature.block_id_flag === 1n).length,
+      nilSlots: signatures.filter((signature) => signature.block_id_flag === 3n).length,
+      adjacent: header.signedHeader.header.height === trustedHeight.revisionHeight + 1n,
+      inputConsensusStates: 1,
+      outputConsensusStates: 2,
+      removedConsensusStates: 0,
+      unsignedBytes,
+      signedBytes,
+      signingOverheadBytes: signedBytes - unsignedBytes,
+      absoluteSizeMarginBytes: CARDANO_MAX_TX_SIZE_BYTES - signedBytes,
+      safeSizeMarginBytes: CARDANO_SAFE_TX_SIZE_BYTES - signedBytes,
+      payloads,
+      shape,
+      scriptExUnits: {
+        hostState: { mem: exUnits.hostState.mem.toString(), steps: exUnits.hostState.steps.toString() },
+        spendClient: { mem: exUnits.spendClient.mem.toString(), steps: exUnits.spendClient.steps.toString() },
+        tendermintProof: {
+          mem: exUnits.tendermintProof.mem.toString(),
+          steps: exUnits.tendermintProof.steps.toString(),
+        },
         total: { mem: totalExUnits.mem.toString(), steps: totalExUnits.steps.toString() },
         absoluteMargin: {
           mem: (CARDANO_MAX_TX_EX_MEM - totalExUnits.mem).toString(),
@@ -706,16 +1071,19 @@ export async function renderAikenFixtureModule(fixturePath = DEFAULT_NORMALIZED_
 }
 
 export function formatCapacityReport(report: CapacityScenarioReport): string {
+  const proofExUnits = report.scriptExUnits.tendermintProof
+    ? ` proof=${report.scriptExUnits.tendermintProof.mem}/${report.scriptExUnits.tendermintProof.steps}`
+    : '';
   return [
-    `${report.scenario} (${report.classification}; ledger-evaluated=${report.ledgerEvaluated}; provider-completed=${report.providerCompleted}; balanced=${report.balanced})`,
+    `${report.scenario} (${report.mode}; ${report.classification}; ledger-evaluated=${report.ledgerEvaluated}; provider-completed=${report.providerCompleted}; balanced=${report.balanced})`,
     `  validators: current=${report.validatorCount} trusted=${report.trustedValidatorCount}`,
     `  commit slots: total=${report.commitSlots} commit=${report.committingSlots} absent=${report.absentSlots} nil=${report.nilSlots}`,
     `  consensus history: input=${report.inputConsensusStates} output=${report.outputConsensusStates} removed=${report.removedConsensusStates}`,
     `  exact CBOR: unsigned=${report.unsignedBytes} signed=${report.signedBytes} signing-overhead=${report.signingOverheadBytes}`,
     `  size margins: absolute=${report.absoluteSizeMarginBytes} safe=${report.safeSizeMarginBytes}`,
-    `  payload bytes: spend-client=${report.payloads.spendClientRedeemerBytes} host-state=${report.payloads.hostStateRedeemerBytes} client-datum=${report.payloads.updatedClientDatumBytes} host-datum=${report.payloads.updatedHostStateDatumBytes} total=${report.payloads.totalBytes}`,
-    `  shape: regular-inputs=${report.shape.regularInputs} script-inputs=${report.shape.scriptInputs} collateral=${report.shape.collateralInputs} references=${report.shape.referenceInputs} inline-outputs=${report.shape.inlineDatumOutputs} spend-redeemers=${report.shape.spendRedeemers} vkeys=${report.shape.vkeyWitnesses}`,
-    `  script ex-units (${report.exUnitsSource}; ledger-evaluated=${report.ledgerEvaluated}): host-state=${report.scriptExUnits.hostState.mem}/${report.scriptExUnits.hostState.steps} spend-client=${report.scriptExUnits.spendClient.mem}/${report.scriptExUnits.spendClient.steps} total=${report.scriptExUnits.total.mem}/${report.scriptExUnits.total.steps}`,
+    `  payload bytes: spend-client=${report.payloads.spendClientRedeemerBytes} host-state=${report.payloads.hostStateRedeemerBytes} proof-redeemer=${report.payloads.tendermintProofRedeemerBytes} wrapped-proof(nested)=${report.payloads.wrappedProofBytes} client-datum=${report.payloads.updatedClientDatumBytes} host-datum=${report.payloads.updatedHostStateDatumBytes} total=${report.payloads.totalBytes}`,
+    `  shape: regular-inputs=${report.shape.regularInputs} script-inputs=${report.shape.scriptInputs} collateral=${report.shape.collateralInputs} references=${report.shape.referenceInputs} inline-outputs=${report.shape.inlineDatumOutputs} spend-redeemers=${report.shape.spendRedeemers} reward-redeemers=${report.shape.rewardRedeemers} withdrawals=${report.shape.withdrawals} vkeys=${report.shape.vkeyWitnesses}`,
+    `  script ex-units (${report.exUnitsSource}; ledger-evaluated=${report.ledgerEvaluated}): host-state=${report.scriptExUnits.hostState.mem}/${report.scriptExUnits.hostState.steps} spend-client=${report.scriptExUnits.spendClient.mem}/${report.scriptExUnits.spendClient.steps}${proofExUnits} total=${report.scriptExUnits.total.mem}/${report.scriptExUnits.total.steps}`,
     `  ex-unit margins: absolute=${report.scriptExUnits.absoluteMargin.mem}/${report.scriptExUnits.absoluteMargin.steps} safe=${report.scriptExUnits.safeMargin.mem}/${report.scriptExUnits.safeMargin.steps}`,
   ].join('\n');
 }

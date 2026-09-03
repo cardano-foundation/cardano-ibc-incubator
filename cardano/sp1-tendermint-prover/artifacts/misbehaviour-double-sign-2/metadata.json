@@ -1,0 +1,61 @@
+{
+  "case": "misbehaviour-double-sign-2",
+  "validators": 2,
+  "program": "sp1-ics07-tendermint-misbehaviour-v2.0.0",
+  "programVkey": "0010008da4267c2e85d02616e853379e3c937c03a271b5b005f479cff09ccfcb",
+  "eurekaRelease": "sp1-programs-v2.0.0",
+  "eurekaCommit": "ef25a661a8be156d4908956e1055ca40cd67adb7",
+  "eurekaElfSha256": "6ec141ebb604565dfb7669f8482bd3eacc57ae35158ba3931f1c20f78f7bf921",
+  "sp1Version": "6.1.0",
+  "scenario": {
+    "source": "packages/tendermint-light-client/misbehaviour/tests/helpers.rs:double_sign_scenario",
+    "chainId": "test-chain-0",
+    "evidenceBytes": 1489,
+    "evidenceSha256": "bfc567b28ed5326f0c9b384a1015c60006d7b32b289d5e534f3f250f2db89a3a",
+    "trustedAppHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "requestId": "0e80700f8d70fec6fec1bfed1fcba9c61cf537ede74ee68ad2cfcceb786bfa56",
+  "proofTimeNanos": "1000003600000000000",
+  "trustedHeight1": {
+    "revisionNumber": "0",
+    "revisionHeight": "1"
+  },
+  "trustedHeight2": {
+    "revisionNumber": "0",
+    "revisionHeight": "1"
+  },
+  "trustedConsensusState": {
+    "timestampNanos": "1000000000000000000",
+    "root": "0000000000000000000000000000000000000000000000000000000000000000",
+    "nextValidatorsHash": "6b3e8b55d47c1687a7e43d65ed8a07debfdefcf2dac5bee87556a1a81b94c2cf"
+  },
+  "measurement": {
+    "profile": "release",
+    "preWrapperPipelineSecondsApprox": 623,
+    "outerWrapperSecondsApprox": 142,
+    "totalSeconds": 765.06,
+    "maximumResidentBytes": 8208957440,
+    "sp1Groth16Constraints": 15972262
+  },
+  "publicValues": {
+    "path": "public_values.bin",
+    "bytes": 768,
+    "sha256": "1d7e7545afa75466ce623cd1b66250d4cb7d9ba642fc16d441676d7c888c541a"
+  },
+  "wrappedProof": {
+    "path": "wrapped_proof.bin",
+    "bytes": 288,
+    "sha256": "67070bc3eef265a14c887209a21ae84575ca219fd399050bcbb739381c2988c6"
+  },
+  "wrapperPublicVkey": {
+    "path": "../wrapper_verification_key.json",
+    "sha256": "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037"
+  },
+  "wrapperSetup": {
+    "developmentSetup": true,
+    "constraints": 1192065,
+    "r1csSha256": "e56e08438f85b4e6c5cff9faa3cd42cf3307859b106a7e1cb6ba9f8c813c2512",
+    "provingKeySha256": "6e2193c290385ad7582594066c7c88a9ed50f3584a31ffad72b9e3f5d419ca9d",
+    "rawVerificationKeySha256": "dcf014ab0fec55883fc7922595119f51f77dcc6596d6ff148311ba03e53abf1e"
+  }
+}

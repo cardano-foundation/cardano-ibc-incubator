@@ -7,6 +7,7 @@ import {
   resolveManagedKupoUrl,
 } from "./http_auth.ts";
 import { queryOgmiosJsonRpc } from "./external_cardano.ts";
+import type { TendermintProofSetupMetadata } from "./tendermint_proof_verification_key.ts";
 import {
   Address,
   applyParamsToScript,
@@ -778,6 +779,7 @@ export const getLiveWalletUtxos = async (
 
 type Validator =
   | "spendClient"
+  | "tendermintProof"
   | "spendConnection"
   | "spendChannel"
   | "spendMockModule"
@@ -800,8 +802,22 @@ type Tokens = "mock";
 
 export type DeploymentTemplate = {
   deployedAt: string;
+  tendermintClient: {
+    protocol: "07-tendermint-sp1" | "07-tendermint-direct";
+    scriptHash: string;
+  };
+  tendermintProofSetup: TendermintProofSetupMetadata & {
+    verificationKeySha256: string;
+  };
   validators: {
     spendClient: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    tendermintProof: {
       title: string;
       script: string;
       scriptHash: string;

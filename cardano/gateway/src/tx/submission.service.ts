@@ -12,7 +12,7 @@ import {
   ibcTreeCacheIdForHeight,
   ibcTreeCacheIdForRoot,
 } from '../shared/services/ibc-tree-cache.service';
-import { getCurrentTree } from '../shared/helpers/ibc-state-root';
+import { getCurrentTree, setCurrentTree } from '../shared/helpers/ibc-state-root';
 import { HISTORY_SERVICE, HistoryService } from '../query/services/history.service';
 import { QueryService } from '../query/services/query.service';
 import { GatewayEvent } from './tx-events.service';
@@ -68,16 +68,29 @@ export class SubmissionService {
       // so wait for that backend to index the submitted tx and use its block number.
       const confirmedBlockNo = await this.waitForIndexedConfirmation(txHash);
 
+      const unsignedTxHash = this.computeTxBodyHashHex(signedTxCbor) || txHash;
+
       const confirmedRoot = await this.applyPendingIbcTreeUpdate(
         signedTxCbor,
         txHash,
         BigInt(confirmedBlockNo),
+        unsignedTxHash,
       );
 
-      let events =
-        this.txEventsService.take(txHash) ||
-        this.txEventsService.takeByExpectedRoot(confirmedRoot) ||
-        [];
+      try {
+        await this.ibcTreeCacheService.bindTxEventsToConfirmedTransaction(unsignedTxHash, confirmedRoot, txHash);
+      } catch (error) {
+        this.logger.warn(`Failed to bind persisted events to tx ${txHash}: ${error?.message ?? error}`);
+      }
+
+      let events = this.txEventsService.take(txHash) || [];
+      if (events.length === 0) {
+        try {
+          events = (await this.ibcTreeCacheService.loadTxEventsByConfirmedHash(txHash)) || [];
+        } catch (error) {
+          this.logger.warn(`Failed to load persisted events for tx ${txHash}: ${error?.message ?? error}`);
+        }
+      }
       if (events.length === 0) {
         events = await this.findIndexedPacketEvents(txHash);
       }
@@ -100,25 +113,43 @@ export class SubmissionService {
     signedTxCbor: string,
     txHash: string,
     confirmedBlockNo: bigint,
+    unsignedTxHash: string = this.computeTxBodyHashHex(signedTxCbor) || txHash,
   ): Promise<string> {
     // Tree updates are registered when building unsigned txs and keyed by tx hash.
     // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
-    let pending = this.ibcTreePendingUpdatesService.take(txHash);
+    let pending = this.ibcTreePendingUpdatesService.take(unsignedTxHash);
     let confirmedRoot: string | undefined;
 
-    // Best-effort: if hashes don't line up due to encoding/formatting, compute the canonical body hash.
+    if (!pending && unsignedTxHash.toLowerCase() !== txHash.toLowerCase()) {
+      pending = this.ibcTreePendingUpdatesService.take(txHash);
+    }
+
+    // Proof updates persist the exact speculative tree under the unsigned body
+    // hash before returning it to the signer. Restore that snapshot after a
+    // Gateway restart and verify it against the confirmed HostState output.
     if (!pending) {
-      const fallbackHash = this.computeTxBodyHashHex(signedTxCbor);
-      if (fallbackHash && fallbackHash.toLowerCase() !== txHash.toLowerCase()) {
-        pending = this.ibcTreePendingUpdatesService.take(fallbackHash);
+      confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);
+      const persisted = await this.ibcTreeCacheService.loadPendingTreeSnapshot(unsignedTxHash);
+      if (persisted) {
+        if (persisted.root.toLowerCase() !== confirmedRoot.toLowerCase()) {
+          throw new GrpcInternalException(
+            `Persisted IBC tree root mismatch for tx ${txHash}: expected ${persisted.root.substring(0, 16)}..., got ${confirmedRoot.substring(0, 16)}...`,
+          );
+        }
+        pending = {
+          expectedNewRoot: persisted.root,
+          treeSnapshot: persisted.tree,
+          commit: () => setCurrentTree(persisted.tree),
+        };
       }
     }
 
-    // Strict fallback: if hash matching fails, resolve the pending update by the resulting
-    // confirmed transaction root. This keeps correctness strict (root must match exactly) while handling
-    // signer/tooling paths that produce a different tx hash key than we recorded pre-signing.
+    // Root fallback is only allowed when exactly one in-memory candidate has
+    // that result. Ambiguous candidates are rejected by the pending service.
     if (!pending) {
-      confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);
+      if (!confirmedRoot) {
+        confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);
+      }
       pending = this.ibcTreePendingUpdatesService.takeByExpectedRoot(confirmedRoot);
       if (pending) {
         this.logger.warn(
@@ -150,13 +181,21 @@ export class SubmissionService {
     pending.commit();
 
     // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
-    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return confirmedRoot;
+    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') {
+      try {
+        await this.ibcTreeCacheService.deletePendingTreeSnapshot(unsignedTxHash);
+      } catch (error) {
+        this.logger.warn(`Failed to remove pending tree snapshot for tx ${txHash}: ${error?.message ?? error}`);
+      }
+      return confirmedRoot;
+    }
     try {
       await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
         CURRENT_IBC_TREE_CACHE_ID,
         ibcTreeCacheIdForRoot(confirmedRoot),
         ibcTreeCacheIdForHeight(confirmedBlockNo),
       ]);
+      await this.ibcTreeCacheService.deletePendingTreeSnapshot(unsignedTxHash);
     } catch (error) {
       this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
     }

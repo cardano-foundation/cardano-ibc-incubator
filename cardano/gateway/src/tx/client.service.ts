@@ -22,17 +22,20 @@ import {
   CLIENT_PREFIX,
   EVENT_TYPE_CLIENT,
   MAX_CONSENSUS_STATE_SIZE,
+  MAX_SP1_CONSENSUS_STATE_SIZE,
 } from 'src/constant';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from 'src/shared/types/client-datum';
 import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
 import { Height } from 'src/shared/types/height';
 import { isExpired } from '@shared/helpers/client-state';
+import { getClientMessageFromTendermint, verifyClientMessage } from '../shared/types/msgs/client-message';
 import {
-  ClientMessage,
-  getClientMessageFromTendermint,
-  verifyClientMessage,
-} from '../shared/types/msgs/client-message';
-import { checkForMisbehaviour, TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '@shared/types/misbehaviour/misbehaviour';
+  checkForMisbehaviour,
+  decodeMisBehaviour,
+  initializeMisbehaviour,
+  TENDERMINT_HEADER_TYPE_URL,
+  TENDERMINT_MISBEHAVIOUR_TYPE_URL,
+} from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import {
   validateAndFormatCreateClientParams,
@@ -54,6 +57,16 @@ import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import { toHex } from '../shared/helpers/hex';
 import type { GatewayEvent } from './tx-events.service';
 import { getHeightMapValue, getProcessedHeight } from '../shared/helpers/verify';
+import {
+  buildEurekaUpdateClientOutput,
+  EUREKA_UPDATE_CLIENT_MAX_CLOCK_DRIFT_NS,
+  toEurekaClientState,
+  toEurekaConsensusState,
+} from '../shared/types/sp1-update-client';
+import { buildEurekaMisbehaviourOutput } from '../shared/types/sp1-misbehaviour';
+import { TendermintProofService } from './tendermint-proof.service';
+import { encodeTendermintProofRedeemer } from '../shared/types/tendermint-proof-redeemer';
+import type { DeploymentConfig, TendermintClientProtocol } from '../config/bridge-manifest';
 
 @Injectable()
 export class ClientService {
@@ -62,7 +75,67 @@ export class ClientService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
+    private readonly tendermintProofService: TendermintProofService,
   ) {}
+
+  private requireTendermintClientDeployment(): DeploymentConfig {
+    const deployment = this.configService.get<DeploymentConfig>('deployment');
+    const protocol = deployment?.tendermintClient?.protocol;
+    const boundScriptHash = deployment?.tendermintClient?.scriptHash;
+    const spendClientScriptHash = deployment?.validators?.spendClient?.scriptHash;
+    if (protocol !== '07-tendermint-sp1' && protocol !== '07-tendermint-direct') {
+      throw new GrpcInternalException('Bridge deployment has no supported Tendermint client protocol');
+    }
+    if (!boundScriptHash || boundScriptHash !== spendClientScriptHash) {
+      throw new GrpcInternalException(
+        'Bridge deployment Tendermint client script hash does not match validators.spendClient',
+      );
+    }
+    if (protocol === '07-tendermint-sp1' && !deployment.validators.tendermintProof) {
+      throw new GrpcInternalException('Bridge deployment has no Tendermint proof validator');
+    }
+    return deployment;
+  }
+
+  private requireConfiguredSpendClientAddress(deployment: DeploymentConfig): void {
+    const spendClientAddress = deployment.validators.spendClient.address;
+    let paymentCredential: ReturnType<LucidService['getPaymentCredential']>;
+    try {
+      paymentCredential = this.lucidService.getPaymentCredential(spendClientAddress ?? '');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new GrpcInternalException(`Invalid configured spend-client address: ${reason}`);
+    }
+    if (paymentCredential?.type !== 'Script' || paymentCredential.hash !== deployment.tendermintClient.scriptHash) {
+      throw new GrpcInternalException(
+        'Configured spend-client address does not use the Tendermint client script declared by the deployment',
+      );
+    }
+  }
+
+  private createClientProtocol(): TendermintClientProtocol {
+    const deployment = this.requireTendermintClientDeployment();
+    this.requireConfiguredSpendClientAddress(deployment);
+    return deployment.tendermintClient.protocol;
+  }
+
+  private clientProtocolForUtxo(clientUtxo: UTxO): TendermintClientProtocol {
+    const deployment = this.requireTendermintClientDeployment();
+    this.requireConfiguredSpendClientAddress(deployment);
+    let paymentCredential: ReturnType<LucidService['getPaymentCredential']>;
+    try {
+      paymentCredential = this.lucidService.getPaymentCredential(clientUtxo.address);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new GrpcInvalidArgumentException(`Invalid Tendermint client UTxO address: ${reason}`);
+    }
+    if (paymentCredential?.type !== 'Script' || paymentCredential.hash !== deployment.tendermintClient.scriptHash) {
+      throw new GrpcInvalidArgumentException(
+        'Tendermint client UTxO is not locked by the spend-client script declared by this deployment',
+      );
+    }
+    return deployment.tendermintClient.protocol;
+  }
 
   private async refreshWalletContext(address: string, context: string): Promise<void> {
     const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
@@ -147,19 +220,29 @@ export class ClientService {
     try {
       this.logger.log('Create client is processing', 'createClient');
       const { constructedAddress, clientState, consensusState } = validateAndFormatCreateClientParams(data);
+      if (this.createClientProtocol() === '07-tendermint-sp1') {
+        try {
+          toEurekaClientState(clientState);
+          toEurekaConsensusState('initialConsensusState', consensusState);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          throw new GrpcInvalidArgumentException(`SP1 Tendermint client is incompatible with Eureka v2: ${reason}`);
+        }
+      }
       await this.refreshWalletContext(constructedAddress, 'createClientBuilder');
       const { validFromTime: validFromTimestamp, validToTime: validToTimestamp } =
         await this.computeTxValidityWindow(60_000);
       const txValidFromNs = BigInt(validFromTimestamp) * 1_000_000n;
       // Build unsigned create client transaction
-      const { unsignedTx: unsignedCreateClientTx, clientId, pendingTreeUpdate } = await this.buildUnsignedCreateClientTx(
-        clientState,
-        consensusState,
-        constructedAddress,
-        txValidFromNs,
-      );
+      const {
+        unsignedTx: unsignedCreateClientTx,
+        clientId,
+        pendingTreeUpdate,
+      } = await this.buildUnsignedCreateClientTx(clientState, consensusState, constructedAddress, txValidFromNs);
 
-      this.logger.log(`[DEBUG] Setting validity: validFrom=${new Date(validFromTimestamp).toISOString()}, validTo=${new Date(validToTimestamp).toISOString()}`);
+      this.logger.log(
+        `[DEBUG] Setting validity: validFrom=${new Date(validFromTimestamp).toISOString()}, validTo=${new Date(validToTimestamp).toISOString()}`,
+      );
 
       const createdClientId = `${CLIENT_ID_PREFIX}-${clientId.toString()}`;
       const { unsignedTxCbor, unsignedTxBytes: hexStringBytes } = await this.txOperationRunnerService.run({
@@ -194,7 +277,9 @@ export class ClientService {
       });
 
       this.logger.log(`Returning unsigned tx for client creation (client_id: ${createdClientId})`);
-      this.logger.log(`CBOR hex string length: ${unsignedTxCbor.length}, first 40 chars: ${unsignedTxCbor.substring(0, 40)}`);
+      this.logger.log(
+        `CBOR hex string length: ${unsignedTxCbor.length}, first 40 chars: ${unsignedTxCbor.substring(0, 40)}`,
+      );
 
       const response: MsgCreateClientResponse = {
         unsigned_tx: {
@@ -209,7 +294,9 @@ export class ClientService {
       // Log full error object to capture Ogmios evaluateTransaction details
       this.logger.error(`createClient FULL ERROR: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`);
       if (error?.cause) {
-        this.logger.error(`createClient ERROR CAUSE: ${JSON.stringify(error.cause, Object.getOwnPropertyNames(error.cause), 2)}`);
+        this.logger.error(
+          `createClient ERROR CAUSE: ${JSON.stringify(error.cause, Object.getOwnPropertyNames(error.cause), 2)}`,
+        );
       }
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error.stack}`);
@@ -231,19 +318,47 @@ export class ClientService {
       const clientTokenUnit = this.lucidService.getClientTokenUnit(clientId);
       // Find the UTXO for the client token
       const currentClientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+      const protocol = this.clientProtocolForUtxo(currentClientUtxo);
       // Retrieve the current client datum from the UTXO
       const currentClientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(
         currentClientUtxo.datum!,
         'client',
       );
 
-      if (!verifyClientMessage(data.client_message, currentClientDatum)) {
+      const usesSp1Mode = protocol === '07-tendermint-sp1';
+      const isTendermintHeader = data.client_message.type_url === TENDERMINT_HEADER_TYPE_URL;
+      const isTendermintMisbehaviour = data.client_message.type_url === TENDERMINT_MISBEHAVIOUR_TYPE_URL;
+      if (usesSp1Mode && !isTendermintHeader && !isTendermintMisbehaviour) {
+        throw new GrpcInvalidArgumentException(
+          'SP1 Tendermint clients accept only Header or Misbehaviour client messages',
+        );
+      }
+      const usesSp1HeaderProof = usesSp1Mode && isTendermintHeader;
+      const usesSp1MisbehaviourProof = usesSp1Mode && isTendermintMisbehaviour;
+      const usesSp1Proof = usesSp1HeaderProof || usesSp1MisbehaviourProof;
+
+      if (
+        usesSp1Proof &&
+        currentClientDatum.state.clientState.maxClockDrift !== EUREKA_UPDATE_CLIENT_MAX_CLOCK_DRIFT_NS
+      ) {
+        throw new GrpcInvalidArgumentException(
+          `SP1 Tendermint clients require max_clock_drift=${EUREKA_UPDATE_CLIENT_MAX_CLOCK_DRIFT_NS.toString()}ns`,
+        );
+      }
+
+      if (usesSp1Proof && currentClientDatum.state.consensusStates.size > MAX_SP1_CONSENSUS_STATE_SIZE) {
+        throw new GrpcInvalidArgumentException(
+          `Proof-based Tendermint client history exceeds the ${MAX_SP1_CONSENSUS_STATE_SIZE.toString()}-state limit`,
+        );
+      }
+
+      if (!usesSp1Proof && !verifyClientMessage(data.client_message, currentClientDatum)) {
         throw new GrpcInvalidArgumentException('Invalid client message');
       }
 
       const foundMisbehaviour = checkForMisbehaviour(data.client_message, currentClientDatum);
 
-      if (foundMisbehaviour) {
+      if (foundMisbehaviour && !usesSp1Proof) {
         await this.refreshWalletContext(constructedAddress, 'updateClientOnMisbehaviourBuilder');
         // Build and complete the unsigned transaction
         const updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto = {
@@ -260,8 +375,7 @@ export class ClientService {
         const maxClockDriftMs = currentClientDatum.state.clientState.maxClockDrift / 1_000_000n;
         const maxBackdateMarginMs = 1_000n;
         const maxBackdateCapMs = 60_000n;
-        const maxAllowedBackdateMs =
-          maxClockDriftMs > maxBackdateMarginMs ? (maxClockDriftMs - maxBackdateMarginMs) : 0n;
+        const maxAllowedBackdateMs = maxClockDriftMs > maxBackdateMarginMs ? maxClockDriftMs - maxBackdateMarginMs : 0n;
         const safeBackdateMs = Number(
           maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs,
         );
@@ -308,7 +422,123 @@ export class ClientService {
         return response;
       }
       if (data.client_message.type_url === TENDERMINT_MISBEHAVIOUR_TYPE_URL) {
-        throw new GrpcInvalidArgumentException('submitted Tendermint misbehaviour does not prove a conflict');
+        if (!usesSp1MisbehaviourProof || !foundMisbehaviour) {
+          throw new GrpcInvalidArgumentException('submitted Tendermint misbehaviour does not prove a conflict');
+        }
+
+        const misbehaviourMessage = decodeMisBehaviour(data.client_message.value);
+        if (misbehaviourMessage.client_id !== data.client_id) {
+          throw new GrpcInvalidArgumentException(
+            `Tendermint misbehaviour client_id ${misbehaviourMessage.client_id} does not match ${data.client_id}`,
+          );
+        }
+        const misbehaviour = initializeMisbehaviour(misbehaviourMessage);
+        if (misbehaviour.header1.signedHeader.header.height < misbehaviour.header2.signedHeader.header.height) {
+          throw new GrpcInvalidArgumentException(
+            'Tendermint misbehaviour header1 height must be greater than or equal to header2 height',
+          );
+        }
+
+        const trustedConsensusState1 = getHeightMapValue(
+          currentClientDatum.state.consensusStates,
+          misbehaviour.header1.trustedHeight,
+        );
+        if (!trustedConsensusState1) {
+          throw new GrpcInvalidArgumentException(
+            `No trusted consensus state exists for misbehaviour header1 at ${misbehaviour.header1.trustedHeight.revisionNumber.toString()}-${misbehaviour.header1.trustedHeight.revisionHeight.toString()}`,
+          );
+        }
+        const trustedConsensusState2 = getHeightMapValue(
+          currentClientDatum.state.consensusStates,
+          misbehaviour.header2.trustedHeight,
+        );
+        if (!trustedConsensusState2) {
+          throw new GrpcInvalidArgumentException(
+            `No trusted consensus state exists for misbehaviour header2 at ${misbehaviour.header2.trustedHeight.revisionNumber.toString()}-${misbehaviour.header2.trustedHeight.revisionHeight.toString()}`,
+          );
+        }
+
+        const maxClockDriftMs = currentClientDatum.state.clientState.maxClockDrift / 1_000_000n;
+        const maxBackdateMarginMs = 1_000n;
+        const maxBackdateCapMs = 60_000n;
+        const maxAllowedBackdateMs = maxClockDriftMs > maxBackdateMarginMs ? maxClockDriftMs - maxBackdateMarginMs : 0n;
+        const safeBackdateMs = Number(
+          maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs,
+        );
+        const initialValidity = await this.computeTxValidityWindow(safeBackdateMs);
+        const proofTime = BigInt(initialValidity.currentLedgerTime) * 1_000_000n;
+        const expectedOutput = buildEurekaMisbehaviourOutput({
+          clientState: currentClientDatum.state.clientState,
+          time: proofTime,
+          trustedHeight1: misbehaviour.header1.trustedHeight,
+          trustedHeight2: misbehaviour.header2.trustedHeight,
+          trustedConsensusState1,
+          trustedConsensusState2,
+        });
+        const { proof } = await this.tendermintProofService.proveMisbehaviour({
+          misbehaviourBytes: data.client_message.value,
+          expectedOutput,
+        });
+
+        const latestClientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+        if (
+          latestClientUtxo.txHash !== currentClientUtxo.txHash ||
+          latestClientUtxo.outputIndex !== currentClientUtxo.outputIndex
+        ) {
+          throw new GrpcInvalidArgumentException(
+            'The Tendermint client advanced while its proof was being created; retry',
+          );
+        }
+
+        const { validFromTime: validFromTimeMs, validToTime: validToTimeMs } =
+          await this.computeTxValidityWindow(safeBackdateMs);
+        await this.refreshWalletContext(constructedAddress, 'updateClientOnMisbehaviourBuilder');
+        const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } = await this.buildUnsignedUpdateOnMisbehaviour({
+          clientId,
+          clientMessage: data.client_message,
+          constructedAddress,
+          clientDatum: currentClientDatum,
+          clientTokenUnit,
+          currentClientUtxo,
+          proof,
+          proofTime,
+          trustedHeight1: misbehaviour.header1.trustedHeight,
+          trustedHeight2: misbehaviour.header2.trustedHeight,
+        });
+        const frozenHeight = { revisionNumber: 0n, revisionHeight: 1n } as Height;
+        const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+          operationName: 'updateClientOnMisbehaviour',
+          unsignedTx: unsignedUpdateClientTx,
+          validity: {
+            apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTimeMs),
+          },
+          wallet: {
+            mode: 'refresh_from_address',
+            address: constructedAddress,
+            context: 'updateClientOnMisbehaviour',
+          },
+          completeOptions: {
+            localUPLCEval: false,
+            setCollateral: TRANSACTION_SET_COLLATERAL,
+          },
+          pendingTreeUpdate,
+          syntheticEvents: [
+            this.buildUpdateClientSyntheticEvent(
+              EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR,
+              clientId,
+              frozenHeight,
+              data.client_message,
+            ),
+          ],
+          persistSyntheticEvents: true,
+          durableStateValidToMs: validToTimeMs,
+        });
+
+        this.logger.log(`Returning unsigned tx for SP1 misbehaviour (client_id: ${clientId})`);
+        return {
+          unsigned_tx: { type_url: '', value: cborHexBytes },
+          client_id: parseInt(clientId.toString()),
+        } as unknown as MsgUpdateClientResponse;
       }
       const headerMsg = decodeHeader(data.client_message.value);
       const header = initializeHeader(headerMsg);
@@ -334,13 +564,58 @@ export class ClientService {
       // due to normal cross-chain time skew.
       const maxBackdateMarginMs = 1_000n;
       const maxBackdateCapMs = 60_000n;
-      const maxAllowedBackdateMs =
-        maxClockDriftMs > maxBackdateMarginMs ? (maxClockDriftMs - maxBackdateMarginMs) : 0n;
-      const safeBackdateMs = Number(
-        maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs,
-      );
-      const { validFromTime: validFromTimeMs, validToTime: validToTimeMs } =
-        await this.computeTxValidityWindow(safeBackdateMs);
+      const maxAllowedBackdateMs = maxClockDriftMs > maxBackdateMarginMs ? maxClockDriftMs - maxBackdateMarginMs : 0n;
+      const safeBackdateMs = Number(maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs);
+      let validity = await this.computeTxValidityWindow(safeBackdateMs);
+      let proof: string | undefined;
+      let proofTime: bigint | undefined;
+      if (usesSp1Proof) {
+        const trustedConsensusState = getHeightMapValue(currentClientDatum.state.consensusStates, header.trustedHeight);
+        if (!trustedConsensusState) {
+          throw new GrpcInvalidArgumentException(
+            `No trusted consensus state exists at ${header.trustedHeight.revisionNumber.toString()}-${header.trustedHeight.revisionHeight.toString()}`,
+          );
+        }
+        const newHeight: Height = {
+          revisionNumber: header.trustedHeight.revisionNumber,
+          revisionHeight: header.signedHeader.header.height,
+        };
+        const newConsensusState: ConsensusState = {
+          timestamp: header.signedHeader.header.time,
+          next_validators_hash: header.signedHeader.header.nextValidatorsHash,
+          root: { hash: header.signedHeader.header.appHash },
+        };
+        proofTime = BigInt(validity.currentLedgerTime) * 1_000_000n;
+        const expectedOutput = buildEurekaUpdateClientOutput({
+          clientState: currentClientDatum.state.clientState,
+          trustedConsensusState,
+          newConsensusState,
+          time: proofTime,
+          trustedHeight: header.trustedHeight,
+          newHeight,
+        });
+        proof = (
+          await this.tendermintProofService.proveUpdateClient({
+            headerBytes: data.client_message.value,
+            expectedOutput,
+          })
+        ).proof;
+
+        const latestClientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+        if (
+          latestClientUtxo.txHash !== currentClientUtxo.txHash ||
+          latestClientUtxo.outputIndex !== currentClientUtxo.outputIndex
+        ) {
+          throw new GrpcInvalidArgumentException(
+            'The Tendermint client advanced while its proof was being created; retry',
+          );
+        }
+
+        // Proof generation can take several minutes. Build the transaction with
+        // a fresh ledger-anchored validity window after the proof returns.
+        validity = await this.computeTxValidityWindow(safeBackdateMs);
+      }
+      const { validFromTime: validFromTimeMs, validToTime: validToTimeMs } = validity;
       const txValidFromNs = BigInt(validFromTimeMs) * 1_000_000n;
       const updateClientHeaderOperator: UpdateClientOperatorDto = {
         clientId,
@@ -350,6 +625,9 @@ export class ClientService {
         clientTokenUnit,
         currentClientUtxo,
         txValidFrom: txValidFromNs,
+        proof,
+        proofTime,
+        proofMisbehaviour: usesSp1Proof && foundMisbehaviour,
       };
 
       await this.refreshWalletContext(constructedAddress, 'updateClientBuilder');
@@ -373,12 +651,14 @@ export class ClientService {
         pendingTreeUpdate,
         syntheticEvents: [
           this.buildUpdateClientSyntheticEvent(
-            EVENT_TYPE_CLIENT.UPDATE_CLIENT,
+            foundMisbehaviour ? EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR : EVENT_TYPE_CLIENT.UPDATE_CLIENT,
             clientId,
-            updateConsensusHeight,
+            foundMisbehaviour ? { revisionNumber: 0n, revisionHeight: 1n } : updateConsensusHeight,
             data.client_message,
           ),
         ],
+        persistSyntheticEvents: usesSp1Proof,
+        durableStateValidToMs: usesSp1Proof ? validToTimeMs : undefined,
       });
 
       this.logger.log(`Returning unsigned tx for update client (client_id: ${clientId})`);
@@ -406,15 +686,14 @@ export class ClientService {
     updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const currentClientDatumState = updateOnMisbehaviourOperator.clientDatum.state;
-    const clientMessageAny = updateOnMisbehaviourOperator.clientMessage;
-    const clientMessage: ClientMessage = getClientMessageFromTendermint(clientMessageAny);
-
-    // Create a SpendClientRedeemer using the provided header
-    const spendClientRedeemer: SpendClientRedeemer = {
-      UpdateClient: {
-        msg: clientMessage,
-      },
-    };
+    const usesProof = updateOnMisbehaviourOperator.proof !== undefined;
+    const spendClientRedeemer: SpendClientRedeemer = usesProof
+      ? 'UpdateClientProof'
+      : {
+          UpdateClient: {
+            msg: getClientMessageFromTendermint(updateOnMisbehaviourOperator.clientMessage),
+          },
+        };
 
     const newClientState: ClientState = {
       ...currentClientDatumState.clientState,
@@ -474,14 +753,20 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
-      computeRootWithUpdateClientUpdate(
-        hostStateDatum.state.ibc_state_root,
-        ibcClientId,
-        newClientStateValue,
-        removedConsensusHeights,
-        addedConsensusState,
-      );
+    const {
+      newRoot,
+      clientStateSiblings,
+      consensusStateSiblings,
+      removedConsensusStateSiblings,
+      treeSnapshot,
+      commit,
+    } = computeRootWithUpdateClientUpdate(
+      hostStateDatum.state.ibc_state_root,
+      ibcClientId,
+      newClientStateValue,
+      removedConsensusHeights,
+      addedConsensusState,
+    );
 
     const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
@@ -502,6 +787,24 @@ export class ClientService {
     };
 
     const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer');
+    const encodedTendermintProofRedeemer =
+      'trustedHeight1' in updateOnMisbehaviourOperator
+        ? encodeTendermintProofRedeemer(
+            {
+              Misbehaviour: {
+                client_input_ref: {
+                  transaction_id: updateOnMisbehaviourOperator.currentClientUtxo.txHash,
+                  output_index: BigInt(updateOnMisbehaviourOperator.currentClientUtxo.outputIndex),
+                },
+                trusted_height_1: updateOnMisbehaviourOperator.trustedHeight1,
+                trusted_height_2: updateOnMisbehaviourOperator.trustedHeight2,
+                proof_time: updateOnMisbehaviourOperator.proofTime,
+                proof: updateOnMisbehaviourOperator.proof,
+              },
+            },
+            this.lucidService.LucidImporter,
+          )
+        : undefined;
     const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
@@ -514,10 +817,11 @@ export class ClientService {
       encodedNewClientDatum,
       updateOnMisbehaviourOperator.clientTokenUnit,
       updateOnMisbehaviourOperator.constructedAddress,
+      encodedTendermintProofRedeemer,
     );
     return {
       unsignedTx,
-      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit, treeSnapshot },
     };
   }
 
@@ -529,30 +833,23 @@ export class ClientService {
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const currentClientDatumState = updateClientOperator.clientDatum.state;
     const header = updateClientOperator.header;
-    // Create a SpendClientRedeemer using the provided header
-    const spendClientRedeemer: SpendClientRedeemer = {
-      UpdateClient: {
-        msg: {
-          HeaderCase: [header],
-        },
-      },
-    };
+    const spendClientRedeemer: SpendClientRedeemer = updateClientOperator.proof
+      ? 'UpdateClientProof'
+      : {
+          UpdateClient: {
+            msg: {
+              HeaderCase: [header],
+            },
+          },
+        };
     const headerHeight = header.signedHeader.header.height;
-    validateUpdateHeaderAdvancesLatestHeight(
-      headerHeight,
-      currentClientDatumState.clientState.latestHeight,
-    );
+    if (header.trustedHeight.revisionNumber !== currentClientDatumState.clientState.latestHeight.revisionNumber) {
+      throw new GrpcInvalidArgumentException('Update header revision must match the client latest-height revision');
+    }
     const newHeight: Height = {
-      ...currentClientDatumState.clientState.latestHeight,
+      revisionNumber: header.trustedHeight.revisionNumber,
       revisionHeight: headerHeight,
-      // revisionHeight: headerHeight,
     };
-
-    const newClientState: ClientState = {
-      ...currentClientDatumState.clientState,
-      latestHeight: newHeight,
-    };
-
     const newConsState: ConsensusState = {
       timestamp: header.signedHeader.header.time,
       next_validators_hash: header.signedHeader.header.nextValidatorsHash,
@@ -560,52 +857,86 @@ export class ClientService {
         hash: header.signedHeader.header.appHash,
       },
     };
-    let currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries()).filter(
-      ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
-    );
+    const freezesClient = Boolean(updateClientOperator.proof && updateClientOperator.proofMisbehaviour);
+    let newClientState: ClientState;
+    let newClientDatum: ClientDatum;
 
-    if (currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight)) {
-      console.dir(
-        {
-          proofHeight: headerHeight,
-          currentConsStateInArray,
+    if (freezesClient) {
+      newClientState = {
+        ...currentClientDatumState.clientState,
+        frozenHeight: { revisionNumber: 0n, revisionHeight: 1n },
+      };
+      newClientDatum = {
+        ...updateClientOperator.clientDatum,
+        state: {
+          ...currentClientDatumState,
+          clientState: newClientState,
         },
-        { depth: 10 },
+      };
+    } else {
+      validateUpdateHeaderAdvancesLatestHeight(headerHeight, currentClientDatumState.clientState.latestHeight);
+      newClientState = {
+        ...currentClientDatumState.clientState,
+        latestHeight: newHeight,
+      };
+      const inputConsensusStates = Array.from(currentClientDatumState.consensusStates.entries());
+      if (updateClientOperator.proof && inputConsensusStates.length > MAX_SP1_CONSENSUS_STATE_SIZE) {
+        throw new GrpcInvalidArgumentException(
+          `Proof-based Tendermint client history exceeds the ${MAX_SP1_CONSENSUS_STATE_SIZE.toString()}-state limit`,
+        );
+      }
+      // The proof validator keeps the exact existing history below capacity and
+      // only applies expiry pruning when it must make room at the fixed limit.
+      let currentConsStateInArray =
+        updateClientOperator.proof && inputConsensusStates.length < MAX_SP1_CONSENSUS_STATE_SIZE
+          ? inputConsensusStates
+          : inputConsensusStates.filter(
+              ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
+            );
+
+      if (
+        currentConsStateInArray.some(
+          ([key]) => newHeight.revisionNumber === key.revisionNumber && newHeight.revisionHeight === key.revisionHeight,
+        )
+      ) {
+        throw new GrpcInternalException(
+          `Client already has a consensus state at ${newHeight.revisionNumber.toString()}-${newHeight.revisionHeight.toString()}`,
+        );
+      }
+
+      currentConsStateInArray.unshift([newHeight, newConsState]);
+      const historyLimit = updateClientOperator.proof ? MAX_SP1_CONSENSUS_STATE_SIZE : MAX_CONSENSUS_STATE_SIZE;
+      if (currentConsStateInArray.length > historyLimit) {
+        currentConsStateInArray = currentConsStateInArray.slice(0, historyLimit);
+      }
+
+      const newConsStates = new Map(currentConsStateInArray);
+      const newProcessedTimes = new Map(
+        currentConsStateInArray.map(([height]) => [
+          height,
+          height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
+            ? updateClientOperator.txValidFrom
+            : (getHeightMapValue(currentClientDatumState.processedTimes, height) ?? 0n),
+        ]),
       );
-      throw new GrpcInternalException(`Client already created at height: ${headerHeight}`);
+      const newProcessedHeights = new Map(
+        currentConsStateInArray.map(([height]) => [
+          height,
+          height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
+            ? getProcessedHeight(updateClientOperator.txValidFrom)
+            : (getHeightMapValue(currentClientDatumState.processedHeights, height) ?? 0n),
+        ]),
+      );
+      newClientDatum = {
+        ...updateClientOperator.clientDatum,
+        state: {
+          clientState: newClientState,
+          consensusStates: newConsStates,
+          processedTimes: newProcessedTimes,
+          processedHeights: newProcessedHeights,
+        },
+      };
     }
-
-    currentConsStateInArray.unshift([newHeight, newConsState]);
-    if (currentConsStateInArray.length > MAX_CONSENSUS_STATE_SIZE) {
-      currentConsStateInArray = currentConsStateInArray.splice(0, MAX_CONSENSUS_STATE_SIZE);
-    }
-
-    const newConsStates = new Map(currentConsStateInArray);
-    const newProcessedTimes = new Map(
-      currentConsStateInArray.map(([height]) => [
-        height,
-        height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
-          ? updateClientOperator.txValidFrom
-          : getHeightMapValue(currentClientDatumState.processedTimes, height) ?? 0n,
-      ]),
-    );
-    const newProcessedHeights = new Map(
-      currentConsStateInArray.map(([height]) => [
-        height,
-        height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
-          ? getProcessedHeight(updateClientOperator.txValidFrom)
-          : getHeightMapValue(currentClientDatumState.processedHeights, height) ?? 0n,
-      ]),
-    );
-    const newClientDatum: ClientDatum = {
-      ...updateClientOperator.clientDatum,
-      state: {
-        clientState: newClientState,
-        consensusStates: newConsStates,
-        processedTimes: newProcessedTimes,
-        processedHeights: newProcessedHeights,
-      },
-    };
 
     // Root correctness enforcement (HostState update)
     //
@@ -657,10 +988,7 @@ export class ClientService {
         }
         addedConsensusState = {
           height: height.revisionHeight.toString(),
-          value: Buffer.from(
-            await encodeConsensusStateValue(consensusState, this.lucidService.LucidImporter),
-            'hex',
-          ),
+          value: Buffer.from(await encodeConsensusStateValue(consensusState, this.lucidService.LucidImporter), 'hex'),
         };
       }
     }
@@ -670,14 +998,20 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
-      computeRootWithUpdateClientUpdate(
-        hostStateDatum.state.ibc_state_root,
-        ibcClientId,
-        newClientStateValue,
-        removedConsensusHeights,
-        addedConsensusState,
-      );
+    const {
+      newRoot,
+      clientStateSiblings,
+      consensusStateSiblings,
+      removedConsensusStateSiblings,
+      treeSnapshot,
+      commit,
+    } = computeRootWithUpdateClientUpdate(
+      hostStateDatum.state.ibc_state_root,
+      ibcClientId,
+      newClientStateValue,
+      removedConsensusHeights,
+      addedConsensusState,
+    );
 
     const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
@@ -697,7 +1031,29 @@ export class ClientService {
       },
     };
 
+    if (updateClientOperator.proof && updateClientOperator.proofTime === undefined) {
+      throw new GrpcInternalException('Proof-based Tendermint update is missing its proof time');
+    }
+
     const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer');
+    const encodedTendermintProofRedeemer = updateClientOperator.proof
+      ? encodeTendermintProofRedeemer(
+          {
+            Update: {
+              client_input_ref: {
+                transaction_id: updateClientOperator.currentClientUtxo.txHash,
+                output_index: BigInt(updateClientOperator.currentClientUtxo.outputIndex),
+              },
+              trusted_height: header.trustedHeight,
+              new_height: newHeight,
+              new_consensus_state: newConsState,
+              proof_time: updateClientOperator.proofTime!,
+              proof: updateClientOperator.proof,
+            },
+          },
+          this.lucidService.LucidImporter,
+        )
+      : undefined;
     const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
@@ -710,10 +1066,11 @@ export class ClientService {
       encodedNewClientDatum,
       updateClientOperator.clientTokenUnit,
       updateClientOperator.constructedAddress,
+      encodedTendermintProofRedeemer,
     );
     return {
       unsignedTx,
-      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit, treeSnapshot },
     };
   }
   /**
@@ -746,7 +1103,9 @@ export class ClientService {
     // This prevents stale tree state from causing root mismatches after failed transactions
     await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
 
-    this.logger.log(`[DEBUG] Decoded HostState datum - version: ${hostStateDatum.state.version}, nft_policy: ${hostStateDatum.nft_policy.substring(0, 20)}...`);
+    this.logger.log(
+      `[DEBUG] Decoded HostState datum - version: ${hostStateDatum.state.version}, nft_policy: ${hostStateDatum.nft_policy.substring(0, 20)}...`,
+    );
 
     this.logger.log(`[DEBUG] HostState datum version: ${hostStateDatum.state.version}`);
     this.logger.log(`[DEBUG] HostState next_client_sequence: ${hostStateDatum.state.next_client_sequence}`);
@@ -771,14 +1130,13 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
-      computeRootWithCreateClientUpdate(
-        hostStateDatum.state.ibc_state_root,
-        clientId,
-        clientStateValue,
-        consensusStateValue,
-        consensusHeight,
-      );
+    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } = computeRootWithCreateClientUpdate(
+      hostStateDatum.state.ibc_state_root,
+      clientId,
+      clientStateValue,
+      consensusStateValue,
+      consensusHeight,
+    );
 
     // Create an updated HostState datum with:
     // - Incremented version (STT monotonicity requirement)
@@ -831,10 +1189,7 @@ export class ClientService {
     // Encode all data for the transaction
     const encodedMintClientRedeemer: string = await this.lucidService.encode(mintClientRedeemer, 'mintClientRedeemer');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
-    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(
-      updatedHostStateDatum,
-      'host_state',
-    );
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedClientDatum = await this.lucidService.encode<ClientDatum>(clientDatum, 'client');
 
     this.logger.log(`[DEBUG] ==================== TRANSACTION CBOR VALUES ====================`);
@@ -843,8 +1198,12 @@ export class ClientService {
     this.logger.log(`[DEBUG] Encoded mint client redeemer (CBOR): ${encodedMintClientRedeemer}`);
     this.logger.log(`[DEBUG] Encoded host state redeemer (CBOR): ${encodedHostStateRedeemer}`);
     this.logger.log(`[DEBUG] Encoded updated HostState datum (CBOR - FULL): ${encodedUpdatedHostStateDatum}`);
-    this.logger.log(`[DEBUG] Encoded client datum (CBOR - first 200 chars): ${encodedClientDatum.substring(0, 200)}...`);
-    this.logger.log(`[DEBUG] Updated HostState datum next_client_sequence: ${updatedHostStateDatum.state.next_client_sequence}`);
+    this.logger.log(
+      `[DEBUG] Encoded client datum (CBOR - first 200 chars): ${encodedClientDatum.substring(0, 200)}...`,
+    );
+    this.logger.log(
+      `[DEBUG] Updated HostState datum next_client_sequence: ${updatedHostStateDatum.state.next_client_sequence}`,
+    );
     this.logger.log(`[DEBUG] ==================================================================`);
 
     // Create and return the unsigned transaction for creating new client
@@ -869,10 +1228,6 @@ export class ClientService {
   private generateClientTokenName(hostStateDatum: any): string {
     // Generate client token name from HostState NFT policy
     const hostStateNFT = this.configService.get('deployment').hostStateNFT;
-    return this.lucidService.generateTokenName(
-      hostStateNFT,
-      CLIENT_PREFIX,
-      hostStateDatum.state.next_client_sequence,
-    );
+    return this.lucidService.generateTokenName(hostStateNFT, CLIENT_PREFIX, hostStateDatum.state.next_client_sequence);
   }
 }

@@ -6,10 +6,178 @@
     "programReleaseCommit": "ef25a661a8be156d4908956e1055ca40cd67adb7",
     "updateClientElf": {
       "url": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-update-client",
+      "path": "third_party/ibc-eureka/sp1-programs-v2.0.0/sp1-ics07-tendermint-update-client",
+      "bytes": 820056,
       "sha256": "6a6a40df2b1339455de7b238fdf3e914f4c2f99e85b8fc4abb65fb1664f42270"
+    },
+    "misbehaviourElf": {
+      "url": "https://github.com/cosmos/ibc-contracts/releases/download/sp1-programs-v2.0.0/sp1-ics07-tendermint-misbehaviour",
+      "path": "third_party/ibc-eureka/sp1-programs-v2.0.0/sp1-ics07-tendermint-misbehaviour",
+      "bytes": 833328,
+      "sha256": "6ec141ebb604565dfb7669f8482bd3eacc57ae35158ba3931f1c20f78f7bf921"
     },
     "sp1Version": "6.1.0"
   },
+  "guestRunner": {
+    "source": {
+      "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/src/main.rs",
+      "sha256": "860d586e312df32fb971dc010bd8484c4295a0f5abc79e84e8edb936d2810fcb"
+    },
+    "cpuBenchmarkScript": {
+      "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/benchmark-cpu.sh",
+      "sha256": "bb87f1766669726eceb8fea40bdf4efa2f1757ce6f36574d3ce8f928fbabc92f"
+    },
+    "cargoLock": {
+      "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/Cargo.lock",
+      "sha256": "5bd2661c64618b87ed2e87e2f909ba43166546ed51945ddb1cfcbc62699b1d46"
+    },
+    "cargoManifest": {
+      "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/Cargo.toml",
+      "sha256": "a674bdba54db6009251e19e24dfa70cb4f5c1431c715fe3a1a08c34e04687f82"
+    },
+    "observationsCheckedOn": "2026-08-31",
+    "measurementMethod": "runner-generated-local-execution-metrics-and-manually-recorded-single-run-proof-and-wrapper-observations",
+    "rerunInCi": false,
+    "host": {
+      "model": "Mac17,2",
+      "processor": "Apple M5",
+      "memoryBytes": 17179869184,
+      "performanceCores": 4,
+      "efficiencyCores": 6,
+      "operatingSystem": "macOS 26.4 (25E246)",
+      "rust": "1.91.1"
+    },
+    "executionBenchmark": {
+      "runId": "baseline-execution-20260831T003124Z",
+      "profile": "baseline",
+      "repeatCountPerCase": 1,
+      "rayonThreads": 10,
+      "runnerBinarySha256": "00698f28ab49801790441d621c21e09fbd77f1e7e8e4e027c5515be0ebfd12e9",
+      "processWallSeconds": 105.31,
+      "maximumResidentBytes": 5440585728
+    },
+    "cpuTuning": {
+      "fixture": "injective-45",
+      "repeatCountPerConfiguration": 1,
+      "programVkey": "0x00d38536f65ab10e7eff0895b1b9f7cf12f89691631742bb487fe090027e0e6d",
+      "publicValuesSha256": "4a7114908b8dab0e72c5fd1441afc49c2b9266e04efabf7639d1f53643ae2462",
+      "fullGroth16": {
+        "runnerSource": {
+          "relationship": "pre-alignment-prototype-not-the-current-attested-runner",
+          "commit": "54b5776a8a6a805d5d695801089dd6897174825a",
+          "path": "studies/sp1_tendermint_cardano/eureka-guest-runner/src/main.rs",
+          "sha256": "70ebfcfdbfeffe5c7fd8caa7f10167d7f323cf9a787f780017376f0828de5d6e"
+        },
+        "inputRelationship": "The prototype input predates the current runner's millisecond alignment, so its proof time and public-values hash intentionally differ from the current runner observations.",
+        "proofTimeNanos": "1787752048402288591",
+        "publicValuesSha256": "472b5bc799b3fae373911eadc365e5af5c9d715398369428c4c029e389e311a6",
+        "proveSeconds": 505.846,
+        "processWallSeconds": 526.69
+      },
+      "screeningRuns": [
+        {
+          "profile": "baseline",
+          "mode": "core",
+          "rayonThreads": 10,
+          "proveSeconds": 58.149770208,
+          "maximumResidentBytes": 6783942656
+        },
+        {
+          "profile": "trace-16m",
+          "mode": "core",
+          "rayonThreads": 10,
+          "proveSeconds": 56.034989417,
+          "maximumResidentBytes": 7894614016
+        },
+        {
+          "profile": "trace-16m",
+          "mode": "core",
+          "rayonThreads": 4,
+          "proveSeconds": 79.214465792,
+          "maximumResidentBytes": 7729233920
+        },
+        {
+          "profile": "baseline",
+          "mode": "compressed",
+          "rayonThreads": 10,
+          "proveSeconds": 113.332241333,
+          "maximumResidentBytes": 9282191360
+        },
+        {
+          "profile": "trace-16m",
+          "mode": "compressed",
+          "rayonThreads": 10,
+          "proveSeconds": 118.4740315,
+          "maximumResidentBytes": 8313536512
+        },
+        {
+          "profile": "threads-8",
+          "mode": "compressed",
+          "rayonThreads": 8,
+          "proveSeconds": 128.725613125,
+          "maximumResidentBytes": 7420542976
+        },
+        {
+          "profile": "recursion-low",
+          "mode": "compressed",
+          "rayonThreads": 10,
+          "proveSeconds": 119.913946292,
+          "maximumResidentBytes": 7996817408
+        },
+        {
+          "profile": "native",
+          "mode": "compressed",
+          "rayonThreads": 10,
+          "rustFlags": "-C target-cpu=native",
+          "lto": "thin",
+          "codegenUnits": 1,
+          "proveSeconds": 123.53625275,
+          "maximumResidentBytes": 7717765120
+        }
+      ],
+      "fixedProvingKeyResult": "SP1 6.1 executor reset is unimplemented; proof failed with artifact not found"
+    }
+  },
+  "guestExecutions": [
+    {
+      "case": "injective-45",
+      "fixture": "real Injective adjacent update",
+      "validators": 45,
+      "measuredAtUnixSeconds": 1788136403,
+      "executeSeconds": 0.907410917,
+      "instructions": 2796372,
+      "syscalls": 12585,
+      "localEstimatedPgu": 3140508,
+      "publicValuesSha256": "4a7114908b8dab0e72c5fd1441afc49c2b9266e04efabf7639d1f53643ae2462",
+      "networkProof": {
+        "status": "not_submitted",
+        "requestId": null,
+        "requestToFulfillmentSeconds": null,
+        "gasLimitPgu": null,
+        "gasUsedPgu": null
+      },
+      "executionStatus": "sp1-groth16-proved-and-development-wrapped"
+    },
+    {
+      "case": "synthetic-200",
+      "fixture": "generated adjacent update",
+      "validators": 200,
+      "measuredAtUnixSeconds": 1788136432,
+      "executeSeconds": 9.68218875,
+      "instructions": 17222743,
+      "syscalls": 107412,
+      "localEstimatedPgu": 19714926,
+      "publicValuesSha256": "1ed9ae07c6f1d4e82603ba74250763f9fd3687df80dbb248511920fdddbf9670",
+      "networkProof": {
+        "status": "not_submitted",
+        "requestId": null,
+        "requestToFulfillmentSeconds": null,
+        "gasLimitPgu": null,
+        "gasUsedPgu": null
+      },
+      "executionStatus": "executed-and-mock-proved"
+    }
+  ],
   "cardanoGroth16Verifier": {
     "repository": "https://github.com/cardano-foundation/bls",
     "commit": "24bd7e3a1f9f57b1d43b7bebdc37446dc559eb40",
@@ -34,6 +202,119 @@
       "public_values.bin": "b0964b25f1b1680f9eb3044629edbab71d1a15e61270f8ff1fecddc7ab894afc",
       "public_values.hex": "07e92d50b4aa956eecf22f72b6a5d8fdafcbaaab3ca634fc52640ce00bfb1ae8",
       "verification_key.json": "4e9473da0c2b76313040b80cc83157257a701b4f80c60598fd136bf9ebdc2d1d"
+    }
+  },
+  "proverService": {
+    "program": "sp1-ics07-tendermint-update-client-v2.0.0",
+    "programVkey": "00d38536f65ab10e7eff0895b1b9f7cf12f89691631742bb487fe090027e0e6d",
+    "httpPath": "/v1/tendermint/update-client/proof",
+    "misbehaviour": {
+      "program": "sp1-ics07-tendermint-misbehaviour-v2.0.0",
+      "programVkey": "0010008da4267c2e85d02616e853379e3c937c03a271b5b005f479cff09ccfcb",
+      "httpPath": "/v1/tendermint/misbehaviour/proof"
+    },
+    "stableDevelopmentSetup": {
+      "constraints": 1192065,
+      "setupSeconds": 216.715,
+      "filesNotCommitted": {
+        "outer.r1cs": {
+          "bytes": 62355655,
+          "sha256": "e56e08438f85b4e6c5cff9faa3cd42cf3307859b106a7e1cb6ba9f8c813c2512"
+        },
+        "outer.pk": {
+          "bytes": 505324081,
+          "sha256": "6e2193c290385ad7582594066c7c88a9ed50f3584a31ffad72b9e3f5d419ca9d"
+        },
+        "outer.vk": {
+          "bytes": 832,
+          "sha256": "dcf014ab0fec55883fc7922595119f51f77dcc6596d6ff148311ba03e53abf1e"
+        }
+      },
+      "trackedPublicVerificationKey": {
+        "path": "cardano/sp1-tendermint-prover/artifacts/wrapper_verification_key.json",
+        "bytes": 1766,
+        "sha256": "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037"
+      }
+    },
+    "persistentWrapperBenchmark": {
+      "classification": "single-local-observation",
+      "runId": "persistent-wrapper-two-request-20260831",
+      "measuredOn": "2026-08-31",
+      "requestCount": 2,
+      "fixture": {
+        "path": "studies/sp1_tendermint_cardano/fixtures/update_client_fixture-groth16.json",
+        "sha256": "1ee25223b8d311a3fb1bde306055ebe95f4d90a4dcabd9b6b775ece3998c99fc"
+      },
+      "benchmarkScript": {
+        "path": "cardano/sp1-tendermint-prover/bn254-to-bls-wrapper/benchmark-worker.sh",
+        "sha256": "bdea3327cff1b4e5586369dd44fb1a78cb75f7fab0f74355b9e9b5b9a206e3f3"
+      },
+      "timings": {
+        "processStartToReadinessSeconds": 134.319,
+        "proofSeconds": [
+          9.775701833,
+          9.61133575
+        ],
+        "processTotalWallSeconds": 159.22
+      },
+      "resources": {
+        "maximumResidentBytesApprox": 4230000000,
+        "measurement": "/usr/bin/time -l",
+        "qualification": "The retained observation recorded peak resident memory as approximately 4.23 GB; the exact byte count was not retained."
+      },
+      "host": {
+        "model": "Mac17,2",
+        "processor": "Apple M5",
+        "memoryBytes": 17179869184,
+        "performanceCores": 4,
+        "efficiencyCores": 6,
+        "operatingSystem": "macOS 26.4 (25E246)",
+        "architecture": "arm64"
+      },
+      "tools": {
+        "go": "go version go1.26.1 darwin/arm64",
+        "gnark": "0.14.0",
+        "gnarkCrypto": "0.19.2"
+      },
+      "verificationKeySha256": "e9c2403db628a090f4a598589812f36bb82aaf09c4646b14a6c12c5b5e99a037"
+    },
+    "injective45Regression": {
+      "validators": 45,
+      "sp1ProveSeconds": 590.383017625,
+      "sp1PeakResidentBytes": 8985001984,
+      "wrapperKeyLoadSeconds": 136.207,
+      "outerWrapperSeconds": 18.891,
+      "proofTimeNanos": "1787752048403000000",
+      "publicValues": {
+        "path": "cardano/sp1-tendermint-prover/artifacts/injective-45/public_values.bin",
+        "bytes": 768,
+        "sha256": "4a7114908b8dab0e72c5fd1441afc49c2b9266e04efabf7639d1f53643ae2462"
+      },
+      "wrappedProof": {
+        "path": "cardano/sp1-tendermint-prover/artifacts/injective-45/wrapped_proof.bin",
+        "bytes": 288,
+        "sha256": "ec5fe188500102c2e974c842257178305365ecf09809effca4a83b1e2629a464"
+      }
+    },
+    "misbehaviourDoubleSignRegression": {
+      "validators": 2,
+      "scenario": "test-chain-0 deterministic double-sign",
+      "evidenceSha256": "bfc567b28ed5326f0c9b384a1015c60006d7b32b289d5e534f3f250f2db89a3a",
+      "proofTimeNanos": "1000003600000000000",
+      "releasePipelineSeconds": 765.06,
+      "preWrapperPipelineSecondsApprox": 623,
+      "outerWrapperSecondsApprox": 142,
+      "maximumResidentBytes": 8208957440,
+      "publicValues": {
+        "path": "cardano/sp1-tendermint-prover/artifacts/misbehaviour-double-sign-2/public_values.bin",
+        "bytes": 768,
+        "sha256": "1d7e7545afa75466ce623cd1b66250d4cb7d9ba642fc16d441676d7c888c541a"
+      },
+      "wrappedProof": {
+        "path": "cardano/sp1-tendermint-prover/artifacts/misbehaviour-double-sign-2/wrapped_proof.bin",
+        "bytes": 288,
+        "sha256": "67070bc3eef265a14c887209a21ae84575ca219fd399050bcbb739381c2988c6"
+      }
     }
   }
 }

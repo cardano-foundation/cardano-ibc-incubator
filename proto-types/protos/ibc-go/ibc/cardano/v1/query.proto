@@ -58,6 +58,7 @@ message QueryBridgeManifestResponse {
 }
 
 message BridgeManifest {
+  reserved 5; // Removed handler_auth_token.
   uint32 schema_version = 1;
   string deployment_id = 2;
   // RFC 3339 / ISO-8601 timestamp for when the bridge deployment completed.
@@ -66,6 +67,15 @@ message BridgeManifest {
   BridgeManifestAuthToken host_state_nft = 4;
   BridgeManifestValidators validators = 6;
   BridgeManifestModules modules = 7;
+  BridgeManifestTendermintClient tendermint_client = 9;
+  BridgeManifestTraceRegistry trace_registry = 10;
+}
+
+// Identifies the Cardano ICS-07 implementation bound to this bridge deployment.
+// protocol is either "07-tendermint-sp1" or "07-tendermint-direct".
+message BridgeManifestTendermintClient {
+  string protocol = 1;
+  string script_hash = 2;
 }
 
 message BridgeManifestCardanoInfo {
@@ -115,6 +125,7 @@ message BridgeManifestSpendChannelValidator {
 }
 
 message BridgeManifestValidators {
+  reserved 2; // Removed spend_handler.
   BridgeManifestValidator host_state_stt = 1;
   BridgeManifestValidator spend_client = 3;
   BridgeManifestValidator spend_connection = 4;
@@ -125,6 +136,17 @@ message BridgeManifestValidators {
   BridgeManifestValidator mint_connection_stt = 9;
   BridgeManifestValidator mint_channel_stt = 10;
   BridgeManifestValidator mint_voucher = 11;
+  BridgeManifestValidator tendermint_proof = 12;
+  BridgeManifestValidator mint_identifier = 13;
+  BridgeManifestValidator mint_transfer_escrow_shard = 14;
+  BridgeManifestValidator mint_port = 15;
+  BridgeManifestValidator spend_mock_module = 16;
+  BridgeManifestValidator spend_trace_registry = 17;
+  BridgeManifestVoucherMetadata voucher_metadata = 18;
+}
+
+message BridgeManifestVoucherMetadata {
+  string address = 1;
 }
 
 message BridgeManifestModule {
@@ -133,6 +155,19 @@ message BridgeManifestModule {
 }
 
 message BridgeManifestModules {
+  reserved 1; // Removed handler.
   BridgeManifestModule transfer = 2;
   BridgeManifestModule mock = 3;
+  BridgeManifestModule icq = 4;
+}
+
+message BridgeManifestTraceRegistryShard {
+  string policy_id = 1;
+  string token_name = 2;
+}
+
+message BridgeManifestTraceRegistry {
+  string address = 1;
+  string shard_policy_id = 2;
+  BridgeManifestTraceRegistryShard directory = 3;
 }

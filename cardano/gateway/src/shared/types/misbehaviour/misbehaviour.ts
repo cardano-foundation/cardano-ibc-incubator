@@ -11,7 +11,7 @@ import { deepEquals } from '@shared/helpers/deep-equal';
 import { getConsensusStateFromTmHeader } from '../cometbft/header';
 import { Height } from '../height';
 
-const TENDERMINT_HEADER_TYPE_URL = '/ibc.lightclients.tendermint.v1.Header';
+export const TENDERMINT_HEADER_TYPE_URL = '/ibc.lightclients.tendermint.v1.Header';
 export const TENDERMINT_MISBEHAVIOUR_TYPE_URL = '/ibc.lightclients.tendermint.v1.Misbehaviour';
 
 export type Misbehaviour = {
@@ -140,38 +140,14 @@ export function checkForMisbehaviour(clientMessage: Any, clientDatum: ClientDatu
       const headerMsg = decodeHeader(clientMessage.value);
       const header = initializeHeader(headerMsg);
       const consState = getConsensusStateFromTmHeader(header.signedHeader.header);
-
-      // Check if the Client store already has a consensus state for the header's height
-      // If the consensus state exists, and it matches the header then we return early
-      // since header has already been submitted in a previous UpdateClient.
-      const consensusHeightsArray = Array.from(clientDatum.state.consensusStates.entries());
-      const existedConsensus = consensusHeightsArray.find(
-        ([heightK]) => header.signedHeader.header.height === heightK.revisionHeight,
+      return checkHeaderForMisbehaviour(
+        clientDatum,
+        {
+          revisionNumber: header.trustedHeight.revisionNumber,
+          revisionHeight: header.signedHeader.header.height,
+        },
+        consState,
       );
-
-      if (existedConsensus) {
-        const [_, existingConsState] = existedConsensus;
-        // This header has already been submitted and the necessary state is already stored
-        // in client store, thus we can return early without further validation.
-
-        if (deepEquals(existingConsState, consState)) return false;
-
-        // A consensus state already exists for this height, but it does not match the provided header.
-        // The assumption is that Header has already been validated. Thus we can return true as misbehaviour is present
-        return true;
-      }
-
-      // Check that consensus state timestamps are monotonic
-      const prevCons = getPreviousConsensusState(consensusHeightsArray, header.signedHeader.header.height);
-      const nextCons = getNextConsensusState(consensusHeightsArray, header.signedHeader.header.height);
-      // if previous consensus state exists, check consensus state time is greater than previous consensus state time
-      // if previous consensus state is not before current consensus state return true
-      if (prevCons && prevCons.timestamp > consState.timestamp) return true;
-      // if next consensus state exists, check consensus state time is less than next consensus state time
-      // if next consensus state is not after current consensus state return true
-      if (nextCons && nextCons.timestamp < consState.timestamp) return true;
-
-      break;
     }
     case TENDERMINT_MISBEHAVIOUR_TYPE_URL: {
       const misbehaviourMsg = decodeMisBehaviour(clientMessage.value);
@@ -200,34 +176,32 @@ export function checkForMisbehaviour(clientMessage: Any, clientDatum: ClientDatu
   return false;
 }
 
-function getPreviousConsensusState(consensusStatesList: [Height, ConsensusState][], height: bigint): ConsensusState {
-  const consensusStateAtGivenHeight = consensusStatesList.find(([heightK]) => heightK.revisionHeight === height);
-
-  if (consensusStateAtGivenHeight) {
-    const indexOfConsensusState = consensusStatesList.findIndex(([key]) => key.revisionHeight === height);
-
-    if (indexOfConsensusState > 0) {
-      const [_, prevState] = consensusStatesList[indexOfConsensusState - 1] || [];
-      return prevState || null;
-    }
-    return null;
+function compareHeight(left: Height, right: Height): number {
+  if (left.revisionNumber !== right.revisionNumber) {
+    return left.revisionNumber < right.revisionNumber ? -1 : 1;
   }
-
-  return null;
+  if (left.revisionHeight === right.revisionHeight) return 0;
+  return left.revisionHeight < right.revisionHeight ? -1 : 1;
 }
 
-function getNextConsensusState(consensusStatesList: [Height, ConsensusState][], height: bigint): ConsensusState {
-  const consensusStateAtGivenHeight = consensusStatesList.find(([heightK]) => heightK.revisionHeight === height);
-
-  if (consensusStateAtGivenHeight) {
-    const indexOfConsensusState = consensusStatesList.findIndex(([key]) => key.revisionHeight === height);
-
-    if (indexOfConsensusState < consensusStatesList.length - 1) {
-      const [_, nextState] = consensusStatesList[indexOfConsensusState + 1] || [];
-      return nextState || null;
-    }
+export function checkHeaderForMisbehaviour(
+  clientDatum: ClientDatum,
+  newHeight: Height,
+  newConsensusState: ConsensusState,
+): boolean {
+  const sorted = Array.from(clientDatum.state.consensusStates.entries()).sort(([left], [right]) =>
+    compareHeight(left, right),
+  );
+  const existing = sorted.find(([height]) => compareHeight(height, newHeight) === 0);
+  if (existing) {
+    return !deepEquals(existing[1], newConsensusState);
   }
-  return null;
+
+  const previous = sorted.filter(([height]) => compareHeight(height, newHeight) < 0).at(-1)?.[1];
+  if (previous && previous.timestamp >= newConsensusState.timestamp) return true;
+
+  const next = sorted.find(([height]) => compareHeight(height, newHeight) > 0)?.[1];
+  return Boolean(next && next.timestamp <= newConsensusState.timestamp);
 }
 export function decodeMisBehaviour(value: Uint8Array): MisbehaviourMsg {
   try {
