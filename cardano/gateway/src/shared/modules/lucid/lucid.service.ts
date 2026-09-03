@@ -603,7 +603,11 @@ export class LucidService implements OnModuleInit {
   }
 
   public async getPublicKeyHash(address: string): Promise<string> {
-    return getAddressDetails(address).paymentCredential?.hash;
+    const paymentCredential = getAddressDetails(address).paymentCredential;
+    if (!paymentCredential) {
+      throw new GrpcInternalException(`Address ${address} does not contain a payment credential`);
+    }
+    return paymentCredential.hash;
   }
 
   public getPaymentCredential(address: string) {
@@ -666,17 +670,22 @@ export class LucidService implements OnModuleInit {
 
     // Hermes can provide enterprise-address bytes (header + key hash) as hex.
     // Strip the header and use the underlying 28-byte key hash.
+    const network = this.lucid.config().network;
+    if (!network) {
+      throw new GrpcInternalException("Lucid network configuration is missing");
+    }
+
     if (/^[0-9a-f]+$/.test(lowered) && lowered.length === 58) {
       const paymentHash = lowered.slice(2);
       if (/^[0-9a-f]{56}$/.test(paymentHash)) {
-        return credentialToAddress(this.lucid.config().network, {
+        return credentialToAddress(network, {
           hash: paymentHash,
           type: "Key",
         });
       }
     }
 
-    return credentialToAddress(this.lucid.config().network, {
+    return credentialToAddress(network, {
       hash: lowered,
       type: "Key",
     });
@@ -3050,12 +3059,12 @@ export class LucidService implements OnModuleInit {
     // validators expect a finite upper bound, so give the probe the same
     // ledger-anchored validity style the production tx runner uses.
     const ogmiosEndpoint = this.configService.get<string>("ogmiosEndpoint");
-    const cardanoNetwork = this.configService.get<string>("cardanoNetwork");
+    const cardanoNetwork = this.configService.get<"Mainnet" | "Preview" | "Preprod" | "Custom">("cardanoNetwork");
     const slotConfig = cardanoNetwork
       ? this.LucidImporter.SLOT_CONFIG_NETWORK?.[cardanoNetwork]
       : undefined;
 
-    if (ogmiosEndpoint && slotConfig?.slotLength > 0) {
+    if (ogmiosEndpoint && slotConfig && slotConfig.slotLength > 0) {
       const { validFromTime, validToTime } = await computeLedgerAnchoredValidityWindow(
         ogmiosEndpoint,
         slotConfig,

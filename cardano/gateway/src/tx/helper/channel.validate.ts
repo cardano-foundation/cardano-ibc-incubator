@@ -42,6 +42,8 @@ export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit)
     case ChannelOrder.ORDER_ORDERED:
       orderingChannel = Order.Ordered;
       break;
+    default:
+      throw new GrpcInvalidArgumentException('Invalid argument: "channel.ordering" is not recognized');
   }
   const channelOpenInitOperator: ChannelOpenInitOperator = {
     //TODO: check in channel.connection_hops

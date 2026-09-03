@@ -28,12 +28,14 @@ export class MithrilService {
   }
 
   async getMostRecentCertificates(): Promise<CertificateDTO[]> {
-    const certificates = await this._request({
+    const certificates = await this._request<unknown>({
       path: '/certificates',
       method: 'GET',
     });
 
-    return certificates.map((certificate) => certificate as unknown as CertificateDTO);
+    return this.expectArray(certificates, '/certificates').map(
+      (certificate) => certificate as CertificateDTO,
+    );
   }
 
   async getRegisteredSignersForEpoch(epoch: number): Promise<RegisterdSignersResponseDTO> {
@@ -56,33 +58,39 @@ export class MithrilService {
   }
 
   async getMostRecentSnapshots(): Promise<SnapshotDTO[]> {
-    const snapshots = await this._request({
+    const snapshots = await this._request<unknown>({
       path: '/artifact/snapshots',
       method: 'GET',
     });
 
-    return snapshots.map((snapshot) => snapshot as unknown as SnapshotDTO);
+    return this.expectArray(snapshots, '/artifact/snapshots').map(
+      (snapshot) => snapshot as SnapshotDTO,
+    );
   }
 
   async getCardanoTransactionsSetSnapshot(): Promise<CardanoTransactionSetSnapshotDTO[]> {
-    const cardanoTransactions = await this._request({
+    const cardanoTransactions = await this._request<unknown>({
       path: '/artifact/cardano-transactions',
       method: 'GET',
     });
 
-    return cardanoTransactions.map((tx) => tx as unknown as CardanoTransactionSetSnapshotDTO);
+    return this.expectArray(cardanoTransactions, '/artifact/cardano-transactions').map(
+      (tx) => tx as CardanoTransactionSetSnapshotDTO,
+    );
   }
 
   async getMostRecentMithrilStakeDistributions(): Promise<MithrilStakeDistributionDTO[]> {
-    const stakeDistributions = await this._request({
+    const stakeDistributions = await this._request<unknown>({
       path: '/artifact/mithril-stake-distributions',
       method: 'GET',
     });
 
-    return stakeDistributions.map((stakeDistribution) => stakeDistribution as unknown as MithrilStakeDistributionDTO);
+    return this.expectArray(stakeDistributions, '/artifact/mithril-stake-distributions').map(
+      (stakeDistribution) => stakeDistribution as MithrilStakeDistributionDTO,
+    );
   }
 
-  async getProofsCardanoTransactionList(transactionHashes: string[]): Promise<any> {
+  async getProofsCardanoTransactionList(transactionHashes: string[]): Promise<unknown> {
     const proofs = await this._request({
       path: '/proof/cardano-transaction',
       method: 'GET',
@@ -94,9 +102,24 @@ export class MithrilService {
     return proofs;
   }
 
-  private async _request(requestData: { path: string; payload?: any; params?: any; method: Method }): Promise<any> {
+  private expectArray(value: unknown, path: string): unknown[] {
+    if (!Array.isArray(value)) {
+      throw new Error(`Mithril ${path} returned a non-array response`);
+    }
+    return value;
+  }
+
+  private async _request<T = unknown>(requestData: {
+    path: string;
+    payload?: unknown;
+    params?: Record<string, unknown>;
+    method: Method;
+  }): Promise<T> {
     const { path, payload = {}, params = {}, method = 'POST' } = requestData;
-    const mithrilEndpoint = this.configService.get('mithrilEndpoint');
+    const mithrilEndpoint = this.configService.get<string>('mithrilEndpoint');
+    if (!mithrilEndpoint) {
+      throw new Error('Mithril endpoint is not configured');
+    }
     const pathUrl = `${mithrilEndpoint}${path}`;
     const response = await lastValueFrom(
       this.httpService
@@ -108,6 +131,6 @@ export class MithrilService {
         })
         .pipe(map((res) => res.data)),
     );
-    return response;
+    return response as T;
   }
 }

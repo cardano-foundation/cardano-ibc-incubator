@@ -1730,9 +1730,10 @@ export class YaciHistoryService implements HistoryService {
   private mapPoolRegistrationSlotRows(
     rows: PoolRegistrationSlotRow[] | CachedPoolRegistrationRow[],
   ): Map<string, bigint> {
+    const registrationRows: CachedPoolRegistrationRow[] = rows;
     return new Map(
-      rows
-        .filter((row) =>
+      registrationRows
+        .filter((row): row is PoolRegistrationSlotRow =>
           row.first_registration_slot !== null &&
           row.first_registration_slot !== undefined
         )
@@ -1900,7 +1901,7 @@ export class YaciHistoryService implements HistoryService {
     return (unixNs - systemStartUnixNs) / CARDANO_SLOT_LENGTH_NS;
   }
 
-  async findTxByHash(hash: string): Promise<TxDto> {
+  async findTxByHash(hash: string): Promise<TxDto | null> {
     const query = `
       SELECT
         tx_hash,

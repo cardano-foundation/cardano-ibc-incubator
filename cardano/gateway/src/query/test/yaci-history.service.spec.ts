@@ -95,7 +95,7 @@ describe('YaciHistoryService', () => {
     jest.resetAllMocks();
     delete process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
     delete process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE;
-    delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
+    Reflect.deleteProperty(globalThis, 'fetch');
   });
 
   it('sources a full epoch context from Ogmios local state at the block point', async () => {
@@ -834,7 +834,7 @@ describe('YaciHistoryService stake snapshot source selection', () => {
     jest.resetAllMocks();
     delete process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
     delete process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE;
-    delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
+    Reflect.deleteProperty(globalThis, 'fetch');
   });
 
   it('does not use the local stale-point fallback from a registration-slot assumption alone', async () => {
@@ -1062,7 +1062,7 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
 
   afterEach(() => {
     jest.resetAllMocks();
-    delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
+    Reflect.deleteProperty(globalThis, 'fetch');
   });
 
   it('includes a retired producer omitted by the Ogmios live registry', async () => {

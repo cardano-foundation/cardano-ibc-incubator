@@ -132,7 +132,7 @@ export class ConnectionService {
     validToSlot: number;
     validToTime: number;
   }> {
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const ogmiosEndpoint = this.configService.getOrThrow<string>('ogmiosEndpoint');
     const network = this.configService.get('cardanoNetwork') as Network;
     const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
     if (!slotConfig || slotConfig.slotLength <= 0) {
@@ -263,6 +263,10 @@ export class ConnectionService {
       const redeemerLines: string[] = [];
       if (redeemers.kind() === CML.RedeemersKind.MapRedeemerKeyToRedeemerVal) {
         const redeemerMap = redeemers.as_map_redeemer_key_to_redeemer_val();
+        if (!redeemerMap) {
+          this.logger.warn(`[DEBUG] ${context} redeemer map was unavailable`);
+          return;
+        }
         const keys = redeemerMap.keys();
         for (let i = 0; i < keys.len(); i += 1) {
           const key = keys.get(i);

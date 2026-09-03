@@ -1,7 +1,14 @@
 import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import { Header as HeaderMsg } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { ResponseDeliverTx } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/block';
 
-import { ACK_RESULT, ATTRIBUTE_KEY_CLIENT, ATTRIBUTE_KEY_PACKET, EVENT_TYPE_CLIENT, EVENT_TYPE_PACKET } from '../../constant';
+import {
+  ACK_RESULT,
+  ATTRIBUTE_KEY_CLIENT,
+  ATTRIBUTE_KEY_PACKET,
+  EVENT_TYPE_CLIENT,
+  EVENT_TYPE_PACKET,
+} from '../../constant';
 import { initializeHeader } from '../types/header';
 import { SpendClientRedeemer } from '../types/client-redeemer';
 import {
@@ -11,8 +18,10 @@ import {
 import headerMockBuilder from '../../tx/test/mock/header';
 import { clientDatumMockBuilder } from '../../tx/test/mock/client-datum';
 
-function eventAttributeValue(result: any, key: string): string {
-  return result.events[0].event_attribute.find((attr) => attr.key === key)?.value;
+function eventAttributeValue(result: ResponseDeliverTx, key: string): string {
+  const attribute = result.events[0]?.event_attribute.find((attr) => attr.key === key);
+  if (!attribute) throw new Error(`Missing event attribute: ${key}`);
+  return attribute.value;
 }
 
 describe('normalizeTxsResultFromClientDatum', () => {
@@ -38,9 +47,14 @@ describe('normalizeTxsResultFromClientDatum', () => {
       Buffer.from(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX), 'hex'),
     );
     const emittedHeader = HeaderMsg.decode(clientMessageAny.value);
-    expect(emittedHeader.signed_header.header.version).toEqual({ block: 11n, app: 0n });
-    expect(emittedHeader.signed_header.header.last_block_id.hash).toEqual(headerMsg.signed_header.header.last_block_id.hash);
-    expect(emittedHeader.signed_header.commit.signatures[0].block_id_flag).toBe(
+    const emittedSignedHeader = emittedHeader.signed_header;
+    if (!emittedSignedHeader?.header || !emittedSignedHeader.commit) {
+      throw new Error('Decoded fixture is missing its signed header fields');
+    }
+
+    expect(emittedSignedHeader.header.version).toEqual({ block: 11n, app: 0n });
+    expect(emittedSignedHeader.header.last_block_id.hash).toEqual(headerMsg.signed_header.header.last_block_id.hash);
+    expect(emittedSignedHeader.commit.signatures[0].block_id_flag).toBe(
       Number(headerMsg.signed_header.commit.signatures[0].block_id_flag),
     );
   });
@@ -91,16 +105,18 @@ describe('normalizeTxsResultFromRecvPacketSuccessAcknowledgement', () => {
       timeout_timestamp: 0n,
     };
 
-    const result = normalizeTxsResultFromRecvPacketSuccessAcknowledgement({ RecvPacket: { packet } } as any, channelDatum);
+    const result = normalizeTxsResultFromRecvPacketSuccessAcknowledgement(
+      { RecvPacket: { packet } } as any,
+      channelDatum,
+    );
     const event = result.events[0];
-    const attr = (key: string) => event.event_attribute.find((entry) => entry.key === key)?.value;
 
     expect(event.type).toBe(EVENT_TYPE_PACKET.WRITE_ACKNOWLEDGEMENT);
-    expect(attr(ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE)).toBe('2');
-    expect(attr(ATTRIBUTE_KEY_PACKET.PACKET_ACK)).toBe(JSON.stringify({ result: ACK_RESULT }));
-    expect(attr(ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX)).toBe(
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE)).toBe('2');
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_PACKET.PACKET_ACK)).toBe(JSON.stringify({ result: ACK_RESULT }));
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX)).toBe(
       Buffer.from(JSON.stringify({ result: ACK_RESULT }), 'utf8').toString('hex'),
     );
-    expect(attr(ATTRIBUTE_KEY_PACKET.PACKET_DATA)).toBe('{"denom":"uosmo"}');
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_PACKET.PACKET_DATA)).toBe('{"denom":"uosmo"}');
   });
 });

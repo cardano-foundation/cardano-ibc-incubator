@@ -21,6 +21,10 @@ export type Misbehaviour = {
 };
 
 export function initializeMisbehaviour(misbehaviourMsg: MisbehaviourMsg): Misbehaviour {
+  if (!misbehaviourMsg.header1 || !misbehaviourMsg.header2) {
+    throw new GrpcInvalidArgumentException('misbehaviour requires two headers');
+  }
+
   const misbehaviour: Misbehaviour = {
     client_id: misbehaviourMsg.client_id,
     header1: initializeHeader(misbehaviourMsg.header1),
@@ -200,7 +204,10 @@ export function checkForMisbehaviour(clientMessage: Any, clientDatum: ClientDatu
   return false;
 }
 
-function getPreviousConsensusState(consensusStatesList: [Height, ConsensusState][], height: bigint): ConsensusState {
+function getPreviousConsensusState(
+  consensusStatesList: [Height, ConsensusState][],
+  height: bigint,
+): ConsensusState | null {
   const consensusStateAtGivenHeight = consensusStatesList.find(([heightK]) => heightK.revisionHeight === height);
 
   if (consensusStateAtGivenHeight) {
@@ -216,7 +223,10 @@ function getPreviousConsensusState(consensusStatesList: [Height, ConsensusState]
   return null;
 }
 
-function getNextConsensusState(consensusStatesList: [Height, ConsensusState][], height: bigint): ConsensusState {
+function getNextConsensusState(
+  consensusStatesList: [Height, ConsensusState][],
+  height: bigint,
+): ConsensusState | null {
   const consensusStateAtGivenHeight = consensusStatesList.find(([heightK]) => heightK.revisionHeight === height);
 
   if (consensusStateAtGivenHeight) {

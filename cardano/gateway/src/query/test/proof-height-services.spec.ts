@@ -9,7 +9,8 @@ import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { HistoryService } from '../services/history.service';
+import { HistoryService, HistoryTxEvidence } from '../services/history.service';
+import { UtxoDto } from '../dtos/utxo.dto';
 import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { decodeClientDatum } from '@shared/types/client-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
@@ -165,8 +166,8 @@ function makeDeps() {
       outputIndex: 0,
       datum: 'historical-datum',
     })),
-    findUtxosByPolicyIdAndPrefixTokenName: jest.fn(async () => []),
-    findTransactionEvidenceByHash: jest.fn(async () => null),
+    findUtxosByPolicyIdAndPrefixTokenName: jest.fn(async (): Promise<UtxoDto[]> => []),
+    findTransactionEvidenceByHash: jest.fn(async (): Promise<HistoryTxEvidence | null> => null),
   };
   const mithrilService = {
     getCardanoTransactionsSetSnapshot: jest.fn(async () => [
@@ -333,9 +334,15 @@ describe('proof-bearing services with historical query heights', () => {
     deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName.mockResolvedValueOnce([
       {
         txHash: 'recv-packet-tx',
+        txId: 0,
         outputIndex: 0,
+        address: '',
+        assetsPolicy: '',
+        assetsName: '',
         datum: 'historical-datum',
         blockNo: Number(HISTORICAL_HEIGHT),
+        blockId: Number(HISTORICAL_HEIGHT),
+        index: 0,
       },
     ]);
     deps.mocks.historyService.findTransactionEvidenceByHash.mockResolvedValueOnce({
@@ -439,10 +446,9 @@ describe('proof-bearing services with historical query heights', () => {
       deps.ibcTreeCacheService as any,
     );
 
-    const response = await service.queryNextSequenceReceive(
-      { channel_id: 'channel-0', port_id: 'transfer' } as any,
-      { queryHeight: HISTORICAL_HEIGHT },
-    );
+    const response = await service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'transfer' } as any, {
+      queryHeight: HISTORICAL_HEIGHT,
+    });
 
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
       'nextSequenceRecv/ports/transfer/channels/channel-0',

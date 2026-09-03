@@ -135,10 +135,7 @@ export class ChannelService {
 
   private async findChannelUtxo(channelTokenUnit: string) {
     const deploymentConfig = this.configService.get('deployment');
-    return this.lucidService.findUtxoAtWithUnit(
-      deploymentConfig.validators.spendChannel.address,
-      channelTokenUnit,
-    );
+    return this.lucidService.findUtxoAtWithUnit(deploymentConfig.validators.spendChannel.address, channelTokenUnit);
   }
 
   async getChannelHealth(channelId: string, expectedPortId = 'transfer'): Promise<CardanoChannelHealthResponse> {
@@ -191,12 +188,12 @@ export class ChannelService {
     this.logger.log('', 'listCurrentChannelEnds');
     const pagination = getPaginationParams(validPagination(request.pagination));
     const {
-      'pagination.key': key,
-      'pagination.limit': limit,
-      'pagination.count_total': count_total,
-      'pagination.reverse': reverse,
+      'pagination.key': key = '',
+      'pagination.limit': limit = '100',
+      'pagination.count_total': count_total = false,
+      'pagination.reverse': reverse = false,
     } = pagination;
-    let { 'pagination.offset': offset } = pagination;
+    let { 'pagination.offset': offset = '0' } = pagination;
     if (key) offset = decodePaginationKey(key);
 
     const {
@@ -248,7 +245,7 @@ export class ChannelService {
       }),
     );
 
-    const channelFilters = identifiedChannels.reduce((accumulator, currentValue) => {
+    const channelFilters = identifiedChannels.reduce<Record<string, IdentifiedChannel>>((accumulator, currentValue) => {
       const key = `${currentValue.channel_id}_${currentValue.port_id}`;
       if (!accumulator[key] || accumulator[key].state < currentValue.state) accumulator[key] = currentValue;
       return accumulator;
@@ -363,14 +360,14 @@ export class ChannelService {
   async queryConnectionChannels(request: QueryConnectionChannelsRequest): Promise<QueryConnectionChannelsResponse> {
     this.logger.log('queryConnectionChannels');
     const { connection: connectionId, pagination: paginationReq } = validQueryConnectionChannelsParam(request);
-    const pagination = getPaginationParams(paginationReq);
+    const pagination = getPaginationParams(validPagination(paginationReq));
     const {
-      'pagination.key': key,
-      'pagination.limit': limit,
-      'pagination.count_total': count_total,
-      'pagination.reverse': reverse,
+      'pagination.key': key = '',
+      'pagination.limit': limit = '100',
+      'pagination.count_total': count_total = false,
+      'pagination.reverse': reverse = false,
     } = pagination;
-    let { 'pagination.offset': offset } = pagination;
+    let { 'pagination.offset': offset = '0' } = pagination;
     if (key) offset = decodePaginationKey(key);
 
     const {
@@ -424,7 +421,7 @@ export class ChannelService {
 
     const channelFilters = identifiedChannels
       .filter((idChannel) => idChannel.connection_hops[0] === connectionId)
-      .reduce((accumulator, currentValue) => {
+      .reduce<Record<string, IdentifiedChannel>>((accumulator, currentValue) => {
         const key = `${currentValue.channel_id}_${currentValue.port_id}`;
         if (!accumulator[key] || accumulator[key].state < currentValue.state) accumulator[key] = currentValue;
         return accumulator;

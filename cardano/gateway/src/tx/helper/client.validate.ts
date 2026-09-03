@@ -11,12 +11,19 @@ import { ClientState } from '@shared/types/client-state-types';
 import { ConsensusState } from '@shared/types/consensus-state';
 import { CLIENT_ID_PREFIX } from 'src/constant';
 import { Height } from '@shared/types/height';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 
 export function validateAndFormatCreateClientParams(data: MsgCreateClient): {
   constructedAddress: string;
   clientState: ClientState;
   consensusState: ConsensusState;
 } {
+  if (!data.client_state) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "client_state" is required');
+  }
+  if (!data.consensus_state) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "consensus_state" is required');
+  }
   const decodedClientStateMsg: ClientStateMsg = decodeClientState(data.client_state.value);
   const decodedConsensusMsg: ConsensusStateMsg = decodeConsensusState(data.consensus_state.value);
   const constructedAddress: string = data.signer;
@@ -40,6 +47,7 @@ export function validateAndFormatCreateClientParams(data: MsgCreateClient): {
 export function validateAndFormatUpdateClientParams(data: MsgUpdateClient): {
   constructedAddress: string;
   clientId: string;
+  clientMessage: Any;
 } {
   // Validate client ID
   if (!data.client_id) {
@@ -57,8 +65,11 @@ export function validateAndFormatUpdateClientParams(data: MsgUpdateClient): {
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
+  if (!data.client_message) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "client_message" is required');
+  }
 
-  return { constructedAddress, clientId };
+  return { constructedAddress, clientId, clientMessage: data.client_message };
 }
 
 export function validateUpdateHeaderAdvancesLatestHeight(headerHeight: bigint, latestHeight: Height): void {

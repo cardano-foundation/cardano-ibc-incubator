@@ -1,7 +1,8 @@
 import { ClientState as ClientStateTendermint } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { bytesFromBase64, toDuration } from '@cardano-ibc/proto-types/build/helpers';
-import { HashOp, LengthOp, hashOpFromJSON, lengthOpFromJSON } from '@cardano-ibc/proto-types/build/cosmos/ics23/v1/proofs';
+import { HashOp, LengthOp } from '@cardano-ibc/proto-types/build/cosmos/ics23/v1/proofs';
 import { ClientState } from '../types/client-state-types';
+import { ProofSpec } from '../types/proof-specs';
 import { convertHex2String, convertString2Hex } from './hex';
 import { convertToProofType } from './proof_types';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
@@ -59,25 +60,8 @@ export function normalizeClientStateFromDatum(clientState: ClientState): ClientS
   return clientStateTendermint;
 }
 // Define the conversion function for proofSpec
-function convertProofSpec(proofSpec: any): any {
-  const toHashOp = (value: any): HashOp => {
-    if (typeof value === 'string') return hashOpFromJSON(value);
-    if (typeof value === 'bigint') return Number(value) as HashOp;
-    if (typeof value === 'number') return value as HashOp;
-    return HashOp.UNRECOGNIZED;
-  };
-
-  const toLengthOp = (value: any): LengthOp => {
-    if (typeof value === 'string') return lengthOpFromJSON(value);
-    if (typeof value === 'bigint') return Number(value) as LengthOp;
-    if (typeof value === 'number') return value as LengthOp;
-    return LengthOp.UNRECOGNIZED;
-  };
-
-  const bytesFromBase64OrHex = (value: any): Uint8Array => {
-    if (value instanceof Uint8Array) return value;
-    if (typeof value !== 'string') return new Uint8Array();
-
+function convertProofSpec(proofSpec: ProofSpec) {
+  const bytesFromBase64OrHex = (value: string): Uint8Array => {
     const trimmed = value.startsWith('0x') ? value.slice(2) : value;
     const looksLikeHex = trimmed.length % 2 === 0 && /^[0-9a-fA-F]*$/.test(trimmed);
     if (looksLikeHex) {
@@ -86,26 +70,26 @@ function convertProofSpec(proofSpec: any): any {
 
     try {
       return bytesFromBase64(value);
-    } catch {
-      return new Uint8Array();
+    } catch (error) {
+      throw new GrpcInvalidArgumentException(`invalid proof spec byte string: ${String(error)}`);
     }
   };
 
   return {
     leaf_spec: {
-      hash: toHashOp(proofSpec.leaf_spec.hash),
-      prehash_key: toHashOp(proofSpec.leaf_spec.prehash_key),
-      prehash_value: toHashOp(proofSpec.leaf_spec.prehash_value),
-      length: toLengthOp(proofSpec.leaf_spec.length),
+      hash: Number(proofSpec.leaf_spec.hash) as HashOp,
+      prehash_key: Number(proofSpec.leaf_spec.prehash_key) as HashOp,
+      prehash_value: Number(proofSpec.leaf_spec.prehash_value) as HashOp,
+      length: Number(proofSpec.leaf_spec.length) as LengthOp,
       prefix: bytesFromBase64OrHex(proofSpec.leaf_spec.prefix),
     },
     inner_spec: {
-      child_order: proofSpec.inner_spec.child_order.map((e: any) => Number(e)),
+      child_order: proofSpec.inner_spec.child_order.map((entry) => Number(entry)),
       child_size: Number(proofSpec.inner_spec.child_size),
       min_prefix_length: Number(proofSpec.inner_spec.min_prefix_length),
       max_prefix_length: Number(proofSpec.inner_spec.max_prefix_length),
       empty_child: bytesFromBase64OrHex(proofSpec.inner_spec.empty_child),
-      hash: toHashOp(proofSpec.inner_spec.hash),
+      hash: Number(proofSpec.inner_spec.hash) as HashOp,
     },
     max_depth: Number(proofSpec.max_depth),
     min_depth: Number(proofSpec.min_depth),
@@ -113,26 +97,25 @@ function convertProofSpec(proofSpec: any): any {
 }
 // Convert client state operator to a structured ClientState object for submit on cardano
 export function initializeClientState(clientStateMsg: ClientStateTendermint): ClientState {
-  // Helper function to convert numbers to BigInt
-  const convertToBigInt = (value: any): bigint | null => value;
-
-  const convertHeight = (height: any): { revisionNumber: bigint | null; revisionHeight: bigint | null } => ({
-    revisionNumber: convertToBigInt(height?.revision_number),
-    revisionHeight: convertToBigInt(height?.revision_height),
-  });
   // Build the client state object
   const clientState: ClientState = {
     chainId: convertString2Hex(clientStateMsg.chain_id),
     trustLevel: {
       //TODO: remove hardcode 2n
-      numerator: convertToBigInt(clientStateMsg.trust_level?.numerator),
-      denominator: convertToBigInt(clientStateMsg.trust_level?.denominator),
+      numerator: clientStateMsg.trust_level.numerator,
+      denominator: clientStateMsg.trust_level.denominator,
     },
-    trustingPeriod: convertToBigInt(clientStateMsg.trusting_period.seconds * 10n ** 9n),
-    unbondingPeriod: convertToBigInt(clientStateMsg.unbonding_period.seconds * 10n ** 9n),
-    maxClockDrift: convertToBigInt(clientStateMsg.max_clock_drift.seconds * 10n ** 9n),
-    frozenHeight: convertHeight(clientStateMsg.frozen_height),
-    latestHeight: convertHeight(clientStateMsg.latest_height),
+    trustingPeriod: clientStateMsg.trusting_period.seconds * 10n ** 9n,
+    unbondingPeriod: clientStateMsg.unbonding_period.seconds * 10n ** 9n,
+    maxClockDrift: clientStateMsg.max_clock_drift.seconds * 10n ** 9n,
+    frozenHeight: {
+      revisionNumber: clientStateMsg.frozen_height.revision_number,
+      revisionHeight: clientStateMsg.frozen_height.revision_height,
+    },
+    latestHeight: {
+      revisionNumber: clientStateMsg.latest_height.revision_number,
+      revisionHeight: clientStateMsg.latest_height.revision_height,
+    },
     proofSpecs: convertToProofType(clientStateMsg.proof_specs),
   };
 
@@ -140,7 +123,7 @@ export function initializeClientState(clientStateMsg: ClientStateTendermint): Cl
 }
 
 // Validate the structure and values of the client state
-export function validateClientState(clientState: ClientState): GrpcInvalidArgumentException {
+export function validateClientState(clientState: ClientState): GrpcInvalidArgumentException | null {
   if (clientState.chainId?.length === 0) {
     return new GrpcInvalidArgumentException('chain id cannot be empty string');
   }
@@ -152,13 +135,8 @@ export function validateClientState(clientState: ClientState): GrpcInvalidArgume
   // 1]. If not, it returns an error. 1/3 is the minimum amount of trust needed
   // which does not break the security model.
   if (
-    (clientState.trustLevel?.numerator !== null &&
-      clientState.trustLevel?.denominator !== null &&
-      BigInt(clientState.trustLevel?.numerator) * BigInt(3) < clientState.trustLevel?.denominator) || // < 1/3
+    clientState.trustLevel.numerator * 3n < clientState.trustLevel.denominator || // < 1/3
     clientState.trustLevel?.numerator > clientState.trustLevel?.denominator || // > 1
-    (clientState.trustLevel?.numerator !== null &&
-      clientState.trustLevel?.numerator > clientState.trustLevel?.denominator) || // ? This condition seems incorrect. Did you mean denominator?
-    clientState.trustLevel?.denominator === null ||
     clientState.trustLevel?.denominator === BigInt(0)
   ) {
     return new GrpcInvalidArgumentException('trustLevel must be within [1/3, 1]');
@@ -201,6 +179,7 @@ export function validateClientState(clientState: ClientState): GrpcInvalidArgume
   //   }
   // }
   //
+  return null;
 }
 
 export function isExpired(cs: ClientState, latestTimestamp: bigint, now: bigint): boolean {

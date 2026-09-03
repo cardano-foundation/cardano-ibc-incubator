@@ -801,7 +801,7 @@ export class PacketService {
     validToSlot: number;
     validToTime: number;
   }> {
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const ogmiosEndpoint = this.configService.getOrThrow<string>('ogmiosEndpoint');
     const network = this.configService.get('cardanoNetwork') as Network;
     const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
     if (!slotConfig || slotConfig.slotLength <= 0) {
@@ -1807,7 +1807,7 @@ export class PacketService {
       // Async-icq rides the normal recv-packet path. The difference from ICS-20 is
       // only how the packet data is interpreted and how the ack is produced.
       const moduleConfig = getGatewayModuleConfigForPortId(
-        this.configService.get('deployment'),
+        this.configService.getOrThrow('deployment'),
         ASYNC_ICQ_HOST_PORT,
       );
       const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
@@ -2678,7 +2678,10 @@ export class PacketService {
     );
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
-    const moduleConfig = getGatewayModuleConfigForPortId(this.configService.get('deployment'), sendPacketOperator.sourcePort);
+    const moduleConfig = getGatewayModuleConfigForPortId(
+      this.configService.getOrThrow('deployment'),
+      sendPacketOperator.sourcePort,
+    );
     if (moduleConfig.key === 'transfer') {
       throw new GrpcInvalidArgumentException('async-icq send must not use the transfer module');
     }
@@ -2961,7 +2964,7 @@ export class PacketService {
     );
     if (convertHex2String(packet.source_port) === ASYNC_ICQ_HOST_PORT) {
       const moduleConfig = getGatewayModuleConfigForPortId(
-        this.configService.get('deployment'),
+        this.configService.getOrThrow('deployment'),
         ASYNC_ICQ_HOST_PORT,
       );
       const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);

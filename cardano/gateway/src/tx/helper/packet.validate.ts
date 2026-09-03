@@ -195,7 +195,7 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
       revisionNumber: BigInt(data.timeout_height?.revision_number || 0),
     },
     timeoutTimestamp: BigInt(data?.timeout_timestamp || 0),
-    memo: data.memo || undefined,
+    memo: data.memo || '',
   };
   return sendPacketOperator;
 }

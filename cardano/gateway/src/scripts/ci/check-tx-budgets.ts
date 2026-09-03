@@ -190,9 +190,11 @@ function orderedPruneHostStateRedeemer(): string {
 
   // HandlePacket is constructor 7 in the wire-locked HostStateRedeemer ABI.
   // Its seven fields are sparse-Merkle sibling lists in declaration order.
-  return Lucid.Data.to(new Lucid.Constr(7, [[], [], [], [], [], [], acknowledgementSiblings]), undefined, {
-    canonical: true,
-  });
+  return Lucid.Data.to<Lucid.Data>(
+    new Lucid.Constr<Lucid.Data>(7, [[], [], [], [], [], [], acknowledgementSiblings]),
+    undefined,
+    { canonical: true },
+  );
 }
 
 function scriptBytes(validators: Map<string, BlueprintValidator>, title: string): number {

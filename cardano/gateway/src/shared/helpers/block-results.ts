@@ -150,17 +150,25 @@ export function normalizeTxsResultFromClientDatum(
   clientId: string,
   spendClientRedeemer: SpendClientRedeemer,
 ): ResponseDeliverTx {
-  const [latestHeight] = [...ClientDatum.state.consensusStates].at(-1);
+  const latestConsensusEntry = [...ClientDatum.state.consensusStates].at(-1);
+  if (!latestConsensusEntry) {
+    throw new Error('Cannot normalize a client event without a consensus state');
+  }
+
+  const [latestHeight] = latestConsensusEntry;
   let header = '';
   let clientMessageAnyHex = '';
   let eventType = clientEvent;
   let consensusHeight = latestHeight;
 
-  if (spendClientRedeemer && spendClientRedeemer.hasOwnProperty('UpdateClient')) {
-    const clientMessage = spendClientRedeemer['UpdateClient'].msg;
+  if (typeof spendClientRedeemer === 'object' && 'UpdateClient' in spendClientRedeemer) {
+    const clientMessage = spendClientRedeemer.UpdateClient.msg;
 
-    if (clientMessage && clientMessage.hasOwnProperty('HeaderCase')) {
-      const updateHeader = clientMessage['HeaderCase'][0];
+    if ('HeaderCase' in clientMessage) {
+      const updateHeader = clientMessage.HeaderCase[0];
+      if (!updateHeader) {
+        throw new Error('UpdateClient header message is empty');
+      }
       const msgUpdateClient = convertHeaderToTendermint(updateHeader);
       const headerAny: Any = {
         type_url: '/ibc.lightclients.tendermint.v1.Header',
@@ -173,8 +181,11 @@ export function normalizeTxsResultFromClientDatum(
         revisionNumber: updateHeader.trustedHeight.revisionNumber,
         revisionHeight: updateHeader.signedHeader.header.height,
       };
-    } else if (clientMessage && clientMessage.hasOwnProperty('MisbehaviourCase')) {
-      const misbehaviour = clientMessage['MisbehaviourCase'][0];
+    } else if ('MisbehaviourCase' in clientMessage) {
+      const misbehaviour = clientMessage.MisbehaviourCase[0];
+      if (!misbehaviour) {
+        throw new Error('UpdateClient misbehaviour message is empty');
+      }
       const misbehaviourAny: Any = {
         type_url: '/ibc.lightclients.tendermint.v1.Misbehaviour',
         value: MisbehaviourMsg.encode({
@@ -230,29 +241,44 @@ export function normalizeTxsResultFromClientDatum(
 }
 
 function getEventPacketChannel(channelRedeemer: SpendChannelRedeemer): string {
-  if (channelRedeemer.hasOwnProperty('RecvPacket')) return EVENT_TYPE_PACKET.RECV_PACKET;
-  if (channelRedeemer.hasOwnProperty('SendPacket')) return EVENT_TYPE_PACKET.SEND_PACKET;
-  if (channelRedeemer.hasOwnProperty('AcknowledgePacket')) return EVENT_TYPE_PACKET.ACKNOWLEDGE_PACKET;
-  if (channelRedeemer.hasOwnProperty('TimeoutPacket')) return EVENT_TYPE_PACKET.TIMEOUT_PACKET;
+  if (typeof channelRedeemer !== 'object') return '';
+  if ('RecvPacket' in channelRedeemer) return EVENT_TYPE_PACKET.RECV_PACKET;
+  if ('SendPacket' in channelRedeemer) return EVENT_TYPE_PACKET.SEND_PACKET;
+  if ('AcknowledgePacket' in channelRedeemer) return EVENT_TYPE_PACKET.ACKNOWLEDGE_PACKET;
+  if ('TimeoutPacket' in channelRedeemer) return EVENT_TYPE_PACKET.TIMEOUT_PACKET;
   return '';
+}
+
+function packetFromChannelRedeemer(channelRedeemer: SpendChannelRedeemer): {
+  packet: Packet;
+  acknowledgement: string;
+} {
+  if (typeof channelRedeemer !== 'object') {
+    throw new Error(`Channel redeemer ${channelRedeemer} does not contain packet data`);
+  }
+  if ('RecvPacket' in channelRedeemer) {
+    return { packet: channelRedeemer.RecvPacket.packet, acknowledgement: '' };
+  }
+  if ('SendPacket' in channelRedeemer) {
+    return { packet: channelRedeemer.SendPacket.packet, acknowledgement: '' };
+  }
+  if ('AcknowledgePacket' in channelRedeemer) {
+    return {
+      packet: channelRedeemer.AcknowledgePacket.packet,
+      acknowledgement: channelRedeemer.AcknowledgePacket.acknowledgement,
+    };
+  }
+  if ('TimeoutPacket' in channelRedeemer) {
+    return { packet: channelRedeemer.TimeoutPacket.packet, acknowledgement: '' };
+  }
+  throw new Error('Channel redeemer does not contain packet data');
 }
 
 export function normalizeTxsResultFromChannelRedeemer(
   channelRedeemer: SpendChannelRedeemer,
   channelDatum: ChannelDatum,
 ): ResponseDeliverTx {
-  let packetData: Packet;
-  let acknowledgement = '';
-  if (channelRedeemer.hasOwnProperty('RecvPacket'))
-    packetData = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
-  if (channelRedeemer.hasOwnProperty('SendPacket'))
-    packetData = channelRedeemer['SendPacket']?.packet as unknown as Packet;
-  if (channelRedeemer.hasOwnProperty('AcknowledgePacket')) {
-    packetData = channelRedeemer['AcknowledgePacket']?.packet as unknown as Packet;
-    acknowledgement = channelRedeemer['AcknowledgePacket']?.acknowledgement;
-  }
-  if (channelRedeemer.hasOwnProperty('TimeoutPacket'))
-    packetData = channelRedeemer['TimeoutPacket']?.packet as unknown as Packet;
+  const { packet: packetData, acknowledgement } = packetFromChannelRedeemer(channelRedeemer);
 
   return {
     code: 0,
@@ -330,19 +356,23 @@ export function normalizeTxsResultFromModuleRedeemer(
   channelRedeemer: SpendChannelRedeemer,
   channelDatum: ChannelDatum,
 ): ResponseDeliverTx {
-  if (!moduleRedeemer.hasOwnProperty('Callback')) return { code: 0, events: [] };
-  const moduleCallback = moduleRedeemer['Callback'][0] as unknown as IBCModuleCallback;
+  if (!('Callback' in moduleRedeemer)) return { code: 0, events: [] };
+  const moduleCallback: IBCModuleCallback | undefined = moduleRedeemer.Callback[0];
 
-  if (!moduleCallback.hasOwnProperty('OnRecvPacket')) return { code: 0, events: [] };
-  const acknowledgementRes: AcknowledgementResponse = moduleCallback['OnRecvPacket']?.acknowledgement
-    ?.response as unknown as AcknowledgementResponse;
+  if (!moduleCallback || typeof moduleCallback !== 'object' || !('OnRecvPacket' in moduleCallback)) {
+    return { code: 0, events: [] };
+  }
+  const acknowledgementRes: AcknowledgementResponse = moduleCallback.OnRecvPacket.acknowledgement.response;
   // Emit the real ack payload derived from the module callback so downstream
   // relayer/event consumers see the same acknowledgement bytes committed in state.
   const packetAck = acknowledgementJsonFromResponse(acknowledgementRes);
   const packetAckHex = acknowledgementHexFromResponse(acknowledgementRes);
 
   // TODO: handle packet ack
-  const packetData: Packet = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
+  if (typeof channelRedeemer !== 'object' || !('RecvPacket' in channelRedeemer)) {
+    throw new Error('OnRecvPacket module callback requires a RecvPacket channel redeemer');
+  }
+  const packetData = channelRedeemer.RecvPacket.packet;
   return {
     code: 0,
     events: [
@@ -418,7 +448,10 @@ export function normalizeTxsResultFromRecvPacketSuccessAcknowledgement(
   channelRedeemer: SpendChannelRedeemer,
   channelDatum: ChannelDatum,
 ): ResponseDeliverTx {
-  const packetData: Packet = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
+  if (typeof channelRedeemer !== 'object' || !('RecvPacket' in channelRedeemer)) {
+    throw new Error('Successful receive acknowledgement requires a RecvPacket channel redeemer');
+  }
+  const packetData = channelRedeemer.RecvPacket.packet;
   const packetAck = JSON.stringify({ result: ACK_RESULT });
   const packetAckHex = toHex(Buffer.from(packetAck, 'utf8'));
 

@@ -38,26 +38,22 @@ export function verifyClientMessage(clientMessage: Any, clientDatum: ClientDatum
 }
 
 export function getClientMessageFromTendermint(clientMessageAny: Any): ClientMessage {
-  let clientMessage: ClientMessage = null;
-
   switch (clientMessageAny.type_url) {
     case '/ibc.lightclients.tendermint.v1.Header': {
       const headerMsg = HeaderMsg.decode(clientMessageAny.value);
       const header = initializeHeader(headerMsg);
-      clientMessage = {
+      return {
         HeaderCase: [header],
       };
-      break;
     }
     case '/ibc.lightclients.tendermint.v1.Misbehaviour': {
       const misbehaviourMsg = MisbehaviourMsg.decode(clientMessageAny.value);
       const misbehaviour = initializeMisbehaviour(misbehaviourMsg);
-      clientMessage = {
+      return {
         MisbehaviourCase: [misbehaviour],
       };
-      break;
     }
+    default:
+      throw new Error(`Unsupported Tendermint client message type URL: ${clientMessageAny.type_url}`);
   }
-
-  return clientMessage;
 }

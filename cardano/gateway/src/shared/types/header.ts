@@ -29,47 +29,64 @@ function toTendermintBlockIdFlag(flag: bigint): number {
 // Convert Header operator to a structured Header object to submit to cardano
 
 export function initializeHeader(headerMsg: HeaderMsg): Header {
-  const toBytes = (value: Uint8Array | null | undefined) => (value ? toHex(value) : null);
+  const signedHeader = headerMsg.signed_header;
+  if (!signedHeader) throw new GrpcInvalidArgumentException('missing signed header');
+
+  const tmHeader = signedHeader.header;
+  if (!tmHeader) throw new GrpcInvalidArgumentException('missing header');
+
+  const commit = signedHeader.commit;
+  if (!commit) throw new GrpcInvalidArgumentException('missing commit');
+
+  const validatorSet = headerMsg.validator_set;
+  if (!validatorSet) throw new GrpcInvalidArgumentException('missing validator set');
+  const proposer = validatorSet.proposer;
+  if (!proposer) throw new GrpcInvalidArgumentException('missing validator set proposer');
+
+  const trustedValidators = headerMsg.trusted_validators;
+  if (!trustedValidators) throw new GrpcInvalidArgumentException('missing trusted validator set');
+  const trustedProposer = trustedValidators.proposer;
+  if (!trustedProposer) throw new GrpcInvalidArgumentException('missing trusted validator set proposer');
+
+  const toBytes = (value: Uint8Array | null | undefined): string => (value ? toHex(value) : '');
   const header: Header = {
     signedHeader: {
       header: {
         version: {
-          block: BigInt(headerMsg.signed_header.header.version.block),
-          app: BigInt(headerMsg.signed_header.header.version.app),
+          block: BigInt(tmHeader.version.block),
+          app: BigInt(tmHeader.version.app),
         },
-        chainId: toBytes(Buffer.from(headerMsg.signed_header.header.chain_id)),
-        height: BigInt(headerMsg.signed_header.header.height),
-        time:
-          BigInt(headerMsg.signed_header.header.time.seconds) * 10n ** 9n +
-          BigInt(headerMsg.signed_header.header.time.nanos),
+        chainId: toBytes(Buffer.from(tmHeader.chain_id)),
+        height: BigInt(tmHeader.height),
+        time: BigInt(tmHeader.time.seconds) * 10n ** 9n + BigInt(tmHeader.time.nanos),
         lastBlockId: {
-          hash: toBytes(headerMsg.signed_header.header.last_block_id.hash),
+          hash: toBytes(tmHeader.last_block_id.hash),
           partSetHeader: {
-            total: BigInt(headerMsg.signed_header.header.last_block_id.part_set_header.total),
-            hash: toBytes(headerMsg.signed_header.header.last_block_id.part_set_header.hash),
+            total: BigInt(tmHeader.last_block_id.part_set_header.total),
+            hash: toBytes(tmHeader.last_block_id.part_set_header.hash),
           },
         },
-        lastCommitHash: toBytes(headerMsg.signed_header.header.last_commit_hash),
-        dataHash: toBytes(headerMsg.signed_header.header.data_hash),
-        validatorsHash: toBytes(headerMsg.signed_header.header.validators_hash),
-        nextValidatorsHash: toBytes(headerMsg.signed_header.header.next_validators_hash),
-        consensusHash: toBytes(headerMsg.signed_header.header.consensus_hash),
-        appHash: toBytes(headerMsg.signed_header.header.app_hash),
-        lastResultsHash: toBytes(headerMsg.signed_header.header.last_results_hash),
-        evidenceHash: toBytes(headerMsg.signed_header.header.evidence_hash),
-        proposerAddress: toBytes(headerMsg.signed_header.header.proposer_address),
+        lastCommitHash: toBytes(tmHeader.last_commit_hash),
+        dataHash: toBytes(tmHeader.data_hash),
+        validatorsHash: toBytes(tmHeader.validators_hash),
+        nextValidatorsHash: toBytes(tmHeader.next_validators_hash),
+        consensusHash: toBytes(tmHeader.consensus_hash),
+        appHash: toBytes(tmHeader.app_hash),
+        lastResultsHash: toBytes(tmHeader.last_results_hash),
+        evidenceHash: toBytes(tmHeader.evidence_hash),
+        proposerAddress: toBytes(tmHeader.proposer_address),
       },
       commit: {
-        height: BigInt(headerMsg.signed_header.commit.height),
-        round: BigInt(headerMsg.signed_header.commit.round),
+        height: BigInt(commit.height),
+        round: BigInt(commit.round),
         blockId: {
-          hash: toBytes(headerMsg.signed_header.commit.block_id.hash),
+          hash: toBytes(commit.block_id.hash),
           partSetHeader: {
-            total: BigInt(headerMsg.signed_header.commit.block_id.part_set_header.total),
-            hash: toBytes(headerMsg.signed_header.commit.block_id.part_set_header.hash),
+            total: BigInt(commit.block_id.part_set_header.total),
+            hash: toBytes(commit.block_id.part_set_header.hash),
           },
         },
-        signatures: headerMsg.signed_header.commit.signatures.map((signature) => {
+        signatures: commit.signatures.map((signature) => {
           let timestamp = BigInt(signature.timestamp.seconds) * 10n ** 9n + BigInt(signature.timestamp.nanos);
           if (timestamp < 0 && 0n - timestamp === EPOCH_DIFF_BTW_GO_JS) timestamp = 0n;
 
@@ -83,42 +100,38 @@ export function initializeHeader(headerMsg: HeaderMsg): Header {
       },
     },
     validatorSet: {
-      validators: headerMsg.validator_set.validators.map((validator) => ({
+      validators: validatorSet.validators.map((validator) => ({
         address: toBytes(validator.address),
         pubkey: toBytes(validator.pub_key.ed25519) || toBytes(validator.pub_key.secp256k1),
         votingPower: validator.voting_power,
         proposerPriority: validator.proposer_priority,
       })),
       proposer: {
-        address: toBytes(headerMsg.validator_set.proposer.address),
-        pubkey:
-          toBytes(headerMsg.validator_set.proposer.pub_key.ed25519) ||
-          toBytes(headerMsg.validator_set.proposer.pub_key.secp256k1),
-        votingPower: headerMsg.validator_set.proposer.voting_power,
-        proposerPriority: headerMsg.validator_set.proposer.proposer_priority,
+        address: toBytes(proposer.address),
+        pubkey: toBytes(proposer.pub_key.ed25519) || toBytes(proposer.pub_key.secp256k1),
+        votingPower: proposer.voting_power,
+        proposerPriority: proposer.proposer_priority,
       },
-      totalVotingPower: getTotalVotingPowerFromTendermint(headerMsg.validator_set),
+      totalVotingPower: getTotalVotingPowerFromTendermint(validatorSet),
     },
     trustedHeight: {
       revisionHeight: headerMsg.trusted_height.revision_height,
       revisionNumber: headerMsg.trusted_height.revision_number,
     },
     trustedValidators: {
-      validators: headerMsg.trusted_validators.validators.map((validator) => ({
+      validators: trustedValidators.validators.map((validator) => ({
         address: toBytes(validator.address),
         pubkey: toBytes(validator.pub_key.ed25519) || toBytes(validator.pub_key.secp256k1),
         votingPower: validator.voting_power,
         proposerPriority: validator.proposer_priority,
       })),
       proposer: {
-        address: toBytes(headerMsg.trusted_validators.proposer.address),
-        pubkey:
-          toBytes(headerMsg.trusted_validators.proposer.pub_key.ed25519) ||
-          toBytes(headerMsg.trusted_validators.proposer.pub_key.secp256k1),
-        votingPower: headerMsg.trusted_validators.proposer.voting_power,
-        proposerPriority: headerMsg.trusted_validators.proposer.proposer_priority,
+        address: toBytes(trustedProposer.address),
+        pubkey: toBytes(trustedProposer.pub_key.ed25519) || toBytes(trustedProposer.pub_key.secp256k1),
+        votingPower: trustedProposer.voting_power,
+        proposerPriority: trustedProposer.proposer_priority,
       },
-      totalVotingPower: getTotalVotingPowerFromTendermint(headerMsg.trusted_validators),
+      totalVotingPower: getTotalVotingPowerFromTendermint(trustedValidators),
     },
   };
   return header;

@@ -1,7 +1,22 @@
 import { Header } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
+type SignedHeaderFixture = NonNullable<Header['signed_header']> & {
+  header: NonNullable<NonNullable<Header['signed_header']>['header']>;
+  commit: NonNullable<NonNullable<Header['signed_header']>['commit']>;
+};
+
+type ValidatorSetFixture = NonNullable<Header['validator_set']> & {
+  proposer: NonNullable<NonNullable<Header['validator_set']>['proposer']>;
+};
+
+type HeaderFixture = Header & {
+  signed_header: SignedHeaderFixture;
+  validator_set: ValidatorSetFixture;
+  trusted_validators: ValidatorSetFixture;
+};
+
 class HeaderMockBuilder {
-  private headerMock: Header;
+  private headerMock: HeaderFixture;
 
   constructor() {
     this.setDefault();
@@ -392,7 +407,7 @@ class HeaderMockBuilder {
     return this;
   }
 
-  build(): any {
+  build(): HeaderFixture {
     const builtHeaderMock = { ...this.headerMock };
     this.reset();
     return builtHeaderMock;
