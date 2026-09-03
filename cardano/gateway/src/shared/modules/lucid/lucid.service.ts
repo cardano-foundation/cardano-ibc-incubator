@@ -1171,6 +1171,8 @@ export class LucidService implements OnModuleInit {
     connectionTokenUnit: string,
     clientUtxo: UTxO,
     encodedMintConnectionRedeemer: string,
+    verifyProofPolicyId: string,
+    encodedVerifyProofRedeemer: string,
     encodedUpdatedHostStateDatum: string,
     encodedConnectionDatum: string,
     _constructedAddress: string,
@@ -1187,6 +1189,7 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.mintConnection,
+      this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
@@ -1195,6 +1198,12 @@ export class LucidService implements OnModuleInit {
           [connectionTokenUnit]: 1n,
         },
         encodedMintConnectionRedeemer,
+      )
+      .mintAssets(
+        {
+          [verifyProofPolicyId]: 1n,
+        },
+        encodedVerifyProofRedeemer,
       )
       .readFrom([clientUtxo]);
 
@@ -1286,6 +1295,8 @@ export class LucidService implements OnModuleInit {
     connectionTokenUnit: string,
     clientUtxo: UTxO,
     encodedUpdatedConnectionDatum: string,
+    verifyProofPolicyId: string,
+    encodedVerifyProofRedeemer: string,
     _constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
@@ -1310,6 +1321,7 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendConnection,
+      this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
@@ -1328,6 +1340,12 @@ export class LucidService implements OnModuleInit {
         {
           [connectionTokenUnit]: 1n,
         },
+      )
+      .mintAssets(
+        {
+          [verifyProofPolicyId]: 1n,
+        },
+        encodedVerifyProofRedeemer,
       );
     return tx;
   }
@@ -1492,6 +1510,7 @@ export class LucidService implements OnModuleInit {
       .readFrom([
         this.referenceScripts.mintChannel,
         this.getModuleReferenceScript(dto.moduleKey),
+        this.referenceScripts.verifyProof,
         this.referenceScripts.hostStateStt,
       ])
       .mintAssets(
@@ -1499,6 +1518,12 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
         dto.encodedMintChannelRedeemer,
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo]);
     const addPayToContract = (
@@ -1863,12 +1888,14 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
+      this.getModuleReferenceScript(dto.moduleKey),
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
@@ -1902,6 +1929,8 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }

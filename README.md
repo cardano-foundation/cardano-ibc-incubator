@@ -161,7 +161,7 @@ The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/
 
 - `ChainEndpoint` trait implementation for Cardano
 - Hermes-specific SLIP-0010 Ed25519 mnemonic derivation using a Cardano-shaped path. This is not wallet-compatible Ed25519-BIP32/CIP-1852 derivation; verify the derived address before funding it.
-- Ed25519 transaction signing using Pallas primitives
+- Intent-bound Cardano transaction validation and Ed25519 signing using Pallas primitives
 - Gateway gRPC client for blockchain interaction
 - Cardano-specific IBC types (Header, ClientState, ConsensusState)
 - Full async runtime integration with Hermes's message-passing architecture
@@ -176,22 +176,53 @@ The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/
 > [[chains]]
 > type = 'Cardano'
 > id = 'cardano-devnet'
+> bridge_manifest_path = '/absolute/path/to/bridge-manifest.json'
 > key_store_folder = '/Users/yourusername/.hermes/keys'  # Absolute path required
 > ```
+
+`bridge_manifest_path` is required for Cardano signing. It must name the trusted local deployment
+manifest that corresponds to the Gateway's `BRIDGE_MANIFEST_PATH`; never source it from the
+Gateway itself. `caribic start` resolves the active network profile's manifest, snapshots it into
+the owner-only `~/.hermes/signing-security` directory, and writes that snapshot path into
+`~/.hermes/config.toml`, failing before Hermes starts if the artifact is absent. The Gateway's
+deployment-artifact mounts are also read-only. Restart Hermes after changing or redeploying the
+manifest.
+
+Hermes also requires `signing_utxo_kupo_url` and `signing_ogmios_url`. It resolves every regular
+and collateral input against the configured Kupo service and evaluates the exact unsigned CBOR
+with the configured Ogmios service before loading the signing key. After signing, Hermes submits
+the exact signed envelope directly to that Ogmios endpoint; the Gateway receives only its hash so
+it can confirm inclusion and finalize the corresponding pending IBC-tree update. For hosted
+Demeter endpoints, `caribic start` derives these settings from the active Gateway `.env` profile
+and stores any required API-key files with owner-only permissions.
+
+Keep the signing limits in the Cardano chain configuration at values appropriate for the funded
+relayer wallet. In particular, `max_wallet_lovelace_top_up` bounds ADA the wallet may contribute
+beyond the exact fee and any explicitly requested outbound lovelace transfer.
+
+The default local Gateway URL uses plaintext on loopback. Hermes rejects plaintext connections to
+non-loopback Gateway hosts. Remote deployments must use `https://`; configure
+`gateway_tls_ca_file` for a private CA and pair `gateway_auth_token_file` with the Gateway's
+`GRPC_AUTH_TOKEN_FILE` when bearer authentication is enabled. An independently configured
+`misbehaviour_witness_gateway_url` follows the same rules; use its corresponding
+`misbehaviour_witness_gateway_tls_ca_file` and
+`misbehaviour_witness_gateway_auth_token_file` settings when needed.
 
 ## Architecture & Design Decisions
 
 ### Transaction Signing Architecture
 
-The Hermes relayer implements Cardano transaction signing using [Pallas](https://github.com/txpipe/pallas), a pure Rust library for Cardano primitives. The architecture separates concerns between transaction building and signing:
+The Hermes relayer implements Cardano transaction validation and signing using [Pallas](https://github.com/txpipe/pallas), a pure Rust library for Cardano primitives. The architecture separates transaction construction from authorization and signing:
 
 - **Gateway (NestJS/TypeScript)** builds unsigned transactions using [Lucid Evolution](https://github.com/Anastasia-Labs/lucid-evolution) and handles all Cardano-specific domain logic (UTxO querying, fee calculation, and proof/header preparation)
-- **Hermes Relayer (Rust)** signs pre-built transactions using CIP-1852 key derivation and Ed25519 signatures via the native `CardanoSigningKeyPair` implementation
+- **Hermes Relayer (Rust)** derives the expected effect from the IBC message, decodes exactly one Gateway transaction, and checks it against the operator-pinned bridge manifest and configured fee, collateral, transaction-size, validity-interval, total protocol-output value, network, signer, input, output, mint, and reference-script policy before producing a signature
+- **Cardano validators** remain the final authority for protocol state transitions; Hermes's policy prevents its fee key from authorizing an unrelated or materially broader transaction assembled by a compromised Gateway
 
 This separation provides:
 - Clean boundaries between chain-specific logic (Gateway) and generic IBC relaying (Hermes)
 - Native integration with Hermes's keyring system following the same pattern as Cosmos SDK chains
-- Easier testing and maintenance of cryptographic signing separate from transaction construction
+- A local authorization boundary between the network-facing transaction builder and the funded signing key
+- Easier testing and maintenance of validation and cryptographic signing separate from transaction construction
 
 The Cardano chain implementation in Hermes (`relayer/crates/relayer/src/chain/cardano/`) follows the same architectural patterns as other supported chains, ensuring consistent behavior across the IBC ecosystem.
 

@@ -829,6 +829,36 @@ export class ConnectionService {
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
+    if (!isValidProofHeight(heightsArray, connectionOpenTryOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${connectionOpenTryOperator.proofHeight.revisionNumber}/${connectionOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === connectionOpenTryOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === connectionOpenTryOperator.proofHeight.revisionHeight,
+    );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${connectionOpenTryOperator.proofHeight.revisionNumber}/${connectionOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const processedTime = getHeightMapValue(
+      clientDatum.state.processedTimes,
+      connectionOpenTryOperator.proofHeight,
+    );
+    const processedHeight = getHeightMapValue(
+      clientDatum.state.processedHeights,
+      connectionOpenTryOperator.proofHeight,
+    );
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(
+        `Missing processed delay metadata at proof height ${connectionOpenTryOperator.proofHeight.revisionNumber}/${connectionOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
     
     // Derive the new connection identifier from the HostState sequence.
     const connectionId = `connection-${hostStateDatum.state.next_connection_sequence}`;
@@ -893,6 +923,64 @@ export class ConnectionService {
       mintConnectionRedeemer,
       'mintConnectionRedeemer',
     );
+    const expectedCounterpartyConnection: ConnectionEnd = {
+      client_id: convertHex2String(connectionEnd.counterparty.client_id),
+      versions: connectionEnd.versions.map((version) => ({
+        identifier: convertHex2String(version.identifier),
+        features: version.features.map((feature) => convertHex2String(feature)),
+      })),
+      state: ConnectionState.STATE_INIT,
+      counterparty: {
+        client_id: convertHex2String(connectionEnd.client_id),
+        connection_id: '',
+        prefix: { key_prefix: fromHex(DEFAULT_MERKLE_PREFIX) },
+      },
+      delay_period: connectionEnd.delay_period,
+    };
+    const proofContext = {
+      cs: clientDatum.state.clientState,
+      cons_state: consensusEntry[1],
+      height: connectionOpenTryOperator.proofHeight,
+      processed_time: processedTime,
+      processed_height: processedHeight,
+      delay_time_period: connectionEnd.delay_period,
+      delay_block_period: getBlockDelay(connectionEnd.delay_period),
+    };
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      BatchVerifyMembership: [[
+        {
+          ...proofContext,
+          proof: connectionOpenTryOperator.proofInit,
+          path: {
+            key_path: [
+              connectionEnd.counterparty.prefix.key_prefix,
+              convertString2Hex(
+                connectionPath(convertHex2String(connectionEnd.counterparty.connection_id)),
+              ),
+            ],
+          },
+          value: toHex(ConnectionEnd.encode(expectedCounterpartyConnection).finish()),
+        },
+        {
+          ...proofContext,
+          proof: connectionOpenTryOperator.proofClient,
+          path: {
+            key_path: [
+              connectionEnd.counterparty.prefix.key_prefix,
+              convertString2Hex(
+                `clients/${convertHex2String(connectionEnd.counterparty.client_id)}/clientState`,
+              ),
+            ],
+          },
+          value: connectionOpenTryOperator.counterpartyClientState,
+        },
+      ]],
+    };
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const encodedVerifyProofRedeemer = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
@@ -904,6 +992,8 @@ export class ConnectionService {
       connectionTokenUnit,
       clientUtxo,
       encodedMintConnectionRedeemer,
+      verifyProofPolicyId,
+      encodedVerifyProofRedeemer,
       encodedUpdatedHostStateDatum,
       encodedConnectionDatum,
       constructedAddress,
@@ -1301,6 +1391,78 @@ export class ConnectionService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
+    if (!isValidProofHeight(heightsArray, connectionOpenConfirmOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${connectionOpenConfirmOperator.proofHeight.revisionNumber}/${connectionOpenConfirmOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === connectionOpenConfirmOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === connectionOpenConfirmOperator.proofHeight.revisionHeight,
+    );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${connectionOpenConfirmOperator.proofHeight.revisionNumber}/${connectionOpenConfirmOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const processedTime = getHeightMapValue(
+      clientDatum.state.processedTimes,
+      connectionOpenConfirmOperator.proofHeight,
+    );
+    const processedHeight = getHeightMapValue(
+      clientDatum.state.processedHeights,
+      connectionOpenConfirmOperator.proofHeight,
+    );
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(
+        `Missing processed delay metadata at proof height ${connectionOpenConfirmOperator.proofHeight.revisionNumber}/${connectionOpenConfirmOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const expectedCounterpartyConnection: ConnectionEnd = {
+      client_id: convertHex2String(updatedConnectionDatum.state.counterparty.client_id),
+      versions: updatedConnectionDatum.state.versions.map((version) => ({
+        identifier: convertHex2String(version.identifier),
+        features: version.features.map((feature) => convertHex2String(feature)),
+      })),
+      state: ConnectionState.STATE_OPEN,
+      counterparty: {
+        client_id: convertHex2String(updatedConnectionDatum.state.client_id),
+        connection_id: connectionId,
+        prefix: { key_prefix: fromHex(DEFAULT_MERKLE_PREFIX) },
+      },
+      delay_period: updatedConnectionDatum.state.delay_period,
+    };
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusEntry[1],
+        height: connectionOpenConfirmOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
+        delay_time_period: updatedConnectionDatum.state.delay_period,
+        delay_block_period: getBlockDelay(updatedConnectionDatum.state.delay_period),
+        proof: connectionOpenConfirmOperator.proofAck,
+        path: {
+          key_path: [
+            updatedConnectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              connectionPath(
+                convertHex2String(updatedConnectionDatum.state.counterparty.connection_id),
+              ),
+            ),
+          ],
+        },
+        value: toHex(ConnectionEnd.encode(expectedCounterpartyConnection).finish()),
+      },
+    };
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const encodedVerifyProofRedeemer = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
     const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
       spendConnectionRedeemer,
       'spendConnectionRedeemer',
@@ -1320,6 +1482,8 @@ export class ConnectionService {
       connectionTokenUnit,
       clientUtxo,
       encodedUpdatedConnectionDatum,
+      verifyProofPolicyId,
+      encodedVerifyProofRedeemer,
       constructedAddress,
     );
     return {

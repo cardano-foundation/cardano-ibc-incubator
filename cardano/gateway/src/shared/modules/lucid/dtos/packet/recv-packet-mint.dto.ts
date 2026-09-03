@@ -17,6 +17,8 @@ import {
 
 export type UnsignedRecvPacketDto = WithHostStateUpdate &
   WithChannelContext &
+  WithModuleContext &
+  WithModuleSpend &
   WithChannelSpend &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'recvPacketPolicyId'> &

@@ -1,4 +1,4 @@
-import { Controller } from '@nestjs/common';
+import { Controller, UseGuards } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import {
   MsgCreateClientResponse,
@@ -44,18 +44,15 @@ import { ChannelService } from './channel.service';
 import { PacketService } from './packet.service';
 import { SubmissionService } from './submission.service';
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
-import {
-  BuildHostStateHeartbeatRequest,
-  BuildHostStateHeartbeatResponse,
-} from './dto/host-state-heartbeat.dto';
-import {
-  MsgPrunePacketHistory,
-  MsgPrunePacketHistoryResponse,
-} from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
+import { BuildHostStateHeartbeatRequest, BuildHostStateHeartbeatResponse } from './dto/host-state-heartbeat.dto';
+import { MsgPrunePacketHistory, MsgPrunePacketHistoryResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import { validateAndFormatPrunePacketHistoryParams } from './helper/packet.validate';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
+import { GrpcAuthGuard } from '../security/grpc-auth.guard';
+import { ObserveTxRequest, ObserveTxResponse } from './dto/observe-tx.dto';
 
 @Controller()
+@UseGuards(GrpcAuthGuard)
 export class TxController {
   constructor(
     private readonly clientService: ClientService,
@@ -161,19 +158,22 @@ export class TxController {
     return response;
   }
 
+  /**
+   * Finalizes Gateway state for a transaction Hermes submitted directly to a
+   * trusted Cardano node. No signed transaction bytes cross this RPC boundary.
+   */
+  @GrpcMethod('CardanoMsg', 'ObserveTx')
+  async ObserveTx(data: ObserveTxRequest): Promise<ObserveTxResponse> {
+    return this.submissionService.observeTransaction(data);
+  }
+
   @GrpcMethod('CardanoMsg', 'BuildHostStateHeartbeat')
-  async BuildHostStateHeartbeat(
-    data: BuildHostStateHeartbeatRequest,
-  ): Promise<BuildHostStateHeartbeatResponse> {
+  async BuildHostStateHeartbeat(data: BuildHostStateHeartbeatRequest): Promise<BuildHostStateHeartbeatResponse> {
     return this.hostStateHeartbeatService.buildHeartbeat(data);
   }
 
   @GrpcMethod('CardanoMsg', 'PrunePacketHistory')
-  async PrunePacketHistory(
-    data: MsgPrunePacketHistory,
-  ): Promise<MsgPrunePacketHistoryResponse> {
-    return this.packetService.prunePacketHistory(
-      validateAndFormatPrunePacketHistoryParams(data),
-    );
+  async PrunePacketHistory(data: MsgPrunePacketHistory): Promise<MsgPrunePacketHistoryResponse> {
+    return this.packetService.prunePacketHistory(validateAndFormatPrunePacketHistoryParams(data));
   }
 }

@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
-import { GrpcInternalException } from '../exception/grpc_exceptions';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '../exception/grpc_exceptions';
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
 import { TxEventsService } from './tx-events.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
-import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
+import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import {
   CURRENT_IBC_TREE_CACHE_ID,
   IbcTreeCacheService,
@@ -13,13 +13,24 @@ import {
   ibcTreeCacheIdForRoot,
 } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
-import { HISTORY_SERVICE, HistoryService } from '../query/services/history.service';
+import { HISTORY_SERVICE, HistoryService, HistoryTxEvidence } from '../query/services/history.service';
 import { QueryService } from '../query/services/query.service';
 import { GatewayEvent } from './tx-events.service';
+import { ObserveTxRequest, ObserveTxResponse } from './dto/observe-tx.dto';
+
+const MAX_COMPLETED_OBSERVATIONS = 1024;
+
+type ConfirmedHostStateEvidence = {
+  root: string;
+  datumCborHex: string;
+  outputIndex: number;
+};
 
 @Injectable()
 export class SubmissionService {
   private readonly logger = new Logger(SubmissionService.name);
+  private readonly observationInFlight = new Map<string, Promise<ObserveTxResponse>>();
+  private readonly completedObservations = new Map<string, ObserveTxResponse>();
 
   constructor(
     private readonly lucidService: LucidService,
@@ -68,16 +79,9 @@ export class SubmissionService {
       // so wait for that backend to index the submitted tx and use its block number.
       const confirmedBlockNo = await this.waitForIndexedConfirmation(txHash);
 
-      const confirmedRoot = await this.applyPendingIbcTreeUpdate(
-        signedTxCbor,
-        txHash,
-        BigInt(confirmedBlockNo),
-      );
+      const confirmedRoot = await this.applyPendingIbcTreeUpdate(signedTxCbor, txHash, BigInt(confirmedBlockNo));
 
-      let events =
-        this.txEventsService.take(txHash) ||
-        this.txEventsService.takeByExpectedRoot(confirmedRoot) ||
-        [];
+      let events = this.txEventsService.take(txHash) || this.txEventsService.takeByExpectedRoot(confirmedRoot) || [];
       if (events.length === 0) {
         events = await this.findIndexedPacketEvents(txHash);
       }
@@ -94,6 +98,254 @@ export class SubmissionService {
       this.logger.error(`submitSignedTransaction error: ${error.message}`, error.stack);
       throw new GrpcInternalException(`Failed to submit signed transaction: ${error.message}`);
     }
+  }
+
+  /**
+   * Waits for a transaction Hermes submitted directly through its trusted
+   * Cardano node connection, verifies the exact confirmed transaction body,
+   * and commits the matching in-memory IBC tree update.
+   *
+   * The request deliberately contains only the canonical transaction hash;
+   * signed transaction bytes are loaded from confirmed chain history and
+   * never cross the Hermes-to-Gateway RPC boundary.
+   */
+  async observeTransaction(request: ObserveTxRequest): Promise<ObserveTxResponse> {
+    const txHash = request?.tx_hash;
+    if (typeof txHash !== 'string' || !/^[0-9a-f]{64}$/.test(txHash)) {
+      throw new GrpcInvalidArgumentException(
+        'Invalid argument: "tx_hash" must be a canonical lowercase 32-byte hexadecimal transaction hash',
+      );
+    }
+
+    const completed = this.completedObservations.get(txHash);
+    if (completed) {
+      return completed;
+    }
+
+    const existing = this.observationInFlight.get(txHash);
+    if (existing) {
+      return existing;
+    }
+
+    const pending = this.ibcTreePendingUpdatesService.peek(txHash);
+    if (!pending) {
+      throw new GrpcInternalException(
+        `Missing exact pending IBC update for tx ${txHash}; refusing to observe a transaction the Gateway did not build`,
+      );
+    }
+
+    const observation = this.observeTransactionOnce(txHash, pending)
+      .then((response) => {
+        this.cacheCompletedObservation(txHash, response);
+        return response;
+      })
+      .catch((error) => {
+        this.logger.error(`observeTransaction error for ${txHash}: ${error?.message ?? error}`, error?.stack);
+        if (error instanceof GrpcInternalException || error instanceof GrpcInvalidArgumentException) {
+          throw error;
+        }
+        throw new GrpcInternalException(`Failed to observe transaction ${txHash}: ${error?.message ?? error}`);
+      })
+      .finally(() => {
+        this.observationInFlight.delete(txHash);
+      });
+
+    this.observationInFlight.set(txHash, observation);
+    return observation;
+  }
+
+  private async observeTransactionOnce(txHash: string, pending: PendingTreeUpdate): Promise<ObserveTxResponse> {
+    const evidence = await this.waitForIndexedTransactionEvidence(txHash);
+    const confirmedBodyCborHex = this.verifyObservedTransactionEvidence(txHash, evidence);
+
+    const confirmedRoot = await this.applyExactPendingIbcTreeUpdate(
+      confirmedBodyCborHex,
+      txHash,
+      BigInt(evidence.blockNo),
+      pending,
+      evidence,
+    );
+
+    let events = this.txEventsService.take(txHash) || this.txEventsService.takeByExpectedRoot(confirmedRoot) || [];
+    if (events.length === 0) {
+      events = await this.findIndexedPacketEvents(txHash);
+    }
+
+    return {
+      tx_hash: txHash,
+      height: `0-${evidence.blockNo}`,
+      events,
+    };
+  }
+
+  private verifyObservedTransactionEvidence(txHash: string, evidence: HistoryTxEvidence): string {
+    if (!evidence || evidence.txHash?.toLowerCase() !== txHash) {
+      throw new GrpcInternalException(
+        `History returned transaction evidence that does not match requested hash ${txHash}`,
+      );
+    }
+    if (!Number.isSafeInteger(evidence.blockNo) || evidence.blockNo <= 0) {
+      throw new GrpcInternalException(`History returned an invalid inclusion height for transaction ${txHash}`);
+    }
+    if (!this.isNonEmptyHex(evidence.txCborHex)) {
+      throw new GrpcInternalException(`History returned invalid transaction CBOR for transaction ${txHash}`);
+    }
+    if (!this.isNonEmptyHex(evidence.txBodyCborHex)) {
+      throw new GrpcInternalException(`History returned invalid transaction-body CBOR for transaction ${txHash}`);
+    }
+
+    const canonicalBodyCborHex = this.canonicalizeTransactionBodyCbor(evidence.txBodyCborHex, txHash);
+    const bodyFromTransactionCbor = this.extractBodyCborFromHistoryTransactionCbor(evidence.txCborHex, txHash);
+    if (bodyFromTransactionCbor !== canonicalBodyCborHex) {
+      throw new GrpcInternalException(`History transaction/body CBOR mismatch for transaction ${txHash}`);
+    }
+
+    const observedBodyHash = this.computeTransactionBodyHashHex(canonicalBodyCborHex)?.toLowerCase();
+    if (observedBodyHash !== txHash) {
+      throw new GrpcInternalException(
+        `Confirmed transaction body hash mismatch: requested ${txHash}, observed ${observedBodyHash ?? 'unavailable'}`,
+      );
+    }
+
+    return canonicalBodyCborHex;
+  }
+
+  private isNonEmptyHex(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(value);
+  }
+
+  private canonicalizeTransactionBodyCbor(txBodyCborHex: string, txHash: string): string {
+    try {
+      const { CML } = this.lucidService.LucidImporter as any;
+      const body = CML.TransactionBody.from_cbor_hex(txBodyCborHex.toLowerCase());
+      return body.to_cbor_hex().toLowerCase();
+    } catch (error) {
+      throw new GrpcInternalException(
+        `Failed to decode indexed transaction body for tx ${txHash}: ${error?.message ?? error}`,
+      );
+    }
+  }
+
+  private extractBodyCborFromHistoryTransactionCbor(txCborHex: string, txHash: string): string {
+    const normalizedCbor = txCborHex.toLowerCase();
+    const { CML } = this.lucidService.LucidImporter as any;
+
+    let transaction: any;
+    try {
+      transaction = CML.Transaction.from_cbor_hex(normalizedCbor);
+    } catch {
+      try {
+        // Depending on Yaci mode, transaction_cbor contains a TransactionBody
+        // directly rather than a complete transaction envelope.
+        return CML.TransactionBody.from_cbor_hex(normalizedCbor).to_cbor_hex().toLowerCase();
+      } catch (error) {
+        throw new GrpcInternalException(
+          `Failed to decode indexed transaction evidence for tx ${txHash}: ${error?.message ?? error}`,
+        );
+      }
+    }
+
+    // The body hash does not commit to this wrapper flag. A false flag causes
+    // script outputs not to be applied, so never finalize a pending tree update
+    // from an explicitly invalid transaction envelope.
+    if (transaction.is_valid() !== true) {
+      throw new GrpcInternalException(`Confirmed transaction ${txHash} is marked invalid`);
+    }
+    return transaction.body().to_cbor_hex().toLowerCase();
+  }
+
+  private computeTransactionBodyHashHex(txBodyCborHex: string): string | null {
+    try {
+      const { CML } = this.lucidService.LucidImporter as any;
+      const body = CML.TransactionBody.from_cbor_hex(txBodyCborHex);
+      if (typeof CML.hash_transaction === 'function') {
+        return CML.hash_transaction(body).to_hex();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async applyExactPendingIbcTreeUpdate(
+    confirmedBodyCborHex: string,
+    txHash: string,
+    confirmedBlockNo: bigint,
+    pending: PendingTreeUpdate,
+    indexedEvidence: HistoryTxEvidence,
+  ): Promise<string> {
+    const confirmedHostState = await this.readConfirmedHostStateFromBody(confirmedBodyCborHex, txHash);
+    const confirmedRoot = confirmedHostState.root;
+
+    if (
+      indexedEvidence.hostStateOutputIndex !== undefined &&
+      indexedEvidence.hostStateOutputIndex !== null &&
+      indexedEvidence.hostStateOutputIndex !== confirmedHostState.outputIndex
+    ) {
+      throw new GrpcInternalException(
+        `Indexed HostState output mismatch for tx ${txHash}: parsed ${confirmedHostState.outputIndex}, indexed ${indexedEvidence.hostStateOutputIndex}`,
+      );
+    }
+    if (
+      indexedEvidence.hostStateDatum &&
+      indexedEvidence.hostStateDatum.toLowerCase() !== confirmedHostState.datumCborHex
+    ) {
+      throw new GrpcInternalException(`Indexed HostState datum mismatch for tx ${txHash}`);
+    }
+    if (indexedEvidence.hostStateRoot && indexedEvidence.hostStateRoot.toLowerCase() !== confirmedRoot) {
+      throw new GrpcInternalException(
+        `Indexed HostState root mismatch for tx ${txHash}: parsed ${confirmedRoot.substring(0, 16)}..., indexed ${indexedEvidence.hostStateRoot.substring(0, 16)}...`,
+      );
+    }
+    if (confirmedRoot !== pending.expectedNewRoot) {
+      throw new GrpcInternalException(
+        `Confirmed tx root mismatch for tx ${txHash}: expected ${pending.expectedNewRoot.substring(0, 16)}..., got ${confirmedRoot.substring(0, 16)}...`,
+      );
+    }
+
+    if (!this.ibcTreePendingUpdatesService.commit(txHash, pending)) {
+      throw new GrpcInternalException(`Pending IBC update for confirmed tx ${txHash} changed during finalization`);
+    }
+
+    await this.persistIbcTreeUpdate(confirmedRoot, txHash, confirmedBlockNo);
+    return confirmedRoot;
+  }
+
+  private async readConfirmedHostStateFromBody(
+    txBodyCborHex: string,
+    txHash: string,
+  ): Promise<ConfirmedHostStateEvidence> {
+    try {
+      const { CML } = this.lucidService.LucidImporter as any;
+      const body = CML.TransactionBody.from_cbor_hex(txBodyCborHex);
+      const { output, outputIndex } = this.findHostStateOutputInBody(body, txHash);
+      const datumOption = output.datum?.();
+      const plutusDatum = datumOption?.as_datum?.();
+      if (!plutusDatum) {
+        throw new Error(`Missing inline HostState datum in confirmed tx ${txHash}`);
+      }
+
+      const datumCborHex = plutusDatum.to_cbor_hex().toLowerCase();
+      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(datumCborHex, 'host_state');
+      const root = hostStateDatum?.state?.ibc_state_root?.toLowerCase();
+      if (typeof root !== 'string' || !/^[0-9a-f]{64}$/.test(root)) {
+        throw new Error(`Invalid HostState root in confirmed tx ${txHash}`);
+      }
+
+      return { root, datumCborHex, outputIndex };
+    } catch (error) {
+      throw new GrpcInternalException(
+        `Failed to resolve HostState root for tx ${txHash} from the confirmed transaction body: ${error?.message ?? error}`,
+      );
+    }
+  }
+
+  private cacheCompletedObservation(txHash: string, response: ObserveTxResponse): void {
+    if (this.completedObservations.size >= MAX_COMPLETED_OBSERVATIONS) {
+      const oldest = this.completedObservations.keys().next().value;
+      if (oldest) this.completedObservations.delete(oldest);
+    }
+    this.completedObservations.set(txHash, response);
   }
 
   private async applyPendingIbcTreeUpdate(
@@ -149,8 +401,14 @@ export class SubmissionService {
 
     pending.commit();
 
+    await this.persistIbcTreeUpdate(confirmedRoot, txHash, confirmedBlockNo);
+
+    return confirmedRoot;
+  }
+
+  private async persistIbcTreeUpdate(confirmedRoot: string, txHash: string, confirmedBlockNo: bigint): Promise<void> {
     // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
-    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return confirmedRoot;
+    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
     try {
       await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
         CURRENT_IBC_TREE_CACHE_ID,
@@ -160,8 +418,6 @@ export class SubmissionService {
     } catch (error) {
       this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
     }
-
-    return confirmedRoot;
   }
 
   private async findIndexedPacketEvents(txHash: string): Promise<GatewayEvent[]> {
@@ -204,11 +460,17 @@ export class SubmissionService {
 
   private findHostStateOutputInSignedTx(signedTxCbor: string, txHash: string): any {
     const { CML } = this.lucidService.LucidImporter as any;
-    const hostStateNft = this.configService.get('deployment').hostStateNFT;
     const transaction = CML.Transaction.from_cbor_hex(signedTxCbor);
-    const outputs = transaction.body().outputs();
+    return this.findHostStateOutputInBody(transaction.body(), txHash).output;
+  }
+
+  private findHostStateOutputInBody(body: any, txHash: string): { output: any; outputIndex: number } {
+    const { CML } = this.lucidService.LucidImporter as any;
+    const hostStateNft = this.configService.get('deployment').hostStateNFT;
+    const outputs = body.outputs();
     const policyId = CML.ScriptHash.from_hex(hostStateNft.policyId);
     const tokenName = CML.AssetName.from_hex(hostStateNft.name);
+    let found: { output: any; outputIndex: number } | undefined;
 
     for (let index = 0; index < outputs.len(); index += 1) {
       const output = outputs.get(index);
@@ -219,11 +481,17 @@ export class SubmissionService {
 
       const quantity = amount.multi_asset?.()?.get?.(policyId, tokenName);
       if (typeof quantity === 'bigint' ? quantity > 0n : quantity !== undefined) {
-        return output;
+        if (found) {
+          throw new Error(`Confirmed tx ${txHash} contains multiple HostState outputs`);
+        }
+        found = { output, outputIndex: index };
       }
     }
 
-    throw new Error(`Confirmed tx ${txHash} does not contain a HostState output`);
+    if (!found) {
+      throw new Error(`Confirmed tx ${txHash} does not contain a HostState output`);
+    }
+    return found;
   }
 
   private computeTxBodyHashHex(txCborHex: string): string | null {
@@ -368,5 +636,29 @@ export class SubmissionService {
     }
     this.logger.warn(`Transaction ${txHash} history indexing timeout after ${timeoutMs}ms`);
     throw new GrpcInternalException(`Transaction ${txHash} history indexing timeout after ${timeoutMs}ms`);
+  }
+
+  private async waitForIndexedTransactionEvidence(
+    txHash: string,
+    timeoutMs: number = 180000,
+  ): Promise<HistoryTxEvidence> {
+    const startTime = Date.now();
+    const pollInterval = 2000;
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const evidence = await this.historyService.findTransactionEvidenceByHash(txHash);
+        if (evidence) {
+          this.logger.log(`Transaction ${txHash} evidence indexed at block ${evidence.blockNo}`);
+          return evidence;
+        }
+      } catch (error) {
+        this.logger.debug(`Polling history evidence for tx ${txHash}: ${error?.message ?? error}`);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+
+    throw new GrpcInternalException(`Transaction ${txHash} history evidence indexing timeout after ${timeoutMs}ms`);
   }
 }

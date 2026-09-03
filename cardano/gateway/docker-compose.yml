@@ -6,15 +6,18 @@ services:
       dockerfile: cardano/gateway/Dockerfile
     ports:
       - "8000:8000"
-      - "5001:5001"
+      # Plaintext gRPC is intended for the co-hosted Hermes process only.
+      - "${GRPC_PUBLISH_HOST:-127.0.0.1}:5001:5001"
     environment:
       PORT: 8000
+      # The host-side port mapping below supplies the plaintext trust boundary.
+      GRPC_HOST: 0.0.0.0
     networks:
       - cardano_network
     volumes:
       - ./dist:/usr/src/app/dist
       - ../../chains/mithrils/data/aggregator/stores:/usr/chains/mithrils/data/aggregator/stores
-      - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
+      - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments:ro
       - ../../manifests:/usr/src/app/manifests:ro
     env_file:
       - .env
@@ -30,7 +33,7 @@ services:
       - cardano_network
     volumes:
       - ./dist:/usr/src/app/dist
-      - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
+      - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments:ro
       - ../../manifests:/usr/src/app/manifests:ro
     env_file:
       - .env

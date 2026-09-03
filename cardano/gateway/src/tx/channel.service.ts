@@ -696,6 +696,36 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionClientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
+    if (!isValidProofHeight(heightsArray, channelOpenTryOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${channelOpenTryOperator.proofHeight.revisionNumber}/${channelOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === channelOpenTryOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === channelOpenTryOperator.proofHeight.revisionHeight,
+    );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${channelOpenTryOperator.proofHeight.revisionNumber}/${channelOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const processedTime = getHeightMapValue(
+      clientDatum.state.processedTimes,
+      channelOpenTryOperator.proofHeight,
+    );
+    const processedHeight = getHeightMapValue(
+      clientDatum.state.processedHeights,
+      channelOpenTryOperator.proofHeight,
+    );
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(
+        `Missing processed delay metadata at proof height ${channelOpenTryOperator.proofHeight.revisionNumber}/${channelOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
 
     // Derive the new channel identifier from the HostState sequence.
     const channelSequence = hostStateDatum.state.next_channel_sequence;
@@ -740,6 +770,45 @@ export class ChannelService {
       port: convertString2Hex(channelOpenTryOperator.port_id),
       token: channelToken,
     };
+    const expectedCounterpartyChannel: CardanoChannel = {
+      state: CardanoChannelState.STATE_INIT,
+      ordering: orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]),
+      counterparty: {
+        port_id: convertHex2String(channelDatum.port),
+        channel_id: '',
+      },
+      connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
+      version: channelOpenTryOperator.counterpartyVersion,
+    };
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusEntry[1],
+        height: channelOpenTryOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
+        proof: channelOpenTryOperator.proofInit,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              channelPath(
+                convertHex2String(channelDatum.state.channel.counterparty.port_id),
+                convertHex2String(channelDatum.state.channel.counterparty.channel_id),
+              ),
+            ),
+          ],
+        },
+        value: toHex(CardanoChannel.encode(expectedCounterpartyChannel).finish()),
+      },
+    };
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const encodedVerifyProofRedeemer = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
 
     const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings } =
       await this.computeRootWithCreateChannelUpdate(
@@ -801,6 +870,8 @@ export class ChannelService {
       moduleUtxo,
       encodedSpendModuleRedeemer,
       encodedMintChannelRedeemer,
+      verifyProofPolicyId,
+      encodedVerifyProofRedeemer,
       channelTokenUnit,
       encodedUpdatedHostStateDatum,
       encodedChannelDatum,

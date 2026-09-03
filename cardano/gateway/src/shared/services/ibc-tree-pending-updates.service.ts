@@ -14,6 +14,28 @@ export class IbcTreePendingUpdatesService {
     this.pendingByTxHash.set(txHash.toLowerCase(), update);
   }
 
+  peek(txHash: string): PendingTreeUpdate | undefined {
+    if (!txHash) return undefined;
+    return this.pendingByTxHash.get(txHash.toLowerCase());
+  }
+
+  /**
+   * Commits and removes an exact pending entry as one synchronous operation.
+   * Keeping the entry until commit succeeds makes observation retries safe if
+   * the commit callback throws, while the identity check prevents a stale
+   * observer from consuming a newer registration for the same transaction.
+   */
+  commit(txHash: string, expectedUpdate: PendingTreeUpdate): boolean {
+    if (!txHash) return false;
+    const key = txHash.toLowerCase();
+    const update = this.pendingByTxHash.get(key);
+    if (update !== expectedUpdate) return false;
+
+    update.commit();
+    this.pendingByTxHash.delete(key);
+    return true;
+  }
+
   take(txHash: string): PendingTreeUpdate | undefined {
     if (!txHash) return undefined;
     const key = txHash.toLowerCase();

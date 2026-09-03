@@ -156,6 +156,31 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+### Securing the Hermes gRPC connection
+
+The default local stack publishes Gateway gRPC on host loopback and Hermes connects to
+`http://localhost:5001`. Hermes rejects plaintext Gateway URLs whose host is not a loopback
+address. A remote Gateway must therefore use an `https://` URL with a certificate whose name
+matches that URL.
+
+To terminate TLS in the Gateway itself, set both `GRPC_TLS_CERT_FILE` and
+`GRPC_TLS_KEY_FILE` to PEM files visible inside the Gateway process. Setting only one makes
+startup fail. Alternatively, terminate HTTP/2 TLS at a trusted gRPC-capable reverse proxy and
+keep the proxy-to-Gateway hop on an isolated network. Hermes uses native trust roots and can add
+a private CA with `gateway_tls_ca_file` in its Cardano chain configuration.
+
+Transaction-building and submission RPCs can additionally require a bearer token. Put the same
+non-empty token in files readable only by the Gateway and Hermes, then configure
+`GRPC_AUTH_TOKEN_FILE` for the Gateway and `gateway_auth_token_file` for Hermes. The token is
+client authentication and must be used with TLS whenever the connection is not loopback.
+
+Hermes submits signed transactions directly through its trusted Ogmios connection. After
+submission it calls `ibc.cardano.v1.CardanoMsg/ObserveTx` with only the canonical lowercase
+transaction hash. Gateway waits for exact transaction evidence in the historical backend,
+recomputes the confirmed transaction-body hash, verifies its HostState root against the exact
+pending update created while building that transaction, and only then commits the update and
+returns the inclusion height and events. Signed CBOR is not part of this RPC contract.
+
 ## Test
 
 ```bash

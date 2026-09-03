@@ -18,16 +18,17 @@ use crate::{
 };
 use console::style;
 use dirs::home_dir;
-use fs_extra::file::copy;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::cmp::min;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
 use std::thread;
 use std::time::{Duration, Instant};
+use zeroize::Zeroizing;
 
 const GATEWAY_HTTP_READINESS_ATTEMPTS: u32 = 4;
 const GATEWAY_HTTP_READINESS_RETRY_INTERVAL_MILLIS: u64 = 5000;
@@ -37,6 +38,11 @@ const IBC_SWAP_DAPP_READINESS_ATTEMPTS: u32 = 60;
 const IBC_SWAP_DAPP_READINESS_INTERVAL_MILLIS: u64 = 2000;
 const YACI_HEALTH_CHECK_ATTEMPTS: u32 = 36;
 const YACI_HEALTH_CHECK_INTERVAL_MILLIS: u64 = 5000;
+const HERMES_BRIDGE_MANIFEST_PLACEHOLDER: &str = "'__CARDANO_BRIDGE_MANIFEST_PATH__'";
+const HERMES_SIGNING_KUPO_URL_PLACEHOLDER: &str = "'__CARDANO_SIGNING_KUPO_URL__'";
+const HERMES_SIGNING_OGMIOS_URL_PLACEHOLDER: &str = "'__CARDANO_SIGNING_OGMIOS_URL__'";
+const HERMES_SIGNING_KUPO_KEY_PLACEHOLDER: &str = "# __CARDANO_SIGNING_KUPO_API_KEY_FILE__";
+const HERMES_SIGNING_OGMIOS_KEY_PLACEHOLDER: &str = "# __CARDANO_SIGNING_OGMIOS_API_KEY_FILE__";
 static RELAYER_REMOTE_TIP_CHECK_ONCE: Once = Once::new();
 
 mod hermes;
@@ -289,17 +295,25 @@ fn read_public_testnet_kupmios_api_keys(
     gateway_env_path: &Path,
 ) -> Result<(Option<String>, Option<String>), Box<dyn std::error::Error>> {
     crate::setup::resolve_preprod_kupo_mode(gateway_env_path)?;
-
-    let kupo_api_key = read_first_nonempty_gateway_value(
-        gateway_env_path,
-        &["GATEWAY_RUNTIME_KUPO_API_KEY", "KUPO_API_KEY"],
-    );
-    let ogmios_api_key = read_first_nonempty_gateway_value(gateway_env_path, &["OGMIOS_API_KEY"]);
     let kupmios_url = read_public_testnet_kupmios_url(gateway_env_path)?
         .ok_or("Public Cardano testnets require Kupo and Ogmios endpoints")?;
     let (kupo_endpoint, ogmios_endpoint) = kupmios_url
         .split_once(',')
         .ok_or("Invalid public Cardano Kupmios endpoint pair")?;
+
+    read_public_testnet_api_keys_for_endpoints(gateway_env_path, kupo_endpoint, ogmios_endpoint)
+}
+
+fn read_public_testnet_api_keys_for_endpoints(
+    gateway_env_path: &Path,
+    kupo_endpoint: &str,
+    ogmios_endpoint: &str,
+) -> Result<(Option<String>, Option<String>), Box<dyn std::error::Error>> {
+    let kupo_api_key = read_first_nonempty_gateway_value(
+        gateway_env_path,
+        &["GATEWAY_RUNTIME_KUPO_API_KEY", "KUPO_API_KEY"],
+    );
+    let ogmios_api_key = read_first_nonempty_gateway_value(gateway_env_path, &["OGMIOS_API_KEY"]);
 
     let mut missing = Vec::new();
     if kupo_api_key.is_none() && demeter_endpoint_requires_header_key(kupo_endpoint, "kupo") {
@@ -317,6 +331,325 @@ fn read_public_testnet_kupmios_api_keys(
     }
 
     Ok((kupo_api_key, ogmios_api_key))
+}
+
+struct HermesSigningSources {
+    kupo_url: String,
+    ogmios_url: String,
+    kupo_api_key: Option<Zeroizing<String>>,
+    ogmios_api_key: Option<Zeroizing<String>>,
+}
+
+#[derive(Clone, Copy)]
+enum DemeterSigningAuthentication {
+    Header,
+    Hostname,
+}
+
+type HermesSigningEndpointAuth = (String, Option<Zeroizing<String>>);
+
+fn endpoint_hostname_starts_with_api_key(endpoint: &str, api_key: &str) -> bool {
+    let prefix = format!("{api_key}.");
+    reqwest::Url::parse(endpoint)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .and_then(|host| host.get(..prefix.len()).map(str::to_string))
+        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(&prefix))
+}
+
+fn is_demeter_endpoint(endpoint: &str) -> bool {
+    reqwest::Url::parse(endpoint)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host.ends_with(".dmtr.host") || host.ends_with(".demeter.run"))
+}
+
+fn authenticated_demeter_endpoint(
+    endpoint: &str,
+    api_key: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut url = reqwest::Url::parse(endpoint)
+        .map_err(|error| format!("Invalid Demeter signing endpoint: {error}"))?;
+    let host = url
+        .host_str()
+        .ok_or("Demeter signing endpoint does not contain a hostname")?;
+    let authenticated_host = format!("{api_key}.{host}");
+    url.set_host(Some(&authenticated_host))
+        .map_err(|_| "Demeter signing API key cannot be encoded in the endpoint hostname")?;
+    Ok(url.to_string().trim_end_matches('/').to_string())
+}
+
+fn resolve_hermes_signing_endpoint_auth(
+    endpoint: String,
+    api_key: Option<String>,
+    demeter_authentication: DemeterSigningAuthentication,
+) -> Result<HermesSigningEndpointAuth, Box<dyn std::error::Error>> {
+    let Some(api_key) = api_key
+        .map(Zeroizing::new)
+        .filter(|api_key| !api_key.trim().is_empty())
+    else {
+        return Ok((endpoint, None));
+    };
+    let trimmed_api_key = api_key.trim();
+
+    // Demeter's key-in-hostname form is already authenticated. Sending the same
+    // credential again as `dmtr-api-key` is both unnecessary and rejected by
+    // some managed endpoint routes.
+    if endpoint_hostname_starts_with_api_key(&endpoint, trimmed_api_key) {
+        return Ok((endpoint, None));
+    }
+
+    if matches!(
+        demeter_authentication,
+        DemeterSigningAuthentication::Hostname
+    ) && is_demeter_endpoint(&endpoint)
+    {
+        return Ok((
+            authenticated_demeter_endpoint(&endpoint, trimmed_api_key)?,
+            None,
+        ));
+    }
+
+    Ok((endpoint, Some(api_key)))
+}
+
+fn ogmios_http_url(endpoint: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut url = reqwest::Url::parse(endpoint)
+        .map_err(|error| format!("Invalid Ogmios endpoint for Hermes signing: {error}"))?;
+    match url.scheme() {
+        "http" | "https" => {}
+        "ws" => url
+            .set_scheme("http")
+            .map_err(|_| "Failed to convert the Ogmios ws:// URL to http://")?,
+        "wss" => url
+            .set_scheme("https")
+            .map_err(|_| "Failed to convert the Ogmios wss:// URL to https://")?,
+        scheme => {
+            return Err(
+                format!("Unsupported Ogmios URL scheme '{scheme}' for Hermes signing").into(),
+            )
+        }
+    }
+    Ok(url.to_string().trim_end_matches('/').to_string())
+}
+
+fn hermes_signing_sources(
+    project_root: &Path,
+    cardano_chain_id: &str,
+) -> Result<HermesSigningSources, Box<dyn std::error::Error>> {
+    if cardano_chain_id == "cardano-devnet" {
+        return Ok(HermesSigningSources {
+            kupo_url: "http://localhost:1442".to_string(),
+            ogmios_url: "http://localhost:1337".to_string(),
+            kupo_api_key: None,
+            ogmios_api_key: None,
+        });
+    }
+
+    let gateway_env_path = project_root.join("cardano/gateway/.env");
+    if !gateway_env_path.is_file() {
+        return Err(format!(
+            "Cardano Gateway environment was not found at {}; configure the public Kupo/Ogmios signing sources first",
+            gateway_env_path.display()
+        )
+        .into());
+    }
+    let raw_kupo_url = read_public_testnet_runtime_kupo_endpoint(&gateway_env_path).ok_or(
+        "Public Cardano Hermes signing requires GATEWAY_RUNTIME_KUPO_ENDPOINT or KUPO_ENDPOINT",
+    )?;
+    let raw_ogmios_url = read_first_nonempty_gateway_value(
+        &gateway_env_path,
+        &["OGMIOS_HTTP_URL", "OGMIOS_ENDPOINT"],
+    )
+    .ok_or("Public Cardano Hermes signing requires OGMIOS_HTTP_URL or OGMIOS_ENDPOINT")?;
+    crate::setup::resolve_preprod_kupo_mode(&gateway_env_path)?;
+    let ogmios_url = ogmios_http_url(&raw_ogmios_url)?;
+    let (kupo_api_key, ogmios_api_key) = read_public_testnet_api_keys_for_endpoints(
+        &gateway_env_path,
+        &raw_kupo_url,
+        &raw_ogmios_url,
+    )?;
+    let (kupo_url, kupo_api_key) = resolve_hermes_signing_endpoint_auth(
+        raw_kupo_url,
+        kupo_api_key,
+        DemeterSigningAuthentication::Header,
+    )?;
+    let (ogmios_url, ogmios_api_key) = resolve_hermes_signing_endpoint_auth(
+        ogmios_url,
+        ogmios_api_key,
+        DemeterSigningAuthentication::Hostname,
+    )?;
+
+    Ok(HermesSigningSources {
+        kupo_url,
+        ogmios_url,
+        kupo_api_key,
+        ogmios_api_key,
+    })
+}
+
+fn ensure_owner_only_directory(path: &Path) -> std::io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "refusing non-directory Hermes security path {}",
+                    path.display()
+                ),
+            ))
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(path)?,
+        Err(error) => return Err(error),
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+fn write_owner_only_file(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Hermes secret path has no parent: {}", path.display()),
+        )
+    })?;
+    ensure_owner_only_directory(parent)?;
+
+    let temporary_path = parent.join(format!(
+        ".{}.{}-{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("hermes-secret"),
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(std::io::Error::other)?
+            .as_nanos()
+    ));
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temporary_path)?;
+    if let Err(error) = file.write_all(contents).and_then(|()| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    drop(file);
+    if let Err(error) = fs::rename(&temporary_path, path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+fn persist_optional_hermes_api_key(
+    security_dir: &Path,
+    file_name: &str,
+    api_key: Option<&str>,
+) -> std::io::Result<Option<PathBuf>> {
+    let path = security_dir.join(file_name);
+    match api_key.map(str::trim).filter(|key| !key.is_empty()) {
+        Some(api_key) => {
+            write_owner_only_file(&path, api_key.as_bytes())?;
+            Ok(Some(path))
+        }
+        None => {
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.is_file() || metadata.file_type().is_symlink() => {
+                    fs::remove_file(&path)?;
+                }
+                Ok(_) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("refusing unexpected Hermes secret path {}", path.display()),
+                    ))
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+            Ok(None)
+        }
+    }
+}
+
+fn snapshot_hermes_bridge_manifest(source: &Path, security_dir: &Path) -> std::io::Result<PathBuf> {
+    let snapshot = security_dir.join("bridge-manifest.json");
+    let contents = fs::read(source)?;
+    write_owner_only_file(&snapshot, &contents)?;
+    Ok(snapshot)
+}
+
+fn inject_hermes_signing_sources(
+    config_path: &Path,
+    sources: &HermesSigningSources,
+    kupo_api_key_file: Option<&Path>,
+    ogmios_api_key_file: Option<&Path>,
+) -> std::io::Result<()> {
+    let mut content = fs::read_to_string(config_path)?;
+    let replacements = [
+        (
+            HERMES_SIGNING_KUPO_URL_PLACEHOLDER,
+            serde_json::to_string(&sources.kupo_url).map_err(std::io::Error::other)?,
+        ),
+        (
+            HERMES_SIGNING_OGMIOS_URL_PLACEHOLDER,
+            serde_json::to_string(&sources.ogmios_url).map_err(std::io::Error::other)?,
+        ),
+        (
+            HERMES_SIGNING_KUPO_KEY_PLACEHOLDER,
+            optional_path_setting("signing_utxo_kupo_api_key_file", kupo_api_key_file)?,
+        ),
+        (
+            HERMES_SIGNING_OGMIOS_KEY_PLACEHOLDER,
+            optional_path_setting("signing_ogmios_api_key_file", ogmios_api_key_file)?,
+        ),
+    ];
+    for (placeholder, replacement) in replacements {
+        let count = content.matches(placeholder).count();
+        if count != 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("expected exactly one {placeholder} placeholder, found {count}"),
+            ));
+        }
+        content = content.replacen(placeholder, &replacement, 1);
+    }
+    write_owner_only_file(config_path, content.as_bytes())
+}
+
+fn optional_path_setting(name: &str, path: Option<&Path>) -> std::io::Result<String> {
+    match path {
+        Some(path) => {
+            let value = path.to_str().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "Hermes security path is not valid UTF-8: {}",
+                        path.display()
+                    ),
+                )
+            })?;
+            let value = serde_json::to_string(value).map_err(std::io::Error::other)?;
+            Ok(format!("{name} = {value}"))
+        }
+        None => Ok(format!("# {name} is not configured")),
+    }
 }
 
 const PUBLIC_TESTNET_FORBIDDEN_LOCAL_SERVICES: [&str; 8] = [
@@ -416,11 +749,14 @@ pub fn start_relayer(
     relayer_path: &Path,
     _relayer_env_template_path: &Path,
     _relayer_config_source_path: &Path,
-    _chain_handler_path: &Path,
+    bridge_manifest_path: Option<&Path>,
     cardano_chain_id: &str,
     allow_devnet_key_fallback: bool,
     runtime_deployer_sk: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let bridge_manifest_path =
+        require_bridge_manifest_path(bridge_manifest_path, cardano_chain_id)?;
+
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -485,19 +821,52 @@ pub fn start_relayer(
     fs::create_dir_all(&hermes_keys_dir)
         .map_err(|e| format!("Failed to create Hermes keys directory: {}", e))?;
 
-    // Copy hermes-config.example.toml to ~/.hermes/config.toml
-    let options = fs_extra::file::CopyOptions::new().overwrite(true);
-    let caribic_dir = relayer_path
+    // Install the Hermes configuration owner-only before injecting signing
+    // endpoints. Managed providers can encode credentials in a hostname, so
+    // there must never be a world-readable intermediate configuration.
+    let project_root = relayer_path
         .parent()
-        .ok_or_else(|| format!("Relayer path has no parent: {}", relayer_path.display()))?
-        .join("caribic");
+        .ok_or_else(|| format!("Relayer path has no parent: {}", relayer_path.display()))?;
+    let caribic_dir = project_root.join("caribic");
     let hermes_config_path = hermes_dir.join("config.toml");
-    copy(
-        caribic_dir.join("config/hermes-config.example.toml"),
-        &hermes_config_path,
-        &options,
+    let hermes_config_template = fs::read(caribic_dir.join("config/hermes-config.example.toml"))
+        .map_err(|e| format!("Failed to read Hermes config template: {}", e))?;
+    write_owner_only_file(&hermes_config_path, &hermes_config_template)
+        .map_err(|e| format!("Failed to install Hermes config securely: {}", e))?;
+    let signing_security_dir = hermes_dir.join("signing-security");
+    let bridge_manifest_snapshot = snapshot_hermes_bridge_manifest(
+        &bridge_manifest_path,
+        &signing_security_dir,
     )
-    .map_err(|e| format!("Failed to copy Hermes config: {}", e))?;
+    .map_err(|error| {
+        format!("Failed to snapshot trusted bridge manifest for {cardano_chain_id}: {error}")
+    })?;
+    inject_bridge_manifest_path(&hermes_config_path, &bridge_manifest_snapshot).map_err(
+        |error| {
+            format!("Failed to configure Hermes bridge manifest for {cardano_chain_id}: {error}")
+        },
+    )?;
+    let signing_sources = hermes_signing_sources(project_root, cardano_chain_id)?;
+    let kupo_api_key_file = persist_optional_hermes_api_key(
+        &signing_security_dir,
+        "kupo-api-key",
+        signing_sources.kupo_api_key.as_ref().map(|key| key.trim()),
+    )?;
+    let ogmios_api_key_file = persist_optional_hermes_api_key(
+        &signing_security_dir,
+        "ogmios-api-key",
+        signing_sources
+            .ogmios_api_key
+            .as_ref()
+            .map(|key| key.trim()),
+    )?;
+    inject_hermes_signing_sources(
+        &hermes_config_path,
+        &signing_sources,
+        kupo_api_key_file.as_deref(),
+        ogmios_api_key_file.as_deref(),
+    )
+    .map_err(|error| format!("Failed to configure trusted Cardano signing sources: {error}"))?;
     replace_text_in_file(
         hermes_config_path.as_path(),
         r#"id = 'cardano-devnet'"#,
@@ -559,9 +928,6 @@ pub fn start_relayer(
     // This keeps Hermes (sender/signer identity) aligned with the Gateway's Lucid wallet
     // context and the seeded devnet funds. If we fall back to a random default key, the
     // test suite will see an unfunded sender and transfers will fail or behave unexpectedly.
-    let project_root = relayer_path
-        .parent()
-        .ok_or("Failed to resolve project root from relayer path")?;
     let cardano_key = runtime_deployer_sk
         .map(|key| key.trim().to_string())
         .filter(|key| !key.is_empty())
@@ -587,9 +953,8 @@ pub fn start_relayer(
                 cardano_chain_id
             )
         })?;
-    let cardano_key_file = std::env::temp_dir().join("cardano-key.txt");
-    fs::write(&cardano_key_file, &cardano_key)
-        .map_err(|e| format!("Failed to write cardano key: {}", e))?;
+    let cardano_key_file =
+        chains::hermes_support::write_temp_mnemonic_file("cardano-key", cardano_key)?;
 
     let cardano_key_output = HermesCli::new(hermes_binary.as_path()).output(
         None,
@@ -641,6 +1006,61 @@ pub fn start_relayer(
     }
 
     Ok(())
+}
+
+fn require_bridge_manifest_path(
+    configured_path: Option<&Path>,
+    cardano_chain_id: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let configured_path = configured_path.ok_or_else(|| {
+        format!(
+            "No bridge manifest is configured for {cardano_chain_id}. Set the active Cardano \
+network profile's bridge_manifest_path before starting Hermes."
+        )
+    })?;
+
+    if !configured_path.is_file() {
+        return Err(format!(
+            "Bridge manifest for {cardano_chain_id} was not found at {}. Deploy the bridge or \
+update the active Cardano network profile's bridge_manifest_path before starting Hermes.",
+            configured_path.display()
+        )
+        .into());
+    }
+
+    configured_path.canonicalize().map_err(|error| {
+        format!(
+            "Failed to canonicalize bridge manifest for {cardano_chain_id} at {}: {error}",
+            configured_path.display()
+        )
+        .into()
+    })
+}
+
+fn inject_bridge_manifest_path(config_path: &Path, manifest_path: &Path) -> std::io::Result<()> {
+    let content = fs::read_to_string(config_path)?;
+    let placeholder_count = content.matches(HERMES_BRIDGE_MANIFEST_PLACEHOLDER).count();
+    if placeholder_count != 1 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("expected exactly one bridge manifest placeholder, found {placeholder_count}"),
+        ));
+    }
+
+    let manifest_path = manifest_path.to_str().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "bridge manifest path is not valid UTF-8: {}",
+                manifest_path.display()
+            ),
+        )
+    })?;
+    let toml_string = serde_json::to_string(manifest_path).map_err(std::io::Error::other)?;
+    fs::write(
+        config_path,
+        content.replacen(HERMES_BRIDGE_MANIFEST_PLACEHOLDER, toml_string.as_str(), 1),
+    )
 }
 
 fn ensure_relayer_sources_available(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -4162,11 +4582,16 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
 mod tests {
     use super::{
         cardano_network_switch_blockers, demeter_endpoint_requires_header_key,
-        ibc_swap_dapp_url_for, managed_cardano_service_plan, normalize_ibc_swap_base_path,
-        redact_endpoint_in_message, redact_external_endpoint,
+        hermes_signing_sources, ibc_swap_dapp_url_for, inject_bridge_manifest_path,
+        inject_hermes_signing_sources, managed_cardano_service_plan, normalize_ibc_swap_base_path,
+        ogmios_http_url, persist_optional_hermes_api_key, redact_endpoint_in_message,
+        redact_external_endpoint, require_bridge_manifest_path,
+        resolve_hermes_signing_endpoint_auth, snapshot_hermes_bridge_manifest,
+        write_owner_only_file, DemeterSigningAuthentication, HermesSigningSources,
         PUBLIC_TESTNET_FORBIDDEN_LOCAL_SERVICES,
     };
     use crate::config::{CoreCardanoNetwork, Services};
+    use std::path::Path;
 
     fn all_services_enabled() -> Services {
         Services {
@@ -4177,6 +4602,304 @@ mod tests {
             cardano_node: true,
             postgres: true,
         }
+    }
+
+    #[test]
+    fn bridge_manifest_is_required_and_canonicalized_for_hermes() {
+        let missing = require_bridge_manifest_path(None, "cardano-preprod").unwrap_err();
+        assert!(missing
+            .to_string()
+            .contains("No bridge manifest is configured"));
+
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        assert_eq!(
+            require_bridge_manifest_path(Some(&manifest), "cardano-devnet").unwrap(),
+            manifest.canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn hermes_config_gets_an_escaped_manifest_path() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "caribic-hermes-manifest-config-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let config_path = test_dir.join("config.toml");
+        std::fs::write(
+            &config_path,
+            "bridge_manifest_path = '__CARDANO_BRIDGE_MANIFEST_PATH__'\n",
+        )
+        .unwrap();
+
+        inject_bridge_manifest_path(
+            &config_path,
+            Path::new("/tmp/operator's $bridge manifest.json"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&config_path).unwrap(),
+            "bridge_manifest_path = \"/tmp/operator's $bridge manifest.json\"\n"
+        );
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hermes_uses_an_owner_only_snapshot_of_the_bridge_manifest() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let test_dir = std::env::temp_dir().join(format!(
+            "caribic-hermes-manifest-snapshot-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let source = test_dir.join("source.json");
+        let security_dir = test_dir.join("signing-security");
+        let original = br#"{"validators":{"host_state_stt":{}}}"#;
+        std::fs::write(&source, original).unwrap();
+
+        let snapshot = snapshot_hermes_bridge_manifest(&source, &security_dir).unwrap();
+        std::fs::write(&source, b"changed after snapshot").unwrap();
+
+        assert_eq!(std::fs::read(&snapshot).unwrap(), original);
+        assert_eq!(
+            std::fs::metadata(&snapshot).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            std::fs::metadata(&security_dir)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn hermes_config_gets_trusted_signing_sources_without_inline_secrets() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "caribic-hermes-signing-config-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let config_path = test_dir.join("config.toml");
+        std::fs::write(
+            &config_path,
+            concat!(
+                "signing_utxo_kupo_url = '__CARDANO_SIGNING_KUPO_URL__'\n",
+                "signing_ogmios_url = '__CARDANO_SIGNING_OGMIOS_URL__'\n",
+                "# __CARDANO_SIGNING_KUPO_API_KEY_FILE__\n",
+                "# __CARDANO_SIGNING_OGMIOS_API_KEY_FILE__\n"
+            ),
+        )
+        .unwrap();
+        let sources = HermesSigningSources {
+            kupo_url: "https://kupo.example/path".to_string(),
+            ogmios_url: "https://ogmios.example".to_string(),
+            kupo_api_key: None,
+            ogmios_api_key: None,
+        };
+        let kupo_key_path = test_dir.join("kupo key");
+
+        inject_hermes_signing_sources(&config_path, &sources, Some(&kupo_key_path), None).unwrap();
+
+        let configured = std::fs::read_to_string(&config_path).unwrap();
+        assert!(configured.contains("signing_utxo_kupo_url = \"https://kupo.example/path\""));
+        assert!(configured.contains("signing_ogmios_url = \"https://ogmios.example\""));
+        assert!(configured.contains("signing_utxo_kupo_api_key_file ="));
+        assert!(configured.contains("# signing_ogmios_api_key_file is not configured"));
+        assert!(!configured.contains("API_KEY_FILE__"));
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn ogmios_websocket_urls_are_converted_for_hermes_http_rpc() {
+        assert_eq!(
+            ogmios_http_url("ws://localhost:1337").unwrap(),
+            "http://localhost:1337"
+        );
+        assert_eq!(
+            ogmios_http_url("wss://ogmios.example/rpc").unwrap(),
+            "https://ogmios.example/rpc"
+        );
+    }
+
+    #[test]
+    fn hermes_signing_accepts_an_http_only_ogmios_configuration() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "caribic-hermes-http-ogmios-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let gateway_dir = test_dir.join("cardano/gateway");
+        std::fs::create_dir_all(&gateway_dir).unwrap();
+        std::fs::write(
+            gateway_dir.join(".env"),
+            concat!(
+                "CARDANO_KUPO_MODE=remote\n",
+                "GATEWAY_RUNTIME_KUPO_ENDPOINT=https://kupo123.cardano-preprod-v2.kupo-m1.dmtr.host\n",
+                "OGMIOS_HTTP_URL=https://ogmios123.cardano-preprod-v6.ogmios-m1.dmtr.host/json-rpc\n"
+            ),
+        )
+        .unwrap();
+
+        let sources = hermes_signing_sources(&test_dir, "cardano-preprod").unwrap();
+        assert_eq!(
+            sources.ogmios_url,
+            "https://ogmios123.cardano-preprod-v6.ogmios-m1.dmtr.host/json-rpc"
+        );
+        assert!(sources.ogmios_api_key.is_none());
+
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn hermes_ogmios_uses_demeter_authenticated_hostname_without_header_key() {
+        let (endpoint, header_key) = resolve_hermes_signing_endpoint_auth(
+            "https://cardano-preprod-v6.ogmios-m1.dmtr.host/json-rpc".to_string(),
+            Some("ogmios123".to_string()),
+            DemeterSigningAuthentication::Hostname,
+        )
+        .unwrap();
+        assert_eq!(
+            endpoint,
+            "https://ogmios123.cardano-preprod-v6.ogmios-m1.dmtr.host/json-rpc"
+        );
+        assert!(header_key.is_none());
+
+        let (endpoint, header_key) = resolve_hermes_signing_endpoint_auth(
+            endpoint,
+            Some("ogmios123".to_string()),
+            DemeterSigningAuthentication::Hostname,
+        )
+        .unwrap();
+        assert_eq!(
+            endpoint,
+            "https://ogmios123.cardano-preprod-v6.ogmios-m1.dmtr.host/json-rpc"
+        );
+        assert!(header_key.is_none());
+    }
+
+    #[test]
+    fn hermes_kupo_matches_gateway_header_and_authenticated_host_rules() {
+        let base_endpoint = "https://cardano-preprod-v2.kupo-m1.dmtr.host";
+        let (endpoint, header_key) = resolve_hermes_signing_endpoint_auth(
+            base_endpoint.to_string(),
+            Some("kupo123".to_string()),
+            DemeterSigningAuthentication::Header,
+        )
+        .unwrap();
+        assert_eq!(endpoint, base_endpoint);
+        assert_eq!(header_key.as_deref().map(String::as_str), Some("kupo123"));
+
+        let authenticated_endpoint = "https://kupo123.cardano-preprod-v2.kupo-m1.dmtr.host";
+        let (endpoint, header_key) = resolve_hermes_signing_endpoint_auth(
+            authenticated_endpoint.to_string(),
+            Some("kupo123".to_string()),
+            DemeterSigningAuthentication::Header,
+        )
+        .unwrap();
+        assert_eq!(endpoint, authenticated_endpoint);
+        assert!(header_key.is_none());
+    }
+
+    #[test]
+    fn hermes_non_demeter_signing_endpoint_keeps_configured_header_key() {
+        let (endpoint, header_key) = resolve_hermes_signing_endpoint_auth(
+            "https://ogmios.operator.example/rpc".to_string(),
+            Some("operator-secret".to_string()),
+            DemeterSigningAuthentication::Hostname,
+        )
+        .unwrap();
+        assert_eq!(endpoint, "https://ogmios.operator.example/rpc");
+        assert_eq!(
+            header_key.as_deref().map(String::as_str),
+            Some("operator-secret")
+        );
+    }
+
+    #[test]
+    fn absent_hermes_header_key_removes_stale_secret_file() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "caribic-hermes-stale-secret-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let secret =
+            persist_optional_hermes_api_key(&test_dir, "ogmios-api-key", Some("ogmios123"))
+                .unwrap()
+                .unwrap();
+        assert!(secret.is_file());
+
+        assert!(
+            persist_optional_hermes_api_key(&test_dir, "ogmios-api-key", None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(!secret.exists());
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hermes_api_key_file_is_owner_only_and_does_not_follow_symlinks() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let test_dir = std::env::temp_dir().join(format!(
+            "caribic-hermes-secret-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let victim = test_dir.join("victim");
+        let secret = test_dir.join("security").join("api-key");
+        std::fs::create_dir(secret.parent().unwrap()).unwrap();
+        std::fs::write(&victim, "untouched").unwrap();
+        symlink(&victim, &secret).unwrap();
+
+        write_owner_only_file(&secret, b"new-secret").unwrap();
+
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "untouched");
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "new-secret");
+        assert_eq!(
+            std::fs::metadata(&secret).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            std::fs::metadata(secret.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        std::fs::remove_dir_all(test_dir).unwrap();
     }
 
     #[test]
