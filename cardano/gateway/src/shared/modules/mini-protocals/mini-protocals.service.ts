@@ -10,6 +10,7 @@ import {
   HandshakeClient,
   Multiplexer,
 } from '@harmoniclabs/ouroboros-miniprotocols-ts';
+import type { SocketLike } from '@harmoniclabs/ouroboros-miniprotocols-ts/dist/multiplexer/SocketLike';
 import { createConnection } from 'net';
 import {
   HISTORY_SERVICE,
@@ -128,7 +129,9 @@ export class MiniProtocalsService {
         const socket = createConnection({ host, port });
         // Prevent raw socket errors from surfacing as unhandled process-level events.
         socket.on('error', () => undefined);
-        return socket;
+        // The library's NodeSocketLike declaration predates Node's `address(): string`
+        // overload, but a TCP Socket satisfies the runtime contract used by Multiplexer.
+        return socket as unknown as SocketLike;
       },
     });
     const handshake = new HandshakeClient(multiplexer);

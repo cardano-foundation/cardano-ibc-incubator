@@ -127,7 +127,7 @@ export class ClientService {
     validToSlot: number;
     validToTime: number;
   }> {
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const ogmiosEndpoint = this.configService.getOrThrow<string>('ogmiosEndpoint');
     const network = this.configService.get('cardanoNetwork') as Network;
     const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
     if (!slotConfig || slotConfig.slotLength <= 0) {
@@ -225,7 +225,7 @@ export class ClientService {
    */
   async updateClient(data: MsgUpdateClient): Promise<MsgUpdateClientResponse> {
     try {
-      const { clientId, constructedAddress } = validateAndFormatUpdateClientParams(data);
+      const { clientId, constructedAddress, clientMessage } = validateAndFormatUpdateClientParams(data);
 
       // Get the token unit associated with the client
       const clientTokenUnit = this.lucidService.getClientTokenUnit(clientId);
@@ -237,18 +237,18 @@ export class ClientService {
         'client',
       );
 
-      if (!verifyClientMessage(data.client_message, currentClientDatum)) {
+      if (!verifyClientMessage(clientMessage, currentClientDatum)) {
         throw new GrpcInvalidArgumentException('Invalid client message');
       }
 
-      const foundMisbehaviour = checkForMisbehaviour(data.client_message, currentClientDatum);
+      const foundMisbehaviour = checkForMisbehaviour(clientMessage, currentClientDatum);
 
       if (foundMisbehaviour) {
         await this.refreshWalletContext(constructedAddress, 'updateClientOnMisbehaviourBuilder');
         // Build and complete the unsigned transaction
         const updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto = {
           clientId,
-          clientMessage: data.client_message,
+          clientMessage,
           constructedAddress,
           clientDatum: currentClientDatum,
           clientTokenUnit,
@@ -291,7 +291,7 @@ export class ClientService {
               EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR,
               clientId,
               frozenHeight,
-              data.client_message,
+              clientMessage,
             ),
           ],
         });
@@ -307,10 +307,10 @@ export class ClientService {
         } as unknown as MsgUpdateClientResponse;
         return response;
       }
-      if (data.client_message.type_url === TENDERMINT_MISBEHAVIOUR_TYPE_URL) {
+      if (clientMessage.type_url === TENDERMINT_MISBEHAVIOUR_TYPE_URL) {
         throw new GrpcInvalidArgumentException('submitted Tendermint misbehaviour does not prove a conflict');
       }
-      const headerMsg = decodeHeader(data.client_message.value);
+      const headerMsg = decodeHeader(clientMessage.value);
       const header = initializeHeader(headerMsg);
       const updateConsensusHeight = {
         revisionNumber: header.trustedHeight.revisionNumber,
@@ -376,7 +376,7 @@ export class ClientService {
             EVENT_TYPE_CLIENT.UPDATE_CLIENT,
             clientId,
             updateConsensusHeight,
-            data.client_message,
+            clientMessage,
           ),
         ],
       });
@@ -466,9 +466,6 @@ export class ClientService {
       }
     }
 
-    // Misbehaviour updates do not add a new consensus state.
-    const addedConsensusState = undefined;
-
     const newClientStateValue = Buffer.from(
       await encodeClientStateValue(newClientState, this.lucidService.LucidImporter),
       'hex',
@@ -480,7 +477,7 @@ export class ClientService {
         ibcClientId,
         newClientStateValue,
         removedConsensusHeights,
-        addedConsensusState,
+        undefined,
       );
 
     const updatedHostStateDatum: HostStateDatum = {

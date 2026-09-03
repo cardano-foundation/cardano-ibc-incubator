@@ -1,4 +1,5 @@
 import { convertHex2String, convertString2Hex } from '../helpers/hex';
+import type { Data as PlutusData } from '@lucid-evolution/lucid';
 
 // Protocol constants mirrored by the Aiken trace-registry library. These are
 // consensus-facing limits, not relayer tuning knobs.
@@ -198,12 +199,12 @@ export function encodeTraceRegistryDatum(
   const { Constr, Data } = Lucid;
 
   if ('Shard' in datum) {
-    return Data.to(new Constr(0, [encodeShardDatum(datum.Shard, Lucid)]), undefined, {
+    return Data.to<PlutusData>(new Constr(0, [encodeShardDatum(datum.Shard, Lucid)]), undefined, {
       canonical: true,
     });
   }
 
-  return Data.to(
+  return Data.to<PlutusData>(
     new Constr(1, [encodeDirectoryDatum(datum.Directory, Lucid)]),
     undefined,
     { canonical: true },
@@ -236,7 +237,7 @@ export function encodeTraceRegistryRedeemer(
   const { Constr, Data } = Lucid;
 
   if ('InsertTrace' in redeemer) {
-    return Data.to(
+    return Data.to<PlutusData>(
       new Constr(0, [
         redeemer.InsertTrace.voucher_hash,
         convertString2Hex(redeemer.InsertTrace.full_denom),
@@ -247,7 +248,7 @@ export function encodeTraceRegistryRedeemer(
   }
 
   if ('RolloverInsertTrace' in redeemer) {
-    return Data.to(
+    return Data.to<PlutusData>(
       new Constr(1, [
         redeemer.RolloverInsertTrace.voucher_hash,
         convertString2Hex(redeemer.RolloverInsertTrace.full_denom),
@@ -258,7 +259,7 @@ export function encodeTraceRegistryRedeemer(
     );
   }
 
-  return Data.to(
+  return Data.to<PlutusData>(
     new Constr(2, [
       redeemer.AdvanceDirectory.bucket_index,
       redeemer.AdvanceDirectory.voucher_hash,

@@ -156,7 +156,7 @@ const queryTransactionInclusionBlockHeight = async (
       sendRequest('findIntersection', { points });
     });
 
-    client.on('message', (rawMessage) => {
+    client.on('message', (rawMessage: WebSocket.RawData) => {
       if (settled) return;
 
       try {
@@ -202,8 +202,8 @@ const queryTransactionInclusionBlockHeight = async (
       }
     });
 
-    client.once('error', (event: ErrorEvent) => {
-      finish(event.error ?? new Error('Ogmios chain sync websocket request failed'));
+    client.once('error', (error: Error) => {
+      finish(error);
     });
 
     client.once('close', () => {
@@ -214,12 +214,14 @@ const queryTransactionInclusionBlockHeight = async (
   });
 };
 
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-const getNanoseconds = (d) => {
-  let nanoSeconds = d.split('.')[1].split('Z')[0];
-  nanoSeconds = Number(nanoSeconds).toString();
-  return parseInt(nanoSeconds);
+const getNanoseconds = (date: string): number => {
+  const fractionalSeconds = date.split('.')[1]?.split('Z')[0];
+  if (!fractionalSeconds || !/^\d+$/.test(fractionalSeconds)) {
+    throw new Error(`Invalid timestamp: ${date}`);
+  }
+  return Number.parseInt(fractionalSeconds, 10);
 };
 
 export {

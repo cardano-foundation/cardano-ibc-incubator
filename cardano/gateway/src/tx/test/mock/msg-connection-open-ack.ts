@@ -1,7 +1,12 @@
 import { MsgConnectionOpenAck } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/tx';
 
+type MsgConnectionOpenAckFixture = MsgConnectionOpenAck & {
+  version: NonNullable<MsgConnectionOpenAck['version']>;
+  client_state: NonNullable<MsgConnectionOpenAck['client_state']>;
+};
+
 class MsgConnectionOpenAckMockBuilder {
-  private msg: MsgConnectionOpenAck;
+  private msg: MsgConnectionOpenAckFixture;
 
   constructor() {
     this.setDefault();
@@ -95,7 +100,7 @@ class MsgConnectionOpenAckMockBuilder {
     return this;
   }
 
-  build(): any {
+  build(): MsgConnectionOpenAckFixture {
     const builtMsg = { ...this.msg };
     this.reset();
     return builtMsg;

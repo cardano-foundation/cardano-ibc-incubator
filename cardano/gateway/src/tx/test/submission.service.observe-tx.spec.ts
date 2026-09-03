@@ -52,7 +52,7 @@ describe('SubmissionService ObserveTx', () => {
         multi_asset: () => ({ get: () => 1n }),
       }),
       datum: () => ({
-        as_datum: () => ({ to_cbor_hex: () => hostStateDatumCborHex }),
+        as_datum: () => ({ to_cbor_hex: (): string => hostStateDatumCborHex }),
       }),
     };
     const transactionBody = {
@@ -72,7 +72,7 @@ describe('SubmissionService ObserveTx', () => {
       TransactionBody: {
         from_cbor_hex: jest.fn((value: string) => {
           if (value === txBodyCborHex) return transactionBody;
-          if (value === 'a1') return { to_cbor_hex: () => 'a1' };
+          if (value === 'a1') return { to_cbor_hex: (): string => 'a1' };
           throw new Error('not a transaction body');
         }),
       },

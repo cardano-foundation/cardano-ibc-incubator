@@ -84,6 +84,7 @@ import {
   normalizeTxsResultFromRecvPacketSuccessAcknowledgement,
 } from '@shared/helpers/block-results';
 import {
+  Event,
   ResponseDeliverTx,
   ResultBlockResults,
   ResultBlockSearch,
@@ -94,14 +95,22 @@ import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@lucid-evolution/lucid';
 import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
-import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
+import {
+  decodeMintChannelRedeemer,
+  decodeSpendChannelRedeemer,
+  SpendChannelRedeemer,
+} from '../../shared/types/channel/channel-redeemer';
 import {
   decodeMintConnectionRedeemer,
   decodeSpendConnectionRedeemer,
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import { Packet } from '@shared/types/channel/packet';
-import { decodeMintClientRedeemer, decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
+import {
+  decodeMintClientRedeemer,
+  decodeSpendClientRedeemer,
+  SpendClientRedeemer,
+} from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
@@ -172,6 +181,15 @@ const STABILITY_LATEST_HEIGHT_DELAY_MS = 2_000;
 const MAX_PROTO_UINT64 = (1n << 64n) - 1n;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function getPacketFromSpendChannelRedeemer(redeemer: SpendChannelRedeemer): Packet | undefined {
+  if (typeof redeemer === 'string') return undefined;
+  if ('RecvPacket' in redeemer) return redeemer.RecvPacket.packet;
+  if ('AcknowledgePacket' in redeemer) return redeemer.AcknowledgePacket.packet;
+  if ('TimeoutPacket' in redeemer) return redeemer.TimeoutPacket.packet;
+  if ('SendPacket' in redeemer) return redeemer.SendPacket.packet;
+  return undefined;
+}
 
 function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -476,6 +494,10 @@ export class QueryService {
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
+    const cardanoChainId = this.configService.get<string>('cardanoChainId');
+    if (!cardanoChainId) {
+      throw new GrpcInternalException('Cardano chain ID is not configured');
+    }
 
     const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
       historyService: this.historyService,
@@ -505,7 +527,7 @@ export class QueryService {
     );
 
     const clientStateProbabilistic: ClientStateProbabilistic = {
-      chain_id: this.configService.get('cardanoChainId'),
+      chain_id: cardanoChainId,
       latest_height: {
         revision_number: 0n,
         revision_height: stabilityEvidence.anchorHeight,
@@ -634,6 +656,9 @@ export class QueryService {
 
   private async getHostStateDatum(): Promise<HostStateDatum> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo?.datum) {
+      throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
+    }
     return decodeHostStateDatum(hostStateUtxo.datum, this.lucidService.LucidImporter);
   }
 
@@ -646,6 +671,9 @@ export class QueryService {
       ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(clientAuthTokenUnit, queryHeight)
       : await this.lucidService.findUtxoByUnit(clientAuthTokenUnit);
 
+    if (!spendClientUTXO.datum) {
+      throw new GrpcInternalException(`IBC infrastructure error: client ${clientId} UTxO missing datum`);
+    }
     const clientDatum = await decodeClientDatum(spendClientUTXO.datum, this.lucidService.LucidImporter);
     return [clientDatum, spendClientUTXO];
   }
@@ -960,11 +988,12 @@ export class QueryService {
         try {
           // Reuse existing queryBlockResults logic
           const blockResult = await this.queryBlockResults({ height: BigInt(height) });
+          const txResults = blockResult.block_results?.txs_results ?? [];
 
-          if (blockResult.block_results.txs_results.length > 0) {
+          if (txResults.length > 0) {
             blockEvents.push({
               height: BigInt(height),
-              events: blockResult.block_results.txs_results,
+              events: txResults,
             });
           }
         } catch (err) {
@@ -1176,7 +1205,10 @@ export class QueryService {
               }
             }
 
-            const recvPacket = spendRedeemer['RecvPacket']?.packet as Packet | undefined;
+            const recvPacket =
+              typeof spendRedeemer !== 'string' && 'RecvPacket' in spendRedeemer
+                ? spendRedeemer.RecvPacket.packet
+                : undefined;
             if (
               recvPacket &&
               !hasWriteAckEvent &&
@@ -1230,6 +1262,7 @@ export class QueryService {
         .filter((utxo) => [mintClientScriptHash].includes(utxo.assetsPolicy))
         .map(async (clientUtxo) => {
           const clientId = getIdByTokenName(clientUtxo.assetsName, tokenBase, CLIENT_PREFIX);
+          if (!clientUtxo.datum) return null;
           let clientDatum: ClientDatum;
           try {
             clientDatum = await decodeClientDatum(clientUtxo.datum, this.lucidService.LucidImporter);
@@ -1249,7 +1282,7 @@ export class QueryService {
             });
           const eventClient = hasMintClientRedeemer ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
           const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
-          let spendClientRedeemerData = null;
+          let spendClientRedeemerData: SpendClientRedeemer = 'Other';
           if (spendClientRedeemer) {
             try {
               spendClientRedeemerData = decodeSpendClientRedeemer(
@@ -1257,7 +1290,7 @@ export class QueryService {
                 this.lucidService.LucidImporter,
               );
             } catch {
-              spendClientRedeemerData = null;
+              spendClientRedeemerData = 'Other';
             }
           }
 
@@ -1296,13 +1329,13 @@ export class QueryService {
     return Object.values(EVENT_TYPE_PACKET).includes(type);
   }
 
-  private mapPacketEvent(txHash: string, height: number, event: any): IndexedPacketEvent | null {
+  private mapPacketEvent(txHash: string, height: number, event: Event): IndexedPacketEvent | null {
     if (!this.isPacketEventType(event.type)) return null;
 
     // Keep malformed packet events visible while omitting the normalized packet summary.
-    const attributes = (event.event_attribute || []).reduce((acc: Record<string, string>, attr: any) => {
-      if (attr?.key === undefined) return acc;
-      acc[String(attr.key)] = attr?.value === undefined ? '' : String(attr.value);
+    const attributes = (event.event_attribute || []).reduce((acc: Record<string, string>, attr) => {
+      if (attr.key === undefined) return acc;
+      acc[String(attr.key)] = attr.value === undefined ? '' : String(attr.value);
       return acc;
     }, {});
 
@@ -1459,11 +1492,11 @@ export class QueryService {
       const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
       const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
       const spendAddress = deploymentConfig.validators.spendChannel.address;
-      if (!request.packet_src_channel.startsWith(`${CHANNEL_ID_PREFIX}-`))
+      if (!srcChannelId?.startsWith(`${CHANNEL_ID_PREFIX}-`))
         throw new GrpcInvalidArgumentException(
           `Invalid argument: "packet_src_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
         );
-      if (!request.packet_dst_channel.startsWith(`${CHANNEL_ID_PREFIX}-`))
+      if (!dstChannelId?.startsWith(`${CHANNEL_ID_PREFIX}-`))
         throw new GrpcInvalidArgumentException(
           `Invalid argument: "packet_dst_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
         );
@@ -1492,7 +1525,7 @@ export class QueryService {
       }
 
       const utxosOfChannel = Array.from(utxosByRef.values());
-      let blockResults: ResultBlockSearch[] = await Promise.all(
+      const blockSearchResults = await Promise.all(
         utxosOfChannel.map(async (utxo) => {
           let redeemers = await this.getTransactionRedeemers(utxo.txHash);
           redeemers = redeemers.filter(
@@ -1507,12 +1540,7 @@ export class QueryService {
             } catch {
               continue;
             }
-            let packet: Packet = null;
-            if (spendRedeemer['RecvPacket']) packet = spendRedeemer['RecvPacket']?.packet as unknown as Packet;
-            if (spendRedeemer['AcknowledgePacket'])
-              packet = spendRedeemer['AcknowledgePacket']?.packet as unknown as Packet;
-            if (spendRedeemer['TimeoutPacket']) packet = spendRedeemer['TimeoutPacket']?.packet as unknown as Packet;
-            if (spendRedeemer['SendPacket']) packet = spendRedeemer['SendPacket']?.packet as unknown as Packet;
+            const packet = getPacketFromSpendChannelRedeemer(spendRedeemer);
             if (!packet) continue;
             const packetSourceChannel = convertHex2String(packet.source_channel);
             const packetDestinationChannel = convertHex2String(packet.destination_channel);
@@ -1537,7 +1565,7 @@ export class QueryService {
           } as unknown as ResultBlockSearch;
         }),
       );
-      blockResults = blockResults.filter((e) => e);
+      const blockResults = blockSearchResults.filter((result): result is ResultBlockSearch => result !== null);
       const totalCount = blockResults.length;
       let blockResultsResp = blockResults;
       if (blockResults.length > limit) {
@@ -2117,8 +2145,12 @@ export class QueryService {
     systemStartUnixNs: bigint;
     slotLengthNs: bigint;
   } {
-    const network = this.configService.get('cardanoNetwork');
-    const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
+    const network = this.configService.get<string>('cardanoNetwork');
+    const slotConfigs = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK;
+    const slotConfig =
+      network && slotConfigs && Object.prototype.hasOwnProperty.call(slotConfigs, network)
+        ? slotConfigs[network as keyof typeof slotConfigs]
+        : undefined;
     if (
       !slotConfig ||
       !Number.isFinite(slotConfig.zeroTime) ||

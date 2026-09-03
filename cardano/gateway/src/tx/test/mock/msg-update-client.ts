@@ -1,8 +1,12 @@
 import { MsgUpdateClient } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
 import headerMockBuilder from './header';
 
+type MsgUpdateClientFixture = MsgUpdateClient & {
+  client_message: NonNullable<MsgUpdateClient['client_message']>;
+};
+
 export class MsgUpdateClientMockBuilder {
-  private msgUpdateClientMock: MsgUpdateClient;
+  private msgUpdateClientMock: MsgUpdateClientFixture;
 
   constructor() {
     this.setDefault();
@@ -43,7 +47,7 @@ export class MsgUpdateClientMockBuilder {
     return this;
   }
 
-  build(): any {
+  build(): MsgUpdateClientFixture {
     const builtMsgUpdateClientMock = { ...this.msgUpdateClientMock };
     this.reset();
     return builtMsgUpdateClientMock;

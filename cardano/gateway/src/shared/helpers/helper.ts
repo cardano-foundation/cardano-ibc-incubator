@@ -84,16 +84,17 @@ export const deleteKeySortMap = <K, V>(inputMap: Map<K, V>, deleteKey: K): Map<K
   updatedMap.delete(deleteKey);
   return updatedMap;
 };
-export function sortedStringify(obj) {
+export function sortedStringify(obj: unknown): string | undefined {
   if (typeof obj !== 'object' || obj === null) {
     return JSON.stringify(obj);
   }
 
-  const sortedObj = {};
+  const sortedObj: Record<string, unknown> = {};
+  const record = obj as Record<string, unknown>;
   Object.keys(obj)
     .sort()
     .forEach((key) => {
-      sortedObj[key] = obj[key];
+      sortedObj[key] = record[key];
     });
 
   return JSON.stringify(sortedObj);

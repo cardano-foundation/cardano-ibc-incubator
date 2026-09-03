@@ -124,12 +124,12 @@ export class ConnectionService {
     this.logger.log('', 'queryConnections');
     const pagination = getPaginationParams(validPagination(request.pagination));
     const {
-      'pagination.key': key,
-      'pagination.limit': limit,
-      'pagination.count_total': count_total,
-      'pagination.reverse': reverse,
+      'pagination.key': key = '',
+      'pagination.limit': limit = '100',
+      'pagination.count_total': count_total = false,
+      'pagination.reverse': reverse = false,
     } = pagination;
-    let { 'pagination.offset': offset } = pagination;
+    let { 'pagination.offset': offset = '0' } = pagination;
     if (key) offset = decodePaginationKey(key);
 
     const deploymentConfig = this.configService.get('deployment');
@@ -184,11 +184,14 @@ export class ConnectionService {
       }),
     );
 
-    const connectionFilters = identifiedConnections.reduce((accumulator, currentValue) => {
-      const key = `${currentValue.client_id}_${currentValue.id}`;
-      if (!accumulator[key] || accumulator[key].state < currentValue.state) accumulator[key] = currentValue;
-      return accumulator;
-    }, {});
+    const connectionFilters = identifiedConnections.reduce<Record<string, IdentifiedConnection>>(
+      (accumulator, currentValue) => {
+        const key = `${currentValue.client_id}_${currentValue.id}`;
+        if (!accumulator[key] || accumulator[key].state < currentValue.state) accumulator[key] = currentValue;
+        return accumulator;
+      },
+      {},
+    );
 
     let nextKey = null;
     let connections = reverse ? Object.values(connectionFilters).reverse() : Object.values(connectionFilters);

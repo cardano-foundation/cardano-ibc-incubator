@@ -225,7 +225,8 @@ describe('ApiController (modern)', () => {
       port_id: 'transfer',
       channel_id: 'channel-7',
       sequence: '9',
-      proof_commitment_absence: Buffer.from([0x0a, 0x00]).toString('base64'),
+      // MerkleProof containing a recognized BatchProof variant.
+      proof_commitment_absence: Buffer.from([0x0a, 0x02, 0x1a, 0x00]).toString('base64'),
       proof_height: { revision_number: '0', revision_height: '55' },
     });
 

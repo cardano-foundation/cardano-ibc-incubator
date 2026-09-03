@@ -516,7 +516,7 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
           method: methodname,
           params: args,
         });
-        client.send(payload, (error) => {
+        client.send(payload, (error?: Error) => {
           if (!error || settled) {
             return;
           }

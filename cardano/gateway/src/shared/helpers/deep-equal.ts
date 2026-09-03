@@ -1,4 +1,4 @@
-export function deepEquals(x: any, y: any): boolean {
+export function deepEquals(x: unknown, y: unknown): boolean {
   // Handle primitive types directly
   if (typeof x === typeof y) {
     switch (typeof x) {
@@ -41,6 +41,8 @@ export function deepEquals(x: any, y: any): boolean {
 }
 
 function deepObjectEquals(obj1: object, obj2: object): boolean {
+  const record1 = obj1 as Record<string, unknown>;
+  const record2 = obj2 as Record<string, unknown>;
   const keys1 = Object.keys(obj1);
   const keys2 = Object.keys(obj2);
 
@@ -51,7 +53,7 @@ function deepObjectEquals(obj1: object, obj2: object): boolean {
 
   // Iterate through keys and compare values recursively
   for (const key of keys1) {
-    if (!obj2.hasOwnProperty(key) || !deepEquals(obj1[key], obj2[key])) {
+    if (!Object.prototype.hasOwnProperty.call(record2, key) || !deepEquals(record1[key], record2[key])) {
       return false;
     }
   }

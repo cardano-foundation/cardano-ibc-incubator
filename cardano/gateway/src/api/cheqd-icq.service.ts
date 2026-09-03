@@ -380,7 +380,7 @@ export class CheqdIcqService {
     dto: Pick<AsyncIcqResultRequestDto, 'packet_data_hex' | 'source_channel' | 'packet_sequence'>,
   ): Promise<Array<{ packetSequence: string; sourceChannel: string }>> {
     const blockResult = await this.queryService.queryBlockResults({ height: txHeight });
-    return this.findMatchingSendPacketEvents(blockResult.block_results.txs_results ?? [], dto);
+    return this.findMatchingSendPacketEvents(blockResult.block_results?.txs_results ?? [], dto);
   }
 
   private findAcknowledgementEvent(

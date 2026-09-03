@@ -1,6 +1,48 @@
 import { Height } from '@shared/types/height';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { validateUpdateHeaderAdvancesLatestHeight } from '../helper/client.validate';
+import { MsgCreateClient, MsgUpdateClient } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
+import {
+  validateAndFormatCreateClientParams,
+  validateAndFormatUpdateClientParams,
+  validateUpdateHeaderAdvancesLatestHeight,
+} from '../helper/client.validate';
+
+describe('client message required fields', () => {
+  const signer = 'addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql';
+
+  it('rejects create client without client_state', () => {
+    const request: MsgCreateClient = {
+      consensus_state: { type_url: '', value: new Uint8Array() },
+      signer,
+    };
+
+    const validate = () => validateAndFormatCreateClientParams(request);
+    expect(validate).toThrow(GrpcInvalidArgumentException);
+    expect(validate).toThrow('client_state');
+  });
+
+  it('rejects create client without consensus_state', () => {
+    const request: MsgCreateClient = {
+      client_state: { type_url: '', value: new Uint8Array() },
+      signer,
+    };
+
+    const validate = () => validateAndFormatCreateClientParams(request);
+    expect(validate).toThrow(GrpcInvalidArgumentException);
+    expect(validate).toThrow('consensus_state');
+  });
+
+  it('rejects update client without client_message', () => {
+    const request: MsgUpdateClient = {
+      client_id: '07-tendermint-0',
+      signer,
+    };
+
+    const validate = () => validateAndFormatUpdateClientParams(request);
+    expect(validate).toThrow(GrpcInvalidArgumentException);
+    expect(validate).toThrow('client_message');
+  });
+});
 
 describe('update client header height validation', () => {
   const latestHeight: Height = {

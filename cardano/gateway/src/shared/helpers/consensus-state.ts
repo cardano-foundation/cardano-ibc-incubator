@@ -10,14 +10,12 @@ export function normalizeConsensusStateFromDatum(
   consensusStateDatum: Map<Height, ConsensusState>,
   requestHeight: bigint,
 ): ConsensusStateTendermint {
-  let consensusState: ConsensusState;
-
-  for (const [height, consensusState_] of consensusStateDatum.entries()) {
-    if (height.revisionHeight == requestHeight) {
-      consensusState = consensusState_;
-    }
+  const consensusState = Array.from(consensusStateDatum.entries()).find(
+    ([height]) => height.revisionHeight === requestHeight,
+  )?.[1];
+  if (!consensusState) {
+    throw new GrpcNotFoundException(`Unable to find Consensus State at height ${requestHeight}`);
   }
-  if (!consensusState) throw new GrpcNotFoundException(`Unable to find Consensus State at height ${requestHeight}`); // Return undefined if no matching entry is found
   const consensus: ConsensusStateTendermint = {
     timestamp: Timestamp.fromPartial({
       seconds: BigInt(Math.round(Number(consensusState.timestamp) / 1e9)),
@@ -57,7 +55,7 @@ export function initializeConsensusState(consensusStateMsg: ConsensusStateTender
   return consensusState;
 }
 // Validate the structure and values of the consensus state
-export function validateConsensusState(consensusState: ConsensusState): GrpcInvalidArgumentException {
+export function validateConsensusState(consensusState: ConsensusState): GrpcInvalidArgumentException | null {
   if (consensusState.root?.hash?.length === 0) {
     return new GrpcInvalidArgumentException('root cannot be empty');
   }

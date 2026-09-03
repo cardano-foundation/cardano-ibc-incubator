@@ -79,6 +79,6 @@ export type HistoryService = {
   findClientUtxosByBlockNo(height: number): Promise<UtxoDto[]>;
   checkExistPoolUpdateByBlockNo(height: number): Promise<boolean>;
   checkExistPoolRetireByBlockNo(height: number): Promise<boolean>;
-  findTxByHash(hash: string): Promise<TxDto>;
+  findTxByHash(hash: string): Promise<TxDto | null>;
   findTransactionEvidenceByHash(hash: string): Promise<HistoryTxEvidence | null>;
 };

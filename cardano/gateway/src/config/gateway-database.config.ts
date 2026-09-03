@@ -8,7 +8,7 @@ export const GatewayDatabaseConfig: TypeOrmModuleOptions = {
   name: 'gateway',
   type: 'postgres',
   host: process.env.GATEWAY_DB_HOST,
-  port: +process.env.GATEWAY_DB_PORT,
+  port: process.env.GATEWAY_DB_PORT ? Number(process.env.GATEWAY_DB_PORT) : undefined,
   username: process.env.GATEWAY_DB_USERNAME,
   password: process.env.GATEWAY_DB_PASSWORD,
   database: process.env.GATEWAY_DB_NAME,

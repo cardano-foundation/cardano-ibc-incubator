@@ -22,7 +22,13 @@ import {
   QueryNextSequenceReceiveResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { ACK_RESULT, CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX, REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from '../../constant';
+import {
+  ACK_RESULT,
+  CHANNEL_ID_PREFIX,
+  CHANNEL_TOKEN_PREFIX,
+  REDEEMER_EMPTY_DATA,
+  REDEEMER_TYPE,
+} from '../../constant';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
@@ -39,7 +45,11 @@ import {
 } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
-import { GrpcInvalidArgumentException, GrpcInternalException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcInvalidArgumentException,
+  GrpcInternalException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
@@ -128,10 +138,7 @@ export class PacketService {
 
   private async findChannelUtxo(channelTokenUnit: string) {
     const deploymentConfig = this.configService.get('deployment');
-    return this.lucidService.findUtxoAtWithUnit(
-      deploymentConfig.validators.spendChannel.address,
-      channelTokenUnit,
-    );
+    return this.lucidService.findUtxoAtWithUnit(deploymentConfig.validators.spendChannel.address, channelTokenUnit);
   }
 
   private async getChannelUtxo(channelId: string, queryHeight?: bigint) {
@@ -206,7 +213,8 @@ export class PacketService {
           const acknowledgementResponse = callback.OnRecvPacket?.acknowledgement?.response;
           if (!acknowledgementResponse) continue;
 
-          const acknowledgementCommitment = acknowledgementCommitmentFromResponse(acknowledgementResponse).toLowerCase();
+          const acknowledgementCommitment =
+            acknowledgementCommitmentFromResponse(acknowledgementResponse).toLowerCase();
           if (acknowledgementCommitment === normalizedCommitment) {
             return acknowledgementHexFromResponse(acknowledgementResponse);
           }
@@ -352,12 +360,12 @@ export class PacketService {
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryPacketAcknowledgements');
     const pagination = getPaginationParams(validPagination(paginationReq));
     const {
-      'pagination.key': key,
-      'pagination.limit': limit,
-      'pagination.count_total': count_total,
-      'pagination.reverse': reverse,
+      'pagination.key': key = '',
+      'pagination.limit': limit = '100',
+      'pagination.count_total': count_total = false,
+      'pagination.reverse': reverse = false,
     } = pagination;
-    let { 'pagination.offset': offset } = pagination;
+    let { 'pagination.offset': offset = '0' } = pagination;
     if (key) offset = decodePaginationKey(key);
 
     const utxo = await this.getChannelUtxo(channelId);
@@ -387,7 +395,7 @@ export class PacketService {
         /** packet sequence. */
         sequence: seq.toString(),
         /** embedded data that represents packet state. */
-        data: bytesFromBase64(channelDatumDecoded.state.packet_acknowledgement.get(seq)),
+        data: bytesFromBase64(channelDatumDecoded.state.packet_acknowledgement.get(seq)!),
       })),
       /** pagination response */
       pagination: {
@@ -459,12 +467,12 @@ export class PacketService {
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryPacketCommitments');
     const pagination = getPaginationParams(validPagination(paginationReq));
     const {
-      'pagination.key': key,
-      'pagination.limit': limit,
-      'pagination.count_total': count_total,
-      'pagination.reverse': reverse,
+      'pagination.key': key = '',
+      'pagination.limit': limit = '100',
+      'pagination.count_total': count_total = false,
+      'pagination.reverse': reverse = false,
     } = pagination;
-    let { 'pagination.offset': offset } = pagination;
+    let { 'pagination.offset': offset = '0' } = pagination;
     if (key) offset = decodePaginationKey(key);
 
     const utxo = await this.getChannelUtxo(channelId);
@@ -494,7 +502,7 @@ export class PacketService {
         /** packet sequence. */
         sequence: seq.toString(),
         /** embedded data that represents packet state. */
-        data: bytesFromBase64(channelDatumDecoded.state.packet_commitment.get(seq)),
+        data: bytesFromBase64(channelDatumDecoded.state.packet_commitment.get(seq)!),
       })),
       /** pagination response */
       pagination: {

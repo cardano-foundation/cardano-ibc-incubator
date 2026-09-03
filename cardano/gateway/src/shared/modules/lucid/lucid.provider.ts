@@ -73,6 +73,22 @@ const NON_RETRYABLE_RUNTIME_PROVIDER_ERROR_MARKERS = [
   'validator returned false',
 ];
 
+function requireConfigString(configService: ConfigService, key: string): string {
+  const value = configService.get<unknown>(key);
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`[startup] Required configuration ${key} is missing`);
+  }
+  return value;
+}
+
+function requireCardanoNetwork(configService: ConfigService): Network {
+  const network = requireConfigString(configService, 'cardanoNetwork');
+  if (!['Mainnet', 'Preview', 'Preprod', 'Custom'].includes(network)) {
+    throw new Error(`[startup] Unsupported Cardano network ${network}`);
+  }
+  return network as Network;
+}
+
 function toSafeCostModelInteger(value: unknown): number {
   let parsedValue: number;
 
@@ -860,9 +876,10 @@ export const LucidClient = {
     // Create Lucid provider and instance
     const kupoApiKey = configService.get('kupoApiKey') ?? process.env.KUPO_API_KEY;
     const ogmiosApiKey = configService.get('ogmiosApiKey') ?? process.env.OGMIOS_API_KEY;
-    const rawKupoEndpoint = configService.get('kupoEndpoint');
+    const rawKupoEndpoint = requireConfigString(configService, 'kupoEndpoint');
     const kupoEndpoint = resolveManagedKupoEndpoint(rawKupoEndpoint, kupoApiKey) ?? rawKupoEndpoint;
-    const ogmiosEndpoint = resolveManagedOgmiosHttpEndpoint(configService.get('ogmiosEndpoint'), ogmiosApiKey);
+    const rawOgmiosEndpoint = requireConfigString(configService, 'ogmiosEndpoint');
+    const ogmiosEndpoint = resolveManagedOgmiosHttpEndpoint(rawOgmiosEndpoint, ogmiosApiKey) ?? rawOgmiosEndpoint;
     const kupmiosHeaders = withKupoStringQuantityHeader(
       resolveManagedKupmiosHeaders(kupoEndpoint, kupoApiKey, ogmiosEndpoint, ogmiosApiKey),
     );
@@ -870,7 +887,7 @@ export const LucidClient = {
     installManagedCardanoAuthFetch(
       configService.get('kupoEndpoint'),
       kupoApiKey,
-      configService.get('ogmiosEndpoint'),
+      rawOgmiosEndpoint,
       ogmiosApiKey,
     );
 
@@ -1060,7 +1077,7 @@ export const LucidClient = {
       provider.awaitTx = async (txHash: string, checkInterval: number = 20_000) => {
         const timeoutMs = Math.max(160_000, checkInterval * 8);
         try {
-          await queryTransactionInclusionBlockHeight(configService.get('ogmiosEndpoint'), txHash, 'origin', timeoutMs);
+          await queryTransactionInclusionBlockHeight(rawOgmiosEndpoint, txHash, 'origin', timeoutMs);
           return true;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1072,7 +1089,7 @@ export const LucidClient = {
       };
     }
 
-    const network = configService.get('cardanoNetwork') as Network;
+    const network = requireCardanoNetwork(configService);
     console.log('[startup] Fetching Ogmios protocol parameters');
     const protocolParameters = sanitizeProtocolParameters(
       await retryWithBackoff(
@@ -1091,7 +1108,7 @@ export const LucidClient = {
     if (isDevnetWithRuntimeSlotConfig) {
       console.log('[startup] Querying Ogmios system start');
       const devnetZeroTime = await retryWithBackoff(
-        () => querySystemStart(configService.get('ogmiosEndpoint')),
+        () => querySystemStart(rawOgmiosEndpoint),
         'Ogmios system start query',
       );
       console.log('[startup] Ogmios system start loaded');

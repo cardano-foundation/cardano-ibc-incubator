@@ -103,12 +103,12 @@ export class ApiController {
     };
     const request = QueryChannelsRequest.fromJSON(pageRequestDto);
     const response = await this.channelService.queryChannels(request);
-    const next_key = Buffer.from(response.pagination.next_key || '').toString('base64');
+    const next_key = Buffer.from(response.pagination?.next_key || '').toString('base64');
     return {
       channels: response.channels.map((chann) => IdentifiedChannel.toJSON(chann)),
       pagination: {
         next_key: next_key,
-        total: response.pagination.total.toString(),
+        total: (response.pagination?.total ?? 0n).toString(),
       },
       height: {
         revision_height: response.height.revision_height.toString(),
@@ -135,13 +135,13 @@ export class ApiController {
       },
     });
     const response = await this.channelService.listCurrentChannelEnds(request);
-    const next_key = Buffer.from(response.pagination.next_key || '').toString('base64');
+    const next_key = Buffer.from(response.pagination?.next_key || '').toString('base64');
 
     return {
       channels: response.channels.map((channel) => IdentifiedChannel.toJSON(channel)),
       pagination: {
         next_key,
-        total: response.pagination.total.toString(),
+        total: (response.pagination?.total ?? 0n).toString(),
       },
     };
   }

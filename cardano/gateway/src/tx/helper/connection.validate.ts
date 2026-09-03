@@ -80,6 +80,9 @@ export function validateAndFormatConnectionOpenTryParams(data: MsgConnectionOpen
       `Invalid argument: "client_id". Please use the prefix "${CLIENT_ID_PREFIX}-"`,
     );
   const clientSequence: string = data.client_id.replaceAll(`${CLIENT_ID_PREFIX}-`, '');
+  if (!data.client_state) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "client_state" is required');
+  }
   const decodedProofInitMsg: MerkleProofMsg = MerkleProofMsg.decode(data.proof_init);
   const decodedProofClientMsg: MerkleProofMsg = MerkleProofMsg.decode(data.proof_client);
   const clientStateAnyHex = Buffer.from(Any.encode(data.client_state).finish()).toString('hex');
@@ -124,6 +127,9 @@ export function validateAndFormatConnectionOpenAckParams(data: MsgConnectionOpen
     );
 
   const connectionSequence = data.connection_id.replaceAll(`${CONNECTION_ID_PREFIX}-`, '');
+  if (!data.client_state) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "client_state" is required');
+  }
   const decodedProofTryMsg: MerkleProofMsg = decodeMerkleProof(data.proof_try);
   const decodedProofClientMsg: MerkleProofMsg = decodeMerkleProof(data.proof_client);
 

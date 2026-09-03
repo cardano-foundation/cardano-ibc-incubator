@@ -157,7 +157,7 @@ export class ChannelService {
     validToSlot: number;
     validToTime: number;
   }> {
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const ogmiosEndpoint = this.configService.getOrThrow<string>('ogmiosEndpoint');
     const network = this.configService.get('cardanoNetwork') as Network;
     const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
     if (!slotConfig || slotConfig.slotLength <= 0) {
@@ -201,7 +201,7 @@ export class ChannelService {
   }
 
   private getModuleConfig(portId: string) {
-    return getGatewayModuleConfigForPortId(this.configService.get('deployment'), portId);
+    return getGatewayModuleConfigForPortId(this.configService.getOrThrow('deployment'), portId);
   }
 
   async channelOpenInit(data: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
