@@ -122,33 +122,45 @@ sample.
 
 ### Apple M5 and AWS CPU comparison
 
-The 45-validator Injective fixture was also run on an AWS `c5a.8xlarge` with
-32 vCPUs (16 AMD EPYC 7R32 cores) and 62 GiB of usable memory. Each result is
-one run.
+The 45-validator Injective fixture was run on two AWS hosts: a `c5a.8xlarge`
+with 16 physical AMD EPYC 7R32 cores and 62 GiB of usable memory, and a
+`c8a.16xlarge` with 64 physical AMD EPYC 9R45 cores and 123 GiB of usable
+memory. The C8a runs used commit `574b5e90e`, Ubuntu 26.04, Rust 1.91.1, and
+Go 1.26.7.
 
 | Host | Proof mode | Rayon threads | Proof call | Complete process | Peak resident memory |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Apple M5 | Core | 10 | 58.150 s | — | 6.78 GB |
 | AWS `c5a.8xlarge` | Core | 16 | 83.221 s | 108.80 s | 21.8 GiB |
 | AWS `c5a.8xlarge` | Core | 32 | 85.607 s | 109.66 s | 21.8 GiB |
+| AWS `c8a.16xlarge` | Core | 16 | 38.381 s | 51.66 s | 22.0 GiB |
+| AWS `c8a.16xlarge` | Core | 32 | 27.149 s | 36.83 s | 22.0 GiB |
+| AWS `c8a.16xlarge` | Core | 64 | 27.126 s | 35.22 s | 22.0 GiB |
 | Apple M5, older pre-alignment runner | Groth16 | — | 505.846 s | 526.69 s | — |
 | AWS `c5a.8xlarge`, warm circuit cache | Groth16 | 32 | 374.621 s | 401.05 s | 31.0 GiB |
+| AWS `c8a.16xlarge`, cold circuit cache | Groth16 | 64 | 271.443 s | 280.25 s | 30.3 GiB |
+| AWS `c8a.16xlarge`, warm circuit cache, three runs | Groth16 | 64 | 112.456 s median | 121.12 s median | 32.5 GiB maximum |
 
-The AWS host reduced the full proof call by about 26%, but it still took 6
-minutes 15 seconds. Its Core phase was slower than the M5, and using 32 threads
-instead of 16 did not help. A cold AWS run took 558.737 seconds for the proof
-and 584.93 seconds overall because it also downloaded the 7.9 GB SP1 circuit
-cache. These are directional single-run results, not a benchmark distribution.
+The C8a warm median was about 70% lower than the single C5a warm observation.
+All three C8a proof calls finished below two minutes (111.744–114.067 seconds),
+while the complete processes took 120.44–122.75 seconds. Core showed no
+material improvement after 32 threads, although Compressed improved from
+50.736 seconds at 32 threads to 46.441 seconds at 64. Each screening and cold
+result is one run. The cold C8a run included the one-time 7.9 GB circuit
+download; the older C5a cold run took 558.737 seconds for the proof and 584.93
+seconds overall. The runner verified every SP1 proof on the AWS host, but these
+runs did not include Cardano wrapping or Aiken verification.
 
 The smaller trace chunks reduced Compressed resident memory by about 10%, but
 made the proof about 4.5% slower. Eight threads, reduced recursion concurrency,
 and the native/LTO build were also slower. SP1's fixed proving-key option was
 not usable: SP1 6.1 reached an unimplemented executor reset and then failed
-with `artifact not found`. The best Compressed result alone is 113.332 seconds,
-before the remaining Groth16 stages, so these local settings cannot reduce the
-current CPU proof below 60 seconds. Reaching that target requires a material
-prover improvement, an SP1 upgrade with compatible circuit and wrapper keys,
-or faster CPU hardware; it is not a matter of enabling more local threads.
+with `artifact not found`. The best Apple M5 Compressed result alone is 113.332
+seconds before the remaining Groth16 stages, so those local settings cannot
+reduce the full proof below 60 seconds. The C8a results also show that adding
+threads stops helping some stages. Reaching a full proof below 60 seconds still
+requires a material prover improvement, an SP1 upgrade with compatible circuit
+and wrapper keys, or faster CPU hardware.
 
 The execution cost can be measured without generating a proof or using network
 credits:
@@ -162,7 +174,8 @@ A single Apple M5 run measured 0.907 seconds, 12,585 syscalls, and an estimated
 3,140,508 PGU for 45 validators. The 200-validator case measured 9.682 seconds,
 107,412 syscalls, and an estimated 19,714,926 PGU. These are local guest
 execution measurements, not proof-generation time or network billing. The
-generated JSON leaves network latency and actual network PGU fields null.
+same cases took 0.494 and 4.223 seconds on the C8a. The generated JSON leaves
+network latency and actual network PGU fields null.
 
 The CPU proof profiles can be rerun separately:
 
