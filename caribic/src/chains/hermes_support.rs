@@ -1,8 +1,10 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dirs::home_dir;
+use zeroize::Zeroizing;
 
 use crate::logger::verbose;
 
@@ -88,6 +90,7 @@ pub fn write_temp_mnemonic_file(
     prefix: &str,
     mnemonic: String,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let mnemonic = Zeroizing::new(mnemonic);
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let file_path = std::env::temp_dir().join(format!(
         "caribic-{}-{}-{}.mnemonic",
@@ -95,8 +98,23 @@ pub fn write_temp_mnemonic_file(
         std::process::id(),
         timestamp
     ));
-    fs::write(file_path.as_path(), mnemonic)
-        .map_err(|error| format!("Failed to write temporary mnemonic file: {}", error))?;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let mut file = options
+        .open(file_path.as_path())
+        .map_err(|error| format!("Failed to create temporary mnemonic file: {}", error))?;
+    if let Err(error) = file.write_all(mnemonic.as_bytes()) {
+        drop(file);
+        let _ = fs::remove_file(file_path.as_path());
+        return Err(format!("Failed to write temporary mnemonic file: {}", error).into());
+    }
     Ok(file_path)
 }
 
@@ -308,4 +326,34 @@ fn extract_chain_block(config: &str, target_chain_id: &str) -> Option<String> {
     let lines: Vec<&str> = config.lines().collect();
     let (block_start, block_end) = find_chain_block_bounds(&lines, target_chain_id)?;
     Some(lines[block_start..block_end].join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn temporary_mnemonic_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        struct RemoveFile(std::path::PathBuf);
+
+        impl Drop for RemoveFile {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+
+        let path = RemoveFile(
+            super::write_temp_mnemonic_file(
+                "permissions-test",
+                "test mnemonic material".to_string(),
+            )
+            .unwrap(),
+        );
+
+        assert_eq!(
+            std::fs::metadata(&path.0).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
 }

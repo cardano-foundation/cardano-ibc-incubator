@@ -275,6 +275,7 @@ dependencies = [
  "sha3",
  "tokio",
  "tonic",
+ "zeroize",
  "zip",
 ]
 

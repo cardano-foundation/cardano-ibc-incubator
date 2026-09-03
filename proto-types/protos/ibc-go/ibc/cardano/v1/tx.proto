@@ -22,6 +22,11 @@ service CardanoMsg {
 
   // SubmitSignedTx submits a signed Cardano transaction.
   rpc SubmitSignedTx(SubmitSignedTxRequest) returns (SubmitSignedTxResponse);
+
+  // ObserveTx waits for a transaction submitted directly by Hermes to be
+  // indexed, then finalizes the Gateway's pending IBC state update. The
+  // signed transaction is deliberately never sent to the Gateway.
+  rpc ObserveTx(ObserveTxRequest) returns (ObserveTxResponse);
 }
 
 message BuildHostStateHeartbeatRequest {
@@ -81,6 +86,25 @@ message SubmitSignedTxResponse {
   string height = 2;
   
   // Raw transaction events (for IBC event parsing).
+  repeated Event events = 3;
+}
+
+// ObserveTxRequest identifies a transaction that Hermes already submitted
+// through its trusted Cardano node connection.
+message ObserveTxRequest {
+  // Blake2b-256 hash of the Cardano transaction body, encoded as 64 hex digits.
+  string tx_hash = 1;
+}
+
+// ObserveTxResponse contains the confirmed inclusion height and IBC events.
+message ObserveTxResponse {
+  // Canonical Blake2b-256 transaction body hash.
+  string tx_hash = 1;
+
+  // Confirmed block height in IBC revision-number/revision-height form.
+  string height = 2;
+
+  // Raw transaction events for IBC event parsing.
   repeated Event events = 3;
 }
 

@@ -15,6 +15,7 @@ import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pendin
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { WalletContextService } from './wallet-context.service';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
+import { GRPC_AUTH_TOKEN, GrpcAuthGuard, loadGrpcAuthToken } from '../security/grpc-auth.guard';
 
 @Module({
   imports: [LucidModule, QueryModule, KupoModule],
@@ -32,6 +33,11 @@ import { HostStateHeartbeatService } from './host-state-heartbeat.service';
     IbcTreeCacheService,
     IbcTreePendingUpdatesService,
     HostStateHeartbeatService,
+    GrpcAuthGuard,
+    {
+      provide: GRPC_AUTH_TOKEN,
+      useFactory: loadGrpcAuthToken,
+    },
     Logger,
   ],
   exports: [IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService],

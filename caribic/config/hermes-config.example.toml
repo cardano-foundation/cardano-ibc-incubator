@@ -64,6 +64,47 @@ id = 'cardano-devnet'
 # Gateway gRPC endpoint - this is your NestJS Gateway
 # Note: Gateway gRPC listens on port 5001; its HTTP/REST server defaults to 8000.
 gateway_url = 'http://localhost:5001'
+# Plaintext is accepted only for localhost/loopback endpoints. Remote Gateways
+# must use an https:// URL. Public certificate authorities use native trust roots;
+# set this only when the Gateway certificate is issued by a private CA.
+# gateway_tls_ca_file = '/path/to/gateway-ca.pem'
+# Optional file containing the bearer token expected by the Gateway's transaction RPCs.
+# gateway_auth_token_file = '/run/secrets/cardano-gateway-token'
+# Apply the same transport and authentication rules when an independent
+# misbehaviour-witness Gateway is configured:
+# misbehaviour_witness_gateway_url = 'https://witness-gateway.example:5001'
+# misbehaviour_witness_gateway_tls_ca_file = '/path/to/witness-gateway-ca.pem'
+# misbehaviour_witness_gateway_auth_token_file = '/run/secrets/cardano-witness-gateway-token'
+
+# Trusted, operator-pinned deployment manifest used to authorize Gateway-built
+# transactions before Hermes accesses the signing key. `caribic start` replaces
+# this placeholder with an owner-only snapshot of the manifest selected by the
+# active Cardano profile.
+# Do not point this at a file supplied by the Gateway.
+bridge_manifest_path = '__CARDANO_BRIDGE_MANIFEST_PATH__'
+
+# Independent Cardano data sources used before every signature. `caribic start`
+# replaces these placeholders with host-reachable Kupo and Ogmios HTTP URLs for
+# the active network. For Demeter, base Kupo uses `dmtr-api-key`; Ogmios HTTP
+# uses the authenticated key-prefixed hostname. A URL that already contains its
+# matching key prefix does not also receive an API-key header file. Hermes
+# refuses plaintext endpoints outside loopback.
+signing_utxo_kupo_url = '__CARDANO_SIGNING_KUPO_URL__'
+signing_ogmios_url = '__CARDANO_SIGNING_OGMIOS_URL__'
+# __CARDANO_SIGNING_KUPO_API_KEY_FILE__
+# __CARDANO_SIGNING_OGMIOS_API_KEY_FILE__
+# Optional private-CA roots for self-hosted HTTPS services:
+# signing_utxo_kupo_tls_ca_file = '/path/to/kupo-ca.pem'
+# signing_ogmios_tls_ca_file = '/path/to/ogmios-ca.pem'
+
+# Local signing-policy limits. Transactions outside these bounds are rejected.
+max_tx_fee_lovelace = 5000000
+max_total_collateral_lovelace = 10000000
+max_tx_size_bytes = 65536
+max_external_output_lovelace = 5000000
+max_total_protocol_output_lovelace = 50000000
+max_wallet_lovelace_top_up = 5000000
+max_validity_interval_slots = 3600
 
 # Poll for a HostState heartbeat once a minute. The Gateway only builds a
 # transaction when no ordinary IBC transition has created an anchor in the

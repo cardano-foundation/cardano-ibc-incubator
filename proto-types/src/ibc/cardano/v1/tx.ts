@@ -106,6 +106,39 @@ export interface SubmitSignedTxResponse {
   events: Event[];
 }
 /**
+ * ObserveTxRequest identifies a transaction that Hermes already submitted
+ * through its trusted Cardano node connection.
+ * @name ObserveTxRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.ObserveTxRequest
+ */
+export interface ObserveTxRequest {
+  /**
+   * Blake2b-256 hash of the Cardano transaction body, encoded as 64 hex digits.
+   */
+  tx_hash: string;
+}
+/**
+ * ObserveTxResponse contains the confirmed inclusion height and IBC events.
+ * @name ObserveTxResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.ObserveTxResponse
+ */
+export interface ObserveTxResponse {
+  /**
+   * Canonical Blake2b-256 transaction body hash.
+   */
+  tx_hash: string;
+  /**
+   * Confirmed block height in IBC revision-number/revision-height form.
+   */
+  height: string;
+  /**
+   * Raw transaction events for IBC event parsing.
+   */
+  events: Event[];
+}
+/**
  * Event represents a transaction event with type and attributes.
  * @name Event
  * @package ibc.cardano.v1
@@ -574,6 +607,135 @@ export const SubmitSignedTxResponse = {
   },
   fromPartial<I extends Exact<DeepPartial<SubmitSignedTxResponse>, I>>(object: I): SubmitSignedTxResponse {
     const message = createBaseSubmitSignedTxResponse();
+    message.tx_hash = object.tx_hash ?? "";
+    message.height = object.height ?? "";
+    message.events = object.events?.map((e) => Event.fromPartial(e)) || [];
+    return message;
+  },
+};
+function createBaseObserveTxRequest(): ObserveTxRequest {
+  return {
+    tx_hash: "",
+  };
+}
+/**
+ * ObserveTxRequest identifies a transaction that Hermes already submitted
+ * through its trusted Cardano node connection.
+ * @name ObserveTxRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.ObserveTxRequest
+ */
+export const ObserveTxRequest = {
+  typeUrl: "/ibc.cardano.v1.ObserveTxRequest",
+  encode(message: ObserveTxRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.tx_hash !== "") {
+      writer.uint32(10).string(message.tx_hash);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): ObserveTxRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseObserveTxRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.tx_hash = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): ObserveTxRequest {
+    const obj = createBaseObserveTxRequest();
+    if (isSet(object.tx_hash)) obj.tx_hash = String(object.tx_hash);
+    return obj;
+  },
+  toJSON(message: ObserveTxRequest): unknown {
+    const obj: any = {};
+    message.tx_hash !== undefined && (obj.tx_hash = message.tx_hash);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<ObserveTxRequest>, I>>(object: I): ObserveTxRequest {
+    const message = createBaseObserveTxRequest();
+    message.tx_hash = object.tx_hash ?? "";
+    return message;
+  },
+};
+function createBaseObserveTxResponse(): ObserveTxResponse {
+  return {
+    tx_hash: "",
+    height: "",
+    events: [],
+  };
+}
+/**
+ * ObserveTxResponse contains the confirmed inclusion height and IBC events.
+ * @name ObserveTxResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.ObserveTxResponse
+ */
+export const ObserveTxResponse = {
+  typeUrl: "/ibc.cardano.v1.ObserveTxResponse",
+  encode(message: ObserveTxResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.tx_hash !== "") {
+      writer.uint32(10).string(message.tx_hash);
+    }
+    if (message.height !== "") {
+      writer.uint32(18).string(message.height);
+    }
+    for (const v of message.events) {
+      Event.encode(v!, writer.uint32(26).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): ObserveTxResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseObserveTxResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.tx_hash = reader.string();
+          break;
+        case 2:
+          message.height = reader.string();
+          break;
+        case 3:
+          message.events.push(Event.decode(reader, reader.uint32()));
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): ObserveTxResponse {
+    const obj = createBaseObserveTxResponse();
+    if (isSet(object.tx_hash)) obj.tx_hash = String(object.tx_hash);
+    if (isSet(object.height)) obj.height = String(object.height);
+    if (Array.isArray(object?.events)) obj.events = object.events.map((e: any) => Event.fromJSON(e));
+    return obj;
+  },
+  toJSON(message: ObserveTxResponse): unknown {
+    const obj: any = {};
+    message.tx_hash !== undefined && (obj.tx_hash = message.tx_hash);
+    message.height !== undefined && (obj.height = message.height);
+    if (message.events) {
+      obj.events = message.events.map((e) => (e ? Event.toJSON(e) : undefined));
+    } else {
+      obj.events = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<ObserveTxResponse>, I>>(object: I): ObserveTxResponse {
+    const message = createBaseObserveTxResponse();
     message.tx_hash = object.tx_hash ?? "";
     message.height = object.height ?? "";
     message.events = object.events?.map((e) => Event.fromPartial(e)) || [];

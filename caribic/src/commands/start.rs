@@ -234,7 +234,10 @@ pub async fn run_start(
             project_root_path.join("relayer").as_path(),
             project_root_path.join("relayer/.env.example").as_path(),
             project_root_path.join("relayer/examples").as_path(),
-            Path::new(core_cardano_profile.handler_json_path.as_str()),
+            core_cardano_profile
+                .bridge_manifest_path
+                .as_deref()
+                .map(Path::new),
             core_cardano_profile.chain_id.as_str(),
             core_cardano_network == config::CoreCardanoNetwork::Local,
             runtime_deployer_sk.as_deref(),
@@ -517,7 +520,10 @@ pub async fn run_start(
             project_root_path.join("relayer").as_path(),
             project_root_path.join("relayer/.env.example").as_path(),
             project_root_path.join("relayer/examples").as_path(),
-            Path::new(core_cardano_profile.handler_json_path.as_str()),
+            core_cardano_profile
+                .bridge_manifest_path
+                .as_deref()
+                .map(Path::new),
             core_cardano_profile.chain_id.as_str(),
             core_cardano_network == config::CoreCardanoNetwork::Local,
             runtime_deployer_sk.as_deref(),

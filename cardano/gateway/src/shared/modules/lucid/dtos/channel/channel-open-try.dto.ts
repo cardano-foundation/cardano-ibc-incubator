@@ -1,4 +1,4 @@
-import { UTxO } from '@lucid-evolution/lucid';
+import { PolicyId, UTxO } from '@lucid-evolution/lucid';
 import { GatewayModuleKey } from '@shared/helpers/module-port';
 
 export type UnsignedChannelOpenTryDto = {
@@ -8,6 +8,8 @@ export type UnsignedChannelOpenTryDto = {
   moduleUtxo: UTxO;
   encodedSpendModuleRedeemer: string;
   encodedMintChannelRedeemer: string;
+  verifyProofPolicyId: PolicyId;
+  encodedVerifyProofRedeemer: string;
   channelTokenUnit: string;
   encodedUpdatedHostStateDatum: string;
   encodedHostStateRedeemer: string;
