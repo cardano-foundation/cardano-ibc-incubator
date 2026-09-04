@@ -23,7 +23,13 @@ import {
   formatCapacityReport,
   loadNormalizedCapacityFixture,
 } from './tendermint-update-capacity';
-import { addMaxAlternativeExUnits, checkTransactionBudgets, type ExUnits } from './tx-budget-limits';
+import {
+  addMaxAlternativeExUnits,
+  type BudgetScenario,
+  checkTransactionBudgets,
+  type ExUnits,
+  subtractBaselineExUnits,
+} from './tx-budget-limits';
 
 type BlueprintValidator = {
   title: string;
@@ -79,6 +85,28 @@ type AikenTestAlternative = {
 type AikenTestMaxGroup = {
   name: string;
   alternatives: AikenTestAlternative[];
+};
+
+type PairedAikenTest = {
+  name: string;
+  baselineTest: string;
+  measuredTest: string;
+};
+
+type StagedExecutionScenario = {
+  id: string;
+  name: string;
+  pairs: PairedAikenTest[];
+};
+
+type StagedExecutionReport = BudgetScenario & {
+  pairs: Array<
+    PairedAikenTest & {
+      baseline: ExUnits;
+      measured: ExUnits;
+      marginal: ExUnits;
+    }
+  >;
 };
 
 type ScenarioInput = {
@@ -149,6 +177,82 @@ const CAPACITY_SCENARIOS = [
     aikenTest: 'spending_client_capacity.test.update_client_capacity_non_adjacent_mixed_45_succeeds',
   },
 ] as const;
+
+const STAGED_TENDERMINT_EXECUTION_SCENARIOS: StagedExecutionScenario[] = [
+  {
+    id: 'tendermint_staged_session_initialize',
+    name: 'Staged Tendermint session initialization',
+    pairs: [
+      {
+        name: 'session NFT mint',
+        baselineTest: 'minting_tendermint_update_session.test.session_mint_fixture_setup_baseline',
+        measuredTest: 'minting_tendermint_update_session.test.mints_one_seed_bound_session_with_exact_initial_datum',
+      },
+    ],
+  },
+  {
+    id: 'tendermint_staged_adjacent_six_validator_batch',
+    name: 'Staged Tendermint adjacent six-validator batch',
+    pairs: [
+      {
+        name: 'six target validators and signatures',
+        baselineTest: 'spending_tendermint_update_session.test.real_injective_six_validator_fixture_setup_baseline',
+        measuredTest: 'spending_tendermint_update_session.test.advances_real_injective_six_validator_target_batch',
+      },
+    ],
+  },
+  {
+    id: 'tendermint_staged_non_adjacent_six_validator_batch',
+    name: 'Staged Tendermint skipped-height six-validator batch',
+    pairs: [
+      {
+        name: 'six target validators, signatures, and trusted memberships',
+        baselineTest: 'spending_tendermint_update_session.test.real_non_adjacent_six_membership_fixture_setup_baseline',
+        measuredTest: 'spending_tendermint_update_session.test.advances_real_non_adjacent_six_membership_target_batch',
+      },
+    ],
+  },
+  {
+    id: 'tendermint_staged_depth_eight_six_validator_batch',
+    name: 'Staged Tendermint 256-validator depth-eight six-validator batch',
+    pairs: [
+      {
+        name: 'six target validators, signatures, and depth-eight trusted memberships',
+        baselineTest:
+          'spending_tendermint_update_session.test.depth_eight_non_adjacent_six_membership_fixture_setup_baseline',
+        measuredTest:
+          'spending_tendermint_update_session.test.advances_depth_eight_non_adjacent_six_membership_target_batch',
+      },
+    ],
+  },
+  {
+    id: 'tendermint_staged_finalize',
+    name: 'Staged Tendermint minimum-history finalization',
+    pairs: [
+      {
+        name: 'HostState root transition',
+        baselineTest: 'host_state_stt.test.host_update_client_capacity_fixture_setup_baseline',
+        measuredTest: 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds',
+      },
+      {
+        name: 'client state transition',
+        baselineTest: 'spending_multitx_client.test.completed_session_update_fixture_setup_baseline',
+        measuredTest: 'spending_multitx_client.test.completed_session_updates_the_client_atomically',
+      },
+      {
+        name: 'session completion authorization',
+        baselineTest: 'spending_tendermint_update_session.test.session_finalize_fixture_setup_baseline',
+        measuredTest:
+          'spending_tendermint_update_session.test.complete_session_requires_client_and_host_threads_and_burn',
+      },
+      {
+        name: 'session NFT burn',
+        baselineTest: 'minting_tendermint_update_session.test.session_burn_fixture_setup_baseline',
+        measuredTest: 'minting_tendermint_update_session.test.burns_only_a_token_carried_by_the_session_script',
+      },
+    ],
+  },
+];
 
 function readIntegerEnv(name: string, fallback: number): number {
   const value = process.env[name]?.trim();
@@ -223,6 +327,37 @@ function sumExUnits(aikenTests: Map<string, ExUnits>, testNames: string[]): ExUn
       }),
       { mem: 0, steps: 0 },
     );
+}
+
+function buildStagedExecutionReports(aikenTests: Map<string, ExUnits>): StagedExecutionReport[] {
+  return STAGED_TENDERMINT_EXECUTION_SCENARIOS.map((scenario) => {
+    const pairs = scenario.pairs.map((pair) => {
+      const baseline = requiredAikenTestUnits(aikenTests, pair.baselineTest);
+      const measured = requiredAikenTestUnits(aikenTests, pair.measuredTest);
+      return {
+        ...pair,
+        baseline,
+        measured,
+        marginal: subtractBaselineExUnits(measured, baseline),
+      };
+    });
+    const exUnits = pairs.reduce(
+      (sum, pair) => ({
+        mem: sum.mem + pair.marginal.mem,
+        steps: sum.steps + pair.marginal.steps,
+      }),
+      { mem: 0, steps: 0 },
+    );
+
+    return {
+      id: scenario.id,
+      name: scenario.name,
+      unsignedBytes: 0,
+      signedBytesEstimate: 0,
+      exUnits,
+      pairs,
+    };
+  });
 }
 
 function estimateUnsignedBytes(validators: Map<string, BlueprintValidator>, scenario: ScenarioInput): number {
@@ -1323,6 +1458,32 @@ function printReport(reports: ScenarioReport[], maxTxSize: number, txHeadroomByt
   }
 }
 
+function printStagedExecutionReports(
+  reports: StagedExecutionReport[],
+  maxTxExMem: number,
+  maxTxExSteps: number,
+  exUnitHeadroomBps: number,
+): void {
+  const safeMem = Math.floor((maxTxExMem * (10_000 - exUnitHeadroomBps)) / 10_000);
+  const safeSteps = Math.floor((maxTxExSteps * (10_000 - exUnitHeadroomBps)) / 10_000);
+  console.log(
+    `\nStaged Tendermint paired execution-unit report ` +
+      `(safe mem=${safeMem}, safe steps=${safeSteps}, reserve=${exUnitHeadroomBps / 100}%)`,
+  );
+  for (const report of reports) {
+    console.log(`\n${report.name}`);
+    for (const pair of report.pairs) {
+      console.log(
+        `  ${pair.name}: measured mem=${pair.measured.mem} steps=${pair.measured.steps}; ` +
+          `baseline mem=${pair.baseline.mem} steps=${pair.baseline.steps}; ` +
+          `marginal mem=${pair.marginal.mem} steps=${pair.marginal.steps}`,
+      );
+    }
+    console.log(`  total marginal: mem=${report.exUnits.mem} steps=${report.exUnits.steps}`);
+    console.log(`  safe margin: mem=${safeMem - report.exUnits.mem} steps=${safeSteps - report.exUnits.steps}`);
+  }
+}
+
 function formatPayloads(payloads: SizedPayload[]): string {
   if (payloads.length === 0) {
     return 'none';
@@ -1345,12 +1506,14 @@ async function main() {
   const aikenTests = toAikenTestMap(aikenCheckReport);
   const reports = await buildScenarios(validators, aikenTests);
   const capacityReports = await buildCapacityReports(aikenTests);
+  const stagedExecutionReports = buildStagedExecutionReports(aikenTests);
 
   printReport(reports, maxTxSize, txHeadroomBytes);
   console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
   console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
+  printStagedExecutionReports(stagedExecutionReports, maxTxExMem, maxTxExSteps, exUnitHeadroomBps);
 
-  const { failures, knownViolations } = checkTransactionBudgets(reports, {
+  const { failures, knownViolations } = checkTransactionBudgets([...reports, ...stagedExecutionReports], {
     maxTxSize,
     txHeadroomBytes,
     maxTxExMem,

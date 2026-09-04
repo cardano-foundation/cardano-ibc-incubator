@@ -38,6 +38,20 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
   }, common);
 }
 
+export function subtractBaselineExUnits(measured: ExUnits, baseline: ExUnits): ExUnits {
+  if (baseline.mem > measured.mem || baseline.steps > measured.steps) {
+    throw new Error(
+      `execution-unit baseline mem=${baseline.mem} steps=${baseline.steps} exceeds ` +
+        `measured mem=${measured.mem} steps=${measured.steps}`,
+    );
+  }
+
+  return {
+    mem: measured.mem - baseline.mem,
+    steps: measured.steps - baseline.steps,
+  };
+}
+
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
     unsignedBytes: 15_780,

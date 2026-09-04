@@ -354,7 +354,6 @@ fn live_client_with_older_trusted_height(latest_timestamp: Int) -> ClientDatum {
   ClientDatum {
     ..client,
     state: ClientDatumState {
-      ..client.state,
       client_state: ClientState { ..client.state.client_state, latest_height },
       consensus_states: [
         Pair(latest_height, latest_consensus_state),
