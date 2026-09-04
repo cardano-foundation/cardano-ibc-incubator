@@ -54,16 +54,15 @@ validator unit contexts and are summed for the two spending scripts rather
 than being extracted from a completed transaction. Every generated report
 prints these qualifications.
 
-The execution-unit figures below were measured on `main` at `2c1c8c1f` and
-include the verifier optimizations in PR #657. CI recomputes them for every
-relevant Aiken or encoder change; the serialized-size result is independent of
-those verifier optimizations.
+The execution-unit figures below include the verifier optimizations in PR #657.
+CI recomputes them for every relevant Aiken or encoder change; the
+serialized-size result is independent of those verifier optimizations.
 
 | Scenario                               | Signed bytes | Absolute margin | Safe margin |     Memory |            CPU |
 | -------------------------------------- | -----------: | --------------: | ----------: | ---------: | -------------: |
-| Adjacent, all 45 commits               |       16,791 |            -407 |      -1,157 | 72,091,542 | 23,675,599,153 |
-| Adjacent, 43 commit + absent + nil     |       16,698 |            -314 |      -1,064 | 71,866,206 | 23,551,367,592 |
-| Non-adjacent, 43 commit + absent + nil |       16,698 |            -314 |      -1,064 | 80,979,625 | 28,348,286,191 |
+| Adjacent, all 45 commits               |       16,791 |            -407 |      -1,157 | 73,474,132 | 24,139,660,487 |
+| Adjacent, 43 commit + absent + nil     |       16,698 |            -314 |      -1,064 | 73,248,996 | 24,015,460,926 |
+| Non-adjacent, 43 commit + absent + nil |       16,698 |            -314 |      -1,064 | 82,364,719 | 28,812,987,297 |
 
 Even the smallest candidate is 314 bytes over Cardano's absolute transaction
 limit before provider completion can add anything. Every measured scenario
@@ -73,9 +72,10 @@ size and execution cost are both binding constraints.
 ## Interpretation
 
 These measurements establish why a normal update cannot remain one transaction.
-The multi-transaction protocol below sets and tests a separate 256-validator
-limit. Explicit two-header misbehaviour evidence still requires its own design
-because its payload shape is materially larger than a normal update.
+The multi-transaction protocol below has a structural limit of 256 validators
+and checks the worst-case six-validator batch at that tree depth. Explicit
+two-header misbehaviour evidence still requires its own design because its
+payload shape is materially larger than a normal update.
 
 ## Experimental multi-transaction update protocol
 
@@ -111,8 +111,9 @@ original update instead of reporting success. Confirmed update events can be
 reconstructed from historical session outputs and their indexed redeemers; they
 do not depend on process memory.
 
-Version 1 supports at most 256 validators. With equal trusted and target set
-sizes, its deterministic transaction counts are:
+Version 1 has a structural cap of 256 validators. A live 200- or 256-validator
+update has not been completed yet. With equal trusted and target set sizes, its
+deterministic transaction counts are:
 
 | Validators | Adjacent update | Skipped-height update |
 | ---------: | --------------: | --------------------: |
@@ -124,22 +125,21 @@ sizes, its deterministic transaction counts are:
 The hard batch limit is six. Prepared-fixture Aiken tests subtract an identical
 fixture-construction baseline, because decoding the legacy 45-validator CBOR
 and deriving the expected continuation are not ledger work. The marginal
-six-entry adjacent step costs 11,704,438 memory and 3,943,023,573 CPU; the
+six-entry adjacent step costs 11,716,641 memory and 3,946,918,427 CPU; the
 45-validator skipped-height step with six trusted-membership proofs costs
-14,793,854 memory and 4,772,303,193 CPU. A precomputed canonical 256-validator
+14,806,057 memory and 4,776,198,047 CPU. A precomputed canonical 256-validator
 root with six depth-eight proofs at bitmap indices 250 through 255 costs
-38,700,147 memory and 11,520,189,768 CPU raw. Against its 23,630,558-memory and
-6,544,637,059-CPU setup baseline, that is 15,069,589 memory and 4,975,552,709
-CPU of marginal validator work, leaving 605,411 memory below the project's
-15,675,000 safe limit. Seven depth-six proofs already cost 15,978,541 memory,
-so the consensus batch limit remains six.
+38,700,147 memory and 11,520,189,768 CPU raw. Against its 23,634,810-memory and
+6,546,126,609-CPU setup baseline, that is 15,065,337 memory and 4,974,063,159
+CPU of marginal validator work, leaving 609,663 memory below the project's
+15,675,000 safe limit. The consensus batch limit remains six.
 
 The paired session-init mint test costs 8,739,800 memory and 2,909,344,910 CPU
 raw, against a 2,287,117-memory and 863,077,474-CPU setup baseline: a marginal
 6,452,683 memory and 2,046,267,436 CPU.
 
 Paired fixture baselines estimate the four scripts in the minimum-history final
-transaction at 12,730,661 memory and 3,989,930,237 CPU in total. This is a
+transaction at 12,759,352 memory and 4,000,973,933 CPU in total. This is a
 subtracted Aiken-test estimate, not a provider evaluation of one combined
 transaction.
 
