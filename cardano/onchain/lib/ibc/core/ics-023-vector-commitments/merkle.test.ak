@@ -88,9 +88,7 @@ test test_verify_membership_rejects_nonexist_before_exist() fail {
     }
 
   merkle.verify_membership(
-    MerkleProof {
-      proofs: [null_nonexist_commitment_proof(), exist_proof],
-    },
+    MerkleProof { proofs: [null_nonexist_commitment_proof(), exist_proof] },
     merkle.get_sdk_specs(),
     MerkleRoot { hash: proof.calculate(exist_proof) },
     MerklePath { key_path: ["store", key] },
