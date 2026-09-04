@@ -5,6 +5,7 @@
     "@std/path": "jsr:@std/path@^1.0.13",
     "@std/fs": "jsr:@std/fs@^1.0.13",
     "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.4.29",
+    "@lucid-evolution/provider": "npm:@lucid-evolution/provider@0.1.90",
     "@lucid-evolution/utils": "npm:@lucid-evolution/utils@0.1.66",
     "@noble/hashes/blake2b": "npm:@noble/hashes@1.8.0/blake2b",
     "ws": "npm:ws@7.5.10"
@@ -20,6 +21,7 @@
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
     "check": "deno check index.ts src/*.ts scripts/*.ts types/**/*.ts",
+    "test:shutdown": "deno test --allow-env --allow-read scripts/shutdown-deployment.test.ts",
     "shutdown:deployment": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts",
     "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi --allow-write index.ts"
   }
