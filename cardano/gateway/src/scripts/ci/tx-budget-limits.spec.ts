@@ -3,6 +3,7 @@ import {
   type BudgetLimits,
   type BudgetScenario,
   checkTransactionBudgets,
+  subtractBaselineExUnits,
 } from './tx-budget-limits';
 
 const limits: BudgetLimits = {
@@ -34,6 +35,18 @@ describe('transaction budget limits', () => {
         ],
       ]),
     ).toEqual({ mem: 130, steps: 1_040 });
+  });
+
+  it('subtracts paired fixture setup costs from measured execution units', () => {
+    expect(
+      subtractBaselineExUnits({ mem: 38_700_147, steps: 11_520_189_768 }, { mem: 23_634_810, steps: 6_546_126_609 }),
+    ).toEqual({ mem: 15_065_337, steps: 4_974_063_159 });
+  });
+
+  it('rejects a fixture baseline larger than its paired measurement', () => {
+    expect(() => subtractBaselineExUnits({ mem: 10, steps: 20 }, { mem: 11, steps: 20 })).toThrow(
+      'execution-unit baseline mem=11 steps=20 exceeds measured mem=10 steps=20',
+    );
   });
 
   it('accepts an ordinary scenario within the public-network limits', () => {

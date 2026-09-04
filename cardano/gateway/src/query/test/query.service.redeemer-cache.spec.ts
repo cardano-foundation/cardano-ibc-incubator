@@ -46,6 +46,20 @@ describe('QueryService transaction redeemer cache', () => {
     expect(fetchTransactionEvidence).toHaveBeenCalledTimes(1);
   });
 
+  it('shares cached transaction evidence with redeemer decoding', async () => {
+    const txEvidence = evidence('abc');
+    const fetchTransactionEvidence = jest.fn().mockResolvedValue(txEvidence);
+    const service = makeService(fetchTransactionEvidence);
+    const getTransactionEvidence = (service as any).getTransactionEvidence.bind(service);
+    const getTransactionRedeemers = (service as any).getTransactionRedeemers.bind(service);
+
+    await expect(getTransactionEvidence('ABC')).resolves.toBe(txEvidence);
+    await expect(getTransactionRedeemers('abc')).resolves.toEqual([
+      { type: 'spend', index: 0n, data: 'd87980' },
+    ]);
+    expect(fetchTransactionEvidence).toHaveBeenCalledTimes(1);
+  });
+
   it('removes failed lookups so a later request can retry', async () => {
     const fetchTransactionEvidence = jest
       .fn()
@@ -82,7 +96,7 @@ describe('QueryService transaction redeemer cache', () => {
       await getTransactionRedeemers(`tx-${index}`);
     }
 
-    expect((service as any).txRedeemerCache.size).toBe(TX_REDEEMER_CACHE_MAX_ENTRIES);
+    expect((service as any).txEvidenceCache.size).toBe(TX_REDEEMER_CACHE_MAX_ENTRIES);
     await getTransactionRedeemers('tx-0');
     expect(fetchTransactionEvidence).toHaveBeenCalledTimes(TX_REDEEMER_CACHE_MAX_ENTRIES + 2);
     expect(metrics.setCacheEntries).toHaveBeenLastCalledWith('tx_redeemers', TX_REDEEMER_CACHE_MAX_ENTRIES);

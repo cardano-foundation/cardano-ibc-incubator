@@ -38,21 +38,34 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
   }, common);
 }
 
+export function subtractBaselineExUnits(measured: ExUnits, baseline: ExUnits): ExUnits {
+  if (baseline.mem > measured.mem || baseline.steps > measured.steps) {
+    throw new Error(
+      `execution-unit baseline mem=${baseline.mem} steps=${baseline.steps} exceeds ` +
+        `measured mem=${measured.mem} steps=${measured.steps}`,
+    );
+  }
+
+  return {
+    mem: measured.mem - baseline.mem,
+    steps: measured.steps - baseline.steps,
+  };
+}
+
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
-    unsignedBytes: 15_840,
-    signedBytesEstimate: 16_100,
+    signedBytesEstimate: 15_775,
   },
   send_packet_at_commitment_capacity: {
-    mem: 52_816_011,
-    steps: 16_522_531_327,
+    mem: 52_840_821,
+    steps: 16_532_223_749,
   },
   recv_packet_at_history_capacity: {
-    mem: 49_356_343,
-    steps: 15_355_134_504,
+    mem: 49_397_051,
+    steps: 15_371_937_200,
   },
   prune_packet_history_at_capacity: {
-    mem: 27_573_829,
+    mem: 27_591_361,
   },
   trace_registry_rollover: {
     mem: 32_118_256,
@@ -61,8 +74,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
   first_seen_voucher_receive_at_capacity: {
     unsignedBytes: 20_615,
     signedBytesEstimate: 20_875,
-    mem: 96_763_249,
-    steps: 31_523_623_002,
+    mem: 96_805_885,
+    steps: 31_541_023_235,
   },
   first_seen_voucher_mint: {
     mem: 38_315_184,

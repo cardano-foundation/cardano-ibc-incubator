@@ -9,7 +9,6 @@ use ibc/apps/transfer/escrow.{TransferModuleSpend}
 use ibc/apps/transfer/mint_voucher_redeemer.{MintVoucherRedeemer, RefundVoucher}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
-use ibc/apps/transfer/value_delta
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
@@ -135,14 +134,8 @@ pub fn validate_refund_packet_token(
       mint_voucher_redeemer
     trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
 
-    let updated_output = transfer_escrow.expect_module_state(spend)
-
     and {
-      value_delta.validate_output_amount(
-        spent_input,
-        updated_output,
-        assets.zero,
-      )?,
+      transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
       (packet_source_port == packet.source_port)?,
       (packet_source_channel == packet.source_channel)?,
     }

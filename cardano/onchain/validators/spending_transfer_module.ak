@@ -16,7 +16,6 @@ use ibc/apps/transfer/transfer_module_redeemer.{
 }
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
-use ibc/apps/transfer/value_delta as transfer_value_delta
 use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
@@ -154,7 +153,6 @@ fn module_callback(
     }
 
     OnChanOpenInit { channel_id } -> {
-      let updated_output = transfer_escrow.expect_module_state(spend)
       let output_channel =
         transfer_channel_callback.validate_channel_open_init(
           redeemers,
@@ -165,11 +163,7 @@ fn module_callback(
           channel_id,
         )
       and {
-        transfer_value_delta.validate_output_amount(
-          spent_input,
-          updated_output,
-          assets.zero,
-        )?,
+        transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
         transfer_ibc_module.validate_on_chan_open_init(
           output_channel.ordering,
           output_channel.connection_hops,
@@ -182,7 +176,6 @@ fn module_callback(
     }
 
     OnChanOpenTry { channel_id } -> {
-      let updated_output = transfer_escrow.expect_module_state(spend)
       expect Some((output_channel, counterparty_version)) =
         transfer_channel_callback.validate_channel_open_try(
           redeemers,
@@ -193,11 +186,7 @@ fn module_callback(
           channel_id,
         )
       and {
-        transfer_value_delta.validate_output_amount(
-          spent_input,
-          updated_output,
-          assets.zero,
-        )?,
+        transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
         transfer_ibc_module.validate_on_chan_open_try(
           output_channel.ordering,
           output_channel.connection_hops,
@@ -211,7 +200,6 @@ fn module_callback(
     }
 
     OnChanOpenAck { channel_id } -> {
-      let updated_output = transfer_escrow.expect_module_state(spend)
       expect Some((output_channel, counterparty_version)) =
         transfer_channel_callback.validate_chan_open_ack(
           inputs,
@@ -224,11 +212,7 @@ fn module_callback(
         )
 
       and {
-        transfer_value_delta.validate_output_amount(
-          spent_input,
-          updated_output,
-          assets.zero,
-        )?,
+        transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
         transfer_ibc_module.validate_on_chan_open_ack(
           port_id,
           channel_id,
@@ -239,7 +223,6 @@ fn module_callback(
     }
 
     OnChanOpenConfirm { channel_id } -> {
-      let updated_output = transfer_escrow.expect_module_state(spend)
       expect Some(_) =
         transfer_channel_callback.validate_chan_open_confirm(
           inputs,
@@ -251,11 +234,7 @@ fn module_callback(
           channel_id,
         )
       and {
-        transfer_value_delta.validate_output_amount(
-          spent_input,
-          updated_output,
-          assets.zero,
-        )?,
+        transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
         transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)?,
       }
     }
@@ -391,16 +370,11 @@ fn module_callback(
           ) >= transfer_amount)?,
         }
       } else {
-        let updated_output = transfer_escrow.expect_module_state(spend)
         // Non-source receive mints vouchers.
         trace @"mint_voucher: tx mint voucher token"
 
         and {
-          transfer_value_delta.validate_output_amount(
-            spent_input,
-            updated_output,
-            assets.zero,
-          )?,
+          transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
           transfer_voucher_flow.validate_mint_voucher_packet(
             redeemers,
             voucher_minting_policy_id,
@@ -480,19 +454,13 @@ fn module_callback(
               packet,
             ),
           }
-        _ -> {
-          let updated_output = transfer_escrow.expect_module_state(spend)
+        _ ->
           // Ack success leaves transfer supply unchanged.
           and {
-            transfer_value_delta.validate_output_amount(
-              spent_input,
-              updated_output,
-              assets.zero,
-            )?,
+            transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
             fungible_token_packet_data.matches_bytes(tf_data, packet.data)?,
             (acknowledgement_mod.marshal_json(acknowledgement) == channel_ack)?,
           }
-        }
       }
     }
   }
@@ -595,14 +563,9 @@ fn module_operator(
 
         valid_transfer_amount
       } else {
-        let updated_output = transfer_escrow.expect_module_state(spend)
         // Sending from a sink chain destroys the voucher representation.
         and {
-          transfer_value_delta.validate_output_amount(
-            spent_input,
-            updated_output,
-            assets.zero,
-          )?,
+          transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
           transfer_voucher_flow.validate_burn_voucher_packet(
             redeemers,
             voucher_minting_policy_id,

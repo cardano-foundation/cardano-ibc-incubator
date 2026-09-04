@@ -111,6 +111,17 @@ import {
   decodeSpendClientRedeemer,
   SpendClientRedeemer,
 } from '@shared/types/client-redeemer';
+import type { Header as TendermintHeader } from '@shared/types/header';
+import {
+  decodeSessionDatum,
+  decodeSpendMultitxClientRedeemer,
+  decodeSpendSessionRedeemer,
+  sameTendermintUpdatePlan,
+  type SessionDatum,
+  type SpendSessionRedeemer,
+} from '@shared/types/tendermint-update-session';
+import { reconstructStagedTendermintHeader } from '@shared/helpers/staged-tendermint-event';
+import type { GatewayEvent } from '../../tx/tx-events.service';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
@@ -132,7 +143,7 @@ import {
 import { Denom, Hop } from '@cardano-ibc/proto-types/build/ibc/applications/transfer/v1/token';
 import { DenomTraceService } from './denom-trace.service';
 import { convertHex2String } from '@shared/helpers/hex';
-import { HISTORY_SERVICE, HistoryBlock, HistoryService } from './history.service';
+import { HISTORY_SERVICE, HistoryBlock, HistoryService, HistoryTxEvidence } from './history.service';
 import {
   resolveCurrentLiveHostStateTxHeight,
   resolveProofContextForQuery,
@@ -152,6 +163,11 @@ type ParsedTxRedeemer = {
   type: string;
   data: string;
   index: bigint;
+};
+
+type CanonicalTxInput = {
+  txHash: string;
+  outputIndex: number;
 };
 
 // Packet status responses keep raw attributes so callers can inspect partially decoded events.
@@ -207,7 +223,7 @@ function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
 }
 @Injectable()
 export class QueryService {
-  private readonly txRedeemerCache: BoundedCache<string, Promise<ParsedTxRedeemer[]>>;
+  private readonly txEvidenceCache: BoundedCache<string, Promise<HistoryTxEvidence>>;
 
   constructor(
     private readonly logger: Logger,
@@ -221,7 +237,7 @@ export class QueryService {
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
     @Optional() @Inject(MetricsService) metricsService?: MetricsService,
   ) {
-    this.txRedeemerCache = new BoundedCache({
+    this.txEvidenceCache = new BoundedCache({
       maxEntries: TX_REDEEMER_CACHE_MAX_ENTRIES,
       ttlMs: TX_REDEEMER_CACHE_TTL_MS,
       onSizeChange: (size) => metricsService?.setCacheEntries(TX_REDEEMER_CACHE_METRIC, size),
@@ -343,29 +359,259 @@ export class QueryService {
     });
   }
 
-  private async getTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
+  private async getTransactionEvidence(txHash: string): Promise<HistoryTxEvidence> {
     const cacheKey = txHash.toLowerCase();
-    let lookup = this.txRedeemerCache.get(cacheKey);
+    let lookup = this.txEvidenceCache.get(cacheKey);
     if (!lookup) {
-      lookup = this.loadTransactionRedeemers(cacheKey);
-      this.txRedeemerCache.set(cacheKey, lookup);
+      lookup = this.miniProtocalsService.fetchTransactionEvidence(cacheKey);
+      this.txEvidenceCache.set(cacheKey, lookup);
     }
 
     try {
       return await lookup;
     } catch (error) {
-      this.txRedeemerCache.deleteIfValue(cacheKey, lookup);
+      this.txEvidenceCache.deleteIfValue(cacheKey, lookup);
       throw error;
     }
   }
 
-  private async loadTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
-    const evidence = await this.miniProtocalsService.fetchTransactionEvidence(txHash);
+  private async getTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
+    const evidence = await this.getTransactionEvidence(txHash);
     return evidence.redeemers.map((redeemer) => ({
       type: redeemer.type,
       index: BigInt(redeemer.index),
       data: redeemer.data,
     }));
+  }
+
+  private async getCanonicalTransactionInputs(txHash: string): Promise<CanonicalTxInput[]> {
+    const evidence = await this.getTransactionEvidence(txHash);
+    if (!evidence.txBodyCborHex) {
+      throw new Error(`Cannot bind historical redeemers for ${txHash}: transaction body evidence is missing`);
+    }
+
+    const { CML } = this.lucidService.LucidImporter;
+    const body = CML.TransactionBody.from_cbor_hex(evidence.txBodyCborHex);
+    const bodyInputs = body.inputs();
+    const inputs: CanonicalTxInput[] = [];
+    for (let index = 0; index < bodyInputs.len(); index += 1) {
+      const input = bodyInputs.get(index);
+      inputs.push({
+        txHash: input.transaction_id().to_hex().toLowerCase(),
+        outputIndex: Number(input.index()),
+      });
+    }
+
+    return inputs.sort((left, right) => {
+      if (left.txHash !== right.txHash) return left.txHash < right.txHash ? -1 : 1;
+      return left.outputIndex - right.outputIndex;
+    });
+  }
+
+  private findInputIndexForToken(
+    inputs: readonly CanonicalTxInput[],
+    historicalOutputs: readonly UtxoDto[],
+    address: string,
+    token: AuthToken,
+  ): number | null {
+    const expectedRefs = new Set(
+      historicalOutputs
+        .filter(
+          (utxo) =>
+            utxo.address.toLowerCase() === address.toLowerCase() &&
+            utxo.assetsPolicy.toLowerCase() === token.policyId.toLowerCase() &&
+            utxo.assetsName.toLowerCase() === token.name.toLowerCase(),
+        )
+        .map((utxo) => `${utxo.txHash.toLowerCase()}#${utxo.outputIndex}`),
+    );
+    const indexes = inputs.flatMap((input, index) =>
+      expectedRefs.has(`${input.txHash}#${input.outputIndex}`) ? [index] : [],
+    );
+    if (indexes.length > 1) {
+      throw new Error(
+        `Cannot bind historical redeemer: transaction consumes the ${token.policyId}${token.name} token more than once`,
+      );
+    }
+    return indexes[0] ?? null;
+  }
+
+  private async findStagedFinalizationSessionToken(
+    clientUtxo: UtxoDto,
+    clientDatum: ClientDatum,
+    redeemers: ParsedTxRedeemer[],
+  ): Promise<AuthToken | null> {
+    const deploymentConfig = this.configService.get('deployment');
+    const expectedPolicyId = deploymentConfig.validators.mintTendermintUpdateSession?.scriptHash;
+    if (!expectedPolicyId) return null;
+
+    const containsFinalization = redeemers.some((redeemer) => {
+      if (redeemer.type !== REDEEMER_TYPE.SPEND) return false;
+      try {
+        const decoded = decodeSpendMultitxClientRedeemer(redeemer.data, this.lucidService.LucidImporter);
+        return (
+          typeof decoded !== 'string' &&
+          'FinalizeUpdate' in decoded &&
+          decoded.FinalizeUpdate.sessionToken.policyId.toLowerCase() === expectedPolicyId.toLowerCase()
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (!containsFinalization) return null;
+
+    const spendClientAddress = deploymentConfig.validators.spendClient?.address;
+    const clientPolicyId = deploymentConfig.validators.mintClientStt?.scriptHash;
+    if (!spendClientAddress || !clientPolicyId) {
+      throw new Error('Cannot bind staged finalization without the configured client scripts');
+    }
+    const clientToken = clientDatum.token;
+    if (
+      clientToken.policyId.toLowerCase() !== clientPolicyId.toLowerCase() ||
+      clientUtxo.assetsPolicy.toLowerCase() !== clientPolicyId.toLowerCase() ||
+      clientUtxo.assetsName.toLowerCase() !== clientToken.name.toLowerCase()
+    ) {
+      throw new Error('Cannot bind staged finalization to the canonical client NFT');
+    }
+
+    const [inputs, clientHistory] = await Promise.all([
+      this.getCanonicalTransactionInputs(clientUtxo.txHash),
+      this.historyService.findUtxosByPolicyIdAndPrefixTokenName(clientToken.policyId, clientToken.name),
+    ]);
+    const clientInputIndex = this.findInputIndexForToken(inputs, clientHistory, spendClientAddress, clientToken);
+    if (clientInputIndex === null) return null;
+
+    const clientRedeemer = redeemers.find(
+      (redeemer) => redeemer.type === REDEEMER_TYPE.SPEND && redeemer.index === BigInt(clientInputIndex),
+    );
+    if (!clientRedeemer) return null;
+
+    try {
+      const decoded = decodeSpendMultitxClientRedeemer(clientRedeemer.data, this.lucidService.LucidImporter);
+      if (
+        typeof decoded !== 'string' &&
+        'FinalizeUpdate' in decoded &&
+        decoded.FinalizeUpdate.sessionToken.policyId.toLowerCase() === expectedPolicyId.toLowerCase()
+      ) {
+        return decoded.FinalizeUpdate.sessionToken;
+      }
+    } catch {
+      // A client input using the legacy redeemer belongs to the direct protocol.
+    }
+    return null;
+  }
+
+  private async recoverStagedTendermintHeader(
+    clientUtxo: UtxoDto,
+    clientDatum: ClientDatum,
+    finalRedeemers: ParsedTxRedeemer[],
+  ): Promise<TendermintHeader | null> {
+    const sessionToken = await this.findStagedFinalizationSessionToken(clientUtxo, clientDatum, finalRedeemers);
+    if (!sessionToken) return null;
+
+    const deploymentConfig = this.configService.get('deployment');
+    const sessionAddress = deploymentConfig.validators.spendTendermintUpdateSession?.address;
+    if (!sessionAddress) {
+      throw new Error('Cannot reconstruct staged Tendermint event without the session spending validator');
+    }
+
+    const historicalOutputs = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(
+      sessionToken.policyId,
+      sessionToken.name,
+    );
+    const decodedOutputs: Array<{ utxo: UtxoDto; datum: SessionDatum }> = [];
+    for (const utxo of historicalOutputs) {
+      if (
+        utxo.blockNo > clientUtxo.blockNo ||
+        utxo.assetsPolicy.toLowerCase() !== sessionToken.policyId.toLowerCase() ||
+        utxo.assetsName.toLowerCase() !== sessionToken.name.toLowerCase() ||
+        utxo.address.toLowerCase() !== sessionAddress.toLowerCase() ||
+        !utxo.datum
+      ) {
+        continue;
+      }
+      try {
+        const datum = decodeSessionDatum(utxo.datum, this.lucidService.LucidImporter);
+        if (
+          datum.sessionToken.policyId.toLowerCase() === sessionToken.policyId.toLowerCase() &&
+          datum.sessionToken.name.toLowerCase() === sessionToken.name.toLowerCase()
+        ) {
+          decodedOutputs.push({ utxo, datum });
+        }
+      } catch {
+        // Ignore malformed/unrelated historical outputs; exact receipt checks follow.
+      }
+    }
+
+    const completeOutputs = decodedOutputs.filter(
+      ({ datum }) =>
+        'Complete' in datum.phase &&
+        datum.plan.clientToken.policyId.toLowerCase() === clientDatum.token.policyId.toLowerCase() &&
+        datum.plan.clientToken.name.toLowerCase() === clientDatum.token.name.toLowerCase(),
+    );
+    if (completeOutputs.length !== 1) {
+      throw new Error(
+        `Cannot reconstruct staged Tendermint event: expected one completed session output, found ${completeOutputs.length}`,
+      );
+    }
+
+    const completeSession = completeOutputs[0].datum;
+    const sessionOutputsForPlan = decodedOutputs.filter(({ datum }) =>
+      sameTendermintUpdatePlan(datum.plan, completeSession.plan, this.lucidService.LucidImporter),
+    );
+    const sessionTxHashes = Array.from(new Set(sessionOutputsForPlan.map(({ utxo }) => utxo.txHash.toLowerCase())));
+    const sessionRedeemers: SpendSessionRedeemer[] = [];
+    const historicalTransactions = await Promise.all(
+      sessionTxHashes.map(async (txHash) => ({
+        txHash,
+        inputs: await this.getCanonicalTransactionInputs(txHash),
+        redeemers: await this.getTransactionRedeemers(txHash),
+      })),
+    );
+    for (const transaction of historicalTransactions) {
+      const sessionInputIndex = this.findInputIndexForToken(
+        transaction.inputs,
+        sessionOutputsForPlan.map(({ utxo }) => utxo),
+        sessionAddress,
+        sessionToken,
+      );
+      if (sessionInputIndex === null) continue;
+
+      const sessionRedeemer = transaction.redeemers.find(
+        (redeemer) => redeemer.type === REDEEMER_TYPE.SPEND && redeemer.index === BigInt(sessionInputIndex),
+      );
+      if (!sessionRedeemer) {
+        throw new Error(
+          `Cannot reconstruct staged Tendermint event: session redeemer missing in ${transaction.txHash}`,
+        );
+      }
+      try {
+        const decoded = decodeSpendSessionRedeemer(sessionRedeemer.data, this.lucidService.LucidImporter);
+        if (typeof decoded !== 'string' && ('VerifyTrusted' in decoded || 'VerifyTarget' in decoded)) {
+          sessionRedeemers.push(decoded);
+        }
+      } catch {
+        throw new Error(
+          `Cannot reconstruct staged Tendermint event: invalid session redeemer in ${transaction.txHash}`,
+        );
+      }
+    }
+
+    return reconstructStagedTendermintHeader(completeSession, sessionRedeemers);
+  }
+
+  private clientEventType(redeemers: ParsedTxRedeemer[], stagedHeader: TendermintHeader | null): string {
+    if (stagedHeader) return EVENT_TYPE_CLIENT.UPDATE_CLIENT;
+
+    const hasMintClientRedeemer = redeemers
+      .filter((redeemer) => redeemer.type === REDEEMER_TYPE.MINT)
+      .some((redeemer) => {
+        try {
+          return decodeMintClientRedeemer(redeemer.data, this.lucidService.LucidImporter) === 'MintClient';
+        } catch {
+          return false;
+        }
+      });
+    return hasMintClientRedeemer ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
   }
 
   async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
@@ -1292,16 +1538,6 @@ export class QueryService {
           }
 
           const redeemers = await this.getTransactionRedeemers(clientUtxo.txHash);
-          const hasMintClientRedeemer = redeemers
-            .filter((redeemer) => redeemer.type === REDEEMER_TYPE.MINT)
-            .some((redeemer) => {
-              try {
-                return decodeMintClientRedeemer(redeemer.data, this.lucidService.LucidImporter) === 'MintClient';
-              } catch {
-                return false;
-              }
-            });
-          const eventClient = hasMintClientRedeemer ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
           const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
           let spendClientRedeemerData: SpendClientRedeemer = 'Other';
           if (spendClientRedeemer) {
@@ -1314,12 +1550,15 @@ export class QueryService {
               spendClientRedeemerData = 'Other';
             }
           }
+          const stagedHeader = await this.recoverStagedTendermintHeader(clientUtxo, clientDatum, redeemers);
+          const eventClient = this.clientEventType(redeemers, stagedHeader);
 
           const txsResult = normalizeTxsResultFromClientDatum(
             clientDatum,
             eventClient,
             clientId,
             spendClientRedeemerData,
+            stagedHeader,
           );
           return txsResult as unknown as ResponseDeliverTx;
         }),
@@ -1440,6 +1679,45 @@ export class QueryService {
     const utxosInBlock = await this.historyService.findUtxosByBlockNo(tx.height);
     const txChannelUtxos = utxosInBlock.filter((utxo) => utxo.txHash.toLowerCase() === normalizedHash);
     const events = await this.parsePacketEventsForChannelUtxos(txChannelUtxos, context);
+
+    return {
+      tx_hash: tx.hash,
+      height: tx.height.toString(),
+      indexed: true,
+      events,
+    };
+  }
+
+  /** Rebuild client events for one confirmed tx without relying on process-local synthetic events. */
+  async queryClientEventsByTxHash(hash: string): Promise<{
+    tx_hash: string;
+    height: string;
+    indexed: boolean;
+    events: GatewayEvent[];
+  }> {
+    if (!hash) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');
+    }
+
+    const normalizedHash = hash.toLowerCase();
+    const tx = await this.historyService.findTxByHash(normalizedHash);
+    if (!tx) {
+      throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
+    }
+
+    const clientUtxos = (await this.historyService.findClientUtxosByBlockNo(tx.height)).filter(
+      (utxo) => utxo.txHash.toLowerCase() === normalizedHash,
+    );
+    const txResults = await this._parseEventClient(clientUtxos);
+    const events = txResults.flatMap((result) =>
+      result.events.map((event) => ({
+        type: event.type,
+        attributes: event.event_attribute.map((attribute) => ({
+          key: attribute.key,
+          value: attribute.value,
+        })),
+      })),
+    );
 
     return {
       tx_hash: tx.hash,

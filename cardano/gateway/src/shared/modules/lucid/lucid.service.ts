@@ -58,6 +58,10 @@ import {
 } from "../../types/channel/channel-datum";
 import { convertString2Hex, hashSha3_256 } from "../../helpers/hex";
 import {
+  LedgerStateUtxo,
+  queryLedgerStateUtxosAtAddresses,
+} from "../../helpers/ogmios-utxo";
+import {
   encodeIBCModuleRedeemer,
   IBCModuleRedeemer,
 } from "@shared/types/port/ibc_module_redeemer";
@@ -188,6 +192,8 @@ type ReferenceScripts = {
   mintIdentifier: UTxO;
   spendConnection: UTxO;
   spendClient: UTxO;
+  spendTendermintUpdateSession?: UTxO;
+  mintTendermintUpdateSession?: UTxO;
   spendMockModule?: UTxO;
   spendTransferModule: UTxO;
   verifyProof: UTxO;
@@ -231,6 +237,10 @@ export class LucidService implements OnModuleInit {
       spendTraceRegistry: deploymentConfig.validators.spendTraceRegistry
         ?.refUtxo,
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
+      spendTendermintUpdateSession: deploymentConfig.validators
+        .spendTendermintUpdateSession?.refUtxo,
+      mintTendermintUpdateSession: deploymentConfig.validators
+        .mintTendermintUpdateSession?.refUtxo,
       spendMockModule: deploymentConfig.validators.spendMockModule?.refUtxo,
       spendTransferModule:
         deploymentConfig.validators.spendTransferModule.refUtxo,
@@ -922,6 +932,47 @@ export class LucidService implements OnModuleInit {
     );
     return mintClientPolicyId + clientTokenName;
   }
+
+  public hasStagedTendermintClient(): boolean {
+    const validators = this.configService.get("deployment").validators;
+    return Boolean(
+      validators.spendTendermintUpdateSession &&
+        validators.mintTendermintUpdateSession,
+    );
+  }
+
+  public getTendermintUpdateSessionPolicyId(): string {
+    const validator = this.configService.get("deployment").validators
+      .mintTendermintUpdateSession;
+    if (!validator) {
+      throw new GrpcInternalException(
+        "Staged Tendermint session minting policy is not configured",
+      );
+    }
+    return validator.scriptHash;
+  }
+
+  public getTendermintUpdateSessionAddress(): string {
+    const validator = this.configService.get("deployment").validators
+      .spendTendermintUpdateSession;
+    if (!validator?.address) {
+      throw new GrpcInternalException(
+        "Staged Tendermint session address is not configured",
+      );
+    }
+    return validator.address;
+  }
+
+  public async queryLedgerStateUtxosAtAddresses(addresses: string[]): Promise<LedgerStateUtxo[]> {
+    const ogmiosEndpoint = this.configService.get<string>("ogmiosEndpoint");
+    if (!ogmiosEndpoint) {
+      throw new GrpcInternalException(
+        "Ogmios is required to recover staged Tendermint sessions safely",
+      );
+    }
+    return queryLedgerStateUtxosAtAddresses(ogmiosEndpoint, addresses);
+  }
+
   public getConnectionTokenUnit(connectionId: bigint): [string, string] {
     const mintConnectionPolicyId = this.getMintConnectionScriptHash();
     const hostStateNFT: AuthToken =
@@ -991,6 +1042,133 @@ export class LucidService implements OnModuleInit {
       );
 
     return tx;
+  }
+
+  public createUnsignedTendermintSessionTransaction(
+    seedUtxo: UTxO,
+    encodedMintSessionRedeemer: string,
+    encodedSessionDatum: string,
+    sessionTokenUnit: string,
+    ownerKeyHash: string,
+  ): TxBuilder {
+    const mintSession = this.referenceScripts.mintTendermintUpdateSession;
+    if (!mintSession) {
+      throw new GrpcInternalException(
+        "Staged Tendermint session minting reference script is not configured",
+      );
+    }
+
+    return this.newTxBuilder()
+      .readFrom([mintSession])
+      .collectFrom([seedUtxo])
+      .mintAssets({ [sessionTokenUnit]: 1n }, encodedMintSessionRedeemer)
+      .pay.ToContract(
+        this.getTendermintUpdateSessionAddress(),
+        { kind: "inline", value: encodedSessionDatum },
+        { [sessionTokenUnit]: 1n },
+      )
+      .addSignerKey(ownerKeyHash);
+  }
+
+  public createUnsignedAdvanceTendermintSessionTransaction(
+    sessionUtxo: UTxO,
+    encodedSpendSessionRedeemer: string,
+    encodedNextSessionDatum: string,
+    sessionTokenUnit: string,
+    signerKeyHash: string,
+  ): TxBuilder {
+    const spendSession = this.referenceScripts.spendTendermintUpdateSession;
+    if (!spendSession) {
+      throw new GrpcInternalException(
+        "Staged Tendermint session spending reference script is not configured",
+      );
+    }
+
+    return this.newTxBuilder()
+      .readFrom([spendSession])
+      .collectFrom([sessionUtxo], encodedSpendSessionRedeemer)
+      .pay.ToContract(
+        this.getTendermintUpdateSessionAddress(),
+        { kind: "inline", value: encodedNextSessionDatum },
+        { [sessionTokenUnit]: 1n },
+      )
+      .addSignerKey(signerKeyHash);
+  }
+
+  public createUnsignedCancelTendermintSessionTransaction(
+    sessionUtxo: UTxO,
+    encodedSpendSessionRedeemer: string,
+    encodedBurnSessionRedeemer: string,
+    sessionTokenUnit: string,
+    signerKeyHash: string,
+  ): TxBuilder {
+    const spendSession = this.referenceScripts.spendTendermintUpdateSession;
+    const mintSession = this.referenceScripts.mintTendermintUpdateSession;
+    if (!spendSession || !mintSession) {
+      throw new GrpcInternalException(
+        "Staged Tendermint session reference scripts are not configured",
+      );
+    }
+
+    return this.newTxBuilder()
+      .readFrom([spendSession, mintSession])
+      .collectFrom([sessionUtxo], encodedSpendSessionRedeemer)
+      .mintAssets({ [sessionTokenUnit]: -1n }, encodedBurnSessionRedeemer)
+      .addSignerKey(signerKeyHash);
+  }
+
+  public createUnsignedFinalizeTendermintSessionTransaction(
+    hostStateUtxo: UTxO,
+    encodedHostStateRedeemer: string,
+    currentClientUtxo: UTxO,
+    encodedSpendClientRedeemer: string,
+    sessionUtxo: UTxO,
+    encodedSpendSessionRedeemer: string,
+    encodedBurnSessionRedeemer: string,
+    encodedUpdatedHostStateDatum: string,
+    encodedNewClientDatum: string,
+    clientTokenUnit: string,
+    sessionTokenUnit: string,
+    signerKeyHash: string,
+  ): TxBuilder {
+    const deploymentConfig = this.configService.get("deployment");
+    const spendSession = this.referenceScripts.spendTendermintUpdateSession;
+    const mintSession = this.referenceScripts.mintTendermintUpdateSession;
+    if (!spendSession || !mintSession) {
+      throw new GrpcInternalException(
+        "Staged Tendermint session reference scripts are not configured",
+      );
+    }
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
+      deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...hostStateUtxo,
+      datum: hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    return this.newTxBuilder()
+      .readFrom([
+        this.referenceScripts.hostStateStt,
+        this.referenceScripts.spendClient,
+        spendSession,
+        mintSession,
+      ])
+      .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
+      .collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
+      .collectFrom([sessionUtxo], encodedSpendSessionRedeemer)
+      .mintAssets({ [sessionTokenUnit]: -1n }, encodedBurnSessionRedeemer)
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        { kind: "inline", value: encodedUpdatedHostStateDatum },
+        { [hostStateNFT]: 1n },
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendClient.address,
+        { kind: "inline", value: encodedNewClientDatum },
+        { [clientTokenUnit]: 1n },
+      )
+      .addSignerKey(signerKeyHash);
   }
 
   public createUnsignedHostStateHeartbeatTransaction(

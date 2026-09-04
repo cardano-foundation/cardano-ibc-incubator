@@ -49,4 +49,15 @@ describe('IbcTreePendingUpdatesService cache lifecycle', () => {
     expect(service.commit('tx', update)).toBe(true);
     expect(service.peek('tx')).toBeUndefined();
   });
+
+  it('does not match a tree-neutral update through the expected-root fallback', () => {
+    const service = new IbcTreePendingUpdatesService();
+    const neutralUpdate = { kind: 'tree_neutral' as const, expectedNewRoot: 'root', commit: jest.fn() };
+    const treeUpdate = { kind: 'tree_update' as const, expectedNewRoot: 'root', commit: jest.fn() };
+    service.register('neutral-tx', neutralUpdate);
+    service.register('tree-tx', treeUpdate);
+
+    expect(service.takeByExpectedRoot('root')).toBe(treeUpdate);
+    expect(service.peek('neutral-tx')).toBe(neutralUpdate);
+  });
 });

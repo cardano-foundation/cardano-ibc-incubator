@@ -83,7 +83,7 @@ export class SubmissionService {
 
       let events = this.txEventsService.take(txHash) || this.txEventsService.takeByExpectedRoot(confirmedRoot) || [];
       if (events.length === 0) {
-        events = await this.findIndexedPacketEvents(txHash);
+        events = await this.findIndexedIbcEvents(txHash);
       }
       this.logger.log(`[DEBUG] Returning ${events.length} events for tx ${txHash}`);
 
@@ -103,7 +103,7 @@ export class SubmissionService {
   /**
    * Waits for a transaction Hermes submitted directly through its trusted
    * Cardano node connection, verifies the exact confirmed transaction body,
-   * and commits the matching in-memory IBC tree update.
+   * and finalizes the matching Gateway registration.
    *
    * The request deliberately contains only the canonical transaction hash;
    * signed transaction bytes are loaded from confirmed chain history and
@@ -118,14 +118,10 @@ export class SubmissionService {
     }
 
     const completed = this.completedObservations.get(txHash);
-    if (completed) {
-      return completed;
-    }
+    if (completed) return completed;
 
     const existing = this.observationInFlight.get(txHash);
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
 
     const pending = this.ibcTreePendingUpdatesService.peek(txHash);
     if (!pending) {
@@ -141,9 +137,7 @@ export class SubmissionService {
       })
       .catch((error) => {
         this.logger.error(`observeTransaction error for ${txHash}: ${error?.message ?? error}`, error?.stack);
-        if (error instanceof GrpcInternalException || error instanceof GrpcInvalidArgumentException) {
-          throw error;
-        }
+        if (error instanceof GrpcInternalException || error instanceof GrpcInvalidArgumentException) throw error;
         throw new GrpcInternalException(`Failed to observe transaction ${txHash}: ${error?.message ?? error}`);
       })
       .finally(() => {
@@ -158,6 +152,15 @@ export class SubmissionService {
     const evidence = await this.waitForIndexedTransactionEvidence(txHash);
     const confirmedBodyCborHex = this.verifyObservedTransactionEvidence(txHash, evidence);
 
+    if (pending.kind === 'tree_neutral') {
+      if (!this.ibcTreePendingUpdatesService.commit(txHash, pending)) {
+        throw new GrpcInternalException(
+          `Pending tree-neutral update for confirmed tx ${txHash} changed during observation`,
+        );
+      }
+      return { tx_hash: txHash, height: `0-${evidence.blockNo}`, events: [] };
+    }
+
     const confirmedRoot = await this.applyExactPendingIbcTreeUpdate(
       confirmedBodyCborHex,
       txHash,
@@ -167,15 +170,9 @@ export class SubmissionService {
     );
 
     let events = this.txEventsService.take(txHash) || this.txEventsService.takeByExpectedRoot(confirmedRoot) || [];
-    if (events.length === 0) {
-      events = await this.findIndexedPacketEvents(txHash);
-    }
+    if (events.length === 0) events = await this.findIndexedIbcEvents(txHash);
 
-    return {
-      tx_hash: txHash,
-      height: `0-${evidence.blockNo}`,
-      events,
-    };
+    return { tx_hash: txHash, height: `0-${evidence.blockNo}`, events };
   }
 
   private verifyObservedTransactionEvidence(txHash: string, evidence: HistoryTxEvidence): string {
@@ -217,8 +214,7 @@ export class SubmissionService {
   private canonicalizeTransactionBodyCbor(txBodyCborHex: string, txHash: string): string {
     try {
       const { CML } = this.lucidService.LucidImporter as any;
-      const body = CML.TransactionBody.from_cbor_hex(txBodyCborHex.toLowerCase());
-      return body.to_cbor_hex().toLowerCase();
+      return CML.TransactionBody.from_cbor_hex(txBodyCborHex.toLowerCase()).to_cbor_hex().toLowerCase();
     } catch (error) {
       throw new GrpcInternalException(
         `Failed to decode indexed transaction body for tx ${txHash}: ${error?.message ?? error}`,
@@ -230,38 +226,31 @@ export class SubmissionService {
     const normalizedCbor = txCborHex.toLowerCase();
     const { CML } = this.lucidService.LucidImporter as any;
 
-    let transaction: any;
     try {
-      transaction = CML.Transaction.from_cbor_hex(normalizedCbor);
-    } catch {
+      const transaction = CML.Transaction.from_cbor_hex(normalizedCbor);
+      if (transaction.is_valid() !== true) {
+        throw new GrpcInternalException(`Confirmed transaction ${txHash} is marked invalid`);
+      }
+      return transaction.body().to_cbor_hex().toLowerCase();
+    } catch (error) {
+      if (error instanceof GrpcInternalException) throw error;
       try {
         // Depending on Yaci mode, transaction_cbor contains a TransactionBody
         // directly rather than a complete transaction envelope.
         return CML.TransactionBody.from_cbor_hex(normalizedCbor).to_cbor_hex().toLowerCase();
-      } catch (error) {
+      } catch (bodyError) {
         throw new GrpcInternalException(
-          `Failed to decode indexed transaction evidence for tx ${txHash}: ${error?.message ?? error}`,
+          `Failed to decode indexed transaction evidence for tx ${txHash}: ${bodyError?.message ?? bodyError}`,
         );
       }
     }
-
-    // The body hash does not commit to this wrapper flag. A false flag causes
-    // script outputs not to be applied, so never finalize a pending tree update
-    // from an explicitly invalid transaction envelope.
-    if (transaction.is_valid() !== true) {
-      throw new GrpcInternalException(`Confirmed transaction ${txHash} is marked invalid`);
-    }
-    return transaction.body().to_cbor_hex().toLowerCase();
   }
 
   private computeTransactionBodyHashHex(txBodyCborHex: string): string | null {
     try {
       const { CML } = this.lucidService.LucidImporter as any;
       const body = CML.TransactionBody.from_cbor_hex(txBodyCborHex);
-      if (typeof CML.hash_transaction === 'function') {
-        return CML.hash_transaction(body).to_hex();
-      }
-      return null;
+      return typeof CML.hash_transaction === 'function' ? CML.hash_transaction(body).to_hex() : null;
     } catch {
       return null;
     }
@@ -321,9 +310,7 @@ export class SubmissionService {
       const { output, outputIndex } = this.findHostStateOutputInBody(body, txHash);
       const datumOption = output.datum?.();
       const plutusDatum = datumOption?.as_datum?.();
-      if (!plutusDatum) {
-        throw new Error(`Missing inline HostState datum in confirmed tx ${txHash}`);
-      }
+      if (!plutusDatum) throw new Error(`Missing inline HostState datum in confirmed tx ${txHash}`);
 
       const datumCborHex = plutusDatum.to_cbor_hex().toLowerCase();
       const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(datumCborHex, 'host_state');
@@ -355,15 +342,24 @@ export class SubmissionService {
   ): Promise<string> {
     // Tree updates are registered when building unsigned txs and keyed by tx hash.
     // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
-    let pending = this.ibcTreePendingUpdatesService.take(txHash);
+    let pending = this.ibcTreePendingUpdatesService.peek(txHash);
+    let pendingKey = txHash;
+    let pendingWasTakenByRoot = false;
     let confirmedRoot: string | undefined;
 
     // Best-effort: if hashes don't line up due to encoding/formatting, compute the canonical body hash.
     if (!pending) {
       const fallbackHash = this.computeTxBodyHashHex(signedTxCbor);
       if (fallbackHash && fallbackHash.toLowerCase() !== txHash.toLowerCase()) {
-        pending = this.ibcTreePendingUpdatesService.take(fallbackHash);
+        pending = this.ibcTreePendingUpdatesService.peek(fallbackHash);
+        pendingKey = fallbackHash;
       }
+    }
+
+    if (pending?.kind === 'tree_neutral') {
+      throw new GrpcInternalException(
+        `Tree-neutral staged transaction ${txHash} must be submitted by Hermes and finalized through ObserveTx`,
+      );
     }
 
     // Strict fallback: if hash matching fails, resolve the pending update by the resulting
@@ -373,6 +369,7 @@ export class SubmissionService {
       confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);
       pending = this.ibcTreePendingUpdatesService.takeByExpectedRoot(confirmedRoot);
       if (pending) {
+        pendingWasTakenByRoot = true;
         this.logger.warn(
           `Resolved pending IBC update for tx ${txHash} via confirmed-tx root fallback (hash-key lookup missed)`,
         );
@@ -399,15 +396,17 @@ export class SubmissionService {
       );
     }
 
-    pending.commit();
+    if (pendingWasTakenByRoot) {
+      pending.commit();
+    } else if (!this.ibcTreePendingUpdatesService.commit(pendingKey, pending)) {
+      throw new GrpcInternalException(`Pending IBC update for confirmed tx ${txHash} changed during finalization`);
+    }
 
     await this.persistIbcTreeUpdate(confirmedRoot, txHash, confirmedBlockNo);
-
     return confirmedRoot;
   }
 
   private async persistIbcTreeUpdate(confirmedRoot: string, txHash: string, confirmedBlockNo: bigint): Promise<void> {
-    // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
     if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
     try {
       await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
@@ -420,10 +419,17 @@ export class SubmissionService {
     }
   }
 
-  private async findIndexedPacketEvents(txHash: string): Promise<GatewayEvent[]> {
+  private async findIndexedIbcEvents(txHash: string): Promise<GatewayEvent[]> {
+    let clientEvents: GatewayEvent[] = [];
+    let packetEvents: GatewayEvent[] = [];
+    try {
+      clientEvents = (await this.queryService.queryClientEventsByTxHash(txHash)).events;
+    } catch (error) {
+      this.logger.debug(`No indexed client events found for tx ${txHash}: ${error?.message ?? error}`);
+    }
     try {
       const response = await this.queryService.queryPacketEventsByTxHash(txHash);
-      return response.events.map((event) => ({
+      packetEvents = response.events.map((event) => ({
         type: event.type,
         attributes: Object.entries(event.attributes).map(([key, value]) => ({
           key,
@@ -432,8 +438,14 @@ export class SubmissionService {
       }));
     } catch (error) {
       this.logger.debug(`No indexed packet events found for tx ${txHash}: ${error?.message ?? error}`);
-      return [];
     }
+
+    const unique = new Map<string, GatewayEvent>();
+    for (const event of [...clientEvents, ...packetEvents]) {
+      const key = JSON.stringify([event.type, event.attributes]);
+      if (!unique.has(key)) unique.set(key, event);
+    }
+    return [...unique.values()];
   }
 
   private async readConfirmedTxRoot(signedTxCbor: string, txHash: string): Promise<string> {
@@ -481,16 +493,12 @@ export class SubmissionService {
 
       const quantity = amount.multi_asset?.()?.get?.(policyId, tokenName);
       if (typeof quantity === 'bigint' ? quantity > 0n : quantity !== undefined) {
-        if (found) {
-          throw new Error(`Confirmed tx ${txHash} contains multiple HostState outputs`);
-        }
+        if (found) throw new Error(`Confirmed tx ${txHash} contains multiple HostState outputs`);
         found = { output, outputIndex: index };
       }
     }
 
-    if (!found) {
-      throw new Error(`Confirmed tx ${txHash} does not contain a HostState output`);
-    }
+    if (!found) throw new Error(`Confirmed tx ${txHash} does not contain a HostState output`);
     return found;
   }
 
@@ -540,7 +548,6 @@ export class SubmissionService {
         }
 
         const { currentSlot, invalidBefore, invalidAfter } = tooEarly;
-        // If we somehow reached here but the tx is already expired, do not retry.
         if (typeof invalidAfter === 'number' && currentSlot > invalidAfter) {
           const message = typeof error?.message === 'string' ? error.message : String(error);
           this.logger.error(
@@ -549,7 +556,6 @@ export class SubmissionService {
           throw new GrpcInternalException(`Cardano submission failed: ${message}`);
         }
 
-        // If we have retries left, wait until the lower bound should be satisfied and retry.
         if (attempt >= maxRetries) {
           const message = typeof error?.message === 'string' ? error.message : String(error);
           this.logger.error(
@@ -560,16 +566,13 @@ export class SubmissionService {
 
         const waitSlots = Math.max(1, invalidBefore - currentSlot);
         const waitMs = waitSlots * slotLengthMs + retryBackoffMs;
-
         this.logger.warn(
           `Tx rejected as too early (currentSlot=${currentSlot}, invalidBefore=${invalidBefore}); waiting ${waitMs}ms and retrying (attempt ${attempt + 1}/${maxRetries})`,
         );
-
         await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
     }
 
-    // Unreachable (loop either returns a tx hash or throws), but keeps TypeScript happy.
     throw new GrpcInternalException('Cardano submission failed: unexpected retry loop exit');
   }
 

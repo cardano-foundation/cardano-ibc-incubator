@@ -392,6 +392,9 @@ function deriveBridgeProjectionFilter(bridgeConfig: LoadedBridgeConfig): BridgeP
     deployment.validators.mintConnectionStt.scriptHash,
     deployment.validators.mintChannelStt.scriptHash,
     deployment.validators.mintVoucher.scriptHash,
+    ...(deployment.validators.mintTendermintUpdateSession
+      ? [deployment.validators.mintTendermintUpdateSession.scriptHash]
+      : []),
   ]);
 
   return {

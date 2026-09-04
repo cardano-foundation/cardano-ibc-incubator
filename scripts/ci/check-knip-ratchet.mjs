@@ -108,7 +108,6 @@ const allowed = new Set([
   'gateway:src/shared/types/apps/transfer/types/fungible-token-packet-data.ts:exports:decodeFungibleTokenPacketDatum',
   'gateway:src/shared/types/apps/transfer/types/fungible-token-packet-data.ts:exports:encodeFungibleTokenPacketDatum',
   'gateway:src/shared/types/channel/channel-datum.ts:types:ChannelDatumState',
-  'gateway:src/shared/types/cometbft/commit.ts:types:CommitSig',
   'gateway:src/shared/types/cometbft/commit.ts:types:PartSetHeader',
   'gateway:src/shared/types/cometbft/header.ts:types:ConsensusVersion',
   'gateway:src/shared/types/cometbft/validator-set.ts:exports:validateBasic',

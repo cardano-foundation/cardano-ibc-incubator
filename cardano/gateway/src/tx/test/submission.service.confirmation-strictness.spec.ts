@@ -2,86 +2,38 @@ import { SubmissionService } from '../submission.service';
 
 describe('SubmissionService confirmation strictness regressions', () => {
   let service: SubmissionService;
-  let lucidServiceMock: {
-    LucidImporter: Record<string, unknown>;
-    lucid: {
-      wallet: jest.Mock;
-      awaitTx: jest.Mock;
-    };
-    findUtxoAtHostStateNFT: jest.Mock;
-    decodeDatum: jest.Mock;
+  let pendingUpdates: {
+    peek: jest.Mock;
+    commit: jest.Mock;
+    takeByExpectedRoot: jest.Mock;
   };
-  let configServiceMock: {
-    get: jest.Mock;
-  };
-  let txEventsServiceMock: {
-    take: jest.Mock;
-  };
-  let ibcTreePendingUpdatesServiceMock: {
-    take: jest.Mock;
-  };
-  let ibcTreeCacheServiceMock: {
-    saveAliases: jest.Mock;
-  };
-  let historyServiceMock: {
-    findTxByHash: jest.Mock;
-  };
-  let queryServiceMock: {
-    queryPacketEventsByTxHash: jest.Mock;
-  };
+  let treeCache: { saveAliases: jest.Mock };
+  let history: { findTxByHash: jest.Mock; findTransactionEvidenceByHash: jest.Mock };
 
   beforeEach(() => {
-    lucidServiceMock = {
+    const lucidService = {
       LucidImporter: {},
-      lucid: {
-        wallet: jest.fn().mockReturnValue({
-          submitTx: jest.fn().mockResolvedValue('tx-hash-abc'),
-        }),
-        awaitTx: jest.fn().mockResolvedValue(false),
-      },
-      findUtxoAtHostStateNFT: jest.fn(),
+      lucid: { wallet: jest.fn().mockReturnValue({ submitTx: jest.fn().mockResolvedValue('tx-hash-abc') }) },
       decodeDatum: jest.fn(),
     };
-
-    configServiceMock = {
-      get: jest.fn().mockImplementation((key: string) => {
-        if (key === 'ogmiosEndpoint') {
-          return 'ws://localhost:1337';
-        }
-        if (key === 'deployment') {
-          return {
-            hostStateNFT: {
-              policyId: 'policy-id',
-              name: 'token-name',
-            },
-          };
-        }
-        return undefined;
-      }),
+    pendingUpdates = {
+      peek: jest.fn().mockReturnValue(undefined),
+      commit: jest.fn().mockReturnValue(true),
+      takeByExpectedRoot: jest.fn().mockReturnValue(undefined),
     };
-
-    txEventsServiceMock = {
-      take: jest.fn().mockReturnValue([]),
-    };
-
-    ibcTreePendingUpdatesServiceMock = {
-      take: jest.fn().mockReturnValue(undefined),
-    };
-
-    ibcTreeCacheServiceMock = {
-      saveAliases: jest.fn().mockResolvedValue(undefined),
-    };
-    historyServiceMock = { findTxByHash: jest.fn() };
-    queryServiceMock = { queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }) };
-
+    treeCache = { saveAliases: jest.fn().mockResolvedValue(undefined) };
+    history = { findTxByHash: jest.fn(), findTransactionEvidenceByHash: jest.fn() };
     service = new SubmissionService(
-      lucidServiceMock as any,
-      configServiceMock as any,
-      txEventsServiceMock as any,
-      ibcTreePendingUpdatesServiceMock as any,
-      ibcTreeCacheServiceMock as any,
-      historyServiceMock as any,
-      queryServiceMock as any,
+      lucidService as any,
+      { get: jest.fn() } as any,
+      { take: jest.fn().mockReturnValue([]), takeByExpectedRoot: jest.fn() } as any,
+      pendingUpdates as any,
+      treeCache as any,
+      history as any,
+      {
+        queryClientEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }),
+        queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }),
+      } as any,
     );
   });
 
@@ -91,40 +43,34 @@ describe('SubmissionService confirmation strictness regressions', () => {
     );
   });
 
-  it('does not finalize denom traces if on-chain root verification fails', async () => {
-    ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
-      expectedNewRoot: 'expected-root',
-      commit: jest.fn(),
-    });
-    jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('hoststate unavailable'));
-
-    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 9999)).rejects.toThrow();
-  });
-
   it('does not return submit success when confirmation status is unknown', async () => {
     jest.spyOn(service as any, 'submitToCardano').mockResolvedValueOnce('tx-hash-abc');
     jest.spyOn(service as any, 'waitForIndexedConfirmation').mockRejectedValueOnce(new Error('not confirmed'));
 
-    await expect(
-      service.submitSignedTransaction({
-        signed_tx_cbor: 'deadbeef',
-      } as any),
-    ).rejects.toThrow('not confirmed');
-    expect(historyServiceMock.findTxByHash).not.toHaveBeenCalled();
+    await expect(service.submitSignedTransaction({ signed_tx_cbor: 'deadbeef' })).rejects.toThrow('not confirmed');
+    expect(history.findTxByHash).not.toHaveBeenCalled();
   });
 
-  it('persists confirmed IBC tree snapshots by current id, root, and block height', async () => {
-    const commit = jest.fn();
-    ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
-      expectedNewRoot: 'ab'.repeat(32),
-      commit,
-    });
+  it('does not finalize the IBC tree if confirmed HostState lookup fails', async () => {
+    const pending = { expectedNewRoot: 'expected-root', commit: jest.fn() };
+    pendingUpdates.peek.mockReturnValueOnce(pending);
+    jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('hoststate unavailable'));
+
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 9999)).rejects.toThrow(
+      'hoststate unavailable',
+    );
+    expect(pendingUpdates.commit).not.toHaveBeenCalled();
+  });
+
+  it('persists snapshots only after committing the exact pending entry', async () => {
+    const pending = { expectedNewRoot: 'ab'.repeat(32), commit: jest.fn() };
+    pendingUpdates.peek.mockReturnValueOnce(pending);
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('ab'.repeat(32));
 
     await (service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 9999);
 
-    expect(commit).toHaveBeenCalled();
-    expect(ibcTreeCacheServiceMock.saveAliases).toHaveBeenCalledWith(
+    expect(pendingUpdates.commit).toHaveBeenCalledWith('tx-hash-abc', pending);
+    expect(treeCache.saveAliases).toHaveBeenCalledWith(
       expect.anything(),
       expect.arrayContaining(['current', `root:${'ab'.repeat(32)}`, 'height:9999']),
     );

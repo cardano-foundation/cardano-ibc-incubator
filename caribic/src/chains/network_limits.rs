@@ -63,6 +63,29 @@ mod tests {
     }
 
     #[test]
+    fn local_cardano_plutus_v3_cost_model_supports_protocol_version() {
+        let shelley: Value =
+            serde_json::from_str(&read("chains/cardano/config/devnet/genesis-shelley.json"))
+                .expect("local Shelley genesis should be JSON");
+        let protocol_major = shelley["protocolParams"]["protocolVersion"]["major"]
+            .as_u64()
+            .expect("local Shelley genesis should declare a protocol major version");
+
+        let conway: Value =
+            serde_json::from_str(&read("chains/cardano/config/devnet/genesis-conway.json"))
+                .expect("local Conway genesis should be JSON");
+        let plutus_v3_cost_model = conway["plutusV3CostModel"]
+            .as_array()
+            .expect("local Conway genesis should declare a PlutusV3 cost model");
+
+        assert!(
+            protocol_major < 10 || plutus_v3_cost_model.len() >= 297,
+            "Cardano protocol version {protocol_major} requires the 297-entry PlutusV3 PV10 cost model, but the local Conway genesis has {} entries",
+            plutus_v3_cost_model.len()
+        );
+    }
+
+    #[test]
     fn compatibility_profiles_use_injective_capacity_limits() {
         let setup = read("chains/cosmos/scripts/setup_profile.sh");
         for expected in [

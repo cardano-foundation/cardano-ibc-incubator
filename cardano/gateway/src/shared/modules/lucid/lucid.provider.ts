@@ -72,6 +72,7 @@ const NON_RETRYABLE_RUNTIME_PROVIDER_ERROR_MARKERS = [
   'validationerror',
   'validator returned false',
 ];
+const OGMIOS_PLUTUS_SCRIPT_DECODE_ERROR_MARKER = "couldn't decode plutus script";
 
 function requireConfigString(configService: ConfigService, key: string): string {
   const value = configService.get<unknown>(key);
@@ -438,6 +439,35 @@ function summarizeError(error: unknown): string {
     return 'Unknown error';
   }
   return uniqueSignals.slice(0, 4).join(' | ');
+}
+
+function isOgmiosPlutusScriptDecodeError(error: unknown): boolean {
+  return collectErrorSignals(error).some((signal) =>
+    signal.toLowerCase().includes(OGMIOS_PLUTUS_SCRIPT_DECODE_ERROR_MARKER),
+  );
+}
+
+export async function evaluateTxWithOgmiosScriptRefFallback<T>(
+  evaluateTx: (additionalUTxOs?: any[]) => Promise<T>,
+  additionalUTxOs?: any[],
+): Promise<T> {
+  try {
+    return await evaluateTx(additionalUTxOs);
+  } catch (error) {
+    const scriptRefUtxos = additionalUTxOs?.filter((utxo) => Boolean(utxo?.scriptRef)) ?? [];
+    if (!isOgmiosPlutusScriptDecodeError(error) || scriptRefUtxos.length === 0) {
+      throw error;
+    }
+
+    // Ogmios can reject newer builtins while decoding explicitly supplied scripts even though
+    // the current ledger protocol accepts the same scripts. Keep ordinary additional UTxOs, but
+    // let the node resolve confirmed reference scripts from its canonical ledger view.
+    const ledgerResolvedUtxos = additionalUTxOs?.filter((utxo) => !utxo?.scriptRef) ?? [];
+    console.warn(
+      `[Kupmios.evaluateTx] Ogmios could not decode ${scriptRefUtxos.length} explicitly supplied Plutus script-reference UTxO(s); retrying with those references resolved from the ledger`,
+    );
+    return await evaluateTx(ledgerResolvedUtxos);
+  }
 }
 
 function hasTransientHttpStatus(normalizedSignals: string[]): boolean {
@@ -926,7 +956,11 @@ export const LucidClient = {
       provider.evaluateTx = async (tx: string, additionalUTxOs?: any[]) => {
         try {
           return await retryRuntimeProviderOperation(
-            () => originalEvaluateTx(tx, additionalUTxOs),
+            () =>
+              evaluateTxWithOgmiosScriptRefFallback(
+                (fallbackAdditionalUTxOs) => originalEvaluateTx(tx, fallbackAdditionalUTxOs),
+                additionalUTxOs,
+              ),
             'Kupmios.evaluateTx',
           );
         } catch (error) {

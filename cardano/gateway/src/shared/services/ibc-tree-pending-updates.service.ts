@@ -8,6 +8,8 @@ export const PENDING_TREE_UPDATE_CACHE_TTL_MS = 60 * 60 * 1000;
 const PENDING_TREE_UPDATE_CACHE_METRIC = 'ibc_tree_pending_updates';
 
 export type PendingTreeUpdate = {
+  /** `tree_neutral` is used by staged verification transactions. */
+  kind?: 'tree_update' | 'tree_neutral';
   expectedNewRoot: string;
   commit: () => void;
 };
@@ -37,8 +39,8 @@ export class IbcTreePendingUpdatesService {
   /**
    * Commits and removes an exact pending entry as one synchronous operation.
    * Keeping the entry until commit succeeds makes observation retries safe if
-   * the commit callback throws, while the identity check prevents a stale
-   * observer from consuming a newer registration for the same transaction.
+   * the callback throws, while the identity check prevents a stale observer
+   * from consuming a newer registration for the same transaction hash.
    */
   commit(txHash: string, expectedUpdate: PendingTreeUpdate): boolean {
     if (!txHash) return false;
@@ -60,6 +62,8 @@ export class IbcTreePendingUpdatesService {
     // Hash-based lookup can miss when external signers alter final body shape.
     // Root matching remains strict because expectedNewRoot is derived from the
     // exact in-memory tree mutation we prepared before signing.
-    return this.pendingByTxHash.findAndTake((update) => update.expectedNewRoot === expectedNewRoot);
+    return this.pendingByTxHash.findAndTake(
+      (update) => update.kind !== 'tree_neutral' && update.expectedNewRoot === expectedNewRoot,
+    );
   }
 }

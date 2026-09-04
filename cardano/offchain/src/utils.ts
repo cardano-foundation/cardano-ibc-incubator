@@ -778,6 +778,8 @@ export const getLiveWalletUtxos = async (
 
 type Validator =
   | "spendClient"
+  | "spendTendermintUpdateSession"
+  | "mintTendermintUpdateSession"
   | "spendConnection"
   | "spendChannel"
   | "spendMockModule"
@@ -803,6 +805,20 @@ export type DeploymentTemplate = {
   ics20PacketCodec: "ics20-classic-json-v1";
   validators: {
     spendClient: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendTendermintUpdateSession: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintTendermintUpdateSession: {
       title: string;
       script: string;
       scriptHash: string;
