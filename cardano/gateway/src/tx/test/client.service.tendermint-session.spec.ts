@@ -484,9 +484,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
         operationName: 'buildTendermintUpdateTransactionChain',
       }),
     );
-    expect(pendingUpdates.take('initialize-hash')).toEqual(
-      expect.objectContaining({ kind: 'tree_neutral', expectedNewRoot: '' }),
-    );
+    expect(pendingUpdates.take('initialize-hash')).toBeUndefined();
     expect(pendingUpdates.take('advance-1')).toEqual(
       expect.objectContaining({ kind: 'tree_neutral', expectedNewRoot: '' }),
     );

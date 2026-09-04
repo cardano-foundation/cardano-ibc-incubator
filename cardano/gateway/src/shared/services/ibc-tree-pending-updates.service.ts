@@ -38,8 +38,10 @@ export class IbcTreePendingUpdatesService {
   }
 
   /**
-   * Keep the exact entry retryable until the live-chain check succeeds.
-   * A stale publication still acknowledges the confirmed historical snapshot.
+   * Commits and removes an exact pending entry as one synchronous operation.
+   * Keeping the entry until commit succeeds makes observation retries safe if
+   * the callback throws, while the identity check prevents a stale observer
+   * from consuming a newer registration for the same transaction hash.
    */
   async commit(
     txHash: string,
