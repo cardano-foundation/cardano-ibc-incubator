@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-export const TENDERMINT_MULTITX_PROTOCOL = 'tendermint-multitx-v1' as const;
+const TENDERMINT_MULTITX_PROTOCOL = 'tendermint-multitx-v1' as const;
 export const TENDERMINT_MULTITX_MAX_BATCH_SIZE = 6;
 export const TENDERMINT_MULTITX_MAX_VALIDATOR_COUNT = 256;
 
@@ -13,14 +13,14 @@ export interface TendermintValidatorRange {
   end: number;
 }
 
-export interface TendermintUpdatePlanStep {
+interface TendermintUpdatePlanStep {
   id: string;
   kind: TendermintUpdateStepKind;
   dependsOn: string[];
   range?: TendermintValidatorRange;
 }
 
-export interface TendermintUpdateCleanupStep {
+interface TendermintUpdateCleanupStep {
   id: 'cancel';
   kind: 'cancel';
   /**
@@ -30,7 +30,7 @@ export interface TendermintUpdateCleanupStep {
   authorization: 'session_validator';
 }
 
-export interface TendermintUpdatePlan {
+interface TendermintUpdatePlan {
   protocol: typeof TENDERMINT_MULTITX_PROTOCOL;
   /** Stable query/retry key. The minted session token additionally commits to its seed UTxO. */
   planId: string;
@@ -44,7 +44,7 @@ export interface TendermintUpdatePlan {
   cleanup: TendermintUpdateCleanupStep;
 }
 
-export interface BuildTendermintUpdatePlanInput {
+interface BuildTendermintUpdatePlanInput {
   clientId: string;
   /** SHA3-256 commitment to the canonical MsgUpdateClient protobuf bytes. */
   clientMessageHash: string;

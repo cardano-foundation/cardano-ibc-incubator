@@ -62,7 +62,7 @@ export type TxOperationRunnerResult<TExtraResponseFields = Record<string, never>
   extraResponseFields?: TExtraResponseFields;
 };
 
-export type TxChainLinkPlan = {
+type TxChainLinkPlan = {
   operationName: string;
   unsignedTx: TxBuilder;
   validity: TxValidityPolicy;
@@ -71,16 +71,16 @@ export type TxChainLinkPlan = {
   syntheticEvents?: GatewayEvent[];
 };
 
-export type TxChainLinkResult = TxOperationRunnerResult & {
+type TxChainLinkResult = TxOperationRunnerResult & {
   walletInputs: UTxO[];
   derivedOutputs: UTxO[];
 };
 
-export type TxChainOperationContext = {
+type TxChainOperationContext = {
   complete(link: TxChainLinkPlan): Promise<TxChainLinkResult>;
 };
 
-export type TxChainOperationPlan<T> = {
+type TxChainOperationPlan<T> = {
   operationName: string;
   wallet: TxWalletInstruction;
   /** Register metadata only for the final dependency-ordered link. */
@@ -88,7 +88,7 @@ export type TxChainOperationPlan<T> = {
   build: (context: TxChainOperationContext) => Promise<T>;
 };
 
-export type TxChainOperationResult<T> = {
+type TxChainOperationResult<T> = {
   value: T;
   links: TxChainLinkResult[];
 };

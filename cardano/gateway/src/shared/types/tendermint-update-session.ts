@@ -11,14 +11,14 @@ import type { Rational } from './rational';
 type LucidModule = typeof import('@lucid-evolution/lucid');
 type LucidData = LucidModule['Data'];
 
-export const TENDERMINT_UPDATE_SESSION_ID_DOMAIN = 'cardano-ibc/tendermint-update-session/v1';
+const TENDERMINT_UPDATE_SESSION_ID_DOMAIN = 'cardano-ibc/tendermint-update-session/v1';
 
-export type OutputReference = {
+type OutputReference = {
   transactionId: string;
   outputIndex: bigint;
 };
 
-export type CommitCore = {
+type CommitCore = {
   height: bigint;
   round: bigint;
   blockId: BlockID;
@@ -37,7 +37,7 @@ export type UpdatePlan = {
   trustedValidatorCount: bigint;
 };
 
-export type MerklePeak = {
+type MerklePeak = {
   size: bigint;
   root: string;
 };
@@ -52,7 +52,7 @@ export type ValidatorOrderKey = {
   address: string;
 };
 
-export type TrustedMembership = {
+type TrustedMembership = {
   index: bigint;
   trustedValidator: Validator;
   auditPath: string[];
@@ -150,7 +150,7 @@ export type SpendMultitxClientRedeemer =
  * Build all schemas in one place so constructor and record-field order cannot
  * drift between the individual datum/redeemer codecs.
  */
-export function createTendermintUpdateSessionSchemas(Data: LucidData) {
+function createTendermintUpdateSessionSchemas(Data: LucidData) {
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),
     name: Data.Bytes(),
