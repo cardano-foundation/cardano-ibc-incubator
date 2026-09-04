@@ -777,6 +777,7 @@ export const getLiveWalletUtxos = async (
 };
 
 type Validator =
+  | "recoverClient"
   | "spendClient"
   | "spendConnection"
   | "spendChannel"
@@ -802,6 +803,13 @@ export type DeploymentTemplate = {
   deployedAt: string;
   ics20PacketCodec: "ics20-classic-json-v1";
   validators: {
+    recoverClient?: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
     spendClient: {
       title: string;
       script: string;

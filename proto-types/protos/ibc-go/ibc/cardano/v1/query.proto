@@ -126,6 +126,7 @@ message BridgeManifestValidators {
   BridgeManifestValidator mint_connection_stt = 9;
   BridgeManifestValidator mint_channel_stt = 10;
   BridgeManifestValidator mint_voucher = 11;
+  BridgeManifestValidator recover_client = 12;
 }
 
 message BridgeManifestModule {
