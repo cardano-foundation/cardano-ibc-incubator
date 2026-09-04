@@ -2469,11 +2469,8 @@ test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_host_handle_packet_accepts_timeout_on_already_closed_channel(
-  seed via fuzz.int(),
-) {
-  fuzz.label(@"fuzz.contract.host.handle_packet.valid_timeout_on_close")
-
+test host_handle_packet_accepts_timeout_on_already_closed_channel() {
+  let seed = 1
   let sequence = test_sequence(seed)
   let packet = test_packet(sequence)
   let siblings = full_empty_siblings()

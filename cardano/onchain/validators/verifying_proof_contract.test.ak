@@ -516,11 +516,7 @@ test prop_proof_batch_accepts_two_items(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_proof_mixed_batch_accepts_membership_and_nonmembership(
-  _seed via fuzz.int(),
-) {
-  fuzz.label(@"regression.contract.proof.mixed_batch.valid")
-
+test proof_mixed_batch_accepts_membership_and_nonmembership() {
   fuzz_dsl.valid_check(
     "proof",
     "mixed_batch",
