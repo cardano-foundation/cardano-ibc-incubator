@@ -90,7 +90,7 @@ fixture is the sorted-order late-match path after Cardano. Paying for the failed
 earlier candidate makes these two paths bound all four accepted wire profiles.
 
 The CI size budget is 15,634 bytes: the 16,384-byte ledger maximum less a
-750-byte reserve. Reference-script deployment has a 16,040-byte signed estimate,
+750-byte reserve. Reference-script deployment has a 15,775-byte signed estimate,
 so it is a headroom violation but remains below the ledger maximum. The combined
 receive path's additive model estimates 20,615 unsigned bytes and 20,875 signed
 bytes, which exceeds the ledger maximum. Actual balanced CBOR is not built here,

@@ -39,8 +39,8 @@ describe('transaction budget limits', () => {
 
   it('subtracts paired fixture setup costs from measured execution units', () => {
     expect(
-      subtractBaselineExUnits({ mem: 15_069_589, steps: 4_975_552_709 }, { mem: 605_411, steps: 475_552_709 }),
-    ).toEqual({ mem: 14_464_178, steps: 4_500_000_000 });
+      subtractBaselineExUnits({ mem: 38_700_147, steps: 11_520_189_768 }, { mem: 23_634_810, steps: 6_546_126_609 }),
+    ).toEqual({ mem: 15_065_337, steps: 4_974_063_159 });
   });
 
   it('rejects a fixture baseline larger than its paired measurement', () => {

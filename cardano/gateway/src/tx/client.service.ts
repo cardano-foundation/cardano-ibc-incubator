@@ -89,7 +89,7 @@ import {
 export const TENDERMINT_HEADER_TYPE_URL = '/ibc.lightclients.tendermint.v1.Header';
 const TENDERMINT_SESSION_MATCH_MAX_ATTEMPTS = 10;
 const TENDERMINT_SESSION_MATCH_RETRY_DELAY_MS = 500;
-// The maximum staged plan is 70 sequential transactions. Nine minutes leaves
+// The maximum staged plan is 88 sequential transactions. Nine minutes leaves
 // enough time to submit that plan while staying inside this devnet's 576-slot
 // forecast safe zone when it uses one-second slots.
 export const TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE = 9 * 60 * 1000;
