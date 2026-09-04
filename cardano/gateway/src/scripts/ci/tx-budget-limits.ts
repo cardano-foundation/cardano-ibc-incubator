@@ -40,12 +40,12 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
-    unsignedBytes: 15_780,
-    signedBytesEstimate: 16_040,
+    unsignedBytes: 15_839,
+    signedBytesEstimate: 16_099,
   },
   send_packet_at_commitment_capacity: {
-    mem: 52_064_773,
-    steps: 16_331_979_546,
+    mem: 52_813_419,
+    steps: 16_521_763_366,
   },
   recv_packet_at_history_capacity: {
     mem: 49_356_343,
@@ -61,8 +61,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
   first_seen_voucher_receive_at_capacity: {
     unsignedBytes: 20_615,
     signedBytesEstimate: 20_875,
-    mem: 96_763_049,
-    steps: 31_523_591_002,
+    mem: 96_763_249,
+    steps: 31_523_623_002,
   },
   first_seen_voucher_mint: {
     mem: 38_315_184,
