@@ -420,10 +420,12 @@ describe('ClientService staged Tendermint update chain integration', () => {
     lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo(), seed]);
 
     const response = await service.updateClient(message);
+    const unsignedTx = response.unsigned_tx;
+    if (!unsignedTx) throw new Error('expected an unsigned transaction');
 
-    expect(response.unsigned_tx.type_url).toBe(TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL);
-    expect(decodeChainCbor(response.unsigned_tx.value)).toHaveLength(2);
-    expect(decodeChainEnvelope(response.unsigned_tx.value).rebuildAfterSubmission).toBe(true);
+    expect(unsignedTx.type_url).toBe(TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL);
+    expect(decodeChainCbor(unsignedTx.value)).toHaveLength(2);
+    expect(decodeChainEnvelope(unsignedTx.value).rebuildAfterSubmission).toBe(true);
     expect(decodeHeader).toHaveBeenCalledWith(adjacentHeader);
     expect(SessionState.deriveTendermintSessionUpdatePlan).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -452,7 +454,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
     );
     lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo(), seed]);
     lucidService.createUnsignedTendermintSessionTransaction.mockImplementation(
-      (_seed, _redeemer, encodedDatum: string, tokenUnit: string) =>
+      (_seed: unknown, _redeemer: unknown, encodedDatum: string, tokenUnit: string) =>
         createTxBuilder('initialize-hash', undefined, [
           derivedSessionOutput(encodedDatum, tokenUnit, 'initialize-derived'),
         ]),
@@ -620,7 +622,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
     lucidService.tryFindUtxosAt.mockResolvedValue([session]);
     lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo(), session]);
     lucidService.createUnsignedAdvanceTendermintSessionTransaction.mockImplementation(
-      (_session, _redeemer, encodedDatum: string, tokenUnit: string) =>
+      (_session: unknown, _redeemer: unknown, encodedDatum: string, tokenUnit: string) =>
         createTxBuilder('advance-hash', undefined, [derivedSessionOutput(encodedDatum, tokenUnit, 'advance-derived')]),
     );
 
@@ -1174,12 +1176,14 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
       .mockResolvedValue({ unsignedTx: directBuilder, pendingTreeUpdate: pending });
 
     const response = await service.updateClient(UPDATE_MESSAGE);
+    const unsignedTx = response.unsigned_tx;
+    if (!unsignedTx) throw new Error('expected an unsigned transaction');
 
     expect(verifyClientMessage).toHaveBeenCalled();
     expect(buildDirect).toHaveBeenCalledTimes(1);
     expect(buildDirect.mock.calls[0]).toHaveLength(1);
     expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
-    expect(response.unsigned_tx.type_url).toBe('');
+    expect(unsignedTx.type_url).toBe('');
     expect(runnerSpy).toHaveBeenCalledWith(
       expect.objectContaining({ operationName: 'updateClient', pendingTreeUpdate: pending }),
     );
@@ -1657,7 +1661,7 @@ describe('ClientService staged Tendermint session recovery and seed reservations
       .mockImplementationOnce(() => {
         throw new Error('transient build failure');
       })
-      .mockImplementationOnce((_seed, _redeemer, encodedDatum: string, tokenUnit: string) =>
+      .mockImplementationOnce((_seed: unknown, _redeemer: unknown, encodedDatum: string, tokenUnit: string) =>
         createTxBuilder('replacement-initialize', undefined, [
           derivedSessionOutput(encodedDatum, tokenUnit, 'replacement-derived'),
         ]),
