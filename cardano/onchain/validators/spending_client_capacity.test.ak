@@ -1,6 +1,6 @@
 use aiken/cbor
 use aiken/interval
-use cardano/address.{from_script}
+use cardano/address.{Script, from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
@@ -227,6 +227,7 @@ fn check_update_client_capacity(
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     Some(client_datum),
     redeemer,
     mock.output_reference,

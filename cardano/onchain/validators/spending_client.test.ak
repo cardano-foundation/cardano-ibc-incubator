@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/fuzz
 use aiken/interval
-use cardano/address.{from_script}
+use cardano/address.{Script, from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
@@ -435,6 +435,7 @@ fn check_update_client_misbehaviour_conflict_header(
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     Some(client_datum),
     redeemer,
     mock.output_reference,
@@ -703,6 +704,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     Some(client_datum),
     redeemer,
     mock.output_reference,
@@ -938,6 +940,7 @@ fn check_update_client_verify_adjacent(
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     Some(client_datum),
     redeemer,
     mock.output_reference,
@@ -1215,6 +1218,7 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     Some(client_datum),
     redeemer,
     mock.output_reference,
@@ -1472,6 +1476,7 @@ test update_client_verify_non_adjacent_succeed() {
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     Some(client_datum),
     redeemer,
     mock.output_reference,
@@ -1493,6 +1498,7 @@ test prop_client_update_rejects_wrong_host_redeemer(_seed via fuzz.int()) fail {
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     None,
     UpdateClient { msg: HeaderCase(header_mod.null_header()) },
     mock.output_reference,
@@ -1514,6 +1520,7 @@ test prop_client_update_rejects_missing_host_state(_seed via fuzz.int()) fail {
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     None,
     UpdateClient { msg: HeaderCase(header_mod.null_header()) },
     mock.output_reference,

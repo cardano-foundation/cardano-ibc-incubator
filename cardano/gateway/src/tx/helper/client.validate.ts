@@ -1,4 +1,8 @@
-import { MsgCreateClient, MsgUpdateClient } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
+import {
+  MsgCreateClient,
+  MsgRecoverClient,
+  MsgUpdateClient,
+} from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
 import { decodeClientState, decodeConsensusState } from './helper';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { initializeClientState, validateClientState } from '@shared/helpers/client-state';
@@ -70,6 +74,37 @@ export function validateAndFormatUpdateClientParams(data: MsgUpdateClient): {
   }
 
   return { constructedAddress, clientId, clientMessage: data.client_message };
+}
+
+export function validateAndFormatRecoverClientParams(data: MsgRecoverClient): {
+  constructedAddress: string;
+  subjectClientId: string;
+  substituteClientId: string;
+} {
+  const parseClientId = (value: string, field: string): string => {
+    const match = new RegExp(`^${CLIENT_ID_PREFIX}-(0|[1-9][0-9]*)$`).exec(value);
+    if (!match) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: "${field}". Please use the format "${CLIENT_ID_PREFIX}-{sequence}"`,
+      );
+    }
+    return match[1];
+  };
+
+  const subjectClientId = parseClientId(data.subject_client_id, 'subject_client_id');
+  const substituteClientId = parseClientId(data.substitute_client_id, 'substitute_client_id');
+  if (subjectClientId === substituteClientId) {
+    throw new GrpcInvalidArgumentException('Subject and substitute clients must be different');
+  }
+  if (!data.signer?.trim()) {
+    throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
+  }
+
+  return {
+    constructedAddress: data.signer,
+    subjectClientId,
+    substituteClientId,
+  };
 }
 
 export function validateUpdateHeaderAdvancesLatestHeight(headerHeight: bigint, latestHeight: Height): void {

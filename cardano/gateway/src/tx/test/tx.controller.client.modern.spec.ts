@@ -12,6 +12,7 @@ describe('TxController - Client (modern)', () => {
   let clientServiceMock: {
     createClient: jest.Mock;
     updateClient: jest.Mock;
+    recoverClient: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -20,6 +21,7 @@ describe('TxController - Client (modern)', () => {
     clientServiceMock = {
       createClient: jest.fn(),
       updateClient: jest.fn(),
+      recoverClient: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -79,5 +81,18 @@ describe('TxController - Client (modern)', () => {
     await expect(controller.UpdateClient(request)).rejects.toThrow(
       'Invalid argument: "client_id". Please use the prefix "07-tendermint-"',
     );
+  });
+
+  it('delegates RecoverClient to ClientService and returns its response', async () => {
+    const request = {
+      subject_client_id: '07-tendermint-0',
+      substitute_client_id: '07-tendermint-1',
+      signer: 'addr_test1...',
+    } as any;
+    const expected = { unsigned_tx: Buffer.from([7, 8, 9]) } as any;
+    clientServiceMock.recoverClient.mockResolvedValue(expected);
+
+    await expect(controller.RecoverClient(request)).resolves.toBe(expected);
+    expect(clientServiceMock.recoverClient).toHaveBeenCalledWith(request);
   });
 });

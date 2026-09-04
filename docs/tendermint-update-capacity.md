@@ -79,3 +79,44 @@ representation, add matching on-chain and Gateway guards, and test the chosen
 limit and limit-plus-one. Explicit two-header misbehaviour evidence requires a
 separate capacity result because its payload shape is materially larger than a
 normal update.
+
+## Expired or frozen client recovery
+
+An expired or frozen Cardano-side Tendermint client cannot safely resume normal
+header updates because its previous trust period has ended. Recovery uses a
+second active client for the same chain as a new trusted checkpoint. The
+deployment authority submits `MsgRecoverClient`, naming the inactive subject
+client and the active substitute client.
+
+The recovery transaction keeps the subject client token and identifier, clears
+its frozen height, and copies the substitute's latest consensus state with its
+processed time and height. Existing connections and channels therefore continue
+to use the same client identifier. The substitute is read as a reference input
+and is not modified.
+
+This is not retroactive for deployments that use the previous `spend_client`
+script. Adding recovery changes that script's hash, and its existing `Other`
+branch cannot authorize a migration. Those deployments must deploy the new
+contracts and establish new clients, connections, and channels. A recovery
+operator runs `hermes tx recover-client` with the subject and substitute client
+identifiers. Hermes asks the Gateway to build the transaction, checks it, then
+signs and submits it with the selected deployment key. Hermes does not initiate
+recovery automatically.
+
+Recovery requires identical Tendermint parameters, including `chain_id` and
+`trusting_period`, and requires the substitute height to be strictly newer. The
+subject history is retained and only the oldest entry is removed when the
+300-state bound is already full. This keeps recovery itself to at most one
+consensus-state deletion. The broader incremental pruning work tracked by issue
+#557 is still required for ordinary updates after long downtime.
+
+The recovery validator still checks the retained lists, so its execution cost
+grows with the number of stored consensus states. The Aiken fixtures show this
+growth, but they include construction of the test transaction and are not
+ledger-evaluated transaction costs. A provider-completed transaction is still
+needed before claiming support at the full 300-state bound. The history work in
+issue #557 is still required.
+
+Recovery is an administrative trust decision rather than an ordinary relayer
+operation. For a client frozen by misbehaviour, operators should also wait for
+the counterparty evidence window to pass before selecting the substitute.

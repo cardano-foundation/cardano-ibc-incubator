@@ -544,7 +544,9 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
     needs: aiken-changes
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Collecting and running the full suite takes about nine minutes on hosted
+    # runners. Allow for runner variation while keeping every test in this pass.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: cardano/onchain
@@ -562,6 +564,13 @@ jobs:
       # fixture-construction failures before the deeper fuzz shards finish.
       - name: Run smoke test pass
         run: aiken check --deny --max-success 1 --property-coverage relative-to-tests > ../../aiken-smoke.json
+
+      - name: Upload smoke report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiken-smoke
+          path: aiken-smoke.json
 
   aiken-fuzz:
     name: Cardano Onchain Aiken Property/Fuzz (${{ matrix.suite }})
@@ -597,19 +606,19 @@ jobs:
             match_tests: >-
               -m prop_host_handle_packet_rejects_recv_with_unrelated_channel_mutation
           # Capacity cases build the full 64-entry bounded state. Their seed
-          # only varies unrelated metadata, so 350 cases keep each label above
+          # only varies unrelated metadata, so 400 cases keep each label above
           # the global 0.50% share ratchet without repeating the boundary 500
           # times. The slight margin accommodates new labeled properties.
           - suite: host-packet-capacity-receipt
-            max_success: 350
+            max_success: 400
             match_tests: >-
               -m prop_host_handle_packet_rejects_history_capacity_overflow
           - suite: host-packet-capacity-acknowledgement
-            max_success: 350
+            max_success: 400
             match_tests: >-
               -m prop_host_handle_packet_rejects_acknowledgement_capacity_overflow
           - suite: host-packet-capacity-commitment
-            max_success: 350
+            max_success: 400
             match_tests: >-
               -m prop_host_handle_packet_rejects_commitment_capacity_overflow
           - suite: host-bind-port
@@ -621,6 +630,7 @@ jobs:
               -m ibc/client/ics_007_tendermint_client/client_state
               -m ibc/client/ics_007_tendermint_client/misbehaviour_handle
               -m prop_client_update_
+              -m prop_client_recovery_
           - suite: connection
             match_tests: >-
               -m ibc/core/ics_003_connection_semantics/connection_datum
@@ -892,6 +902,8 @@ jobs:
             -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_near_byte_limit}' \
             -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
             -m 'host_state_stt.{host_update_client_capacity_minimum_history_succeeds}' \
+            -m 'recover_client.{recover_client_accepts_expired_subject}' \
+            -m 'recover_client.{spend_client_forwards_valid_recovery}' \
             -m 'spending_client_capacity.{update_client_capacity_adjacent_all_signed_45_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_adjacent_mixed_45_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_non_adjacent_mixed_45_succeeds}' \

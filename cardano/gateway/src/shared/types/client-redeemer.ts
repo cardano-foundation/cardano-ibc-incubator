@@ -1,13 +1,18 @@
 import { type Data } from '@lucid-evolution/lucid';
+import { AuthToken } from './auth-token';
 import { ClientMessage } from './msgs/client-message';
 
 type MintClientRedeemer = 'MintClient';
 
 export type SpendClientRedeemer =
-  | 'Other'
   | {
       UpdateClient: {
         msg: ClientMessage;
+      };
+    }
+  | {
+      RecoverClient: {
+        substitute_token: AuthToken;
       };
     };
 
@@ -99,6 +104,10 @@ export async function encodeSpendClientRedeemer(
     revisionNumber: Data.Integer(),
     revisionHeight: Data.Integer(),
   });
+  const AuthTokenSchema = Data.Object({
+    policyId: Data.Bytes(),
+    name: Data.Bytes(),
+  });
   const HeaderSchema = Data.Object({
     signedHeader: SignedHeaderSchema,
     validatorSet: ValidatorSetSchema,
@@ -121,7 +130,9 @@ export async function encodeSpendClientRedeemer(
     Data.Object({
       UpdateClient: Data.Object({ msg: ClientMessageSchema }),
     }),
-    Data.Literal('Other'),
+    Data.Object({
+      RecoverClient: Data.Object({ substitute_token: AuthTokenSchema }),
+    }),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;
@@ -192,6 +203,10 @@ export function decodeSpendClientRedeemer(
     revisionNumber: Data.Integer(),
     revisionHeight: Data.Integer(),
   });
+  const AuthTokenSchema = Data.Object({
+    policyId: Data.Bytes(),
+    name: Data.Bytes(),
+  });
   const HeaderSchema = Data.Object({
     signedHeader: SignedHeaderSchema,
     validatorSet: ValidatorSetSchema,
@@ -214,9 +229,27 @@ export function decodeSpendClientRedeemer(
     Data.Object({
       UpdateClient: Data.Object({ msg: ClientMessageSchema }),
     }),
-    Data.Literal('Other'),
+    Data.Object({
+      RecoverClient: Data.Object({ substitute_token: AuthTokenSchema }),
+    }),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;
   return Data.from(spendClientRedeemer, TSpendClientRedeemer);
+}
+
+export function findSpendClientRedeemer(
+  redeemers: Array<{ type: string; data: string }>,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): SpendClientRedeemer | undefined {
+  for (const redeemer of redeemers) {
+    if (redeemer.type !== 'spend') continue;
+    try {
+      const decoded = decodeSpendClientRedeemer(redeemer.data, Lucid);
+      return decoded;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
 }

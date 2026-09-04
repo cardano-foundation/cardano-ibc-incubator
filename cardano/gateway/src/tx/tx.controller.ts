@@ -3,6 +3,8 @@ import { GrpcMethod } from '@nestjs/microservices';
 import {
   MsgCreateClientResponse,
   MsgCreateClient,
+  MsgRecoverClient,
+  MsgRecoverClientResponse,
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
@@ -72,6 +74,10 @@ export class TxController {
   async UpdateClient(data: MsgUpdateClient): Promise<MsgUpdateClientResponse> {
     const response: MsgUpdateClientResponse = await this.clientService.updateClient(data);
     return response;
+  }
+  @GrpcMethod('Msg', 'RecoverClient')
+  async RecoverClient(data: MsgRecoverClient): Promise<MsgRecoverClientResponse> {
+    return this.clientService.recoverClient(data);
   }
   @GrpcMethod('Msg', 'ConnectionOpenInit')
   async ConnectionOpenInit(data: MsgConnectionOpenInit): Promise<MsgConnectionOpenInitResponse> {

@@ -82,6 +82,24 @@ describe('normalizeTxsResultFromClientDatum', () => {
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.HEADER)).toBe('');
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX)).not.toBe('');
   });
+
+  it('reports recovery as recover_client with both client IDs', () => {
+    const clientDatum = clientDatumMockBuilder.build();
+    const redeemer: SpendClientRedeemer = {
+      RecoverClient: {
+        substitute_token: {
+          policyId: '11'.repeat(28),
+          name: '22'.repeat(24) + Buffer.from('9').toString('hex'),
+        },
+      },
+    };
+
+    const result = normalizeTxsResultFromClientDatum(clientDatum, EVENT_TYPE_CLIENT.UPDATE_CLIENT, '4', redeemer, '9');
+
+    expect(result.events[0].type).toBe(EVENT_TYPE_CLIENT.RECOVER_CLIENT);
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.SUBJECT_CLIENT_ID)).toBe('07-tendermint-4');
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.SUBSTITUTE_CLIENT_ID)).toBe('07-tendermint-9');
+  });
 });
 
 describe('normalizeTxsResultFromRecvPacketSuccessAcknowledgement', () => {

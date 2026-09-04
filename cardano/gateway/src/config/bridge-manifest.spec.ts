@@ -30,6 +30,7 @@ function buildHandlerJsonDeployment() {
     },
     validators: {
       hostStateStt: buildValidator('hostStateStt'),
+      recoverClient: buildValidator('recoverClient'),
       spendClient: buildValidator('spendClient'),
       spendConnection: buildValidator('spendConnection'),
       spendChannel: {
@@ -110,6 +111,22 @@ describe('bridge manifest normalization', () => {
     expect(loaded.bridgeManifest.validators.voucher_metadata).toEqual({
       address: 'voucher-metadata-address',
     });
+    expect(loaded.deployment.validators.recoverClient).toEqual({
+      scriptHash: 'recoverClient-hash',
+      address: 'recoverClient-address',
+      refUtxo: {
+        txHash: 'recoverClient-tx',
+        outputIndex: 1,
+      },
+    });
+    expect(loaded.bridgeManifest.validators.recover_client).toEqual({
+      script_hash: 'recoverClient-hash',
+      address: 'recoverClient-address',
+      ref_utxo: {
+        tx_hash: 'recoverClient-tx',
+        output_index: 1,
+      },
+    });
 
     expect(loaded.deployment.validators.spendChannel.refValidator.chan_open_ack.scriptHash).toBe('open-ack-hash');
     expect(loaded.bridgeManifest.validators.spend_channel.ref_validator.chan_open_ack).toEqual({
@@ -144,6 +161,40 @@ describe('bridge manifest normalization', () => {
 
     expect(manifestLoaded.deployment).toEqual(legacy.deployment);
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
+  });
+
+  it('keeps handler files without a recovery validator loadable', () => {
+    const current = buildHandlerJsonDeployment();
+    const { recoverClient: _recoverClient, ...legacyValidators } = current.validators;
+
+    const loaded = normalizeHandlerJsonDeploymentConfig(
+      { ...current, validators: legacyValidators },
+      {
+        chain_id: 'cardano-devnet',
+        network_magic: 42,
+        network: 'Custom',
+      },
+    );
+
+    expect(loaded.deployment.validators.recoverClient).toBeUndefined();
+    expect(loaded.bridgeManifest.validators.recover_client).toBeUndefined();
+  });
+
+  it('keeps manifests without a recovery validator loadable', () => {
+    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    }).bridgeManifest;
+    const { recover_client: _recoverClient, ...legacyValidators } = current.validators;
+
+    const loaded = normalizeBridgeManifestConfig({
+      ...current,
+      validators: legacyValidators,
+    });
+
+    expect(loaded.deployment.validators.recoverClient).toBeUndefined();
+    expect(loaded.bridgeManifest.validators.recover_client).toBeUndefined();
   });
 
   it('defaults handler files without a codec capability to the legacy validators', () => {

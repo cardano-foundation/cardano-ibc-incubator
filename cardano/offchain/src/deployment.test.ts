@@ -45,6 +45,58 @@ Deno.test("generic module deployments pin the spend handler from the blueprint",
   );
 });
 
+Deno.test("client deployment pins the recovery withdrawal validator", () => {
+  const recoveryValidator = blueprint.validators.find(
+    ({ title }) => title === "recover_client.recover_client.withdraw",
+  ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
+  const spendClientValidator = blueprint.validators.find(
+    ({ title }) => title === "spending_client.spend_client.spend",
+  ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
+
+  assertEquals(
+    recoveryValidator?.parameters?.map(({ title }) => title) ?? [],
+    ["host_state_nft_policy_id"],
+  );
+  assertEquals(
+    spendClientValidator?.parameters?.map(({ title }) => title) ?? [],
+    ["host_state_nft_policy_id", "recover_client_credential"],
+  );
+});
+
+Deno.test("applied client validator fits a mainnet reference-script transaction", () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const hostPolicy = "11".repeat(28);
+  const [recoveryValidator, recoveryScriptHash] = readValidator(
+    "recover_client.recover_client.withdraw",
+    lucid,
+    [hostPolicy],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+  const [spendClientValidator, spendClientScriptHash] = readValidator(
+    "spending_client.spend_client.spend",
+    lucid,
+    [hostPolicy, { Script: [recoveryScriptHash] }],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Enum([
+        Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
+        Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
+      ]),
+    ]) as unknown as [string, { Script: [string] }],
+  );
+  const report = buildReferenceValidatorSizeReport(
+    [recoveryValidator, spendClientValidator],
+    16_384,
+  );
+  const spendClientReport = report.find(
+    ({ scriptHash }) => scriptHash === spendClientScriptHash,
+  );
+
+  assertEquals(spendClientReport?.oversized, false);
+});
+
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
