@@ -519,12 +519,6 @@ fn module_operator(
       expect fungible_token_packet_data.validate_basic(data)
       trace @"spend_transfer_module: redeemer data is valid"
 
-      // Every outbound transfer must be refundable to a Cardano payment key.
-      expect Some(sender_public_key_hash) =
-        string_utils.hex_string_to_bytes(data.sender)
-      expect bytearray.length(sender_public_key_hash) == 28
-      trace @"spend_transfer_module: sender is a valid public key hash"
-
       expect Some(channel_redeemer) =
         transfer_channel_callback.extract_channel_redeemer(
           inputs,
@@ -542,6 +536,12 @@ fn module_operator(
         }
 
       expect fungible_token_packet_data.matches_valid_bytes(data, packet.data)
+
+      // Every outbound transfer must be refundable to a Cardano payment key.
+      expect Some(sender_public_key_hash) =
+        string_utils.hex_string_to_bytes(data.sender)
+      expect bytearray.length(sender_public_key_hash) == 28
+      trace @"spend_transfer_module: sender is a valid public key hash"
 
       if transfer_coin.sender_chain_is_source(
         packet.source_port,
