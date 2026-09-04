@@ -8,8 +8,10 @@ use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header}
+use ibc/client/ics_007_tendermint_client/header_handle
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
+use ibc/utils/int.{max_uint64}
 
 const expected_revision_height = 99
 
@@ -92,4 +94,35 @@ test test_consensus_state() {
     next_validators_hash: expected_next_validators_hash,
     root: expected_root,
   }
+}
+
+fn valid_trusted_validator_set() -> ValidatorSet {
+  let val =
+    Validator {
+      address: #"4ae76aed128636dad8c84f814aff2b5b965a8001",
+      pubkey: #"6210fc94ff775add5fb919f1abbf9eb94aab6c345c334a035f3d4f2ea485ed70",
+      voting_power: 10,
+      proposer_priority: 0,
+    }
+  ValidatorSet { validators: [val], proposer: val, total_voting_power: 10 }
+}
+
+test check_trusted_header_rejects_wrapped_voting_power() fail {
+  let honest = valid_trusted_validator_set()
+  expect [val] = honest.validators
+  let wrapped =
+    ValidatorSet {
+      ..honest,
+      validators: [Validator { ..val, voting_power: 10 - max_uint64 }],
+    }
+  let h = Header { ..get_sample_header(), trusted_validators: wrapped }
+  let cons_state =
+    ConsensusState {
+      timestamp: expected_time,
+      next_validators_hash: validator_set.hash(honest),
+      root: MerkleRoot { hash: expected_app_hash },
+    }
+
+  expect validator_set.hash(wrapped) == cons_state.next_validators_hash
+  header_handle.check_trusted_header(h, cons_state)
 }

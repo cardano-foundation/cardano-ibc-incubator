@@ -19,7 +19,9 @@ pub fn verify_commit_light(
   list_vote_sign_bytes: Option<List<ByteArray>>,
 ) -> Bool {
   expect verify_basic_vals_and_commit(vals, commit, height, block_id)
-  let voting_power_needed = validator_set.total_voting_power(vals) * 2 / 3
+  let total_voting_power = validator_set.total_voting_power(vals)
+  expect validator_set.valid_total_voting_power(total_voting_power)
+  let voting_power_needed = total_voting_power * 2 / 3
 
   if should_batch_verify(vals, commit) {
     let ignore =

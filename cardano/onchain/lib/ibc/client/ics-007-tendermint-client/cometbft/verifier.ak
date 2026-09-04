@@ -136,6 +136,8 @@ fn verify_new_header_and_vals(
   now: Time,
   max_clock_drift: Duration,
 ) -> Bool {
+  expect validator_set.validate_basic(untrusted_vals)
+
   and {
     untrusted_header
       |> signed_header.validate_basic(trusted_header.header.chain_id),

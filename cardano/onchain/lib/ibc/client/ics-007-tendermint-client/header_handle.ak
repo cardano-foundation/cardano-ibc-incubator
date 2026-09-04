@@ -59,6 +59,8 @@ pub fn verify_header(
 
 /// check_trusted_header() checks that consensus state matches trusted fields of Header
 pub fn check_trusted_header(header: Header, cons_state: ConsensusState) {
+  expect validator_set.validate_basic(header.trusted_validators)
+
   bytearray.compare(
     cons_state.next_validators_hash,
     validator_set.hash(header.trusted_validators),

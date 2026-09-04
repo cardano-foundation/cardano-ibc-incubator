@@ -14,6 +14,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
 use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/misbehaviour.{Misbehaviour} as misbehaviour_mod
+use ibc/utils/int.{max_uint64}
 
 fn committed_validator_set() -> ValidatorSet {
   let proposer =
@@ -193,4 +194,22 @@ test validate_basic_rejects_mismatched_validator_set() fail {
   let detached = Header { ..header, validator_set: mismatched_set }
 
   misbehaviour_mod.validate_basic(evidence(detached, header))
+}
+
+test validate_basic_rejects_wrapped_validator_voting_power() fail {
+  let header = committed_header()
+  expect [first, ..rest] = header.validator_set.validators
+  let wrapped_set =
+    ValidatorSet {
+      ..header.validator_set,
+      validators: [
+        Validator { ..first, voting_power: first.voting_power - max_uint64 },
+        ..rest
+      ],
+    }
+  let wrapped_header = Header { ..header, validator_set: wrapped_set }
+
+  expect
+    validator_set.hash(wrapped_set) == header.signed_header.header.validators_hash
+  misbehaviour_mod.validate_basic(evidence(wrapped_header, header))
 }
