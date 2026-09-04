@@ -8,17 +8,19 @@ use cardano/transaction.{
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
+use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership, VerifyNonMembership,
+  BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
+  VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
-use ibc/core/ics_004/channel_redeemer.{TimeoutPacket}
+use ibc/core/ics_004/channel_redeemer.{TimeoutOnClose, TimeoutPacket}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as chan_keys_mod
@@ -33,6 +35,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   ExistenceProof, InnerOp, LeafOp, NonExistenceProof,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
+use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
@@ -43,10 +46,19 @@ fn check_timeout_unordered_packet(
   use_escrow_shard: Bool,
   include_callback: Bool,
   callback_packet_matches: Bool,
+  use_timeout_on_close: Bool,
 ) {
   let mock_data = setup()
 
-  let pack_timeout_height = Height { revision_number: 1, revision_height: 18 }
+  let pack_timeout_height =
+    Height {
+      revision_number: 1,
+      revision_height: if use_timeout_on_close {
+        1000
+      } else {
+        18
+      },
+    }
 
   let packet =
     Packet {
@@ -115,11 +127,7 @@ fn check_timeout_unordered_packet(
   let inputs = [mock_data.host_state_input, callback_input, channel_input]
 
   //========================arrange reference_inputs=======================
-  let proof_height =
-    Height {
-      ..pack_timeout_height,
-      revision_height: pack_timeout_height.revision_height + 1,
-    }
+  let proof_height = Height { revision_number: 1, revision_height: 19 }
 
   let cons_state =
     ConsensusState {
@@ -275,12 +283,23 @@ fn check_timeout_unordered_packet(
       ],
     }
 
+  let proof_close = MerkleProof { proofs: [] }
   let spend_channel_redeemer: Redeemer =
-    TimeoutPacket {
-      packet,
-      proof_unreceived,
-      proof_height,
-      next_sequence_recv: 0,
+    if use_timeout_on_close {
+      TimeoutOnClose {
+        packet,
+        proof_unreceived,
+        proof_close,
+        proof_height,
+        next_sequence_recv: 0,
+      }
+    } else {
+      TimeoutPacket {
+        packet,
+        proof_unreceived,
+        proof_height,
+        next_sequence_recv: 0,
+      }
     }
 
   let channel_id =
@@ -317,8 +336,8 @@ fn check_timeout_unordered_packet(
       ),
     )
 
-  let verify_proof_redeemer: Redeemer =
-    VerifyNonMembership {
+  let receipt_non_membership =
+    VerifyNonMembershipParams {
       cs: client_datum.state.client_state,
       cons_state,
       height: proof_height,
@@ -328,6 +347,61 @@ fn check_timeout_unordered_packet(
       delay_block_period: 0,
       proof: proof_unreceived,
       path: merkle_path,
+    }
+  let verify_proof_redeemer: Redeemer =
+    if use_timeout_on_close {
+      let expected_remote_channel =
+        Channel {
+          state: chan_state_mod.Closed,
+          ordering: chan_order_mod.Unordered,
+          counterparty: ChannelCounterparty {
+            port_id: input_channel_datum.port_id,
+            channel_id,
+          },
+          connection_hops: [connection_datum.state.counterparty.connection_id],
+          version: input_channel_datum.state.channel.version,
+        }
+      let close_membership =
+        VerifyMembershipParams {
+          cs: client_datum.state.client_state,
+          cons_state,
+          height: proof_height,
+          processed_time: 0,
+          processed_height: 0,
+          delay_time_period: 0,
+          delay_block_period: 0,
+          proof: proof_close,
+          path: merkle.apply_prefix(
+            connection_datum.state.counterparty.prefix,
+            merkle.new_merkle_path(
+              [
+                channel_keys.channel_path(
+                  packet.destination_port,
+                  packet.destination_channel,
+                ),
+              ],
+            ),
+          ),
+          value: channel_pb.marshal_for_channel(
+            channel.convert_to_channel_proto(expected_remote_channel),
+          ).2nd,
+        }
+      BatchVerifyMembershipAndNonMembership {
+        memberships: [close_membership],
+        non_memberships: [receipt_non_membership],
+      }
+    } else {
+      VerifyNonMembership {
+        cs: receipt_non_membership.cs,
+        cons_state: receipt_non_membership.cons_state,
+        height: receipt_non_membership.height,
+        processed_time: receipt_non_membership.processed_time,
+        processed_height: receipt_non_membership.processed_height,
+        delay_time_period: receipt_non_membership.delay_time_period,
+        delay_block_period: receipt_non_membership.delay_block_period,
+        proof: receipt_non_membership.proof,
+        path: receipt_non_membership.path,
+      }
     }
 
   let timeout_packet_redeemer: Redeemer = mock_data.channel_token
@@ -373,27 +447,31 @@ fn check_timeout_unordered_packet(
 }
 
 test succeed_timeout_unordered_packet() {
-  check_timeout_unordered_packet(False, True, True)
+  check_timeout_unordered_packet(False, True, True, False)
+}
+
+test succeed_timeout_on_close_unordered_future_packet() {
+  check_timeout_unordered_packet(False, True, True, True)
 }
 
 test timeout_packet_accepts_registered_escrow_shard_callback() {
-  check_timeout_unordered_packet(True, True, True)
+  check_timeout_unordered_packet(True, True, True, False)
 }
 
 test timeout_packet_rejects_missing_voucher_refund_callback() fail {
-  check_timeout_unordered_packet(False, False, True)
+  check_timeout_unordered_packet(False, False, True, False)
 }
 
 test timeout_packet_rejects_mismatched_voucher_refund_packet() fail {
-  check_timeout_unordered_packet(False, True, False)
+  check_timeout_unordered_packet(False, True, False, False)
 }
 
 test timeout_packet_rejects_missing_native_refund_callback() fail {
-  check_timeout_unordered_packet(True, False, True)
+  check_timeout_unordered_packet(True, False, True, False)
 }
 
 test timeout_packet_rejects_mismatched_native_refund_packet() fail {
-  check_timeout_unordered_packet(True, True, False)
+  check_timeout_unordered_packet(True, True, False, False)
 }
 
 test succeed_timeout_ordered_packet() {
@@ -569,6 +647,226 @@ test succeed_timeout_ordered_packet() {
       outputs,
       redeemers,
       validity_range,
+      mint: from_asset(mock_data.timeout_packet_policy_id, "", 1),
+    }
+
+  timeout_packet.timeout_packet.mint(
+    mock_data.client_minting_policy_id,
+    mock_data.connection_minting_policy_id,
+    mock_data.port_minting_policy_id,
+    mock_data.verify_proof_policy_id,
+    mock_data.host_state_nft_policy_id,
+    mock_data.channel_token,
+    mock_data.timeout_packet_policy_id,
+    transaction,
+  )
+}
+
+test timeout_on_close_recovers_second_future_packet_from_closed_ordered_channel() {
+  let mock_data = setup()
+  let first_packet =
+    Packet {
+      sequence: 1,
+      source_port: "port-1",
+      source_channel: "channel-0",
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+      data: "first packet",
+      timeout_height: Height { revision_number: 1, revision_height: 18 },
+      timeout_timestamp: 0,
+    }
+  let second_packet =
+    Packet {
+      ..first_packet,
+      sequence: 2,
+      data: "second packet",
+      timeout_height: Height { revision_number: 1, revision_height: 1000 },
+    }
+
+  let open_channel =
+    Channel {
+      state: chan_state_mod.Open,
+      ordering: chan_order_mod.Ordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-1",
+        channel_id: "channel-0",
+      },
+      connection_hops: [mock_data.connection_id],
+      version: "mock-version",
+    }
+  let empty_channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
+        channel: open_channel,
+        next_sequence_send: 1,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: mock_data.port_id,
+      token: mock_data.channel_token,
+    }
+  let two_packet_datum =
+    test_utils.send_packet(
+      second_packet,
+      test_utils.send_packet(first_packet, empty_channel_datum),
+    )
+  let input_channel_datum =
+    ChannelDatum {
+      ..two_packet_datum,
+      state: ChannelDatumState {
+        ..two_packet_datum.state,
+        channel: Channel {
+          ..two_packet_datum.state.channel,
+          state: chan_state_mod.Closed,
+        },
+        packet_commitment: pairs.delete_first(
+          two_packet_datum.state.packet_commitment,
+          first_packet.sequence,
+        ),
+      },
+    }
+  let output_channel_datum =
+    ChannelDatum {
+      ..input_channel_datum,
+      state: ChannelDatumState {
+        ..input_channel_datum.state,
+        packet_commitment: pairs.delete_first(
+          input_channel_datum.state.packet_commitment,
+          second_packet.sequence,
+        ),
+      },
+    }
+  let channel_input =
+    test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
+  let channel_output =
+    test_utils.build_channel_output(
+      output_channel_datum,
+      mock_data.channel_token,
+    )
+
+  let proof_height = Height { revision_number: 1, revision_height: 19 }
+  let consensus_state =
+    ConsensusState {
+      timestamp: 1577923365000000000,
+      next_validators_hash: #"020402703976bb4e91f05e69c25627e1b813bfeca54f4825afee49efe8acdbd7",
+      root: MerkleRoot {
+        hash: #"2a2a5880ec8d4d978eaace39e4d256a7d1dbd024f3c471aa8fa14a955d3eb102",
+      },
+    }
+  let client_input =
+    test_utils.update_client(
+      proof_height,
+      consensus_state,
+      mock_data.client_input,
+    )
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  expect connection_datum: ConnectionDatum =
+    validator_utils.get_inline_datum(mock_data.connection_input.output)
+
+  let proof_unreceived = MerkleProof { proofs: [] }
+  let proof_close = MerkleProof { proofs: [] }
+  let next_sequence_recv = 2
+  let spend_channel_redeemer: Redeemer =
+    TimeoutOnClose {
+      packet: second_packet,
+      proof_unreceived,
+      proof_close,
+      proof_height,
+      next_sequence_recv,
+    }
+
+  let channel_id =
+    chan_keys_mod.format_channel_identifier(mock_data.channel_sequence)
+  let module_redeemer: Redeemer =
+    Callback(
+      OnTimeoutPacket {
+        channel_id,
+        packet_data: second_packet.data,
+        data: OtherModuleData,
+      },
+    )
+
+  let common_membership =
+    VerifyMembershipParams {
+      cs: client_datum.state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      processed_time: 0,
+      processed_height: 0,
+      delay_time_period: 0,
+      delay_block_period: 0,
+      proof: proof_unreceived,
+      path: merkle.apply_prefix(
+        connection_datum.state.counterparty.prefix,
+        merkle.new_merkle_path(
+          [
+            packet_keys.next_sequence_recv_path(
+              second_packet.destination_port,
+              second_packet.destination_channel,
+            ),
+          ],
+        ),
+      ),
+      value: from_int_big_endian(next_sequence_recv, 8),
+    }
+  let expected_remote_channel =
+    Channel {
+      state: chan_state_mod.Closed,
+      ordering: chan_order_mod.Ordered,
+      counterparty: ChannelCounterparty {
+        port_id: input_channel_datum.port_id,
+        channel_id,
+      },
+      connection_hops: [connection_datum.state.counterparty.connection_id],
+      version: input_channel_datum.state.channel.version,
+    }
+  let close_membership =
+    VerifyMembershipParams {
+      ..common_membership,
+      proof: proof_close,
+      path: merkle.apply_prefix(
+        connection_datum.state.counterparty.prefix,
+        merkle.new_merkle_path(
+          [
+            channel_keys.channel_path(
+              second_packet.destination_port,
+              second_packet.destination_channel,
+            ),
+          ],
+        ),
+      ),
+      value: channel_pb.marshal_for_channel(
+        channel.convert_to_channel_proto(expected_remote_channel),
+      ).2nd,
+    }
+  let verify_proof_redeemer: Redeemer =
+    BatchVerifyMembership([common_membership, close_membership])
+  let timeout_packet_redeemer: Redeemer = mock_data.channel_token
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.timeout_packet_policy_id), timeout_packet_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [
+        mock_data.host_state_input,
+        mock_data.module_input,
+        channel_input,
+      ],
+      reference_inputs: [mock_data.connection_input, client_input],
+      outputs: [mock_data.module_input.output, channel_output],
+      redeemers,
+      validity_range: mock_data.validity_range,
       mint: from_asset(mock_data.timeout_packet_policy_id, "", 1),
     }
 

@@ -25,7 +25,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry,
-  RecvPacket, SendPacket, TimeoutPacket,
+  RecvPacket, SendPacket, TimeoutOnClose, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -2578,7 +2578,7 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
   )
 }
 
-test on_timeout_packet_mint_voucher_succeed() {
+fn check_timeout_packet_mint_voucher(use_timeout_on_close: Bool) {
   let mock = setup()
 
   let receiver = mock.cardano_public_key_hash
@@ -2623,11 +2623,21 @@ test on_timeout_packet_mint_voucher_succeed() {
     )
 
   let channel_redeemer: Redeemer =
-    TimeoutPacket {
-      packet,
-      proof_unreceived: mock.proof,
-      proof_height: mock.proof_height,
-      next_sequence_recv: 1,
+    if use_timeout_on_close {
+      TimeoutOnClose {
+        packet,
+        proof_unreceived: mock.proof,
+        proof_close: mock.proof,
+        proof_height: mock.proof_height,
+        next_sequence_recv: 1,
+      }
+    } else {
+      TimeoutPacket {
+        packet,
+        proof_unreceived: mock.proof,
+        proof_height: mock.proof_height,
+        next_sequence_recv: 1,
+      }
     }
 
   let mint_voucher_redeemer: Redeemer =
@@ -2664,6 +2674,14 @@ test on_timeout_packet_mint_voucher_succeed() {
     mock.module_input.output_reference,
     transaction,
   )
+}
+
+test on_timeout_packet_mint_voucher_succeed() {
+  check_timeout_packet_mint_voucher(False)
+}
+
+test on_timeout_on_close_packet_mint_voucher_succeed() {
+  check_timeout_packet_mint_voucher(True)
 }
 
 test on_timeout_packet_unescrow_succeed() {

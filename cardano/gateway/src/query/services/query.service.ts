@@ -193,6 +193,7 @@ function getPacketFromSpendChannelRedeemer(redeemer: SpendChannelRedeemer): Pack
   if ('RecvPacket' in redeemer) return redeemer.RecvPacket.packet;
   if ('AcknowledgePacket' in redeemer) return redeemer.AcknowledgePacket.packet;
   if ('TimeoutPacket' in redeemer) return redeemer.TimeoutPacket.packet;
+  if ('TimeoutOnClose' in redeemer) return redeemer.TimeoutOnClose.packet;
   if ('SendPacket' in redeemer) return redeemer.SendPacket.packet;
   return undefined;
 }
@@ -1247,6 +1248,10 @@ export class QueryService {
             txsResult.events = packetEvent.events;
           }
           if (spendRedeemer.hasOwnProperty('TimeoutPacket')) {
+            const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
+            txsResult.events = packetEvent.events;
+          }
+          if (spendRedeemer.hasOwnProperty('TimeoutOnClose')) {
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
           }

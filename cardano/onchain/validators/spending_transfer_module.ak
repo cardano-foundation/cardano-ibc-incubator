@@ -3,9 +3,7 @@ use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{from_verification_key}
 use cardano/assets.{PolicyId, quantity_of}
-use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
-}
+use cardano/transaction.{Input, Output, OutputReference, Transaction}
 use ibc/apps/transfer/channel_callback as transfer_channel_callback
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/escrow.{TransferModuleSpend}
@@ -21,7 +19,7 @@ use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, RecvPacket, SendPacket, TimeoutPacket,
+  AcknowledgePacket, RecvPacket, SendPacket, TimeoutOnClose, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
@@ -63,9 +61,6 @@ validator spend_transfer_module(
         outputs,
         host_state_nft_policy_id,
       )
-    // Force the HostState thread for callback branches as well as operators.
-    expect InlineDatum(_) = host_state_input.output.datum
-
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     // Classify whether this spend is root state or a packet escrow shard.
     let spend =
@@ -283,8 +278,8 @@ fn module_callback(
       expect RecvPacket { packet, .. } = channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect packet_data == packet.data
-      expect fungible_token_packet_data.matches_valid_bytes(data, packet.data)
+      // The receive marker binds these callback bytes to this channel packet.
+      expect fungible_token_packet_data.matches_valid_bytes(data, packet_data)
 
       if transfer_coin.receiver_chain_is_source(
         packet.source_port,
@@ -420,11 +415,15 @@ fn module_callback(
           host_state_nft,
           channel_id,
         )
-      expect TimeoutPacket { packet, .. } = channel_redeemer
+      expect
+        when channel_redeemer is {
+          TimeoutPacket { .. } | TimeoutOnClose { .. } -> True
+          _ -> False
+        }
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect packet_data == packet.data
       let data = decode_transfer_packet_data(data)
+      // The timeout marker binds the callback port, channel and bytes to its packet.
       // Timeout refunds the sender-side packet effect.
       let valid_refund_packet =
         transfer_refund.validate_refund_packet_token(
@@ -437,12 +436,13 @@ fn module_callback(
           shard_policy_id,
           mint,
           data,
-          packet,
+          port_id,
+          channel_id,
         )
 
       and {
         valid_refund_packet?,
-        fungible_token_packet_data.matches_bytes(data, packet.data)?,
+        fungible_token_packet_data.matches_bytes(data, packet_data)?,
       }
     }
     OnAcknowledgementPacket { channel_id, packet_data, acknowledgement, data } -> {
@@ -460,12 +460,12 @@ fn module_callback(
         channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect packet_data == packet.data
       let tf_data = decode_transfer_packet_data(data)
+      // The acknowledgement marker binds these callback bytes to this packet.
       when acknowledgement.response is {
         AcknowledgementError { .. } -> and {
             // Only error acknowledgements trigger transfer refunds.
-            fungible_token_packet_data.matches_bytes(tf_data, packet.data),
+            fungible_token_packet_data.matches_bytes(tf_data, packet_data),
             acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
             transfer_refund.validate_refund_packet_token(
               voucher_minting_policy_id,
@@ -477,7 +477,8 @@ fn module_callback(
               shard_policy_id,
               mint,
               tf_data,
-              packet,
+              packet.source_port,
+              packet.source_channel,
             ),
           }
         _ -> {
@@ -489,7 +490,7 @@ fn module_callback(
               updated_output,
               assets.zero,
             )?,
-            fungible_token_packet_data.matches_bytes(tf_data, packet.data)?,
+            fungible_token_packet_data.matches_bytes(tf_data, packet_data)?,
             (acknowledgement_mod.marshal_json(acknowledgement) == channel_ack)?,
           }
         }

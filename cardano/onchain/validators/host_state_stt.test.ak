@@ -37,7 +37,7 @@ use ibc/core/ics_004/channel_datum.{
 }
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
-  SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  SendPacket, SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
 }
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -2455,6 +2455,75 @@ test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
       TimeoutPacket {
         packet,
         proof_unreceived: empty_proof(),
+        proof_height: test_height(1),
+        next_sequence_recv: 1,
+      },
+      test_channel_input_full(input_channel_datum),
+      [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+      [
+        test_host_output(new_state),
+        test_channel_output_full(output_channel_datum),
+      ],
+    ),
+  )
+    |> fuzz_dsl.assert_valid
+}
+
+test prop_host_handle_packet_accepts_timeout_on_already_closed_channel(
+  seed via fuzz.int(),
+) {
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_timeout_on_close")
+
+  let sequence = test_sequence(seed)
+  let packet = test_packet(sequence)
+  let siblings = full_empty_siblings()
+  let commitment = packet_mod.commit_packet(packet)
+  let old_root = test_committed_packet_root(sequence, commitment, siblings)
+  let input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Closed),
+      1,
+      1,
+      1,
+      [Pair(sequence, commitment)],
+      [],
+      [],
+    )
+  let output_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Closed),
+      1,
+      1,
+      1,
+      [],
+      [],
+      [],
+    )
+  let new_root =
+    test_handle_packet_commitment_delete_root(
+      old_root,
+      sequence,
+      commitment,
+      siblings,
+    )
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+
+  fuzz_dsl.valid_check(
+    "host",
+    "handle_packet_timeout_on_close",
+    "spend_host_state",
+    spend_host_state_with_channel_redeemer(
+      handle_packet_redeemer([], [], [], [], siblings, [], []),
+      TimeoutOnClose {
+        packet,
+        proof_unreceived: empty_proof(),
+        proof_close: empty_proof(),
         proof_height: test_height(1),
         next_sequence_recv: 1,
       },

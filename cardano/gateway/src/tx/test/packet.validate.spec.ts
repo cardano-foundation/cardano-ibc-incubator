@@ -1,6 +1,7 @@
 import {
   MsgRecvPacket,
   MsgTimeout,
+  MsgTimeoutOnClose,
   MsgTransfer,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import {
@@ -11,6 +12,7 @@ import { normalizeDenomTokenTransfer } from '../helper/helper';
 import {
   validateAndFormatRecvPacketParams,
   validateAndFormatSendPacketParams,
+  validateAndFormatTimeoutOnClosePacketParams,
   validateAndFormatTimeoutPacketParams,
   validateRecvPacketHistoryCapacity,
   validateSendPacketCommitmentCapacity,
@@ -197,6 +199,25 @@ describe('Timeout packet ICS-20 JSON validation', () => {
     );
 
     expect(result.timeoutPacketOperator.fungibleTokenPacketData.memo).toHaveLength(600);
+  });
+
+  it('keeps the counterparty close proof separate from the unreceived proof', () => {
+    const packetData = Buffer.from(
+      '{"denom":"uatom","amount":"12","sender":"cosmos1sender","receiver":"addr_test1receiver"}',
+      'utf8',
+    );
+    const proofClose = Uint8Array.from([0x0a, 0x02, 0x1a, 0x00]);
+    const message: MsgTimeoutOnClose = {
+      ...buildMsgTimeout(packetData),
+      proof_close: proofClose,
+    };
+
+    const result = validateAndFormatTimeoutOnClosePacketParams(message);
+
+    expect(result.constructedAddress).toBe(message.signer);
+    expect(result.timeoutOnClosePacketOperator.proofUnreceived.proofs).toHaveLength(0);
+    expect(result.timeoutOnClosePacketOperator.proofClose.proofs).toHaveLength(1);
+    expect(result.timeoutOnClosePacketOperator.packet.sequence).toBe(1n);
   });
 });
 

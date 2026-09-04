@@ -43,4 +43,11 @@ pub type SpendChannelRedeemer {
     proof_commitment_absence: MerkleProof,
     proof_height: Height,
   }
+  TimeoutOnClose {
+    packet: Packet,
+    proof_unreceived: MerkleProof,
+    proof_close: MerkleProof,
+    proof_height: Height,
+    next_sequence_recv: Int,
+  }
 }

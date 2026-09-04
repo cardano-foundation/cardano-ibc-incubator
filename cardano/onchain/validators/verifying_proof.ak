@@ -4,8 +4,9 @@ use cardano/transaction.{Transaction}
 use ibc/client/ics_007_tendermint_client/client_datum
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, VerifyMembership, VerifyMembershipParams,
-  VerifyNonMembership, VerifyProofRedeemer,
+  BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
+  VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
+  VerifyProofRedeemer,
 }
 use ibc/utils/validator_utils
 
@@ -99,6 +100,49 @@ validator verify_proof {
                 i.proof,
                 i.path,
                 i.value,
+              )
+            },
+          ),
+        }
+
+      BatchVerifyMembershipAndNonMembership { memberships, non_memberships } ->
+        and {
+          !list.is_empty(memberships),
+          !list.is_empty(non_memberships),
+          list.all(
+            memberships,
+            fn(i) {
+              client_state_mod.verify_membership(
+                i.cs,
+                i.cons_state,
+                i.height,
+                i.processed_time,
+                i.processed_height,
+                current_time,
+                current_height,
+                i.delay_time_period,
+                i.delay_block_period,
+                i.proof,
+                i.path,
+                i.value,
+              )
+            },
+          ),
+          list.all(
+            non_memberships,
+            fn(i) {
+              client_state_mod.verify_non_membership(
+                i.cs,
+                i.cons_state,
+                i.height,
+                i.processed_time,
+                i.processed_height,
+                current_time,
+                current_height,
+                i.delay_time_period,
+                i.delay_block_period,
+                i.proof,
+                i.path,
               )
             },
           ),
