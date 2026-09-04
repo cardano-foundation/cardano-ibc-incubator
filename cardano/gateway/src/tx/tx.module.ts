@@ -16,9 +16,10 @@ import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { WalletContextService } from './wallet-context.service';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 import { GRPC_AUTH_TOKEN, GrpcAuthGuard, loadGrpcAuthToken } from '../security/grpc-auth.guard';
+import { HealthModule } from '../health/health.module';
 
 @Module({
-  imports: [LucidModule, QueryModule, KupoModule],
+  imports: [LucidModule, QueryModule, KupoModule, HealthModule],
   controllers: [TxController],
   providers: [
     ClientService,

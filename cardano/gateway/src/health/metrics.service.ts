@@ -12,6 +12,9 @@ export class MetricsService {
   public readonly gatewayDbConnectionStatus: Gauge;
   public readonly historyBackendConnectionStatus: Gauge;
 
+  // Bounded in-memory cache metrics
+  public readonly cacheEntries: Gauge;
+
   constructor() {
     // Enable default metrics (CPU, memory, etc.)
     collectDefaultMetrics({ prefix: 'gateway_' });
@@ -34,6 +37,12 @@ export class MetricsService {
       help: 'Historical backend database connection status (1 = connected, 0 = disconnected)',
     });
 
+    this.cacheEntries = new Gauge({
+      name: 'gateway_cache_entries',
+      help: 'Current number of entries held by each bounded Gateway in-memory cache',
+      labelNames: ['cache'],
+    });
+
     this.logger.log('Metrics service initialized');
   }
 
@@ -49,6 +58,10 @@ export class MetricsService {
    */
   getContentType(): string {
     return register.contentType;
+  }
+
+  setCacheEntries(cache: string, entries: number): void {
+    this.cacheEntries.set({ cache }, entries);
   }
 
   /**

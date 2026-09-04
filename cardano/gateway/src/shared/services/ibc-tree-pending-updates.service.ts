@@ -1,4 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { MetricsService } from '../../health/metrics.service';
+import { BoundedCache } from '../helpers/bounded-cache';
+
+export const PENDING_TREE_UPDATE_CACHE_MAX_ENTRIES = 256;
+export const PENDING_TREE_UPDATE_CACHE_TTL_MS = 60 * 60 * 1000;
+
+const PENDING_TREE_UPDATE_CACHE_METRIC = 'ibc_tree_pending_updates';
 
 export type PendingTreeUpdate = {
   /** `tree_neutral` is used by staged verification transactions. */
@@ -9,7 +16,15 @@ export type PendingTreeUpdate = {
 
 @Injectable()
 export class IbcTreePendingUpdatesService {
-  private readonly pendingByTxHash = new Map<string, PendingTreeUpdate>();
+  private readonly pendingByTxHash: BoundedCache<string, PendingTreeUpdate>;
+
+  constructor(@Optional() @Inject(MetricsService) metricsService?: MetricsService) {
+    this.pendingByTxHash = new BoundedCache({
+      maxEntries: PENDING_TREE_UPDATE_CACHE_MAX_ENTRIES,
+      ttlMs: PENDING_TREE_UPDATE_CACHE_TTL_MS,
+      onSizeChange: (size) => metricsService?.setCacheEntries(PENDING_TREE_UPDATE_CACHE_METRIC, size),
+    });
+  }
 
   register(txHash: string, update: PendingTreeUpdate): void {
     if (!txHash) return;
@@ -34,18 +49,12 @@ export class IbcTreePendingUpdatesService {
     if (update !== expectedUpdate) return false;
 
     update.commit();
-    this.pendingByTxHash.delete(key);
-    return true;
+    return this.pendingByTxHash.deleteIfValue(key, update);
   }
 
   take(txHash: string): PendingTreeUpdate | undefined {
     if (!txHash) return undefined;
-    const key = txHash.toLowerCase();
-    const update = this.pendingByTxHash.get(key);
-    if (update) {
-      this.pendingByTxHash.delete(key);
-    }
-    return update;
+    return this.pendingByTxHash.take(txHash.toLowerCase());
   }
 
   takeByExpectedRoot(expectedNewRoot: string): PendingTreeUpdate | undefined {
@@ -53,12 +62,8 @@ export class IbcTreePendingUpdatesService {
     // Hash-based lookup can miss when external signers alter final body shape.
     // Root matching remains strict because expectedNewRoot is derived from the
     // exact in-memory tree mutation we prepared before signing.
-    for (const [key, update] of this.pendingByTxHash.entries()) {
-      if (update.kind !== 'tree_neutral' && update.expectedNewRoot === expectedNewRoot) {
-        this.pendingByTxHash.delete(key);
-        return update;
-      }
-    }
-    return undefined;
+    return this.pendingByTxHash.findAndTake(
+      (update) => update.kind !== 'tree_neutral' && update.expectedNewRoot === expectedNewRoot,
+    );
   }
 }

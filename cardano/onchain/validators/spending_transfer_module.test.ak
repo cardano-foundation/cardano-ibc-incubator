@@ -621,6 +621,8 @@ fn run_transfer_module_transition(
 
 type SendCallbackMutation {
   ExactSendCallback
+  UndecodableSender
+  WrongLengthSender
   WrongTypedPacketData
   WrongSendCommitment
   MovedModuleCredential
@@ -633,7 +635,13 @@ fn native_send_escrow_fixture(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let transfer_amount = 1234
-  let receiver = mock.cardano_public_key_hash
+  let sender =
+    when callback_mutation is {
+      UndecodableSender -> "zz"
+      WrongLengthSender -> "00"
+      _ -> mock.cardano_public_key_hash
+    }
+  let receiver = mock.cosmos_address
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let source_port = "port-0"
   let source_channel = "channel-0"
@@ -663,7 +671,7 @@ fn native_send_escrow_fixture(
     build_packet(
       denom,
       transfer_amount,
-      mock.cosmos_address,
+      sender,
       receiver,
       source_port,
       source_channel,
@@ -1033,7 +1041,7 @@ fn voucher_send_burn_fixture(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let transfer_amount = 1234
-  let receiver = mock.cardano_public_key_hash
+  let receiver = mock.cosmos_address
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
     [mock.module_output, mock.channel_output, mock.host_state_output]
@@ -1046,7 +1054,7 @@ fn voucher_send_burn_fixture(
     build_packet(
       denom,
       transfer_amount,
-      mock.cosmos_address,
+      mock.cardano_public_key_hash,
       receiver,
       source_port,
       source_channel,
@@ -1209,6 +1217,24 @@ test prop_transfer_module_native_send_escrow_increases_exactly(
   // Native SendPacket should move exactly the sent amount into escrow. This is
   // the positive baseline that the value-delta mutations below deviate from.
   native_send_escrow_fixture(1234, fuzz_dsl.no_mutation(), ExactSendCallback)
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test transfer_send_rejects_undecodable_sender() fail {
+  native_send_escrow_fixture(
+    1234,
+    fuzz_dsl.mutation("undecodable_sender"),
+    UndecodableSender,
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test transfer_send_rejects_wrong_length_sender() fail {
+  native_send_escrow_fixture(
+    1234,
+    fuzz_dsl.mutation("wrong_length_sender"),
+    WrongLengthSender,
+  )
     |> fuzz_dsl.assert_protocol_valid
 }
 
@@ -2047,7 +2073,7 @@ test transfer_escrow_succeed() {
 
   let transfer_amount = 1234
 
-  let receiver = mock.cardano_public_key_hash
+  let receiver = mock.cosmos_address
 
   //==========================arrange inputs=========================
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
@@ -2083,13 +2109,13 @@ test transfer_escrow_succeed() {
     build_prebuilt_packet(
       denom,
       "1234",
-      mock.cosmos_address,
+      mock.cardano_public_key_hash,
       receiver,
       source_port,
       source_channel,
       mock.port_id,
       mock.channel_id,
-      #"7b22616d6f756e74223a2231323334222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232222c2273656e646572223a226d6f636b20636f736d6f732061646472657373227d",
+      #"7b22616d6f756e74223a2231323334222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a226d6f636b20636f736d6f732061646472657373222c2273656e646572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232227d",
     )
 
   let module_redeemer: Redeemer =
@@ -2140,7 +2166,7 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
   let mock = setup()
 
   let transfer_amount = 1234
-  let receiver = mock.cardano_public_key_hash
+  let receiver = mock.cosmos_address
 
   let shutdown_host_state_output =
     Output {
@@ -2185,7 +2211,7 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
     build_packet(
       denom,
       transfer_amount,
-      mock.cosmos_address,
+      mock.cardano_public_key_hash,
       receiver,
       source_port,
       source_channel,
@@ -2238,7 +2264,7 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
 test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
   let mock = setup()
   let transfer_amount = 1234
-  let receiver = mock.cardano_public_key_hash
+  let receiver = mock.cosmos_address
   let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   let native_token_name = "coin"
   let denom = native_asset_denom()
@@ -2260,7 +2286,7 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
     build_packet(
       denom,
       transfer_amount,
-      mock.cosmos_address,
+      mock.cardano_public_key_hash,
       receiver,
       "port-0",
       "channel-0",
@@ -2318,7 +2344,7 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
 test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
   let mock = setup()
   let transfer_amount = 1234
-  let receiver = mock.cardano_public_key_hash
+  let receiver = mock.cosmos_address
   let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   let native_token_name = "coin"
   let denom = native_asset_denom()
@@ -2340,7 +2366,7 @@ test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
     build_packet(
       denom,
       transfer_amount,
-      mock.cosmos_address,
+      mock.cardano_public_key_hash,
       receiver,
       "port-0",
       "channel-0",
@@ -2400,7 +2426,7 @@ test transfer_burn_voucher_succeed() {
 
   let transfer_amount = 1234
 
-  let receiver = mock.cardano_public_key_hash
+  let receiver = mock.cosmos_address
 
   //==========================arrange inputs=========================
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
@@ -2421,7 +2447,7 @@ test transfer_burn_voucher_succeed() {
     build_packet(
       denom,
       transfer_amount,
-      mock.cosmos_address,
+      mock.cardano_public_key_hash,
       receiver,
       source_port,
       source_channel,
@@ -2475,7 +2501,7 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
   let mock = setup()
 
   let transfer_amount = 1234
-  let receiver = mock.cardano_public_key_hash
+  let receiver = mock.cosmos_address
 
   let shutdown_host_state_output =
     Output {
@@ -2505,7 +2531,7 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
     build_packet(
       denom,
       transfer_amount,
-      mock.cosmos_address,
+      mock.cardano_public_key_hash,
       receiver,
       source_port,
       source_channel,
@@ -3341,7 +3367,7 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
 
   let prior_escrow_amount = 0
   let transfer_amount = 15_000_000
-  let receiver = mock.cardano_public_key_hash
+  let receiver = mock.cosmos_address
 
   let source_port = "port-0"
   let source_channel = "channel-0"
@@ -3393,7 +3419,7 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
     build_packet(
       denom,
       transfer_amount,
-      mock.cosmos_address,
+      mock.cardano_public_key_hash,
       receiver,
       source_port,
       source_channel,

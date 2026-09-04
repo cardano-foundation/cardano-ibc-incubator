@@ -120,10 +120,11 @@ export class TxOperationRunnerService {
     }
 
     if (plan.syntheticEvents && plan.syntheticEvents.length > 0) {
-      this.txEventsService.register(unsignedTxHash, plan.syntheticEvents);
-      if (pendingTreeUpdate?.expectedNewRoot) {
-        this.txEventsService.registerByExpectedRoot(pendingTreeUpdate.expectedNewRoot, plan.syntheticEvents);
-      }
+      this.txEventsService.register(
+        unsignedTxHash,
+        plan.syntheticEvents,
+        pendingTreeUpdate?.expectedNewRoot,
+      );
     }
 
     return {
@@ -218,10 +219,7 @@ export class TxOperationRunnerService {
       this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
     }
     if (syntheticEvents && syntheticEvents.length > 0) {
-      this.txEventsService.register(unsignedTxHash, syntheticEvents);
-      if (pendingTreeUpdate?.expectedNewRoot) {
-        this.txEventsService.registerByExpectedRoot(pendingTreeUpdate.expectedNewRoot, syntheticEvents);
-      }
+      this.txEventsService.register(unsignedTxHash, syntheticEvents, pendingTreeUpdate?.expectedNewRoot);
     }
   }
 

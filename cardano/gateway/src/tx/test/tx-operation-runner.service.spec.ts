@@ -41,7 +41,6 @@ describe('TxOperationRunnerService', () => {
     } as any;
     const txEventsService = {
       register: jest.fn(),
-      registerByExpectedRoot: jest.fn(),
     } as any;
     const ibcTreePendingUpdatesService = {
       register: jest.fn(),
@@ -121,8 +120,11 @@ describe('TxOperationRunnerService', () => {
       'txhash-create-client',
       pendingTreeUpdate,
     );
-    expect(txEventsService.register).toHaveBeenCalledWith('txhash-create-client', syntheticEvents);
-    expect(txEventsService.registerByExpectedRoot).toHaveBeenCalledWith('abc123', syntheticEvents);
+    expect(txEventsService.register).toHaveBeenCalledWith(
+      'txhash-create-client',
+      syntheticEvents,
+      'abc123',
+    );
     expect(result.unsignedTxHash).toBe('txhash-create-client');
     expect(result.unsignedTxCbor).toBe('84a30081825820deadbeef');
     expect(result.unsignedTxBytes).toEqual(new Uint8Array(Buffer.from('84a30081825820deadbeef', 'utf-8')));
@@ -425,8 +427,7 @@ describe('TxOperationRunnerService', () => {
       ['first-hash', firstPending],
       ['second-hash', finalPending],
     ]);
-    expect(txEventsService.register).toHaveBeenCalledWith('second-hash', finalEvents);
-    expect(txEventsService.registerByExpectedRoot).toHaveBeenCalledWith('final-root', finalEvents);
+    expect(txEventsService.register).toHaveBeenCalledWith('second-hash', finalEvents, 'final-root');
   });
 
   it('does not register partial chain metadata when a later link fails', async () => {

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   QueryClientStateRequest,
   QueryClientStateResponse,
@@ -156,6 +156,8 @@ import {
 } from './stability-evidence';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
+import { BoundedCache } from '../../shared/helpers/bounded-cache';
+import { MetricsService } from '../../health/metrics.service';
 
 type ParsedTxRedeemer = {
   type: string;
@@ -195,6 +197,10 @@ type PacketEventQuery = {
 const STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS = 40;
 const STABILITY_LATEST_HEIGHT_DELAY_MS = 2_000;
 const MAX_PROTO_UINT64 = (1n << 64n) - 1n;
+export const TX_REDEEMER_CACHE_MAX_ENTRIES = 1024;
+export const TX_REDEEMER_CACHE_TTL_MS = 60 * 60 * 1000;
+
+const TX_REDEEMER_CACHE_METRIC = 'tx_redeemers';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -217,7 +223,7 @@ function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
 }
 @Injectable()
 export class QueryService {
-  private readonly txEvidenceCache = new Map<string, Promise<HistoryTxEvidence>>();
+  private readonly txEvidenceCache: BoundedCache<string, Promise<HistoryTxEvidence>>;
 
   constructor(
     private readonly logger: Logger,
@@ -229,7 +235,14 @@ export class QueryService {
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
-  ) {}
+    @Optional() @Inject(MetricsService) metricsService?: MetricsService,
+  ) {
+    this.txEvidenceCache = new BoundedCache({
+      maxEntries: TX_REDEEMER_CACHE_MAX_ENTRIES,
+      ttlMs: TX_REDEEMER_CACHE_TTL_MS,
+      onSizeChange: (size) => metricsService?.setCacheEntries(TX_REDEEMER_CACHE_METRIC, size),
+    });
+  }
 
   /**
    * Ensure the in-memory ICS-23 Merkle tree is aligned with on-chain state.
@@ -348,10 +361,18 @@ export class QueryService {
 
   private async getTransactionEvidence(txHash: string): Promise<HistoryTxEvidence> {
     const cacheKey = txHash.toLowerCase();
-    if (!this.txEvidenceCache.has(cacheKey)) {
-      this.txEvidenceCache.set(cacheKey, this.miniProtocalsService.fetchTransactionEvidence(cacheKey));
+    let lookup = this.txEvidenceCache.get(cacheKey);
+    if (!lookup) {
+      lookup = this.miniProtocalsService.fetchTransactionEvidence(cacheKey);
+      this.txEvidenceCache.set(cacheKey, lookup);
     }
-    return this.txEvidenceCache.get(cacheKey)!;
+
+    try {
+      return await lookup;
+    } catch (error) {
+      this.txEvidenceCache.deleteIfValue(cacheKey, lookup);
+      throw error;
+    }
   }
 
   private async getTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {

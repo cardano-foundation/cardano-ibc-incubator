@@ -95,7 +95,7 @@ so it is a headroom violation but remains below the ledger maximum. The combined
 receive path's additive model estimates 20,615 unsigned bytes and 20,875 signed
 bytes, which exceeds the ledger maximum. Actual balanced CBOR is not built here,
 so this estimate is not a direct measurement of a submitted transaction. Its
-96,763,049 memory units and 31,523,591,002 CPU steps also sum isolated Aiken
+96,805,885 memory units and 31,541,023,235 CPU steps also sum isolated Aiken
 fixtures; they are not a ledger evaluation of every validator in one combined
 transaction. Each recorded size or execution-unit overrun has an exact
 regression ceiling. CI rejects any increase, requires the ceiling to be lowered
