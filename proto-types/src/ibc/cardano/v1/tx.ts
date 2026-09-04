@@ -84,6 +84,54 @@ export interface SubmitSignedTxRequest {
    * Optional description for logging/debugging.
    */
   description: string;
+  /**
+   * When true, return after the node accepts the transaction instead of
+   * waiting for history indexing. The Gateway only honors this for
+   * structurally tree-neutral staged Tendermint session transactions.
+   */
+  submit_only: boolean;
+  /**
+   * Optional bounded confirmation timeout for a non-submit-only transaction.
+   * Zero keeps the server default. Values are seconds.
+   */
+  confirmation_timeout_seconds: number;
+  /**
+   * Marks a structurally authenticated staged-session transaction as neutral
+   * to the HostState commitment tree. This may be true with submit_only=false
+   * when a tree-neutral phase boundary must be confirmed before rebuilding.
+   */
+  tree_neutral: boolean;
+  /**
+   * True only when this transaction consumes an output produced by an earlier
+   * transaction in the same dependency-ordered chain. The Gateway may retry
+   * unknown-input errors until the shared validity deadline only in this case.
+   */
+  has_prior_dependency: boolean;
+}
+/**
+ * TendermintUpdateTxChain carries one dependency-ordered transaction phase.
+ * A phase contains tree-neutral session transactions or one final client and
+ * HostState update.
+ * @name TendermintUpdateTxChain
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.TendermintUpdateTxChain
+ */
+export interface TendermintUpdateTxChain {
+  /**
+   * Envelope version. The only currently supported value is 1.
+   */
+  version: number;
+  /**
+   * Unsigned Cardano transaction bodies, CBOR-encoded as UTF-8 hex, in
+   * dependency order. The protocol limit is 100 entries.
+   */
+  unsigned_tx_cbor: string[];
+  /**
+   * True when the last tree-neutral transaction is a confirmed phase boundary.
+   * Hermes must rebuild and continue the original MsgUpdateClient after either
+   * verification reaches a Complete session or session cleanup finishes.
+   */
+  rebuild_after_submission: boolean;
 }
 /**
  * SubmitSignedTxResponse contains the result of submitting a signed transaction.
@@ -479,6 +527,10 @@ function createBaseSubmitSignedTxRequest(): SubmitSignedTxRequest {
   return {
     signed_tx_cbor: "",
     description: "",
+    submit_only: false,
+    confirmation_timeout_seconds: 0,
+    tree_neutral: false,
+    has_prior_dependency: false,
   };
 }
 /**
@@ -496,6 +548,18 @@ export const SubmitSignedTxRequest = {
     if (message.description !== "") {
       writer.uint32(18).string(message.description);
     }
+    if (message.submit_only === true) {
+      writer.uint32(24).bool(message.submit_only);
+    }
+    if (message.confirmation_timeout_seconds !== 0) {
+      writer.uint32(32).uint32(message.confirmation_timeout_seconds);
+    }
+    if (message.tree_neutral === true) {
+      writer.uint32(40).bool(message.tree_neutral);
+    }
+    if (message.has_prior_dependency === true) {
+      writer.uint32(48).bool(message.has_prior_dependency);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): SubmitSignedTxRequest {
@@ -511,6 +575,18 @@ export const SubmitSignedTxRequest = {
         case 2:
           message.description = reader.string();
           break;
+        case 3:
+          message.submit_only = reader.bool();
+          break;
+        case 4:
+          message.confirmation_timeout_seconds = reader.uint32();
+          break;
+        case 5:
+          message.tree_neutral = reader.bool();
+          break;
+        case 6:
+          message.has_prior_dependency = reader.bool();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -522,18 +598,113 @@ export const SubmitSignedTxRequest = {
     const obj = createBaseSubmitSignedTxRequest();
     if (isSet(object.signed_tx_cbor)) obj.signed_tx_cbor = String(object.signed_tx_cbor);
     if (isSet(object.description)) obj.description = String(object.description);
+    if (isSet(object.submit_only)) obj.submit_only = Boolean(object.submit_only);
+    if (isSet(object.confirmation_timeout_seconds))
+      obj.confirmation_timeout_seconds = Number(object.confirmation_timeout_seconds);
+    if (isSet(object.tree_neutral)) obj.tree_neutral = Boolean(object.tree_neutral);
+    if (isSet(object.has_prior_dependency)) obj.has_prior_dependency = Boolean(object.has_prior_dependency);
     return obj;
   },
   toJSON(message: SubmitSignedTxRequest): unknown {
     const obj: any = {};
     message.signed_tx_cbor !== undefined && (obj.signed_tx_cbor = message.signed_tx_cbor);
     message.description !== undefined && (obj.description = message.description);
+    message.submit_only !== undefined && (obj.submit_only = message.submit_only);
+    message.confirmation_timeout_seconds !== undefined &&
+      (obj.confirmation_timeout_seconds = Math.round(message.confirmation_timeout_seconds));
+    message.tree_neutral !== undefined && (obj.tree_neutral = message.tree_neutral);
+    message.has_prior_dependency !== undefined && (obj.has_prior_dependency = message.has_prior_dependency);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<SubmitSignedTxRequest>, I>>(object: I): SubmitSignedTxRequest {
     const message = createBaseSubmitSignedTxRequest();
     message.signed_tx_cbor = object.signed_tx_cbor ?? "";
     message.description = object.description ?? "";
+    message.submit_only = object.submit_only ?? false;
+    message.confirmation_timeout_seconds = object.confirmation_timeout_seconds ?? 0;
+    message.tree_neutral = object.tree_neutral ?? false;
+    message.has_prior_dependency = object.has_prior_dependency ?? false;
+    return message;
+  },
+};
+function createBaseTendermintUpdateTxChain(): TendermintUpdateTxChain {
+  return {
+    version: 0,
+    unsigned_tx_cbor: [],
+    rebuild_after_submission: false,
+  };
+}
+/**
+ * TendermintUpdateTxChain carries one dependency-ordered transaction phase.
+ * A phase contains tree-neutral session transactions or one final client and
+ * HostState update.
+ * @name TendermintUpdateTxChain
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.TendermintUpdateTxChain
+ */
+export const TendermintUpdateTxChain = {
+  typeUrl: "/ibc.cardano.v1.TendermintUpdateTxChain",
+  encode(message: TendermintUpdateTxChain, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.version !== 0) {
+      writer.uint32(8).uint32(message.version);
+    }
+    for (const v of message.unsigned_tx_cbor) {
+      writer.uint32(18).string(v!);
+    }
+    if (message.rebuild_after_submission === true) {
+      writer.uint32(24).bool(message.rebuild_after_submission);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): TendermintUpdateTxChain {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseTendermintUpdateTxChain();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.version = reader.uint32();
+          break;
+        case 2:
+          message.unsigned_tx_cbor.push(reader.string());
+          break;
+        case 3:
+          message.rebuild_after_submission = reader.bool();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): TendermintUpdateTxChain {
+    const obj = createBaseTendermintUpdateTxChain();
+    if (isSet(object.version)) obj.version = Number(object.version);
+    if (Array.isArray(object?.unsigned_tx_cbor))
+      obj.unsigned_tx_cbor = object.unsigned_tx_cbor.map((e: any) => String(e));
+    if (isSet(object.rebuild_after_submission))
+      obj.rebuild_after_submission = Boolean(object.rebuild_after_submission);
+    return obj;
+  },
+  toJSON(message: TendermintUpdateTxChain): unknown {
+    const obj: any = {};
+    message.version !== undefined && (obj.version = Math.round(message.version));
+    if (message.unsigned_tx_cbor) {
+      obj.unsigned_tx_cbor = message.unsigned_tx_cbor.map((e) => e);
+    } else {
+      obj.unsigned_tx_cbor = [];
+    }
+    message.rebuild_after_submission !== undefined &&
+      (obj.rebuild_after_submission = message.rebuild_after_submission);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<TendermintUpdateTxChain>, I>>(object: I): TendermintUpdateTxChain {
+    const message = createBaseTendermintUpdateTxChain();
+    message.version = object.version ?? 0;
+    message.unsigned_tx_cbor = object.unsigned_tx_cbor?.map((e) => e) || [];
+    message.rebuild_after_submission = object.rebuild_after_submission ?? false;
     return message;
   },
 };

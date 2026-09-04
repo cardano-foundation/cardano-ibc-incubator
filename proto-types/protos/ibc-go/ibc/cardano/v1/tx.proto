@@ -75,6 +75,42 @@ message SubmitSignedTxRequest {
   
   // Optional description for logging/debugging.
   string description = 2;
+
+  // When true, return after the node accepts the transaction instead of
+  // waiting for history indexing. The Gateway only honors this for
+  // structurally tree-neutral staged Tendermint session transactions.
+  bool submit_only = 3;
+
+  // Optional bounded confirmation timeout for a non-submit-only transaction.
+  // Zero keeps the server default. Values are seconds.
+  uint32 confirmation_timeout_seconds = 4;
+
+  // Marks a structurally authenticated staged-session transaction as neutral
+  // to the HostState commitment tree. This may be true with submit_only=false
+  // when a tree-neutral phase boundary must be confirmed before rebuilding.
+  bool tree_neutral = 5;
+
+  // True only when this transaction consumes an output produced by an earlier
+  // transaction in the same dependency-ordered chain. The Gateway may retry
+  // unknown-input errors until the shared validity deadline only in this case.
+  bool has_prior_dependency = 6;
+}
+
+// TendermintUpdateTxChain carries one dependency-ordered transaction phase.
+// A phase contains tree-neutral session transactions or one final client and
+// HostState update.
+message TendermintUpdateTxChain {
+  // Envelope version. The only currently supported value is 1.
+  uint32 version = 1;
+
+  // Unsigned Cardano transaction bodies, CBOR-encoded as UTF-8 hex, in
+  // dependency order. The protocol limit is 100 entries.
+  repeated string unsigned_tx_cbor = 2;
+
+  // True when the last tree-neutral transaction is a confirmed phase boundary.
+  // Hermes must rebuild and continue the original MsgUpdateClient after either
+  // verification reaches a Complete session or session cleanup finishes.
+  bool rebuild_after_submission = 3;
 }
 
 // SubmitSignedTxResponse contains the result of submitting a signed transaction.

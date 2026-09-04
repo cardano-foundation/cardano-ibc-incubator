@@ -72,139 +72,115 @@ size and execution cost are both binding constraints.
 
 ## Interpretation
 
-These measurements establish the current boundary; they do not choose or
-enforce a validator-count ceiling. A follow-up design must reconcile the
-supported limit with Injective, introduce any required compact transaction
-representation, add matching on-chain and Gateway guards, and test the chosen
-limit and limit-plus-one. Explicit two-header misbehaviour evidence requires a
-separate capacity result because its payload shape is materially larger than a
-normal update.
+These measurements establish why a normal update cannot remain one transaction.
+The multi-transaction protocol below sets and tests a separate 256-validator
+limit. Explicit two-header misbehaviour evidence still requires its own design
+because its payload shape is materially larger than a normal update.
 
-## Consensus-history processing (#726)
+## Experimental multi-transaction update protocol
 
-Measured with Aiken `v1.1.21+42babe5`, stdlib `3.1.0` and tracing disabled.
-The baseline is `main` at `bbef7e9b2938637e4c0311fc267d8c36b8ce98b7`,
-compared with the optimization at `cdb4148276f58bea39055a8a527f3c65854eabb4`.
-These measurements precede the client-recovery changes described below.
-Both versions use the same compile-time fixtures in
-[`consensus_history_benchmark.test.ak`](../cardano/onchain/lib/ibc/client/ics-007-tendermint-client/consensus_history_benchmark.test.ak).
-Only `check_for_misbehaviour` and `update_state` run inside each measured test.
-These are execution units for history processing, not complete transactions,
-fees or validator-signature benchmarks.
+Fresh deployments use a separate Tendermint client validator that does not
+accept the old single-transaction update redeemer. Existing deployments without
+the session validators keep the old behavior. The staged protocol is
+experimental.
 
-| Stored states | Memory before | Memory after | CPU before | CPU after |
-| --- | ---: | ---: | ---: | ---: |
-| 1 | 518,973 | 438,068 | 176,738,504 | 151,768,828 |
-| 10 | 2,256,189 | 1,470,170 | 992,645,294 | 681,770,350 |
-| 16 | 4,514,583 | 2,419,058 | 2,062,403,294 | 1,224,276,598 |
-| 17 | 4,976,557 | 3,972,335 | 2,281,593,416 | 1,687,024,420 |
-| 50 | 33,938,149 | 14,572,200 | 16,070,091,854 | 6,317,008,560 |
-| 150 | 284,293,049 | 56,197,772 | 135,557,952,254 | 23,392,148,728 |
-| 300 | 1,118,251,703 | 127,284,620 | 533,875,920,140 | 52,587,041,380 |
-| 300 (150 expire) | 1,050,584,699 | 95,311,244 | 485,295,894,104 | 41,786,857,310 |
+A normal update has two phases. Phase one starts by minting a temporary session
+NFT. Its datum commits to the header, trusted client state, validator counts,
+running voting-power totals, and an RFC-6962 Merkle accumulator. For a
+skipped-height update, the first group of transactions authenticates the trusted
+validator set. The next group checks the target validator set and its aligned
+commit signatures. Each transaction handles at most six validators. Phase-one
+init and advance verification ends when its last transaction writes a Complete
+session that has been confirmed and indexed.
 
-At 300 unexpired states this saves 89% memory and 90% CPU. The remaining
-history cost alone still exceeds mainnet transaction limits. This does not
-resolve transaction-size or pruning costs in #557.
+The Gateway builds the remaining phase-one transactions as one
+dependency-ordered chain. Hermes signs and submits them in order, waiting for
+node acceptance of intermediate transactions and ledger confirmation of the
+Complete session. Cardano may include dependent transactions in the same block,
+but correctness does not depend on that. The `rebuild_after_submission` marker
+then makes Hermes rebuild the original update. The Gateway reads the confirmed
+Complete session and fresh client and HostState inputs, applies a normal narrow
+validity window, and returns a separate final-only transaction. That transaction
+burns the session NFT and updates the client and HostState atomically.
 
-Neighbor selection now scans once. Metadata retention builds a balanced height
-index instead of searching the full retained list for every metadata entry.
-With `C` retained states and `M` metadata entries across both lists, indexed
-retention costs `O(C log C + M log C)`. Histories of at most 16 retained states
-use bounded scans to avoid index overhead. Larger indexes also use leaves of
-at most 16 keys. CPU and memory are lower in every measured case.
-List order, duplicates, expiry and independent truncation are unchanged.
+The session datum is the source of progress after a restart. The Gateway checks
+live UTxOs through Ogmios, loads their datums through the indexer, resumes at the
+recorded validator count, and cancels duplicate or stale sessions. Cleanup chains
+use the same rebuild marker so Hermes confirms the phase boundary and retries the
+original update instead of reporting success. Confirmed update events can be
+reconstructed from historical session outputs and their indexed redeemers; they
+do not depend on process memory.
 
-At those revisions, the compiled client grows from 15,315 to 15,568 bytes,
-below the then-largest script of 15,640 bytes, and the transaction-budget
-regression check passes. These historical measurements do not include the
-subsequent recovery implementation.
+Version 1 supports at most 256 validators. With equal trusted and target set
+sizes, its deterministic transaction counts are:
 
-To reproduce, run this from `cardano/onchain` at the optimization commit above.
-Fixtures are constants so their construction is excluded from the measured
-execution.
+| Validators | Adjacent update | Skipped-height update |
+| ---------: | --------------: | --------------------: |
+|         45 |              10 |                    18 |
+|        100 |              19 |                    36 |
+|        200 |              36 |                    70 |
+|        256 |              45 |                    88 |
 
-```sh
-aiken check --deny --trace-level silent --plain-numbers \
-  -m 'consensus_history_benchmark.{..}'
-```
+The hard batch limit is six. Prepared-fixture Aiken tests subtract an identical
+fixture-construction baseline, because decoding the legacy 45-validator CBOR
+and deriving the expected continuation are not ledger work. The marginal
+six-entry adjacent step costs 11,704,438 memory and 3,943,023,573 CPU; the
+45-validator skipped-height step with six trusted-membership proofs costs
+14,793,854 memory and 4,772,303,193 CPU. A precomputed canonical 256-validator
+root with six depth-eight proofs at bitmap indices 250 through 255 costs
+38,700,147 memory and 11,520,189,768 CPU raw. Against its 23,630,558-memory and
+6,544,637,059-CPU setup baseline, that is 15,069,589 memory and 4,975,552,709
+CPU of marginal validator work, leaving 605,411 memory below the project's
+15,675,000 safe limit. Seven depth-six proofs already cost 15,978,541 memory,
+so the consensus batch limit remains six.
 
-For the baseline, create a separate worktree at the baseline commit above, copy only
-`consensus_history_benchmark.test.ak` into the same directory there and run
-the same command. Keep the compiler and dependency versions identical.
+The paired session-init mint test costs 8,739,800 memory and 2,909,344,910 CPU
+raw, against a 2,287,117-memory and 863,077,474-CPU setup baseline: a marginal
+6,452,683 memory and 2,046,267,436 CPU.
 
-### Shared index and deployment size
+Paired fixture baselines estimate the four scripts in the minimum-history final
+transaction at 12,730,661 memory and 3,989,930,237 CPU in total. This is a
+subtracted Aiken-test estimate, not a provider evaluation of one combined
+transaction.
 
-After integration with client recovery, retained-height membership and trusted
-validator lookup share a balanced tree. Bounded leaves use native equality;
-internal nodes use ordering and preserve the first matching validator in wire
-order. This keeps the history optimization deployable without changing datum
-or validator-parameter schemas.
+These are structural counts rather than live measurements. The Aiken figures
+are isolated validator estimates rather than provider-completed transaction
+evaluations. Staged misbehaviour evidence is also not implemented; the new
+protocol currently accepts normal `Header` updates only.
 
-With the same Aiken version and silent traces, the current client blueprint is
-15,353 bytes. Applying the host policy and recovery credential produces a
-15,429-byte script and a 15,629-byte estimated reference output. This fits the
-15,634-byte deployment guard, which reserves 750 bytes from the 16,384-byte
-transaction limit. The existing deployment-size regression test now runs in CI.
+## Local end-to-end benchmark
 
-The current shared-index implementation, measured with the same fixtures and
-silent settings, has the following history-only execution costs:
+On 4 September 2026, a local run transferred 12,345 units of a Cardano native
+asset to the single-validator `v8-classic` ibc-go v8.7.0 chain and then returned
+the resulting ICS-20 voucher to Cardano. This was an ICS-20 round trip, not an
+AMM swap. The run used `run_direct_token_swap.sh` with `COSMOS_RETURN_DENOM`
+set to the minted v8 voucher. The Cardano receiver balance changed from zero to
+12,345, the Cosmos voucher balance returned to its pre-run value, and both
+channel commitment sets returned to their pre-run state.
 
-| Stored states | Current memory | Current CPU |
-| --- | ---: | ---: |
-| 1 | 443,702 | 155,124,366 |
-| 10 | 1,536,392 | 715,830,756 |
-| 16 | 2,552,672 | 1,283,126,916 |
-| 17 | 4,094,881 | 1,713,025,665 |
-| 50 | 15,134,286 | 6,351,014,455 |
-| 150 | 58,650,646 | 23,148,108,772 |
-| 300 | 133,072,782 | 51,780,946,479 |
-| 300 (150 expire) | 100,101,534 | 40,935,008,010 |
+| Cardano work | Transactions | Total bytes | Fees (lovelace) | Highest transaction memory | Highest transaction CPU |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Send | 1 | 2,271 | 2,814,966 | 11,187,684 | 3,501,352,459 |
+| Two Tendermint updates | 8 | 14,642 | 9,675,878 | 11,583,647 | 3,871,730,128 |
+| Acknowledgement | 1 | 2,222 | 2,804,647 | 10,020,381 | 3,327,890,869 |
+| Receive and unescrow | 1 | 2,419 | 3,392,220 | 15,697,994 | 5,006,318,793 |
+| Total | 11 | 21,554 | 18,687,711 | - | - |
 
-Memory and CPU remain below the pre-optimization baseline in every measured
-case. At 300 unexpired states, the current implementation saves 88% memory and
-90% CPU versus that baseline. These history-only costs still exceed transaction
-limits; the broader capacity and pruning limitations remain unchanged.
+Each Tendermint update used three dependent session transactions followed by
+one final client-update transaction. In both updates, Cardano included all
+three session transactions in one block and the final transaction in the next
+block. The full command took 566.62 seconds. Most of that time was spent waiting
+for the configured 24-block Cardano stability threshold, so it is safe relay
+latency rather than raw transaction-processing time.
 
-Run the benchmark command above on the current branch to reproduce this table.
+This run proves the transaction chaining, relay, acknowledgement, and token
+round trip against a real local route. Its one-validator v8 chain does not
+measure validator-set scaling; the deterministic tests above cover that shape,
+and a live 200- or 256-validator run remains necessary.
 
-## Expired or frozen client recovery
-
-An expired or frozen Cardano-side Tendermint client cannot safely resume normal
-header updates because its previous trust period has ended. Recovery uses a
-second active client for the same chain as a new trusted checkpoint. The
-deployment authority submits `MsgRecoverClient`, naming the inactive subject
-client and the active substitute client.
-
-The recovery transaction keeps the subject client token and identifier, clears
-its frozen height, and copies the substitute's latest consensus state with its
-processed time and height. Existing connections and channels therefore continue
-to use the same client identifier. The substitute is read as a reference input
-and is not modified.
-
-This is not retroactive for deployments that use the previous `spend_client`
-script. Adding recovery changes that script's hash, and its existing `Other`
-branch cannot authorize a migration. Those deployments must deploy the new
-contracts and establish new clients, connections, and channels. A recovery
-operator runs `hermes tx recover-client` with the subject and substitute client
-identifiers. Hermes asks the Gateway to build the transaction, checks it, then
-signs and submits it with the selected deployment key. Hermes does not initiate
-recovery automatically.
-
-Recovery requires identical Tendermint parameters, including `chain_id` and
-`trusting_period`, and requires the substitute height to be strictly newer. The
-subject history is retained and only the oldest entry is removed when the
-300-state bound is already full. This keeps recovery itself to at most one
-consensus-state deletion. The broader incremental pruning work tracked by issue
-#557 is still required for ordinary updates after long downtime.
-
-The recovery validator still checks the retained lists, so its execution cost
-grows with the number of stored consensus states. The Aiken fixtures show this
-growth, but they include construction of the test transaction and are not
-ledger-evaluated transaction costs. A provider-completed transaction is still
-needed before claiming support at the full 300-state bound. The history work in
-issue #557 is still required.
-
-Recovery is an administrative trust decision rather than an ordinary relayer
-operation. For a client frozen by misbehaviour, operators should also wait for
-the counterparty evidence window to pass before selecting the substitute.
+An initial run that sent a new Cosmos-native `utest` denomination to Cardano
+also exposed an existing packet-level limit. Its first-seen voucher receive
+required 22,437,146 memory units against the 16,500,000 transaction limit. That
+path is separate from Tendermint update staging. Returning the Cardano-origin
+voucher used the unescrow path and succeeded, although its receive transaction
+used 15,697,994 memory units, or 95.1% of the limit.

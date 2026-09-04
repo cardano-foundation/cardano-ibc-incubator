@@ -9,6 +9,8 @@ export const PENDING_TREE_UPDATE_CACHE_TTL_MS = 60 * 60 * 1000;
 const PENDING_TREE_UPDATE_CACHE_METRIC = 'ibc_tree_pending_updates';
 
 export type PendingTreeUpdate = {
+  /** `tree_neutral` is used by staged verification transactions. */
+  kind?: 'tree_update' | 'tree_neutral';
   expectedNewRoot: string;
   commit: StateRootResult['commit'];
 };
@@ -66,6 +68,12 @@ export class IbcTreePendingUpdatesService {
     // Hash-based lookup can miss when external signers alter final body shape.
     // Root matching remains strict because expectedNewRoot is derived from the
     // exact in-memory tree mutation we prepared before signing.
-    return this.pendingByTxHash.findAndTake((update) => update.expectedNewRoot === expectedNewRoot);
+    for (const [key, update] of this.pendingByTxHash.entries()) {
+      if (update.kind !== 'tree_neutral' && update.expectedNewRoot === expectedNewRoot) {
+        this.pendingByTxHash.delete(key);
+        return update;
+      }
+    }
+    return undefined;
   }
 }

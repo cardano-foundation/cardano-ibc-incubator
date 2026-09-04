@@ -218,7 +218,7 @@ fn validate_create_client_root(
   outputs: List<Output>,
   mint: Value,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
-  client_policy_id: PolicyId,
+  client_mint_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
 ) -> Bool {
@@ -230,18 +230,10 @@ fn validate_create_client_root(
 
   // Decode the client datum so we can derive the exact state bytes that must be
   // committed into the Merkle root.
-  let client_datum = decode_client_datum(client_output)
-
-  expect
-    authenticate_created_state_thread(
-      client_output,
-      client_datum.token,
-      mint,
-      old_datum.nft_policy,
-      client_policy_id,
-      client_id_keys.client_prefix,
-      old_datum.state.next_client_sequence,
-    )
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_output)
+  expect client_datum.token.policy_id == client_mint_policy_id
+  expect auth.contain_auth_token(client_output, client_datum.token)
 
   // Derive the client identifier from the HostState sequence.
   //
@@ -371,7 +363,7 @@ fn validate_update_client_root(
   inputs: List<Input>,
   outputs: List<Output>,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
-  client_policy_id: PolicyId,
+  client_mint_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
   removed_consensus_state_siblings: List<List<ByteArray>>,
@@ -382,23 +374,20 @@ fn validate_update_client_root(
   // so we require exactly one here too.
   let client_output = find_state_output(outputs, spend_client_script_hash)
 
-  let client_output_datum = decode_client_datum(client_output)
-
-  let client_input =
-    authenticate_state_thread(
-      inputs,
-      client_output,
-      client_output_datum.token,
-      client_policy_id,
-      old_datum.nft_policy,
-      client_id_keys.client_prefix,
-    )
-
-  let client_input_datum = decode_client_datum(client_input.output)
-  expect client_input_datum.token == client_output_datum.token
+  expect client_output_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_output)
+  expect client_output_datum.token.policy_id == client_mint_policy_id
+  expect auth.contain_auth_token(client_output, client_output_datum.token)
 
   let client_id = client_id_from_token_name(client_output_datum.token.name)
 
+  // Find the input client UTxO by looking for the same auth token.
+  expect Some(client_input) =
+    find_input_with_auth_token(inputs, client_output_datum.token)
+
+  expect client_input_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  expect client_input_datum.token.policy_id == client_mint_policy_id
   // 1) Apply the clientState update.
   let client_state_key = client_keys.full_client_state_path(client_id)
 
@@ -1115,9 +1104,7 @@ validator host_state_stt(
   spend_client_script_hash: Hash<Blake2b_224, Script>,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
-  client_policy_id: PolicyId,
-  connection_policy_id: PolicyId,
-  channel_policy_id: PolicyId,
+  client_mint_policy_id: PolicyId,
 ) {
   spend(
     _datum_opt: Option<HostStateDatum>,
@@ -1184,7 +1171,7 @@ validator host_state_stt(
                 outputs,
                 mint,
                 spend_client_script_hash,
-                client_policy_id,
+                client_mint_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
               ),
@@ -1249,7 +1236,7 @@ validator host_state_stt(
                 inputs,
                 outputs,
                 spend_client_script_hash,
-                client_policy_id,
+                client_mint_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
                 removed_consensus_state_siblings,
