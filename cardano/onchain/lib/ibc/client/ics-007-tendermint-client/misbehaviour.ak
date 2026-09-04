@@ -62,6 +62,7 @@ pub fn validate_basic(misbehaviour: Misbehaviour) -> Bool {
 /// by the signed header.
 fn validate_header_basic(h: Header, chain_id: ByteArray) -> Bool {
   expect signed_header.validate_basic(h.signed_header, chain_id)
+  expect validator_set.validate_basic(h.validator_set)
   expect
     h.signed_header.header.validators_hash == validator_set.hash(
       h.validator_set,

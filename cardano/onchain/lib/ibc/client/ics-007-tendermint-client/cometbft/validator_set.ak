@@ -8,6 +8,16 @@ pub type ValidatorSet {
   total_voting_power: Int,
 }
 
+/// Validate every validator entry before its fields are hashed or counted.
+pub fn validate_basic(vals: ValidatorSet) -> Bool {
+  list.all(vals.validators, fn(val) { tm_validator.validate_basic(val) })
+}
+
+/// Ensure quorum arithmetic stays within CometBFT's signed 64-bit domain.
+pub fn valid_total_voting_power(total: Int) -> Bool {
+  total >= 0 && total <= tm_validator.max_voting_power
+}
+
 pub fn hash(vals: ValidatorSet) -> ByteArray {
   let bzs = list.map(vals.validators, fn(val) { tm_validator.bytes(val) })
   tree.hash_from_byte_slices_sha2_256(bzs)

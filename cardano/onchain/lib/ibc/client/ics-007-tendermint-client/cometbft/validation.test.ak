@@ -9,10 +9,13 @@ use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{
   block_id_flag_absent, block_id_flag_commit, block_id_flag_nil,
 }
-use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
+use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{
+  Validator, max_voting_power,
+}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
-use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
+use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet} as validator_set_mod
 use ibc/client/ics_007_tendermint_client/cometbft/vote
+use ibc/utils/int.{max_uint64}
 
 const chain_id = "testchain2-1"
 
@@ -48,6 +51,27 @@ fn validators() -> List<Validator> {
 fn validator_set() -> ValidatorSet {
   expect [proposer, ..] = validators()
   ValidatorSet { validators: validators(), proposer, total_voting_power: 4 }
+}
+
+fn wrapped_validator_set() -> ValidatorSet {
+  let vals = validator_set()
+  expect [first, ..rest] = vals.validators
+  ValidatorSet {
+    ..vals,
+    validators: [
+      Validator { ..first, voting_power: first.voting_power - max_uint64 },
+      ..rest
+    ],
+  }
+}
+
+fn overflowing_validator_set() -> ValidatorSet {
+  expect [first, second, ..] = validators()
+  ValidatorSet {
+    validators: [Validator { ..first, voting_power: max_voting_power }, second],
+    proposer: first,
+    total_voting_power: max_voting_power + second.voting_power,
+  }
 }
 
 fn commit_signatures() -> List<CommitSig> {
@@ -92,6 +116,17 @@ fn commit_with(signatures: List<CommitSig>) -> Commit {
     },
     signatures,
   }
+}
+
+fn unsigned_commit(signature_count: Int) -> Commit {
+  let absent =
+    CommitSig {
+      block_id_flag: block_id_flag_absent,
+      validator_address: #"",
+      timestamp: 0,
+      signature: #"",
+    }
+  commit_with(list.repeat(absent, signature_count))
 }
 
 fn one_third() -> rational.Rational {
@@ -311,5 +346,62 @@ test trusting_commit_45_unknown_addresses_is_insufficient() {
     commit,
     one_third(),
     Some(list.repeat(#"", 45)),
+  )
+}
+
+test wrapped_voting_power_hash_collision_is_invalid() {
+  let honest = validator_set()
+  let wrapped = wrapped_validator_set()
+
+  validator_set_mod.hash(wrapped) == validator_set_mod.hash(honest) && !validator_set_mod.validate_basic(
+    wrapped,
+  )
+}
+
+test adjacent_verifier_rejects_wrapped_voting_power() fail {
+  let vals = wrapped_validator_set()
+  let commit = unsigned_commit(4)
+
+  validation.verify_commit_light(
+    chain_id,
+    vals,
+    commit.block_id,
+    commit.height,
+    commit,
+    None,
+  )
+}
+
+test trusting_verifier_rejects_wrapped_voting_power() fail {
+  validation.verify_commit_light_trusting(
+    chain_id,
+    wrapped_validator_set(),
+    unsigned_commit(4),
+    one_third(),
+    None,
+  )
+}
+
+test adjacent_verifier_rejects_overflowing_total_voting_power() fail {
+  let vals = overflowing_validator_set()
+  let commit = unsigned_commit(2)
+
+  validation.verify_commit_light(
+    chain_id,
+    vals,
+    commit.block_id,
+    commit.height,
+    commit,
+    None,
+  )
+}
+
+test trusting_verifier_rejects_overflowing_total_voting_power() fail {
+  validation.verify_commit_light_trusting(
+    chain_id,
+    overflowing_validator_set(),
+    unsigned_commit(2),
+    one_third(),
+    None,
   )
 }

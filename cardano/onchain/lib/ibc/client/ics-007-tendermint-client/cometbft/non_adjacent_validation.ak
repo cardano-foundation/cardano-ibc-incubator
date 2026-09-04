@@ -46,6 +46,7 @@ pub fn verify_commit_light_trusting(
     validator_index,
     total_voting_power,
   <- make_validator_index(vals.validators)
+  expect validator_set.valid_total_voting_power(total_voting_power)
   let voting_power_needed =
     total_voting_power * rational.numerator(trust_level) / rational.denominator(
       trust_level,
