@@ -24,8 +24,8 @@ export class IbcTreePendingUpdatesService {
   /**
    * Commits and removes an exact pending entry as one synchronous operation.
    * Keeping the entry until commit succeeds makes observation retries safe if
-   * the commit callback throws, while the identity check prevents a stale
-   * observer from consuming a newer registration for the same transaction.
+   * the callback throws, while the identity check prevents a stale observer
+   * from consuming a newer registration for the same transaction hash.
    */
   commit(txHash: string, expectedUpdate: PendingTreeUpdate): boolean {
     if (!txHash) return false;

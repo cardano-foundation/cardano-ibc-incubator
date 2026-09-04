@@ -83,6 +83,8 @@ export type TxChainOperationContext = {
 export type TxChainOperationPlan<T> = {
   operationName: string;
   wallet: TxWalletInstruction;
+  /** Register metadata only for the final dependency-ordered link. */
+  finalPendingTreeUpdate?: PendingTreeUpdate;
   build: (context: TxChainOperationContext) => Promise<T>;
 };
 
@@ -105,18 +107,14 @@ export class TxOperationRunnerService {
   async run<TExtraResponseFields = Record<string, never>>(
     plan: TxOperationPlan<TExtraResponseFields>,
   ): Promise<TxOperationRunnerResult<TExtraResponseFields>> {
-    const completedUnsignedTx = await this.withCompletionLock(() =>
-      this.completeWithExplicitWalletSelection(plan),
-    );
+    const completedUnsignedTx = await this.withCompletionLock(() => this.completeWithExplicitWalletSelection(plan));
 
     const unsignedTxCbor = completedUnsignedTx.toCBOR();
     const unsignedTxHash = completedUnsignedTx.toHash();
     const unsignedTxBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
     const pendingTreeUpdate =
-      typeof plan.pendingTreeUpdate === 'function'
-        ? plan.pendingTreeUpdate()
-        : plan.pendingTreeUpdate;
+      typeof plan.pendingTreeUpdate === 'function' ? plan.pendingTreeUpdate() : plan.pendingTreeUpdate;
     if (pendingTreeUpdate) {
       this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
     }
@@ -175,10 +173,17 @@ export class TxOperationRunnerService {
           },
         });
 
-        for (const link of links) {
+        if (plan.finalPendingTreeUpdate && links.length === 0) {
+          throw new Error(`${plan.operationName} cannot register a final pending update without a transaction`);
+        }
+        for (const [index, link] of links.entries()) {
+          const isFinalLink = index === links.length - 1;
+          if (isFinalLink && plan.finalPendingTreeUpdate && link.plan.pendingTreeUpdate) {
+            throw new Error(`${plan.operationName} cannot register two pending updates for its final transaction`);
+          }
           this.registerCompletedTransaction(
             link.result.unsignedTxHash,
-            link.plan.pendingTreeUpdate,
+            isFinalLink ? (plan.finalPendingTreeUpdate ?? link.plan.pendingTreeUpdate) : link.plan.pendingTreeUpdate,
             link.plan.syntheticEvents,
           );
         }
@@ -227,10 +232,7 @@ export class TxOperationRunnerService {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const txBuilder =
-        attempt === 1 || !plan.rebuildUnsignedTx
-          ? plan.unsignedTx
-          : await plan.rebuildUnsignedTx();
+      const txBuilder = attempt === 1 || !plan.rebuildUnsignedTx ? plan.unsignedTx : await plan.rebuildUnsignedTx();
       const txWithValidity = plan.validity.apply(txBuilder);
       const walletScopeId = this.lucidService.beginWalletSelectionScope();
       try {
@@ -245,10 +247,7 @@ export class TxOperationRunnerService {
       } catch (error) {
         lastError = error;
         const retryPolicy = plan.completeRetry;
-        const shouldRetry =
-          retryPolicy &&
-          attempt < maxAttempts &&
-          retryPolicy.isRetryable(error);
+        const shouldRetry = retryPolicy && attempt < maxAttempts && retryPolicy.isRetryable(error);
 
         if (!shouldRetry) {
           throw error;

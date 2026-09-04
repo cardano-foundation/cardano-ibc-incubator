@@ -17,14 +17,8 @@ import { HISTORY_SERVICE, HistoryService, HistoryTxEvidence } from '../query/ser
 import { QueryService } from '../query/services/query.service';
 import { GatewayEvent } from './tx-events.service';
 import { ObserveTxRequest, ObserveTxResponse } from './dto/observe-tx.dto';
-import { queryNetworkTipPoint } from '../shared/helpers/time';
 
 const MAX_COMPLETED_OBSERVATIONS = 1024;
-const MAX_BACKPRESSURE_RETRIES = 360;
-const BACKPRESSURE_RETRY_INTERVAL_MS = 5_000;
-const MAX_BACKPRESSURE_RETRY_WINDOW_MS = 30 * 60 * 1000;
-const FIRST_LINK_DEPENDENCY_RECONCILIATION_GRACE_MS = 30_000;
-const FIRST_LINK_DEPENDENCY_RECONCILIATION_POLL_MS = 2_000;
 
 type ConfirmedHostStateEvidence = {
   root: string;
@@ -109,7 +103,7 @@ export class SubmissionService {
   /**
    * Waits for a transaction Hermes submitted directly through its trusted
    * Cardano node connection, verifies the exact confirmed transaction body,
-   * and commits the matching in-memory IBC tree update.
+   * and finalizes the matching Gateway registration.
    *
    * The request deliberately contains only the canonical transaction hash;
    * signed transaction bytes are loaded from confirmed chain history and
@@ -124,14 +118,10 @@ export class SubmissionService {
     }
 
     const completed = this.completedObservations.get(txHash);
-    if (completed) {
-      return completed;
-    }
+    if (completed) return completed;
 
     const existing = this.observationInFlight.get(txHash);
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
 
     const pending = this.ibcTreePendingUpdatesService.peek(txHash);
     if (!pending) {
@@ -147,9 +137,7 @@ export class SubmissionService {
       })
       .catch((error) => {
         this.logger.error(`observeTransaction error for ${txHash}: ${error?.message ?? error}`, error?.stack);
-        if (error instanceof GrpcInternalException || error instanceof GrpcInvalidArgumentException) {
-          throw error;
-        }
+        if (error instanceof GrpcInternalException || error instanceof GrpcInvalidArgumentException) throw error;
         throw new GrpcInternalException(`Failed to observe transaction ${txHash}: ${error?.message ?? error}`);
       })
       .finally(() => {
@@ -182,15 +170,9 @@ export class SubmissionService {
     );
 
     let events = this.txEventsService.take(txHash) || this.txEventsService.takeByExpectedRoot(confirmedRoot) || [];
-    if (events.length === 0) {
-      events = await this.findIndexedIbcEvents(txHash);
-    }
+    if (events.length === 0) events = await this.findIndexedIbcEvents(txHash);
 
-    return {
-      tx_hash: txHash,
-      height: `0-${evidence.blockNo}`,
-      events,
-    };
+    return { tx_hash: txHash, height: `0-${evidence.blockNo}`, events };
   }
 
   private verifyObservedTransactionEvidence(txHash: string, evidence: HistoryTxEvidence): string {
@@ -232,8 +214,7 @@ export class SubmissionService {
   private canonicalizeTransactionBodyCbor(txBodyCborHex: string, txHash: string): string {
     try {
       const { CML } = this.lucidService.LucidImporter as any;
-      const body = CML.TransactionBody.from_cbor_hex(txBodyCborHex.toLowerCase());
-      return body.to_cbor_hex().toLowerCase();
+      return CML.TransactionBody.from_cbor_hex(txBodyCborHex.toLowerCase()).to_cbor_hex().toLowerCase();
     } catch (error) {
       throw new GrpcInternalException(
         `Failed to decode indexed transaction body for tx ${txHash}: ${error?.message ?? error}`,
@@ -245,38 +226,31 @@ export class SubmissionService {
     const normalizedCbor = txCborHex.toLowerCase();
     const { CML } = this.lucidService.LucidImporter as any;
 
-    let transaction: any;
     try {
-      transaction = CML.Transaction.from_cbor_hex(normalizedCbor);
-    } catch {
+      const transaction = CML.Transaction.from_cbor_hex(normalizedCbor);
+      if (transaction.is_valid() !== true) {
+        throw new GrpcInternalException(`Confirmed transaction ${txHash} is marked invalid`);
+      }
+      return transaction.body().to_cbor_hex().toLowerCase();
+    } catch (error) {
+      if (error instanceof GrpcInternalException) throw error;
       try {
         // Depending on Yaci mode, transaction_cbor contains a TransactionBody
         // directly rather than a complete transaction envelope.
         return CML.TransactionBody.from_cbor_hex(normalizedCbor).to_cbor_hex().toLowerCase();
-      } catch (error) {
+      } catch (bodyError) {
         throw new GrpcInternalException(
-          `Failed to decode indexed transaction evidence for tx ${txHash}: ${error?.message ?? error}`,
+          `Failed to decode indexed transaction evidence for tx ${txHash}: ${bodyError?.message ?? bodyError}`,
         );
       }
     }
-
-    // The body hash does not commit to this wrapper flag. A false flag causes
-    // script outputs not to be applied, so never finalize a pending tree update
-    // from an explicitly invalid transaction envelope.
-    if (transaction.is_valid() !== true) {
-      throw new GrpcInternalException(`Confirmed transaction ${txHash} is marked invalid`);
-    }
-    return transaction.body().to_cbor_hex().toLowerCase();
   }
 
   private computeTransactionBodyHashHex(txBodyCborHex: string): string | null {
     try {
       const { CML } = this.lucidService.LucidImporter as any;
       const body = CML.TransactionBody.from_cbor_hex(txBodyCborHex);
-      if (typeof CML.hash_transaction === 'function') {
-        return CML.hash_transaction(body).to_hex();
-      }
-      return null;
+      return typeof CML.hash_transaction === 'function' ? CML.hash_transaction(body).to_hex() : null;
     } catch {
       return null;
     }
@@ -336,9 +310,7 @@ export class SubmissionService {
       const { output, outputIndex } = this.findHostStateOutputInBody(body, txHash);
       const datumOption = output.datum?.();
       const plutusDatum = datumOption?.as_datum?.();
-      if (!plutusDatum) {
-        throw new Error(`Missing inline HostState datum in confirmed tx ${txHash}`);
-      }
+      if (!plutusDatum) throw new Error(`Missing inline HostState datum in confirmed tx ${txHash}`);
 
       const datumCborHex = plutusDatum.to_cbor_hex().toLowerCase();
       const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(datumCborHex, 'host_state');
@@ -362,6 +334,7 @@ export class SubmissionService {
     }
     this.completedObservations.set(txHash, response);
   }
+
   private async applyPendingIbcTreeUpdate(
     signedTxCbor: string,
     txHash: string,
@@ -430,12 +403,10 @@ export class SubmissionService {
     }
 
     await this.persistIbcTreeUpdate(confirmedRoot, txHash, confirmedBlockNo);
-
     return confirmedRoot;
   }
 
   private async persistIbcTreeUpdate(confirmedRoot: string, txHash: string, confirmedBlockNo: bigint): Promise<void> {
-    // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
     if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
     try {
       await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
@@ -522,16 +493,12 @@ export class SubmissionService {
 
       const quantity = amount.multi_asset?.()?.get?.(policyId, tokenName);
       if (typeof quantity === 'bigint' ? quantity > 0n : quantity !== undefined) {
-        if (found) {
-          throw new Error(`Confirmed tx ${txHash} contains multiple HostState outputs`);
-        }
+        if (found) throw new Error(`Confirmed tx ${txHash} contains multiple HostState outputs`);
         found = { output, outputIndex: index };
       }
     }
 
-    if (!found) {
-      throw new Error(`Confirmed tx ${txHash} does not contain a HostState output`);
-    }
+    if (!found) throw new Error(`Confirmed tx ${txHash} does not contain a HostState output`);
     return found;
   }
 
@@ -553,15 +520,7 @@ export class SubmissionService {
   /**
    * Submit signed CBOR transaction to Cardano via Lucid/Ogmios.
    */
-  private async submitToCardano(
-    signedTxCbor: string,
-    options: {
-      expectedTxHash?: string;
-      allowMempoolBackpressure?: boolean;
-      allowDependencyBackpressure?: boolean;
-      reconcileFirstLinkDependencyFailure?: boolean;
-    } = {},
-  ): Promise<string> {
+  private async submitToCardano(signedTxCbor: string): Promise<string> {
     // Cardano nodes reject transactions which are "too early" for their validity interval.
     // This happens in local/devnet setups when:
     // - the Gateway builds the transaction against wallclock time (Lucid uses `unixTimeToSlot(Date.now())`), but
@@ -572,208 +531,49 @@ export class SubmissionService {
     //   data.validityInterval.invalidBefore = 2966
     //
     // In that case we can safely wait until the node reaches `invalidBefore` and retry submission.
-    const maxTooEarlyRetries = 5;
+    const maxRetries = 5;
     const slotLengthMs = 1000; // Devnet + mainnet are 1s slots in Shelley+ eras.
     const retryBackoffMs = 250; // Small cushion to avoid edge-of-slot races.
-    let tooEarlyRetries = 0;
-    let backpressureRetries = 0;
-    let backpressureDeadline: { deadlineMs: number; validityUpperBoundSlot: bigint } | undefined;
 
-    while (true) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         // Submit the signed transaction directly using Lucid Evolution's wallet submitTx.
         return await this.lucidService.lucid.wallet().submitTx(signedTxCbor);
       } catch (error) {
-        const message = typeof error?.message === 'string' ? error.message : String(error);
-        if (
-          options.expectedTxHash &&
-          (this.isAlreadyAcceptedSubmissionError(message) ||
-            (await this.isTransactionAlreadyIndexed(options.expectedTxHash)))
-        ) {
-          this.logger.warn(`Treating idempotent resubmission of ${options.expectedTxHash} as accepted`);
-          return options.expectedTxHash;
-        }
-
         const tooEarly = this.parseTxSubmittedTooEarlyError(error);
-        if (tooEarly) {
-          const { currentSlot, invalidBefore, invalidAfter } = tooEarly;
-          if (typeof invalidAfter === 'number' && currentSlot > invalidAfter) {
-            throw new GrpcInternalException(
-              `Cardano submission failed after validity upper bound ${invalidAfter}: ${message}`,
-            );
-          }
-          if (tooEarlyRetries >= maxTooEarlyRetries) {
-            throw new GrpcInternalException(
-              `Cardano submission remained too early after ${maxTooEarlyRetries} retries: ${message}`,
-            );
-          }
-
-          const waitSlots = Math.max(1, invalidBefore - currentSlot);
-          const waitMs = waitSlots * slotLengthMs + retryBackoffMs;
-          tooEarlyRetries += 1;
-          this.logger.warn(
-            `Tx rejected as too early (currentSlot=${currentSlot}, invalidBefore=${invalidBefore}); waiting ${waitMs}ms and retrying (${tooEarlyRetries}/${maxTooEarlyRetries})`,
-          );
-          await this.waitBeforeSubmissionRetry(waitMs);
-          continue;
+        if (!tooEarly) {
+          const message = typeof error?.message === 'string' ? error.message : String(error);
+          this.logger.error(`Failed to submit to Cardano: ${message}`);
+          throw new GrpcInternalException(`Cardano submission failed: ${message}`);
         }
 
-        const retryableKind = this.chainSubmissionRetryableKind(message);
-        const retryAllowed =
-          retryableKind === 'mempool'
-            ? options.allowMempoolBackpressure
-            : retryableKind === 'dependency'
-              ? options.allowDependencyBackpressure
-              : false;
-        if (retryAllowed) {
-          backpressureDeadline ??= await this.computeBackpressureDeadline(signedTxCbor);
-          const nextAttemptAt = Date.now() + BACKPRESSURE_RETRY_INTERVAL_MS;
-          if (backpressureRetries >= MAX_BACKPRESSURE_RETRIES || nextAttemptAt >= backpressureDeadline.deadlineMs) {
-            throw new GrpcInternalException(
-              `Cardano chained submission backpressure deadline reached before transaction validity upper bound slot ${backpressureDeadline.validityUpperBoundSlot} after ${backpressureRetries} retries: ${message}`,
-            );
-          }
-
-          backpressureRetries += 1;
-          this.logger.warn(
-            `Cardano mempool/dependency backpressure for chained transaction; retrying in ${BACKPRESSURE_RETRY_INTERVAL_MS}ms (${backpressureRetries}/${MAX_BACKPRESSURE_RETRIES}): ${message}`,
+        const { currentSlot, invalidBefore, invalidAfter } = tooEarly;
+        if (typeof invalidAfter === 'number' && currentSlot > invalidAfter) {
+          const message = typeof error?.message === 'string' ? error.message : String(error);
+          this.logger.error(
+            `Tx rejected as too late (currentSlot=${currentSlot}, invalidAfter=${invalidAfter}): ${message}`,
           );
-          await this.waitBeforeSubmissionRetry(BACKPRESSURE_RETRY_INTERVAL_MS);
-          continue;
+          throw new GrpcInternalException(`Cardano submission failed: ${message}`);
         }
 
-        if (
-          retryableKind === 'dependency' &&
-          options.allowMempoolBackpressure &&
-          !options.allowDependencyBackpressure
-        ) {
-          let reconciliationFailure = 'exact-hash reconciliation was unavailable';
-          if (options.reconcileFirstLinkDependencyFailure && options.expectedTxHash) {
-            if (await this.reconcileFirstLinkDependencyFailure(options.expectedTxHash)) {
-              return options.expectedTxHash;
-            }
-            reconciliationFailure = `it was not indexed during the ${FIRST_LINK_DEPENDENCY_RECONCILIATION_GRACE_MS / 1000}-second exact-hash reconciliation grace`;
-          }
-          throw new GrpcInternalException(
-            `First chained transaction has an unknown input; ${reconciliationFailure}; refusing a TTL-long dependency retry because it has no prior in-chain dependency: ${message}`,
+        if (attempt >= maxRetries) {
+          const message = typeof error?.message === 'string' ? error.message : String(error);
+          this.logger.error(
+            `Tx still too early after ${maxRetries} retries (currentSlot=${currentSlot}, invalidBefore=${invalidBefore}): ${message}`,
           );
+          throw new GrpcInternalException(`Cardano submission failed: ${message}`);
         }
 
-        this.logger.error(`Failed to submit to Cardano: ${message}`);
-        throw new GrpcInternalException(`Cardano submission failed: ${message}`);
-      }
-    }
-  }
-
-  private chainSubmissionRetryableKind(message: string): 'mempool' | 'dependency' | null {
-    const normalized = message.toLowerCase();
-    if (
-      [
-        'mempool is full',
-        'mempool full',
-        'mempoolfull',
-        'mempool capacity',
-        'temporarily unavailable',
-        'resource exhausted',
-      ].some((fragment) => normalized.includes(fragment))
-    ) {
-      return 'mempool';
-    }
-    if (
-      [
-        'unknown output reference',
-        'unknownoutputreference',
-        'unknown transaction input',
-        'badinputsutxo',
-        'missing transaction input',
-        '"code":3117',
-        '"code\\":3117',
-      ].some((fragment) => normalized.includes(fragment))
-    ) {
-      return 'dependency';
-    }
-    return null;
-  }
-
-  private isAlreadyAcceptedSubmissionError(message: string): boolean {
-    const normalized = message.toLowerCase();
-    return [
-      'already in mempool',
-      'already submitted',
-      'already known',
-      'knowntransaction',
-      'transaction already exists',
-    ].some((fragment) => normalized.includes(fragment));
-  }
-
-  private async isTransactionAlreadyIndexed(txHash: string): Promise<boolean> {
-    try {
-      return Boolean(await this.historyService.findTxByHash(txHash));
-    } catch {
-      return false;
-    }
-  }
-
-  private async reconcileFirstLinkDependencyFailure(expectedTxHash: string): Promise<boolean> {
-    const deadlineMs = Date.now() + FIRST_LINK_DEPENDENCY_RECONCILIATION_GRACE_MS;
-    this.logger.warn(
-      `First chained transaction ${expectedTxHash} reported an unknown input; polling its exact hash for up to ${FIRST_LINK_DEPENDENCY_RECONCILIATION_GRACE_MS / 1000} seconds before treating the input as stale`,
-    );
-
-    while (Date.now() < deadlineMs) {
-      await this.waitBeforeHistoryReconciliationPoll(
-        Math.min(FIRST_LINK_DEPENDENCY_RECONCILIATION_POLL_MS, deadlineMs - Date.now()),
-      );
-      if (await this.isTransactionAlreadyIndexed(expectedTxHash)) {
+        const waitSlots = Math.max(1, invalidBefore - currentSlot);
+        const waitMs = waitSlots * slotLengthMs + retryBackoffMs;
         this.logger.warn(
-          `Treating first chained transaction ${expectedTxHash} as accepted after exact-hash history reconciliation`,
+          `Tx rejected as too early (currentSlot=${currentSlot}, invalidBefore=${invalidBefore}); waiting ${waitMs}ms and retrying (attempt ${attempt + 1}/${maxRetries})`,
         );
-        return true;
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
     }
 
-    return false;
-  }
-
-  private async waitBeforeHistoryReconciliationPoll(ms: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private async computeBackpressureDeadline(
-    signedTxCbor: string,
-  ): Promise<{ deadlineMs: number; validityUpperBoundSlot: bigint }> {
-    const { CML, SLOT_CONFIG_NETWORK } = this.lucidService.LucidImporter as any;
-    const transaction = CML.Transaction.from_cbor_hex(signedTxCbor);
-    const validityUpperBoundSlot = transaction.body().ttl?.();
-    if (validityUpperBoundSlot === undefined) {
-      throw new GrpcInternalException('Cannot retry chained transaction backpressure without a validity upper bound');
-    }
-
-    const ogmiosEndpoint = this.configService.getOrThrow<string>('ogmiosEndpoint');
-    const network = this.configService.getOrThrow<string>('cardanoNetwork');
-    const slotLength = SLOT_CONFIG_NETWORK?.[network]?.slotLength;
-    if (!ogmiosEndpoint || !Number.isFinite(slotLength) || slotLength <= 0) {
-      throw new GrpcInternalException(
-        'Cannot establish chained submission deadline without Ogmios and Cardano slot configuration',
-      );
-    }
-    const tip = await queryNetworkTipPoint(ogmiosEndpoint);
-    const currentSlot = BigInt(tip === 'origin' ? 0 : tip.slot);
-    if (validityUpperBoundSlot <= currentSlot) {
-      throw new GrpcInternalException(
-        `Chained transaction validity upper bound slot ${validityUpperBoundSlot} has expired at node slot ${currentSlot}`,
-      );
-    }
-
-    const remainingMs = Number(validityUpperBoundSlot - currentSlot) * slotLength;
-    return {
-      deadlineMs: Date.now() + Math.min(remainingMs, MAX_BACKPRESSURE_RETRY_WINDOW_MS),
-      validityUpperBoundSlot,
-    };
-  }
-
-  private async waitBeforeSubmissionRetry(ms: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, ms));
+    throw new GrpcInternalException('Cardano submission failed: unexpected retry loop exit');
   }
 
   /**

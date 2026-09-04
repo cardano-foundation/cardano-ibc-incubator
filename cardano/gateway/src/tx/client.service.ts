@@ -716,6 +716,7 @@ export class ClientService {
         address: updateClientOperator.constructedAddress,
         context: 'buildTendermintUpdateTransactionChain',
       },
+      finalPendingTreeUpdate: treeNeutralUpdate(),
       build: async (chain) => {
         let linkCount = 0;
         const completeIntermediate = async (operationName: string, buildUnsignedTx: () => TxBuilder) => {
@@ -733,7 +734,6 @@ export class ClientService {
               localUPLCEval: false,
               setCollateral: TRANSACTION_SET_COLLATERAL,
             },
-            pendingTreeUpdate: treeNeutralUpdate(),
           });
         };
 
@@ -912,6 +912,11 @@ export class ClientService {
         address: updateClientOperator.constructedAddress,
         context: 'cancelStaleTendermintUpdateSessions',
       },
+      finalPendingTreeUpdate: {
+        kind: 'tree_neutral',
+        expectedNewRoot: '',
+        commit: () => undefined,
+      },
       build: async (chain) => {
         for (const session of this.orderStagedTendermintSessions(sessions).reverse()) {
           await chain.complete({
@@ -921,11 +926,6 @@ export class ClientService {
             completeOptions: {
               localUPLCEval: false,
               setCollateral: TRANSACTION_SET_COLLATERAL,
-            },
-            pendingTreeUpdate: {
-              kind: 'tree_neutral',
-              expectedNewRoot: '',
-              commit: () => undefined,
             },
           });
         }

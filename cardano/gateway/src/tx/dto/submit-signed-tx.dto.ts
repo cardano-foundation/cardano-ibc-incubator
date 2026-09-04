@@ -13,30 +13,6 @@ export interface SubmitSignedTxRequest {
    * Optional metadata for logging/debugging.
    */
   description?: string;
-
-  /**
-   * Return after node acceptance. The server only honors this for a
-   * structurally tree-neutral staged Tendermint session transaction.
-   */
-  submit_only?: boolean;
-
-  /**
-   * Optional confirmation timeout in seconds. Zero uses the ordinary server
-   * default; the server enforces a bounded maximum.
-   */
-  confirmation_timeout_seconds?: number;
-
-  /**
-   * Structurally authenticated staged-session transaction that does not update
-   * HostState. Used with submit_only=false for a confirmed phase boundary.
-   */
-  tree_neutral?: boolean;
-
-  /**
-   * The transaction consumes an output created by an earlier transaction in
-   * the same signed chain. Only these links may receive long dependency retry.
-   */
-  has_prior_dependency?: boolean;
 }
 
 /**

@@ -76,24 +76,6 @@ message SubmitSignedTxRequest {
   // Optional description for logging/debugging.
   string description = 2;
 
-  // When true, return after the node accepts the transaction instead of
-  // waiting for history indexing. The Gateway only honors this for
-  // structurally tree-neutral staged Tendermint session transactions.
-  bool submit_only = 3;
-
-  // Optional bounded confirmation timeout for a non-submit-only transaction.
-  // Zero keeps the server default. Values are seconds.
-  uint32 confirmation_timeout_seconds = 4;
-
-  // Marks a structurally authenticated staged-session transaction as neutral
-  // to the HostState commitment tree. This may be true with submit_only=false
-  // when a tree-neutral phase boundary must be confirmed before rebuilding.
-  bool tree_neutral = 5;
-
-  // True only when this transaction consumes an output produced by an earlier
-  // transaction in the same dependency-ordered chain. The Gateway may retry
-  // unknown-input errors until the shared validity deadline only in this case.
-  bool has_prior_dependency = 6;
 }
 
 // TendermintUpdateTxChain carries one dependency-ordered transaction phase.
