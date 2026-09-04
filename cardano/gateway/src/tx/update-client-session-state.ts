@@ -41,7 +41,7 @@ export const TENDERMINT_UPDATE_MIN_REMAINING_VALIDITY_MS = 120_000;
 
 export type TendermintSessionAdvanceRedeemer = Exclude<SpendSessionRedeemer, 'Finalize' | 'Cancel'>;
 
-export interface DeriveTendermintSessionUpdatePlanInput {
+interface DeriveTendermintSessionUpdatePlanInput {
   header: Header;
   clientDatum: ClientDatum;
   /**
@@ -52,7 +52,7 @@ export interface DeriveTendermintSessionUpdatePlanInput {
   trustedConsensusState?: ConsensusState;
 }
 
-export interface CapTendermintStagedValidToInput {
+interface CapTendermintStagedValidToInput {
   proposedValidToMs: number;
   currentLedgerTimeMs: number;
   trustedHeight: UpdatePlan['trustedHeight'];
@@ -62,7 +62,7 @@ export interface CapTendermintStagedValidToInput {
   minimumRemainingValidityMs?: number;
 }
 
-export interface ValidateTendermintStagedFinalizationInput {
+interface ValidateTendermintStagedFinalizationInput {
   validFromTimeMs: number;
   trustedHeight: UpdatePlan['trustedHeight'];
   headerTimeNs: bigint;

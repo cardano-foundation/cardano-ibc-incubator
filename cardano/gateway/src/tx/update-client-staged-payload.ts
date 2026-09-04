@@ -50,25 +50,25 @@ export interface DecodedTendermintHeaderForStaging {
   };
 }
 
-export interface TrustedValidatorMembershipPayload {
+interface TrustedValidatorMembershipPayload {
   index: bigint;
   trustedValidator: StagedTendermintValidator;
   /** Root-to-leaf sibling hashes, matching the on-chain verifier. */
   auditPath: string[];
 }
 
-export interface TargetValidatorEntryPayload {
+interface TargetValidatorEntryPayload {
   targetValidator: StagedTendermintValidator;
   commitSig: StagedTendermintCommitSig;
   trustedMembership: TrustedValidatorMembershipPayload | null;
 }
 
-export interface TrustedValidatorBatchPayload {
+interface TrustedValidatorBatchPayload {
   range: TendermintValidatorRange;
   validators: StagedTendermintValidator[];
 }
 
-export interface TargetValidatorBatchPayload {
+interface TargetValidatorBatchPayload {
   range: TendermintValidatorRange;
   entries: TargetValidatorEntryPayload[];
 }
@@ -80,7 +80,7 @@ export interface TendermintStagedPayloads {
   targetBatches: TargetValidatorBatchPayload[];
 }
 
-export interface BuildTendermintStagedPayloadsInput {
+interface BuildTendermintStagedPayloadsInput {
   header: DecodedTendermintHeaderForStaging;
   mode: TendermintUpdateMode;
   /** Required for skipped updates; sourced from the trusted consensus state. */

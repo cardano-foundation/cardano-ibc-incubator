@@ -241,7 +241,6 @@ const getNanoseconds = (date: string): number => {
 
 export {
   querySystemStart,
-  queryNetworkTipPoint,
   queryTransactionInclusionBlockHeight,
   computeLedgerAnchoredValidityWindow,
   ledgerVisibleValidityUpperBoundMs,

@@ -5,12 +5,12 @@ import {
   type TendermintUpdateStepKind,
 } from '../../tx/update-client-plan';
 
-export const TENDERMINT_MULTITX_STRUCTURAL_COUNTS = [45, 100, 200, 256] as const;
+const TENDERMINT_MULTITX_STRUCTURAL_COUNTS = [45, 100, 200, 256] as const;
 
 export const TENDERMINT_MULTITX_STRUCTURAL_DISCLAIMER =
   'Structural model only. These counts are not measurements of serialized transaction bytes, execution units, fees, latency, or same-block capacity.';
 
-export type TendermintMultitxStructuralReport = {
+type TendermintMultitxStructuralReport = {
   classification: 'deterministic-structural-model';
   measured: false;
   mode: TendermintUpdateMode;
@@ -35,7 +35,7 @@ function countSteps(steps: ReadonlyArray<{ kind: TendermintUpdateStepKind }>, ki
   return steps.filter((step) => step.kind === kind).length;
 }
 
-export function buildTendermintMultitxStructuralReport(
+function buildTendermintMultitxStructuralReport(
   targetValidatorCount: number,
   mode: TendermintUpdateMode,
 ): TendermintMultitxStructuralReport {
