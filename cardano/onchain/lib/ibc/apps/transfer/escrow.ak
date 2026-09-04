@@ -122,6 +122,17 @@ pub fn expect_module_state(spend: TransferModuleSpend) -> Output {
   updated_output
 }
 
+pub fn validate_preserved_module_state(
+  spent_input: Input,
+  spend: TransferModuleSpend,
+) -> Bool {
+  value_delta.validate_output_amount(
+    spent_input,
+    expect_module_state(spend),
+    assets.zero,
+  )
+}
+
 pub fn transfer_escrow_datum(
   channel_id: ByteArray,
   denom: ByteArray,

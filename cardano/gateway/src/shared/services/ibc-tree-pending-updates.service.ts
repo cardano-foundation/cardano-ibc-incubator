@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
 export type PendingTreeUpdate = {
+  /** `tree_neutral` is used by staged verification transactions. */
+  kind?: 'tree_update' | 'tree_neutral';
   expectedNewRoot: string;
   commit: () => void;
 };
@@ -52,7 +54,7 @@ export class IbcTreePendingUpdatesService {
     // Root matching remains strict because expectedNewRoot is derived from the
     // exact in-memory tree mutation we prepared before signing.
     for (const [key, update] of this.pendingByTxHash.entries()) {
-      if (update.expectedNewRoot === expectedNewRoot) {
+      if (update.kind !== 'tree_neutral' && update.expectedNewRoot === expectedNewRoot) {
         this.pendingByTxHash.delete(key);
         return update;
       }

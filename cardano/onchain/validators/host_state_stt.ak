@@ -142,6 +142,7 @@ fn validate_create_client_root(
   new_datum: HostStateDatum,
   outputs: List<Output>,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_mint_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
 ) -> Bool {
@@ -156,6 +157,8 @@ fn validate_create_client_root(
   // committed into the Merkle root.
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_output)
+  expect client_datum.token.policy_id == client_mint_policy_id
+  expect auth.contain_auth_token(client_output, client_datum.token)
 
   // Derive the client identifier from the HostState sequence.
   //
@@ -285,6 +288,7 @@ fn validate_update_client_root(
   inputs: List<Input>,
   outputs: List<Output>,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_mint_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
   removed_consensus_state_siblings: List<List<ByteArray>>,
@@ -298,6 +302,8 @@ fn validate_update_client_root(
 
   expect client_output_datum: ClientDatum =
     validator_utils.get_inline_datum(client_output)
+  expect client_output_datum.token.policy_id == client_mint_policy_id
+  expect auth.contain_auth_token(client_output, client_output_datum.token)
 
   // Identify which client is being updated.
   let client_id = client_id_from_token_name(client_output_datum.token.name)
@@ -308,6 +314,7 @@ fn validate_update_client_root(
 
   expect client_input_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
+  expect client_input_datum.token.policy_id == client_mint_policy_id
 
   // 1) Apply the clientState update.
   let client_state_key = client_keys.full_client_state_path(client_id)
@@ -979,6 +986,7 @@ validator host_state_stt(
   spend_client_script_hash: Hash<Blake2b_224, Script>,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  client_mint_policy_id: PolicyId,
 ) {
   spend(
     _datum_opt: Option<HostStateDatum>,
@@ -1041,6 +1049,7 @@ validator host_state_stt(
                 new_datum,
                 outputs,
                 spend_client_script_hash,
+                client_mint_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
               ),
@@ -1101,6 +1110,7 @@ validator host_state_stt(
                 inputs,
                 outputs,
                 spend_client_script_hash,
+                client_mint_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
                 removed_consensus_state_siblings,

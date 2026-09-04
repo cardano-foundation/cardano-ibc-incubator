@@ -81,6 +81,18 @@ function buildHandlerJsonDeployment() {
   };
 }
 
+function buildStagedHandlerJsonDeployment() {
+  const deployment = buildHandlerJsonDeployment();
+  return {
+    ...deployment,
+    validators: {
+      ...deployment.validators,
+      spendTendermintUpdateSession: buildValidator('spendTendermintUpdateSession'),
+      mintTendermintUpdateSession: buildValidator('mintTendermintUpdateSession'),
+    },
+  };
+}
+
 describe('bridge manifest normalization', () => {
   it('normalizes handler.json into the public manifest and internal deployment config', () => {
     const loaded = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
@@ -146,6 +158,84 @@ describe('bridge manifest normalization', () => {
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
   });
 
+  it('round-trips staged Tendermint session validators', () => {
+    const staged = normalizeHandlerJsonDeploymentConfig(buildStagedHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(staged.deployment.validators.spendTendermintUpdateSession).toEqual({
+      scriptHash: 'spendTendermintUpdateSession-hash',
+      address: 'spendTendermintUpdateSession-address',
+      refUtxo: {
+        txHash: 'spendTendermintUpdateSession-tx',
+        outputIndex: 1,
+      },
+    });
+    expect(staged.bridgeManifest.validators.mint_tendermint_update_session).toEqual({
+      script_hash: 'mintTendermintUpdateSession-hash',
+      address: 'mintTendermintUpdateSession-address',
+      ref_utxo: {
+        tx_hash: 'mintTendermintUpdateSession-tx',
+        output_index: 1,
+      },
+    });
+
+    const manifestLoaded = normalizeBridgeManifestConfig(staged.bridgeManifest);
+    expect(manifestLoaded.deployment).toEqual(staged.deployment);
+    expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, staged.bridgeManifest)).toBe(true);
+  });
+
+  it('accepts legacy deployments without Tendermint session validators', () => {
+    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(legacy.deployment.validators.spendTendermintUpdateSession).toBeUndefined();
+    expect(legacy.deployment.validators.mintTendermintUpdateSession).toBeUndefined();
+    expect(legacy.bridgeManifest.validators.spend_tendermint_update_session).toBeUndefined();
+    expect(legacy.bridgeManifest.validators.mint_tendermint_update_session).toBeUndefined();
+  });
+
+  it('rejects handler files with only one Tendermint session validator', () => {
+    const staged = buildStagedHandlerJsonDeployment();
+    const { mintTendermintUpdateSession: _mintSession, ...withoutMintSession } = staged.validators;
+    const { spendTendermintUpdateSession: _spendSession, ...withoutSpendSession } = staged.validators;
+
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig(
+        { ...staged, validators: withoutMintSession },
+        { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+      ),
+    ).toThrow('staged Tendermint spend and mint session validators must be configured together');
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig(
+        { ...staged, validators: withoutSpendSession },
+        { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+      ),
+    ).toThrow('staged Tendermint spend and mint session validators must be configured together');
+  });
+
+  it('rejects public manifests with only one Tendermint session validator', () => {
+    const staged = normalizeHandlerJsonDeploymentConfig(buildStagedHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    }).bridgeManifest;
+    const { mint_tendermint_update_session: _mintSession, ...withoutMintSession } = staged.validators;
+    const { spend_tendermint_update_session: _spendSession, ...withoutSpendSession } = staged.validators;
+
+    expect(() => normalizeBridgeManifestConfig({ ...staged, validators: withoutMintSession })).toThrow(
+      'staged Tendermint spend and mint session validators must be configured together',
+    );
+    expect(() => normalizeBridgeManifestConfig({ ...staged, validators: withoutSpendSession })).toThrow(
+      'staged Tendermint spend and mint session validators must be configured together',
+    );
+  });
+
   it('defaults handler files without a codec capability to the legacy validators', () => {
     const { ics20PacketCodec: _codec, ...legacyHandler } = buildHandlerJsonDeployment();
 
@@ -184,7 +274,7 @@ describe('bridge manifest normalization', () => {
       normalizeBridgeManifestConfig({
         ...current.bridgeManifest,
         ics20_packet_codec: 'future-codec',
-      }),
+      })
     ).toThrow('Invalid bridge config: "ics20_packet_codec"');
   });
 
@@ -196,7 +286,7 @@ describe('bridge manifest normalization', () => {
         chain_id: 'cardano-devnet',
         network_magic: 42,
         network: 'Custom',
-      })
+      }),
     ).toThrow('Invalid bridge config: "deployedAt" must be a non-empty string');
   });
 

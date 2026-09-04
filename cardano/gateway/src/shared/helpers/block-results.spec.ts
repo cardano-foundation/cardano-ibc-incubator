@@ -25,6 +25,16 @@ function eventAttributeValue(result: ResponseDeliverTx, key: string): string {
 }
 
 describe('normalizeTxsResultFromClientDatum', () => {
+  it('uses the client latest height when a staged update has no replayable header', () => {
+    const clientDatum = clientDatumMockBuilder.withLatestHeight(9n, 321n).build();
+
+    const result = normalizeTxsResultFromClientDatum(clientDatum, EVENT_TYPE_CLIENT.UPDATE_CLIENT, '0', null);
+
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CONSENSUS_HEIGHT)).toBe('9-321');
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.HEADER)).toBe('');
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX)).toBe('');
+  });
+
   it('derives replayed update_client consensus height from the submitted header', () => {
     const clientDatum = clientDatumMockBuilder.build();
     const headerMsg = headerMockBuilder.withHeight(123n).withCommitHeight(123n).withTrustedHeight(42n, 7n).build();
@@ -57,6 +67,33 @@ describe('normalizeTxsResultFromClientDatum', () => {
     expect(emittedSignedHeader.commit.signatures[0].block_id_flag).toBe(
       Number(headerMsg.signed_header.commit.signatures[0].block_id_flag),
     );
+  });
+
+  it('emits a historically reconstructed staged header without a legacy redeemer', () => {
+    const clientDatum = clientDatumMockBuilder.build();
+    const headerMsg = headerMockBuilder.withHeight(124n).withCommitHeight(124n).withTrustedHeight(43n, 7n).build();
+    const stagedHeader = initializeHeader(headerMsg);
+
+    const result = normalizeTxsResultFromClientDatum(
+      clientDatum,
+      EVENT_TYPE_CLIENT.UPDATE_CLIENT,
+      '0',
+      null,
+      stagedHeader,
+    );
+
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CONSENSUS_HEIGHT)).toBe('7-124');
+    const clientMessageAny = Any.decode(
+      Buffer.from(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX), 'hex'),
+    );
+    const emittedHeader = HeaderMsg.decode(clientMessageAny.value);
+    const emittedSignedHeader = emittedHeader.signed_header;
+    if (!emittedSignedHeader?.header || !emittedSignedHeader.commit) {
+      throw new Error('Decoded fixture is missing its signed header fields');
+    }
+    expect(clientMessageAny.type_url).toBe('/ibc.lightclients.tendermint.v1.Header');
+    expect(emittedSignedHeader.header.height).toBe(124n);
+    expect(emittedSignedHeader.commit.signatures).toHaveLength(1);
   });
 
   it('uses frozen height for replayed client_misbehaviour events', () => {

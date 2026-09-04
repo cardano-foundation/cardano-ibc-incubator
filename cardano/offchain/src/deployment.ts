@@ -290,6 +290,51 @@ const buildBindPortHostStateUpdate = async (
   };
 };
 
+export const loadStagedTendermintValidators = (
+  lucid: LucidEvolution,
+  hostStateNftPolicyId: string,
+) => {
+  const [sessionSpendValidator, sessionSpendScriptHash, sessionSpendAddress] =
+    readValidator(
+      "spending_tendermint_update_session.spend_tendermint_update_session.spend",
+      lucid,
+      [hostStateNftPolicyId],
+      Data.Tuple([Data.Bytes()]) as unknown as [string],
+    );
+
+  const [sessionMintValidator, sessionMintPolicyId] = readValidator(
+    "minting_tendermint_update_session.mint_tendermint_update_session.mint",
+    lucid,
+    [sessionSpendScriptHash],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+
+  const [clientSpendValidator, clientSpendScriptHash, clientSpendAddress] =
+    readValidator(
+      "spending_multitx_client.spend_multitx_client.spend",
+      lucid,
+      [hostStateNftPolicyId, sessionMintPolicyId],
+      Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+    );
+
+  return {
+    sessionSpend: {
+      validator: sessionSpendValidator,
+      scriptHash: sessionSpendScriptHash,
+      address: sessionSpendAddress,
+    },
+    sessionMint: {
+      validator: sessionMintValidator,
+      policyId: sessionMintPolicyId,
+    },
+    clientSpend: {
+      validator: clientSpendValidator,
+      scriptHash: clientSpendScriptHash,
+      address: clientSpendAddress,
+    },
+  };
+};
+
 export const createDeployment = async (
   lucid: LucidEvolution,
   mode?: string,
@@ -447,12 +492,32 @@ export const createDeployment = async (
     Data.Tuple([Data.Bytes()]) as unknown as [string],
   );
 
-  // load spend client validator
-  const [spendClientValidator, spendClientScriptHash, spendClientAddress] =
-    await readValidator("spending_client.spend_client.spend", lucid, [
-      mintHostStateNFTPolicyId,
-    ]);
-  referredValidators.push(spendClientValidator);
+  // The staged Tendermint protocol authenticates partial verification work in
+  // a session NFT. Its validators must be loaded in dependency order because
+  // each downstream script is parameterized by the preceding script hash.
+  const stagedTendermint = loadStagedTendermintValidators(
+    lucid,
+    mintHostStateNFTPolicyId,
+  );
+  const {
+    validator: spendTendermintUpdateSessionValidator,
+    scriptHash: spendTendermintUpdateSessionScriptHash,
+    address: spendTendermintUpdateSessionAddress,
+  } = stagedTendermint.sessionSpend;
+  const {
+    validator: mintTendermintUpdateSessionValidator,
+    policyId: mintTendermintUpdateSessionPolicyId,
+  } = stagedTendermint.sessionMint;
+  const {
+    validator: spendClientValidator,
+    scriptHash: spendClientScriptHash,
+    address: spendClientAddress,
+  } = stagedTendermint.clientSpend;
+  referredValidators.push(
+    spendTendermintUpdateSessionValidator,
+    mintTendermintUpdateSessionValidator,
+    spendClientValidator,
+  );
 
   // STT minting policies derive client/connection/channel token names from the
   // HostState NFT, keeping object-token authorization tied to the canonical mutex.
@@ -570,6 +635,7 @@ export const createDeployment = async (
     mintHostStateNFTValidator,
     mintHostStateNFTPolicyId,
     spendClientScriptHash,
+    mintClientSttPolicyId,
     spendConnectionScriptHash,
     spendingChannel.base.hash,
     deployerPaymentKeyHash,
@@ -748,11 +814,27 @@ export const createDeployment = async (
     ics20PacketCodec: "ics20-classic-json-v1",
     validators: {
       spendClient: {
-        title: "spending_client.spend_client.spend",
+        title: "spending_multitx_client.spend_multitx_client.spend",
         script: spendClientValidator.script,
         scriptHash: spendClientScriptHash,
         address: spendClientAddress,
         refUtxo: refUtxosInfo[spendClientScriptHash],
+      },
+      spendTendermintUpdateSession: {
+        title:
+          "spending_tendermint_update_session.spend_tendermint_update_session.spend",
+        script: spendTendermintUpdateSessionValidator.script,
+        scriptHash: spendTendermintUpdateSessionScriptHash,
+        address: spendTendermintUpdateSessionAddress,
+        refUtxo: refUtxosInfo[spendTendermintUpdateSessionScriptHash],
+      },
+      mintTendermintUpdateSession: {
+        title:
+          "minting_tendermint_update_session.mint_tendermint_update_session.mint",
+        script: mintTendermintUpdateSessionValidator.script,
+        scriptHash: mintTendermintUpdateSessionPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintTendermintUpdateSessionPolicyId],
       },
       spendConnection: {
         title: "spending_connection.spend_connection.spend",
@@ -2309,6 +2391,7 @@ const deployHostState = async (
   mintHostStateNFTValidator: MintingPolicy,
   mintHostStateNFTPolicyId: string,
   spendClientScriptHash: string,
+  mintClientSttPolicyId: string,
   spendConnectionScriptHash: string,
   spendChannelScriptHash: string,
   deployerPaymentKeyHash: string,
@@ -2336,6 +2419,7 @@ const deployHostState = async (
   // 2) `spend_client_script_hash` (used to locate the created client output when enforcing root correctness)
   // 3) `spend_connection_script_hash` (used to locate the created connection output when enforcing root correctness)
   // 4) `spend_channel_script_hash` (used to locate the created channel output when enforcing root correctness)
+  // 5) `client_mint_policy_id` (binds client state roots to canonical client STTs)
   const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] =
     await readValidator(
       "host_state_stt.host_state_stt.spend",
@@ -2345,13 +2429,16 @@ const deployHostState = async (
         spendClientScriptHash,
         spendConnectionScriptHash,
         spendChannelScriptHash,
+        mintClientSttPolicyId,
       ],
       Data.Tuple([
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
+        Data.Bytes(),
       ]) as unknown as [
+        string,
         string,
         string,
         string,

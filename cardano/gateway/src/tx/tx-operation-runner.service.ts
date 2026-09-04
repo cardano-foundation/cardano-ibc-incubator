@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { TxBuilder } from '@lucid-evolution/lucid';
+import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { TRANSACTION_SET_COLLATERAL } from '~@/config/constant.config';
 
@@ -62,6 +62,35 @@ export type TxOperationRunnerResult<TExtraResponseFields = Record<string, never>
   extraResponseFields?: TExtraResponseFields;
 };
 
+export type TxChainLinkPlan = {
+  operationName: string;
+  unsignedTx: TxBuilder;
+  validity: TxValidityPolicy;
+  completeOptions?: TxCompleteOptions;
+  pendingTreeUpdate?: PendingTreeUpdate;
+  syntheticEvents?: GatewayEvent[];
+};
+
+export type TxChainLinkResult = TxOperationRunnerResult & {
+  walletInputs: UTxO[];
+  derivedOutputs: UTxO[];
+};
+
+export type TxChainOperationContext = {
+  complete(link: TxChainLinkPlan): Promise<TxChainLinkResult>;
+};
+
+export type TxChainOperationPlan<T> = {
+  operationName: string;
+  wallet: TxWalletInstruction;
+  build: (context: TxChainOperationContext) => Promise<T>;
+};
+
+export type TxChainOperationResult<T> = {
+  value: T;
+  links: TxChainLinkResult[];
+};
+
 @Injectable()
 export class TxOperationRunnerService {
   private completionChain: Promise<void> = Promise.resolve();
@@ -108,6 +137,58 @@ export class TxOperationRunnerService {
     };
   }
 
+  async runChain<T>(plan: TxChainOperationPlan<T>): Promise<TxChainOperationResult<T>> {
+    return this.withCompletionLock(async () => {
+      const walletScopeId = this.lucidService.beginWalletSelectionScope();
+      const links: Array<{ result: TxChainLinkResult; plan: TxChainLinkPlan }> = [];
+      let walletInputs: UTxO[] | undefined;
+
+      try {
+        await this.applyWalletInstruction(plan.wallet);
+        this.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, plan.operationName);
+
+        const value = await plan.build({
+          complete: async (link) => {
+            if (walletInputs && plan.wallet.mode === 'refresh_from_address') {
+              this.lucidService.selectWalletFromAddress(plan.wallet.address, walletInputs);
+            }
+            const txWithValidity = link.validity.apply(link.unsignedTx);
+            const [updatedWalletInputs, derivedOutputs, completedUnsignedTx] = await txWithValidity.chain({
+              localUPLCEval: false,
+              setCollateral: TRANSACTION_SET_COLLATERAL,
+              ...(link.completeOptions || {}),
+              ...(walletInputs ? { presetWalletInputs: walletInputs } : {}),
+            });
+            walletInputs = updatedWalletInputs;
+            const unsignedTxCbor = completedUnsignedTx.toCBOR();
+            const unsignedTxHash = completedUnsignedTx.toHash();
+            const result: TxChainLinkResult = {
+              unsignedTxHash,
+              unsignedTxCbor,
+              unsignedTxBytes: new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8')),
+              completedUnsignedTx,
+              walletInputs: updatedWalletInputs,
+              derivedOutputs,
+            };
+            links.push({ result, plan: link });
+            return result;
+          },
+        });
+
+        for (const link of links) {
+          this.registerCompletedTransaction(
+            link.result.unsignedTxHash,
+            link.plan.pendingTreeUpdate,
+            link.plan.syntheticEvents,
+          );
+        }
+        return { value, links: links.map((link) => link.result) };
+      } finally {
+        this.lucidService.endWalletSelectionScope(walletScopeId);
+      }
+    });
+  }
+
   private async withCompletionLock<T>(fn: () => Promise<T>): Promise<T> {
     const previous = this.completionChain;
     let release!: () => void;
@@ -120,6 +201,22 @@ export class TxOperationRunnerService {
       return await fn();
     } finally {
       release();
+    }
+  }
+
+  private registerCompletedTransaction(
+    unsignedTxHash: string,
+    pendingTreeUpdate?: PendingTreeUpdate,
+    syntheticEvents?: GatewayEvent[],
+  ): void {
+    if (pendingTreeUpdate) {
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
+    }
+    if (syntheticEvents && syntheticEvents.length > 0) {
+      this.txEventsService.register(unsignedTxHash, syntheticEvents);
+      if (pendingTreeUpdate?.expectedNewRoot) {
+        this.txEventsService.registerByExpectedRoot(pendingTreeUpdate.expectedNewRoot, syntheticEvents);
+      }
     }
   }
 

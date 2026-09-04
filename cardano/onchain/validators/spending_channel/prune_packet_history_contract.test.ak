@@ -520,6 +520,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       "unused client script hash",
       "unused connection script hash",
       "mock spend channel script hash",
+      mock.client_minting_policy_id,
       None,
       host_redeemer,
       host_input.output_reference,

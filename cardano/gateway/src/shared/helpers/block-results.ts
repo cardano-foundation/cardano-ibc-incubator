@@ -24,7 +24,8 @@ import { Packet } from '../types/channel/packet';
 import { IBCModuleCallback, IBCModuleRedeemer } from '../types/port/ibc_module_redeemer';
 import { AcknowledgementResponse } from '../types/channel/acknowledgement_response';
 import { SpendClientRedeemer } from '../types/client-redeemer';
-import { convertHeaderToTendermint } from '../types/header';
+import type { ClientMessage } from '../types/msgs/client-message';
+import { convertHeaderToTendermint, Header as DecodedTendermintHeader } from '../types/header';
 import {
   Header,
   Misbehaviour as MisbehaviourMsg,
@@ -148,22 +149,31 @@ export function normalizeTxsResultFromClientDatum(
   ClientDatum: ClientDatum,
   clientEvent: string,
   clientId: string,
-  spendClientRedeemer: SpendClientRedeemer,
+  spendClientRedeemer: SpendClientRedeemer | null,
+  stagedHeader: DecodedTendermintHeader | null = null,
 ): ResponseDeliverTx {
-  const latestConsensusEntry = [...ClientDatum.state.consensusStates].at(-1);
-  if (!latestConsensusEntry) {
-    throw new Error('Cannot normalize a client event without a consensus state');
-  }
-
-  const [latestHeight] = latestConsensusEntry;
+  // Consensus states are prepended on every update, but the client state's
+  // latestHeight is the authoritative value and does not depend on map order.
+  // Staged finalization deliberately omits the full header from its redeemer,
+  // so historical replay uses this fallback.
+  const latestHeight = ClientDatum.state.clientState.latestHeight;
   let header = '';
   let clientMessageAnyHex = '';
   let eventType = clientEvent;
   let consensusHeight = latestHeight;
 
-  if (typeof spendClientRedeemer === 'object' && 'UpdateClient' in spendClientRedeemer) {
-    const clientMessage = spendClientRedeemer.UpdateClient.msg;
+  let clientMessage: ClientMessage | null = null;
+  if (stagedHeader !== null) {
+    clientMessage = { HeaderCase: [stagedHeader] };
+  } else if (
+    spendClientRedeemer !== null &&
+    typeof spendClientRedeemer === 'object' &&
+    'UpdateClient' in spendClientRedeemer
+  ) {
+    clientMessage = spendClientRedeemer.UpdateClient.msg;
+  }
 
+  if (clientMessage) {
     if ('HeaderCase' in clientMessage) {
       const updateHeader = clientMessage.HeaderCase[0];
       if (!updateHeader) {

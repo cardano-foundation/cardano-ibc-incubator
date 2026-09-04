@@ -55,9 +55,10 @@ The active local ledger source is
 genesis in that directory. `chains/cardano/config/protocol-parameters.json` is
 not loaded by Caribic.
 
-The local Cardano ledger is still pinned to protocol version 9 and the
-repository cost models. These changes make its numeric capacity strict; they
-do not claim byte-for-byte protocol-version 11 execution parity. Full current
+The local Cardano ledger is pinned to protocol version 10 and the repository
+cost models. Protocol version 10 is required by the bitwise Plutus V3 builtins
+used by the supported ICS-20 codecs. The numeric capacity is strict, but this
+does not claim byte-for-byte protocol-version 11 execution parity. Full current
 Cardano execution parity requires a coordinated cardano-node, Ogmios, Kupo,
 Aiken, and cost-model upgrade.
 

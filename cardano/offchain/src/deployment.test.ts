@@ -12,6 +12,7 @@ import {
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
   GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+  loadStagedTendermintValidators,
   sortPortRegistrations,
 } from "./deployment.ts";
 import { generatePortTokenName, readValidator } from "./utils.ts";
@@ -72,6 +73,55 @@ Deno.test("mock and icq share the host-policy-bound generic module hash", () => 
 
   assertEquals(mockHash, icqHash);
   assertNotEquals(mockHash, otherHostHash);
+});
+
+Deno.test("staged Tendermint validators preserve their hash dependencies", () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const hostPolicy = "11".repeat(28);
+  const staged = loadStagedTendermintValidators(lucid, hostPolicy);
+
+  const [, expectedSessionMintPolicyId] = readValidator(
+    "minting_tendermint_update_session.mint_tendermint_update_session.mint",
+    lucid,
+    [staged.sessionSpend.scriptHash],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+  const [, expectedClientSpendScriptHash] = readValidator(
+    "spending_multitx_client.spend_multitx_client.spend",
+    lucid,
+    [hostPolicy, staged.sessionMint.policyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+  );
+
+  assertEquals(staged.sessionMint.policyId, expectedSessionMintPolicyId);
+  assertEquals(staged.clientSpend.scriptHash, expectedClientSpendScriptHash);
+
+  const otherHost = loadStagedTendermintValidators(
+    lucid,
+    "22".repeat(28),
+  );
+  assertNotEquals(
+    staged.sessionSpend.scriptHash,
+    otherHost.sessionSpend.scriptHash,
+  );
+  assertNotEquals(staged.sessionMint.policyId, otherHost.sessionMint.policyId);
+  assertNotEquals(
+    staged.clientSpend.scriptHash,
+    otherHost.clientSpend.scriptHash,
+  );
+  assertEquals(
+    buildReferenceValidatorSizeReport(
+      [
+        staged.sessionSpend.validator,
+        staged.sessionMint.validator,
+        staged.clientSpend.validator,
+      ],
+      16_384,
+    ).map(({ oversized }) => oversized),
+    [false, false, false],
+  );
 });
 
 Deno.test("sortPortRegistrations uses canonical bytes-key ordering", () => {

@@ -11,12 +11,14 @@ describe('SubmissionService pending update strictness', () => {
   };
   let ibcTreePendingUpdatesServiceMock: {
     take: jest.Mock;
+    peek: jest.Mock;
     takeByExpectedRoot: jest.Mock;
   };
 
   beforeEach(() => {
     ibcTreePendingUpdatesServiceMock = {
       take: jest.fn().mockReturnValue(undefined),
+      peek: jest.fn().mockReturnValue(undefined),
       takeByExpectedRoot: jest.fn().mockReturnValue(undefined),
     };
 
@@ -39,9 +41,15 @@ describe('SubmissionService pending update strictness', () => {
       }),
     };
     const txEventsServiceMock = {};
-    const ibcTreeCacheServiceMock = { saveAliases: jest.fn() };
+    const ibcTreeCacheServiceMock = {
+      load: jest.fn().mockResolvedValue(null),
+      saveAliases: jest.fn(),
+    };
     const historyServiceMock = { findTxByHash: jest.fn() };
-    const queryServiceMock = { queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }) };
+    const queryServiceMock = {
+      queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }),
+      queryClientEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }),
+    };
 
     service = new SubmissionService(
       lucidServiceMock as any,
@@ -54,13 +62,28 @@ describe('SubmissionService pending update strictness', () => {
     );
   });
 
-  it('fails hard when confirmed tx has no pending update entry', async () => {
+  it('recovers the exact confirmed root when the pending update was lost on restart', async () => {
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('root-at-tx');
+    const recoverTreeAtConfirmedRoot = jest
+      .spyOn(service as any, 'recoverTreeAtConfirmedRoot')
+      .mockResolvedValueOnce(undefined);
 
-    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123', 1234)).rejects.toThrow();
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123', 1234)).resolves.toBe('root-at-tx');
 
     expect(ibcTreePendingUpdatesServiceMock.take).toHaveBeenCalledWith('abc123');
     expect(ibcTreePendingUpdatesServiceMock.takeByExpectedRoot).toHaveBeenCalledWith('root-at-tx');
+    expect(recoverTreeAtConfirmedRoot).toHaveBeenCalledWith('root-at-tx', 'abc123');
+  });
+
+  it('does not accept a latest unrelated root during restart recovery', async () => {
+    jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('root-at-tx');
+    jest
+      .spyOn(service as any, 'recoverTreeAtConfirmedRoot')
+      .mockRejectedValueOnce(new Error('rebuilt root latest-unrelated does not match root-at-tx'));
+
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123', 1234)).rejects.toThrow(
+      'latest-unrelated',
+    );
   });
 
   it('fails hard on confirmed tx root lookup error instead of falling back to current HostState', async () => {
