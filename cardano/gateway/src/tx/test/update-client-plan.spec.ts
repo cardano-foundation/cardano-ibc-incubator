@@ -30,9 +30,11 @@ describe('Tendermint multi-transaction update plan', () => {
     expect(plan.steps).toHaveLength(txCount);
     expect(targetSteps[0].range).toEqual({ start: 0, end: Math.min(count, TENDERMINT_MULTITX_MAX_BATCH_SIZE) });
     expect(targetSteps.at(-1)?.range?.end).toBe(count);
-    expect(targetSteps.every((step) => step.range.end - step.range.start <= TENDERMINT_MULTITX_MAX_BATCH_SIZE)).toBe(
-      true,
-    );
+    expect(
+      targetSteps.every(
+        (step) => step.range !== undefined && step.range.end - step.range.start <= TENDERMINT_MULTITX_MAX_BATCH_SIZE,
+      ),
+    ).toBe(true);
   });
 
   it.each([

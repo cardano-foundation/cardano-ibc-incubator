@@ -132,13 +132,15 @@ describe('Tendermint staged update payloads', () => {
       .map((entry) => entry.trustedMembership)
       .filter((membership) => membership !== null);
     const membershipIndices = memberships.map((membership) => Number(membership.index));
+    const trustedValidatorRoot = payloads.trustedValidatorRoot;
+    if (trustedValidatorRoot === null) throw new Error('expected a trusted validator root');
 
     expect(memberships).toHaveLength(scenario.observations.commit_vote_count);
     expect(new Set(membershipIndices).size).toBe(membershipIndices.length);
     memberships.forEach((membership) => {
       expect(
         verifyTendermintValidatorMembership({
-          expectedRoot: payloads.trustedValidatorRoot,
+          expectedRoot: trustedValidatorRoot,
           validator: membership.trustedValidator,
           index: Number(membership.index),
           total: header.trustedValidators.validators.length,
