@@ -1,5 +1,5 @@
 import { InjectEntityManager } from "@nestjs/typeorm";
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EntityManager } from "typeorm";
 import { bech32 } from "bech32";
@@ -12,6 +12,8 @@ import {
   queryOperationalCertificateCountersAtPoint,
 } from "../../shared/helpers/ogmios";
 import { LucidService } from "../../shared/modules/lucid/lucid.service";
+import { BoundedCache } from "../../shared/helpers/bounded-cache";
+import { MetricsService } from "../../health/metrics.service";
 import { UtxoDto } from "../dtos/utxo.dto";
 import { TxDto } from "../dtos/tx.dto";
 import {
@@ -148,7 +150,10 @@ const EPOCH_PARAMS_LOOKUP_TIMEOUT_MS = 10_000;
 const EPOCH_PARAMS_LOOKUP_MAX_ATTEMPTS = 3;
 const EPOCH_PARAMS_RETRY_BASE_DELAY_MS = 250;
 const EPOCH_PARAMS_RETRY_MAX_DELAY_MS = 5_000;
-const EPOCH_PARAMS_CACHE_MAX_ENTRIES = 128;
+export const EPOCH_PARAMS_CACHE_MAX_ENTRIES = 128;
+export const EPOCH_LOOKUP_MAX_ENTRIES = 64;
+export const HISTORICAL_EPOCH_CONTEXT_CACHE_MAX_ENTRIES = 16;
+export const CURRENT_EPOCH_STAKE_SNAPSHOT_CACHE_MAX_ENTRIES = 2;
 const HISTORICAL_STAKE_LOOKUP_TIMEOUT_MS = 30_000;
 const HISTORICAL_STAKE_LOOKUP_MAX_ATTEMPTS = 3;
 const HISTORICAL_STAKE_RETRY_DELAY_MS = 10_000;
@@ -158,6 +163,16 @@ const HISTORICAL_STAKE_REMAINDER_POOL_PREFIX =
   "__historical_unproduced_stake__";
 const CURRENT_EPOCH_STAKE_PAGE_SIZE = 1_000;
 const CURRENT_EPOCH_STAKE_MAX_PAGES = 10;
+
+const EPOCH_NONCE_CACHE_METRIC = "epoch_nonce";
+const EPOCH_NONCE_LOOKUPS_METRIC = "epoch_nonce_lookups";
+const HISTORICAL_EPOCH_CONTEXT_CACHE_METRIC = "historical_epoch_context";
+const HISTORICAL_EPOCH_CONTEXT_LOOKUPS_METRIC =
+  "historical_epoch_context_lookups";
+const CURRENT_EPOCH_STAKE_SNAPSHOT_CACHE_METRIC =
+  "current_epoch_stake_snapshot";
+const CURRENT_EPOCH_STAKE_SNAPSHOT_LOOKUPS_METRIC =
+  "current_epoch_stake_snapshot_lookups";
 
 class EpochParamsLookupError extends Error {
   constructor(
@@ -184,31 +199,66 @@ class HistoricalStakeLookupError extends Error {
 @Injectable()
 export class YaciHistoryService implements HistoryService {
   private poolRegistrationCacheTableReady = false;
-  private readonly epochNonceCache = new Map<string, string>();
-  private readonly epochNonceLookups = new Map<string, Promise<string>>();
-  private readonly historicalEpochContextCache = new Map<
+  private readonly epochNonceCache: BoundedCache<string, string>;
+  private readonly epochNonceLookups: BoundedCache<string, Promise<string>>;
+  private readonly historicalEpochContextCache: BoundedCache<
     string,
     HistoryEpochContextAtBlock
-  >();
-  private readonly historicalEpochContextLookups = new Map<
+  >;
+  private readonly historicalEpochContextLookups: BoundedCache<
     string,
     Promise<HistoryEpochContextAtBlock>
-  >();
-  private readonly currentEpochStakeSnapshotCache = new Map<
+  >;
+  private readonly currentEpochStakeSnapshotCache: BoundedCache<
     string,
     HistoryStakeDistributionEntry[]
-  >();
-  private readonly currentEpochStakeSnapshotLookups = new Map<
+  >;
+  private readonly currentEpochStakeSnapshotLookups: BoundedCache<
     string,
     Promise<HistoryStakeDistributionEntry[]>
-  >();
+  >;
 
   constructor(
     private readonly configService: ConfigService,
     @Inject(LucidService) private readonly lucidService: LucidService,
     @InjectEntityManager("history") private readonly entityManager:
       EntityManager,
-  ) {}
+    @Optional() @Inject(MetricsService) metricsService?: MetricsService,
+  ) {
+    const cache = <Value>(
+      maxEntries: number,
+      metric: string,
+    ): BoundedCache<string, Value> =>
+      new BoundedCache({
+        maxEntries,
+        onSizeChange: (size) => metricsService?.setCacheEntries(metric, size),
+      });
+
+    this.epochNonceCache = cache(
+      EPOCH_PARAMS_CACHE_MAX_ENTRIES,
+      EPOCH_NONCE_CACHE_METRIC,
+    );
+    this.epochNonceLookups = cache(
+      EPOCH_LOOKUP_MAX_ENTRIES,
+      EPOCH_NONCE_LOOKUPS_METRIC,
+    );
+    this.historicalEpochContextCache = cache(
+      HISTORICAL_EPOCH_CONTEXT_CACHE_MAX_ENTRIES,
+      HISTORICAL_EPOCH_CONTEXT_CACHE_METRIC,
+    );
+    this.historicalEpochContextLookups = cache(
+      EPOCH_LOOKUP_MAX_ENTRIES,
+      HISTORICAL_EPOCH_CONTEXT_LOOKUPS_METRIC,
+    );
+    this.currentEpochStakeSnapshotCache = cache(
+      CURRENT_EPOCH_STAKE_SNAPSHOT_CACHE_MAX_ENTRIES,
+      CURRENT_EPOCH_STAKE_SNAPSHOT_CACHE_METRIC,
+    );
+    this.currentEpochStakeSnapshotLookups = cache(
+      EPOCH_LOOKUP_MAX_ENTRIES,
+      CURRENT_EPOCH_STAKE_SNAPSHOT_LOOKUPS_METRIC,
+    );
+  }
 
   private koiosRequestHeaders(): KoiosRequestHeaders {
     const apiKey = this.configService.get<string>("cardanoKoiosApiKey")?.trim();
@@ -633,9 +683,7 @@ export class YaciHistoryService implements HistoryService {
       this.currentEpochStakeSnapshotCache.set(cacheKey, snapshot);
       return snapshot.map((entry) => ({ ...entry }));
     } finally {
-      if (this.currentEpochStakeSnapshotLookups.get(cacheKey) === lookup) {
-        this.currentEpochStakeSnapshotLookups.delete(cacheKey);
-      }
+      this.currentEpochStakeSnapshotLookups.deleteIfValue(cacheKey, lookup);
     }
   }
 
@@ -896,9 +944,7 @@ export class YaciHistoryService implements HistoryService {
       this.historicalEpochContextCache.set(cacheKey, context);
       return context;
     } finally {
-      if (this.historicalEpochContextLookups.get(cacheKey) === lookup) {
-        this.historicalEpochContextLookups.delete(cacheKey);
-      }
+      this.historicalEpochContextLookups.deleteIfValue(cacheKey, lookup);
     }
   }
 
@@ -1460,9 +1506,7 @@ export class YaciHistoryService implements HistoryService {
       this.cacheEpochNonce(cacheKey, nonce);
       return nonce;
     } finally {
-      if (this.epochNonceLookups.get(cacheKey) === lookup) {
-        this.epochNonceLookups.delete(cacheKey);
-      }
+      this.epochNonceLookups.deleteIfValue(cacheKey, lookup);
     }
   }
 
@@ -1476,15 +1520,6 @@ export class YaciHistoryService implements HistoryService {
   }
 
   private cacheEpochNonce(cacheKey: string, nonce: string): void {
-    if (!this.epochNonceCache.has(cacheKey)) {
-      while (this.epochNonceCache.size >= EPOCH_PARAMS_CACHE_MAX_ENTRIES) {
-        const oldestKey = this.epochNonceCache.keys().next().value;
-        if (oldestKey === undefined) {
-          break;
-        }
-        this.epochNonceCache.delete(oldestKey);
-      }
-    }
     this.epochNonceCache.set(cacheKey, nonce);
   }
 
