@@ -5,6 +5,7 @@ import * as Lucid from '@lucid-evolution/lucid';
 
 import { encodeAuthToken } from '@shared/types/auth-token';
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
+import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { encodeTransferIBCModuleRedeemer } from '@shared/types/apps/transfer/transfer-ibc-module-redeemer';
 import { encodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import {
@@ -17,6 +18,7 @@ import {
   encodeTraceRegistryRedeemer,
   TRACE_REGISTRY_LIMITS,
 } from '@shared/types/trace-registry';
+import { encodeRecoverClientWithdrawalRedeemer } from '@shared/types/recover-client-redeemer';
 
 import {
   analyzeCapacityScenario,
@@ -427,6 +429,16 @@ const CONSENSUS_STATE = {
   root: { hash: hexOfBytes(32, '08') },
 };
 
+const RECOVERY_SUBJECT_TOKEN = {
+  policyId: hexOfBytes(28, '21'),
+  name: hexOfBytes(8, '22'),
+};
+
+const RECOVERY_SUBSTITUTE_TOKEN = {
+  policyId: RECOVERY_SUBJECT_TOKEN.policyId,
+  name: hexOfBytes(8, '23'),
+};
+
 function verifyProofRedeemer(proofBytes: number, valueBytes = 128): string {
   return encodeVerifyProofRedeemer(
     {
@@ -713,6 +725,55 @@ async function buildFirstSeenVoucherReceiveAtCapacityScenario(): Promise<Scenari
   };
 }
 
+async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
+  return {
+    id: 'recover_client_minimum_history',
+    // Execution units sum complete Aiken test programs. This is a conservative
+    // regression model, not a provider-completed or ledger-evaluated tx.
+    name: 'Modeled RecoverClient with minimum retained history using Aiken full-fixture accounting',
+    inputCount: 2,
+    nonScriptReferenceInputCount: 1,
+    outputCount: 2,
+    mintPolicyCount: 0,
+    referenceScriptTitles: [
+      'host_state_stt.host_state_stt.spend',
+      'spending_client.spend_client.spend',
+      'recover_client.recover_client.withdraw',
+    ],
+    redeemers: [
+      // Recovery updates the client-state leaf and inserts one consensus
+      // state, so HostState carries two complete 64-level Merkle witnesses.
+      dataBytes('host state UpdateClient redeemer', 4_600),
+      sized(
+        'spend client RecoverClient',
+        await encodeSpendClientRedeemer({ RecoverClient: { substitute_token: RECOVERY_SUBSTITUTE_TOKEN } }, Lucid),
+      ),
+      sized(
+        'recover client withdrawal',
+        encodeRecoverClientWithdrawalRedeemer(
+          {
+            RecoverClientWithdrawal: {
+              subject_token: RECOVERY_SUBJECT_TOKEN,
+              substitute_token: RECOVERY_SUBSTITUTE_TOKEN,
+            },
+          },
+          Lucid,
+        ),
+      ),
+    ],
+    datums: [
+      dataBytes('updated host state datum', 1_000),
+      dataBytes('recovered client datum with two consensus states', 1_000),
+    ],
+    largestProofPayloadBytes: 4_096,
+    aikenTests: [
+      'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds',
+      'recover_client.test.recover_client_accepts_expired_subject',
+      'recover_client.test.spend_client_forwards_valid_recovery',
+    ],
+  };
+}
+
 async function buildScenarios(
   validators: Map<string, BlueprintValidator>,
   aikenTests: Map<string, ExUnits>,
@@ -724,6 +785,7 @@ async function buildScenarios(
     'minting_connection_stt.mint_connection_stt.mint',
     'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
     'minting_voucher.mint_voucher.mint',
+    'recover_client.recover_client.withdraw',
     'spending_channel.spend_channel.spend',
     'spending_client.spend_client.spend',
     'spending_connection.spend_connection.spend',
@@ -837,6 +899,7 @@ async function buildScenarios(
       largestProofPayloadBytes: 1536,
       aikenTests: ['spending_connection.test.conn_open_ack_succeed'],
     },
+    await buildMinimumHistoryRecoveryScenario(),
     {
       id: 'send_packet_at_commitment_capacity',
       name: 'First native SendPacket at commitment capacity',

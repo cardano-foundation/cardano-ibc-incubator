@@ -621,6 +621,7 @@ jobs:
               -m ibc/client/ics_007_tendermint_client/client_state
               -m ibc/client/ics_007_tendermint_client/misbehaviour_handle
               -m prop_client_update_
+              -m prop_client_recovery_
           - suite: connection
             match_tests: >-
               -m ibc/core/ics_003_connection_semantics/connection_datum
@@ -892,6 +893,8 @@ jobs:
             -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_near_byte_limit}' \
             -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
             -m 'host_state_stt.{host_update_client_capacity_minimum_history_succeeds}' \
+            -m 'recover_client.{recover_client_accepts_expired_subject}' \
+            -m 'recover_client.{spend_client_forwards_valid_recovery}' \
             -m 'spending_client_capacity.{update_client_capacity_adjacent_all_signed_45_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_adjacent_mixed_45_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_non_adjacent_mixed_45_succeeds}' \
