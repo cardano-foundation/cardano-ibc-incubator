@@ -48,6 +48,9 @@ type CallbackMutation {
   WrongModuleCredential
 }
 
+const refundable_sender =
+  #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
+
 fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
   if count <= 0 {
     []
@@ -65,6 +68,7 @@ fn full_empty_siblings() -> List<ByteArray> {
 
 fn check_send_packet_with_data(
   mutation: CallbackMutation,
+  sender: ByteArray,
   packet_data: ByteArray,
 ) {
   let mock_data = setup()
@@ -73,7 +77,7 @@ fn check_send_packet_with_data(
     FungibleTokenPacketData {
       denom: "6c6f76656c616365",
       amount: "1000",
-      sender: "sender",
+      sender,
       receiver: "receiver",
       memo: "",
     }
@@ -448,6 +452,7 @@ fn check_send_packet(mutation: CallbackMutation) {
     }
   check_send_packet_with_data(
     mutation,
+    transfer_data.sender,
     fungible_token_packet_data.get_bytes(transfer_data),
   )
 }
@@ -457,7 +462,8 @@ test succeed_send_packet() {
   // double-charging the serializer that the validator itself exercises.
   check_send_packet_with_data(
     ValidCallback,
-    #"7b22616d6f756e74223a2231303030222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a227265636569766572222c2273656e646572223a2273656e646572227d",
+    refundable_sender,
+    #"7b22616d6f756e74223a2231303030222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a227265636569766572222c2273656e646572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232227d",
   )
 }
 
