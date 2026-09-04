@@ -66,29 +66,29 @@ const channel_script_hash =
 
 const deployer = #"66666666666666666666666666666666666666666666666666666666"
 
+const subject_name = #"681612818cdd9151d976a929debffdcf3ec5f872f2c9db6430"
+
+const substitute_name = #"681612818cdd9151d976a929debffdcf3ec5f872f2c9db6431"
+
 const trusting_period = 1_000_000_000
 
 const active_timestamp = 1_500_000_000
 
 fn subject_token() -> AuthToken {
-  AuthToken {
-    policy_id: client_policy,
-    name: generate_token_name(
-      AuthToken { policy_id: host_policy, name: host_state_token_name },
-      client_prefix,
-      "0",
-    ),
-  }
+  AuthToken { policy_id: client_policy, name: subject_name }
 }
 
 fn substitute_token() -> AuthToken {
-  AuthToken {
-    policy_id: client_policy,
-    name: generate_token_name(
-      AuthToken { policy_id: host_policy, name: host_state_token_name },
-      client_prefix,
-      "1",
-    ),
+  AuthToken { policy_id: client_policy, name: substitute_name }
+}
+
+test recovery_token_names_match_client_stt_derivation() {
+  let host_token =
+    AuthToken { policy_id: host_policy, name: host_state_token_name }
+
+  and {
+    subject_name == generate_token_name(host_token, client_prefix, "0"),
+    substitute_name == generate_token_name(host_token, client_prefix, "1"),
   }
 }
 
