@@ -10,6 +10,8 @@ import {
   MsgRecvPacket,
   MsgRecvPacketResponse,
   MsgTimeout,
+  MsgTimeoutOnClose,
+  MsgTimeoutOnCloseResponse,
   MsgTimeoutResponse,
   MsgTransfer,
   MsgTransferResponse,
@@ -38,7 +40,7 @@ import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fung
 import { TransferEscrowDatum } from '@shared/types/apps/transfer/transfer-escrow-datum';
 import { TransferModuleDatum } from '@shared/types/apps/transfer/transfer-module-datum';
 import { mapLovelaceDenom, normalizeDenomTokenTransfer, sumLovelaceFromUtxos } from './helper/helper';
-import { convertHex2String, convertString2Hex, hashSHA256 } from '../shared/helpers/hex';
+import { convertHex2String, convertString2Hex, hashSHA256, toHex } from '../shared/helpers/hex';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { commitPacket } from '../shared/helpers/commitment';
 import { ClientDatum } from '@shared/types/client-datum';
@@ -50,13 +52,19 @@ import {
   validateAndFormatRecvPacketParams,
   validateAndFormatSendPacketParams,
   validateAndFormatTimeoutPacketParams,
+  validateAndFormatTimeoutOnClosePacketParams,
   validateRecvPacketHistoryCapacity,
   validateSendPacketCommitmentCapacity,
 } from './helper/packet.validate';
 import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
-import { Order as ChannelOrder } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
+import {
+  Channel as CardanoChannel,
+  Order as ChannelOrder,
+  State as CardanoChannelState,
+  orderFromJSON,
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 import {
   GrpcFailedPreconditionException,
   GrpcInternalException,
@@ -70,6 +78,7 @@ import {
   SendModulePacketOperator,
   SendPacketOperator,
   TimeoutPacketOperator,
+  TimeoutOnClosePacketOperator,
 } from './dto';
 import { MsgPrunePacketHistoryResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
@@ -100,6 +109,8 @@ import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 import { isHeightAtLeast, maximumHeight } from '../shared/helpers/packet-history-height';
+import { channelPath } from '../shared/helpers/channel';
+import { ChannelState } from '../shared/types/channel/state';
 import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
 import { buildVoucherCip68Metadata, encodeVoucherCip68MetadataDatum } from '../shared/helpers/cip68-voucher-metadata';
 import {
@@ -146,6 +157,12 @@ type TransferEscrowShardLookup =
       registrySiblings: string[];
       encodedUpdatedTransferModuleDatum: string;
     };
+
+function uint64ToBigEndianHex(value: bigint): string {
+  const bytes = Buffer.alloc(8);
+  bytes.writeBigUInt64BE(value);
+  return bytes.toString('hex');
+}
 
 @Injectable()
 export class PacketService {
@@ -1577,6 +1594,64 @@ export class PacketService {
       throw error;
     }
   }
+
+  async timeoutOnClosePacket(data: MsgTimeoutOnClose): Promise<MsgTimeoutOnCloseResponse> {
+    try {
+      this.logger.log('timeoutOnClosePacket is processing');
+      const { constructedAddress, timeoutOnClosePacketOperator } =
+        validateAndFormatTimeoutOnClosePacketParams(data, this.getIcs20PacketCodec());
+      const buildTimeoutOnCloseAttempt = async () => {
+        await this.refreshWalletContext(constructedAddress, 'timeoutOnClosePacketBuilder');
+        return this.buildUnsignedTimeoutOnClosePacketTx(
+          timeoutOnClosePacketOperator,
+          constructedAddress,
+        );
+      };
+      const timeoutOnCloseAttempt = await buildTimeoutOnCloseAttempt();
+      const unsignedTimeoutOnClosePacketTx = timeoutOnCloseAttempt.unsignedTx;
+      let pendingTreeUpdate = timeoutOnCloseAttempt.pendingTreeUpdate;
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'timeoutOnClosePacket',
+        unsignedTx: unsignedTimeoutOnClosePacketTx,
+        rebuildUnsignedTx: async () => {
+          const rebuilt = await buildTimeoutOnCloseAttempt();
+          pendingTreeUpdate = rebuilt.pendingTreeUpdate;
+          return rebuilt.unsignedTx;
+        },
+        validity: {
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'timeoutOnClosePacket',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate: () => pendingTreeUpdate,
+      });
+
+      this.logger.log('Returning unsigned tx for timeout on close packet');
+      return {
+        result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
+        unsigned_tx: {
+          type_url: '',
+          value: cborHexBytes,
+        },
+      } as unknown as MsgTimeoutOnCloseResponse;
+    } catch (error) {
+      this.logger.error(`TimeoutOnClose: ${error}`);
+      if (!(error instanceof RpcException)) {
+        throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
+      }
+
+      throw error;
+    }
+  }
+
   async acknowledgementPacket(data: MsgAcknowledgement): Promise<MsgAcknowledgementResponse> {
     try {
       // entypoint fromc controller.
@@ -2212,6 +2287,29 @@ export class PacketService {
     timeoutPacketOperator: TimeoutPacketOperator,
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    return this.buildUnsignedTimeoutLikePacketTx(
+      timeoutPacketOperator,
+      constructedAddress,
+      null,
+    );
+  }
+
+  async buildUnsignedTimeoutOnClosePacketTx(
+    timeoutOnClosePacketOperator: TimeoutOnClosePacketOperator,
+    constructedAddress: string,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    return this.buildUnsignedTimeoutLikePacketTx(
+      timeoutOnClosePacketOperator,
+      constructedAddress,
+      timeoutOnClosePacketOperator.proofClose,
+    );
+  }
+
+  private async buildUnsignedTimeoutLikePacketTx(
+    timeoutPacketOperator: TimeoutPacketOperator,
+    constructedAddress: string,
+    proofClose: TimeoutOnClosePacketOperator['proofClose'] | null,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const channelSequence = parseChannelSequence(convertHex2String(timeoutPacketOperator.packet.source_channel));
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -2248,22 +2346,54 @@ export class PacketService {
     }
     const packetSequence: bigint = timeoutPacketOperator.packet.sequence;
     const packet: Packet = timeoutPacketOperator.packet;
-    // update channel datum
+    const isTimeoutOnClose = proofClose !== null;
+    const channelOrder = ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering];
+    const isOrdered = channelOrder === ChannelOrder.ORDER_ORDERED;
+    const isUnordered = channelOrder === ChannelOrder.ORDER_UNORDERED;
+    if (!isOrdered && !isUnordered) {
+      throw new GrpcFailedPreconditionException(
+        `Packet timeout is not valid for channel ordering ${channelDatum.state.channel.ordering}`,
+      );
+    }
+    if (
+      channelDatum.state.channel.state !== ChannelState.Open &&
+      (!isTimeoutOnClose || channelDatum.state.channel.state !== ChannelState.Close)
+    ) {
+      throw new GrpcFailedPreconditionException(
+        `${isTimeoutOnClose ? 'TimeoutOnClose' : 'Timeout'} is not valid for channel state ${channelDatum.state.channel.state}`,
+      );
+    }
+
+    const updatedChannel =
+      isOrdered && channelDatum.state.channel.state !== ChannelState.Close
+        ? { ...channelDatum.state.channel, state: ChannelState.Close }
+        : channelDatum.state.channel;
     const updatedChannelDatum: ChannelDatum = {
       ...channelDatum,
       state: {
         ...channelDatum.state,
+        channel: updatedChannel,
         packet_commitment: deleteSortMap(channelDatum.state.packet_commitment, packetSequence),
       },
     };
-    const spendChannelRedeemer: SpendChannelRedeemer = {
-      TimeoutPacket: {
-        packet: packet,
-        proof_unreceived: timeoutPacketOperator.proofUnreceived,
-        proof_height: timeoutPacketOperator.proofHeight,
-        next_sequence_recv: timeoutPacketOperator.nextSequenceRecv,
-      },
-    };
+    const spendChannelRedeemer: SpendChannelRedeemer = isTimeoutOnClose
+      ? {
+          TimeoutOnClose: {
+            packet,
+            proof_unreceived: timeoutPacketOperator.proofUnreceived,
+            proof_close: proofClose,
+            proof_height: timeoutPacketOperator.proofHeight,
+            next_sequence_recv: timeoutPacketOperator.nextSequenceRecv,
+          },
+        }
+      : {
+          TimeoutPacket: {
+            packet,
+            proof_unreceived: timeoutPacketOperator.proofUnreceived,
+            proof_height: timeoutPacketOperator.proofHeight,
+            next_sequence_recv: timeoutPacketOperator.nextSequenceRecv,
+          },
+        };
 
     const transferModuleAddress = this.getTransferModuleAddress();
     const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
@@ -2304,8 +2434,9 @@ export class PacketService {
       'channel',
     );
 
+    const localChannelId = `${CHANNEL_ID_PREFIX}-${channelSequence}`;
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, convertHex2String(packet.source_channel));
+      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, localChannelId);
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
       spendTransferModuleRedeemer,
       'transferIBCModuleRedeemer',
@@ -2340,30 +2471,84 @@ export class PacketService {
     if (processedTime == null || processedHeight == null) {
       throw new GrpcInternalException(`Missing processed delay metadata at proof height revisionNumber/revisionHeight`);
     }
-    const verifyProofRedeemer: VerifyProofRedeemer = {
-      VerifyNonMembership: {
-        cs: clientDatum.state.clientState,
-        cons_state: consensusState,
-        height: timeoutPacketOperator.proofHeight,
-        processed_time: processedTime,
-        processed_height: processedHeight,
-        delay_time_period: connectionDatum.state.delay_period,
-        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
-        proof: timeoutPacketOperator.proofUnreceived,
-        path: {
-          key_path: [
-            connectionDatum.state.counterparty.prefix.key_prefix,
-            convertString2Hex(
-              packetReceiptPath(
-                convertHex2String(packet.destination_port),
-                convertHex2String(packet.destination_channel),
-                packet.sequence,
-              ),
-            ),
-          ],
-        },
+    const proofContext = {
+      cs: clientDatum.state.clientState,
+      cons_state: consensusState,
+      height: timeoutPacketOperator.proofHeight,
+      processed_time: processedTime,
+      processed_height: processedHeight,
+      delay_time_period: connectionDatum.state.delay_period,
+      delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
+    };
+    const proofPrefix = connectionDatum.state.counterparty.prefix.key_prefix;
+    const counterpartyPortId = convertHex2String(channelDatum.state.channel.counterparty.port_id);
+    const counterpartyChannelId = convertHex2String(channelDatum.state.channel.counterparty.channel_id);
+    const unreceivedMembership = {
+      ...proofContext,
+      proof: timeoutPacketOperator.proofUnreceived,
+      path: {
+        key_path: [
+          proofPrefix,
+          convertString2Hex(
+            `nextSequenceRecv/ports/${counterpartyPortId}/channels/${counterpartyChannelId}`,
+          ),
+        ],
+      },
+      value: uint64ToBigEndianHex(timeoutPacketOperator.nextSequenceRecv),
+    };
+    const unreceivedNonMembership = {
+      ...proofContext,
+      proof: timeoutPacketOperator.proofUnreceived,
+      path: {
+        key_path: [
+          proofPrefix,
+          convertString2Hex(
+            packetReceiptPath(counterpartyPortId, counterpartyChannelId, packet.sequence),
+          ),
+        ],
       },
     };
+
+    let verifyProofRedeemer: VerifyProofRedeemer;
+    if (!isTimeoutOnClose) {
+      verifyProofRedeemer = isOrdered
+        ? { VerifyMembership: unreceivedMembership }
+        : { VerifyNonMembership: unreceivedNonMembership };
+    } else {
+      const localPortId = convertHex2String(channelDatum.port);
+      const expectedCounterpartyClosedChannel: CardanoChannel = {
+        state: CardanoChannelState.STATE_CLOSED,
+        ordering: orderFromJSON(channelOrder),
+        counterparty: {
+          port_id: localPortId,
+          channel_id: localChannelId,
+        },
+        connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
+        version: convertHex2String(channelDatum.state.channel.version),
+      };
+      const closedChannelMembership = {
+        ...proofContext,
+        proof: proofClose,
+        path: {
+          key_path: [
+            proofPrefix,
+            convertString2Hex(channelPath(counterpartyPortId, counterpartyChannelId)),
+          ],
+        },
+        value: toHex(CardanoChannel.encode(expectedCounterpartyClosedChannel).finish()),
+      };
+
+      verifyProofRedeemer = isOrdered
+        ? {
+            BatchVerifyMembership: [[unreceivedMembership, closedChannelMembership]],
+          }
+        : {
+            BatchVerifyMembershipAndNonMembership: {
+              memberships: [closedChannelMembership],
+              non_memberships: [unreceivedNonMembership],
+            },
+          };
+    }
 
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,

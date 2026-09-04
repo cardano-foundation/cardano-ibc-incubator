@@ -10,7 +10,6 @@ use ibc/apps/transfer/mint_voucher_redeemer.{MintVoucherRedeemer, RefundVoucher}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta
-use ibc/core/ics_004/types/packet.{Packet}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
@@ -24,11 +23,12 @@ pub fn validate_refund_packet_token(
   shard_policy_id: PolicyId,
   mint: Value,
   data: FungibleTokenPacketData,
-  packet: Packet,
+  source_port: ByteArray,
+  source_channel: ByteArray,
 ) -> Bool {
   if transfer_coin.sender_chain_is_source(
-    packet.source_port,
-    packet.source_channel,
+    source_port,
+    source_channel,
     data.denom,
   ) {
     // Source-side packets locked native funds, so timeout/ack-error refunds
@@ -62,7 +62,7 @@ pub fn validate_refund_packet_token(
         spend,
         inputs,
         outputs,
-        transfer_escrow.transfer_escrow_datum(packet.source_channel, data.denom),
+        transfer_escrow.transfer_escrow_datum(source_channel, data.denom),
         shard_policy_id,
         mint,
         0 - transfer_amount,
@@ -143,8 +143,8 @@ pub fn validate_refund_packet_token(
         updated_output,
         assets.zero,
       )?,
-      (packet_source_port == packet.source_port)?,
-      (packet_source_channel == packet.source_channel)?,
+      (packet_source_port == source_port)?,
+      (packet_source_channel == source_channel)?,
     }
   }
 }

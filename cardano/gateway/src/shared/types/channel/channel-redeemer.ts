@@ -74,6 +74,15 @@ export type SpendChannelRedeemer =
         proof_commitment_absence: MerkleProof;
         proof_height: Height;
       };
+    }
+  | {
+      TimeoutOnClose: {
+        packet: Packet;
+        proof_unreceived: MerkleProof;
+        proof_close: MerkleProof;
+        proof_height: Height;
+        next_sequence_recv: bigint;
+      };
     };
 
 function buildMintChannelRedeemerSchema(Data: LucidData) {
@@ -151,6 +160,15 @@ function buildSpendChannelRedeemerSchema(Data: LucidData) {
         sequence: Data.Integer(),
         proof_commitment_absence: MerkleProofSchema,
         proof_height: HeightSchema,
+      }),
+    }),
+    Data.Object({
+      TimeoutOnClose: Data.Object({
+        packet: PacketSchema,
+        proof_unreceived: MerkleProofSchema,
+        proof_close: MerkleProofSchema,
+        proof_height: HeightSchema,
+        next_sequence_recv: Data.Integer(),
       }),
     }),
   ]);

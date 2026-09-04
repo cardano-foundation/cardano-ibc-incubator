@@ -23,7 +23,8 @@ use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer,
+  TimeoutOnClose, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
@@ -226,6 +227,14 @@ validator mint_voucher(
         when channel_redeemer is {
           TimeoutPacket { packet, .. } -> {
             // Timeout refunds have no acknowledgement.
+            expect acknowledgement == None
+            expect packet.source_port == packet_source_port
+            expect packet.source_channel == packet_source_channel
+            expect
+              fungible_token_packet_data.matches_valid_bytes(data, packet.data)
+          }
+          TimeoutOnClose { packet, .. } -> {
+            // Timeout-on-close refunds have no acknowledgement.
             expect acknowledgement == None
             expect packet.source_port == packet_source_port
             expect packet.source_channel == packet_source_channel

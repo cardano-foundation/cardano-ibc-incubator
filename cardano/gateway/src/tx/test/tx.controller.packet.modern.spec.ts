@@ -14,6 +14,7 @@ describe('TxController - Packet (modern)', () => {
     sendPacket: jest.Mock;
     acknowledgementPacket: jest.Mock;
     timeoutPacket: jest.Mock;
+    timeoutOnClosePacket: jest.Mock;
     prunePacketHistory: jest.Mock;
   };
   let channelServiceMock: {
@@ -28,6 +29,7 @@ describe('TxController - Packet (modern)', () => {
       sendPacket: jest.fn(),
       acknowledgementPacket: jest.fn(),
       timeoutPacket: jest.fn(),
+      timeoutOnClosePacket: jest.fn(),
       prunePacketHistory: jest.fn(),
     };
 
@@ -99,6 +101,17 @@ describe('TxController - Packet (modern)', () => {
     const response = await controller.Timeout(request);
 
     expect(packetServiceMock.timeoutPacket).toHaveBeenCalledWith(request);
+    expect(response).toBe(expected);
+  });
+
+  it('delegates TimeoutOnClose to PacketService', async () => {
+    const request = { packet: { sequence: 3n }, proof_close: Uint8Array.from([1]) } as any;
+    const expected = { unsigned_tx: Buffer.from([5]) } as any;
+    packetServiceMock.timeoutOnClosePacket.mockResolvedValue(expected);
+
+    const response = await controller.TimeoutOnClose(request);
+
+    expect(packetServiceMock.timeoutOnClosePacket).toHaveBeenCalledWith(request);
     expect(response).toBe(expected);
   });
 

@@ -423,7 +423,7 @@ pub fn validate_timeout_packet(
     if input_datum.state.channel.ordering == order.Ordered {
       channel_state.Closed
     } else {
-      channel_state.Open
+      input_datum.state.channel.state
     }
 
   let expected_datum =

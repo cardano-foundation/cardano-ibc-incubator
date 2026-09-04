@@ -6,7 +6,7 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
   ChanOpenConfirm, PrunePacketHistory, RecvPacket, SendPacket,
-  SpendChannelRedeemer, TimeoutPacket,
+  SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
 }
 use ibc/utils/validator_utils
 
@@ -96,6 +96,16 @@ validator spend_channel(
           True,
         )
       TimeoutPacket { .. } ->
+        validate_operation_witness(
+          transaction,
+          spent_output,
+          datum.token,
+          host_state_nft_policy_id,
+          timeout_packet_policy_id,
+          validator_utils.ExpectHandlePacket,
+          True,
+        )
+      TimeoutOnClose { .. } ->
         validate_operation_witness(
           transaction,
           spent_output,
