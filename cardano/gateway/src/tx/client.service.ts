@@ -1,6 +1,8 @@
 import {
   MsgCreateClientResponse,
   MsgCreateClient,
+  MsgRecoverClient,
+  MsgRecoverClientResponse,
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
@@ -10,7 +12,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
 import { ClientState } from '../shared/types/client-state-types';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcFailedPreconditionException,
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+} from '~@/exception/grpc_exceptions';
 import { decodeHeader, initializeHeader } from '../shared/types/header';
 import { RpcException } from '@nestjs/microservices';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
@@ -33,9 +39,10 @@ import {
   verifyClientMessage,
 } from '../shared/types/msgs/client-message';
 import { checkForMisbehaviour, TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '@shared/types/misbehaviour/misbehaviour';
-import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
+import { RecoverClientOperatorDto, UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import {
   validateAndFormatCreateClientParams,
+  validateAndFormatRecoverClientParams,
   validateAndFormatUpdateClientParams,
   validateUpdateHeaderAdvancesLatestHeight,
 } from './helper/client.validate';
@@ -54,6 +61,7 @@ import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import { toHex } from '../shared/helpers/hex';
 import type { GatewayEvent } from './tx-events.service';
 import { getHeightMapValue, getProcessedHeight } from '../shared/helpers/verify';
+import { isDeepStrictEqual } from 'node:util';
 
 @Injectable()
 export class ClientService {
@@ -137,6 +145,91 @@ export class ClientService {
     return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE, {
       backdateMs,
     });
+  }
+
+  private isZeroHeight(height: Height): boolean {
+    return height.revisionNumber === 0n && height.revisionHeight === 0n;
+  }
+
+  private isHeightGreater(left: Height, right: Height): boolean {
+    return (
+      left.revisionNumber > right.revisionNumber ||
+      (left.revisionNumber === right.revisionNumber && left.revisionHeight > right.revisionHeight)
+    );
+  }
+
+  private isSameHeight(left: Height, right: Height): boolean {
+    return left.revisionNumber === right.revisionNumber && left.revisionHeight === right.revisionHeight;
+  }
+
+  private recoveryParametersMatch(subject: ClientState, substitute: ClientState): boolean {
+    return (
+      subject.chainId === substitute.chainId &&
+      subject.trustLevel.numerator === substitute.trustLevel.numerator &&
+      subject.trustLevel.denominator === substitute.trustLevel.denominator &&
+      subject.trustingPeriod === substitute.trustingPeriod &&
+      subject.unbondingPeriod === substitute.unbondingPeriod &&
+      subject.maxClockDrift === substitute.maxClockDrift &&
+      isDeepStrictEqual(subject.proofSpecs, substitute.proofSpecs)
+    );
+  }
+
+  private validateRecoveryState(
+    subjectDatum: ClientDatum,
+    substituteDatum: ClientDatum,
+    validToNs: bigint,
+  ): { height: Height; consensusState: ConsensusState; processedTime: bigint; processedHeight: bigint } {
+    const subjectState = subjectDatum.state.clientState;
+    const substituteState = substituteDatum.state.clientState;
+    const subjectLatestConsensus = getHeightMapValue(subjectDatum.state.consensusStates, subjectState.latestHeight);
+    const subjectIsActive =
+      this.isZeroHeight(subjectState.frozenHeight) &&
+      subjectLatestConsensus !== undefined &&
+      subjectLatestConsensus.timestamp + subjectState.trustingPeriod > validToNs;
+    if (subjectIsActive) {
+      throw new GrpcFailedPreconditionException('Subject client must be frozen or expired');
+    }
+
+    if (!this.isZeroHeight(substituteState.frozenHeight)) {
+      throw new GrpcFailedPreconditionException('Substitute client must be active');
+    }
+    const substituteConsensus = getHeightMapValue(substituteDatum.state.consensusStates, substituteState.latestHeight);
+    if (!substituteConsensus || substituteConsensus.timestamp + substituteState.trustingPeriod <= validToNs) {
+      throw new GrpcFailedPreconditionException('Substitute client must be active');
+    }
+    if (!this.isHeightGreater(substituteState.latestHeight, subjectState.latestHeight)) {
+      throw new GrpcFailedPreconditionException('Substitute client must be newer than the subject client');
+    }
+    if (!this.recoveryParametersMatch(subjectState, substituteState)) {
+      throw new GrpcFailedPreconditionException('Subject and substitute client parameters do not match');
+    }
+    if (subjectDatum.state.consensusStates.size > MAX_CONSENSUS_STATE_SIZE) {
+      throw new GrpcFailedPreconditionException('Subject client consensus-state history exceeds the configured limit');
+    }
+    const consensusKeys = Array.from(subjectDatum.state.consensusStates.keys());
+    const processedTimeKeys = Array.from(subjectDatum.state.processedTimes.keys());
+    const processedHeightKeys = Array.from(subjectDatum.state.processedHeights.keys());
+    const keysMatch = (candidate: Height[]) =>
+      candidate.length === consensusKeys.length &&
+      candidate.every((height, index) => this.isSameHeight(height, consensusKeys[index]));
+    if (!keysMatch(processedTimeKeys) || !keysMatch(processedHeightKeys)) {
+      throw new GrpcFailedPreconditionException(
+        'Subject client consensus-state history and processed metadata keys do not match',
+      );
+    }
+
+    const processedTime = getHeightMapValue(substituteDatum.state.processedTimes, substituteState.latestHeight);
+    const processedHeight = getHeightMapValue(substituteDatum.state.processedHeights, substituteState.latestHeight);
+    if (processedTime === undefined || processedHeight === undefined) {
+      throw new GrpcFailedPreconditionException('Substitute client is missing processed metadata at its latest height');
+    }
+
+    return {
+      height: substituteState.latestHeight,
+      consensusState: substituteConsensus,
+      processedTime,
+      processedHeight,
+    };
   }
   /**
    * Processes the creation of a client tx.
@@ -402,6 +495,116 @@ export class ClientService {
       }
     }
   }
+
+  async recoverClient(data: MsgRecoverClient): Promise<MsgRecoverClientResponse> {
+    try {
+      const { subjectClientId, substituteClientId, constructedAddress } =
+        validateAndFormatRecoverClientParams(data);
+      const recoveryConfig = this.configService.get('deployment')?.validators?.recoverClient;
+      if (!recoveryConfig?.address || !recoveryConfig?.refUtxo) {
+        throw new GrpcFailedPreconditionException(
+          'Tendermint client recovery is not configured for this deployment',
+        );
+      }
+
+      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+      if (!hostStateUtxo.datum) {
+        throw new GrpcInternalException('HostState UTXO has no datum');
+      }
+      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+        hostStateUtxo.datum,
+        'host_state',
+      );
+
+      let signerKeyHash: string;
+      try {
+        const paymentCredential = this.lucidService.getPaymentCredential(constructedAddress);
+        if (!paymentCredential || paymentCredential.type !== 'Key') {
+          throw new Error('signer does not use a key payment credential');
+        }
+        signerKeyHash = paymentCredential.hash;
+      } catch {
+        throw new GrpcInvalidArgumentException('Recover client signer is not a valid Cardano address');
+      }
+      if (signerKeyHash.toLowerCase() !== hostStateDatum.deployer.toLowerCase()) {
+        throw new GrpcFailedPreconditionException(
+          'Recover client signer does not match the deployment recovery authority',
+        );
+      }
+
+      const subjectClientTokenUnit = this.lucidService.getClientTokenUnit(subjectClientId);
+      const substituteClientTokenUnit = this.lucidService.getClientTokenUnit(substituteClientId);
+      const [subjectClientUtxo, substituteClientUtxo] = await Promise.all([
+        this.lucidService.findUtxoByUnit(subjectClientTokenUnit),
+        this.lucidService.findUtxoByUnit(substituteClientTokenUnit),
+      ]);
+      const [subjectClientDatum, substituteClientDatum] = await Promise.all([
+        this.lucidService.decodeDatum<ClientDatum>(subjectClientUtxo.datum!, 'client'),
+        this.lucidService.decodeDatum<ClientDatum>(substituteClientUtxo.datum!, 'client'),
+      ]);
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow(60_000);
+
+      await this.refreshWalletContext(constructedAddress, 'recoverClientBuilder');
+      const { unsignedTx, pendingTreeUpdate } = await this.buildUnsignedRecoverClientTx({
+        subjectClientId,
+        substituteClientId,
+        constructedAddress,
+        subjectClientDatum,
+        substituteClientDatum,
+        subjectClientTokenUnit,
+        subjectClientUtxo,
+        substituteClientUtxo,
+        hostStateUtxo,
+        hostStateDatum,
+        signerKeyHash,
+        txValidTo: BigInt(validToTime) * 1_000_000n,
+      });
+      const { unsignedTxBytes } = await this.txOperationRunnerService.run({
+        operationName: 'recoverClient',
+        unsignedTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'recoverClient',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+        syntheticEvents: [
+          {
+            type: EVENT_TYPE_CLIENT.RECOVER_CLIENT,
+            attributes: [
+              { key: ATTRIBUTE_KEY_CLIENT.SUBJECT_CLIENT_ID, value: `${CLIENT_ID_PREFIX}-${subjectClientId}` },
+              { key: ATTRIBUTE_KEY_CLIENT.CLIENT_TYPE, value: CLIENT_ID_PREFIX },
+              {
+                key: ATTRIBUTE_KEY_CLIENT.SUBSTITUTE_CLIENT_ID,
+                value: `${CLIENT_ID_PREFIX}-${substituteClientId}`,
+              },
+            ],
+          },
+        ],
+      });
+
+      return {
+        unsigned_tx: {
+          type_url: '',
+          value: unsignedTxBytes,
+        },
+      } as MsgRecoverClientResponse;
+    } catch (error) {
+      this.logger.error(`recoverClient: ${error}`);
+      if (!(error instanceof RpcException)) {
+        throw new GrpcInternalException(`An unexpected error occurred. ${error.stack}`);
+      }
+      throw error;
+    }
+  }
+
   public async buildUnsignedUpdateOnMisbehaviour(
     updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
@@ -713,6 +916,155 @@ export class ClientService {
       pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
     };
   }
+
+  public async buildUnsignedRecoverClientTx(
+    operator: RecoverClientOperatorDto,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    const recoveryState = this.validateRecoveryState(
+      operator.subjectClientDatum,
+      operator.substituteClientDatum,
+      operator.txValidTo,
+    );
+    if (
+      Array.from(operator.subjectClientDatum.state.consensusStates.keys()).some((height) =>
+        this.isSameHeight(height, recoveryState.height),
+      )
+    ) {
+      throw new GrpcFailedPreconditionException(
+        'Subject client already contains the substitute latest consensus state',
+      );
+    }
+
+    const subjectHistory = Array.from(operator.subjectClientDatum.state.consensusStates.entries()).map(
+      ([height, consensusState]) => {
+        const processedTime = getHeightMapValue(operator.subjectClientDatum.state.processedTimes, height);
+        const processedHeight = getHeightMapValue(operator.subjectClientDatum.state.processedHeights, height);
+        if (processedTime === undefined || processedHeight === undefined) {
+          throw new GrpcFailedPreconditionException(
+            'Subject client consensus-state history is missing processed metadata',
+          );
+        }
+        return { height, consensusState, processedTime, processedHeight };
+      },
+    );
+    const retainedHistory = [recoveryState, ...subjectHistory].slice(0, MAX_CONSENSUS_STATE_SIZE);
+    const newClientState: ClientState = {
+      ...operator.subjectClientDatum.state.clientState,
+      frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
+      latestHeight: recoveryState.height,
+    };
+    const recoveredClientDatum: ClientDatum = {
+      ...operator.subjectClientDatum,
+      state: {
+        clientState: newClientState,
+        consensusStates: new Map(
+          retainedHistory.map(({ height, consensusState }) => [height, consensusState]),
+        ),
+        processedTimes: new Map(
+          retainedHistory.map(({ height, processedTime }) => [height, processedTime]),
+        ),
+        processedHeights: new Map(
+          retainedHistory.map(({ height, processedHeight }) => [height, processedHeight]),
+        ),
+      },
+    };
+
+    await this.ensureTreeAligned(operator.hostStateDatum.state.ibc_state_root);
+    const outputHeightKeys = new Set(
+      retainedHistory.map(
+        ({ height }) => `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`,
+      ),
+    );
+    const removedConsensusHeights = Array.from(
+      operator.subjectClientDatum.state.consensusStates.keys(),
+    )
+      .filter(
+        (height) =>
+          !outputHeightKeys.has(`${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`),
+      )
+      .map((height) => height.revisionHeight.toString());
+    if (removedConsensusHeights.length > 1) {
+      throw new GrpcInternalException('RecoverClient should prune at most one consensus state');
+    }
+
+    const newClientStateValue = Buffer.from(
+      await encodeClientStateValue(newClientState, this.lucidService.LucidImporter),
+      'hex',
+    );
+    const addedConsensusState = {
+      height: recoveryState.height.revisionHeight.toString(),
+      value: Buffer.from(
+        await encodeConsensusStateValue(recoveryState.consensusState, this.lucidService.LucidImporter),
+        'hex',
+      ),
+    };
+    const ibcClientId = `${CLIENT_ID_PREFIX}-${operator.subjectClientId}`;
+    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
+      computeRootWithUpdateClientUpdate(
+        operator.hostStateDatum.state.ibc_state_root,
+        ibcClientId,
+        newClientStateValue,
+        removedConsensusHeights,
+        addedConsensusState,
+      );
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...operator.hostStateDatum,
+      state: {
+        ...operator.hostStateDatum.state,
+        version: operator.hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+    const hostStateRedeemer = {
+      UpdateClient: {
+        client_state_siblings: clientStateSiblings,
+        consensus_state_siblings: consensusStateSiblings,
+        removed_consensus_state_siblings: removedConsensusStateSiblings,
+      },
+    };
+    const spendClientRedeemer: SpendClientRedeemer = {
+      RecoverClient: {
+        substitute_token: operator.substituteClientDatum.token,
+      },
+    };
+    const withdrawalRedeemer = {
+      RecoverClientWithdrawal: {
+        subject_token: operator.subjectClientDatum.token,
+        substitute_token: operator.substituteClientDatum.token,
+      },
+    };
+
+    const [encodedHostStateRedeemer, encodedSpendClientRedeemer, encodedWithdrawalRedeemer] =
+      await Promise.all([
+        this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer'),
+        this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer'),
+        this.lucidService.encode(withdrawalRedeemer, 'recoverClientWithdrawalRedeemer'),
+      ]);
+    const [encodedUpdatedHostStateDatum, encodedRecoveredClientDatum] = await Promise.all([
+      this.lucidService.encode(updatedHostStateDatum, 'host_state'),
+      this.lucidService.encode(recoveredClientDatum, 'client'),
+    ]);
+    const unsignedTx = this.lucidService.createUnsignedRecoverClientTransaction(
+      operator.hostStateUtxo,
+      encodedHostStateRedeemer,
+      operator.subjectClientUtxo,
+      encodedSpendClientRedeemer,
+      operator.substituteClientUtxo,
+      encodedWithdrawalRedeemer,
+      encodedUpdatedHostStateDatum,
+      encodedRecoveredClientDatum,
+      operator.subjectClientTokenUnit,
+      operator.signerKeyHash,
+    );
+
+    return {
+      unsignedTx,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
+  }
+
   /**
    * Builds an unsigned transaction for creating a new client, incorporating client and consensus state.
    *

@@ -106,11 +106,7 @@ import {
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import { Packet } from '@shared/types/channel/packet';
-import {
-  decodeMintClientRedeemer,
-  decodeSpendClientRedeemer,
-  SpendClientRedeemer,
-} from '@shared/types/client-redeemer';
+import { decodeMintClientRedeemer, findSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
@@ -1302,24 +1298,18 @@ export class QueryService {
               }
             });
           const eventClient = hasMintClientRedeemer ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
-          const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
-          let spendClientRedeemerData: SpendClientRedeemer = 'Other';
-          if (spendClientRedeemer) {
-            try {
-              spendClientRedeemerData = decodeSpendClientRedeemer(
-                spendClientRedeemer.data,
-                this.lucidService.LucidImporter,
-              );
-            } catch {
-              spendClientRedeemerData = 'Other';
-            }
-          }
+          const spendClientRedeemerData = findSpendClientRedeemer(redeemers, this.lucidService.LucidImporter);
+          const substituteClientId =
+            typeof spendClientRedeemerData === 'object' && 'RecoverClient' in spendClientRedeemerData
+              ? getIdByTokenName(spendClientRedeemerData.RecoverClient.substitute_token.name, tokenBase, CLIENT_PREFIX)
+              : undefined;
 
           const txsResult = normalizeTxsResultFromClientDatum(
             clientDatum,
             eventClient,
             clientId,
             spendClientRedeemerData,
+            substituteClientId,
           );
           return txsResult as unknown as ResponseDeliverTx;
         }),
