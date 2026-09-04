@@ -73,7 +73,7 @@ fn check_send_packet_with_data(
     FungibleTokenPacketData {
       denom: "6c6f76656c616365",
       amount: "1000",
-      sender: "sender",
+      sender: "525f6e2b0f8a15a3c95d82c8113b99dfebfe40f124cb2bc71ee99e22",
       receiver: "receiver",
       memo: "",
     }
@@ -442,7 +442,7 @@ fn check_send_packet(mutation: CallbackMutation) {
     FungibleTokenPacketData {
       denom: "6c6f76656c616365",
       amount: "1000",
-      sender: "sender",
+      sender: "525f6e2b0f8a15a3c95d82c8113b99dfebfe40f124cb2bc71ee99e22",
       receiver: "receiver",
       memo: "",
     }
@@ -457,7 +457,7 @@ test succeed_send_packet() {
   // double-charging the serializer that the validator itself exercises.
   check_send_packet_with_data(
     ValidCallback,
-    #"7b22616d6f756e74223a2231303030222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a227265636569766572222c2273656e646572223a2273656e646572227d",
+    #"7b22616d6f756e74223a2231303030222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a227265636569766572222c2273656e646572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232227d",
   )
 }
 
