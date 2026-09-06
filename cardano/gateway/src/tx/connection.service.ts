@@ -3,7 +3,7 @@ import { Network, TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { inspect } from 'util';
-import { appendFileSync } from 'fs';
+import { gatewayDiagnostics } from '@shared/helpers/gateway-diagnostics';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import {
@@ -62,7 +62,6 @@ import { isNonRetryableRuntimeProviderError } from '../shared/modules/lucid/luci
 export class ConnectionService {
   private static readonly CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS = 5;
   private static readonly CONN_OPEN_ACK_COMPLETE_BASE_DELAY_MS = 1000;
-  private static readonly CONN_OPEN_ACK_DEBUG_LOG = '/tmp/connection-open-ack-debug.log';
 
   constructor(
     private readonly logger: Logger,
@@ -156,6 +155,8 @@ export class ConnectionService {
     context: string,
     spendInputs: Array<{ label: string; utxo: UTxO; validator: string }>,
   ): void {
+    if (!gatewayDiagnostics.isEnabled()) return;
+
     const sorted = [...spendInputs].sort((a, b) => this.compareUtxoRef(a.utxo, b.utxo));
     const rendered = sorted
       .map(
@@ -163,33 +164,11 @@ export class ConnectionService {
           `Spend[${index}] ${this.toUtxoRef(entry.utxo)} (${entry.label}:${entry.validator})`,
       )
       .join(', ');
-    this.logConnOpenAckDebug(`[DEBUG] ${context} predicted_spend_inputs_sorted: ${rendered}`);
+    this.logConnOpenAckDebug(() => `[DEBUG] ${context} predicted_spend_inputs_sorted: ${rendered}`);
   }
 
-  private appendConnOpenAckDebug(line: string): void {
-    try {
-      appendFileSync(
-        ConnectionService.CONN_OPEN_ACK_DEBUG_LOG,
-        `${new Date().toISOString()} ${line}\n`,
-      );
-    } catch {
-      // Best-effort debugging only.
-    }
-  }
-
-  private logConnOpenAckDebug(line: string): void {
-    this.logger.log(line);
-    this.appendConnOpenAckDebug(line);
-  }
-
-  private logConnOpenAckWarn(line: string): void {
-    this.logger.warn(line);
-    this.appendConnOpenAckDebug(`[WARN] ${line}`);
-  }
-
-  private logConnOpenAckError(line: string): void {
-    this.logger.error(line);
-    this.appendConnOpenAckDebug(`[ERROR] ${line}`);
+  private logConnOpenAckDebug(line: () => string): void {
+    gatewayDiagnostics.record('connectionOpenAck', line);
   }
 
   /**
@@ -206,17 +185,19 @@ export class ConnectionService {
     completedUnsignedTx: { toCBOR(): string; toHash(): string },
     knownUtxos: Record<string, UTxO | undefined> = {},
   ): void {
+    if (!gatewayDiagnostics.isEnabled()) return;
+
     try {
       const unsignedTxCborHex = completedUnsignedTx.toCBOR();
       const unsignedTxHash = completedUnsignedTx.toHash();
 
       this.logConnOpenAckDebug(
-        `[DEBUG] ${context} unsigned_tx hash=${unsignedTxHash} cbor_len=${unsignedTxCborHex.length} cbor_head=${unsignedTxCborHex.substring(0, 120)}`,
+        () => `[DEBUG] ${context} unsigned_tx hash=${unsignedTxHash} cbor_len=${unsignedTxCborHex.length} cbor_head=${unsignedTxCborHex.substring(0, 120)}`,
       );
 
       const { CML } = this.lucidService.LucidImporter;
       if (!CML?.Transaction?.from_cbor_hex) {
-        this.logConnOpenAckWarn(`[DEBUG] ${context} cannot decode tx: LucidImporter.CML.Transaction unavailable`);
+        this.logConnOpenAckDebug(() => `[DEBUG] ${context} cannot decode tx: LucidImporter.CML.Transaction unavailable`);
         return;
       }
 
@@ -237,7 +218,7 @@ export class ConnectionService {
         const label = knownByRef.get(ref);
         inputRefs.push(label ? `${ref} (${label})` : ref);
       }
-      this.logger.log(`[DEBUG] ${context} inputs(${inputRefs.length}): ${inputRefs.join(', ')}`);
+      this.logConnOpenAckDebug(() => `[DEBUG] ${context} inputs(${inputRefs.length}): ${inputRefs.join(', ')}`);
 
       const referenceInputs = body.reference_inputs();
       if (referenceInputs) {
@@ -248,15 +229,15 @@ export class ConnectionService {
           const label = knownByRef.get(ref);
           refInputRefs.push(label ? `${ref} (${label})` : ref);
         }
-        this.logger.log(
-          `[DEBUG] ${context} reference_inputs(${refInputRefs.length}): ${refInputRefs.join(', ')}`,
+        this.logConnOpenAckDebug(
+          () => `[DEBUG] ${context} reference_inputs(${refInputRefs.length}): ${refInputRefs.join(', ')}`,
         );
       }
 
       const witnessSet = parsedTx.witness_set();
       const redeemers = witnessSet.redeemers();
       if (!redeemers) {
-        this.logger.log(`[DEBUG] ${context} redeemers: none`);
+        this.logConnOpenAckDebug(() => `[DEBUG] ${context} redeemers: none`);
         return;
       }
 
@@ -264,7 +245,7 @@ export class ConnectionService {
       if (redeemers.kind() === CML.RedeemersKind.MapRedeemerKeyToRedeemerVal) {
         const redeemerMap = redeemers.as_map_redeemer_key_to_redeemer_val();
         if (!redeemerMap) {
-          this.logger.warn(`[DEBUG] ${context} redeemer map was unavailable`);
+          this.logConnOpenAckDebug(() => `[DEBUG] ${context} redeemer map was unavailable`);
           return;
         }
         const keys = redeemerMap.keys();
@@ -285,14 +266,14 @@ export class ConnectionService {
         // Legacy redeemer format: still log the CBOR for later inspection.
         redeemerLines.push(`legacy_redeemers cbor_head=${redeemers.to_cbor_hex().substring(0, 120)}`);
       }
-      this.logger.log(`[DEBUG] ${context} redeemers(${redeemerLines.length}): ${redeemerLines.join(', ')}`);
+      this.logConnOpenAckDebug(() => `[DEBUG] ${context} redeemers(${redeemerLines.length}): ${redeemerLines.join(', ')}`);
 
       const plutusDatums = witnessSet.plutus_datums();
       if (plutusDatums) {
-        this.logger.log(`[DEBUG] ${context} plutus_datums(${plutusDatums.len()})`);
+        this.logConnOpenAckDebug(() => `[DEBUG] ${context} plutus_datums(${plutusDatums.len()})`);
       }
     } catch (error) {
-      this.logger.warn(`[DEBUG] ${context} failed to decode/log tx summary: ${inspect(error, { depth: 6 })}`);
+      this.logConnOpenAckDebug(() => `[DEBUG] ${context} failed to decode/log tx summary: ${inspect(error, { depth: 6 })}`);
     }
   }
 
@@ -485,46 +466,48 @@ export class ConnectionService {
         validToTime,
       } = await buildConnectionOpenAckAttempt();
 
-      this.appendConnOpenAckDebug('===== connectionOpenAck attempt start =====');
+      this.logConnOpenAckDebug(() => '===== connectionOpenAck attempt start =====');
       
-      // DEBUG: `.complete()` asks the node to evaluate scripts to pick fees/execution units.
-      // When it fails, we *won't* have a transaction body to decode, so we must log as
-      // much as possible before calling it.
-      //
-      // Note: `rawConfig()` is best-effort only. Lucid can defer parts of the builder
-      // until completion (fee balancing, implicit inputs, etc), so this may show
-      // empty arrays even if `.collectFrom()` was already called.
-      try {
-        const deploymentConfig = this.configService.get('deployment');
-        const raw = unsignedConnectionOpenAckTx.rawConfig();
-        const knownByRef = new Map<string, string>([
-          [this.toUtxoRef(hostStateUtxo), 'hostStateUtxo'],
-          [this.toUtxoRef(connectionUtxo), 'connectionUtxo'],
-          [this.toUtxoRef(clientUtxo), 'clientUtxo'],
-        ]);
-        const maybeRefScripts: Array<[string, UTxO | undefined]> = [
-          ['refScript.hostStateStt', deploymentConfig.validators.hostStateStt?.refUtxo],
-          ['refScript.spendConnection', deploymentConfig.validators.spendConnection?.refUtxo],
-          ['refScript.verifyProof', deploymentConfig.validators.verifyProof?.refUtxo],
-        ];
-        for (const [name, utxo] of maybeRefScripts) {
-          if (!utxo) continue;
-          knownByRef.set(this.toUtxoRef(utxo), name);
+      if (gatewayDiagnostics.isEnabled()) {
+        // DEBUG: `.complete()` asks the node to evaluate scripts to pick fees/execution units.
+        // When it fails, we *won't* have a transaction body to decode, so we must log as
+        // much as possible before calling it.
+        //
+        // Note: `rawConfig()` is best-effort only. Lucid can defer parts of the builder
+        // until completion (fee balancing, implicit inputs, etc), so this may show
+        // empty arrays even if `.collectFrom()` was already called.
+        try {
+          const deploymentConfig = this.configService.get('deployment');
+          const raw = unsignedConnectionOpenAckTx.rawConfig();
+          const knownByRef = new Map<string, string>([
+            [this.toUtxoRef(hostStateUtxo), 'hostStateUtxo'],
+            [this.toUtxoRef(connectionUtxo), 'connectionUtxo'],
+            [this.toUtxoRef(clientUtxo), 'clientUtxo'],
+          ]);
+          const maybeRefScripts: Array<[string, UTxO | undefined]> = [
+            ['refScript.hostStateStt', deploymentConfig.validators.hostStateStt?.refUtxo],
+            ['refScript.spendConnection', deploymentConfig.validators.spendConnection?.refUtxo],
+            ['refScript.verifyProof', deploymentConfig.validators.verifyProof?.refUtxo],
+          ];
+          for (const [name, utxo] of maybeRefScripts) {
+            if (!utxo) continue;
+            knownByRef.set(this.toUtxoRef(utxo), name);
+          }
+          const collected = raw.collectedInputs.map((u, i) => {
+            const ref = this.toUtxoRef(u);
+            const label = knownByRef.get(ref);
+            return label ? `#${i} ${ref} (${label})` : `#${i} ${ref}`;
+          });
+          const reads = raw.readInputs.map((u, i) => {
+            const ref = this.toUtxoRef(u);
+            const label = knownByRef.get(ref);
+            return label ? `#${i} ${ref} (${label})` : `#${i} ${ref}`;
+          });
+          this.logConnOpenAckDebug(() => `[DEBUG] connectionOpenAck raw.collectedInputs(${collected.length}): ${collected.join(', ')}`);
+          this.logConnOpenAckDebug(() => `[DEBUG] connectionOpenAck raw.readInputs(${reads.length}): ${reads.join(', ')}`);
+        } catch (e) {
+          this.logConnOpenAckDebug(() => `[DEBUG] connectionOpenAck failed to read rawConfig: ${e}`);
         }
-        const collected = raw.collectedInputs.map((u, i) => {
-          const ref = this.toUtxoRef(u);
-          const label = knownByRef.get(ref);
-          return label ? `#${i} ${ref} (${label})` : `#${i} ${ref}`;
-        });
-        const reads = raw.readInputs.map((u, i) => {
-          const ref = this.toUtxoRef(u);
-          const label = knownByRef.get(ref);
-          return label ? `#${i} ${ref} (${label})` : `#${i} ${ref}`;
-        });
-        this.logConnOpenAckDebug(`[DEBUG] connectionOpenAck raw.collectedInputs(${collected.length}): ${collected.join(', ')}`);
-        this.logConnOpenAckDebug(`[DEBUG] connectionOpenAck raw.readInputs(${reads.length}): ${reads.join(', ')}`);
-      } catch (e) {
-        this.logConnOpenAckWarn(`[DEBUG] connectionOpenAck failed to read rawConfig: ${e}`);
       }
 
       const {
@@ -590,27 +573,11 @@ export class ConnectionService {
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
     } catch (error) {
-      console.error(error);
-      this.appendConnOpenAckDebug('===== connectionOpenAck attempt failed =====');
-      this.appendConnOpenAckDebug(inspect(error, { depth: 15 }));
+      this.logConnOpenAckDebug(() => '===== connectionOpenAck attempt failed =====');
+      this.logConnOpenAckDebug(() => inspect(error, { depth: 15 }));
 
-      // DEBUG: Ogmios evaluation errors are often deeply nested and hard to scan in logs.
-      // Print a compact summary if possible, before dumping the full object below.
-      try {
-        const failures = (error as any)?.data?.failures;
-        if (Array.isArray(failures) && failures.length > 0) {
-          const summary = failures
-            .map((f: any) => `${f?.validator?.purpose ?? 'unknown'}[${f?.validator?.index ?? '?'}]`)
-            .join(', ');
-          this.logConnOpenAckError(`[DEBUG] connectionOpenAck script_failures: ${summary}`);
-        }
-      } catch {
-        // Best-effort debug logging only.
-      }
-
-      this.logConnOpenAckError(`connectionOpenAck error: ${String(error)}`);
-      this.logConnOpenAckError(`connectionOpenAck: ${error.stack}`);
-      this.logConnOpenAckError(`[DEBUG] connectionOpenAck error detail: ${inspect(error, { depth: 15 })}`);
+      this.logger.error(`connectionOpenAck error: ${String(error)}`);
+      this.logger.error(`connectionOpenAck: ${error.stack}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       } else {
@@ -1025,7 +992,7 @@ export class ConnectionService {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateHasNft = (hostStateUtxo.assets?.[hostStateNftUnit] ?? 0n) > 0n;
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck hostStateUtxo=${this.toUtxoRef(hostStateUtxo)} addr_ok=${hostStateUtxo.address === expectedHostStateAddress} nft_ok=${hostStateHasNft}`,
+      () => `[DEBUG] ConnOpenAck hostStateUtxo=${this.toUtxoRef(hostStateUtxo)} addr_ok=${hostStateUtxo.address === expectedHostStateAddress} nft_ok=${hostStateHasNft}`,
     );
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
       hostStateUtxo.datum!,
@@ -1034,12 +1001,12 @@ export class ConnectionService {
 
 	    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing a witness.
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck on_chain_ibc_state_root=${hostStateDatum.state.ibc_state_root.substring(0, 32)}...`,
+	      () => `[DEBUG] ConnOpenAck on_chain_ibc_state_root=${hostStateDatum.state.ibc_state_root.substring(0, 32)}...`,
 	    );
 	    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
 	    const treeRootAfterAlign = getCurrentTree().getRoot();
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck tree_root_after_align=${treeRootAfterAlign.substring(0, 32)}... matches_on_chain=${treeRootAfterAlign === hostStateDatum.state.ibc_state_root}`,
+	      () => `[DEBUG] ConnOpenAck tree_root_after_align=${treeRootAfterAlign.substring(0, 32)}... matches_on_chain=${treeRootAfterAlign === hostStateDatum.state.ibc_state_root}`,
 	    );
 
     // Get the token unit associated with the client
@@ -1050,7 +1017,7 @@ export class ConnectionService {
     // Find the UTXO for the client token
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck connectionUtxo=${this.toUtxoRef(connectionUtxo)} addr_ok=${connectionUtxo.address === expectedConnectionAddress} unit=${connectionTokenUnit}`,
+      () => `[DEBUG] ConnOpenAck connectionUtxo=${this.toUtxoRef(connectionUtxo)} addr_ok=${connectionUtxo.address === expectedConnectionAddress} unit=${connectionTokenUnit}`,
     );
     this.debugLogPredictedSpendIndex('ConnOpenAck', [
       { label: 'hostStateUtxo', utxo: hostStateUtxo, validator: 'host_state_stt' },
@@ -1061,7 +1028,7 @@ export class ConnectionService {
       'connection',
     );
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck connection input state=${connectionDatum.state.state} token_policy=${connectionDatum.token.policyId} token_name=${connectionDatum.token.name}`,
+      () => `[DEBUG] ConnOpenAck connection input state=${connectionDatum.state.state} token_policy=${connectionDatum.token.policyId} token_name=${connectionDatum.token.name}`,
     );
     const clientId = convertHex2String(connectionDatum.state.client_id);
     const counterpartyClientId = convertHex2String(connectionDatum.state.counterparty.client_id);
@@ -1091,23 +1058,23 @@ export class ConnectionService {
 	      'hex',
 	    );
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck root_witness key=${connectionKey} tree_old_value_len=${treeOldConnectionValue?.length ?? 0} input_old_value_len=${oldConnectionEndValue.length} tree_old_equals_input_old=${treeOldConnectionValue ? treeOldConnectionValue.equals(oldConnectionEndValue) : false}`,
+	      () => `[DEBUG] ConnOpenAck root_witness key=${connectionKey} tree_old_value_len=${treeOldConnectionValue?.length ?? 0} input_old_value_len=${oldConnectionEndValue.length} tree_old_equals_input_old=${treeOldConnectionValue ? treeOldConnectionValue.equals(oldConnectionEndValue) : false}`,
 	    );
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck root_witness old_value_from_tree=${treeOldConnectionValue?.toString('hex') ?? '<missing>'}`,
+	      () => `[DEBUG] ConnOpenAck root_witness old_value_from_tree=${treeOldConnectionValue?.toString('hex') ?? '<missing>'}`,
 	    );
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck root_witness old_value_from_input_datum=${oldConnectionEndValue.toString('hex')}`,
+	      () => `[DEBUG] ConnOpenAck root_witness old_value_from_input_datum=${oldConnectionEndValue.toString('hex')}`,
 	    );
 	    const updatedConnectionEndValue = Buffer.from(
 	      await encodeConnectionEndValue(updatedConnectionDatum.state, this.lucidService.LucidImporter),
 	      'hex',
 	    );
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck root_witness new_value=${updatedConnectionEndValue.toString('hex')}`,
+	      () => `[DEBUG] ConnOpenAck root_witness new_value=${updatedConnectionEndValue.toString('hex')}`,
 	    );
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck connection_end_value_len=${updatedConnectionEndValue.length} connection_id=${connectionId}`,
+	      () => `[DEBUG] ConnOpenAck connection_end_value_len=${updatedConnectionEndValue.length} connection_id=${connectionId}`,
 	    );
 	    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
 	      hostStateDatum.state.ibc_state_root,
@@ -1115,13 +1082,13 @@ export class ConnectionService {
 	      updatedConnectionEndValue,
 	    );
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck computed_new_root=${newRoot.substring(0, 32)}... siblings_len=${connectionSiblings.length}`,
+	      () => `[DEBUG] ConnOpenAck computed_new_root=${newRoot.substring(0, 32)}... siblings_len=${connectionSiblings.length}`,
 	    );
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck root_witness old_root=${hostStateDatum.state.ibc_state_root} new_root=${newRoot}`,
+	      () => `[DEBUG] ConnOpenAck root_witness old_root=${hostStateDatum.state.ibc_state_root} new_root=${newRoot}`,
 	    );
 	    this.logConnOpenAckDebug(
-	      `[DEBUG] ConnOpenAck root_witness siblings=${connectionSiblings.join(',')}`,
+	      () => `[DEBUG] ConnOpenAck root_witness siblings=${connectionSiblings.join(',')}`,
 	    );
 
     const updatedHostStateDatum: HostStateDatum = {
@@ -1142,7 +1109,7 @@ export class ConnectionService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    this.logConnOpenAckDebug(`[DEBUG] ConnOpenAck clientUtxo(ref only)=${this.toUtxoRef(clientUtxo)} unit=${clientTokenUnit}`);
+    this.logConnOpenAckDebug(() => `[DEBUG] ConnOpenAck clientUtxo(ref only)=${this.toUtxoRef(clientUtxo)} unit=${clientTokenUnit}`);
     const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
@@ -1159,17 +1126,17 @@ export class ConnectionService {
     const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck encoded_host_state_redeemer head=${encodedHostStateRedeemer.substring(0, 16)} len=${encodedHostStateRedeemer.length}`,
+      () => `[DEBUG] ConnOpenAck encoded_host_state_redeemer head=${encodedHostStateRedeemer.substring(0, 16)} len=${encodedHostStateRedeemer.length}`,
     );
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck encoded_updated_host_state_datum head=${encodedUpdatedHostStateDatum.substring(0, 16)} len=${encodedUpdatedHostStateDatum.length}`,
+      () => `[DEBUG] ConnOpenAck encoded_updated_host_state_datum head=${encodedUpdatedHostStateDatum.substring(0, 16)} len=${encodedUpdatedHostStateDatum.length}`,
     );
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck encoded_updated_connection_datum head=${encodedUpdatedConnectionDatum.substring(0, 16)} len=${encodedUpdatedConnectionDatum.length}`,
+      () => `[DEBUG] ConnOpenAck encoded_updated_connection_datum head=${encodedUpdatedConnectionDatum.substring(0, 16)} len=${encodedUpdatedConnectionDatum.length}`,
     );
 
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
-    this.logConnOpenAckDebug(`[DEBUG] ConnOpenAck verifyProofPolicyId=${verifyProofPolicyId}`);
+    this.logConnOpenAckDebug(() => `[DEBUG] ConnOpenAck verifyProofPolicyId=${verifyProofPolicyId}`);
     const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
       ([key]) =>
         key.revisionNumber === connectionOpenAckOperator.proofHeight.revisionNumber &&
@@ -1207,43 +1174,45 @@ export class ConnectionService {
       delay_period: connectionDatum.state.delay_period,
     };
 
-    const firstExist = (proof: any) => {
-      for (const p of proof?.proofs ?? []) {
-        const inner = p?.proof;
-        if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
-      }
-      return undefined;
-    };
+    if (gatewayDiagnostics.isEnabled()) {
+      const firstExist = (proof: any) => {
+        for (const p of proof?.proofs ?? []) {
+          const inner = p?.proof;
+          if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
+        }
+        return undefined;
+      };
 
-    // Debugging aid: verify that the Tendermint proof Hermes provided is actually proving
-    // the counterparty connection state we expect for ConnOpenAck.
-    //
-    // If this is wrong, the on-chain `verify_proof` minting policy will fail, and the
-    // `spend_connection` script will fail as well (it requires a successful verify-proof mint).
-    try {
-      const expectedConnKeyUtf8 = connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id));
-      const expectedConnValue = ConnectionEnd.encode(cardanoConnectionEnd).finish();
-      const expectedConnValueBuf = Buffer.from(expectedConnValue);
+      // Debugging aid: verify that the Tendermint proof Hermes provided is actually proving
+      // the counterparty connection state we expect for ConnOpenAck.
+      //
+      // If this is wrong, the on-chain `verify_proof` minting policy will fail, and the
+      // `spend_connection` script will fail as well (it requires a successful verify-proof mint).
+      try {
+        const expectedConnKeyUtf8 = connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id));
+        const expectedConnValue = ConnectionEnd.encode(cardanoConnectionEnd).finish();
+        const expectedConnValueBuf = Buffer.from(expectedConnValue);
 
-      const tryExist = firstExist(connectionOpenAckOperator.proofTry as any);
-      if (tryExist?.key && tryExist?.value) {
-        const keyUtf8 = Buffer.from(tryExist.key, 'hex').toString('utf8');
-        const valueBytes = Buffer.from(tryExist.value, 'hex');
-        const decoded = ConnectionEnd.decode(valueBytes);
-        this.logConnOpenAckDebug(
-          `[DEBUG] ConnOpenAck proof_try: key='${keyUtf8}', expected='${expectedConnKeyUtf8}', value_len=${valueBytes.length}, expected_len=${expectedConnValue.length}, decoded_state=${decoded.state}`,
-        );
-        this.logConnOpenAckDebug(
-          `[DEBUG] ConnOpenAck proof_try_value_matches_expected=${valueBytes.equals(expectedConnValueBuf)}`,
-        );
+        const tryExist = firstExist(connectionOpenAckOperator.proofTry as any);
+        if (tryExist?.key && tryExist?.value) {
+          const keyUtf8 = Buffer.from(tryExist.key, 'hex').toString('utf8');
+          const valueBytes = Buffer.from(tryExist.value, 'hex');
+          const decoded = ConnectionEnd.decode(valueBytes);
+          this.logConnOpenAckDebug(
+            () => `[DEBUG] ConnOpenAck proof_try: key='${keyUtf8}', expected='${expectedConnKeyUtf8}', value_len=${valueBytes.length}, expected_len=${expectedConnValue.length}, decoded_state=${decoded.state}`,
+          );
+          this.logConnOpenAckDebug(
+            () => `[DEBUG] ConnOpenAck proof_try_value_matches_expected=${valueBytes.equals(expectedConnValueBuf)}`,
+          );
+        }
+      } catch (e) {
+        this.logConnOpenAckDebug(() => `[DEBUG] ConnOpenAck proof debug failed: ${e}`);
       }
-    } catch (e) {
-      this.logConnOpenAckWarn(`[DEBUG] ConnOpenAck proof debug failed: ${e}`);
     }
 
     const delayBlockPeriod = getBlockDelay(updatedConnectionDatum.state.delay_period);
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck delay_period(ns)=${updatedConnectionDatum.state.delay_period} delay_block_period=${delayBlockPeriod} proof_height=${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
+      () => `[DEBUG] ConnOpenAck delay_period(ns)=${updatedConnectionDatum.state.delay_period} delay_block_period=${delayBlockPeriod} proof_height=${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
     );
 
     const verifyProofRedeemer: VerifyProofRedeemer = {
@@ -1273,7 +1242,7 @@ export class ConnectionService {
       this.lucidService.LucidImporter,
     );
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck encoded_verify_proof_redeemer head=${encodedVerifyProofRedeemer.substring(0, 16)} len=${encodedVerifyProofRedeemer.length}`,
+      () => `[DEBUG] ConnOpenAck encoded_verify_proof_redeemer head=${encodedVerifyProofRedeemer.substring(0, 16)} len=${encodedVerifyProofRedeemer.length}`,
     );
 
     const spendConnectionRedeemer: SpendConnectionRedeemer = 'ConnOpenAck';
@@ -1282,7 +1251,7 @@ export class ConnectionService {
       'spendConnectionRedeemer',
     );
     this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck encoded_spend_connection_redeemer head=${encodedSpendConnectionRedeemer.substring(0, 16)} len=${encodedSpendConnectionRedeemer.length}`,
+      () => `[DEBUG] ConnOpenAck encoded_spend_connection_redeemer head=${encodedSpendConnectionRedeemer.substring(0, 16)} len=${encodedSpendConnectionRedeemer.length}`,
     );
 
     const unsignedConnectionOpenAckParams: UnsignedConnectionOpenAckDto = {
