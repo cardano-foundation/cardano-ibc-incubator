@@ -1,13 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { isTreeAligned } from '../../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
-
-jest.mock('../../shared/helpers/ibc-state-root', () => ({
-  alignTreeWithChain: jest.fn(),
-  isTreeAligned: jest.fn(),
-}));
 
 describe('HostStateHeartbeatService', () => {
   const hostStateUtxo = {
@@ -46,8 +41,13 @@ describe('HostStateHeartbeatService', () => {
   let historyService: any;
   let txOperationRunner: any;
   let service: HostStateHeartbeatService;
+  let treeStore: IbcTreeStateStore;
 
   beforeEach(() => {
+    treeStore = {
+      isTreeAligned: jest.fn().mockReturnValue(true),
+      alignTreeWithChain: jest.fn(),
+    } as unknown as IbcTreeStateStore;
     lucidService = {
       findUtxoAtHostStateNFT: jest.fn().mockResolvedValue(hostStateUtxo),
       decodeDatum: jest.fn().mockResolvedValue(hostStateDatum),
@@ -83,13 +83,13 @@ describe('HostStateHeartbeatService', () => {
       lucidService,
       historyService,
       txOperationRunner,
+      treeStore,
     );
     jest.spyOn(service as any, 'computeTxValidityWindow').mockResolvedValue({
       currentLedgerTime: 2_000,
       validFromTime: 1_900,
       validToTime: 3_000,
     });
-    (isTreeAligned as jest.Mock).mockReturnValue(true);
   });
 
   it('does not build a heartbeat when HostState already has an anchor in the current epoch', async () => {

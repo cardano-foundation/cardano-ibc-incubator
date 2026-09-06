@@ -3,18 +3,18 @@ import * as runtimeState from '@cardano-ibc/tx-builder-runtime/ibcStateRoot';
 import { ICS23MerkleTree as RuntimeTree } from '@cardano-ibc/tx-builder-runtime/ics23MerkleTree';
 import { ICS23MerkleTree } from './ics23-merkle-tree';
 import * as gatewayState from './ibc-state-root';
+import { createTestTreeStore } from '../testing/ibc-tree-test-store';
 
 describe('Gateway shared commitment store', () => {
-  beforeEach(() => gatewayState.resetTreeState());
-
   it('uses the runtime tree for Gateway queries and packet updates', async () => {
     expect(ICS23MerkleTree).toBe(RuntimeTree);
-    expect(gatewayState.computeRootWithHandlePacketUpdate).toBe(runtimeState.computeRootWithHandlePacketUpdate);
+    expect(gatewayState.IbcTreeStateStore).toBe(runtimeState.IbcTreeStateStore);
+    const store = createTestTreeStore();
 
     const originalTree = new ICS23MerkleTree();
     originalTree.set('ports/transfer', '01');
-    gatewayState.setCurrentTree(originalTree);
-    expect(runtimeState.getCurrentTree()).toBe(originalTree);
+    store.setCurrentTree(originalTree);
+    expect(store.getCurrentTree()).toBe(originalTree);
 
     const channel = {
       state: 'Open',
@@ -45,14 +45,14 @@ describe('Gateway shared commitment store', () => {
         packet_commitment: new Map([[1n, 'aabb']]),
       },
     };
-    const update = await runtimeState.computeRootWithHandlePacketUpdate(
+    const update = await store.computeRootWithHandlePacketUpdate(
       originalTree.getRoot(), 'transfer', 'channel-0', input, output, Lucid,
     );
-    expect(gatewayState.getCurrentTree()).toBe(originalTree);
+    expect(store.getCurrentTree()).toBe(originalTree);
     update.commit();
 
-    const queryTree = gatewayState.getCurrentTree();
-    expect(queryTree).toBe(runtimeState.getCurrentTree());
+    const queryTree = store.getCurrentTree();
+    expect(store).toBeInstanceOf(runtimeState.IbcTreeStateStore);
     expect(queryTree.getRoot()).toBe(update.newRoot);
     const proof = queryTree.generateProof('commitments/ports/transfer/channels/channel-0/sequences/1');
     expect(queryTree.verifyProof(proof)).toBe(true);

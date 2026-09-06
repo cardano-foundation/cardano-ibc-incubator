@@ -15,7 +15,7 @@ import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { decodeClientDatum } from '@shared/types/client-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
-import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { hashSHA256 } from '../../shared/helpers/hex';
 import { decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
@@ -39,15 +39,6 @@ jest.mock('@shared/helpers/consensus-state', () => ({
 jest.mock('../../shared/helpers/ics23-proof-serialization', () => ({
   serializeExistenceProof: jest.fn(() => Buffer.from('existence-proof')),
   serializeNonExistenceProof: jest.fn(() => Buffer.from('non-existence-proof')),
-}));
-
-jest.mock('../../shared/helpers/ibc-state-root', () => ({
-  getCurrentTree: jest.fn(() => ({
-    generateProof: jest.fn(),
-    generateNonExistenceProof: jest.fn(),
-  })),
-  isTreeAligned: jest.fn(() => true),
-  alignTreeWithChain: jest.fn(async () => ({ root: 'aligned-root' })),
 }));
 
 jest.mock('../../shared/types/channel/channel-redeemer', () => ({
@@ -118,6 +109,11 @@ function makeHistoricalTree() {
 }
 
 function makeDeps() {
+  const treeStore = {
+    getCurrentTree: jest.fn(() => ({ generateProof: jest.fn(), generateNonExistenceProof: jest.fn() })),
+    isTreeAligned: jest.fn(() => true),
+    alignTreeWithChain: jest.fn(async () => ({ root: 'aligned-root' })),
+  };
   const historicalTree = makeHistoricalTree();
   const logger = makeLogger();
   const configService = {
@@ -185,6 +181,7 @@ function makeDeps() {
 
   return {
     historicalTree,
+    treeStore: treeStore as unknown as IbcTreeStateStore,
     logger,
     configService,
     lucidService: lucidService as unknown as LucidService,
@@ -249,6 +246,7 @@ describe('proof-bearing services with historical query heights', () => {
       deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
+      deps.treeStore,
     );
 
     const response = await service.queryChannel({ channel_id: 'channel-0' } as any, {
@@ -261,7 +259,7 @@ describe('proof-bearing services with historical query heights', () => {
     );
     expect(deps.mocks.lucidService.findUtxoByUnit).not.toHaveBeenCalled();
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('channelEnds/ports/transfer/channels/channel-0');
-    expect(getCurrentTree).not.toHaveBeenCalled();
+    expect(deps.treeStore.getCurrentTree).not.toHaveBeenCalled();
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
@@ -274,6 +272,7 @@ describe('proof-bearing services with historical query heights', () => {
       deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
+      deps.treeStore,
     );
 
     const response = await service.queryPacketCommitment(
@@ -288,7 +287,7 @@ describe('proof-bearing services with historical query heights', () => {
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
       'commitments/ports/transfer/channels/channel-0/sequences/7',
     );
-    expect(getCurrentTree).not.toHaveBeenCalled();
+    expect(deps.treeStore.getCurrentTree).not.toHaveBeenCalled();
     expect(response.commitment).toBe('commitment-bytes');
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
@@ -307,6 +306,7 @@ describe('proof-bearing services with historical query heights', () => {
       deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
+      deps.treeStore,
     );
 
     const response = await service.queryPacketAcknowledgement(
@@ -395,6 +395,7 @@ describe('proof-bearing services with historical query heights', () => {
       deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
+      deps.treeStore,
     );
 
     const response = await service.queryPacketAcknowledgement(
@@ -421,6 +422,7 @@ describe('proof-bearing services with historical query heights', () => {
       deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
+      deps.treeStore,
     );
 
     const response = await service.queryPacketReceipt(
@@ -444,6 +446,7 @@ describe('proof-bearing services with historical query heights', () => {
       deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
+      deps.treeStore,
     );
 
     const response = await service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'transfer' } as any, {
@@ -469,6 +472,7 @@ describe('proof-bearing services with historical query heights', () => {
       deps.mithrilService,
       {} as DenomTraceService,
       deps.ibcTreeCacheService as any,
+      deps.treeStore,
     );
 
     const response = await service.queryClientState({ client_id: '07-tendermint-0' } as any, {
@@ -495,6 +499,7 @@ describe('proof-bearing services with historical query heights', () => {
       deps.mithrilService,
       {} as DenomTraceService,
       deps.ibcTreeCacheService as any,
+      deps.treeStore,
     );
 
     const response = await service.queryConsensusState(

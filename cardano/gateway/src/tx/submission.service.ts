@@ -12,7 +12,7 @@ import {
   ibcTreeCacheIdForHeight,
   ibcTreeCacheIdForRoot,
 } from '../shared/services/ibc-tree-cache.service';
-import { getCurrentTree } from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
 import { HISTORY_SERVICE, HistoryService, HistoryTxEvidence } from '../query/services/history.service';
 import { QueryService } from '../query/services/query.service';
 import { GatewayEvent } from './tx-events.service';
@@ -40,6 +40,7 @@ export class SubmissionService {
     private readonly ibcTreeCacheService: IbcTreeCacheService,
     @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
     private readonly queryService: QueryService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   /**
@@ -410,7 +411,7 @@ export class SubmissionService {
     // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
     if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
     try {
-      await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
+      await this.ibcTreeCacheService.saveAliases(this.ibcTreeStore.getCurrentTree(), [
         CURRENT_IBC_TREE_CACHE_ID,
         ibcTreeCacheIdForRoot(confirmedRoot),
         ibcTreeCacheIdForHeight(confirmedBlockNo),

@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { SubmissionService } from '../submission.service';
 
 describe('SubmissionService pending update strictness', () => {
@@ -51,6 +52,7 @@ describe('SubmissionService pending update strictness', () => {
       ibcTreeCacheServiceMock as any,
       historyServiceMock as any,
       queryServiceMock as any,
+      createTestTreeStore(),
     );
   });
 

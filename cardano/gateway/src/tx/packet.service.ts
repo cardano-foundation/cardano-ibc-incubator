@@ -88,12 +88,7 @@ import {
   UnsignedTimeoutPacketUnescrowDto,
 } from '~@/shared/modules/lucid/dtos';
 import { acknowledgementCommitmentFromResponse } from '../shared/helpers/acknowledgement';
-import {
-  alignTreeWithChain,
-  computeRootWithHandlePacketUpdate,
-  computeRootWithPrunePacketHistoryUpdate,
-  isTreeAligned,
-} from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
@@ -138,6 +133,7 @@ export class PacketService {
     private denomTraceService: DenomTraceService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
     private readonly asyncIcqHostService: AsyncIcqHostService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   private getIcs20PacketCodec(): Ics20PacketCodec {
@@ -751,9 +747,9 @@ export class PacketService {
    * otherwise `host_state_stt` will reject the transaction.
    */
   private async ensureTreeAligned(onChainRoot: string): Promise<void> {
-    if (!isTreeAligned(onChainRoot)) {
+    if (!this.ibcTreeStore.isTreeAligned(onChainRoot)) {
       this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
-      await alignTreeWithChain();
+      await this.ibcTreeStore.alignTreeWithChain();
     }
   }
 
@@ -948,7 +944,7 @@ export class PacketService {
       packetReceiptSiblings,
       packetAcknowledgementSiblings,
       commit,
-    } = await computeRootWithHandlePacketUpdate(
+    } = await this.ibcTreeStore.computeRootWithHandlePacketUpdate(
       hostStateDatum.state.ibc_state_root,
       portId,
       channelIdForRoot,
@@ -1018,7 +1014,7 @@ export class PacketService {
       packetReceiptSiblings,
       packetAcknowledgementSiblings,
       commit,
-    } = computeRootWithPrunePacketHistoryUpdate(
+    } = this.ibcTreeStore.computeRootWithPrunePacketHistoryUpdate(
       hostStateDatum.state.ibc_state_root,
       convertHex2String(inputChannelDatum.port),
       channelId,

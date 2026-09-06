@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ICS23MerkleTree } from '@shared/helpers/ics23-merkle-tree';
@@ -91,6 +92,7 @@ function createService(findUtxoAt: jest.Mock): PacketService {
     {} as DenomTraceService,
     {} as any,
     {} as any,
+      createTestTreeStore(),
   );
 }
 
