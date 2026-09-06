@@ -32,6 +32,7 @@
     "@cardano-ibc/proto-types": "file:../../proto-types",
     "@cardano-ibc/trace-registry": "file:../../packages/cardano-ibc-trace-registry",
     "@cardano-ibc/tx-builder": "file:../../packages/cardano-ibc-tx-builder",
+    "@cardano-ibc/tx-builder-runtime": "file:../../packages/cardano-ibc-tx-builder-runtime",
     "@cardano-ogmios/client": "6.13.0",
     "@cardano-ogmios/schema": "6.13.0",
     "@cuonglv0297/mithril-client-wasm": "^0.3.1",

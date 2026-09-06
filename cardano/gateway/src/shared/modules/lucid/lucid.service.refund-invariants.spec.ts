@@ -1,4 +1,6 @@
 import { LucidService } from './lucid.service';
+import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
+import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 
 type ChainableTxBuilder = {
   readFrom: jest.Mock;
@@ -387,6 +389,63 @@ describe('LucidService voucher refund invariants', () => {
         },
       ],
     ]);
+  });
+
+  it('uses the shared escrow builder for an existing shard without consuming the module root', () => {
+    const txBuilder = createChainedTxBuilder();
+    const service = createService(txBuilder);
+    const transferEscrowUtxo = {
+      txHash: 'existing-escrow', outputIndex: 0, address: 'addr_test1transfer',
+      assets: { lovelace: 2_000_000n, 'native-token': 40n, 'shard-token': 1n },
+      datum: 'escrow-datum',
+    };
+    const contextUtxo = { txHash: 'context', outputIndex: 0, address: 'addr_test1context', assets: {} };
+    const dto: UnsignedSendPacketEscrowTxInput = {
+      hostStateUtxo: { ...contextUtxo, datum: 'host-datum' },
+      encodedHostStateRedeemer: 'host-redeemer',
+      encodedUpdatedHostStateDatum: 'updated-host',
+      channelUTxO: contextUtxo,
+      connectionUTxO: contextUtxo,
+      clientUTxO: contextUtxo,
+      transferModuleReferenceUtxo,
+      encodedSpendChannelRedeemer: 'channel-redeemer',
+      encodedUpdatedChannelDatum: 'updated-channel',
+      channelTokenUnit: 'channel-token',
+      encodedSpendTransferModuleRedeemer: 'transfer-redeemer',
+      transferAmount: 12n,
+      constructedAddress: 'operator',
+      sendPacketPolicyId: 'send-policy',
+      channelToken: { policyId: 'channel-policy', name: 'channel-name' },
+      senderAddress: 'sender',
+      receiverAddress: 'receiver',
+      walletUtxos: [contextUtxo],
+      spendChannelAddress: 'addr_test1channel',
+      transferModuleAddress: 'addr_test1transfer',
+      denomToken: 'native-token',
+      encodedTransferEscrowDatum: 'escrow-datum',
+      transferEscrowUtxo,
+      transferEscrowShardTokenUnit: 'shard-token',
+    };
+
+    expect(service.createUnsignedSendPacketEscrowTx(dto)).toBe(txBuilder);
+    expect(txBuilder.readFrom).toHaveBeenCalledWith([transferModuleReferenceUtxo]);
+    expect(txBuilder.collectFrom).toHaveBeenCalledWith([transferEscrowUtxo], 'transfer-redeemer');
+    expect(txBuilder.collectFrom).not.toHaveBeenCalledWith([transferModuleReferenceUtxo], expect.anything());
+    expect(txBuilder.mintAssets).toHaveBeenCalledTimes(1);
+    expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
+      'addr_test1transfer',
+      { kind: 'inline', value: 'escrow-datum' },
+      { lovelace: 2_000_000n, 'native-token': 52n, 'shard-token': 1n },
+    );
+    expect(transferEscrowUtxo.assets['native-token']).toBe(40n);
+  });
+
+  it('preserves gRPC internal errors from shared escrow input validation', () => {
+    const txBuilder = createChainedTxBuilder();
+    const service = createService(txBuilder);
+    expect(() => service.createUnsignedSendPacketEscrowTx({ walletUtxos: [] }))
+      .toThrow(GrpcInternalException);
+    expect(service.lucid.newTx).not.toHaveBeenCalled();
   });
 
   it('spends and updates the transfer escrow shard in acknowledgement native-token refunds', () => {

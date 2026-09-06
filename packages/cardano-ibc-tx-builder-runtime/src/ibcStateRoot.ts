@@ -23,12 +23,12 @@ type ChannelDatumLike = {
   port: string;
 };
 
-type StateRootResult = {
+export type StateRootResult = {
   newRoot: string;
   commit: () => void;
 };
 
-type HandlePacketStateRootResult = StateRootResult & {
+export type HandlePacketStateRootResult = StateRootResult & {
   channelSiblings: string[];
   nextSequenceSendSiblings: string[];
   nextSequenceRecvSiblings: string[];
@@ -38,6 +38,43 @@ type HandlePacketStateRootResult = StateRootResult & {
   packetAcknowledgementSiblings: string[];
 };
 
+export interface CreateClientStateRootResult extends StateRootResult {
+  clientStateSiblings: string[];
+  consensusStateSiblings: string[];
+}
+
+export interface CreateConnectionStateRootResult extends StateRootResult {
+  connectionSiblings: string[];
+}
+
+export interface CreateChannelStateRootResult extends StateRootResult {
+  channelSiblings: string[];
+  nextSequenceSendSiblings: string[];
+  nextSequenceRecvSiblings: string[];
+  nextSequenceAckSiblings: string[];
+}
+
+export interface BindPortStateRootResult extends StateRootResult {
+  portSiblings: string[];
+}
+
+export interface UpdateChannelStateRootResult extends StateRootResult {
+  channelSiblings: string[];
+}
+
+export interface UpdateClientStateRootResult extends StateRootResult {
+  clientStateSiblings: string[];
+  consensusStateSiblings: string[];
+  removedConsensusStateSiblings: string[][];
+}
+
+export interface PrunePacketHistoryStateRootResult extends StateRootResult {
+  packetReceiptSiblings: string[];
+  packetAcknowledgementSiblings: string[];
+}
+
+// Gateway queries and runtime transaction construction share this confirmed tree.
+// Speculative updates must only replace it after transaction confirmation.
 let currentTree: ICS23MerkleTree = new ICS23MerkleTree();
 let cachedKupoService: any = null;
 let cachedLucidService: any = null;
@@ -78,7 +115,7 @@ function getClonedTreeFromRoot(rootHash: string): ICS23MerkleTree {
   );
 }
 
-async function encodeClientStateValue(
+export async function encodeClientStateValue(
   clientState: any,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): Promise<string> {
@@ -124,10 +161,12 @@ async function encodeClientStateValue(
     proofSpecs: Data.Array(ProofSpecSchema),
   });
 
+  // Match Aiken cbor.serialise, including indefinite-length arrays.
+  // Canonical CBOR would change the committed value bytes.
   return Data.to(clientState, ClientStateSchema as any);
 }
 
-async function encodeConsensusStateValue(
+export async function encodeConsensusStateValue(
   consensusState: any,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): Promise<string> {
@@ -144,7 +183,7 @@ async function encodeConsensusStateValue(
   return Data.to(consensusState, ConsensusStateSchema as any);
 }
 
-async function encodeConnectionEndValue(
+export async function encodeConnectionEndValue(
   connectionEnd: any,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): Promise<string> {
@@ -178,7 +217,7 @@ async function encodeConnectionEndValue(
   return Data.to(connectionEnd, ConnectionEndSchema as any);
 }
 
-async function encodeChannelEndValue(
+export async function encodeChannelEndValue(
   channelEnd: any,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): Promise<string> {
@@ -366,21 +405,11 @@ export async function rebuildTreeFromChain(
 
   const boundPorts = hostStateDatum.control.port_registry ?? new Map();
   if (boundPorts.size > 0) {
-    const { Data } = lucidService.LucidImporter;
-    const AuthTokenSchema = Data.Object({
-      policy_id: Data.Bytes(),
-      name: Data.Bytes(),
-    });
-    const ModuleRegistrationSchema = Data.Object({
-      module_script_hash: Data.Bytes(),
-      port_token: AuthTokenSchema,
-      module_token: AuthTokenSchema,
-    });
     for (const [portIdHex, registration] of boundPorts.entries()) {
       // Datum keys are hex-encoded UTF-8 and must be decoded before rebuilding textual paths.
       const portId = Buffer.from(portIdHex, 'hex').toString('utf8');
       const portValue = Buffer.from(
-        Data.to(registration as any, ModuleRegistrationSchema as any),
+        await encodeModuleRegistration(registration, lucidService.LucidImporter),
         'hex',
       );
       tree.set(`ports/${portId}`, portValue);
@@ -534,4 +563,302 @@ export async function rebuildTreeFromChain(
 
   currentTree = tree;
   return { tree, root: computedRoot };
+}
+
+export function computeRootWithCreateClientUpdate(
+  oldRoot: string,
+  clientId: string,
+  clientStateValue: Buffer,
+  consensusStateValue: Buffer,
+  consensusHeight: string | number | bigint,
+): CreateClientStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+
+  const clientPath = `clients/${clientId}/clientState`;
+  const clientStateSiblings = speculativeTree.getSiblings(clientPath).map((h) => h.toString('hex'));
+  speculativeTree.set(clientPath, clientStateValue);
+
+  const heightStr = String(consensusHeight);
+  const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
+  const consensusStateSiblings = speculativeTree
+    .getSiblings(consensusPath)
+    .map((h) => h.toString('hex'));
+  speculativeTree.set(consensusPath, consensusStateValue);
+
+  const newRoot = speculativeTree.getRoot();
+
+  return {
+    newRoot,
+    clientStateSiblings,
+    consensusStateSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+    },
+  };
+}
+
+export function computeRootWithUpdateClientUpdate(
+  oldRoot: string,
+  clientId: string,
+  newClientStateValue: Buffer,
+  removedConsensusHeights: Array<string | number | bigint>,
+  addedConsensusState:
+    | {
+        height: string | number | bigint;
+        value: Buffer;
+      }
+    | undefined,
+): UpdateClientStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+
+  // 1) Client state update.
+  const clientPath = `clients/${clientId}/clientState`;
+  if (!speculativeTree.get(clientPath)) {
+    throw new Error(
+      `UpdateClient root update expects existing clientState at '${clientPath}', but it was not found in the tree`,
+    );
+  }
+  const clientStateSiblings = speculativeTree.getSiblings(clientPath).map((h) => h.toString('hex'));
+  speculativeTree.set(clientPath, newClientStateValue);
+
+  // 2) Consensus state deletions (in the order provided by the caller).
+  const removedConsensusStateSiblings: string[][] = [];
+  for (const height of removedConsensusHeights) {
+    const heightStr = String(height);
+    const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
+
+    if (!speculativeTree.get(consensusPath)) {
+      throw new Error(
+        `UpdateClient root update expects existing consensusState at '${consensusPath}', but it was not found in the tree`,
+      );
+    }
+
+    const siblings = speculativeTree.getSiblings(consensusPath).map((h) => h.toString('hex'));
+    removedConsensusStateSiblings.push(siblings);
+
+    // Deletion is modeled as "set to empty", which collapses back to the empty hash on-chain.
+    speculativeTree.set(consensusPath, Buffer.alloc(0));
+  }
+
+  // 3) Optional consensus state insertion (exactly one for normal UpdateClient, none for misbehaviour).
+  let consensusStateSiblings: string[] = [];
+  if (addedConsensusState) {
+    const heightStr = String(addedConsensusState.height);
+    const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
+
+    // For an insertion, the old value must be absent at this point in the update sequence.
+    if (speculativeTree.get(consensusPath)) {
+      throw new Error(
+        `UpdateClient root update expects no consensusState at '${consensusPath}' before insertion, but one already exists`,
+      );
+    }
+
+    consensusStateSiblings = speculativeTree.getSiblings(consensusPath).map((h) => h.toString('hex'));
+    speculativeTree.set(consensusPath, addedConsensusState.value);
+  }
+
+  const newRoot = speculativeTree.getRoot();
+
+  return {
+    newRoot,
+    clientStateSiblings,
+    consensusStateSiblings,
+    removedConsensusStateSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+    },
+  };
+}
+
+export function computeRootWithCreateConnectionUpdate(
+  oldRoot: string,
+  connectionId: string,
+  connectionValue: Buffer,
+): CreateConnectionStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+
+  const path = `connections/${connectionId}`;
+  const connectionSiblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
+  speculativeTree.set(path, connectionValue);
+
+  const newRoot = speculativeTree.getRoot();
+
+  return {
+    newRoot,
+    connectionSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+    },
+  };
+}
+
+export function computeRootWithCreateChannelUpdate(
+  oldRoot: string,
+  portId: string,
+  channelId: string,
+  channelValue: Buffer,
+  nextSequenceSendValue: Buffer,
+  nextSequenceRecvValue: Buffer,
+  nextSequenceAckValue: Buffer,
+): CreateChannelStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+
+  const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
+  const channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
+  speculativeTree.set(channelPath, channelValue);
+
+  const nextSequenceSendPath = `nextSequenceSend/ports/${portId}/channels/${channelId}`;
+  const nextSequenceSendSiblings = speculativeTree
+    .getSiblings(nextSequenceSendPath)
+    .map((h) => h.toString('hex'));
+  speculativeTree.set(nextSequenceSendPath, nextSequenceSendValue);
+
+  const nextSequenceRecvPath = `nextSequenceRecv/ports/${portId}/channels/${channelId}`;
+  const nextSequenceRecvSiblings = speculativeTree
+    .getSiblings(nextSequenceRecvPath)
+    .map((h) => h.toString('hex'));
+  speculativeTree.set(nextSequenceRecvPath, nextSequenceRecvValue);
+
+  const nextSequenceAckPath = `nextSequenceAck/ports/${portId}/channels/${channelId}`;
+  const nextSequenceAckSiblings = speculativeTree.getSiblings(nextSequenceAckPath).map((h) => h.toString('hex'));
+  speculativeTree.set(nextSequenceAckPath, nextSequenceAckValue);
+
+  const newRoot = speculativeTree.getRoot();
+
+  return {
+    newRoot,
+    channelSiblings,
+    nextSequenceSendSiblings,
+    nextSequenceRecvSiblings,
+    nextSequenceAckSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+    },
+  };
+}
+
+export function computeRootWithUpdateChannelUpdate(
+  oldRoot: string,
+  portId: string,
+  channelId: string,
+  channelValue: Buffer,
+): UpdateChannelStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+
+  const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
+  const channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
+  speculativeTree.set(channelPath, channelValue);
+
+  const newRoot = speculativeTree.getRoot();
+
+  return {
+    newRoot,
+    channelSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+    },
+  };
+}
+
+export function computeRootWithPrunePacketHistoryUpdate(
+  oldRoot: string,
+  portId: string,
+  channelId: string,
+  sequence: bigint,
+  ordering: 'None' | 'Unordered' | 'Ordered',
+): PrunePacketHistoryStateRootResult {
+  if (ordering !== 'Unordered' && ordering !== 'Ordered') {
+    throw new Error(`PrunePacketHistory does not support channel ordering '${ordering}'`);
+  }
+
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+  const sequenceText = sequence.toString();
+  const receiptPath = `receipts/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
+  const acknowledgementPath = `acks/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
+
+  if (ordering === 'Unordered' && !speculativeTree.get(receiptPath)) {
+    throw new Error(`PrunePacketHistory expects an existing receipt at '${receiptPath}'`);
+  }
+  if (!speculativeTree.get(acknowledgementPath)) {
+    throw new Error(`PrunePacketHistory expects an existing acknowledgement at '${acknowledgementPath}'`);
+  }
+
+  let packetReceiptSiblings: string[] = [];
+  if (ordering === 'Unordered') {
+    packetReceiptSiblings = speculativeTree.getSiblings(receiptPath).map((hash) => hash.toString('hex'));
+    speculativeTree.set(receiptPath, Buffer.alloc(0));
+  }
+
+  const packetAcknowledgementSiblings = speculativeTree
+    .getSiblings(acknowledgementPath)
+    .map((hash) => hash.toString('hex'));
+  speculativeTree.set(acknowledgementPath, Buffer.alloc(0));
+
+  const newRoot = speculativeTree.getRoot();
+  return {
+    newRoot,
+    packetReceiptSiblings,
+    packetAcknowledgementSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+    },
+  };
+}
+
+export function computeRootWithPortBind(
+  oldRoot: string,
+  portId: string,
+  portValue: Buffer,
+): BindPortStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+
+  // Exact case-sensitive port text becomes the commitment path without aliases or normalization.
+  const path = `ports/${portId}`;
+
+  // The on-chain validator replays this update using the per-level sibling hashes.
+  const portSiblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
+  speculativeTree.set(path, portValue);
+
+  const newRoot = speculativeTree.getRoot();
+
+  return {
+    newRoot,
+    portSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+    },
+  };
+}
+
+export function getCurrentTree(): ICS23MerkleTree {
+  return currentTree;
+}
+
+export function setCurrentTree(tree: ICS23MerkleTree): void {
+  currentTree = tree;
+}
+
+export function getCurrentRoot(): string {
+  return currentTree.getRoot();
+}
+
+export function resetTreeState(): void {
+  currentTree = new ICS23MerkleTree();
+}
+
+export async function encodeModuleRegistration(
+  registration: any,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): Promise<string> {
+  const { Data } = Lucid;
+  const AuthTokenSchema = Data.Object({
+    policy_id: Data.Bytes(),
+    name: Data.Bytes(),
+  });
+  const ModuleRegistrationSchema = Data.Object({
+    module_script_hash: Data.Bytes(),
+    port_token: AuthTokenSchema,
+    module_token: AuthTokenSchema,
+  });
+  return Data.to(registration as never, ModuleRegistrationSchema as never);
 }

@@ -373,9 +373,9 @@ jobs:
       - name: Prune package-local installs for gateway
         run: |
           rm -rf packages/cardano-ibc-planner/node_modules
-          rm -rf packages/cardano-ibc-tx-builder-runtime/node_modules
           npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev --legacy-peer-deps
           npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
 
       - name: Install dependencies
         run: npm ci --prefix cardano/gateway --legacy-peer-deps
