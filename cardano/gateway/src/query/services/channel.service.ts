@@ -29,12 +29,11 @@ import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
-import { HostStateDatum } from '../../shared/types/host-state-datum';
 import { AuthToken } from '../../shared/types/auth-token';
 import { CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { getChannelIdByTokenName } from '../../shared/helpers/channel';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
+import { assertProofContextHostState, resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
 
@@ -64,23 +63,6 @@ export class ChannelService {
     private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
-  private async ensureTreeAligned(): Promise<void> {
-    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-    if (!hostStateUtxo?.datum) {
-      throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
-    }
-
-    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-    const onChainRoot = hostStateDatum.state.ibc_state_root;
-
-    if (this.ibcTreeStore.isTreeAligned(onChainRoot)) return;
-
-    this.logger.warn(
-      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
-    );
-    await this.ibcTreeStore.alignTreeWithChain();
-  }
-
   private async getProofHeight(): Promise<bigint> {
     return resolveProofHeightForCurrentRoot({
       logger: this.logger,
@@ -109,6 +91,7 @@ export class ChannelService {
       'stake-weighted-stability';
 
     return resolveProofContextForQuery({
+      ibcTreeStore: this.ibcTreeStore,
       logger: this.logger,
       lucidService: this.lucidService,
       mithrilService: this.mithrilService,
@@ -296,20 +279,15 @@ export class ChannelService {
       const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
       const channelTokenUnit = mintChannelPolicyId + channelTokenName;
       const proofContext = await this.getProofContext('queryChannel', options.queryHeight);
-      const utxo = proofContext.historical
-        ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, proofContext.proofHeight)
-        : await this.findChannelUtxo(channelTokenUnit);
+      const utxo = await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, proofContext.proofHeight);
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-
-      if (!proofContext.historical) {
-        await this.ensureTreeAligned();
-      }
 
       // Generate ICS-23 proof from the IBC state tree
       // Channel path: channelEnds/ports/{portId}/channels/{channelId}
       const portId = convertHex2String(channelDatumDecoded.port || 'transfer');
       const ibcPath = `channelEnds/ports/${portId}/channels/channel-${channelId}`;
-      const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
+      await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+      const tree = proofContext.tree;
       let channelProof: Buffer;
       try {
         const existenceProof = tree.generateProof(ibcPath);

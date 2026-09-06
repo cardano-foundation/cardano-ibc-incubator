@@ -45,8 +45,8 @@ describe('HostStateHeartbeatService', () => {
 
   beforeEach(() => {
     treeStore = {
-      isTreeAligned: jest.fn().mockReturnValue(true),
-      alignTreeWithChain: jest.fn(),
+      getAlignedSnapshot: jest.fn().mockResolvedValue({ root: hostStateDatum.state.ibc_state_root, hostState: hostStateUtxo }),
+      computeRootWithHeartbeatUpdate: jest.fn().mockReturnValue({ commit: jest.fn() }),
     } as unknown as IbcTreeStateStore;
     lucidService = {
       findUtxoAtHostStateNFT: jest.fn().mockResolvedValue(hostStateUtxo),

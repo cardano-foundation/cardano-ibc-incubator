@@ -46,7 +46,7 @@ export class TreeInitService implements OnModuleInit {
           const onChainRoot = hostStateDatum.state.ibc_state_root;
 
           if (onChainRoot === cached.root) {
-            this.ibcTreeStore.setCurrentTree(cached.tree);
+            await this.ibcTreeStore.restoreTreeFromCache(cached.tree);
             this.logger.log(`Loaded IBC state tree from cache, root: ${cached.root.substring(0, 16)}...`);
             return;
           }
@@ -57,14 +57,14 @@ export class TreeInitService implements OnModuleInit {
         }
       }
 
-      const { tree, root } = await this.ibcTreeStore.rebuildTreeFromChain();
+      const { tree, root, hostState } = await this.ibcTreeStore.rebuildTreeFromChain();
 
       this.logger.log(`IBC state tree initialized successfully`);
       this.logger.log(`   Root: ${root.substring(0, 16)}...`);
 
       if (process.env.IBC_TREE_CACHE_ENABLED !== 'false') {
         try {
-          await this.ibcTreeCacheService.saveAliases(tree, [CURRENT_IBC_TREE_CACHE_ID, ibcTreeCacheIdForRoot(root)]);
+          await this.ibcTreeCacheService.saveAliases(tree, [CURRENT_IBC_TREE_CACHE_ID, ibcTreeCacheIdForRoot(root)], hostState);
           this.logger.log(`Persisted IBC state tree cache, root: ${root.substring(0, 16)}...`);
         } catch (error) {
           this.logger.warn(`Failed to persist IBC state tree cache: ${error?.message ?? error}`);

@@ -41,7 +41,7 @@ import {
 } from './helper/client.validate';
 import { sumLovelaceFromUtxos } from './helper/helper';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
-import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore, StaleIbcTreeStateError } from '../shared/helpers/ibc-state-root';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
@@ -109,10 +109,12 @@ export class ClientService {
    * Ensure the in-memory Merkle tree is aligned with on-chain state
    * Call this before building transactions if the tree may be stale
    */
-  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
-    if (!this.ibcTreeStore.isTreeAligned(onChainRoot)) {
-      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
-      await this.ibcTreeStore.alignTreeWithChain();
+  private async ensureTreeAligned(onChainRoot: string, hostStateUtxo: Pick<UTxO, 'txHash' | 'outputIndex'>): Promise<void> {
+    const snapshot = await this.ibcTreeStore.getAlignedSnapshot();
+    if (snapshot.root !== onChainRoot ||
+      snapshot.hostState.txHash !== hostStateUtxo.txHash ||
+      snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
+      throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
     }
   }
 
@@ -441,7 +443,7 @@ export class ClientService {
       hostStateUtxo.datum,
       'host_state',
     );
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     // The IBC client identifier used in the commitment tree matches the on-chain convention.
     const ibcClientId = `07-tendermint-${updateOnMisbehaviourOperator.clientId}`;
@@ -613,7 +615,7 @@ export class ClientService {
       hostStateUtxo.datum,
       'host_state',
     );
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     const ibcClientId = `07-tendermint-${updateClientOperator.clientId}`;
 
@@ -737,7 +739,7 @@ export class ClientService {
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
     // This prevents stale tree state from causing root mismatches after failed transactions
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     this.logger.log(`[DEBUG] Decoded HostState datum - version: ${hostStateDatum.state.version}, nft_policy: ${hostStateDatum.nft_policy.substring(0, 20)}...`);
 

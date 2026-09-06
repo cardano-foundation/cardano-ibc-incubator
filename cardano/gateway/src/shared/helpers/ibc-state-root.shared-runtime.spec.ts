@@ -3,18 +3,19 @@ import * as runtimeState from '@cardano-ibc/tx-builder-runtime/ibcStateRoot';
 import { ICS23MerkleTree as RuntimeTree } from '@cardano-ibc/tx-builder-runtime/ics23MerkleTree';
 import { ICS23MerkleTree } from './ics23-merkle-tree';
 import * as gatewayState from './ibc-state-root';
-import { createTestTreeStore } from '../testing/ibc-tree-test-store';
+import { createTestTreeContext } from '../testing/ibc-tree-test-store';
 
 describe('Gateway shared commitment store', () => {
   it('uses the runtime tree for Gateway queries and packet updates', async () => {
     expect(ICS23MerkleTree).toBe(RuntimeTree);
     expect(gatewayState.IbcTreeStateStore).toBe(runtimeState.IbcTreeStateStore);
-    const store = createTestTreeStore();
+    const fixture = createTestTreeContext();
+    const { store } = fixture;
 
     const originalTree = new ICS23MerkleTree();
     originalTree.set('ports/transfer', '01');
-    store.setCurrentTree(originalTree);
-    expect(store.getCurrentTree()).toBe(originalTree);
+    await fixture.restore(originalTree);
+    expect(store.getCurrentTree().toJSON()).toEqual(originalTree.toJSON());
 
     const channel = {
       state: 'Open',
@@ -48,8 +49,8 @@ describe('Gateway shared commitment store', () => {
     const update = await store.computeRootWithHandlePacketUpdate(
       originalTree.getRoot(), 'transfer', 'channel-0', input, output, Lucid,
     );
-    expect(store.getCurrentTree()).toBe(originalTree);
-    update.commit();
+    expect(store.getCurrentTree().toJSON()).toEqual(originalTree.toJSON());
+    await fixture.commit(update);
 
     const queryTree = store.getCurrentTree();
     expect(store).toBeInstanceOf(runtimeState.IbcTreeStateStore);

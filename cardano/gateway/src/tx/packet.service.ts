@@ -88,7 +88,7 @@ import {
   UnsignedTimeoutPacketUnescrowDto,
 } from '~@/shared/modules/lucid/dtos';
 import { acknowledgementCommitmentFromResponse } from '../shared/helpers/acknowledgement';
-import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore, StateRootResult, StaleIbcTreeStateError } from '../shared/helpers/ibc-state-root';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
@@ -746,10 +746,12 @@ export class PacketService {
    * Packet handlers must compute sibling witnesses against the *current* root,
    * otherwise `host_state_stt` will reject the transaction.
    */
-  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
-    if (!this.ibcTreeStore.isTreeAligned(onChainRoot)) {
-      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
-      await this.ibcTreeStore.alignTreeWithChain();
+  private async ensureTreeAligned(onChainRoot: string, hostStateUtxo: Pick<UTxO, 'txHash' | 'outputIndex'>): Promise<void> {
+    const snapshot = await this.ibcTreeStore.getAlignedSnapshot();
+    if (snapshot.root !== onChainRoot ||
+      snapshot.hostState.txHash !== hostStateUtxo.txHash ||
+      snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
+      throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
     }
   }
 
@@ -918,7 +920,7 @@ export class PacketService {
     encodedHostStateRedeemer: string;
     encodedUpdatedHostStateDatum: string;
     newRoot: string;
-    commit: () => void;
+    commit: StateRootResult['commit'];
   }> {
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
@@ -930,7 +932,7 @@ export class PacketService {
       'host_state',
     );
 
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     const portId = convertHex2String(inputChannelDatum.port);
 
@@ -996,7 +998,7 @@ export class PacketService {
     encodedHostStateRedeemer: string;
     encodedUpdatedHostStateDatum: string;
     newRoot: string;
-    commit: () => void;
+    commit: StateRootResult['commit'];
   }> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
@@ -1007,7 +1009,7 @@ export class PacketService {
       hostStateUtxo.datum,
       'host_state',
     );
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     const {
       newRoot,

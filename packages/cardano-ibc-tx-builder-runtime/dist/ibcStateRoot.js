@@ -1,12 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.IbcTreeStateStore = void 0;
+exports.IbcTreeStateStore = exports.StaleIbcTreeStateError = void 0;
 exports.encodeClientStateValue = encodeClientStateValue;
 exports.encodeConsensusStateValue = encodeConsensusStateValue;
 exports.encodeConnectionEndValue = encodeConnectionEndValue;
 exports.encodeChannelEndValue = encodeChannelEndValue;
 exports.encodeModuleRegistration = encodeModuleRegistration;
 const ics23MerkleTree_1 = require("./ics23MerkleTree");
+class StaleIbcTreeStateError extends Error {
+    constructor(message = 'IBC tree state changed while the operation was in progress') {
+        super(message);
+        this.name = 'StaleIbcTreeStateError';
+    }
+}
+exports.StaleIbcTreeStateError = StaleIbcTreeStateError;
 async function encodeClientStateValue(clientState, Lucid) {
     const { Data } = Lucid;
     const RationalSchema = Data.Object({
@@ -143,6 +150,8 @@ class IbcTreeStateStore {
     lucidService;
     deployment;
     currentTree = new ics23MerkleTree_1.ICS23MerkleTree();
+    version = 0;
+    hostState = null;
     constructor(deployment, kupoService, lucidService) {
         this.kupoService = kupoService;
         this.lucidService = lucidService;
@@ -154,27 +163,106 @@ class IbcTreeStateStore {
             }),
         });
     }
-    isTreeAligned(onChainRoot) {
-        if (onChainRoot === '0'.repeat(64)) {
-            return this.currentTree.getRoot() === onChainRoot;
-        }
-        return this.currentTree.getRoot() === onChainRoot;
+    isTreeAligned(onChainRoot, hostState) {
+        return this.hostState !== null && this.currentTree.getRoot() === onChainRoot &&
+            (hostState === undefined || this.sameHostState(this.hostState, hostState));
     }
     async alignTreeWithChain() {
         const result = await this.rebuildTreeFromChain();
         return { root: result.root };
     }
     getClonedTreeFromRoot(rootHash) {
-        if (rootHash === '0'.repeat(64)) {
-            return new ics23MerkleTree_1.ICS23MerkleTree();
-        }
         const currentRoot = this.currentTree.getRoot();
         if (currentRoot === rootHash) {
             return this.currentTree.clone();
         }
-        throw new Error(`Tree out of sync with on-chain state. Expected root ${rootHash.substring(0, 16)}..., but in-memory root is ${currentRoot.substring(0, 16)}...`);
+        throw new StaleIbcTreeStateError(`Tree out of sync with on-chain state. Expected root ${rootHash.substring(0, 16)}..., but in-memory root is ${currentRoot.substring(0, 16)}...`);
+    }
+    sameHostState(left, right) {
+        return left.txHash === right.txHash && left.outputIndex === right.outputIndex;
+    }
+    copyHostState(hostState) {
+        if (!/^[0-9a-f]{64}$/.test(hostState.txHash) ||
+            !Number.isSafeInteger(hostState.outputIndex) || hostState.outputIndex < 0) {
+            throw new Error('HostState reference must contain a canonical transaction hash and output index');
+        }
+        return Object.freeze({ txHash: hostState.txHash, outputIndex: hostState.outputIndex });
+    }
+    snapshot(tree, hostState) {
+        return Object.freeze({ root: tree.getRoot(), hostState: this.copyHostState(hostState), tree: tree.clone() });
+    }
+    async readLiveHostState() {
+        const utxo = await this.lucidService.findUtxoAtHostStateNFT();
+        if (!utxo?.datum)
+            throw new Error('HostState UTXO has no datum');
+        const hostState = this.copyHostState(utxo);
+        const datum = await this.lucidService.decodeDatum(utxo.datum, 'host_state');
+        const root = datum.state.ibc_state_root;
+        if (!/^[0-9a-f]{64}$/.test(root))
+            throw new Error('HostState root must be 32 lowercase hexadecimal bytes');
+        return { root, hostState, datum };
+    }
+    assertUnchanged(version, initial, live) {
+        if (this.version !== version || initial.root !== live.root || !this.sameHostState(initial.hostState, live.hostState)) {
+            throw new StaleIbcTreeStateError();
+        }
+    }
+    publish(tree, hostState) {
+        this.currentTree = tree.clone();
+        this.hostState = this.copyHostState(hostState);
+        this.version += 1;
+    }
+    preparePublication(tree, version) {
+        // Detach from caller-owned input buffers before returning a commit callback.
+        const preparedTree = tree.clone();
+        const newRoot = preparedTree.getRoot();
+        return {
+            newRoot,
+            commit: async (hostState) => {
+                const snapshot = this.snapshot(preparedTree, hostState);
+                if (this.version !== version)
+                    return { published: false, snapshot };
+                const live = await this.readLiveHostState();
+                if (this.version !== version || live.root !== newRoot || !this.sameHostState(live.hostState, snapshot.hostState)) {
+                    return { published: false, snapshot };
+                }
+                // No await between the generation/live-state checks and publication.
+                this.publish(preparedTree, snapshot.hostState);
+                return { published: true, snapshot };
+            },
+        };
+    }
+    getSnapshot() {
+        if (!this.hostState)
+            throw new Error('IBC tree store has no bound HostState snapshot');
+        return Object.freeze({ ...this.snapshot(this.currentTree, this.hostState), version: this.version });
+    }
+    async getAlignedSnapshot() {
+        const version = this.version;
+        const live = await this.readLiveHostState();
+        if (this.version !== version)
+            throw new StaleIbcTreeStateError();
+        if (this.isTreeAligned(live.root, live.hostState))
+            return this.getSnapshot();
+        return this.rebuildTreeFromChain();
+    }
+    async restoreTreeFromCache(tree) {
+        const version = this.version;
+        const candidate = tree.clone();
+        const initial = await this.readLiveHostState();
+        const live = await this.readLiveHostState();
+        this.assertUnchanged(version, initial, live);
+        if (candidate.getRoot() !== live.root)
+            throw new Error('Cached tree root does not match the live HostState');
+        this.publish(candidate, live.hostState);
+        return this.getSnapshot();
+    }
+    computeRootWithHeartbeatUpdate(oldRoot) {
+        const version = this.version;
+        return this.preparePublication(this.getClonedTreeFromRoot(oldRoot), version);
     }
     async computeRootWithHandlePacketUpdate(oldRoot, portId, channelId, inputChannelDatum, outputChannelDatum, Lucid) {
+        const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         const { Data } = Lucid;
         const encodePacketStoreValue = (bytesHex) => Buffer.from(Data.to(bytesHex, Data.Bytes()), 'hex');
@@ -263,9 +351,8 @@ class IbcTreeStateStore {
         else if (removedAcks.length > 0) {
             throw new Error('HandlePacket root update does not allow acknowledgement deletions');
         }
-        const newRoot = speculativeTree.getRoot();
         return {
-            newRoot,
+            ...this.preparePublication(speculativeTree, version),
             channelSiblings,
             nextSequenceSendSiblings,
             nextSequenceRecvSiblings,
@@ -273,19 +360,14 @@ class IbcTreeStateStore {
             packetCommitmentSiblings,
             packetReceiptSiblings,
             packetAcknowledgementSiblings,
-            commit: () => {
-                this.currentTree = speculativeTree;
-            },
         };
     }
     async rebuildTreeFromChain() {
+        const version = this.version;
         const { kupoService, lucidService } = this;
-        const hostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
-        if (!hostStateUtxo?.datum) {
-            throw new Error('HostState UTXO has no datum');
-        }
-        const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
-        const expectedRoot = hostStateDatum.state.ibc_state_root;
+        const initial = await this.readLiveHostState();
+        const hostStateDatum = initial.datum;
+        const expectedRoot = initial.root;
         const tree = new ics23MerkleTree_1.ICS23MerkleTree();
         const boundPorts = hostStateDatum.control.port_registry ?? new Map();
         if (boundPorts.size > 0) {
@@ -387,13 +469,16 @@ class IbcTreeStateStore {
             }
         }
         const computedRoot = tree.getRoot();
+        const live = await this.readLiveHostState();
+        this.assertUnchanged(version, initial, live);
         if (computedRoot !== expectedRoot) {
             throw new Error(`Tree rebuild failed: expected ${expectedRoot} but computed ${computedRoot}`);
         }
-        this.currentTree = tree;
-        return { tree, root: computedRoot };
+        this.publish(tree, live.hostState);
+        return this.getSnapshot();
     }
     computeRootWithCreateClientUpdate(oldRoot, clientId, clientStateValue, consensusStateValue, consensusHeight) {
+        const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         const clientPath = `clients/${clientId}/clientState`;
         const clientStateSiblings = speculativeTree.getSiblings(clientPath).map((h) => h.toString('hex'));
@@ -404,17 +489,14 @@ class IbcTreeStateStore {
             .getSiblings(consensusPath)
             .map((h) => h.toString('hex'));
         speculativeTree.set(consensusPath, consensusStateValue);
-        const newRoot = speculativeTree.getRoot();
         return {
-            newRoot,
+            ...this.preparePublication(speculativeTree, version),
             clientStateSiblings,
             consensusStateSiblings,
-            commit: () => {
-                this.currentTree = speculativeTree;
-            },
         };
     }
     computeRootWithUpdateClientUpdate(oldRoot, clientId, newClientStateValue, removedConsensusHeights, addedConsensusState) {
+        const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         // 1) Client state update.
         const clientPath = `clients/${clientId}/clientState`;
@@ -448,32 +530,26 @@ class IbcTreeStateStore {
             consensusStateSiblings = speculativeTree.getSiblings(consensusPath).map((h) => h.toString('hex'));
             speculativeTree.set(consensusPath, addedConsensusState.value);
         }
-        const newRoot = speculativeTree.getRoot();
         return {
-            newRoot,
+            ...this.preparePublication(speculativeTree, version),
             clientStateSiblings,
             consensusStateSiblings,
             removedConsensusStateSiblings,
-            commit: () => {
-                this.currentTree = speculativeTree;
-            },
         };
     }
     computeRootWithCreateConnectionUpdate(oldRoot, connectionId, connectionValue) {
+        const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         const path = `connections/${connectionId}`;
         const connectionSiblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
         speculativeTree.set(path, connectionValue);
-        const newRoot = speculativeTree.getRoot();
         return {
-            newRoot,
+            ...this.preparePublication(speculativeTree, version),
             connectionSiblings,
-            commit: () => {
-                this.currentTree = speculativeTree;
-            },
         };
     }
     computeRootWithCreateChannelUpdate(oldRoot, portId, channelId, channelValue, nextSequenceSendValue, nextSequenceRecvValue, nextSequenceAckValue) {
+        const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
         const channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
@@ -491,36 +567,30 @@ class IbcTreeStateStore {
         const nextSequenceAckPath = `nextSequenceAck/ports/${portId}/channels/${channelId}`;
         const nextSequenceAckSiblings = speculativeTree.getSiblings(nextSequenceAckPath).map((h) => h.toString('hex'));
         speculativeTree.set(nextSequenceAckPath, nextSequenceAckValue);
-        const newRoot = speculativeTree.getRoot();
         return {
-            newRoot,
+            ...this.preparePublication(speculativeTree, version),
             channelSiblings,
             nextSequenceSendSiblings,
             nextSequenceRecvSiblings,
             nextSequenceAckSiblings,
-            commit: () => {
-                this.currentTree = speculativeTree;
-            },
         };
     }
     computeRootWithUpdateChannelUpdate(oldRoot, portId, channelId, channelValue) {
+        const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
         const channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
         speculativeTree.set(channelPath, channelValue);
-        const newRoot = speculativeTree.getRoot();
         return {
-            newRoot,
+            ...this.preparePublication(speculativeTree, version),
             channelSiblings,
-            commit: () => {
-                this.currentTree = speculativeTree;
-            },
         };
     }
     computeRootWithPrunePacketHistoryUpdate(oldRoot, portId, channelId, sequence, ordering) {
         if (ordering !== 'Unordered' && ordering !== 'Ordered') {
             throw new Error(`PrunePacketHistory does not support channel ordering '${ordering}'`);
         }
+        const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         const sequenceText = sequence.toString();
         const receiptPath = `receipts/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
@@ -540,43 +610,35 @@ class IbcTreeStateStore {
             .getSiblings(acknowledgementPath)
             .map((hash) => hash.toString('hex'));
         speculativeTree.set(acknowledgementPath, Buffer.alloc(0));
-        const newRoot = speculativeTree.getRoot();
         return {
-            newRoot,
+            ...this.preparePublication(speculativeTree, version),
             packetReceiptSiblings,
             packetAcknowledgementSiblings,
-            commit: () => {
-                this.currentTree = speculativeTree;
-            },
         };
     }
     computeRootWithPortBind(oldRoot, portId, portValue) {
+        const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         // Exact case-sensitive port text becomes the commitment path without aliases or normalization.
         const path = `ports/${portId}`;
         // The on-chain validator replays this update using the per-level sibling hashes.
         const portSiblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
         speculativeTree.set(path, portValue);
-        const newRoot = speculativeTree.getRoot();
         return {
-            newRoot,
+            ...this.preparePublication(speculativeTree, version),
             portSiblings,
-            commit: () => {
-                this.currentTree = speculativeTree;
-            },
         };
     }
     getCurrentTree() {
-        return this.currentTree;
-    }
-    setCurrentTree(tree) {
-        this.currentTree = tree;
+        return this.currentTree.clone();
     }
     getCurrentRoot() {
         return this.currentTree.getRoot();
     }
     resetTreeState() {
         this.currentTree = new ics23MerkleTree_1.ICS23MerkleTree();
+        this.hostState = null;
+        this.version += 1;
     }
 }
 exports.IbcTreeStateStore = IbcTreeStateStore;

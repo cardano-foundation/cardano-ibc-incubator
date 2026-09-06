@@ -7,7 +7,23 @@ export type IbcTreeDeployment = Readonly<{
         name: string;
     }>;
 }>;
-export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets'>;
+export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets' | 'txHash' | 'outputIndex'>;
+export type IbcTreeHostStateRef = Readonly<Pick<UTxO, 'txHash' | 'outputIndex'>>;
+export type IbcTreeSnapshot = Readonly<{
+    root: string;
+    hostState: IbcTreeHostStateRef;
+    tree: ICS23MerkleTree;
+}>;
+export type IbcTreeStateSnapshot = IbcTreeSnapshot & Readonly<{
+    version: number;
+}>;
+export type IbcTreeCommitResult = {
+    published: boolean;
+    snapshot: IbcTreeSnapshot;
+};
+export declare class StaleIbcTreeStateError extends Error {
+    constructor(message?: string);
+}
 export interface IbcTreeKupoService {
     queryAllClientUtxos(): Promise<IbcTreeUtxo[]>;
     queryAllConnectionUtxos(): Promise<IbcTreeUtxo[]>;
@@ -41,7 +57,7 @@ type ChannelDatumLike = {
 };
 export type StateRootResult = {
     newRoot: string;
-    commit: () => void;
+    commit: (hostState: IbcTreeHostStateRef) => Promise<IbcTreeCommitResult>;
 };
 export type HandlePacketStateRootResult = StateRootResult & {
     channelSiblings: string[];
@@ -94,17 +110,27 @@ export declare class IbcTreeStateStore {
     private readonly lucidService;
     readonly deployment: IbcTreeDeployment;
     private currentTree;
+    private version;
+    private hostState;
     constructor(deployment: IbcTreeDeployment, kupoService: IbcTreeKupoService, lucidService: IbcTreeLucidService);
-    isTreeAligned(onChainRoot: string): boolean;
+    isTreeAligned(onChainRoot: string, hostState?: IbcTreeHostStateRef): boolean;
     alignTreeWithChain(): Promise<{
         root: string;
     }>;
     private getClonedTreeFromRoot;
+    private sameHostState;
+    private copyHostState;
+    private snapshot;
+    private readLiveHostState;
+    private assertUnchanged;
+    private publish;
+    private preparePublication;
+    getSnapshot(): IbcTreeStateSnapshot;
+    getAlignedSnapshot(): Promise<IbcTreeStateSnapshot>;
+    restoreTreeFromCache(tree: ICS23MerkleTree): Promise<IbcTreeStateSnapshot>;
+    computeRootWithHeartbeatUpdate(oldRoot: string): StateRootResult;
     computeRootWithHandlePacketUpdate(oldRoot: string, portId: string, channelId: string, inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, Lucid: typeof import('@lucid-evolution/lucid')): Promise<HandlePacketStateRootResult>;
-    rebuildTreeFromChain(): Promise<{
-        tree: ICS23MerkleTree;
-        root: string;
-    }>;
+    rebuildTreeFromChain(): Promise<IbcTreeStateSnapshot>;
     computeRootWithCreateClientUpdate(oldRoot: string, clientId: string, clientStateValue: Buffer, consensusStateValue: Buffer, consensusHeight: string | number | bigint): CreateClientStateRootResult;
     computeRootWithUpdateClientUpdate(oldRoot: string, clientId: string, newClientStateValue: Buffer, removedConsensusHeights: Array<string | number | bigint>, addedConsensusState: {
         height: string | number | bigint;
@@ -116,7 +142,6 @@ export declare class IbcTreeStateStore {
     computeRootWithPrunePacketHistoryUpdate(oldRoot: string, portId: string, channelId: string, sequence: bigint, ordering: 'None' | 'Unordered' | 'Ordered'): PrunePacketHistoryStateRootResult;
     computeRootWithPortBind(oldRoot: string, portId: string, portValue: Buffer): BindPortStateRootResult;
     getCurrentTree(): ICS23MerkleTree;
-    setCurrentTree(tree: ICS23MerkleTree): void;
     getCurrentRoot(): string;
     resetTreeState(): void;
 }

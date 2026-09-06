@@ -102,11 +102,13 @@ describe('Gateway IBC tree ownership', () => {
       expect(second.store.deployment.hostStateNFT.policyId).toBe('bb'.repeat(28));
       const firstTree = new ICS23MerkleTree();
       firstTree.set('clients/first/clientState', Buffer.from('first'));
-      first.store.setCurrentTree(firstTree);
+      first.lucid.findUtxoAtHostStateNFT.mockResolvedValue({ txHash: 'aa'.repeat(32), outputIndex: 0, datum: 'host-state-datum' } as never);
+      first.lucid.decodeDatum.mockResolvedValue({ state: { ibc_state_root: firstTree.getRoot() } });
+      await first.store.restoreTreeFromCache(firstTree);
       expect(first.store.getCurrentTree().get('clients/first/clientState')).toEqual(Buffer.from('first'));
       expect(second.store.getCurrentTree().get('clients/first/clientState')).toBeUndefined();
       second.store.resetTreeState();
-      expect(first.store.getCurrentTree()).toBe(firstTree);
+      expect(first.store.getCurrentTree().toJSON()).toEqual(firstTree.toJSON());
       expect(second.store.deployment.hostStateNFT.policyId).toBe('bb'.repeat(28));
     } finally {
       await first.context.close();
@@ -120,13 +122,13 @@ describe('Gateway IBC tree ownership', () => {
     cachedTree.set('clients/cached/clientState', Buffer.from('cached'));
     const root = cachedTree.getRoot();
     fixture.cache.load.mockResolvedValue({ tree: cachedTree, root } as never);
-    fixture.lucid.findUtxoAtHostStateNFT.mockResolvedValue({ datum: 'host-state-datum' } as never);
+    fixture.lucid.findUtxoAtHostStateNFT.mockResolvedValue({ txHash: 'aa'.repeat(32), outputIndex: 0, datum: 'host-state-datum' } as never);
     fixture.lucid.decodeDatum.mockResolvedValue({ state: { ibc_state_root: root } });
     const previousCacheSetting = process.env.IBC_TREE_CACHE_ENABLED;
     process.env.IBC_TREE_CACHE_ENABLED = 'true';
     try {
       await fixture.context.get(TreeInitService).onModuleInit();
-      expect(fixture.store.getCurrentTree()).toBe(cachedTree);
+      expect(fixture.store.getCurrentTree().toJSON()).toEqual(cachedTree.toJSON());
       expect(fixture.kupo.queryAllClientUtxos).not.toHaveBeenCalled();
     } finally {
       if (previousCacheSetting === undefined) delete process.env.IBC_TREE_CACHE_ENABLED;

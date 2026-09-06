@@ -2,11 +2,13 @@ import * as Lucid from '@lucid-evolution/lucid';
 
 import { ICS23MerkleTree } from './ics23-merkle-tree';
 import { encodeModuleRegistration } from '../types/host-state-datum';
-import { createTestTreeStore } from '../testing/ibc-tree-test-store';
+import { createTestTreeContext } from '../testing/ibc-tree-test-store';
 
 describe('IBC state root - BindPort', () => {
   it('does not mutate the canonical tree unless commit() is called', async () => {
-    const store = createTestTreeStore();
+    const fixture = createTestTreeContext();
+    const { store } = fixture;
+    await fixture.restore(new ICS23MerkleTree());
 
     const emptyRoot = '0'.repeat(64);
     expect(store.isTreeAligned(emptyRoot)).toBe(true);
@@ -39,7 +41,7 @@ describe('IBC state root - BindPort', () => {
     expect(result.newRoot).not.toBe(wrongTree.getRoot());
 
     // Calling commit() is the point where the Gateway updates its canonical tree.
-    result.commit();
+    await fixture.commit(result);
     expect(store.isTreeAligned(result.newRoot)).toBe(true);
     expect(store.isTreeAligned(emptyRoot)).toBe(false);
   });

@@ -37,7 +37,7 @@ import {
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
-import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore, StateRootResult, StaleIbcTreeStateError } from '../shared/helpers/ibc-state-root';
 import { ConnectionEnd, State as ConnectionState } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/connection';
 import {
   ConnectionOpenAckOperator,
@@ -300,7 +300,7 @@ export class ConnectionService {
     oldRoot: string,
     connectionId: string,
     connectionEndValue: Buffer,
-  ): { newRoot: string; connectionSiblings: string[]; commit: () => void } {
+  ): { newRoot: string; connectionSiblings: string[]; commit: StateRootResult['commit'] } {
     const result = this.ibcTreeStore.computeRootWithCreateConnectionUpdate(oldRoot, connectionId, connectionEndValue);
     return { newRoot: result.newRoot, connectionSiblings: result.connectionSiblings, commit: result.commit };
   }
@@ -308,10 +308,12 @@ export class ConnectionService {
   /**
    * Ensure the in-memory Merkle tree is aligned with on-chain state
    */
-  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
-    if (!this.ibcTreeStore.isTreeAligned(onChainRoot)) {
-      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
-      await this.ibcTreeStore.alignTreeWithChain();
+  private async ensureTreeAligned(onChainRoot: string, hostStateUtxo: Pick<UTxO, 'txHash' | 'outputIndex'>): Promise<void> {
+    const snapshot = await this.ibcTreeStore.getAlignedSnapshot();
+    if (snapshot.root !== onChainRoot ||
+      snapshot.hostState.txHash !== hostStateUtxo.txHash ||
+      snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
+      throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
     }
   }
   /**
@@ -702,7 +704,7 @@ export class ConnectionService {
     );
     
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
     
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenInitOperator.clientId);
@@ -823,7 +825,7 @@ export class ConnectionService {
     );
     
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
     
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
@@ -1032,7 +1034,7 @@ export class ConnectionService {
 	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck on_chain_ibc_state_root=${hostStateDatum.state.ibc_state_root.substring(0, 32)}...`,
 	    );
-	    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+	    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 	    const treeRootAfterAlign = this.ibcTreeStore.getCurrentTree().getRoot();
 	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck tree_root_after_align=${treeRootAfterAlign.substring(0, 32)}... matches_on_chain=${treeRootAfterAlign === hostStateDatum.state.ibc_state_root}`,
@@ -1323,7 +1325,7 @@ export class ConnectionService {
     );
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing a witness.
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     // Get the token unit associated with the client
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(

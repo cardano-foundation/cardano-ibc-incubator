@@ -8,7 +8,7 @@ import {
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
 import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
-import { IbcTreeStateStore } from './ibcStateRoot';
+import { IbcTreeStateStore, StaleIbcTreeStateError } from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
 import {
   findTransferEscrowShard as findTransferEscrowShardFromRegistry,
@@ -1478,10 +1478,16 @@ async function findTransferEscrowShard(
   );
 }
 
-async function ensureTreeAlignedForRoot(context: BuilderContext, onChainRoot: string): Promise<void> {
-  if (!context.treeStore.isTreeAligned(onChainRoot)) {
-    context.logger.warn(`IBC tree root mismatch for local tx builder runtime, aligning to ${onChainRoot.slice(0, 16)}...`);
-    await context.treeStore.alignTreeWithChain();
+async function ensureTreeAlignedForRoot(
+  context: BuilderContext,
+  onChainRoot: string,
+  hostStateUtxo: Pick<UTxO, 'txHash' | 'outputIndex'>,
+): Promise<void> {
+  const snapshot = await context.treeStore.getAlignedSnapshot();
+  if (snapshot.root !== onChainRoot ||
+    snapshot.hostState.txHash !== hostStateUtxo.txHash ||
+    snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
+    throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
   }
 }
 
@@ -1493,7 +1499,7 @@ async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inpu
 
   const hostStateDatum = await context.lucidService.decodeDatum<any>(hostStateUtxo.datum, 'host_state');
 
-  await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root);
+  await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
   const portId = convertHex2String(inputChannelDatum.port);
   const {

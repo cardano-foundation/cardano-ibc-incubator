@@ -151,14 +151,17 @@ describe('IBC state root recovery after packet-history pruning', () => {
       control: { port_registry: new Map([[toHex('Transfer-v2'), registration]]), shutdown: 'Active' },
     };
     const clientUtxo = {
+      txHash: '11'.repeat(32), outputIndex: 0,
       datum: 'client-datum',
       assets: { [authAssetUnit('61', '62', 0)]: 1n },
     };
     const connectionUtxo = {
+      txHash: '22'.repeat(32), outputIndex: 0,
       datum: 'connection-datum',
       assets: { [authAssetUnit('71', '72', 0)]: 1n },
     };
     const channelUtxo = {
+      txHash: '33'.repeat(32), outputIndex: 0,
       datum: 'channel-datum',
       assets: { [authAssetUnit('81', '82', 0)]: 1n },
     };
@@ -169,7 +172,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
     };
     const lucidService = {
       LucidImporter: Lucid,
-      findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({ datum: 'host-state-datum' }),
+      findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({ txHash: '44'.repeat(32), outputIndex: 0, assets: {}, datum: 'host-state-datum' }),
       decodeDatum: jest.fn().mockImplementation(async (datum: string) => {
         if (datum === 'host-state-datum') return hostStateDatum;
         if (datum === 'client-datum') return clientDatum;
@@ -211,7 +214,10 @@ describe('IBC state root recovery after packet-history pruning', () => {
     expect(continuation.packetReceiptSiblings).toHaveLength(64);
     expect(continuation.packetAcknowledgementSiblings).toHaveLength(64);
     expect(store.getCurrentTree().getRoot()).toBe(rebuilt.root);
-    continuation.commit();
+    const confirmedRef = { txHash: '55'.repeat(32), outputIndex: 0 };
+    lucidService.findUtxoAtHostStateNFT.mockResolvedValue({ ...confirmedRef, assets: {}, datum: 'next-host-state' });
+    lucidService.decodeDatum.mockImplementation(async () => ({ state: { ibc_state_root: continuation.newRoot } }));
+    await continuation.commit(confirmedRef);
 
     const newReceiptPath = `receipts/ports/transfer/channels/channel-0/sequences/${nextSequence}`;
     const newAcknowledgementPath = `acks/ports/transfer/channels/channel-0/sequences/${nextSequence}`;
