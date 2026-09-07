@@ -162,8 +162,7 @@ test reference_validator_reclaim_fails_before_grace_period() fail {
 }
 
 test reference_validator_reclaim_fails_without_finite_lower_bound() fail {
-  let transaction =
-    normal_reclaim_transaction(shutdown_grace_period_end, True)
+  let transaction = normal_reclaim_transaction(shutdown_grace_period_end, True)
   validate(
     Transaction {
       ..transaction,
@@ -177,8 +176,7 @@ test reference_validator_reclaim_fails_without_deployer_signature() fail {
 }
 
 test reference_validator_preserves_terminal_host_reference() fail {
-  let transaction =
-    normal_reclaim_transaction(shutdown_grace_period_end, True)
+  let transaction = normal_reclaim_transaction(shutdown_grace_period_end, True)
   validate(Transaction { ..transaction, inputs: [terminal_reference_input()] })
 }
 

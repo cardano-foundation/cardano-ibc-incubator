@@ -332,10 +332,7 @@ pub fn validate_enter_shutdown(
     old.control.shutdown |> is_active,
     new.control == HostStateControl {
       port_registry: old.control.port_registry,
-      shutdown: ShuttingDown {
-        initiated_at: valid_to,
-        grace_period_end,
-      },
+      shutdown: ShuttingDown { initiated_at: valid_to, grace_period_end },
     },
     new.state.last_update_time == valid_to,
     grace_period_end >= valid_to + min_shutdown_grace_period_ms,

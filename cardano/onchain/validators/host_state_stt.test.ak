@@ -3655,7 +3655,11 @@ fn validate_test_enter_shutdown(
       ..placeholder,
       inputs: [host_input],
       outputs: [host_output],
-      extra_signatories: if signed { [trusted_deployer] } else { [] },
+      extra_signatories: if signed {
+        [trusted_deployer]
+      } else {
+        []
+      },
       validity_range,
     }
 
