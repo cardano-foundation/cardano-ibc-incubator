@@ -156,6 +156,22 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+### Transaction diagnostics
+
+Detailed `evaluateTx`, `connectionOpenAck`, and `recvPacket` diagnostics are disabled by default.
+Set `GATEWAY_DEBUG_DIAGNOSTICS=true` to enable them while investigating a failure. Records may
+contain full transaction CBOR, additional UTxOs, packet data, and proofs, so treat them as private.
+
+The Gateway writes asynchronously to `diagnostic-0.json` through `diagnostic-7.json` in
+`cardano-ibc-gateway-diagnostics` under the OS temporary directory. Each file is at most 64 KiB
+and the same slots are reused after restarts, limiting retained diagnostics to 512 KiB.
+At most eight records can be queued or in flight. Extra records, oversized records, and write
+failures are dropped without failing the request. Recent records may be lost on shutdown.
+
+Set `GATEWAY_DEBUG_DIAGNOSTICS_DIR` to use another directory. The Gateway creates it with mode
+`0700` and writes files with mode `0600`. An existing directory must be owned by the Gateway
+user and have no group or other permissions. Use a separate directory for each Gateway process.
+
 ### Securing the Hermes gRPC connection
 
 The default local stack publishes Gateway gRPC on host loopback and Hermes connects to
