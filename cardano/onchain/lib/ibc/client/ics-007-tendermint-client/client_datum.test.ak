@@ -364,20 +364,36 @@ test metadata_update_empty_singleton_and_exact_expiry_boundary() {
   )
 }
 
-test metadata_update_looks_up_before_capacity_truncation() {
+// Keep the large fixture and legacy oracle out of the test's generated code.
+// The test still runs the production update against the oracle's exact output.
+const capacity_history_input = make_capacity_history_input()
+
+const capacity_history_header = history_header()
+
+const capacity_history_output =
+  previous_history_update(capacity_history_input, capacity_history_header)
+
+fn make_capacity_history_input() -> ClientDatum {
   let keys =
     list.range(1, max_consensus_state_size + 5)
       |> list.map(fn(n) { height.new_height(0, n) })
-  let input =
-    history_fixture(
-      list.map(keys, fn(key) { Pair(key, 999001) }),
-      list.map(list.reverse(keys), fn(key) { Pair(key, key.revision_height) }),
-      [],
-    )
-  let output = previous_history_update(input, history_header())
+  history_fixture(
+    list.map(keys, fn(key) { Pair(key, 999001) }),
+    list.map(list.reverse(keys), fn(key) { Pair(key, key.revision_height) }),
+    [],
+  )
+}
+
+test metadata_update_looks_up_before_capacity_truncation() {
+  let output = capacity_history_output
   expect [_, first_metadata, ..] = output.state.processed_times
   and {
-    matches_previous_history_update(input),
+    client_datum.update_state(
+      capacity_history_input,
+      output,
+      capacity_history_header,
+      1,
+    ),
     list.length(output.state.consensus_states) == max_consensus_state_size,
     list.length(output.state.processed_times) == max_consensus_state_size,
     list.length(output.state.processed_heights) == 1,

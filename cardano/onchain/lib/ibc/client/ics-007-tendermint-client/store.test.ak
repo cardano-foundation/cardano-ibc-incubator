@@ -196,11 +196,17 @@ test neighbors_compare_revision_number_before_revision_height() {
   )
 }
 
+// Evaluate the fixed input and old sort-based oracle once, outside the test.
+const capacity_neighbor_states =
+  make_fake_consensus_states_store(list.reverse(list.range(1, 300)))
+
+const capacity_neighbor_target = create_height(150)
+
+const capacity_neighbor_expected =
+  sorted_neighbors(capacity_neighbor_states, capacity_neighbor_target)
+
 test neighbors_match_sorted_search_at_history_capacity() {
-  let states =
-    make_fake_consensus_states_store(list.reverse(list.range(1, 300)))
-  let target = create_height(150)
-  neighbors(states, target) == sorted_neighbors(states, target)
+  neighbors(capacity_neighbor_states, capacity_neighbor_target) == capacity_neighbor_expected
 }
 
 test prop_client_update_neighbors_match_sorted_search(
