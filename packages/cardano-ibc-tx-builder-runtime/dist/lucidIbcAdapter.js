@@ -4,6 +4,7 @@ exports.LucidIbcAdapter = void 0;
 const lucid_1 = require("@lucid-evolution/lucid");
 const js_sha3_1 = require("js-sha3");
 const acknowledgementCodec_1 = require("./acknowledgementCodec");
+const sendPacketEscrow_1 = require("./sendPacketEscrow");
 const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
 const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
 const CONNECTION_TOKEN_PREFIX = '636f6e6e656374696f6e'; // fromText('connection')
@@ -21,18 +22,6 @@ const ENCODABLE_DATUM_TYPES = [
     'mintPortRedeemer',
     'transferEscrowShardRedeemer',
 ];
-function updateTransferModuleAssets(assets, transferAmount, denom) {
-    const updatedAssets = {
-        ...assets,
-        [denom]: (assets[denom] ?? 0n) + transferAmount,
-    };
-    for (const [assetUnit, amount] of Object.entries(updatedAssets)) {
-        if (amount === 0n) {
-            delete updatedAssets[assetUnit];
-        }
-    }
-    return updatedAssets;
-}
 function encodeAuthToken(token, Lucid) {
     const { Data } = Lucid;
     const AuthTokenSchema = Data.Object({
@@ -1072,68 +1061,15 @@ class LucidIbcAdapter {
         const channelTokenName = this.generateTokenName(this.deployment.hostStateNFT, CHANNEL_TOKEN_PREFIX, channelId);
         return [mintChannelPolicyId, channelTokenName];
     }
-    payTransferEscrowDelta(tx, transferModuleAddress, encodedTransferEscrowDatum, transferAmount, denomToken, transferEscrowUtxo, transferEscrowShardTokenUnit) {
-        if (!encodedTransferEscrowDatum) {
-            throw new Error('Transfer escrow datum is required for sharded escrow updates');
-        }
-        const updatedAssets = updateTransferModuleAssets(transferEscrowUtxo?.assets ?? {}, transferAmount, denomToken);
-        if (transferEscrowShardTokenUnit && !transferEscrowUtxo) {
-            updatedAssets[transferEscrowShardTokenUnit] = (updatedAssets[transferEscrowShardTokenUnit] ?? 0n) + 1n;
-        }
-        const targetAmount = updatedAssets[denomToken] ?? 0n;
-        const keepsNonLovelace = Object.keys(updatedAssets).some((unit) => unit !== 'lovelace');
-        if (targetAmount <= 0n && !keepsNonLovelace) {
-            return tx;
-        }
-        return tx.pay.ToContract(transferModuleAddress, { kind: 'inline', value: encodedTransferEscrowDatum }, updatedAssets);
-    }
     createUnsignedSendPacketEscrowTx(dto) {
-        const hostStateAddress = this.deployment.validators.hostStateStt.address;
-        if (!hostStateAddress) {
-            throw new Error('Host state script address is missing from deployment config');
-        }
-        const hostStateNFT = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
-        const hostStateUtxoWithRawDatum = {
-            ...dto.hostStateUtxo,
-            datum: dto.hostStateUtxo.datum,
-            datumHash: undefined,
-        };
-        if (!dto.walletUtxos || dto.walletUtxos.length === 0) {
-            throw new Error('Sender wallet UTxOs are required for escrow send packet');
-        }
-        const tx = this.lucid.newTx();
-        tx.readFrom([
-            this.referenceScripts.spendChannel,
-            this.referenceScripts.spendTransferModule,
-            this.referenceScripts.mintTransferEscrowShard,
-            this.referenceScripts.sendPacket,
-            this.referenceScripts.hostStateStt,
-        ])
-            .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-            .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-            .readFrom([dto.connectionUTxO, dto.clientUTxO])
-            .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, { [hostStateNFT]: 1n })
-            .pay.ToContract(dto.spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
-            .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
-        if (dto.transferEscrowUtxo) {
-            tx
-                .readFrom([dto.transferModuleReferenceUtxo])
-                .collectFrom([dto.transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer);
-        }
-        else {
-            if (!dto.transferModuleReferenceUtxo ||
-                !dto.transferEscrowShardTokenUnit ||
-                !dto.encodedMintTransferEscrowShardRedeemer ||
-                !dto.encodedUpdatedTransferModuleDatum) {
-                throw new Error('Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard');
-            }
-            tx
-                .collectFrom([dto.transferModuleReferenceUtxo], dto.encodedSpendTransferModuleRedeemer)
-                .mintAssets({ [dto.transferEscrowShardTokenUnit]: 1n }, dto.encodedMintTransferEscrowShardRedeemer)
-                .pay.ToContract(dto.transferModuleAddress, { kind: 'inline', value: dto.encodedUpdatedTransferModuleDatum }, dto.transferModuleReferenceUtxo.assets);
-        }
-        this.payTransferEscrowDelta(tx, dto.transferModuleAddress, dto.encodedTransferEscrowDatum, dto.transferAmount, dto.denomToken, dto.transferEscrowUtxo, dto.transferEscrowShardTokenUnit);
-        return tx;
+        return (0, sendPacketEscrow_1.createUnsignedSendPacketEscrowTx)({
+            newTx: () => this.lucid.newTx(),
+            hostStateAddress: this.deployment.validators.hostStateStt.address,
+            hostStateTokenUnit: this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name,
+            transferModuleRootAddress: this.deployment.modules.transfer.address,
+            referenceScripts: this.referenceScripts,
+            encodeAuthToken: (token) => encodeAuthToken(token, this.LucidImporter),
+        }, dto);
     }
     createUnsignedSendPacketBurnTx(dto) {
         const hostStateAddress = this.deployment.validators.hostStateStt.address;

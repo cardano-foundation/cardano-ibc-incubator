@@ -6,6 +6,7 @@ import {
   findTransferEscrowShard,
   transferEscrowShardRegistryKey,
   transferEscrowShardTokenName,
+  getTransferModuleRootFromAddressScan,
   type TransferEscrowShardRegistryDependencies,
 } from './transferEscrowShard';
 
@@ -126,6 +127,13 @@ describe('transfer escrow shard registry lookup', () => {
     if (result.kind === 'existing') {
       assert.equal(result.utxo, existingShard);
       assert.equal(result.shardTokenUnit, SHARD_TOKEN_UNIT);
+      const tree = new ICS23MerkleTree();
+      tree.set(transferEscrowShardRegistryKey(SHARD_TOKEN_NAME), Buffer.from([1]));
+      assert.deepEqual(
+        result.registrySiblings,
+        tree.getSiblings(transferEscrowShardRegistryKey(SHARD_TOKEN_NAME))
+          .map((sibling) => sibling.toString('hex')),
+      );
     }
   });
 
@@ -148,7 +156,7 @@ describe('transfer escrow shard registry lookup', () => {
   it('rejects a registry root that does not match the live shard set', async () => {
     await assert.rejects(
       () => lookup(dependencies(async () => [moduleRoot('11'.repeat(32)), shard()])),
-      /registry root does not match live shards/,
+      /registry root mismatch/,
     );
   });
 
@@ -160,7 +168,7 @@ describe('transfer escrow shard registry lookup', () => {
     );
     await assert.rejects(
       () => lookup(dependencies(async () => [root, shard('shard-a'), shard('shard-b')])),
-      /Duplicate transfer escrow shard/,
+      /Duplicate escrow shard holders/,
     );
 
     const malformed = utxo(
@@ -171,7 +179,7 @@ describe('transfer escrow shard registry lookup', () => {
     );
     await assert.rejects(
       () => lookup(dependencies(async () => [moduleRoot('00'.repeat(32)), malformed])),
-      /Malformed transfer escrow shard/,
+      /Malformed escrow shard holder/,
     );
   });
 
@@ -216,5 +224,72 @@ describe('transfer escrow shard registry lookup', () => {
         ),
       /Requested asset .* does not match escrow shard denom/,
     );
+  });
+
+  it('checks canonical datum encoding for shards other than the requested shard', async () => {
+    const otherChannel = Buffer.from('channel-8').toString('hex');
+    const otherName = transferEscrowShardTokenName(otherChannel, PACKET_DENOM);
+    const otherShard = utxo(
+      'other-shard',
+      0,
+      { lovelace: 2_000_000n, [SHARD_POLICY_ID + otherName]: 1n },
+      encodedEscrowDatum(otherChannel, PACKET_DENOM) + ':non-canonical',
+    );
+    const tree = new ICS23MerkleTree();
+    tree.set(transferEscrowShardRegistryKey(SHARD_TOKEN_NAME), Buffer.from([1]));
+    tree.set(transferEscrowShardRegistryKey(otherName), Buffer.from([1]));
+
+    await assert.rejects(
+      () => lookup(dependencies(async () => [moduleRoot(tree.getRoot()), shard(), otherShard])),
+      /Non-canonical escrow shard holder other-shard#0/,
+    );
+  });
+
+  it('preserves invalid-argument and failed-precondition classifications without wrapping provider errors', async () => {
+    class InvalidArgument extends Error {}
+    class FailedPrecondition extends Error {}
+    const errorFactories = {
+      invalidArgument: (message: string) => new InvalidArgument(message),
+      failedPrecondition: (message: string) => new FailedPrecondition(message),
+    };
+    const deps = dependencies(async () => [moduleRoot(existingRegistryRoot()), shard()], errorFactories);
+
+    await assert.rejects(() => lookup(deps, 'wrong-token'), InvalidArgument);
+    await assert.rejects(
+      () => findTransferEscrowShard(deps, CHANNEL_ID, PACKET_DENOM, DENOM_TOKEN, 1n),
+      InvalidArgument,
+    );
+    await assert.rejects(
+      () => lookup(dependencies(async () => [moduleRoot('11'.repeat(32))], errorFactories)),
+      FailedPrecondition,
+    );
+    const providerError = new Error('provider unavailable');
+    await assert.rejects(
+      () => lookup(dependencies(async () => { throw providerError; }, errorFactories)),
+      (error) => error === providerError,
+    );
+  });
+
+  it('normalizes the requested asset unit before comparing it with the shard datum', async () => {
+    const result = await lookup(
+      dependencies(async () => [moduleRoot(existingRegistryRoot()), shard()]),
+      ` ${DENOM_TOKEN.toUpperCase()} `,
+    );
+    assert.equal(result.kind, 'existing');
+  });
+
+  it('rejects absent, duplicate and non-unit module roots through the shared selector', () => {
+    const root = moduleRoot();
+    assert.equal(getTransferModuleRootFromAddressScan([root], TRANSFER_MODULE_IDENTIFIER), root);
+    for (const candidates of [
+      [],
+      [root, { ...root, txHash: 'other-root' }],
+      [{ ...root, assets: { [TRANSFER_MODULE_IDENTIFIER]: 2n } }],
+    ]) {
+      assert.throws(
+        () => getTransferModuleRootFromAddressScan(candidates, TRANSFER_MODULE_IDENTIFIER),
+        /Expected one canonical transfer-module registry root/,
+      );
+    }
   });
 });

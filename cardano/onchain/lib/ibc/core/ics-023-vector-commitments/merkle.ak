@@ -148,7 +148,7 @@ fn verify_chained_membership_proof(
         when ele_proof.proof is {
           CommitmentProof_Exist { .. } ->
             if accum.2nd < index {
-              (value, index)
+              (value, accum.2nd + 1)
             } else {
               let temp_accum_subroot = proof.calculate(ele_proof)
               let key =
@@ -165,8 +165,8 @@ fn verify_chained_membership_proof(
               (temp_accum_subroot, accum.2nd + 1)
             }
           CommitmentProof_Nonexist { .. } ->
-            if accum.2nd == 0 {
-              (value, index)
+            if accum.2nd < index {
+              (value, accum.2nd + 1)
             } else {
               fail
             }

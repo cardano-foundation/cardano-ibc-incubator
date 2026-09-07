@@ -6,7 +6,6 @@ export * from './recv-packet-mint.dto';
 export * from './recv-packet-unescrow.dto';
 export * from './prune-packet-history.dto';
 export * from './send-packet-module.dto';
-export * from './send-packet-escrow.dto';
 export * from './send-packet-burn.dto';
 export * from './timeout-packet-mint.dto';
 export * from './timeout-packet-unescrow.dto';

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { appendFileSync } from 'fs';
 import { inspect } from 'util';
+import { gatewayDiagnostics } from '@shared/helpers/gateway-diagnostics';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { DenomTraceService, TraceRegistryInsertContext } from 'src/query/services/denom-trace.service';
@@ -84,7 +84,6 @@ import {
   UnsignedPrunePacketHistoryDto,
   UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
-  UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
 } from '~@/shared/modules/lucid/dtos';
@@ -121,35 +120,14 @@ import {
   decodeIcs20PacketDataForCodec,
   stringifyIcs20PacketDataForCodec,
 } from '../shared/helpers/ics20-packet-codec';
-import { ICS23MerkleTree } from '@shared/helpers/ics23-merkle-tree';
 import {
-  escrowDenomTokenFromPacketDenom,
-  TRANSFER_ESCROW_SHARD_REGISTERED_VALUE,
-  transferEscrowShardRegistryKey,
-  transferEscrowShardTokenName,
-} from '@shared/helpers/transfer-escrow-shard';
-
-type TransferEscrowShardLookup =
-  | {
-      kind: 'existing';
-      utxo: UTxO;
-      encodedDatum: string;
-      shardTokenUnit: string;
-      transferModuleUtxo: UTxO;
-      registrySiblings: string[];
-    }
-  | {
-      kind: 'missing';
-      encodedDatum: string;
-      shardTokenUnit: string;
-      transferModuleUtxo: UTxO;
-      registrySiblings: string[];
-      encodedUpdatedTransferModuleDatum: string;
-    };
+  findTransferEscrowShard as findTransferEscrowShardWithPackage,
+  getTransferModuleRootFromAddressScan,
+  type TransferEscrowShardLookup,
+} from '@cardano-ibc/tx-builder-runtime/transferEscrowShard';
 
 @Injectable()
 export class PacketService {
-  private static readonly RECV_PACKET_DEBUG_LOG = '/tmp/recv-packet-debug.log';
   private static readonly DEFAULT_ASYNC_ICQ_TIMEOUT_HEIGHT_DELTA = 1000n;
 
   constructor(
@@ -239,17 +217,8 @@ export class PacketService {
     );
   }
 
-  private appendRecvPacketDebug(line: string): void {
-    try {
-      appendFileSync(PacketService.RECV_PACKET_DEBUG_LOG, `${new Date().toISOString()} ${line}\n`);
-    } catch {
-      // Best-effort debugging only.
-    }
-  }
-
-  private logRecvPacketDebug(line: string): void {
-    this.logger.log(line);
-    this.appendRecvPacketDebug(line);
+  private logRecvPacketDebug(line: () => string): void {
+    gatewayDiagnostics.record('recvPacket', line);
   }
 
   private compareUtxoRef(a: UTxO, b: UTxO): number {
@@ -285,45 +254,47 @@ export class PacketService {
       traceRegistryKind?: string;
     },
   ): void {
+    if (!gatewayDiagnostics.isEnabled()) return;
+
     const sortedSpendInputs = [...params.spendInputs].sort((a, b) => this.compareUtxoRef(a.utxo, b.utxo));
     const renderedSpendInputs = sortedSpendInputs
       .map((entry, index) => `Spend[${index}] ${this.toUtxoRef(entry.utxo)} (${entry.label})`)
       .join(', ');
 
-    this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} spend_inputs_sorted=${renderedSpendInputs}`);
+    this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} spend_inputs_sorted=${renderedSpendInputs}`);
     this.logRecvPacketDebug(
-      `[DEBUG recvPacket] ${context} policy_ids recv_packet=${params.recvPacketPolicyId} verify_proof=${params.verifyProofPolicyId} channel_token_unit=${params.channelTokenUnit}`,
+      () => `[DEBUG recvPacket] ${context} policy_ids recv_packet=${params.recvPacketPolicyId} verify_proof=${params.verifyProofPolicyId} channel_token_unit=${params.channelTokenUnit}`,
     );
     this.logRecvPacketDebug(
-      `[DEBUG recvPacket] ${context} packet sequence=${params.packetSequence} proof_height=${params.proofHeight}`,
+      () => `[DEBUG recvPacket] ${context} packet sequence=${params.packetSequence} proof_height=${params.proofHeight}`,
     );
     this.logRecvPacketDebug(
-      `[DEBUG recvPacket] ${context} output_addresses channel=${params.channelOutputAddress} host_state=${params.hostStateOutputAddress}${params.receiverAddress ? ` receiver=${params.receiverAddress}` : ''}`,
+      () => `[DEBUG recvPacket] ${context} output_addresses channel=${params.channelOutputAddress} host_state=${params.hostStateOutputAddress}${params.receiverAddress ? ` receiver=${params.receiverAddress}` : ''}`,
     );
     if (params.transferModuleInputAddress || params.transferModuleOutputAddress) {
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} transfer_module_addresses input=${params.transferModuleInputAddress ?? 'n/a'} output=${params.transferModuleOutputAddress ?? 'n/a'}`,
+        () => `[DEBUG recvPacket] ${context} transfer_module_addresses input=${params.transferModuleInputAddress ?? 'n/a'} output=${params.transferModuleOutputAddress ?? 'n/a'}`,
       );
     }
     if (params.voucherTokenUnit) {
-      this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} voucher_token_unit=${params.voucherTokenUnit}`);
+      this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} voucher_token_unit=${params.voucherTokenUnit}`);
     }
     if (params.denomToken) {
-      this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} denom_token=${params.denomToken}`);
+      this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} denom_token=${params.denomToken}`);
     }
     if (params.packetDataUtf8 !== undefined) {
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} packet_data profiles=${params.packetDataProfiles ?? 'unknown'} utf8=${params.packetDataUtf8}`,
+        () => `[DEBUG recvPacket] ${context} packet_data profiles=${params.packetDataProfiles ?? 'unknown'} utf8=${params.packetDataUtf8}`,
       );
     }
     if (params.packetDataHex !== undefined) {
-      this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} packet_data_hex=${params.packetDataHex}`);
+      this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} packet_data_hex=${params.packetDataHex}`);
     }
     if (params.traceRegistryKind) {
-      this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} trace_registry_kind=${params.traceRegistryKind}`);
+      this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} trace_registry_kind=${params.traceRegistryKind}`);
     }
     this.logRecvPacketDebug(
-      `[DEBUG recvPacket] ${context} updated_channel_datum len=${params.updatedChannelDatumHex.length} head=${params.updatedChannelDatumHex.substring(0, 160)}`,
+      () => `[DEBUG recvPacket] ${context} updated_channel_datum len=${params.updatedChannelDatumHex.length} head=${params.updatedChannelDatumHex.substring(0, 160)}`,
     );
   }
 
@@ -332,6 +303,8 @@ export class PacketService {
     tx: TxBuilder,
     knownRefs: Array<[string, UTxO | undefined]>,
   ): void {
+    if (!gatewayDiagnostics.isEnabled()) return;
+
     try {
       const raw = tx.rawConfig();
       const knownByRef = new Map<string, string>();
@@ -352,30 +325,18 @@ export class PacketService {
         return `#${index} ${inspect(output, { depth: 5, breakLength: 120 })}`;
       });
 
-      this.logger.log(
-        `[DEBUG recvPacket] ${context} raw.collectedInputs(${collected.length})=${collected.join(', ')}`,
-      );
-      this.logger.log(
-        `[DEBUG recvPacket] ${context} raw.readInputs(${reads.length})=${reads.join(', ')}`,
-      );
-      this.logger.log(
-        `[DEBUG recvPacket] ${context} raw.payToOutputs(${payToOutputs.length})=${payToOutputs.join(' || ')}`,
+      this.logRecvPacketDebug(
+        () => `[DEBUG recvPacket] ${context} raw.collectedInputs(${collected.length})=${collected.join(', ')}`,
       );
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} raw.collectedInputs(${collected.length})=${collected.join(', ')}`,
+        () => `[DEBUG recvPacket] ${context} raw.readInputs(${reads.length})=${reads.join(', ')}`,
       );
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} raw.readInputs(${reads.length})=${reads.join(', ')}`,
-      );
-      this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} raw.payToOutputs(${payToOutputs.length})=${payToOutputs.join(' || ')}`,
+        () => `[DEBUG recvPacket] ${context} raw.payToOutputs(${payToOutputs.length})=${payToOutputs.join(' || ')}`,
       );
     } catch (error) {
-      this.logger.error(
-        `[DEBUG recvPacket] ${context} rawConfig_error=${inspect(error, { depth: 5, breakLength: 120 })}`,
-      );
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} rawConfig_error=${inspect(error, { depth: 5 })}`,
+        () => `[DEBUG recvPacket] ${context} rawConfig_error=${inspect(error, { depth: 5 })}`,
       );
     }
   }
@@ -398,6 +359,8 @@ export class PacketService {
       proof: any;
     },
   ): void {
+    if (!gatewayDiagnostics.isEnabled()) return;
+
     const proofs = Array.isArray(params.proof?.proofs) ? params.proof.proofs : [];
     const firstProof = params.proof?.proofs?.[0]?.proof;
     const existenceProof =
@@ -410,23 +373,23 @@ export class PacketService {
         : null;
 
     this.logRecvPacketDebug(
-      `[DEBUG recvPacket] ${context} verify_membership client_latest_height=${params.clientLatestHeight.revisionNumber}/${params.clientLatestHeight.revisionHeight} proof_height=${params.proofHeight.revisionNumber}/${params.proofHeight.revisionHeight} consensus_root=${params.consensusRoot}`,
+      () => `[DEBUG recvPacket] ${context} verify_membership client_latest_height=${params.clientLatestHeight.revisionNumber}/${params.clientLatestHeight.revisionHeight} proof_height=${params.proofHeight.revisionNumber}/${params.proofHeight.revisionHeight} consensus_root=${params.consensusRoot}`,
     );
     this.logRecvPacketDebug(
-      `[DEBUG recvPacket] ${context} verify_membership proof_specs=${params.clientState.proofSpecs?.length ?? 0} proofs=${proofs.length}`,
+      () => `[DEBUG recvPacket] ${context} verify_membership proof_specs=${params.clientState.proofSpecs?.length ?? 0} proofs=${proofs.length}`,
     );
     params.clientState.proofSpecs?.forEach((spec, index) => {
       const canonicalSpec = this.getCanonicalProofSpecs()[index];
       const isIavlSpec = index === 0 && this.proofSpecEquals(spec, canonicalSpec);
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} verify_membership spec[${index}] leaf_prefix=${spec.leaf_spec?.prefix ?? 'n/a'} leaf_hash=${spec.leaf_spec?.hash ?? 'n/a'} prehash_key=${spec.leaf_spec?.prehash_key ?? 'n/a'} prehash_value=${spec.leaf_spec?.prehash_value ?? 'n/a'} length=${spec.leaf_spec?.length ?? 'n/a'} child_size=${spec.inner_spec?.child_size ?? 'n/a'} min_prefix=${spec.inner_spec?.min_prefix_length ?? 'n/a'} max_prefix=${spec.inner_spec?.max_prefix_length ?? 'n/a'} inner_hash=${spec.inner_spec?.hash ?? 'n/a'}`,
+        () => `[DEBUG recvPacket] ${context} verify_membership spec[${index}] leaf_prefix=${spec.leaf_spec?.prefix ?? 'n/a'} leaf_hash=${spec.leaf_spec?.hash ?? 'n/a'} prehash_key=${spec.leaf_spec?.prehash_key ?? 'n/a'} prehash_value=${spec.leaf_spec?.prehash_value ?? 'n/a'} length=${spec.leaf_spec?.length ?? 'n/a'} child_size=${spec.inner_spec?.child_size ?? 'n/a'} min_prefix=${spec.inner_spec?.min_prefix_length ?? 'n/a'} max_prefix=${spec.inner_spec?.max_prefix_length ?? 'n/a'} inner_hash=${spec.inner_spec?.hash ?? 'n/a'}`,
       );
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} verify_membership spec[${index}] canonical_match=${this.proofSpecEquals(spec, canonicalSpec)} iavl_mode=${isIavlSpec}`,
+        () => `[DEBUG recvPacket] ${context} verify_membership spec[${index}] canonical_match=${this.proofSpecEquals(spec, canonicalSpec)} iavl_mode=${isIavlSpec}`,
       );
     });
     this.logRecvPacketDebug(
-      `[DEBUG recvPacket] ${context} verify_membership merkle_path=${params.pathKeyPath.join(' | ')}`,
+      () => `[DEBUG recvPacket] ${context} verify_membership merkle_path=${params.pathKeyPath.join(' | ')}`,
     );
     const computedRoots: Array<string | null> = [];
     proofs.forEach((proofItem: any, index: number) => {
@@ -451,10 +414,10 @@ export class PacketService {
           ? exist.path.map((innerOp: any) => this.checkAgainstSpecInnerOp(innerOp, spec, isIavlSpec))
           : [];
         this.logRecvPacketDebug(
-          `[DEBUG recvPacket] ${context} verify_membership proof[${index}] exist key=${exist.key} value=${exist.value} leaf_prefix=${exist.leaf?.prefix ?? 'n/a'} leaf_hash=${exist.leaf?.hash ?? 'n/a'} prehash_key=${exist.leaf?.prehash_key ?? 'n/a'} prehash_value=${exist.leaf?.prehash_value ?? 'n/a'} length=${exist.leaf?.length ?? 'n/a'} inner_ops=${exist.path?.length ?? 0} computed_root=${computedRoot ?? 'n/a'}`,
+          () => `[DEBUG recvPacket] ${context} verify_membership proof[${index}] exist key=${exist.key} value=${exist.value} leaf_prefix=${exist.leaf?.prefix ?? 'n/a'} leaf_hash=${exist.leaf?.hash ?? 'n/a'} prehash_key=${exist.leaf?.prehash_key ?? 'n/a'} prehash_value=${exist.leaf?.prehash_value ?? 'n/a'} length=${exist.leaf?.length ?? 'n/a'} inner_ops=${exist.path?.length ?? 0} computed_root=${computedRoot ?? 'n/a'}`,
         );
         this.logRecvPacketDebug(
-          `[DEBUG recvPacket] ${context} verify_membership proof[${index}] spec_checks leaf=${leafCheck} inner=${innerChecks.every(Boolean)} inner_detail=${innerChecks.join(',')}`,
+          () => `[DEBUG recvPacket] ${context} verify_membership proof[${index}] spec_checks leaf=${leafCheck} inner=${innerChecks.every(Boolean)} inner_detail=${innerChecks.join(',')}`,
         );
         return;
       }
@@ -462,14 +425,14 @@ export class PacketService {
       if (nonexist) {
         computedRoots[index] = null;
         this.logRecvPacketDebug(
-          `[DEBUG recvPacket] ${context} verify_membership proof[${index}] nonexist key=${nonexist.key} left_key=${nonexist.left?.key ?? 'n/a'} right_key=${nonexist.right?.key ?? 'n/a'}`,
+          () => `[DEBUG recvPacket] ${context} verify_membership proof[${index}] nonexist key=${nonexist.key} left_key=${nonexist.left?.key ?? 'n/a'} right_key=${nonexist.right?.key ?? 'n/a'}`,
         );
         return;
       }
 
       computedRoots[index] = null;
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} verify_membership proof[${index}] kind=${String(proofKind)}`,
+        () => `[DEBUG recvPacket] ${context} verify_membership proof[${index}] kind=${String(proofKind)}`,
       );
     });
     if (computedRoots.length >= 2 && computedRoots[0]) {
@@ -480,32 +443,32 @@ export class PacketService {
           ? proofs[1].proof.CommitmentProof_Exist.exist?.value
           : null;
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} verify_membership proof_chain_match=${computedRoots[0] === secondProofValue} proof0_root=${computedRoots[0]} proof1_value=${secondProofValue ?? 'n/a'}`,
+        () => `[DEBUG recvPacket] ${context} verify_membership proof_chain_match=${computedRoots[0] === secondProofValue} proof0_root=${computedRoots[0]} proof1_value=${secondProofValue ?? 'n/a'}`,
       );
     }
     const finalComputedRoot = computedRoots[computedRoots.length - 1];
     if (finalComputedRoot) {
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} verify_membership consensus_root_match=${finalComputedRoot === params.consensusRoot} final_proof_root=${finalComputedRoot}`,
+        () => `[DEBUG recvPacket] ${context} verify_membership consensus_root_match=${finalComputedRoot === params.consensusRoot} final_proof_root=${finalComputedRoot}`,
       );
     }
 
     if (existenceProof) {
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} verify_membership existence key=${existenceProof.key} value=${existenceProof.value} expected_value=${params.expectedValue} value_match=${existenceProof.value === params.expectedValue} inner_ops=${existenceProof.path.length}`,
+        () => `[DEBUG recvPacket] ${context} verify_membership existence key=${existenceProof.key} value=${existenceProof.value} expected_value=${params.expectedValue} value_match=${existenceProof.value === params.expectedValue} inner_ops=${existenceProof.path.length}`,
       );
       return;
     }
 
     if (nonExistenceProof) {
       this.logRecvPacketDebug(
-        `[DEBUG recvPacket] ${context} verify_membership nonexist key=${nonExistenceProof.key} left_key=${nonExistenceProof.left?.key ?? 'n/a'} right_key=${nonExistenceProof.right?.key ?? 'n/a'}`,
+        () => `[DEBUG recvPacket] ${context} verify_membership nonexist key=${nonExistenceProof.key} left_key=${nonExistenceProof.left?.key ?? 'n/a'} right_key=${nonExistenceProof.right?.key ?? 'n/a'}`,
       );
       return;
     }
 
     this.logRecvPacketDebug(
-      `[DEBUG recvPacket] ${context} verify_membership first_proof_kind=${String(firstProof)}`,
+      () => `[DEBUG recvPacket] ${context} verify_membership first_proof_kind=${String(firstProof)}`,
     );
   }
 
@@ -1364,10 +1327,10 @@ export class PacketService {
       return response;
     } catch (error) {
       this.logger.error(`recvPacket: ${error}`);
-      this.logger.error(`[DEBUG recvPacket] error.inspect=${inspect(error, { depth: 8, breakLength: 120 })}`);
+      this.logRecvPacketDebug(() => `[DEBUG recvPacket] error.inspect=${inspect(error, { depth: 8, breakLength: 120 })}`);
       const cause = (error as { cause?: unknown })?.cause;
       if (cause) {
-        this.logger.error(`[DEBUG recvPacket] error.cause=${inspect(cause, { depth: 8, breakLength: 120 })}`);
+        this.logRecvPacketDebug(() => `[DEBUG recvPacket] error.cause=${inspect(cause, { depth: 8, breakLength: 120 })}`);
       }
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
@@ -2506,7 +2469,6 @@ export class PacketService {
   async buildUnsignedSendPacketTx(
     sendPacketOperator: SendPacketOperator,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate; walletOverride?: { address: string; utxos: UTxO[] } }> {
-    let transferEscrowShardLookup: TransferEscrowShardLookup | undefined;
     return buildUnsignedSendPacketTxWithPackage(
       sendPacketOperator as SharedSendPacketOperator,
       {
@@ -2616,30 +2578,19 @@ export class PacketService {
           this.lucidService.findUtxoAtWithUnit(address, unit),
         tryFindUtxosAt: (address, options) =>
           this.lucidService.tryFindUtxosAt(address, options),
-        findTransferEscrowShard: async (channelId, packetDenom, denomToken, requiredAmount) => {
-          transferEscrowShardLookup = await this.findTransferEscrowShard(
+        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+          this.findTransferEscrowShard(
             channelId,
             packetDenom,
             denomToken,
             requiredAmount,
-          );
-          return transferEscrowShardLookup;
-        },
+          ),
         createUnsignedSendPacketBurnTx: (dto) =>
           this.lucidService.createUnsignedSendPacketBurnTx(
             dto as UnsignedSendPacketBurnDto,
           ),
-        createUnsignedSendPacketEscrowTx: (dto) => {
-          if (!transferEscrowShardLookup) {
-            throw new GrpcInternalException(
-              'Transfer escrow shard lookup was not completed before transaction assembly',
-            );
-          }
-          return this.lucidService.createUnsignedSendPacketEscrowTx({
-            ...dto,
-            transferModuleReferenceUtxo: transferEscrowShardLookup.transferModuleUtxo,
-          } as UnsignedSendPacketEscrowDto);
-        },
+        createUnsignedSendPacketEscrowTx: (dto) =>
+          this.lucidService.createUnsignedSendPacketEscrowTx(dto),
         invalidArgument: (message) =>
           new GrpcInvalidArgumentException(message),
         failedPrecondition: (message) =>
@@ -3535,67 +3486,14 @@ export class PacketService {
   private getSpendChannelAddress(): string {
     return this.configService.get('deployment').validators.spendChannel.address;
   }
-  private buildTransferEscrowDatum(channelId: string, packetDenom: string): TransferEscrowDatum {
-    return {
-      channel_id: channelId,
-      denom: packetDenom,
-    };
-  }
-  private async encodeTransferEscrowDatum(channelId: string, packetDenom: string): Promise<string> {
-    return this.lucidService.encode(
-      this.buildTransferEscrowDatum(channelId, packetDenom),
-      'transferEscrow',
-    );
-  }
-  private getTransferEscrowShardTokenName(channelId: string, packetDenom: string): string {
-    return transferEscrowShardTokenName(channelId, packetDenom);
-  }
-  private getTransferEscrowShardTokenUnit(channelId: string, packetDenom: string): string {
-    return (
-      this.configService.get('deployment').validators.mintTransferEscrowShard.scriptHash +
-      this.getTransferEscrowShardTokenName(channelId, packetDenom)
-    );
-  }
-  private escrowShardHasCanonicalAssets(
-    utxo: UTxO,
-    denomToken: string,
-    shardTokenUnit: string,
-  ): boolean {
-    return (
-      (utxo.assets?.[shardTokenUnit] ?? 0n) === 1n &&
-      Object.keys(utxo.assets ?? {}).every((unit) =>
-        unit === LOVELACE || unit === denomToken || unit === shardTokenUnit
-      )
-    );
-  }
-  private getTransferModuleRootFromAddressScan(utxos: UTxO[]): UTxO {
-    const transferModuleIdentifier = this.getTransferModuleIdentifier();
-    const holders = utxos.filter((utxo) =>
-      Object.prototype.hasOwnProperty.call(utxo.assets ?? {}, transferModuleIdentifier)
-    );
-    if (
-      holders.length !== 1 ||
-      (holders[0].assets?.[transferModuleIdentifier] ?? 0n) !== 1n
-    ) {
-      throw new GrpcFailedPreconditionException(
-        `Expected one canonical transfer-module registry root at the transfer module address, found ${holders.length}`,
-      );
-    }
-    return holders[0];
-  }
   private async findTransferModuleRootByAddressScan(): Promise<UTxO> {
     const transferModuleAddress = this.configService.get('deployment').modules.transfer.address;
     const utxos = await this.lucidService.findUtxoAt(transferModuleAddress);
-    return this.getTransferModuleRootFromAddressScan(utxos);
-  }
-  private getTransferEscrowRegistryRoot(tree: ICS23MerkleTree): string {
-    try {
-      return tree.getRoot();
-    } catch (error) {
-      throw new GrpcFailedPreconditionException(
-        `Transfer escrow shard registry Merkle path collision: ${error}`,
-      );
-    }
+    return getTransferModuleRootFromAddressScan(
+      utxos,
+      this.getTransferModuleIdentifier(),
+      (message) => new GrpcFailedPreconditionException(message),
+    );
   }
   private async findTransferEscrowShard(
     channelId: string,
@@ -3603,184 +3501,27 @@ export class PacketService {
     denomToken: string,
     requiredAmount?: bigint,
   ): Promise<TransferEscrowShardLookup> {
-    const encodedDatum = await this.encodeTransferEscrowDatum(channelId, packetDenom);
-    const shardTokenUnit = this.getTransferEscrowShardTokenUnit(channelId, packetDenom);
-    const canonicalRequestedDenom = escrowDenomTokenFromPacketDenom(packetDenom);
-    if (denomToken.trim().toLowerCase() !== canonicalRequestedDenom) {
-      throw new GrpcInvalidArgumentException(
-        `Requested asset ${denomToken} does not match escrow shard denom ${canonicalRequestedDenom}`,
-      );
-    }
     const deployment = this.configService.get('deployment');
-    const transferModuleAddress = deployment.modules.transfer.address;
-    const shardPolicyId = deployment.validators.mintTransferEscrowShard.scriptHash;
-    if (!/^[0-9a-f]{56}$/.test(shardPolicyId)) {
-      throw new GrpcFailedPreconditionException(
-        'Transfer escrow shard policy id must be a 28-byte lowercase hexadecimal string',
-      );
-    }
-
-    // A plural address query is authoritative for both membership and uniqueness.
-    // Provider failures intentionally propagate so an outage cannot look like absence.
-    const addressUtxos = await this.lucidService.findUtxoAt(transferModuleAddress);
-    const seenOutRefs = new Set<string>();
-    for (const utxo of addressUtxos) {
-      const outRef = this.toUtxoRef(utxo);
-      if (seenOutRefs.has(outRef)) {
-        throw new GrpcFailedPreconditionException(
-          `Transfer module address scan returned duplicate output ${outRef}`,
-        );
-      }
-      seenOutRefs.add(outRef);
-    }
-
-    const transferModuleUtxo = this.getTransferModuleRootFromAddressScan(addressUtxos);
-    let onChainRoot = '00'.repeat(32);
-    if (transferModuleUtxo.datum) {
-      try {
-        const moduleDatum = await this.lucidService.decodeDatum<TransferModuleDatum>(
-          transferModuleUtxo.datum,
-          'transferModule',
-        );
-        onChainRoot = moduleDatum.escrow_shard_registry_root;
-      } catch (error) {
-        throw new GrpcFailedPreconditionException(
-          `Malformed transfer-module registry datum: ${error}`,
-        );
-      }
-    }
-    if (!/^[0-9a-f]{64}$/.test(onChainRoot)) {
-      throw new GrpcFailedPreconditionException(
-        'Transfer-module escrow shard registry root must be 32 lowercase hexadecimal bytes',
-      );
-    }
-
-    const tree = new ICS23MerkleTree();
-    const canonicalShards = new Map<string, UTxO>();
-    for (const utxo of addressUtxos) {
-      const shardAssets = Object.entries(utxo.assets ?? {}).filter(([unit]) =>
-        unit.startsWith(shardPolicyId)
-      );
-      if (shardAssets.length === 0) continue;
-      if (shardAssets.length !== 1) {
-        throw new GrpcFailedPreconditionException(
-          `Malformed escrow shard holder ${this.toUtxoRef(utxo)}: expected one shard-policy asset`,
-        );
-      }
-
-      const [candidateUnit, candidateQuantity] = shardAssets[0];
-      if (
-        candidateUnit.length !== shardPolicyId.length + 56 ||
-        !/^[0-9a-f]+$/.test(candidateUnit) ||
-        candidateQuantity !== 1n ||
-        !utxo.datum
-      ) {
-        throw new GrpcFailedPreconditionException(
-          `Malformed escrow shard holder ${this.toUtxoRef(utxo)}`,
-        );
-      }
-      if (canonicalShards.has(candidateUnit)) {
-        throw new GrpcFailedPreconditionException(
-          `Duplicate escrow shard holders found for ${candidateUnit}`,
-        );
-      }
-
-      let datum: TransferEscrowDatum;
-      let canonicalDenomToken: string;
-      try {
-        datum = await this.lucidService.decodeDatum<TransferEscrowDatum>(
-          utxo.datum,
-          'transferEscrow',
-        );
-        canonicalDenomToken = escrowDenomTokenFromPacketDenom(datum.denom);
-      } catch (error) {
-        throw new GrpcFailedPreconditionException(
-          `Malformed escrow shard datum at ${this.toUtxoRef(utxo)}: ${error}`,
-        );
-      }
-
-      const canonicalTokenName = this.getTransferEscrowShardTokenName(
-        datum.channel_id,
-        datum.denom,
-      );
-      const canonicalUnit = shardPolicyId + canonicalTokenName;
-      const canonicalDatum = await this.encodeTransferEscrowDatum(
-        datum.channel_id,
-        datum.denom,
-      );
-      if (
-        candidateUnit !== canonicalUnit ||
-        utxo.datum !== canonicalDatum ||
-        !this.escrowShardHasCanonicalAssets(
-          utxo,
-          canonicalDenomToken,
-          canonicalUnit,
-        )
-      ) {
-        throw new GrpcFailedPreconditionException(
-          `Non-canonical escrow shard holder ${this.toUtxoRef(utxo)}`,
-        );
-      }
-
-      canonicalShards.set(canonicalUnit, utxo);
-      tree.set(
-        transferEscrowShardRegistryKey(canonicalTokenName),
-        TRANSFER_ESCROW_SHARD_REGISTERED_VALUE,
-      );
-    }
-
-    const reconstructedRoot = this.getTransferEscrowRegistryRoot(tree);
-    if (reconstructedRoot !== onChainRoot) {
-      throw new GrpcFailedPreconditionException(
-        `Transfer escrow shard registry root mismatch: datum=${onChainRoot}, reconstructed=${reconstructedRoot}`,
-      );
-    }
-
-    const shardTokenName = shardTokenUnit.slice(shardPolicyId.length);
-    const registryKey = transferEscrowShardRegistryKey(shardTokenName);
-    const registrySiblings = tree.getSiblings(registryKey).map((sibling) =>
-      sibling.toString('hex')
+    return findTransferEscrowShardWithPackage(
+      {
+        transferModuleAddress: deployment.modules.transfer.address,
+        transferModuleIdentifier: this.getTransferModuleIdentifier(),
+        shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
+        findUtxosAt: (address) => this.lucidService.findUtxoAt(address),
+        encodeTransferEscrowDatum: (datum) => this.lucidService.encode(datum, 'transferEscrow'),
+        decodeTransferEscrowDatum: (datum) =>
+          this.lucidService.decodeDatum<TransferEscrowDatum>(datum, 'transferEscrow'),
+        encodeTransferModuleDatum: (datum) => this.lucidService.encode(datum, 'transferModule'),
+        decodeTransferModuleDatum: (datum) =>
+          this.lucidService.decodeDatum<TransferModuleDatum>(datum, 'transferModule'),
+        invalidArgument: (message) => new GrpcInvalidArgumentException(message),
+        failedPrecondition: (message) => new GrpcFailedPreconditionException(message),
+      },
+      channelId,
+      packetDenom,
+      denomToken,
+      requiredAmount,
     );
-    const existingUtxo = canonicalShards.get(shardTokenUnit);
-    if (existingUtxo) {
-      if (existingUtxo.datum !== encodedDatum) {
-        throw new GrpcFailedPreconditionException(
-          `Escrow shard ${shardTokenUnit} does not match the requested channel and denom`,
-        );
-      }
-      if (
-        requiredAmount !== undefined &&
-        (existingUtxo.assets[canonicalRequestedDenom] ?? 0n) < requiredAmount
-      ) {
-        throw new GrpcInvalidArgumentException(
-          `Insufficient escrowed amount for ${canonicalRequestedDenom}`,
-        );
-      }
-      return {
-        kind: 'existing',
-        utxo: existingUtxo,
-        encodedDatum,
-        shardTokenUnit,
-        transferModuleUtxo,
-        registrySiblings,
-      };
-    }
-
-    const updatedTree = tree.clone();
-    updatedTree.set(registryKey, TRANSFER_ESCROW_SHARD_REGISTERED_VALUE);
-    const encodedUpdatedTransferModuleDatum = await this.lucidService.encode<TransferModuleDatum>(
-      { escrow_shard_registry_root: this.getTransferEscrowRegistryRoot(updatedTree) },
-      'transferModule',
-    );
-
-    return {
-      kind: 'missing',
-      encodedDatum,
-      shardTokenUnit,
-      transferModuleUtxo,
-      registrySiblings,
-      encodedUpdatedTransferModuleDatum,
-    };
   }
   private getTransferModuleIdentifier(): string {
     return this.configService.get('deployment').modules.transfer.identifier;

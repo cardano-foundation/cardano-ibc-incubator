@@ -1,10 +1,12 @@
 use ibc/core/ics_023_vector_commitments/ics23/ics23
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
-  CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
-  NonExistenceProof, ProofSpec,
+  CommitmentProof, CommitmentProof_Exist, CommitmentProof_Nonexist,
+  ExistenceProof, InnerOp, LeafOp, NonExistenceProof, ProofSpec,
 }
-use ibc/core/ics_023_vector_commitments/merkle.{MerklePath}
+use ibc/core/ics_023_vector_commitments/merkle.{
+  MerklePath, MerkleProof, MerkleRoot,
+}
 use ibc/core/ics_023_vector_commitments/merkle_prefix
 
 test test_apply_prefix() {
@@ -37,6 +39,61 @@ test test_get_key_fail_with_index_too_big() fail {
   let m_path =
     MerklePath { key_path: ["storePrefixKey", "pathone/pathtwo/paththree/key"] }
   merkle.get_key(m_path, 3) == "storePrefixKey"
+}
+
+fn null_nonexist_commitment_proof() -> CommitmentProof {
+  CommitmentProof {
+    proof: CommitmentProof_Nonexist {
+      non_exist: proofs.null_non_existance_proof(),
+    },
+  }
+}
+
+test test_verify_membership_rejects_two_nonexist_proofs() fail {
+  let value = #"01"
+
+  merkle.verify_membership(
+    MerkleProof {
+      proofs: [
+        null_nonexist_commitment_proof(),
+        null_nonexist_commitment_proof(),
+      ],
+    },
+    merkle.get_sdk_specs(),
+    MerkleRoot { hash: value },
+    MerklePath { key_path: ["store", "key"] },
+    value,
+  )
+}
+
+test test_verify_membership_rejects_nonexist_before_exist() fail {
+  let key = #"6b6579"
+  let value = #"76616c7565"
+  let exist_proof =
+    CommitmentProof {
+      proof: CommitmentProof_Exist {
+        exist: ExistenceProof {
+          key,
+          value,
+          leaf: LeafOp {
+            hash: 1,
+            prehash_key: 0,
+            prehash_value: 1,
+            length: 1,
+            prefix: #"000202",
+          },
+          path: [],
+        },
+      },
+    }
+
+  merkle.verify_membership(
+    MerkleProof { proofs: [null_nonexist_commitment_proof(), exist_proof] },
+    merkle.get_sdk_specs(),
+    MerkleRoot { hash: proof.calculate(exist_proof) },
+    MerklePath { key_path: ["store", key] },
+    value,
+  )
 }
 
 test test_verify_membership_success_exist_left_with_iavl_spec() {
