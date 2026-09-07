@@ -3286,6 +3286,7 @@ fn ensure_gateway_built(
         "cardano-ibc-trace-registry",
         "cardano-ibc-planner",
         "cardano-ibc-tx-builder",
+        "cardano-ibc-tx-builder-runtime",
     ] {
         let package_dir = project_root.join("packages").join(package_name);
 
@@ -3293,17 +3294,18 @@ fn ensure_gateway_built(
             continue;
         }
 
-        if package_dir.join("dist").exists() {
-            continue;
-        }
-
         if !package_dir.join("node_modules").exists() {
             execute_script(
                 &package_dir,
                 "npm",
-                vec!["install", "--package-lock=false"],
+                vec!["install", "--package-lock=false", "--legacy-peer-deps"],
                 None,
             )?;
+        }
+
+        // Tracked dist files still need the package's runtime dependencies.
+        if package_dir.join("dist").exists() {
+            continue;
         }
 
         execute_script(&package_dir, "npm", vec!["run", "build"], None)?;

@@ -14,6 +14,21 @@
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./ics23MerkleTree": { "types": "./dist/ics23MerkleTree.d.ts", "default": "./dist/ics23MerkleTree.js" },
+    "./ibcStateRoot": { "types": "./dist/ibcStateRoot.d.ts", "default": "./dist/ibcStateRoot.js" },
+    "./transferEscrowShard": { "types": "./dist/transferEscrowShard.d.ts", "default": "./dist/transferEscrowShard.js" },
+    "./sendPacketEscrow": { "types": "./dist/sendPacketEscrow.d.ts", "default": "./dist/sendPacketEscrow.js" }
+  },
+  "typesVersions": {
+    "*": {
+      "ics23MerkleTree": ["dist/ics23MerkleTree.d.ts"],
+      "ibcStateRoot": ["dist/ibcStateRoot.d.ts"],
+      "transferEscrowShard": ["dist/transferEscrowShard.d.ts"],
+      "sendPacketEscrow": ["dist/sendPacketEscrow.d.ts"]
+    }
+  },
   "files": [
     "dist",
     "!dist/*.test.*"

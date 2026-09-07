@@ -8,6 +8,8 @@ import {
   type UTxO,
 } from "@lucid-evolution/lucid";
 import { LUCID_CLIENT, LUCID_IMPORTER } from "./lucid.provider";
+import type { UnsignedSendPacketEscrowTxInput } from "@cardano-ibc/tx-builder";
+import { createUnsignedSendPacketEscrowTx } from "@cardano-ibc/tx-builder-runtime/sendPacketEscrow";
 import {
   CHANNEL_TOKEN_PREFIX,
   CLIENT_PREFIX,
@@ -104,7 +106,6 @@ import {
   UnsignedRecvPacketUnescrowDto,
   UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
-  UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
 } from "./dtos";
@@ -2478,106 +2479,18 @@ export class LucidService implements OnModuleInit {
   }
 
   public createUnsignedSendPacketEscrowTx(
-    dto: UnsignedSendPacketEscrowDto,
+    dto: UnsignedSendPacketEscrowTxInput,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-    // Guardrail: escrow path is expected to be user-funded, missing wallet UTxOs
-    // should fail immediately
-    if (!dto.walletUtxos || dto.walletUtxos.length === 0) {
-      throw new GrpcInternalException(
-        "Sender wallet UTxOs are required for escrow send packet",
-      );
-    }
-    const tx: TxBuilder = this.newTxBuilder();
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintTransferEscrowShard,
-      this.referenceScripts.sendPacket,
-      this.referenceScripts.hostStateStt,
-    ])
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-      .readFrom([dto.connectionUTxO, dto.clientUTxO])
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: "inline",
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        {
-          [hostStateNFT]: 1n,
-        },
-      )
-      .pay.ToContract(
-        dto.spendChannelAddress,
-        {
-          kind: "inline",
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
-      )
-      .mintAssets(
-        {
-          [dto.sendPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      );
-
-    if (dto.transferEscrowUtxo) {
-      tx
-        .readFrom([dto.transferModuleReferenceUtxo])
-        .collectFrom(
-          [dto.transferEscrowUtxo],
-          dto.encodedSpendTransferModuleRedeemer,
-        );
-    } else {
-      if (
-        !dto.transferEscrowShardTokenUnit ||
-        !dto.encodedMintTransferEscrowShardRedeemer ||
-        !dto.encodedUpdatedTransferModuleDatum
-      ) {
-        throw new GrpcInternalException(
-          "Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard",
-        );
-      }
-      tx
-        .collectFrom(
-          [dto.transferModuleReferenceUtxo],
-          dto.encodedSpendTransferModuleRedeemer,
-        )
-        .mintAssets(
-          { [dto.transferEscrowShardTokenUnit]: 1n },
-          dto.encodedMintTransferEscrowShardRedeemer,
-        );
-      this.payModuleUtxo(
-        tx,
-        "transfer",
-        dto.transferModuleReferenceUtxo,
-        dto.encodedUpdatedTransferModuleDatum,
-      );
-    }
-
-    this.payTransferEscrowDelta(
-      tx,
-      dto.transferModuleAddress,
-      this.requireTransferEscrowDatum(dto.encodedTransferEscrowDatum),
-      dto.transferAmount,
-      dto.denomToken,
-      dto.transferEscrowUtxo,
-      dto.transferEscrowShardTokenUnit,
-    );
-
-    return tx;
+    return createUnsignedSendPacketEscrowTx({
+      newTx: () => this.newTxBuilder(),
+      hostStateAddress: deploymentConfig.validators.hostStateStt.address,
+      hostStateTokenUnit: deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name,
+      transferModuleRootAddress: deploymentConfig.modules.transfer.address,
+      referenceScripts: this.referenceScripts,
+      encodeAuthToken: (token) => encodeAuthToken(token, this.LucidImporter),
+      internalError: (message) => new GrpcInternalException(message),
+    }, dto);
   }
 
   public createUnsignedSendPacketModuleTx(

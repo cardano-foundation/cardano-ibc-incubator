@@ -84,7 +84,6 @@ import {
   UnsignedPrunePacketHistoryDto,
   UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
-  UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
 } from '~@/shared/modules/lucid/dtos';
@@ -121,31 +120,11 @@ import {
   decodeIcs20PacketDataForCodec,
   stringifyIcs20PacketDataForCodec,
 } from '../shared/helpers/ics20-packet-codec';
-import { ICS23MerkleTree } from '@shared/helpers/ics23-merkle-tree';
 import {
-  escrowDenomTokenFromPacketDenom,
-  TRANSFER_ESCROW_SHARD_REGISTERED_VALUE,
-  transferEscrowShardRegistryKey,
-  transferEscrowShardTokenName,
-} from '@shared/helpers/transfer-escrow-shard';
-
-type TransferEscrowShardLookup =
-  | {
-      kind: 'existing';
-      utxo: UTxO;
-      encodedDatum: string;
-      shardTokenUnit: string;
-      transferModuleUtxo: UTxO;
-      registrySiblings: string[];
-    }
-  | {
-      kind: 'missing';
-      encodedDatum: string;
-      shardTokenUnit: string;
-      transferModuleUtxo: UTxO;
-      registrySiblings: string[];
-      encodedUpdatedTransferModuleDatum: string;
-    };
+  findTransferEscrowShard as findTransferEscrowShardWithPackage,
+  getTransferModuleRootFromAddressScan,
+  type TransferEscrowShardLookup,
+} from '@cardano-ibc/tx-builder-runtime/transferEscrowShard';
 
 @Injectable()
 export class PacketService {
@@ -2506,7 +2485,6 @@ export class PacketService {
   async buildUnsignedSendPacketTx(
     sendPacketOperator: SendPacketOperator,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate; walletOverride?: { address: string; utxos: UTxO[] } }> {
-    let transferEscrowShardLookup: TransferEscrowShardLookup | undefined;
     return buildUnsignedSendPacketTxWithPackage(
       sendPacketOperator as SharedSendPacketOperator,
       {
@@ -2616,30 +2594,19 @@ export class PacketService {
           this.lucidService.findUtxoAtWithUnit(address, unit),
         tryFindUtxosAt: (address, options) =>
           this.lucidService.tryFindUtxosAt(address, options),
-        findTransferEscrowShard: async (channelId, packetDenom, denomToken, requiredAmount) => {
-          transferEscrowShardLookup = await this.findTransferEscrowShard(
+        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+          this.findTransferEscrowShard(
             channelId,
             packetDenom,
             denomToken,
             requiredAmount,
-          );
-          return transferEscrowShardLookup;
-        },
+          ),
         createUnsignedSendPacketBurnTx: (dto) =>
           this.lucidService.createUnsignedSendPacketBurnTx(
             dto as UnsignedSendPacketBurnDto,
           ),
-        createUnsignedSendPacketEscrowTx: (dto) => {
-          if (!transferEscrowShardLookup) {
-            throw new GrpcInternalException(
-              'Transfer escrow shard lookup was not completed before transaction assembly',
-            );
-          }
-          return this.lucidService.createUnsignedSendPacketEscrowTx({
-            ...dto,
-            transferModuleReferenceUtxo: transferEscrowShardLookup.transferModuleUtxo,
-          } as UnsignedSendPacketEscrowDto);
-        },
+        createUnsignedSendPacketEscrowTx: (dto) =>
+          this.lucidService.createUnsignedSendPacketEscrowTx(dto),
         invalidArgument: (message) =>
           new GrpcInvalidArgumentException(message),
         failedPrecondition: (message) =>
@@ -3535,67 +3502,14 @@ export class PacketService {
   private getSpendChannelAddress(): string {
     return this.configService.get('deployment').validators.spendChannel.address;
   }
-  private buildTransferEscrowDatum(channelId: string, packetDenom: string): TransferEscrowDatum {
-    return {
-      channel_id: channelId,
-      denom: packetDenom,
-    };
-  }
-  private async encodeTransferEscrowDatum(channelId: string, packetDenom: string): Promise<string> {
-    return this.lucidService.encode(
-      this.buildTransferEscrowDatum(channelId, packetDenom),
-      'transferEscrow',
-    );
-  }
-  private getTransferEscrowShardTokenName(channelId: string, packetDenom: string): string {
-    return transferEscrowShardTokenName(channelId, packetDenom);
-  }
-  private getTransferEscrowShardTokenUnit(channelId: string, packetDenom: string): string {
-    return (
-      this.configService.get('deployment').validators.mintTransferEscrowShard.scriptHash +
-      this.getTransferEscrowShardTokenName(channelId, packetDenom)
-    );
-  }
-  private escrowShardHasCanonicalAssets(
-    utxo: UTxO,
-    denomToken: string,
-    shardTokenUnit: string,
-  ): boolean {
-    return (
-      (utxo.assets?.[shardTokenUnit] ?? 0n) === 1n &&
-      Object.keys(utxo.assets ?? {}).every((unit) =>
-        unit === LOVELACE || unit === denomToken || unit === shardTokenUnit
-      )
-    );
-  }
-  private getTransferModuleRootFromAddressScan(utxos: UTxO[]): UTxO {
-    const transferModuleIdentifier = this.getTransferModuleIdentifier();
-    const holders = utxos.filter((utxo) =>
-      Object.prototype.hasOwnProperty.call(utxo.assets ?? {}, transferModuleIdentifier)
-    );
-    if (
-      holders.length !== 1 ||
-      (holders[0].assets?.[transferModuleIdentifier] ?? 0n) !== 1n
-    ) {
-      throw new GrpcFailedPreconditionException(
-        `Expected one canonical transfer-module registry root at the transfer module address, found ${holders.length}`,
-      );
-    }
-    return holders[0];
-  }
   private async findTransferModuleRootByAddressScan(): Promise<UTxO> {
     const transferModuleAddress = this.configService.get('deployment').modules.transfer.address;
     const utxos = await this.lucidService.findUtxoAt(transferModuleAddress);
-    return this.getTransferModuleRootFromAddressScan(utxos);
-  }
-  private getTransferEscrowRegistryRoot(tree: ICS23MerkleTree): string {
-    try {
-      return tree.getRoot();
-    } catch (error) {
-      throw new GrpcFailedPreconditionException(
-        `Transfer escrow shard registry Merkle path collision: ${error}`,
-      );
-    }
+    return getTransferModuleRootFromAddressScan(
+      utxos,
+      this.getTransferModuleIdentifier(),
+      (message) => new GrpcFailedPreconditionException(message),
+    );
   }
   private async findTransferEscrowShard(
     channelId: string,
@@ -3603,184 +3517,27 @@ export class PacketService {
     denomToken: string,
     requiredAmount?: bigint,
   ): Promise<TransferEscrowShardLookup> {
-    const encodedDatum = await this.encodeTransferEscrowDatum(channelId, packetDenom);
-    const shardTokenUnit = this.getTransferEscrowShardTokenUnit(channelId, packetDenom);
-    const canonicalRequestedDenom = escrowDenomTokenFromPacketDenom(packetDenom);
-    if (denomToken.trim().toLowerCase() !== canonicalRequestedDenom) {
-      throw new GrpcInvalidArgumentException(
-        `Requested asset ${denomToken} does not match escrow shard denom ${canonicalRequestedDenom}`,
-      );
-    }
     const deployment = this.configService.get('deployment');
-    const transferModuleAddress = deployment.modules.transfer.address;
-    const shardPolicyId = deployment.validators.mintTransferEscrowShard.scriptHash;
-    if (!/^[0-9a-f]{56}$/.test(shardPolicyId)) {
-      throw new GrpcFailedPreconditionException(
-        'Transfer escrow shard policy id must be a 28-byte lowercase hexadecimal string',
-      );
-    }
-
-    // A plural address query is authoritative for both membership and uniqueness.
-    // Provider failures intentionally propagate so an outage cannot look like absence.
-    const addressUtxos = await this.lucidService.findUtxoAt(transferModuleAddress);
-    const seenOutRefs = new Set<string>();
-    for (const utxo of addressUtxos) {
-      const outRef = this.toUtxoRef(utxo);
-      if (seenOutRefs.has(outRef)) {
-        throw new GrpcFailedPreconditionException(
-          `Transfer module address scan returned duplicate output ${outRef}`,
-        );
-      }
-      seenOutRefs.add(outRef);
-    }
-
-    const transferModuleUtxo = this.getTransferModuleRootFromAddressScan(addressUtxos);
-    let onChainRoot = '00'.repeat(32);
-    if (transferModuleUtxo.datum) {
-      try {
-        const moduleDatum = await this.lucidService.decodeDatum<TransferModuleDatum>(
-          transferModuleUtxo.datum,
-          'transferModule',
-        );
-        onChainRoot = moduleDatum.escrow_shard_registry_root;
-      } catch (error) {
-        throw new GrpcFailedPreconditionException(
-          `Malformed transfer-module registry datum: ${error}`,
-        );
-      }
-    }
-    if (!/^[0-9a-f]{64}$/.test(onChainRoot)) {
-      throw new GrpcFailedPreconditionException(
-        'Transfer-module escrow shard registry root must be 32 lowercase hexadecimal bytes',
-      );
-    }
-
-    const tree = new ICS23MerkleTree();
-    const canonicalShards = new Map<string, UTxO>();
-    for (const utxo of addressUtxos) {
-      const shardAssets = Object.entries(utxo.assets ?? {}).filter(([unit]) =>
-        unit.startsWith(shardPolicyId)
-      );
-      if (shardAssets.length === 0) continue;
-      if (shardAssets.length !== 1) {
-        throw new GrpcFailedPreconditionException(
-          `Malformed escrow shard holder ${this.toUtxoRef(utxo)}: expected one shard-policy asset`,
-        );
-      }
-
-      const [candidateUnit, candidateQuantity] = shardAssets[0];
-      if (
-        candidateUnit.length !== shardPolicyId.length + 56 ||
-        !/^[0-9a-f]+$/.test(candidateUnit) ||
-        candidateQuantity !== 1n ||
-        !utxo.datum
-      ) {
-        throw new GrpcFailedPreconditionException(
-          `Malformed escrow shard holder ${this.toUtxoRef(utxo)}`,
-        );
-      }
-      if (canonicalShards.has(candidateUnit)) {
-        throw new GrpcFailedPreconditionException(
-          `Duplicate escrow shard holders found for ${candidateUnit}`,
-        );
-      }
-
-      let datum: TransferEscrowDatum;
-      let canonicalDenomToken: string;
-      try {
-        datum = await this.lucidService.decodeDatum<TransferEscrowDatum>(
-          utxo.datum,
-          'transferEscrow',
-        );
-        canonicalDenomToken = escrowDenomTokenFromPacketDenom(datum.denom);
-      } catch (error) {
-        throw new GrpcFailedPreconditionException(
-          `Malformed escrow shard datum at ${this.toUtxoRef(utxo)}: ${error}`,
-        );
-      }
-
-      const canonicalTokenName = this.getTransferEscrowShardTokenName(
-        datum.channel_id,
-        datum.denom,
-      );
-      const canonicalUnit = shardPolicyId + canonicalTokenName;
-      const canonicalDatum = await this.encodeTransferEscrowDatum(
-        datum.channel_id,
-        datum.denom,
-      );
-      if (
-        candidateUnit !== canonicalUnit ||
-        utxo.datum !== canonicalDatum ||
-        !this.escrowShardHasCanonicalAssets(
-          utxo,
-          canonicalDenomToken,
-          canonicalUnit,
-        )
-      ) {
-        throw new GrpcFailedPreconditionException(
-          `Non-canonical escrow shard holder ${this.toUtxoRef(utxo)}`,
-        );
-      }
-
-      canonicalShards.set(canonicalUnit, utxo);
-      tree.set(
-        transferEscrowShardRegistryKey(canonicalTokenName),
-        TRANSFER_ESCROW_SHARD_REGISTERED_VALUE,
-      );
-    }
-
-    const reconstructedRoot = this.getTransferEscrowRegistryRoot(tree);
-    if (reconstructedRoot !== onChainRoot) {
-      throw new GrpcFailedPreconditionException(
-        `Transfer escrow shard registry root mismatch: datum=${onChainRoot}, reconstructed=${reconstructedRoot}`,
-      );
-    }
-
-    const shardTokenName = shardTokenUnit.slice(shardPolicyId.length);
-    const registryKey = transferEscrowShardRegistryKey(shardTokenName);
-    const registrySiblings = tree.getSiblings(registryKey).map((sibling) =>
-      sibling.toString('hex')
+    return findTransferEscrowShardWithPackage(
+      {
+        transferModuleAddress: deployment.modules.transfer.address,
+        transferModuleIdentifier: this.getTransferModuleIdentifier(),
+        shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
+        findUtxosAt: (address) => this.lucidService.findUtxoAt(address),
+        encodeTransferEscrowDatum: (datum) => this.lucidService.encode(datum, 'transferEscrow'),
+        decodeTransferEscrowDatum: (datum) =>
+          this.lucidService.decodeDatum<TransferEscrowDatum>(datum, 'transferEscrow'),
+        encodeTransferModuleDatum: (datum) => this.lucidService.encode(datum, 'transferModule'),
+        decodeTransferModuleDatum: (datum) =>
+          this.lucidService.decodeDatum<TransferModuleDatum>(datum, 'transferModule'),
+        invalidArgument: (message) => new GrpcInvalidArgumentException(message),
+        failedPrecondition: (message) => new GrpcFailedPreconditionException(message),
+      },
+      channelId,
+      packetDenom,
+      denomToken,
+      requiredAmount,
     );
-    const existingUtxo = canonicalShards.get(shardTokenUnit);
-    if (existingUtxo) {
-      if (existingUtxo.datum !== encodedDatum) {
-        throw new GrpcFailedPreconditionException(
-          `Escrow shard ${shardTokenUnit} does not match the requested channel and denom`,
-        );
-      }
-      if (
-        requiredAmount !== undefined &&
-        (existingUtxo.assets[canonicalRequestedDenom] ?? 0n) < requiredAmount
-      ) {
-        throw new GrpcInvalidArgumentException(
-          `Insufficient escrowed amount for ${canonicalRequestedDenom}`,
-        );
-      }
-      return {
-        kind: 'existing',
-        utxo: existingUtxo,
-        encodedDatum,
-        shardTokenUnit,
-        transferModuleUtxo,
-        registrySiblings,
-      };
-    }
-
-    const updatedTree = tree.clone();
-    updatedTree.set(registryKey, TRANSFER_ESCROW_SHARD_REGISTERED_VALUE);
-    const encodedUpdatedTransferModuleDatum = await this.lucidService.encode<TransferModuleDatum>(
-      { escrow_shard_registry_root: this.getTransferEscrowRegistryRoot(updatedTree) },
-      'transferModule',
-    );
-
-    return {
-      kind: 'missing',
-      encodedDatum,
-      shardTokenUnit,
-      transferModuleUtxo,
-      registrySiblings,
-      encodedUpdatedTransferModuleDatum,
-    };
   }
   private getTransferModuleIdentifier(): string {
     return this.configService.get('deployment').modules.transfer.identifier;

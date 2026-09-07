@@ -124,19 +124,4 @@ export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof
   return Data.from(hostStateDatum, THostStateDatum);
 }
 
-export async function encodeModuleRegistration(
-  registration: ModuleRegistration,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-): Promise<string> {
-  const { Data } = Lucid;
-  const AuthTokenSchema = Data.Object({
-    policy_id: Data.Bytes(),
-    name: Data.Bytes(),
-  });
-  const ModuleRegistrationSchema = Data.Object({
-    module_script_hash: Data.Bytes(),
-    port_token: AuthTokenSchema,
-    module_token: AuthTokenSchema,
-  });
-  return Data.to(registration as never, ModuleRegistrationSchema as never);
-}
+export { encodeModuleRegistration } from '@cardano-ibc/tx-builder-runtime/ibcStateRoot';
