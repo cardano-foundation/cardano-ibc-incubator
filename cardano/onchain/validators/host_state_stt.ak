@@ -5,7 +5,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId}
+use cardano/assets.{AssetName, PolicyId, quantity_of}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -1003,23 +1003,28 @@ validator host_state_stt(
 
     // 4. Validate state transition based on operation.
     when redeemer is {
-      FinalizeShutdown -> and {
+      FinalizeShutdown -> {
+        let Transaction { mint, .. } = transaction
+        and {
           list.has(extra_signatories, old_datum.deployer),
           validate_finalize_shutdown(
             old_datum,
             validator_utils.get_tx_valid_from(validity_range),
           ),
+          validator_utils.require_exact_marker_mint(
+            mint,
+            nft_policy,
+            host_state_token_name,
+            -1,
+          ),
           !list.any(
             outputs,
             fn(output) {
-              output.address == host_input.output.address && assets.has_nft(
-                output.value,
-                nft_policy,
-                host_state_token_name,
-              )
+              quantity_of(output.value, nft_policy, host_state_token_name) != 0
             },
           ),
         }
+      }
       _ -> {
         // Non-final transitions must re-create exactly one HostState UTxO.
         let host_output = find_host_state_output(outputs, nft_policy)
