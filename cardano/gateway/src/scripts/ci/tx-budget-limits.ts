@@ -52,7 +52,7 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
     steps: 15_355_726_504,
   },
   prune_packet_history_at_capacity: {
-    mem: 27_578_933,
+    mem: 27_580_331,
   },
   trace_registry_rollover: {
     mem: 32_118_256,

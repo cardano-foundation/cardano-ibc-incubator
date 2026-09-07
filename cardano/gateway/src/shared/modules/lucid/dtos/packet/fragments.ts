@@ -51,10 +51,6 @@ export type WithTransferEscrowShard = {
   transferEscrowShardTokenUnit?: string;
 };
 
-export type WithTransferModuleRegistryUpdate = {
-  encodedUpdatedTransferModuleDatum?: string;
-};
-
 export type WithChannelSpend = {
   encodedSpendChannelRedeemer: string;
   encodedUpdatedChannelDatum: string;
@@ -75,10 +71,6 @@ export type WithModuleSpend = {
 
 export type WithMintVoucherRedeemer = {
   encodedMintVoucherRedeemer: string;
-};
-
-export type WithMintTransferEscrowShardRedeemer = {
-  encodedMintTransferEscrowShardRedeemer?: string;
 };
 
 export type WithVoucherMetadataOutput = {

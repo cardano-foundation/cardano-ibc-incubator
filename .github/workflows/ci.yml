@@ -373,9 +373,9 @@ jobs:
       - name: Prune package-local installs for gateway
         run: |
           rm -rf packages/cardano-ibc-planner/node_modules
-          rm -rf packages/cardano-ibc-tx-builder-runtime/node_modules
           npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev --legacy-peer-deps
           npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
 
       - name: Install dependencies
         run: npm ci --prefix cardano/gateway --legacy-peer-deps
@@ -831,6 +831,9 @@ jobs:
           cache-dependency-path: |
             cardano/gateway/package-lock.json
             proto-types/package-lock.json
+            packages/cardano-ibc-tx-builder/package-lock.json
+            packages/cardano-ibc-trace-registry/package-lock.json
+            packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -904,8 +907,12 @@ jobs:
           npm ci --prefix proto-types
           npm run --prefix proto-types build
 
-      - name: Install gateway dependencies
-        run: npm ci --prefix cardano/gateway --legacy-peer-deps
+      - name: Install gateway and runtime dependencies
+        run: |
+          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
+          npm ci --prefix cardano/gateway --legacy-peer-deps
 
       - name: Check frozen Tendermint capacity fixture
         run: npm run --prefix cardano/gateway check:tendermint-update-capacity-fixture

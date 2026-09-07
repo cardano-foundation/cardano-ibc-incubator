@@ -27,6 +27,12 @@ COPY ./manifests /usr/src/app/manifests
 RUN npm install --package-lock=false --prefix /usr/packages/cardano-ibc-trace-registry \
   && npm run --prefix /usr/packages/cardano-ibc-trace-registry build
 
+RUN npm ci --prefix /usr/packages/cardano-ibc-tx-builder --legacy-peer-deps \
+  && npm run --prefix /usr/packages/cardano-ibc-tx-builder build \
+  && npm ci --prefix /usr/packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps \
+  && npm run --prefix /usr/packages/cardano-ibc-tx-builder-runtime build \
+  && npm prune --prefix /usr/packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
+
 # Install app dependencies
 RUN npm ci --legacy-peer-deps
 
