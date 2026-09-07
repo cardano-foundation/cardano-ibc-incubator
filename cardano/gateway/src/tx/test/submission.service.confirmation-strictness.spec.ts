@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { SubmissionService } from '../submission.service';
 
 describe('SubmissionService confirmation strictness regressions', () => {
@@ -82,6 +83,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
       ibcTreeCacheServiceMock as any,
       historyServiceMock as any,
       queryServiceMock as any,
+      createTestTreeStore(),
     );
   });
 

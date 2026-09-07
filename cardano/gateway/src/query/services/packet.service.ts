@@ -51,7 +51,7 @@ import {
   GrpcNotFoundException,
 } from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
@@ -77,6 +77,7 @@ export class PacketService {
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   private async ensureTreeAligned(): Promise<void> {
@@ -88,12 +89,12 @@ export class PacketService {
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const onChainRoot = hostStateDatum.state.ibc_state_root;
 
-    if (isTreeAligned(onChainRoot)) return;
+    if (this.ibcTreeStore.isTreeAligned(onChainRoot)) return;
 
     this.logger.warn(
       `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
     );
-    await alignTreeWithChain();
+    await this.ibcTreeStore.alignTreeWithChain();
   }
 
   private async getProofHeight(): Promise<bigint> {
@@ -324,7 +325,7 @@ export class PacketService {
     // Generate ICS-23 proof from the IBC state tree
     // Path: acks/ports/{portId}/channels/{channelId}/sequences/{sequence}
     const ibcPath = `acks/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
     let ackProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);
@@ -433,7 +434,7 @@ export class PacketService {
     // Generate ICS-23 proof from the IBC state tree
     // Path: commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}
     const ibcPath = `commitments/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
     let commitmentProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);
@@ -541,7 +542,7 @@ export class PacketService {
     // If received=true: ExistenceProof showing receipt marker exists
     // If received=false: NonExistenceProof showing receipt marker doesn't exist
     const ibcPath = `receipts/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
     let receiptProof: Buffer;
     try {
       if (packetReceipt) {
@@ -671,7 +672,7 @@ export class PacketService {
     // This proves that the receipt does NOT exist (packet is unreceived)
     // Path: receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}
     const ibcPath = `receipts/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
     let unreceivedProof: Buffer;
     try {
       const nonExistenceProof = tree.generateNonExistenceProof(ibcPath);
@@ -716,7 +717,7 @@ export class PacketService {
     // Generate ICS-23 proof from the IBC state tree
     // Path: nextSequenceRecv/ports/{portId}/channels/{channelId}
     const ibcPath = `nextSequenceRecv/ports/${portId}/channels/channel-${channelId}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
     let nextSeqProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);
@@ -762,7 +763,7 @@ export class PacketService {
     // Generate ICS-23 proof from the IBC state tree
     // Path: nextSequenceAck/ports/{portId}/channels/{channelId}
     const ibcPath = `nextSequenceAck/ports/${portId}/channels/channel-${channelId}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
     let nextAckProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);

@@ -41,12 +41,7 @@ import {
 } from './helper/client.validate';
 import { sumLovelaceFromUtxos } from './helper/helper';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
-import {
-  computeRootWithCreateClientUpdate,
-  computeRootWithUpdateClientUpdate,
-  alignTreeWithChain,
-  isTreeAligned,
-} from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
@@ -62,6 +57,7 @@ export class ClientService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   private async refreshWalletContext(address: string, context: string): Promise<void> {
@@ -114,9 +110,9 @@ export class ClientService {
    * Call this before building transactions if the tree may be stale
    */
   private async ensureTreeAligned(onChainRoot: string): Promise<void> {
-    if (!isTreeAligned(onChainRoot)) {
+    if (!this.ibcTreeStore.isTreeAligned(onChainRoot)) {
       this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
-      await alignTreeWithChain();
+      await this.ibcTreeStore.alignTreeWithChain();
     }
   }
 
@@ -472,7 +468,7 @@ export class ClientService {
     );
 
     const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
-      computeRootWithUpdateClientUpdate(
+      this.ibcTreeStore.computeRootWithUpdateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         ibcClientId,
         newClientStateValue,
@@ -668,7 +664,7 @@ export class ClientService {
     );
 
     const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
-      computeRootWithUpdateClientUpdate(
+      this.ibcTreeStore.computeRootWithUpdateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         ibcClientId,
         newClientStateValue,
@@ -769,7 +765,7 @@ export class ClientService {
     );
 
     const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
-      computeRootWithCreateClientUpdate(
+      this.ibcTreeStore.computeRootWithCreateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         clientId,
         clientStateValue,

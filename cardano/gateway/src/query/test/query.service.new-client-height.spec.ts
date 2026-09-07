@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
@@ -70,6 +71,7 @@ describe('QueryService new client height strictness', () => {
       mithrilServiceMock as unknown as MithrilService,
       {} as DenomTraceService,
       {} as any,
+      createTestTreeStore(),
     );
   });
 

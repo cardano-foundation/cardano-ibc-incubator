@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { IbcTreePendingUpdatesService } from '../../shared/services/ibc-tree-pending-updates.service';
 import { SubmissionService } from '../submission.service';
 
@@ -114,6 +115,7 @@ describe('SubmissionService ObserveTx', () => {
       { saveAliases: jest.fn() } as any,
       historyService as any,
       queryService as any,
+      createTestTreeStore(),
     );
   });
 

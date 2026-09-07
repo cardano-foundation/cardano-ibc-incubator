@@ -121,7 +121,7 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
-import { getCurrentTree, isTreeAligned, alignTreeWithChain } from '../../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import {
   QueryDenomRequest,
@@ -219,6 +219,7 @@ export class QueryService {
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
     @Optional() @Inject(MetricsService) metricsService?: MetricsService,
   ) {
     this.txRedeemerCache = new BoundedCache({
@@ -289,7 +290,7 @@ export class QueryService {
 
     // Check if our in-memory tree matches the on-chain commitment.
     // If it does, we're good to go - proofs generated from our tree will verify correctly.
-    if (isTreeAligned(onChainRoot)) {
+    if (this.ibcTreeStore.isTreeAligned(onChainRoot)) {
       this.logger.debug(`Tree aligned with on-chain root ${onChainRoot.substring(0, 16)}...`);
       return;
     }
@@ -302,7 +303,7 @@ export class QueryService {
 
     // alignTreeWithChain() queries all IBC UTXOs (clients, connections, channels)
     // and rebuilds the Merkle tree from scratch. This is expensive but necessary.
-    const result = await alignTreeWithChain();
+    const result = await this.ibcTreeStore.alignTreeWithChain();
 
     this.logger.log(`Tree rebuilt successfully, new root: ${result.root.substring(0, 16)}...`);
   }
@@ -789,7 +790,7 @@ export class QueryService {
       this.logger.debug(`[queryClientState] tree alignment completed in ${Date.now() - treeAlignmentStartedAt}ms`);
     }
 
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
 
     let clientProof: Buffer;
     try {
@@ -868,7 +869,7 @@ export class QueryService {
       await this.ensureTreeAligned();
     }
 
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
 
     let consensusProof: Buffer;
     try {

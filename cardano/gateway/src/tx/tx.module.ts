@@ -17,9 +17,10 @@ import { WalletContextService } from './wallet-context.service';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 import { GRPC_AUTH_TOKEN, GrpcAuthGuard, loadGrpcAuthToken } from '../security/grpc-auth.guard';
 import { HealthModule } from '../health/health.module';
+import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
 
 @Module({
-  imports: [LucidModule, QueryModule, KupoModule, HealthModule],
+  imports: [LucidModule, QueryModule, KupoModule, HealthModule, IbcTreeModule],
   controllers: [TxController],
   providers: [
     ClientService,

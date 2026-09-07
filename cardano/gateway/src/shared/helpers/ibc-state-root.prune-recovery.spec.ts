@@ -8,12 +8,7 @@ import { ConnectionDatum, encodeConnectionEndValue } from '../types/connection/c
 import { State as ConnectionState } from '../types/connection/state';
 import { encodeModuleRegistration } from '../types/host-state-datum';
 import { ICS23MerkleTree } from './ics23-merkle-tree';
-import {
-  computeRootWithHandlePacketUpdate,
-  getCurrentTree,
-  rebuildTreeFromChain,
-  setCurrentTree,
-} from './ibc-state-root';
+import { createTestTreeStore } from '../testing/ibc-tree-test-store';
 
 const toHex = (value: string): string => Buffer.from(value, 'utf8').toString('hex');
 const authAssetUnit = (policyByte: string, prefixByte: string, sequence: number): string =>
@@ -185,8 +180,8 @@ describe('IBC state root recovery after packet-history pruning', () => {
     };
 
     // Model complete loss of the Gateway's in-memory/off-chain tree.
-    setCurrentTree(new ICS23MerkleTree());
-    const rebuilt = await rebuildTreeFromChain(kupoService, lucidService);
+    const store = createTestTreeStore(kupoService, lucidService);
+    const rebuilt = await store.rebuildTreeFromChain();
 
     expect(rebuilt.root).toBe(hostStateDatum.state.ibc_state_root);
     expect(rebuilt.tree.get(prunedReceiptPath)).toBeUndefined();
@@ -204,7 +199,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
         maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 90n },
       },
     };
-    const continuation = await computeRootWithHandlePacketUpdate(
+    const continuation = await store.computeRootWithHandlePacketUpdate(
       rebuilt.root,
       'transfer',
       'channel-0',
@@ -215,13 +210,13 @@ describe('IBC state root recovery after packet-history pruning', () => {
 
     expect(continuation.packetReceiptSiblings).toHaveLength(64);
     expect(continuation.packetAcknowledgementSiblings).toHaveLength(64);
-    expect(getCurrentTree().getRoot()).toBe(rebuilt.root);
+    expect(store.getCurrentTree().getRoot()).toBe(rebuilt.root);
     continuation.commit();
 
     const newReceiptPath = `receipts/ports/transfer/channels/channel-0/sequences/${nextSequence}`;
     const newAcknowledgementPath = `acks/ports/transfer/channels/channel-0/sequences/${nextSequence}`;
-    expect(getCurrentTree().get(newReceiptPath)).toEqual(packetValue(''));
-    expect(getCurrentTree().get(newAcknowledgementPath)).toEqual(packetValue('0102'));
-    expect(getCurrentTree().verifyProof(getCurrentTree().generateProof(newAcknowledgementPath))).toBe(true);
+    expect(store.getCurrentTree().get(newReceiptPath)).toEqual(packetValue(''));
+    expect(store.getCurrentTree().get(newAcknowledgementPath)).toEqual(packetValue('0102'));
+    expect(store.getCurrentTree().verifyProof(store.getCurrentTree().generateProof(newAcknowledgementPath))).toBe(true);
   });
 });

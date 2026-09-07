@@ -9,7 +9,7 @@ import {
   GrpcInvalidArgumentException,
 } from '~@/exception/grpc_exceptions';
 
-import { alignTreeWithChain, isTreeAligned } from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
@@ -35,6 +35,7 @@ export class HostStateHeartbeatService {
     @Inject(LucidService) private readonly lucidService: LucidService,
     @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   async buildHeartbeat(
@@ -77,10 +78,10 @@ export class HostStateHeartbeatService {
       );
     }
 
-    if (!isTreeAligned(context.hostStateDatum.state.ibc_state_root)) {
+    if (!this.ibcTreeStore.isTreeAligned(context.hostStateDatum.state.ibc_state_root)) {
       this.logger.warn('IBC tree is not aligned with HostState before heartbeat; rebuilding');
-      await alignTreeWithChain();
-      if (!isTreeAligned(context.hostStateDatum.state.ibc_state_root)) {
+      await this.ibcTreeStore.alignTreeWithChain();
+      if (!this.ibcTreeStore.isTreeAligned(context.hostStateDatum.state.ibc_state_root)) {
         throw new GrpcFailedPreconditionException(
           'IBC tree could not be aligned with HostState before heartbeat',
         );

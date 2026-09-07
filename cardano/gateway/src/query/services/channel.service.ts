@@ -27,7 +27,7 @@ import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../he
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
 import { AuthToken } from '../../shared/types/auth-token';
@@ -61,6 +61,7 @@ export class ChannelService {
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   private async ensureTreeAligned(): Promise<void> {
@@ -72,12 +73,12 @@ export class ChannelService {
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const onChainRoot = hostStateDatum.state.ibc_state_root;
 
-    if (isTreeAligned(onChainRoot)) return;
+    if (this.ibcTreeStore.isTreeAligned(onChainRoot)) return;
 
     this.logger.warn(
       `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
     );
-    await alignTreeWithChain();
+    await this.ibcTreeStore.alignTreeWithChain();
   }
 
   private async getProofHeight(): Promise<bigint> {
@@ -308,7 +309,7 @@ export class ChannelService {
       // Channel path: channelEnds/ports/{portId}/channels/{channelId}
       const portId = convertHex2String(channelDatumDecoded.port || 'transfer');
       const ibcPath = `channelEnds/ports/${portId}/channels/channel-${channelId}`;
-      const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+      const tree = proofContext.historical ? proofContext.tree : this.ibcTreeStore.getCurrentTree();
       let channelProof: Buffer;
       try {
         const existenceProof = tree.generateProof(ibcPath);
