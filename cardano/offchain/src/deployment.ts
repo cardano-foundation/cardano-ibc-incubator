@@ -40,6 +40,7 @@ import {
   AuthToken,
   AuthTokenSchema,
   HostStateDatum,
+  HostStateNftRedeemer,
   HostStateRedeemer,
   MintPortRedeemer,
   ModuleRegistration,
@@ -872,6 +873,7 @@ export const createDeployment = async (
     hostStateNFT: {
       policyId: hostStateNFT.policy_id,
       name: hostStateNFT.name,
+      script: hostStateNFT.script,
     },
     traceRegistry: {
       address: traceRegistry.base.address,
@@ -2387,9 +2389,9 @@ const deployHostState = async (
   };
 
   // Create and send tx to mint NFT and create HostState UTXO
-  // NFTRedeemer has only one variant (MintInitial) with no fields
-  // Use Data.void() as the redeemer (same as other simple mints)
-  const encodedRedeemer = Data.void();
+  const encodedRedeemer = Data.to("MintInitial", HostStateNftRedeemer, {
+    canonical: true,
+  });
 
   const encodedDatum = Data.to(initHostStateDatum, HostStateDatum, {
     canonical: true,
@@ -2437,6 +2439,7 @@ const deployHostState = async (
     hostStateNFT: {
       policy_id: mintHostStateNFTPolicyId,
       name: HOST_STATE_TOKEN_NAME,
+      script: mintHostStateNFTValidator.script,
     },
   };
 };

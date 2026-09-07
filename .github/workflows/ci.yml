@@ -498,6 +498,10 @@ jobs:
         working-directory: cardano/offchain
         run: deno task check
 
+      - name: Test shutdown finalization
+        working-directory: cardano/offchain
+        run: deno task test:shutdown
+
   aiken-static:
     name: Cardano Onchain Aiken Static
     if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && (needs.aiken-changes.outputs.aiken_files_changed == 'true' || needs.aiken-changes.outputs.aiken_changed == 'true') }}

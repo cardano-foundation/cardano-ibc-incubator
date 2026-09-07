@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { QueryClientConnectionsResponse } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/query';
@@ -40,6 +41,7 @@ describe('ConnectionService ClientConnections query', () => {
       {} as MithrilService,
       {} as HistoryService,
       {} as IbcTreeCacheService,
+      createTestTreeStore(),
     );
     queryConnections = jest.spyOn(service, 'queryConnections');
   });

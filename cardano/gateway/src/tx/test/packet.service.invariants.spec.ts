@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
@@ -49,6 +50,7 @@ describe('PacketService denom invariants', () => {
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      createTestTreeStore(),
     );
   });
 

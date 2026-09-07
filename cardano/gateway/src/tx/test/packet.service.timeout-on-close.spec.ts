@@ -129,6 +129,7 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
     {} as DenomTraceService,
     {} as any,
     {} as any,
+    {} as any,
   );
   jest.spyOn(service as any, 'buildHostStateUpdateForHandlePacket').mockResolvedValue({
     hostStateUtxo: { txHash: 'host', outputIndex: 0, datum: 'host-datum', assets: {} },

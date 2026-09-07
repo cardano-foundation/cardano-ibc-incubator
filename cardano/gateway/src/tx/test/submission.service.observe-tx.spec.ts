@@ -1,10 +1,15 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { IbcTreePendingUpdatesService } from '../../shared/services/ibc-tree-pending-updates.service';
 import { SubmissionService } from '../submission.service';
+import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 
 describe('SubmissionService ObserveTx', () => {
   const txHash = 'ab'.repeat(32);
   const otherTxHash = 'cd'.repeat(32);
-  const confirmedRoot = '12'.repeat(32);
+  const confirmedTree = new ICS23MerkleTree();
+  confirmedTree.set('ports/transfer', '01');
+  const confirmedRoot = confirmedTree.getRoot();
+  const publication = () => ({ published: true, snapshot: { root: confirmedRoot, tree: confirmedTree.clone(), hostState: { txHash, outputIndex: 0 } } });
   const txCborHex = '84a0a0f5f6';
   const txBodyCborHex = 'a0';
   const hostStateDatumCborHex = 'd87980';
@@ -114,6 +119,7 @@ describe('SubmissionService ObserveTx', () => {
       { saveAliases: jest.fn() } as any,
       historyService as any,
       queryService as any,
+      createTestTreeStore(),
     );
   });
 
@@ -126,7 +132,7 @@ describe('SubmissionService ObserveTx', () => {
   });
 
   it('observes a full-transaction history record and commits the exact pending update', async () => {
-    const commit = jest.fn();
+    const commit = jest.fn().mockResolvedValue(publication());
     pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
 
     await expect(service.observeTransaction({ tx_hash: txHash })).resolves.toEqual({
@@ -149,7 +155,7 @@ describe('SubmissionService ObserveTx', () => {
   });
 
   it('observes Yaci body-only transaction_cbor evidence safely', async () => {
-    const commit = jest.fn();
+    const commit = jest.fn().mockResolvedValue(publication());
     pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
     historyService.findTransactionEvidenceByHash.mockResolvedValue({
       ...evidence(),
@@ -168,7 +174,7 @@ describe('SubmissionService ObserveTx', () => {
   });
 
   it('rejects a confirmed full transaction envelope marked invalid', async () => {
-    const commit = jest.fn();
+    const commit = jest.fn().mockResolvedValue(publication());
     pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
     lucidService.LucidImporter.CML.Transaction.from_cbor_hex.mockReturnValueOnce({
       body: () => ({ to_cbor_hex: () => txBodyCborHex }),
@@ -192,7 +198,7 @@ describe('SubmissionService ObserveTx', () => {
   );
 
   it('rejects evidence whose confirmed transaction body hashes differently', async () => {
-    const commit = jest.fn();
+    const commit = jest.fn().mockResolvedValue(publication());
     pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
     lucidService.LucidImporter.CML.hash_transaction.mockReturnValue({
       to_hex: () => otherTxHash,
@@ -207,7 +213,7 @@ describe('SubmissionService ObserveTx', () => {
   });
 
   it('rejects inconsistent transaction and transaction-body evidence', async () => {
-    const commit = jest.fn();
+    const commit = jest.fn().mockResolvedValue(publication());
     pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
     historyService.findTransactionEvidenceByHash.mockResolvedValue({
       ...evidence(),
@@ -221,7 +227,7 @@ describe('SubmissionService ObserveTx', () => {
   });
 
   it('will not finalize an update matched only by HostState root', async () => {
-    const commit = jest.fn();
+    const commit = jest.fn().mockResolvedValue(publication());
     pendingUpdates.register(otherTxHash, { expectedNewRoot: confirmedRoot, commit });
 
     await expect(service.observeTransaction({ tx_hash: txHash })).rejects.toThrow('Missing exact pending IBC update');
@@ -233,7 +239,7 @@ describe('SubmissionService ObserveTx', () => {
   });
 
   it('retains the pending update when the confirmed HostState root does not match', async () => {
-    const commit = jest.fn();
+    const commit = jest.fn().mockResolvedValue(publication());
     pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
     historyService.findTransactionEvidenceByHash.mockResolvedValue({
       ...evidence(),
@@ -256,7 +262,7 @@ describe('SubmissionService ObserveTx', () => {
         releaseEvidence = resolve;
       }),
     );
-    const commit = jest.fn();
+    const commit = jest.fn().mockResolvedValue(publication());
     pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
 
     const first = service.observeTransaction({ tx_hash: txHash });
@@ -279,7 +285,7 @@ describe('SubmissionService ObserveTx', () => {
       .mockImplementationOnce(() => {
         throw new Error('transient tree commit failure');
       })
-      .mockImplementationOnce(() => undefined);
+      .mockResolvedValueOnce(publication());
     const pending = { expectedNewRoot: confirmedRoot, commit };
     pendingUpdates.register(txHash, pending);
 

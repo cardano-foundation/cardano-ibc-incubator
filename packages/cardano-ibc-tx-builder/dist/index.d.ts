@@ -81,24 +81,24 @@ export type LoadedSendPacketContext = {
         transferModuleAddress: string;
     };
 };
-export type HostStateUpdate = {
+export type HostStateUpdate<TreeCommit = () => void> = {
     hostStateUtxo: UTxO;
     encodedHostStateRedeemer: string;
     encodedUpdatedHostStateDatum: string;
     newRoot: string;
-    commit: () => void;
+    commit: TreeCommit;
 };
-export type PendingTreeUpdate = {
+export type PendingTreeUpdate<TreeCommit = () => void> = {
     expectedNewRoot: string;
-    commit: () => void;
+    commit: TreeCommit;
 };
 export type VoucherDenomTrace = {
     path: string;
     baseDenom: string;
 };
-export type SendPacketBuildResult = {
+export type SendPacketBuildResult<TreeCommit = () => void> = {
     unsignedTx: TxBuilder;
-    pendingTreeUpdate: PendingTreeUpdate;
+    pendingTreeUpdate: PendingTreeUpdate<TreeCommit>;
     walletOverride?: {
         address: string;
         utxos: UTxO[];
@@ -170,9 +170,9 @@ export type TransferEscrowShardLookup = {
     registrySiblings: string[];
     encodedUpdatedTransferModuleDatum: string;
 };
-export type SendPacketBuildDependencies = {
+export type SendPacketBuildDependencies<TreeCommit = () => void> = {
     loadContext: (sendPacketOperator: SendPacketOperator) => Promise<LoadedSendPacketContext>;
-    buildHostStateUpdate: (inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, channelIdForRoot: string) => Promise<HostStateUpdate>;
+    buildHostStateUpdate: (inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, channelIdForRoot: string) => Promise<HostStateUpdate<TreeCommit>>;
     resolveIbcDenomHash: (denomHash: string) => Promise<VoucherDenomTrace | null>;
     commitPacket: (packet: Packet) => string;
     stringifyPacketData?: Ics20PacketDataStringifier;
@@ -189,4 +189,4 @@ export type SendPacketBuildDependencies = {
     failedPrecondition?: (message: string) => Error;
     internalError: (message: string) => Error;
 };
-export declare function buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator, deps: SendPacketBuildDependencies): Promise<SendPacketBuildResult>;
+export declare function buildUnsignedSendPacketTx<TreeCommit = () => void>(sendPacketOperator: SendPacketOperator, deps: SendPacketBuildDependencies<TreeCommit>): Promise<SendPacketBuildResult<TreeCommit>>;

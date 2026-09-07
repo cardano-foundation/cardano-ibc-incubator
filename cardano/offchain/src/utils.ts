@@ -928,6 +928,7 @@ export type DeploymentTemplate = {
   hostStateNFT?: {
     policyId: string;
     name: string;
+    script?: string;
   };
   traceRegistry?: {
     address: string;

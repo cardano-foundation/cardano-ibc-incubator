@@ -121,7 +121,7 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
-import { getCurrentTree, isTreeAligned, alignTreeWithChain } from '../../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import {
   QueryDenomRequest,
@@ -135,6 +135,7 @@ import { convertHex2String } from '@shared/helpers/hex';
 import { HISTORY_SERVICE, HistoryBlock, HistoryService } from './history.service';
 import {
   resolveCurrentLiveHostStateTxHeight,
+  assertProofContextHostState,
   resolveProofContextForQuery,
   resolveProofHeightForCurrentRoot,
 } from './proof-context';
@@ -220,6 +221,7 @@ export class QueryService {
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
     @Optional() @Inject(MetricsService) metricsService?: MetricsService,
   ) {
     this.txRedeemerCache = new BoundedCache({
@@ -227,85 +229,6 @@ export class QueryService {
       ttlMs: TX_REDEEMER_CACHE_TTL_MS,
       onSizeChange: (size) => metricsService?.setCacheEntries(TX_REDEEMER_CACHE_METRIC, size),
     });
-  }
-
-  /**
-   * Ensure the in-memory ICS-23 Merkle tree is aligned with on-chain state.
-   *
-   * This is part of the Gateway's selfphealing mechanism. After a crash or restart,
-   * No manual intervention is required - this method automatically detects stale state
-   * and triggers a rebuild from on-chain data.
-   *
-   * The Gateway maintains an in-memory Merkle tree for generating ICS-23 proofs.
-   * This tree can become out of sync in several scenarios:
-   *   1. Gateway restarts - the in-memory tree is lost (most common case)
-   *   2. A transaction fails after we speculatively updated the tree (should not happen
-   *      since we work on a clone and only `commit()` after tx is confirmed)
-   *   3. Another Gateway instance (or direct on-chain interaction) modified state
-   *
-   * HOW IT WORKS:
-   * We query the HostState UTXO (identified by a unique NFT in the STT architecture)
-   * and compare its stored ibc_state_root with our in-memory tree's root.
-   * If they don't match, we call alignTreeWithChain() to rebuild from on-chain UTXOs.
-   *
-   * CRASH RECOVERY FLOW:
-   * 1. Gateway restarts -> in-memory tree is empty
-   * 2. First query arrives (e.g., Hermes calls queryClientState)
-   * 3. This method detects root mismatch (empty tree vs on-chain root)
-   * 4. alignTreeWithChain() queries all IBC UTXOs and rebuilds the tree
-   * 5. Proof generation proceeds normally
-   * 6. Subsequent queries find the tree aligned (cheap root comparison)
-   * SCALING NOTE:
-   * The number of live IBC UTXOs is expected to scale roughly as:
-   *   total_live_ibc_utxos = 1 HostState + numClients + numConnections + numChannels
-   * so the raw UTXO scan is not expected to be the dominant scaling issue by itself.
-   * The more likely long-term pressure is datum growth inside those live UTXOs,
-   * especially client consensus states and channel packet maps
-   * (commitments / receipts / acknowledgements), since rebuild cost scales with the
-   * number of reconstructed ICS-24 tree entries, not just the count of live UTXOs.
-   * PERFORMANCE NOTE:
-   * Tree rebuilding is expensive (queries all IBC UTXOs), but it only happens when
-   * the tree is actually stale. In normal operation, this is a cheap root comparison.
-   *
-   * @returns Promise that resolves when tree is aligned (may trigger rebuild)
-   * @throws GrpcInternalException if HostState UTXO is missing or invalid
-   */
-  private async ensureTreeAligned(): Promise<void> {
-    // Query the HostState UTXO to get the authoritative on-chain root.
-    // The HostState UTXO is identified by a unique NFT (STT architecture)
-    // which guarantees exactly one canonical state exists at any time.
-    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-
-    if (!hostStateUtxo?.datum) {
-      // This should never happen in a properly deployed system.
-      // If it does, there's a fundamental issue with the IBC deployment.
-      this.logger.error('HostState UTXO has no datum - cannot verify tree alignment');
-      throw new GrpcInternalException('IBC infrastructure error: HostState UTXO missing datum');
-    }
-
-    // Decode the datum to extract the committed ibc_state_root.
-    // This root is the Merkle commitment over all IBC state (clients, connections, channels, etc.)
-    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-    const onChainRoot = hostStateDatum.state.ibc_state_root;
-
-    // Check if our in-memory tree matches the on-chain commitment.
-    // If it does, we're good to go - proofs generated from our tree will verify correctly.
-    if (isTreeAligned(onChainRoot)) {
-      this.logger.debug(`Tree aligned with on-chain root ${onChainRoot.substring(0, 16)}...`);
-      return;
-    }
-
-    // Tree is stale. This happens after Gateway restart, failed transactions, etc.
-    // We need to rebuild the tree from on-chain UTXOs before we can generate valid proofs.
-    this.logger.warn(
-      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
-    );
-
-    // alignTreeWithChain() queries all IBC UTXOs (clients, connections, channels)
-    // and rebuilds the Merkle tree from scratch. This is expensive but necessary.
-    const result = await alignTreeWithChain();
-
-    this.logger.log(`Tree rebuilt successfully, new root: ${result.root.substring(0, 16)}...`);
   }
 
   private async getProofHeight(context: string): Promise<bigint> {
@@ -331,6 +254,7 @@ export class QueryService {
       'stake-weighted-stability';
 
     return resolveProofContextForQuery({
+      ibcTreeStore: this.ibcTreeStore,
       logger: this.logger,
       lucidService: this.lucidService,
       mithrilService: this.mithrilService,
@@ -767,7 +691,7 @@ export class QueryService {
     const proofContext = await this.getProofContext('queryClientState', options.queryHeight);
     const [clientDatum, spendClientUTXO] = await this.getClientDatum(
       clientId,
-      proofContext.historical ? proofContext.proofHeight : undefined,
+      proofContext.proofHeight,
     );
     this.logger.debug(
       `[queryClientState] loaded client UTxO ${spendClientUTXO.txHash}#${spendClientUTXO.outputIndex} in ${Date.now() - startedAt}ms`,
@@ -784,13 +708,8 @@ export class QueryService {
     // `clientId` here is the sequence number after prefix stripping.
     const ibcPath = `clients/07-tendermint-${clientId}/clientState`;
 
-    if (!proofContext.historical) {
-      const treeAlignmentStartedAt = Date.now();
-      await this.ensureTreeAligned();
-      this.logger.debug(`[queryClientState] tree alignment completed in ${Date.now() - treeAlignmentStartedAt}ms`);
-    }
-
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const tree = proofContext.tree;
 
     let clientProof: Buffer;
     try {
@@ -841,7 +760,7 @@ export class QueryService {
     const proofContext = await this.getProofContext('queryConsensusState', options.queryHeight);
     const [clientDatum] = await this.getClientDatum(
       clientId,
-      proofContext.historical ? proofContext.proofHeight : undefined,
+      proofContext.proofHeight,
     );
 
     // Consensus height: identifies which consensus state entry to retrieve
@@ -865,11 +784,8 @@ export class QueryService {
     // Generate ICS-23 proof from the IBC state tree.
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${heightReq}`;
 
-    if (!proofContext.historical) {
-      await this.ensureTreeAligned();
-    }
-
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const tree = proofContext.tree;
 
     let consensusProof: Buffer;
     try {

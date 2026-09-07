@@ -4,7 +4,7 @@ import { ChannelDatum, encodeChannelEndValue } from '../types/channel/channel-da
 import { Order } from '../types/channel/order';
 import { ChannelState } from '../types/channel/state';
 import { ICS23MerkleTree } from './ics23-merkle-tree';
-import { computeRootWithHandlePacketUpdate, setCurrentTree } from './ibc-state-root';
+import { createTestTreeContext } from '../testing/ibc-tree-test-store';
 
 const portId = 'transfer';
 const channelId = 'channel-0';
@@ -63,9 +63,10 @@ describe('IBC state root packet timeout updates', () => {
       },
     };
     const tree = await treeFor(input);
-    setCurrentTree(tree);
+    const fixture = createTestTreeContext();
+    await fixture.restore(tree);
 
-    const update = await computeRootWithHandlePacketUpdate(
+    const update = await fixture.store.computeRootWithHandlePacketUpdate(
       tree.getRoot(),
       portId,
       channelId,
@@ -89,9 +90,10 @@ describe('IBC state root packet timeout updates', () => {
       },
     };
     const tree = await treeFor(input);
-    setCurrentTree(tree);
+    const fixture = createTestTreeContext();
+    await fixture.restore(tree);
 
-    const update = await computeRootWithHandlePacketUpdate(
+    const update = await fixture.store.computeRootWithHandlePacketUpdate(
       tree.getRoot(),
       portId,
       channelId,

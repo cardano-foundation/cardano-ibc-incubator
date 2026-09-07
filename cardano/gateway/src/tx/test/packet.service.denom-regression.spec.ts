@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { stringifyIcs20PacketData, type Ics20ClassicPacketData } from '@cardano-ibc/tx-builder';
@@ -103,6 +104,7 @@ describe('PacketService denom regression coverage', () => {
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      createTestTreeStore(),
     );
 
     jest.spyOn(service as any, 'buildHostStateUpdateForHandlePacket').mockResolvedValue({
@@ -311,6 +313,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      createTestTreeStore(),
     );
 
     jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
@@ -507,6 +510,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      createTestTreeStore(),
     );
 
     const refreshWalletContextSpy = jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
@@ -734,6 +738,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      createTestTreeStore(),
     );
 
     jest.spyOn(service as any, 'findTransferEscrowShard').mockResolvedValue({

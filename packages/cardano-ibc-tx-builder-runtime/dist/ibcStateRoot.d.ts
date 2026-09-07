@@ -1,4 +1,39 @@
+import type { UTxO } from '@lucid-evolution/lucid';
 import { ICS23MerkleTree } from './ics23MerkleTree';
+export type IbcTreeDeployment = Readonly<{
+    network: string;
+    hostStateNFT: Readonly<{
+        policyId: string;
+        name: string;
+    }>;
+}>;
+export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets' | 'txHash' | 'outputIndex'>;
+export type IbcTreeHostStateRef = Readonly<Pick<UTxO, 'txHash' | 'outputIndex'>>;
+export type IbcTreeSnapshot = Readonly<{
+    root: string;
+    hostState: IbcTreeHostStateRef;
+    tree: ICS23MerkleTree;
+}>;
+export type IbcTreeStateSnapshot = IbcTreeSnapshot & Readonly<{
+    version: number;
+}>;
+export type IbcTreeCommitResult = {
+    published: boolean;
+    snapshot: IbcTreeSnapshot;
+};
+export declare class StaleIbcTreeStateError extends Error {
+    constructor(message?: string);
+}
+export interface IbcTreeKupoService {
+    queryAllClientUtxos(): Promise<IbcTreeUtxo[]>;
+    queryAllConnectionUtxos(): Promise<IbcTreeUtxo[]>;
+    queryAllChannelUtxos(): Promise<IbcTreeUtxo[]>;
+}
+export interface IbcTreeLucidService {
+    readonly LucidImporter: typeof import('@lucid-evolution/lucid');
+    findUtxoAtHostStateNFT(): Promise<IbcTreeUtxo | undefined>;
+    decodeDatum<T>(encodedDatum: string, type: 'host_state' | 'client' | 'connection' | 'channel'): Promise<T>;
+}
 type ChannelStateLike = {
     channel: any;
     next_sequence_send: bigint;
@@ -22,7 +57,7 @@ type ChannelDatumLike = {
 };
 export type StateRootResult = {
     newRoot: string;
-    commit: () => void;
+    commit: (hostState: IbcTreeHostStateRef) => Promise<IbcTreeCommitResult>;
 };
 export type HandlePacketStateRootResult = StateRootResult & {
     channelSiblings: string[];
@@ -61,33 +96,53 @@ export interface PrunePacketHistoryStateRootResult extends StateRootResult {
     packetReceiptSiblings: string[];
     packetAcknowledgementSiblings: string[];
 }
-export declare function initTreeServices(kupoService: any, lucidService: any): void;
-export declare function isTreeAligned(onChainRoot: string): boolean;
-export declare function alignTreeWithChain(): Promise<{
-    root: string;
-}>;
 export declare function encodeClientStateValue(clientState: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeConsensusStateValue(consensusState: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeConnectionEndValue(connectionEnd: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeChannelEndValue(channelEnd: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
-export declare function computeRootWithHandlePacketUpdate(oldRoot: string, portId: string, channelId: string, inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, Lucid: typeof import('@lucid-evolution/lucid')): Promise<HandlePacketStateRootResult>;
-export declare function rebuildTreeFromChain(kupoService: any, lucidService: any): Promise<{
-    tree: ICS23MerkleTree;
-    root: string;
-}>;
-export declare function computeRootWithCreateClientUpdate(oldRoot: string, clientId: string, clientStateValue: Buffer, consensusStateValue: Buffer, consensusHeight: string | number | bigint): CreateClientStateRootResult;
-export declare function computeRootWithUpdateClientUpdate(oldRoot: string, clientId: string, newClientStateValue: Buffer, removedConsensusHeights: Array<string | number | bigint>, addedConsensusState: {
-    height: string | number | bigint;
-    value: Buffer;
-} | undefined): UpdateClientStateRootResult;
-export declare function computeRootWithCreateConnectionUpdate(oldRoot: string, connectionId: string, connectionValue: Buffer): CreateConnectionStateRootResult;
-export declare function computeRootWithCreateChannelUpdate(oldRoot: string, portId: string, channelId: string, channelValue: Buffer, nextSequenceSendValue: Buffer, nextSequenceRecvValue: Buffer, nextSequenceAckValue: Buffer): CreateChannelStateRootResult;
-export declare function computeRootWithUpdateChannelUpdate(oldRoot: string, portId: string, channelId: string, channelValue: Buffer): UpdateChannelStateRootResult;
-export declare function computeRootWithPrunePacketHistoryUpdate(oldRoot: string, portId: string, channelId: string, sequence: bigint, ordering: 'None' | 'Unordered' | 'Ordered'): PrunePacketHistoryStateRootResult;
-export declare function computeRootWithPortBind(oldRoot: string, portId: string, portValue: Buffer): BindPortStateRootResult;
-export declare function getCurrentTree(): ICS23MerkleTree;
-export declare function setCurrentTree(tree: ICS23MerkleTree): void;
-export declare function getCurrentRoot(): string;
-export declare function resetTreeState(): void;
 export declare function encodeModuleRegistration(registration: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
+/**
+ * One deployment's working tree and the readers used to rebuild it.
+ * Computations use clones and only replace this store's tree when committed.
+ */
+export declare class IbcTreeStateStore {
+    private readonly kupoService;
+    private readonly lucidService;
+    readonly deployment: IbcTreeDeployment;
+    private currentTree;
+    private version;
+    private hostState;
+    constructor(deployment: IbcTreeDeployment, kupoService: IbcTreeKupoService, lucidService: IbcTreeLucidService);
+    isTreeAligned(onChainRoot: string, hostState?: IbcTreeHostStateRef): boolean;
+    alignTreeWithChain(): Promise<{
+        root: string;
+    }>;
+    private getClonedTreeFromRoot;
+    private sameHostState;
+    private copyHostState;
+    private snapshot;
+    private readLiveHostState;
+    private assertUnchanged;
+    private publish;
+    private preparePublication;
+    getSnapshot(): IbcTreeStateSnapshot;
+    getAlignedSnapshot(): Promise<IbcTreeStateSnapshot>;
+    restoreTreeFromCache(tree: ICS23MerkleTree): Promise<IbcTreeStateSnapshot>;
+    computeRootWithHeartbeatUpdate(oldRoot: string): StateRootResult;
+    computeRootWithHandlePacketUpdate(oldRoot: string, portId: string, channelId: string, inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, Lucid: typeof import('@lucid-evolution/lucid')): Promise<HandlePacketStateRootResult>;
+    rebuildTreeFromChain(): Promise<IbcTreeStateSnapshot>;
+    computeRootWithCreateClientUpdate(oldRoot: string, clientId: string, clientStateValue: Buffer, consensusStateValue: Buffer, consensusHeight: string | number | bigint): CreateClientStateRootResult;
+    computeRootWithUpdateClientUpdate(oldRoot: string, clientId: string, newClientStateValue: Buffer, removedConsensusHeights: Array<string | number | bigint>, addedConsensusState: {
+        height: string | number | bigint;
+        value: Buffer;
+    } | undefined): UpdateClientStateRootResult;
+    computeRootWithCreateConnectionUpdate(oldRoot: string, connectionId: string, connectionValue: Buffer): CreateConnectionStateRootResult;
+    computeRootWithCreateChannelUpdate(oldRoot: string, portId: string, channelId: string, channelValue: Buffer, nextSequenceSendValue: Buffer, nextSequenceRecvValue: Buffer, nextSequenceAckValue: Buffer): CreateChannelStateRootResult;
+    computeRootWithUpdateChannelUpdate(oldRoot: string, portId: string, channelId: string, channelValue: Buffer): UpdateChannelStateRootResult;
+    computeRootWithPrunePacketHistoryUpdate(oldRoot: string, portId: string, channelId: string, sequence: bigint, ordering: 'None' | 'Unordered' | 'Ordered'): PrunePacketHistoryStateRootResult;
+    computeRootWithPortBind(oldRoot: string, portId: string, portValue: Buffer): BindPortStateRootResult;
+    getCurrentTree(): ICS23MerkleTree;
+    getCurrentRoot(): string;
+    resetTreeState(): void;
+}
 export {};
