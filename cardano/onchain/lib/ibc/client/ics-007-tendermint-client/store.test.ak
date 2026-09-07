@@ -1,4 +1,6 @@
 use aiken/collection/list
+use aiken/fuzz
+use aiken/option
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/store as store_mod
@@ -121,4 +123,95 @@ test get_next_consensus_state_given_below_minimum_height_returns_first_value() {
 
   let expected_consensus_state = create_fake_consensus_state(0)
   result == Some(expected_consensus_state)
+}
+
+fn sorted_neighbors(
+  consensus_states: Pairs<Height, ConsensusState>,
+  height: Height,
+) -> Pair<Option<ConsensusState>, Option<ConsensusState>> {
+  let sorted =
+    list.sort(
+      consensus_states,
+      fn(left, right) { height_mod.compare(left.1st, right.1st) },
+    )
+  Pair(
+    store_mod.get_prev_consensus_state(sorted, height),
+    store_mod.get_next_consensus_state(sorted, height),
+  )
+}
+
+fn fuzz_height() -> Fuzzer<Height> {
+  fuzz.map2(
+    fuzz.int_between(0, 3),
+    fuzz.int_between(0, 12),
+    height_mod.new_height,
+  )
+}
+
+fn neighbors(
+  states: Pairs<Height, ConsensusState>,
+  target: Height,
+) -> Pair<Option<ConsensusState>, Option<ConsensusState>> {
+  let previous, next <- store_mod.get_consensus_state_neighbors(states, target)
+  Pair(
+    option.map(previous, fn(entry) { entry.2nd }),
+    option.map(next, fn(entry) { entry.2nd }),
+  )
+}
+
+test neighbors_accept_empty_history() {
+  neighbors([], create_height(10)) == Pair(None, None)
+}
+
+test neighbors_select_nearest_heights_from_unsorted_history() {
+  let states = make_fake_consensus_states_store([39, 10, 22])
+  neighbors(states, create_height(25)) == Pair(
+    Some(create_fake_consensus_state(2)),
+    Some(create_fake_consensus_state(0)),
+  )
+}
+
+test neighbors_preserve_sorted_search_ties_for_duplicate_heights() {
+  let states = make_fake_consensus_states_store([12, 8, 8, 12])
+  let result = neighbors(states, create_height(10))
+  and {
+    result == Pair(
+      Some(create_fake_consensus_state(1)),
+      Some(create_fake_consensus_state(3)),
+    ),
+    result == sorted_neighbors(states, create_height(10)),
+  }
+}
+
+test neighbors_compare_revision_number_before_revision_height() {
+  let states =
+    [
+      Pair(height_mod.new_height(2, 0), create_fake_consensus_state(0)),
+      Pair(height_mod.new_height(0, 200), create_fake_consensus_state(1)),
+      Pair(height_mod.new_height(1, 99), create_fake_consensus_state(2)),
+    ]
+  neighbors(states, height_mod.new_height(1, 100)) == Pair(
+    Some(create_fake_consensus_state(2)),
+    Some(create_fake_consensus_state(0)),
+  )
+}
+
+test neighbors_match_sorted_search_at_history_capacity() {
+  let states =
+    make_fake_consensus_states_store(list.reverse(list.range(1, 300)))
+  let target = create_height(150)
+  neighbors(states, target) == sorted_neighbors(states, target)
+}
+
+test prop_client_update_neighbors_match_sorted_search(
+  scenario via fuzz.both(fuzz.list_between(fuzz_height(), 0, 80), fuzz_height()),
+) {
+  fuzz.label(@"fuzz.unit.client.history.neighbor_selection")
+  let (heights, target) = scenario
+  let states =
+    list.indexed_map(
+      heights,
+      fn(index, height) { Pair(height, create_fake_consensus_state(index)) },
+    )
+  neighbors(states, target) == sorted_neighbors(states, target)
 }

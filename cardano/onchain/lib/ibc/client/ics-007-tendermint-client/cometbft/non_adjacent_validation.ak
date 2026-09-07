@@ -10,6 +10,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/constants.{
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/cometbft/vote
+use ibc/utils/merge_sort
 
 type IndexedValidator {
   trusted_validator: Validator,
@@ -101,7 +102,12 @@ fn make_validator_index(
     total_voting_power,
     validator_count,
   <- index_validators(validators, 1)
-  let sorted = sort_indexed_validators(indexed_validators, validator_count)
+  let sorted =
+    merge_sort.sort(
+      indexed_validators,
+      validator_count,
+      compare_indexed_validators,
+    )
   let
     validator_index,
     remaining,
@@ -247,40 +253,4 @@ fn compare_indexed_validators(
     left.trusted_validator.address,
     right.trusted_validator.address,
   )
-}
-
-/// Keep index construction O(v log v). Stdlib `list.sort` is insertion sort.
-fn sort_indexed_validators(
-  items: List<IndexedValidator>,
-  count: Int,
-) -> List<IndexedValidator> {
-  if count <= 1 {
-    items
-  } else {
-    let left_count = count / 2
-    let (left, right) = list.span(items, left_count)
-    merge_indexed_validators(
-      sort_indexed_validators(left, left_count),
-      sort_indexed_validators(right, count - left_count),
-    )
-  }
-}
-
-fn merge_indexed_validators(
-  left: List<IndexedValidator>,
-  right: List<IndexedValidator>,
-) -> List<IndexedValidator> {
-  when left is {
-    [] -> right
-    [left_head, ..left_tail] ->
-      when right is {
-        [] -> left
-        [right_head, ..right_tail] ->
-          if compare_indexed_validators(left_head, right_head) == Greater {
-            [right_head, ..merge_indexed_validators(left, right_tail)]
-          } else {
-            [left_head, ..merge_indexed_validators(left_tail, right)]
-          }
-      }
-  }
 }

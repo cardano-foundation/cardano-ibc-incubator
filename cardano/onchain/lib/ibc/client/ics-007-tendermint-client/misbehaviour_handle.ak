@@ -1,4 +1,3 @@
-use aiken/collection/list
 use aiken/collection/pairs
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
@@ -28,38 +27,25 @@ pub fn check_for_misbehaviour(
         Some(existing_cons_state) ->
           existing_cons_state != header_mod.consensus_state(h)
         None -> {
-          let consensus_states =
-            list.sort(
+          let
+            previous,
+            next,
+          <-
+            store.get_consensus_state_neighbors(
               consensus_states,
-              fn(e1, e2) { height_mod.compare(e1.1st, e2.1st) },
+              header_mod.get_height(h),
             )
-
-          let invalid_prev =
-            when
-              store.get_prev_consensus_state(
-                consensus_states,
-                header_mod.get_height(h),
-              )
-            is {
-              Some(prev_cons) -> prev_cons.timestamp >= header_mod.get_time(h)
+          or {
+            when previous is {
+              Some(prev_cons) ->
+                prev_cons.2nd.timestamp >= header_mod.get_time(h)
               None -> False
-            }
-
-          if !invalid_prev {
-            let invalid_next =
-              when
-                store.get_next_consensus_state(
-                  consensus_states,
-                  header_mod.get_height(h),
-                )
-              is {
-                Some(next_cons) -> next_cons.timestamp <= header_mod.get_time(h)
-                None -> False
-              }
-
-            invalid_next
-          } else {
-            invalid_prev
+            },
+            when next is {
+              Some(next_cons) ->
+                next_cons.2nd.timestamp <= header_mod.get_time(h)
+              None -> False
+            },
           }
         }
       }

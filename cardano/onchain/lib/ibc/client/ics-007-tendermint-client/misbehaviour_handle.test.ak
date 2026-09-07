@@ -1,3 +1,4 @@
+use aiken/collection/list
 use aiken/fuzz
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
   BlockID, PartSetHeader,
@@ -7,12 +8,13 @@ use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header
 use ibc/client/ics_007_tendermint_client/cometbft/protos/types_pb.{Consensus}
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set
-use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
-use ibc/client/ics_007_tendermint_client/header.{Header}
-use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState} as consensus_state
+use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
+use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/misbehaviour.{Misbehaviour}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle
-use ibc/client/ics_007_tendermint_client/msgs.{MisbehaviourCase}
+use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase, MisbehaviourCase}
+use ibc/client/ics_007_tendermint_client/store
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/testing/fuzz_dsl
 
@@ -149,4 +151,128 @@ test prop_client_misbehaviour_rejects_wrong_client_id(_seed via fuzz.int()) {
     client_keys.is_valid_client_id("client-0"),
   )
     |> fuzz_dsl.assert_rejected
+}
+
+// Keep the previous sorting implementation here as an independent oracle.
+fn sorted_header_misbehaviour(
+  header: Header,
+  consensus_states: Pairs<Height, ConsensusState>,
+) -> Bool {
+  let height = header_mod.get_height(header)
+  when store.get_consensus_state(consensus_states, height) is {
+    Some(existing) -> existing != header_mod.consensus_state(header)
+    None -> {
+      let sorted =
+        list.sort(
+          consensus_states,
+          fn(left, right) { height_mod.compare(left.1st, right.1st) },
+        )
+      let invalid_previous =
+        when store.get_prev_consensus_state(sorted, height) is {
+          Some(previous) -> previous.timestamp >= header_mod.get_time(header)
+          None -> False
+        }
+      invalid_previous || when
+        store.get_next_consensus_state(sorted, height)
+      is {
+        Some(next) -> next.timestamp <= header_mod.get_time(header)
+        None -> False
+      }
+    }
+  }
+}
+
+fn history_entry(height: Int, timestamp: Int) -> Pair<Height, ConsensusState> {
+  Pair(
+    Height { revision_number: 1, revision_height: height },
+    ConsensusState { ..consensus_state.null_consensus_state(), timestamp },
+  )
+}
+
+test header_misbehaviour_uses_only_the_nearest_neighbors() {
+  let header = test_header(5, 50, #"01")
+  let history =
+    [
+      history_entry(8, 10),
+      history_entry(2, 70),
+      history_entry(6, 60),
+      history_entry(4, 40),
+    ]
+  !misbehaviour_handle.check_for_misbehaviour(HeaderCase(header), history)
+}
+
+test header_misbehaviour_preserves_duplicate_neighbor_ties() {
+  let header = test_header(5, 50, #"01")
+  let history =
+    [
+      history_entry(4, 40),
+      history_entry(4, 55),
+      history_entry(6, 45),
+      history_entry(6, 60),
+    ]
+  and {
+    !misbehaviour_handle.check_for_misbehaviour(HeaderCase(header), history),
+    misbehaviour_handle.check_for_misbehaviour(
+      HeaderCase(header),
+      list.reverse(history),
+    ),
+  }
+}
+
+test header_misbehaviour_rejects_equal_neighbor_timestamps() {
+  let header = test_header(5, 50, #"01")
+  and {
+    misbehaviour_handle.check_for_misbehaviour(
+      HeaderCase(header),
+      [history_entry(4, 50)],
+    ),
+    misbehaviour_handle.check_for_misbehaviour(
+      HeaderCase(header),
+      [history_entry(6, 50)],
+    ),
+  }
+}
+
+test header_misbehaviour_existing_height_ignores_neighbor_time_violations() {
+  let header = test_header(5, 50, #"01")
+  let matching =
+    Pair(header_mod.get_height(header), header_mod.consensus_state(header))
+  let history =
+    [history_entry(4, 80), matching, history_entry(5, 90), history_entry(6, 20)]
+  and {
+    !misbehaviour_handle.check_for_misbehaviour(HeaderCase(header), history),
+    misbehaviour_handle.check_for_misbehaviour(
+      HeaderCase(header),
+      list.reverse(history),
+    ),
+  }
+}
+
+fn fuzz_consensus_history_entry() -> Fuzzer<Pair<Height, ConsensusState>> {
+  fuzz.map3(
+    fuzz.int_between(0, 2),
+    fuzz.int_between(0, 25),
+    fuzz.int_between(0, 100),
+    fn(revision, height, timestamp) {
+      Pair(
+        Height { revision_number: revision, revision_height: height },
+        ConsensusState { ..consensus_state.null_consensus_state(), timestamp },
+      )
+    },
+  )
+}
+
+test prop_header_misbehaviour_matches_sorted_history(
+  scenario via fuzz.both(
+    fuzz.list_between(fuzz_consensus_history_entry(), 0, 60),
+    fuzz.both(fuzz.int_between(0, 25), fuzz.int_between(0, 100)),
+  ),
+) {
+  fuzz.label(@"fuzz.unit.client.history.misbehaviour_selection")
+  let (history, (height, timestamp)) = scenario
+  let header = test_header(height, timestamp, #"01")
+  misbehaviour_handle.check_for_misbehaviour(HeaderCase(header), history) == sorted_header_misbehaviour(
+    header,
+    history,
+  )
 }

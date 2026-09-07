@@ -9,6 +9,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/constants.{
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/height_set
 use ibc/core/ics_003_connection_semantics/types/params
 
 pub type ClientDatum {
@@ -91,21 +92,24 @@ pub fn update_state(
         )
       },
     )
-  let expected_cons_state_keys = pairs.keys(expected_cons_state)
-
+  // Metadata is not required to have the same order, length or multiplicity as
+  // consensus_states. Index membership once, but preserve each list's filtering
+  // and truncation behavior instead of assuming positional alignment.
+  let cs_len = list.length(expected_cons_state)
+  // Reference the index directly in both filters. Hiding construction inside a
+  // shared predicate regressed measured execution costs in Aiken v1.1.21.
+  let retained = height_set.from_list(pairs.keys(expected_cons_state), cs_len)
   let expected_processed_times =
     list.filter(
       input_datum.state.processed_times,
-      fn(item) { list.has(expected_cons_state_keys, item.1st) },
+      fn(item) { height_set.contains(retained, item.1st) },
     )
-
   let expected_processed_heights =
     list.filter(
       input_datum.state.processed_heights,
-      fn(item) { list.has(expected_cons_state_keys, item.1st) },
+      fn(item) { height_set.contains(retained, item.1st) },
     )
 
-  let cs_len = list.length(expected_cons_state)
   let processed_time = tx_valid_from * 1_000_000
   let processed_height = processed_height_from_time(processed_time)
 
