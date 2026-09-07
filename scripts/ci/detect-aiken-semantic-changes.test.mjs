@@ -281,6 +281,30 @@ test('classifies modified comments as trivia and source additions as relevant', 
       true,
     );
 
+    let calibrationBase = txBudgetLimitsChanged;
+    for (const file of [
+      'scripts/ci/calibrate-aiken-budgets.mjs',
+      'scripts/ci/calibrate-aiken-budgets.test.mjs',
+      'scripts/ci/aiken-budget-evaluator/Cargo.lock',
+      'scripts/ci/aiken-budget-evaluator/src/main.rs',
+    ]) {
+      const directory = join(repo, file.substring(0, file.lastIndexOf('/')));
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(repo, file), 'calibration input\n');
+      execFileSync('git', ['add', '.'], { cwd: repo });
+      execFileSync('git', ['commit', '-qm', 'change budget calibration'], { cwd: repo });
+      const calibrationChanged = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: repo,
+        encoding: 'utf8',
+      }).trim();
+      assert.equal(
+        classifyAikenChanges(repo, calibrationBase, calibrationChanged).aikenRelevantChanged,
+        true,
+        file,
+      );
+      calibrationBase = calibrationChanged;
+    }
+
     const capacityFixtureDir = join(
       repo,
       'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity',

@@ -10,6 +10,7 @@ use aiken/primitive/int
 use aiken/primitive/string
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, Value, add, from_asset, zero}
+use cardano/script_context.{ScriptContext, Spending}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction, placeholder,
@@ -1193,7 +1194,7 @@ test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
 /// consensus-state root transition. Consensus-state removals are deliberately
 /// empty: issue #613 measures validator-set capacity independently of the
 /// pruning growth tracked by issue #557.
-test host_update_client_capacity_minimum_history_succeeds() {
+fn prepare_host_update_client_capacity() -> Pair<HostStateRedeemer, Transaction> {
   let seed = 613
   let input_client_datum = test_client_datum(1, seed)
   let output_client_datum =
@@ -1275,11 +1276,57 @@ test host_update_client_capacity_minimum_history_succeeds() {
       removed_consensus_state_siblings: [],
     }
 
-  spend_host_state(
+  Pair(
     redeemer,
-    [test_host_input(old_state), test_client_input(input_client_datum)],
-    [test_host_output(new_state), test_client_output(output_client_datum)],
+    Transaction {
+      ..placeholder,
+      inputs: [
+        test_host_input(old_state),
+        test_client_input(input_client_datum),
+      ],
+      outputs: [
+        test_host_output(new_state),
+        test_client_output(output_client_datum),
+      ],
+    },
   )
+}
+
+// Merkle roots, witnesses and transaction arguments are prepared at compile time.
+const host_update_client_capacity_fixture =
+  prepare_host_update_client_capacity()
+
+test host_update_client_capacity_minimum_history_succeeds() {
+  let Pair(redeemer, transaction) = host_update_client_capacity_fixture
+  host_state_stt.host_state_stt.spend(
+    test_nft_policy(),
+    test_client_script_hash(),
+    test_connection_script_hash(),
+    test_channel_script_hash(),
+    None,
+    redeemer,
+    test_host_ref(),
+    transaction,
+  )
+}
+
+// Export the same prepared inputs for independent compiled-script evaluation.
+test export_capacity_calibration_fixture() {
+  let Pair(redeemer, transaction) = host_update_client_capacity_fixture
+  let nft_policy: Data = test_nft_policy()
+  let client_script: Data = test_client_script_hash()
+  let connection_script: Data = test_connection_script_hash()
+  let channel_script: Data = test_channel_script_hash()
+  let context: Data =
+    ScriptContext {
+      transaction,
+      redeemer,
+      info: Spending { output: test_host_ref(), datum: None },
+    }
+  let arguments: List<Data> =
+    [nft_policy, client_script, connection_script, channel_script, context]
+  trace @"budget-calibration:host_state": cbor.serialise(arguments)
+  True
 }
 
 test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {

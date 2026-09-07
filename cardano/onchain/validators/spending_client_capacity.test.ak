@@ -2,6 +2,7 @@ use aiken/cbor
 use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
+use cardano/script_context.{ScriptContext, Spending}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -41,6 +42,14 @@ type MockData {
   client_token: AuthToken,
   output_reference: OutputReference,
   input: Input,
+}
+
+type CapacityFixture {
+  host_state_nft_policy_id: PolicyId,
+  datum: Option<ClientDatum>,
+  redeemer: SpendClientRedeemer,
+  output_reference: OutputReference,
+  transaction: Transaction,
 }
 
 fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
@@ -126,12 +135,12 @@ fn update_client_output_datum(
   Output { ..output, datum: InlineDatum(client_datum) }
 }
 
-fn check_update_client_capacity(
+fn prepare_update_client_capacity(
   encoded_redeemer: ByteArray,
   trusted_timestamp: Int,
   trusted_app_hash: ByteArray,
   trusted_validator_set_hash: ByteArray,
-) -> Bool {
+) -> CapacityFixture {
   let mock = setup()
   expect Some(data) = cbor.deserialise(encoded_redeemer)
   expect redeemer: SpendClientRedeemer = data
@@ -225,38 +234,85 @@ fn check_update_client_capacity(
       redeemers: host_state_redeemers,
     }
 
-  spending_client.spend_client.spend(
-    mock.host_state_nft_policy_id,
-    Some(client_datum),
+  CapacityFixture {
+    host_state_nft_policy_id: mock.host_state_nft_policy_id,
+    datum: Some(client_datum),
     redeemer,
-    mock.output_reference,
+    output_reference: mock.output_reference,
     transaction,
-  )
+  }
 }
 
-test update_client_capacity_adjacent_all_signed_45_succeeds() {
-  check_update_client_capacity(
+// Decode and build ledger arguments at compile time, outside measured execution.
+const adjacent_all_signed_fixture =
+  prepare_update_client_capacity(
     adjacent_all_signed_spend_client_redeemer_cbor,
     adjacent_all_signed_trusted_timestamp,
     adjacent_all_signed_trusted_app_hash,
     adjacent_all_signed_trusted_validator_set_hash,
   )
-}
 
-test update_client_capacity_adjacent_mixed_45_succeeds() {
-  check_update_client_capacity(
+const adjacent_mixed_fixture =
+  prepare_update_client_capacity(
     adjacent_mixed_spend_client_redeemer_cbor,
     adjacent_mixed_trusted_timestamp,
     adjacent_mixed_trusted_app_hash,
     adjacent_mixed_trusted_validator_set_hash,
   )
-}
 
-test update_client_capacity_non_adjacent_mixed_45_succeeds() {
-  check_update_client_capacity(
+const non_adjacent_mixed_fixture =
+  prepare_update_client_capacity(
     non_adjacent_mixed_spend_client_redeemer_cbor,
     non_adjacent_mixed_trusted_timestamp,
     non_adjacent_mixed_trusted_app_hash,
     non_adjacent_mixed_trusted_validator_set_hash,
   )
+
+fn check_update_client_capacity(fixture: CapacityFixture) -> Bool {
+  spending_client.spend_client.spend(
+    fixture.host_state_nft_policy_id,
+    fixture.datum,
+    fixture.redeemer,
+    fixture.output_reference,
+    fixture.transaction,
+  )
+}
+
+test update_client_capacity_adjacent_all_signed_45_succeeds() {
+  check_update_client_capacity(adjacent_all_signed_fixture)
+}
+
+test update_client_capacity_adjacent_mixed_45_succeeds() {
+  check_update_client_capacity(adjacent_mixed_fixture)
+}
+
+test update_client_capacity_non_adjacent_mixed_45_succeeds() {
+  check_update_client_capacity(non_adjacent_mixed_fixture)
+}
+
+fn capacity_script_arguments(fixture: CapacityFixture) -> List<Data> {
+  expect Some(datum) = fixture.datum
+  let datum: Data = datum
+  let policy: Data = fixture.host_state_nft_policy_id
+  let context: Data =
+    ScriptContext {
+      transaction: fixture.transaction,
+      redeemer: fixture.redeemer,
+      info: Spending { output: fixture.output_reference, datum: Some(datum) },
+    }
+  [policy, context]
+}
+
+// Export inputs only. These test costs are never used as validator costs.
+test export_capacity_calibration_fixtures() {
+  trace @"budget-calibration:adjacent_all_signed": cbor.serialise(
+    capacity_script_arguments(adjacent_all_signed_fixture),
+  )
+  trace @"budget-calibration:adjacent_mixed": cbor.serialise(
+    capacity_script_arguments(adjacent_mixed_fixture),
+  )
+  trace @"budget-calibration:non_adjacent_mixed": cbor.serialise(
+    capacity_script_arguments(non_adjacent_mixed_fixture),
+  )
+  True
 }
