@@ -64,35 +64,3 @@ client/connection references, duplicate HostState outputs, missing references,
 wrong derived tokens, forged datums without the expected token, and malformed
 client or connection datums. Every selected reference remains authenticated by
 the exact derived policy id and asset name before its inline datum is decoded.
-
-## ICS-23 verification (#725)
-
-Compared with `bfc77fc69` using Aiken `v1.1.21+42babe5` and the default
-`aiken check` traces. Chained membership now validates and calculates each
-subroot once. Neighbor checking walks reversed paths instead of repeatedly
-copying their prefixes. The existing singleton-path behavior is unchanged.
-
-| Operation | Depth | Memory before | Memory after | CPU before | CPU after |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Chained membership | 1 | 799,964 | 613,023 | 307,999,955 | 230,688,074 |
-| Chained membership | 8 | 2,234,089 | 1,796,415 | 857,246,919 | 656,399,479 |
-| Chained membership | 32 | 7,151,089 | 5,853,759 | 2,740,379,367 | 2,115,981,439 |
-| Chained membership | 64 | 13,707,089 | 11,263,551 | 5,251,222,631 | 4,062,090,719 |
-| Chained membership | 128 | 26,819,089 | 22,083,135 | 10,272,909,159 | 7,954,309,279 |
-| Neighbor check | 0 | 448,417 | 393,086 | 139,522,340 | 120,779,147 |
-| Neighbor check | 8 | 1,755,713 | 570,894 | 546,133,564 | 176,900,059 |
-| Neighbor check | 32 | 12,102,689 | 1,104,318 | 3,799,151,236 | 345,262,795 |
-| Neighbor check | 64 | 40,890,529 | 1,815,550 | 12,880,604,132 | 569,746,443 |
-| Neighbor check | 126 | 145,424,017 | 3,193,562 | 45,904,820,618 | 1,004,683,511 |
-
-Membership depth applies to each of the IAVL and Tendermint proofs. Neighbor
-depth counts shared root-side steps, with two additional steps on each path.
-These are verification microbenchmarks, not complete transaction budgets.
-The deepest membership fixture still exceeds Cardano's transaction memory limit.
-
-From `cardano/onchain`, run
-`aiken check --deny --plain-numbers -m 'ibc/core/ics_023_vector_commitments/ics23/verification_benchmark'`.
-To reproduce the baseline, copy only `verification_benchmark.test.ak` into the
-same directory of a worktree at `bfc77fc69` and run the same command. All fixtures
-and trusted roots are constants, so their construction is excluded from the
-measured execution units.
