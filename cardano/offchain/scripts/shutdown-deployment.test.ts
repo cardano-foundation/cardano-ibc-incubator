@@ -6,6 +6,7 @@ import {
   Lucid,
   type LucidEvolution,
   type Script,
+  slotToUnixTime,
   type UTxO,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
@@ -19,7 +20,9 @@ import {
 } from "../types/index.ts";
 import {
   buildFinalizeShutdownTx,
+  MIN_SHUTDOWN_GRACE_PERIOD_MS,
   partitionShutdownReferences,
+  shutdownTiming,
 } from "./shutdown-deployment.ts";
 
 const HOST_STATE_TOKEN_NAME = "6962635f686f73745f7374617465";
@@ -142,6 +145,63 @@ function testReclaimableReference(): UTxO {
     scriptRef: HOST_STATE_POLICY,
   };
 }
+
+Deno.test("shutdown grace starts at the slot-aligned transaction expiry", async () => {
+  const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
+  const emulator = new Emulator([account]);
+  const lucid = await Lucid(emulator, "Preprod");
+  lucid.selectWallet.fromSeed(account.seedPhrase);
+  const now = emulator.now() + 123;
+  const timing = shutdownTiming(lucid, {
+    gracePeriodMs: MIN_SHUTDOWN_GRACE_PERIOD_MS,
+  }, now);
+  const completed = await lucid.newTx()
+    .pay.ToAddress(account.address, { lovelace: 5_000_000n })
+    .validFrom(timing.validFrom)
+    .validTo(timing.validTo)
+    .complete();
+  const body = completed.toTransaction().body();
+  assertEquals(
+    timing.validTo,
+    slotToUnixTime("Preprod", Number(body.ttl())),
+  );
+  assertEquals(
+    timing.validFrom,
+    slotToUnixTime("Preprod", Number(body.validity_interval_start())),
+  );
+  assert(timing.validTo <= now + 10 * 60 * 1000);
+  assert(timing.validTo > now);
+  assertEquals(
+    timing.gracePeriodEnd,
+    timing.validTo + MIN_SHUTDOWN_GRACE_PERIOD_MS,
+  );
+  assertEquals(
+    shutdownTiming(lucid, { gracePeriodEnd: timing.gracePeriodEnd }, now),
+    timing,
+  );
+  for (
+    const grace of [
+      { gracePeriodMs: MIN_SHUTDOWN_GRACE_PERIOD_MS - 1 },
+      { gracePeriodEnd: timing.gracePeriodEnd - 1 },
+      { gracePeriodEnd: now + MIN_SHUTDOWN_GRACE_PERIOD_MS },
+      { gracePeriodMs: Number.MAX_SAFE_INTEGER },
+    ]
+  ) {
+    assertThrows(() => shutdownTiming(lucid, grace, now), Error, "at least");
+  }
+});
+
+Deno.test("shutdown timing requires exactly one grace period input", () => {
+  const { lucid } = recordingLucid();
+  for (
+    const grace of [{}, {
+      gracePeriodMs: 86_400_000,
+      gracePeriodEnd: 100_000_000,
+    }]
+  ) {
+    assertThrows(() => shutdownTiming(lucid, grace), Error, "exactly one");
+  }
+});
 
 Deno.test("reference reclamation uses only known deployment outrefs", () => {
   const deployment = testDeployment();

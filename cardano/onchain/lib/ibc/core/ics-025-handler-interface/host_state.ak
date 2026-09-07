@@ -32,6 +32,9 @@ pub const host_state_token_name = "ibc_host_state"
 /// three ports and can add up to this fixed protocol-wide maximum.
 pub const max_bound_ports = 10
 
+/// Minimum drain/refund window after the shutdown transaction's latest valid time.
+pub const min_shutdown_grace_period_ms = 86_400_000
+
 /// Order byte-string map keys for `pairs.insert_by_ascending_key` using the
 /// order required by canonical CBOR.
 ///
@@ -60,6 +63,7 @@ fn compare_port_keys_for_insertion(
 /// `Active` is the normal operating mode. `ShuttingDown` is entered by the
 /// trusted deployment key and lets users drain/refund existing state before
 /// protocol-owned min-ADA can be reclaimed.
+/// `initiated_at` is the shutdown transaction's latest valid time.
 pub type ShutdownState {
   Active
   ShuttingDown { initiated_at: Int, grace_period_end: Int }
@@ -321,6 +325,7 @@ pub fn validate_enter_shutdown(
   old: HostStateDatum,
   new: HostStateDatum,
   grace_period_end: Int,
+  valid_to: Int,
 ) -> Bool {
   and {
     validate_version_increment(old.state, new.state),
@@ -328,11 +333,12 @@ pub fn validate_enter_shutdown(
     new.control == HostStateControl {
       port_registry: old.control.port_registry,
       shutdown: ShuttingDown {
-        initiated_at: new.state.last_update_time,
+        initiated_at: valid_to,
         grace_period_end,
       },
     },
-    grace_period_end > new.state.last_update_time,
+    new.state.last_update_time == valid_to,
+    grace_period_end >= valid_to + min_shutdown_grace_period_ms,
     new.state.ibc_state_root == old.state.ibc_state_root,
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
