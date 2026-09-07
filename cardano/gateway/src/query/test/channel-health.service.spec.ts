@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelService } from '../services/channel.service';
@@ -82,6 +83,7 @@ function makeService() {
     {} as MithrilService,
     {} as HistoryService,
     {} as any,
+      createTestTreeStore(),
   );
 
   return { service, lucidService };

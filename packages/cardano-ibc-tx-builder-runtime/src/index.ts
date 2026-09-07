@@ -8,7 +8,7 @@ import {
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
 import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
-import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
+import { IbcTreeStateStore, StaleIbcTreeStateError } from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
 import {
   findTransferEscrowShard as findTransferEscrowShardFromRegistry,
@@ -339,6 +339,7 @@ type BuilderRuntimeConfig = {
 type BuilderContext = {
   deployment: DeploymentConfig;
   lucidService: LucidIbcAdapter;
+  treeStore: IbcTreeStateStore;
   logger: RuntimeLogger;
   cardanoNetwork: Network;
   ogmiosEndpoint: string;
@@ -1477,10 +1478,16 @@ async function findTransferEscrowShard(
   );
 }
 
-async function ensureTreeAlignedForRoot(context: BuilderContext, onChainRoot: string): Promise<void> {
-  if (!isTreeAligned(onChainRoot)) {
-    context.logger.warn(`IBC tree root mismatch for local tx builder runtime, aligning to ${onChainRoot.slice(0, 16)}...`);
-    await alignTreeWithChain();
+async function ensureTreeAlignedForRoot(
+  context: BuilderContext,
+  onChainRoot: string,
+  hostStateUtxo: Pick<UTxO, 'txHash' | 'outputIndex'>,
+): Promise<void> {
+  const snapshot = await context.treeStore.getAlignedSnapshot();
+  if (snapshot.root !== onChainRoot ||
+    snapshot.hostState.txHash !== hostStateUtxo.txHash ||
+    snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
+    throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
   }
 }
 
@@ -1492,7 +1499,7 @@ async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inpu
 
   const hostStateDatum = await context.lucidService.decodeDatum<any>(hostStateUtxo.datum, 'host_state');
 
-  await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root);
+  await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
   const portId = convertHex2String(inputChannelDatum.port);
   const {
@@ -1505,7 +1512,7 @@ async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inpu
     packetReceiptSiblings,
     packetAcknowledgementSiblings,
     commit,
-  } = await computeRootWithHandlePacketUpdate(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
+  } = await context.treeStore.computeRootWithHandlePacketUpdate(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
 
   const updatedHostStateDatum = {
     ...hostStateDatum,
@@ -1614,14 +1621,19 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
     const kupoService = new RuntimeKupoService(lucidService, deployment);
-    initTreeServices(kupoService, lucidService);
-    await timed(logger, '[context]', 'rebuild IBC state tree', () => rebuildTreeFromChain(kupoService, lucidService));
+    const treeStore = new IbcTreeStateStore(
+      { network: cardanoNetwork, hostStateNFT: deployment.hostStateNFT },
+      kupoService,
+      lucidService,
+    );
+    await timed(logger, '[context]', 'rebuild IBC state tree', () => treeStore.rebuildTreeFromChain());
 
     logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
 
     return {
       deployment,
       lucidService,
+      treeStore,
       logger,
       cardanoNetwork,
       ogmiosEndpoint,

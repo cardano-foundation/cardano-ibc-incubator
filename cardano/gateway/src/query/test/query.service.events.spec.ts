@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { QueryService } from '../services/query.service';
@@ -40,6 +41,7 @@ describe('QueryService queryEvents', () => {
       {} as MithrilService,
       {} as DenomTraceService,
       {} as any,
+      createTestTreeStore(),
     );
 
     const latestHeightSpy = jest

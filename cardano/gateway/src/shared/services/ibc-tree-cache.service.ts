@@ -3,6 +3,7 @@ import { InjectEntityManager } from '@nestjs/typeorm';
 import { EntityManager } from 'typeorm';
 import zlib from 'zlib';
 import { ICS23MerkleTree } from '../helpers/ics23-merkle-tree';
+import { IbcTreeHostStateRef } from '../helpers/ibc-state-root';
 
 export const CURRENT_IBC_TREE_CACHE_ID = 'current';
 
@@ -12,6 +13,10 @@ export function ibcTreeCacheIdForRoot(root: string): string {
 
 export function ibcTreeCacheIdForHeight(height: bigint | number | string): string {
   return `height:${height.toString()}`;
+}
+
+export function ibcTreeCacheIdForHostState(hostState: IbcTreeHostStateRef): string {
+  return `host-state:${hostState.txHash}#${hostState.outputIndex}`;
 }
 
 type CachedTreeRow = {
@@ -72,9 +77,9 @@ export class IbcTreeCacheService {
     }
   }
 
-  async save(tree: ICS23MerkleTree, id: string = CURRENT_IBC_TREE_CACHE_ID): Promise<{ root: string }> {
+  async save(tree: ICS23MerkleTree, id: string = CURRENT_IBC_TREE_CACHE_ID, hostState?: IbcTreeHostStateRef): Promise<{ root: string }> {
     const root = tree.getRoot();
-    const payload = JSON.stringify(tree.toJSON());
+    const payload = JSON.stringify({ ...tree.toJSON(), ...(hostState ? { hostState } : {}) });
     const leavesGzip = zlib.gzipSync(Buffer.from(payload, 'utf8'));
 
     await this.entityManager.query(
@@ -90,11 +95,11 @@ export class IbcTreeCacheService {
     return { root };
   }
 
-  async saveAliases(tree: ICS23MerkleTree, ids: string[]): Promise<{ root: string }> {
+  async saveAliases(tree: ICS23MerkleTree, ids: string[], hostState?: IbcTreeHostStateRef): Promise<{ root: string }> {
     const uniqueIds = [...new Set(ids.filter((id) => id && id.trim().length > 0))];
     let root = tree.getRoot();
     for (const id of uniqueIds) {
-      ({ root } = await this.save(tree, id));
+      ({ root } = await this.save(tree, id, hostState));
     }
     return { root };
   }

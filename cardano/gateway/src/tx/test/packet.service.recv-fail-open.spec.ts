@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { convertString2Hex } from '@shared/helpers/hex';
@@ -94,6 +95,7 @@ describe('PacketService recv packet fail-open regression', () => {
       {} as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      createTestTreeStore(),
     );
   });
 

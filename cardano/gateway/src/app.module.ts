@@ -12,6 +12,7 @@ import { KupoModule } from './shared/modules/kupo/kupo.module';
 import { ApiModule } from './api/api.module';
 import { MithrilModule } from './shared/modules/mithril/mithril.module';
 import { TreeInitService } from './shared/services/tree-init.service';
+import { IbcTreeModule } from './shared/modules/ibc-tree/ibc-tree.module';
 import { HealthModule } from './health/health.module';
 import {
   loadBridgeConfigFromEnv,
@@ -34,6 +35,7 @@ const bridgeConfigFileReader = {
       isGlobal: true,
     }),
     HealthModule,
+    IbcTreeModule,
     QueryModule,
     TxModule,
     LucidModule,

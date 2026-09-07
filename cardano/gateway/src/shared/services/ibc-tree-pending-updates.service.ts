@@ -1,6 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { MetricsService } from '../../health/metrics.service';
 import { BoundedCache } from '../helpers/bounded-cache';
+import { IbcTreeHostStateRef, StateRootResult } from '../helpers/ibc-state-root';
 
 export const PENDING_TREE_UPDATE_CACHE_MAX_ENTRIES = 256;
 export const PENDING_TREE_UPDATE_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -9,7 +10,7 @@ const PENDING_TREE_UPDATE_CACHE_METRIC = 'ibc_tree_pending_updates';
 
 export type PendingTreeUpdate = {
   expectedNewRoot: string;
-  commit: () => void;
+  commit: StateRootResult['commit'];
 };
 
 @Injectable()
@@ -35,19 +36,24 @@ export class IbcTreePendingUpdatesService {
   }
 
   /**
-   * Commits and removes an exact pending entry as one synchronous operation.
-   * Keeping the entry until commit succeeds makes observation retries safe if
-   * the commit callback throws, while the identity check prevents a stale
-   * observer from consuming a newer registration for the same transaction.
+   * Keep the exact entry retryable until the live-chain check succeeds.
+   * A stale publication still acknowledges the confirmed historical snapshot.
    */
-  commit(txHash: string, expectedUpdate: PendingTreeUpdate): boolean {
-    if (!txHash) return false;
+  async commit(
+    txHash: string,
+    expectedUpdate: PendingTreeUpdate,
+    hostState: IbcTreeHostStateRef,
+  ): Promise<Awaited<ReturnType<PendingTreeUpdate['commit']>> | undefined> {
+    if (!txHash) return undefined;
     const key = txHash.toLowerCase();
     const update = this.pendingByTxHash.get(key);
-    if (update !== expectedUpdate) return false;
+    if (update !== expectedUpdate) return undefined;
 
-    update.commit();
-    return this.pendingByTxHash.deleteIfValue(key, update);
+    const result = await update.commit(hostState);
+    // Expiry or eviction while the live lookup awaited cannot undo confirmation.
+    // Leave any replacement entry intact but return the successful result.
+    this.pendingByTxHash.deleteIfValue(key, update);
+    return result;
   }
 
   take(txHash: string): PendingTreeUpdate | undefined {

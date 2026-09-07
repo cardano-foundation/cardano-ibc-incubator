@@ -1,23 +1,23 @@
 import { ICS23MerkleTree } from './ics23-merkle-tree';
-import {
-  computeRootWithPrunePacketHistoryUpdate,
-  getCurrentTree,
-  setCurrentTree,
-} from './ibc-state-root';
+import { IbcTreeStateStore } from './ibc-state-root';
+import { createTestTreeContext } from '../testing/ibc-tree-test-store';
 import { Order } from '../types/channel/order';
 
 const receiptPath = 'receipts/ports/transfer/channels/channel-0/sequences/7';
 const acknowledgementPath = 'acks/ports/transfer/channels/channel-0/sequences/7';
 
 describe('computeRootWithPrunePacketHistoryUpdate', () => {
-  it('deletes receipt first and acknowledgement second without speculative mutation', () => {
+  let store: IbcTreeStateStore;
+  let fixture: ReturnType<typeof createTestTreeContext>;
+  beforeEach(() => { fixture = createTestTreeContext(); store = fixture.store; });
+  it('deletes receipt first and acknowledgement second without speculative mutation', async () => {
     const tree = new ICS23MerkleTree();
     tree.set(receiptPath, Buffer.from('40', 'hex'));
     tree.set(acknowledgementPath, Buffer.from('41aa', 'hex'));
-    setCurrentTree(tree);
+    await fixture.restore(tree);
     const oldRoot = tree.getRoot();
 
-    const update = computeRootWithPrunePacketHistoryUpdate(
+    const update = store.computeRootWithPrunePacketHistoryUpdate(
       oldRoot,
       'transfer',
       'channel-0',
@@ -28,33 +28,33 @@ describe('computeRootWithPrunePacketHistoryUpdate', () => {
     expect(update.packetReceiptSiblings).toHaveLength(64);
     expect(update.packetAcknowledgementSiblings).toHaveLength(64);
     expect(update.newRoot).not.toBe(oldRoot);
-    expect(getCurrentTree().get(receiptPath)).toEqual(Buffer.from('40', 'hex'));
-    expect(getCurrentTree().get(acknowledgementPath)).toEqual(Buffer.from('41aa', 'hex'));
+    expect(store.getCurrentTree().get(receiptPath)).toEqual(Buffer.from('40', 'hex'));
+    expect(store.getCurrentTree().get(acknowledgementPath)).toEqual(Buffer.from('41aa', 'hex'));
 
-    update.commit();
-    expect(getCurrentTree().getRoot()).toBe(update.newRoot);
-    expect(getCurrentTree().get(receiptPath)).toBeUndefined();
-    expect(getCurrentTree().get(acknowledgementPath)).toBeUndefined();
+    await fixture.commit(update);
+    expect(store.getCurrentTree().getRoot()).toBe(update.newRoot);
+    expect(store.getCurrentTree().get(receiptPath)).toBeUndefined();
+    expect(store.getCurrentTree().get(acknowledgementPath)).toBeUndefined();
   });
 
-  it('fails closed when either retained history entry is missing', () => {
+  it('fails closed when either retained history entry is missing', async () => {
     const tree = new ICS23MerkleTree();
     tree.set(receiptPath, Buffer.from('40', 'hex'));
-    setCurrentTree(tree);
+    await fixture.restore(tree);
 
     expect(() =>
-      computeRootWithPrunePacketHistoryUpdate(tree.getRoot(), 'transfer', 'channel-0', 7n, Order.Unordered),
+      store.computeRootWithPrunePacketHistoryUpdate(tree.getRoot(), 'transfer', 'channel-0', 7n, Order.Unordered),
     ).toThrow('expects an existing acknowledgement');
   });
 
-  it('deletes only the acknowledgement for an ordered channel', () => {
+  it('deletes only the acknowledgement for an ordered channel', async () => {
     const tree = new ICS23MerkleTree();
     tree.set(receiptPath, Buffer.from('40', 'hex'));
     tree.set(acknowledgementPath, Buffer.from('41aa', 'hex'));
-    setCurrentTree(tree);
+    await fixture.restore(tree);
     const oldRoot = tree.getRoot();
 
-    const update = computeRootWithPrunePacketHistoryUpdate(
+    const update = store.computeRootWithPrunePacketHistoryUpdate(
       oldRoot,
       'transfer',
       'channel-0',
@@ -65,20 +65,20 @@ describe('computeRootWithPrunePacketHistoryUpdate', () => {
     expect(update.packetReceiptSiblings).toEqual([]);
     expect(update.packetAcknowledgementSiblings).toHaveLength(64);
     expect(update.newRoot).not.toBe(oldRoot);
-    expect(getCurrentTree().get(receiptPath)).toEqual(Buffer.from('40', 'hex'));
-    expect(getCurrentTree().get(acknowledgementPath)).toEqual(Buffer.from('41aa', 'hex'));
+    expect(store.getCurrentTree().get(receiptPath)).toEqual(Buffer.from('40', 'hex'));
+    expect(store.getCurrentTree().get(acknowledgementPath)).toEqual(Buffer.from('41aa', 'hex'));
 
-    update.commit();
-    expect(getCurrentTree().get(receiptPath)).toEqual(Buffer.from('40', 'hex'));
-    expect(getCurrentTree().get(acknowledgementPath)).toBeUndefined();
+    await fixture.commit(update);
+    expect(store.getCurrentTree().get(receiptPath)).toEqual(Buffer.from('40', 'hex'));
+    expect(store.getCurrentTree().get(acknowledgementPath)).toBeUndefined();
   });
 
-  it('allows an ordered channel with no receipt but still requires an acknowledgement', () => {
+  it('allows an ordered channel with no receipt but still requires an acknowledgement', async () => {
     const tree = new ICS23MerkleTree();
     tree.set(acknowledgementPath, Buffer.from('41aa', 'hex'));
-    setCurrentTree(tree);
+    await fixture.restore(tree);
 
-    const update = computeRootWithPrunePacketHistoryUpdate(
+    const update = store.computeRootWithPrunePacketHistoryUpdate(
       tree.getRoot(),
       'transfer',
       'channel-0',
@@ -88,9 +88,9 @@ describe('computeRootWithPrunePacketHistoryUpdate', () => {
     expect(update.packetReceiptSiblings).toEqual([]);
 
     const missingAcknowledgementTree = new ICS23MerkleTree();
-    setCurrentTree(missingAcknowledgementTree);
+    await fixture.restore(missingAcknowledgementTree);
     expect(() =>
-      computeRootWithPrunePacketHistoryUpdate(
+      store.computeRootWithPrunePacketHistoryUpdate(
         missingAcknowledgementTree.getRoot(),
         'transfer',
         'channel-0',

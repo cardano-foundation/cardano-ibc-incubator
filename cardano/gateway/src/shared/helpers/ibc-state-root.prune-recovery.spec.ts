@@ -8,12 +8,7 @@ import { ConnectionDatum, encodeConnectionEndValue } from '../types/connection/c
 import { State as ConnectionState } from '../types/connection/state';
 import { encodeModuleRegistration } from '../types/host-state-datum';
 import { ICS23MerkleTree } from './ics23-merkle-tree';
-import {
-  computeRootWithHandlePacketUpdate,
-  getCurrentTree,
-  rebuildTreeFromChain,
-  setCurrentTree,
-} from './ibc-state-root';
+import { createTestTreeStore } from '../testing/ibc-tree-test-store';
 
 const toHex = (value: string): string => Buffer.from(value, 'utf8').toString('hex');
 const authAssetUnit = (policyByte: string, prefixByte: string, sequence: number): string =>
@@ -156,14 +151,17 @@ describe('IBC state root recovery after packet-history pruning', () => {
       control: { port_registry: new Map([[toHex('Transfer-v2'), registration]]), shutdown: 'Active' },
     };
     const clientUtxo = {
+      txHash: '11'.repeat(32), outputIndex: 0,
       datum: 'client-datum',
       assets: { [authAssetUnit('61', '62', 0)]: 1n },
     };
     const connectionUtxo = {
+      txHash: '22'.repeat(32), outputIndex: 0,
       datum: 'connection-datum',
       assets: { [authAssetUnit('71', '72', 0)]: 1n },
     };
     const channelUtxo = {
+      txHash: '33'.repeat(32), outputIndex: 0,
       datum: 'channel-datum',
       assets: { [authAssetUnit('81', '82', 0)]: 1n },
     };
@@ -174,7 +172,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
     };
     const lucidService = {
       LucidImporter: Lucid,
-      findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({ datum: 'host-state-datum' }),
+      findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({ txHash: '44'.repeat(32), outputIndex: 0, assets: {}, datum: 'host-state-datum' }),
       decodeDatum: jest.fn().mockImplementation(async (datum: string) => {
         if (datum === 'host-state-datum') return hostStateDatum;
         if (datum === 'client-datum') return clientDatum;
@@ -185,8 +183,8 @@ describe('IBC state root recovery after packet-history pruning', () => {
     };
 
     // Model complete loss of the Gateway's in-memory/off-chain tree.
-    setCurrentTree(new ICS23MerkleTree());
-    const rebuilt = await rebuildTreeFromChain(kupoService, lucidService);
+    const store = createTestTreeStore(kupoService, lucidService);
+    const rebuilt = await store.rebuildTreeFromChain();
 
     expect(rebuilt.root).toBe(hostStateDatum.state.ibc_state_root);
     expect(rebuilt.tree.get(prunedReceiptPath)).toBeUndefined();
@@ -204,7 +202,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
         maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 90n },
       },
     };
-    const continuation = await computeRootWithHandlePacketUpdate(
+    const continuation = await store.computeRootWithHandlePacketUpdate(
       rebuilt.root,
       'transfer',
       'channel-0',
@@ -215,13 +213,16 @@ describe('IBC state root recovery after packet-history pruning', () => {
 
     expect(continuation.packetReceiptSiblings).toHaveLength(64);
     expect(continuation.packetAcknowledgementSiblings).toHaveLength(64);
-    expect(getCurrentTree().getRoot()).toBe(rebuilt.root);
-    continuation.commit();
+    expect(store.getCurrentTree().getRoot()).toBe(rebuilt.root);
+    const confirmedRef = { txHash: '55'.repeat(32), outputIndex: 0 };
+    lucidService.findUtxoAtHostStateNFT.mockResolvedValue({ ...confirmedRef, assets: {}, datum: 'next-host-state' });
+    lucidService.decodeDatum.mockImplementation(async () => ({ state: { ibc_state_root: continuation.newRoot } }));
+    await continuation.commit(confirmedRef);
 
     const newReceiptPath = `receipts/ports/transfer/channels/channel-0/sequences/${nextSequence}`;
     const newAcknowledgementPath = `acks/ports/transfer/channels/channel-0/sequences/${nextSequence}`;
-    expect(getCurrentTree().get(newReceiptPath)).toEqual(packetValue(''));
-    expect(getCurrentTree().get(newAcknowledgementPath)).toEqual(packetValue('0102'));
-    expect(getCurrentTree().verifyProof(getCurrentTree().generateProof(newAcknowledgementPath))).toBe(true);
+    expect(store.getCurrentTree().get(newReceiptPath)).toEqual(packetValue(''));
+    expect(store.getCurrentTree().get(newAcknowledgementPath)).toEqual(packetValue('0102'));
+    expect(store.getCurrentTree().verifyProof(store.getCurrentTree().generateProof(newAcknowledgementPath))).toBe(true);
   });
 });

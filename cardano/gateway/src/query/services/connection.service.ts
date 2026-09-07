@@ -37,11 +37,10 @@ import {
   GrpcInvalidArgumentException,
   GrpcNotFoundException,
 } from '~@/exception/grpc_exceptions';
-import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
-import { HostStateDatum } from '../../shared/types/host-state-datum';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
+import { assertProofContextHostState, resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
 
@@ -55,23 +54,8 @@ export class ConnectionService {
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
-
-  private async ensureTreeAligned(): Promise<void> {
-    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-    if (!hostStateUtxo?.datum) {
-      throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
-    }
-    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-    const onChainRoot = hostStateDatum.state.ibc_state_root;
-
-    if (isTreeAligned(onChainRoot)) return;
-
-    this.logger.warn(
-      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
-    );
-    await alignTreeWithChain();
-  }
 
   private async getQueryHeight(): Promise<bigint> {
     try {
@@ -101,6 +85,7 @@ export class ConnectionService {
       'stake-weighted-stability';
 
     return resolveProofContextForQuery({
+      ibcTreeStore: this.ibcTreeStore,
       logger: this.logger,
       lucidService: this.lucidService,
       mithrilService: this.mithrilService,
@@ -110,14 +95,6 @@ export class ConnectionService {
       requestedHeight,
       lightClientMode,
     });
-  }
-
-  private async findConnectionUtxo(connectionTokenUnit: string) {
-    const deploymentConfig = this.configService.get('deployment');
-    return this.lucidService.findUtxoAtWithUnit(
-      deploymentConfig.validators.spendConnection.address,
-      connectionTokenUnit,
-    );
   }
 
   async queryConnections(request: QueryConnectionsRequest): Promise<QueryConnectionsResponse> {
@@ -297,9 +274,7 @@ export class ConnectionService {
       const connTokenUnit = mintConnScriptHash + connectionTokenName;
       const proofContext = await this.getProofContext('queryConnection', options.queryHeight);
       const lookupStartedAt = Date.now();
-      const utxo = proofContext.historical
-        ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(connTokenUnit, proofContext.proofHeight)
-        : await this.findConnectionUtxo(connTokenUnit);
+      const utxo = await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(connTokenUnit, proofContext.proofHeight);
       this.logger.debug(
         `[queryConnection] loaded connection UTxO ${utxo.txHash}#${utxo.outputIndex} in ${Date.now() - lookupStartedAt}ms`,
       );
@@ -307,11 +282,6 @@ export class ConnectionService {
         utxo.datum!,
         this.lucidService.LucidImporter,
       );
-      if (!proofContext.historical) {
-        const treeAlignmentStartedAt = Date.now();
-        await this.ensureTreeAligned();
-        this.logger.debug(`[queryConnection] tree alignment completed in ${Date.now() - treeAlignmentStartedAt}ms`);
-      }
 
       // Generate ICS-23 proof from the IBC state tree
       //
@@ -319,7 +289,8 @@ export class ConnectionService {
       // is authentic by reconstructing the Merkle root accepted by the active Cardano client.
       // Even if Gateway is compromised, it cannot forge valid proofs.
       const ibcPath = `connections/${CONNECTION_ID_PREFIX}-${connectionId}`;
-      const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+      await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+      const tree = proofContext.tree;
       let connectionProof: Buffer;
       try {
         const existenceProof = tree.generateProof(ibcPath);

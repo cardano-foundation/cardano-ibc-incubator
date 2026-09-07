@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { QueryService, TX_REDEEMER_CACHE_MAX_ENTRIES, TX_REDEEMER_CACHE_TTL_MS } from '../services/query.service';
 
@@ -13,6 +14,7 @@ describe('QueryService transaction redeemer cache', () => {
       {} as any,
       {} as any,
       {} as any,
+      createTestTreeStore(),
       metrics as any,
     );
 

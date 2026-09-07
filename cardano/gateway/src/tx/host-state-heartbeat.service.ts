@@ -9,7 +9,7 @@ import {
   GrpcInvalidArgumentException,
 } from '~@/exception/grpc_exceptions';
 
-import { alignTreeWithChain, isTreeAligned } from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
@@ -35,6 +35,7 @@ export class HostStateHeartbeatService {
     @Inject(LucidService) private readonly lucidService: LucidService,
     @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   async buildHeartbeat(
@@ -77,15 +78,13 @@ export class HostStateHeartbeatService {
       );
     }
 
-    if (!isTreeAligned(context.hostStateDatum.state.ibc_state_root)) {
-      this.logger.warn('IBC tree is not aligned with HostState before heartbeat; rebuilding');
-      await alignTreeWithChain();
-      if (!isTreeAligned(context.hostStateDatum.state.ibc_state_root)) {
-        throw new GrpcFailedPreconditionException(
-          'IBC tree could not be aligned with HostState before heartbeat',
-        );
-      }
+    const snapshot = await this.ibcTreeStore.getAlignedSnapshot();
+    if (snapshot.root !== context.hostStateDatum.state.ibc_state_root ||
+      snapshot.hostState.txHash !== context.hostStateUtxo.txHash ||
+      snapshot.hostState.outputIndex !== context.hostStateUtxo.outputIndex) {
+      throw new GrpcFailedPreconditionException('HostState changed before heartbeat, retry with current inputs');
     }
+    const treeUpdate = this.ibcTreeStore.computeRootWithHeartbeatUpdate(snapshot.root);
 
     const validity = await this.computeTxValidityWindow();
     const updatedHostStateDatum: HostStateDatum = {
@@ -131,11 +130,10 @@ export class HostStateHeartbeatService {
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
       },
-      // A heartbeat deliberately leaves the commitment tree unchanged, but
-      // submission remains strict and still verifies the confirmed HostState root.
+      // The tree stays unchanged but its HostState output reference must advance.
       pendingTreeUpdate: {
         expectedNewRoot: context.hostStateDatum.state.ibc_state_root,
-        commit: () => undefined,
+        commit: treeUpdate.commit,
       },
     });
 

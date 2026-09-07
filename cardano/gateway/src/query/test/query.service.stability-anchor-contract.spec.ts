@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -247,6 +248,7 @@ describe('QueryService stability anchor contract', () => {
       {} as MithrilService,
       {} as DenomTraceService,
       {} as any,
+      createTestTreeStore(),
     );
   });
 
