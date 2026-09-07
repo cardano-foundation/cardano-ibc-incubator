@@ -1,7 +1,9 @@
 use aiken/collection/list
+use aiken/fuzz
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
+  ProofSpec,
 }
 
 fn valid_iavl_leaf() -> LeafOp {
@@ -121,4 +123,265 @@ test test_check_against_iavl_spec_rejects_above_default_max_depth() fail {
 test test_check_against_iavl_spec_rejects_low_height_at_deeper_layer() fail {
   let path = list.repeat(iavl_inner_with_height_2(), 3)
   proof.check_against_spec(iavl_existence_proof(path), proofs.iavl_spec())
+}
+
+test checked_root_preserves_the_validated_root() {
+  let p = iavl_existence_proof([iavl_inner_with_height_2()])
+  proof.calculate_checked_existence_root(p, proofs.iavl_spec(), p.key, p.value) == proof.calculate_exist(
+    p,
+  )
+}
+
+fn checked_root(
+  p: ExistenceProof,
+  spec: ProofSpec,
+  key: ByteArray,
+  value: ByteArray,
+) -> Bool {
+  let root = proof.calculate_checked_existence_root(p, spec, key, value)
+  root != #[]
+}
+
+test checked_root_rejects_wrong_key() fail {
+  let p = iavl_existence_proof([])
+  checked_root(p, proofs.iavl_spec(), #"03", p.value)
+}
+
+test checked_root_rejects_wrong_value() fail {
+  let p = iavl_existence_proof([])
+  checked_root(p, proofs.iavl_spec(), p.key, #"03")
+}
+
+test checked_root_rejects_empty_key() fail {
+  let p = ExistenceProof { ..iavl_existence_proof([]), key: #[] }
+  checked_root(p, proofs.iavl_spec(), p.key, p.value)
+}
+
+test checked_root_rejects_empty_value() fail {
+  let p = ExistenceProof { ..iavl_existence_proof([]), value: #[] }
+  checked_root(p, proofs.iavl_spec(), p.key, p.value)
+}
+
+test checked_root_rejects_null_proof() fail {
+  let p = proofs.null_existance_proof()
+  checked_root(p, proofs.iavl_spec(), p.key, p.value)
+}
+
+test checked_root_rejects_null_spec() fail {
+  let p = iavl_existence_proof([])
+  checked_root(p, proofs.null_proof_spec(), p.key, p.value)
+}
+
+test checked_root_rejects_wrong_leaf_spec() fail {
+  let p = iavl_existence_proof([])
+  let spec = proofs.iavl_spec()
+  let changed =
+    ProofSpec { ..spec, leaf_spec: LeafOp { ..spec.leaf_spec, length: 0 } }
+  checked_root(p, changed, p.key, p.value)
+}
+
+test checked_root_rejects_wrong_inner_hash() fail {
+  let p =
+    iavl_existence_proof([InnerOp { ..iavl_inner_with_height_2(), hash: 2 }])
+  checked_root(p, proofs.iavl_spec(), p.key, p.value)
+}
+
+test checked_root_rejects_below_minimum_depth() fail {
+  let p = iavl_existence_proof([])
+  let spec = ProofSpec { ..proofs.iavl_spec(), min_depth: 1 }
+  checked_root(p, spec, p.key, p.value)
+}
+
+test checked_root_rejects_above_default_depth() fail {
+  let p = iavl_existence_proof(list.repeat(iavl_inner_with_height_129(), 129))
+  checked_root(p, proofs.iavl_spec(), p.key, p.value)
+}
+
+const left_step =
+  InnerOp {
+    hash: 1,
+    prefix: #"01",
+    suffix: #"afca3de8c7aefe1041f185a34e977a976b37d6ce4cce80e5e4545b93413eca02",
+  }
+
+const right_step =
+  InnerOp {
+    hash: 1,
+    prefix: #"01afca3de8c7aefe1041f185a34e977a976b37d6ce4cce80e5e4545b93413eca02",
+    suffix: #[],
+  }
+
+// Test-only model of the old last/length/slice loop, including its initial
+// negative slice indices and iteration bound. None represents an expect failure.
+fn legacy_neighbors(left: List<InnerOp>, right: List<InnerOp>) -> Option<Bool> {
+  let left_length = list.length(left)
+  let right_length = list.length(right)
+  legacy_neighbor_loop(
+    list.slice(left, 0, left_length - 2),
+    list.slice(right, 0, right_length - 2),
+    list.at(left, left_length - 1),
+    list.at(right, right_length - 1),
+    left_length,
+  )
+}
+
+fn legacy_neighbor_loop(
+  left: List<InnerOp>,
+  right: List<InnerOp>,
+  top_left: Option<InnerOp>,
+  top_right: Option<InnerOp>,
+  remaining: Int,
+) -> Option<Bool> {
+  when (top_left, top_right) is {
+    (Some(l), Some(r)) ->
+      if remaining > 0 && l.prefix == r.prefix && l.suffix == r.suffix {
+        let left_length = list.length(left)
+        let right_length = list.length(right)
+        legacy_neighbor_loop(
+          if left_length < 2 {
+            []
+          } else {
+            list.slice(left, 0, left_length - 2)
+          },
+          if right_length < 2 {
+            []
+          } else {
+            list.slice(right, 0, right_length - 2)
+          },
+          list.at(left, left_length - 1),
+          list.at(right, right_length - 1),
+          remaining - 1,
+        )
+      } else {
+        let spec = proofs.tendermint_spec().inner_spec
+        Some(and {
+            proof.is_left_step(spec, l, r),
+            proof.is_right_most(spec, left),
+            proof.is_left_most(spec, right),
+          })
+      }
+    _ -> None
+  }
+}
+
+fn neighbor_paths() -> Fuzzer<(List<InnerOp>, List<InnerOp>)> {
+  let step =
+    fuzz.map(
+      fuzz.bool(),
+      fn(left) {
+        if left {
+          left_step
+        } else {
+          right_step
+        }
+      },
+    )
+  fuzz.map3(
+    fuzz.list_between(step, 0, 8),
+    fuzz.list_between(step, 0, 8),
+    fuzz.list_between(step, 0, 24),
+    fn(left, right, shared) {
+      (list.concat(left, shared), list.concat(right, shared))
+    },
+  )
+}
+
+fn exhausted_neighbor_paths() -> Fuzzer<(List<InnerOp>, List<InnerOp>)> {
+  fuzz.such_that(
+    neighbor_paths(),
+    fn(paths) { legacy_neighbors(paths.1st, paths.2nd) == None },
+  )
+}
+
+fn evaluated_neighbor_paths() -> Fuzzer<(List<InnerOp>, List<InnerOp>)> {
+  fuzz.such_that(
+    neighbor_paths(),
+    fn(paths) { legacy_neighbors(paths.1st, paths.2nd) != None },
+  )
+}
+
+test prop_proof_neighbors_match_legacy_result(
+  paths via evaluated_neighbor_paths(),
+) {
+  fuzz.label(@"fuzz.unit.proof.neighbor_result")
+  expect Some(expected) = legacy_neighbors(paths.1st, paths.2nd)
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    paths.1st,
+    paths.2nd,
+  ) == expected
+}
+
+// Testing both the result and its negation distinguishes an evaluation failure
+// from either Bool result, even under an expected-failure test runner.
+test prop_proof_neighbors_preserve_exhaustion_failure(
+  paths via exhausted_neighbor_paths(),
+) fail {
+  fuzz.label(@"fuzz.unit.proof.neighbor_exhaustion")
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    paths.1st,
+    paths.2nd,
+  )
+}
+
+test prop_proof_neighbors_preserve_exhaustion_failure_negated(
+  paths via exhausted_neighbor_paths(),
+) fail {
+  fuzz.label(@"fuzz.unit.proof.neighbor_exhaustion_negated")
+  !proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    paths.1st,
+    paths.2nd,
+  )
+}
+
+test neighbors_preserve_singleton_results() {
+  let spec = proofs.tendermint_spec().inner_spec
+  and {
+    !proof.is_left_neighbor(spec, [left_step], [right_step]),
+    !proof.is_left_neighbor(spec, [left_step], [left_step]),
+    proof.is_left_neighbor(spec, [left_step], [right_step, left_step]),
+    proof.is_left_neighbor(spec, [left_step, right_step], [right_step]),
+  }
+}
+
+test neighbors_reject_empty_left() fail {
+  proof.is_left_neighbor(proofs.tendermint_spec().inner_spec, [], [right_step])
+}
+
+test neighbors_reject_empty_right() fail {
+  proof.is_left_neighbor(proofs.tendermint_spec().inner_spec, [left_step], [])
+}
+
+test neighbors_reject_identical_multistep_paths() fail {
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    [left_step, right_step],
+    [left_step, right_step],
+  )
+}
+
+test neighbors_reject_exhausted_shorter_left() fail {
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    [right_step, left_step],
+    [left_step, right_step, left_step],
+  )
+}
+
+test neighbors_reject_exhausted_shorter_right() fail {
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    [right_step, left_step, right_step],
+    [left_step, right_step],
+  )
+}
+
+test neighbors_compare_common_padding_without_rechecking_hashes() {
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    [right_step, left_step, left_step],
+    [left_step, right_step, InnerOp { ..left_step, hash: 2 }],
+  )
 }
