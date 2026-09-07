@@ -10,7 +10,6 @@ use aiken/primitive/int
 use aiken/primitive/string
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, Value, add, from_asset, zero}
-use cardano/script_context.{ScriptContext, Spending}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction, placeholder,
@@ -1308,25 +1307,6 @@ test host_update_client_capacity_minimum_history_succeeds() {
     test_host_ref(),
     transaction,
   )
-}
-
-// Export the same prepared inputs for independent compiled-script evaluation.
-test export_capacity_calibration_fixture() {
-  let Pair(redeemer, transaction) = host_update_client_capacity_fixture
-  let nft_policy: Data = test_nft_policy()
-  let client_script: Data = test_client_script_hash()
-  let connection_script: Data = test_connection_script_hash()
-  let channel_script: Data = test_channel_script_hash()
-  let context: Data =
-    ScriptContext {
-      transaction,
-      redeemer,
-      info: Spending { output: test_host_ref(), datum: None },
-    }
-  let arguments: List<Data> =
-    [nft_policy, client_script, connection_script, channel_script, context]
-  trace @"budget-calibration:host_state": cbor.serialise(arguments)
-  True
 }
 
 test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {

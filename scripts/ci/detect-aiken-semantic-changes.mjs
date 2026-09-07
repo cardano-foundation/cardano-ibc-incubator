@@ -9,8 +9,6 @@ const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
 
 const aikenInfrastructurePaths = new Set([
   'scripts/ci/aiken-fuzz-required-labels.json',
-  'scripts/ci/calibrate-aiken-budgets.mjs',
-  'scripts/ci/calibrate-aiken-budgets.test.mjs',
   'scripts/ci/check-aiken-fuzz-coverage.mjs',
   'scripts/ci/check-aiken-fuzz-imports.sh',
   'scripts/ci/check-aiken-wire-schema.mjs',
@@ -35,7 +33,6 @@ function isAikenInfrastructurePath(path) {
   return (
     path.startsWith('.github/actions/') ||
     path.startsWith('.github/workflows/') ||
-    path.startsWith('scripts/ci/aiken-budget-evaluator/') ||
     path.startsWith('cardano/gateway/src/shared/types/') ||
     path.startsWith(
       'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/',

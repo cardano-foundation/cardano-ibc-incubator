@@ -2,7 +2,6 @@ use aiken/cbor
 use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
-use cardano/script_context.{ScriptContext, Spending}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -288,31 +287,4 @@ test update_client_capacity_adjacent_mixed_45_succeeds() {
 
 test update_client_capacity_non_adjacent_mixed_45_succeeds() {
   check_update_client_capacity(non_adjacent_mixed_fixture)
-}
-
-fn capacity_script_arguments(fixture: CapacityFixture) -> List<Data> {
-  expect Some(datum) = fixture.datum
-  let datum: Data = datum
-  let policy: Data = fixture.host_state_nft_policy_id
-  let context: Data =
-    ScriptContext {
-      transaction: fixture.transaction,
-      redeemer: fixture.redeemer,
-      info: Spending { output: fixture.output_reference, datum: Some(datum) },
-    }
-  [policy, context]
-}
-
-// Export inputs only. These test costs are never used as validator costs.
-test export_capacity_calibration_fixtures() {
-  trace @"budget-calibration:adjacent_all_signed": cbor.serialise(
-    capacity_script_arguments(adjacent_all_signed_fixture),
-  )
-  trace @"budget-calibration:adjacent_mixed": cbor.serialise(
-    capacity_script_arguments(adjacent_mixed_fixture),
-  )
-  trace @"budget-calibration:non_adjacent_mixed": cbor.serialise(
-    capacity_script_arguments(non_adjacent_mixed_fixture),
-  )
-  True
 }

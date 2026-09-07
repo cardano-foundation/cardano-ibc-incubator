@@ -906,36 +906,6 @@ jobs:
             -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
             > ../../aiken-check.json
 
-      - name: Setup budget evaluator
-        uses: dtolnay/rust-toolchain@1.91.1
-
-      - name: Cache budget evaluator
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            scripts/ci/aiken-budget-evaluator/target
-          key: ${{ runner.os }}-aiken-budget-evaluator-${{ hashFiles('scripts/ci/aiken-budget-evaluator/Cargo.lock') }}
-
-      - name: Test budget calibration
-        run: |
-          node --test scripts/ci/calibrate-aiken-budgets.test.mjs
-          cargo test --locked --release --manifest-path scripts/ci/aiken-budget-evaluator/Cargo.toml
-
-      - name: Compare test costs with compiled production scripts
-        run: >-
-          node scripts/ci/calibrate-aiken-budgets.mjs
-          --aiken-report aiken-check.json
-          > aiken-budget-calibration.json
-
-      - name: Upload budget measurements
-        uses: actions/upload-artifact@v4
-        with:
-          name: aiken-budget-measurements
-          path: |
-            aiken-check.json
-            aiken-budget-calibration.json
-
       - name: Build proto types
         run: |
           npm ci --prefix proto-types
