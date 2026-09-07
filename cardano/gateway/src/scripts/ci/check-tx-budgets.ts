@@ -733,7 +733,7 @@ async function buildScenarios(
     'spending_channel/chan_open_ack.chan_open_ack.mint',
     'spending_channel/prune_packet_history.prune_packet_history.mint',
     'spending_channel/recv_packet.recv_packet.mint',
-    'spending_channel/send_packet.send_packet.spend',
+    'spending_channel/send_packet.send_packet.mint',
     'spending_channel/timeout_packet.timeout_packet.mint',
   ]
     .map((title) => ({ title, bytes: scriptBytes(validators, title) }))
@@ -847,7 +847,7 @@ async function buildScenarios(
         'host_state_stt.host_state_stt.spend',
         'spending_channel.spend_channel.spend',
         'spending_transfer_module.spend_transfer_module.spend',
-        'spending_channel/send_packet.send_packet.spend',
+        'spending_channel/send_packet.send_packet.mint',
         'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
       ],
       redeemers: [

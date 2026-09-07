@@ -45,6 +45,19 @@ Deno.test("generic module deployments pin the spend handler from the blueprint",
   );
 });
 
+Deno.test("send_packet is a mint-only policy in the compiled blueprint", () => {
+  assertEquals(
+    blueprint.validators
+      .map(({ title }) => title)
+      .filter((title) => title.startsWith("spending_channel/send_packet."))
+      .sort(),
+    [
+      "spending_channel/send_packet.send_packet.else",
+      "spending_channel/send_packet.send_packet.mint",
+    ],
+  );
+});
+
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {
   const lucid = {
     config: () => ({ network: "Preview" }),

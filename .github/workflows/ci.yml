@@ -498,6 +498,10 @@ jobs:
         working-directory: cardano/offchain
         run: deno task check
 
+      - name: Test deployment
+        working-directory: cardano/offchain
+        run: deno task test:deployment
+
       - name: Test shutdown finalization
         working-directory: cardano/offchain
         run: deno task test:shutdown
