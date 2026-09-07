@@ -268,8 +268,10 @@ class IbcTreeStateStore {
         const encodePacketStoreValue = (bytesHex) => Buffer.from(Data.to(bytesHex, Data.Bytes()), 'hex');
         const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
         let channelSiblings = [];
-        if (inputChannelDatum.state.channel !== outputChannelDatum.state.channel) {
-            const newChannelValue = Buffer.from(await encodeChannelEndValue(outputChannelDatum.state.channel, Lucid), 'hex');
+        const inputChannelValue = await encodeChannelEndValue(inputChannelDatum.state.channel, Lucid);
+        const outputChannelValue = await encodeChannelEndValue(outputChannelDatum.state.channel, Lucid);
+        if (inputChannelValue !== outputChannelValue) {
+            const newChannelValue = Buffer.from(outputChannelValue, 'hex');
             channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
             speculativeTree.set(channelPath, newChannelValue);
         }

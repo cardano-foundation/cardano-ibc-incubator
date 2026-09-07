@@ -246,6 +246,7 @@ function getEventPacketChannel(channelRedeemer: SpendChannelRedeemer): string {
   if ('SendPacket' in channelRedeemer) return EVENT_TYPE_PACKET.SEND_PACKET;
   if ('AcknowledgePacket' in channelRedeemer) return EVENT_TYPE_PACKET.ACKNOWLEDGE_PACKET;
   if ('TimeoutPacket' in channelRedeemer) return EVENT_TYPE_PACKET.TIMEOUT_PACKET;
+  if ('TimeoutOnClose' in channelRedeemer) return EVENT_TYPE_PACKET.TIMEOUT_ON_CLOSE_PACKET;
   return '';
 }
 
@@ -270,6 +271,9 @@ function packetFromChannelRedeemer(channelRedeemer: SpendChannelRedeemer): {
   }
   if ('TimeoutPacket' in channelRedeemer) {
     return { packet: channelRedeemer.TimeoutPacket.packet, acknowledgement: '' };
+  }
+  if ('TimeoutOnClose' in channelRedeemer) {
+    return { packet: channelRedeemer.TimeoutOnClose.packet, acknowledgement: '' };
   }
   throw new Error('Channel redeemer does not contain packet data');
 }

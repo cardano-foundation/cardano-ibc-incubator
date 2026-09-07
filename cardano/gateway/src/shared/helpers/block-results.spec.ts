@@ -13,6 +13,7 @@ import { initializeHeader } from '../types/header';
 import { SpendClientRedeemer } from '../types/client-redeemer';
 import {
   normalizeTxsResultFromClientDatum,
+  normalizeTxsResultFromChannelRedeemer,
   normalizeTxsResultFromRecvPacketSuccessAcknowledgement,
 } from './block-results';
 import headerMockBuilder from '../../tx/test/mock/header';
@@ -117,6 +118,46 @@ describe('normalizeTxsResultFromRecvPacketSuccessAcknowledgement', () => {
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX)).toBe(
       Buffer.from(JSON.stringify({ result: ACK_RESULT }), 'utf8').toString('hex'),
     );
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_PACKET.PACKET_DATA)).toBe('{"denom":"uosmo"}');
+  });
+});
+
+describe('normalizeTxsResultFromChannelRedeemer', () => {
+  it('emits the Cardano TimeoutOnClose event name and packet attributes', () => {
+    const channelDatum = {
+      state: {
+        channel: {
+          ordering: 'Ordered',
+          connection_hops: [Buffer.from('connection-0').toString('hex')],
+        },
+      },
+    } as any;
+    const packet = {
+      sequence: 3n,
+      source_port: Buffer.from('transfer').toString('hex'),
+      source_channel: Buffer.from('channel-0').toString('hex'),
+      destination_port: Buffer.from('transfer').toString('hex'),
+      destination_channel: Buffer.from('channel-1').toString('hex'),
+      data: Buffer.from('{"denom":"uosmo"}').toString('hex'),
+      timeout_height: { revisionNumber: 0n, revisionHeight: 100n },
+      timeout_timestamp: 0n,
+    };
+
+    const result = normalizeTxsResultFromChannelRedeemer(
+      {
+        TimeoutOnClose: {
+          packet,
+          proof_unreceived: { proofs: [] },
+          proof_close: { proofs: [] },
+          proof_height: { revisionNumber: 0n, revisionHeight: 50n },
+          next_sequence_recv: 2n,
+        },
+      },
+      channelDatum,
+    );
+
+    expect(result.events[0].type).toBe('timeout_on_close_packet');
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE).toString()).toBe('3');
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_PACKET.PACKET_DATA)).toBe('{"denom":"uosmo"}');
   });
 });

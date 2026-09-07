@@ -32,6 +32,8 @@ import {
   MsgRecvPacket,
   MsgRecvPacketResponse,
   MsgTimeout,
+  MsgTimeoutOnClose,
+  MsgTimeoutOnCloseResponse,
   MsgTimeoutResponse,
   MsgTransfer,
   MsgTransferResponse,
@@ -135,6 +137,11 @@ export class TxController {
   @GrpcMethod('Msg', 'Timeout')
   async Timeout(data: MsgTimeout): Promise<MsgTimeoutResponse> {
     const response: MsgTimeoutResponse = await this.packetService.timeoutPacket(data);
+    return response;
+  }
+  @GrpcMethod('Msg', 'TimeoutOnClose')
+  async TimeoutOnClose(data: MsgTimeoutOnClose): Promise<MsgTimeoutOnCloseResponse> {
+    const response: MsgTimeoutOnCloseResponse = await this.packetService.timeoutOnClosePacket(data);
     return response;
   }
   @GrpcMethod('Msg', 'ChannelCloseInit')

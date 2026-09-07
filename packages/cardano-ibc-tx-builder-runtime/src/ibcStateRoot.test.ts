@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import * as Lucid from '@lucid-evolution/lucid';
 import {
+  encodeChannelEndValue,
   IbcTreeStateStore,
   StaleIbcTreeStateError,
   type IbcTreeHostStateRef,
@@ -67,7 +68,14 @@ describe('shared IBC state root updates', () => {
   });
 
   it('uses a committed channel update for packet construction and query proofs', async () => {
-    const channelValue = Buffer.from('d87980', 'hex');
+    const channelEnd = {
+      state: 'Open',
+      ordering: 'Unordered',
+      counterparty: { port_id: Buffer.from('transfer').toString('hex'), channel_id: '' },
+      connection_hops: [],
+      version: Buffer.from('ics20-1').toString('hex'),
+    };
+    const channelValue = Buffer.from(await encodeChannelEndValue(channelEnd, Lucid), 'hex');
     const sequenceValue = Buffer.from('01', 'hex');
     const channel = store.computeRootWithCreateChannelUpdate(
       emptyRoot, 'transfer', 'channel-0', channelValue, sequenceValue, sequenceValue, sequenceValue,
@@ -78,7 +86,7 @@ describe('shared IBC state root updates', () => {
     const input = {
       port: Buffer.from('transfer').toString('hex'),
       state: {
-        channel: {},
+        channel: channelEnd,
         next_sequence_send: 1n,
         next_sequence_recv: 1n,
         next_sequence_ack: 1n,
@@ -93,6 +101,7 @@ describe('shared IBC state root updates', () => {
       ...input,
       state: {
         ...input.state,
+        channel: { ...input.state.channel },
         next_sequence_send: 2n,
         packet_commitment: new Map([[1n, 'aabb']]),
       },
@@ -101,6 +110,7 @@ describe('shared IBC state root updates', () => {
       channel.newRoot, 'transfer', 'channel-0', input, output, Lucid,
     );
     assert.equal(store.getCurrentRoot(), channel.newRoot);
+    assert.deepEqual(packet.channelSiblings, []);
     assert.equal(packet.nextSequenceSendSiblings.length, 64);
     assert.equal(packet.packetCommitmentSiblings.length, 64);
     await commitLive(store, readers, packet, 2);
@@ -110,6 +120,73 @@ describe('shared IBC state root updates', () => {
     assert.equal(tree.verifyProof(proof), true);
     assert.equal(proof.value.toString('hex'), '42aabb');
   });
+
+  for (const initialState of ['Open', 'Close']) {
+    it(`removes a timed-out commitment when an ordered channel starts ${initialState}`, async () => {
+      const channelPath = 'channelEnds/ports/transfer/channels/channel-0';
+      const commitmentPath = 'commitments/ports/transfer/channels/channel-0/sequences/1';
+      const channelEnd = {
+        state: initialState,
+        ordering: 'Ordered',
+        counterparty: { port_id: Buffer.from('transfer').toString('hex'), channel_id: '' },
+        connection_hops: [],
+        version: Buffer.from('ics20-1').toString('hex'),
+      };
+      const input = {
+        port: Buffer.from('transfer').toString('hex'),
+        state: {
+          channel: channelEnd,
+          next_sequence_send: 2n,
+          next_sequence_recv: 1n,
+          next_sequence_ack: 1n,
+          packet_commitment: new Map([[1n, 'aabb']]),
+          packet_receipt: new Map<bigint, string>(),
+          packet_acknowledgement: new Map<bigint, string>(),
+          minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+          maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+        },
+      };
+      const output = {
+        ...input,
+        state: {
+          ...input.state,
+          channel: { ...channelEnd, state: 'Close' },
+          packet_commitment: new Map<bigint, string>(),
+        },
+      };
+      const initialTree = new ICS23MerkleTree();
+      initialTree.set(channelPath, await encodeChannelEndValue(channelEnd, Lucid));
+      initialTree.set(commitmentPath, '42aabb');
+      for (const [path, value] of [['nextSequenceSend', '02'], ['nextSequenceRecv', '01'], ['nextSequenceAck', '01']]) {
+        initialTree.set(`${path}/ports/transfer/channels/channel-0`, value);
+      }
+      readers.setLive(initialTree.getRoot(), hostRef(1));
+      await store.restoreTreeFromCache(initialTree);
+
+      const expected = initialTree.clone();
+      const channelSiblings = initialState === 'Open'
+        ? expected.getSiblings(channelPath).map((hash) => hash.toString('hex'))
+        : [];
+      const closedChannelValue = await encodeChannelEndValue(output.state.channel, Lucid);
+      expected.set(channelPath, closedChannelValue);
+      const commitmentSiblings = expected.getSiblings(commitmentPath).map((hash) => hash.toString('hex'));
+      expected.set(commitmentPath, Buffer.alloc(0));
+
+      const timeout = await store.computeRootWithHandlePacketUpdate(
+        initialTree.getRoot(), 'transfer', 'channel-0', input, output, Lucid,
+      );
+      assert.deepEqual(timeout.channelSiblings, channelSiblings);
+      assert.deepEqual(timeout.packetCommitmentSiblings, commitmentSiblings);
+      assert.deepEqual(timeout.nextSequenceSendSiblings, []);
+      assert.deepEqual(timeout.nextSequenceRecvSiblings, []);
+      assert.deepEqual(timeout.nextSequenceAckSiblings, []);
+      assert.equal(timeout.newRoot, expected.getRoot());
+      assert.equal(store.getCurrentRoot(), initialTree.getRoot());
+      await commitLive(store, readers, timeout, 2);
+      assert.equal(store.getCurrentTree().get(commitmentPath), undefined);
+      assert.equal(store.getCurrentTree().get(channelPath)?.toString('hex'), closedChannelValue);
+    });
+  }
 
   it('retains the client-update existence checks and consensus deletion order', async () => {
     const client = store.computeRootWithCreateClientUpdate(

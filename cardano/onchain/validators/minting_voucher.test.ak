@@ -27,7 +27,7 @@ use ibc/apps/transfer/voucher_metadata
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, RecvPacket, SendPacket, TimeoutPacket,
+  AcknowledgePacket, RecvPacket, SendPacket, TimeoutOnClose, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement
 use ibc/core/ics_004/types/keys as channel_keys
@@ -1945,7 +1945,7 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
   )
 }
 
-test test_refund_voucher() {
+fn check_refund_voucher(use_timeout_on_close: Bool) {
   let mock_data = prepare_mock_data()
 
   let packet_source_port = "port-99"
@@ -2011,18 +2011,30 @@ test test_refund_voucher() {
       mock_data.host_state_nft_policy_id,
       packet_source_channel,
     )
+  let packet =
+    make_packet(
+      packet_source_port,
+      packet_source_channel,
+      "transfer",
+      "channel-1",
+      fungible_token_packet_data.get_bytes(ftpd),
+    )
   let channel_redeemer =
-    TimeoutPacket {
-      packet: make_packet(
-        packet_source_port,
-        packet_source_channel,
-        "transfer",
-        "channel-1",
-        fungible_token_packet_data.get_bytes(ftpd),
-      ),
-      proof_unreceived: mock_proof(),
-      proof_height: Height { revision_number: 1, revision_height: 1 },
-      next_sequence_recv: 1,
+    if use_timeout_on_close {
+      TimeoutOnClose {
+        packet,
+        proof_unreceived: mock_proof(),
+        proof_close: mock_proof(),
+        proof_height: Height { revision_number: 1, revision_height: 1 },
+        next_sequence_recv: 1,
+      }
+    } else {
+      TimeoutPacket {
+        packet,
+        proof_unreceived: mock_proof(),
+        proof_height: Height { revision_number: 1, revision_height: 1 },
+        next_sequence_recv: 1,
+      }
     }
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
@@ -2068,6 +2080,14 @@ test test_refund_voucher() {
     mock_data.voucher_minting_policy_id,
     transaction,
   )
+}
+
+test test_refund_voucher() {
+  check_refund_voucher(False)
+}
+
+test test_refund_voucher_on_close() {
+  check_refund_voucher(True)
 }
 
 test test_refund_voucher_fails_with_wrong_mint_quantity() fail {

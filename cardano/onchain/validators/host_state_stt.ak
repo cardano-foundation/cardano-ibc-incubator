@@ -20,7 +20,7 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
-  SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  SendPacket, SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
 }
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_004/types/order.{Ordered}
@@ -903,6 +903,34 @@ fn validate_handle_packet_root(
           )
         let channel_root =
           if is_ordered {
+            ibc_state_commitment.apply_update(
+              old_root,
+              host_channel_keys.channel_path(port_id, channel_id),
+              cbor.serialise(channel_input_datum.state.channel),
+              cbor.serialise(channel_output_datum.state.channel),
+              channel_siblings,
+            )
+          } else {
+            old_root
+          }
+        apply_packet_commitment_deletion(
+          channel_root,
+          channel_input_datum,
+          port_id,
+          channel_id,
+          packet.sequence,
+          packet_commitment_siblings,
+        )
+      }
+      TimeoutOnClose { packet, .. } -> {
+        expect
+          channel_datum_mod.validate_timeout_packet(
+            channel_input_datum,
+            channel_output_datum,
+            packet,
+          )
+        let channel_root =
+          if channel_input_datum.state.channel != channel_output_datum.state.channel {
             ibc_state_commitment.apply_update(
               old_root,
               host_channel_keys.channel_path(port_id, channel_id),
