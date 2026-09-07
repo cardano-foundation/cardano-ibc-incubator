@@ -79,3 +79,52 @@ representation, add matching on-chain and Gateway guards, and test the chosen
 limit and limit-plus-one. Explicit two-header misbehaviour evidence requires a
 separate capacity result because its payload shape is materially larger than a
 normal update.
+
+## Consensus-history processing (#726)
+
+Measured with Aiken `v1.1.21+42babe5`, stdlib `3.1.0` and tracing disabled.
+The baseline is `main` at `bbef7e9b2938637e4c0311fc267d8c36b8ce98b7`.
+Both versions use the same compile-time fixtures in
+[`consensus_history_benchmark.test.ak`](../cardano/onchain/lib/ibc/client/ics-007-tendermint-client/consensus_history_benchmark.test.ak).
+Only `check_for_misbehaviour` and `update_state` run inside each measured test.
+These are execution units for history processing, not complete transactions,
+fees or validator-signature benchmarks.
+
+| Stored states | Memory before | Memory after | CPU before | CPU after |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 518,973 | 438,068 | 176,738,504 | 151,768,828 |
+| 10 | 2,256,189 | 1,470,170 | 992,645,294 | 681,770,350 |
+| 16 | 4,514,583 | 2,419,058 | 2,062,403,294 | 1,224,276,598 |
+| 17 | 4,976,557 | 3,972,335 | 2,281,593,416 | 1,687,024,420 |
+| 50 | 33,938,149 | 14,572,200 | 16,070,091,854 | 6,317,008,560 |
+| 150 | 284,293,049 | 56,197,772 | 135,557,952,254 | 23,392,148,728 |
+| 300 | 1,118,251,703 | 127,284,620 | 533,875,920,140 | 52,587,041,380 |
+| 300 (150 expire) | 1,050,584,699 | 95,311,244 | 485,295,894,104 | 41,786,857,310 |
+
+At 300 unexpired states this saves 89% memory and 90% CPU. The remaining
+history cost alone still exceeds mainnet transaction limits. This does not
+resolve transaction-size or pruning costs in #557.
+
+Neighbor selection now scans once. Metadata retention builds a balanced height
+index instead of searching the full retained list for every metadata entry.
+With `C` retained states and `M` metadata entries across both lists, indexed
+retention costs `O(C log C + M log C)`. Histories of at most 16 retained states
+use bounded scans to avoid index overhead. Larger indexes also use leaves of
+at most 16 keys. CPU and memory are lower in every measured case.
+List order, duplicates, expiry and independent truncation are unchanged.
+
+The compiled client grows from 15,315 to 15,568 bytes. It stays below the
+existing largest script of 15,640 bytes, so deployment budget ceilings are
+unchanged. The transaction-budget regression check passes.
+
+To reproduce, run this from `cardano/onchain` on this branch. Fixtures are
+constants so their construction is excluded from the measured execution.
+
+```sh
+aiken check --deny --trace-level silent --plain-numbers \
+  -m 'consensus_history_benchmark.{..}'
+```
+
+For the baseline, create a separate worktree at the commit above, copy only
+`consensus_history_benchmark.test.ak` into the same directory there and run
+the same command. Keep the compiler and dependency versions identical.
