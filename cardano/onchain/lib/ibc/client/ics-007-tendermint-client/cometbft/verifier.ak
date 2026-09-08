@@ -1,6 +1,5 @@
 use aiken/collection/list
 use aiken/math/rational.{Rational}
-use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
@@ -59,10 +58,7 @@ pub fn verify_adjacent(
       tx_time.valid_from,
       max_clock_drift,
     ),
-    bytearray.compare(
-      untrusted_header.header.validators_hash,
-      trusted_header.header.next_validators_hash,
-    ) == Equal,
+    untrusted_header.header.validators_hash == trusted_header.header.next_validators_hash,
     validation.verify_commit_light(
       trusted_header.header.chain_id,
       untrusted_vals,

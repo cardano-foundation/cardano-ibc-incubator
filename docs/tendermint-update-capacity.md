@@ -133,6 +133,41 @@ For the baseline, create a separate worktree at the baseline commit above, copy 
 `consensus_history_benchmark.test.ak` into the same directory there and run
 the same command. Keep the compiler and dependency versions identical.
 
+### Shared index and deployment size
+
+After integration with client recovery, retained-height membership and trusted
+validator lookup share a balanced tree. Bounded leaves use native equality;
+internal nodes use ordering and preserve the first matching validator in wire
+order. This keeps the history optimization deployable without changing datum
+or validator-parameter schemas.
+
+With the same Aiken version and silent traces, the current client blueprint is
+15,353 bytes. Applying the host policy and recovery credential produces a
+15,429-byte script and a 15,629-byte estimated reference output. This fits the
+15,634-byte deployment guard, which reserves 750 bytes from the 16,384-byte
+transaction limit. The existing deployment-size regression test now runs in CI.
+
+The current shared-index implementation, measured with the same fixtures and
+silent settings, has the following history-only execution costs:
+
+| Stored states | Current memory | Current CPU |
+| --- | ---: | ---: |
+| 1 | 443,702 | 155,124,366 |
+| 10 | 1,536,392 | 715,830,756 |
+| 16 | 2,552,672 | 1,283,126,916 |
+| 17 | 4,094,881 | 1,713,025,665 |
+| 50 | 15,134,286 | 6,351,014,455 |
+| 150 | 58,650,646 | 23,148,108,772 |
+| 300 | 133,072,782 | 51,780,946,479 |
+| 300 (150 expire) | 100,101,534 | 40,935,008,010 |
+
+Memory and CPU remain below the pre-optimization baseline in every measured
+case. At 300 unexpired states, the current implementation saves 88% memory and
+90% CPU versus that baseline. These history-only costs still exceed transaction
+limits; the broader capacity and pruning limitations remain unchanged.
+
+Run the benchmark command above on the current branch to reproduce this table.
+
 ## Expired or frozen client recovery
 
 An expired or frozen Cardano-side Tendermint client cannot safely resume normal

@@ -1,4 +1,3 @@
-use aiken/collection/list
 use aiken/primitive/int
 
 /// Stable O(n log n) sorting with an already-known input length.
@@ -12,12 +11,24 @@ pub fn sort(
     items
   } else {
     let left_count = count / 2
-    let (left, right) = list.span(items, left_count)
+    let (left, right) = split(items, left_count)
     merge(
       sort(left, left_count, compare),
       sort(right, count - left_count, compare),
       compare,
     )
+  }
+}
+
+/// Split a prefix whose length is already known to fit in the input.
+/// Callers must ensure 0 <= count <= list length.
+pub fn split(items: List<a>, count: Int) -> (List<a>, List<a>) {
+  if count <= 0 {
+    ([], items)
+  } else {
+    expect [first, ..rest] = items
+    let (left, right) = split(rest, count - 1)
+    ([first, ..left], right)
   }
 }
 

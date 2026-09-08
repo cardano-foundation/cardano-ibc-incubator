@@ -1,5 +1,4 @@
 use aiken/collection/pairs
-use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit
 use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header
@@ -61,8 +60,7 @@ pub fn verify_header(
 pub fn check_trusted_header(header: Header, cons_state: ConsensusState) {
   expect validator_set.validate_basic(header.trusted_validators)
 
-  bytearray.compare(
-    cons_state.next_validators_hash,
-    validator_set.hash(header.trusted_validators),
-  ) == Equal
+  cons_state.next_validators_hash == validator_set.hash(
+    header.trusted_validators,
+  )
 }

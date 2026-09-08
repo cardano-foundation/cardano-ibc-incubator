@@ -11,20 +11,15 @@ use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/cometbft/vote
 use ibc/utils/merge_sort
+use ibc/utils/search_tree.{SearchTree}
 
 type IndexedValidator {
   trusted_validator: Validator,
   seen_bit: Int,
 }
 
-type ValidatorIndex {
-  EmptyValidatorIndex
-  ValidatorIndexNode {
-    left: ValidatorIndex,
-    entry: IndexedValidator,
-    right: ValidatorIndex,
-  }
-}
+type ValidatorIndex =
+  SearchTree<IndexedValidator>
 
 /// Verify that strictly more than `trust_level` of a trusted validator set
 /// signed `commit`.
@@ -55,7 +50,7 @@ pub fn verify_commit_light_trusting(
   let
     tallied_voting_power,
     _seen_bits,
-    partial_passed,
+    _partial_passed,
   <-
     verify_commit_signatures(
       chain_id,
@@ -65,7 +60,9 @@ pub fn verify_commit_light_trusting(
       commit.signatures,
       cached_vote_sign_bytes,
     )
-  partial_passed || tallied_voting_power > voting_power_needed
+  // A true partial-pass flag already implies this strict threshold, and the
+  // remaining slots leave the tally unchanged once the threshold is reached.
+  tallied_voting_power > voting_power_needed
 }
 
 fn index_validators(
@@ -108,54 +105,18 @@ fn make_validator_index(
       validator_count,
       compare_indexed_validators,
     )
-  let
-    validator_index,
-    remaining,
-  <- validator_index_from_sorted(sorted, validator_count)
-  expect list.is_empty(remaining)
-  return(validator_index, total_voting_power)
+  return(search_tree.from_sorted(sorted, validator_count), total_voting_power)
 }
 
-/// Build a height-balanced tree in one pass over sorted entries. Returning the
-/// unused suffix avoids repeated list indexing/splitting.
-fn validator_index_from_sorted(
-  entries: List<IndexedValidator>,
-  count: Int,
-  return: fn(ValidatorIndex, List<IndexedValidator>) -> result,
-) -> result {
-  if count <= 0 {
-    return(EmptyValidatorIndex, entries)
-  } else {
-    let left_count = count / 2
-    let left, after_left <- validator_index_from_sorted(entries, left_count)
-    expect [entry, ..after_entry] = after_left
-    let
-      right,
-      remaining,
-    <- validator_index_from_sorted(after_entry, count - left_count - 1)
-    return(ValidatorIndexNode { left, entry, right }, remaining)
-  }
-}
-
-/// On duplicate trusted addresses, return the first entry in original wire
-/// order just like the previous `list.find` implementation.
 fn lookup_validator(
   validator_index: ValidatorIndex,
   address: ByteArray,
 ) -> Option<IndexedValidator> {
-  when validator_index is {
-    EmptyValidatorIndex -> None
-    ValidatorIndexNode { left, entry, right } ->
-      when bytearray.compare(address, entry.trusted_validator.address) is {
-        Less -> lookup_validator(left, address)
-        Greater -> lookup_validator(right, address)
-        Equal ->
-          when lookup_validator(left, address) is {
-            Some(earlier) -> Some(earlier)
-            None -> Some(entry)
-          }
-      }
-  }
+  search_tree.find(
+    validator_index,
+    fn(entry) { bytearray.compare(address, entry.trusted_validator.address) },
+    fn(entry) { address == entry.trusted_validator.address },
+  )
 }
 
 /// Right recursion processes the tail first, exactly like the previous
@@ -233,11 +194,11 @@ fn verify_commit_signatures(
               tallied_voting_power + indexed_val.trusted_validator.voting_power
             let new_seen_bits = seen_bits + indexed_val.seen_bit
 
-            if new_tallied_voting_power > voting_power_needed {
-              return(new_tallied_voting_power, new_seen_bits, True)
-            } else {
-              return(new_tallied_voting_power, new_seen_bits, False)
-            }
+            return(
+              new_tallied_voting_power,
+              new_seen_bits,
+              new_tallied_voting_power > voting_power_needed,
+            )
           }
         }
       }
