@@ -962,14 +962,17 @@ const mergeWalletUtxos = (utxos: UTxO[]): UTxO[] => {
   return [...byRef.values()];
 };
 
-const selectDeploymentCollateralHoldback = (utxos: UTxO[]): UTxO[] => {
+export const selectDeploymentCollateralHoldback = (utxos: UTxO[]): UTxO[] => {
   const candidateGroups = [
     sortUtxosByLovelaceDesc(utxos.filter(isAdaOnlyUtxo)),
     sortUtxosByLovelaceDesc(utxos),
   ];
 
   for (const candidates of candidateGroups) {
-    const singleCollateral = candidates.find((utxo) =>
+    // Holding the largest output can strand nearly the entire deployment
+    // balance after the nonce split. Reserve the smallest sufficient output;
+    // keep the descending order below for the bounded multi-input fallback.
+    const singleCollateral = sortUtxosByLovelaceAsc(candidates).find((utxo) =>
       utxoLovelace(utxo) >= DEPLOYMENT_COLLATERAL_LOVELACE
     );
     if (singleCollateral) {

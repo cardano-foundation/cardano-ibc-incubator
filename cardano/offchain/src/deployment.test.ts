@@ -5,6 +5,7 @@ import {
   fromText,
   type LucidEvolution,
   type Script,
+  type UTxO,
 } from "@lucid-evolution/lucid";
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 
@@ -17,6 +18,7 @@ import {
   loadHostStateValidator,
   loadTransferModuleValidator,
   loadStagedTendermintValidators,
+  selectDeploymentCollateralHoldback,
   sortPortRegistrations,
 } from "./deployment.ts";
 import {
@@ -455,4 +457,17 @@ Deno.test("fully applied production HostState fits the reference publication gua
   );
   const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
   assertEquals(report.oversized, false, JSON.stringify(report));
+});
+
+Deno.test("collateral holdback keeps the main deployment funding output spendable", () => {
+  const utxos = [99_176_454_853n, 5_158_925n, 5_936_517n, 2_358_421n].map((
+    lovelace,
+    outputIndex,
+  ) => ({
+    txHash: "11".repeat(32),
+    outputIndex,
+    address: "test",
+    assets: { lovelace },
+  } as UTxO));
+  assertEquals(selectDeploymentCollateralHoldback(utxos), [utxos[1]]);
 });
