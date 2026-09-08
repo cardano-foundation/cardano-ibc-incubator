@@ -34,53 +34,6 @@ export type DeploymentPlanInputs = {
   benchmarkVoucherEnabled: boolean;
 };
 
-export const loadStagedTendermintValidators = (
-  lucid: LucidEvolution,
-  hostStateNftPolicyId: string,
-) => {
-  const [sessionSpendValidator, sessionSpendScriptHash, sessionSpendAddress] =
-    readValidator(
-      "spending_tendermint_update_session.spend_tendermint_update_session.spend",
-      lucid,
-      [hostStateNftPolicyId],
-      Data.Tuple([Data.Bytes()]) as unknown as [string],
-    );
-
-  const [sessionMintValidator, sessionMintPolicyId, sessionMintAddress] =
-    readValidator(
-      "minting_tendermint_update_session.mint_tendermint_update_session.mint",
-      lucid,
-      [sessionSpendScriptHash],
-      Data.Tuple([Data.Bytes()]) as unknown as [string],
-    );
-
-  const [clientSpendValidator, clientSpendScriptHash, clientSpendAddress] =
-    readValidator(
-      "spending_multitx_client.spend_multitx_client.spend",
-      lucid,
-      [hostStateNftPolicyId, sessionMintPolicyId],
-      Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
-    );
-
-  return {
-    sessionSpend: {
-      validator: sessionSpendValidator,
-      scriptHash: sessionSpendScriptHash,
-      address: sessionSpendAddress,
-    },
-    sessionMint: {
-      validator: sessionMintValidator,
-      policyId: sessionMintPolicyId,
-      address: sessionMintAddress,
-    },
-    clientSpend: {
-      validator: clientSpendValidator,
-      scriptHash: clientSpendScriptHash,
-      address: clientSpendAddress,
-    },
-  };
-};
-
 /** Load the fully applied HostState used by production deployment. */
 export const loadHostStateValidator = (
   lucid: LucidEvolution,
@@ -88,19 +41,17 @@ export const loadHostStateValidator = (
   clientHash: string,
   connectionHash: string,
   channelHash: string,
-  clientMintPolicyId: string,
 ) =>
   readValidator(
     "host_state_stt.host_state_stt.spend",
     lucid,
-    [hostPolicy, clientHash, connectionHash, channelHash, clientMintPolicyId],
+    [hostPolicy, clientHash, connectionHash, channelHash],
     Data.Tuple([
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [string, string, string, string, string],
+    ]) as unknown as [string, string, string, string],
   );
 
 /**
@@ -155,36 +106,14 @@ export const loadDeploymentPlan = async (
     "runtime",
     bytes(hostPolicy),
   );
-  // The legacy recovery authority remains registered, but the staged client
-  // authenticates start/continue/finalize work through its session policy.
-  const staged = loadStagedTendermintValidators(lucid, hostPolicy);
-  const sessionSpend = register(
-    "spending_tendermint_update_session.spend_tendermint_update_session.spend",
-    "runtime",
-    [
-      staged.sessionSpend.validator,
-      staged.sessionSpend.scriptHash,
-      staged.sessionSpend.address,
-    ],
-  );
-  const sessionMint = register(
-    "minting_tendermint_update_session.mint_tendermint_update_session.mint",
-    "runtime",
-    [
-      staged.sessionMint.validator,
-      staged.sessionMint.policyId,
-      staged.sessionMint.address,
-    ],
-  );
-  const spendClient = register(
-    "spending_multitx_client.spend_multitx_client.spend",
-    "runtime",
-    [
-      staged.clientSpend.validator,
-      staged.clientSpend.scriptHash,
-      staged.clientSpend.address,
-    ],
-  );
+  const credential = Data.Enum([
+    Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
+    Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
+  ]);
+  const spendClient = load("spending_client.spend_client.spend", "runtime", [
+    hostPolicy,
+    { Script: [recoverClient.hash] },
+  ], Data.Tuple([Data.Bytes(), credential]));
   const mintClient = load(
     "minting_client_stt.mint_client_stt.mint",
     "runtime",
@@ -251,7 +180,6 @@ export const loadDeploymentPlan = async (
       spendClient.hash,
       spendConnection.hash,
       spendChannel.hash,
-      mintClient.hash,
     ),
   );
   const mintIdentifier = load(
@@ -363,8 +291,6 @@ export const loadDeploymentPlan = async (
     verifyProof,
     mintPort,
     recoverClient,
-    sessionSpend,
-    sessionMint,
     spendClient,
     mintClient,
     spendConnection,

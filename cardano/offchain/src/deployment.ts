@@ -4,10 +4,7 @@ import {
   loadDeploymentPlan,
   type PlannedValidator,
 } from "./deployment-plan.ts";
-export {
-  GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
-  loadStagedTendermintValidators,
-} from "./deployment-plan.ts";
+export { GENERIC_MODULE_SPEND_VALIDATOR_TITLE } from "./deployment-plan.ts";
 import {
   buildHostStateBootstrapTx,
   buildMockTokenMintTx,
@@ -523,19 +520,12 @@ export const createDeployment = async (
   const verifyProofPolicyId = plan.verifyProof.hash;
   const mintPortValidator = plan.mintPort.script;
   const mintPortPolicyId = plan.mintPort.hash;
-  // Preserve the legacy recovery authority in the manifest. The staged client
-  // does not accept a recovery redeemer; registration alone does not enable it.
   const recoverClientValidator = plan.recoverClient.script;
   const recoverClientScriptHash = plan.recoverClient.hash;
   const recoverClientAddress = validatorToRewardAddress(
     lucid.config().network || "Custom",
     recoverClientValidator,
   );
-  const spendTendermintUpdateSessionValidator = plan.sessionSpend.script;
-  const spendTendermintUpdateSessionScriptHash = plan.sessionSpend.hash;
-  const spendTendermintUpdateSessionAddress = plan.sessionSpend.address;
-  const mintTendermintUpdateSessionValidator = plan.sessionMint.script;
-  const mintTendermintUpdateSessionPolicyId = plan.sessionMint.hash;
   const spendClientValidator = plan.spendClient.script;
   const spendClientScriptHash = plan.spendClient.hash;
   const spendClientAddress = plan.spendClient.address;
@@ -549,6 +539,7 @@ export const createDeployment = async (
   const spendingChannel = plan.spendingChannel;
   const mintChannelSttValidator = plan.mintChannel.script;
   const mintChannelSttPolicyId = plan.mintChannel.hash;
+
   await submitTx(
     () => lucid.newTx().register.Stake(recoverClientAddress),
     lucid,
