@@ -44,8 +44,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
     signedBytesEstimate: 16_109,
   },
   send_packet_at_commitment_capacity: {
-    mem: 40_044_494,
-    steps: 12_666_110_285,
+    mem: 38_210_852,
+    steps: 12_074_986_922,
   },
   recv_packet_at_history_capacity: {
     mem: 40_977_138,
