@@ -103,9 +103,7 @@ jobs:
 
       - name: Set up trusted publishing credentials
         id: baseline
-        # TODO: pin the cf-gha-workflows revision containing Cargo.toml version
-        # discovery before merging this workflow.
-        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@feat/artifact-sub-dir
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@9d6fdaf043772b4f9eb1ea4bcc994dc30b515a96
         with:
           GITHUB_TOKEN: ${{ github.token }}
           PRIVATE_DOCKER_REGISTRY_URL: ${{ env.PRIVATE_DOCKER_REGISTRY_URL }}
@@ -140,3 +138,86 @@ jobs:
             --PUSH=true \
             --DOCKER_REGISTRIES="${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}" \
             --DOCKER_IMAGES_EXTRA_TAGS="${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}"
+
+      - name: Prepare gateway release
+        if: github.ref_type == 'tag' && matrix.image.component == 'gateway'
+        shell: bash
+        env:
+          REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
+          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
+        run: |
+          release_dir="${RUNNER_TEMP}/gateway-release"
+          mkdir -p "${release_dir}"
+          archive="cardano-gateway-manifests-${IMAGE_TAG}.tar.gz"
+          tar -czf "${release_dir}/${archive}" manifests
+
+          read -ra registries <<< "${REGISTRIES}"
+          public_images=0
+          {
+            echo 'Published Cardano Gateway container images:'
+            for registry in "${registries[@]}"; do
+              case "${registry}" in
+                ghcr.io/*|docker.io/*) ;;
+                *) continue ;;
+              esac
+              image="${registry}/cardano-ibc-gateway"
+              digest=$(docker buildx imagetools inspect "${image}:${IMAGE_TAG}" \
+                --format '{{json .Manifest}}' | \
+                jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))')
+              printf "\n\`%s:%s\`\n\n\`%s@%s\`\n\n\`\`\`bash\ndocker pull %s:%s\n\`\`\`\n" \
+                "${image}" "${IMAGE_TAG}" "${image}" "${digest}" "${image}" "${IMAGE_TAG}"
+              public_images=$((public_images + 1))
+            done
+            if [[ "${public_images}" == 0 ]]; then
+              echo 'No public gateway image registry is configured.' >&2
+              exit 1
+            fi
+            printf "\nThe image includes tracked bridge manifests at \`/usr/src/app/manifests\`.\n"
+            printf "\nFor preprod, set \`BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json\`.\n"
+            printf "\nThe tracked manifests are also attached as \`%s\`.\n" "${archive}"
+          } > "${release_dir}/notes.md"
+
+      - name: Upload gateway release files
+        if: github.ref_type == 'tag' && matrix.image.component == 'gateway'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gateway-release
+          path: ${{ runner.temp }}/gateway-release/
+          if-no-files-found: error
+          overwrite: true
+
+  gateway-release:
+    name: Publish gateway GitHub Release
+    needs: build-and-publish
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'gateway/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download gateway release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gateway-release
+          path: ${{ runner.temp }}/gateway-release/
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          release_dir="${RUNNER_TEMP}/gateway-release"
+          image_tag="${RELEASE_TAG#gateway/}"
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --title "${RELEASE_TAG}" \
+              --notes-file "${release_dir}/notes.md"
+          else
+            gh release create "${RELEASE_TAG}" \
+              --verify-tag \
+              --title "${RELEASE_TAG}" \
+              --notes-file "${release_dir}/notes.md"
+          fi
+          gh release upload "${RELEASE_TAG}" \
+            "${release_dir}/cardano-gateway-manifests-${image_tag}.tar.gz" --clobber
