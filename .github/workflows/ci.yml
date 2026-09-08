@@ -875,6 +875,11 @@ jobs:
             packages/cardano-ibc-trace-registry/package-lock.json
             packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
@@ -883,6 +888,10 @@ jobs:
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
         run: aiken build --deny --trace-level silent
+
+      - name: Check and export fully applied deployment plan
+        working-directory: cardano/offchain
+        run: deno task export:deployment-plan --output ../../deployment-plan.json
 
       - name: Collect Aiken execution units
         working-directory: cardano/onchain

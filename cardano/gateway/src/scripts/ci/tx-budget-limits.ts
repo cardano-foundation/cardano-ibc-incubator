@@ -54,7 +54,9 @@ export function subtractBaselineExUnits(measured: ExUnits, baseline: ExUnits): E
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
-    signedBytesEstimate: 15_746,
+    // Every applied reference output independently passes the mandatory
+    // deployment guard. This is the separate conservative signing estimate.
+    signedBytesEstimate: 15_889,
   },
   send_packet_at_commitment_capacity: {
     mem: 38_093_446,

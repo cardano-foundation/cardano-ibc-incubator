@@ -18,6 +18,7 @@ const aikenInfrastructurePaths = new Set([
   'scripts/ci/detect-aiken-semantic-changes.test.mjs',
   'scripts/ci/merge-aiken-check-reports.mjs',
   'cardano/gateway/src/scripts/ci/check-tx-budgets.ts',
+  'cardano/gateway/src/scripts/ci/applied-deployment-plan.ts',
   'cardano/gateway/src/scripts/ci/tendermint-update-capacity.ts',
   'cardano/gateway/src/scripts/ci/tx-budget-limits.ts',
   'cardano/gateway/src/scripts/test/generate-injective-tendermint-capacity-fixture.ts',
@@ -33,6 +34,8 @@ function isAikenInfrastructurePath(path) {
   return (
     path.startsWith('.github/actions/') ||
     path.startsWith('.github/workflows/') ||
+    // Production parameter loading and transaction construction feed the size gate.
+    path.startsWith('cardano/offchain/') ||
     path.startsWith('cardano/gateway/src/shared/types/') ||
     path.startsWith(
       'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/',

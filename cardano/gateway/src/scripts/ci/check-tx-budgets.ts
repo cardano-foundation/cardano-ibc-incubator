@@ -3,6 +3,8 @@ import * as path from 'node:path';
 
 import * as Lucid from '@lucid-evolution/lucid';
 
+import { readAppliedDeploymentPlan, type AppliedReferenceValidator } from './applied-deployment-plan';
+
 import { encodeAuthToken } from '@shared/types/auth-token';
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
@@ -162,7 +164,6 @@ const TX_INPUT_BYTES = 44;
 const TX_OUTPUT_BYTES = 80;
 const TX_MINT_POLICY_BYTES = 45;
 const TX_REFERENCE_INPUT_BYTES = 44;
-const REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES = 200;
 
 const CAPACITY_HOST_STATE_AIKEN_TEST = 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds';
 const CAPACITY_SCENARIOS = [
@@ -912,34 +913,16 @@ async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
 async function buildScenarios(
   validators: Map<string, BlueprintValidator>,
   aikenTests: Map<string, ExUnits>,
+  deploymentReferences: AppliedReferenceValidator[],
 ): Promise<ScenarioReport[]> {
-  const largestReferenceScript = [
-    'host_state_stt.host_state_stt.spend',
-    'minting_channel_stt.mint_channel_stt.mint',
-    'minting_client_stt.mint_client_stt.mint',
-    'minting_connection_stt.mint_connection_stt.mint',
-    'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
-    'minting_voucher.mint_voucher.mint',
-    'recover_client.recover_client.withdraw',
-    'spending_channel.spend_channel.spend',
-    'spending_client.spend_client.spend',
-    'spending_connection.spend_connection.spend',
-    'spending_transfer_module.spend_transfer_module.spend',
-    'trace_registry.spend_trace_registry.spend',
-    'spending_channel/acknowledge_packet.acknowledge_packet.mint',
-    'spending_channel/chan_open_ack.chan_open_ack.mint',
-    'spending_channel/prune_packet_history.prune_packet_history.mint',
-    'spending_channel/recv_packet.recv_packet.mint',
-    'spending_channel/send_packet.send_packet.mint',
-    'spending_channel/timeout_packet.timeout_packet.mint',
-  ]
-    .map((title) => ({ title, bytes: scriptBytes(validators, title) }))
-    .sort((left, right) => right.bytes - left.bytes)[0];
+  const largestReferenceScript = [...deploymentReferences].sort(
+    (left, right) => right.estimatedReferenceOutputBytes - left.estimatedReferenceOutputBytes,
+  )[0];
 
   const scenarios: ScenarioInput[] = [
     {
       id: 'reference_script_deployment',
-      name: 'reference script deployment',
+      name: `fully applied reference deployment (${largestReferenceScript.mode}: ${largestReferenceScript.title})`,
       inputCount: 1,
       outputCount: 1,
       mintPolicyCount: 0,
@@ -949,7 +932,7 @@ async function buildScenarios(
       datums: [dataBytes('reference datum', 0)],
       largestProofPayloadBytes: 0,
       aikenTests: [],
-      unsignedBytesOverride: largestReferenceScript.bytes + REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES,
+      unsignedBytesOverride: largestReferenceScript.estimatedReferenceOutputBytes,
     },
     {
       id: 'bind_port_at_global_cap',
@@ -1563,14 +1546,18 @@ async function main() {
   const blueprintPath = process.env.CARDANO_TX_BUDGET_BLUEPRINT || path.join(repoRoot, 'cardano/onchain/plutus.json');
   const aikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_AIKEN_CHECK_JSON || path.join(repoRoot, 'aiken-check.json');
 
+  const deploymentPlanPath = process.env.CARDANO_TX_BUDGET_DEPLOYMENT_PLAN || path.join(repoRoot, 'deployment-plan.json');
+  const deploymentReferences = readAppliedDeploymentPlan(deploymentPlanPath, blueprintPath, maxTxSize, txHeadroomBytes);
+
   const blueprint = readJson<Blueprint>(blueprintPath);
   const validators = new Map(blueprint.validators.map((validator) => [validator.title, validator]));
   const aikenCheckReport = readJson<AikenCheckReport>(aikenCheckJsonPath);
   const aikenTests = toAikenTestMap(aikenCheckReport);
-  const reports = await buildScenarios(validators, aikenTests);
+  const reports = await buildScenarios(validators, aikenTests, deploymentReferences);
   const capacityReports = await buildCapacityReports(aikenTests);
   const stagedExecutionReports = buildStagedExecutionReports(aikenTests);
 
+  console.log(`Production deployment preflight passed for ${deploymentReferences.length} fully applied references across both modes.`);
   console.log('Execution units are test-derived estimates collected with --trace-level silent, not ledger evaluations.');
   printReport(reports, maxTxSize, txHeadroomBytes);
   console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
