@@ -2503,7 +2503,7 @@ const deploySpendChannel = async (
     chan_close_init: "chan_close_init.spend",
     chan_close_confirm: "chan_close_confirm.spend",
     recv_packet: "recv_packet.mint",
-    send_packet: "send_packet.spend",
+    send_packet: "send_packet.mint",
     timeout_packet: "timeout_packet.mint",
     acknowledge_packet: "acknowledge_packet.mint",
     prune_packet_history: "prune_packet_history.mint",

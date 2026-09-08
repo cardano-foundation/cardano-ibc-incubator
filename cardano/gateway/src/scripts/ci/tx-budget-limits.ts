@@ -44,12 +44,12 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
     signedBytesEstimate: 16_109,
   },
   recover_client_minimum_history: {
-    mem: 36_477_267,
-    steps: 11_228_843_765,
+    mem: 36_486_499,
+    steps: 11_230_398_915,
   },
   send_packet_at_commitment_capacity: {
-    mem: 52_816_135,
-    steps: 16_520_663_849,
+    mem: 45_642_288,
+    steps: 14_306_607_849,
   },
   recv_packet_at_history_capacity: {
     mem: 49_391_271,
