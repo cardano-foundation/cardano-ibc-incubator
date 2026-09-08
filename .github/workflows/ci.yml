@@ -484,7 +484,7 @@ jobs:
 
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
-        run: aiken build
+        run: aiken build --deny --trace-level silent
 
       - name: Check formatting
         working-directory: cardano/offchain

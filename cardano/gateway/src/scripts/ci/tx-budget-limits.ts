@@ -40,21 +40,20 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
-    unsignedBytes: 15_818,
-    signedBytesEstimate: 16_078,
+    signedBytesEstimate: 15_746,
   },
   send_packet_at_commitment_capacity: {
-    mem: 38_182_438,
-    steps: 12_062_695_649,
+    mem: 38_099_098,
+    steps: 12_039_331_774,
   },
   recv_packet_at_history_capacity: {
-    mem: 40_602_692,
-    steps: 12_714_899_716,
+    mem: 40_602_892,
+    steps: 12_714_931_716,
   },
   prune_packet_history_at_capacity: {
-    // Authenticating the state token and input script adds 8,304 memory units
-    // to this existing overrun. The public-network limits are unchanged.
-    mem: 25_214_154,
+    // Includes state-token authentication and the shared timeout helper.
+    // The public-network limits are unchanged.
+    mem: 25_214_354,
   },
   trace_registry_rollover: {
     mem: 25_643_260,
@@ -63,8 +62,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
   first_seen_voucher_receive_at_capacity: {
     unsignedBytes: 20_615,
     signedBytesEstimate: 20_875,
-    mem: 83_145_410,
-    steps: 27_601_135_415,
+    mem: 83_093_590,
+    steps: 27_586_415_638,
   },
   first_seen_voucher_mint: {
     mem: 33_842_210,

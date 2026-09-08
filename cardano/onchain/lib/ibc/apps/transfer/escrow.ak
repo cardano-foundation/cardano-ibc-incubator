@@ -122,6 +122,16 @@ pub fn expect_module_state(spend: TransferModuleSpend) -> Output {
   updated_output
 }
 
+pub fn validate_preserved_module_state(
+  spent_input: Input,
+  spend: TransferModuleSpend,
+) -> Bool {
+  value_delta.validate_output_value(
+    expect_module_state(spend),
+    spent_input.output.value,
+  )
+}
+
 pub fn transfer_escrow_datum(
   channel_id: ByteArray,
   denom: ByteArray,
@@ -327,10 +337,9 @@ pub fn validate_module_escrow_transition(
       // Root spends are lifecycle/setup state; any native packet-side escrow effect
       // must still be witnessed by the matching shard update or creation.
       let preserved_module_state =
-        value_delta.validate_output_amount(
-          spent_input,
+        value_delta.validate_output_value(
           updated_output,
-          assets.zero,
+          spent_input.output.value,
         )
       let matching_escrow_input =
         find_matching_escrow_input(
