@@ -32,6 +32,8 @@ The shared [image workflow](../../.github/workflows/publish.yaml) publishes same
 
 Public Gateway releases use Git tags such as `gateway/v2.0.2`, matching the version in `package.json`. The tag must point to a commit already on `main`. The published image is named `cardano-ibc-gateway` and its Docker tag omits the `gateway/` prefix, for example `v2.0.2`. The GitHub Release lists the published public image references, digests and pull commands.
 
+The exact tagged commit must have a successful `main` CI run. Release images are smoke-tested before that same image is pushed. Gateway startup uses isolated test databases and node/indexer fixtures, not a live Cardano network. Hermes runs its version and offline configuration checks, and the swap client serves its runtime configuration, page and static assets. For example, repeat the gateway check locally with `node scripts/ci/image-smoke.mjs gateway cardano-ibc-gateway:latest` and Docker running.
+
 Published images include tracked bridge manifests at `/usr/src/app/manifests`.
 For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json`
 to start the Gateway against the shared Cardano preprod bridge deployment.

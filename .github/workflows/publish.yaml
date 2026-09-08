@@ -67,7 +67,8 @@ jobs:
                git diff --quiet --ignore-submodules=none --no-ext-diff \
                  "${PR_BASE_SHA}...${PR_HEAD_SHA}" -- \
                  relayer .gitmodules docker/hermes.Dockerfile .dockerignore \
-                 Earthfile .github/workflows/publish.yaml .github/workflows/build-image.yaml; then
+                 Earthfile .github/workflows/publish.yaml .github/workflows/build-image.yaml \
+                 'scripts/ci/image-*' 'scripts/ci/release-*'; then
               images=$(jq -c 'map(select(.component != "hermes"))' <<< "${images}")
             fi
           fi
@@ -100,6 +101,7 @@ jobs:
     needs: select-components
     if: github.event_name == 'push' && github.ref_type == 'tag'
     permissions:
+      actions: read
       contents: read
       packages: write
     strategy:
