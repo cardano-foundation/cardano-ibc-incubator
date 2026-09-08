@@ -1,3 +1,4 @@
+import { loadHostStateValidator } from "./deployment-plan.ts";
 import { assertEquals, assertNotEquals } from "@std/assert";
 import {
   Data,
@@ -438,4 +439,20 @@ Deno.test("DeploymentIbcTree commits leaves with key hash included", async () =>
   tree.set(key, value);
 
   assertEquals(await tree.getRoot(), await expectedSingleLeafRoot(key, value));
+});
+
+Deno.test("fully applied production HostState fits the reference publication guard", () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const [validator] = loadHostStateValidator(
+    lucid,
+    "11".repeat(28),
+    "22".repeat(28),
+    "33".repeat(28),
+    "44".repeat(28),
+    "55".repeat(28),
+  );
+  const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
+  assertEquals(report.oversized, false, JSON.stringify(report));
 });

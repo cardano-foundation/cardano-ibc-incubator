@@ -14,19 +14,20 @@
   "nodeModulesDir": "auto",
   "lint": {
     "rules": {
-      "exclude": ["no-explicit-any"]
+      "exclude": [
+        "no-explicit-any"
+      ]
     }
   },
   "tasks": {
     "clean": "rm -rf deployments",
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
-    "check": "deno check index.ts src/*.ts src/testing/*.ts scripts/*.ts types/**/*.ts",
-    "test:deployment": "deno test --allow-env --allow-read src/deployment.test.ts",
-    "test:channels": "deno test --allow-env --allow-read src/channel-actions.test.ts",
-    "test:channels:fuzz": "deno test --allow-env --allow-read src/channel-actions.fuzz.test.ts",
+    "check": "deno check index.ts src/*.ts scripts/*.ts types/**/*.ts",
+    "test:deployment": "deno test --allow-env --allow-read src/deployment.test.ts src/deployment-plan.test.ts src/deployment-transactions.test.ts",
     "test:shutdown": "deno test --allow-env --allow-read scripts/shutdown-deployment.test.ts",
     "shutdown:deployment": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts",
-    "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi --allow-write index.ts"
+    "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi --allow-write index.ts",
+    "export:deployment-plan": "deno run --allow-env --allow-read --allow-write scripts/export-deployment-plan.ts"
   }
 }
