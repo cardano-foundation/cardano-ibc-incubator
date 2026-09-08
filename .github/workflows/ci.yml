@@ -65,6 +65,9 @@ jobs:
       - name: Test Aiken wire schema lock
         run: node --test scripts/ci/check-aiken-wire-schema.test.mjs
 
+      - name: Test image publishing guards
+        run: node --test scripts/ci/image-publishing.test.mjs
+
       - name: Detect Aiken-relevant changes
         id: detect
         env:

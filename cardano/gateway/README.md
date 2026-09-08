@@ -28,7 +28,7 @@
 
 ## Published Container Image
 
-The shared [image workflow](../../.github/workflows/publish.yaml) publishes PR images to the configured private registry. Ordinary merges to `main` do not publish images.
+The shared [image workflow](../../.github/workflows/publish.yaml) publishes same-repository PR images to the configured private registry. Fork and Dependabot PRs build without publishing or registry credentials. Ordinary merges to `main` do not publish images.
 
 Public Gateway releases use Git tags such as `gateway/v2.0.2`, matching the version in `package.json`. The tag must point to a commit already on `main`. The published image is named `cardano-ibc-gateway` and its Docker tag omits the `gateway/` prefix, for example `v2.0.2`. The GitHub Release lists the published public image references, digests and pull commands.
 

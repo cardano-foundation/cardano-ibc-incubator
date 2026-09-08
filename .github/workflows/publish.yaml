@@ -13,9 +13,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# The CF baseline action removes public registries for pull requests and branch
-# builds. Consequently, those events publish only to the configured private
-# registry, while component release tags publish to every configured registry.
+# PRs have read-only GitHub tokens and only private registry credentials.
+# Fork and Dependabot PRs build without publishing. Only tags receive release credentials.
 permissions:
   contents: read
 
@@ -68,7 +67,7 @@ jobs:
                git diff --quiet --ignore-submodules=none --no-ext-diff \
                  "${PR_BASE_SHA}...${PR_HEAD_SHA}" -- \
                  relayer .gitmodules docker/hermes.Dockerfile .dockerignore \
-                 Earthfile .github/workflows/publish.yaml; then
+                 Earthfile .github/workflows/publish.yaml .github/workflows/build-image.yaml; then
               images=$(jq -c 'map(select(.component != "hermes"))' <<< "${images}")
             fi
           fi
@@ -76,11 +75,30 @@ jobs:
           echo "Selected image matrix: ${images}"
           echo "images=${images}" >> "${GITHUB_OUTPUT}"
 
-  build-and-publish:
-    name: Build and publish ${{ matrix.image.component }}
+  pr-images:
+    name: Build PR ${{ matrix.image.component }}
     needs: select-components
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.select-components.outputs.images) }}
+    uses: ./.github/workflows/build-image.yaml
+    with:
+      component: ${{ matrix.image.component }}
+      version-directory: ${{ matrix.image.version_directory }}
+      publish: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+    secrets:
+      DOCKER_REGISTRIES: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && secrets.DOCKER_REGISTRIES || '' }}
+      PRIVATE_DOCKER_REGISTRY_URL: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && secrets.GITLAB_DOCKER_REGISTRY_URL || '' }}
+      PRIVATE_DOCKER_REGISTRY_PASS: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && secrets.GITLAB_PKG_REGISTRY_TOKEN || '' }}
+
+  release-images:
+    name: Release ${{ matrix.image.component }}
+    needs: select-components
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     permissions:
       contents: read
       packages: write
@@ -88,107 +106,21 @@ jobs:
       fail-fast: false
       matrix:
         image: ${{ fromJSON(needs.select-components.outputs.images) }}
-    env:
+    uses: ./.github/workflows/build-image.yaml
+    with:
+      component: ${{ matrix.image.component }}
+      version-directory: ${{ matrix.image.version_directory }}
+      publish: true
+    secrets:
+      DOCKER_REGISTRIES: ${{ secrets.DOCKER_REGISTRIES }}
       PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.GITLAB_DOCKER_REGISTRY_URL }}
-      PRIVATE_DOCKER_REGISTRY_USER: Deploy-Token
       PRIVATE_DOCKER_REGISTRY_PASS: ${{ secrets.GITLAB_PKG_REGISTRY_TOKEN }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          submodules: recursive
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Set up trusted publishing credentials
-        id: baseline
-        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@9d6fdaf043772b4f9eb1ea4bcc994dc30b515a96
-        with:
-          GITHUB_TOKEN: ${{ github.token }}
-          PRIVATE_DOCKER_REGISTRY_URL: ${{ env.PRIVATE_DOCKER_REGISTRY_URL }}
-          PRIVATE_DOCKER_REGISTRY_USER: ${{ env.PRIVATE_DOCKER_REGISTRY_USER }}
-          PRIVATE_DOCKER_REGISTRY_PASS: ${{ env.PRIVATE_DOCKER_REGISTRY_PASS }}
-          HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
-          HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
-          DOCKER_REGISTRIES: ${{ secrets.DOCKER_REGISTRIES }}
-          artifact-version-directory: ${{ matrix.image.version_directory }}
-
-      - name: Validate release version
-        if: github.ref_type == 'tag'
-        env:
-          COMPONENT: ${{ matrix.image.component }}
-          COMPONENT_VERSION: ${{ steps.baseline.outputs.GUESSED_ARTIFACT_VERSION }}
-        run: |
-          expected_tag="${COMPONENT}/v${COMPONENT_VERSION}"
-          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
-            echo "Release tag '${GITHUB_REF_NAME}' does not match ${COMPONENT} version ${COMPONENT_VERSION}." >&2
-            echo "Expected tag: ${expected_tag}" >&2
-            exit 1
-          fi
-
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
-            echo "Release tags must point to a commit already merged into main." >&2
-            exit 1
-          fi
-
-      - name: Build and publish image
-        run: |
-          earthly +${{ matrix.image.component }} \
-            --PUSH=true \
-            --DOCKER_REGISTRIES="${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}" \
-            --DOCKER_IMAGES_EXTRA_TAGS="${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}"
-
-      - name: Prepare gateway release
-        if: github.ref_type == 'tag' && matrix.image.component == 'gateway'
-        shell: bash
-        env:
-          REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
-          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
-        run: |
-          release_dir="${RUNNER_TEMP}/gateway-release"
-          mkdir -p "${release_dir}"
-          archive="cardano-gateway-manifests-${IMAGE_TAG}.tar.gz"
-          tar -czf "${release_dir}/${archive}" manifests
-
-          read -ra registries <<< "${REGISTRIES}"
-          public_images=0
-          {
-            echo 'Published Cardano Gateway container images:'
-            for registry in "${registries[@]}"; do
-              case "${registry}" in
-                ghcr.io/*|docker.io/*) ;;
-                *) continue ;;
-              esac
-              image="${registry}/cardano-ibc-gateway"
-              digest=$(docker buildx imagetools inspect "${image}:${IMAGE_TAG}" \
-                --format '{{json .Manifest}}' | \
-                jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))')
-              printf "\n\`%s:%s\`\n\n\`%s@%s\`\n\n\`\`\`bash\ndocker pull %s:%s\n\`\`\`\n" \
-                "${image}" "${IMAGE_TAG}" "${image}" "${digest}" "${image}" "${IMAGE_TAG}"
-              public_images=$((public_images + 1))
-            done
-            if [[ "${public_images}" == 0 ]]; then
-              echo 'No public gateway image registry is configured.' >&2
-              exit 1
-            fi
-            printf "\nThe image includes tracked bridge manifests at \`/usr/src/app/manifests\`.\n"
-            printf "\nFor preprod, set \`BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json\`.\n"
-            printf "\nThe tracked manifests are also attached as \`%s\`.\n" "${archive}"
-          } > "${release_dir}/notes.md"
-
-      - name: Upload gateway release files
-        if: github.ref_type == 'tag' && matrix.image.component == 'gateway'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: gateway-release
-          path: ${{ runner.temp }}/gateway-release/
-          if-no-files-found: error
-          overwrite: true
+      HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
+      HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
 
   gateway-release:
     name: Publish gateway GitHub Release
-    needs: build-and-publish
+    needs: release-images
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'gateway/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
