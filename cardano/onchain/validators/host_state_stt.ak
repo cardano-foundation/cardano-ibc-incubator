@@ -186,14 +186,10 @@ fn decode_client_datum(output: Output) -> ClientDatum {
 fn expect_client_output_datum(
   outputs: List<Output>,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
-  client_mint_policy_id: PolicyId,
 ) -> ClientDatum {
   expect [client_output] =
     outputs |> transaction.find_script_outputs(spend_client_script_hash)
-  let datum = decode_client_datum(client_output)
-  expect datum.token.policy_id == client_mint_policy_id
-  expect auth.contain_auth_token(client_output, datum.token)
-  datum
+  decode_client_datum(client_output)
 }
 
 /// Enforce that `ibc_state_root` is updated correctly for CreateClient.
@@ -212,11 +208,7 @@ fn validate_create_client_root(
   consensus_state_siblings: List<ByteArray>,
 ) -> Bool {
   let client_datum =
-    expect_client_output_datum(
-      outputs,
-      spend_client_script_hash,
-      client_mint_policy_id,
-    )
+    expect_client_output_datum(outputs, spend_client_script_hash)
 
   // Derive the client identifier from the HostState sequence.
   //
@@ -352,12 +344,9 @@ fn validate_update_client_root(
   removed_consensus_state_siblings: List<List<ByteArray>>,
 ) -> Bool {
   let client_output_datum =
-    expect_client_output_datum(
-      outputs,
-      spend_client_script_hash,
-      client_mint_policy_id,
-    )
+    expect_client_output_datum(outputs, spend_client_script_hash)
 
+  // Identify which client is being updated.
   let client_id = client_id_from_token_name(client_output_datum.token.name)
 
   // Find the input client UTxO by looking for the same auth token.
@@ -365,7 +354,7 @@ fn validate_update_client_root(
     find_input_with_auth_token(inputs, client_output_datum.token)
 
   let client_input_datum = decode_client_datum(client_input.output)
-  expect client_input_datum.token.policy_id == client_mint_policy_id
+
   // 1) Apply the clientState update.
   let client_state_key = client_keys.full_client_state_path(client_id)
 
