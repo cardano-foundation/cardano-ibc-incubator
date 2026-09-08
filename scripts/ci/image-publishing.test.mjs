@@ -45,7 +45,8 @@ test('fork and Dependabot build-only mode supplies no login destinations', () =>
   const result = selectRegistries({ PUBLISH: 'false' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.output, 'registries=');
-  assert.match(build, /--PUSH=\$\{\{ inputs\.publish \}\}/);
+  assert.match(build, /earthly "\+\$\{COMPONENT\}" --PUSH=false/);
+  assert.match(build, /name: Publish tested image\n        if: inputs.publish/);
 });
 
 test('releases retain every configured registry', () => {
@@ -82,4 +83,17 @@ test('only tag callers receive release credentials and package writes', () => {
   assert.match(release, /if: github.event_name == 'push' && github.ref_type == 'tag'/);
   assert.match(release, /packages: write/);
   assert.match(release, /HUB_DOCKER_COM_PASS: \$\{\{ secrets.HUB_DOCKER_COM_PASS \}\}/);
+});
+
+test('release CI runs before login, and smoke tests precede publication of the same image ID', () => {
+  assert.ok(build.indexOf('run: node scripts/ci/release-ci.mjs') < build.indexOf('id: baseline'));
+  assert.ok(build.indexOf('name: Smoke test release image') < build.indexOf('name: Publish tested image'));
+  assert.match(build, /image_id=\$\(docker image inspect/);
+  const smoke = build.split('      - name: Smoke test release image')[1].split('      - name:')[0];
+  const publish = build.split('      - name: Publish tested image')[1].split('      - name:')[0];
+  for (const step of [smoke, publish]) {
+    assert.match(step, /IMAGE_ID: \$\{\{ steps.image.outputs.id \}\}/);
+  }
+  assert.match(smoke, /if: github.ref_type == 'tag'/);
+  assert.match(publish, /docker tag "\$\{IMAGE_ID\}"/);
 });
