@@ -437,9 +437,9 @@ pub fn require_exact_marker_mint(
   expected_asset_name: AssetName,
   expected_quantity: Int,
 ) -> Bool {
-  tokens(mint, own_policy_id) == (
-    dict.empty
-      |> dict.insert(expected_asset_name, expected_quantity)
+  tokens(mint, own_policy_id) == dict.singleton(
+    expected_asset_name,
+    expected_quantity,
   )
 }
 

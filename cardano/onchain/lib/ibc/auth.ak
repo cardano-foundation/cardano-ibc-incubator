@@ -24,9 +24,7 @@ pub fn contains_only_auth_tokens(
     list.foldl(
       tokens,
       zero,
-      fn(token, acc) {
-        assets.from_asset(token.policy_id, token.name, 1) |> assets.merge(acc)
-      },
+      fn(token, acc) { assets.add(acc, token.policy_id, token.name, 1) },
     )
   assets.match_assets(output.value, expected_value)
 }
@@ -34,7 +32,7 @@ pub fn contains_only_auth_tokens(
 pub fn mint_auth_token(mint: Value, token: AuthToken) -> Bool {
   let minted_tokens = mint |> tokens(token.policy_id)
 
-  minted_tokens == ( dict.empty |> dict.insert(token.name, 1) )
+  minted_tokens == dict.singleton(token.name, 1)
 }
 
 pub fn generate_token_name(
