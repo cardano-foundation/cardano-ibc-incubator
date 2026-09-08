@@ -3,6 +3,7 @@ export const EVENT_TYPE_CLIENT = {
   UPDATE_CLIENT: 'update_client',
   UPGRADE_CLIENT: 'upgrade_client',
   CLIENT_MISBEHAVIOR: 'client_misbehaviour',
+  RECOVER_CLIENT: 'recover_client',
   UPDATE_CLIENT_PROPOSAL: 'update_client_proposal',
   UPGRADE_CHAIN: 'upgrade_chain',
   UPGRADE_CLIENT_PROPOSAL: 'upgrade_client_proposal',
@@ -11,6 +12,7 @@ export const EVENT_TYPE_CLIENT = {
 export const ATTRIBUTE_KEY_CLIENT = {
   CLIENT_ID: 'client_id',
   SUBJECT_CLIENT_ID: 'subject_client_id',
+  SUBSTITUTE_CLIENT_ID: 'substitute_client_id',
   CLIENT_TYPE: 'client_type',
   CONSENSUS_HEIGHT: 'consensus_height',
   CONSENSUS_HEIGHTS: 'consensus_heights',

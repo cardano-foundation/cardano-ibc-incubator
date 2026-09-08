@@ -12,6 +12,8 @@ import {
   TransferIBCModuleRedeemer,
 } from './apps/transfer/transfer-ibc-module-redeemer';
 import { decodeIBCModuleRedeemer, encodeIBCModuleRedeemer } from './port/ibc_module_redeemer';
+import { decodeSpendClientRedeemer, encodeSpendClientRedeemer, findSpendClientRedeemer } from './client-redeemer';
+import { encodeRecoverClientWithdrawalRedeemer } from './recover-client-redeemer';
 
 const EMPTY_PROOF = { proofs: [] } as const;
 const HEIGHT = { revisionNumber: 0n, revisionHeight: 11n } as const;
@@ -30,6 +32,34 @@ const PACKET = {
 const MITHRIL_CLIENT_STATE_HEX = 'aabbccdd';
 
 describe('Redeemer encoding regression', () => {
+  it('keeps client recovery constructors aligned with Aiken', async () => {
+    const subjectToken = { policyId: '11'.repeat(28), name: 'aa' };
+    const substituteToken = { policyId: '22'.repeat(28), name: 'bb' };
+    const spendRedeemer = { RecoverClient: { substitute_token: substituteToken } } as const;
+    const withdrawalRedeemer = {
+      RecoverClientWithdrawal: {
+        subject_token: subjectToken,
+        substitute_token: substituteToken,
+      },
+    } as const;
+
+    const encodedSpend = await encodeSpendClientRedeemer(spendRedeemer, Lucid);
+    const encodedWithdrawal = encodeRecoverClientWithdrawalRedeemer(withdrawalRedeemer, Lucid);
+
+    expect(encodedSpend.startsWith('d87a')).toBe(true);
+    expect(encodedWithdrawal.startsWith('d879')).toBe(true);
+    expect(decodeSpendClientRedeemer(encodedSpend, Lucid)).toEqual(spendRedeemer);
+    expect(
+      findSpendClientRedeemer(
+        [
+          { type: 'spend', data: 'd9050380' },
+          { type: 'spend', data: encodedSpend },
+        ],
+        Lucid,
+      ),
+    ).toEqual(spendRedeemer);
+  });
+
   it('keeps MintChannel redeemer encoding stable', async () => {
     const encoded = await encodeMintChannelRedeemer(
       {

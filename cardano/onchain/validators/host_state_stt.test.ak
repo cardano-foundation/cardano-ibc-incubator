@@ -55,7 +55,7 @@ use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   ShutdownState, ShuttingDown, empty_ibc_state_root, host_state_token_name,
-  max_bound_ports, validate_bind_port,
+  max_bound_ports, min_shutdown_grace_period_ms, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
@@ -3584,7 +3584,12 @@ test host_state_bind_port_fails_if_output_missing() fail {
   )
 }
 
-test host_state_enter_shutdown_succeeds_with_deployer_signature() {
+fn validate_test_enter_shutdown(
+  initiated_at: Int,
+  grace_period_end: Int,
+  validity_range: interval.Interval,
+  signed: Bool,
+) -> Bool {
   let nft_policy: PolicyId =
     #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
   let host_script_hash =
@@ -3608,10 +3613,9 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
     HostState {
       ..old_state,
       version: old_state.version + 1,
-      last_update_time: 2000,
+      last_update_time: initiated_at,
     }
 
-  let grace_period_end = 5000
   let input_ref =
     OutputReference {
       transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
@@ -3651,7 +3655,12 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
       ..placeholder,
       inputs: [host_input],
       outputs: [host_output],
-      extra_signatories: [trusted_deployer],
+      extra_signatories: if signed {
+        [trusted_deployer]
+      } else {
+        []
+      },
+      validity_range,
     }
 
   let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
@@ -3668,82 +3677,92 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
   )
 }
 
-test host_state_enter_shutdown_fails_without_deployer_signature() fail {
-  let nft_policy: PolicyId =
-    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
-  let host_script_hash =
-    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
-  let dummy_script_hash =
-    #"a15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b372"
-  let address = Address(Script(host_script_hash), None)
+test host_state_enter_shutdown_succeeds_with_deployer_signature() {
+  validate_test_enter_shutdown(
+    2000,
+    2000 + min_shutdown_grace_period_ms,
+    interval.between(1000, 2000),
+    True,
+  )
+}
 
-  let old_state =
-    HostState {
-      version: 0,
-      ibc_state_root: empty_ibc_state_root,
-      next_client_sequence: 0,
-      next_connection_sequence: 0,
-      next_channel_sequence: 0,
-      bound_port: [],
-      last_update_time: 1000,
-    }
+test host_state_enter_shutdown_allows_longer_grace_period() {
+  validate_test_enter_shutdown(
+    2000,
+    2000 + 2 * min_shutdown_grace_period_ms,
+    interval.between(1000, 2000),
+    True,
+  )
+}
 
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: 2000,
-    }
-
-  let grace_period_end = 5000
-  let input_ref =
-    OutputReference {
-      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
-      output_index: 0,
-    }
-
-  let host_input =
-    Input(
-      input_ref,
-      Output {
-        address,
-        value: from_asset(nft_policy, host_state_token_name, 1),
-        datum: InlineDatum(test_host_state_datum(old_state, nft_policy)),
-        reference_script: None,
+test host_state_enter_shutdown_accepts_exclusive_upper_bound() {
+  let validity_range = interval.between(1000, 2000)
+  validate_test_enter_shutdown(
+    2000,
+    2000 + min_shutdown_grace_period_ms,
+    interval.Interval {
+      ..validity_range,
+      upper_bound: interval.IntervalBound {
+        ..validity_range.upper_bound,
+        is_inclusive: False,
       },
-    )
+    },
+    True,
+  )
+}
 
-  let host_output =
-    Output {
-      address,
-      value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: InlineDatum(
-        test_host_state_datum_with_shutdown(
-          new_state,
-          nft_policy,
-          ShuttingDown {
-            initiated_at: new_state.last_update_time,
-            grace_period_end,
-          },
-        ),
-      ),
-      reference_script: None,
-    }
+test host_state_enter_shutdown_fails_without_deployer_signature() fail {
+  validate_test_enter_shutdown(
+    2000,
+    2000 + min_shutdown_grace_period_ms,
+    interval.between(1000, 2000),
+    False,
+  )
+}
 
-  let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
+test host_state_enter_shutdown_rejects_backdated_grace_period() fail {
+  validate_test_enter_shutdown(
+    2000,
+    5000,
+    interval.between(1_800_000_000_000, 1_800_000_600_000),
+    True,
+  )
+}
 
-  let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
+test host_state_enter_shutdown_rejects_backdated_initiation() fail {
+  validate_test_enter_shutdown(
+    1000,
+    2000 + min_shutdown_grace_period_ms,
+    interval.between(1000, 2000),
+    True,
+  )
+}
 
-  host_state_stt.host_state_stt.spend(
-    nft_policy,
-    dummy_script_hash,
-    dummy_script_hash,
-    dummy_script_hash,
-    None,
-    redeemer,
-    input_ref,
-    transaction,
+test host_state_enter_shutdown_rejects_short_grace_period() fail {
+  validate_test_enter_shutdown(
+    2000,
+    2000 + min_shutdown_grace_period_ms - 1,
+    interval.between(1000, 2000),
+    True,
+  )
+}
+
+test host_state_enter_shutdown_measures_grace_from_upper_bound() fail {
+  let valid_to = 1000 + min_shutdown_grace_period_ms
+  validate_test_enter_shutdown(
+    valid_to,
+    1000 + min_shutdown_grace_period_ms + 1,
+    interval.between(1000, valid_to),
+    True,
+  )
+}
+
+test host_state_enter_shutdown_requires_finite_upper_bound() fail {
+  validate_test_enter_shutdown(
+    2000,
+    2000 + min_shutdown_grace_period_ms,
+    interval.after(2000),
+    True,
   )
 }
 
@@ -3797,7 +3816,7 @@ fn validate_test_finalize_shutdown(
 
 test host_state_finalize_shutdown_succeeds_with_exact_nft_burn() {
   let nft_policy = test_nft_policy()
-  let grace_period_end = 5000
+  let grace_period_end = 2000 + min_shutdown_grace_period_ms
   validate_test_finalize_shutdown(
     from_asset(nft_policy, host_state_token_name, -1),
     [],
@@ -3864,7 +3883,7 @@ test host_state_finalize_shutdown_rejects_nft_output_with_burn() fail {
 
 test host_state_finalize_shutdown_fails_before_grace_period() fail {
   let nft_policy = test_nft_policy()
-  let grace_period_end = 5000
+  let grace_period_end = 2000 + min_shutdown_grace_period_ms
   validate_test_finalize_shutdown(
     from_asset(nft_policy, host_state_token_name, -1),
     [],

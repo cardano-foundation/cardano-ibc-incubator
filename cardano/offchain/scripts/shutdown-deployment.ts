@@ -5,6 +5,7 @@ import {
   getAddressDetails,
   Kupmios,
   type LucidEvolution,
+  slotToUnixTime,
   type UTxO,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
@@ -49,6 +50,40 @@ const DEFAULT_HANDLER_JSON_PATH = "./deployments/handler.json";
 const DEFAULT_REFERENCE_RECLAIM_BATCH_SIZE = 10;
 const DEFAULT_KUPMIOS_SUBMIT_TIMEOUT_MS = 60000;
 const TX_VALIDITY_WINDOW_MS = 10 * 60 * 1000;
+// Keep aligned with the on-chain minimum shutdown grace period.
+export const MIN_SHUTDOWN_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
+
+export function shutdownTiming(
+  lucid: Pick<LucidEvolution, "config" | "unixTimeToSlot">,
+  grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
+  now = Date.now(),
+) {
+  if (
+    (grace.gracePeriodEnd === undefined) === (grace.gracePeriodMs === undefined)
+  ) {
+    throw new Error("Specify exactly one grace period duration or end time");
+  }
+  const network = lucid.config().network;
+  if (!network) {
+    throw new Error("Shutdown requires a configured Cardano network");
+  }
+  const validFrom = slotToUnixTime(network, lucid.unixTimeToSlot(now));
+  const validTo = slotToUnixTime(
+    network,
+    lucid.unixTimeToSlot(now + TX_VALIDITY_WINDOW_MS),
+  );
+  const gracePeriodEnd = grace.gracePeriodEnd ?? validTo + grace.gracePeriodMs!;
+  if (
+    !Number.isSafeInteger(validFrom) || !Number.isSafeInteger(validTo) ||
+    validTo <= validFrom || !Number.isSafeInteger(gracePeriodEnd) ||
+    gracePeriodEnd - validTo < MIN_SHUTDOWN_GRACE_PERIOD_MS
+  ) {
+    throw new Error(
+      `Shutdown requires at least ${MIN_SHUTDOWN_GRACE_PERIOD_MS} ms of grace after transaction expiry ${validTo}`,
+    );
+  }
+  return { validFrom, validTo, gracePeriodEnd };
+}
 
 function toJson(value: unknown): string {
   return JSON.stringify(
@@ -920,7 +955,7 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
 async function enterShutdown(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
-  gracePeriodEnd: number,
+  grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
 ) {
   const hostUtxo = await getHostStateUtxo(lucid, deployment);
   const currentDatum = decodeHostStateDatum(hostUtxo);
@@ -928,12 +963,7 @@ async function enterShutdown(
     throw new Error("HostState is already shutting down");
   }
 
-  const now = Date.now();
-  if (gracePeriodEnd <= now) {
-    throw new Error(
-      `grace period end ${gracePeriodEnd} must be after current time ${now}`,
-    );
-  }
+  const { validFrom, validTo, gracePeriodEnd } = shutdownTiming(lucid, grace);
 
   const walletAddress = await lucid.wallet().address();
   const signerKeyHash = deployerPaymentKeyHash(walletAddress);
@@ -942,13 +972,13 @@ async function enterShutdown(
     state: {
       ...currentDatum.state,
       version: currentDatum.state.version + 1n,
-      last_update_time: BigInt(now),
+      last_update_time: BigInt(validTo),
     },
     control: {
       ...currentDatum.control,
       shutdown: {
         ShuttingDown: {
-          initiated_at: BigInt(now),
+          initiated_at: BigInt(validTo),
           grace_period_end: BigInt(gracePeriodEnd),
         },
       },
@@ -980,15 +1010,15 @@ async function enterShutdown(
           hostUtxo.assets,
         )
         .addSignerKey(signerKeyHash)
-        .validFrom(now)
-        .validTo(now + TX_VALIDITY_WINDOW_MS),
+        .validFrom(validFrom)
+        .validTo(validTo),
     lucid,
     "EnterDeploymentShutdown",
   );
 
   console.log(toJson({
     txHash,
-    initiatedAt: now,
+    initiatedAt: validTo,
     gracePeriodEnd,
   }));
 }
@@ -1143,9 +1173,7 @@ async function main() {
       await status(lucid, deployment);
       break;
     case "enter": {
-      const gracePeriodEnd = args.gracePeriodEnd ??
-        Date.now() + args.gracePeriodMs!;
-      await enterShutdown(lucid, deployment, gracePeriodEnd);
+      await enterShutdown(lucid, deployment, args);
       break;
     }
     case "reclaim-reference-scripts":

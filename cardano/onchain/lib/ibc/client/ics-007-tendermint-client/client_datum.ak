@@ -162,3 +162,135 @@ pub fn update_state_on_misbehaviour(
 
   expected_datum == output_datum
 }
+
+/// Immutable Tendermint parameters must remain unchanged when an inactive
+/// client adopts a trusted checkpoint from a substitute client.
+pub fn recovery_parameters_match(
+  subject: ClientState,
+  substitute: ClientState,
+) -> Bool {
+  and {
+    subject.chain_id == substitute.chain_id,
+    subject.trust_level == substitute.trust_level,
+    subject.trusting_period == substitute.trusting_period,
+    subject.unbonding_period == substitute.unbonding_period,
+    subject.max_clock_drift == substitute.max_clock_drift,
+    subject.proof_specs == substitute.proof_specs,
+  }
+}
+
+fn recovered_histories_match(
+  input_consensus_states: Pairs<Height, ConsensusState>,
+  input_processed_times: Pairs<Height, Int>,
+  input_processed_heights: Pairs<Height, Int>,
+  output_consensus_states: Pairs<Height, ConsensusState>,
+  output_processed_times: Pairs<Height, Int>,
+  output_processed_heights: Pairs<Height, Int>,
+  remaining: Int,
+) -> Bool {
+  when input_consensus_states is {
+    [] -> and {
+        input_processed_times == [],
+        input_processed_heights == [],
+        output_consensus_states == [],
+        output_processed_times == [],
+        output_processed_heights == [],
+      }
+    [input_consensus, ..input_consensus_rest] -> {
+      expect [input_time, ..input_time_rest] = input_processed_times
+      expect [input_height, ..input_height_rest] = input_processed_heights
+      expect input_consensus.1st == input_time.1st
+      expect input_consensus.1st == input_height.1st
+
+      if remaining <= 0 {
+        and {
+          input_consensus_rest == [],
+          input_time_rest == [],
+          input_height_rest == [],
+          output_consensus_states == [],
+          output_processed_times == [],
+          output_processed_heights == [],
+        }
+      } else {
+        expect [output_consensus, ..output_consensus_rest] =
+          output_consensus_states
+        expect [output_time, ..output_time_rest] = output_processed_times
+        expect [output_height, ..output_height_rest] = output_processed_heights
+
+        and {
+          input_consensus == output_consensus,
+          input_time == output_time,
+          input_height == output_height,
+          recovered_histories_match(
+            input_consensus_rest,
+            input_time_rest,
+            input_height_rest,
+            output_consensus_rest,
+            output_time_rest,
+            output_height_rest,
+            remaining - 1,
+          ),
+        }
+      }
+    }
+  }
+}
+
+/// Replace the subject's trusted tip with the substitute's latest checkpoint.
+/// Existing subject history is retained. At the capacity bound only the final
+/// entry is evicted, which keeps the HostState deletion proof bounded to one.
+pub fn recover_state(
+  subject: ClientDatum,
+  substitute: ClientDatum,
+  output: ClientDatum,
+) -> Bool {
+  let subject_state = subject.state
+  let substitute_state = substitute.state
+  let subject_client_state = subject_state.client_state
+  let substitute_client_state = substitute_state.client_state
+  let substitute_height = substitute_client_state.latest_height
+
+  expect
+    recovery_parameters_match(subject_client_state, substitute_client_state)
+  expect
+    height.compare(substitute_height, subject_client_state.latest_height) == Greater
+  expect !pairs.has_key(subject_state.consensus_states, substitute_height)
+
+  expect Some(substitute_consensus_state) =
+    pairs.get_first(substitute_state.consensus_states, substitute_height)
+  expect Some(substitute_processed_time) =
+    pairs.get_first(substitute_state.processed_times, substitute_height)
+  expect Some(substitute_processed_height) =
+    pairs.get_first(substitute_state.processed_heights, substitute_height)
+
+  expect [output_consensus_head, ..output_consensus_tail] =
+    output.state.consensus_states
+  expect [output_time_head, ..output_time_tail] = output.state.processed_times
+  expect [output_height_head, ..output_height_tail] =
+    output.state.processed_heights
+
+  let expected_client_state =
+    ClientState {
+      ..subject_client_state,
+      frozen_height: height.zero_height(),
+      latest_height: substitute_height,
+    }
+  let retained_history_size = max_consensus_state_size - 1
+
+  and {
+    output.token == subject.token,
+    output.state.client_state == expected_client_state,
+    output_consensus_head == Pair(substitute_height, substitute_consensus_state),
+    output_time_head == Pair(substitute_height, substitute_processed_time),
+    output_height_head == Pair(substitute_height, substitute_processed_height),
+    recovered_histories_match(
+      subject_state.consensus_states,
+      subject_state.processed_times,
+      subject_state.processed_heights,
+      output_consensus_tail,
+      output_time_tail,
+      output_height_tail,
+      retained_history_size,
+    ),
+  }
+}
