@@ -1,6 +1,7 @@
 use aiken/collection/list
 use cardano/address.{from_script}
 use cardano/assets.{ada_asset_name, ada_policy_id, add, from_asset}
+use cardano/script_context.{ScriptContext, Spending}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
   Spend, Transaction,
@@ -402,16 +403,6 @@ fn check_send_packet_with_data(
     }
 
   and {
-    send_packet.send_packet.spend(
-      mock_data.client_minting_policy_id,
-      mock_data.connection_minting_policy_id,
-      mock_data.port_minting_policy_id,
-      mock_data.host_state_nft_policy_id,
-      None,
-      mock_data.channel_token,
-      channel_input.output_reference,
-      transaction,
-    )?,
     send_packet.send_packet.mint(
       mock_data.client_minting_policy_id,
       mock_data.connection_minting_policy_id,
@@ -464,6 +455,25 @@ test succeed_send_packet() {
     ValidCallback,
     refundable_sender,
     #"7b22616d6f756e74223a2231303030222c2264656e6f6d223a2236633666373636353663363136333635222c227265636569766572223a227265636569766572222c2273656e646572223a223532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232227d",
+  )
+}
+
+test send_packet_rejects_spending_purpose() fail {
+  let mock_data = setup()
+  let datum: Data = Void
+  send_packet.send_packet.else(
+    mock_data.client_minting_policy_id,
+    mock_data.connection_minting_policy_id,
+    mock_data.port_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
+    ScriptContext {
+      transaction: transaction.placeholder,
+      redeemer: mock_data.channel_token,
+      info: Spending {
+        output: mock_data.module_input.output_reference,
+        datum: Some(datum),
+      },
+    },
   )
 }
 

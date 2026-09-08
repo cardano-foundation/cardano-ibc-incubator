@@ -48,8 +48,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
     steps: 11_230_206_915,
   },
   send_packet_at_commitment_capacity: {
-    mem: 52_816_135,
-    steps: 16_520_663_849,
+    mem: 45_642_288,
+    steps: 14_306_607_849,
   },
   recv_packet_at_history_capacity: {
     mem: 49_391_271,
