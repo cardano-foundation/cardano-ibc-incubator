@@ -34,6 +34,10 @@ Public Gateway releases use Git tags such as `gateway/v2.0.2`, matching the vers
 
 The exact tagged commit must have a successful `main` CI run. Release images are smoke-tested before that same image is pushed. Gateway startup uses isolated test databases and node/indexer fixtures, not a live Cardano network. Hermes runs its version and offline configuration checks, and the swap client serves its runtime configuration, page and static assets. For example, repeat the gateway check locally with `node scripts/ci/image-smoke.mjs gateway cardano-ibc-gateway:latest` and Docker running.
 
+Release publishing refuses to overwrite an existing version in any registry. Deploy using the `image@sha256:...` reference from the release, and keep the previous digest for rollback. If only GitHub Release creation fails, rerun that failed job. A partially published image release needs recovery from the existing digest, not another build over the same version.
+
+A repository administrator must import [the release tag ruleset](../../.github/release-tag-ruleset.json) in Settings → Rules → Rulesets to prevent component tags from being moved or deleted. The file alone does not activate protection. Registry administrators should also enable immutable release tags where supported and restrict public image writers. The workflow's preflight checks do not prevent another publisher racing a push.
+
 Published images include tracked bridge manifests at `/usr/src/app/manifests`.
 For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json`
 to start the Gateway against the shared Cardano preprod bridge deployment.
