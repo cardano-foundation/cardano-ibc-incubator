@@ -29,7 +29,7 @@ const MAX_TX_SIZE = 16_384;
 const TEST_SEED = "abandon ".repeat(11) + "about";
 const TEST_TIME = 1_700_000_000_000;
 
-async function deploymentFixture() {
+async function deploymentFixture(benchmarkVoucherEnabled = true) {
   const address = walletFromSeed(TEST_SEED, {
     addressType: "Base",
     accountIndex: 0,
@@ -61,7 +61,7 @@ async function deploymentFixture() {
     transferModuleNonce: outref(3),
     traceDirectoryNonce: outref(4),
     deployerPaymentKeyHash: paymentCredential.hash,
-    benchmarkVoucherEnabled: true,
+    benchmarkVoucherEnabled,
   });
   return { lucid, emulator, address, nonceUtxo, plan };
 }
@@ -82,83 +82,90 @@ function assertSignedTransactionFits(signed: TxSigned, label: string) {
 }
 
 Deno.test("every applied reference validator fits its signed production transaction", async (t) => {
-  const { plan: inventory } = await deploymentFixture();
-  for (const { title } of inventory.referenceValidators) {
-    await t.step(title, async () => {
-      const { lucid, emulator, address, plan } = await deploymentFixture();
-      const validator = plan.referenceValidators.find((entry) =>
-        entry.title === title
-      )!;
-      const validators = [validator.script];
-      let dedicatedFunding: UTxO | undefined;
-      if (shouldUseDedicatedReferenceFunding(validators, MAX_TX_SIZE)) {
-        const { totalOutputAssets } = await buildReferenceBatchTx(
+  for (const benchmarkVoucherEnabled of [false, true]) {
+    const mode = benchmarkVoucherEnabled ? "local-benchmark" : "production";
+    const { plan: inventory } = await deploymentFixture(
+      benchmarkVoucherEnabled,
+    );
+    for (const { title } of inventory.referenceValidators) {
+      await t.step(`${mode}/${title}`, async () => {
+        const { lucid, emulator, address, plan } = await deploymentFixture(
+          benchmarkVoucherEnabled,
+        );
+        const validator = plan.referenceValidators.find((entry) =>
+          entry.title === title
+        )!;
+        const validators = [validator.script];
+        let dedicatedFunding: UTxO | undefined;
+        if (shouldUseDedicatedReferenceFunding(validators, MAX_TX_SIZE)) {
+          const { totalOutputAssets } = await buildReferenceBatchTx(
+            lucid,
+            plan.referenceHolder.address,
+            validators,
+          ).config();
+          const fundingLovelace = totalOutputAssets.lovelace +
+            REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE;
+          const funding = await lucid.newTx()
+            .pay.ToAddress(address, { lovelace: fundingLovelace })
+            .complete();
+          const signedFunding = await funding.sign.withWallet().complete();
+          assertSignedTransactionFits(signedFunding, `fund ${title}`);
+          const fundingHash = await signedFunding.submit();
+          emulator.awaitBlock();
+          dedicatedFunding = (await lucid.wallet().getUtxos()).find((utxo) =>
+            utxo.txHash === fundingHash &&
+            utxo.assets.lovelace === fundingLovelace
+          );
+          assert(dedicatedFunding);
+        }
+
+        const result = await completeReferenceBatchTx(
           lucid,
           plan.referenceHolder.address,
           validators,
-        ).config();
-        const fundingLovelace = totalOutputAssets.lovelace +
-          REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE;
-        const funding = await lucid.newTx()
-          .pay.ToAddress(address, { lovelace: fundingLovelace })
-          .complete();
-        const signedFunding = await funding.sign.withWallet().complete();
-        assertSignedTransactionFits(signedFunding, `fund ${title}`);
-        const fundingHash = await signedFunding.submit();
-        emulator.awaitBlock();
-        dedicatedFunding = (await lucid.wallet().getUtxos()).find((utxo) =>
-          utxo.txHash === fundingHash &&
-          utxo.assets.lovelace === fundingLovelace
+          dedicatedFunding,
         );
-        assert(dedicatedFunding);
-      }
-
-      const result = await completeReferenceBatchTx(
-        lucid,
-        plan.referenceHolder.address,
-        validators,
-        dedicatedFunding,
-      );
-      assertSignedTransactionFits(result.signedTx, title);
-      const referenceOutputs = result.outputs.filter(({ scriptRef }) =>
-        scriptRef
-      );
-      assertEquals(referenceOutputs.length, 1);
-      assertEquals(referenceOutputs[0].address, plan.referenceHolder.address);
-      assertEquals(referenceOutputs[0].datum, Data.void());
-      assertEquals(
-        validatorToScriptHash(referenceOutputs[0].scriptRef!),
-        validator.hash,
-      );
-      assertEquals(referenceOutputs[0].txHash, result.signedTx.toHash());
-      assert(result.consumedWalletInputs.length > 0);
-      const body = result.signedTx.toTransaction().body();
-      if (dedicatedFunding) {
-        assertEquals(body.inputs().len(), 1);
-        assertEquals(body.outputs().len(), 1);
+        assertSignedTransactionFits(result.signedTx, title);
+        const referenceOutputs = result.outputs.filter(({ scriptRef }) =>
+          scriptRef
+        );
+        assertEquals(referenceOutputs.length, 1);
+        assertEquals(referenceOutputs[0].address, plan.referenceHolder.address);
+        assertEquals(referenceOutputs[0].datum, Data.void());
         assertEquals(
-          body.fee(),
-          REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE,
+          validatorToScriptHash(referenceOutputs[0].scriptRef!),
+          validator.hash,
         );
-        assertEquals(result.consumedWalletInputs, [dedicatedFunding]);
-      } else {
-        assert(result.outputs.some((output) => output.address === address));
-      }
-      const inputLovelace = result.consumedWalletInputs.reduce(
-        (total, input) => total + input.assets.lovelace,
-        0n,
-      );
-      const outputLovelace = result.outputs.reduce(
-        (total, output) => total + output.assets.lovelace,
-        0n,
-      );
-      assertEquals(inputLovelace, outputLovelace + body.fee());
-      assertEquals(await result.signedTx.submit(), result.signedTx.toHash());
-      emulator.awaitBlock();
-      const published = await lucid.utxosAt(plan.referenceHolder.address);
-      assertEquals(published.length, 1);
-      assertEquals(published[0].txHash, result.signedTx.toHash());
-    });
+        assertEquals(referenceOutputs[0].txHash, result.signedTx.toHash());
+        assert(result.consumedWalletInputs.length > 0);
+        const body = result.signedTx.toTransaction().body();
+        if (dedicatedFunding) {
+          assertEquals(body.inputs().len(), 1);
+          assertEquals(body.outputs().len(), 1);
+          assertEquals(
+            body.fee(),
+            REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE,
+          );
+          assertEquals(result.consumedWalletInputs, [dedicatedFunding]);
+        } else {
+          assert(result.outputs.some((output) => output.address === address));
+        }
+        const inputLovelace = result.consumedWalletInputs.reduce(
+          (total, input) => total + input.assets.lovelace,
+          0n,
+        );
+        const outputLovelace = result.outputs.reduce(
+          (total, output) => total + output.assets.lovelace,
+          0n,
+        );
+        assertEquals(inputLovelace, outputLovelace + body.fee());
+        assertEquals(await result.signedTx.submit(), result.signedTx.toHash());
+        emulator.awaitBlock();
+        const published = await lucid.utxosAt(plan.referenceHolder.address);
+        assertEquals(published.length, 1);
+        assertEquals(published[0].txHash, result.signedTx.toHash());
+      });
+    }
   }
 });
 
