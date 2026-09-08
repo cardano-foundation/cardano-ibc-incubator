@@ -31,12 +31,28 @@ jobs:
       aiken_changed: ${{ steps.detect.outputs.aiken_changed }}
       aiken_files_changed: ${{ steps.detect.outputs.aiken_files_changed }}
       aiken_pr_changed: ${{ steps.detect.outputs.aiken_pr_changed }}
+      hermes_changed: ${{ steps.hermes.outputs.changed }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Detect Hermes changes
+        id: hermes
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=true
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]] &&
+             git diff --quiet --ignore-submodules=none --no-ext-diff \
+               "${PR_BASE_SHA}...${PR_HEAD_SHA}" -- \
+               relayer .gitmodules .github/workflows/ci.yml; then
+            changed=false
+          fi
+          echo "changed=${changed}" >> "${GITHUB_OUTPUT}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -1085,7 +1101,8 @@ jobs:
 
   hermes-relayer:
     name: Hermes Relayer
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    needs: aiken-changes
+    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.hermes_changed == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
