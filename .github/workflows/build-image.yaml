@@ -37,6 +37,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Require successful main CI for the release commit
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/release-ci.mjs
+
       - name: Select registry credentials before login
         id: registries
         shell: bash
@@ -103,13 +110,42 @@ jobs:
             exit 1
           fi
 
-      - name: Build and publish image
+      - name: Build image without publishing
+        id: image
         shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
         run: |
-          earthly +${{ inputs.component }} \
-            --PUSH=${{ inputs.publish }} \
-            --DOCKER_REGISTRIES="${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}" \
-            --DOCKER_IMAGES_EXTRA_TAGS="${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}"
+          earthly "+${COMPONENT}" --PUSH=false
+          image_id=$(docker image inspect "cardano-ibc-${COMPONENT}:latest" --format '{{.Id}}')
+          echo "id=${image_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Smoke test release image
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
+          IMAGE_ID: ${{ steps.image.outputs.id }}
+        run: node scripts/ci/image-smoke.mjs "${COMPONENT}" "${IMAGE_ID}"
+
+      - name: Publish tested image
+        if: inputs.publish
+        shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
+          IMAGE_ID: ${{ steps.image.outputs.id }}
+          REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
+          IMAGE_TAGS: ${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }} ${{ steps.baseline.outputs.GIT_SHORT_COMMIT }}
+        run: |
+          read -ra registries <<< "${REGISTRIES}"
+          read -ra tags <<< "${IMAGE_TAGS}"
+          for registry in "${registries[@]}"; do
+            for tag in "${tags[@]}"; do
+              ref="${registry}/cardano-ibc-${COMPONENT}:${tag}"
+              docker tag "${IMAGE_ID}" "${ref}"
+              docker push "${ref}"
+            done
+          done
 
       - name: Prepare gateway release
         if: github.ref_type == 'tag' && inputs.component == 'gateway'

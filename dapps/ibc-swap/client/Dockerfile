@@ -43,6 +43,9 @@ WORKDIR /app
 COPY --from=build --chown=node:node /workspace/dapps/ibc-swap/client/.next/standalone ./
 COPY --from=build --chown=node:node /workspace/dapps/ibc-swap/client/.next/static /app/dapps/ibc-swap/client/.next/static
 COPY --from=build --chown=node:node /workspace/dapps/ibc-swap/client/public /app/dapps/ibc-swap/client/public
+# Server-side WebAssembly is outside Next's traced standalone files.
+COPY --from=build --chown=node:node /workspace/dapps/ibc-swap/client/.next/server/chunks/static /app/dapps/ibc-swap/client/.next/server/chunks/static
+RUN ln -sfn chunks/static /app/dapps/ibc-swap/client/.next/server/static
 
 USER node
 EXPOSE 3000
