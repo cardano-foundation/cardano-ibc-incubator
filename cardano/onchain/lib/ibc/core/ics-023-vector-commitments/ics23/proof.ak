@@ -38,6 +38,20 @@ pub fn verify_existence_proof(
   }
 }
 
+/// Validate a chained proof's spec, key and value, then hash its path once.
+/// The caller must still compare the final chained root with its trusted root.
+pub fn calculate_checked_existence_root(
+  p: ExistenceProof,
+  spec: ProofSpec,
+  key: ByteArray,
+  value: ByteArray,
+) -> CommitmentRoot {
+  expect check_against_spec(p, spec)
+  expect key == p.key
+  expect value == p.value
+  calculate_exist_internal(p, spec)
+}
+
 /// Verify does all checks to ensure the proof has valid non-existence proofs,
 /// and they ensure the given key is not in the CommitmentState
 pub fn verify_non_existence_proof(
@@ -265,73 +279,39 @@ pub fn is_left_neighbor(
   left: List<InnerOp>,
   right: List<InnerOp>,
 ) -> Bool {
-  let left_length = list.length(left)
-  let right_length = list.length(right)
-  let (l, r, opt_top_left, otp_top_right, _is_break) =
-    list.range(0, left_length - 1)
-      |> list.reduce(
-          (
-            list.slice(left, 0, left_length - 2),
-            list.slice(right, 0, right_length - 2),
-            list.at(left, left_length - 1),
-            list.at(right, right_length - 1),
-            False,
-          ),
-          fn(accum, _i) {
-            if accum.5th == False {
-              expect Some(t_left) = accum.3rd
-              expect Some(t_right) = accum.4th
-              if t_left.prefix == t_right.prefix && t_left.suffix == t_right.suffix {
-                let left_remaining_length = list.length(accum.1st)
-                let right_remaining_length = list.length(accum.2nd)
-                let next_left = list.at(accum.1st, left_remaining_length - 1)
-                let next_right = list.at(accum.2nd, right_remaining_length - 1)
-                let left_is_short = left_remaining_length < 2
-                let right_is_short = right_remaining_length < 2
-                if left_is_short && right_is_short {
-                  ([], [], next_left, next_right, False)
-                } else if left_is_short && !right_is_short {
-                  (
-                    [],
-                    list.slice(accum.2nd, 0, right_remaining_length - 2),
-                    next_left,
-                    next_right,
-                    False,
-                  )
-                } else if !left_is_short && right_is_short {
-                  (
-                    list.slice(accum.1st, 0, left_remaining_length - 2),
-                    [],
-                    next_left,
-                    next_right,
-                    False,
-                  )
-                } else {
-                  (
-                    list.slice(accum.1st, 0, left_remaining_length - 2),
-                    list.slice(accum.2nd, 0, right_remaining_length - 2),
-                    next_left,
-                    next_right,
-                    False,
-                  )
-                }
-              } else {
-                (accum.1st, accum.2nd, accum.3rd, accum.4th, True)
-              }
-            } else {
-              accum
-            }
-          },
-        )
-  expect Some(top_left) = opt_top_left
-  expect Some(top_right) = otp_top_right
-  if !is_left_step(spec, top_left, top_right) || !is_right_most(spec, l) || !is_left_most(
+  neighbors_from_root(
     spec,
-    r,
-  ) {
-    False
+    path_from_root(left),
+    path_from_root(right),
+    list.length(left),
+  )
+}
+
+fn path_from_root(path: List<InnerOp>) -> List<InnerOp> {
+  when list.reverse(path) is {
+    // The previous initial slice(0, length - 2) retained a singleton's top
+    // step as its remaining branch. Preserve that behavior here.
+    [step] -> [step, step]
+    reversed -> reversed
+  }
+}
+
+fn neighbors_from_root(
+  spec: InnerSpec,
+  left: List<InnerOp>,
+  right: List<InnerOp>,
+  remaining: Int,
+) -> Bool {
+  expect [top_left, ..left_rest] = left
+  expect [top_right, ..right_rest] = right
+  if remaining > 0 && top_left.prefix == top_right.prefix && top_left.suffix == top_right.suffix {
+    neighbors_from_root(spec, left_rest, right_rest, remaining - 1)
   } else {
-    True
+    and {
+      is_left_step(spec, top_left, top_right),
+      is_right_most(spec, list.reverse(left_rest)),
+      is_left_most(spec, list.reverse(right_rest)),
+    }
   }
 }
 
