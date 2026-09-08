@@ -611,6 +611,9 @@ export const createDeployment = async (
     spendClientScriptHash,
     spendConnectionScriptHash,
     spendingChannel.base.hash,
+    mintClientSttPolicyId,
+    mintConnectionSttPolicyId,
+    mintChannelSttPolicyId,
     deployerPaymentKeyHash,
   );
   referredValidators.push(hostStateStt.validator);
@@ -2358,6 +2361,9 @@ const deployHostState = async (
   spendClientScriptHash: string,
   spendConnectionScriptHash: string,
   spendChannelScriptHash: string,
+  mintClientSttPolicyId: string,
+  mintConnectionSttPolicyId: string,
+  mintChannelSttPolicyId: string,
   deployerPaymentKeyHash: string,
 ) => {
   console.log("Deploy HostState (STT Architecture)");
@@ -2383,6 +2389,9 @@ const deployHostState = async (
   // 2) `spend_client_script_hash` (used to locate the created client output when enforcing root correctness)
   // 3) `spend_connection_script_hash` (used to locate the created connection output when enforcing root correctness)
   // 4) `spend_channel_script_hash` (used to locate the created channel output when enforcing root correctness)
+  // 5) `client_policy_id` (authenticates client state tokens)
+  // 6) `connection_policy_id` (authenticates connection state tokens)
+  // 7) `channel_policy_id` (authenticates channel state tokens)
   const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] =
     await readValidator(
       "host_state_stt.host_state_stt.spend",
@@ -2392,13 +2401,22 @@ const deployHostState = async (
         spendClientScriptHash,
         spendConnectionScriptHash,
         spendChannelScriptHash,
+        mintClientSttPolicyId,
+        mintConnectionSttPolicyId,
+        mintChannelSttPolicyId,
       ],
       Data.Tuple([
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
       ]) as unknown as [
+        string,
+        string,
+        string,
         string,
         string,
         string,

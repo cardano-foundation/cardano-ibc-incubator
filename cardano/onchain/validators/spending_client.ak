@@ -8,7 +8,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  RecoverClient, SpendClientRedeemer, UpdateClient,
+  RecoverClient, RecoverClientWithdrawal, SpendClientRedeemer, UpdateClient,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle as misbehaviour_handle_mod
@@ -128,10 +128,19 @@ validator spend_client(
         }
       }
 
-      RecoverClient { .. } -> {
+      RecoverClient { substitute_token } -> {
         trace @"spend_client: RecoverClient branch"
 
-        pairs.has_key(redeemers, Withdraw(recover_client_credential))
+        expect Some(withdrawal_redeemer) =
+          pairs.get_first(redeemers, Withdraw(recover_client_credential))
+        let expected_withdrawal: Data =
+          RecoverClientWithdrawal {
+            subject_token: datum.token,
+            substitute_token,
+          }
+
+        // A withdrawal validating another client must not authorize this spend.
+        withdrawal_redeemer == expected_withdrawal
       }
     }
   }
