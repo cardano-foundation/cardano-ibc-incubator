@@ -1,3 +1,6 @@
+use aiken/collection/list
+use aiken/fuzz
+use aiken/primitive/bytearray
 use ibc/core/ics_023_vector_commitments/ics23/ics23
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
@@ -47,6 +50,148 @@ fn null_nonexist_commitment_proof() -> CommitmentProof {
       non_exist: proofs.null_non_existance_proof(),
     },
   }
+}
+
+fn chained_fixture(depth: Int, key: ByteArray, value: ByteArray) -> MerkleProof {
+  let lower =
+    ExistenceProof {
+      key,
+      value,
+      leaf: LeafOp { ..proofs.iavl_spec().leaf_spec, prefix: #"000202" },
+      path: list.repeat(
+        InnerOp {
+          hash: 1,
+          prefix: #"8202060220",
+          suffix: #"20afca3de8c7aefe1041f185a34e977a976b37d6ce4cce80e5e4545b93413eca02",
+        },
+        depth,
+      ),
+    }
+  let upper =
+    ExistenceProof {
+      key: #"696263",
+      value: proof.calculate_exist(lower),
+      leaf: proofs.tendermint_spec().leaf_spec,
+      path: [],
+    }
+  MerkleProof {
+    proofs: [
+      CommitmentProof { proof: CommitmentProof_Exist { exist: lower } },
+      CommitmentProof { proof: CommitmentProof_Exist { exist: upper } },
+    ],
+  }
+}
+
+fn legacy_chained_membership(
+  p: MerkleProof,
+  root: MerkleRoot,
+  key: ByteArray,
+  value: ByteArray,
+) -> Bool {
+  expect [lower, upper] = p.proofs
+  let lower_root = proof.calculate(lower)
+  expect
+    ics23.verify_membership(proofs.iavl_spec(), lower_root, lower, key, value)
+  let upper_root = proof.calculate(upper)
+  expect
+    ics23.verify_membership(
+      proofs.tendermint_spec(),
+      upper_root,
+      upper,
+      #"696263",
+      lower_root,
+    )
+  root.hash == upper_root
+}
+
+fn chained_inputs() -> Fuzzer<(Int, ByteArray, ByteArray)> {
+  fuzz.map3(
+    fuzz.int_between(0, 32),
+    fuzz.bytearray_between(1, 16),
+    fuzz.bytearray_between(1, 16),
+    fn(depth, key, value) { (depth, key, value) },
+  )
+}
+
+test prop_proof_chained_membership_matches_legacy(input via chained_inputs()) {
+  fuzz.label(@"fuzz.unit.proof.chained_membership")
+  let (depth, key, value) = input
+  let p = chained_fixture(depth, key, value)
+  expect [_, upper] = p.proofs
+  let root = MerkleRoot { hash: proof.calculate(upper) }
+  let wrong_root = MerkleRoot { hash: bytearray.concat(root.hash, #"00") }
+  let path = MerklePath { key_path: [#"696263", key] }
+  and {
+    merkle.verify_membership(p, merkle.get_sdk_specs(), root, path, value) == legacy_chained_membership(
+      p,
+      root,
+      key,
+      value,
+    ),
+    !merkle.verify_membership(
+      p,
+      merkle.get_sdk_specs(),
+      wrong_root,
+      path,
+      value,
+    ),
+    !legacy_chained_membership(p, wrong_root, key, value),
+  }
+}
+
+test chained_membership_rejects_wrong_key() fail {
+  let p = chained_fixture(1, #"01", #"02")
+  expect [_, upper] = p.proofs
+  merkle.verify_membership(
+    p,
+    merkle.get_sdk_specs(),
+    MerkleRoot { hash: proof.calculate(upper) },
+    MerklePath { key_path: [#"696263", #"03"] },
+    #"02",
+  )
+}
+
+test chained_membership_rejects_wrong_value() fail {
+  let p = chained_fixture(1, #"01", #"02")
+  expect [_, upper] = p.proofs
+  merkle.verify_membership(
+    p,
+    merkle.get_sdk_specs(),
+    MerkleRoot { hash: proof.calculate(upper) },
+    MerklePath { key_path: [#"696263", #"01"] },
+    #"03",
+  )
+}
+
+test chained_membership_rejects_wrong_intermediate_root() fail {
+  let p = chained_fixture(1, #"01", #"02")
+  expect [lower, upper] = p.proofs
+  expect CommitmentProof_Exist { exist } = upper.proof
+  let altered =
+    CommitmentProof {
+      proof: CommitmentProof_Exist {
+        exist: ExistenceProof { ..exist, value: #"03" },
+      },
+    }
+  merkle.verify_membership(
+    MerkleProof { proofs: [lower, altered] },
+    merkle.get_sdk_specs(),
+    MerkleRoot { hash: proof.calculate(altered) },
+    MerklePath { key_path: [#"696263", #"01"] },
+    #"02",
+  )
+}
+
+test chained_membership_rejects_wrong_spec() fail {
+  let p = chained_fixture(1, #"01", #"02")
+  expect [_, upper] = p.proofs
+  merkle.verify_membership(
+    p,
+    [proofs.null_proof_spec(), proofs.tendermint_spec()],
+    MerkleRoot { hash: proof.calculate(upper) },
+    MerklePath { key_path: [#"696263", #"01"] },
+    #"02",
+  )
 }
 
 test test_verify_membership_rejects_two_nonexist_proofs() fail {
