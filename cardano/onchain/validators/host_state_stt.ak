@@ -5,7 +5,8 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId, quantity_of}
+use cardano/address
+use cardano/assets.{AssetName, PolicyId, Value, quantity_of}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -14,6 +15,7 @@ use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/core/ics_002_client_semantics/types/keys as client_id_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -48,11 +50,8 @@ use ibc/utils/validator_utils
 /// Find the HostState UTXO input being spent
 /// 
 /// Returns the input that contains the IBC Host State NFT
-fn find_host_state_input(
-  inputs: List<Input>,
-  nft_policy: PolicyId,
-) -> Option<Input> {
-  list.find(
+fn find_host_state_input(inputs: List<Input>, nft_policy: PolicyId) -> Input {
+  list.expect_find(
     inputs,
     fn(input) {
       assets.has_nft(input.output.value, nft_policy, host_state_token_name)
@@ -76,20 +75,67 @@ fn find_host_state_output(outputs: List<Output>, nft_policy: PolicyId) -> Output
   host_output
 }
 
-/// Find an input that carries a specific auth token.
-///
-/// We use this to locate the "state UTxO" for an IBC object (connection/channel)
-/// during an update transaction, without relying on address parsing.
-fn find_input_with_auth_token(
-  inputs: List<Input>,
-  token: AuthToken,
-) -> Option<Input> {
-  list.find(
-    inputs,
-    fn(input) {
-      assets.has_nft(input.output.value, token.policy_id, token.name)
-    },
+fn state_thread_name(
+  nft_policy: PolicyId,
+  prefix: ByteArray,
+  sequence: ByteArray,
+) -> AssetName {
+  auth.generate_token_name(
+    AuthToken { policy_id: nft_policy, name: host_state_token_name },
+    prefix,
+    sequence,
   )
+}
+
+/// The token named by an object datum is a claim, not authentication. Pin its
+/// policy and full name before deriving an IBC key, and require the genuine
+/// object validator to execute on the input that supplies the old state.
+fn authenticate_state_thread(
+  inputs: List<Input>,
+  output: Output,
+  token: AuthToken,
+  policy_id: PolicyId,
+  nft_policy: PolicyId,
+  prefix: ByteArray,
+) -> Input {
+  expect token.policy_id == policy_id
+  expect
+    token.name == state_thread_name(
+      nft_policy,
+      prefix,
+      auth.extract_token_sequence(token.name),
+    )
+  expect auth.contain_auth_token(output, token)
+  let input =
+    list.expect_find(
+      inputs,
+      fn(input) { auth.contain_auth_token(input.output, token) },
+    )
+  // The output was selected using the pinned spending script.
+  expect
+    input.output.address.payment_credential == output.address.payment_credential
+  input
+}
+
+/// Creation must execute the genuine mint policy, which validates the initial
+/// object state and locks its token at the expected spending validator.
+fn authenticate_created_state_thread(
+  output: Output,
+  token: AuthToken,
+  mint: Value,
+  nft_policy: PolicyId,
+  policy_id: PolicyId,
+  prefix: ByteArray,
+  sequence: Int,
+) -> Bool {
+  let expected_name =
+    state_thread_name(nft_policy, prefix, string_utils.int_to_string(sequence))
+  and {
+    token.policy_id == policy_id,
+    token.name == expected_name,
+    auth.contain_auth_token(output, token),
+    validator_utils.require_exact_marker_mint(mint, policy_id, expected_name, 1),
+  }
 }
 
 /// Derive a `07-tendermint-{N}` identifier from a client token name.
@@ -132,6 +178,35 @@ fn decode_host_state_datum(output: Output) -> HostStateDatum {
   decoded_datum
 }
 
+fn decode_client_datum(output: Output) -> ClientDatum {
+  expect datum: ClientDatum = validator_utils.get_inline_datum(output)
+  datum
+}
+
+fn decode_connection_datum(output: Output) -> ConnectionDatum {
+  expect datum: ConnectionDatum = validator_utils.get_inline_datum(output)
+  datum
+}
+
+fn decode_channel_datum(output: Output) -> ChannelDatum {
+  expect datum: ChannelDatum = validator_utils.get_inline_datum(output)
+  datum
+}
+
+fn find_state_output(
+  outputs: List<Output>,
+  script_hash: Hash<Blake2b_224, Script>,
+) -> Output {
+  expect [output] =
+    list.filter(
+      outputs,
+      fn(output) {
+        output.address.payment_credential == address.Script(script_hash)
+      },
+    )
+  output
+}
+
 /// Enforce that `ibc_state_root` is updated correctly for CreateClient.
 ///
 /// In plain terms:
@@ -141,7 +216,9 @@ fn validate_create_client_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   outputs: List<Output>,
+  mint: Value,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
 ) -> Bool {
@@ -149,13 +226,22 @@ fn validate_create_client_root(
   //
   // `mint_client_stt` enforces there is exactly one client output for CreateClient,
   // so we require exactly one here too.
-  expect [client_output] =
-    outputs |> transaction.find_script_outputs(spend_client_script_hash)
+  let client_output = find_state_output(outputs, spend_client_script_hash)
 
   // Decode the client datum so we can derive the exact state bytes that must be
   // committed into the Merkle root.
-  expect client_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_output)
+  let client_datum = decode_client_datum(client_output)
+
+  expect
+    authenticate_created_state_thread(
+      client_output,
+      client_datum.token,
+      mint,
+      old_datum.nft_policy,
+      client_policy_id,
+      client_id_keys.client_prefix,
+      old_datum.state.next_client_sequence,
+    )
 
   // Derive the client identifier from the HostState sequence.
   //
@@ -285,6 +371,7 @@ fn validate_update_client_root(
   inputs: List<Input>,
   outputs: List<Output>,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
   removed_consensus_state_siblings: List<List<ByteArray>>,
@@ -293,21 +380,24 @@ fn validate_update_client_root(
   //
   // `spend_client` enforces there is exactly one client output in this transaction,
   // so we require exactly one here too.
-  expect [client_output] =
-    outputs |> transaction.find_script_outputs(spend_client_script_hash)
+  let client_output = find_state_output(outputs, spend_client_script_hash)
 
-  expect client_output_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_output)
+  let client_output_datum = decode_client_datum(client_output)
 
-  // Identify which client is being updated.
+  let client_input =
+    authenticate_state_thread(
+      inputs,
+      client_output,
+      client_output_datum.token,
+      client_policy_id,
+      old_datum.nft_policy,
+      client_id_keys.client_prefix,
+    )
+
+  let client_input_datum = decode_client_datum(client_input.output)
+  expect client_input_datum.token == client_output_datum.token
+
   let client_id = client_id_from_token_name(client_output_datum.token.name)
-
-  // Find the input client UTxO by looking for the same auth token.
-  expect Some(client_input) =
-    find_input_with_auth_token(inputs, client_output_datum.token)
-
-  expect client_input_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_input.output)
 
   // 1) Apply the clientState update.
   let client_state_key = client_keys.full_client_state_path(client_id)
@@ -385,20 +475,32 @@ fn validate_create_connection_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   outputs: List<Output>,
+  mint: Value,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
+  connection_policy_id: PolicyId,
   connection_siblings: List<ByteArray>,
 ) -> Bool {
   // Find the newly created connection output.
   //
   // `mint_connection_stt` enforces there is exactly one connection output for CreateConnection,
   // so we require exactly one here too.
-  expect [connection_output] =
-    outputs |> transaction.find_script_outputs(spend_connection_script_hash)
+  let connection_output =
+    find_state_output(outputs, spend_connection_script_hash)
 
   // Decode the connection datum so we can derive the exact state bytes that must be
   // committed into the Merkle root.
-  expect connection_datum: ConnectionDatum =
-    validator_utils.get_inline_datum(connection_output)
+  let connection_datum = decode_connection_datum(connection_output)
+
+  expect
+    authenticate_created_state_thread(
+      connection_output,
+      connection_datum.token,
+      mint,
+      old_datum.nft_policy,
+      connection_policy_id,
+      conn_id_keys.connection_prefix,
+      old_datum.state.next_connection_sequence,
+    )
 
   // Derive the connection identifier from the HostState sequence.
   //
@@ -437,7 +539,9 @@ fn validate_create_channel_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   outputs: List<Output>,
+  mint: Value,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  channel_policy_id: PolicyId,
   channel_siblings: List<ByteArray>,
   next_sequence_send_siblings: List<ByteArray>,
   next_sequence_recv_siblings: List<ByteArray>,
@@ -447,13 +551,22 @@ fn validate_create_channel_root(
   //
   // `mint_channel_stt` enforces there is exactly one channel output for CreateChannel,
   // so we require exactly one here too.
-  expect [channel_output] =
-    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
+  let channel_output = find_state_output(outputs, spend_channel_script_hash)
 
   // Decode the channel datum so we can derive the exact state bytes that must be
   // committed into the Merkle root.
-  expect channel_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_output)
+  let channel_datum = decode_channel_datum(channel_output)
+
+  expect
+    authenticate_created_state_thread(
+      channel_output,
+      channel_datum.token,
+      mint,
+      old_datum.nft_policy,
+      channel_policy_id,
+      chan_id_keys.channel_prefix,
+      old_datum.state.next_channel_sequence,
+    )
 
   // Derive the channel identifier from the HostState sequence.
   //
@@ -588,31 +701,37 @@ fn validate_update_connection_root(
   inputs: List<Input>,
   outputs: List<Output>,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
+  connection_policy_id: PolicyId,
   connection_siblings: List<ByteArray>,
 ) -> Bool {
   // Find the updated connection output.
   //
   // `spend_connection` enforces there is exactly one connection output in this transaction,
   // so we require exactly one here too.
-  expect [connection_output] =
-    outputs |> transaction.find_script_outputs(spend_connection_script_hash)
+  let connection_output =
+    find_state_output(outputs, spend_connection_script_hash)
 
   // Decode the output datum so we can:
   // - derive the connection id from its token name
   // - compute the exact CBOR bytes that are committed into the Merkle root
-  expect connection_output_datum: ConnectionDatum =
-    validator_utils.get_inline_datum(connection_output)
+  let connection_output_datum = decode_connection_datum(connection_output)
+
+  let connection_input =
+    authenticate_state_thread(
+      inputs,
+      connection_output,
+      connection_output_datum.token,
+      connection_policy_id,
+      old_datum.nft_policy,
+      conn_id_keys.connection_prefix,
+    )
+
+  let connection_input_datum = decode_connection_datum(connection_input.output)
+  expect connection_input_datum.token == connection_output_datum.token
 
   let connection_id =
     connection_id_from_token_name(connection_output_datum.token.name)
   let connection_key = host_connection_keys.connection_path(connection_id)
-
-  // Find the input connection UTxO by looking for the same auth token.
-  expect Some(connection_input) =
-    find_input_with_auth_token(inputs, connection_output_datum.token)
-
-  expect connection_input_datum: ConnectionDatum =
-    validator_utils.get_inline_datum(connection_input.output)
 
   // Commitment values.
   //
@@ -645,32 +764,37 @@ fn validate_update_channel_root(
   inputs: List<Input>,
   outputs: List<Output>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  channel_policy_id: PolicyId,
   channel_siblings: List<ByteArray>,
 ) -> Bool {
   // Find the updated channel output.
   //
   // `spend_channel` enforces there is exactly one channel output in this transaction,
   // so we require exactly one here too.
-  expect [channel_output] =
-    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
+  let channel_output = find_state_output(outputs, spend_channel_script_hash)
 
   // Decode the output datum so we can:
   // - derive the channel id from its token name
   // - read the port id (which is part of the IBC path)
   // - compute the exact CBOR bytes that are committed into the Merkle root
-  expect channel_output_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_output)
+  let channel_output_datum = decode_channel_datum(channel_output)
+
+  let channel_input =
+    authenticate_state_thread(
+      inputs,
+      channel_output,
+      channel_output_datum.token,
+      channel_policy_id,
+      old_datum.nft_policy,
+      chan_id_keys.channel_prefix,
+    )
+
+  let channel_input_datum = decode_channel_datum(channel_input.output)
+  expect channel_input_datum.token == channel_output_datum.token
 
   let channel_id = channel_id_from_token_name(channel_output_datum.token.name)
   let port_id = channel_output_datum.port_id
   let channel_key = host_channel_keys.channel_path(port_id, channel_id)
-
-  // Find the input channel UTxO by looking for the same auth token.
-  expect Some(channel_input) =
-    find_input_with_auth_token(inputs, channel_output_datum.token)
-
-  expect channel_input_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_input.output)
 
   // UpdateChannel only commits the channel end key; packet and sequence fields
   // must be handled by HandlePacket.
@@ -750,6 +874,7 @@ fn validate_handle_packet_root(
   outputs: List<Output>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  channel_policy_id: PolicyId,
   channel_siblings: List<ByteArray>,
   next_sequence_send_siblings: List<ByteArray>,
   next_sequence_recv_siblings: List<ByteArray>,
@@ -759,21 +884,25 @@ fn validate_handle_packet_root(
   packet_acknowledgement_siblings: List<ByteArray>,
 ) -> Bool {
   // Find the updated channel output.
-  expect [channel_output] =
-    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
+  let channel_output = find_state_output(outputs, spend_channel_script_hash)
 
-  expect channel_output_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_output)
+  let channel_output_datum = decode_channel_datum(channel_output)
+
+  let channel_input =
+    authenticate_state_thread(
+      inputs,
+      channel_output,
+      channel_output_datum.token,
+      channel_policy_id,
+      old_datum.nft_policy,
+      chan_id_keys.channel_prefix,
+    )
+
+  let channel_input_datum = decode_channel_datum(channel_input.output)
+  expect channel_input_datum.token == channel_output_datum.token
 
   let channel_id = channel_id_from_token_name(channel_output_datum.token.name)
   let port_id = channel_output_datum.port_id
-
-  // Find the input channel UTxO by looking for the same auth token.
-  expect Some(channel_input) =
-    find_input_with_auth_token(inputs, channel_output_datum.token)
-
-  expect channel_input_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_input.output)
 
   expect Some(channel_redeemer_data) =
     pairs.get_first(redeemers, Spend(channel_input.output_reference))
@@ -1007,6 +1136,9 @@ validator host_state_stt(
   spend_client_script_hash: Hash<Blake2b_224, Script>,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  client_policy_id: PolicyId,
+  connection_policy_id: PolicyId,
+  channel_policy_id: PolicyId,
 ) {
   spend(
     _datum_opt: Option<HostStateDatum>,
@@ -1018,22 +1150,21 @@ validator host_state_stt(
     let Transaction {
       inputs,
       outputs,
+      mint,
       redeemers,
       extra_signatories,
       validity_range,
       ..
     } = transaction
     // 2. Find input HostState UTXO
-    expect Some(host_input) = find_host_state_input(inputs, nft_policy)
+    let host_input = find_host_state_input(inputs, nft_policy)
     let old_datum = decode_host_state_datum(host_input.output)
     // 3. Verify NFT policy matches
     expect old_datum.nft_policy == nft_policy
 
     // 4. Validate state transition based on operation.
     when redeemer is {
-      FinalizeShutdown -> {
-        let Transaction { mint, .. } = transaction
-        and {
+      FinalizeShutdown -> and {
           list.has(extra_signatories, old_datum.deployer),
           validate_finalize_shutdown(
             old_datum,
@@ -1052,7 +1183,6 @@ validator host_state_stt(
             },
           ),
         }
-      }
       _ -> {
         // Non-final transitions must re-create exactly one HostState UTxO.
         let host_output = find_host_state_output(outputs, nft_policy)
@@ -1063,8 +1193,8 @@ validator host_state_stt(
         // In practice, this means the output that carries the NFT must stay at the
         // same address as the spent HostState UTxO.
         expect host_output.address == host_input.output.address
-        expect new_datum.nft_policy == nft_policy
 
+        // Each transition below preserves the authenticated input's NFT policy.
         when redeemer is {
           CreateClient { client_state_siblings, consensus_state_siblings } ->
             and {
@@ -1073,7 +1203,9 @@ validator host_state_stt(
                 old_datum,
                 new_datum,
                 outputs,
+                mint,
                 spend_client_script_hash,
+                client_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
               ),
@@ -1084,7 +1216,9 @@ validator host_state_stt(
                 old_datum,
                 new_datum,
                 outputs,
+                mint,
                 spend_connection_script_hash,
+                connection_policy_id,
                 connection_siblings,
               ),
             }
@@ -1099,7 +1233,9 @@ validator host_state_stt(
                 old_datum,
                 new_datum,
                 outputs,
+                mint,
                 spend_channel_script_hash,
+                channel_policy_id,
                 channel_siblings,
                 next_sequence_send_siblings,
                 next_sequence_recv_siblings,
@@ -1134,6 +1270,7 @@ validator host_state_stt(
                 inputs,
                 outputs,
                 spend_client_script_hash,
+                client_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
                 removed_consensus_state_siblings,
@@ -1147,6 +1284,7 @@ validator host_state_stt(
                 inputs,
                 outputs,
                 spend_connection_script_hash,
+                connection_policy_id,
                 connection_siblings,
               ),
             }
@@ -1159,6 +1297,7 @@ validator host_state_stt(
                 inputs,
                 outputs,
                 spend_channel_script_hash,
+                channel_policy_id,
                 channel_siblings,
               ),
             }
@@ -1180,6 +1319,7 @@ validator host_state_stt(
                 outputs,
                 redeemers,
                 spend_channel_script_hash,
+                channel_policy_id,
                 channel_siblings,
                 next_sequence_send_siblings,
                 next_sequence_recv_siblings,

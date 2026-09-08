@@ -89,6 +89,25 @@ Deno.test("client deployment pins the recovery withdrawal validator", () => {
   );
 });
 
+Deno.test("HostState deployment pins the state-token minting policies", () => {
+  const hostStateValidator = blueprint.validators.find(
+    ({ title }) => title === "host_state_stt.host_state_stt.spend",
+  ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
+
+  assertEquals(
+    hostStateValidator?.parameters?.map(({ title }) => title) ?? [],
+    [
+      "nft_policy",
+      "spend_client_script_hash",
+      "spend_connection_script_hash",
+      "spend_channel_script_hash",
+      "client_policy_id",
+      "connection_policy_id",
+      "channel_policy_id",
+    ],
+  );
+});
+
 Deno.test("applied client validator fits a mainnet reference-script transaction", () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
@@ -121,6 +140,29 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
   );
 
   assertEquals(spendClientReport?.oversized, false);
+});
+
+Deno.test("applied HostState validator fits a mainnet reference-script transaction", () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const [hostStateValidator] = readValidator(
+    "host_state_stt.host_state_stt.spend",
+    lucid,
+    Array.from(
+      { length: 7 },
+      (_, index) => (17 + index).toString(16).repeat(28),
+    ),
+    Data.Tuple(
+      Array.from({ length: 7 }, () => Data.Bytes()),
+    ) as unknown as string[],
+  );
+  const [hostStateReport] = buildReferenceValidatorSizeReport(
+    [hostStateValidator],
+    16_384,
+  );
+
+  assertEquals(hostStateReport.oversized, false);
 });
 
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {

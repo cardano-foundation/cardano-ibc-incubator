@@ -485,8 +485,32 @@ fn run_recovery(
 }
 
 fn run_atomic_recovery(correct_output_root: Bool) -> Bool {
-  let subject = frozen_subject()
-  let substitute = active_substitute()
+  run_atomic_recovery_with_policy(correct_output_root, client_policy, True)
+}
+
+fn run_atomic_recovery_with_policy(
+  correct_output_root: Bool,
+  actual_client_policy: ByteArray,
+  verify_host_state: Bool,
+) -> Bool {
+  let original_subject = frozen_subject()
+  let original_substitute = active_substitute()
+  let subject =
+    ClientDatum {
+      ..original_subject,
+      token: AuthToken {
+        ..original_subject.token,
+        policy_id: actual_client_policy,
+      },
+    }
+  let substitute =
+    ClientDatum {
+      ..original_substitute,
+      token: AuthToken {
+        ..original_substitute.token,
+        policy_id: actual_client_policy,
+      },
+    }
   let recovered = expected_recovered(subject, substitute)
   let subject_client_key = client_keys.full_client_state_path("07-tendermint-0")
   let subject_old_consensus_key =
@@ -572,7 +596,7 @@ fn run_atomic_recovery(correct_output_root: Bool) -> Bool {
       host_update_redeemer,
     )
 
-  and {
+  expect
     spending_client.spend_client.spend(
       host_policy,
       address.Script(recovery_script_hash),
@@ -580,23 +604,30 @@ fn run_atomic_recovery(correct_output_root: Bool) -> Bool {
       RecoverClient { substitute_token: substitute.token },
       subject_reference,
       transaction,
-    ),
+    )
+  expect
     recover_client.recover_client.withdraw(
       host_policy,
       recovery_redeemer(subject, substitute),
       address.Script(recovery_script_hash),
       transaction,
-    ),
+    )
+  if verify_host_state {
     host_state_stt.host_state_stt.spend(
       host_policy,
       client_script_hash,
       connection_script_hash,
       channel_script_hash,
+      client_policy,
+      "unused connection minting policy",
+      "unused channel minting policy",
       Some(old_host_datum),
       host_update_redeemer,
       host_reference,
       transaction,
-    ),
+    )
+  } else {
+    True
   }
 }
 
@@ -606,6 +637,14 @@ test atomic_recovery_all_validators_accept_real_root_transition() {
 
 test atomic_recovery_host_rejects_wrong_committed_root() fail {
   run_atomic_recovery(False)
+}
+
+test atomic_recovery_host_rejects_counterfeit_client_policy() fail {
+  run_atomic_recovery_with_policy(True, other_client_policy, True)
+}
+
+test counterfeit_recovery_pair_passes_local_validators() {
+  run_atomic_recovery_with_policy(True, other_client_policy, False)
 }
 
 test recover_state_copies_checkpoint_and_clears_frozen() {
@@ -1001,5 +1040,145 @@ test spend_client_rejects_missing_recovery_withdrawal() fail {
       False,
       False,
     ),
+  )
+}
+
+fn spend_with_withdrawal_redeemer(withdrawal_redeemer: Redeemer) -> Bool {
+  let subject = expired_subject()
+  let substitute = active_substitute()
+  let tx =
+    recovery_transaction(
+      subject,
+      substitute,
+      expected_recovered(subject, substitute),
+      client_script_hash,
+      [deployer],
+      True,
+      False,
+    )
+  spending_client.spend_client.spend(
+    host_policy,
+    address.Script(recovery_script_hash),
+    Some(subject),
+    RecoverClient { substitute_token: substitute.token },
+    subject_reference,
+    Transaction {
+      ..tx,
+      redeemers: [
+        Pair(
+          Withdraw(address.Script(recovery_script_hash)),
+          withdrawal_redeemer,
+        ),
+        ..tx.redeemers
+      ],
+    },
+  )
+}
+
+test spend_client_rejects_recovery_for_another_subject() {
+  !spend_with_withdrawal_redeemer(
+    RecoverClientWithdrawal {
+      subject_token: AuthToken {
+        ..subject_token(),
+        policy_id: other_client_policy,
+      },
+      substitute_token: substitute_token(),
+    },
+  )
+}
+
+test spend_client_rejects_recovery_from_another_substitute() {
+  !spend_with_withdrawal_redeemer(
+    RecoverClientWithdrawal {
+      subject_token: subject_token(),
+      substitute_token: AuthToken {
+        ..substitute_token(),
+        policy_id: other_client_policy,
+      },
+    },
+  )
+}
+
+test spend_client_rejects_malformed_recovery_withdrawal() {
+  !spend_with_withdrawal_redeemer(Void)
+}
+
+test unrelated_valid_recovery_cannot_authorize_a_real_client_spend() {
+  let subject = expired_subject()
+  let substitute = active_substitute()
+  let fake_subject =
+    ClientDatum {
+      ..subject,
+      token: AuthToken { ..subject.token, policy_id: other_client_policy },
+    }
+  let fake_substitute =
+    ClientDatum {
+      ..substitute,
+      token: AuthToken { ..substitute.token, policy_id: other_client_policy },
+    }
+  let fake_reference = OutputReference { ..subject_reference, output_index: 1 }
+  let fake_substitute_reference =
+    OutputReference { ..substitute_reference, output_index: 1 }
+  let tx =
+    recovery_transaction(
+      subject,
+      substitute,
+      expected_recovered(subject, substitute),
+      client_script_hash,
+      [deployer],
+      True,
+      False,
+    )
+  let fake_spend_redeemer: Redeemer =
+    RecoverClient { substitute_token: fake_substitute.token }
+  let fake_withdrawal_redeemer: Redeemer =
+    recovery_redeemer(fake_subject, fake_substitute)
+  let tx =
+    Transaction {
+      ..tx,
+      inputs: [
+        Input {
+          output_reference: fake_reference,
+          output: client_output(fake_subject, other_client_script_hash),
+        },
+        ..tx.inputs
+      ],
+      reference_inputs: [
+        Input {
+          output_reference: fake_substitute_reference,
+          output: client_output(fake_substitute, other_client_script_hash),
+        },
+        ..tx.reference_inputs
+      ],
+      outputs: [
+        client_output(
+          expected_recovered(fake_subject, fake_substitute),
+          other_client_script_hash,
+        ),
+        ..tx.outputs
+      ],
+      redeemers: [
+        Pair(Spend(fake_reference), fake_spend_redeemer),
+        Pair(
+          Withdraw(address.Script(recovery_script_hash)),
+          fake_withdrawal_redeemer,
+        ),
+        ..tx.redeemers
+      ],
+    }
+  expect
+    recover_client.recover_client.withdraw(
+      host_policy,
+      recovery_redeemer(fake_subject, fake_substitute),
+      address.Script(recovery_script_hash),
+      tx,
+    )
+  !spending_client.spend_client.spend(
+    host_policy,
+    address.Script(recovery_script_hash),
+    Some(subject),
+    RecoverClient { substitute_token: substitute.token },
+    subject_reference,
+    tx,
   )
 }

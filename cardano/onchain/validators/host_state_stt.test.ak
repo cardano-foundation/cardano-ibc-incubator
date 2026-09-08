@@ -8,7 +8,7 @@ use aiken/interval
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use aiken/primitive/string
-use cardano/address.{Address, Script}
+use cardano/address.{Address, Credential, Script, VerificationKey}
 use cardano/assets.{PolicyId, Value, add, from_asset, zero}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
@@ -58,8 +58,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
   max_bound_ports, min_shutdown_grace_period_ms, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
-  HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
+  BindPort, CreateConnection, EnterShutdown, FinalizeShutdown, HandlePacket,
+  Heartbeat, HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/fuzz_dsl
@@ -226,7 +226,7 @@ fn test_host_state_datum_with_shutdown(
 
 fn test_channel_token() -> AuthToken {
   let base_token =
-    AuthToken { policy_id: "mock base token policy", name: "mock base token" }
+    AuthToken { policy_id: test_nft_policy(), name: host_state_token_name }
   AuthToken {
     policy_id: "mock channel policy",
     name: auth.generate_token_name(base_token, channel_keys.channel_prefix, "0"),
@@ -613,6 +613,9 @@ fn spend_host_state_with_signatories(
     test_client_script_hash(),
     test_connection_script_hash(),
     test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     test_host_ref(),
@@ -633,6 +636,9 @@ fn spend_host_state_with_channel_redeemer(
     test_client_script_hash(),
     test_connection_script_hash(),
     test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     test_host_ref(),
@@ -705,7 +711,7 @@ fn spend_test_bind_port(
 
 fn test_client_token() -> AuthToken {
   let base_token =
-    AuthToken { policy_id: "mock base token policy", name: "mock base token" }
+    AuthToken { policy_id: test_nft_policy(), name: host_state_token_name }
   AuthToken {
     policy_id: "mock client policy",
     name: auth.generate_token_name(
@@ -840,7 +846,7 @@ fn test_committed_client_root(
 
 fn test_connection_token() -> AuthToken {
   let base_token =
-    AuthToken { policy_id: "mock base token policy", name: "mock base token" }
+    AuthToken { policy_id: test_nft_policy(), name: host_state_token_name }
   AuthToken {
     policy_id: "mock connection policy",
     name: auth.generate_token_name(
@@ -975,7 +981,7 @@ fn with_maximum_receive_proof_height(
 }
 
 fn test_channel_input_full(datum: ChannelDatum) -> Input {
-  let token = test_channel_token()
+  let token = datum.token
   Input(
     test_object_ref(3),
     Output {
@@ -988,7 +994,7 @@ fn test_channel_input_full(datum: ChannelDatum) -> Input {
 }
 
 fn test_channel_output_full(datum: ChannelDatum) -> Output {
-  let token = test_channel_token()
+  let token = datum.token
   Output {
     address: Address(Script(test_channel_script_hash()), None),
     value: from_asset(token.policy_id, token.name, 1),
@@ -1302,6 +1308,9 @@ test host_update_client_capacity_minimum_history_succeeds() {
     test_client_script_hash(),
     test_connection_script_hash(),
     test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     test_host_ref(),
@@ -1418,6 +1427,190 @@ test prop_host_update_connection_accepts_exact_root(seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
+fn create_connection_thread(token: AuthToken, mint: Value) -> Bool {
+  let siblings = full_empty_siblings()
+  let datum =
+    ConnectionDatum {
+      ..test_connection_datum(connection_state.Init, 669),
+      token,
+    }
+  let old_state = test_host_state(empty_ibc_state_root, 669)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      next_connection_sequence: old_state.next_connection_sequence + 1,
+      ibc_state_root: test_committed_connection_root(datum, siblings),
+    }
+  let connection_output =
+    Output {
+      ..test_connection_output(datum),
+      value: from_asset(token.policy_id, token.name, 1),
+    }
+  host_state_stt.host_state_stt.spend(
+    test_nft_policy(),
+    test_client_script_hash(),
+    test_connection_script_hash(),
+    test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
+    None,
+    CreateConnection { connection_siblings: siblings },
+    test_host_ref(),
+    Transaction {
+      ..placeholder,
+      inputs: [test_host_input(old_state)],
+      outputs: [test_host_output(new_state), connection_output],
+      mint,
+    },
+  )
+}
+
+test host_state_accepts_canonical_connection_creation() {
+  let token = test_connection_token()
+  create_connection_thread(token, from_asset(token.policy_id, token.name, 1))
+}
+
+test host_state_rejects_counterfeit_connection_creation_policy() fail {
+  let token =
+    AuthToken { ..test_connection_token(), policy_id: "counterfeit policy" }
+  create_connection_thread(token, from_asset(token.policy_id, token.name, 1))
+}
+
+test host_state_rejects_connection_creation_without_mint() fail {
+  create_connection_thread(test_connection_token(), zero)
+}
+
+// The committed state and Merkle witnesses are unchanged. Only the state
+// thread's claimed token or input credential is substituted.
+fn update_substituted_connection_thread(
+  token: AuthToken,
+  credential: Credential,
+) -> Bool {
+  check_connection_thread(token, token, credential, 1)
+}
+
+fn check_connection_thread(
+  token: AuthToken,
+  input_datum_token: AuthToken,
+  credential: Credential,
+  output_token_quantity: Int,
+) -> Bool {
+  let siblings = full_empty_siblings()
+  let original_input = test_connection_datum(connection_state.Init, 669)
+  let original_output = test_connection_datum(connection_state.Open, 669)
+  let input_datum =
+    ConnectionDatum { ..original_input, token: input_datum_token }
+  let output_datum = ConnectionDatum { ..original_output, token }
+  let old_root = test_committed_connection_root(original_input, siblings)
+  let new_root =
+    test_update_connection_root(
+      old_root,
+      original_input,
+      original_output,
+      siblings,
+    )
+  let old_state = test_host_state(old_root, 669)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+  let original = test_connection_input(input_datum)
+  let counterfeit_input =
+    Input {
+      ..original,
+      output: Output {
+        ..original.output,
+        address: Address(credential, None),
+        value: from_asset(token.policy_id, token.name, 1),
+      },
+    }
+  let counterfeit_output =
+    Output {
+      ..test_connection_output(output_datum),
+      value: from_asset(token.policy_id, token.name, output_token_quantity),
+    }
+  spend_host_state(
+    UpdateConnection { connection_siblings: siblings },
+    [test_host_input(old_state), counterfeit_input],
+    [test_host_output(new_state), counterfeit_output],
+  )
+}
+
+test host_state_accepts_canonical_connection_thread() {
+  update_substituted_connection_thread(
+    test_connection_token(),
+    Script(test_connection_script_hash()),
+  )
+}
+
+test host_state_rejects_counterfeit_connection_policy() fail {
+  let token = test_connection_token()
+  update_substituted_connection_thread(
+    AuthToken { ..token, policy_id: "counterfeit policy" },
+    Script(test_connection_script_hash()),
+  )
+}
+
+test host_state_rejects_counterfeit_key_locked_connection() fail {
+  update_substituted_connection_thread(
+    test_connection_token(),
+    VerificationKey(trusted_deployer),
+  )
+}
+
+test host_state_rejects_connection_from_another_deployment() fail {
+  let token = test_connection_token()
+  let name =
+    auth.generate_token_name(
+      AuthToken { policy_id: "another deployment", name: host_state_token_name },
+      connection_keys.connection_prefix,
+      "0",
+    )
+  update_substituted_connection_thread(
+    AuthToken { ..token, name },
+    Script(test_connection_script_hash()),
+  )
+}
+
+test host_state_rejects_connection_with_channel_prefix() fail {
+  let token = test_connection_token()
+  update_substituted_connection_thread(
+    AuthToken { ..token, name: test_channel_token().name },
+    Script(test_connection_script_hash()),
+  )
+}
+
+test host_state_rejects_connection_at_another_script() fail {
+  update_substituted_connection_thread(
+    test_connection_token(),
+    Script(test_client_script_hash()),
+  )
+}
+
+test host_state_rejects_connection_input_datum_token_mismatch() fail {
+  let token = test_connection_token()
+  check_connection_thread(
+    token,
+    AuthToken { ..token, policy_id: "counterfeit policy" },
+    Script(test_connection_script_hash()),
+    1,
+  )
+}
+
+test host_state_rejects_connection_output_without_token() fail {
+  let token = test_connection_token()
+  check_connection_thread(
+    token,
+    token,
+    Script(test_connection_script_hash()),
+    0,
+  )
+}
+
 test prop_host_update_connection_rejects_uncommitted_change(
   seed via fuzz.int(),
 ) fail {
@@ -1454,14 +1647,14 @@ test prop_host_update_connection_rejects_uncommitted_change(
   )
 }
 
-test prop_host_update_channel_accepts_exact_root(seed via fuzz.int()) {
-  fuzz.label(@"fuzz.contract.host.update_channel.valid")
-
+fn check_host_update_channel(seed: Int, token: AuthToken) -> Bool {
   let siblings = full_empty_siblings()
   let input_channel_datum =
     test_channel_datum(test_channel(channel_state.Init), 1, [])
+  let input_channel_datum = ChannelDatum { ..input_channel_datum, token }
   let output_channel_datum =
     test_channel_datum(test_channel(channel_state.Open), 1, [])
+  let output_channel_datum = ChannelDatum { ..output_channel_datum, token }
   let old_root = test_committed_channel_root(input_channel_datum, siblings)
   let new_root =
     test_update_channel_root(
@@ -1479,20 +1672,38 @@ test prop_host_update_channel_accepts_exact_root(seed via fuzz.int()) {
     }
   let redeemer: HostStateRedeemer = UpdateChannel { channel_siblings: siblings }
 
+  spend_host_state(
+    redeemer,
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test prop_host_update_channel_accepts_exact_root(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.contract.host.update_channel.valid")
+
   fuzz_dsl.valid_check(
     "host",
     "update_channel",
     "spend_host_state",
-    spend_host_state(
-      redeemer,
-      [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
-      [
-        test_host_output(new_state),
-        test_channel_output_full(output_channel_datum),
-      ],
-    ),
+    check_host_update_channel(seed, test_channel_token()),
   )
     |> fuzz_dsl.assert_valid
+}
+
+test host_state_accepts_canonical_channel_update() {
+  check_host_update_channel(669, test_channel_token())
+}
+
+test host_state_rejects_counterfeit_channel_update_policy() fail {
+  let token = test_channel_token()
+  check_host_update_channel(
+    669,
+    AuthToken { ..token, policy_id: "counterfeit policy" },
+  )
 }
 
 test prop_host_update_channel_rejects_packet_field_change(
@@ -1569,9 +1780,7 @@ test prop_host_update_channel_rejects_receive_height_mutation(
   )
 }
 
-test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
-  fuzz.label(@"fuzz.contract.host.handle_packet.valid_send")
-
+fn check_host_handle_packet_send(seed: Int, token: AuthToken) -> Bool {
   // SendPacket creates a packet commitment, so the new root must commit exactly
   // that packet key/value and the channel datum must record the same sequence.
   let sequence = test_sequence(seed)
@@ -1606,6 +1815,7 @@ test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
       [],
       [],
     )
+  let input_channel_datum = ChannelDatum { ..input_channel_datum, token }
   let output_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
@@ -1616,6 +1826,7 @@ test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
       [],
       [],
     )
+  let output_channel_datum = ChannelDatum { ..output_channel_datum, token }
   let new_root =
     test_handle_packet_send_root(
       old_root,
@@ -1632,22 +1843,40 @@ test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
       ibc_state_root: new_root,
     }
 
+  spend_host_state_with_channel_redeemer(
+    handle_packet_redeemer([], siblings, [], [], commitment_siblings, [], []),
+    SendPacket { packet },
+    test_channel_input_full(input_channel_datum),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_send")
+
   fuzz_dsl.valid_check(
     "host",
     "handle_packet_send",
     "spend_host_state",
-    spend_host_state_with_channel_redeemer(
-      handle_packet_redeemer([], siblings, [], [], commitment_siblings, [], []),
-      SendPacket { packet },
-      test_channel_input_full(input_channel_datum),
-      [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
-      [
-        test_host_output(new_state),
-        test_channel_output_full(output_channel_datum),
-      ],
-    ),
+    check_host_handle_packet_send(seed, test_channel_token()),
   )
     |> fuzz_dsl.assert_valid
+}
+
+test host_state_accepts_canonical_packet_thread() {
+  check_host_handle_packet_send(669, test_channel_token())
+}
+
+test host_state_rejects_counterfeit_packet_thread_policy() fail {
+  let token = test_channel_token()
+  check_host_handle_packet_send(
+    669,
+    AuthToken { ..token, policy_id: "counterfeit policy" },
+  )
 }
 
 test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
@@ -3221,6 +3450,9 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3314,6 +3546,9 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3428,6 +3663,9 @@ test host_state_cannot_move_nft_to_different_address() fail {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3535,6 +3773,9 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3604,6 +3845,9 @@ test host_state_bind_port_fails_if_output_missing() fail {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3697,6 +3941,9 @@ fn validate_test_enter_shutdown(
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3827,6 +4074,9 @@ fn validate_test_finalize_shutdown(
     test_client_script_hash(),
     test_connection_script_hash(),
     test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     FinalizeShutdown,
     test_host_ref(),
@@ -4035,6 +4285,9 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
     host_script_hash,
     host_script_hash,
     channel_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     host_ref,
@@ -4169,6 +4422,9 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
     host_script_hash,
     host_script_hash,
     channel_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     host_ref,
