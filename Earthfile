@@ -7,13 +7,11 @@ VERSION 0.8
 IMPORT --allow-privileged github.com/cardano-foundation/cf-gha-workflows/./earthfiles/functions:e02adcacc7178585dab0ca362adc83424654b324 AS functions
 
 # Space-separated list of image targets built by `+all` / `+docker-publish`.
-# NOTE: `injective` is excluded from the default list because its build context
+# `injective` is not included because its build context
 # (chains/injective/injective-core) is neither vendored in this repo nor
-# declared as a git submodule. Build it explicitly with `earthly +injective`
-# once the injective-core source is provided.
-# Gateway remains available as an explicit target, but its existing dedicated
-# workflow owns CI and publication; these defaults add only the missing images.
-ARG --global DOCKER_IMAGES_TARGETS="hermes swap-client"
+# declared as a git submodule.
+# Gateway, Hermes and swap-client share .github/workflows/publish.yaml.
+ARG --global DOCKER_IMAGES_TARGETS="gateway hermes swap-client"
 ARG --global DOCKER_IMAGES_PREFIX="cardano-ibc"
 ARG --global DOCKER_IMAGES_EXTRA_TAGS=""
 ARG --global DOCKER_REGISTRIES=""
