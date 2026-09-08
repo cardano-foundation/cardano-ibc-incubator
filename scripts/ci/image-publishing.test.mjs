@@ -97,3 +97,16 @@ test('release CI runs before login, and smoke tests precede publication of the s
   assert.match(smoke, /if: github.ref_type == 'tag'/);
   assert.match(publish, /docker tag "\$\{IMAGE_ID\}"/);
 });
+
+test('release publishing checks unused tags before building and never uses the mutable PR push loop', () => {
+  assert.ok(build.indexOf('run: node scripts/ci/release-image.mjs --preflight-only') <
+    build.indexOf('name: Build image without publishing'));
+  const publish = build.split('      - name: Publish tested image')[1].split('      - name:')[0];
+  assert.match(publish, /if \[\[ "\$\{GITHUB_REF_TYPE\}" == "tag" \]\]; then\n            node scripts\/ci\/release-image.mjs\n            exit 0\n          fi/);
+  assert.match(workflow, /cancel-in-progress: \$\{\{ github.event_name == 'pull_request' \}\}/);
+});
+
+test('gateway release pull commands use immutable digests', () => {
+  assert.ok(build.includes('docker pull %s@%s'));
+  assert.ok(!build.includes('docker pull %s:%s'));
+});
