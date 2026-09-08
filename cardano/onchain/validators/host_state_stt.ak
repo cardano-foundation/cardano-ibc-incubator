@@ -183,28 +183,17 @@ fn decode_client_datum(output: Output) -> ClientDatum {
   datum
 }
 
-fn decode_connection_datum(output: Output) -> ConnectionDatum {
-  expect datum: ConnectionDatum = validator_utils.get_inline_datum(output)
-  datum
-}
-
-fn decode_channel_datum(output: Output) -> ChannelDatum {
-  expect datum: ChannelDatum = validator_utils.get_inline_datum(output)
-  datum
-}
-
-fn find_state_output(
+fn expect_client_output_datum(
   outputs: List<Output>,
-  script_hash: Hash<Blake2b_224, Script>,
-) -> Output {
-  expect [output] =
-    list.filter(
-      outputs,
-      fn(output) {
-        output.address.payment_credential == address.Script(script_hash)
-      },
-    )
-  output
+  spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_mint_policy_id: PolicyId,
+) -> ClientDatum {
+  expect [client_output] =
+    outputs |> transaction.find_script_outputs(spend_client_script_hash)
+  let datum = decode_client_datum(client_output)
+  expect datum.token.policy_id == client_mint_policy_id
+  expect auth.contain_auth_token(client_output, datum.token)
+  datum
 }
 
 /// Enforce that `ibc_state_root` is updated correctly for CreateClient.
@@ -222,18 +211,12 @@ fn validate_create_client_root(
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
 ) -> Bool {
-  // Find the newly created client output.
-  //
-  // `mint_client_stt` enforces there is exactly one client output for CreateClient,
-  // so we require exactly one here too.
-  let client_output = find_state_output(outputs, spend_client_script_hash)
-
-  // Decode the client datum so we can derive the exact state bytes that must be
-  // committed into the Merkle root.
-  expect client_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_output)
-  expect client_datum.token.policy_id == client_mint_policy_id
-  expect auth.contain_auth_token(client_output, client_datum.token)
+  let client_datum =
+    expect_client_output_datum(
+      outputs,
+      spend_client_script_hash,
+      client_mint_policy_id,
+    )
 
   // Derive the client identifier from the HostState sequence.
   //
@@ -368,16 +351,12 @@ fn validate_update_client_root(
   consensus_state_siblings: List<ByteArray>,
   removed_consensus_state_siblings: List<List<ByteArray>>,
 ) -> Bool {
-  // Find the updated client output.
-  //
-  // `spend_client` enforces there is exactly one client output in this transaction,
-  // so we require exactly one here too.
-  let client_output = find_state_output(outputs, spend_client_script_hash)
-
-  expect client_output_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_output)
-  expect client_output_datum.token.policy_id == client_mint_policy_id
-  expect auth.contain_auth_token(client_output, client_output_datum.token)
+  let client_output_datum =
+    expect_client_output_datum(
+      outputs,
+      spend_client_script_hash,
+      client_mint_policy_id,
+    )
 
   let client_id = client_id_from_token_name(client_output_datum.token.name)
 
@@ -385,8 +364,7 @@ fn validate_update_client_root(
   expect Some(client_input) =
     find_input_with_auth_token(inputs, client_output_datum.token)
 
-  expect client_input_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_input.output)
+  let client_input_datum = decode_client_datum(client_input.output)
   expect client_input_datum.token.policy_id == client_mint_policy_id
   // 1) Apply the clientState update.
   let client_state_key = client_keys.full_client_state_path(client_id)
