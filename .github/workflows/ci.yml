@@ -552,9 +552,9 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
     needs: aiken-changes
     runs-on: ubuntu-latest
-    # Collecting and running the full suite takes about nine minutes on hosted
-    # runners. Allow for runner variation while keeping every test in this pass.
-    timeout-minutes: 20
+    # The expanded suite can spend fourteen minutes collecting on hosted
+    # runners. Leave time for execution while keeping every test in this pass.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: cardano/onchain
@@ -636,6 +636,7 @@ jobs:
             match_tests: >-
               -m ibc/client/ics_007_tendermint_client/client_datum
               -m ibc/client/ics_007_tendermint_client/client_state
+              -m ibc/client/ics_007_tendermint_client/height_set
               -m ibc/client/ics_007_tendermint_client/misbehaviour_handle
               -m prop_client_update_
               -m prop_client_recovery_

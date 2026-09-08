@@ -194,6 +194,27 @@ test trusting_commit_selects_first_wire_entry_for_duplicate_address() {
   )
 }
 
+// Duplicate keys can straddle an internal node and both bounded leaves.
+// Only the first wire entry has the key and power that can verify this vote.
+test trusting_commit_selects_first_duplicate_across_index_partitions() {
+  expect [first, second, ..] = validators()
+  expect [first_signature, ..] = commit_signatures()
+  let first = Validator { ..first, voting_power: 40 }
+  let duplicate =
+    Validator { ..second, address: first.address, voting_power: 0 }
+  validation.verify_commit_light_trusting(
+    chain_id,
+    ValidatorSet {
+      validators: [first, ..list.repeat(duplicate, 39)],
+      proposer: first,
+      total_voting_power: 40,
+    },
+    commit_with([first_signature]),
+    one_third(),
+    None,
+  )
+}
+
 test trusting_commit_ignores_absent_and_nil_slots() {
   expect [_first, second, third, fourth] = commit_signatures()
   let absent =

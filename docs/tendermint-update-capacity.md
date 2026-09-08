@@ -80,6 +80,94 @@ limit and limit-plus-one. Explicit two-header misbehaviour evidence requires a
 separate capacity result because its payload shape is materially larger than a
 normal update.
 
+## Consensus-history processing (#726)
+
+Measured with Aiken `v1.1.21+42babe5`, stdlib `3.1.0` and tracing disabled.
+The baseline is `main` at `bbef7e9b2938637e4c0311fc267d8c36b8ce98b7`,
+compared with the optimization at `cdb4148276f58bea39055a8a527f3c65854eabb4`.
+These measurements precede the client-recovery changes described below.
+Both versions use the same compile-time fixtures in
+[`consensus_history_benchmark.test.ak`](../cardano/onchain/lib/ibc/client/ics-007-tendermint-client/consensus_history_benchmark.test.ak).
+Only `check_for_misbehaviour` and `update_state` run inside each measured test.
+These are execution units for history processing, not complete transactions,
+fees or validator-signature benchmarks.
+
+| Stored states | Memory before | Memory after | CPU before | CPU after |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 518,973 | 438,068 | 176,738,504 | 151,768,828 |
+| 10 | 2,256,189 | 1,470,170 | 992,645,294 | 681,770,350 |
+| 16 | 4,514,583 | 2,419,058 | 2,062,403,294 | 1,224,276,598 |
+| 17 | 4,976,557 | 3,972,335 | 2,281,593,416 | 1,687,024,420 |
+| 50 | 33,938,149 | 14,572,200 | 16,070,091,854 | 6,317,008,560 |
+| 150 | 284,293,049 | 56,197,772 | 135,557,952,254 | 23,392,148,728 |
+| 300 | 1,118,251,703 | 127,284,620 | 533,875,920,140 | 52,587,041,380 |
+| 300 (150 expire) | 1,050,584,699 | 95,311,244 | 485,295,894,104 | 41,786,857,310 |
+
+At 300 unexpired states this saves 89% memory and 90% CPU. The remaining
+history cost alone still exceeds mainnet transaction limits. This does not
+resolve transaction-size or pruning costs in #557.
+
+Neighbor selection now scans once. Metadata retention builds a balanced height
+index instead of searching the full retained list for every metadata entry.
+With `C` retained states and `M` metadata entries across both lists, indexed
+retention costs `O(C log C + M log C)`. Histories of at most 16 retained states
+use bounded scans to avoid index overhead. Larger indexes also use leaves of
+at most 16 keys. CPU and memory are lower in every measured case.
+List order, duplicates, expiry and independent truncation are unchanged.
+
+At those revisions, the compiled client grows from 15,315 to 15,568 bytes,
+below the then-largest script of 15,640 bytes, and the transaction-budget
+regression check passes. These historical measurements do not include the
+subsequent recovery implementation.
+
+To reproduce, run this from `cardano/onchain` at the optimization commit above.
+Fixtures are constants so their construction is excluded from the measured
+execution.
+
+```sh
+aiken check --deny --trace-level silent --plain-numbers \
+  -m 'consensus_history_benchmark.{..}'
+```
+
+For the baseline, create a separate worktree at the baseline commit above, copy only
+`consensus_history_benchmark.test.ak` into the same directory there and run
+the same command. Keep the compiler and dependency versions identical.
+
+### Shared index and deployment size
+
+After integration with client recovery, retained-height membership and trusted
+validator lookup share a balanced tree. Bounded leaves use native equality;
+internal nodes use ordering and preserve the first matching validator in wire
+order. This keeps the history optimization deployable without changing datum
+or validator-parameter schemas.
+
+With the same Aiken version and silent traces, the current client blueprint is
+15,353 bytes. Applying the host policy and recovery credential produces a
+15,429-byte script and a 15,629-byte estimated reference output. This fits the
+15,634-byte deployment guard, which reserves 750 bytes from the 16,384-byte
+transaction limit. The existing deployment-size regression test now runs in CI.
+
+The current shared-index implementation, measured with the same fixtures and
+silent settings, has the following history-only execution costs:
+
+| Stored states | Current memory | Current CPU |
+| --- | ---: | ---: |
+| 1 | 443,702 | 155,124,366 |
+| 10 | 1,536,392 | 715,830,756 |
+| 16 | 2,552,672 | 1,283,126,916 |
+| 17 | 4,094,881 | 1,713,025,665 |
+| 50 | 15,134,286 | 6,351,014,455 |
+| 150 | 58,650,646 | 23,148,108,772 |
+| 300 | 133,072,782 | 51,780,946,479 |
+| 300 (150 expire) | 100,101,534 | 40,935,008,010 |
+
+Memory and CPU remain below the pre-optimization baseline in every measured
+case. At 300 unexpired states, the current implementation saves 88% memory and
+90% CPU versus that baseline. These history-only costs still exceed transaction
+limits; the broader capacity and pruning limitations remain unchanged.
+
+Run the benchmark command above on the current branch to reproduce this table.
+
 ## Expired or frozen client recovery
 
 An expired or frozen Cardano-side Tendermint client cannot safely resume normal
