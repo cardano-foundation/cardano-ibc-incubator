@@ -3,11 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import * as Lucid from '@lucid-evolution/lucid';
 
 import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
-import { setCurrentTree } from '../../shared/helpers/ibc-state-root';
-import { ClientDatum } from '../../shared/types/client-datum';
+import { StaleIbcTreeStateError } from '../../shared/helpers/ibc-state-root';
+import { createTestTreeContext } from '../../shared/testing/ibc-tree-test-store';
+import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from '../../shared/types/client-datum';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { ClientService } from '../client.service';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
+import { RecoverClientOperatorDto } from '../dto';
 
 const height = (revisionHeight: bigint) => ({ revisionNumber: 0n, revisionHeight });
 
@@ -122,12 +124,54 @@ describe('ClientService recovery transaction', () => {
       createUnsignedRecoverClientTransaction: jest.fn().mockReturnValue({}),
     };
     const runner: any = { run: jest.fn().mockResolvedValue({ unsignedTxBytes: new Uint8Array([1, 2]) }) };
-    const service = new ClientService(logger, config, lucid as LucidService, runner as TxOperationRunnerService);
+    const treeContext = createTestTreeContext();
+    const service = new ClientService(
+      logger,
+      config,
+      lucid as LucidService,
+      runner as TxOperationRunnerService,
+      treeContext.store,
+    );
     (service as any).computeTxValidityWindow = jest.fn().mockResolvedValue({
       validFromTime: 100,
       validToTime: 200,
     });
-    return { service, deployment, lucid, runner };
+    return { service, deployment, lucid, runner, treeContext };
+  }
+
+  function recoveryOperator(
+    tree: ICS23MerkleTree,
+    hostStateUtxo: RecoverClientOperatorDto['hostStateUtxo'],
+    subject = clientDatum(1n, 0n),
+    substitute = clientDatum(2n, 150n),
+  ): RecoverClientOperatorDto {
+    return {
+      subjectClientId: '1',
+      substituteClientId: '2',
+      constructedAddress: 'addr_test1authority',
+      subjectClientDatum: subject,
+      substituteClientDatum: substitute,
+      subjectClientTokenUnit: 'unit-1',
+      subjectClientUtxo: {} as any,
+      substituteClientUtxo: {} as any,
+      hostStateUtxo,
+      hostStateDatum: {
+        deployer: 'deployer',
+        nft_policy: 'host-policy',
+        control: { port_registry: new Map(), shutdown: 'Active' },
+        state: {
+          version: 1n,
+          ibc_state_root: tree.getRoot(),
+          next_client_sequence: 3n,
+          next_connection_sequence: 0n,
+          next_channel_sequence: 0n,
+          bound_port: [],
+          last_update_time: 0n,
+        },
+      },
+      signerKeyHash: 'deployer',
+      txValidTo: 200n,
+    };
   }
 
   it('builds an authorized recovery response', async () => {
@@ -188,7 +232,7 @@ describe('ClientService recovery transaction', () => {
   });
 
   it('caps subject history at 300 entries and commits the matching root update', async () => {
-    const { service, lucid } = serviceContext();
+    const { service, lucid, treeContext } = serviceContext();
     const subject = clientDatum(300n, 0n, { frozen: true });
     const consensusEntries: Array<[ReturnType<typeof height>, any]> = [];
     const timeEntries: Array<[ReturnType<typeof height>, bigint]> = [];
@@ -205,46 +249,57 @@ describe('ClientService recovery transaction', () => {
     subject.state.consensusStates = new Map(consensusEntries);
     subject.state.processedTimes = new Map(timeEntries);
     subject.state.processedHeights = new Map(heightEntries);
-    setCurrentTree(tree);
+    const hostStateUtxo = { txHash: 'aa'.repeat(32), outputIndex: 0, address: 'host', assets: {} };
+    await treeContext.restore(tree, hostStateUtxo);
     const recoveredDatums: ClientDatum[] = [];
     lucid.encode.mockImplementation((data: unknown, type: string) => {
       if (type === 'client') recoveredDatums.push(data as ClientDatum);
       return Promise.resolve(`encoded-${type}`);
     });
 
-    const result = await service.buildUnsignedRecoverClientTx({
-      subjectClientId: '1',
-      substituteClientId: '2',
-      constructedAddress: 'addr_test1authority',
-      subjectClientDatum: subject,
-      substituteClientDatum: clientDatum(301n, 150n),
-      subjectClientTokenUnit: 'unit-1',
-      subjectClientUtxo: {} as any,
-      substituteClientUtxo: {} as any,
-      hostStateUtxo: {} as any,
-      hostStateDatum: {
-        deployer: 'deployer',
-        nft_policy: 'host-policy',
-        control: { port_registry: new Map(), shutdown: 'Active' },
-        state: {
-          version: 1n,
-          ibc_state_root: tree.getRoot(),
-          next_client_sequence: 3n,
-          next_connection_sequence: 0n,
-          next_channel_sequence: 0n,
-          bound_port: [],
-          last_update_time: 0n,
-        },
-      },
-      signerKeyHash: 'deployer',
-      txValidTo: 200n,
-    });
+    const result = await service.buildUnsignedRecoverClientTx(
+      recoveryOperator(tree, hostStateUtxo, subject, clientDatum(301n, 150n)),
+    );
 
     const recovered = recoveredDatums[0];
     expect(recovered.state.consensusStates.size).toBe(300);
     expect(Array.from(recovered.state.consensusStates.keys())[0]).toEqual(height(301n));
     expect(Array.from(recovered.state.consensusStates.keys()).at(-1)).toEqual(height(2n));
-    expect(result.pendingTreeUpdate.expectedNewRoot).not.toBe(tree.getRoot());
+    const expectedTree = tree.clone();
+    expectedTree.set(
+      'clients/07-tendermint-1/clientState',
+      Buffer.from(await encodeClientStateValue(recovered.state.clientState, Lucid), 'hex'),
+    );
+    expectedTree.set('clients/07-tendermint-1/consensusStates/1', Buffer.alloc(0));
+    expectedTree.set(
+      'clients/07-tendermint-1/consensusStates/301',
+      Buffer.from(await encodeConsensusStateValue(Array.from(recovered.state.consensusStates.values())[0], Lucid), 'hex'),
+    );
+    expect(result.pendingTreeUpdate.expectedNewRoot).toBe(expectedTree.getRoot());
+    expect(treeContext.store.getCurrentRoot()).toBe(tree.getRoot());
     expect(lucid.createUnsignedRecoverClientTransaction).toHaveBeenCalled();
+
+    const confirmedHostState = { txHash: 'bb'.repeat(32), outputIndex: 1 };
+    await expect(result.pendingTreeUpdate.commit(confirmedHostState)).resolves.toMatchObject({ published: false });
+    expect(treeContext.store.getCurrentRoot()).toBe(tree.getRoot());
+    treeContext.setLiveRoot(result.pendingTreeUpdate.expectedNewRoot, confirmedHostState);
+    await expect(result.pendingTreeUpdate.commit(confirmedHostState)).resolves.toMatchObject({ published: true });
+    expect(treeContext.store.getCurrentRoot()).toBe(expectedTree.getRoot());
+  });
+
+  it('rejects recovery when a heartbeat replaces the HostState input without changing its root', async () => {
+    const { service, lucid, treeContext } = serviceContext();
+    const tree = new ICS23MerkleTree();
+    tree.set('clients/07-tendermint-1/clientState', Buffer.from('old-client'));
+    const originalHostState = { txHash: 'aa'.repeat(32), outputIndex: 0, address: 'host', assets: {} };
+    await treeContext.restore(tree, originalHostState);
+    const operator = recoveryOperator(tree, originalHostState);
+    const heartbeatHostState = { txHash: 'bb'.repeat(32), outputIndex: 1 };
+    await treeContext.restore(tree, heartbeatHostState);
+
+    await expect(service.buildUnsignedRecoverClientTx(operator)).rejects.toThrow(StaleIbcTreeStateError);
+    expect(lucid.createUnsignedRecoverClientTransaction).not.toHaveBeenCalled();
+    expect(treeContext.store.getSnapshot().hostState).toEqual(heartbeatHostState);
+    expect(treeContext.store.getCurrentRoot()).toBe(tree.getRoot());
   });
 });

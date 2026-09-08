@@ -967,7 +967,7 @@ export class ClientService {
       },
     };
 
-    await this.ensureTreeAligned(operator.hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(operator.hostStateDatum.state.ibc_state_root, operator.hostStateUtxo);
     const outputHeightKeys = new Set(
       retainedHistory.map(
         ({ height }) => `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`,
@@ -998,7 +998,7 @@ export class ClientService {
     };
     const ibcClientId = `${CLIENT_ID_PREFIX}-${operator.subjectClientId}`;
     const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
-      computeRootWithUpdateClientUpdate(
+      this.ibcTreeStore.computeRootWithUpdateClientUpdate(
         operator.hostStateDatum.state.ibc_state_root,
         ibcClientId,
         newClientStateValue,
