@@ -860,16 +860,16 @@ jobs:
 
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
-        run: aiken build --deny
+        run: aiken build --deny --trace-level silent
 
       - name: Collect Aiken execution units
         working-directory: cardano/onchain
         run: |
-          # Tx budgets consume representative production transaction fixtures.
-          # Fuzzers and other .test.ak cases are not deployed transactions, so
-          # they should not inflate this job or affect the budget calculation.
+          # Keep traces consistent with production builds. These test-derived
+          # regression estimates are not evaluations of complete transactions.
           aiken check \
             --deny \
+            --trace-level silent \
             --plain-numbers \
             --exact-match \
             -m 'ibc/core/ics_003_connection_semantics/connection_datum.{test_is_conn_open_try_valid_succeed}' \

@@ -1409,6 +1409,7 @@ async function main() {
   const reports = await buildScenarios(validators, aikenTests);
   const capacityReports = await buildCapacityReports(aikenTests);
 
+  console.log('Execution units are test-derived estimates collected with --trace-level silent, not ledger evaluations.');
   printReport(reports, maxTxSize, txHeadroomBytes);
   console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
   console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
