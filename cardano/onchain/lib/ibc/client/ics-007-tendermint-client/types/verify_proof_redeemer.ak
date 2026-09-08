@@ -16,6 +16,18 @@ pub type VerifyMembershipParams {
   value: ByteArray,
 }
 
+pub type VerifyNonMembershipParams {
+  cs: ClientState,
+  cons_state: ConsensusState,
+  height: Height,
+  processed_time: Int,
+  processed_height: Int,
+  delay_time_period: Int,
+  delay_block_period: Int,
+  proof: MerkleProof,
+  path: MerklePath,
+}
+
 pub type VerifyProofRedeemer {
   VerifyMembership {
     cs: ClientState,
@@ -45,4 +57,9 @@ pub type VerifyProofRedeemer {
   BatchVerifyMembership(List<VerifyMembershipParams>)
 
   VerifyOther
+
+  BatchVerifyMembershipAndNonMembership {
+    memberships: List<VerifyMembershipParams>,
+    non_memberships: List<VerifyNonMembershipParams>,
+  }
 }

@@ -12,6 +12,8 @@ import {
   TransferIBCModuleRedeemer,
 } from './apps/transfer/transfer-ibc-module-redeemer';
 import { decodeIBCModuleRedeemer, encodeIBCModuleRedeemer } from './port/ibc_module_redeemer';
+import { decodeSpendClientRedeemer, encodeSpendClientRedeemer, findSpendClientRedeemer } from './client-redeemer';
+import { encodeRecoverClientWithdrawalRedeemer } from './recover-client-redeemer';
 
 const EMPTY_PROOF = { proofs: [] } as const;
 const HEIGHT = { revisionNumber: 0n, revisionHeight: 11n } as const;
@@ -30,6 +32,34 @@ const PACKET = {
 const MITHRIL_CLIENT_STATE_HEX = 'aabbccdd';
 
 describe('Redeemer encoding regression', () => {
+  it('keeps client recovery constructors aligned with Aiken', async () => {
+    const subjectToken = { policyId: '11'.repeat(28), name: 'aa' };
+    const substituteToken = { policyId: '22'.repeat(28), name: 'bb' };
+    const spendRedeemer = { RecoverClient: { substitute_token: substituteToken } } as const;
+    const withdrawalRedeemer = {
+      RecoverClientWithdrawal: {
+        subject_token: subjectToken,
+        substitute_token: substituteToken,
+      },
+    } as const;
+
+    const encodedSpend = await encodeSpendClientRedeemer(spendRedeemer, Lucid);
+    const encodedWithdrawal = encodeRecoverClientWithdrawalRedeemer(withdrawalRedeemer, Lucid);
+
+    expect(encodedSpend.startsWith('d87a')).toBe(true);
+    expect(encodedWithdrawal.startsWith('d879')).toBe(true);
+    expect(decodeSpendClientRedeemer(encodedSpend, Lucid)).toEqual(spendRedeemer);
+    expect(
+      findSpendClientRedeemer(
+        [
+          { type: 'spend', data: 'd9050380' },
+          { type: 'spend', data: encodedSpend },
+        ],
+        Lucid,
+      ),
+    ).toEqual(spendRedeemer);
+  });
+
   it('keeps MintChannel redeemer encoding stable', async () => {
     const encoded = await encodeMintChannelRedeemer(
       {
@@ -73,6 +103,25 @@ describe('Redeemer encoding regression', () => {
     const encoded = await encodeSpendChannelRedeemer(redeemer, Lucid);
 
     expect(encoded).toBe('d905018303d8798180d87982000b');
+    expect(decodeSpendChannelRedeemer(encoded, Lucid)).toEqual(redeemer);
+  });
+
+  it('appends TimeoutOnClose after all existing SpendChannel constructors', async () => {
+    const redeemer = {
+      TimeoutOnClose: {
+        packet: PACKET,
+        proof_unreceived: EMPTY_PROOF,
+        proof_close: EMPTY_PROOF,
+        proof_height: HEIGHT,
+        next_sequence_recv: 2n,
+      },
+    } as const;
+
+    const encoded = await encodeSpendChannelRedeemer(redeemer as any, Lucid);
+
+    expect(encoded).toBe(
+      'd9050285d8798803487472616e73666572496368616e6e656c2d30487472616e73666572496368616e6e656c2d31427b7dd8798200186300d8798180d8798180d87982000b02',
+    );
     expect(decodeSpendChannelRedeemer(encoded, Lucid)).toEqual(redeemer);
   });
 
@@ -138,6 +187,20 @@ describe('Redeemer encoding regression', () => {
     expect(encoded).toBe(
       'd8798ad879884a656e747279706f696e74d879820103187818f00ad879820000d8798200183280d87983187b41aad8798141bbd87982000b00000000d8798180d879818243696263447061746847636f6e74656e74',
     );
+  });
+
+  it('appends the mixed proof batch after VerifyOther', () => {
+    const encoded = encodeVerifyProofRedeemer(
+      {
+        BatchVerifyMembershipAndNonMembership: {
+          memberships: [],
+          non_memberships: [],
+        },
+      },
+      Lucid,
+    );
+
+    expect(encoded).toBe('d87d828080');
   });
 
   it('encodes channel close-confirm module callback with the close-confirm constructor', async () => {

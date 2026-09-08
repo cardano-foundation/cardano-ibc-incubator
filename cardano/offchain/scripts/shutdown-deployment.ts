@@ -5,7 +5,9 @@ import {
   getAddressDetails,
   Kupmios,
   type LucidEvolution,
+  slotToUnixTime,
   type UTxO,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import { applySingleCborEncoding } from "@lucid-evolution/utils";
 import {
@@ -29,6 +31,7 @@ import {
 import {
   HostStateDatum,
   type HostStateDatum as HostStateDatumType,
+  HostStateNftRedeemer,
   HostStateRedeemer,
   type HostStateRedeemer as HostStateRedeemerType,
 } from "../types/index.ts";
@@ -47,6 +50,40 @@ const DEFAULT_HANDLER_JSON_PATH = "./deployments/handler.json";
 const DEFAULT_REFERENCE_RECLAIM_BATCH_SIZE = 10;
 const DEFAULT_KUPMIOS_SUBMIT_TIMEOUT_MS = 60000;
 const TX_VALIDITY_WINDOW_MS = 10 * 60 * 1000;
+// Keep aligned with the on-chain minimum shutdown grace period.
+export const MIN_SHUTDOWN_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
+
+export function shutdownTiming(
+  lucid: Pick<LucidEvolution, "config" | "unixTimeToSlot">,
+  grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
+  now = Date.now(),
+) {
+  if (
+    (grace.gracePeriodEnd === undefined) === (grace.gracePeriodMs === undefined)
+  ) {
+    throw new Error("Specify exactly one grace period duration or end time");
+  }
+  const network = lucid.config().network;
+  if (!network) {
+    throw new Error("Shutdown requires a configured Cardano network");
+  }
+  const validFrom = slotToUnixTime(network, lucid.unixTimeToSlot(now));
+  const validTo = slotToUnixTime(
+    network,
+    lucid.unixTimeToSlot(now + TX_VALIDITY_WINDOW_MS),
+  );
+  const gracePeriodEnd = grace.gracePeriodEnd ?? validTo + grace.gracePeriodMs!;
+  if (
+    !Number.isSafeInteger(validFrom) || !Number.isSafeInteger(validTo) ||
+    validTo <= validFrom || !Number.isSafeInteger(gracePeriodEnd) ||
+    gracePeriodEnd - validTo < MIN_SHUTDOWN_GRACE_PERIOD_MS
+  ) {
+    throw new Error(
+      `Shutdown requires at least ${MIN_SHUTDOWN_GRACE_PERIOD_MS} ms of grace after transaction expiry ${validTo}`,
+    );
+  }
+  return { validFrom, validTo, gracePeriodEnd };
+}
 
 function toJson(value: unknown): string {
   return JSON.stringify(
@@ -507,6 +544,8 @@ function usage(): never {
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts enter (--grace-period-ms <ms> | --grace-period-end <unix-ms>) [--handler-json <path>]",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-reference-scripts [--batch-size <n>] [--handler-json <path>]",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts finalize [--handler-json <path>]",
+      "",
+      "Before finalizing, close or migrate every connected counterparty client. Finalizing burns the HostState NFT and permanently stops state updates.",
     ].join("\n"),
   );
 }
@@ -690,6 +729,147 @@ function hostStateUnit(deployment: DeploymentTemplate): string {
   return deployment.hostStateNFT.policyId + deployment.hostStateNFT.name;
 }
 
+function hostStateNftPolicy(deployment: DeploymentTemplate) {
+  const hostStateNFT = deployment.hostStateNFT;
+  if (!hostStateNFT?.script) {
+    throw new Error(
+      "handler.json does not contain the burn-capable HostState NFT policy script. Deployments created before burn support must be migrated instead of finalized",
+    );
+  }
+
+  const policy = {
+    type: "PlutusV3" as const,
+    script: hostStateNFT.script,
+  };
+  if (validatorToScriptHash(policy) !== hostStateNFT.policyId) {
+    throw new Error(
+      "HostState NFT policy script does not match hostStateNFT.policyId",
+    );
+  }
+  return policy;
+}
+
+function sameOutRef(left: UTxO, right: UTxO): boolean {
+  return left.txHash === right.txHash && left.outputIndex === right.outputIndex;
+}
+
+function deploymentReferenceOutRefs(
+  deployment: DeploymentTemplate,
+): UTxO[] {
+  const refs: UTxO[] = [];
+  for (const validator of Object.values(deployment.validators)) {
+    if (!validator) {
+      continue;
+    }
+    if ("refUtxo" in validator) {
+      refs.push(validator.refUtxo);
+    }
+    if ("refValidator" in validator && validator.refValidator) {
+      refs.push(
+        ...Object.values(validator.refValidator).map((entry) => entry.refUtxo),
+      );
+    }
+  }
+  return [...new Map(
+    refs.map((utxo) => [`${utxo.txHash}#${utxo.outputIndex}`, utxo]),
+  ).values()];
+}
+
+function requireTerminalHostStateReference(
+  deployment: DeploymentTemplate,
+  referenceUtxo: UTxO,
+): UTxO {
+  const expected = normalizeUtxo(deployment.validators.hostStateStt.refUtxo);
+  if (!sameOutRef(referenceUtxo, expected)) {
+    throw new Error(
+      "The sole terminal reference UTxO is not the deployed HostState STT reference",
+    );
+  }
+  if (!referenceUtxo.scriptRef) {
+    throw new Error("The HostState STT reference UTxO has no reference script");
+  }
+
+  const expectedHostScript = {
+    type: "PlutusV3" as const,
+    script: deployment.validators.hostStateStt.script,
+  };
+  const expectedHostScriptHash = validatorToScriptHash(expectedHostScript);
+  if (
+    expectedHostScriptHash !== deployment.validators.hostStateStt.scriptHash ||
+    validatorToScriptHash(referenceUtxo.scriptRef) !== expectedHostScriptHash
+  ) {
+    throw new Error(
+      "The HostState STT reference script does not match the deployed validator",
+    );
+  }
+  return referenceUtxo;
+}
+
+export function partitionShutdownReferences(
+  deployment: DeploymentTemplate,
+  referenceScriptUtxos: UTxO[],
+): { terminalReference: UTxO; reclaimableReferences: UTxO[] } {
+  const knownOutRefs = new Set(
+    deploymentReferenceOutRefs(deployment).map((utxo) =>
+      `${utxo.txHash}#${utxo.outputIndex}`
+    ),
+  );
+  const knownReferences = referenceScriptUtxos.filter((utxo) =>
+    knownOutRefs.has(`${utxo.txHash}#${utxo.outputIndex}`)
+  );
+  const expectedTerminalReference = normalizeUtxo(
+    deployment.validators.hostStateStt.refUtxo,
+  );
+  const terminalReferences = knownReferences.filter((utxo) =>
+    sameOutRef(utxo, expectedTerminalReference)
+  );
+  if (terminalReferences.length !== 1) {
+    throw new Error(
+      "The deployed HostState STT reference UTxO is not live, refusing to remove the finalization witness",
+    );
+  }
+  const terminalReference = requireTerminalHostStateReference(
+    deployment,
+    terminalReferences[0],
+  );
+  return {
+    terminalReference,
+    reclaimableReferences: knownReferences.filter((utxo) =>
+      !sameOutRef(utxo, terminalReference)
+    ),
+  };
+}
+
+function readReferenceValidator(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+) {
+  if (!deployment.hostStateNFT) {
+    throw new Error("handler.json does not contain hostStateNFT");
+  }
+  return readValidator(
+    "reference_validator.refer_only.else",
+    lucid,
+    [deployment.hostStateNFT.policyId],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+}
+
+function reclaimableHostStateAssets(
+  hostUtxo: UTxO,
+  nftUnit: string,
+): Record<string, bigint> {
+  if (hostUtxo.assets[nftUnit] !== 1n) {
+    throw new Error(
+      "HostState UTxO does not contain exactly one HostState NFT",
+    );
+  }
+
+  return Object.fromEntries(
+    Object.entries(hostUtxo.assets).filter(([unit]) => unit !== nftUnit),
+  );
+}
+
 async function getHostStateUtxo(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
@@ -753,7 +933,9 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
     [deployment.hostStateNFT!.policyId],
     Data.Tuple([Data.Bytes()]) as unknown as [string],
   );
-  const referenceScriptUtxos = (await lucid.utxosAt(referenceValidatorAddress))
+  const referenceScriptUtxos = (await lucid.utxosByOutRef(
+    deploymentReferenceOutRefs(deployment),
+  ))
     .filter((utxo) => utxo.scriptRef);
 
   console.log(toJson({
@@ -773,7 +955,7 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
 async function enterShutdown(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
-  gracePeriodEnd: number,
+  grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
 ) {
   const hostUtxo = await getHostStateUtxo(lucid, deployment);
   const currentDatum = decodeHostStateDatum(hostUtxo);
@@ -781,12 +963,7 @@ async function enterShutdown(
     throw new Error("HostState is already shutting down");
   }
 
-  const now = Date.now();
-  if (gracePeriodEnd <= now) {
-    throw new Error(
-      `grace period end ${gracePeriodEnd} must be after current time ${now}`,
-    );
-  }
+  const { validFrom, validTo, gracePeriodEnd } = shutdownTiming(lucid, grace);
 
   const walletAddress = await lucid.wallet().address();
   const signerKeyHash = deployerPaymentKeyHash(walletAddress);
@@ -795,13 +972,13 @@ async function enterShutdown(
     state: {
       ...currentDatum.state,
       version: currentDatum.state.version + 1n,
-      last_update_time: BigInt(now),
+      last_update_time: BigInt(validTo),
     },
     control: {
       ...currentDatum.control,
       shutdown: {
         ShuttingDown: {
-          initiated_at: BigInt(now),
+          initiated_at: BigInt(validTo),
           grace_period_end: BigInt(gracePeriodEnd),
         },
       },
@@ -833,15 +1010,15 @@ async function enterShutdown(
           hostUtxo.assets,
         )
         .addSignerKey(signerKeyHash)
-        .validFrom(now)
-        .validTo(now + TX_VALIDITY_WINDOW_MS),
+        .validFrom(validFrom)
+        .validTo(validTo),
     lucid,
     "EnterDeploymentShutdown",
   );
 
   console.log(toJson({
     txHash,
-    initiatedAt: now,
+    initiatedAt: validTo,
     gracePeriodEnd,
   }));
 }
@@ -858,27 +1035,24 @@ async function reclaimReferenceScripts(
   const gracePeriodEnd = requireShutdownGracePeriodEnd(hostDatum);
   const validFrom = requireGracePeriodElapsed(gracePeriodEnd);
 
-  const [referenceValidator, , referenceValidatorAddress] = await readValidator(
-    "reference_validator.refer_only.else",
-    lucid,
-    [deployment.hostStateNFT!.policyId],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
-  );
-  const referenceScriptUtxos = (await lucid.utxosAt(referenceValidatorAddress))
+  const [referenceValidator] = readReferenceValidator(lucid, deployment);
+  const referenceScriptUtxos = (await lucid.utxosByOutRef(
+    deploymentReferenceOutRefs(deployment),
+  ))
     .filter((utxo) => utxo.scriptRef);
-
-  if (referenceScriptUtxos.length === 0) {
-    console.log("No reclaimable reference-script UTxOs found.");
-    return;
-  }
+  const { terminalReference, reclaimableReferences } =
+    partitionShutdownReferences(
+      deployment,
+      referenceScriptUtxos,
+    );
 
   const txHashes: string[] = [];
   for (
     let index = 0;
-    index < referenceScriptUtxos.length;
+    index < reclaimableReferences.length;
     index += batchSize
   ) {
-    const batch = referenceScriptUtxos.slice(index, index + batchSize);
+    const batch = reclaimableReferences.slice(index, index + batchSize);
     const txHash = await submitTx(
       () =>
         lucid
@@ -896,7 +1070,9 @@ async function reclaimReferenceScripts(
   }
 
   console.log(toJson({
-    reclaimedUtxos: referenceScriptUtxos.length,
+    reclaimedUtxos: reclaimableReferences.length,
+    terminalHostStateReference:
+      `${terminalReference.txHash}#${terminalReference.outputIndex}`,
     batchSize,
     txHashes,
   }));
@@ -912,28 +1088,79 @@ async function finalizeShutdown(
   const hostDatum = decodeHostStateDatum(hostUtxo);
   const gracePeriodEnd = requireShutdownGracePeriodEnd(hostDatum);
   const validFrom = requireGracePeriodElapsed(gracePeriodEnd);
+  const liveReferences = (await lucid.utxosByOutRef(
+    deploymentReferenceOutRefs(deployment),
+  ))
+    .filter((utxo) => utxo.scriptRef);
+  const { terminalReference, reclaimableReferences } =
+    partitionShutdownReferences(deployment, liveReferences);
+  if (reclaimableReferences.length !== 0) {
+    throw new Error(
+      `Finalize requires all other deployment reference UTxOs to be reclaimed, found ${reclaimableReferences.length}`,
+    );
+  }
+
+  console.warn(
+    "Finalizing burns the HostState NFT permanently. Connected counterparty clients must already be closed or migrated.",
+  );
 
   const txHash = await submitTx(
     () =>
-      lucid
-        .newTx()
-        .attach.SpendingValidator({
-          type: "PlutusV3",
-          script: deployment.validators.hostStateStt.script,
-        })
-        .collectFrom(
-          [hostUtxo],
-          Data.to("FinalizeShutdown", HostStateRedeemer, { canonical: true }),
-        )
-        .pay.ToAddress(walletAddress, hostUtxo.assets)
-        .addSignerKey(signerKeyHash)
-        .validFrom(validFrom)
-        .validTo(validFrom + TX_VALIDITY_WINDOW_MS),
+      buildFinalizeShutdownTx(
+        lucid,
+        deployment,
+        hostUtxo,
+        terminalReference,
+        walletAddress,
+        signerKeyHash,
+        validFrom,
+      ),
     lucid,
     "FinalizeDeploymentShutdown",
   );
 
   console.log(toJson({ txHash }));
+}
+
+export function buildFinalizeShutdownTx(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+  hostUtxo: UTxO,
+  terminalHostStateReference: UTxO,
+  walletAddress: string,
+  signerKeyHash: string,
+  validFrom: number,
+) {
+  const nftUnit = hostStateUnit(deployment);
+  const nftPolicy = hostStateNftPolicy(deployment);
+  const reclaimedAssets = reclaimableHostStateAssets(hostUtxo, nftUnit);
+  const hostStateReference = requireTerminalHostStateReference(
+    deployment,
+    terminalHostStateReference,
+  );
+  const [referenceValidator] = readReferenceValidator(lucid, deployment);
+
+  return lucid
+    .newTx()
+    .attach.SpendingValidator({
+      type: "PlutusV3",
+      script: deployment.validators.hostStateStt.script,
+    })
+    .attach.SpendingValidator(referenceValidator)
+    .collectFrom(
+      [hostUtxo],
+      Data.to("FinalizeShutdown", HostStateRedeemer, { canonical: true }),
+    )
+    .collectFrom([hostStateReference], Data.void())
+    .attach.MintingPolicy(nftPolicy)
+    .mintAssets(
+      { [nftUnit]: -1n },
+      Data.to("BurnFinal", HostStateNftRedeemer, { canonical: true }),
+    )
+    .pay.ToAddress(walletAddress, reclaimedAssets)
+    .addSignerKey(signerKeyHash)
+    .validFrom(validFrom)
+    .validTo(validFrom + TX_VALIDITY_WINDOW_MS);
 }
 
 async function main() {
@@ -946,9 +1173,7 @@ async function main() {
       await status(lucid, deployment);
       break;
     case "enter": {
-      const gracePeriodEnd = args.gracePeriodEnd ??
-        Date.now() + args.gracePeriodMs!;
-      await enterShutdown(lucid, deployment, gracePeriodEnd);
+      await enterShutdown(lucid, deployment, args);
       break;
     }
     case "reclaim-reference-scripts":
@@ -960,11 +1185,13 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(
-    `shutdown-deployment failed: ${
-      error instanceof Error ? error.message : String(error)
-    }`,
-  );
-  Deno.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(
+      `shutdown-deployment failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    Deno.exit(1);
+  });
+}

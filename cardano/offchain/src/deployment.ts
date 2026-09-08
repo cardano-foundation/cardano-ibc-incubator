@@ -11,6 +11,7 @@ import {
   ScriptHash,
   type SpendingValidator,
   UTxO,
+  validatorToRewardAddress,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import {
@@ -40,6 +41,7 @@ import {
   AuthToken,
   AuthTokenSchema,
   HostStateDatum,
+  HostStateNftRedeemer,
   HostStateRedeemer,
   MintPortRedeemer,
   ModuleRegistration,
@@ -447,11 +449,37 @@ export const createDeployment = async (
     Data.Tuple([Data.Bytes()]) as unknown as [string],
   );
 
+  // Recovery is authorized by a zero withdrawal from this script reward
+  // address. The client validator pins its hash so recovery cannot substitute
+  // another authority script.
+  const [recoverClientValidator, recoverClientScriptHash] = await readValidator(
+    "recover_client.recover_client.withdraw",
+    lucid,
+    [mintHostStateNFTPolicyId],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+  const recoverClientAddress = validatorToRewardAddress(
+    lucid.config().network || "Custom",
+    recoverClientValidator,
+  );
+  referredValidators.push(recoverClientValidator);
+
+  const credentialSchema = Data.Enum([
+    Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
+    Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
+  ]);
+
   // load spend client validator
   const [spendClientValidator, spendClientScriptHash, spendClientAddress] =
-    await readValidator("spending_client.spend_client.spend", lucid, [
-      mintHostStateNFTPolicyId,
-    ]);
+    await readValidator(
+      "spending_client.spend_client.spend",
+      lucid,
+      [mintHostStateNFTPolicyId, { Script: [recoverClientScriptHash] }],
+      Data.Tuple([Data.Bytes(), credentialSchema]) as unknown as [
+        string,
+        { Script: [string] },
+      ],
+    );
   referredValidators.push(spendClientValidator);
 
   // STT minting policies derive client/connection/channel token names from the
@@ -558,6 +586,17 @@ export const createDeployment = async (
     referredValidators,
     "initial validator preflight",
   );
+
+  // A withdrawal validator is only usable after its script stake credential
+  // exists in the ledger accounts state. Registration itself uses the legacy
+  // witness-free certificate, so it does not execute the validator.
+  await submitTx(
+    () => lucid.newTx().register.Stake(recoverClientAddress),
+    lucid,
+    "RegisterRecoverClient",
+    false,
+  );
+  reservedDeploymentRefs = await setSpendableWalletUtxos();
 
   // Deploy HostState (STT Architecture)
   const {
@@ -747,6 +786,13 @@ export const createDeployment = async (
     deployedAt,
     ics20PacketCodec: "ics20-classic-json-v1",
     validators: {
+      recoverClient: {
+        title: "recover_client.recover_client.withdraw",
+        script: recoverClientValidator.script,
+        scriptHash: recoverClientScriptHash,
+        address: recoverClientAddress,
+        refUtxo: refUtxosInfo[recoverClientScriptHash],
+      },
       spendClient: {
         title: "spending_client.spend_client.spend",
         script: spendClientValidator.script,
@@ -872,6 +918,7 @@ export const createDeployment = async (
     hostStateNFT: {
       policyId: hostStateNFT.policy_id,
       name: hostStateNFT.name,
+      script: hostStateNFT.script,
     },
     traceRegistry: {
       address: traceRegistry.base.address,
@@ -2387,9 +2434,9 @@ const deployHostState = async (
   };
 
   // Create and send tx to mint NFT and create HostState UTXO
-  // NFTRedeemer has only one variant (MintInitial) with no fields
-  // Use Data.void() as the redeemer (same as other simple mints)
-  const encodedRedeemer = Data.void();
+  const encodedRedeemer = Data.to("MintInitial", HostStateNftRedeemer, {
+    canonical: true,
+  });
 
   const encodedDatum = Data.to(initHostStateDatum, HostStateDatum, {
     canonical: true,
@@ -2437,6 +2484,7 @@ const deployHostState = async (
     hostStateNFT: {
       policy_id: mintHostStateNFTPolicyId,
       name: HOST_STATE_TOKEN_NAME,
+      script: mintHostStateNFTValidator.script,
     },
   };
 };

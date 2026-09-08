@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { convertString2Hex } from '@shared/helpers/hex';
@@ -79,6 +80,7 @@ describe('PacketService signer wallet selection for escrow', () => {
       {} as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      createTestTreeStore(),
     );
 
     // Keep this test scoped to escrow wallet-selection behavior instead of HostState internals.

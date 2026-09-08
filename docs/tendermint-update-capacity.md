@@ -83,7 +83,9 @@ normal update.
 ## Consensus-history processing (#726)
 
 Measured with Aiken `v1.1.21+42babe5`, stdlib `3.1.0` and tracing disabled.
-The baseline is `main` at `bbef7e9b2938637e4c0311fc267d8c36b8ce98b7`.
+The baseline is `main` at `bbef7e9b2938637e4c0311fc267d8c36b8ce98b7`,
+compared with the optimization at `cdb4148276f58bea39055a8a527f3c65854eabb4`.
+These measurements precede the client-recovery changes described below.
 Both versions use the same compile-time fixtures in
 [`consensus_history_benchmark.test.ak`](../cardano/onchain/lib/ibc/client/ics-007-tendermint-client/consensus_history_benchmark.test.ak).
 Only `check_for_misbehaviour` and `update_state` run inside each measured test.
@@ -113,18 +115,61 @@ use bounded scans to avoid index overhead. Larger indexes also use leaves of
 at most 16 keys. CPU and memory are lower in every measured case.
 List order, duplicates, expiry and independent truncation are unchanged.
 
-The compiled client grows from 15,315 to 15,568 bytes. It stays below the
-existing largest script of 15,640 bytes, so deployment budget ceilings are
-unchanged. The transaction-budget regression check passes.
+At those revisions, the compiled client grows from 15,315 to 15,568 bytes,
+below the then-largest script of 15,640 bytes, and the transaction-budget
+regression check passes. These historical measurements do not include the
+subsequent recovery implementation.
 
-To reproduce, run this from `cardano/onchain` on this branch. Fixtures are
-constants so their construction is excluded from the measured execution.
+To reproduce, run this from `cardano/onchain` at the optimization commit above.
+Fixtures are constants so their construction is excluded from the measured
+execution.
 
 ```sh
 aiken check --deny --trace-level silent --plain-numbers \
   -m 'consensus_history_benchmark.{..}'
 ```
 
-For the baseline, create a separate worktree at the commit above, copy only
+For the baseline, create a separate worktree at the baseline commit above, copy only
 `consensus_history_benchmark.test.ak` into the same directory there and run
 the same command. Keep the compiler and dependency versions identical.
+
+## Expired or frozen client recovery
+
+An expired or frozen Cardano-side Tendermint client cannot safely resume normal
+header updates because its previous trust period has ended. Recovery uses a
+second active client for the same chain as a new trusted checkpoint. The
+deployment authority submits `MsgRecoverClient`, naming the inactive subject
+client and the active substitute client.
+
+The recovery transaction keeps the subject client token and identifier, clears
+its frozen height, and copies the substitute's latest consensus state with its
+processed time and height. Existing connections and channels therefore continue
+to use the same client identifier. The substitute is read as a reference input
+and is not modified.
+
+This is not retroactive for deployments that use the previous `spend_client`
+script. Adding recovery changes that script's hash, and its existing `Other`
+branch cannot authorize a migration. Those deployments must deploy the new
+contracts and establish new clients, connections, and channels. A recovery
+operator runs `hermes tx recover-client` with the subject and substitute client
+identifiers. Hermes asks the Gateway to build the transaction, checks it, then
+signs and submits it with the selected deployment key. Hermes does not initiate
+recovery automatically.
+
+Recovery requires identical Tendermint parameters, including `chain_id` and
+`trusting_period`, and requires the substitute height to be strictly newer. The
+subject history is retained and only the oldest entry is removed when the
+300-state bound is already full. This keeps recovery itself to at most one
+consensus-state deletion. The broader incremental pruning work tracked by issue
+#557 is still required for ordinary updates after long downtime.
+
+The recovery validator still checks the retained lists, so its execution cost
+grows with the number of stored consensus states. The Aiken fixtures show this
+growth, but they include construction of the test transaction and are not
+ledger-evaluated transaction costs. A provider-completed transaction is still
+needed before claiming support at the full 300-state bound. The history work in
+issue #557 is still required.
+
+Recovery is an administrative trust decision rather than an ordinary relayer
+operation. For a client frozen by misbehaviour, operators should also wait for
+the counterparty evidence window to pass before selecting the substitute.

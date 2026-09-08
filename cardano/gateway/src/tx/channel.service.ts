@@ -66,12 +66,7 @@ import {
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
-import {
-  alignTreeWithChain,
-  computeRootWithCreateChannelUpdate,
-  computeRootWithUpdateChannelUpdate,
-  isTreeAligned,
-} from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore, StateRootResult, StaleIbcTreeStateError } from '../shared/helpers/ibc-state-root';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
@@ -83,6 +78,7 @@ export class ChannelService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   private async refreshWalletContext(address: string, context: string): Promise<void> {
@@ -116,7 +112,7 @@ export class ChannelService {
     nextSequenceSendSiblings: string[];
     nextSequenceRecvSiblings: string[];
     nextSequenceAckSiblings: string[];
-    commit: () => void;
+    commit: StateRootResult['commit'];
   }> {
     // Encode the exact bytes that the on-chain validator commits to the root.
     // These bytes must match Aiken's `cbor.serialise(...)` output.
@@ -139,7 +135,7 @@ export class ChannelService {
       'hex',
     );
 
-    return computeRootWithCreateChannelUpdate(
+    return this.ibcTreeStore.computeRootWithCreateChannelUpdate(
       oldRoot,
       portId,
       channelId,
@@ -179,7 +175,7 @@ export class ChannelService {
     portId: string,
     channelId: string,
     channelDatum: ChannelDatum,
-  ): Promise<{ newRoot: string; channelSiblings: string[]; commit: () => void }> {
+  ): Promise<{ newRoot: string; channelSiblings: string[]; commit: StateRootResult['commit'] }> {
     // Encode the exact bytes that the on-chain validator commits to the root.
     // These bytes must match Aiken's `cbor.serialise(...)` output.
     const channelValue = Buffer.from(
@@ -187,16 +183,18 @@ export class ChannelService {
       'hex',
     );
 
-    return computeRootWithUpdateChannelUpdate(oldRoot, portId, channelId, channelValue);
+    return this.ibcTreeStore.computeRootWithUpdateChannelUpdate(oldRoot, portId, channelId, channelValue);
   }
 
   /**
    * Ensure the in-memory Merkle tree is aligned with on-chain state
    */
-  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
-    if (!isTreeAligned(onChainRoot)) {
-      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
-      await alignTreeWithChain();
+  private async ensureTreeAligned(onChainRoot: string, hostStateUtxo: Pick<UTxO, 'txHash' | 'outputIndex'>): Promise<void> {
+    const snapshot = await this.ibcTreeStore.getAlignedSnapshot();
+    if (snapshot.root !== onChainRoot ||
+      snapshot.hostState.txHash !== hostStateUtxo.txHash ||
+      snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
+      throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
     }
   }
 
@@ -533,7 +531,7 @@ export class ChannelService {
     );
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenInitOperator.connectionId),
@@ -680,7 +678,7 @@ export class ChannelService {
     );
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenTryOperator.connectionId),
@@ -913,7 +911,7 @@ export class ChannelService {
     );
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       //TODO: recheck
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
@@ -1146,7 +1144,7 @@ export class ChannelService {
     );
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       //TODO: recheck
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
@@ -1344,7 +1342,7 @@ export class ChannelService {
     );
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     const channelSequence = channelCloseInitOperator.channel_id;
 
@@ -1500,7 +1498,7 @@ export class ChannelService {
       'host_state',
     );
 
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),

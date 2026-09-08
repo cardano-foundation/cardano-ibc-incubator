@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { QueryChannelsRequest } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { ChannelService } from '../services/channel.service';
@@ -100,6 +101,7 @@ describe('ChannelService channel listings', () => {
       {} as any,
       {} as any,
       {} as any,
+      createTestTreeStore(),
     );
   }
 

@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
@@ -91,6 +92,7 @@ describe('QueryService packet event queries', () => {
       {} as MithrilService,
       {} as DenomTraceService,
       {} as IbcTreeCacheService,
+      createTestTreeStore(),
     );
   });
 

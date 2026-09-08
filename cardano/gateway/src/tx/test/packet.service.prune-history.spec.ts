@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import * as Lucid from '@lucid-evolution/lucid';
 import { PacketService } from '../packet.service';
 import { convertString2Hex } from '../../shared/helpers/hex';
@@ -99,6 +100,7 @@ function createService(ordering: 'Unordered' | 'Ordered' | 'None' = 'Unordered')
     {} as any,
     {} as any,
     {} as any,
+      createTestTreeStore(),
   );
   jest.spyOn(service as any, 'buildHostStateUpdateForPrunePacketHistory').mockResolvedValue({
     hostStateUtxo: { txHash: 'host', outputIndex: 0, datum: 'host-datum', assets: {} },

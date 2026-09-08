@@ -8,12 +8,16 @@ import {
 import { MithrilService } from "../../shared/modules/mithril/mithril.service";
 import { HistoryService } from "./history.service";
 import { loadStakeWeightedStabilityEvidenceForTxHash } from "./stability-evidence";
-import { ICS23MerkleTree } from "../../shared/helpers/ics23-merkle-tree";
 import {
   ibcTreeCacheIdForHeight,
   ibcTreeCacheIdForRoot,
   IbcTreeCacheService,
 } from "../../shared/services/ibc-tree-cache.service";
+import {
+  IbcTreeStateStore,
+  StaleIbcTreeStateError,
+  type IbcTreeSnapshot,
+} from "../../shared/helpers/ibc-state-root";
 
 type ProofContextDeps = {
   logger: Logger;
@@ -24,24 +28,45 @@ type ProofContextDeps = {
   lightClientMode?: "mithril" | "stake-weighted-stability";
   maxAttempts?: number;
   delayMs?: number;
+  targetSnapshot?: Pick<IbcTreeSnapshot, "root" | "hostState">;
 };
 
 type HistoricalProofContextDeps = ProofContextDeps & {
   ibcTreeCacheService: IbcTreeCacheService;
   requestedHeight?: bigint;
+  ibcTreeStore: IbcTreeStateStore;
 };
 
-type ProofQueryContext =
-  | {
-    historical: false;
-    proofHeight: bigint;
+type ProofQueryContext = IbcTreeSnapshot & {
+  historical: boolean;
+  proofHeight: bigint;
+};
+
+export async function assertProofContextHostState(
+  proofContext: Pick<ProofQueryContext, "proofHeight" | "hostState" | "root">,
+  historyService: HistoryService,
+  lucidService: LucidService,
+): Promise<void> {
+  const { proofHeight, hostState: capturedHostState, root } = proofContext;
+  const hostState = await historyService.findHostStateUtxoAtOrBeforeBlockNo(proofHeight);
+  if (
+    hostState.txHash !== capturedHostState.txHash ||
+    hostState.outputIndex !== capturedHostState.outputIndex
+  ) {
+    throw new StaleIbcTreeStateError(
+      `HostState at proof height ${proofHeight} no longer identifies the captured output`,
+    );
   }
-  | {
-    historical: true;
-    proofHeight: bigint;
-    root: string;
-    tree: ICS23MerkleTree;
-  };
+  if (!hostState.datum) {
+    throw new GrpcInternalException(`HostState at proof height ${proofHeight} is missing datum`);
+  }
+  const datum = await lucidService.decodeDatum<HostStateDatum>(hostState.datum, "host_state");
+  if (datum.state.ibc_state_root.toLowerCase() !== root.toLowerCase()) {
+    throw new StaleIbcTreeStateError(
+      `HostState root at proof height ${proofHeight} does not match the captured tree`,
+    );
+  }
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -73,8 +98,7 @@ export async function resolveCurrentLiveHostStateTxHeight({
   );
 }
 
-// Proof-serving endpoints build ICS-23 proofs from the latest live IBC tree. They may advertise
-// a height only after the active Cardano light-client mode accepts the same HostState UTxO/root.
+// A proof's accepted height must identify the same HostState output as its captured tree.
 export async function resolveProofHeightForCurrentRoot({
   logger,
   lucidService,
@@ -84,38 +108,47 @@ export async function resolveProofHeightForCurrentRoot({
   lightClientMode = "stake-weighted-stability",
   maxAttempts = 10,
   delayMs = 1500,
+  targetSnapshot,
 }: ProofContextDeps): Promise<bigint> {
-  if (lightClientMode === "stake-weighted-stability") {
-    return resolveStabilityAcceptedProofHeightForCurrentRoot({
+  const proofHeight = lightClientMode === "stake-weighted-stability"
+    ? await resolveStabilityAcceptedProofHeightForCurrentRoot({
       logger,
       lucidService,
       historyService,
       context,
       maxAttempts,
       delayMs,
+      targetSnapshot,
+    })
+    : await resolveCertifiedProofHeightForCurrentRoot({
+      logger,
+      lucidService,
+      mithrilService,
+      historyService,
+      context,
+      maxAttempts,
+      delayMs,
+      targetSnapshot,
     });
+  if (targetSnapshot) {
+    await assertProofContextHostState({ ...targetSnapshot, proofHeight }, historyService, lucidService);
   }
-
-  return resolveCertifiedProofHeightForCurrentRoot({
-    logger,
-    lucidService,
-    mithrilService,
-    historyService,
-    context,
-    maxAttempts,
-    delayMs,
-  });
+  return proofHeight;
 }
 
 export async function resolveProofContextForQuery({
   requestedHeight,
   ibcTreeCacheService,
+  ibcTreeStore,
   ...deps
 }: HistoricalProofContextDeps): Promise<ProofQueryContext> {
   if (requestedHeight === undefined || requestedHeight === 0n) {
+    const snapshot = await ibcTreeStore.getAlignedSnapshot();
+    const proofHeight = await resolveProofHeightForCurrentRoot({ ...deps, targetSnapshot: snapshot });
     return {
+      ...snapshot,
       historical: false,
-      proofHeight: await resolveProofHeightForCurrentRoot(deps),
+      proofHeight,
     };
   }
 
@@ -164,7 +197,8 @@ export async function resolveProofContextForQuery({
     historical: true,
     proofHeight: requestedHeight,
     root,
-    tree: cached.tree,
+    hostState: { txHash: hostStateUtxo.txHash, outputIndex: hostStateUtxo.outputIndex },
+    tree: cached.tree.clone(),
   };
 }
 
@@ -176,19 +210,19 @@ async function resolveCertifiedProofHeightForCurrentRoot({
   context,
   maxAttempts = 10,
   delayMs = 1500,
+  targetSnapshot,
 }: ProofContextDeps): Promise<bigint> {
-  const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
-  if (!liveHostStateUtxo?.datum) {
-    throw new GrpcInternalException(
-      "IBC infrastructure error: HostState UTxO missing datum",
-    );
+  let captured = targetSnapshot;
+  if (!captured) {
+    const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+    if (!liveHostStateUtxo?.datum) {
+      throw new GrpcInternalException("IBC infrastructure error: HostState UTxO missing datum");
+    }
+    const liveHostStateDatum = await lucidService.decodeDatum<HostStateDatum>(liveHostStateUtxo.datum, "host_state");
+    captured = { hostState: liveHostStateUtxo, root: liveHostStateDatum.state.ibc_state_root };
   }
-
-  const liveHostStateDatum = await lucidService.decodeDatum<HostStateDatum>(
-    liveHostStateUtxo.datum,
-    "host_state",
-  );
-  const liveRoot = liveHostStateDatum.state.ibc_state_root;
+  const liveHostStateUtxo = captured.hostState;
+  const liveRoot = captured.root;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const snapshots = await mithrilService.getCardanoTransactionsSetSnapshot();
@@ -241,10 +275,11 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
   context,
   maxAttempts = 10,
   delayMs = 1500,
+  targetSnapshot,
 }: Omit<ProofContextDeps, "mithrilService" | "lightClientMode">): Promise<
   bigint
 > {
-  const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+  const liveHostStateUtxo = targetSnapshot?.hostState ?? await lucidService.findUtxoAtHostStateNFT();
 
   let lastStabilityError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {

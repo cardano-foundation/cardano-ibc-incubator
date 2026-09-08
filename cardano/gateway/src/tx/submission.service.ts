@@ -9,10 +9,10 @@ import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/servi
 import {
   CURRENT_IBC_TREE_CACHE_ID,
   IbcTreeCacheService,
-  ibcTreeCacheIdForHeight,
+  ibcTreeCacheIdForHostState,
   ibcTreeCacheIdForRoot,
 } from '../shared/services/ibc-tree-cache.service';
-import { getCurrentTree } from '../shared/helpers/ibc-state-root';
+import { IbcTreeSnapshot, IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
 import { HISTORY_SERVICE, HistoryService, HistoryTxEvidence } from '../query/services/history.service';
 import { QueryService } from '../query/services/query.service';
 import { GatewayEvent } from './tx-events.service';
@@ -31,6 +31,7 @@ export class SubmissionService {
   private readonly logger = new Logger(SubmissionService.name);
   private readonly observationInFlight = new Map<string, Promise<ObserveTxResponse>>();
   private readonly completedObservations = new Map<string, ObserveTxResponse>();
+  private treeCacheWrite: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly lucidService: LucidService,
@@ -40,6 +41,7 @@ export class SubmissionService {
     private readonly ibcTreeCacheService: IbcTreeCacheService,
     @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
     private readonly queryService: QueryService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   /**
@@ -303,11 +305,15 @@ export class SubmissionService {
       );
     }
 
-    if (!this.ibcTreePendingUpdatesService.commit(txHash, pending)) {
+    const publication = await this.ibcTreePendingUpdatesService.commit(txHash, pending, {
+      txHash,
+      outputIndex: confirmedHostState.outputIndex,
+    });
+    if (!publication) {
       throw new GrpcInternalException(`Pending IBC update for confirmed tx ${txHash} changed during finalization`);
     }
 
-    await this.persistIbcTreeUpdate(confirmedRoot, txHash, confirmedBlockNo);
+    await this.persistIbcTreeUpdate(publication.snapshot, txHash, confirmedBlockNo);
     return confirmedRoot;
   }
 
@@ -356,7 +362,7 @@ export class SubmissionService {
     // Tree updates are registered when building unsigned txs and keyed by tx hash.
     // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
     let pending = this.ibcTreePendingUpdatesService.take(txHash);
-    let confirmedRoot: string | undefined;
+    let confirmedHostState: ConfirmedHostStateEvidence | undefined;
 
     // Best-effort: if hashes don't line up due to encoding/formatting, compute the canonical body hash.
     if (!pending) {
@@ -370,8 +376,8 @@ export class SubmissionService {
     // confirmed transaction root. This keeps correctness strict (root must match exactly) while handling
     // signer/tooling paths that produce a different tx hash key than we recorded pre-signing.
     if (!pending) {
-      confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);
-      pending = this.ibcTreePendingUpdatesService.takeByExpectedRoot(confirmedRoot);
+      confirmedHostState = await this.readConfirmedTxHostState(signedTxCbor, txHash);
+      pending = this.ibcTreePendingUpdatesService.takeByExpectedRoot(confirmedHostState.root);
       if (pending) {
         this.logger.warn(
           `Resolved pending IBC update for tx ${txHash} via confirmed-tx root fallback (hash-key lookup missed)`,
@@ -389,9 +395,10 @@ export class SubmissionService {
     // We intentionally do not accept "latest HostState" here because that can
     // mask runtime failures and attach traces to the wrong tx context.
     // Verify the confirmed transaction root matches what we computed when building the tx.
-    if (!confirmedRoot) {
-      confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);
+    if (!confirmedHostState) {
+      confirmedHostState = await this.readConfirmedTxHostState(signedTxCbor, txHash);
     }
+    const confirmedRoot = confirmedHostState.root;
 
     if (confirmedRoot !== pending.expectedNewRoot) {
       throw new GrpcInternalException(
@@ -399,25 +406,45 @@ export class SubmissionService {
       );
     }
 
-    pending.commit();
+    let publication: Awaited<ReturnType<PendingTreeUpdate['commit']>>;
+    try {
+      publication = await pending.commit({ txHash, outputIndex: confirmedHostState.outputIndex });
+    } catch (error) {
+      // Live-state lookups can fail after confirmation. Keep the update retryable
+      // without replacing a registration that arrived while the lookup awaited.
+      if (!this.ibcTreePendingUpdatesService.peek(txHash)) {
+        this.ibcTreePendingUpdatesService.register(txHash, pending);
+      }
+      throw error;
+    }
 
-    await this.persistIbcTreeUpdate(confirmedRoot, txHash, confirmedBlockNo);
+    await this.persistIbcTreeUpdate(publication.snapshot, txHash, confirmedBlockNo);
 
     return confirmedRoot;
   }
 
-  private async persistIbcTreeUpdate(confirmedRoot: string, txHash: string, confirmedBlockNo: bigint): Promise<void> {
-    // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
+  private async persistIbcTreeUpdate(snapshot: IbcTreeSnapshot, txHash: string, confirmedBlockNo: bigint): Promise<void> {
     if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
-    try {
-      await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
-        CURRENT_IBC_TREE_CACHE_ID,
-        ibcTreeCacheIdForRoot(confirmedRoot),
-        ibcTreeCacheIdForHeight(confirmedBlockNo),
-      ]);
-    } catch (error) {
-      this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
-    }
+    this.treeCacheWrite = this.treeCacheWrite.then(async () => {
+      // A late confirmation owns its historical tree, never the current tree.
+      await this.ibcTreeCacheService.saveAliases(snapshot.tree, [
+        ibcTreeCacheIdForRoot(snapshot.root),
+        ibcTreeCacheIdForHostState(snapshot.hostState),
+      ], snapshot.hostState);
+
+      // Serialize writes and choose current state when this write runs, not when
+      // its transaction was observed. A rollback can legitimately lower height.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const current = this.ibcTreeStore.getSnapshot();
+        await this.ibcTreeCacheService.saveAliases(current.tree, [CURRENT_IBC_TREE_CACHE_ID], current.hostState);
+        if (this.ibcTreeStore.getSnapshot().version === current.version) return;
+      }
+      // Startup always checks this optional cache against the live HostState.
+      throw new Error('Current IBC tree cache became stale repeatedly during persistence');
+    }).catch((error) => {
+      this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash} at block ${confirmedBlockNo}: ${error?.message ?? error}`);
+    });
+    await this.treeCacheWrite;
   }
 
   private async findIndexedPacketEvents(txHash: string): Promise<GatewayEvent[]> {
@@ -436,32 +463,10 @@ export class SubmissionService {
     }
   }
 
-  private async readConfirmedTxRoot(signedTxCbor: string, txHash: string): Promise<string> {
-    try {
-      const hostStateDatumCbor = this.extractHostStateDatumCborFromSignedTx(signedTxCbor, txHash);
-      const hostStateDatumAtTx = await this.lucidService.decodeDatum<HostStateDatum>(hostStateDatumCbor, 'host_state');
-      return hostStateDatumAtTx.state.ibc_state_root;
-    } catch (error) {
-      throw new GrpcInternalException(
-        `Failed to resolve HostState root for tx ${txHash} from the confirmed transaction: ${error?.message ?? error}`,
-      );
-    }
-  }
-
-  private extractHostStateDatumCborFromSignedTx(signedTxCbor: string, txHash: string): string {
-    const hostStateOutput = this.findHostStateOutputInSignedTx(signedTxCbor, txHash);
-    const datumOption = hostStateOutput.datum?.();
-    const plutusDatum = datumOption?.as_datum?.();
-    if (!plutusDatum) {
-      throw new Error(`Missing inline HostState datum in confirmed tx ${txHash}`);
-    }
-    return plutusDatum.to_cbor_hex();
-  }
-
-  private findHostStateOutputInSignedTx(signedTxCbor: string, txHash: string): any {
+  private async readConfirmedTxHostState(signedTxCbor: string, txHash: string): Promise<ConfirmedHostStateEvidence> {
     const { CML } = this.lucidService.LucidImporter as any;
     const transaction = CML.Transaction.from_cbor_hex(signedTxCbor);
-    return this.findHostStateOutputInBody(transaction.body(), txHash).output;
+    return this.readConfirmedHostStateFromBody(transaction.body().to_cbor_hex(), txHash);
   }
 
   private findHostStateOutputInBody(body: any, txHash: string): { output: any; outputIndex: number } {

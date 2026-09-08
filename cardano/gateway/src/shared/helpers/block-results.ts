@@ -148,7 +148,8 @@ export function normalizeTxsResultFromClientDatum(
   ClientDatum: ClientDatum,
   clientEvent: string,
   clientId: string,
-  spendClientRedeemer: SpendClientRedeemer,
+  spendClientRedeemer: SpendClientRedeemer | undefined,
+  substituteClientId?: string,
 ): ResponseDeliverTx {
   const latestConsensusEntry = [...ClientDatum.state.consensusStates].at(-1);
   if (!latestConsensusEntry) {
@@ -160,6 +161,41 @@ export function normalizeTxsResultFromClientDatum(
   let clientMessageAnyHex = '';
   let eventType = clientEvent;
   let consensusHeight = latestHeight;
+
+  if (typeof spendClientRedeemer === 'object' && 'RecoverClient' in spendClientRedeemer) {
+    if (!substituteClientId) {
+      throw new Error('Cannot normalize a recover_client event without the substitute client ID');
+    }
+    return {
+      code: 0,
+      events: [
+        {
+          type: EVENT_TYPE_CLIENT.RECOVER_CLIENT,
+          event_attribute: [
+            {
+              key: ATTRIBUTE_KEY_CLIENT.SUBJECT_CLIENT_ID,
+              value: `${CLIENT_ID_PREFIX}-${clientId}`,
+            },
+            {
+              key: ATTRIBUTE_KEY_CLIENT.SUBSTITUTE_CLIENT_ID,
+              value: `${CLIENT_ID_PREFIX}-${substituteClientId}`,
+            },
+            {
+              key: ATTRIBUTE_KEY_CLIENT.CLIENT_TYPE,
+              value: CLIENT_ID_PREFIX,
+            },
+          ].map(
+            (attr) =>
+              <EventAttribute>{
+                key: attr.key.toString(),
+                value: attr.value.toString(),
+                index: true,
+              },
+          ),
+        },
+      ] as Event[],
+    } as unknown as ResponseDeliverTx;
+  }
 
   if (typeof spendClientRedeemer === 'object' && 'UpdateClient' in spendClientRedeemer) {
     const clientMessage = spendClientRedeemer.UpdateClient.msg;
@@ -246,6 +282,7 @@ function getEventPacketChannel(channelRedeemer: SpendChannelRedeemer): string {
   if ('SendPacket' in channelRedeemer) return EVENT_TYPE_PACKET.SEND_PACKET;
   if ('AcknowledgePacket' in channelRedeemer) return EVENT_TYPE_PACKET.ACKNOWLEDGE_PACKET;
   if ('TimeoutPacket' in channelRedeemer) return EVENT_TYPE_PACKET.TIMEOUT_PACKET;
+  if ('TimeoutOnClose' in channelRedeemer) return EVENT_TYPE_PACKET.TIMEOUT_ON_CLOSE_PACKET;
   return '';
 }
 
@@ -270,6 +307,9 @@ function packetFromChannelRedeemer(channelRedeemer: SpendChannelRedeemer): {
   }
   if ('TimeoutPacket' in channelRedeemer) {
     return { packet: channelRedeemer.TimeoutPacket.packet, acknowledgement: '' };
+  }
+  if ('TimeoutOnClose' in channelRedeemer) {
+    return { packet: channelRedeemer.TimeoutOnClose.packet, acknowledgement: '' };
   }
   throw new Error('Channel redeemer does not contain packet data');
 }

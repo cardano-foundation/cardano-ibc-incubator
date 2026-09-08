@@ -5,7 +5,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId}
+use cardano/assets.{AssetName, PolicyId, quantity_of}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -20,7 +20,7 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
-  SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  SendPacket, SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
 }
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_004/types/order.{Ordered}
@@ -922,6 +922,34 @@ fn validate_handle_packet_root(
           packet_commitment_siblings,
         )
       }
+      TimeoutOnClose { packet, .. } -> {
+        expect
+          channel_datum_mod.validate_timeout_packet(
+            channel_input_datum,
+            channel_output_datum,
+            packet,
+          )
+        let channel_root =
+          if channel_input_datum.state.channel != channel_output_datum.state.channel {
+            ibc_state_commitment.apply_update(
+              old_root,
+              host_channel_keys.channel_path(port_id, channel_id),
+              cbor.serialise(channel_input_datum.state.channel),
+              cbor.serialise(channel_output_datum.state.channel),
+              channel_siblings,
+            )
+          } else {
+            old_root
+          }
+        apply_packet_commitment_deletion(
+          channel_root,
+          channel_input_datum,
+          port_id,
+          channel_id,
+          packet.sequence,
+          packet_commitment_siblings,
+        )
+      }
       PruneChannelPacketHistory { sequence, .. } -> {
         // The prune marker validates the complete successor datum and the
         // authenticated absence proof. The HostState side binds that typed
@@ -1003,23 +1031,28 @@ validator host_state_stt(
 
     // 4. Validate state transition based on operation.
     when redeemer is {
-      FinalizeShutdown -> and {
+      FinalizeShutdown -> {
+        let Transaction { mint, .. } = transaction
+        and {
           list.has(extra_signatories, old_datum.deployer),
           validate_finalize_shutdown(
             old_datum,
             validator_utils.get_tx_valid_from(validity_range),
           ),
+          validator_utils.require_exact_marker_mint(
+            mint,
+            nft_policy,
+            host_state_token_name,
+            -1,
+          ),
           !list.any(
             outputs,
             fn(output) {
-              output.address == host_input.output.address && assets.has_nft(
-                output.value,
-                nft_policy,
-                host_state_token_name,
-              )
+              quantity_of(output.value, nft_policy, host_state_token_name) != 0
             },
           ),
         }
+      }
       _ -> {
         // Non-final transitions must re-create exactly one HostState UTxO.
         let host_output = find_host_state_output(outputs, nft_policy)
@@ -1158,7 +1191,12 @@ validator host_state_stt(
             }
           EnterShutdown { grace_period_end } -> and {
               list.has(extra_signatories, old_datum.deployer),
-              validate_enter_shutdown(old_datum, new_datum, grace_period_end),
+              validate_enter_shutdown(
+                old_datum,
+                new_datum,
+                grace_period_end,
+                validator_utils.get_tx_valid_to(validity_range),
+              ),
             }
           Heartbeat -> and {
               list.has(extra_signatories, old_datum.deployer),

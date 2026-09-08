@@ -9,8 +9,9 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, VerifyMembership, VerifyMembershipParams,
-  VerifyNonMembership, VerifyProofRedeemer,
+  BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
+  VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
+  VerifyProofRedeemer,
 }
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
@@ -426,7 +427,22 @@ fn existing_left_neighbor_path() -> MerklePath {
 }
 
 fn nonmembership_redeemer(path: MerklePath) -> VerifyProofRedeemer {
+  let params = valid_nonmembership_params(path)
   VerifyNonMembership {
+    cs: params.cs,
+    cons_state: params.cons_state,
+    height: params.height,
+    processed_time: params.processed_time,
+    processed_height: params.processed_height,
+    delay_time_period: params.delay_time_period,
+    delay_block_period: params.delay_block_period,
+    proof: params.proof,
+    path: params.path,
+  }
+}
+
+fn valid_nonmembership_params(path: MerklePath) -> VerifyNonMembershipParams {
+  VerifyNonMembershipParams {
     cs: client_state(),
     cons_state: nonmembership_consensus_state(),
     height: proof_height(),
@@ -496,6 +512,21 @@ test prop_proof_batch_accepts_two_items(_seed via fuzz.int()) {
     "batch",
     "verify",
     verify(BatchVerifyMembership([item, item])),
+  )
+    |> fuzz_dsl.assert_valid
+}
+
+test proof_mixed_batch_accepts_membership_and_nonmembership() {
+  fuzz_dsl.valid_check(
+    "proof",
+    "mixed_batch",
+    "verify",
+    verify(
+      BatchVerifyMembershipAndNonMembership {
+        memberships: [valid_membership_params()],
+        non_memberships: [valid_nonmembership_params(receipt_path(1))],
+      },
+    ),
   )
     |> fuzz_dsl.assert_valid
 }

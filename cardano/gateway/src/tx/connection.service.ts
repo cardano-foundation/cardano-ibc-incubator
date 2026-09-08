@@ -37,12 +37,7 @@ import {
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
-import { 
-	  computeRootWithCreateConnectionUpdate as computeRootWithCreateConnectionUpdateHelper,
-	  alignTreeWithChain,
-	  isTreeAligned,
-	  getCurrentTree,
-	} from '../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore, StateRootResult, StaleIbcTreeStateError } from '../shared/helpers/ibc-state-root';
 import { ConnectionEnd, State as ConnectionState } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/connection';
 import {
   ConnectionOpenAckOperator,
@@ -68,6 +63,7 @@ export class ConnectionService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
+    private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
   private async refreshWalletContext(address: string, context: string): Promise<void> {
@@ -285,18 +281,20 @@ export class ConnectionService {
     oldRoot: string,
     connectionId: string,
     connectionEndValue: Buffer,
-  ): { newRoot: string; connectionSiblings: string[]; commit: () => void } {
-    const result = computeRootWithCreateConnectionUpdateHelper(oldRoot, connectionId, connectionEndValue);
+  ): { newRoot: string; connectionSiblings: string[]; commit: StateRootResult['commit'] } {
+    const result = this.ibcTreeStore.computeRootWithCreateConnectionUpdate(oldRoot, connectionId, connectionEndValue);
     return { newRoot: result.newRoot, connectionSiblings: result.connectionSiblings, commit: result.commit };
   }
   
   /**
    * Ensure the in-memory Merkle tree is aligned with on-chain state
    */
-  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
-    if (!isTreeAligned(onChainRoot)) {
-      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
-      await alignTreeWithChain();
+  private async ensureTreeAligned(onChainRoot: string, hostStateUtxo: Pick<UTxO, 'txHash' | 'outputIndex'>): Promise<void> {
+    const snapshot = await this.ibcTreeStore.getAlignedSnapshot();
+    if (snapshot.root !== onChainRoot ||
+      snapshot.hostState.txHash !== hostStateUtxo.txHash ||
+      snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
+      throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
     }
   }
   /**
@@ -673,7 +671,7 @@ export class ConnectionService {
     );
     
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
     
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenInitOperator.clientId);
@@ -794,7 +792,7 @@ export class ConnectionService {
     );
     
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
     
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
@@ -1003,8 +1001,8 @@ export class ConnectionService {
 	    this.logConnOpenAckDebug(
 	      () => `[DEBUG] ConnOpenAck on_chain_ibc_state_root=${hostStateDatum.state.ibc_state_root.substring(0, 32)}...`,
 	    );
-	    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
-	    const treeRootAfterAlign = getCurrentTree().getRoot();
+	    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
+	    const treeRootAfterAlign = this.ibcTreeStore.getCurrentTree().getRoot();
 	    this.logConnOpenAckDebug(
 	      () => `[DEBUG] ConnOpenAck tree_root_after_align=${treeRootAfterAlign.substring(0, 32)}... matches_on_chain=${treeRootAfterAlign === hostStateDatum.state.ibc_state_root}`,
 	    );
@@ -1052,7 +1050,7 @@ export class ConnectionService {
     // old and new connection datums in this transaction, using the sibling hashes below.
 	    const connectionId = `${CONNECTION_ID_PREFIX}-${connectionOpenAckOperator.connectionSequence}`;
 	    const connectionKey = `connections/${connectionId}`;
-	    const treeOldConnectionValue = getCurrentTree().get(connectionKey);
+	    const treeOldConnectionValue = this.ibcTreeStore.getCurrentTree().get(connectionKey);
 	    const oldConnectionEndValue = Buffer.from(
 	      await encodeConnectionEndValue(connectionDatum.state, this.lucidService.LucidImporter),
 	      'hex',
@@ -1296,7 +1294,7 @@ export class ConnectionService {
     );
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing a witness.
-    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root, hostStateUtxo);
 
     // Get the token unit associated with the client
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(

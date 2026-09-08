@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -49,6 +50,7 @@ describe('QueryService denom trace queries', () => {
       {} as MithrilService,
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
+      createTestTreeStore(),
     );
   });
 

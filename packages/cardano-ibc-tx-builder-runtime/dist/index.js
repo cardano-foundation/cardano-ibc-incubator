@@ -981,10 +981,12 @@ async function findTransferEscrowShard(context, channelId, packetDenom, denomTok
         decodeTransferModuleDatum: (encodedDatum) => context.lucidService.decodeDatum(encodedDatum, 'transferModule'),
     }, channelId, packetDenom, denomToken, requiredAmount);
 }
-async function ensureTreeAlignedForRoot(context, onChainRoot) {
-    if (!(0, ibcStateRoot_1.isTreeAligned)(onChainRoot)) {
-        context.logger.warn(`IBC tree root mismatch for local tx builder runtime, aligning to ${onChainRoot.slice(0, 16)}...`);
-        await (0, ibcStateRoot_1.alignTreeWithChain)();
+async function ensureTreeAlignedForRoot(context, onChainRoot, hostStateUtxo) {
+    const snapshot = await context.treeStore.getAlignedSnapshot();
+    if (snapshot.root !== onChainRoot ||
+        snapshot.hostState.txHash !== hostStateUtxo.txHash ||
+        snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
+        throw new ibcStateRoot_1.StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
     }
 }
 async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot) {
@@ -993,9 +995,9 @@ async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, o
         throw new Error('HostState UTXO has no datum');
     }
     const hostStateDatum = await context.lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
-    await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root);
+    await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root, hostStateUtxo);
     const portId = convertHex2String(inputChannelDatum.port);
-    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings, packetCommitmentSiblings, packetReceiptSiblings, packetAcknowledgementSiblings, commit, } = await (0, ibcStateRoot_1.computeRootWithHandlePacketUpdate)(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
+    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings, packetCommitmentSiblings, packetReceiptSiblings, packetAcknowledgementSiblings, commit, } = await context.treeStore.computeRootWithHandlePacketUpdate(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
     const updatedHostStateDatum = {
         ...hostStateDatum,
         state: {
@@ -1083,12 +1085,13 @@ function createTxBuilderRuntime(config) {
         const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
         await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
-        (0, ibcStateRoot_1.initTreeServices)(kupoService, lucidService);
-        await timed(logger, '[context]', 'rebuild IBC state tree', () => (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService));
+        const treeStore = new ibcStateRoot_1.IbcTreeStateStore({ network: cardanoNetwork, hostStateNFT: deployment.hostStateNFT }, kupoService, lucidService);
+        await timed(logger, '[context]', 'rebuild IBC state tree', () => treeStore.rebuildTreeFromChain());
         logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
         return {
             deployment,
             lucidService,
+            treeStore,
             logger,
             cardanoNetwork,
             ogmiosEndpoint,

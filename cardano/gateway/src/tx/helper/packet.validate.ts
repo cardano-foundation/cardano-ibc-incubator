@@ -8,6 +8,7 @@ import {
   MsgAcknowledgement,
   MsgRecvPacket,
   MsgTimeout,
+  MsgTimeoutOnClose,
   MsgTransfer,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
@@ -16,6 +17,7 @@ import {
   PrunePacketHistoryOperator,
   RecvPacketOperator,
   SendPacketOperator,
+  TimeoutOnClosePacketOperator,
   TimeoutPacketOperator,
 } from '../dto';
 import { MsgPrunePacketHistory } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
@@ -247,6 +249,25 @@ export function validateAndFormatTimeoutPacketParams(
     },
   };
   return { constructedAddress, timeoutPacketOperator };
+}
+
+export function validateAndFormatTimeoutOnClosePacketParams(
+  data: MsgTimeoutOnClose,
+  ics20PacketCodec: Ics20PacketCodec = ICS20_PACKET_CODEC.STRICT,
+): {
+  constructedAddress: string;
+  timeoutOnClosePacketOperator: TimeoutOnClosePacketOperator;
+} {
+  const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data, ics20PacketCodec);
+  const decodedProofClose: MerkleProof = decodeMerkleProof(data.proof_close);
+
+  return {
+    constructedAddress,
+    timeoutOnClosePacketOperator: {
+      ...timeoutPacketOperator,
+      proofClose: initializeMerkleProof(decodedProofClose),
+    },
+  };
 }
 
 export function validateAndFormatAcknowledgementPacketParams(data: MsgAcknowledgement): {

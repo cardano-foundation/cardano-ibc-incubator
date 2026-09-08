@@ -111,6 +111,31 @@ test succeed_with_ordered_channel() {
   channel_datum_mod.validate_timeout_packet(input_datum, output_datum, packet)
 }
 
+test succeed_without_reopening_an_already_closed_unordered_channel() {
+  let (input_datum, _, packet) = setup_unordered()
+  let closed_input =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        channel: Channel { ..input_datum.state.channel, state: Closed },
+      },
+    }
+  let closed_output =
+    ChannelDatum {
+      ..closed_input,
+      state: ChannelDatumState {
+        ..closed_input.state,
+        packet_commitment: pairs.delete_first(
+          closed_input.state.packet_commitment,
+          packet.sequence,
+        ),
+      },
+    }
+
+  channel_datum_mod.validate_timeout_packet(closed_input, closed_output, packet)
+}
+
 test fail_if_channel_not_closed_with_ordered_channel() {
   let (input_datum, output_datum, packet) = setup_ordered()
 

@@ -1,5 +1,6 @@
 export * from "./HostState.ts";
 export * from "./HostStateRedeemer.ts";
+export * from "./HostStateNftRedeemer.ts";
 export * from "./AuthToken.ts";
 export * from "./MintPortRedeemer.ts";
 export * from "./TransferEscrowShardRedeemer.ts";

@@ -116,17 +116,17 @@ export type LoadedSendPacketContext = {
   };
 };
 
-export type HostStateUpdate = {
+export type HostStateUpdate<TreeCommit = () => void> = {
   hostStateUtxo: UTxO;
   encodedHostStateRedeemer: string;
   encodedUpdatedHostStateDatum: string;
   newRoot: string;
-  commit: () => void;
+  commit: TreeCommit;
 };
 
-export type PendingTreeUpdate = {
+export type PendingTreeUpdate<TreeCommit = () => void> = {
   expectedNewRoot: string;
-  commit: () => void;
+  commit: TreeCommit;
 };
 
 export type VoucherDenomTrace = {
@@ -134,9 +134,9 @@ export type VoucherDenomTrace = {
   baseDenom: string;
 };
 
-export type SendPacketBuildResult = {
+export type SendPacketBuildResult<TreeCommit = () => void> = {
   unsignedTx: TxBuilder;
-  pendingTreeUpdate: PendingTreeUpdate;
+  pendingTreeUpdate: PendingTreeUpdate<TreeCommit>;
   walletOverride?: {
     address: string;
     utxos: UTxO[];
@@ -214,7 +214,7 @@ export type TransferEscrowShardLookup =
       encodedUpdatedTransferModuleDatum: string;
     };
 
-export type SendPacketBuildDependencies = {
+export type SendPacketBuildDependencies<TreeCommit = () => void> = {
   loadContext: (
     sendPacketOperator: SendPacketOperator,
   ) => Promise<LoadedSendPacketContext>;
@@ -222,7 +222,7 @@ export type SendPacketBuildDependencies = {
     inputChannelDatum: ChannelDatumLike,
     outputChannelDatum: ChannelDatumLike,
     channelIdForRoot: string,
-  ) => Promise<HostStateUpdate>;
+  ) => Promise<HostStateUpdate<TreeCommit>>;
   resolveIbcDenomHash: (
     denomHash: string,
   ) => Promise<VoucherDenomTrace | null>;
@@ -254,10 +254,10 @@ export type SendPacketBuildDependencies = {
   internalError: (message: string) => Error;
 };
 
-export async function buildUnsignedSendPacketTx(
+export async function buildUnsignedSendPacketTx<TreeCommit = () => void>(
   sendPacketOperator: SendPacketOperator,
-  deps: SendPacketBuildDependencies,
-): Promise<SendPacketBuildResult> {
+  deps: SendPacketBuildDependencies<TreeCommit>,
+): Promise<SendPacketBuildResult<TreeCommit>> {
   const context = await deps.loadContext(sendPacketOperator);
 
   const retainedPacketEntryCount =
