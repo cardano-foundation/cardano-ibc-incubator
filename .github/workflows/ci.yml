@@ -86,6 +86,9 @@ jobs:
       - name: Test Aiken wire schema lock
         run: node --test scripts/ci/check-aiken-wire-schema.test.mjs
 
+      - name: Test image publishing guards
+        run: node --test scripts/ci/image-publishing.test.mjs
+
       - name: Test fuzz assurance helpers
         run: node --test scripts/ci/aiken-property-inventory.test.mjs scripts/ci/check-aiken-fuzz-coverage.test.mjs
 
