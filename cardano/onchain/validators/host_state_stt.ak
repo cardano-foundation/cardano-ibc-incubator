@@ -1191,7 +1191,12 @@ validator host_state_stt(
             }
           EnterShutdown { grace_period_end } -> and {
               list.has(extra_signatories, old_datum.deployer),
-              validate_enter_shutdown(old_datum, new_datum, grace_period_end),
+              validate_enter_shutdown(
+                old_datum,
+                new_datum,
+                grace_period_end,
+                validator_utils.get_tx_valid_to(validity_range),
+              ),
             }
           Heartbeat -> and {
               list.has(extra_signatories, old_datum.deployer),

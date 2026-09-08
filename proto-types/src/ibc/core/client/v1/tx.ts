@@ -138,6 +138,35 @@ export interface MsgSubmitMisbehaviour {
  * @see proto type: ibc.core.client.v1.MsgSubmitMisbehaviourResponse
  */
 export interface MsgSubmitMisbehaviourResponse {}
+/**
+ * MsgRecoverClient defines the message used to recover a frozen or expired client.
+ * @name MsgRecoverClient
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgRecoverClient
+ */
+export interface MsgRecoverClient {
+  /**
+   * client identifier for the frozen or expired client
+   */
+  subject_client_id: string;
+  /**
+   * client identifier for the active client used as the recovery checkpoint
+   */
+  substitute_client_id: string;
+  /**
+   * signer address
+   */
+  signer: string;
+}
+/**
+ * MsgRecoverClientResponse defines the Msg/RecoverClient response type.
+ * @name MsgRecoverClientResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgRecoverClientResponse
+ */
+export interface MsgRecoverClientResponse {
+  unsigned_tx?: Any;
+}
 function createBaseMsgCreateClient(): MsgCreateClient {
   return {
     client_state: undefined,
@@ -693,6 +722,135 @@ export const MsgSubmitMisbehaviourResponse = {
     return message;
   },
 };
+function createBaseMsgRecoverClient(): MsgRecoverClient {
+  return {
+    subject_client_id: "",
+    substitute_client_id: "",
+    signer: "",
+  };
+}
+/**
+ * MsgRecoverClient defines the message used to recover a frozen or expired client.
+ * @name MsgRecoverClient
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgRecoverClient
+ */
+export const MsgRecoverClient = {
+  typeUrl: "/ibc.core.client.v1.MsgRecoverClient",
+  encode(message: MsgRecoverClient, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.subject_client_id !== "") {
+      writer.uint32(10).string(message.subject_client_id);
+    }
+    if (message.substitute_client_id !== "") {
+      writer.uint32(18).string(message.substitute_client_id);
+    }
+    if (message.signer !== "") {
+      writer.uint32(26).string(message.signer);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgRecoverClient {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgRecoverClient();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.subject_client_id = reader.string();
+          break;
+        case 2:
+          message.substitute_client_id = reader.string();
+          break;
+        case 3:
+          message.signer = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MsgRecoverClient {
+    const obj = createBaseMsgRecoverClient();
+    if (isSet(object.subject_client_id)) obj.subject_client_id = String(object.subject_client_id);
+    if (isSet(object.substitute_client_id)) obj.substitute_client_id = String(object.substitute_client_id);
+    if (isSet(object.signer)) obj.signer = String(object.signer);
+    return obj;
+  },
+  toJSON(message: MsgRecoverClient): unknown {
+    const obj: any = {};
+    message.subject_client_id !== undefined && (obj.subject_client_id = message.subject_client_id);
+    message.substitute_client_id !== undefined && (obj.substitute_client_id = message.substitute_client_id);
+    message.signer !== undefined && (obj.signer = message.signer);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MsgRecoverClient>, I>>(object: I): MsgRecoverClient {
+    const message = createBaseMsgRecoverClient();
+    message.subject_client_id = object.subject_client_id ?? "";
+    message.substitute_client_id = object.substitute_client_id ?? "";
+    message.signer = object.signer ?? "";
+    return message;
+  },
+};
+function createBaseMsgRecoverClientResponse(): MsgRecoverClientResponse {
+  return {
+    unsigned_tx: undefined,
+  };
+}
+/**
+ * MsgRecoverClientResponse defines the Msg/RecoverClient response type.
+ * @name MsgRecoverClientResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgRecoverClientResponse
+ */
+export const MsgRecoverClientResponse = {
+  typeUrl: "/ibc.core.client.v1.MsgRecoverClientResponse",
+  encode(message: MsgRecoverClientResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgRecoverClientResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgRecoverClientResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MsgRecoverClientResponse {
+    const obj = createBaseMsgRecoverClientResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
+    return obj;
+  },
+  toJSON(message: MsgRecoverClientResponse): unknown {
+    const obj: any = {};
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MsgRecoverClientResponse>, I>>(
+    object: I,
+  ): MsgRecoverClientResponse {
+    const message = createBaseMsgRecoverClientResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
+    return message;
+  },
+};
 /** Msg defines the ibc/client Msg service. */
 export interface Msg {
   /** CreateClient defines a rpc handler method for MsgCreateClient. */
@@ -703,6 +861,8 @@ export interface Msg {
   UpgradeClient(request: MsgUpgradeClient): Promise<MsgUpgradeClientResponse>;
   /** SubmitMisbehaviour defines a rpc handler method for MsgSubmitMisbehaviour. */
   SubmitMisbehaviour(request: MsgSubmitMisbehaviour): Promise<MsgSubmitMisbehaviourResponse>;
+  /** RecoverClient defines a rpc handler method for MsgRecoverClient. */
+  RecoverClient(request: MsgRecoverClient): Promise<MsgRecoverClientResponse>;
 }
 export class MsgClientImpl implements Msg {
   private readonly rpc: Rpc;
@@ -712,6 +872,7 @@ export class MsgClientImpl implements Msg {
     this.UpdateClient = this.UpdateClient.bind(this);
     this.UpgradeClient = this.UpgradeClient.bind(this);
     this.SubmitMisbehaviour = this.SubmitMisbehaviour.bind(this);
+    this.RecoverClient = this.RecoverClient.bind(this);
   }
   CreateClient(request: MsgCreateClient): Promise<MsgCreateClientResponse> {
     const data = MsgCreateClient.encode(request).finish();
@@ -732,6 +893,11 @@ export class MsgClientImpl implements Msg {
     const data = MsgSubmitMisbehaviour.encode(request).finish();
     const promise = this.rpc.request("ibc.core.client.v1.Msg", "SubmitMisbehaviour", data);
     return promise.then((data) => MsgSubmitMisbehaviourResponse.decode(new BinaryReader(data)));
+  }
+  RecoverClient(request: MsgRecoverClient): Promise<MsgRecoverClientResponse> {
+    const data = MsgRecoverClient.encode(request).finish();
+    const promise = this.rpc.request("ibc.core.client.v1.Msg", "RecoverClient", data);
+    return promise.then((data) => MsgRecoverClientResponse.decode(new BinaryReader(data)));
   }
 }
 export const createClientImpl = (rpc: Rpc) => {

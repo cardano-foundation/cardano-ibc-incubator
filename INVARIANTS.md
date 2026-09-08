@@ -9,9 +9,10 @@ and their CI-enforced labels.
 
 - [Label Kinds And Depths](#label-kinds-and-depths)
 - [Composable Fixtures](#composable-fixtures)
-- [Client Update And Misbehaviour](#client-update-and-misbehaviour)
+- [Client Update, Recovery, And Misbehaviour](#client-update-recovery-and-misbehaviour)
   - [Header Update Transitions](#header-update-transitions)
   - [HostState Coupling](#hoststate-coupling)
+  - [Client Recovery](#client-recovery)
   - [Misbehaviour Detection](#misbehaviour-detection)
   - [Frozen Client Rejection](#frozen-client-rejection)
 - [Connection And Channel Handshakes](#connection-and-channel-handshakes)
@@ -160,7 +161,7 @@ The fuzz suite currently covers:
 - trace-registry rollover transitions in
   `cardano/onchain/validators/trace_registry_rollover.test.ak`.
 
-## Client Update And Misbehaviour
+## Client Update, Recovery, And Misbehaviour
 
 Required CI label suffixes:
 
@@ -170,6 +171,9 @@ Required CI label suffixes:
 - `contract.client.update.invalid_wrong_host_redeemer`
 - `unit.client.update.invalid_wrong_consensus_state`
 - `contract.client.update.invalid_missing_host_state`
+- `contract.client.recovery.valid_expired`
+- `contract.client.recovery.valid_frozen`
+- `contract.client.recovery.invalid_missing_authority`
 - `unit.client.misbehaviour.valid_same_height_conflict`
 - `unit.client.misbehaviour.valid_time_violation`
 - `unit.client.misbehaviour.invalid_monotonic_headers`
@@ -212,6 +216,20 @@ expensive Tendermint verification. They prove these invariants:
 - A client update must be co-spent with HostState.
 - The co-spent HostState must use the `UpdateClient` redeemer branch.
 - A different HostState redeemer branch cannot authorize a client update.
+
+### Client Recovery
+
+Covered by `contract.client.recovery.valid_expired`,
+`contract.client.recovery.valid_frozen`, and
+`contract.client.recovery.invalid_missing_authority`.
+
+The recovery properties exercise the withdrawal validator with an inactive
+subject client and a newer active substitute client. They prove these
+invariants:
+
+- Both expired and frozen subject clients can recover from a compatible active
+  substitute.
+- Recovery requires the deployment authority recorded in HostState.
 
 ### Misbehaviour Detection
 

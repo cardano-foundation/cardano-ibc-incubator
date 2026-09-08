@@ -36,6 +36,9 @@ export class BridgeManifestService {
         validators: {
           ...manifest.validators,
           host_state_stt: this.toGrpcValidator(manifest.validators.host_state_stt),
+          recover_client: manifest.validators.recover_client
+            ? this.toGrpcValidator(manifest.validators.recover_client)
+            : undefined,
           spend_client: this.toGrpcValidator(manifest.validators.spend_client),
           spend_connection: this.toGrpcValidator(manifest.validators.spend_connection),
           spend_channel: {
