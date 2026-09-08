@@ -1,0 +1,159 @@
+name: Build image
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        required: true
+        type: string
+      version-directory:
+        required: true
+        type: string
+      publish:
+        required: true
+        type: boolean
+    secrets:
+      DOCKER_REGISTRIES:
+        required: false
+      PRIVATE_DOCKER_REGISTRY_URL:
+        required: false
+      PRIVATE_DOCKER_REGISTRY_PASS:
+        required: false
+      HUB_DOCKER_COM_USER:
+        required: false
+      HUB_DOCKER_COM_PASS:
+        required: false
+
+# Permissions are inherited from the caller. PR callers have no package writes.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Select registry credentials before login
+        id: registries
+        shell: bash
+        env:
+          REGISTRIES: ${{ secrets.DOCKER_REGISTRIES }}
+          PRIVATE_REGISTRY: ${{ secrets.PRIVATE_DOCKER_REGISTRY_URL }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          selected=""
+          if [[ "${PUBLISH}" == "true" ]]; then
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              selected="${REGISTRIES}"
+            else
+              # Only the configured private host is allowed on a PR.
+              private_host="${PRIVATE_REGISTRY%%/*}"
+              case "${private_host}" in
+                ""|ghcr.io|docker.io|hub.docker.com)
+                  echo "A private registry must be configured for PR publishing." >&2
+                  exit 1 ;;
+              esac
+              read -ra registries <<< "${REGISTRIES}"
+              for registry in "${registries[@]}"; do
+                if [[ "${registry%%/*}" == "${private_host}" ]]; then
+                  selected="${selected} ${registry}"
+                fi
+              done
+            fi
+            if [[ -z "${selected// /}" ]]; then
+              echo "No publishing registry is configured." >&2
+              exit 1
+            fi
+          fi
+          echo "registries=${selected}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up trusted publishing credentials
+        id: baseline
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@9d6fdaf043772b4f9eb1ea4bcc994dc30b515a96
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.PRIVATE_DOCKER_REGISTRY_URL }}
+          PRIVATE_DOCKER_REGISTRY_USER: Deploy-Token
+          PRIVATE_DOCKER_REGISTRY_PASS: ${{ secrets.PRIVATE_DOCKER_REGISTRY_PASS }}
+          HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
+          HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
+          DOCKER_REGISTRIES: ${{ steps.registries.outputs.registries }}
+          artifact-version-directory: ${{ inputs.version-directory }}
+
+      - name: Validate release version
+        if: github.ref_type == 'tag'
+        env:
+          COMPONENT: ${{ inputs.component }}
+          COMPONENT_VERSION: ${{ steps.baseline.outputs.GUESSED_ARTIFACT_VERSION }}
+        shell: bash
+        run: |
+          expected_tag="${COMPONENT}/v${COMPONENT_VERSION}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Release tag '${GITHUB_REF_NAME}' does not match ${COMPONENT} version ${COMPONENT_VERSION}." >&2
+            echo "Expected tag: ${expected_tag}" >&2
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
+            echo "Release tags must point to a commit already merged into main." >&2
+            exit 1
+          fi
+
+      - name: Build and publish image
+        shell: bash
+        run: |
+          earthly +${{ inputs.component }} \
+            --PUSH=${{ inputs.publish }} \
+            --DOCKER_REGISTRIES="${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}" \
+            --DOCKER_IMAGES_EXTRA_TAGS="${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}"
+
+      - name: Prepare gateway release
+        if: github.ref_type == 'tag' && inputs.component == 'gateway'
+        shell: bash
+        env:
+          REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
+          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
+        run: |
+          release_dir="${RUNNER_TEMP}/gateway-release"
+          mkdir -p "${release_dir}"
+          archive="cardano-gateway-manifests-${IMAGE_TAG}.tar.gz"
+          tar -czf "${release_dir}/${archive}" manifests
+
+          read -ra registries <<< "${REGISTRIES}"
+          public_images=0
+          {
+            echo 'Published Cardano Gateway container images:'
+            for registry in "${registries[@]}"; do
+              case "${registry}" in
+                ghcr.io/*|docker.io/*) ;;
+                *) continue ;;
+              esac
+              image="${registry}/cardano-ibc-gateway"
+              digest=$(docker buildx imagetools inspect "${image}:${IMAGE_TAG}" \
+                --format '{{json .Manifest}}' | \
+                jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))')
+              printf "\n\`%s:%s\`\n\n\`%s@%s\`\n\n\`\`\`bash\ndocker pull %s:%s\n\`\`\`\n" \
+                "${image}" "${IMAGE_TAG}" "${image}" "${digest}" "${image}" "${IMAGE_TAG}"
+              public_images=$((public_images + 1))
+            done
+            if [[ "${public_images}" == 0 ]]; then
+              echo 'No public gateway image registry is configured.' >&2
+              exit 1
+            fi
+            printf "\nThe image includes tracked bridge manifests at \`/usr/src/app/manifests\`.\n"
+            printf "\nFor preprod, set \`BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json\`.\n"
+            printf "\nThe tracked manifests are also attached as \`%s\`.\n" "${archive}"
+          } > "${release_dir}/notes.md"
+
+      - name: Upload gateway release files
+        if: github.ref_type == 'tag' && inputs.component == 'gateway'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gateway-release
+          path: ${{ runner.temp }}/gateway-release/
+          if-no-files-found: error
+          overwrite: true
