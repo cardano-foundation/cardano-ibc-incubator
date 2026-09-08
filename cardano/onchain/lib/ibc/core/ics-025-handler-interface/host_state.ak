@@ -180,6 +180,29 @@ pub fn validate_version_increment(old: HostState, new: HostState) -> Bool {
   new.version == old.version + 1
 }
 
+fn validate_transition(
+  old: HostStateDatum,
+  new: HostStateDatum,
+  next_client_sequence: Int,
+  next_connection_sequence: Int,
+  next_channel_sequence: Int,
+  control: HostStateControl,
+) -> Bool {
+  new == HostStateDatum {
+    ..old,
+    state: HostState {
+      version: old.state.version + 1,
+      ibc_state_root: new.state.ibc_state_root,
+      next_client_sequence,
+      next_connection_sequence,
+      next_channel_sequence,
+      bound_port: [],
+      last_update_time: new.state.last_update_time,
+    },
+    control,
+  }
+}
+
 /// Validate HostState transition for client creation
 /// 
 /// Requirements:
@@ -191,15 +214,15 @@ pub fn validate_version_increment(old: HostState, new: HostState) -> Bool {
 /// - NFT policy unchanged
 pub fn validate_create_client(old: HostStateDatum, new: HostStateDatum) -> Bool {
   and {
-    validate_version_increment(old.state, new.state),
-    new.state.next_client_sequence == old.state.next_client_sequence + 1,
-    new.state.next_connection_sequence == old.state.next_connection_sequence,
-    new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == [],
+    validate_transition(
+      old,
+      new,
+      old.state.next_client_sequence + 1,
+      old.state.next_connection_sequence,
+      old.state.next_channel_sequence,
+      old.control,
+    ),
     old.control.shutdown |> is_active,
-    new.control == old.control,
-    new.nft_policy == old.nft_policy,
-    new.deployer == old.deployer,
   }
 }
 
@@ -209,30 +232,30 @@ pub fn validate_create_connection(
   new: HostStateDatum,
 ) -> Bool {
   and {
-    validate_version_increment(old.state, new.state),
-    new.state.next_client_sequence == old.state.next_client_sequence,
-    new.state.next_connection_sequence == old.state.next_connection_sequence + 1,
-    new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == [],
+    validate_transition(
+      old,
+      new,
+      old.state.next_client_sequence,
+      old.state.next_connection_sequence + 1,
+      old.state.next_channel_sequence,
+      old.control,
+    ),
     old.control.shutdown |> is_active,
-    new.control == old.control,
-    new.nft_policy == old.nft_policy,
-    new.deployer == old.deployer,
   }
 }
 
 /// Validate HostState transition for channel creation
 pub fn validate_create_channel(old: HostStateDatum, new: HostStateDatum) -> Bool {
   and {
-    validate_version_increment(old.state, new.state),
-    new.state.next_client_sequence == old.state.next_client_sequence,
-    new.state.next_connection_sequence == old.state.next_connection_sequence,
-    new.state.next_channel_sequence == old.state.next_channel_sequence + 1,
-    new.state.bound_port == [],
+    validate_transition(
+      old,
+      new,
+      old.state.next_client_sequence,
+      old.state.next_connection_sequence,
+      old.state.next_channel_sequence + 1,
+      old.control,
+    ),
     old.control.shutdown |> is_active,
-    new.control == old.control,
-    new.nft_policy == old.nft_policy,
-    new.deployer == old.deployer,
   }
 }
 
@@ -256,25 +279,24 @@ pub fn validate_bind_port(
     port_id_length >= 2,
     port_id_length <= 128,
     list.length(old.control.port_registry) < max_bound_ports,
-    validate_version_increment(old.state, new.state),
-    new.state.next_client_sequence == old.state.next_client_sequence,
-    new.state.next_connection_sequence == old.state.next_connection_sequence,
-    new.state.next_channel_sequence == old.state.next_channel_sequence,
-    // The legacy integer list is ABI padding and must never be repurposed.
-    new.state.bound_port == [],
-    // Port registrations are immutable and kept in canonical CBOR map order.
-    new.control == HostStateControl {
-      port_registry: pairs.insert_by_ascending_key(
-        old.control.port_registry,
-        port_id,
-        registration,
-        compare_port_keys_for_insertion,
-      ),
-      shutdown: old.control.shutdown,
-    },
+    validate_transition(
+      old,
+      new,
+      old.state.next_client_sequence,
+      old.state.next_connection_sequence,
+      old.state.next_channel_sequence,
+      // Port registrations are immutable and kept in canonical CBOR map order.
+      HostStateControl {
+        port_registry: pairs.insert_by_ascending_key(
+          old.control.port_registry,
+          port_id,
+          registration,
+          compare_port_keys_for_insertion,
+        ),
+        shutdown: old.control.shutdown,
+      },
+    ),
     old.control.shutdown |> is_active,
-    new.nft_policy == old.nft_policy,
-    new.deployer == old.deployer,
   }
 }
 
@@ -293,16 +315,14 @@ pub fn validate_update_only_root(
   old: HostStateDatum,
   new: HostStateDatum,
 ) -> Bool {
-  and {
-    validate_version_increment(old.state, new.state),
-    new.state.next_client_sequence == old.state.next_client_sequence,
-    new.state.next_connection_sequence == old.state.next_connection_sequence,
-    new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == [],
-    new.control == old.control,
-    new.nft_policy == old.nft_policy,
-    new.deployer == old.deployer,
-  }
+  validate_transition(
+    old,
+    new,
+    old.state.next_client_sequence,
+    old.state.next_connection_sequence,
+    old.state.next_channel_sequence,
+    old.control,
+  )
 }
 
 /// Validate a liveness heartbeat which advances the HostState UTxO without
@@ -328,21 +348,21 @@ pub fn validate_enter_shutdown(
   valid_to: Int,
 ) -> Bool {
   and {
-    validate_version_increment(old.state, new.state),
+    validate_transition(
+      old,
+      new,
+      old.state.next_client_sequence,
+      old.state.next_connection_sequence,
+      old.state.next_channel_sequence,
+      HostStateControl {
+        port_registry: old.control.port_registry,
+        shutdown: ShuttingDown { initiated_at: valid_to, grace_period_end },
+      },
+    ),
     old.control.shutdown |> is_active,
-    new.control == HostStateControl {
-      port_registry: old.control.port_registry,
-      shutdown: ShuttingDown { initiated_at: valid_to, grace_period_end },
-    },
     new.state.last_update_time == valid_to,
     grace_period_end >= valid_to + min_shutdown_grace_period_ms,
     new.state.ibc_state_root == old.state.ibc_state_root,
-    new.state.next_client_sequence == old.state.next_client_sequence,
-    new.state.next_connection_sequence == old.state.next_connection_sequence,
-    new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == [],
-    new.nft_policy == old.nft_policy,
-    new.deployer == old.deployer,
   }
 }
 

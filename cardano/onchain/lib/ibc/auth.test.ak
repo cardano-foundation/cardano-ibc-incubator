@@ -267,6 +267,39 @@ test test_contains_only_auth_tokens() {
       (valid_output, [auth_token], True),
       (invalid_output_missing, [auth_token], False),
       (invalid_output_dust, [auth_token], False),
+      (invalid_output_missing, [], True),
+      (valid_output, [auth_token, auth_token], False),
+      (
+        Output {
+          ..valid_output,
+          value: valid_output.value
+            |> add(auth_token.policy_id, auth_token.name, 1),
+        },
+        [auth_token, auth_token],
+        True,
+      ),
+      (
+        invalid_output_dust,
+        [
+          AuthToken {
+            policy_id: dust_token_policy_id,
+            name: dust_token_asset_name,
+          },
+          auth_token,
+        ],
+        True,
+      ),
+      (
+        invalid_output_dust,
+        [
+          auth_token,
+          AuthToken {
+            policy_id: dust_token_policy_id,
+            name: dust_token_asset_name,
+          },
+        ],
+        True,
+      ),
     ]
 
   test_cases
