@@ -1733,6 +1733,47 @@ async function createReferenceUtxos(
   }
 }
 
+export const loadTransferModuleValidator = (
+  lucid: LucidEvolution,
+  portToken: AuthToken,
+  identifierToken: AuthToken,
+  portId: string,
+  mintTransferEscrowShardPolicyId: string,
+  mintChannelPolicyId: string,
+  mintVoucherPolicyId: string,
+  hostStateNftPolicyId: string,
+) =>
+  readValidator(
+    "spending_transfer_module.spend_transfer_module.spend",
+    lucid,
+    [
+      portToken,
+      identifierToken,
+      portId,
+      mintTransferEscrowShardPolicyId,
+      mintChannelPolicyId,
+      mintVoucherPolicyId,
+      hostStateNftPolicyId,
+    ],
+    Data.Tuple([
+      AuthTokenSchema,
+      AuthTokenSchema,
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [
+      AuthToken,
+      AuthToken,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ],
+  );
+
 const deployTransferModule = async (
   lucid: LucidEvolution,
   hostStateStt: {
@@ -1819,35 +1860,15 @@ const deployTransferModule = async (
     spendTransferModuleValidator,
     spendTransferModuleScriptHash,
     spendTransferModuleAddress,
-  ] = await readValidator(
-    "spending_transfer_module.spend_transfer_module.spend",
+  ] = loadTransferModuleValidator(
     lucid,
-    [
-      portToken,
-      identifierToken,
-      portId,
-      mintTransferEscrowShardPolicyId,
-      mintChannelPolicyId,
-      mintVoucherPolicyId,
-      hostStateNFT.policy_id,
-    ],
-    Data.Tuple([
-      AuthTokenSchema,
-      AuthTokenSchema,
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [
-      AuthToken,
-      AuthToken,
-      string,
-      string,
-      string,
-      string,
-      string,
-    ],
+    portToken,
+    identifierToken,
+    portId,
+    mintTransferEscrowShardPolicyId,
+    mintChannelPolicyId,
+    mintVoucherPolicyId,
+    hostStateNFT.policy_id,
   );
 
   const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
@@ -2352,6 +2373,39 @@ const deployTraceRegistryDirectory = async (
   };
 };
 
+export const loadHostStateValidator = (
+  lucid: LucidEvolution,
+  hostPolicy: string,
+  clientHash: string,
+  connectionHash: string,
+  channelHash: string,
+  clientPolicy: string,
+  connectionPolicy: string,
+  channelPolicy: string,
+) =>
+  readValidator(
+    "host_state_stt.host_state_stt.spend",
+    lucid,
+    [
+      hostPolicy,
+      clientHash,
+      connectionHash,
+      channelHash,
+      clientPolicy,
+      connectionPolicy,
+      channelPolicy,
+    ],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [string, string, string, string, string, string, string],
+  );
+
 const deployHostState = async (
   lucid: LucidEvolution,
   nonceUtxo: UTxO,
@@ -2393,35 +2447,15 @@ const deployHostState = async (
   // 6) `connection_policy_id` (authenticates connection state tokens)
   // 7) `channel_policy_id` (authenticates channel state tokens)
   const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] =
-    await readValidator(
-      "host_state_stt.host_state_stt.spend",
+    loadHostStateValidator(
       lucid,
-      [
-        mintHostStateNFTPolicyId,
-        spendClientScriptHash,
-        spendConnectionScriptHash,
-        spendChannelScriptHash,
-        mintClientSttPolicyId,
-        mintConnectionSttPolicyId,
-        mintChannelSttPolicyId,
-      ],
-      Data.Tuple([
-        Data.Bytes(),
-        Data.Bytes(),
-        Data.Bytes(),
-        Data.Bytes(),
-        Data.Bytes(),
-        Data.Bytes(),
-        Data.Bytes(),
-      ]) as unknown as [
-        string,
-        string,
-        string,
-        string,
-        string,
-        string,
-        string,
-      ],
+      mintHostStateNFTPolicyId,
+      spendClientScriptHash,
+      spendConnectionScriptHash,
+      spendChannelScriptHash,
+      mintClientSttPolicyId,
+      mintConnectionSttPolicyId,
+      mintChannelSttPolicyId,
     );
 
   const HOST_STATE_TOKEN_NAME = fromText("ibc_host_state");

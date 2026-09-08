@@ -13,9 +13,15 @@ import {
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
   GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+  loadHostStateValidator,
+  loadTransferModuleValidator,
   sortPortRegistrations,
 } from "./deployment.ts";
-import { generatePortTokenName, readValidator } from "./utils.ts";
+import {
+  generateIdentifierTokenName,
+  generatePortTokenName,
+  readValidator,
+} from "./utils.ts";
 
 const makeValidator = (byteLength: number): Script => ({
   type: "PlutusV3",
@@ -142,27 +148,47 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
   assertEquals(spendClientReport?.oversized, false);
 });
 
-Deno.test("applied HostState validator fits a mainnet reference-script transaction", () => {
+Deno.test("fully applied production HostState fits the reference publication guard", () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
-  const [hostStateValidator] = readValidator(
-    "host_state_stt.host_state_stt.spend",
+  const [validator] = loadHostStateValidator(
     lucid,
-    Array.from(
-      { length: 7 },
-      (_, index) => (17 + index).toString(16).repeat(28),
-    ),
-    Data.Tuple(
-      Array.from({ length: 7 }, () => Data.Bytes()),
-    ) as unknown as string[],
+    "11".repeat(28),
+    "22".repeat(28),
+    "33".repeat(28),
+    "44".repeat(28),
+    "55".repeat(28),
+    "66".repeat(28),
+    "77".repeat(28),
   );
-  const [hostStateReport] = buildReferenceValidatorSizeReport(
-    [hostStateValidator],
-    16_384,
-  );
+  const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
+  assertEquals(report.oversized, false, JSON.stringify(report));
+});
 
-  assertEquals(hostStateReport.oversized, false);
+Deno.test("fully applied production transfer module fits the reference publication guard", async () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const portId = fromText("transfer");
+  const [validator] = loadTransferModuleValidator(
+    lucid,
+    { policy_id: "11".repeat(28), name: generatePortTokenName(portId) },
+    {
+      policy_id: "22".repeat(28),
+      name: await generateIdentifierTokenName({
+        transaction_id: "aa".repeat(32),
+        output_index: 0n,
+      }),
+    },
+    portId,
+    "33".repeat(28),
+    "44".repeat(28),
+    "55".repeat(28),
+    "66".repeat(28),
+  );
+  const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
+  assertEquals(report.oversized, false, JSON.stringify(report));
 });
 
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {

@@ -7,6 +7,7 @@ use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
 }
+use ibc/apps/transfer/channel_callback as transfer_channel_callback
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, RefundVoucher,
@@ -3477,5 +3478,113 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
     module_redeemer,
     shard_input.output_reference,
     transaction,
+  )
+}
+
+fn check_init_channel_callback(
+  mock: MockData,
+  outputs: List<Output>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+) -> Bool {
+  let channel =
+    transfer_channel_callback.validate_channel_open_init(
+      redeemers,
+      mock.channel_minting_policy_id,
+      AuthToken {
+        policy_id: mock.host_state_nft_policy_id,
+        name: "ibc_host_state",
+      },
+      outputs,
+      mock.port_id,
+      mock.channel_id,
+    )
+  channel.version == transfer_module_keys.version
+}
+
+fn check_ack_channel_callback(
+  mock: MockData,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+) -> Bool {
+  expect Some((channel, version)) =
+    transfer_channel_callback.validate_chan_open_ack(
+      [mock.channel_input],
+      redeemers,
+      mock.channel_minting_policy_id,
+      AuthToken {
+        policy_id: mock.host_state_nft_policy_id,
+        name: "ibc_host_state",
+      },
+      [mock.channel_output],
+      mock.port_id,
+      mock.channel_id,
+    )
+  channel.version == version
+}
+
+test channel_callback_helpers_accept_authenticated_channel() {
+  let mock = setup()
+  let init: Redeemer = ChanOpenInit
+  let ack: Redeemer =
+    ChanOpenAck {
+      counterparty_version: transfer_module_keys.version,
+      proof_try: mock.proof,
+      proof_height: mock.proof_height,
+    }
+  and {
+    check_init_channel_callback(
+      mock,
+      [mock.channel_output],
+      [Pair(Mint(mock.channel_minting_policy_id), init)],
+    ),
+    check_ack_channel_callback(
+      mock,
+      [Pair(Spend(mock.channel_input.output_reference), ack)],
+    ),
+  }
+}
+
+test channel_callback_rejects_duplicate_channel_outputs() fail {
+  let mock = setup()
+  let init: Redeemer = ChanOpenInit
+  check_init_channel_callback(
+    mock,
+    [mock.channel_output, mock.channel_output],
+    [Pair(Mint(mock.channel_minting_policy_id), init)],
+  )
+}
+
+test channel_callback_rejects_wrong_port_in_authenticated_output() fail {
+  let mock = setup()
+  let init: Redeemer = ChanOpenInit
+  expect InlineDatum(raw) = mock.channel_output.datum
+  expect datum: ChannelDatum = raw
+  let wrong_port_output =
+    Output {
+      ..mock.channel_output,
+      datum: InlineDatum(ChannelDatum { ..datum, port_id: "other-port" }),
+    }
+  check_init_channel_callback(
+    mock,
+    [wrong_port_output],
+    [Pair(Mint(mock.channel_minting_policy_id), init)],
+  )
+}
+
+test channel_callback_rejects_missing_mint_redeemer() fail {
+  let mock = setup()
+  check_init_channel_callback(mock, [mock.channel_output], [])
+}
+
+test channel_callback_rejects_missing_spend_redeemer() fail {
+  check_ack_channel_callback(setup(), [])
+}
+
+test channel_callback_rejects_wrong_spend_redeemer_constructor() fail {
+  let mock = setup()
+  let wrong: Redeemer =
+    ChanOpenConfirm { proof_ack: mock.proof, proof_height: mock.proof_height }
+  check_ack_channel_callback(
+    mock,
+    [Pair(Spend(mock.channel_input.output_reference), wrong)],
   )
 }

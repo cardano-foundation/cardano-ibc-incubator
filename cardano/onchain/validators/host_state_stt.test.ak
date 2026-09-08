@@ -4633,3 +4633,151 @@ test host_state_heartbeat_rejects_shutdown_state() fail {
     [trusted_deployer],
   )
 }
+
+fn preserves_successor_invariants(
+  old: HostStateDatum,
+  successor: HostStateDatum,
+  validate: fn(HostStateDatum, HostStateDatum) -> Bool,
+) -> Bool {
+  let invalid_successors =
+    [
+      HostStateDatum {
+        ..successor,
+        state: HostState { ..successor.state, version: old.state.version },
+      },
+      HostStateDatum { ..successor, nft_policy: "counterfeit host policy" },
+      HostStateDatum { ..successor, deployer: "replacement authority" },
+      HostStateDatum {
+        ..successor,
+        state: HostState { ..successor.state, bound_port: [1] },
+      },
+      HostStateDatum {
+        ..successor,
+        state: HostState {
+          ..successor.state,
+          next_client_sequence: successor.state.next_client_sequence + 1,
+        },
+      },
+      HostStateDatum {
+        ..successor,
+        state: HostState {
+          ..successor.state,
+          next_connection_sequence: successor.state.next_connection_sequence + 1,
+        },
+      },
+      HostStateDatum {
+        ..successor,
+        state: HostState {
+          ..successor.state,
+          next_channel_sequence: successor.state.next_channel_sequence + 1,
+        },
+      },
+    ]
+  and {
+    validate(old, successor),
+    list.all(invalid_successors, fn(invalid) { !validate(old, invalid) }),
+  }
+}
+
+test all_host_state_transitions_preserve_successor_invariants() {
+  let old =
+    test_host_state_datum(
+      test_host_state(empty_ibc_state_root, 7),
+      test_nft_policy(),
+    )
+  let successor =
+    HostStateDatum {
+      ..old,
+      state: HostState { ..old.state, version: old.state.version + 1 },
+    }
+  let registration = test_module_registration(test_module_script_hash())
+  let grace_period_end =
+    old.state.last_update_time + min_shutdown_grace_period_ms
+  and {
+    preserves_successor_invariants(
+      old,
+      HostStateDatum {
+        ..successor,
+        state: HostState { ..successor.state, next_client_sequence: 1 },
+      },
+      host_state.validate_create_client,
+    ),
+    preserves_successor_invariants(
+      old,
+      HostStateDatum {
+        ..successor,
+        state: HostState { ..successor.state, next_connection_sequence: 1 },
+      },
+      host_state.validate_create_connection,
+    ),
+    preserves_successor_invariants(
+      old,
+      HostStateDatum {
+        ..successor,
+        state: HostState { ..successor.state, next_channel_sequence: 1 },
+      },
+      host_state.validate_create_channel,
+    ),
+    preserves_successor_invariants(
+      old,
+      HostStateDatum {
+        ..successor,
+        control: HostStateControl {
+          ..successor.control,
+          port_registry: [Pair("transfer", registration)],
+        },
+      },
+      fn(old, new) {
+        host_state.validate_bind_port(old, new, "transfer", registration)
+      },
+    ),
+    preserves_successor_invariants(
+      old,
+      successor,
+      host_state.validate_update_only_root,
+    ),
+    preserves_successor_invariants(
+      old,
+      HostStateDatum {
+        ..successor,
+        control: HostStateControl {
+          ..successor.control,
+          shutdown: ShuttingDown {
+            initiated_at: old.state.last_update_time,
+            grace_period_end,
+          },
+        },
+      },
+      fn(old, new) {
+        host_state.validate_enter_shutdown(
+          old,
+          new,
+          grace_period_end,
+          old.state.last_update_time,
+        )
+      },
+    ),
+  }
+}
+
+test root_updates_remain_allowed_during_shutdown() {
+  let old =
+    test_host_state_datum_with_shutdown(
+      test_host_state(empty_ibc_state_root, 7),
+      test_nft_policy(),
+      ShuttingDown {
+        initiated_at: 7,
+        grace_period_end: 7 + min_shutdown_grace_period_ms,
+      },
+    )
+  let successor =
+    HostStateDatum {
+      ..old,
+      state: HostState { ..old.state, version: old.state.version + 1 },
+    }
+  preserves_successor_invariants(
+    old,
+    successor,
+    host_state.validate_update_only_root,
+  )
+}
