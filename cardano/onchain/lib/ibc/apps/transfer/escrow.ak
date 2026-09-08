@@ -126,10 +126,9 @@ pub fn validate_preserved_module_state(
   spent_input: Input,
   spend: TransferModuleSpend,
 ) -> Bool {
-  value_delta.validate_output_amount(
-    spent_input,
+  value_delta.validate_output_value(
     expect_module_state(spend),
-    assets.zero,
+    spent_input.output.value,
   )
 }
 
