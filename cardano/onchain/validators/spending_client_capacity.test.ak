@@ -1,6 +1,6 @@
 use aiken/cbor
 use aiken/interval
-use cardano/address.{from_script}
+use cardano/address.{Script, from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
@@ -270,6 +270,7 @@ const non_adjacent_mixed_fixture =
 fn check_update_client_capacity(fixture: CapacityFixture) -> Bool {
   spending_client.spend_client.spend(
     fixture.host_state_nft_policy_id,
+    Script("mock recover client script hash"),
     fixture.datum,
     fixture.redeemer,
     fixture.output_reference,

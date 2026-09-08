@@ -7,7 +7,7 @@ use cardano/transaction.{
 }
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateControl, HostStateDatum, ShuttingDown,
-  empty_ibc_state_root, host_state_token_name,
+  empty_ibc_state_root, host_state_token_name, min_shutdown_grace_period_ms,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   FinalizeShutdown, Heartbeat, HostStateRedeemer,
@@ -16,6 +16,11 @@ use reference_validator
 
 const trusted_deployer =
   #"00000000000000000000000000000000000000000000000000000000"
+
+const shutdown_initiated_at = 2000
+
+const shutdown_grace_period_end =
+  shutdown_initiated_at + min_shutdown_grace_period_ms
 
 fn test_nft_policy() -> PolicyId {
   #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
@@ -52,7 +57,7 @@ fn shutdown_host_state_datum(grace_period_end: Int) -> HostStateDatum {
       next_connection_sequence: 0,
       next_channel_sequence: 0,
       bound_port: [],
-      last_update_time: 2000,
+      last_update_time: shutdown_initiated_at,
     }
 
   HostStateDatum {
@@ -108,7 +113,7 @@ fn normal_reclaim_transaction(valid_from: Int, signed: Bool) -> Transaction {
   Transaction {
     ..placeholder,
     inputs: [ordinary_reference_input()],
-    reference_inputs: [host_state_input(5000)],
+    reference_inputs: [host_state_input(shutdown_grace_period_end)],
     extra_signatories: if signed {
       [trusted_deployer]
     } else {
@@ -126,12 +131,15 @@ fn terminal_transaction(
   let spend_redeemer: Redeemer = host_redeemer
   Transaction {
     ..placeholder,
-    inputs: [host_state_input(5000), terminal_reference_input()],
+    inputs: [
+      host_state_input(shutdown_grace_period_end),
+      terminal_reference_input(),
+    ],
     outputs,
     mint,
     redeemers: [Pair(Spend(host_ref()), spend_redeemer)],
     extra_signatories: [trusted_deployer],
-    validity_range: interval.after(5000),
+    validity_range: interval.after(shutdown_grace_period_end),
   }
 }
 
@@ -146,19 +154,29 @@ fn validate(transaction: Transaction) -> Bool {
 }
 
 test reference_validator_reclaim_succeeds_after_grace_period() {
-  validate(normal_reclaim_transaction(5000, True))
+  validate(normal_reclaim_transaction(shutdown_grace_period_end, True))
 }
 
 test reference_validator_reclaim_fails_before_grace_period() fail {
-  validate(normal_reclaim_transaction(4999, True))
+  validate(normal_reclaim_transaction(shutdown_grace_period_end - 1, True))
+}
+
+test reference_validator_reclaim_fails_without_finite_lower_bound() fail {
+  let transaction = normal_reclaim_transaction(shutdown_grace_period_end, True)
+  validate(
+    Transaction {
+      ..transaction,
+      validity_range: interval.before(shutdown_grace_period_end + 1),
+    },
+  )
 }
 
 test reference_validator_reclaim_fails_without_deployer_signature() fail {
-  validate(normal_reclaim_transaction(5000, False))
+  validate(normal_reclaim_transaction(shutdown_grace_period_end, False))
 }
 
 test reference_validator_preserves_terminal_host_reference() fail {
-  let transaction = normal_reclaim_transaction(5000, True)
+  let transaction = normal_reclaim_transaction(shutdown_grace_period_end, True)
   validate(Transaction { ..transaction, inputs: [terminal_reference_input()] })
 }
 
@@ -196,7 +214,10 @@ test reference_validator_terminal_reclaim_rejects_wrong_reference_script() fail 
   validate(
     Transaction {
       ..transaction,
-      inputs: [host_state_input(5000), ordinary_reference_input()],
+      inputs: [
+        host_state_input(shutdown_grace_period_end),
+        ordinary_reference_input(),
+      ],
     },
   )
 }

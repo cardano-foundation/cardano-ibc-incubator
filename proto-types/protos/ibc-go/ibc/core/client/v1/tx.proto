@@ -20,6 +20,9 @@ service Msg {
 
   // SubmitMisbehaviour defines a rpc handler method for MsgSubmitMisbehaviour.
   rpc SubmitMisbehaviour(MsgSubmitMisbehaviour) returns (MsgSubmitMisbehaviourResponse);
+
+  // RecoverClient defines a rpc handler method for MsgRecoverClient.
+  rpc RecoverClient(MsgRecoverClient) returns (MsgRecoverClientResponse);
 }
 
 // MsgCreateClient defines a message to create an IBC client
@@ -103,3 +106,20 @@ message MsgSubmitMisbehaviour {
 // MsgSubmitMisbehaviourResponse defines the Msg/SubmitMisbehaviour response
 // type.
 message MsgSubmitMisbehaviourResponse {}
+
+// MsgRecoverClient defines the message used to recover a frozen or expired client.
+message MsgRecoverClient {
+  option (gogoproto.goproto_getters) = false;
+
+  // client identifier for the frozen or expired client
+  string subject_client_id = 1;
+  // client identifier for the active client used as the recovery checkpoint
+  string substitute_client_id = 2;
+  // signer address
+  string signer = 3;
+}
+
+// MsgRecoverClientResponse defines the Msg/RecoverClient response type.
+message MsgRecoverClientResponse {
+  google.protobuf.Any unsigned_tx = 1;
+}
