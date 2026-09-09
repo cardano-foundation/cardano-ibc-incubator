@@ -16,7 +16,7 @@ export type ConsensusStateDatum = {
 
 type LucidModule = typeof import('@lucid-evolution/lucid');
 
-export function consensusStateDatumSchema({ Data }: LucidModule) {
+function consensusStateDatumSchema({ Data }: LucidModule) {
   return Data.Object({
     clientToken: Data.Object({ policyId: Data.Bytes(), name: Data.Bytes() }),
     height: Data.Object({ revisionNumber: Data.Integer(), revisionHeight: Data.Integer() }),
