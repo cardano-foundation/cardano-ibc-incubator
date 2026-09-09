@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
   CML,
   Constr,
@@ -12,13 +12,22 @@ import {
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
+import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import {
   consensusHistoryKey,
   type ConsensusHistoryRecord,
+  type ConsensusHistoryWitness,
   encodeConsensusHistoryRecord,
   recordToConstr,
 } from "../src/consensus_history_commitment.ts";
-import { DeploymentIbcTree } from "../src/deployment.ts";
+import {
+  ConsensusHistoryRecovery,
+  type HistoryDeployment,
+  type HistorySource,
+  type HistoryTransaction,
+} from "../src/consensus_history_recovery.ts";
+import { IncrementalIbcTree } from "../src/incremental_ibc_tree.ts";
 import { hashSha3_256, readValidator } from "../src/utils.ts";
 import adjacent from "./fixtures/tendermint-adjacent.json" with {
   type: "json",
@@ -89,10 +98,17 @@ function clientDatum(tip: ConsensusHistoryRecord): Constr<Data> {
   ]);
 }
 
-async function setup(count: number, updating: boolean) {
+async function setup(
+  count: number,
+  updating: boolean,
+  publishInitialization = false,
+  canonicalEncoding = true,
+) {
+  const encode = (data: Data) =>
+    Data.to<Data>(data, undefined, { canonical: canonicalEncoding });
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account]);
-  emulator.time = NOW;
+  emulator.time = NOW - (publishInitialization ? 20_000 : 0);
   Object.assign(emulator.protocolParameters, {
     maxTxSize: MAX_BYTES,
     maxTxExMem: MAX_MEMORY,
@@ -138,7 +154,23 @@ async function setup(count: number, updating: boolean) {
     return utxo;
   }
 
-  const tree = new DeploymentIbcTree();
+  const database = new DatabaseSync(":memory:");
+  const tree = new IncrementalIbcTree(database);
+  const transactions: HistoryTransaction[] = [];
+  function retainTransaction(txHash: string, cbor: string) {
+    // The emulator has no block-history API. Retain accepted signed bodies
+    // with synthetic block identifiers, not predecoded consensus snapshots.
+    transactions.push({
+      txHash,
+      cbor,
+      blockHash: createHash("sha256").update(
+        `emulator-block-${emulator.blockHeight}`,
+      ).digest("hex"),
+      blockHeight: emulator.blockHeight,
+      slot: emulator.slot,
+      transactionIndex: 0,
+    });
+  }
   const selected = record(1n);
   const started = performance.now();
   for (let n = 1; n <= count; n++) {
@@ -174,7 +206,33 @@ async function setup(count: number, updating: boolean) {
   const root = await tree.getRoot();
   const buildMilliseconds = Math.round(performance.now() - started);
   const state = new Constr(0, [client, root]);
-  let stateUtxo = seed(address, encode(state), { [UNIT]: 1n });
+  let stateUtxo: UTxO;
+  if (publishInitialization) {
+    // The NFT is a trusted emulator seed. Its initial checkpoint/root must
+    // still appear in a real submitted transaction for history-only recovery.
+    assertEquals(count, 0, "recovery bootstrap cannot hide historical leaves");
+    const funding = seed(account.address, Data.void(), { [UNIT]: 1n });
+    const created = await lucid.newTx().collectFrom([funding])
+      .pay.ToContract(address, { kind: "inline", value: encode(state) }, {
+        [UNIT]: 1n,
+      }).complete();
+    const signed = await created.sign.withWallet().complete();
+    assert(signed.toCBOR().length / 2 <= MAX_BYTES - 750);
+    assertEquals(await signed.submit(), signed.toHash());
+    emulator.awaitBlock();
+    retainTransaction(signed.toHash(), signed.toCBOR());
+    stateUtxo = await lucid.utxoByUnit(UNIT);
+  } else {
+    stateUtxo = seed(address, encode(state), { [UNIT]: 1n });
+  }
+  const deployment: HistoryDeployment = {
+    clientToken: TOKEN,
+    stateAddress: address,
+    bootstrap: {
+      txHash: stateUtxo.txHash,
+      outputIndex: stateUtxo.outputIndex,
+    },
+  };
   const scriptUtxo = seed(account.address, Data.void(), {}, script);
 
   const minAda = (utxo: UTxO) =>
@@ -211,6 +269,7 @@ async function setup(count: number, updating: boolean) {
     );
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
+    retainTransaction(signed.toHash(), signed.toCBOR());
     let measuredOutput = utxoToCore(stateUtxo).output();
     const outputs = transaction.body().outputs();
     for (let n = 0; n < outputs.len(); n++) {
@@ -387,44 +446,88 @@ async function setup(count: number, updating: boolean) {
     );
     return result;
   }
-  return { lookup, update };
+  let closed = false;
+  return {
+    lookup,
+    update,
+    deployment,
+    source(): HistorySource {
+      const retained = structuredClone(transactions);
+      return {
+        async *transactions() {
+          for (const transaction of retained) yield transaction;
+        },
+        currentState: () => lucid.utxoByUnit(UNIT),
+      };
+    },
+    async recoveredLookup(witness: ConsensusHistoryWitness) {
+      return await finish(
+        lookupBuilder(
+          new Constr(0, [recordToConstr(witness.record), witness.siblings]),
+          witness.record.height.revisionHeight,
+        ),
+        "historical lookup after deleting the local database",
+      );
+    },
+    close() {
+      if (!closed) database.close();
+      closed = true;
+    },
+  };
 }
 
 Deno.test("signed proof-backed history transactions at 1, 100 and 10000 records", async () => {
   const sizes: number[] = [];
   for (const count of [1, 100, 10_000]) {
     const read = await setup(count, false);
-    const result = await read.lookup();
-    assert(result);
-    sizes.push(result.signedBytes);
+    try {
+      const result = await read.lookup();
+      assert(result);
+      sizes.push(result.signedBytes);
+    } finally {
+      read.close();
+    }
     const write = await setup(count, true);
-    await write.update("", true);
+    try {
+      await write.update("", true);
+    } finally {
+      write.close();
+    }
   }
   assert(
     Math.max(...sizes) - Math.min(...sizes) < 100,
     "history length must not grow the lookup transaction",
   );
-  await (await setup(1, true)).update();
+  const adjacent = await setup(1, true);
+  try {
+    await adjacent.update();
+  } finally {
+    adjacent.close();
+  }
 });
 
 Deno.test("history lookups reject modified records, malformed proofs and unauthenticated roots", async () => {
   const fixture = await setup(2, false);
-  for (
-    const mutation of [
-      "time",
-      "height",
-      "revision",
-      "client",
-      "root",
-      "proof",
-      "short",
-      "long",
-      "unauthenticated-root",
-      "early-delay",
-      "expired",
-    ]
-  ) {
-    await fixture.lookup(mutation);
+  try {
+    for (
+      const mutation of [
+        "time",
+        "height",
+        "revision",
+        "client",
+        "root",
+        "proof",
+        "short",
+        "long",
+        "unauthenticated-root",
+        "early-delay",
+        "expired",
+      ]
+    ) {
+      await fixture.lookup(mutation);
+    }
+  } finally {
+    fixture.close();
   }
 });
 
@@ -433,6 +536,209 @@ Deno.test("signed updates reject wrong roots, metadata and invalid Tendermint si
     const mutation of ["root", "metadata", "archived-metadata", "signature"]
   ) {
     const fixture = await setup(1, true);
-    await fixture.update(mutation);
+    try {
+      await fixture.update(mutation);
+    } finally {
+      fixture.close();
+    }
+  }
+});
+
+Deno.test("recover from submitted transaction history after deleting every local history cache", async () => {
+  const directory = await Deno.makeTempDir({ prefix: "ibc-history-recovery-" });
+  const applicationDirectory = `${directory}/application`;
+  await Deno.mkdir(applicationDirectory);
+  const databasePath = `${applicationDirectory}/history.sqlite`;
+  const fixture = await setup(0, true, true);
+  let recovery = new ConsensusHistoryRecovery(databasePath, fixture.deployment);
+  try {
+    // Start with an actual published checkpoint and no hidden history records.
+    const initialSource = fixture.source();
+    const initialLive = await initialSource.currentState();
+    const initial = await recovery.recover(initialSource);
+    assertThrows(() =>
+      recovery.witness(TOKEN, {
+        revisionNumber: 1n,
+        revisionHeight: 2n,
+      })
+    );
+    await fixture.update();
+    const live = await fixture.source().currentState();
+    const expectedRoot = (Data.from(live.datum!) as Constr<Data>)
+      .fields[1] as string;
+    assert(initial.root !== expectedRoot);
+    assertEquals((await recovery.recover(fixture.source())).root, expectedRoot);
+
+    // A saved database is not authority to serve proofs after a restart. It
+    // must first agree with the independently queried current state again.
+    recovery.close();
+    recovery = new ConsensusHistoryRecovery(databasePath, fixture.deployment);
+    assertThrows(() =>
+      recovery.witness(TOKEN, {
+        revisionNumber: 1n,
+        revisionHeight: 2n,
+      })
+    );
+    assertEquals((await recovery.recover(fixture.source())).root, expectedRoot);
+
+    // Simulate the archival source rolling back to the initial transaction.
+    // The emulator itself is not forked. Replay must discard the removed
+    // archival commitment before accepting the canonical update again.
+    assertEquals(
+      (await recovery.recover({
+        transactions: initialSource.transactions,
+        currentState: () => Promise.resolve(initialLive),
+      })).root,
+      initial.root,
+    );
+    assertThrows(() =>
+      recovery.witness(TOKEN, {
+        revisionNumber: 1n,
+        revisionHeight: 2n,
+      })
+    );
+    assertEquals((await recovery.recover(fixture.source())).root, expectedRoot);
+
+    // Retain only raw transactions as the simulated archival node would. Both
+    // the witness-builder tree and the recovery database are then discarded.
+    const chain = fixture.source();
+    fixture.close();
+    recovery.close();
+    await Deno.remove(applicationDirectory, { recursive: true });
+    await Deno.mkdir(applicationDirectory);
+    recovery = new ConsensusHistoryRecovery(databasePath, fixture.deployment);
+    const recovered = await recovery.recover(chain);
+    assertEquals(recovered.root, expectedRoot);
+    const witness = recovery.witness(TOKEN, {
+      revisionNumber: 1n,
+      revisionHeight: 2n,
+    });
+    assertEquals(witness.root, expectedRoot);
+    assertEquals(witness.record.processedTime, NOW_NS - 5_000_000_000n);
+    assertEquals(
+      witness.record.processedHeight,
+      (NOW_NS - 5_000_000_000n) / 4_000_000_000n,
+    );
+    const modified = {
+      ...witness,
+      record: {
+        ...witness.record,
+        processedTime: witness.record.processedTime - 1n,
+      },
+    };
+    await assertRejects(() => fixture.recoveredLookup(modified));
+    await fixture.recoveredLookup(witness);
+    console.log(JSON.stringify({
+      operation: "cold recovery from accepted transaction CBOR",
+      retainedHistoricalRecords: 1,
+      ...recovered,
+    }));
+  } finally {
+    recovery.close();
+    fixture.close();
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("recovery rejects missing or corrupted history and a mismatched live state", async () => {
+  const directory = await Deno.makeTempDir({
+    prefix: "ibc-history-rejection-",
+  });
+  const fixture = await setup(0, true, true);
+  try {
+    await fixture.update();
+    const source = fixture.source();
+    const live = await source.currentState();
+    const transactions: HistoryTransaction[] = [];
+    for await (const transaction of source.transactions()) {
+      transactions.push(transaction);
+    }
+    const changedState = structuredClone(live);
+    const datum = Data.from(changedState.datum!) as Constr<Data>;
+    datum.fields[1] = "ff".repeat(32);
+    changedState.datum = encode(datum);
+    const cases = [
+      { name: "missing bootstrap", transactions: transactions.slice(1), live },
+      {
+        name: "missing predecessor update",
+        transactions: transactions.filter((tx) => tx.txHash !== live.txHash),
+        live,
+      },
+      {
+        name: "corrupt transaction hash",
+        transactions: transactions.map((tx, n) =>
+          n === 1 ? { ...tx, txHash: "ff".repeat(32) } : tx
+        ),
+        live,
+      },
+      {
+        name: "corrupt transaction body",
+        transactions: transactions.map((tx, n) =>
+          n === 1 ? { ...tx, cbor: "00" } : tx
+        ),
+        live,
+      },
+      { name: "wrong live root", transactions, live: changedState },
+      {
+        name: "wrong live output reference",
+        transactions,
+        live: { ...live, outputIndex: live.outputIndex + 1 },
+      },
+    ];
+    for (const [n, candidate] of cases.entries()) {
+      const recovery = new ConsensusHistoryRecovery(
+        `${directory}/${n}.sqlite`,
+        fixture.deployment,
+      );
+      try {
+        await assertRejects(
+          () =>
+            recovery.recover({
+              async *transactions() {
+                for (const transaction of candidate.transactions) {
+                  yield transaction;
+                }
+              },
+              currentState: () => Promise.resolve(candidate.live),
+            }),
+          Error,
+          "",
+          candidate.name,
+        );
+      } finally {
+        recovery.close();
+      }
+    }
+  } finally {
+    fixture.close();
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("recover public commitments from signed transactions with indefinite CBOR constructors", async () => {
+  const directory = await Deno.makeTempDir({ prefix: "ibc-history-encoding-" });
+  const fixture = await setup(0, true, true, false);
+  const recovery = new ConsensusHistoryRecovery(
+    `${directory}/history.sqlite`,
+    fixture.deployment,
+  );
+  try {
+    await fixture.update();
+    fixture.close();
+    const source = fixture.source();
+    const live = await source.currentState();
+    const expectedRoot = (Data.from(live.datum!) as Constr<Data>)
+      .fields[1] as string;
+    assertEquals((await recovery.recover(source)).root, expectedRoot);
+    const witness = recovery.witness(TOKEN, {
+      revisionNumber: 1n,
+      revisionHeight: 2n,
+    });
+    assertEquals(witness.record.processedTime, NOW_NS - 5_000_000_000n);
+    await fixture.recoveredLookup(witness);
+  } finally {
+    recovery.close();
+    fixture.close();
+    await Deno.remove(directory, { recursive: true });
   }
 });
