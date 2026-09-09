@@ -8,8 +8,9 @@
     "@lucid-evolution/provider": "npm:@lucid-evolution/provider@0.1.90",
     "@lucid-evolution/utils": "npm:@lucid-evolution/utils@0.1.66",
     "@noble/hashes/blake2b": "npm:@noble/hashes@1.8.0/blake2b",
+    "@harmoniclabs/cbor": "npm:@harmoniclabs/cbor@1.6.6",
     "ws": "npm:ws@7.5.10",
-    "fast-check": "npm:fast-check@3.23.2"
+    "pg": "npm:pg@8.16.0"
   },
   "nodeModulesDir": "auto",
   "lint": {
@@ -27,7 +28,8 @@
     "test:channels:fuzz": "deno test --allow-env --allow-read src/channel-actions.fuzz.test.ts",
     "test:shutdown": "deno test --allow-env --allow-read scripts/shutdown-deployment.test.ts",
     "test:consensus-history": "deno test --allow-env --allow-read scripts/consensus-history.test.ts",
-    "test:consensus-history-prototype": "deno test --allow-env --allow-read src/consensus_history_commitment.test.ts scripts/consensus-history-prototype.test.ts",
+    "test:consensus-history-prototype": "deno test --allow-env --allow-read --allow-write --allow-run=aiken src/consensus_history_commitment.test.ts src/incremental_ibc_tree.test.ts src/plutus_serialise.test.ts src/consensus_history_recovery.test.ts src/consensus_history_yaci.test.ts scripts/consensus-history-prototype.test.ts",
+    "recover:consensus-history": "deno run --allow-read --allow-write --allow-env --allow-net scripts/recover-consensus-history.ts",
     "shutdown:deployment": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts",
     "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi --allow-write index.ts"
   }
