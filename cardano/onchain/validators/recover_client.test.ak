@@ -1,15 +1,13 @@
-use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/fuzz
 use aiken/interval
-use aiken/math
 use cardano/address
 use cardano/assets.{from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
-  Transaction, Withdraw,
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction, Withdraw,
 }
 use host_state_stt
 use ibc/auth.{AuthToken, generate_token_name}
@@ -17,12 +15,11 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  RecoverClient, RecoverClientWithdrawal, RecoverClientWithdrawalRedeemer,
+  ArchiveConsensusState, RecoverClient, RecoverClientWithdrawal,
+  RecoverClientWithdrawalRedeemer,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
-use ibc/client/ics_007_tendermint_client/cometbft/constants.{
-  max_consensus_state_size,
-}
+use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
@@ -34,7 +31,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
-use ibc/utils/bits
+use ibc/testing/sparse_tree
+use minting_client_stt
 use recover_client
 use spending_client
 
@@ -57,6 +55,9 @@ const other_client_script_hash =
 
 const recovery_script_hash =
   #"55555555555555555555555555555555555555555555555555555555"
+
+const consensus_script_hash =
+  #"56565656565656565656565656565656565656565656565656565656"
 
 const connection_script_hash =
   #"57575757575757575757575757575757575757575757575757575757"
@@ -162,11 +163,6 @@ fn expected_recovered(
     pairs.get_first(substitute.state.processed_times, substitute_height)
   expect Some(substitute_processed_height) =
     pairs.get_first(substitute.state.processed_heights, substitute_height)
-  let final_index =
-    math.min(
-      max_consensus_state_size - 1,
-      list.length(subject.state.consensus_states),
-    )
 
   ClientDatum {
     ..subject,
@@ -176,121 +172,11 @@ fn expected_recovered(
         frozen_height: zero_height(),
         latest_height: substitute_height,
       },
-      consensus_states: [
-        Pair(substitute_height, substitute_consensus),
-        ..subject.state.consensus_states
-      ]
-        |> list.slice(from: 0, to: final_index),
-      processed_times: [
-        Pair(substitute_height, substitute_time),
-        ..subject.state.processed_times
-      ]
-        |> list.slice(from: 0, to: final_index),
-      processed_heights: [
-        Pair(substitute_height, substitute_processed_height),
-        ..subject.state.processed_heights
-      ]
-        |> list.slice(from: 0, to: final_index),
+      consensus_states: [Pair(substitute_height, substitute_consensus)],
+      processed_times: [Pair(substitute_height, substitute_time)],
+      processed_heights: [Pair(substitute_height, substitute_processed_height)],
     },
   }
-}
-
-fn commitment_key_bit(key_hash: ByteArray, depth: Int) -> Int {
-  let byte_index = 7 - depth / 8
-  let bit_in_byte = depth % 8
-  bits.shr(builtin.index_bytearray(key_hash, byte_index), bit_in_byte) % 2
-}
-
-fn shares_path_above(
-  first_hash: ByteArray,
-  second_hash: ByteArray,
-  depth: Int,
-) -> Bool {
-  let next_depth = depth + 1
-  if next_depth == ibc_state_commitment.merkle_depth_bits {
-    True
-  } else {
-    commitment_key_bit(first_hash, next_depth) == commitment_key_bit(
-      second_hash,
-      next_depth,
-    ) && shares_path_above(first_hash, second_hash, next_depth)
-  }
-}
-
-fn sparse_subtree_root(
-  entries: Pairs<ByteArray, ByteArray>,
-  depth: Int,
-) -> ByteArray {
-  when entries is {
-    [] -> ibc_state_commitment.empty_hash
-    _ ->
-      if depth < 0 {
-        expect [Pair(key, value)] = entries
-        ibc_state_commitment.leaf_hash(
-          builtin.sha2_256(key),
-          ibc_state_commitment.value_hash(value),
-        )
-      } else {
-        let left =
-          list.filter(
-            entries,
-            fn(entry) {
-              commitment_key_bit(builtin.sha2_256(entry.1st), depth) == 0
-            },
-          )
-        let right =
-          list.filter(
-            entries,
-            fn(entry) {
-              commitment_key_bit(builtin.sha2_256(entry.1st), depth) == 1
-            },
-          )
-        ibc_state_commitment.inner_hash(
-          sparse_subtree_root(left, depth - 1),
-          sparse_subtree_root(right, depth - 1),
-        )
-      }
-  }
-}
-
-fn sparse_siblings_go(
-  entries: Pairs<ByteArray, ByteArray>,
-  target_key: ByteArray,
-  target_hash: ByteArray,
-  depth: Int,
-) -> List<ByteArray> {
-  if depth == ibc_state_commitment.merkle_depth_bits {
-    []
-  } else {
-    let target_bit = commitment_key_bit(target_hash, depth)
-    let sibling_entries =
-      list.filter(
-        entries,
-        fn(entry) {
-          let entry_hash = builtin.sha2_256(entry.1st)
-          entry.1st != target_key && commitment_key_bit(entry_hash, depth) != target_bit && shares_path_above(
-            entry_hash,
-            target_hash,
-            depth,
-          )
-        },
-      )
-    [
-      sparse_subtree_root(sibling_entries, depth - 1),
-      ..sparse_siblings_go(entries, target_key, target_hash, depth + 1)
-    ]
-  }
-}
-
-fn sparse_siblings(
-  entries: Pairs<ByteArray, ByteArray>,
-  target_key: ByteArray,
-) -> List<ByteArray> {
-  sparse_siblings_go(entries, target_key, builtin.sha2_256(target_key), 0)
-}
-
-fn sparse_root(entries: Pairs<ByteArray, ByteArray>) -> ByteArray {
-  sparse_subtree_root(entries, ibc_state_commitment.merkle_depth_bits - 1)
 }
 
 const host_reference =
@@ -395,10 +281,15 @@ fn recovery_transaction_with_host(
   let subject_redeemer: Redeemer =
     RecoverClient { substitute_token: substitute.token }
   let withdrawal_redeemer: Redeemer = recovery_redeemer(subject, substitute)
+  let record = consensus_history.from_client(subject)
+  let archive_token = consensus_history.token(subject.token, record.height)
+  let archive_redeemer: Redeemer =
+    ArchiveConsensusState { client_token: subject.token }
   let base_redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(Spend(host_reference), host_redeemer),
       Pair(Spend(subject_reference), subject_redeemer),
+      Pair(Mint(client_policy), archive_redeemer),
     ]
   let redeemers =
     if include_withdrawal_redeemer {
@@ -426,7 +317,14 @@ fn recovery_transaction_with_host(
     outputs: [
       client_output(recovered, client_script_hash),
       host_output_with_datum(new_host_datum),
+      Output {
+        address: address.from_script(consensus_script_hash),
+        value: from_asset(archive_token.policy_id, archive_token.name, 1),
+        datum: InlineDatum(record),
+        reference_script: None,
+      },
     ],
+    mint: from_asset(archive_token.policy_id, archive_token.name, 1),
     withdrawals,
     validity_range: interval.between(1900, 2000),
     extra_signatories: signers,
@@ -534,8 +432,9 @@ fn run_atomic_recovery_with_policy(
       Pair(substitute_client_key, cbor.serialise(substitute.state.client_state)),
       Pair(substitute_consensus_key, cbor.serialise(substitute_consensus)),
     ]
-  let old_root = sparse_root(old_entries)
-  let client_state_siblings = sparse_siblings(old_entries, subject_client_key)
+  let old_root = sparse_tree.root(old_entries)
+  let client_state_siblings =
+    sparse_tree.siblings(old_entries, subject_client_key)
   let root_after_client_update =
     ibc_state_commitment.apply_update(
       old_root,
@@ -551,9 +450,10 @@ fn run_atomic_recovery_with_policy(
       Pair(substitute_client_key, cbor.serialise(substitute.state.client_state)),
       Pair(substitute_consensus_key, cbor.serialise(substitute_consensus)),
     ]
-  expect root_after_client_update == sparse_root(entries_after_client_update)
+  expect
+    root_after_client_update == sparse_tree.root(entries_after_client_update)
   let consensus_state_siblings =
-    sparse_siblings(entries_after_client_update, subject_new_consensus_key)
+    sparse_tree.siblings(entries_after_client_update, subject_new_consensus_key)
   let new_root =
     ibc_state_commitment.apply_update(
       root_after_client_update,
@@ -567,7 +467,7 @@ fn run_atomic_recovery_with_policy(
       Pair(subject_new_consensus_key, cbor.serialise(subject_new_consensus)),
       ..entries_after_client_update
     ]
-  expect new_root == sparse_root(final_entries)
+  expect new_root == sparse_tree.root(final_entries)
   let old_host_datum = host_datum_at(old_root, 0)
   let output_root =
     if correct_output_root {
@@ -596,7 +496,15 @@ fn run_atomic_recovery_with_policy(
       host_update_redeemer,
     )
 
-  expect
+  and {
+    minting_client_stt.mint_client_stt.mint(
+      client_script_hash,
+      host_policy,
+      consensus_script_hash,
+      ArchiveConsensusState { client_token: subject.token },
+      client_policy,
+      transaction,
+    ),
     spending_client.spend_client.spend(
       host_policy,
       address.Script(recovery_script_hash),
@@ -619,8 +527,6 @@ fn run_atomic_recovery_with_policy(
       connection_script_hash,
       channel_script_hash,
       client_policy,
-      "unused connection minting policy",
-      "unused channel minting policy",
       Some(old_host_datum),
       host_update_redeemer,
       host_reference,
@@ -696,104 +602,42 @@ fn substitute_after(history_size: Int) -> ClientDatum {
   )
 }
 
-fn run_recovery_with_history(history_size: Int) -> Bool {
-  let subject = subject_with_history(history_size)
-  let substitute = substitute_after(history_size)
-  run_recovery(
+test recovery_rejects_legacy_300_entry_datum() fail {
+  let subject = subject_with_history(300)
+  let substitute = substitute_after(300)
+  client_datum_mod.recover_state(
     subject,
     substitute,
     expected_recovered(subject, substitute),
-    client_script_hash,
-    [deployer],
   )
 }
 
-fn recovery_transaction_fixture_with_history(history_size: Int) -> Bool {
-  let subject = subject_with_history(history_size)
-  let substitute = substitute_after(history_size)
+test recovery_keeps_one_tip_after_300_updates() {
+  // The previous 299 records live in separate UTxOs and are not recovery inputs.
+  let subject = datum(subject_token(), height(300), 0, zero_height())
+  let substitute = substitute_after(300)
+  let recovered = expected_recovered(subject, substitute)
   let transaction =
     recovery_transaction(
       subject,
       substitute,
-      expected_recovered(subject, substitute),
+      recovered,
       client_script_hash,
       [deployer],
       True,
       True,
     )
-
-  and {
-    list.length(transaction.inputs) == 2,
-    list.length(transaction.reference_inputs) == 1,
-    list.length(transaction.outputs) == 2,
-    list.length(transaction.withdrawals) == 1,
-    list.length(transaction.extra_signatories) == 1,
-    list.length(transaction.redeemers) == 3,
-  }
-}
-
-// These large-history tests are diagnostic cost probes. A passing result only
-// means the transition is correct. It does not mean the full three-script
-// recovery transaction fits public execution limits. The 150 and 300 entry
-// withdrawal-validator probes already exceed the public memory limit alone.
-test recovery_capacity_fixture_300_cost() {
-  let subject = subject_with_history(max_consensus_state_size)
-  let substitute = substitute_after(max_consensus_state_size)
-  let recovered = expected_recovered(subject, substitute)
-
-  and {
-    list.length(subject.state.consensus_states) == max_consensus_state_size,
-    list.length(subject.state.processed_times) == max_consensus_state_size,
-    list.length(subject.state.processed_heights) == max_consensus_state_size,
-    list.length(recovered.state.consensus_states) == max_consensus_state_size,
-    list.length(recovered.state.processed_times) == max_consensus_state_size,
-    list.length(recovered.state.processed_heights) == max_consensus_state_size,
-  }
-}
-
-test recover_state_at_capacity_evicts_only_one_tail() {
-  let subject = subject_with_history(max_consensus_state_size)
-  let substitute = substitute_after(max_consensus_state_size)
-  let recovered = expected_recovered(subject, substitute)
-
   and {
     client_datum_mod.recover_state(subject, substitute, recovered),
-    list.length(recovered.state.consensus_states) == max_consensus_state_size,
-    pairs.has_key(recovered.state.consensus_states, height(2)),
-    !pairs.has_key(recovered.state.consensus_states, height(1)),
+    list.length(recovered.state.consensus_states) == 1,
+    list.length(recovered.state.processed_times) == 1,
+    list.length(recovered.state.processed_heights) == 1,
+    list.length(transaction.inputs) == 2,
+    list.length(transaction.reference_inputs) == 1,
+    list.length(transaction.outputs) == 3,
+    list.length(transaction.redeemers) == 4,
+    run_recovery(subject, substitute, recovered, client_script_hash, [deployer]),
   }
-}
-
-test recover_client_validator_history_50_cost() {
-  run_recovery_with_history(50)
-}
-
-test recovery_transaction_fixture_history_50_cost() {
-  recovery_transaction_fixture_with_history(50)
-}
-
-test recover_client_validator_history_100_cost() {
-  run_recovery_with_history(100)
-}
-
-test recovery_transaction_fixture_history_100_cost() {
-  recovery_transaction_fixture_with_history(100)
-}
-
-test recover_client_validator_history_150_cost() {
-  run_recovery_with_history(150)
-}
-
-test recovery_transaction_fixture_history_150_cost() {
-  recovery_transaction_fixture_with_history(150)
-}
-
-test recover_client_validator_history_300_cost() {
-  run_recovery_with_history(max_consensus_state_size)
-}
-
-test recovery_transaction_fixture_history_300_cost() {
-  recovery_transaction_fixture_with_history(max_consensus_state_size)
 }
 
 test recovery_parameters_reject_chain_id_change() fail {

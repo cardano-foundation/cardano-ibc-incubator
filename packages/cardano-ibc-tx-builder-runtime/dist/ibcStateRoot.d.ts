@@ -6,8 +6,12 @@ export type IbcTreeDeployment = Readonly<{
         policyId: string;
         name: string;
     }>;
+    consensusStateHistory?: Readonly<{
+        address: string;
+        policyId: string;
+    }>;
 }>;
-export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets' | 'txHash' | 'outputIndex'>;
+export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets' | 'txHash' | 'outputIndex'> & Partial<Pick<UTxO, 'address'>>;
 export type IbcTreeHostStateRef = Readonly<Pick<UTxO, 'txHash' | 'outputIndex'>>;
 export type IbcTreeSnapshot = Readonly<{
     root: string;
@@ -26,14 +30,23 @@ export declare class StaleIbcTreeStateError extends Error {
 }
 export interface IbcTreeKupoService {
     queryAllClientUtxos(): Promise<IbcTreeUtxo[]>;
+    queryAllConsensusStateUtxos?(): Promise<IbcTreeUtxo[]>;
     queryAllConnectionUtxos(): Promise<IbcTreeUtxo[]>;
     queryAllChannelUtxos(): Promise<IbcTreeUtxo[]>;
 }
 export interface IbcTreeLucidService {
     readonly LucidImporter: typeof import('@lucid-evolution/lucid');
     findUtxoAtHostStateNFT(): Promise<IbcTreeUtxo | undefined>;
-    decodeDatum<T>(encodedDatum: string, type: 'host_state' | 'client' | 'connection' | 'channel'): Promise<T>;
+    decodeDatum<T>(encodedDatum: string, type: 'host_state' | 'client' | 'consensus_state' | 'connection' | 'channel'): Promise<T>;
 }
+type AuthTokenLike = {
+    policyId: string;
+    name: string;
+};
+type HeightLike = {
+    revisionNumber: bigint;
+    revisionHeight: bigint;
+};
 type ChannelStateLike = {
     channel: any;
     next_sequence_send: bigint;
@@ -55,6 +68,7 @@ type ChannelDatumLike = {
     state: ChannelStateLike;
     port: string;
 };
+export declare function consensusStateArchiveTokenName(clientToken: AuthTokenLike, height: HeightLike, Lucid: typeof import('@lucid-evolution/lucid')): string;
 export type StateRootResult = {
     newRoot: string;
     commit: (hostState: IbcTreeHostStateRef) => Promise<IbcTreeCommitResult>;
@@ -95,6 +109,9 @@ export interface UpdateClientStateRootResult extends StateRootResult {
 export interface PrunePacketHistoryStateRootResult extends StateRootResult {
     packetReceiptSiblings: string[];
     packetAcknowledgementSiblings: string[];
+}
+export interface PruneConsensusStateRootResult extends StateRootResult {
+    consensusStateSiblings: string[];
 }
 export declare function encodeClientStateValue(clientState: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeConsensusStateValue(consensusState: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
@@ -139,6 +156,7 @@ export declare class IbcTreeStateStore {
     computeRootWithCreateConnectionUpdate(oldRoot: string, connectionId: string, connectionValue: Buffer): CreateConnectionStateRootResult;
     computeRootWithCreateChannelUpdate(oldRoot: string, portId: string, channelId: string, channelValue: Buffer, nextSequenceSendValue: Buffer, nextSequenceRecvValue: Buffer, nextSequenceAckValue: Buffer): CreateChannelStateRootResult;
     computeRootWithUpdateChannelUpdate(oldRoot: string, portId: string, channelId: string, channelValue: Buffer): UpdateChannelStateRootResult;
+    computeRootWithPruneConsensusStateUpdate(oldRoot: string, clientId: string, height: string | number | bigint, expectedValue: Buffer): PruneConsensusStateRootResult;
     computeRootWithPrunePacketHistoryUpdate(oldRoot: string, portId: string, channelId: string, sequence: bigint, ordering: 'None' | 'Unordered' | 'Ordered'): PrunePacketHistoryStateRootResult;
     computeRootWithPortBind(oldRoot: string, portId: string, portValue: Buffer): BindPortStateRootResult;
     getCurrentTree(): ICS23MerkleTree;

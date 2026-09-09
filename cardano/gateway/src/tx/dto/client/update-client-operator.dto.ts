@@ -12,7 +12,7 @@ export type UpdateClientOperatorDto = {
   clientTokenUnit: string;
   currentClientUtxo: UTxO;
   txValidFrom: bigint;
-  txValidTo: bigint;
+  historyUtxos?: UTxO[];
 };
 
 export type UpdateOnMisbehaviourOperatorDto = {
@@ -22,6 +22,7 @@ export type UpdateOnMisbehaviourOperatorDto = {
   clientDatum: ClientDatum;
   clientTokenUnit: string;
   currentClientUtxo: UTxO;
+  historyUtxos?: UTxO[];
 };
 
 export type RecoverClientOperatorDto = {

@@ -86,6 +86,8 @@ validator send_packet(
         client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+        tx_valid_to * 1_000_000,
+        None,
       )
     trace @"send_packet: reference_inputs contain Connection utxo"
     trace @"send_packet: reference_inputs contain Client utxo"

@@ -338,24 +338,14 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
   const [hostValidator, hostValidatorHash, hostAddress] = readValidator(
     "host_state_stt.host_state_stt.spend",
     lucid,
-    [
-      nftPolicyId,
-      dummyHash,
-      dummyHash,
-      dummyHash,
-      "21".repeat(28),
-      "22".repeat(28),
-      "23".repeat(28),
-    ],
+    [nftPolicyId, dummyHash, dummyHash, dummyHash, dummyHash],
     Data.Tuple([
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [string, string, string, string, string, string, string],
+    ]) as unknown as [string, string, string, string, string],
   );
   const [, referenceValidatorHash, referenceAddress] = readValidator(
     "reference_validator.refer_only.else",

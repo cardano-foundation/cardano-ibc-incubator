@@ -7,7 +7,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
-use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/utils/validator_utils
@@ -53,33 +53,17 @@ pub fn update_client(
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
 
-  let latest_height = {
-    let input_height =
-      client_state.get_latest_height(client_datum.state.client_state)
-    if height_mod.compare(height, input_height) == Greater {
-      height
-    } else {
-      input_height
-    }
-  }
-
   let client_datum =
     ClientDatum {
       ..client_datum,
       state: ClientDatumState {
         client_state: ClientState {
           ..client_datum.state.client_state,
-          latest_height,
+          latest_height: height,
         },
-        consensus_states: [
-          Pair(height, consensus_state),
-          ..client_datum.state.consensus_states
-        ],
-        processed_times: [Pair(height, 0), ..client_datum.state.processed_times],
-        processed_heights: [
-          Pair(height, 0),
-          ..client_datum.state.processed_heights
-        ],
+        consensus_states: [Pair(height, consensus_state)],
+        processed_times: [Pair(height, 0)],
+        processed_heights: [Pair(height, 0)],
       },
     }
 

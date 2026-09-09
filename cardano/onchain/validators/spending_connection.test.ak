@@ -13,6 +13,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
+use ibc/client/ics_007_tendermint_client/consensus_history.{ConsensusStateDatum}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
@@ -263,7 +264,7 @@ fn host_state_update_connection_redeemer() -> Redeemer {
   redeemer
 }
 
-test conn_open_ack_succeed() {
+test conn_open_ack_accepts_authenticated_archived_height() {
   let mock = setup()
 
   //========================arrange inputs=======================
@@ -299,10 +300,41 @@ test conn_open_ack_succeed() {
       },
     }
 
+  let latest_height = Height { revision_number: 0, revision_height: 188486 }
+  let latest_cons_state =
+    ConsensusState { ..cons_state, timestamp: cons_state.timestamp + 1 }
   let client_input =
-    test_utils.update_client(proof_height, cons_state, mock.client_input)
+    test_utils.update_client(
+      latest_height,
+      latest_cons_state,
+      mock.client_input,
+    )
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  let record =
+    ConsensusStateDatum {
+      client_token: client_datum.token,
+      height: proof_height,
+      consensus_state: cons_state,
+      processed_time: 0,
+      processed_height: 0,
+    }
+  let archive_token = consensus_history.token(client_datum.token, proof_height)
+  let archive_input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"4040404040404040404040404040404040404040404040404040404040404040",
+        output_index: 0,
+      },
+      output: Output {
+        address: from_script("mock consensus state script hash"),
+        value: from_asset(archive_token.policy_id, archive_token.name, 1),
+        datum: InlineDatum(record),
+        reference_script: None,
+      },
+    }
 
-  let reference_inputs = [client_input]
+  let reference_inputs = [client_input, archive_input]
 
   //========================arrange outputs=======================
   let output_conn_datum =
@@ -329,9 +361,6 @@ test conn_open_ack_succeed() {
   let proof_try = MerkleProof { proofs: [] }
 
   let connection_redeemer: Redeemer = ConnOpenAck
-
-  expect client_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_input.output)
 
   let client_datum_state = client_datum.state
   let connection = output_conn_datum.state
@@ -368,13 +397,10 @@ test conn_open_ack_succeed() {
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
-  expect Some(consensus_state) =
-    pairs.get_first(client_datum_state.consensus_states, proof_height)
-
   let verify_proof_redeemer: Redeemer =
     VerifyMembership {
       cs: client_datum_state.client_state,
-      cons_state: consensus_state,
+      cons_state,
       height: proof_height,
       processed_time: 0,
       processed_height: 0,

@@ -119,6 +119,7 @@ export type WithOptionalTraceRegistryUpdate = {
 export type WithVerifyProof = {
   verifyProofPolicyId: PolicyId;
   encodedVerifyProofRedeemer: string;
+  consensusStateReferenceUtxos: UTxO[];
 };
 
 export type WithConstructedAddress = {

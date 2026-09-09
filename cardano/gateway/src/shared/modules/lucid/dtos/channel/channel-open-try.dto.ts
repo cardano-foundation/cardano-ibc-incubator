@@ -5,6 +5,7 @@ export type UnsignedChannelOpenTryDto = {
   moduleKey: GatewayModuleKey;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
+  consensusStateReferenceUtxos: UTxO[];
   moduleUtxo: UTxO;
   encodedSpendModuleRedeemer: string;
   encodedMintChannelRedeemer: string;

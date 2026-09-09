@@ -1,8 +1,11 @@
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/msgs.{ClientMessage}
 
 pub type MintClientRedeemer {
   MintClient
+  ArchiveConsensusState { client_token: AuthToken }
+  PruneConsensusState { client_token: AuthToken, height: Height }
 }
 
 pub type SpendClientRedeemer {

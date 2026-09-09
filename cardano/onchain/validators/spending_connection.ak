@@ -28,6 +28,17 @@ use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/utils/validator_utils
 
+fn conn_open_ack_proof_height(
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
+) -> Height {
+  expect Some(raw_verify_proof_redeemer) =
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
+  expect VerifyMembership { height, .. }: VerifyProofRedeemer =
+    raw_verify_proof_redeemer
+  height
+}
+
 validator spend_connection(
   client_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
@@ -96,6 +107,12 @@ validator spend_connection(
         datum.token.name,
         client_minting_policy_id,
         datum.state.client_id,
+        validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+        when redeemer is {
+          ConnOpenConfirm { proof_height, .. } -> Some(proof_height)
+          ConnOpenAck ->
+            Some(conn_open_ack_proof_height(redeemers, verify_proof_policy_id))
+        },
       )
     trace @"spend_connection: validator_utils.validate_referred_client"
 

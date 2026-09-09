@@ -1160,7 +1160,8 @@ export class PacketService {
       parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
     );
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [pruneOperator.proofHeight]);
     const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
       ([height]) =>
         height.revisionNumber === pruneOperator.proofHeight.revisionNumber &&
@@ -1249,6 +1250,7 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
+      consensusStateReferenceUtxos,
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer,
@@ -1720,7 +1722,8 @@ export class PacketService {
     );
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [recvPacketOperator.proofHeight]);
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
 
@@ -1899,6 +1902,7 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
+        consensusStateReferenceUtxos,
         moduleKey: moduleConfig.key,
         moduleUtxo,
         encodedHostStateRedeemer,
@@ -2039,6 +2043,7 @@ export class PacketService {
               channelUtxo,
               connectionUtxo,
               clientUtxo,
+              consensusStateReferenceUtxos,
               transferEscrowUtxo: transferEscrowShard.utxo,
               transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
 
@@ -2146,6 +2151,7 @@ export class PacketService {
               channelUtxo,
               connectionUtxo,
               clientUtxo,
+              consensusStateReferenceUtxos,
               transferModuleUtxo,
 
               encodedHostStateRedeemer,
@@ -2296,7 +2302,8 @@ export class PacketService {
     );
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [timeoutPacketOperator.proofHeight]);
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     // Check if consensus state includes the proof height
@@ -2548,6 +2555,7 @@ export class PacketService {
         transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
         connectionUtxo: connectionUtxo,
         clientUtxo: clientUtxo,
+        consensusStateReferenceUtxos,
 
         encodedHostStateRedeemer: encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
@@ -2604,6 +2612,7 @@ export class PacketService {
       channelUtxo: channelUtxo,
       connectionUtxo: connectionUtxo,
       clientUtxo: clientUtxo,
+      consensusStateReferenceUtxos,
       transferModuleReferenceUtxo,
 
       encodedHostStateRedeemer: encodedHostStateRedeemer,
@@ -2967,7 +2976,8 @@ export class PacketService {
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     // Get client utxo by client unit associated
-    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [ackPacketOperator.proofHeight]);
     // Get the token unit associated with the client by connection datum
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
@@ -3125,6 +3135,7 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
+        consensusStateReferenceUtxos,
         moduleKey: moduleConfig.key,
         moduleUtxo,
         encodedHostStateRedeemer,
@@ -3195,6 +3206,7 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
+        consensusStateReferenceUtxos,
         transferModuleReferenceUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
@@ -3281,6 +3293,7 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
+        consensusStateReferenceUtxos,
         transferEscrowUtxo: transferEscrowShard.utxo,
         transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
 
@@ -3363,6 +3376,7 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
+      consensusStateReferenceUtxos,
       transferModuleReferenceUtxo,
 
       encodedHostStateRedeemer,

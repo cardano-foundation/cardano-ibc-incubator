@@ -162,6 +162,11 @@ function normalizeBridgeManifest(manifest) {
             validators: {
                 hostStateStt: mapValidator(manifest.validators.host_state_stt),
                 spendClient: mapValidator(manifest.validators.spend_client),
+                ...(manifest.validators.spend_consensus_state
+                    ? {
+                        spendConsensusState: mapValidator(manifest.validators.spend_consensus_state),
+                    }
+                    : {}),
                 spendConnection: mapValidator(manifest.validators.spend_connection),
                 spendChannel: {
                     ...mapValidator(manifest.validators.spend_channel),
@@ -919,6 +924,7 @@ class RuntimeKupoService {
     clientAddress;
     connectionAddress;
     channelAddress;
+    consensusStateAddress;
     constructor(lucidService, deployment) {
         this.lucidService = lucidService;
         this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
@@ -927,6 +933,7 @@ class RuntimeKupoService {
         this.clientAddress = deployment.validators.spendClient.address ?? '';
         this.connectionAddress = deployment.validators.spendConnection.address ?? '';
         this.channelAddress = deployment.validators.spendChannel.address ?? '';
+        this.consensusStateAddress = deployment.validators.spendConsensusState?.address;
     }
     getMatchingAssetNames(utxo, policyId) {
         return Object.keys(utxo.assets)
@@ -945,6 +952,13 @@ class RuntimeKupoService {
     }
     async queryAllClientUtxos() {
         return this.queryUtxosAtAddressByPolicy(this.clientAddress, this.clientTokenPrefix);
+    }
+    async queryAllConsensusStateUtxos() {
+        if (!this.consensusStateAddress) {
+            throw new Error('Consensus-state history validator address is not configured');
+        }
+        const utxos = await (0, lucidIbcAdapter_1.findUtxosAtAllowEmpty)(this.lucidService, this.consensusStateAddress);
+        return utxos.filter((utxo) => this.getMatchingAssetNames(utxo, this.clientTokenPrefix).length > 0);
     }
     async queryAllConnectionUtxos() {
         return this.queryUtxosAtAddressByPolicy(this.connectionAddress, this.connectionTokenPrefix);
@@ -1085,7 +1099,18 @@ function createTxBuilderRuntime(config) {
         const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
         await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
-        const treeStore = new ibcStateRoot_1.IbcTreeStateStore({ network: cardanoNetwork, hostStateNFT: deployment.hostStateNFT }, kupoService, lucidService);
+        const treeStore = new ibcStateRoot_1.IbcTreeStateStore({
+            network: cardanoNetwork,
+            hostStateNFT: deployment.hostStateNFT,
+            ...(deployment.validators.spendConsensusState?.address
+                ? {
+                    consensusStateHistory: {
+                        address: deployment.validators.spendConsensusState.address,
+                        policyId: deployment.validators.mintClientStt.scriptHash,
+                    },
+                }
+                : {}),
+        }, kupoService, lucidService);
         await timed(logger, '[context]', 'rebuild IBC state tree', () => treeStore.rebuildTreeFromChain());
         logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
         return {

@@ -1,3 +1,4 @@
+use aiken/cbor
 use aiken/collection/list
 use aiken/fuzz
 use aiken/option
@@ -30,6 +31,21 @@ fn make_fake_consensus_states_store(
 }
 
 //===========================get_consensus_state===============================
+test consensus_lookup_matches_decoded_height_fields_and_revision() {
+  expect Some(raw) = cbor.deserialise(#"d879820016")
+  expect decoded: Height = raw
+  let state = create_fake_consensus_state(10)
+  and {
+    store_mod.get_consensus_state([Pair(decoded, state)], create_height(22)) == Some(
+      state,
+    ),
+    store_mod.get_consensus_state(
+      [Pair(decoded, state)],
+      height_mod.new_height(1, 22),
+    ) == None,
+  }
+}
+
 test get_consensus_state_given_existed_height_returns_right_value() {
   let consensus_states = make_fake_consensus_states_store([10, 22, 39])
 

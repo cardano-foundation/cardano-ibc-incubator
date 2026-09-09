@@ -1,6 +1,7 @@
 jest.mock('~@/tx/packet.service', () => ({
   PacketService: class PacketService {},
 }));
+jest.mock('../tx/client.service', () => ({ ClientService: class ClientService {} }));
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ApiController } from './api.controller';
@@ -13,6 +14,7 @@ import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 import { QueryService } from '~@/query/services/query.service';
+import { ClientService } from '../tx/client.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
@@ -25,6 +27,7 @@ describe('ApiController (modern)', () => {
     sendPacket: jest.Mock;
     prunePacketHistory: jest.Mock;
   };
+  let clientServiceMock: { pruneConsensusState: jest.Mock };
   let denomTraceServiceMock: {
     findByHash: jest.Mock;
     findAll: jest.Mock;
@@ -61,6 +64,7 @@ describe('ApiController (modern)', () => {
       sendPacket: jest.fn(),
       prunePacketHistory: jest.fn(),
     };
+    clientServiceMock = { pruneConsensusState: jest.fn() };
     denomTraceServiceMock = {
       findByHash: jest.fn(),
       findAll: jest.fn(),
@@ -96,10 +100,24 @@ describe('ApiController (modern)', () => {
         { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
         { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
         { provide: QueryService, useValue: queryServiceMock },
+        { provide: ClientService, useValue: clientServiceMock },
       ],
     }).compile();
 
     controller = module.get<ApiController>(ApiController);
+  });
+
+  it('builds one permissionless consensus-state prune with bigint-safe height fields', async () => {
+    clientServiceMock.pruneConsensusState.mockResolvedValue({ unsigned_tx: { type_url: '', value: Buffer.from('archive-prune') } });
+    const response = await controller.buildPruneConsensusState({
+      signer: 'addr_test1funding', client_id: '07-tendermint-7',
+      height: { revision_number: '2', revision_height: '9007199254740993' },
+    });
+    expect(clientServiceMock.pruneConsensusState).toHaveBeenCalledWith({
+      clientId: '7', constructedAddress: 'addr_test1funding',
+      height: { revisionNumber: 2n, revisionHeight: 9007199254740993n },
+    });
+    expect(response.unsigned_tx.value).toBe(Buffer.from('archive-prune').toString('base64'));
   });
 
   it('delegates getChannels to ChannelService and maps pagination/height to strings', async () => {

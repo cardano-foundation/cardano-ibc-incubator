@@ -301,6 +301,40 @@ export class YaciHistoryService implements HistoryService {
     return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
   }
 
+  async findUtxosByAddressAndPolicyIdAtOrBeforeBlockNo(
+    address: string,
+    policyId: string,
+    height: bigint,
+    assetName?: string,
+  ): Promise<UtxoDto[]> {
+    const query = `
+      SELECT
+        address,
+        tx_hash,
+        tx_id,
+        output_index,
+        datum,
+        datum_hash,
+        assets_policy,
+        assets_name,
+        block_no,
+        block_id
+      FROM bridge_utxo_history
+      WHERE block_no <= $1
+        AND lower(address) = lower($2)
+        AND lower(assets_policy) = lower($3)
+        AND ($4::text IS NULL OR lower(assets_name) = lower($4))
+      ORDER BY block_no ASC, COALESCE(tx_index, 0) ASC, output_index ASC
+    `;
+    const rows = await this.entityManager.query(query, [
+      height.toString(),
+      address,
+      policyId,
+      assetName ?? null,
+    ]);
+    return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
+  }
+
   async findUtxosByBlockNo(height: number): Promise<UtxoDto[]> {
     const query = `
       SELECT

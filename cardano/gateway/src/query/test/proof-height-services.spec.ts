@@ -56,7 +56,9 @@ const HISTORICAL_HEIGHT = 123n;
 const LATEST_ACCEPTED_HEIGHT = 200n;
 const HISTORICAL_ROOT = 'ab'.repeat(32);
 const CHANNEL_TOKEN_UNIT = 'policychannel-token';
-const CLIENT_TOKEN_UNIT = 'client-auth-token-unit';
+const CLIENT_POLICY_ID = 'aa'.repeat(28);
+const CLIENT_TOKEN_NAME = 'bb'.repeat(24) + '30';
+const CLIENT_TOKEN_UNIT = CLIENT_POLICY_ID + CLIENT_TOKEN_NAME;
 const SUCCESS_ACKNOWLEDGEMENT_HEX = toHex(JSON.stringify({ result: 'AQ==' }));
 const SUCCESS_ACKNOWLEDGEMENT_COMMITMENT = hashSHA256(SUCCESS_ACKNOWLEDGEMENT_HEX);
 
@@ -231,13 +233,29 @@ describe('proof-bearing services with captured query heights', () => {
       },
     });
     (decodeClientDatum as jest.Mock).mockResolvedValue({
+      token: {
+        policyId: CLIENT_POLICY_ID,
+        name: CLIENT_TOKEN_NAME,
+      },
       state: {
         clientState: {
           latestHeight: {
+            revisionNumber: 0n,
             revisionHeight: 77n,
           },
         },
-        consensusStates: new Map(),
+        consensusStates: new Map([
+          [
+            { revisionNumber: 0n, revisionHeight: 77n },
+            {
+              timestamp: 1_000n,
+              next_validators_hash: '11'.repeat(32),
+              root: { hash: '22'.repeat(32) },
+            },
+          ],
+        ]),
+        processedTimes: new Map([[{ revisionNumber: 0n, revisionHeight: 77n }, 2_000n]]),
+        processedHeights: new Map([[{ revisionNumber: 0n, revisionHeight: 77n }, 20n]]),
       },
     });
     (normalizeClientStateFromDatum as jest.Mock).mockReturnValue(

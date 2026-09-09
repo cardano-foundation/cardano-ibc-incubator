@@ -73,6 +73,8 @@ validator chan_close_init(
         client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+        validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+        None,
       )
     trace @"chan_close_init: reference_inputs contain Connection utxo"
 

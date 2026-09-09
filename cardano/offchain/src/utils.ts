@@ -817,6 +817,13 @@ export type DeploymentTemplate = {
       address: string;
       refUtxo: UTxO;
     };
+    spendConsensusState: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
     spendConnection: {
       title: string;
       script: string;

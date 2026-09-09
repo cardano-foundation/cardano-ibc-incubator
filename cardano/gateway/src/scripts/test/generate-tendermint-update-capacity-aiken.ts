@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { renderAikenFixtureModule } from '../ci/tendermint-update-capacity';
+import { analyzeNormalizedCapacityFixture, renderAikenFixtureModule } from '../ci/tendermint-update-capacity';
 
 const OUTPUT_PATH = path.resolve(
   __dirname,
@@ -14,6 +14,19 @@ async function main(): Promise<void> {
     throw new Error('Usage: generate-tendermint-update-capacity-aiken.ts [--check|--write]');
   }
 
+  // This generator emits only header/trust constants; the executable Aiken
+  // transaction fixture lives separately in spending_client_capacity.test.ak.
+  // Check its current Gateway counterpart before updating the shared constants.
+  // Capacity overflow remains diagnostic: these real 45-validator headers are
+  // intentionally retained even when they exceed the transaction-size limit.
+  const artifacts = await analyzeNormalizedCapacityFixture();
+  for (const { report } of artifacts) {
+    if (report.outputConsensusStates !== 1 || report.archivedConsensusStates !== 1 ||
+      report.removedConsensusStates !== 0 || report.shape.inlineDatumOutputs !== 3 ||
+      report.shape.referenceInputs !== 3 || report.shape.mintRedeemers !== 1 || report.shape.mintedAssets !== 1) {
+      throw new Error(`Capacity fixture ${report.scenario} must use a singleton client and one authenticated archive`);
+    }
+  }
   const expected = await renderAikenFixtureModule();
   if (mode === '--write') {
     fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });

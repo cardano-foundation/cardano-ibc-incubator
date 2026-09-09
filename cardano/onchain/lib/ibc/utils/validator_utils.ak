@@ -13,6 +13,8 @@ use cardano/transaction.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
+use ibc/client/ics_007_tendermint_client/consensus_history
+use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
@@ -303,6 +305,8 @@ pub fn validate_referred_client(
   referrer_token_name: ByteArray,
   client_minting_policy_id: PolicyId,
   client_id: ByteArray,
+  current_time: Int,
+  proof_height: Option<Height>,
 ) -> ClientDatum {
   let client_token =
     expected_client_token(
@@ -314,7 +318,13 @@ pub fn validate_referred_client(
   expect Some(client_input) =
     find_authenticated_input(reference_inputs, client_token)
   expect client_datum: ClientDatum = get_inline_datum(client_input.output)
-  client_datum
+  expect client_datum.token == client_token
+  consensus_history.with_reference_at_height(
+    client_datum,
+    reference_inputs,
+    current_time,
+    proof_height,
+  )
 }
 
 pub fn validate_referred_connection(
@@ -350,6 +360,8 @@ pub fn validate_referred_connection_and_client(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   connection_id: ByteArray,
+  current_time: Int,
+  proof_height: Option<Height>,
 ) -> (ConnectionDatum, ClientDatum) {
   let connection_token =
     expected_connection_token(
@@ -384,8 +396,16 @@ pub fn validate_referred_connection_and_client(
   expect Some(client_input) =
     find_authenticated_input(client_search_inputs, client_token)
   expect client_datum: ClientDatum = get_inline_datum(client_input.output)
-
-  (connection_datum, client_datum)
+  expect client_datum.token == client_token
+  (
+    connection_datum,
+    consensus_history.with_reference_at_height(
+      client_datum,
+      reference_inputs,
+      current_time,
+      proof_height,
+    ),
+  )
 }
 
 fn find_connection_with_remaining_inputs(

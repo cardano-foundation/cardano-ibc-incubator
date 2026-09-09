@@ -1,12 +1,18 @@
 import type { UTxO } from '@lucid-evolution/lucid';
+import { sha3_256 } from 'js-sha3';
 import { ICS23MerkleTree } from './ics23MerkleTree';
 
 export type IbcTreeDeployment = Readonly<{
   network: string;
   hostStateNFT: Readonly<{ policyId: string; name: string }>;
+  consensusStateHistory?: Readonly<{
+    address: string;
+    policyId: string;
+  }>;
 }>;
 
-export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets' | 'txHash' | 'outputIndex'>;
+export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets' | 'txHash' | 'outputIndex'> &
+  Partial<Pick<UTxO, 'address'>>;
 
 export type IbcTreeHostStateRef = Readonly<Pick<UTxO, 'txHash' | 'outputIndex'>>;
 
@@ -32,6 +38,7 @@ export class StaleIbcTreeStateError extends Error {
 
 export interface IbcTreeKupoService {
   queryAllClientUtxos(): Promise<IbcTreeUtxo[]>;
+  queryAllConsensusStateUtxos?(): Promise<IbcTreeUtxo[]>;
   queryAllConnectionUtxos(): Promise<IbcTreeUtxo[]>;
   queryAllChannelUtxos(): Promise<IbcTreeUtxo[]>;
 }
@@ -39,7 +46,10 @@ export interface IbcTreeKupoService {
 export interface IbcTreeLucidService {
   readonly LucidImporter: typeof import('@lucid-evolution/lucid');
   findUtxoAtHostStateNFT(): Promise<IbcTreeUtxo | undefined>;
-  decodeDatum<T>(encodedDatum: string, type: 'host_state' | 'client' | 'connection' | 'channel'): Promise<T>;
+  decodeDatum<T>(
+    encodedDatum: string,
+    type: 'host_state' | 'client' | 'consensus_state' | 'connection' | 'channel',
+  ): Promise<T>;
 }
 
 type HostStateDatumLike = {
@@ -53,6 +63,17 @@ type ClientDatumLike = {
     clientState: unknown;
     consensusStates?: Map<ConsensusHeight, unknown> | Record<string, unknown>;
   };
+  token?: AuthTokenLike;
+};
+
+type AuthTokenLike = { policyId: string; name: string };
+type HeightLike = { revisionNumber: bigint; revisionHeight: bigint };
+type ConsensusStateDatumLike = {
+  clientToken: AuthTokenLike;
+  height: HeightLike;
+  consensusState: unknown;
+  processedTime: bigint;
+  processedHeight: bigint;
 };
 
 type ConnectionDatumLike = { state: unknown };
@@ -79,6 +100,30 @@ type ChannelDatumLike = {
   state: ChannelStateLike;
   port: string;
 };
+
+export function consensusStateArchiveTokenName(
+  clientToken: AuthTokenLike,
+  height: HeightLike,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): string {
+  const { Data } = Lucid;
+  const keySchema = Data.Object({
+    clientToken: Data.Object({ policyId: Data.Bytes(), name: Data.Bytes() }),
+    height: Data.Object({ revisionNumber: Data.Integer(), revisionHeight: Data.Integer() }),
+  });
+  const encodedKey = Data.to({ clientToken, height } as never, keySchema as never, {
+    canonical: false,
+  });
+  return sha3_256(Buffer.from(encodedKey, 'hex'));
+}
+
+function normalizeHex(value: string): string {
+  return value.toLowerCase();
+}
+
+function utxoLabel(utxo: IbcTreeUtxo): string {
+  return `${utxo.txHash}#${utxo.outputIndex}`;
+}
 
 export type StateRootResult = {
   newRoot: string;
@@ -128,6 +173,10 @@ export interface UpdateClientStateRootResult extends StateRootResult {
 export interface PrunePacketHistoryStateRootResult extends StateRootResult {
   packetReceiptSiblings: string[];
   packetAcknowledgementSiblings: string[];
+}
+
+export interface PruneConsensusStateRootResult extends StateRootResult {
+  consensusStateSiblings: string[];
 }
 
 export async function encodeClientStateValue(
@@ -302,6 +351,14 @@ export class IbcTreeStateStore {
         policyId: deployment.hostStateNFT.policyId,
         name: deployment.hostStateNFT.name,
       }),
+      ...(deployment.consensusStateHistory
+        ? {
+            consensusStateHistory: Object.freeze({
+              address: deployment.consensusStateHistory.address,
+              policyId: deployment.consensusStateHistory.policyId,
+            }),
+          }
+        : {}),
     });
   }
 
@@ -579,6 +636,8 @@ export class IbcTreeStateStore {
       }
     }
 
+    const clientIdsByTokenUnit = new Map<string, string>();
+    const consensusPaths = new Set<string>();
     const clientUtxos = await kupoService.queryAllClientUtxos();
     for (const clientUtxo of clientUtxos) {
       if (!clientUtxo.datum) {
@@ -586,15 +645,49 @@ export class IbcTreeStateStore {
       }
 
       const clientDatum = await lucidService.decodeDatum<ClientDatumLike>(clientUtxo.datum, 'client');
-      const clientUnit = Object.keys(clientUtxo.assets || {}).find((unit) => unit !== 'lovelace');
+      const clientUnit = Object.keys(clientUtxo.assets || {}).find((unit) =>
+        unit !== 'lovelace' &&
+        (!this.deployment.consensusStateHistory ||
+          normalizeHex(unit).startsWith(normalizeHex(this.deployment.consensusStateHistory.policyId))),
+      );
       if (!clientUnit || clientUnit.length < 56 + 48 + 2) {
         continue;
       }
 
+      if (this.deployment.consensusStateHistory) {
+        const expectedPolicy = normalizeHex(this.deployment.consensusStateHistory.policyId);
+        const clientPolicyUnits = Object.keys(clientUtxo.assets || {}).filter(
+          (unit) => unit !== 'lovelace' && normalizeHex(unit).startsWith(expectedPolicy),
+        );
+        const datumUnit = clientDatum.token
+          ? normalizeHex(clientDatum.token.policyId + clientDatum.token.name)
+          : undefined;
+        if (
+          clientPolicyUnits.length !== 1 ||
+          clientUtxo.assets[clientUnit] !== 1n ||
+          !datumUnit ||
+          datumUnit !== normalizeHex(clientUnit)
+        ) {
+          throw new Error(`Client UTxO ${utxoLabel(clientUtxo)} failed authentication during tree rebuild`);
+        }
+      }
+
       const tokenName = clientUnit.slice(56);
       const postfixHex = tokenName.slice(48);
-      const clientSequence = BigInt(Buffer.from(postfixHex, 'hex').toString('utf8'));
+      const clientSequenceText = Buffer.from(postfixHex, 'hex').toString('utf8');
+      if (!/^\d+$/.test(clientSequenceText)) {
+        if (this.deployment.consensusStateHistory) {
+          throw new Error(`Client UTxO ${utxoLabel(clientUtxo)} has an invalid sequence token`);
+        }
+        continue;
+      }
+      const clientSequence = BigInt(clientSequenceText);
       const clientId = `07-tendermint-${clientSequence.toString()}`;
+      const normalizedClientUnit = normalizeHex(clientUnit);
+      if (clientIdsByTokenUnit.has(normalizedClientUnit)) {
+        throw new Error(`Duplicate client authentication token ${clientUnit} during tree rebuild`);
+      }
+      clientIdsByTokenUnit.set(normalizedClientUnit, clientId);
 
       const clientStateValue = Buffer.from(
         await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter),
@@ -611,11 +704,99 @@ export class IbcTreeStateStore {
         const heightStr = typeof heightKey === 'object' && heightKey !== null
           ? `${(heightKey as { revisionHeight?: bigint | number }).revisionHeight || 0}`
           : String(heightKey);
+        const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
+        if (consensusPaths.has(consensusPath)) {
+          throw new Error(`Duplicate consensus state path '${consensusPath}' during tree rebuild`);
+        }
         const consensusValue = Buffer.from(
           await encodeConsensusStateValue(consensusState, lucidService.LucidImporter),
           'hex',
         );
-        tree.set(`clients/${clientId}/consensusStates/${heightStr}`, consensusValue);
+        tree.set(consensusPath, consensusValue);
+        consensusPaths.add(consensusPath);
+      }
+    }
+
+    const consensusStateHistory = this.deployment.consensusStateHistory;
+    if (consensusStateHistory) {
+      if (!kupoService.queryAllConsensusStateUtxos) {
+        throw new Error('Consensus-state history is configured but its chain reader is unavailable');
+      }
+      const archiveUtxos = await kupoService.queryAllConsensusStateUtxos();
+      for (const archiveUtxo of archiveUtxos) {
+        if (
+          !archiveUtxo.address ||
+          normalizeHex(archiveUtxo.address) !== normalizeHex(consensusStateHistory.address)
+        ) {
+          throw new Error(`Consensus-state archive ${utxoLabel(archiveUtxo)} is at the wrong address`);
+        }
+        if (!archiveUtxo.datum) {
+          throw new Error(`Consensus-state archive ${utxoLabel(archiveUtxo)} is missing its inline datum`);
+        }
+
+        let archive: ConsensusStateDatumLike;
+        try {
+          archive = await lucidService.decodeDatum<ConsensusStateDatumLike>(
+            archiveUtxo.datum,
+            'consensus_state',
+          );
+        } catch (error) {
+          throw new Error(
+            `Consensus-state archive ${utxoLabel(archiveUtxo)} has an invalid datum: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+
+        const expectedPolicy = normalizeHex(consensusStateHistory.policyId);
+        const clientPolicy = normalizeHex(archive.clientToken?.policyId ?? '');
+        const clientTokenUnit = normalizeHex(
+          `${archive.clientToken?.policyId ?? ''}${archive.clientToken?.name ?? ''}`,
+        );
+        const clientId = clientIdsByTokenUnit.get(clientTokenUnit);
+        if (
+          clientPolicy !== expectedPolicy ||
+          !clientId ||
+          typeof archive.height?.revisionNumber !== 'bigint' ||
+          typeof archive.height?.revisionHeight !== 'bigint' ||
+          archive.height.revisionNumber < 0n ||
+          archive.height.revisionHeight <= 0n ||
+          typeof archive.processedTime !== 'bigint' ||
+          typeof archive.processedHeight !== 'bigint' ||
+          archive.processedTime < 0n ||
+          archive.processedHeight < 0n
+        ) {
+          throw new Error(`Consensus-state archive ${utxoLabel(archiveUtxo)} failed authentication`);
+        }
+
+        const tokenName = consensusStateArchiveTokenName(
+          archive.clientToken,
+          archive.height,
+          lucidService.LucidImporter,
+        );
+        const expectedUnit = expectedPolicy + normalizeHex(tokenName);
+        const archivePolicyUnits = Object.keys(archiveUtxo.assets || {}).filter(
+          (unit) => unit !== 'lovelace' && normalizeHex(unit).startsWith(expectedPolicy),
+        );
+        if (
+          archivePolicyUnits.length !== 1 ||
+          normalizeHex(archivePolicyUnits[0]) !== expectedUnit ||
+          archiveUtxo.assets[archivePolicyUnits[0]] !== 1n
+        ) {
+          throw new Error(`Consensus-state archive ${utxoLabel(archiveUtxo)} has the wrong NFT`);
+        }
+
+        const consensusPath =
+          `clients/${clientId}/consensusStates/${archive.height.revisionHeight.toString()}`;
+        if (consensusPaths.has(consensusPath)) {
+          throw new Error(`Duplicate consensus state path '${consensusPath}' during tree rebuild`);
+        }
+        const consensusValue = Buffer.from(
+          await encodeConsensusStateValue(archive.consensusState, lucidService.LucidImporter),
+          'hex',
+        );
+        tree.set(consensusPath, consensusValue);
+        consensusPaths.add(consensusPath);
       }
     }
 
@@ -770,6 +951,9 @@ export class IbcTreeStateStore {
         }
       | undefined,
   ): UpdateClientStateRootResult {
+    if (removedConsensusHeights.length !== 0) {
+      throw new Error('UpdateClient preserves consensus history; use explicit PruneConsensusState');
+    }
     const version = this.version;
     const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
 
@@ -783,24 +967,8 @@ export class IbcTreeStateStore {
     const clientStateSiblings = speculativeTree.getSiblings(clientPath).map((h) => h.toString('hex'));
     speculativeTree.set(clientPath, newClientStateValue);
 
-    // 2) Consensus state deletions (in the order provided by the caller).
+    // Archiving a tip changes its UTxO location, not its commitment leaf.
     const removedConsensusStateSiblings: string[][] = [];
-    for (const height of removedConsensusHeights) {
-      const heightStr = String(height);
-      const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
-
-      if (!speculativeTree.get(consensusPath)) {
-        throw new Error(
-          `UpdateClient root update expects existing consensusState at '${consensusPath}', but it was not found in the tree`,
-        );
-      }
-
-      const siblings = speculativeTree.getSiblings(consensusPath).map((h) => h.toString('hex'));
-      removedConsensusStateSiblings.push(siblings);
-
-      // Deletion is modeled as "set to empty", which collapses back to the empty hash on-chain.
-      speculativeTree.set(consensusPath, Buffer.alloc(0));
-    }
 
     // 3) Optional consensus state insertion (exactly one for normal UpdateClient, none for misbehaviour).
     let consensusStateSiblings: string[] = [];
@@ -903,6 +1071,24 @@ export class IbcTreeStateStore {
       ...this.preparePublication(speculativeTree, version),
       channelSiblings,
     };
+  }
+
+  computeRootWithPruneConsensusStateUpdate(
+    oldRoot: string,
+    clientId: string,
+    height: string | number | bigint,
+    expectedValue: Buffer,
+  ): PruneConsensusStateRootResult {
+    const version = this.version;
+    const tree = this.getClonedTreeFromRoot(oldRoot);
+    const path = `clients/${clientId}/consensusStates/${String(height)}`;
+    const value = tree.get(path);
+    if (!value || !value.equals(expectedValue)) {
+      throw new Error(`PruneConsensusState expects the authenticated consensus state at '${path}'`);
+    }
+    const consensusStateSiblings = tree.getSiblings(path).map((hash) => hash.toString('hex'));
+    tree.set(path, Buffer.alloc(0));
+    return { ...this.preparePublication(tree, version), consensusStateSiblings };
   }
 
   computeRootWithPrunePacketHistoryUpdate(
