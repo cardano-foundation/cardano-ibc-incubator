@@ -84,6 +84,7 @@ validator prune_packet_history(
     } = current_state
 
     expect [connection_id] = channel.connection_hops
+    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     let (connection_datum, client_datum) =
       validator_utils.validate_referred_connection_and_client(
         reference_inputs,
@@ -91,9 +92,10 @@ validator prune_packet_history(
         client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+        tx_valid_to * 1_000_000,
+        Some(proof_height),
       )
 
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     let valid_commitment_absence =
       validate_source_commitment_absence(
         connection_datum.state,

@@ -109,6 +109,11 @@ validator mint_connection_stt(
         connection_output_datum.token.name,
         client_minting_policy_id,
         connection_output_datum.state.client_id,
+        validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+        when redeemer is {
+          ConnOpenTry { proof_height, .. } -> Some(proof_height)
+          ConnOpenInit -> None
+        },
       )
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)

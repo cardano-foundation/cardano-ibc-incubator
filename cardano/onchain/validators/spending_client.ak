@@ -1,3 +1,4 @@
+use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/address.{Credential}
@@ -11,8 +12,8 @@ use ibc/client/ics_007_tendermint_client/client_redeemer.{
   RecoverClient, SpendClientRedeemer, UpdateClient,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
+use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle as misbehaviour_handle_mod
-use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/update as update_mod
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
@@ -30,6 +31,15 @@ fn find_host_state_input(
       assets.has_nft(input.output.value, nft_policy, host_state_token_name)
     },
   )
+}
+
+fn require_archive(transaction: Transaction, datum: ClientDatum) -> Bool {
+  // HostState permits one client continuation. Its UpdateClient branch rules
+  // out client creation, so the only policy branch that can mint here is the
+  // archive branch, which checks this client's exact checkpoint and NFT name.
+  expect [Pair(_, quantity)] =
+    transaction.mint |> assets.tokens(datum.token.policy_id) |> dict.to_pairs
+  quantity == 1
 }
 
 validator spend_client(
@@ -71,12 +81,12 @@ validator spend_client(
       )
 
     // output contains client token
-    expect auth.contains_only_auth_tokens(updated_output, [datum.token])
+    expect
+      assets.match_assets(
+        updated_output.value,
+        assets.from_asset(datum.token.policy_id, datum.token.name, 1),
+      )
 
-    // TODO: add verify header
-    // output datum is updated correctly
-    expect updated_datum: ClientDatum =
-      validator_utils.get_inline_datum(updated_output)
     when redeemer is {
       UpdateClient { msg } -> {
         trace @"spend_client: UpdateClient branch"
@@ -98,39 +108,44 @@ validator spend_client(
             valid_from: tx_valid_from * 1_000_000,
             valid_to: tx_valid_to * 1_000_000,
           }
+        let proof_states =
+          consensus_history.consensus_states_for_message(
+            datum,
+            transaction.reference_inputs,
+            tx_time.valid_to,
+            msg,
+          )
         expect
           update_mod.verify_client_message(
             datum.state.client_state,
             tx_time,
-            datum.state.consensus_states,
+            proof_states,
             msg,
           )
         trace @"spend_client: verify client msg succeeded"
 
         let found_misbehaviour =
-          misbehaviour_handle_mod.check_for_misbehaviour(
-            msg,
-            datum.state.consensus_states,
-          )
+          misbehaviour_handle_mod.check_for_misbehaviour(msg, proof_states)
 
         if found_misbehaviour {
           trace @"spend_client: found misbehaviour"
+          expect updated_datum: ClientDatum =
+            validator_utils.get_inline_datum(updated_output)
           client_datum_mod.update_state_on_misbehaviour(datum, updated_datum)?
         } else {
-          expect HeaderCase(header) = msg
-          client_datum_mod.update_state(
-            datum,
-            updated_datum,
-            header,
-            tx_valid_from,
-          )?
+          // The canonical mint policy reads this same spend redeemer and checks
+          // its new checkpoint, processing metadata and HostState commitment.
+          require_archive(transaction, datum)
         }
       }
 
       RecoverClient { .. } -> {
         trace @"spend_client: RecoverClient branch"
 
-        pairs.has_key(redeemers, Withdraw(recover_client_credential))
+        and {
+          require_archive(transaction, datum),
+          pairs.has_key(redeemers, Withdraw(recover_client_credential)),
+        }
       }
     }
   }

@@ -85,6 +85,8 @@ validator chan_open_confirm(
         client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+        validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+        Some(proof_height),
       )
     trace @"chan_open_confirm: reference_inputs contain Connection utxo"
 

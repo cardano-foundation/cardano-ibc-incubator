@@ -54,6 +54,7 @@ type ReferenceScripts = {
 
 export type CodecType =
   | 'client'
+  | 'consensus_state'
   | 'connection'
   | 'channel'
   | 'transferEscrow'
@@ -67,7 +68,7 @@ export type CodecType =
   | 'mintPortRedeemer'
   | 'transferEscrowShardRedeemer';
 
-const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'transferEscrow', 'transferModule', 'host_state'] as const;
+const DECODABLE_DATUM_TYPES = ['client', 'consensus_state', 'connection', 'channel', 'transferEscrow', 'transferModule', 'host_state'] as const;
 const ENCODABLE_DATUM_TYPES = [
   'channel',
   'transferEscrow',
@@ -252,6 +253,34 @@ async function decodeClientDatum(
     token: AuthTokenSchema,
   });
   return Data.from(encoded, ClientDatumSchema as any);
+}
+
+async function decodeConsensusStateDatum(
+  encoded: string,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
+  const { Data } = Lucid;
+  const AuthTokenSchema = Data.Object({
+    policyId: Data.Bytes(),
+    name: Data.Bytes(),
+  });
+  const HeightSchema = Data.Object({
+    revisionNumber: Data.Integer(),
+    revisionHeight: Data.Integer(),
+  });
+  const ConsensusStateSchema = Data.Object({
+    timestamp: Data.Integer(),
+    next_validators_hash: Data.Bytes(),
+    root: Data.Object({ hash: Data.Bytes() }),
+  });
+  const ConsensusStateDatumSchema = Data.Object({
+    clientToken: AuthTokenSchema,
+    height: HeightSchema,
+    consensusState: ConsensusStateSchema,
+    processedTime: Data.Integer(),
+    processedHeight: Data.Integer(),
+  });
+  return Data.from(encoded, ConsensusStateDatumSchema as any);
 }
 
 async function decodeConnectionDatum(
@@ -611,6 +640,24 @@ async function encodeHostStateRedeemer(
     Data.Object({ UpdateConnection: CreateConnectionSchema }),
     Data.Object({ UpdateChannel: UpdateChannelSchema }),
     Data.Object({ HandlePacket: HandlePacketSchema }),
+    Data.Object({
+      EnterShutdown: Data.Object({ grace_period_end: Data.Integer() }),
+    }),
+    Data.Literal('FinalizeShutdown'),
+    Data.Literal('Heartbeat'),
+    Data.Object({
+      PruneConsensusState: Data.Object({
+        client_token: Data.Object({
+          policyId: Data.Bytes(),
+          name: Data.Bytes(),
+        }),
+        height: Data.Object({
+          revisionNumber: Data.Integer(),
+          revisionHeight: Data.Integer(),
+        }),
+        consensus_state_siblings: SiblingHashesSchema,
+      }),
+    }),
   ]);
   return Data.to(data, HostStateRedeemerSchema as any, { canonical: true });
 }
@@ -957,6 +1004,13 @@ function encodeTransferEscrowShardRedeemer(
   });
 }
 
+export class UtxosAtAddressNotFoundError extends Error {
+  constructor(readonly addressOrCredential: string) {
+    super(`Unable to find UTxO at ${addressOrCredential}`);
+    this.name = 'UtxosAtAddressNotFoundError';
+  }
+}
+
 export class LucidIbcAdapter {
   public readonly LucidImporter: typeof import('@lucid-evolution/lucid');
   private referenceScripts!: ReferenceScripts;
@@ -1094,7 +1148,7 @@ export class LucidIbcAdapter {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     const utxos = await this.lucid.utxosAt(normalizedAddress);
     if (utxos.length === 0) {
-      throw new Error(`Unable to find UTxO at ${addressOrCredential}`);
+      throw new UtxosAtAddressNotFoundError(addressOrCredential);
     }
     return utxos;
   }
@@ -1218,6 +1272,8 @@ export class LucidIbcAdapter {
     switch (type) {
       case 'client':
         return (await decodeClientDatum(encodedDatum, this.LucidImporter)) as T;
+      case 'consensus_state':
+        return (await decodeConsensusStateDatum(encodedDatum, this.LucidImporter)) as T;
       case 'connection':
         return (await decodeConnectionDatum(encodedDatum, this.LucidImporter)) as T;
       case 'channel':
@@ -1366,6 +1422,20 @@ export class LucidIbcAdapter {
     const baseTokenPart = hashSha3_256Hex(baseToken.policyId + baseToken.name).slice(0, 40);
     const prefixPart = hashSha3_256Hex(prefix).slice(0, 8);
     return `${baseTokenPart}${prefixPart}${postfixHex}`;
+  }
+}
+
+export async function findUtxosAtAllowEmpty(
+  lucidService: Pick<LucidIbcAdapter, 'findUtxoAt'>,
+  addressOrCredential: string,
+): Promise<UTxO[]> {
+  try {
+    return await lucidService.findUtxoAt(addressOrCredential);
+  } catch (error) {
+    if (error instanceof UtxosAtAddressNotFoundError) {
+      return [];
+    }
+    throw error;
   }
 }
 

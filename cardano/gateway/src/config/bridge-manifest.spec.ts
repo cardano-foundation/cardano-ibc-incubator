@@ -32,6 +32,7 @@ function buildHandlerJsonDeployment() {
       hostStateStt: buildValidator('hostStateStt'),
       recoverClient: buildValidator('recoverClient'),
       spendClient: buildValidator('spendClient'),
+      spendConsensusState: buildValidator('spendConsensusState'),
       spendConnection: buildValidator('spendConnection'),
       spendChannel: {
         ...buildValidator('spendChannel'),
@@ -108,6 +109,11 @@ describe('bridge manifest normalization', () => {
     expect(loaded.deployment.validators.voucherMetadata).toEqual({
       address: 'voucher-metadata-address',
     });
+    expect(loaded.bridgeManifest.validators.spend_consensus_state).toEqual({
+      script_hash: 'spendConsensusState-hash',
+      address: 'spendConsensusState-address',
+      ref_utxo: { tx_hash: 'spendConsensusState-tx', output_index: 1 },
+    });
     expect(loaded.bridgeManifest.validators.voucher_metadata).toEqual({
       address: 'voucher-metadata-address',
     });
@@ -161,6 +167,16 @@ describe('bridge manifest normalization', () => {
 
     expect(manifestLoaded.deployment).toEqual(legacy.deployment);
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
+  });
+
+  it('keeps legacy deployments without consensus-state storage loadable', () => {
+    const { spendConsensusState: _archive, ...validators } = buildHandlerJsonDeployment().validators;
+    const legacy = normalizeHandlerJsonDeploymentConfig(
+      { ...buildHandlerJsonDeployment(), validators },
+      { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+    );
+    expect(legacy.deployment.validators.spendConsensusState).toBeUndefined();
+    expect(normalizeBridgeManifestConfig(legacy.bridgeManifest).deployment.validators.spendConsensusState).toBeUndefined();
   });
 
   it('keeps handler files without a recovery validator loadable', () => {

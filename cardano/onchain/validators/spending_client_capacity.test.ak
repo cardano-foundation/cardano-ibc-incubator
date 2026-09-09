@@ -3,17 +3,18 @@ use aiken/interval
 use cardano/address.{Script, from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
-  Transaction,
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  SpendClientRedeemer, UpdateClient,
+  ArchiveConsensusState, SpendClientRedeemer, UpdateClient,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
+use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -190,18 +191,13 @@ fn prepare_update_client_capacity(
         },
         consensus_states: [
           Pair(header_height, header_mod.consensus_state(header)),
-          Pair(header.trusted_height, consensus_state),
         ],
-        processed_times: [
-          Pair(header_height, processed_time),
-          Pair(header.trusted_height, 0),
-        ],
+        processed_times: [Pair(header_height, processed_time)],
         processed_heights: [
           Pair(
             header_height,
             client_datum_mod.processed_height_from_time(processed_time),
           ),
-          Pair(header.trusted_height, 0),
         ],
       },
     }
@@ -224,13 +220,29 @@ fn prepare_update_client_capacity(
     }
   let host_state_redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Spend(mock.host_state_input.output_reference), host_state_redeemer)]
+  let archive_token =
+    consensus_history.token(client_datum.token, header.trusted_height)
+  let archive_redeemer: Redeemer =
+    ArchiveConsensusState { client_token: client_datum.token }
   let transaction =
     Transaction {
       ..transaction.placeholder,
       inputs: [client_input, mock.host_state_input],
-      outputs,
+      outputs: [
+        Output {
+          address: from_script("archive script hash"),
+          value: from_asset(archive_token.policy_id, archive_token.name, 1),
+          datum: InlineDatum(consensus_history.from_client(client_datum)),
+          reference_script: None,
+        },
+        ..outputs
+      ],
       validity_range,
-      redeemers: host_state_redeemers,
+      mint: from_asset(archive_token.policy_id, archive_token.name, 1),
+      redeemers: [
+        Pair(Mint(client_datum.token.policy_id), archive_redeemer),
+        ..host_state_redeemers
+      ],
     }
 
   CapacityFixture {
@@ -288,4 +300,14 @@ test update_client_capacity_adjacent_mixed_45_succeeds() {
 
 test update_client_capacity_non_adjacent_mixed_45_succeeds() {
   check_update_client_capacity(non_adjacent_mixed_fixture)
+}
+
+test advancing_update_rejects_missing_archive_mint() fail {
+  let fixture = adjacent_all_signed_fixture
+  check_update_client_capacity(
+    CapacityFixture {
+      ..fixture,
+      transaction: Transaction { ..fixture.transaction, mint: assets.zero },
+    },
+  )
 }

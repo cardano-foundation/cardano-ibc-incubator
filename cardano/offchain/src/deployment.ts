@@ -482,15 +482,35 @@ export const createDeployment = async (
     );
   referredValidators.push(spendClientValidator);
 
+  const [
+    spendConsensusStateValidator,
+    spendConsensusStateScriptHash,
+    spendConsensusStateAddress,
+  ] = await readValidator(
+    "spending_consensus_state.spend_consensus_state.spend",
+    lucid,
+    [mintHostStateNFTPolicyId],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+  referredValidators.push(spendConsensusStateValidator);
+
   // STT minting policies derive client/connection/channel token names from the
   // HostState NFT, keeping object-token authorization tied to the canonical mutex.
 
-  // Load mint client STT validator (parameterized by spend_client_script_hash, host_state_nft_policy_id)
+  // The client policy also authenticates immutable historical consensus records.
   const [mintClientSttValidator, mintClientSttPolicyId] = await readValidator(
     "minting_client_stt.mint_client_stt.mint",
     lucid,
-    [spendClientScriptHash, mintHostStateNFTPolicyId],
-    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+    [
+      spendClientScriptHash,
+      mintHostStateNFTPolicyId,
+      spendConsensusStateScriptHash,
+    ],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+      string,
+      string,
+      string,
+    ],
   );
   referredValidators.push(mintClientSttValidator);
 
@@ -611,6 +631,7 @@ export const createDeployment = async (
     spendClientScriptHash,
     spendConnectionScriptHash,
     spendingChannel.base.hash,
+    mintClientSttPolicyId,
     deployerPaymentKeyHash,
   );
   referredValidators.push(hostStateStt.validator);
@@ -799,6 +820,13 @@ export const createDeployment = async (
         scriptHash: spendClientScriptHash,
         address: spendClientAddress,
         refUtxo: refUtxosInfo[spendClientScriptHash],
+      },
+      spendConsensusState: {
+        title: "spending_consensus_state.spend_consensus_state.spend",
+        script: spendConsensusStateValidator.script,
+        scriptHash: spendConsensusStateScriptHash,
+        address: spendConsensusStateAddress,
+        refUtxo: refUtxosInfo[spendConsensusStateScriptHash],
       },
       spendConnection: {
         title: "spending_connection.spend_connection.spend",
@@ -2358,6 +2386,7 @@ const deployHostState = async (
   spendClientScriptHash: string,
   spendConnectionScriptHash: string,
   spendChannelScriptHash: string,
+  mintClientSttPolicyId: string,
   deployerPaymentKeyHash: string,
 ) => {
   console.log("Deploy HostState (STT Architecture)");
@@ -2383,6 +2412,7 @@ const deployHostState = async (
   // 2) `spend_client_script_hash` (used to locate the created client output when enforcing root correctness)
   // 3) `spend_connection_script_hash` (used to locate the created connection output when enforcing root correctness)
   // 4) `spend_channel_script_hash` (used to locate the created channel output when enforcing root correctness)
+  // 5) `client_mint_policy_id` (authenticates client and archived-state tokens)
   const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] =
     await readValidator(
       "host_state_stt.host_state_stt.spend",
@@ -2392,13 +2422,16 @@ const deployHostState = async (
         spendClientScriptHash,
         spendConnectionScriptHash,
         spendChannelScriptHash,
+        mintClientSttPolicyId,
       ],
       Data.Tuple([
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
+        Data.Bytes(),
       ]) as unknown as [
+        string,
         string,
         string,
         string,

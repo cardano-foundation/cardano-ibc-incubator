@@ -429,6 +429,7 @@ fn run_conn_open_try_transition(
           "client script hash",
           fixture.spend_connection_script_hash,
           "channel script hash",
+          "unused client mint policy",
           None,
           fixture.host_redeemer,
           fixture.host_input.output_reference,

@@ -16,6 +16,7 @@ import {
   MsgtransferDto,
   PlanTransferRouteDto,
   PrunePacketHistoryDto,
+  PruneConsensusStateDto,
 } from './api.dto';
 import {
   CheqdDidDocIcqRequestDto,
@@ -39,6 +40,7 @@ import { QueryService } from '~@/query/services/query.service';
 import { CheqdIcqService } from './cheqd-icq.service';
 import { parseVoucherAssetName } from '../shared/helpers/voucher-asset';
 import { validateAndFormatPrunePacketHistoryParams } from '../tx/helper/packet.validate';
+import { ClientService } from '../tx/client.service';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -82,6 +84,7 @@ export class ApiController {
     private readonly bridgeManifestService: BridgeManifestService,
     private readonly queryService: QueryService,
     private readonly cheqdIcqService: CheqdIcqService,
+    private readonly clientService: ClientService,
   ) {}
 
   @Get('channels')
@@ -178,6 +181,20 @@ export class ApiController {
         },
       }),
     );
+    return this.serializeUnsignedTxResponse(response);
+  }
+
+  @Post('consensus-state-history/prune')
+  @HttpCode(200)
+  async buildPruneConsensusState(@Body() dto: PruneConsensusStateDto) {
+    const response = await this.clientService.pruneConsensusState({
+      clientId: dto.client_id.replace(/^07-tendermint-/, ''),
+      constructedAddress: dto.signer,
+      height: {
+        revisionNumber: BigInt(dto.height.revision_number),
+        revisionHeight: BigInt(dto.height.revision_height),
+      },
+    });
     return this.serializeUnsignedTxResponse(response);
   }
 

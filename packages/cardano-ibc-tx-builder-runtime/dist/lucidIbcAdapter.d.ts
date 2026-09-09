@@ -55,7 +55,11 @@ type DeploymentConfig = {
         };
     };
 };
-export type CodecType = 'client' | 'connection' | 'channel' | 'transferEscrow' | 'transferModule' | 'host_state' | 'host_state_redeemer' | 'spendChannelRedeemer' | 'iBCModuleRedeemer' | 'transferIBCModuleRedeemer' | 'mintVoucherRedeemer' | 'mintPortRedeemer' | 'transferEscrowShardRedeemer';
+export type CodecType = 'client' | 'consensus_state' | 'connection' | 'channel' | 'transferEscrow' | 'transferModule' | 'host_state' | 'host_state_redeemer' | 'spendChannelRedeemer' | 'iBCModuleRedeemer' | 'transferIBCModuleRedeemer' | 'mintVoucherRedeemer' | 'mintPortRedeemer' | 'transferEscrowShardRedeemer';
+export declare class UtxosAtAddressNotFoundError extends Error {
+    readonly addressOrCredential: string;
+    constructor(addressOrCredential: string);
+}
 export declare class LucidIbcAdapter {
     private readonly lucid;
     private readonly deployment;
@@ -93,4 +97,5 @@ export declare class LucidIbcAdapter {
     createUnsignedSendPacketBurnTx(dto: any): TxBuilder;
     private generateTokenName;
 }
+export declare function findUtxosAtAllowEmpty(lucidService: Pick<LucidIbcAdapter, 'findUtxoAt'>, addressOrCredential: string): Promise<UTxO[]>;
 export type { AuthToken, DeploymentConfig };

@@ -1,10 +1,13 @@
+use aiken/builtin
 use aiken/cbor
+use aiken/collection/dict
 // HostState is the single coordinator UTxO for IBC object creation and root updates.
 
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
+use cardano/address
 use cardano/assets.{AssetName, PolicyId, quantity_of}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
@@ -12,8 +15,6 @@ use cardano/transaction.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
-use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
-use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -38,8 +39,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
-  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel,
-  UpdateClient, UpdateConnection,
+  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer,
+  PruneConsensusState, UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/string as string_utils
@@ -52,11 +53,9 @@ fn find_host_state_input(
   inputs: List<Input>,
   nft_policy: PolicyId,
 ) -> Option<Input> {
-  list.find(
+  find_input_with_auth_token(
     inputs,
-    fn(input) {
-      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
-    },
+    AuthToken { policy_id: nft_policy, name: host_state_token_name },
   )
 }
 
@@ -90,6 +89,19 @@ fn find_input_with_auth_token(
       assets.has_nft(input.output.value, token.policy_id, token.name)
     },
   )
+}
+
+fn require_script_output(
+  outputs: List<Output>,
+  script_hash: Hash<Blake2b_224, Script>,
+) -> Output {
+  let credential = address.Script(script_hash)
+  expect [output] =
+    list.filter(
+      outputs,
+      fn(output) { output.address.payment_credential == credential },
+    )
+  output
 }
 
 /// Derive a `07-tendermint-{N}` identifier from a client token name.
@@ -149,8 +161,7 @@ fn validate_create_client_root(
   //
   // `mint_client_stt` enforces there is exactly one client output for CreateClient,
   // so we require exactly one here too.
-  expect [client_output] =
-    outputs |> transaction.find_script_outputs(spend_client_script_hash)
+  let client_output = require_script_output(outputs, spend_client_script_hash)
 
   // Decode the client datum so we can derive the exact state bytes that must be
   // committed into the Merkle root.
@@ -184,8 +195,9 @@ fn validate_create_client_root(
 
   // `is_initialized_valid` guarantees there is exactly one consensus state and
   // its key equals `latest_height`, so we can require a single value here.
-  expect [consensus_state] =
-    pairs.get_all(client_datum.state.consensus_states, latest_height)
+  expect [Pair(consensus_height_key, consensus_state)] =
+    client_datum.state.consensus_states
+  expect consensus_height_key == latest_height
   let consensus_state_value = cbor.serialise(consensus_state)
 
   // Apply the two updates in order, starting from the old root.
@@ -213,167 +225,67 @@ fn validate_create_client_root(
   root_after_consensus_state == new_datum.state.ibc_state_root
 }
 
-/// Apply a list of consensus state deletions to the commitment root.
-///
-/// Why this exists:
-/// - The `spend_client` validator may prune old consensus states (size bound)
-///   and/or drop expired consensus states (safety).
-/// - Each removed consensus state must also be removed from the `ibc_state_root`
-///   commitment tree, otherwise proofs become inconsistent.
-///
-/// How we make this verifiable:
-/// - The HostState redeemer carries one sibling list per removed consensus state.
-/// - On-chain we compute which consensus states were removed by comparing the
-///   input and output client datums, then apply the deletions in that order.
-fn apply_removed_consensus_state_updates(
-  current_root: ByteArray,
-  client_id: ByteArray,
-  removed_pairs: Pairs<Height, ConsensusState>,
-  siblings_lists: List<List<ByteArray>>,
-) -> ByteArray {
-  when removed_pairs is {
-    [] -> {
-      // No removed keys means we also expect no witnesses.
-      expect siblings_lists == []
-      current_root
-    }
-    [Pair(height, consensus_state), ..rest_pairs] -> {
-      // Each removed consensus state must have a corresponding sibling witness.
-      expect [siblings, ..rest_siblings] = siblings_lists
-
-      // The ICS-24 key uses only `revision_height` as the path component today.
-      let height_str = string_utils.int_to_string(height.revision_height)
-      let consensus_key =
-        client_keys.full_client_consensus_state_path(client_id, height_str)
-
-      // Commitment values are always CBOR-serialized before being committed.
-      let old_value = cbor.serialise(consensus_state)
-
-      // Deletion is represented by the empty bytearray.
-      let next_root =
-        ibc_state_commitment.apply_update(
-          current_root,
-          consensus_key,
-          old_value,
-          "",
-          siblings,
-        )
-
-      apply_removed_consensus_state_updates(
-        next_root,
-        client_id,
-        rest_pairs,
-        rest_siblings,
-      )
-    }
-  }
-}
-
-/// Enforce that `ibc_state_root` is updated correctly for UpdateClient.
-///
-/// In plain terms:
-/// - The new HostState datum is only accepted if its `ibc_state_root` equals
-///   the old root with exactly the client update key changes applied.
-///
-/// What can change in a valid UpdateClient transition:
-/// - `clients/{clientId}/clientState` is updated (always)
-/// - one new consensus state may be added at `clients/{clientId}/consensusStates/{height}`
-/// - some old consensus states may be removed (expiry/pruning)
+/// Archive movement does not change the historical consensus-state leaf.
+/// Only the client summary and the newly accepted height change in the tree.
 fn validate_update_client_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   inputs: List<Input>,
   outputs: List<Output>,
+  mint: assets.Value,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_mint_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
   removed_consensus_state_siblings: List<List<ByteArray>>,
 ) -> Bool {
-  // Find the updated client output.
-  //
-  // `spend_client` enforces there is exactly one client output in this transaction,
-  // so we require exactly one here too.
-  expect [client_output] =
-    outputs |> transaction.find_script_outputs(spend_client_script_hash)
-
-  expect client_output_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_output)
-
-  // Identify which client is being updated.
-  let client_id = client_id_from_token_name(client_output_datum.token.name)
-
-  // Find the input client UTxO by looking for the same auth token.
-  expect Some(client_input) =
-    find_input_with_auth_token(inputs, client_output_datum.token)
-
-  expect client_input_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_input.output)
-
-  // 1) Apply the clientState update.
-  let client_state_key = client_keys.full_client_state_path(client_id)
-
-  let old_client_state_value =
-    cbor.serialise(client_input_datum.state.client_state)
-  let new_client_state_value =
-    cbor.serialise(client_output_datum.state.client_state)
-
-  let root_after_client_state =
-    ibc_state_commitment.apply_update(
-      old_datum.state.ibc_state_root,
-      client_state_key,
-      old_client_state_value,
-      new_client_state_value,
-      client_state_siblings,
-    )
-
-  // 2) Apply any consensus state deletions (pruning / expiry).
-  let input_cons_states = client_input_datum.state.consensus_states
-  let output_cons_states = client_output_datum.state.consensus_states
-
-  let removed_consensus_pairs =
-    list.filter(
-      input_cons_states,
-      fn(pair) { !pairs.has_key(output_cons_states, pair.1st) },
-    )
-
-  let root_after_removed =
-    apply_removed_consensus_state_updates(
-      root_after_client_state,
-      client_id,
-      removed_consensus_pairs,
-      removed_consensus_state_siblings,
-    )
-
-  // 3) Apply the new consensus state insertion (if any).
-  //
-  // Misbehaviour updates do not add a new consensus state.
-  let added_consensus_pairs =
-    list.filter(
-      output_cons_states,
-      fn(pair) { !pairs.has_key(input_cons_states, pair.1st) },
-    )
-
-  let root_final =
-    when added_consensus_pairs is {
-      [] -> root_after_removed
-      [Pair(height, consensus_state)] -> {
-        let height_str = string_utils.int_to_string(height.revision_height)
-        let consensus_key =
-          client_keys.full_client_consensus_state_path(client_id, height_str)
-        let new_value = cbor.serialise(consensus_state)
-
-        ibc_state_commitment.apply_update(
-          root_after_removed,
-          consensus_key,
-          "",
-          new_value,
-          consensus_state_siblings,
+  expect removed_consensus_state_siblings == []
+  when assets.tokens(mint, client_mint_policy_id) |> dict.to_pairs is {
+    // The archive policy verifies both root updates and permits exactly one
+    // client continuation. Other policy branches cannot mint during UpdateClient.
+    [Pair(_, 1)] -> True
+    _ -> {
+      // A freeze keeps the same checkpoint and updates only the client leaf.
+      expect consensus_state_siblings == []
+      let client_output =
+        require_script_output(outputs, spend_client_script_hash)
+      expect output_client: ClientDatum =
+        validator_utils.get_inline_datum(client_output)
+      expect output_client.token.policy_id == client_mint_policy_id
+      expect Some(client_input) =
+        find_input_with_auth_token(inputs, output_client.token)
+      expect
+        client_input.output.address.payment_credential == address.Script(
+          spend_client_script_hash,
         )
-      }
-      _ -> fail @"UpdateClient should add at most one consensus state"
+      expect input_client: ClientDatum =
+        validator_utils.get_inline_datum(client_input.output)
+      expect
+        input_client.state.client_state.latest_height == output_client.state.client_state.latest_height
+      ibc_state_commitment.apply_update(
+        old_datum.state.ibc_state_root,
+        client_keys.full_client_state_path(
+          client_id_from_token_name(output_client.token.name),
+        ),
+        cbor.serialise(input_client.state.client_state),
+        cbor.serialise(output_client.state.client_state),
+        client_state_siblings,
+      ) == new_datum.state.ibc_state_root
     }
+  }
+}
 
-  root_final == new_datum.state.ibc_state_root
+/// The canonical client minting policy checks the historical datum, expiry and
+/// exact root deletion before allowing this single NFT burn.
+fn validate_prune_consensus_state_root(
+  tx: Transaction,
+  client_mint_policy_id: PolicyId,
+) -> Bool {
+  // Only the PruneConsensusState policy branch can burn an asset. That branch
+  // also binds its client and height to this HostState redeemer.
+  expect [Pair(_, -1)] =
+    assets.tokens(tx.mint, client_mint_policy_id) |> dict.to_pairs
+  True
 }
 
 /// Enforce that `ibc_state_root` is updated correctly for CreateConnection.
@@ -392,8 +304,8 @@ fn validate_create_connection_root(
   //
   // `mint_connection_stt` enforces there is exactly one connection output for CreateConnection,
   // so we require exactly one here too.
-  expect [connection_output] =
-    outputs |> transaction.find_script_outputs(spend_connection_script_hash)
+  let connection_output =
+    require_script_output(outputs, spend_connection_script_hash)
 
   // Decode the connection datum so we can derive the exact state bytes that must be
   // committed into the Merkle root.
@@ -447,8 +359,7 @@ fn validate_create_channel_root(
   //
   // `mint_channel_stt` enforces there is exactly one channel output for CreateChannel,
   // so we require exactly one here too.
-  expect [channel_output] =
-    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
+  let channel_output = require_script_output(outputs, spend_channel_script_hash)
 
   // Decode the channel datum so we can derive the exact state bytes that must be
   // committed into the Merkle root.
@@ -556,8 +467,8 @@ fn validate_bind_port_root(
   // The initial root must be created at the registered script credential with
   // precisely the two registered capability NFTs. Its datum is application
   // state owned and interpreted by the registered module, not IBC core.
-  expect [module_output] =
-    transaction.find_script_outputs(outputs, registration.module_script_hash)
+  let module_output =
+    require_script_output(outputs, registration.module_script_hash)
 
   let root_after_bind =
     ibc_state_commitment.apply_update(
@@ -594,8 +505,8 @@ fn validate_update_connection_root(
   //
   // `spend_connection` enforces there is exactly one connection output in this transaction,
   // so we require exactly one here too.
-  expect [connection_output] =
-    outputs |> transaction.find_script_outputs(spend_connection_script_hash)
+  let connection_output =
+    require_script_output(outputs, spend_connection_script_hash)
 
   // Decode the output datum so we can:
   // - derive the connection id from its token name
@@ -651,8 +562,7 @@ fn validate_update_channel_root(
   //
   // `spend_channel` enforces there is exactly one channel output in this transaction,
   // so we require exactly one here too.
-  expect [channel_output] =
-    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
+  let channel_output = require_script_output(outputs, spend_channel_script_hash)
 
   // Decode the output datum so we can:
   // - derive the channel id from its token name
@@ -759,8 +669,7 @@ fn validate_handle_packet_root(
   packet_acknowledgement_siblings: List<ByteArray>,
 ) -> Bool {
   // Find the updated channel output.
-  expect [channel_output] =
-    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
+  let channel_output = require_script_output(outputs, spend_channel_script_hash)
 
   expect channel_output_datum: ChannelDatum =
     validator_utils.get_inline_datum(channel_output)
@@ -777,13 +686,19 @@ fn validate_handle_packet_root(
 
   expect Some(channel_redeemer_data) =
     pairs.get_first(redeemers, Spend(channel_input.output_reference))
-  expect channel_redeemer: SpendChannelRedeemer = channel_redeemer_data
+  // Dispatch on the stable SpendChannelRedeemer tag, then decode only that
+  // exact constructor. Every accepted branch retains the typed packet/height
+  // checks; unrelated handshake proof constructors are not needed here.
+  let channel_redeemer_tag =
+    builtin.fst_pair(builtin.un_constr_data(channel_redeemer_data))
 
   let old_root = old_datum.state.ibc_state_root
   let is_ordered = channel_input_datum.state.channel.ordering == Ordered
   let expected_root =
-    when channel_redeemer is {
-      SendPacket { packet } -> {
+    when channel_redeemer_tag is {
+      5 -> {
+        expect SendPacket { packet }: SpendChannelRedeemer =
+          channel_redeemer_data
         let commitment = packet_mod.commit_packet(packet)
         expect
           channel_datum_mod.validate_send_packet(
@@ -812,7 +727,9 @@ fn validate_handle_packet_root(
           packet_commitment_siblings,
         )
       }
-      RecvPacket { packet, proof_height, .. } -> {
+      2 -> {
+        expect RecvPacket { packet, proof_height, .. }: SpendChannelRedeemer =
+          channel_redeemer_data
         let acknowledgement =
           required_packet_entry(
             channel_output_datum.state.packet_acknowledgement,
@@ -866,7 +783,9 @@ fn validate_handle_packet_root(
           packet_acknowledgement_siblings,
         )
       }
-      AcknowledgePacket { packet, .. } -> {
+      4 -> {
+        expect AcknowledgePacket { packet, .. }: SpendChannelRedeemer =
+          channel_redeemer_data
         expect
           channel_datum_mod.validate_acknowledge_packet(
             channel_input_datum,
@@ -894,7 +813,9 @@ fn validate_handle_packet_root(
           packet_commitment_siblings,
         )
       }
-      TimeoutPacket { packet, .. } -> {
+      3 -> {
+        expect TimeoutPacket { packet, .. }: SpendChannelRedeemer =
+          channel_redeemer_data
         expect
           channel_datum_mod.validate_timeout_packet(
             channel_input_datum,
@@ -922,7 +843,9 @@ fn validate_handle_packet_root(
           packet_commitment_siblings,
         )
       }
-      TimeoutOnClose { packet, .. } -> {
+      9 -> {
+        expect TimeoutOnClose { packet, .. }: SpendChannelRedeemer =
+          channel_redeemer_data
         expect
           channel_datum_mod.validate_timeout_packet(
             channel_input_datum,
@@ -950,7 +873,9 @@ fn validate_handle_packet_root(
           packet_commitment_siblings,
         )
       }
-      PruneChannelPacketHistory { sequence, .. } -> {
+      8 -> {
+        expect PruneChannelPacketHistory { sequence, .. }: SpendChannelRedeemer =
+          channel_redeemer_data
         // The prune marker validates the complete successor datum and the
         // authenticated absence proof. The HostState side binds that typed
         // operation to the same sequence and commits the ordering-specific
@@ -1007,6 +932,7 @@ validator host_state_stt(
   spend_client_script_hash: Hash<Blake2b_224, Script>,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  client_mint_policy_id: PolicyId,
 ) {
   spend(
     _datum_opt: Option<HostStateDatum>,
@@ -1063,8 +989,9 @@ validator host_state_stt(
         // In practice, this means the output that carries the NFT must stay at the
         // same address as the spent HostState UTxO.
         expect host_output.address == host_input.output.address
-        expect new_datum.nft_policy == nft_policy
 
+        // Every non-final transition below preserves nft_policy from old_datum,
+        // whose policy was already authenticated against nft_policy above.
         when redeemer is {
           CreateClient { client_state_siblings, consensus_state_siblings } ->
             and {
@@ -1133,10 +1060,19 @@ validator host_state_stt(
                 new_datum,
                 inputs,
                 outputs,
+                transaction.mint,
                 spend_client_script_hash,
+                client_mint_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
                 removed_consensus_state_siblings,
+              ),
+            }
+          PruneConsensusState { .. } -> and {
+              validate_update_only_root(old_datum, new_datum),
+              validate_prune_consensus_state_root(
+                transaction,
+                client_mint_policy_id,
               ),
             }
           UpdateConnection { connection_siblings } -> and {

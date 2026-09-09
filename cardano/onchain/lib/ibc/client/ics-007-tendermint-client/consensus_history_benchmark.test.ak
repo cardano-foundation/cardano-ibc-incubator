@@ -1,15 +1,10 @@
 use aiken/collection/list
-use aiken/collection/pairs
-use aiken/math
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/header.{TmHeader} as tm_header
-use ibc/client/ics_007_tendermint_client/cometbft/constants.{
-  max_consensus_state_size,
-}
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header}
@@ -94,36 +89,25 @@ fn fixture(count: Int, expire_alternate: Bool) -> Fixture {
           Height { revision_number: 0, revision_height: count },
           merkle.get_sdk_specs(),
         ),
-        consensus_states,
-        processed_times: list.map(consensus_states, fn(p) { Pair(p.1st, 0) }),
-        processed_heights: list.map(consensus_states, fn(p) { Pair(p.1st, 0) }),
+        consensus_states: list.take(consensus_states, 1),
+        processed_times: list.map(
+          list.take(consensus_states, 1),
+          fn(p) { Pair(p.1st, 0) },
+        ),
+        processed_heights: list.map(
+          list.take(consensus_states, 1),
+          fn(p) { Pair(p.1st, 0) },
+        ),
       },
       token: AuthToken { policy_id: #"03", name: #"04" },
     }
-  Fixture { input, output: legacy_output(input, next_header), next_header }
+  Fixture { input, output: singleton_output(input, next_header), next_header }
 }
 
-// Frozen reference of the pre-#726 filtering and truncation algorithm. This only
-// constructs expected fixtures at compile time, outside the measured functions.
-fn legacy_output(input: ClientDatum, next_header: Header) -> ClientDatum {
+// Count changes the chain height, not the amount of live history. Earlier
+// checkpoints live outside this transaction and require no expiry traversal.
+fn singleton_output(input: ClientDatum, next_header: Header) -> ClientDatum {
   let next_height = header.get_height(next_header)
-  let retained =
-    list.filter(
-      input.state.consensus_states,
-      fn(p) {
-        !client_state.is_expired(
-          input.state.client_state,
-          p.2nd.timestamp,
-          tx_valid_from * 1_000_000,
-        )
-      },
-    )
-  let keys = pairs.keys(retained)
-  let times =
-    list.filter(input.state.processed_times, fn(p) { list.has(keys, p.1st) })
-  let heights =
-    list.filter(input.state.processed_heights, fn(p) { list.has(keys, p.1st) })
-  let end = math.min(max_consensus_state_size - 1, list.length(retained))
   let processed_time = tx_valid_from * 1_000_000
   ClientDatum {
     ..input,
@@ -132,27 +116,14 @@ fn legacy_output(input: ClientDatum, next_header: Header) -> ClientDatum {
         ..input.state.client_state,
         latest_height: next_height,
       },
-      consensus_states: list.slice(
-        [Pair(next_height, header.consensus_state(next_header)), ..retained],
-        0,
-        end,
-      ),
-      processed_times: list.slice(
-        [Pair(next_height, processed_time), ..times],
-        0,
-        end,
-      ),
-      processed_heights: list.slice(
-        [
-          Pair(
-            next_height,
-            client_datum.processed_height_from_time(processed_time),
-          ),
-          ..heights
-        ],
-        0,
-        end,
-      ),
+      consensus_states: [Pair(next_height, header.consensus_state(next_header))],
+      processed_times: [Pair(next_height, processed_time)],
+      processed_heights: [
+        Pair(
+          next_height,
+          client_datum.processed_height_from_time(processed_time),
+        ),
+      ],
     },
   }
 }

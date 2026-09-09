@@ -5,7 +5,7 @@ import * as Lucid from '@lucid-evolution/lucid';
 
 import { encodeAuthToken } from '@shared/types/auth-token';
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
-import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
+import { encodeMintClientRedeemer, encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { encodeTransferIBCModuleRedeemer } from '@shared/types/apps/transfer/transfer-ibc-module-redeemer';
 import { encodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import {
@@ -137,6 +137,7 @@ const TX_REFERENCE_INPUT_BYTES = 44;
 const REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES = 200;
 
 const CAPACITY_HOST_STATE_AIKEN_TEST = 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds';
+const CAPACITY_ARCHIVE_MINT_AIKEN_TEST = 'consensus_history.test.normal_update_mint_binds_checkpoint_and_processing_metadata';
 const CAPACITY_SCENARIOS = [
   {
     fixtureName: 'adjacent_all_signed',
@@ -733,17 +734,21 @@ async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
     name: 'Modeled RecoverClient with minimum retained history using Aiken full-fixture accounting',
     inputCount: 2,
     nonScriptReferenceInputCount: 1,
-    outputCount: 2,
-    mintPolicyCount: 0,
+    outputCount: 3,
+    mintPolicyCount: 1,
     referenceScriptTitles: [
       'host_state_stt.host_state_stt.spend',
       'spending_client.spend_client.spend',
       'recover_client.recover_client.withdraw',
+      'minting_client_stt.mint_client_stt.mint',
     ],
     redeemers: [
       // Recovery updates the client-state leaf and inserts one consensus
       // state, so HostState carries two complete 64-level Merkle witnesses.
       dataBytes('host state UpdateClient redeemer', 4_600),
+      sized('archive previous consensus state', await encodeMintClientRedeemer(
+        { ArchiveConsensusState: { client_token: RECOVERY_SUBJECT_TOKEN } }, Lucid,
+      )),
       sized(
         'spend client RecoverClient',
         await encodeSpendClientRedeemer({ RecoverClient: { substitute_token: RECOVERY_SUBSTITUTE_TOKEN } }, Lucid),
@@ -763,13 +768,15 @@ async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
     ],
     datums: [
       dataBytes('updated host state datum', 1_000),
-      dataBytes('recovered client datum with two consensus states', 1_000),
+      dataBytes('recovered client datum with one consensus state', 700),
+      dataBytes('archived subject consensus state', 300),
     ],
     largestProofPayloadBytes: 4_096,
     aikenTests: [
       'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds',
       'recover_client.test.recover_client_accepts_expired_subject',
       'recover_client.test.spend_client_forwards_valid_recovery',
+      'consensus_history.test.archive_authenticates_exact_checkpoint_and_metadata',
     ],
   };
 }
@@ -788,6 +795,7 @@ async function buildScenarios(
     'recover_client.recover_client.withdraw',
     'spending_channel.spend_channel.spend',
     'spending_client.spend_client.spend',
+    'spending_consensus_state.spend_consensus_state.spend',
     'spending_connection.spend_connection.spend',
     'spending_transfer_module.spend_transfer_module.spend',
     'trace_registry.spend_trace_registry.spend',
@@ -883,6 +891,9 @@ async function buildScenarios(
       id: 'conn_open_ack',
       name: 'ConnOpenAck',
       inputCount: 3,
+      // The historical-proof fixture references the live client and one
+      // authenticated archived consensus-state output.
+      nonScriptReferenceInputCount: 2,
       outputCount: 3,
       mintPolicyCount: 1,
       referenceScriptTitles: [
@@ -897,7 +908,7 @@ async function buildScenarios(
       ],
       datums: [dataBytes('updated host state datum', 1000), dataBytes('connection datum', 768)],
       largestProofPayloadBytes: 1536,
-      aikenTests: ['spending_connection.test.conn_open_ack_succeed'],
+      aikenTests: ['spending_connection.test.conn_open_ack_accepts_authenticated_archived_height'],
     },
     await buildMinimumHistoryRecoveryScenario(),
     {
@@ -1335,6 +1346,11 @@ async function buildScenarios(
 async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
   const fixture = loadNormalizedCapacityFixture();
   const hostState = requiredAikenTestUnits(aikenTests, CAPACITY_HOST_STATE_AIKEN_TEST);
+  // Normal updates validate the successor checkpoint in ArchiveConsensusState.
+  // The recovery archive probe skips that branch and would undercount its work.
+  // This small-validator fixture remains a modeled component estimate, not an
+  // evaluation of the full 45-validator transaction.
+  const archiveMint = requiredAikenTestUnits(aikenTests, CAPACITY_ARCHIVE_MINT_AIKEN_TEST);
 
   return Promise.all(
     CAPACITY_SCENARIOS.map(async ({ fixtureName, aikenTest }) => {
@@ -1349,6 +1365,7 @@ async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
         {
           hostState: { mem: BigInt(hostState.mem), steps: BigInt(hostState.steps) },
           spendClient: { mem: BigInt(spendClient.mem), steps: BigInt(spendClient.steps) },
+          archiveMint: { mem: BigInt(archiveMint.mem), steps: BigInt(archiveMint.steps) },
         },
         'aiken-unit-tests',
       );
@@ -1412,6 +1429,7 @@ async function main() {
   console.log('Execution units are test-derived estimates collected with --trace-level silent, not ledger evaluations.');
   printReport(reports, maxTxSize, txHeadroomBytes);
   console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
+  console.log('Modeled archive-mint units use the small-validator normal-update fixture, not the recovery branch; these are not full 45-validator ledger evaluations and those cases remain unsupported.');
   console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
 
   const { failures, knownViolations } = checkTransactionBudgets(reports, {

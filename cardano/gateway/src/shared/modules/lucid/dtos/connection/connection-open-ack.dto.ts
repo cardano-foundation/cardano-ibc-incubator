@@ -7,6 +7,7 @@ export type UnsignedConnectionOpenAckDto = {
 
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
+  consensusStateReferenceUtxos: UTxO[];
   constructedAddress: string;
 
   connectionTokenUnit: string;

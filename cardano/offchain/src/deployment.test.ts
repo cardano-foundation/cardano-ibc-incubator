@@ -99,8 +99,48 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
       ]),
     ]) as unknown as [string, { Script: [string] }],
   );
+  const [archiveValidator, archiveHash] = readValidator(
+    "spending_consensus_state.spend_consensus_state.spend",
+    lucid,
+    [hostPolicy],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+  const [clientPolicy, clientPolicyId] = readValidator(
+    "minting_client_stt.mint_client_stt.mint",
+    lucid,
+    [spendClientScriptHash, hostPolicy, archiveHash],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+      string,
+      string,
+      string,
+    ],
+  );
+  const [hostValidator] = readValidator(
+    "host_state_stt.host_state_stt.spend",
+    lucid,
+    [
+      hostPolicy,
+      spendClientScriptHash,
+      "22".repeat(28),
+      "33".repeat(28),
+      clientPolicyId,
+    ],
+    Data.Tuple(Array.from({ length: 5 }, () => Data.Bytes())) as unknown as [
+      string,
+      string,
+      string,
+      string,
+      string,
+    ],
+  );
   const report = buildReferenceValidatorSizeReport(
-    [recoveryValidator, spendClientValidator],
+    [
+      recoveryValidator,
+      spendClientValidator,
+      archiveValidator,
+      clientPolicy,
+      hostValidator,
+    ],
     16_384,
   );
   const spendClientReport = report.find(
@@ -108,6 +148,29 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
   );
 
   assertEquals(spendClientReport?.oversized, false);
+  assertEquals(report.filter(({ oversized }) => oversized), []);
+});
+
+Deno.test("consensus history deployment binds both authentication and storage scripts", () => {
+  const parameters = (title: string) =>
+    blueprint.validators.find((validator) => validator.title === title)
+      ?.parameters?.map((parameter) => parameter.title);
+  assertEquals(
+    parameters("spending_consensus_state.spend_consensus_state.spend"),
+    ["host_state_nft_policy_id"],
+  );
+  assertEquals(parameters("minting_client_stt.mint_client_stt.mint"), [
+    "spend_client_script_hash",
+    "host_state_nft_policy_id",
+    "consensus_state_script_hash",
+  ]);
+  assertEquals(parameters("host_state_stt.host_state_stt.spend"), [
+    "nft_policy",
+    "spend_client_script_hash",
+    "spend_connection_script_hash",
+    "spend_channel_script_hash",
+    "client_mint_policy_id",
+  ]);
 });
 
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {

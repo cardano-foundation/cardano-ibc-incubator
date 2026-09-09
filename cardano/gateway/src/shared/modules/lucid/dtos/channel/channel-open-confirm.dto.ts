@@ -9,6 +9,7 @@ export type UnsignedChannelOpenConfirmDto = {
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
+  consensusStateReferenceUtxos: UTxO[];
   moduleKey: GatewayModuleKey;
   moduleUtxo: UTxO;
   encodedSpendChannelRedeemer: string;

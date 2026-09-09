@@ -9,7 +9,7 @@ import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
 import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
 import { IbcTreeStateStore, StaleIbcTreeStateError } from './ibcStateRoot';
-import { LucidIbcAdapter } from './lucidIbcAdapter';
+import { findUtxosAtAllowEmpty, LucidIbcAdapter } from './lucidIbcAdapter';
 import {
   findTransferEscrowShard as findTransferEscrowShardFromRegistry,
 } from './transferEscrowShard';
@@ -104,6 +104,7 @@ type DeploymentConfig = {
   validators: {
     hostStateStt: DeploymentValidator;
     spendClient: DeploymentValidator;
+    spendConsensusState?: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
     spendTraceRegistry?: DeploymentValidator;
@@ -142,6 +143,11 @@ type BridgeManifest = {
       ref_utxo: { tx_hash: string; output_index: number };
     };
     spend_client: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    spend_consensus_state?: {
       script_hash: string;
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
@@ -354,6 +360,7 @@ const LUCID_NETWORKS = ['Mainnet', 'Preprod', 'Preview', 'Custom'] as const;
 
 type KupoLikeService = {
   queryAllClientUtxos(): Promise<UTxO[]>;
+  queryAllConsensusStateUtxos(): Promise<UTxO[]>;
   queryAllConnectionUtxos(): Promise<UTxO[]>;
   queryAllChannelUtxos(): Promise<UTxO[]>;
 };
@@ -478,6 +485,11 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
       validators: {
         hostStateStt: mapValidator(manifest.validators.host_state_stt),
         spendClient: mapValidator(manifest.validators.spend_client),
+        ...(manifest.validators.spend_consensus_state
+          ? {
+              spendConsensusState: mapValidator(manifest.validators.spend_consensus_state),
+            }
+          : {}),
         spendConnection: mapValidator(manifest.validators.spend_connection),
         spendChannel: {
           ...mapValidator(manifest.validators.spend_channel),
@@ -1385,6 +1397,7 @@ class RuntimeKupoService implements KupoLikeService {
   private readonly clientAddress: string;
   private readonly connectionAddress: string;
   private readonly channelAddress: string;
+  private readonly consensusStateAddress?: string;
 
   constructor(private readonly lucidService: LucidIbcAdapter, deployment: DeploymentConfig) {
     this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
@@ -1393,6 +1406,7 @@ class RuntimeKupoService implements KupoLikeService {
     this.clientAddress = deployment.validators.spendClient.address ?? '';
     this.connectionAddress = deployment.validators.spendConnection.address ?? '';
     this.channelAddress = deployment.validators.spendChannel.address ?? '';
+    this.consensusStateAddress = deployment.validators.spendConsensusState?.address;
   }
 
   private getMatchingAssetNames(utxo: UTxO, policyId: string): string[] {
@@ -1413,6 +1427,14 @@ class RuntimeKupoService implements KupoLikeService {
 
   async queryAllClientUtxos(): Promise<UTxO[]> {
     return this.queryUtxosAtAddressByPolicy(this.clientAddress, this.clientTokenPrefix);
+  }
+
+  async queryAllConsensusStateUtxos(): Promise<UTxO[]> {
+    if (!this.consensusStateAddress) {
+      throw new Error('Consensus-state history validator address is not configured');
+    }
+    const utxos = await findUtxosAtAllowEmpty(this.lucidService, this.consensusStateAddress);
+    return utxos.filter((utxo) => this.getMatchingAssetNames(utxo, this.clientTokenPrefix).length > 0);
   }
 
   async queryAllConnectionUtxos(): Promise<UTxO[]> {
@@ -1622,7 +1644,18 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
 
     const kupoService = new RuntimeKupoService(lucidService, deployment);
     const treeStore = new IbcTreeStateStore(
-      { network: cardanoNetwork, hostStateNFT: deployment.hostStateNFT },
+      {
+        network: cardanoNetwork,
+        hostStateNFT: deployment.hostStateNFT,
+        ...(deployment.validators.spendConsensusState?.address
+          ? {
+              consensusStateHistory: {
+                address: deployment.validators.spendConsensusState.address,
+                policyId: deployment.validators.mintClientStt.scriptHash,
+              },
+            }
+          : {}),
+      },
       kupoService,
       lucidService,
     );

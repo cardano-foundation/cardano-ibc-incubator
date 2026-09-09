@@ -67,6 +67,7 @@ export type DeploymentConfig = {
   validators: {
     hostStateStt: DeploymentValidator;
     recoverClient?: DeploymentValidator;
+    spendConsensusState?: DeploymentValidator;
     spendClient: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
@@ -163,6 +164,7 @@ export type BridgeManifest = {
   validators: {
     host_state_stt: BridgeManifestValidator;
     recover_client?: BridgeManifestValidator;
+    spend_consensus_state?: BridgeManifestValidator;
     spend_client: BridgeManifestValidator;
     spend_connection: BridgeManifestValidator;
     spend_channel: BridgeManifestSpendChannelValidator;
@@ -607,6 +609,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
         ? { recoverClient: requireDeploymentValidator(validators.recoverClient, 'validators.recoverClient') }
         : {}),
       spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
+      ...(validators.spendConsensusState
+        ? { spendConsensusState: requireDeploymentValidator(validators.spendConsensusState, 'validators.spendConsensusState') }
+        : {}),
       spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection'),
       spendChannel: requireDeploymentSpendChannelValidator(validators.spendChannel, 'validators.spendChannel'),
       ...(validators.spendMockModule
@@ -666,6 +671,9 @@ export function normalizeHandlerJsonDeploymentConfig(
           ? { recover_client: deploymentValidatorToManifest(normalizedDeployment.validators.recoverClient) }
           : {}),
         spend_client: deploymentValidatorToManifest(normalizedDeployment.validators.spendClient),
+        ...(normalizedDeployment.validators.spendConsensusState
+          ? { spend_consensus_state: deploymentValidatorToManifest(normalizedDeployment.validators.spendConsensusState) }
+          : {}),
         spend_connection: deploymentValidatorToManifest(normalizedDeployment.validators.spendConnection),
         spend_channel: deploymentSpendChannelToManifest(normalizedDeployment.validators.spendChannel),
         ...(normalizedDeployment.validators.spendMockModule
@@ -731,6 +739,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         ? { recover_client: requireManifestValidator(validators.recover_client, 'validators.recover_client') }
         : {}),
       spend_client: requireManifestValidator(validators.spend_client, 'validators.spend_client'),
+      ...(validators.spend_consensus_state
+        ? { spend_consensus_state: requireManifestValidator(validators.spend_consensus_state, 'validators.spend_consensus_state') }
+        : {}),
       spend_connection: requireManifestValidator(validators.spend_connection, 'validators.spend_connection'),
       spend_channel: requireManifestSpendChannelValidator(validators.spend_channel, 'validators.spend_channel'),
       ...(validators.spend_mock_module
@@ -787,6 +798,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
           ? { recoverClient: manifestValidatorToDeployment(bridgeManifest.validators.recover_client) }
           : {}),
         spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
+        ...(bridgeManifest.validators.spend_consensus_state
+          ? { spendConsensusState: manifestValidatorToDeployment(bridgeManifest.validators.spend_consensus_state) }
+          : {}),
         spendConnection: manifestValidatorToDeployment(bridgeManifest.validators.spend_connection),
         spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
         ...(bridgeManifest.validators.spend_mock_module

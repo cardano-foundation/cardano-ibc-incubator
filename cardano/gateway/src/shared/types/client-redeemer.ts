@@ -1,8 +1,22 @@
 import { type Data } from '@lucid-evolution/lucid';
 import { AuthToken } from './auth-token';
 import { ClientMessage } from './msgs/client-message';
+import { Height } from './height';
 
-type MintClientRedeemer = 'MintClient';
+export type MintClientRedeemer =
+  | 'MintClient'
+  | { ArchiveConsensusState: { client_token: AuthToken } }
+  | { PruneConsensusState: { client_token: AuthToken; height: Height } };
+
+function mintClientRedeemerSchema({ Data }: typeof import('@lucid-evolution/lucid')) {
+  const token = Data.Object({ policyId: Data.Bytes(), name: Data.Bytes() });
+  const height = Data.Object({ revisionNumber: Data.Integer(), revisionHeight: Data.Integer() });
+  return Data.Enum([
+    Data.Literal('MintClient'),
+    Data.Object({ ArchiveConsensusState: Data.Object({ client_token: token }) }),
+    Data.Object({ PruneConsensusState: Data.Object({ client_token: token, height }) }),
+  ]);
+}
 
 export type SpendClientRedeemer =
   | {
@@ -21,9 +35,7 @@ export function decodeMintClientRedeemer(
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): MintClientRedeemer {
   const { Data } = Lucid;
-  const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
-  Data.from(mintClientRedeemer, MintClientRedeemerSchema as unknown as undefined);
-  return 'MintClient';
+  return Data.from(mintClientRedeemer, mintClientRedeemerSchema(Lucid) as never) as MintClientRedeemer;
 }
 
 export async function encodeMintClientRedeemer(
@@ -31,11 +43,7 @@ export async function encodeMintClientRedeemer(
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
-  const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
-  if (mintClientRedeemer !== 'MintClient') {
-    throw new Error(`Unsupported mint client redeemer: ${String(mintClientRedeemer)}`);
-  }
-  return Data.to(undefined, MintClientRedeemerSchema as unknown as undefined, {
+  return Data.to(mintClientRedeemer as never, mintClientRedeemerSchema(Lucid) as never, {
     canonical: true,
   });
 }

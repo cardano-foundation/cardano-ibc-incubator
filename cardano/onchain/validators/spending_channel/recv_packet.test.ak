@@ -634,6 +634,7 @@ fn check_recv_packet_with_timeout(
         "unused client script hash",
         "unused connection script hash",
         "mock spend channel script hash",
+        "unused client mint policy",
         None,
         host_state_redeemer,
         host_input.output_reference,

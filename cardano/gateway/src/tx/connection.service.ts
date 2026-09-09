@@ -25,7 +25,6 @@ import { MintConnectionRedeemer, SpendConnectionRedeemer } from '@shared/types/c
 import { ConfigService } from '@nestjs/config';
 import { parseClientSequence } from 'src/shared/helpers/sequence';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
-import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import { sumLovelaceFromUtxos } from './helper/helper';
 import {
@@ -798,7 +797,8 @@ export class ConnectionService {
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [connectionOpenTryOperator.proofHeight]);
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     if (!isValidProofHeight(heightsArray, connectionOpenTryOperator.proofHeight)) {
       throw new GrpcInternalException(
@@ -960,6 +960,7 @@ export class ConnectionService {
       encodedHostStateRedeemer,
       connectionTokenUnit,
       clientUtxo,
+      consensusStateReferenceUtxos,
       encodedMintConnectionRedeemer,
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
@@ -1108,7 +1109,8 @@ export class ConnectionService {
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     this.logConnOpenAckDebug(() => `[DEBUG] ConnOpenAck clientUtxo(ref only)=${this.toUtxoRef(clientUtxo)} unit=${clientTokenUnit}`);
-    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [connectionOpenAckOperator.proofHeight]);
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
 
@@ -1260,6 +1262,7 @@ export class ConnectionService {
       encodedSpendConnectionRedeemer,
       connectionTokenUnit,
       clientUtxo,
+      consensusStateReferenceUtxos,
       encodedUpdatedConnectionDatum,
       constructedAddress,
       verifyProofPolicyId,
@@ -1362,7 +1365,8 @@ export class ConnectionService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [connectionOpenConfirmOperator.proofHeight]);
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     if (!isValidProofHeight(heightsArray, connectionOpenConfirmOperator.proofHeight)) {
       throw new GrpcInternalException(
@@ -1452,6 +1456,7 @@ export class ConnectionService {
       encodedSpendConnectionRedeemer,
       connectionTokenUnit,
       clientUtxo,
+      consensusStateReferenceUtxos,
       encodedUpdatedConnectionDatum,
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,

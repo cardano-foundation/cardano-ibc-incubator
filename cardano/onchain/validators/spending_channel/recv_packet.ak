@@ -104,6 +104,8 @@ validator recv_packet(
         client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+        validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+        Some(proof_height),
       )
     trace @"recv_packet: reference_inputs contain Connection utxo"
 

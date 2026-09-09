@@ -5,7 +5,8 @@ import * as Lucid from '@lucid-evolution/lucid';
 
 import { LucidService, type CodecType } from '@shared/modules/lucid/lucid.service';
 import { encodeClientDatum, type ClientDatum } from '@shared/types/client-datum';
-import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
+import { encodeMintClientRedeemer, encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
+import { consensusStateTokenName, encodeConsensusStateDatum } from '@shared/types/consensus-state-datum';
 import { type ConsensusState } from '@shared/types/consensus-state';
 import { type Header } from '@shared/types/header';
 import { encodeHostStateDatum, type HostStateDatum } from '@shared/types/host-state-datum';
@@ -33,6 +34,7 @@ export const DEFAULT_NORMALIZED_FIXTURE_PATH = path.resolve(
 export const STRUCTURAL_PLACEHOLDER_EX_UNITS = {
   hostState: { mem: 10_000_000n, steps: 5_000_000_000n },
   spendClient: { mem: 10_000_000n, steps: 5_000_000_000n },
+  archiveMint: { mem: 10_000_000n, steps: 5_000_000_000n },
 } as const;
 
 const HOST_STATE_POLICY_ID = 'a1'.repeat(28);
@@ -41,6 +43,7 @@ const CLIENT_POLICY_ID = 'b2'.repeat(28);
 const CLIENT_ASSET_NAME = '43'.repeat(32);
 const HOST_STATE_SCRIPT_HASH = 'c3'.repeat(28);
 const SPEND_CLIENT_SCRIPT_HASH = 'd4'.repeat(28);
+const SPEND_CONSENSUS_STATE_SCRIPT_HASH = 'd5'.repeat(28);
 const ZERO_HASH = '00'.repeat(32);
 const HOST_STATE_SIBLINGS = Array.from({ length: 64 }, () => ZERO_HASH);
 
@@ -138,6 +141,7 @@ export type NormalizedCapacityFixture = {
 export type StructuralExUnits = {
   hostState: { mem: bigint; steps: bigint };
   spendClient: { mem: bigint; steps: bigint };
+  archiveMint: { mem: bigint; steps: bigint };
 };
 
 export type ExUnitsSource = 'structural-placeholder' | 'aiken-unit-tests';
@@ -147,6 +151,8 @@ export type CapacityPayloadSizes = {
   hostStateRedeemerBytes: number;
   updatedClientDatumBytes: number;
   updatedHostStateDatumBytes: number;
+  archiveDatumBytes: number;
+  archiveMintRedeemerBytes: number;
   totalBytes: number;
 };
 
@@ -157,6 +163,8 @@ export type CapacityTransactionShape = {
   referenceInputs: number;
   inlineDatumOutputs: number;
   spendRedeemers: number;
+  mintRedeemers: number;
+  mintedAssets: number;
   vkeyWitnesses: number;
 };
 
@@ -175,7 +183,8 @@ export type CapacityScenarioReport = {
   nilSlots: number;
   adjacent: boolean;
   inputConsensusStates: 1;
-  outputConsensusStates: 2;
+  outputConsensusStates: 1;
+  archivedConsensusStates: 1;
   removedConsensusStates: 0;
   unsignedBytes: number;
   signedBytes: number;
@@ -187,6 +196,7 @@ export type CapacityScenarioReport = {
   scriptExUnits: {
     hostState: { mem: string; steps: string };
     spendClient: { mem: string; steps: string };
+    archiveMint: { mem: string; steps: string };
     total: { mem: string; steps: string };
     absoluteMargin: { mem: string; steps: string };
     safeMargin: { mem: string; steps: string };
@@ -202,6 +212,9 @@ export type CapacityScenarioArtifact = {
     hostStateRedeemer: string;
     updatedClientDatum: string;
     updatedHostStateDatum: string;
+    archiveDatum: string;
+    archiveMintRedeemer: string;
+    archiveTokenName: string;
   };
 };
 
@@ -325,7 +338,7 @@ export function loadNormalizedCapacityFixture(filePath = DEFAULT_NORMALIZED_FIXT
   return JSON.parse(fs.readFileSync(filePath, 'utf8')) as NormalizedCapacityFixture;
 }
 
-function outputConsensusStates(header: Header, trustedConsensusState: ConsensusState): Array<[Height, ConsensusState]> {
+function outputConsensusStates(header: Header): Array<[Height, ConsensusState]> {
   const revisionNumber = header.trustedHeight.revisionNumber;
   const newHeight: Height = {
     revisionNumber,
@@ -336,28 +349,23 @@ function outputConsensusStates(header: Header, trustedConsensusState: ConsensusS
     next_validators_hash: header.signedHeader.header.nextValidatorsHash,
     root: { hash: header.signedHeader.header.appHash },
   };
-  return [
-    [newHeight, newConsensusState],
-    [header.trustedHeight, trustedConsensusState],
-  ];
+  return [[newHeight, newConsensusState]];
 }
 
 async function encodeRepresentativeDatums(
   header: Header,
   trustedConsensusState: ConsensusState,
-): Promise<{ updatedClientDatum: string; updatedHostStateDatum: string }> {
-  // Start with one unexpired trusted state and retain it when prepending the
-  // target state. This is the smallest valid no-pruning UpdateClient output.
-  const states = outputConsensusStates(header, trustedConsensusState);
+): Promise<{ updatedClientDatum: string; updatedHostStateDatum: string; archiveDatum: string; archiveTokenName: string }> {
+  // The persisted client contains only the new tip. Its previous tip moves to
+  // a separate authenticated output without deleting its commitment leaf.
+  const states = outputConsensusStates(header);
   const txValidFromNs =
     ((header.signedHeader.header.time - CLIENT_MAX_CLOCK_DRIFT_NS) / 1_000_000n + 1_000n) * 1_000_000n;
   const processedTimes = new Map<Height, bigint>([
     [states[0][0], txValidFromNs],
-    [states[1][0], 0n],
   ]);
   const processedHeights = new Map<Height, bigint>([
     [states[0][0], txValidFromNs / 4_000_000_000n],
-    [states[1][0], 0n],
   ]);
   const clientDatum: ClientDatum = {
     state: {
@@ -399,6 +407,14 @@ async function encodeRepresentativeDatums(
   return {
     updatedClientDatum: await encodeClientDatum(clientDatum, Lucid),
     updatedHostStateDatum: await encodeHostStateDatum(hostStateDatum, Lucid),
+    archiveDatum: encodeConsensusStateDatum({
+      clientToken: clientDatum.token,
+      height: header.trustedHeight,
+      consensusState: trustedConsensusState,
+      processedTime: 0n,
+      processedHeight: 0n,
+    }, Lucid),
+    archiveTokenName: consensusStateTokenName(clientDatum.token, header.trustedHeight, Lucid),
   };
 }
 
@@ -449,7 +465,7 @@ function scriptAddress(scriptHash: string) {
   return CML.EnterpriseAddress.new(0, CML.Credential.new_script(CML.ScriptHash.from_hex(scriptHash))).to_address();
 }
 
-function outputList(updatedHostStateDatum: string, updatedClientDatum: string) {
+function outputList(updatedHostStateDatum: string, updatedClientDatum: string, archiveDatum: string, archiveTokenName: string) {
   const CML = Lucid.CML;
   const outputs = CML.TransactionOutputList.new();
   outputs.add(
@@ -466,10 +482,17 @@ function outputList(updatedHostStateDatum: string, updatedClientDatum: string) {
       CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(updatedClientDatum)),
     ),
   );
+  outputs.add(
+    CML.TransactionOutput.new(
+      scriptAddress(SPEND_CONSENSUS_STATE_SCRIPT_HASH),
+      nftValue(CLIENT_POLICY_ID, archiveTokenName, 5_000_000n),
+      CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(archiveDatum)),
+    ),
+  );
   return outputs;
 }
 
-function buildRedeemers(hostStateRedeemer: string, spendClientRedeemer: string, exUnits: StructuralExUnits) {
+function buildRedeemers(hostStateRedeemer: string, spendClientRedeemer: string, archiveMintRedeemer: string, exUnits: StructuralExUnits) {
   const CML = Lucid.CML;
   const map = CML.MapRedeemerKeyToRedeemerVal.new();
   map.insert(
@@ -486,6 +509,13 @@ function buildRedeemers(hostStateRedeemer: string, spendClientRedeemer: string, 
       CML.ExUnits.new(exUnits.spendClient.mem, exUnits.spendClient.steps),
     ),
   );
+  map.insert(
+    CML.RedeemerKey.new(CML.RedeemerTag.Mint, 0n),
+    CML.RedeemerVal.new(
+      CML.PlutusData.from_cbor_hex(archiveMintRedeemer),
+      CML.ExUnits.new(exUnits.archiveMint.mem, exUnits.archiveMint.steps),
+    ),
+  );
   return CML.Redeemers.new_map_redeemer_key_to_redeemer_val(map);
 }
 
@@ -494,6 +524,9 @@ function buildStructuralTransactions(
   spendClientRedeemer: string,
   updatedHostStateDatum: string,
   updatedClientDatum: string,
+  archiveDatum: string,
+  archiveTokenName: string,
+  archiveMintRedeemer: string,
   exUnits: StructuralExUnits,
 ) {
   const CML = Lucid.CML;
@@ -501,30 +534,33 @@ function buildStructuralTransactions(
   // The third regular input supplies fees and requires the single vkey witness.
   const body = CML.TransactionBody.new(
     inputList([txInput('11'), txInput('22'), txInput('33')]),
-    outputList(updatedHostStateDatum, updatedClientDatum),
+    outputList(updatedHostStateDatum, updatedClientDatum, archiveDatum, archiveTokenName),
     2_000_000n,
   );
   body.set_collateral_inputs(inputList([txInput('44')]));
   body.set_total_collateral(5_000_000n);
-  body.set_reference_inputs(inputList([txInput('55'), txInput('66')]));
+  body.set_reference_inputs(inputList([txInput('55'), txInput('66'), txInput('77')]));
+  const mint = CML.Mint.new();
+  mint.set(CML.ScriptHash.from_hex(CLIENT_POLICY_ID), CML.AssetName.from_raw_bytes(Buffer.from(archiveTokenName, 'hex')), 1n);
+  body.set_mint(mint);
   body.set_validity_interval_start(120_000_000n);
   body.set_ttl(120_000_600n);
   body.set_network_id(CML.NetworkId.testnet());
 
-  const scriptDataRedeemers = buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits);
+  const scriptDataRedeemers = buildRedeemers(hostStateRedeemer, spendClientRedeemer, archiveMintRedeemer, exUnits);
   body.set_script_data_hash(
     CML.hash_script_data(scriptDataRedeemers, Lucid.createCostModels(Lucid.PROTOCOL_PARAMETERS_DEFAULT.costModels)),
   );
 
   const unsignedWitnesses = CML.TransactionWitnessSet.new();
-  unsignedWitnesses.set_redeemers(buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits));
+  unsignedWitnesses.set_redeemers(buildRedeemers(hostStateRedeemer, spendClientRedeemer, archiveMintRedeemer, exUnits));
   const unsigned = CML.Transaction.new(body, unsignedWitnesses, true);
 
   const signingKey = CML.PrivateKey.from_normal_bytes(Buffer.alloc(32, 0x42));
   const vkeys = CML.VkeywitnessList.new();
   vkeys.add(CML.make_vkey_witness(CML.hash_transaction(body), signingKey));
   const signedWitnesses = CML.TransactionWitnessSet.new();
-  signedWitnesses.set_redeemers(buildRedeemers(hostStateRedeemer, spendClientRedeemer, exUnits));
+  signedWitnesses.set_redeemers(buildRedeemers(hostStateRedeemer, spendClientRedeemer, archiveMintRedeemer, exUnits));
   signedWitnesses.set_vkeywitnesses(vkeys);
   const signed = CML.Transaction.new(body, signedWitnesses, true);
 
@@ -543,7 +579,9 @@ function inspectShape(transaction: InstanceType<typeof Lucid.CML.Transaction>): 
     inlineDatumOutputs: Array.from({ length: body.outputs().len() }, (_, index) => body.outputs().get(index)).filter(
       (output) => output.datum()?.as_datum() !== undefined,
     ).length,
-    spendRedeemers: redeemers?.len() ?? 0,
+    spendRedeemers: Array.from({ length: redeemers?.len() ?? 0 }, (_, index) => redeemers!.keys().get(index)).filter((key) => key.tag() === Lucid.CML.RedeemerTag.Spend).length,
+    mintRedeemers: Array.from({ length: redeemers?.len() ?? 0 }, (_, index) => redeemers!.keys().get(index)).filter((key) => key.tag() === Lucid.CML.RedeemerTag.Mint).length,
+    mintedAssets: body.mint()?.get_assets(Lucid.CML.ScriptHash.from_hex(CLIENT_POLICY_ID))?.len() ?? 0,
     vkeyWitnesses: witnesses.vkeywitnesses()?.len() ?? 0,
   };
 }
@@ -553,9 +591,11 @@ function assertCandidateShape(shape: CapacityTransactionShape): void {
     regularInputs: 3,
     scriptInputs: 2,
     collateralInputs: 1,
-    referenceInputs: 2,
-    inlineDatumOutputs: 2,
+    referenceInputs: 3,
+    inlineDatumOutputs: 3,
     spendRedeemers: 2,
+    mintRedeemers: 1,
+    mintedAssets: 1,
     vkeyWitnesses: 1,
   };
   for (const key of Object.keys(expected) as Array<keyof CapacityTransactionShape>) {
@@ -578,12 +618,18 @@ export async function analyzeCapacityScenario(
     Lucid,
   );
   const hostStateRedeemer = await encodeHostStateUpdateRedeemer();
-  const { updatedClientDatum, updatedHostStateDatum } = await encodeRepresentativeDatums(header, trustedConsensusState);
+  const { updatedClientDatum, updatedHostStateDatum, archiveDatum, archiveTokenName } = await encodeRepresentativeDatums(header, trustedConsensusState);
+  const archiveMintRedeemer = await encodeMintClientRedeemer({
+    ArchiveConsensusState: { client_token: { policyId: CLIENT_POLICY_ID, name: CLIENT_ASSET_NAME } },
+  }, Lucid);
   const transactions = buildStructuralTransactions(
     hostStateRedeemer,
     spendClientRedeemer,
     updatedHostStateDatum,
     updatedClientDatum,
+    archiveDatum,
+    archiveTokenName,
+    archiveMintRedeemer,
     exUnits,
   );
   const unsignedCbor = transactions.unsigned.to_canonical_cbor_hex();
@@ -599,22 +645,26 @@ export async function analyzeCapacityScenario(
     hostStateRedeemerBytes: byteLength(hostStateRedeemer),
     updatedClientDatumBytes: byteLength(updatedClientDatum),
     updatedHostStateDatumBytes: byteLength(updatedHostStateDatum),
+    archiveDatumBytes: byteLength(archiveDatum),
+    archiveMintRedeemerBytes: byteLength(archiveMintRedeemer),
     totalBytes: 0,
   };
   payloads.totalBytes =
     payloads.spendClientRedeemerBytes +
     payloads.hostStateRedeemerBytes +
     payloads.updatedClientDatumBytes +
-    payloads.updatedHostStateDatumBytes;
+    payloads.updatedHostStateDatumBytes +
+    payloads.archiveDatumBytes +
+    payloads.archiveMintRedeemerBytes;
   const totalExUnits = {
-    mem: exUnits.hostState.mem + exUnits.spendClient.mem,
-    steps: exUnits.hostState.steps + exUnits.spendClient.steps,
+    mem: exUnits.hostState.mem + exUnits.spendClient.mem + exUnits.archiveMint.mem,
+    steps: exUnits.hostState.steps + exUnits.spendClient.steps + exUnits.archiveMint.steps,
   };
 
   return {
     unsignedCbor,
     signedCbor,
-    encoded: { spendClientRedeemer, hostStateRedeemer, updatedClientDatum, updatedHostStateDatum },
+    encoded: { spendClientRedeemer, hostStateRedeemer, updatedClientDatum, updatedHostStateDatum, archiveDatum, archiveTokenName, archiveMintRedeemer },
     report: {
       scenario: scenarioName,
       classification: 'structural-signed-lower-bound',
@@ -630,7 +680,8 @@ export async function analyzeCapacityScenario(
       nilSlots: signatures.filter((signature) => signature.block_id_flag === 3n).length,
       adjacent: header.signedHeader.header.height === header.trustedHeight.revisionHeight + 1n,
       inputConsensusStates: 1,
-      outputConsensusStates: 2,
+      outputConsensusStates: 1,
+      archivedConsensusStates: 1,
       removedConsensusStates: 0,
       unsignedBytes,
       signedBytes,
@@ -642,6 +693,7 @@ export async function analyzeCapacityScenario(
       scriptExUnits: {
         hostState: { mem: exUnits.hostState.mem.toString(), steps: exUnits.hostState.steps.toString() },
         spendClient: { mem: exUnits.spendClient.mem.toString(), steps: exUnits.spendClient.steps.toString() },
+        archiveMint: { mem: exUnits.archiveMint.mem.toString(), steps: exUnits.archiveMint.steps.toString() },
         total: { mem: totalExUnits.mem.toString(), steps: totalExUnits.steps.toString() },
         absoluteMargin: {
           mem: (CARDANO_MAX_TX_EX_MEM - totalExUnits.mem).toString(),
@@ -710,12 +762,12 @@ export function formatCapacityReport(report: CapacityScenarioReport): string {
     `${report.scenario} (${report.classification}; ledger-evaluated=${report.ledgerEvaluated}; provider-completed=${report.providerCompleted}; balanced=${report.balanced})`,
     `  validators: current=${report.validatorCount} trusted=${report.trustedValidatorCount}`,
     `  commit slots: total=${report.commitSlots} commit=${report.committingSlots} absent=${report.absentSlots} nil=${report.nilSlots}`,
-    `  consensus history: input=${report.inputConsensusStates} output=${report.outputConsensusStates} removed=${report.removedConsensusStates}`,
+    `  consensus history: input=${report.inputConsensusStates} output=${report.outputConsensusStates} archived=${report.archivedConsensusStates} removed=${report.removedConsensusStates}`,
     `  exact CBOR: unsigned=${report.unsignedBytes} signed=${report.signedBytes} signing-overhead=${report.signingOverheadBytes}`,
     `  size margins: absolute=${report.absoluteSizeMarginBytes} safe=${report.safeSizeMarginBytes}`,
-    `  payload bytes: spend-client=${report.payloads.spendClientRedeemerBytes} host-state=${report.payloads.hostStateRedeemerBytes} client-datum=${report.payloads.updatedClientDatumBytes} host-datum=${report.payloads.updatedHostStateDatumBytes} total=${report.payloads.totalBytes}`,
-    `  shape: regular-inputs=${report.shape.regularInputs} script-inputs=${report.shape.scriptInputs} collateral=${report.shape.collateralInputs} references=${report.shape.referenceInputs} inline-outputs=${report.shape.inlineDatumOutputs} spend-redeemers=${report.shape.spendRedeemers} vkeys=${report.shape.vkeyWitnesses}`,
-    `  script ex-units (${report.exUnitsSource}; ledger-evaluated=${report.ledgerEvaluated}): host-state=${report.scriptExUnits.hostState.mem}/${report.scriptExUnits.hostState.steps} spend-client=${report.scriptExUnits.spendClient.mem}/${report.scriptExUnits.spendClient.steps} total=${report.scriptExUnits.total.mem}/${report.scriptExUnits.total.steps}`,
+    `  payload bytes: spend-client=${report.payloads.spendClientRedeemerBytes} host-state=${report.payloads.hostStateRedeemerBytes} client-datum=${report.payloads.updatedClientDatumBytes} host-datum=${report.payloads.updatedHostStateDatumBytes} archive-datum=${report.payloads.archiveDatumBytes} archive-mint=${report.payloads.archiveMintRedeemerBytes} total=${report.payloads.totalBytes}`,
+    `  shape: regular-inputs=${report.shape.regularInputs} script-inputs=${report.shape.scriptInputs} collateral=${report.shape.collateralInputs} references=${report.shape.referenceInputs} inline-outputs=${report.shape.inlineDatumOutputs} spend-redeemers=${report.shape.spendRedeemers} mint-redeemers=${report.shape.mintRedeemers} minted-assets=${report.shape.mintedAssets} vkeys=${report.shape.vkeyWitnesses}`,
+    `  script ex-units (${report.exUnitsSource}; ledger-evaluated=${report.ledgerEvaluated}): host-state=${report.scriptExUnits.hostState.mem}/${report.scriptExUnits.hostState.steps} spend-client=${report.scriptExUnits.spendClient.mem}/${report.scriptExUnits.spendClient.steps} archive-mint=${report.scriptExUnits.archiveMint.mem}/${report.scriptExUnits.archiveMint.steps} total=${report.scriptExUnits.total.mem}/${report.scriptExUnits.total.steps}`,
     `  ex-unit margins: absolute=${report.scriptExUnits.absoluteMargin.mem}/${report.scriptExUnits.absoluteMargin.steps} safe=${report.scriptExUnits.safeMargin.mem}/${report.scriptExUnits.safeMargin.steps}`,
   ].join('\n');
 }

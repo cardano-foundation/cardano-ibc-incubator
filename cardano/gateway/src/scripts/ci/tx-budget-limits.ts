@@ -40,19 +40,30 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
-    unsignedBytes: 15_849,
-    signedBytesEstimate: 16_109,
+    unsignedBytes: 15_818,
+    signedBytesEstimate: 16_078,
   },
   send_packet_at_commitment_capacity: {
-    mem: 38_210_852,
-    steps: 12_074_986_922,
+    // This capacity model remains unsupported by the public ledger limits.
+    // The bounded-history release adds the authenticated history-dispatch path
+    // and compact Host dispatch; after reusing the validity bound, the measured
+    // change is +10,412 memory and +7,456,420 steps, including the final
+    // semantic-height/history-dispatch revision (+200 memory/+32,000 steps).
+    // Network limits are unchanged.
+    mem: 38_221_264,
+    steps: 12_082_443_342,
   },
   recv_packet_at_history_capacity: {
-    mem: 40_630_065,
-    steps: 12_731_123_805,
+    // Still unsupported. Field-wise semantic height comparison in historical
+    // proof dispatch adds 6,678 memory and 1,121,883 steps to the prior model.
+    mem: 40_557_779,
+    steps: 12_713_795_574,
   },
   prune_packet_history_at_capacity: {
-    mem: 25_207_456,
+    // Existing unsupported capacity model: authenticated historical-proof
+    // dispatch adds 17,272 memory after eliminating duplicate bound lookup,
+    // including 6,678 from the final semantic-height/history-dispatch revision.
+    mem: 25_224_728,
   },
   trace_registry_rollover: {
     mem: 25_643_260,
@@ -61,8 +72,10 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
   first_seen_voucher_receive_at_capacity: {
     unsignedBytes: 20_615,
     signedBytesEstimate: 20_875,
-    mem: 83_172_783,
-    steps: 27_617_359_504,
+    // Inherits the same +6,678 memory/+1,121,883 steps historical-proof change
+    // as RecvPacket above; this combined capacity model remains unsupported.
+    mem: 83_100_497,
+    steps: 27_600_031_273,
   },
   first_seen_voucher_mint: {
     mem: 33_842_210,

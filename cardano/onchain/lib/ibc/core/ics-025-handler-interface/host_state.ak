@@ -293,15 +293,27 @@ pub fn validate_update_only_root(
   old: HostStateDatum,
   new: HostStateDatum,
 ) -> Bool {
+  let HostStateDatum {
+    state: old_state,
+    control: old_control,
+    nft_policy: old_policy,
+    deployer: old_deployer,
+  } = old
+  let HostStateDatum {
+    state: new_state,
+    control: new_control,
+    nft_policy: new_policy,
+    deployer: new_deployer,
+  } = new
   and {
-    validate_version_increment(old.state, new.state),
-    new.state.next_client_sequence == old.state.next_client_sequence,
-    new.state.next_connection_sequence == old.state.next_connection_sequence,
-    new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == [],
-    new.control == old.control,
-    new.nft_policy == old.nft_policy,
-    new.deployer == old.deployer,
+    validate_version_increment(old_state, new_state),
+    new_state.next_client_sequence == old_state.next_client_sequence,
+    new_state.next_connection_sequence == old_state.next_connection_sequence,
+    new_state.next_channel_sequence == old_state.next_channel_sequence,
+    new_state.bound_port == [],
+    new_control == old_control,
+    new_policy == old_policy,
+    new_deployer == old_deployer,
   }
 }
 

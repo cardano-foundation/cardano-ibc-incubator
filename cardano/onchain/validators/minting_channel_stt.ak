@@ -65,14 +65,10 @@ fn spent_host_state_for_create_channel(
 ) -> Bool {
   expect Some(spend_redeemer) =
     pairs.get_first(redeemers, Spend(host_state_input.output_reference))
-  expect host_redeemer: HostStateRedeemer = spend_redeemer
-
   // Channel token minting is paired with the HostState transition that consumes
   // next_channel_sequence and commits the channel/sequence paths.
-  when host_redeemer is {
-    CreateChannel { .. } -> True
-    _ -> False
-  }
+  expect CreateChannel { .. }: HostStateRedeemer = spend_redeemer
+  True
 }
 
 validator mint_channel_stt(
@@ -112,6 +108,7 @@ validator mint_channel_stt(
 
     expect [connection_id] = channel_output_datum.state.channel.connection_hops
 
+    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     let (connection_datum, client_datum) =
       validator_utils.validate_referred_connection_and_client(
         reference_inputs,
@@ -119,9 +116,13 @@ validator mint_channel_stt(
         client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+        tx_valid_to * 1_000_000,
+        when redeemer is {
+          ChanOpenTry { proof_height, .. } -> Some(proof_height)
+          ChanOpenInit -> None
+        },
       )
 
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     let client_state_active =
       client_state.status(
         client_datum.state.client_state,
@@ -152,9 +153,7 @@ validator mint_channel_stt(
       order.string(channel_output_datum.state.channel.ordering)
         |> version.verify_supported_feature(connection_version, _)
 
-    let channel_id =
-      string_utils.int_to_string(channel_id_sequence)
-        |> channel_keys.format_channel_identifier()
+    let channel_id = channel_keys.format_channel_identifier(id_str)
 
     let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
