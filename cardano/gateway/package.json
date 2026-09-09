@@ -168,7 +168,7 @@
     "@nestjs/swagger": {
       "js-yaml": "5.2.2"
     },
-    "multer": "^2.2.0",
+    "multer": "^2.3.0",
     "protobufjs": "^8.7.2"
   }
 }
