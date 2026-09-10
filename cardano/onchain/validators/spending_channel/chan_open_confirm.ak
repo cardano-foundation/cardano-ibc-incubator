@@ -1,8 +1,6 @@
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{
-  Mint, OutputReference, Redeemer, ScriptPurpose, Transaction,
-}
+use cardano/transaction.{Mint, Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -40,20 +38,18 @@ validator chan_open_confirm(
   verify_proof_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
 ) {
-  spend(
-    _datum: Option<Data>,
-    channel_token: AuthToken,
-    _spent_output: OutputReference,
-    transaction: Transaction,
-  ) {
+  mint(channel_token: AuthToken, policy_id: PolicyId, transaction: Transaction) {
     let Transaction {
       inputs,
+      mint,
       outputs,
       redeemers,
       reference_inputs,
       validity_range,
       ..
     } = transaction
+
+    expect validator_utils.require_exact_marker_mint(mint, policy_id, "", 1)
 
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)

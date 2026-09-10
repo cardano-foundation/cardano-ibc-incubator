@@ -1,3 +1,4 @@
+use cardano/assets.{Value}
 use cardano/transaction.{
   Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -14,7 +15,7 @@ use ibc/utils/test_utils
 use spending_channel/chan_close_init
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
-test chan_close_init_succeed() {
+fn check_chan_close_init(mint: Value) {
   let fake_data = setup()
 
   //========================arrange inputs=======================
@@ -103,20 +104,60 @@ test chan_close_init_succeed() {
     Transaction {
       ..transaction.placeholder,
       inputs,
+      mint,
       reference_inputs,
       outputs,
       redeemers,
       validity_range,
     }
 
-  chan_close_init.chan_close_init.spend(
+  chan_close_init.chan_close_init.mint(
     fake_data.client_minting_policy_id,
     fake_data.connection_minting_policy_id,
     fake_data.port_minting_policy_id,
     fake_data.host_state_nft_policy_id,
-    None,
     fake_data.channel_token,
-    channel_input.output_reference,
+    fake_data.chan_close_init_policy_id,
     transaction,
+  )
+}
+
+test chan_close_init_succeed() {
+  let mock_data = setup()
+  check_chan_close_init(
+    assets.from_asset(mock_data.chan_close_init_policy_id, "", 1),
+  )
+}
+
+test chan_close_init_rejects_missing_marker() fail {
+  check_chan_close_init(assets.zero)
+}
+
+test chan_close_init_rejects_marker_burn() fail {
+  let mock_data = setup()
+  check_chan_close_init(
+    assets.from_asset(mock_data.chan_close_init_policy_id, "", -1),
+  )
+}
+
+test chan_close_init_rejects_multiple_markers() fail {
+  let mock_data = setup()
+  check_chan_close_init(
+    assets.from_asset(mock_data.chan_close_init_policy_id, "", 2),
+  )
+}
+
+test chan_close_init_rejects_wrong_marker_name() fail {
+  let mock_data = setup()
+  check_chan_close_init(
+    assets.from_asset(mock_data.chan_close_init_policy_id, "wrong", 1),
+  )
+}
+
+test chan_close_init_rejects_extra_marker_asset() fail {
+  let mock_data = setup()
+  check_chan_close_init(
+    assets.from_asset(mock_data.chan_close_init_policy_id, "", 1)
+      |> assets.add(mock_data.chan_close_init_policy_id, "extra", 1),
   )
 }
