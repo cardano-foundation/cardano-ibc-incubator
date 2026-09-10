@@ -2452,6 +2452,7 @@ fn write_gateway_env_for_network(
                 "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT",
             )?;
             remove_env_var(&gateway_env, "CARDANO_STABILITY_ASSUME_STATIC_STAKE")?;
+            remove_env_var(&gateway_env, "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE")?;
             let epoch_length = network.epoch_length().to_string();
             let preprod_kupo_mode = resolve_preprod_kupo_mode(&gateway_env)?;
             set_or_append_env_var(

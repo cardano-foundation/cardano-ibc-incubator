@@ -68,6 +68,26 @@ const defaultEpochLength = (networkMagic?: string): number => {
   }
 };
 
+export const validatePublicNetworkStabilityConfig = (network?: string, endpoint?: string): void => {
+  if (network !== 'Mainnet' && network !== 'Preprod' && network !== 'Preview') {
+    return;
+  }
+  if (!endpoint?.trim().replace(/\/+$/, '')) {
+    throw new Error(`CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on ${network}`);
+  }
+  for (const name of [
+    'CARDANO_STABILITY_ASSUME_STATIC_STAKE',
+    'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT',
+    'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE',
+  ]) {
+    const enabled =
+      name === 'CARDANO_STABILITY_ASSUME_STATIC_STAKE' ? process.env[name] === '1' : process.env[name] !== undefined;
+    if (enabled) {
+      throw new Error(`${name} must be unset on ${network}`);
+    }
+  }
+};
+
 const positiveSafeIntegerEnv = (name: string, fallback: number): number => {
   const rawValue = process.env[name];
   if (rawValue === undefined || rawValue.trim() === '') {
@@ -133,6 +153,14 @@ export default (): Partial<Config> => {
     cardanoNetwork = 'Mainnet';
   }
 
+  const cardanoLightClientMode =
+    process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril' ? 'mithril' : 'stake-weighted-stability';
+  const cardanoEpochParamsEndpoint =
+    process.env.CARDANO_EPOCH_PARAMS_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC);
+  if (cardanoLightClientMode === 'stake-weighted-stability') {
+    validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);
+  }
+
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     ogmiosApiKey: process.env.OGMIOS_API_KEY,
@@ -147,8 +175,7 @@ export default (): Partial<Config> => {
     cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),
     cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
-    cardanoLightClientMode:
-      process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril' ? 'mithril' : 'stake-weighted-stability',
+    cardanoLightClientMode,
     cardanoNetwork: cardanoNetwork,
     cardanoEpochLength: Number(
       process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
@@ -164,8 +191,7 @@ export default (): Partial<Config> => {
     cardanoStabilityCheckpointMaxHeaderBytes: Number(
       process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 768 * 1024,
     ),
-    cardanoEpochParamsEndpoint:
-      process.env.CARDANO_EPOCH_PARAMS_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC),
+    cardanoEpochParamsEndpoint,
     cardanoPoolRegistrationHistoryEndpoint:
       process.env.CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC),
     cardanoKoiosApiKey:
