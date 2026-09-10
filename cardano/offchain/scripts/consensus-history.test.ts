@@ -132,25 +132,6 @@ async function fixture(
     await (await registration.sign.withWallet().complete()).submit();
     emulator.awaitBlock();
   }
-  let signerFunding: UTxO | undefined;
-  if (captureSignerFixture) {
-    // Hermes requires disjoint spending/collateral inputs. Fund fees from a
-    // small real output, leaving the larger wallet output for Lucid collateral.
-    const split = await lucid.newTx().pay.ToAddress(account.address, {
-      lovelace: 10_000_000n,
-    }).complete();
-    const signed = await split.sign.withWallet().complete();
-    assertEquals(await signed.submit(), signed.toHash());
-    emulator.awaitBlock();
-    signerFunding = (await lucid.utxosAt(account.address)).find((utxo) =>
-      utxo.txHash === signed.toHash() && utxo.assets.lovelace === 10_000_000n
-    );
-    assert(signerFunding);
-  }
-  const newFundedTx = () => {
-    const tx = lucid.newTx();
-    return signerFunding ? tx.collectFrom([signerFunding]) : tx;
-  };
   const clientName = await generateTokenName(
     { policy_id: HOST_POLICY, name: HOST_NAME },
     fromText("ibc_client"),
@@ -264,9 +245,11 @@ async function fixture(
     const regularRefs = new Set(
       regular.map((input) => `${input.tx_hash}#${input.output_index}`),
     );
+    // Keep these fixtures exercising Lucid's natural selection. CIP-40 allows
+    // an input to fund the successful transaction and also provide collateral.
     assert(
-      collateral.every((input) =>
-        !regularRefs.has(`${input.tx_hash}#${input.output_index}`)
+      collateral.some((input) =>
+        regularRefs.has(`${input.tx_hash}#${input.output_index}`)
       ),
     );
     return {
@@ -526,7 +509,7 @@ async function fixture(
     const recoveryReferences = [clientScript].map((script) =>
       seed(account.address, {}, Data.void(), script)
     );
-    const builder = newFundedTx().readFrom([
+    const builder = lucid.newTx().readFrom([
       substitute,
       references[0],
       references[2],
@@ -672,7 +655,7 @@ async function fixture(
       Data.void(),
       clientScript,
     );
-    const completed = await newFundedTx().readFrom([
+    const completed = await lucid.newTx().readFrom([
       references[0],
       references[2],
       clientReference,
