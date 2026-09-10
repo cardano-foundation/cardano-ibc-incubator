@@ -275,14 +275,28 @@ fn verify_after(
   delay: Int,
   membership: Bool,
 ) -> Bool {
+  verify_with_delays(
+    datum,
+    now,
+    delay,
+    math.ceil_divide_uinteger(delay, params.max_expected_time_per_block),
+    membership,
+  )
+}
+
+fn verify_with_delays(
+  datum: ClientDatum,
+  now: Int,
+  delay: Int,
+  block_delay: Int,
+  membership: Bool,
+) -> Bool {
   expect Some(cons_state) =
     pairs.get_first(datum.state.consensus_states, new_height)
   expect Some(processed_time) =
     pairs.get_first(datum.state.processed_times, new_height)
   expect Some(processed_height) =
     pairs.get_first(datum.state.processed_heights, new_height)
-  let block_delay =
-    math.ceil_divide_uinteger(delay, params.max_expected_time_per_block)
   let redeemer =
     if membership {
       VerifyMembership {
@@ -413,4 +427,12 @@ test update_client_requires_block_delay_even_after_time_delay() fail {
 
 test update_client_allows_proof_when_rounded_block_delay_passes() {
   verify_after(process_client(False), valid_to + 4000, 1_000_000, True)
+}
+
+test client_rejects_negative_time_delay() fail {
+  verify_with_delays(process_client(False), valid_to + 60_000, -1, 0, True)
+}
+
+test client_rejects_negative_block_delay() fail {
+  verify_with_delays(process_client(False), valid_to + 60_000, 0, -1, False)
 }

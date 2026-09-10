@@ -48,11 +48,11 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
     steps: 12_074_986_922,
   },
   recv_packet_at_history_capacity: {
-    mem: 40_630_065,
-    steps: 12_731_123_805,
+    mem: 40_628_459,
+    steps: 12_730_594_707,
   },
   prune_packet_history_at_capacity: {
-    mem: 25_207_456,
+    mem: 25_205_850,
   },
   trace_registry_rollover: {
     mem: 25_643_260,
@@ -61,8 +61,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
   first_seen_voucher_receive_at_capacity: {
     unsignedBytes: 20_615,
     signedBytesEstimate: 20_875,
-    mem: 83_172_783,
-    steps: 27_617_359_504,
+    mem: 83_171_177,
+    steps: 27_616_830_406,
   },
   first_seen_voucher_mint: {
     mem: 33_842_210,
