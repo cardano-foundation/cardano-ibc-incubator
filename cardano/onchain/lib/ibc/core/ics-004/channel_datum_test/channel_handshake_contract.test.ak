@@ -5,32 +5,79 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
-use ibc/core/ics_004/types/order.{Unordered}
+use ibc/core/ics_004/types/keys as channel_keys
+use ibc/core/ics_004/types/order.{Order, Ordered, Unordered}
 use ibc/core/ics_004/types/state.{Closed, Init, Open, TryOpen}
 use ibc/testing/fuzz_dsl
+use ibc/utils/int as int_utils
+
+type HandshakeCase {
+  HandshakeCase {
+    ordering: Order,
+    remote_channel_id: ByteArray,
+    version: ByteArray,
+    next_send: Int,
+    next_recv: Int,
+    next_ack: Int,
+  }
+}
+
+fn handshake_case() -> Fuzzer<HandshakeCase> {
+  fuzz.map4(
+    fuzz.bool(),
+    fuzz.int_between(0, 65535),
+    fuzz.bytearray_between(1, 32),
+    fuzz.tuple3(
+      fuzz.int_between(1, 1000000),
+      fuzz.int_between(1, 1000000),
+      fuzz.int_between(1, 1000000),
+    ),
+    fn(ordered, sequence, version, packet_sequences) {
+      let (next_send, next_recv, next_ack) = packet_sequences
+      HandshakeCase {
+        ordering: if ordered {
+          Ordered
+        } else {
+          Unordered
+        },
+        remote_channel_id: channel_keys.format_channel_identifier(
+          int_utils.to_string(sequence),
+        ),
+        version,
+        next_send,
+        next_recv,
+        next_ack,
+      }
+    },
+  )
+}
 
 fn mock_token() -> AuthToken {
   AuthToken { policy_id: "mock policy_id", name: "mock name" }
 }
 
-fn channel_datum(state, counterparty_channel_id: ByteArray) -> ChannelDatum {
+fn channel_datum(
+  state,
+  counterparty_channel_id: ByteArray,
+  sample: HandshakeCase,
+) -> ChannelDatum {
   ChannelDatum {
     state: ChannelDatumState {
       maximum_receive_proof_height: height_mod.zero_height(),
       minimum_receive_proof_height: height_mod.zero_height(),
       channel: channel_mod.new(
         state,
-        Unordered,
+        sample.ordering,
         counterparty: ChannelCounterparty {
           port_id: "bank",
           channel_id: counterparty_channel_id,
         },
         connection_hops: ["connection-1"],
-        version: "ics20-1",
+        version: sample.version,
       ),
-      next_sequence_send: 1,
-      next_sequence_recv: 1,
-      next_sequence_ack: 1,
+      next_sequence_send: sample.next_send,
+      next_sequence_recv: sample.next_recv,
+      next_sequence_ack: sample.next_ack,
       packet_commitment: [],
       packet_receipt: [],
       packet_acknowledgement: [],
@@ -40,8 +87,8 @@ fn channel_datum(state, counterparty_channel_id: ByteArray) -> ChannelDatum {
   }
 }
 
-fn open_ack_datums() -> (ChannelDatum, ChannelDatum) {
-  let input_datum = channel_datum(Init, "")
+fn open_ack_datums(sample: HandshakeCase) -> (ChannelDatum, ChannelDatum) {
+  let input_datum = channel_datum(Init, "", sample)
   let output_datum =
     ChannelDatum {
       ..input_datum,
@@ -52,7 +99,7 @@ fn open_ack_datums() -> (ChannelDatum, ChannelDatum) {
           state: Open,
           counterparty: ChannelCounterparty {
             ..input_datum.state.channel.counterparty,
-            channel_id: "channel-34",
+            channel_id: sample.remote_channel_id,
           },
         },
       },
@@ -61,8 +108,8 @@ fn open_ack_datums() -> (ChannelDatum, ChannelDatum) {
   (input_datum, output_datum)
 }
 
-fn open_confirm_datums() -> (ChannelDatum, ChannelDatum) {
-  let input_datum = channel_datum(TryOpen, "")
+fn open_confirm_datums(sample: HandshakeCase) -> (ChannelDatum, ChannelDatum) {
+  let input_datum = channel_datum(TryOpen, sample.remote_channel_id, sample)
   let output_datum =
     ChannelDatum {
       ..input_datum,
@@ -75,8 +122,8 @@ fn open_confirm_datums() -> (ChannelDatum, ChannelDatum) {
   (input_datum, output_datum)
 }
 
-fn close_datums() -> (ChannelDatum, ChannelDatum) {
-  let input_datum = channel_datum(Open, "")
+fn close_datums(sample: HandshakeCase) -> (ChannelDatum, ChannelDatum) {
+  let input_datum = channel_datum(Open, sample.remote_channel_id, sample)
   let output_datum =
     ChannelDatum {
       ..input_datum,
@@ -87,10 +134,6 @@ fn close_datums() -> (ChannelDatum, ChannelDatum) {
     }
 
   (input_datum, output_datum)
-}
-
-fn channel_allows_send(channel_datum: ChannelDatum) -> Bool {
-  channel_datum.state.channel.state == Open
 }
 
 type ChannelLifecycleModel {
@@ -135,10 +178,10 @@ fn model_close(model: ChannelLifecycleModel) -> ChannelLifecycleModel {
   }
 }
 
-test prop_chan_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.chan.open_ack.valid")
+test prop_chan_open_ack_accepts_valid_transition(sample via handshake_case()) {
+  fuzz.label(@"fuzz.unit.chan.open_ack.valid")
 
-  let (input_datum, output_datum) = open_ack_datums()
+  let (input_datum, output_datum) = open_ack_datums(sample)
   fuzz_dsl.valid_check(
     "chan",
     "open_ack",
@@ -148,11 +191,11 @@ test prop_chan_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_model_channel_open_close_reject_send(_seed via fuzz.int()) {
-  fuzz.label(@"regression.model.channel.open_close_reject_send")
+test prop_model_channel_open_close_preserves_state(sample via handshake_case()) {
+  fuzz.label(@"fuzz.model.channel.open_close_preserves_state")
 
-  let initial_model = channel_datum(Init, "") |> channel_model_from
-  let opened_model = model_open_ack(initial_model, "channel-34")
+  let initial_model = channel_datum(Init, "", sample) |> channel_model_from
+  let opened_model = model_open_ack(initial_model, sample.remote_channel_id)
   let closed_model = model_close(opened_model)
 
   and {
@@ -176,21 +219,19 @@ test prop_model_channel_open_close_reject_send(_seed via fuzz.int()) {
       ),
     )
       |> fuzz_dsl.assert_valid,
-    fuzz_dsl.mutated_check(
-      "chan",
-      "model_send",
-      "closed_channel",
-      "channel_allows_send",
-      channel_allows_send(closed_model.channel),
-    )
-      |> fuzz_dsl.assert_rejected,
+    closed_model.channel.state.channel.state == Closed,
+    closed_model.channel.state.next_sequence_send == sample.next_send,
+    closed_model.channel.state.next_sequence_recv == sample.next_recv,
+    closed_model.channel.state.next_sequence_ack == sample.next_ack,
   }
 }
 
-test prop_chan_open_confirm_accepts_valid_transition(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.chan.open_confirm.valid")
+test prop_chan_open_confirm_accepts_valid_transition(
+  sample via handshake_case(),
+) {
+  fuzz.label(@"fuzz.unit.chan.open_confirm.valid")
 
-  let (input_datum, output_datum) = open_confirm_datums()
+  let (input_datum, output_datum) = open_confirm_datums(sample)
   fuzz_dsl.valid_check(
     "chan",
     "open_confirm",
@@ -200,12 +241,12 @@ test prop_chan_open_confirm_accepts_valid_transition(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_chan_close_init_accepts_core_close_transition(_seed via fuzz.int()) {
-  fuzz.label(
-    @"regression.contract.chan.close_init.valid_or_rejected_by_app_policy",
-  )
+test prop_chan_close_init_accepts_core_close_transition(
+  sample via handshake_case(),
+) {
+  fuzz.label(@"fuzz.unit.chan.close_init.valid")
 
-  let (input_datum, output_datum) = close_datums()
+  let (input_datum, output_datum) = close_datums(sample)
   fuzz_dsl.valid_check(
     "chan",
     "close_init",
@@ -215,10 +256,12 @@ test prop_chan_close_init_accepts_core_close_transition(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_chan_close_confirm_accepts_valid_transition(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.chan.close_confirm.valid")
+test prop_chan_close_confirm_accepts_valid_transition(
+  sample via handshake_case(),
+) {
+  fuzz.label(@"fuzz.unit.chan.close_confirm.valid")
 
-  let (input_datum, output_datum) = close_datums()
+  let (input_datum, output_datum) = close_datums(sample)
   fuzz_dsl.valid_check(
     "chan",
     "close_confirm",
@@ -228,16 +271,23 @@ test prop_chan_close_confirm_accepts_valid_transition(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_chan_closed_rejects_send(_seed via fuzz.int()) {
-  // Closed-channel send rejection is represented here as a local predicate check.
-  fuzz.label(@"regression.unit.chan.closed.rejects_send")
-
+test prop_chan_close_rejects_packet_sequence_change(sample via handshake_case()) {
+  fuzz.label(@"fuzz.unit.chan.close.invalid_packet_sequence")
+  let (input_datum, output_datum) = close_datums(sample)
+  let mutated_output =
+    ChannelDatum {
+      ..output_datum,
+      state: ChannelDatumState {
+        ..output_datum.state,
+        next_sequence_send: output_datum.state.next_sequence_send + 1,
+      },
+    }
   fuzz_dsl.mutated_check(
     "chan",
-    "send",
-    "closed_channel",
-    "channel_allows_send",
-    channel_allows_send(channel_datum(Closed, "channel-34")),
+    "close_init",
+    "changed_packet_sequence",
+    "channel_datum.validate_chan_close_init",
+    channel_datum_mod.validate_chan_close_init(input_datum, mutated_output),
   )
     |> fuzz_dsl.assert_rejected
 }

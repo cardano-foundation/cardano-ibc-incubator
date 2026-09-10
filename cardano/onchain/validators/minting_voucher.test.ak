@@ -696,14 +696,14 @@ test prop_voucher_first_mint_policy_accepts_valid_metadata(_seed via fuzz.int())
     fuzz_dsl.no_mutation(),
   )
     |> run_first_seen_voucher_mint_transition
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_first_seen_voucher_mint_couples_registry_append(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"regression.tx.voucher.first_mint.valid_registry_coupled")
-  fuzz.label(@"regression.tx.packet.recv.valid_sink_mints_voucher")
+  fuzz.label(@"regression.contract.voucher.first_mint.valid_registry_coupled")
+  fuzz.label(@"regression.contract.packet.recv.valid_sink_mints_voucher")
 
   // tx.* depth: voucher mint and trace-registry append are checked together so
   // metadata cannot be minted without the matching denom trace entry.
@@ -712,14 +712,14 @@ test prop_tx_first_seen_voucher_mint_couples_registry_append(
     fuzz_dsl.no_mutation(),
   )
     |> run_first_seen_voucher_mint_tx
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_first_seen_voucher_mint_rejects_wrong_metadata_registry_coupled(
   _seed via fuzz.int(),
 ) {
   fuzz.label(
-    @"regression.tx.voucher.first_mint.invalid_wrong_metadata_registry_coupled",
+    @"regression.contract.voucher.first_mint.invalid_wrong_metadata_registry_coupled",
   )
 
   // The trace-registry append still matches the minted denom, but the CIP-68
@@ -750,7 +750,7 @@ test prop_tx_first_seen_voucher_mint_rejects_wrong_metadata_registry_coupled(
     fuzz_dsl.mutation("wrong_metadata_registry_coupled"),
   )
     |> run_first_seen_voucher_mint_tx
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_name(_seed via fuzz.int()) {
@@ -781,7 +781,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_name(_seed via fuzz.int()) {
     fuzz_dsl.mutation("wrong_name"),
   )
     |> run_first_seen_voucher_mint_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_ticker(_seed via fuzz.int()) {
@@ -813,7 +813,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_ticker(_seed via fuzz.int()) {
     fuzz_dsl.mutation("wrong_ticker"),
   )
     |> run_first_seen_voucher_mint_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_description(
@@ -849,7 +849,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_description(
     fuzz_dsl.mutation("wrong_description"),
   )
     |> run_first_seen_voucher_mint_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_full_denom(
@@ -885,7 +885,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_full_denom(
     fuzz_dsl.mutation("wrong_full_denom"),
   )
     |> run_first_seen_voucher_mint_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_policy(_seed via fuzz.int()) {
@@ -916,7 +916,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_policy(_seed via fuzz.int()) {
     fuzz_dsl.mutation("wrong_policy"),
   )
     |> run_first_seen_voucher_mint_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_reference_asset(
@@ -949,7 +949,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_reference_asset(
     fuzz_dsl.mutation("wrong_reference_asset"),
   )
     |> run_first_seen_voucher_mint_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 fn mint_voucher_succeeds(

@@ -1217,7 +1217,7 @@ test prop_transfer_module_native_send_escrow_increases_exactly(
   // Native SendPacket should move exactly the sent amount into escrow. This is
   // the positive baseline that the value-delta mutations below deviate from.
   native_send_escrow_fixture(1234, fuzz_dsl.no_mutation(), ExactSendCallback)
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test transfer_send_rejects_undecodable_sender() fail {
@@ -1226,7 +1226,7 @@ test transfer_send_rejects_undecodable_sender() fail {
     fuzz_dsl.mutation("undecodable_sender"),
     UndecodableSender,
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test transfer_send_rejects_wrong_length_sender() fail {
@@ -1235,7 +1235,7 @@ test transfer_send_rejects_wrong_length_sender() fail {
     fuzz_dsl.mutation("wrong_length_sender"),
     WrongLengthSender,
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
@@ -1252,7 +1252,7 @@ test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
     fuzz_dsl.mutation("wrong_escrow_delta"),
     ExactSendCallback,
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test transfer_send_rejects_mismatched_typed_packet_data() fail {
@@ -1261,7 +1261,7 @@ test transfer_send_rejects_mismatched_typed_packet_data() fail {
     fuzz_dsl.mutation("wrong_typed_packet_data"),
     WrongTypedPacketData,
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test transfer_send_rejects_mismatched_packet_commitment() fail {
@@ -1270,7 +1270,7 @@ test transfer_send_rejects_mismatched_packet_commitment() fail {
     fuzz_dsl.mutation("wrong_packet_commitment"),
     WrongSendCommitment,
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test transfer_module_rejects_moving_registered_port_credential() fail {
@@ -1279,7 +1279,7 @@ test transfer_module_rejects_moving_registered_port_credential() fail {
     fuzz_dsl.mutation("moved_module_credential"),
     MovedModuleCredential,
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_recv_source_unescrows_exactly(_seed via fuzz.int()) {
@@ -1287,7 +1287,7 @@ test prop_transfer_module_recv_source_unescrows_exactly(_seed via fuzz.int()) {
 
   // Source-chain receive releases escrow instead of minting voucher supply.
   recv_source_unescrow_fixture(fuzz_dsl.no_mutation())
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_native_timeout_refunds_exactly(_seed via fuzz.int()) {
@@ -1295,7 +1295,7 @@ test prop_transfer_module_native_timeout_refunds_exactly(_seed via fuzz.int()) {
 
   // Timeout on native escrow should restore the original sender balance exactly.
   timeout_unescrow_fixture(1234, fuzz_dsl.no_mutation())
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_native_timeout_rejects_wrong_refund_amount(
@@ -1312,7 +1312,7 @@ test prop_transfer_module_native_timeout_rejects_wrong_refund_amount(
     50,
     fuzz_dsl.mutation("wrong_native_refund_amount"),
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_native_ack_has_no_refund(_seed via fuzz.int()) {
@@ -1320,7 +1320,7 @@ test prop_transfer_module_native_ack_has_no_refund(_seed via fuzz.int()) {
 
   // Successful ack confirms delivery; it must not also refund native escrow.
   ack_success_fixture(fuzz_dsl.no_mutation())
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
@@ -1329,7 +1329,7 @@ test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
   // Sending a voucher back toward its source burns voucher supply rather than
   // increasing native escrow.
   voucher_send_burn_fixture(fuzz_dsl.no_mutation())
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) {
@@ -1337,7 +1337,7 @@ test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) 
 
   // Sink-chain receive creates voucher supply only for the packet amount.
   voucher_recv_sink_fixture(fuzz_dsl.no_mutation())
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_voucher_error_ack_remints_exactly(
@@ -1347,7 +1347,7 @@ test prop_transfer_module_voucher_error_ack_remints_exactly(
 
   // Error ack reverses a voucher send by reminting the burned voucher amount.
   voucher_error_ack_refund_fixture(fuzz_dsl.no_mutation())
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_transfer_module_root_rejects_capability_relocation(
