@@ -633,6 +633,8 @@ jobs:
             match_tests: >-
               -m prop_host_bind_port_
           - suite: client
+            # Collection and execution can exceed the default 20-minute limit.
+            timeout_minutes: 30
             match_tests: >-
               -m ibc/client/ics_007_tendermint_client/client_datum
               -m ibc/client/ics_007_tendermint_client/client_state
