@@ -9,8 +9,10 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header
-use ibc/client/ics_007_tendermint_client/consensus_history.{ConsensusStateDatum}
-use ibc/client/ics_007_tendermint_client/consensus_history_commitment.{Witness} as history
+use ibc/client/ics_007_tendermint_client/consensus_history.{
+  ConsensusStateDatum, Witness,
+}
+use ibc/client/ics_007_tendermint_client/consensus_history_commitment as history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -61,6 +63,7 @@ fn witness() -> Witness {
 fn client() -> ClientDatum {
   let tip = height(10)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     token: token(),
     state: ClientDatumState {
       client_state: ClientState {

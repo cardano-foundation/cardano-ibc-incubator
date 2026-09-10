@@ -1,3 +1,4 @@
+import type { ConsensusHistoryWitness } from '../../../shared/types/consensus-state-datum';
 import { UTxO } from '@lucid-evolution/lucid';
 import { ClientDatum } from '../../../shared/types/client-datum';
 import { Header } from '../../../shared/types/header';
@@ -12,7 +13,7 @@ export type UpdateClientOperatorDto = {
   clientTokenUnit: string;
   currentClientUtxo: UTxO;
   txValidFrom: bigint;
-  historyUtxos?: UTxO[];
+  historyWitnesses?: ConsensusHistoryWitness[];
 };
 
 export type UpdateOnMisbehaviourOperatorDto = {
@@ -22,7 +23,7 @@ export type UpdateOnMisbehaviourOperatorDto = {
   clientDatum: ClientDatum;
   clientTokenUnit: string;
   currentClientUtxo: UTxO;
-  historyUtxos?: UTxO[];
+  historyWitnesses?: ConsensusHistoryWitness[];
 };
 
 export type RecoverClientOperatorDto = {

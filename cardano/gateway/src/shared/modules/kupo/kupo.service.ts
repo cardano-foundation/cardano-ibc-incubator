@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { LucidService } from '../lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { UTxO } from '@lucid-evolution/lucid';
-import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 
 /**
  * KupoService - Provides IBC-specific queries to Kupo indexer (STT Architecture)
@@ -31,7 +30,6 @@ export class KupoService {
   private readonly clientAddress: string;
   private readonly connectionAddress: string;
   private readonly channelAddress: string;
-  private readonly consensusStateAddress?: string;
 
   constructor(
     private readonly lucidService: LucidService,
@@ -49,7 +47,6 @@ export class KupoService {
     this.clientAddress = deployment.validators.spendClient.address;
     this.connectionAddress = deployment.validators.spendConnection.address;
     this.channelAddress = deployment.validators.spendChannel.address;
-    this.consensusStateAddress = deployment.validators.spendConsensusState?.address;
   }
 
   private getMatchingAssetNames(utxo: UTxO, policyId: string, tokenNamePrefix?: string): string[] {
@@ -100,24 +97,6 @@ export class KupoService {
     } catch (_error) {
       // If no UTXOs found, return empty array (no clients exist yet)
       return [];
-    }
-  }
-
-  /** Query the authenticated standalone consensus-state records used by tree rebuilds. */
-  async queryAllConsensusStateUtxos(): Promise<UTxO[]> {
-    if (!this.consensusStateAddress) {
-      throw new Error('Consensus-state history validator address is not configured');
-    }
-    try {
-      const utxos = await this.lucidService.findUtxoAt(this.consensusStateAddress);
-      return utxos.filter(
-        (utxo) => this.getMatchingAssetNames(utxo, this.clientTokenPrefix).length > 0,
-      );
-    } catch (error) {
-      if (error instanceof GrpcNotFoundException) {
-        return [];
-      }
-      throw error;
     }
   }
 

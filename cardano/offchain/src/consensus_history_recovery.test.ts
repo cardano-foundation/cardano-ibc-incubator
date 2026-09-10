@@ -93,8 +93,16 @@ function publications(heights: bigint[], variant = 0): Publication[] {
         ]),
         new Constr(0, [token.policyId, token.name]),
       ]);
-      tree.set(clientKey, encode(clientState));
-      tree.set(publicKey(n), encode(consensus));
+      // The inline datum may use definite containers, but ledger serialiseData
+      // commits the nonempty constructors using indefinite containers.
+      tree.set(
+        clientKey,
+        Data.to<Data>(clientState, undefined, { canonical: false }),
+      );
+      tree.set(
+        publicKey(n),
+        Data.to<Data>(consensus, undefined, { canonical: false }),
+      );
       const previous = result.at(-1);
       if (previous) {
         tree.set(
@@ -167,6 +175,7 @@ function source(items: Publication[]): HistorySource {
 
 function deployment(first: Publication): HistoryDeployment {
   return {
+    layout: "prototype",
     clientToken: token,
     stateAddress: address,
     bootstrap: { txHash: first.output.txHash, outputIndex: 0 },
@@ -645,7 +654,7 @@ Deno.test("recovery database cannot be reused for a different deployment", async
   }
 });
 
-Deno.test("recovery hashes original transaction bytes and preserves tagged integer data", async () => {
+Deno.test("recovery hashes original transaction bytes and normalizes tagged integer public data", async () => {
   const first = publications([1n])[0];
   const fields = (data: CborObj) => {
     assert(data instanceof CborTag && data.data instanceof CborArray);

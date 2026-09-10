@@ -797,7 +797,7 @@ export class ConnectionService {
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [connectionOpenTryOperator.proofHeight]);
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     if (!isValidProofHeight(heightsArray, connectionOpenTryOperator.proofHeight)) {
@@ -949,6 +949,7 @@ export class ConnectionService {
     const encodedVerifyProofRedeemer = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
@@ -960,7 +961,6 @@ export class ConnectionService {
       encodedHostStateRedeemer,
       connectionTokenUnit,
       clientUtxo,
-      consensusStateReferenceUtxos,
       encodedMintConnectionRedeemer,
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
@@ -1109,7 +1109,7 @@ export class ConnectionService {
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     this.logConnOpenAckDebug(() => `[DEBUG] ConnOpenAck clientUtxo(ref only)=${this.toUtxoRef(clientUtxo)} unit=${clientTokenUnit}`);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [connectionOpenAckOperator.proofHeight]);
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
@@ -1240,6 +1240,7 @@ export class ConnectionService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
     this.logConnOpenAckDebug(
       () => `[DEBUG] ConnOpenAck encoded_verify_proof_redeemer head=${encodedVerifyProofRedeemer.substring(0, 16)} len=${encodedVerifyProofRedeemer.length}`,
@@ -1262,7 +1263,6 @@ export class ConnectionService {
       encodedSpendConnectionRedeemer,
       connectionTokenUnit,
       clientUtxo,
-      consensusStateReferenceUtxos,
       encodedUpdatedConnectionDatum,
       constructedAddress,
       verifyProofPolicyId,
@@ -1365,7 +1365,7 @@ export class ConnectionService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [connectionOpenConfirmOperator.proofHeight]);
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     if (!isValidProofHeight(heightsArray, connectionOpenConfirmOperator.proofHeight)) {
@@ -1437,6 +1437,7 @@ export class ConnectionService {
     const encodedVerifyProofRedeemer = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
     const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
       spendConnectionRedeemer,
@@ -1456,7 +1457,6 @@ export class ConnectionService {
       encodedSpendConnectionRedeemer,
       connectionTokenUnit,
       clientUtxo,
-      consensusStateReferenceUtxos,
       encodedUpdatedConnectionDatum,
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,

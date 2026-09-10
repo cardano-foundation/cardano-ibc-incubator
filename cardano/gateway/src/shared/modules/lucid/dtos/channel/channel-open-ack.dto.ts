@@ -9,7 +9,6 @@ export type UnsignedChannelOpenAckDto = {
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
-  consensusStateReferenceUtxos: UTxO[];
   moduleKey: GatewayModuleKey;
   moduleUtxo: UTxO;
   encodedSpendChannelRedeemer: string;

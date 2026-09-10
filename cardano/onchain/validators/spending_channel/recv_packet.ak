@@ -1,6 +1,6 @@
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Mint, Redeemer, ScriptPurpose, Transaction}
+use cardano/transaction.{Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -8,7 +8,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership, VerifyProofRedeemer,
+  VerifyMembership,
 }
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -106,6 +106,7 @@ validator recv_packet(
         connection_id,
         validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
         Some(proof_height),
+        validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).history_witness,
       )
     trace @"recv_packet: reference_inputs contain Connection utxo"
 
@@ -228,9 +229,8 @@ fn validate_recv_packet_proof(
   expect Some(processed_height) =
     pairs.get_first(client_datum_state.processed_heights, proof_height)
 
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  let verify_proof_redeemer =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
   verify_proof_redeemer == VerifyMembership {
     cs: client_datum_state.client_state,

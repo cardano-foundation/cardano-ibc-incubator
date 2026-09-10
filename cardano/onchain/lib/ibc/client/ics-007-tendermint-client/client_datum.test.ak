@@ -128,6 +128,7 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
       name: mock_auth_token_name,
     }
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: mock_client_state,
       consensus_states: mock_consensus_states,
@@ -436,6 +437,7 @@ test test_is_initialized_valid_success() {
     }
   let mock_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
@@ -491,6 +493,7 @@ test test_is_initialized_valid_fail_with_invalid_client_state() fail {
     }
   let mock_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
@@ -530,6 +533,7 @@ test test_is_initialized_valid_fail_with_invalid_consensus_states() fail {
     }
   let mock_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
@@ -584,6 +588,7 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
     }
   let mock_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,

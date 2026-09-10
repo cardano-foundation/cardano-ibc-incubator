@@ -131,21 +131,11 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
       ]),
     ]) as unknown as [string, { Script: [string] }],
   );
-  const [archiveValidator, archiveHash] = readValidator(
-    "spending_consensus_state.spend_consensus_state.spend",
-    lucid,
-    [hostPolicy],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
-  );
   const [clientPolicy, clientPolicyId] = readValidator(
     "minting_client_stt.mint_client_stt.mint",
     lucid,
-    [spendClientScriptHash, hostPolicy, archiveHash],
-    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
-      string,
-      string,
-      string,
-    ],
+    [spendClientScriptHash, hostPolicy],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
   );
   const [hostValidator] = readValidator(
     "host_state_stt.host_state_stt.spend",
@@ -169,7 +159,6 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
     [
       recoveryValidator,
       spendClientValidator,
-      archiveValidator,
       clientPolicy,
       hostValidator,
     ],
@@ -180,21 +169,24 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
   );
 
   assertEquals(spendClientReport?.oversized, false);
-  assertEquals(report.filter(({ oversized }) => oversized), []);
+  assertEquals(
+    report.filter(({ oversized }) => oversized),
+    [],
+    "each production reference script must fit the deployment transaction margin",
+  );
 });
 
-Deno.test("consensus history deployment binds both authentication and storage scripts", () => {
+Deno.test("consensus history is committed by the client without an archive script", () => {
   const parameters = (title: string) =>
     blueprint.validators.find((validator) => validator.title === title)
       ?.parameters?.map((parameter) => parameter.title);
   assertEquals(
     parameters("spending_consensus_state.spend_consensus_state.spend"),
-    ["host_state_nft_policy_id"],
+    undefined,
   );
   assertEquals(parameters("minting_client_stt.mint_client_stt.mint"), [
     "spend_client_script_hash",
     "host_state_nft_policy_id",
-    "consensus_state_script_hash",
   ]);
   assertEquals(parameters("host_state_stt.host_state_stt.spend"), [
     "nft_policy",

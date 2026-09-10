@@ -40,42 +40,42 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
+    // Proof-backed history adds the witness verifier to consumer scripts. The
+    // existing conservative deployment model remains below 16,384 bytes, but
+    // above the unchanged 750-byte reserve; it is not a new ledger-size waiver.
     unsignedBytes: 15_818,
     signedBytesEstimate: 16_078,
   },
   send_packet_at_commitment_capacity: {
-    // This capacity model remains unsupported by the public ledger limits.
-    // The bounded-history release adds the authenticated history-dispatch path
-    // and compact Host dispatch; after reusing the validity bound, the measured
-    // change is +10,412 memory and +7,456,420 steps, including the final
-    // semantic-height/history-dispatch revision (+200 memory/+32,000 steps).
-    // Network limits are unchanged.
-    mem: 38_221_264,
-    steps: 12_082_443_342,
+    // Existing unsupported capacity model, remeasured after proof-backed
+    // history/witness-envelope integration and removing the redundant singleton
+    // check. These are full Aiken fixture estimates, not supported ledger flows.
+    // Network limits and execution/size reserves are unchanged.
+    mem: 38_257_823,
+    steps: 12_088_544_688,
   },
   recv_packet_at_history_capacity: {
-    // Still unsupported. Field-wise semantic height comparison in historical
-    // proof dispatch adds 6,678 memory and 1,121,883 steps to the prior model.
-    mem: 40_557_779,
-    steps: 12_713_795_574,
+    // The same already-unsupported capacity fixture now includes proof-backed
+    // history dispatch and the VerifyProofEnvelope rather than archive UTxOs.
+    mem: 40_930_575,
+    steps: 12_835_088_040,
   },
   prune_packet_history_at_capacity: {
-    // Existing unsupported capacity model: authenticated historical-proof
-    // dispatch adds 17,272 memory after eliminating duplicate bound lookup,
-    // including 6,678 from the final semantic-height/history-dispatch revision.
-    mem: 25_224_728,
+    // Packet-history pruning is unchanged; its existing unsupported capacity
+    // fixture uses the new consensus-history witness/envelope proof consumer.
+    mem: 25_427_902,
   },
   trace_registry_rollover: {
     mem: 25_643_260,
     steps: 10_897_080_470,
   },
   first_seen_voucher_receive_at_capacity: {
-    unsignedBytes: 20_615,
-    signedBytesEstimate: 20_875,
-    // Inherits the same +6,678 memory/+1,121,883 steps historical-proof change
-    // as RecvPacket above; this combined capacity model remains unsupported.
-    mem: 83_100_497,
-    steps: 27_600_031_273,
+    // Already unsupported in both size and execution. The proof envelope adds
+    // six modeled bytes; execution inherits the updated RecvPacket component.
+    unsignedBytes: 20_621,
+    signedBytesEstimate: 20_881,
+    mem: 83_473_293,
+    steps: 27_721_323_739,
   },
   first_seen_voucher_mint: {
     mem: 33_842_210,

@@ -70,7 +70,6 @@ describe('Lucid handshake proof authorization', () => {
       'host-redeemer',
       'connection-token',
       utxo('client-input'),
-      [utxo('consensus-history')],
       'connection-redeemer',
       'verify-policy',
       'verify-redeemer',
@@ -94,7 +93,7 @@ describe('Lucid handshake proof authorization', () => {
       { 'verify-policy': 1n },
       'verify-redeemer',
     );
-    expect(builder.readFrom).toHaveBeenCalledWith([utxo('client-input'), utxo('consensus-history')]);
+    expect(builder.readFrom).toHaveBeenCalledWith([utxo('client-input')]);
   });
 
   it('adds the pinned verify-proof reference and mint to ConnectionOpenConfirm', () => {
@@ -108,7 +107,6 @@ describe('Lucid handshake proof authorization', () => {
       'connection-redeemer',
       'connection-token',
       utxo('client-input'),
-      [utxo('consensus-history')],
       'connection-datum',
       'verify-policy',
       'verify-redeemer',
@@ -125,7 +123,7 @@ describe('Lucid handshake proof authorization', () => {
       { 'verify-policy': 1n },
       'verify-redeemer',
     );
-    expect(builder.readFrom).toHaveBeenCalledWith([utxo('client-input'), utxo('consensus-history')]);
+    expect(builder.readFrom).toHaveBeenCalledWith([utxo('client-input')]);
   });
 
   it('adds the pinned verify-proof reference and mint to ChannelOpenTry', () => {
@@ -135,7 +133,6 @@ describe('Lucid handshake proof authorization', () => {
       moduleKey: 'transfer',
       connectionUtxo: utxo('connection-input'),
       clientUtxo: utxo('client-input'),
-      consensusStateReferenceUtxos: [utxo('consensus-history')],
       moduleUtxo: utxo('module-input', { 'module-token': 1n }),
       encodedSpendModuleRedeemer: 'module-redeemer',
       encodedMintChannelRedeemer: 'channel-redeemer',
@@ -180,7 +177,6 @@ describe('Lucid handshake proof authorization', () => {
       channelUtxo: utxo('channel-input'),
       connectionUtxo: utxo('connection-input'),
       clientUtxo: utxo('client-input'),
-      consensusStateReferenceUtxos: [utxo('consensus-history')],
       encodedSpendChannelRedeemer: 'channel-redeemer',
       encodedUpdatedChannelDatum: 'channel-datum',
       channelTokenUnit: 'channel-token',

@@ -12,19 +12,27 @@ import {
 } from "@lucid-evolution/lucid";
 import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
 import { DeploymentIbcTree } from "../src/deployment.ts";
-import {
-  generateTokenName,
-  hashSha3_256,
-  readValidator,
-} from "../src/utils.ts";
+import { generateTokenName, readValidator } from "../src/utils.ts";
 import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
+import {
+  ConsensusHistoryRecovery,
+  type HistorySource,
+  type HistoryTransaction,
+} from "../src/consensus_history_recovery.ts";
+import { historyPacketFixture } from "./consensus-history-packet-fixture.ts";
+import { serialisePlutusData } from "../src/plutus_serialise.ts";
+import {
+  consensusHistoryKey,
+  encodeConsensusHistoryRecord,
+  recordFromConstr,
+} from "../src/consensus_history_commitment.ts";
 import adjacentFixture from "./fixtures/tendermint-adjacent.json" with {
   type: "json",
 };
 
 const HOST_POLICY = "11".repeat(28);
 const HOST_NAME = fromText("ibc_host_state");
-const TRUSTING_PERIOD = 60_000_000_000n;
+const TRUSTING_PERIOD = 120_000_000_000n;
 const adjacentRedeemer = Data.from(
   adjacentFixture.spend_client_redeemer_cbor,
 ) as Constr<Data>;
@@ -41,10 +49,6 @@ const proofSpecs = [[33n, 4n, 12n], [32n, 1n, 1n]].map(([size, min, max]) =>
     new Constr(0, []),
   ])
 );
-// Hash a freshly constructed key with Plutus constructor-array encoding.
-const encode = (value: Data) => Data.to<Data>(value);
-const encodeStored = (value: Data) =>
-  Data.to<Data>(value, undefined, { canonical: true });
 const consensus = (time: bigint) =>
   new Constr(0, [time, "22".repeat(32), new Constr(0, ["33".repeat(32)])]);
 const consensusKey = (n: bigint) =>
@@ -55,7 +59,17 @@ async function fixture(
   recovery = false,
   unexpired = false,
   normalUpdate = false,
+  createClient = false,
+  canonicalEncoding = true,
+  packetRecovery = false,
+  outputCanonicalEncoding = canonicalEncoding,
 ) {
+  const encodeStored = (value: Data) =>
+    Data.to<Data>(value, undefined, { canonical: canonicalEncoding });
+  const encodePublic = (value: Data) =>
+    serialisePlutusData(encodeStored(value));
+  const encodeOutput = (value: Data) =>
+    Data.to<Data>(value, undefined, { canonical: outputCanonicalEncoding });
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account]);
   if (normalUpdate) {
@@ -75,10 +89,6 @@ async function fixture(
       params,
       Data.Tuple(params.map(() => Data.Bytes())) as unknown as string[],
     );
-  const [archiveScript, archiveHash, archiveAddress] = applyBytes(
-    "spending_consensus_state.spend_consensus_state.spend",
-    [HOST_POLICY],
-  );
   const [recoveryScript, recoveryHash] = applyBytes(
     "recover_client.recover_client.withdraw",
     [HOST_POLICY],
@@ -90,14 +100,23 @@ async function fixture(
   );
   const [clientPolicy, clientPolicyId] = applyBytes(
     "minting_client_stt.mint_client_stt.mint",
-    [clientHash, HOST_POLICY, archiveHash],
+    [clientHash, HOST_POLICY],
   );
+  const packet = packetRecovery
+    ? await historyPacketFixture(lucid, HOST_POLICY, HOST_NAME, clientPolicyId)
+    : undefined;
   const [hostScript, , hostAddress] = applyBytes(
     "host_state_stt.host_state_stt.spend",
-    [HOST_POLICY, clientHash, dummy, dummy, clientPolicyId],
+    [
+      HOST_POLICY,
+      clientHash,
+      dummy,
+      packet?.channelHash ?? dummy,
+      clientPolicyId,
+    ],
   );
   const rewardAddress = validatorToRewardAddress("Preprod", recoveryScript);
-  if (recovery) {
+  if (recovery || normalUpdate) {
     const registration = await lucid.newTx().register.Stake(rewardAddress)
       .complete();
     await (await registration.sign.withWallet().complete()).submit();
@@ -109,9 +128,12 @@ async function fixture(
     0n,
   );
   const clientToken = new Constr(0, [clientPolicyId, clientName]);
-  const latestHeight = BigInt(historyCount + 1);
+  const latestHeight = normalUpdate && historyCount === 0
+    ? 2n
+    : BigInt(historyCount + 1);
   const now = emulator.now();
   const nowNs = BigInt(now) * 1_000_000n;
+  const initialProcessedHeight = createClient ? nowNs / 4_000_000_000n : 1n;
   const oldConsensus = consensus(
     nowNs - (unexpired ? TRUSTING_PERIOD / 2n : 2n * TRUSTING_PERIOD),
   );
@@ -119,7 +141,7 @@ async function fixture(
     ? new Constr(0, [
       BigInt(adjacentFixture.trusted_timestamp_override_ns),
       adjacentTmHeader.fields[7],
-      new Constr(0, ["33".repeat(32)]),
+      new Constr(0, [packet?.root ?? "33".repeat(32)]),
     ])
     : recovery
     ? oldConsensus
@@ -134,12 +156,12 @@ async function fixture(
     height(latestHeight),
     proofSpecs,
   ]);
-  const clientDatum = new Constr(0, [
+  const clientDatum = new Constr<Data>(0, [
     new Constr(0, [
       clientState,
       new Map([[height(latestHeight), latestConsensus]]),
       new Map([[height(latestHeight), nowNs]]),
-      new Map([[height(latestHeight), 1n]]),
+      new Map([[height(latestHeight), initialProcessedHeight]]),
     ]),
     clientToken,
   ]);
@@ -161,18 +183,19 @@ async function fixture(
     emulator.ledger[utxo.txHash + utxo.outputIndex] = { utxo, spent: false };
     return utxo;
   }
-  const client = seed(
+  let client = seed(
     clientAddress,
     { [clientPolicyId + clientName]: 1n },
     encodeStored(clientDatum),
   );
-  const references = [hostScript, clientPolicy, archiveScript].map((script) =>
+  const references = [hostScript, clientPolicy, recoveryScript].map((script) =>
     seed(account.address, {}, Data.void(), script)
   );
-  const tree = new DeploymentIbcTree();
-  tree.set("clients/07-tendermint-0/clientState", encodeStored(clientState));
-  tree.set(consensusKey(latestHeight), encodeStored(latestConsensus));
-  const archives: Array<{ utxo: UTxO; unit: string; height: bigint }> = [];
+  let tree = new DeploymentIbcTree();
+  tree.set("clients/07-tendermint-0/clientState", encodePublic(clientState));
+  tree.set(consensusKey(latestHeight), encodePublic(latestConsensus));
+  let historyTree = new DeploymentIbcTree();
+  const histories: Constr<Data>[] = [];
   for (let n = 1n; n <= BigInt(historyCount); n++) {
     const historicalConsensus = normalUpdate && n === 2n
       ? latestConsensus
@@ -184,17 +207,29 @@ async function fixture(
       historicalConsensus.fields[0],
       n,
     ]);
-    const name = await hashSha3_256(
-      encode(new Constr(0, [clientToken, height(n)])),
+    const parsed = recordFromConstr(record);
+    historyTree.set(
+      consensusHistoryKey(parsed.clientToken, parsed.height),
+      encodeConsensusHistoryRecord(parsed),
     );
-    const unit = clientPolicyId + name;
-    archives.push({
-      utxo: seed(archiveAddress, { [unit]: 1n }, encodeStored(record)),
-      unit,
-      height: n,
-    });
-    tree.set(consensusKey(n), encodeStored(historicalConsensus));
+    histories.push(record);
+    tree.set(consensusKey(n), encodePublic(historicalConsensus));
   }
+  clientDatum.fields.push(await historyTree.getRoot());
+  client.datum = encodeStored(clientDatum);
+  packet?.seed(seed, account.address);
+  packet?.publicLeaves(tree);
+  const transactions: HistoryTransaction[] = [];
+  const retain = (txHash: string, cbor: string) =>
+    transactions.push({
+      txHash,
+      cbor,
+      blockHash: emulator.blockHeight.toString(16).padStart(64, "0"),
+      blockHeight: emulator.blockHeight,
+      slot: emulator.slot,
+      transactionIndex: 0,
+    });
+  let bootstrap = { txHash: client.txHash, outputIndex: client.outputIndex };
   const signer = getAddressDetails(account.address).paymentCredential!.hash;
   let hostDatum: HostStateDatum = {
     state: {
@@ -216,90 +251,76 @@ async function fixture(
     Data.to(hostDatum, HostStateDatum, { canonical: true }),
   );
 
-  async function prune(
-    index: number,
-    mutation?: "wrong-root" | "unexpired" | "two-records",
-  ) {
-    const record = archives[index];
-    const siblings = await tree.getSiblings(consensusKey(record.height));
-    tree.set(consensusKey(record.height), "");
-    const root = await tree.getRoot();
-    // Do not publish the local tree change until the transaction is accepted.
-    tree.set(consensusKey(record.height), encodeStored(oldConsensus));
-    const nextDatum: HostStateDatum = {
-      ...hostDatum,
-      state: {
-        ...hostDatum.state,
-        version: hostDatum.state.version + 1n,
-        ibc_state_root: mutation === "wrong-root"
-          ? hostDatum.state.ibc_state_root
-          : root,
-      },
-    };
-    const redeemer = Data.to(
+  if (createClient) {
+    assertEquals(historyCount, 0);
+    // Only the HostState NFT is seeded. The deployed client policy creates the
+    // client NFT and the HostState script publishes its first public leaves.
+    delete emulator.ledger[client.txHash + client.outputIndex];
+    const initialTree = new DeploymentIbcTree();
+    packet?.publicLeaves(initialTree);
+    const initialRoot = await initialTree.getRoot();
+    const clientSiblings = await initialTree.getSiblings(
+      "clients/07-tendermint-0/clientState",
+    );
+    initialTree.set(
+      "clients/07-tendermint-0/clientState",
+      encodePublic(clientState),
+    );
+    const consensusSiblings = await initialTree.getSiblings(
+      consensusKey(latestHeight),
+    );
+    host.datum = Data.to(
       {
-        PruneConsensusState: {
-          client_token: { policyId: clientPolicyId, name: clientName },
-          height: { revisionNumber: 0n, revisionHeight: record.height },
-          consensus_state_siblings: siblings,
+        ...hostDatum,
+        state: {
+          ...hostDatum.state,
+          next_client_sequence: 0n,
+          ibc_state_root: initialRoot,
         },
       },
-      HostStateRedeemer,
+      HostStateDatum,
       { canonical: true },
     );
-    const batch = mutation === "two-records"
-      ? [record, archives[index + 1]]
-      : [record];
-    const builder = lucid.newTx().readFrom([client, ...references])
-      .collectFrom([host], redeemer)
-      .collectFrom(batch.map((entry) => entry.utxo), Data.void())
-      .mintAssets(
-        Object.fromEntries(batch.map((entry) => [entry.unit, -1n])),
-        encodeStored(new Constr(2, [clientToken, height(record.height)])),
+    hostDatum = { ...hostDatum, state: { ...hostDatum.state, version: 1n } };
+    const created = await lucid.newTx().readFrom([references[0], references[1]])
+      .collectFrom(
+        [host],
+        Data.to(
+          {
+            CreateClient: {
+              client_state_siblings: clientSiblings,
+              consensus_state_siblings: consensusSiblings,
+            },
+          },
+          HostStateRedeemer,
+          { canonical: true },
+        ),
       )
+      .mintAssets(
+        { [clientPolicyId + clientName]: 1n },
+        encodeStored(new Constr(0, [])),
+      )
+      .pay.ToContract(clientAddress, {
+        kind: "inline",
+        value: encodeStored(clientDatum),
+      }, { [clientPolicyId + clientName]: 1n, lovelace: 30_000_000n })
       .pay.ToContract(hostAddress, {
         kind: "inline",
-        value: Data.to(nextDatum, HostStateDatum, { canonical: true }),
+        value: Data.to(hostDatum, HostStateDatum, { canonical: true }),
       }, host.assets)
-      .validFrom(now)
-      .validTo(now + 30_000);
-    const completed = await builder.complete({ localUPLCEval: true });
-    const signed = await completed.sign.withWallet().complete();
-    const transaction = signed.toTransaction();
-    const units = CML.compute_total_ex_units(
-      transaction.witness_set().redeemers()!,
-    );
-    const bytes = signed.toCBOR().length / 2;
-    assert(bytes <= 16_384 - 750, `prune uses ${bytes} signed bytes`);
-    assert(
-      units.mem() <= 15_675_000n,
-      `prune uses ${units.mem()} memory units`,
-    );
-    assert(
-      units.steps() <= 9_500_000_000n,
-      `prune uses ${units.steps()} CPU steps`,
-    );
-    assertEquals(transaction.body().reference_inputs()?.len(), 4);
+      .validFrom(now).validTo(now + 30_000).complete({ localUPLCEval: true });
+    const signed = await created.sign.withWallet().complete();
+    assert(signed.toCBOR().length / 2 <= 16_384 - 750);
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
-    tree.set(consensusKey(record.height), "");
-    hostDatum = nextDatum;
+    client = await lucid.utxoByUnit(clientPolicyId + clientName);
     host = await lucid.utxoByUnit(HOST_POLICY + HOST_NAME);
-    assertEquals(await lucid.utxosAtWithUnit(archiveAddress, record.unit), []);
-    assertEquals(
-      (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
-      client.datum,
-    );
-    return {
-      historyCount,
-      bytes,
-      memory: Number(units.mem()),
-      steps: Number(units.steps()),
-    };
+    bootstrap = { txHash: client.txHash, outputIndex: client.outputIndex };
+    retain(signed.toHash(), signed.toCBOR());
   }
 
   async function recover(
-    mutation?: "missing-archive" | "changed-metadata" | "wrong-root",
+    mutation?: "missing-history" | "changed-metadata" | "wrong-root",
   ) {
     const substituteHeight = latestHeight + 1n;
     const substituteName = await generateTokenName(
@@ -320,16 +341,22 @@ async function fixture(
       new Map([[height(substituteHeight), nowNs]]),
       new Map([[height(substituteHeight), 1n]]),
     ]);
-    const substitute = seed(clientAddress, {
-      [clientPolicyId + substituteName]: 1n,
-    }, encodeStored(new Constr(0, [nextClientState, substituteToken])));
+    const substitute = seed(
+      clientAddress,
+      {
+        [clientPolicyId + substituteName]: 1n,
+      },
+      encodeStored(
+        new Constr(0, [nextClientState, substituteToken, "00".repeat(32)]),
+      ),
+    );
     tree.set(
       "clients/07-tendermint-1/clientState",
-      encodeStored(substituteState),
+      encodePublic(substituteState),
     );
     tree.set(
       `clients/07-tendermint-1/consensusStates/${substituteHeight}`,
-      encodeStored(substituteConsensus),
+      encodePublic(substituteConsensus),
     );
     hostDatum = {
       ...hostDatum,
@@ -345,12 +372,12 @@ async function fixture(
     );
     tree.set(
       "clients/07-tendermint-0/clientState",
-      encodeStored(substituteState),
+      encodePublic(substituteState),
     );
     const consensusSiblings = await tree.getSiblings(
       consensusKey(substituteHeight),
     );
-    tree.set(consensusKey(substituteHeight), encodeStored(substituteConsensus));
+    tree.set(consensusKey(substituteHeight), encodePublic(substituteConsensus));
     const nextHost = {
       ...hostDatum,
       state: {
@@ -366,18 +393,23 @@ async function fixture(
       height(latestHeight),
       latestConsensus,
       mutation === "changed-metadata" ? nowNs + 1n : nowNs,
-      1n,
+      initialProcessedHeight,
     ]);
-    const archiveUnit = clientPolicyId +
-      await hashSha3_256(
-        encode(new Constr(0, [clientToken, height(latestHeight)])),
-      );
-    const recoveryReferences = [clientScript, recoveryScript].map((script) =>
+    const archivedRecord = recordFromConstr(archived);
+    const archivedKey = consensusHistoryKey(
+      archivedRecord.clientToken,
+      archivedRecord.height,
+    );
+    const historySiblings = await historyTree.getSiblings(archivedKey);
+    historyTree.set(archivedKey, encodeConsensusHistoryRecord(archivedRecord));
+    const nextHistoryRoot = await historyTree.getRoot();
+    const recoveryReferences = [clientScript].map((script) =>
       seed(account.address, {}, Data.void(), script)
     );
-    let builder = lucid.newTx().readFrom([
+    const builder = lucid.newTx().readFrom([
       substitute,
-      ...references.slice(0, 2),
+      references[0],
+      references[2],
       ...recoveryReferences,
     ])
       .collectFrom(
@@ -387,17 +419,15 @@ async function fixture(
             UpdateClient: {
               client_state_siblings: clientSiblings,
               consensus_state_siblings: consensusSiblings,
-              removed_consensus_state_siblings: [],
             },
           },
           HostStateRedeemer,
           { canonical: true },
         ),
       )
-      .collectFrom([client], encodeStored(new Constr(1, [substituteToken])))
-      .mintAssets(
-        { [archiveUnit]: 1n },
-        encodeStored(new Constr(1, [clientToken])),
+      .collectFrom(
+        [client],
+        encodeStored(new Constr(1, [substituteToken, historySiblings])),
       )
       .withdraw(
         rewardAddress,
@@ -406,19 +436,22 @@ async function fixture(
       )
       .pay.ToContract(clientAddress, {
         kind: "inline",
-        value: encodeStored(new Constr(0, [nextClientState, clientToken])),
+        value: encodeOutput(
+          new Constr(0, [
+            nextClientState,
+            clientToken,
+            mutation === "missing-history"
+              ? clientDatum.fields[2]
+              : nextHistoryRoot,
+          ]),
+        ),
       }, client.assets)
       .pay.ToContract(hostAddress, {
         kind: "inline",
         value: Data.to(nextHost, HostStateDatum, { canonical: true }),
       }, host.assets)
       .validFrom(now).validTo(now + 30_000).addSignerKey(signer);
-    if (mutation !== "missing-archive") {
-      builder = builder.pay.ToContract(archiveAddress, {
-        kind: "inline",
-        value: encodeStored(archived),
-      }, { [archiveUnit]: 1n });
-    }
+
     const completed = await builder.complete({ localUPLCEval: true });
     const signed = await completed.sign.withWallet().complete();
     const units = CML.compute_total_ex_units(
@@ -436,13 +469,12 @@ async function fixture(
     );
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
-    assertEquals(
-      (await lucid.utxoByUnit(archiveUnit)).datum,
-      encodeStored(archived),
-    );
+    assertEquals(signed.toTransaction().body().mint(), undefined);
     assertEquals(
       (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
-      encodeStored(new Constr(0, [nextClientState, clientToken])),
+      encodeOutput(
+        new Constr(0, [nextClientState, clientToken, nextHistoryRoot]),
+      ),
     );
     return {
       operation: "recovery",
@@ -453,6 +485,8 @@ async function fixture(
     };
   }
   async function update(wrongProcessingTime = false) {
+    const updateNow = emulator.now();
+    const updateNowNs = BigInt(updateNow) * 1_000_000n;
     const newHeight = adjacentTmHeader.fields[2] as bigint;
     const newConsensus = new Constr(0, [
       adjacentTmHeader.fields[3],
@@ -464,21 +498,24 @@ async function fixture(
       height(newHeight),
       proofSpecs,
     ]);
-    const nextClient = new Constr(0, [
+    const nextClient = new Constr<Data>(0, [
       new Constr(0, [
         newState,
         new Map([[height(newHeight), newConsensus]]),
-        new Map([[height(newHeight), nowNs + (wrongProcessingTime ? 1n : 0n)]]),
-        new Map([[height(newHeight), nowNs / 4_000_000_000n]]),
+        new Map([[
+          height(newHeight),
+          updateNowNs + (wrongProcessingTime ? 1n : 0n),
+        ]]),
+        new Map([[height(newHeight), updateNowNs / 4_000_000_000n]]),
       ]),
       clientToken,
     ]);
     const clientSiblings = await tree.getSiblings(
       "clients/07-tendermint-0/clientState",
     );
-    tree.set("clients/07-tendermint-0/clientState", encodeStored(newState));
+    tree.set("clients/07-tendermint-0/clientState", encodePublic(newState));
     const consensusSiblings = await tree.getSiblings(consensusKey(newHeight));
-    tree.set(consensusKey(newHeight), encodeStored(newConsensus));
+    tree.set(consensusKey(newHeight), encodePublic(newConsensus));
     const nextHost = {
       ...hostDatum,
       state: {
@@ -492,12 +529,17 @@ async function fixture(
       height(latestHeight),
       latestConsensus,
       nowNs,
-      1n,
+      initialProcessedHeight,
     ]);
-    const archiveUnit = clientPolicyId +
-      await hashSha3_256(
-        encode(new Constr(0, [clientToken, height(latestHeight)])),
-      );
+    const archivedRecord = recordFromConstr(archived);
+    const archivedKey = consensusHistoryKey(
+      archivedRecord.clientToken,
+      archivedRecord.height,
+    );
+    const historySiblings = await historyTree.getSiblings(archivedKey);
+    historyTree.set(archivedKey, encodeConsensusHistoryRecord(archivedRecord));
+    const nextHistoryRoot = await historyTree.getRoot();
+    nextClient.fields.push(nextHistoryRoot);
     const clientReference = seed(
       account.address,
       {},
@@ -505,7 +547,8 @@ async function fixture(
       clientScript,
     );
     const completed = await lucid.newTx().readFrom([
-      ...references.slice(0, 2),
+      references[0],
+      references[2],
       clientReference,
     ])
       .collectFrom(
@@ -515,31 +558,30 @@ async function fixture(
             UpdateClient: {
               client_state_siblings: clientSiblings,
               consensus_state_siblings: consensusSiblings,
-              removed_consensus_state_siblings: [],
             },
           },
           HostStateRedeemer,
           { canonical: true },
         ),
       )
-      .collectFrom([client], encodeStored(adjacentRedeemer))
-      .mintAssets(
-        { [archiveUnit]: 1n },
-        encodeStored(new Constr(1, [clientToken])),
+      .collectFrom(
+        [client],
+        encodeStored(
+          new Constr(0, [adjacentRedeemer.fields[0], [], historySiblings]),
+        ),
       )
+      .withdraw(rewardAddress, 0n, encodeStored(new Constr(1, [clientToken])))
       .pay.ToContract(clientAddress, {
         kind: "inline",
-        value: encodeStored(nextClient),
+        value: encodeOutput(nextClient),
       }, client.assets)
       .pay.ToContract(hostAddress, {
         kind: "inline",
         value: Data.to(nextHost, HostStateDatum, { canonical: true }),
       }, host.assets)
-      .pay.ToContract(archiveAddress, {
-        kind: "inline",
-        value: encodeStored(archived),
-      }, { [archiveUnit]: 1n })
-      .validFrom(now).validTo(now + 30_000).complete({ localUPLCEval: true });
+      .validFrom(updateNow).validTo(updateNow + 30_000).complete({
+        localUPLCEval: true,
+      });
     const signed = await completed.sign.withWallet().complete();
     const units = CML.compute_total_ex_units(
       signed.toTransaction().witness_set().redeemers()!,
@@ -556,13 +598,11 @@ async function fixture(
     );
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
-    assertEquals(
-      (await lucid.utxoByUnit(archiveUnit)).datum,
-      encodeStored(archived),
-    );
+    retain(signed.toHash(), signed.toCBOR());
+    assertEquals(signed.toTransaction().body().mint(), undefined);
     assertEquals(
       (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
-      encodeStored(nextClient),
+      encodeOutput(nextClient),
     );
     // Replaying the same valid header must not be accepted as misbehaviour.
     const frozenState = new Constr(0, [
@@ -576,11 +616,12 @@ async function fixture(
         ...(nextClient.fields[0] as Constr<Data>).fields.slice(1),
       ]),
       clientToken,
+      nextClient.fields[2],
     ]);
     const freezeSiblings = await tree.getSiblings(
       "clients/07-tendermint-0/clientState",
     );
-    tree.set("clients/07-tendermint-0/clientState", encodeStored(frozenState));
+    tree.set("clients/07-tendermint-0/clientState", encodePublic(frozenState));
     const frozenHost = {
       ...nextHost,
       state: {
@@ -591,8 +632,8 @@ async function fixture(
     };
     const replay = lucid.newTx().readFrom([
       references[0],
+      references[2],
       clientReference,
-      await lucid.utxoByUnit(archiveUnit),
     ])
       .collectFrom(
         [await lucid.utxoByUnit(HOST_POLICY + HOST_NAME)],
@@ -601,7 +642,6 @@ async function fixture(
             UpdateClient: {
               client_state_siblings: freezeSiblings,
               consensus_state_siblings: [],
-              removed_consensus_state_siblings: [],
             },
           },
           HostStateRedeemer,
@@ -610,17 +650,25 @@ async function fixture(
       )
       .collectFrom(
         [await lucid.utxoByUnit(clientPolicyId + clientName)],
-        encodeStored(adjacentRedeemer),
+        encodeStored(
+          new Constr(0, [adjacentRedeemer.fields[0], [
+            new Constr(0, [
+              archived,
+              await historyTree.getSiblings(archivedKey),
+            ]),
+          ], []]),
+        ),
       )
+      .withdraw(rewardAddress, 0n, encodeStored(new Constr(1, [clientToken])))
       .pay.ToContract(clientAddress, {
         kind: "inline",
-        value: encodeStored(frozenClient),
+        value: encodeOutput(frozenClient),
       }, client.assets)
       .pay.ToContract(hostAddress, {
         kind: "inline",
         value: Data.to(frozenHost, HostStateDatum, { canonical: true }),
       }, host.assets)
-      .validFrom(now).validTo(now + 30_000);
+      .validFrom(emulator.now()).validTo(emulator.now() + 30_000);
     await assertRejects(() => replay.complete({ localUPLCEval: true }));
     return {
       operation: "four-validator update",
@@ -641,11 +689,12 @@ async function fixture(
         ...(clientDatum.fields[0] as Constr<Data>).fields.slice(1),
       ]),
       clientToken,
+      clientDatum.fields[2],
     ]);
     const siblings = await tree.getSiblings(
       "clients/07-tendermint-0/clientState",
     );
-    tree.set("clients/07-tendermint-0/clientState", encodeStored(frozenState));
+    tree.set("clients/07-tendermint-0/clientState", encodePublic(frozenState));
     const frozenHost = {
       ...hostDatum,
       state: {
@@ -662,8 +711,8 @@ async function fixture(
     );
     const completed = await lucid.newTx().readFrom([
       references[0],
+      references[2],
       clientReference,
-      archives[1].utxo,
     ])
       .collectFrom(
         [host],
@@ -672,17 +721,36 @@ async function fixture(
             UpdateClient: {
               client_state_siblings: siblings,
               consensus_state_siblings: [],
-              removed_consensus_state_siblings: [],
             },
           },
           HostStateRedeemer,
           { canonical: true },
         ),
       )
-      .collectFrom([client], encodeStored(adjacentRedeemer))
+      .collectFrom(
+        [client],
+        encodeStored(
+          new Constr(0, [
+            adjacentRedeemer.fields[0],
+            [
+              new Constr(0, [
+                histories[1],
+                await historyTree.getSiblings(
+                  consensusHistoryKey(
+                    recordFromConstr(histories[1]).clientToken,
+                    recordFromConstr(histories[1]).height,
+                  ),
+                ),
+              ]),
+            ],
+            [],
+          ]),
+        ),
+      )
+      .withdraw(rewardAddress, 0n, encodeStored(new Constr(1, [clientToken])))
       .pay.ToContract(clientAddress, {
         kind: "inline",
-        value: encodeStored(frozenClient),
+        value: encodeOutput(frozenClient),
       }, client.assets)
       .pay.ToContract(hostAddress, {
         kind: "inline",
@@ -700,53 +768,123 @@ async function fixture(
     emulator.awaitBlock();
     assertEquals(
       (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
-      encodeStored(frozenClient),
+      encodeOutput(frozenClient),
     );
   }
   return {
-    prune,
     recover,
     update,
     freezeConflictingHeader,
     lucid,
-    archives,
+    histories,
     client,
     tree,
+    async coldRecoverAndPrune() {
+      assert(packet && createClient);
+      const directory = await Deno.makeTempDir({
+        prefix: "ibc-production-history-",
+      });
+      const dbPath = `${directory}/history.sqlite`;
+      const deployment = {
+        layout: "production" as const,
+        clientToken: { policyId: clientPolicyId, name: clientName },
+        stateAddress: clientAddress,
+        bootstrap,
+      };
+      // The emulator does not retain blocks. This source keeps only CBOR of
+      // successfully submitted transactions, with explicitly simulated points.
+      const source: HistorySource = {
+        async *transactions(after) {
+          const start = after
+            ? transactions.findIndex((tx) => tx.txHash === after.txHash)
+            : 0;
+          assert(start >= 0);
+          for (const tx of transactions.slice(start)) yield tx;
+        },
+        currentState: () => lucid.utxoByUnit(clientPolicyId + clientName),
+      };
+      let recovered = new ConsensusHistoryRecovery(dbPath, deployment);
+      try {
+        await recovered.recover(source);
+        recovered.close();
+        for (
+          const name of [
+            "history.sqlite",
+            "history.sqlite-wal",
+            "history.sqlite-shm",
+          ]
+        ) {
+          await Deno.remove(`${directory}/${name}`).catch((error) => {
+            if (!(error instanceof Deno.errors.NotFound)) throw error;
+          });
+        }
+        // Discard both tree caches and every supplied historical record.
+        historyTree = new DeploymentIbcTree();
+        tree = new DeploymentIbcTree();
+        histories.length = 0;
+        recovered = new ConsensusHistoryRecovery(dbPath, deployment);
+        const report = await recovered.recover(source);
+        const live = await source.currentState();
+        assertEquals(report.transactions, 2);
+        assertEquals(
+          report.root,
+          (Data.from(live.datum!) as Constr<Data>).fields[2],
+        );
+        assertEquals(recovered.current().utxo.txHash, live.txHash);
+        assertEquals(recovered.current().utxo.outputIndex, live.outputIndex);
+        tree.set(
+          "clients/07-tendermint-0/clientState",
+          recovered.current().clientValue,
+        );
+        for await (const entry of recovered.records()) {
+          tree.set(
+            consensusKey(entry.record.height.revisionHeight),
+            entry.consensusValue,
+          );
+        }
+        packet.publicLeaves(tree);
+        const liveHost = await lucid.utxoByUnit(HOST_POLICY + HOST_NAME);
+        assertEquals(
+          await tree.getRoot(),
+          Data.from(liveHost.datum!, HostStateDatum).state.ibc_state_root,
+        );
+        const witness = recovered.witness(deployment.clientToken, {
+          revisionNumber: 1n,
+          revisionHeight: 2n,
+        });
+        const result = await packet.prune(
+          live,
+          liveHost,
+          references[0],
+          tree,
+          witness,
+          emulator.now(),
+        );
+        emulator.awaitBlock();
+        await packet.assertPruned();
+        assertEquals(
+          (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
+          live.datum,
+        );
+        return { ...result, recoveryMilliseconds: report.milliseconds };
+      } finally {
+        recovered.close();
+        await Deno.remove(directory, { recursive: true });
+      }
+    },
   };
 }
 
-Deno.test("signed pruning transactions remain bounded with 1 and 300 archived states", async () => {
-  for (const count of [1, 300]) {
-    const context = await fixture(count);
-    console.log(JSON.stringify(await context.prune(0)));
-    if (count === 300) {
-      // Cleanup resumes in another transaction without rewriting the active client.
-      console.log(JSON.stringify(await context.prune(1)));
-      assertEquals(
-        (await context.lucid.utxoByUnit(context.archives[299].unit)).datum,
-        context.archives[299].utxo.datum,
-      );
-    }
-  }
-});
-
-Deno.test("the complete pruning transaction rejects wrong roots, unexpired states and two-record batches", async () => {
-  for (const mutation of ["wrong-root", "unexpired", "two-records"] as const) {
-    const context = await fixture(2, false, mutation === "unexpired");
-    await assertRejects(() => context.prune(0, mutation));
-  }
-});
-
-Deno.test("signed recovery archives the expired tip without loading 1 or 300 older states", async () => {
+Deno.test("signed recovery commits the expired tip without creating history UTxOs", async () => {
   for (const count of [1, 300]) {
     console.log(JSON.stringify(await (await fixture(count, true)).recover()));
   }
 });
 
-Deno.test("signed recovery rejects missing archives, changed metadata and wrong roots", async () => {
+Deno.test("signed recovery rejects unchanged history roots, changed metadata and wrong public roots", async () => {
   for (
     const mutation of [
-      "missing-archive",
+      "missing-history",
       "changed-metadata",
       "wrong-root",
     ] as const
@@ -757,10 +895,29 @@ Deno.test("signed recovery rejects missing archives, changed metadata and wrong 
   }
 });
 
-Deno.test("a signed four-validator header update archives its previous tip", async () => {
+Deno.test("a signed four-validator header update commits its previous tip without minting", async () => {
   console.log(
     JSON.stringify(await (await fixture(1, false, false, true)).update()),
   );
+});
+
+Deno.test("production client mint and header update publish bounded state without archive outputs", async () => {
+  for (const canonical of [true, false]) {
+    console.log(
+      JSON.stringify(
+        await (await fixture(
+          0,
+          false,
+          false,
+          true,
+          true,
+          canonical,
+          false,
+          !canonical,
+        )).update(),
+      ),
+    );
+  }
 });
 
 Deno.test("a signed header update cannot forge its new processing metadata", async () => {
@@ -768,8 +925,20 @@ Deno.test("a signed header update cannot forge its new processing metadata", asy
   await assertRejects(() => context.update(true));
 });
 
-Deno.test("a signed conflicting header freezes a client using its archived trusted height", async () => {
+Deno.test("a signed conflicting header freezes a client using its authenticated historical trusted height", async () => {
   // The trusted live height3 checkpoint differs from the valid signed height3
-  // header. Its height2 trust anchor is an immutable historical reference.
-  await (await fixture(2, false, false, true)).freezeConflictingHeader();
+  // header. Its height2 trust anchor is an committed history witness.
+  await (await fixture(2, false, false, true, false, true, false, false))
+    .freezeConflictingHeader();
+});
+
+Deno.test("client recovery accepts equivalent input and output CBOR container encodings", async () => {
+  await (await fixture(1, true, false, false, false, true, false, false))
+    .recover();
+});
+
+Deno.test("a production packet uses an old consensus state after deleting all local history", async () => {
+  const context = await fixture(0, false, false, true, true, true, true, false);
+  console.log(JSON.stringify(await context.update()));
+  console.log(JSON.stringify(await context.coldRecoverAndPrune()));
 });

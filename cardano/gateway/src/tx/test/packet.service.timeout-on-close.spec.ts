@@ -102,7 +102,7 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
   };
   const unsignedTx = { tag: 'unsigned-timeout' };
   const lucidService: any = {
-    resolveClientAtHeights: jest.fn().mockImplementation(async (clientUtxo: unknown) => ({ clientUtxo, clientDatum, historyUtxos: [] })),
+    resolveClientAtHeights: jest.fn().mockImplementation(async (clientUtxo: unknown) => ({ clientUtxo, clientDatum, historyWitnesses: [] })),
     getChannelTokenUnit: jest.fn().mockReturnValue(['channel-policy', 'channel-name']),
     getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy', 'connection-name']),
     getClientTokenUnit: jest.fn().mockReturnValue('client-token'),

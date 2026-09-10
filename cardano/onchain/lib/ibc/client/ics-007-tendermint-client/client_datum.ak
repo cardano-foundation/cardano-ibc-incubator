@@ -4,10 +4,12 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/types/params
+use ibc/core/ics_025_handler_interface/ibc_state_commitment
 
 pub type ClientDatum {
   state: ClientDatumState,
   token: AuthToken,
+  history_root: ByteArray,
 }
 
 pub type ClientDatumState {
@@ -17,8 +19,8 @@ pub type ClientDatumState {
   processed_heights: Pairs<Height, Int>,
 }
 
-/// The live client contains only its tip. Older checkpoints have immutable,
-/// separately authenticated outputs and are never copied during an update.
+/// The live client contains only its tip; older immutable checkpoints are
+/// authenticated against history_root using transaction-provided witnesses.
 pub fn has_singleton_history(datum: ClientDatum) -> Bool {
   when
     (
@@ -45,6 +47,7 @@ pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
     client_state_mod.validate(datum.state.client_state),
     has_singleton_history(datum),
     tokens_match(datum.token, auth_token),
+    datum.history_root == ibc_state_commitment.empty_hash,
   }
 }
 
@@ -115,6 +118,7 @@ pub fn update_state_on_misbehaviour(
     output_state.frozen_height.revision_number == 0,
     output_state.frozen_height.revision_height == 1,
     same_history(input_datum.state, output_datum.state),
+    input_datum.history_root == output_datum.history_root,
   }
 }
 

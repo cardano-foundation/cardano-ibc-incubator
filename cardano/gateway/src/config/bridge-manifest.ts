@@ -59,15 +59,23 @@ export const ICS20_PACKET_CODEC = {
 } as const;
 
 export type Ics20PacketCodec = (typeof ICS20_PACKET_CODEC)[keyof typeof ICS20_PACKET_CODEC];
+export const CONSENSUS_HISTORY_FORMAT = 'proof-backed-v1' as const;
+
+function requireConsensusHistoryFormat(value: unknown): typeof CONSENSUS_HISTORY_FORMAT {
+  if (value !== CONSENSUS_HISTORY_FORMAT) {
+    throw new Error('A fresh proof-backed deployment is required: missing or unsupported consensus-history format. Regenerate deployment artifacts; adding a marker does not migrate old contracts.');
+  }
+  return value;
+}
 
 export type DeploymentConfig = {
   deployedAt: string;
+  consensusHistoryFormat: typeof CONSENSUS_HISTORY_FORMAT;
   ics20PacketCodec: Ics20PacketCodec;
   hostStateNFT: AuthToken;
   validators: {
     hostStateStt: DeploymentValidator;
     recoverClient?: DeploymentValidator;
-    spendConsensusState?: DeploymentValidator;
     spendClient: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
@@ -152,6 +160,7 @@ type BridgeManifestTraceRegistry = {
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
 export type BridgeManifest = {
   schema_version: number;
+  consensus_history_format: typeof CONSENSUS_HISTORY_FORMAT;
   deployment_id: string;
   deployed_at: string;
   ics20_packet_codec: Ics20PacketCodec;
@@ -164,7 +173,6 @@ export type BridgeManifest = {
   validators: {
     host_state_stt: BridgeManifestValidator;
     recover_client?: BridgeManifestValidator;
-    spend_consensus_state?: BridgeManifestValidator;
     spend_client: BridgeManifestValidator;
     spend_connection: BridgeManifestValidator;
     spend_channel: BridgeManifestSpendChannelValidator;
@@ -591,13 +599,17 @@ function manifestSpendChannelToDeployment(validator: BridgeManifestSpendChannelV
 export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfig {
   const deploymentAny = requireObject(deployment, 'deployment');
   const validators = requireObject(deploymentAny.validators, 'validators');
+  if ('spendConsensusState' in validators) {
+    throw new Error('Archive-NFT consensus history is no longer supported; a fresh proof-backed deployment is required');
+  }
+  const consensusHistoryFormat = requireConsensusHistoryFormat(deploymentAny.consensusHistoryFormat);
   const modules = requireObject(deploymentAny.modules, 'modules');
 
   return {
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
-    // Handler files created before the codec capability existed describe the
-    // legacy validators. Defaulting them to legacy keeps their open packets
-    // settleable after a Gateway upgrade.
+    consensusHistoryFormat,
+    // Packet wire encoding is independent of the required client-history ABI.
+    // Keep its legacy default only after validating the proof-backed marker.
     ics20PacketCodec:
       deploymentAny.ics20PacketCodec === undefined
         ? ICS20_PACKET_CODEC.LEGACY
@@ -609,9 +621,6 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
         ? { recoverClient: requireDeploymentValidator(validators.recoverClient, 'validators.recoverClient') }
         : {}),
       spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
-      ...(validators.spendConsensusState
-        ? { spendConsensusState: requireDeploymentValidator(validators.spendConsensusState, 'validators.spendConsensusState') }
-        : {}),
       spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection'),
       spendChannel: requireDeploymentSpendChannelValidator(validators.spendChannel, 'validators.spendChannel'),
       ...(validators.spendMockModule
@@ -660,6 +669,7 @@ export function normalizeHandlerJsonDeploymentConfig(
     deployment: normalizedDeployment,
     bridgeManifest: {
       schema_version: 4,
+      consensus_history_format: normalizedDeployment.consensusHistoryFormat,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
       ics20_packet_codec: normalizedDeployment.ics20PacketCodec,
@@ -671,9 +681,6 @@ export function normalizeHandlerJsonDeploymentConfig(
           ? { recover_client: deploymentValidatorToManifest(normalizedDeployment.validators.recoverClient) }
           : {}),
         spend_client: deploymentValidatorToManifest(normalizedDeployment.validators.spendClient),
-        ...(normalizedDeployment.validators.spendConsensusState
-          ? { spend_consensus_state: deploymentValidatorToManifest(normalizedDeployment.validators.spendConsensusState) }
-          : {}),
         spend_connection: deploymentValidatorToManifest(normalizedDeployment.validators.spendConnection),
         spend_channel: deploymentSpendChannelToManifest(normalizedDeployment.validators.spendChannel),
         ...(normalizedDeployment.validators.spendMockModule
@@ -716,6 +723,10 @@ export function normalizeHandlerJsonDeploymentConfig(
 export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeConfig {
   const manifestAny = requireObject(manifest, 'bridgeManifest');
   const validators = requireObject(manifestAny.validators, 'validators');
+  if ('spend_consensus_state' in validators) {
+    throw new Error('Archive-NFT consensus history is no longer supported; a fresh proof-backed deployment is required');
+  }
+  const consensusHistoryFormat = requireConsensusHistoryFormat(manifestAny.consensus_history_format);
   const modules = requireObject(manifestAny.modules, 'modules');
 
   // Manifest startup is the inverse path: validate the public document, then
@@ -723,10 +734,10 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   // unaware of which bootstrap source was used.
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
+    consensus_history_format: consensusHistoryFormat,
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
     deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
-    // Existing schema-v4 manifests predate this field and therefore refer to
-    // legacy validators. New manifests always emit the capability explicitly.
+    // The packet codec remains independent of the required history capability.
     ics20_packet_codec:
       manifestAny.ics20_packet_codec === undefined
         ? ICS20_PACKET_CODEC.LEGACY
@@ -739,9 +750,6 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         ? { recover_client: requireManifestValidator(validators.recover_client, 'validators.recover_client') }
         : {}),
       spend_client: requireManifestValidator(validators.spend_client, 'validators.spend_client'),
-      ...(validators.spend_consensus_state
-        ? { spend_consensus_state: requireManifestValidator(validators.spend_consensus_state, 'validators.spend_consensus_state') }
-        : {}),
       spend_connection: requireManifestValidator(validators.spend_connection, 'validators.spend_connection'),
       spend_channel: requireManifestSpendChannelValidator(validators.spend_channel, 'validators.spend_channel'),
       ...(validators.spend_mock_module
@@ -790,6 +798,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     bridgeManifest,
     deployment: {
       deployedAt: bridgeManifest.deployed_at,
+      consensusHistoryFormat,
       ics20PacketCodec: bridgeManifest.ics20_packet_codec,
       hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
       validators: {
@@ -798,9 +807,6 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
           ? { recoverClient: manifestValidatorToDeployment(bridgeManifest.validators.recover_client) }
           : {}),
         spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
-        ...(bridgeManifest.validators.spend_consensus_state
-          ? { spendConsensusState: manifestValidatorToDeployment(bridgeManifest.validators.spend_consensus_state) }
-          : {}),
         spendConnection: manifestValidatorToDeployment(bridgeManifest.validators.spend_connection),
         spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
         ...(bridgeManifest.validators.spend_mock_module

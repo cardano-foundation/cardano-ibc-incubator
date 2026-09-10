@@ -25,6 +25,7 @@ function clientDatum(
 ): ClientDatum {
   const latest = height(latestHeight);
   return {
+    history_root: '00'.repeat(32),
     token: { policyId: '11'.repeat(28), name: Buffer.from(latestHeight.toString()).toString('hex') },
     state: {
       clientState: {
@@ -113,11 +114,10 @@ describe('ClientService recovery transaction', () => {
     const config = { get: jest.fn().mockReturnValue(deployment) } as unknown as ConfigService;
     const lucid: any = {
       LucidImporter: Lucid,
+      prepareConsensusHistoryUpdate: jest.fn().mockResolvedValue({ newRoot: '44'.repeat(32), siblings: [] }),
       findUtxoAtHostStateNFT: jest.fn(),
       getPaymentCredential: jest.fn(),
       getClientTokenUnit: jest.fn((id: string) => `unit-${id}`),
-      getConsensusStateAddress: jest.fn().mockReturnValue('history-address'),
-      getConsensusStateTokenUnit: jest.fn().mockReturnValue('history-unit'),
       findUtxoByUnit: jest.fn(),
       decodeDatum: jest.fn(),
       tryFindUtxosAt: jest.fn().mockResolvedValue([{ assets: { lovelace: 2_000_000n } }]),
@@ -258,9 +258,11 @@ describe('ClientService recovery transaction', () => {
     expect(Array.from(recovered.state.consensusStates.keys())[0]).toEqual(height(301n));
     expect(recovered.state.processedTimes.size).toBe(1);
     expect(recovered.state.processedHeights.size).toBe(1);
+    expect(lucid.prepareConsensusHistoryUpdate).toHaveBeenCalledTimes(1);
+    expect(recovered.history_root).toBe('44'.repeat(32));
     expect(lucid.encode).toHaveBeenCalledWith(
-      expect.objectContaining({ clientToken: subject.token, height: height(300n), processedTime: 0n, processedHeight: 300n }),
-      'consensusState',
+      { RecoverClient: { substitute_token: clientDatum(301n, 150n).token, history_siblings: [] } },
+      'spendClientRedeemer',
     );
     const expectedTree = tree.clone();
     expectedTree.set(

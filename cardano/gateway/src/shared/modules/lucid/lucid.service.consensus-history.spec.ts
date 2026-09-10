@@ -1,17 +1,18 @@
 import * as Lucid from '@lucid-evolution/lucid';
 import { LucidService } from './lucid.service';
 import { ClientDatum, encodeClientDatum } from '../../types/client-datum';
-import { ConsensusStateDatum, encodeConsensusStateDatum, consensusStateTokenName } from '../../types/consensus-state-datum';
+import { ConsensusHistoryWitness, ConsensusStateDatum } from '../../types/consensus-state-datum';
 
 const token = { policyId: '11'.repeat(28), name: 'aa' };
 const height = (revisionHeight: bigint) => ({ revisionNumber: 0n, revisionHeight });
 const consensus = { timestamp: 10n, next_validators_hash: '22'.repeat(32), root: { hash: '33'.repeat(32) } };
 const record: ConsensusStateDatum = { clientToken: token, height: height(1n), consensusState: consensus, processedTime: 20n, processedHeight: 30n };
-const archiveUnit = token.policyId + consensusStateTokenName(token, record.height, Lucid);
+const witness: ConsensusHistoryWitness = { record, siblings: Array(64).fill('00'.repeat(32)) };
 
 async function context() {
   const client: ClientDatum = {
     token,
+    history_root: '44'.repeat(32),
     state: {
       clientState: { chainId: 'aa', trustLevel: { numerator: 1n, denominator: 3n }, trustingPeriod: 100n, unbondingPeriod: 200n, maxClockDrift: 10n, frozenHeight: height(0n), latestHeight: height(2n), proofSpecs: [] },
       consensusStates: new Map([[height(2n), consensus]]),
@@ -20,123 +21,76 @@ async function context() {
     },
   };
   const clientUtxo: Lucid.UTxO = { txHash: '01'.repeat(32), outputIndex: 0, address: 'client', assets: { [token.policyId + token.name]: 1n }, datum: await encodeClientDatum(client, Lucid) };
-  const archive: Lucid.UTxO = { txHash: '02'.repeat(32), outputIndex: 0, address: 'history', assets: { [archiveUnit]: 1n }, datum: encodeConsensusStateDatum(record, Lucid) };
-  const deployment: any = { validators: { mintClientStt: { scriptHash: token.policyId }, spendClient: { address: 'client' }, spendConsensusState: { address: 'history', scriptHash: '44'.repeat(28), refUtxo: { txHash: '03'.repeat(32), outputIndex: 0 } } } };
-  const provider = { utxosAtWithUnit: jest.fn().mockResolvedValue([archive]), utxosAt: jest.fn().mockResolvedValue([archive]) };
+  const deployment: any = { hostStateNFT: token, validators: { mintClientStt: { scriptHash: token.policyId }, spendClient: { address: 'client' }, hostStateStt: { address: 'host' }, recoverClient: { address: 'support' } } };
+  const history = { witnesses: jest.fn().mockResolvedValue([witness]), insertion: jest.fn() };
   const service: LucidService = Object.assign(Object.create(LucidService.prototype), {
     LucidImporter: Lucid,
-    lucid: provider,
     configService: { get: () => deployment },
+    consensusHistory: history,
     normalizeAddressOrCredential: (address: string) => address,
   });
-  return { service, client, clientUtxo, archive, provider, deployment };
+  return { service, client, clientUtxo, history, deployment };
 }
 
-describe('Lucid authenticated consensus history', () => {
-  it('resolves one old height without changing the actual client UTxO or datum bytes', async () => {
-    const { service, clientUtxo, archive } = await context();
+describe('Lucid proof-backed consensus history', () => {
+  it('hydrates an old state once and returns its witness without changing the input bytes', async () => {
+    const { service, clientUtxo, history } = await context();
     const before = clientUtxo.datum;
     const resolved = await service.resolveClientAtHeights(clientUtxo, [height(1n), height(1n)]);
     expect(resolved.clientUtxo).toBe(clientUtxo);
     expect(clientUtxo.datum).toBe(before);
-    expect(resolved.historyUtxos).toEqual([archive]);
+    expect(resolved.historyWitnesses).toEqual([witness]);
+    expect(history.witnesses).toHaveBeenCalledTimes(1);
+    expect(history.witnesses.mock.calls[0][3]).toEqual([height(1n)]);
     expect([...resolved.clientDatum.state.processedTimes.values()]).toEqual([40n, 20n]);
     expect([...resolved.clientDatum.state.processedHeights.values()]).toEqual([50n, 30n]);
     expect((await service.decodeDatum<ClientDatum>(before!, 'client')).state.consensusStates.size).toBe(1);
   });
 
-  it('uses no archive inputs for a latest-height read', async () => {
-    const { service, clientUtxo, provider } = await context();
-    const result = await service.resolveClientAtHeights(clientUtxo, [height(2n)]);
-    expect(result.historyUtxos).toEqual([]);
-    expect(provider.utxosAtWithUnit).not.toHaveBeenCalled();
+  it('does not load history for the latest height', async () => {
+    const { service, clientUtxo, history } = await context();
+    expect((await service.resolveClientAtHeights(clientUtxo, [height(2n)])).historyWitnesses).toEqual([]);
+    expect(history.witnesses).not.toHaveBeenCalled();
   });
 
-  it.each(['address', 'token', 'client', 'height'] as const)('rejects an archive with the wrong %s', async (field) => {
-    const { service, archive, provider } = await context();
-    if (field === 'address') archive.address = 'other';
-    if (field === 'token') archive.assets = { [archiveUnit]: 2n };
-    if (field === 'client') archive.datum = encodeConsensusStateDatum({ ...record, clientToken: { ...token, name: 'bb' } }, Lucid);
-    if (field === 'height') archive.datum = encodeConsensusStateDatum({ ...record, height: height(9n) }, Lucid);
-    provider.utxosAtWithUnit.mockResolvedValue([archive]);
-    await expect(service.findConsensusStateHistory(token, height(1n))).rejects.toThrow();
+  it.each(['address', 'token'] as const)('rejects a client with the wrong %s before querying history', async (field) => {
+    const { service, clientUtxo, history } = await context();
+    if (field === 'address') clientUtxo.address = 'other';
+    else clientUtxo.assets = {};
+    await expect(service.resolveClientAtHeights(clientUtxo, [height(1n)])).rejects.toThrow('authentication failed');
+    expect(history.witnesses).not.toHaveBeenCalled();
   });
 
-  it('rejects duplicate records and fails closed if history is not deployed', async () => {
-    const { service, archive, provider, deployment } = await context();
-    provider.utxosAtWithUnit.mockResolvedValue([archive, { ...archive, outputIndex: 1 }]);
-    await expect(service.findConsensusStateHistory(token, height(1n))).rejects.toThrow('Duplicate');
-    delete deployment.validators.spendConsensusState;
-    await expect(service.listConsensusStateHistory()).rejects.toThrow('not configured');
-  });
-
-  it('does not fabricate a missing or future historical state', async () => {
-    const { service, clientUtxo, provider } = await context();
-    provider.utxosAtWithUnit.mockResolvedValue([]);
+  it('fails closed for missing history, future heights, or an unavailable history service', async () => {
+    const { service, clientUtxo, history } = await context();
+    history.witnesses.mockRejectedValue(new Error('historical record not found'));
     await expect(service.resolveClientAtHeights(clientUtxo, [height(1n)])).rejects.toThrow('not found');
     await expect(service.resolveClientAtHeights(clientUtxo, [height(3n)])).rejects.toThrow('not an archived');
+    Object.assign(service, { consensusHistory: undefined });
+    await expect(service.resolveClientAtHeights(clientUtxo, [height(1n)])).rejects.toThrow('unavailable');
   });
-});
 
-describe('Lucid consensus history transaction composition', () => {
-  async function builderContext() {
-    const ctx = await context();
+  it('updates only the HostState and client outputs and invokes the bound support script', async () => {
+    const { service, clientUtxo } = await context();
     const builder: any = {};
-    for (const method of ['readFrom', 'collectFrom', 'mintAssets', 'withdraw', 'addSignerKey']) {
-      builder[method] = jest.fn().mockReturnValue(builder);
-    }
+    for (const method of ['readFrom', 'collectFrom', 'mintAssets', 'withdraw', 'addSignerKey']) builder[method] = jest.fn().mockReturnValue(builder);
     builder.pay = { ToContract: jest.fn().mockReturnValue(builder) };
-    const refs = {
-      hostStateStt: { txHash: 'host-script', outputIndex: 0 },
-      spendClient: { txHash: 'client-script', outputIndex: 0 },
-      mintClient: { txHash: 'mint-script', outputIndex: 0 },
-      spendConsensusState: { txHash: 'history-script', outputIndex: 0 },
-      recoverClient: { txHash: 'recovery-script', outputIndex: 0 },
-    };
-    Object.assign(ctx.service, { referenceScripts: refs, newTxBuilder: () => builder });
-    Object.assign(ctx.deployment, { hostStateNFT: { policyId: '55'.repeat(28), name: 'aa' } });
-    Object.assign(ctx.deployment.validators, { hostStateStt: { address: 'host' }, recoverClient: { address: 'recovery' } });
-    const host: Lucid.UTxO = { txHash: '04'.repeat(32), outputIndex: 0, address: 'host', assets: {}, datum: 'd87980' };
-    const archiveOutput = { tokenUnit: archiveUnit, encodedDatum: 'archive-datum', encodedMintRedeemer: 'archive-redeemer' };
-    return { ...ctx, builder, refs, host, archiveOutput };
-  }
-
-  it('references the historical proof datum and mints exactly one immutable previous-tip output', async () => {
-    const { service, builder, refs, host, clientUtxo, archive, archiveOutput } = await builderContext();
-    service.createUnsignedUpdateClientTransaction(host, 'host-redeemer', clientUtxo, 'client-redeemer', 'new-host', 'new-client', token.policyId + token.name, 'funding', [archive], archiveOutput);
-    expect(builder.readFrom).toHaveBeenCalledWith([refs.hostStateStt, refs.spendClient, archive]);
-    expect(builder.readFrom).toHaveBeenCalledWith([refs.mintClient]);
-    expect(builder.collectFrom).toHaveBeenNthCalledWith(2, [clientUtxo], 'client-redeemer');
-    expect(builder.mintAssets).toHaveBeenCalledTimes(1);
-    expect(builder.mintAssets).toHaveBeenCalledWith({ [archiveUnit]: 1n }, 'archive-redeemer');
-    expect(builder.pay.ToContract).toHaveBeenLastCalledWith('history', { kind: 'inline', value: 'archive-datum' }, { [archiveUnit]: 1n });
-  });
-
-  it('archives the subject tip during recovery while keeping the substitute read-only', async () => {
-    const { service, builder, refs, host, clientUtxo, archiveOutput } = await builderContext();
-    const substitute = { ...clientUtxo, txHash: '06'.repeat(32) };
-    service.createUnsignedRecoverClientTransaction(host, 'host-redeemer', clientUtxo, 'recover-redeemer', substitute, 'withdraw-redeemer', 'new-host', 'new-client', token.policyId + token.name, 'authority', archiveOutput);
-    expect(builder.readFrom).toHaveBeenCalledWith([refs.hostStateStt, refs.spendClient, refs.recoverClient, substitute]);
-    expect(builder.collectFrom.mock.calls.flatMap((call: any[]) => call[0])).not.toContain(substitute);
-    expect(builder.mintAssets).toHaveBeenCalledWith({ [archiveUnit]: 1n }, 'archive-redeemer');
-  });
-
-  it('burns and consumes one archive, references the live client, and requires no authority signer', async () => {
-    const { service, builder, refs, host, clientUtxo, archive } = await builderContext();
-    service.createUnsignedPruneConsensusStateTransaction({
-      hostStateUtxo: host, clientUtxo, historyUtxo: archive, historyTokenUnit: archiveUnit,
-      encodedHostStateRedeemer: 'host-prune', encodedUpdatedHostStateDatum: 'new-host', encodedMintRedeemer: 'prune',
-    });
-    expect(builder.readFrom).toHaveBeenCalledWith([refs.hostStateStt, refs.spendConsensusState, refs.mintClient, clientUtxo]);
-    expect(builder.collectFrom.mock.calls).toEqual([[[host], 'host-prune'], [[archive], Lucid.Data.void()]]);
-    expect(builder.mintAssets).toHaveBeenCalledWith({ [archiveUnit]: -1n }, 'prune');
-    expect(builder.pay.ToContract).toHaveBeenCalledTimes(1);
+    const refs = { hostStateStt: clientUtxo, spendClient: clientUtxo, recoverClient: clientUtxo };
+    Object.assign(service, { referenceScripts: refs, newTxBuilder: () => builder });
+    service.createUnsignedUpdateClientTransaction(clientUtxo, 'host', clientUtxo, 'spend', 'new-host', 'new-client', token.policyId + token.name, 'funding', 'history-proof');
+    expect(builder.readFrom).toHaveBeenCalledWith([refs.hostStateStt, refs.spendClient, refs.recoverClient]);
+    expect(builder.withdraw).toHaveBeenCalledWith('support', 0n, 'history-proof');
+    expect(builder.mintAssets).not.toHaveBeenCalled();
+    expect(builder.pay.ToContract).toHaveBeenCalledTimes(2);
     expect(builder.addSignerKey).not.toHaveBeenCalled();
-  });
 
-  it('fails closed when a required pruning reference script is missing', async () => {
-    const { service, refs, host, clientUtxo, archive } = await builderContext();
-    refs.spendConsensusState = undefined as any;
-    expect(() => service.createUnsignedPruneConsensusStateTransaction({ hostStateUtxo: host, clientUtxo, historyUtxo: archive, historyTokenUnit: archiveUnit, encodedHostStateRedeemer: '', encodedUpdatedHostStateDatum: '', encodedMintRedeemer: '' })).toThrow('scripts are unavailable');
+    builder.pay.ToContract.mockClear();
+    const substitute = { ...clientUtxo, txHash: '66'.repeat(32) };
+    service.createUnsignedRecoverClientTransaction(clientUtxo, 'host', clientUtxo, 'spend', substitute, 'recover', 'new-host', 'new-client', token.policyId + token.name, 'authority');
+    expect(builder.readFrom).toHaveBeenLastCalledWith([refs.hostStateStt, refs.spendClient, refs.recoverClient, substitute]);
+    expect(builder.collectFrom.mock.calls.flatMap((args: any[]) => args[0])).not.toContain(substitute);
+    expect(builder.mintAssets).not.toHaveBeenCalled();
+    expect(builder.pay.ToContract).toHaveBeenCalledTimes(2);
+    expect(builder.addSignerKey).toHaveBeenCalledWith('authority');
   });
 });

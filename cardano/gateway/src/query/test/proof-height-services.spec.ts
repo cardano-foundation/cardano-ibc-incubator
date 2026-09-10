@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Constr, Data } from '@lucid-evolution/lucid';
 import { ClientState, ConsensusState } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { ChannelService } from '../services/channel.service';
@@ -59,6 +60,7 @@ const CHANNEL_TOKEN_UNIT = 'policychannel-token';
 const CLIENT_POLICY_ID = 'aa'.repeat(28);
 const CLIENT_TOKEN_NAME = 'bb'.repeat(24) + '30';
 const CLIENT_TOKEN_UNIT = CLIENT_POLICY_ID + CLIENT_TOKEN_NAME;
+const CONSENSUS_VALUE = Data.to(new Constr(0, [1_000n, '11'.repeat(32), new Constr(0, ['22'.repeat(32)])]));
 const SUCCESS_ACKNOWLEDGEMENT_HEX = toHex(JSON.stringify({ result: 'AQ==' }));
 const SUCCESS_ACKNOWLEDGEMENT_COMMITMENT = hashSHA256(SUCCESS_ACKNOWLEDGEMENT_HEX);
 
@@ -108,6 +110,7 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
 
 function makeHistoricalTree() {
   const tree = {
+    get: jest.fn((path: string) => path === 'clients/07-tendermint-0/consensusStates/77' ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined),
     generateProof: jest.fn((path: string) => ({ path })),
     generateNonExistenceProof: jest.fn((path: string) => ({ path })),
     clone: jest.fn(),
@@ -167,6 +170,15 @@ function makeDeps() {
       outputIndex: 0,
       datum: 'live-datum',
     })),
+    consensusHistoryRecords: jest.fn(async () => [{
+      datum: {
+        clientToken: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
+        height: { revisionNumber: 0n, revisionHeight: 77n },
+        consensusState: { timestamp: 1_000n, next_validators_hash: '11'.repeat(32), root: { hash: '22'.repeat(32) } },
+        processedTime: 2_000n, processedHeight: 20n,
+      },
+      consensusValue: CONSENSUS_VALUE, archived: false,
+    }]),
     getChannelTokenUnit: jest.fn(() => ['policy', 'channel-token']),
     getClientAuthTokenUnit: jest.fn(() => CLIENT_TOKEN_UNIT),
     generateTokenName: jest.fn(() => 'connection-token'),
@@ -609,7 +621,12 @@ describe('proof-bearing services with captured query heights', () => {
         .toHaveBeenCalledWith(query.unit, LATEST_ACCEPTED_HEIGHT);
       expect(deps.capturedTree.generateProof).toHaveBeenCalledWith(query.path);
       expect(deps.treeStore.getCurrentTree).not.toHaveBeenCalled();
-      expect(deps.mocks.lucidService.findUtxoByUnit).not.toHaveBeenCalled();
+      if (query.name === 'consensus state') {
+        expect(deps.mocks.lucidService.findUtxoByUnit).toHaveBeenCalledWith(CLIENT_TOKEN_UNIT);
+        expect(deps.mocks.lucidService.consensusHistoryRecords).toHaveBeenCalledWith(expect.objectContaining({ txHash: 'live-utxo' }));
+      } else {
+        expect(deps.mocks.lucidService.findUtxoByUnit).not.toHaveBeenCalled();
+      }
       expect(deps.mocks.lucidService.findUtxoAtWithUnit).not.toHaveBeenCalled();
       expect(response.proof_height?.revision_height).toBe(LATEST_ACCEPTED_HEIGHT);
     });

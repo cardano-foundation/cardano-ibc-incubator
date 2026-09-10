@@ -175,6 +175,7 @@ async function decodeClientDatum(encoded, Lucid) {
     const ClientDatumSchema = Data.Object({
         state: ClientDatumStateSchema,
         token: AuthTokenSchema,
+        history_root: Data.Bytes({ minLength: 32, maxLength: 32 }),
     });
     return Data.from(encoded, ClientDatumSchema);
 }
@@ -476,7 +477,6 @@ async function encodeHostStateRedeemer(data, Lucid) {
     const UpdateClientSchema = Data.Object({
         client_state_siblings: SiblingHashesSchema,
         consensus_state_siblings: SiblingHashesSchema,
-        removed_consensus_state_siblings: SiblingHashesListSchema,
     });
     const HandlePacketSchema = Data.Object({
         channel_siblings: SiblingHashesSchema,
@@ -516,19 +516,6 @@ async function encodeHostStateRedeemer(data, Lucid) {
         }),
         Data.Literal('FinalizeShutdown'),
         Data.Literal('Heartbeat'),
-        Data.Object({
-            PruneConsensusState: Data.Object({
-                client_token: Data.Object({
-                    policyId: Data.Bytes(),
-                    name: Data.Bytes(),
-                }),
-                height: Data.Object({
-                    revisionNumber: Data.Integer(),
-                    revisionHeight: Data.Integer(),
-                }),
-                consensus_state_siblings: SiblingHashesSchema,
-            }),
-        }),
     ]);
     return Data.to(data, HostStateRedeemerSchema, { canonical: true });
 }
@@ -841,16 +828,23 @@ exports.UtxosAtAddressNotFoundError = UtxosAtAddressNotFoundError;
 class LucidIbcAdapter {
     lucid;
     deployment;
+    readConsensusHistory;
     LucidImporter;
     referenceScripts;
     walletSelectionScopeCounter = 0;
     activeWalletSelectionScopeId = null;
     explicitWalletSelectionForScopeId = null;
     explicitWalletSelectionAddress = null;
-    constructor(LucidImporter, lucid, deployment) {
+    constructor(LucidImporter, lucid, deployment, readConsensusHistory) {
         this.lucid = lucid;
         this.deployment = deployment;
+        this.readConsensusHistory = readConsensusHistory;
         this.LucidImporter = LucidImporter;
+    }
+    async consensusHistoryRecords(client) {
+        if (!this.readConsensusHistory)
+            throw new Error('Consensus history reader is unavailable');
+        return this.readConsensusHistory(client);
     }
     async onModuleInit() {
         this.referenceScripts = await this.loadReferenceScripts();

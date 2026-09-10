@@ -6,8 +6,8 @@ use aiken/interval
 use cardano/address
 use cardano/assets.{from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction, Withdraw,
+  InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction, Withdraw,
 }
 use host_state_stt
 use ibc/auth.{AuthToken, generate_token_name}
@@ -15,7 +15,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  ArchiveConsensusState, RecoverClient, RecoverClientWithdrawal,
+  CheckClientHistory, RecoverClient, RecoverClientWithdrawal,
   RecoverClientWithdrawalRedeemer,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
@@ -32,7 +32,6 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/sparse_tree
-use minting_client_stt
 use recover_client
 use spending_client
 
@@ -55,9 +54,6 @@ const other_client_script_hash =
 
 const recovery_script_hash =
   #"55555555555555555555555555555555555555555555555555555555"
-
-const consensus_script_hash =
-  #"56565656565656565656565656565656565656565656565656565656"
 
 const connection_script_hash =
   #"57575757575757575757575757575757575757575757575757575757"
@@ -130,6 +126,7 @@ fn datum(
 ) -> ClientDatum {
   let consensus_states = [Pair(latest_height, consensus(timestamp, token.name))]
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: client_state(latest_height, frozen_height),
       consensus_states,
@@ -166,6 +163,11 @@ fn expected_recovered(
 
   ClientDatum {
     ..subject,
+    history_root: consensus_history.insert(
+      subject.history_root,
+      consensus_history.from_client(subject),
+      list.repeat(ibc_state_commitment.empty_hash, 64),
+    ),
     state: ClientDatumState {
       client_state: ClientState {
         ..subject.state.client_state,
@@ -279,17 +281,15 @@ fn recovery_transaction_with_host(
     }
   let host_redeemer: Redeemer = host_update_redeemer
   let subject_redeemer: Redeemer =
-    RecoverClient { substitute_token: substitute.token }
+    RecoverClient {
+      substitute_token: substitute.token,
+      history_siblings: list.repeat(ibc_state_commitment.empty_hash, 64),
+    }
   let withdrawal_redeemer: Redeemer = recovery_redeemer(subject, substitute)
-  let record = consensus_history.from_client(subject)
-  let archive_token = consensus_history.token(subject.token, record.height)
-  let archive_redeemer: Redeemer =
-    ArchiveConsensusState { client_token: subject.token }
   let base_redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(Spend(host_reference), host_redeemer),
       Pair(Spend(subject_reference), subject_redeemer),
-      Pair(Mint(client_policy), archive_redeemer),
     ]
   let redeemers =
     if include_withdrawal_redeemer {
@@ -317,14 +317,7 @@ fn recovery_transaction_with_host(
     outputs: [
       client_output(recovered, client_script_hash),
       host_output_with_datum(new_host_datum),
-      Output {
-        address: address.from_script(consensus_script_hash),
-        value: from_asset(archive_token.policy_id, archive_token.name, 1),
-        datum: InlineDatum(record),
-        reference_script: None,
-      },
     ],
-    mint: from_asset(archive_token.policy_id, archive_token.name, 1),
     withdrawals,
     validity_range: interval.between(1900, 2000),
     extra_signatories: signers,
@@ -354,7 +347,6 @@ fn recovery_transaction(
     host_state_redeemer.UpdateClient {
       client_state_siblings: [],
       consensus_state_siblings: [],
-      removed_consensus_state_siblings: [],
     },
   )
 }
@@ -480,7 +472,6 @@ fn run_atomic_recovery_with_policy(
     host_state_redeemer.UpdateClient {
       client_state_siblings,
       consensus_state_siblings,
-      removed_consensus_state_siblings: [],
     }
   let transaction =
     recovery_transaction_with_host(
@@ -497,19 +488,14 @@ fn run_atomic_recovery_with_policy(
     )
 
   and {
-    minting_client_stt.mint_client_stt.mint(
-      client_script_hash,
-      host_policy,
-      consensus_script_hash,
-      ArchiveConsensusState { client_token: subject.token },
-      client_policy,
-      transaction,
-    ),
     spending_client.spend_client.spend(
       host_policy,
       address.Script(recovery_script_hash),
       Some(subject),
-      RecoverClient { substitute_token: substitute.token },
+      RecoverClient {
+        substitute_token: substitute.token,
+        history_siblings: list.repeat(ibc_state_commitment.empty_hash, 64),
+      },
       subject_reference,
       transaction,
     )
@@ -577,6 +563,7 @@ fn history(first_height: Int, count: Int) -> Pairs<Height, ConsensusState> {
 fn subject_with_history(history_size: Int) -> ClientDatum {
   let consensus_states = history(history_size, history_size)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: client_state(height(history_size), zero_height()),
       consensus_states,
@@ -613,7 +600,7 @@ test recovery_rejects_legacy_300_entry_datum() fail {
 }
 
 test recovery_keeps_one_tip_after_300_updates() {
-  // The previous 299 records live in separate UTxOs and are not recovery inputs.
+  // Earlier records are committed off-chain and are not recovery inputs.
   let subject = datum(subject_token(), height(300), 0, zero_height())
   let substitute = substitute_after(300)
   let recovered = expected_recovered(subject, substitute)
@@ -634,8 +621,8 @@ test recovery_keeps_one_tip_after_300_updates() {
     list.length(recovered.state.processed_heights) == 1,
     list.length(transaction.inputs) == 2,
     list.length(transaction.reference_inputs) == 1,
-    list.length(transaction.outputs) == 3,
-    list.length(transaction.redeemers) == 4,
+    list.length(transaction.outputs) == 2,
+    list.length(transaction.redeemers) == 3,
     run_recovery(subject, substitute, recovered, client_script_hash, [deployer]),
   }
 }
@@ -852,7 +839,10 @@ test spend_client_forwards_valid_recovery() {
     host_policy,
     address.Script(recovery_script_hash),
     Some(subject),
-    RecoverClient { substitute_token: substitute.token },
+    RecoverClient {
+      substitute_token: substitute.token,
+      history_siblings: list.repeat(ibc_state_commitment.empty_hash, 64),
+    },
     subject_reference,
     recovery_transaction(
       subject,
@@ -873,7 +863,10 @@ test spend_client_rejects_missing_recovery_withdrawal() fail {
     host_policy,
     address.Script(recovery_script_hash),
     Some(subject),
-    RecoverClient { substitute_token: substitute.token },
+    RecoverClient {
+      substitute_token: substitute.token,
+      history_siblings: list.repeat(ibc_state_commitment.empty_hash, 64),
+    },
     subject_reference,
     recovery_transaction(
       subject,
@@ -887,7 +880,9 @@ test spend_client_rejects_missing_recovery_withdrawal() fail {
   )
 }
 
-fn spend_with_withdrawal_redeemer(withdrawal_redeemer: Redeemer) -> Bool {
+fn spend_with_forged_recovery_support(
+  support: RecoverClientWithdrawalRedeemer,
+) -> Bool {
   let subject = expired_subject()
   let substitute = active_substitute()
   let tx =
@@ -900,129 +895,141 @@ fn spend_with_withdrawal_redeemer(withdrawal_redeemer: Redeemer) -> Bool {
       True,
       False,
     )
+  let credential = address.Script(recovery_script_hash)
+  let raw: Redeemer = support
   spending_client.spend_client.spend(
     host_policy,
-    address.Script(recovery_script_hash),
+    credential,
     Some(subject),
-    RecoverClient { substitute_token: substitute.token },
+    RecoverClient {
+      substitute_token: substitute.token,
+      history_siblings: list.repeat(ibc_state_commitment.empty_hash, 64),
+    },
     subject_reference,
     Transaction {
       ..tx,
-      redeemers: [
-        Pair(
-          Withdraw(address.Script(recovery_script_hash)),
-          withdrawal_redeemer,
-        ),
-        ..tx.redeemers
-      ],
+      redeemers: [Pair(Withdraw(credential), raw), ..tx.redeemers],
     },
   )
 }
 
-test spend_client_rejects_recovery_for_another_subject() {
-  !spend_with_withdrawal_redeemer(
+test recovery_spend_rejects_update_support_branch() fail {
+  spend_with_forged_recovery_support(
+    CheckClientHistory { subject_token: subject_token() },
+  )
+}
+
+test recovery_spend_rejects_other_subject_support() fail {
+  spend_with_forged_recovery_support(
     RecoverClientWithdrawal {
-      subject_token: AuthToken {
-        ..subject_token(),
-        policy_id: other_client_policy,
-      },
+      subject_token: substitute_token(),
       substitute_token: substitute_token(),
     },
   )
 }
 
-test spend_client_rejects_recovery_from_another_substitute() {
-  !spend_with_withdrawal_redeemer(
+test recovery_spend_rejects_other_substitute_support() fail {
+  spend_with_forged_recovery_support(
     RecoverClientWithdrawal {
       subject_token: subject_token(),
-      substitute_token: AuthToken {
-        ..substitute_token(),
-        policy_id: other_client_policy,
-      },
+      substitute_token: subject_token(),
     },
   )
 }
 
-test spend_client_rejects_malformed_recovery_withdrawal() {
-  !spend_with_withdrawal_redeemer(Void)
-}
-
-test unrelated_valid_recovery_cannot_authorize_a_real_client_spend() {
+test recovery_support_rejects_history_root_copy_from_substitute() fail {
   let subject = expired_subject()
   let substitute = active_substitute()
-  let fake_subject =
+  let recovered =
     ClientDatum {
-      ..subject,
-      token: AuthToken { ..subject.token, policy_id: other_client_policy },
+      ..expected_recovered(subject, substitute),
+      history_root: substitute.history_root,
     }
-  let fake_substitute =
+  run_recovery(subject, substitute, recovered, client_script_hash, [deployer])
+}
+
+test recovery_retains_nonempty_subject_history_not_substitute_history() {
+  let before = datum(subject_token(), height(9), 0, zero_height())
+  let record = consensus_history.from_client(before)
+  let entries =
+    [
+      Pair(
+        consensus_history.key(record.client_token, record.height),
+        consensus_history.value(record),
+      ),
+    ]
+  let subject =
+    ClientDatum { ..expired_subject(), history_root: sparse_tree.root(entries) }
+  let substitute = active_substitute()
+  let old_tip = consensus_history.from_client(subject)
+  let siblings =
+    sparse_tree.siblings(
+      entries,
+      consensus_history.key(old_tip.client_token, old_tip.height),
+    )
+  let output =
     ClientDatum {
-      ..substitute,
-      token: AuthToken { ..substitute.token, policy_id: other_client_policy },
+      ..expected_recovered(expired_subject(), substitute),
+      history_root: consensus_history.insert(
+        subject.history_root,
+        old_tip,
+        siblings,
+      ),
     }
-  let fake_reference = OutputReference { ..subject_reference, output_index: 1 }
-  let fake_substitute_reference =
-    OutputReference { ..substitute_reference, output_index: 1 }
   let tx =
     recovery_transaction(
       subject,
       substitute,
-      expected_recovered(subject, substitute),
+      output,
       client_script_hash,
       [deployer],
       True,
-      False,
+      True,
     )
-  let fake_spend_redeemer: Redeemer =
-    RecoverClient { substitute_token: fake_substitute.token }
-  let fake_withdrawal_redeemer: Redeemer =
-    recovery_redeemer(fake_subject, fake_substitute)
-  let tx =
+  let redeemer =
+    RecoverClient {
+      substitute_token: substitute.token,
+      history_siblings: siblings,
+    }
+  let raw: Redeemer = redeemer
+  let supported =
     Transaction {
       ..tx,
-      inputs: [
-        Input {
-          output_reference: fake_reference,
-          output: client_output(fake_subject, other_client_script_hash),
+      redeemers: list.map(
+        tx.redeemers,
+        fn(pair) {
+          if pair.1st == Spend(subject_reference) {
+            Pair(pair.1st, raw)
+          } else {
+            pair
+          }
         },
-        ..tx.inputs
-      ],
-      reference_inputs: [
-        Input {
-          output_reference: fake_substitute_reference,
-          output: client_output(fake_substitute, other_client_script_hash),
-        },
-        ..tx.reference_inputs
-      ],
-      outputs: [
-        client_output(
-          expected_recovered(fake_subject, fake_substitute),
-          other_client_script_hash,
-        ),
-        ..tx.outputs
-      ],
-      redeemers: [
-        Pair(Spend(fake_reference), fake_spend_redeemer),
-        Pair(
-          Withdraw(address.Script(recovery_script_hash)),
-          fake_withdrawal_redeemer,
-        ),
-        ..tx.redeemers
-      ],
+      ),
     }
-  expect
+  and {
+    spending_client.spend_client.spend(
+      host_policy,
+      address.Script(recovery_script_hash),
+      Some(subject),
+      redeemer,
+      subject_reference,
+      supported,
+    ),
     recover_client.recover_client.withdraw(
       host_policy,
-      recovery_redeemer(fake_subject, fake_substitute),
+      recovery_redeemer(subject, substitute),
       address.Script(recovery_script_hash),
-      tx,
-    )
-  !spending_client.spend_client.spend(
-    host_policy,
-    address.Script(recovery_script_hash),
-    Some(subject),
-    RecoverClient { substitute_token: substitute.token },
-    subject_reference,
-    tx,
-  )
+      supported,
+    ),
+    output.history_root == sparse_tree.root(
+      [
+        Pair(
+          consensus_history.key(old_tip.client_token, old_tip.height),
+          consensus_history.value(old_tip),
+        ),
+        ..entries
+      ],
+    ),
+    output.history_root != substitute.history_root,
+  }
 }

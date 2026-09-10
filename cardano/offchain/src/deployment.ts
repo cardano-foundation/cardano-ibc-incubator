@@ -482,35 +482,14 @@ export const createDeployment = async (
     );
   referredValidators.push(spendClientValidator);
 
-  const [
-    spendConsensusStateValidator,
-    spendConsensusStateScriptHash,
-    spendConsensusStateAddress,
-  ] = await readValidator(
-    "spending_consensus_state.spend_consensus_state.spend",
-    lucid,
-    [mintHostStateNFTPolicyId],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
-  );
-  referredValidators.push(spendConsensusStateValidator);
-
   // STT minting policies derive client/connection/channel token names from the
   // HostState NFT, keeping object-token authorization tied to the canonical mutex.
 
-  // The client policy also authenticates immutable historical consensus records.
   const [mintClientSttValidator, mintClientSttPolicyId] = await readValidator(
     "minting_client_stt.mint_client_stt.mint",
     lucid,
-    [
-      spendClientScriptHash,
-      mintHostStateNFTPolicyId,
-      spendConsensusStateScriptHash,
-    ],
-    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
-      string,
-      string,
-      string,
-    ],
+    [spendClientScriptHash, mintHostStateNFTPolicyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
   );
   referredValidators.push(mintClientSttValidator);
 
@@ -805,6 +784,7 @@ export const createDeployment = async (
 
   const deploymentInfo: DeploymentTemplate = {
     deployedAt,
+    consensusHistoryFormat: "proof-backed-v1",
     ics20PacketCodec: "ics20-classic-json-v1",
     validators: {
       recoverClient: {
@@ -820,13 +800,6 @@ export const createDeployment = async (
         scriptHash: spendClientScriptHash,
         address: spendClientAddress,
         refUtxo: refUtxosInfo[spendClientScriptHash],
-      },
-      spendConsensusState: {
-        title: "spending_consensus_state.spend_consensus_state.spend",
-        script: spendConsensusStateValidator.script,
-        scriptHash: spendConsensusStateScriptHash,
-        address: spendConsensusStateAddress,
-        refUtxo: refUtxosInfo[spendConsensusStateScriptHash],
       },
       spendConnection: {
         title: "spending_connection.spend_connection.spend",

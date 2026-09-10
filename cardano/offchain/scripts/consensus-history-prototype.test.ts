@@ -29,6 +29,7 @@ import {
   type HistoryTransaction,
 } from "../src/consensus_history_recovery.ts";
 import { IncrementalIbcTree } from "../src/incremental_ibc_tree.ts";
+import { serialisePlutusData } from "../src/plutus_serialise.ts";
 import { hashSha3_256, readValidator } from "../src/utils.ts";
 import adjacent from "./fixtures/tendermint-adjacent.json" with {
   type: "json",
@@ -96,6 +97,7 @@ function clientDatum(tip: ConsensusHistoryRecord): Constr<Data> {
       new Map([[heightData(tip.height.revisionHeight), tip.processedHeight]]),
     ]),
     tokenData,
+    "00".repeat(32),
   ]);
 }
 
@@ -107,6 +109,7 @@ async function setup(
 ) {
   const encode = (data: Data) =>
     Data.to<Data>(data, undefined, { canonical: canonicalEncoding });
+  const encodePublic = (data: Data) => serialisePlutusData(encode(data));
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account]);
   emulator.time = NOW - (publishInitialization ? 20_000 : 0);
@@ -190,7 +193,7 @@ async function setup(
     const clientId = updating && n > 1 ? n : 0;
     tree.set(
       `clients/07-tendermint-${clientId}/consensusStates/${historical.height.revisionHeight}`,
-      encode(recordToConstr(historical).fields[2]),
+      encodePublic(recordToConstr(historical).fields[2]),
     );
   }
   const tip = record(updating ? 2n : BigInt(count + 1));
@@ -199,10 +202,10 @@ async function setup(
   tip.processedHeight = tip.processedTime / 4_000_000_000n;
   const client = clientDatum(tip);
   const oldClientState = (client.fields[0] as Constr<Data>).fields[0];
-  tree.set(clientKey, encode(oldClientState));
+  tree.set(clientKey, encodePublic(oldClientState));
   tree.set(
     publicKey(tip.height.revisionHeight),
-    encode(recordToConstr(tip).fields[2]),
+    encodePublic(recordToConstr(tip).fields[2]),
   );
   const root = await tree.getRoot();
   const buildMilliseconds = Math.round(performance.now() - started);
@@ -227,6 +230,7 @@ async function setup(
     stateUtxo = seed(address, encode(state), { [UNIT]: 1n });
   }
   const deployment: HistoryDeployment = {
+    layout: "prototype",
     clientToken: TOKEN,
     stateAddress: address,
     bootstrap: {
@@ -376,10 +380,10 @@ async function setup(
     const clientSiblings = await tree.getSiblings(clientKey);
     tree.set(
       clientKey,
-      encode((nextClient.fields[0] as Constr<Data>).fields[0]),
+      encodePublic((nextClient.fields[0] as Constr<Data>).fields[0]),
     );
     const consensusSiblings = await tree.getSiblings(publicKey(3n));
-    tree.set(publicKey(3n), encode(recordToConstr(nextTip).fields[2]));
+    tree.set(publicKey(3n), encodePublic(recordToConstr(nextTip).fields[2]));
     const archiveKey = consensusHistoryKey(TOKEN, tip.height);
     const archiveSiblings = await tree.getSiblings(archiveKey);
     const archived = structuredClone(tip);

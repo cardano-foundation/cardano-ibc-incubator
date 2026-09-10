@@ -693,7 +693,7 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionClientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [channelOpenTryOperator.proofHeight]);
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     if (!isValidProofHeight(heightsArray, channelOpenTryOperator.proofHeight)) {
@@ -806,6 +806,7 @@ export class ChannelService {
     const encodedVerifyProofRedeemer = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
 
     const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings } =
@@ -865,7 +866,6 @@ export class ChannelService {
       encodedHostStateRedeemer,
       connectionUtxo,
       clientUtxo,
-      consensusStateReferenceUtxos,
       moduleUtxo,
       encodedSpendModuleRedeemer,
       encodedMintChannelRedeemer,
@@ -928,7 +928,7 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [channelOpenAckOperator.proofHeight]);
 
     // Get the keys (heights) of the map and convert them into an array
@@ -1068,6 +1068,7 @@ export class ChannelService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
 
     const moduleConfig = this.getModuleConfig(portId);
@@ -1093,7 +1094,6 @@ export class ChannelService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
-      consensusStateReferenceUtxos,
       moduleKey: moduleConfig.key,
       moduleUtxo,
       encodedSpendChannelRedeemer,
@@ -1163,7 +1163,7 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [channelOpenConfirmOperator.proofHeight]);
 
     // ChannelOpenConfirm must prove the counterparty's acknowledged channel end
@@ -1290,6 +1290,7 @@ export class ChannelService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
     const moduleConfig = this.getModuleConfig(portId);
     const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
@@ -1314,7 +1315,6 @@ export class ChannelService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
-      consensusStateReferenceUtxos,
       moduleKey: moduleConfig.key,
       moduleUtxo,
       encodedSpendChannelRedeemer,
@@ -1517,7 +1517,7 @@ export class ChannelService {
     const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [channelCloseConfirmOperator.proofHeight]);
 
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
@@ -1638,6 +1638,7 @@ export class ChannelService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
 
     const moduleConfig = this.getModuleConfig(portId);
@@ -1664,7 +1665,6 @@ export class ChannelService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
-      consensusStateReferenceUtxos,
       moduleKey: moduleConfig.key,
       moduleUtxo,
       encodedSpendChannelRedeemer,

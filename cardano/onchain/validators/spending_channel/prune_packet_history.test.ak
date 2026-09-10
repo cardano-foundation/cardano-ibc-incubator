@@ -4,7 +4,7 @@ use cardano/transaction.{Mint, Redeemer, ScriptPurpose, Spend, Transaction}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyNonMembership,
+  VerifyNonMembership, VerifyProofEnvelope,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
@@ -245,17 +245,21 @@ fn check(mutation: Mutation) -> Bool {
       ),
     )
   let verify_proof_redeemer: Redeemer =
-    VerifyNonMembership {
-      cs: client_datum.state.client_state,
-      cons_state: consensus_state,
-      height: proof_height,
-      processed_time,
-      processed_height,
-      delay_time_period: connection_datum.state.delay_period,
-      delay_block_period: verify_mod.get_block_delay(connection_datum.state),
-      proof,
-      path: proof_path,
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: VerifyNonMembership {
+        cs: client_datum.state.client_state,
+        cons_state: consensus_state,
+        height: proof_height,
+        processed_time,
+        processed_height,
+        delay_time_period: connection_datum.state.delay_period,
+        delay_block_period: verify_mod.get_block_delay(connection_datum.state),
+        proof,
+        path: proof_path,
+      },
     }
+
   let channel_redeemer: Redeemer =
     PrunePacketHistory {
       sequence: redeemer_sequence,

@@ -9,12 +9,16 @@ use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
 }
 use cardano/transaction.{
-  InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, ValidityRange,
+  InlineDatum, Input, Mint, Output, Redeemer, ScriptPurpose, Spend,
+  ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
-use ibc/client/ics_007_tendermint_client/consensus_history
+use ibc/client/ics_007_tendermint_client/consensus_history.{Witness}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+  VerifyProofEnvelope,
+}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
@@ -307,6 +311,7 @@ pub fn validate_referred_client(
   client_id: ByteArray,
   current_time: Int,
   proof_height: Option<Height>,
+  history_witness: Option<Witness>,
 ) -> ClientDatum {
   let client_token =
     expected_client_token(
@@ -319,9 +324,9 @@ pub fn validate_referred_client(
     find_authenticated_input(reference_inputs, client_token)
   expect client_datum: ClientDatum = get_inline_datum(client_input.output)
   expect client_datum.token == client_token
-  consensus_history.with_reference_at_height(
+  consensus_history.with_witness_at_height(
     client_datum,
-    reference_inputs,
+    history_witness,
     current_time,
     proof_height,
   )
@@ -362,6 +367,7 @@ pub fn validate_referred_connection_and_client(
   connection_id: ByteArray,
   current_time: Int,
   proof_height: Option<Height>,
+  history_witness: Option<Witness>,
 ) -> (ConnectionDatum, ClientDatum) {
   let connection_token =
     expected_connection_token(
@@ -399,13 +405,22 @@ pub fn validate_referred_connection_and_client(
   expect client_datum.token == client_token
   (
     connection_datum,
-    consensus_history.with_reference_at_height(
+    consensus_history.with_witness_at_height(
       client_datum,
-      reference_inputs,
+      history_witness,
       current_time,
       proof_height,
     ),
   )
+}
+
+pub fn verify_proof_envelope(
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
+) -> VerifyProofEnvelope {
+  expect Some(raw) = pairs.get_first(redeemers, Mint(verify_proof_policy_id))
+  expect envelope: VerifyProofEnvelope = raw
+  envelope
 }
 
 fn find_connection_with_remaining_inputs(

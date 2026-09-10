@@ -2,18 +2,18 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/fuzz
 use aiken/interval
-use cardano/address.{Script, from_script}
+use cardano/address.{Credential, Script, from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction,
+  InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction, Withdraw,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  ArchiveConsensusState, UpdateClient,
+  CheckClientHistory, SpendClientRedeemer, UpdateClient,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
@@ -33,11 +33,54 @@ use ibc/client/ics_007_tendermint_client/consensus_history.{ConsensusStateDatum}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/misbehaviour_handle
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
+use ibc/testing/sparse_tree
+use recover_client
 use spending_client
+
+fn check_client_update(
+  policy: PolicyId,
+  credential: Credential,
+  datum: Option<ClientDatum>,
+  redeemer: SpendClientRedeemer,
+  reference: OutputReference,
+  tx: Transaction,
+) -> Bool {
+  expect Some(client) = datum
+  let support = CheckClientHistory { subject_token: client.token }
+  let raw_support: Redeemer = support
+  let raw_spend: Redeemer = redeemer
+  let supported =
+    Transaction {
+      ..tx,
+      withdrawals: [Pair(credential, 0)],
+      redeemers: [
+        Pair(Withdraw(credential), raw_support),
+        Pair(Spend(reference), raw_spend),
+        ..tx.redeemers
+      ],
+    }
+  and {
+    spending_client.spend_client.spend(
+      policy,
+      credential,
+      datum,
+      redeemer,
+      reference,
+      supported,
+    ),
+    recover_client.recover_client.withdraw(
+      policy,
+      support,
+      credential,
+      supported,
+    ),
+  }
+}
 
 type MockData {
   host_state_nft_policy_id: PolicyId,
@@ -177,7 +220,6 @@ fn host_state_update_client_redeemers(
     host_state_redeemer.UpdateClient {
       client_state_siblings: [],
       consensus_state_siblings: [],
-      removed_consensus_state_siblings: [],
     }
 
   [Pair(Spend(host_state_input.output_reference), redeemer)]
@@ -383,6 +425,7 @@ fn check_update_client_misbehaviour_conflict_header(
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: ClientState {
           ..client_state,
@@ -402,7 +445,19 @@ fn check_update_client_misbehaviour_conflict_header(
     }
 
   //======================Arrange redeemer============================
-  let redeemer = UpdateClient { msg: HeaderCase(header) }
+  let redeemer =
+    UpdateClient {
+      msg: HeaderCase(header),
+      history_witnesses: history_witnesses(client_datum, header),
+      history_siblings: if misbehaviour_handle.check_for_misbehaviour(
+        HeaderCase(header),
+        client_datum.state.consensus_states,
+      ) {
+        []
+      } else {
+        history_siblings(client_datum)
+      },
+    }
 
   //====================Arrange inputs==============================
   let client_input = update_client_input_datum(client_datum, mock.input)
@@ -443,7 +498,7 @@ fn check_update_client_misbehaviour_conflict_header(
       redeemers: host_state_redeemers,
     }
 
-  spending_client.spend_client.spend(
+  check_client_update(
     mock.host_state_nft_policy_id,
     Script("mock recover client script hash"),
     Some(singleton(client_datum)),
@@ -655,6 +710,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state,
         consensus_states,
@@ -671,7 +727,19 @@ test update_client_misbehaviour_monotonic_time_violation() {
     }
 
   //======================Arrange redeemer============================
-  let redeemer = UpdateClient { msg: HeaderCase(header) }
+  let redeemer =
+    UpdateClient {
+      msg: HeaderCase(header),
+      history_witnesses: history_witnesses(client_datum, header),
+      history_siblings: if misbehaviour_handle.check_for_misbehaviour(
+        HeaderCase(header),
+        client_datum.state.consensus_states,
+      ) {
+        []
+      } else {
+        history_siblings(client_datum)
+      },
+    }
 
   //====================Arrange inputs==============================
   let client_input = update_client_input_datum(client_datum, mock.input)
@@ -712,7 +780,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
       redeemers: host_state_update_client_redeemers(mock.host_state_input),
     }
 
-  spending_client.spend_client.spend(
+  check_client_update(
     mock.host_state_nft_policy_id,
     Script("mock recover client script hash"),
     Some(singleton(client_datum)),
@@ -872,6 +940,7 @@ fn check_update_client_verify_adjacent(
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state,
         consensus_states,
@@ -888,7 +957,19 @@ fn check_update_client_verify_adjacent(
     }
 
   //======================Arrange redeemer============================
-  let redeemer = UpdateClient { msg: HeaderCase(header) }
+  let redeemer =
+    UpdateClient {
+      msg: HeaderCase(header),
+      history_witnesses: history_witnesses(client_datum, header),
+      history_siblings: if misbehaviour_handle.check_for_misbehaviour(
+        HeaderCase(header),
+        client_datum.state.consensus_states,
+      ) {
+        []
+      } else {
+        history_siblings(client_datum)
+      },
+    }
 
   //====================Arrange inputs==============================
   let client_input = update_client_input_datum(client_datum, mock.input)
@@ -954,7 +1035,7 @@ fn check_update_client_verify_adjacent(
       redeemers: host_state_update_client_redeemers(mock.host_state_input),
     }
 
-  spending_client.spend_client.spend(
+  check_client_update(
     mock.host_state_nft_policy_id,
     Script("mock recover client script hash"),
     Some(singleton(client_datum)),
@@ -1158,6 +1239,7 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state,
         consensus_states,
@@ -1173,7 +1255,19 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
       token: mock.client_token,
     }
 
-  let redeemer = UpdateClient { msg: HeaderCase(header) }
+  let redeemer =
+    UpdateClient {
+      msg: HeaderCase(header),
+      history_witnesses: history_witnesses(client_datum, header),
+      history_siblings: if misbehaviour_handle.check_for_misbehaviour(
+        HeaderCase(header),
+        client_datum.state.consensus_states,
+      ) {
+        []
+      } else {
+        history_siblings(client_datum)
+      },
+    }
 
   let client_input = update_client_input_datum(client_datum, mock.input)
 
@@ -1238,7 +1332,7 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
       redeemers: host_state_update_client_redeemers(mock.host_state_input),
     }
 
-  spending_client.spend_client.spend(
+  check_client_update(
     mock.host_state_nft_policy_id,
     Script("mock recover client script hash"),
     Some(singleton(client_datum)),
@@ -1420,6 +1514,7 @@ test update_client_verify_non_adjacent_succeed() {
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state,
         consensus_states,
@@ -1436,7 +1531,19 @@ test update_client_verify_non_adjacent_succeed() {
     }
 
   //======================Arrange redeemer============================
-  let redeemer = UpdateClient { msg: HeaderCase(header) }
+  let redeemer =
+    UpdateClient {
+      msg: HeaderCase(header),
+      history_witnesses: history_witnesses(client_datum, header),
+      history_siblings: if misbehaviour_handle.check_for_misbehaviour(
+        HeaderCase(header),
+        client_datum.state.consensus_states,
+      ) {
+        []
+      } else {
+        history_siblings(client_datum)
+      },
+    }
 
   //====================Arrange inputs==============================
   let client_input = update_client_input_datum(client_datum, mock.input)
@@ -1502,7 +1609,7 @@ test update_client_verify_non_adjacent_succeed() {
       redeemers: host_state_update_client_redeemers(mock.host_state_input),
     }
 
-  spending_client.spend_client.spend(
+  check_client_update(
     mock.host_state_nft_policy_id,
     Script("mock recover client script hash"),
     Some(singleton(client_datum)),
@@ -1524,11 +1631,15 @@ test prop_client_update_rejects_wrong_host_redeemer(_seed via fuzz.int()) fail {
       redeemers: host_state_update_connection_redeemers(mock.host_state_input),
     }
 
-  spending_client.spend_client.spend(
+  check_client_update(
     mock.host_state_nft_policy_id,
     Script("mock recover client script hash"),
     None,
-    UpdateClient { msg: HeaderCase(header_mod.null_header()) },
+    UpdateClient {
+      msg: HeaderCase(header_mod.null_header()),
+      history_witnesses: [],
+      history_siblings: [],
+    },
     mock.output_reference,
     transaction,
   )
@@ -1546,14 +1657,85 @@ test prop_client_update_rejects_missing_host_state(_seed via fuzz.int()) fail {
       redeemers: [],
     }
 
-  spending_client.spend_client.spend(
+  check_client_update(
     mock.host_state_nft_policy_id,
     Script("mock recover client script hash"),
     None,
-    UpdateClient { msg: HeaderCase(header_mod.null_header()) },
+    UpdateClient {
+      msg: HeaderCase(header_mod.null_header()),
+      history_witnesses: [],
+      history_siblings: [],
+    },
     mock.output_reference,
     transaction,
   )
+}
+
+fn history_records(datum: ClientDatum) -> List<ConsensusStateDatum> {
+  datum.state.consensus_states
+    |> list.filter(
+        fn(pair) { pair.1st != datum.state.client_state.latest_height },
+      )
+    |> list.map(
+        fn(pair) {
+          expect Some(time) =
+            pairs.get_first(datum.state.processed_times, pair.1st)
+          expect Some(block) =
+            pairs.get_first(datum.state.processed_heights, pair.1st)
+          ConsensusStateDatum {
+            client_token: datum.token,
+            height: pair.1st,
+            consensus_state: pair.2nd,
+            processed_time: time,
+            processed_height: block,
+          }
+        },
+      )
+}
+
+fn history_entries(datum: ClientDatum) -> Pairs<ByteArray, ByteArray> {
+  list.map(
+    history_records(datum),
+    fn(record) {
+      Pair(
+        consensus_history.key(record.client_token, record.height),
+        consensus_history.value(record),
+      )
+    },
+  )
+}
+
+fn history_siblings(datum: ClientDatum) -> List<ByteArray> {
+  sparse_tree.siblings(
+    history_entries(datum),
+    consensus_history.key(datum.token, datum.state.client_state.latest_height),
+  )
+}
+
+fn history_witnesses(
+  datum: ClientDatum,
+  h: header_mod.Header,
+) -> List<consensus_history.Witness> {
+  let entries = history_entries(datum)
+  history_records(datum)
+    |> list.filter(
+        fn(record) {
+          record.height == h.trusted_height || record.height == header_mod.get_height(
+            h,
+          )
+        },
+      )
+    |> list.map(
+        fn(record) {
+          consensus_history.Witness {
+            record,
+            siblings: sparse_tree.siblings(
+              entries,
+              consensus_history.key(record.client_token, record.height),
+            ),
+          }
+        },
+      )
 }
 
 fn singleton(datum: ClientDatum) -> ClientDatum {
@@ -1563,6 +1745,7 @@ fn singleton(datum: ClientDatum) -> ClientDatum {
   expect Some(block) = pairs.get_first(datum.state.processed_heights, latest)
   ClientDatum {
     ..datum,
+    history_root: sparse_tree.root(history_entries(datum)),
     state: ClientDatumState {
       ..datum.state,
       consensus_states: [Pair(latest, state)],
@@ -1574,7 +1757,7 @@ fn singleton(datum: ClientDatum) -> ClientDatum {
 
 fn history_transaction(tx: Transaction, datum: ClientDatum) -> Transaction {
   let live = singleton(datum)
-  let normalize =
+  let normalize_input =
     fn(output: Output) {
       when output.datum is {
         InlineDatum(raw) ->
@@ -1586,90 +1769,43 @@ fn history_transaction(tx: Transaction, datum: ClientDatum) -> Transaction {
         _ -> output
       }
     }
-  let references =
-    datum.state.consensus_states
-      |> list.filter(
-          fn(pair) { pair.1st != live.state.client_state.latest_height },
-        )
-      |> list.map(
-          fn(pair) {
-            expect Some(time) =
-              pairs.get_first(datum.state.processed_times, pair.1st)
-            expect Some(block) =
-              pairs.get_first(datum.state.processed_heights, pair.1st)
-            let record =
-              ConsensusStateDatum {
-                client_token: datum.token,
-                height: pair.1st,
-                consensus_state: pair.2nd,
-                processed_time: time,
-                processed_height: block,
-              }
-            let token = consensus_history.token(datum.token, pair.1st)
-            Input {
-              output_reference: OutputReference {
-                transaction_id: #"22",
-                output_index: pair.1st.revision_height,
-              },
-              output: Output {
-                address: from_script("archive"),
-                value: from_asset(token.policy_id, token.name, 1),
-                datum: InlineDatum(record),
-                reference_script: None,
-              },
-            }
-          },
-        )
-  let archive_token =
-    consensus_history.token(datum.token, live.state.client_state.latest_height)
-  let mint_redeemer: Redeemer =
-    ArchiveConsensusState { client_token: datum.token }
-  let advances =
-    list.any(
-      tx.outputs,
-      fn(output) {
-        when output.datum is {
-          InlineDatum(raw) ->
-            if raw is client: ClientDatum {
-              height.compare(
+  let normalize_output =
+    fn(output: Output) {
+      when output.datum is {
+        InlineDatum(raw) ->
+          if raw is client: ClientDatum {
+            let root =
+              if height.compare(
                 client.state.client_state.latest_height,
                 live.state.client_state.latest_height,
-              ) == Greater
-            } else {
-              False
+              ) == Greater {
+                consensus_history.insert(
+                  live.history_root,
+                  consensus_history.from_client(live),
+                  history_siblings(datum),
+                )
+              } else {
+                live.history_root
+              }
+            Output {
+              ..output,
+              datum: InlineDatum(
+                ClientDatum { ..singleton(client), history_root: root },
+              ),
             }
-          _ -> False
-        }
-      },
-    )
-  let archive_output =
-    Output {
-      address: from_script("archive"),
-      value: from_asset(archive_token.policy_id, archive_token.name, 1),
-      datum: InlineDatum(consensus_history.from_client(live)),
-      reference_script: None,
+          } else {
+            output
+          }
+        _ -> output
+      }
     }
   Transaction {
     ..tx,
     inputs: list.map(
       tx.inputs,
-      fn(input) { Input { ..input, output: normalize(input.output) } },
+      fn(input) { Input { ..input, output: normalize_input(input.output) } },
     ),
-    outputs: if advances {
-      [archive_output, ..list.map(tx.outputs, normalize)]
-    } else {
-      list.map(tx.outputs, normalize)
-    },
-    reference_inputs: references,
-    mint: if advances {
-      from_asset(archive_token.policy_id, archive_token.name, 1)
-    } else {
-      tx.mint
-    },
-    redeemers: if advances {
-      [Pair(Mint(datum.token.policy_id), mint_redeemer), ..tx.redeemers]
-    } else {
-      tx.redeemers
-    },
+    outputs: list.map(tx.outputs, normalize_output),
+    reference_inputs: [],
   }
 }

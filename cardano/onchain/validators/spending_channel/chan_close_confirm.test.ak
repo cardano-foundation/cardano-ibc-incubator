@@ -9,7 +9,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership,
+  VerifyMembership, VerifyProofEnvelope,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -166,17 +166,20 @@ fn check_chan_close_confirm(module_redeemer: Redeemer, mint: Value) {
     ).2nd
 
   let verify_proof_redeemer: Redeemer =
-    VerifyMembership {
-      cs: client_datum.state.client_state,
-      cons_state: proof_cons_state,
-      height: proof_height,
-      processed_time: 0,
-      processed_height: 0,
-      delay_time_period: time_delay,
-      delay_block_period: block_delay,
-      proof: proof_init,
-      path: merkle_path,
-      value: channel_bz,
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: VerifyMembership {
+        cs: client_datum.state.client_state,
+        cons_state: proof_cons_state,
+        height: proof_height,
+        processed_time: 0,
+        processed_height: 0,
+        delay_time_period: time_delay,
+        delay_block_period: block_delay,
+        proof: proof_init,
+        path: merkle_path,
+        value: channel_bz,
+      },
     }
 
   let chan_close_confirm_redeemer: Redeemer = fake_data.channel_token

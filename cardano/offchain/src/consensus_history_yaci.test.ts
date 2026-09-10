@@ -33,6 +33,7 @@ function transaction(overrides: Record<string, unknown> = {}) {
     slot: "100",
     transaction_index: 3,
     cbor: "83008080",
+    invalid: false,
     ...overrides,
   };
 }
@@ -195,7 +196,7 @@ Deno.test("Yaci resumes inclusively without bootstrap or earlier-history scans",
     [12, 1],
     [13, 0],
   ]);
-  assertEquals(result[0], { ...RESUME, cbor: "83008080" });
+  assertEquals(result[0], { ...RESUME, cbor: "83008080", valid: true });
   assertEquals(db.calls.map((call) => call.kind), [
     "begin",
     "tip",
@@ -350,7 +351,11 @@ Deno.test("Yaci validates resume counters and copies them before awaiting SQL", 
   const pending = collect(source, after);
   after.txHash = "ee".repeat(32);
   after.blockHeight = 999;
-  assertEquals((await pending)[0], { ...RESUME, cbor: "83008080" });
+  assertEquals((await pending)[0], {
+    ...RESUME,
+    cbor: "83008080",
+    valid: true,
+  });
 });
 
 Deno.test("Yaci closes resume snapshots on intersection query errors and cancellation", async () => {
@@ -387,6 +392,19 @@ Deno.test("Yaci fails on missing or invalid raw CBOR instead of skipping evidenc
     await assertRejects(() => collect(source), Error, "raw transaction CBOR");
     assertEquals(db.calls.at(-1)?.kind, "rollback");
     assert(!db.calls.some((call) => call.kind === "commit"));
+  }
+});
+
+Deno.test("Yaci requires explicit canonical phase-2 validity for body evidence", async () => {
+  for (const invalid of [undefined, null, true, "false", 0]) {
+    const { source, db } = fixture();
+    db.pages = [[transaction({ invalid })]];
+    await assertRejects(
+      () => collect(source),
+      Error,
+      "canonical transaction validity",
+    );
+    assertEquals(db.calls.at(-1)?.kind, "rollback");
   }
 });
 

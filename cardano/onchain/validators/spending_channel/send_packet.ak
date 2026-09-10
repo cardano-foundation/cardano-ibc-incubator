@@ -88,6 +88,7 @@ validator send_packet(
         connection_id,
         tx_valid_to * 1_000_000,
         None,
+        None,
       )
     trace @"send_packet: reference_inputs contain Connection utxo"
     trace @"send_packet: reference_inputs contain Client utxo"
