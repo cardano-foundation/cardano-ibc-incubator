@@ -1643,6 +1643,131 @@ describe('ClientService staged Tendermint session recovery and seed reservations
     expect((service as any).stagedTendermintSeedReservations.get(`${seed.txHash}#0`)).toBe('plan-b');
   });
 
+  it.each(['initialization', 'verification'])('releases an unissued live seed after %s fails so a distinct plan can proceed', async (failurePhase) => {
+    const { service, lucidService } = makeHarness();
+    completeSessionAfterOneAdvance();
+    const seed = utxo('ca'.repeat(32), 0);
+    lucidService.tryFindUtxosAt.mockResolvedValue([seed]);
+    lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo(), seed]);
+    if (failurePhase === 'initialization') {
+      lucidService.createUnsignedTendermintSessionTransaction.mockImplementationOnce(() => {
+        throw new Error('initialization failed');
+      });
+    } else {
+      jest.mocked(SessionState.advanceTendermintSession).mockImplementationOnce(() => {
+        throw new Error('verification failed');
+      });
+    }
+
+    await expect(
+      (service as any).updateClientWithStagedSession(UPDATE_MESSAGE, updateOperator(), 1_000, TEST_VALID_TO_TIME_MS, {
+        revisionNumber: 0n,
+        revisionHeight: 11n,
+      }),
+    ).rejects.toThrow(`${failurePhase} failed`);
+
+    expect((service as any).stagedTendermintInitializationSeeds.size).toBe(0);
+    expect((service as any).stagedTendermintSeedReservations.size).toBe(0);
+    const nextPlan = { ...PLAN, commit: { ...PLAN.commit, round: 1n } };
+    jest.mocked(SessionState.deriveTendermintSessionUpdatePlan).mockReturnValue(nextPlan);
+    await expect(
+      (service as any).updateClientWithStagedSession(UPDATE_MESSAGE, updateOperator(), 1_000, TEST_VALID_TO_TIME_MS, {
+        revisionNumber: 0n,
+        revisionHeight: 11n,
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        unsigned_tx: expect.objectContaining({ type_url: TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL }),
+      }),
+    );
+
+    expect(lucidService.createUnsignedTendermintSessionTransaction.mock.calls[1][0]).toBe(seed);
+    expect(lucidService.createUnsignedTendermintSessionTransaction.mock.calls[1][3]).not.toBe(
+      lucidService.createUnsignedTendermintSessionTransaction.mock.calls[0][3],
+    );
+    expect((service as any).stagedTendermintInitializationSeeds.size).toBe(1);
+  });
+
+  it('preserves an issued chain reservation when rebuilding that plan fails', async () => {
+    const { service, lucidService } = makeHarness();
+    completeSessionAfterOneAdvance();
+    const seed = utxo('cb'.repeat(32), 0);
+    lucidService.tryFindUtxosAt.mockResolvedValue([seed]);
+    lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo(), seed]);
+    const build = () =>
+      (service as any).updateClientWithStagedSession(UPDATE_MESSAGE, updateOperator(), 1_000, TEST_VALID_TO_TIME_MS, {
+        revisionNumber: 0n,
+        revisionHeight: 11n,
+      });
+    await build();
+    const [issuedReservation] = (service as any).stagedTendermintInitializationSeeds.values();
+    expect(issuedReservation).toEqual(expect.objectContaining({ activeBuilds: 0, issuedChain: true }));
+
+    lucidService.createUnsignedTendermintSessionTransaction.mockImplementationOnce(() => {
+      throw new Error('retry failed before returning another chain');
+    });
+    await expect(build()).rejects.toThrow('retry failed before returning another chain');
+    expect(Array.from((service as any).stagedTendermintInitializationSeeds.values())).toEqual([issuedReservation]);
+    expect(issuedReservation.activeBuilds).toBe(0);
+
+    jest.mocked(SessionState.deriveTendermintSessionUpdatePlan).mockReturnValue({
+      ...PLAN,
+      commit: { ...PLAN.commit, round: 1n },
+    });
+    await expect(build()).rejects.toThrow(`seed ${seed.txHash}#0 is reserved by another update`);
+    expect(lucidService.createUnsignedTendermintSessionTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for all concurrent builders before releasing an unissued reservation', async () => {
+    const { service, lucidService, runnerChainSpy } = makeHarness();
+    completeSessionAfterOneAdvance();
+    const seed = utxo('cc'.repeat(32), 0);
+    lucidService.tryFindUtxosAt.mockResolvedValue([seed]);
+    lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo(), seed]);
+    let failFirst!: (reason: Error) => void;
+    let failSecond!: (reason: Error) => void;
+    let enterFirst!: () => void;
+    let enterSecond!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { enterFirst = resolve; });
+    const secondEntered = new Promise<void>((resolve) => { enterSecond = resolve; });
+    const firstBuild = new Promise<never>((_resolve, reject) => { failFirst = reject; });
+    const secondBuild = new Promise<never>((_resolve, reject) => { failSecond = reject; });
+    runnerChainSpy
+      .mockImplementationOnce(() => { enterFirst(); return firstBuild; })
+      .mockImplementationOnce(() => { enterSecond(); return secondBuild; });
+    const build = () =>
+      (service as any).updateClientWithStagedSession(UPDATE_MESSAGE, updateOperator(), 1_000, TEST_VALID_TO_TIME_MS, {
+        revisionNumber: 0n,
+        revisionHeight: 11n,
+      });
+    const firstRejected = expect(build()).rejects.toThrow('first build failed');
+    await firstEntered;
+    const secondRejected = expect(build()).rejects.toThrow('second build failed');
+    await secondEntered;
+    const [reservation] = (service as any).stagedTendermintInitializationSeeds.values();
+    expect(reservation.activeBuilds).toBe(2);
+
+    failFirst(new Error('first build failed'));
+    await firstRejected;
+    expect(reservation.activeBuilds).toBe(1);
+    expect((service as any).stagedTendermintInitializationSeeds.size).toBe(1);
+    expect((service as any).stagedTendermintSeedReservations.size).toBe(1);
+
+    failSecond(new Error('second build failed'));
+    await secondRejected;
+    expect((service as any).stagedTendermintInitializationSeeds.size).toBe(0);
+    expect((service as any).stagedTendermintSeedReservations.size).toBe(0);
+    jest.mocked(SessionState.deriveTendermintSessionUpdatePlan).mockReturnValue({
+      ...PLAN,
+      commit: { ...PLAN.commit, round: 1n },
+    });
+    await expect(build()).resolves.toEqual(
+      expect.objectContaining({
+        unsigned_tx: expect.objectContaining({ type_url: TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL }),
+      }),
+    );
+  });
+
   it('releases a spent seed after a build failure and retries with the node-confirmed replacement', async () => {
     const { service, lucidService } = makeHarness();
     completeSessionAfterOneAdvance();

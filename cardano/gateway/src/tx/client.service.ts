@@ -111,6 +111,8 @@ type StagedTendermintSeedReservation = {
   seedRef: string;
   utxo: Promise<UTxO>;
   expiresAtMs: number;
+  activeBuilds: number;
+  issuedChain: boolean;
 };
 
 @Injectable()
@@ -745,157 +747,182 @@ export class ClientService {
         }
       | undefined;
 
-    if (exactSessions.length > 0) {
-      this.releaseTendermintSessionSeed(initializationKey);
-      const orderedSessions = this.orderStagedTendermintSessions(exactSessions);
-      existingSession = orderedSessions[0];
-      const staleSessions = indexedRequestSessions.filter((session) => !exactSessions.includes(session));
-      duplicateSessions = this.orderStagedTendermintSessions([...orderedSessions.slice(1), ...staleSessions]).reverse();
-    } else {
-      const planHash = tendermintUpdatePlanHash(plan, this.lucidService.LucidImporter);
-      const seedUtxo = await this.reserveTendermintSessionSeed(
-        initializationKey,
-        planHash,
-        updateClientOperator.constructedAddress,
-        ledgerUtxos.filter((utxo) => utxo.address === walletAddress),
-        validToTimeMs,
-        currentLedgerTimeMs,
-      );
-      const seed = {
-        transactionId: seedUtxo.txHash,
-        outputIndex: BigInt(seedUtxo.outputIndex),
-      };
-      const policyId = this.lucidService.getTendermintUpdateSessionPolicyId();
-      const tokenName = tendermintUpdateSessionTokenName(seed, plan, this.lucidService.LucidImporter);
-      const sessionToken = { policyId, name: tokenName };
-      const datum: SessionDatum = {
-        sessionToken,
-        owner,
-        plan,
-        phase: initialTendermintSessionPhase(plan),
-      };
-      const mintRedeemer = encodeMintSessionRedeemer(
-        { MintSession: { seed, owner, plan } },
-        this.lucidService.LucidImporter,
-      );
-      initialSession = {
-        seedUtxo,
-        datum,
-        tokenUnit: policyId + tokenName,
-        mintRedeemer,
-      };
-    }
+    let seedReservation: StagedTendermintSeedReservation | undefined;
+    try {
+      if (exactSessions.length > 0) {
+        this.releaseTendermintSessionSeed(initializationKey);
+        const orderedSessions = this.orderStagedTendermintSessions(exactSessions);
+        existingSession = orderedSessions[0];
+        const staleSessions = indexedRequestSessions.filter((session) => !exactSessions.includes(session));
+        duplicateSessions = this.orderStagedTendermintSessions([...orderedSessions.slice(1), ...staleSessions]).reverse();
+      } else {
+        const planHash = tendermintUpdatePlanHash(plan, this.lucidService.LucidImporter);
+        const seedUtxoPromise = this.reserveTendermintSessionSeed(
+          initializationKey,
+          planHash,
+          updateClientOperator.constructedAddress,
+          ledgerUtxos.filter((utxo) => utxo.address === walletAddress),
+          validToTimeMs,
+          currentLedgerTimeMs,
+        );
+        seedReservation = this.stagedTendermintInitializationSeeds.get(initializationKey);
+        if (!seedReservation) {
+          throw new GrpcInternalException('Unable to acquire the Tendermint session seed reservation');
+        }
+        seedReservation.activeBuilds += 1;
+        const seedUtxo = await seedUtxoPromise;
+        const seed = {
+          transactionId: seedUtxo.txHash,
+          outputIndex: BigInt(seedUtxo.outputIndex),
+        };
+        const policyId = this.lucidService.getTendermintUpdateSessionPolicyId();
+        const tokenName = tendermintUpdateSessionTokenName(seed, plan, this.lucidService.LucidImporter);
+        const sessionToken = { policyId, name: tokenName };
+        const datum: SessionDatum = {
+          sessionToken,
+          owner,
+          plan,
+          phase: initialTendermintSessionPhase(plan),
+        };
+        const mintRedeemer = encodeMintSessionRedeemer(
+          { MintSession: { seed, owner, plan } },
+          this.lucidService.LucidImporter,
+        );
+        initialSession = {
+          seedUtxo,
+          datum,
+          tokenUnit: policyId + tokenName,
+          mintRedeemer,
+        };
+      }
 
-    if (existingSession && 'Complete' in existingSession.datum.phase && duplicateSessions.length === 0) {
-      return this.buildTendermintFinalizationChain(
-        data,
-        updateClientOperator,
-        existingSession,
-        owner,
-        updateConsensusHeight,
-      );
-    }
+      if (existingSession && 'Complete' in existingSession.datum.phase && duplicateSessions.length === 0) {
+        return this.buildTendermintFinalizationChain(
+          data,
+          updateClientOperator,
+          existingSession,
+          owner,
+          updateConsensusHeight,
+        );
+      }
 
-    const validity = {
-      apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTimeMs),
-    };
-    const treeNeutralUpdate = (): PendingTreeUpdate => ({
-      kind: 'tree_neutral',
-      expectedNewRoot: '',
-      commit: () => undefined,
-    });
-    const { links } = await this.txOperationRunnerService.runChain({
-      operationName: 'buildTendermintUpdateTransactionChain',
-      wallet: {
-        mode: 'refresh_from_address',
-        address: updateClientOperator.constructedAddress,
-        context: 'buildTendermintUpdateTransactionChain',
-      },
-      finalPendingTreeUpdate: treeNeutralUpdate(),
-      build: async (chain) => {
-        let linkCount = 0;
-        const completeIntermediate = async (operationName: string, buildUnsignedTx: () => TxBuilder) => {
-          if (linkCount >= MAX_TENDERMINT_UPDATE_TX_CHAIN_LENGTH - 1) {
-            throw new GrpcFailedPreconditionException(
-              `The staged Tendermint update needs more than ${MAX_TENDERMINT_UPDATE_TX_CHAIN_LENGTH} transactions after duplicate cleanup`,
+      const validity = {
+        apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTimeMs),
+      };
+      const treeNeutralUpdate = (): PendingTreeUpdate => ({
+        kind: 'tree_neutral',
+        expectedNewRoot: '',
+        commit: () => undefined,
+      });
+      const { links } = await this.txOperationRunnerService.runChain({
+        operationName: 'buildTendermintUpdateTransactionChain',
+        wallet: {
+          mode: 'refresh_from_address',
+          address: updateClientOperator.constructedAddress,
+          context: 'buildTendermintUpdateTransactionChain',
+        },
+        finalPendingTreeUpdate: treeNeutralUpdate(),
+        build: async (chain) => {
+          let linkCount = 0;
+          const completeIntermediate = async (operationName: string, buildUnsignedTx: () => TxBuilder) => {
+            if (linkCount >= MAX_TENDERMINT_UPDATE_TX_CHAIN_LENGTH - 1) {
+              throw new GrpcFailedPreconditionException(
+                `The staged Tendermint update needs more than ${MAX_TENDERMINT_UPDATE_TX_CHAIN_LENGTH} transactions after duplicate cleanup`,
+              );
+            }
+            linkCount += 1;
+            return chain.complete({
+              operationName,
+              unsignedTx: buildUnsignedTx(),
+              validity,
+              completeOptions: {
+                localUPLCEval: false,
+                setCollateral: TRANSACTION_SET_COLLATERAL,
+              },
+            });
+          };
+
+          for (const duplicate of duplicateSessions) {
+            await completeIntermediate('cancelDuplicateTendermintUpdateSession', () =>
+              this.buildUnsignedCancelTendermintSession(duplicate.utxo),
             );
           }
-          linkCount += 1;
-          return chain.complete({
-            operationName,
-            unsignedTx: buildUnsignedTx(),
-            validity,
-            completeOptions: {
-              localUPLCEval: false,
-              setCollateral: TRANSACTION_SET_COLLATERAL,
-            },
-          });
-        };
 
-        for (const duplicate of duplicateSessions) {
-          await completeIntermediate('cancelDuplicateTendermintUpdateSession', () =>
-            this.buildUnsignedCancelTendermintSession(duplicate.utxo),
-          );
-        }
+          let currentSession = existingSession;
+          if (initialSession) {
+            const initializingSession = initialSession;
+            const initialized = await completeIntermediate('initializeTendermintUpdateSession', () =>
+              this.lucidService.createUnsignedTendermintSessionTransaction(
+                initializingSession.seedUtxo,
+                initializingSession.mintRedeemer,
+                encodeSessionDatum(initializingSession.datum, this.lucidService.LucidImporter),
+                initializingSession.tokenUnit,
+                owner,
+              ),
+            );
+            currentSession = {
+              utxo: this.requireDerivedTendermintSessionOutput(initialized.derivedOutputs, initializingSession.tokenUnit),
+              datum: initializingSession.datum,
+              tokenUnit: initializingSession.tokenUnit,
+            };
+          }
+          if (!currentSession) {
+            throw new GrpcInternalException('Unable to establish the staged Tendermint session chain head');
+          }
 
-        let currentSession = existingSession;
-        if (initialSession) {
-          const initialized = await completeIntermediate('initializeTendermintUpdateSession', () =>
-            this.lucidService.createUnsignedTendermintSessionTransaction(
-              initialSession.seedUtxo,
-              initialSession.mintRedeemer,
-              encodeSessionDatum(initialSession.datum, this.lucidService.LucidImporter),
-              initialSession.tokenUnit,
-              owner,
-            ),
-          );
-          currentSession = {
-            utxo: this.requireDerivedTendermintSessionOutput(initialized.derivedOutputs, initialSession.tokenUnit),
-            datum: initialSession.datum,
-            tokenUnit: initialSession.tokenUnit,
-          };
-        }
-        if (!currentSession) {
-          throw new GrpcInternalException('Unable to establish the staged Tendermint session chain head');
-        }
+          for (;;) {
+            const sessionHead: StagedTendermintSession = currentSession;
+            const advanceRedeemer = nextTendermintSessionAdvance(sessionHead.datum, payloads);
+            if (!advanceRedeemer) break;
+            const nextDatum = advanceTendermintSession(sessionHead.datum, advanceRedeemer);
+            const advanced = await completeIntermediate('verifyTendermintUpdateBatch', () =>
+              this.lucidService.createUnsignedAdvanceTendermintSessionTransaction(
+                sessionHead.utxo,
+                encodeSpendSessionRedeemer(advanceRedeemer, this.lucidService.LucidImporter),
+                encodeSessionDatum(nextDatum, this.lucidService.LucidImporter),
+                sessionHead.tokenUnit,
+                owner,
+              ),
+            );
+            currentSession = {
+              utxo: this.requireDerivedTendermintSessionOutput(advanced.derivedOutputs, sessionHead.tokenUnit),
+              datum: nextDatum,
+              tokenUnit: sessionHead.tokenUnit,
+            };
+          }
 
-        for (;;) {
-          const sessionHead: StagedTendermintSession = currentSession;
-          const advanceRedeemer = nextTendermintSessionAdvance(sessionHead.datum, payloads);
-          if (!advanceRedeemer) break;
-          const nextDatum = advanceTendermintSession(sessionHead.datum, advanceRedeemer);
-          const advanced = await completeIntermediate('verifyTendermintUpdateBatch', () =>
-            this.lucidService.createUnsignedAdvanceTendermintSessionTransaction(
-              sessionHead.utxo,
-              encodeSpendSessionRedeemer(advanceRedeemer, this.lucidService.LucidImporter),
-              encodeSessionDatum(nextDatum, this.lucidService.LucidImporter),
-              sessionHead.tokenUnit,
-              owner,
-            ),
-          );
-          currentSession = {
-            utxo: this.requireDerivedTendermintSessionOutput(advanced.derivedOutputs, sessionHead.tokenUnit),
-            datum: nextDatum,
-            tokenUnit: sessionHead.tokenUnit,
-          };
-        }
+          if (!('Complete' in currentSession.datum.phase)) {
+            throw new GrpcInternalException('Staged Tendermint verification stopped before the session reached Complete');
+          }
+        },
+      });
 
-        if (!('Complete' in currentSession.datum.phase)) {
-          throw new GrpcInternalException('Staged Tendermint verification stopped before the session reached Complete');
+      const response = {
+        unsigned_tx: {
+          type_url: TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL,
+          value: encodeTendermintUpdateTxChain(
+            links.map((link) => link.unsignedTxCbor),
+            { rebuildAfterSubmission: true },
+          ),
+        },
+        client_id: parseInt(updateClientOperator.clientId.toString()),
+      } as unknown as MsgUpdateClientResponse;
+      // The caller may submit this chain after a retry fails, so keep its seed
+      // reserved until a live session replaces it or the validity deadline passes.
+      if (seedReservation) seedReservation.issuedChain = true;
+      return response;
+    } finally {
+      if (seedReservation) {
+        seedReservation.activeBuilds -= 1;
+        if (
+          seedReservation.activeBuilds === 0 &&
+          !seedReservation.issuedChain &&
+          this.stagedTendermintInitializationSeeds.get(initializationKey) === seedReservation
+        ) {
+          this.releaseTendermintSessionSeed(initializationKey);
         }
-      },
-    });
-
-    return {
-      unsigned_tx: {
-        type_url: TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL,
-        value: encodeTendermintUpdateTxChain(
-          links.map((link) => link.unsignedTxCbor),
-          { rebuildAfterSubmission: true },
-        ),
-      },
-      client_id: parseInt(updateClientOperator.clientId.toString()),
-    } as unknown as MsgUpdateClientResponse;
+      }
+    }
   }
 
   private async buildTendermintFinalizationChain(
@@ -1156,7 +1183,13 @@ export class ClientService {
         }
         return indexedSeed;
       });
-    const record = { seedRef, utxo: reservation, expiresAtMs };
+    const record: StagedTendermintSeedReservation = {
+      seedRef,
+      utxo: reservation,
+      expiresAtMs,
+      activeBuilds: 0,
+      issuedChain: false,
+    };
     this.stagedTendermintInitializationSeeds.set(initializationKey, record);
     void reservation.catch(() => {
       if (this.stagedTendermintInitializationSeeds.get(initializationKey) === record) {
