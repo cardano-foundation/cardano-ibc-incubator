@@ -74,7 +74,7 @@ type HostStateToken = {
   name: string;
 };
 
-type BridgeProjectionFilter = {
+export type BridgeProjectionFilter = {
   hostStateToken: HostStateToken;
   relevantAddresses: string[];
   relevantPolicies: string[];
@@ -108,8 +108,8 @@ const bridgeConfigFileReader = {
   },
 };
 
-async function ensureBridgeHistoryTables() {
-  await historyPool.query(`
+export async function ensureBridgeHistoryTables(database: Pick<Pool, 'query'> = historyPool) {
+  await database.query(`
     CREATE TABLE IF NOT EXISTS bridge_history_sync_state (
       cursor_name text PRIMARY KEY,
       last_block bigint NOT NULL DEFAULT -1,
@@ -468,6 +468,74 @@ async function getRelevantUtxoRowsForBlock(
   return result.rows;
 }
 
+// A cancellation burns the session NFT and pays only the owner's wallet. Its
+// consumed output still identifies it as bridge work even with no watched output.
+async function getRelevantSpentTxHashesForBlock(
+  client: PoolClient,
+  blockNo: number,
+  filter: BridgeProjectionFilter,
+): Promise<string[]> {
+  const result = await client.query<{ tx_hash: string }>(
+    `
+      SELECT DISTINCT spent.spent_tx_hash AS tx_hash
+      ${relevantSpentOutputsSql}
+      WHERE spent.spent_at_block = $1 AND tx.invalid = false
+        AND ${relevantOutputSql('utxo')}
+    `,
+    [blockNo, filter.relevantAddresses, filter.relevantPolicies],
+  );
+  return result.rows.map((row) => row.tx_hash.toLowerCase());
+}
+
+function relevantOutputSql(alias: string): string {
+  return `(
+    ${alias}.owner_addr = ANY($2::text[])
+    OR ${alias}.owner_addr_full = ANY($2::text[])
+    OR EXISTS (
+      SELECT 1 FROM jsonb_array_elements(COALESCE(${alias}.amounts::jsonb, '[]'::jsonb)) AS amount
+      WHERE lower(COALESCE(amount->>'policy_id', '')) = ANY($3::text[])
+    )
+  )`;
+}
+
+const relevantSpentOutputsSql = `
+  FROM tx_input spent
+  JOIN address_utxo utxo ON utxo.tx_hash = spent.tx_hash AND utxo.output_index = spent.output_index
+  JOIN transaction tx ON tx.tx_hash = spent.spent_tx_hash
+    AND tx.block = spent.spent_at_block AND tx.block_hash = spent.spent_at_block_hash
+  JOIN block canonical ON canonical.number = tx.block AND canonical.hash = tx.block_hash
+`;
+
+export async function getNextRelevantBlock(
+  client: PoolClient,
+  lastBlock: number,
+  filter: BridgeProjectionFilter,
+): Promise<number | null> {
+  const result = await client.query<{ block_no: string | null }>(
+    `
+      SELECT MIN(candidate_block)::text AS block_no
+      FROM (
+        SELECT MIN(utxo.block)::bigint AS candidate_block
+        FROM address_utxo utxo
+        WHERE utxo.block > $1 AND ${relevantOutputSql('utxo')}
+        UNION ALL
+        SELECT MIN(spent.spent_at_block)::bigint AS candidate_block
+        ${relevantSpentOutputsSql}
+        WHERE spent.spent_at_block > $1 AND tx.invalid = false
+          AND ${relevantOutputSql('utxo')}
+        UNION ALL
+        SELECT MIN(block)::bigint AS candidate_block FROM pool_registration WHERE block > $1
+        UNION ALL
+        SELECT MIN(block)::bigint AS candidate_block FROM pool_retirement WHERE block > $1
+      ) next_blocks
+      WHERE candidate_block IS NOT NULL
+    `,
+    [lastBlock, filter.relevantAddresses, filter.relevantPolicies],
+  );
+  const blockNo = result.rows[0]?.block_no;
+  return blockNo === null || blockNo === undefined ? null : Number(blockNo);
+}
+
 async function deriveHostStateEvidence(
   hostStateToken: HostStateToken,
   txHash: string,
@@ -724,7 +792,11 @@ async function reconcileCursor(client: PoolClient) {
   return { lastBlock, lastBlockHash };
 }
 
-async function processBlock(client: PoolClient, hostStateToken: HostStateToken, blockNo: number): Promise<boolean> {
+export async function processBlock(
+  client: PoolClient,
+  projectionFilter: BridgeProjectionFilter,
+  blockNo: number,
+): Promise<boolean> {
   const poolRegistrations = await client.query<SpoEventRow>(
     `
       SELECT pr.tx_hash, pr.pool_id, b.slot AS slot_no
@@ -792,22 +864,22 @@ async function processBlock(client: PoolClient, hostStateToken: HostStateToken, 
     );
   }
 
-  const projectionFilter = tryResolveBridgeProjectionFilter();
-  if (!projectionFilter) {
-    return false;
-  }
-
   const relevantUtxoRows = await getRelevantUtxoRowsForBlock(client, blockNo, projectionFilter);
-  const relevantTxHashes = Array.from(new Set(relevantUtxoRows.map((row) => row.tx_hash.toLowerCase())));
+  const spentTxHashes = await getRelevantSpentTxHashesForBlock(client, blockNo, projectionFilter);
+  const relevantTxHashes = Array.from(new Set([
+    ...relevantUtxoRows.map((row) => row.tx_hash.toLowerCase()),
+    ...spentTxHashes,
+  ]));
 
   if (relevantTxHashes.length > 0) {
     const txResult = await client.query<YaciTxRow>(
       `
-        SELECT tx_hash, fee, block, block_hash, tx_index, slot
-        FROM transaction
-        WHERE block = $1
-          AND tx_hash = ANY($2::varchar[])
-        ORDER BY tx_index ASC, tx_hash ASC
+        SELECT tx.tx_hash, tx.fee, tx.block, tx.block_hash, tx.tx_index, tx.slot
+        FROM transaction tx
+        JOIN block canonical ON canonical.number = tx.block AND canonical.hash = tx.block_hash
+        WHERE tx.block = $1 AND tx.invalid = false
+          AND tx.tx_hash = ANY($2::varchar[])
+        ORDER BY tx.tx_index ASC, tx.tx_hash ASC
       `,
       [blockNo, relevantTxHashes],
     );
@@ -902,7 +974,7 @@ async function processBlock(client: PoolClient, hostStateToken: HostStateToken, 
 
       const txCborHex = txCborRow.cbor_hex.toLowerCase();
       const { txBodyCborHex, redeemers } = decodeTransactionEvidence(txCborHex);
-      const hostStateEvidence = await deriveHostStateEvidence(hostStateToken, txHash, outputRows);
+      const hostStateEvidence = await deriveHostStateEvidence(projectionFilter.hostStateToken, txHash, outputRows);
 
       await upsertBridgeTxEvidence(client, {
         txHash,
@@ -940,43 +1012,13 @@ async function processNextBlock(): Promise<boolean> {
     await client.query('BEGIN');
     const syncState = await reconcileCursor(client);
 
-    const nextBlockResult = await client.query<{ block_no: string | null }>(
-      `
-        SELECT MIN(candidate_block)::text AS block_no
-        FROM (
-          SELECT MIN(block)::bigint AS candidate_block
-          FROM address_utxo
-          WHERE block > $1
-            AND (
-              owner_addr = ANY($2::text[])
-              OR owner_addr_full = ANY($2::text[])
-              OR EXISTS (
-                SELECT 1
-                FROM jsonb_array_elements(COALESCE(amounts::jsonb, '[]'::jsonb)) AS amount
-                WHERE lower(COALESCE(amount->>'policy_id', '')) = ANY($3::text[])
-              )
-            )
-          UNION ALL
-          SELECT MIN(block)::bigint AS candidate_block
-          FROM pool_registration
-          WHERE block > $1
-          UNION ALL
-          SELECT MIN(block)::bigint AS candidate_block
-          FROM pool_retirement
-          WHERE block > $1
-        ) next_blocks
-        WHERE candidate_block IS NOT NULL
-      `,
-      [syncState.lastBlock, projectionFilter.relevantAddresses, projectionFilter.relevantPolicies],
-    );
-
-    const nextBlock = nextBlockResult.rows[0]?.block_no;
-    if (!nextBlock) {
+    const nextBlock = await getNextRelevantBlock(client, syncState.lastBlock, projectionFilter);
+    if (nextBlock === null) {
       await client.query('ROLLBACK');
       return false;
     }
 
-    const processed = await processBlock(client, projectionFilter.hostStateToken, Number(nextBlock));
+    const processed = await processBlock(client, projectionFilter, nextBlock);
     if (!processed) {
       await client.query('ROLLBACK');
       return false;
@@ -1010,8 +1052,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.stack || error.message : String(error);
-  process.stderr.write(`bridge-history-sync fatal: ${message}\n`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.stack || error.message : String(error);
+    process.stderr.write(`bridge-history-sync fatal: ${message}\n`);
+    process.exit(1);
+  });
+}
