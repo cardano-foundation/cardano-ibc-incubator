@@ -1160,7 +1160,7 @@ export class PacketService {
       parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
     );
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [pruneOperator.proofHeight]);
     const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
       ([height]) =>
@@ -1250,7 +1250,6 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
-      consensusStateReferenceUtxos,
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer,
@@ -1262,6 +1261,7 @@ export class PacketService {
       encodedVerifyProofRedeemer: encodeVerifyProofRedeemer(
         verifyProofRedeemer,
         this.lucidService.LucidImporter,
+        historyWitnesses[0] ?? null,
       ),
     };
 
@@ -1722,7 +1722,7 @@ export class PacketService {
     );
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [recvPacketOperator.proofHeight]);
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
@@ -1840,6 +1840,7 @@ export class PacketService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
 
     if (convertHex2String(channelDatum.port) === ASYNC_ICQ_HOST_PORT) {
@@ -1902,7 +1903,6 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
-        consensusStateReferenceUtxos,
         moduleKey: moduleConfig.key,
         moduleUtxo,
         encodedHostStateRedeemer,
@@ -2043,7 +2043,6 @@ export class PacketService {
               channelUtxo,
               connectionUtxo,
               clientUtxo,
-              consensusStateReferenceUtxos,
               transferEscrowUtxo: transferEscrowShard.utxo,
               transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
 
@@ -2151,7 +2150,6 @@ export class PacketService {
               channelUtxo,
               connectionUtxo,
               clientUtxo,
-              consensusStateReferenceUtxos,
               transferModuleUtxo,
 
               encodedHostStateRedeemer,
@@ -2302,7 +2300,7 @@ export class PacketService {
     );
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [timeoutPacketOperator.proofHeight]);
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
@@ -2521,6 +2519,7 @@ export class PacketService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
 
     if (!voucherHasPrefix) {
@@ -2555,7 +2554,6 @@ export class PacketService {
         transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
         connectionUtxo: connectionUtxo,
         clientUtxo: clientUtxo,
-        consensusStateReferenceUtxos,
 
         encodedHostStateRedeemer: encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
@@ -2612,7 +2610,6 @@ export class PacketService {
       channelUtxo: channelUtxo,
       connectionUtxo: connectionUtxo,
       clientUtxo: clientUtxo,
-      consensusStateReferenceUtxos,
       transferModuleReferenceUtxo,
 
       encodedHostStateRedeemer: encodedHostStateRedeemer,
@@ -2976,7 +2973,7 @@ export class PacketService {
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     // Get client utxo by client unit associated
-    const { clientDatum, historyUtxos: consensusStateReferenceUtxos } =
+    const { clientDatum, historyWitnesses } =
       await this.lucidService.resolveClientAtHeights(clientUtxo, [ackPacketOperator.proofHeight]);
     // Get the token unit associated with the client by connection datum
     // Get the keys (heights) of the map and convert them into an array
@@ -3105,6 +3102,7 @@ export class PacketService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
     if (convertHex2String(packet.source_port) === ASYNC_ICQ_HOST_PORT) {
       const moduleConfig = getGatewayModuleConfigForPortId(
@@ -3135,7 +3133,6 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
-        consensusStateReferenceUtxos,
         moduleKey: moduleConfig.key,
         moduleUtxo,
         encodedHostStateRedeemer,
@@ -3206,7 +3203,6 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
-        consensusStateReferenceUtxos,
         transferModuleReferenceUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
@@ -3293,7 +3289,6 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
-        consensusStateReferenceUtxos,
         transferEscrowUtxo: transferEscrowShard.utxo,
         transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
 
@@ -3376,7 +3371,6 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
-      consensusStateReferenceUtxos,
       transferModuleReferenceUtxo,
 
       encodedHostStateRedeemer,

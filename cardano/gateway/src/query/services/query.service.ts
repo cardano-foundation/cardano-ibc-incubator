@@ -50,10 +50,6 @@ import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
 import { ConsensusState } from '@shared/types/consensus-state';
 import { Height } from '@shared/types/height';
 import {
-  consensusStateTokenName,
-  decodeConsensusStateDatum,
-} from '@shared/types/consensus-state-datum';
-import {
   GATEWAY_GRPC_ERROR_CODE,
   GrpcFailedPreconditionException,
   GrpcInternalException,
@@ -130,10 +126,7 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
-import {
-  encodeConsensusStateValue,
-  IbcTreeStateStore,
-} from '../../shared/helpers/ibc-state-root';
+import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import {
   QueryDenomRequest,
@@ -687,124 +680,58 @@ export class QueryService {
       );
     }
 
+    // The private index is recovered against today's live NFT. Its immutable
+    // records can also answer an older query, but ONLY when that exact public
+    // value exists in the selected HostState tree. Never substitute today's root.
+    const liveClient = await this.lucidService.findUtxoByUnit(expectedClientUnit);
+    const history = await this.lucidService.consensusHistoryRecords(liveClient);
+    const requestedKey = resolvedRequestedHeight ? consensusHeightKey(resolvedRequestedHeight) : undefined;
+    const latestHeight = clientDatum.state.clientState.latestHeight;
     const records = new Map<string, StoredConsensusState>();
     const recordPaths = new Set<string>();
-    for (const [height, consensusState] of clientDatum.state.consensusStates.entries()) {
-      const processedTime = getHeightMapValue(clientDatum.state.processedTimes, height);
-      const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, height);
-      if (processedTime === undefined || processedHeight === undefined) {
+    for (const { datum: record, consensusValue } of history) {
+      if (
+        record.clientToken.policyId.toLowerCase() !== expectedClientToken.policyId.toLowerCase() ||
+        record.clientToken.name.toLowerCase() !== expectedClientToken.name.toLowerCase() ||
+        record.height.revisionNumber < 0n || record.height.revisionHeight <= 0n ||
+        record.processedTime < 0n || record.processedHeight < 0n
+      ) {
+        throw new GrpcFailedPreconditionException(`Consensus-state history for client ${clientId} failed authentication`);
+      }
+      // Public paths contain revision height only. Bind the revision to the
+      // selected client datum and exclude records newer than that datum.
+      if (
+        record.height.revisionNumber !== latestHeight.revisionNumber ||
+        compareConsensusHeights(record.height, latestHeight) > 0
+      ) continue;
+      const key = consensusHeightKey(record.height);
+      if (requestedKey && key !== requestedKey) continue;
+      const pathHeight = record.height.revisionHeight.toString();
+      const path = `clients/07-tendermint-${clientId}/consensusStates/${pathHeight}`;
+      const committedValue = proofContext.tree.get(path);
+      if (!committedValue || committedValue.length === 0) {
+        // The record was not present at this historical anchor. This also
+        // preserves read compatibility with older, already-pruned snapshots.
+        continue;
+      }
+      if (
+        !/^(?:[0-9a-f]{2})+$/i.test(consensusValue) ||
+        !committedValue.equals(Buffer.from(consensusValue, 'hex'))
+      ) {
         throw new GrpcFailedPreconditionException(
-          `Client ${clientId} consensus state ${consensusHeightKey(height)} is missing processed metadata`,
+          `Consensus-state history ${clientId}@${key} does not match the committed IBC state root`,
         );
       }
-      const key = consensusHeightKey(height);
-      const pathHeight = height.revisionHeight.toString();
       if (records.has(key) || recordPaths.has(pathHeight)) {
-        throw new GrpcFailedPreconditionException(
-          `Duplicate inline consensus state for ${clientId}@${key}`,
-        );
+        throw new GrpcFailedPreconditionException(`Duplicate consensus-state history record for ${clientId}@${key}`);
       }
       records.set(key, {
-        height,
-        consensusState,
-        processedTime,
-        processedHeight,
+        height: record.height,
+        consensusState: record.consensusState,
+        processedTime: record.processedTime,
+        processedHeight: record.processedHeight,
       });
       recordPaths.add(pathHeight);
-    }
-
-    const deployment = this.configService.get('deployment');
-    const historyValidator = deployment?.validators?.spendConsensusState;
-    const requestedKey = resolvedRequestedHeight ? consensusHeightKey(resolvedRequestedHeight) : undefined;
-    if (historyValidator && (!requestedKey || !records.has(requestedKey))) {
-      const requestedAssetName = resolvedRequestedHeight
-        ? consensusStateTokenName(expectedClientToken, resolvedRequestedHeight, this.lucidService.LucidImporter)
-        : undefined;
-      const archivedUtxos = await this.historyService.findUtxosByAddressAndPolicyIdAtOrBeforeBlockNo(
-        this.lucidService.getConsensusStateAddress(),
-        expectedClientToken.policyId,
-        proofContext.proofHeight,
-        requestedAssetName,
-      );
-      const seenArchiveUnits = new Set<string>();
-
-      for (const archiveUtxo of archivedUtxos) {
-        if (!archiveUtxo.datum) {
-          throw new GrpcFailedPreconditionException(
-            `Consensus-state history UTxO ${archiveUtxo.txHash}#${archiveUtxo.outputIndex} is missing datum`,
-          );
-        }
-        let archive;
-        try {
-          archive = decodeConsensusStateDatum(archiveUtxo.datum, this.lucidService.LucidImporter);
-        } catch (error) {
-          throw new GrpcFailedPreconditionException(
-            `Consensus-state history UTxO ${archiveUtxo.txHash}#${archiveUtxo.outputIndex} has invalid datum: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        const archiveAssetName = consensusStateTokenName(
-          archive.clientToken,
-          archive.height,
-          this.lucidService.LucidImporter,
-        );
-        const archiveUnit = (archive.clientToken.policyId + archiveAssetName).toLowerCase();
-        if (
-          archiveUtxo.address.toLowerCase() !== this.lucidService.getConsensusStateAddress().toLowerCase() ||
-          archive.clientToken.policyId.toLowerCase() !== expectedClientToken.policyId.toLowerCase() ||
-          archiveUtxo.assetsPolicy.toLowerCase() !== expectedClientToken.policyId.toLowerCase() ||
-          archiveUtxo.assetsName.toLowerCase() !== archiveAssetName.toLowerCase() ||
-          archive.height.revisionNumber < 0n ||
-          archive.height.revisionHeight <= 0n ||
-          archive.processedTime < 0n ||
-          archive.processedHeight < 0n
-        ) {
-          throw new GrpcFailedPreconditionException(
-            `Consensus-state history UTxO ${archiveUtxo.txHash}#${archiveUtxo.outputIndex} failed authentication`,
-          );
-        }
-        if (seenArchiveUnits.has(archiveUnit)) {
-          throw new GrpcFailedPreconditionException(`Duplicate consensus-state history NFT ${archiveUnit}`);
-        }
-        seenArchiveUnits.add(archiveUnit);
-
-        if (
-          archive.clientToken.name.toLowerCase() !== expectedClientToken.name.toLowerCase()
-        ) {
-          // A valid archive for another client shares the minting policy and address.
-          continue;
-        }
-
-        const path = `clients/07-tendermint-${clientId}/consensusStates/${archive.height.revisionHeight}`;
-        const committedValue = proofContext.tree.get(path);
-        if (!committedValue || committedValue.length === 0) {
-          // History tables retain spent records. A missing leaf means this record was pruned
-          // before the selected Cardano proof height.
-          continue;
-        }
-        const encodedValue = Buffer.from(
-          await encodeConsensusStateValue(archive.consensusState, this.lucidService.LucidImporter),
-          'hex',
-        );
-        if (!committedValue.equals(encodedValue)) {
-          throw new GrpcFailedPreconditionException(
-            `Consensus-state history ${clientId}@${consensusHeightKey(archive.height)} does not match the committed IBC state root`,
-          );
-        }
-        const key = consensusHeightKey(archive.height);
-        const pathHeight = archive.height.revisionHeight.toString();
-        if (records.has(key) || recordPaths.has(pathHeight)) {
-          throw new GrpcFailedPreconditionException(
-            `Duplicate inline and archived consensus state for ${clientId}@${key}`,
-          );
-        }
-        records.set(key, {
-          height: archive.height,
-          consensusState: archive.consensusState,
-          processedTime: archive.processedTime,
-          processedHeight: archive.processedHeight,
-        });
-        recordPaths.add(pathHeight);
-      }
     }
 
     return {
@@ -1071,6 +998,7 @@ export class QueryService {
     } as QueryClientStateRequest);
     const proofContext = await this.getProofContext('queryConsensusStates', options.queryHeight);
     const { records } = await this.getConsensusStatesAtProofContext(clientId, proofContext);
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     const page = this.paginateConsensusStates(records, request.pagination);
     const consensusStates: ConsensusStateWithHeight[] = page.records.map((record) => ({
       height: {
@@ -1097,6 +1025,7 @@ export class QueryService {
     } as QueryClientStateRequest);
     const proofContext = await this.getProofContext('queryConsensusStateHeights', options.queryHeight);
     const { records } = await this.getConsensusStatesAtProofContext(clientId, proofContext);
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     const page = this.paginateConsensusStates(records, request.pagination);
     return {
       consensus_state_heights: page.records.map(({ height }) => ({

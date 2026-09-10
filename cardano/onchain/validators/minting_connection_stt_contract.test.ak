@@ -18,7 +18,8 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
+  BatchVerifyMembership, VerifyMembershipParams, VerifyProofEnvelope,
+  VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/keys as client_id_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum} as connection_datum
@@ -116,6 +117,7 @@ fn active_client_state(proof_height: Height) -> ClientState {
 
 fn client_datum(client_token: AuthToken, proof_height: Height) -> ClientDatum {
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: active_client_state(proof_height),
       consensus_states: [Pair(proof_height, consensus_state())],
@@ -343,12 +345,15 @@ fn build_conn_open_try_fixture(
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
   let proof_redeemer =
-    verify_proof_redeemer(
-      client_datum,
-      connection,
-      proof_height,
-      proof_client_value,
-    )
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: verify_proof_redeemer(
+        client_datum,
+        connection,
+        proof_height,
+        proof_client_value,
+      ),
+    }
   let redeemer: MintConnectionRedeemer =
     ConnOpenTry {
       client_state: counterparty_client_state,

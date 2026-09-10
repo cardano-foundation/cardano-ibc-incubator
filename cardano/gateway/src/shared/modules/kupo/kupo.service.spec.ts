@@ -12,24 +12,24 @@ function serviceWith(findUtxoAt: jest.Mock): KupoService {
         spendClient: { address: 'addr_test1client' },
         spendConnection: { address: 'addr_test1connection' },
         spendChannel: { address: 'addr_test1channel' },
-        spendConsensusState: { address: 'addr_test1history' },
       },
     },
   });
   return new KupoService({ findUtxoAt } as never, config);
 }
 
-describe('KupoService consensus-state history reads', () => {
-  it('returns no records when a fresh archive address has no UTxOs', async () => {
+describe('KupoService client state reads without archive outputs', () => {
+  it('returns no clients before the first client is created', async () => {
     const findUtxoAt = jest.fn().mockRejectedValue(new GrpcNotFoundException('missing'));
 
-    await expect(serviceWith(findUtxoAt).queryAllConsensusStateUtxos()).resolves.toEqual([]);
+    await expect(serviceWith(findUtxoAt).queryAllClientUtxos()).resolves.toEqual([]);
   });
 
-  it('does not hide provider failures', async () => {
-    const providerFailure = new Error('provider unavailable');
-    const findUtxoAt = jest.fn().mockRejectedValue(providerFailure);
-
-    await expect(serviceWith(findUtxoAt).queryAllConsensusStateUtxos()).rejects.toBe(providerFailure);
+  it('only enumerates the configured client policy at its client address', async () => {
+    const client = { txHash: 'aa'.repeat(32), outputIndex: 0, assets: { ['11'.repeat(28) + '01']: 1n } };
+    const unrelated = { txHash: 'bb'.repeat(32), outputIndex: 0, assets: { ['44'.repeat(28) + '01']: 1n } };
+    const findUtxoAt = jest.fn().mockResolvedValue([client, unrelated]);
+    await expect(serviceWith(findUtxoAt).queryAllClientUtxos()).resolves.toEqual([client]);
+    expect(findUtxoAt).toHaveBeenCalledWith('addr_test1client');
   });
 });

@@ -801,6 +801,7 @@ type Tokens = "mock";
 
 export type DeploymentTemplate = {
   deployedAt: string;
+  consensusHistoryFormat: "proof-backed-v1";
   ics20PacketCodec: "ics20-classic-json-v1";
   validators: {
     recoverClient?: {
@@ -811,13 +812,6 @@ export type DeploymentTemplate = {
       refUtxo: UTxO;
     };
     spendClient: {
-      title: string;
-      script: string;
-      scriptHash: string;
-      address: string;
-      refUtxo: UTxO;
-    };
-    spendConsensusState: {
       title: string;
       script: string;
       scriptHash: string;

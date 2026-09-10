@@ -15,6 +15,7 @@ use cardano/transaction.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
+use ibc/client/ics_007_tendermint_client/height
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -39,8 +40,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
-  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer,
-  PruneConsensusState, UpdateChannel, UpdateClient, UpdateConnection,
+  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel,
+  UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/string as string_utils
@@ -225,8 +226,9 @@ fn validate_create_client_root(
   root_after_consensus_state == new_datum.state.ibc_state_root
 }
 
-/// Archive movement does not change the historical consensus-state leaf.
-/// Only the client summary and the newly accepted height change in the tree.
+/// Public commitments remain separate from the client's internal history root.
+/// The client spend validates its tip/history transition; this script verifies
+/// the exact public client and new-consensus leaves once, in the same transaction.
 fn validate_update_client_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
@@ -237,55 +239,52 @@ fn validate_update_client_root(
   client_mint_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
-  removed_consensus_state_siblings: List<List<ByteArray>>,
 ) -> Bool {
-  expect removed_consensus_state_siblings == []
-  when assets.tokens(mint, client_mint_policy_id) |> dict.to_pairs is {
-    // The archive policy verifies both root updates and permits exactly one
-    // client continuation. Other policy branches cannot mint during UpdateClient.
-    [Pair(_, 1)] -> True
-    _ -> {
-      // A freeze keeps the same checkpoint and updates only the client leaf.
+  expect assets.tokens(mint, client_mint_policy_id) |> dict.is_empty
+  let client_output = require_script_output(outputs, spend_client_script_hash)
+  expect output_client: ClientDatum =
+    validator_utils.get_inline_datum(client_output)
+  expect output_client.token.policy_id == client_mint_policy_id
+  expect auth.contains_only_auth_tokens(client_output, [output_client.token])
+  expect Some(client_input) =
+    find_input_with_auth_token(inputs, output_client.token)
+  expect client_input.output.address == client_output.address
+  expect input_client: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  expect input_client.token == output_client.token
+  // The mandatory client spend/support pair enforces singleton state and exact
+  // processing metadata. Do not repeat that full structural validator here.
+  let client_id = client_id_from_token_name(output_client.token.name)
+  let after_client =
+    ibc_state_commitment.apply_update(
+      old_datum.state.ibc_state_root,
+      client_keys.full_client_state_path(client_id),
+      cbor.serialise(input_client.state.client_state),
+      cbor.serialise(output_client.state.client_state),
+      client_state_siblings,
+    )
+  let old_height = input_client.state.client_state.latest_height
+  expect [Pair(new_height, new_consensus)] =
+    output_client.state.consensus_states
+  when height.compare(new_height, old_height) is {
+    Equal -> {
+      // A freeze preserves the checkpoint/history and changes only ClientState.
       expect consensus_state_siblings == []
-      let client_output =
-        require_script_output(outputs, spend_client_script_hash)
-      expect output_client: ClientDatum =
-        validator_utils.get_inline_datum(client_output)
-      expect output_client.token.policy_id == client_mint_policy_id
-      expect Some(client_input) =
-        find_input_with_auth_token(inputs, output_client.token)
-      expect
-        client_input.output.address.payment_credential == address.Script(
-          spend_client_script_hash,
-        )
-      expect input_client: ClientDatum =
-        validator_utils.get_inline_datum(client_input.output)
-      expect
-        input_client.state.client_state.latest_height == output_client.state.client_state.latest_height
-      ibc_state_commitment.apply_update(
-        old_datum.state.ibc_state_root,
-        client_keys.full_client_state_path(
-          client_id_from_token_name(output_client.token.name),
-        ),
-        cbor.serialise(input_client.state.client_state),
-        cbor.serialise(output_client.state.client_state),
-        client_state_siblings,
-      ) == new_datum.state.ibc_state_root
+      after_client == new_datum.state.ibc_state_root
     }
+    Greater ->
+      ibc_state_commitment.apply_update(
+        after_client,
+        client_keys.full_client_consensus_state_path(
+          client_id,
+          string_utils.int_to_string(new_height.revision_height),
+        ),
+        "",
+        cbor.serialise(new_consensus),
+        consensus_state_siblings,
+      ) == new_datum.state.ibc_state_root
+    Less -> False
   }
-}
-
-/// The canonical client minting policy checks the historical datum, expiry and
-/// exact root deletion before allowing this single NFT burn.
-fn validate_prune_consensus_state_root(
-  tx: Transaction,
-  client_mint_policy_id: PolicyId,
-) -> Bool {
-  // Only the PruneConsensusState policy branch can burn an asset. That branch
-  // also binds its client and height to this HostState redeemer.
-  expect [Pair(_, -1)] =
-    assets.tokens(tx.mint, client_mint_policy_id) |> dict.to_pairs
-  True
 }
 
 /// Enforce that `ibc_state_root` is updated correctly for CreateConnection.
@@ -1048,11 +1047,8 @@ validator host_state_stt(
                 port_siblings,
               ),
             }
-          UpdateClient {
-            client_state_siblings,
-            consensus_state_siblings,
-            removed_consensus_state_siblings,
-          } -> and {
+          UpdateClient { client_state_siblings, consensus_state_siblings } ->
+            and {
               // Client updates should not change HostState sequencing, only the root.
               validate_update_only_root(old_datum, new_datum),
               validate_update_client_root(
@@ -1065,14 +1061,6 @@ validator host_state_stt(
                 client_mint_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
-                removed_consensus_state_siblings,
-              ),
-            }
-          PruneConsensusState { .. } -> and {
-              validate_update_only_root(old_datum, new_datum),
-              validate_prune_consensus_state_root(
-                transaction,
-                client_mint_policy_id,
               ),
             }
           UpdateConnection { connection_siblings } -> and {

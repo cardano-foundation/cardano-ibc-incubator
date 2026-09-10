@@ -79,6 +79,7 @@ fn fixture(count: Int, expire_alternate: Bool) -> Fixture {
         )
   let input =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: client_state.new_client_state(
           "history-0",

@@ -16,6 +16,7 @@
     "noImplicitOverride": true,
     "esModuleInterop": true,
     "moduleResolution": "node",
+    "rewriteRelativeImportExtensions": true,
     "resolveJsonModule": true,
     "skipLibCheck": true
   },

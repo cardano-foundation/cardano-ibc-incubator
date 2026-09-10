@@ -228,6 +228,7 @@ pub fn setup() -> MockData {
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state,
         consensus_states: [Pair(proof_height, cons_state)],

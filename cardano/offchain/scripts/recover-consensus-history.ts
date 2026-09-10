@@ -4,9 +4,10 @@ import type { YaciHistorySqlClient } from "../src/consensus_history_yaci.ts";
 const HELP = `Usage:
   recover-consensus-history.ts <deployment.json> <history.sqlite> [<revisionNumber> <revisionHeight>]
 
-One-shot recovery of the proof-history prototype's local SQLite index from
+One-shot recovery of a client's local proof-backed history index from
 canonical Yaci transaction history. The deployment JSON must contain clientToken,
 stateAddress, and bootstrap { txHash, outputIndex } (HistoryDeployment format).
+The default layout is production. Set layout: "prototype" only for the old experiment.
 The optional height prints a regenerated historical witness after root validation.
 
 Required environment (no default credentials):
@@ -17,10 +18,11 @@ Required environment (no default credentials):
 Optional environment:
   HISTORY_DB_QUERY_TIMEOUT_MS  Query timeout, default 30000, maximum 600000
 
-Yaci must retain spent address_utxo rows and full transaction_cbor from bootstrap.
+Yaci must retain spent address_utxo rows, transaction CBOR and canonical validity
+flags from bootstrap. Both complete transactions and Yaci's body CBOR are supported.
 This only writes the specified local SQLite index. It never signs, submits, or
 publishes a transaction; it does not activate Gateway integration or watch blocks.
-Only the combined-output prototype datum is supported, not production HostState.
+The production index follows one client, not the shared public HostState tree.
 Run with Deno --allow-env --allow-read --allow-write --allow-net.
 `;
 

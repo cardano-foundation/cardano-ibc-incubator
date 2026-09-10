@@ -113,24 +113,6 @@ class PrunePacketHistoryHeightDto {
   revision_height: string;
 }
 
-export class PruneConsensusStateDto {
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  signer: string;
-
-  @ApiProperty()
-  @IsString()
-  @Matches(/^07-tendermint-(0|[1-9][0-9]*)$/)
-  client_id: string;
-
-  @ApiProperty({ type: PrunePacketHistoryHeightDto })
-  @IsDefined()
-  @ValidateNested()
-  @Type(() => PrunePacketHistoryHeightDto)
-  height: PrunePacketHistoryHeightDto;
-}
-
 export class PrunePacketHistoryDto {
   @ApiProperty()
   @IsString()

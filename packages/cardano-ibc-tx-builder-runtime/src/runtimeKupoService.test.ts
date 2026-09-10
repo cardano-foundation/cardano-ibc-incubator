@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { findUtxosAtAllowEmpty, UtxosAtAddressNotFoundError } from './lucidIbcAdapter';
 
-describe('runtime consensus-state history reads', () => {
-  it('returns no records when a fresh archive address has no UTxOs', async () => {
+describe('runtime empty-address reads', () => {
+  it('returns no records when a fresh address has no UTxOs', async () => {
     const lucidService = {
       findUtxoAt: async () => {
         throw new UtxosAtAddressNotFoundError('addr_test1history');

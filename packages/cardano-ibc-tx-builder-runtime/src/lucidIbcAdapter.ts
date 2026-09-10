@@ -3,6 +3,7 @@ import { sha3_256 } from 'js-sha3';
 import { acknowledgementSchema } from './acknowledgementCodec';
 import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
 import { createUnsignedSendPacketEscrowTx } from './sendPacketEscrow';
+import type { IbcTreeLucidService, IbcTreeUtxo } from './ibcStateRoot';
 
 const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
 const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
@@ -251,6 +252,7 @@ async function decodeClientDatum(
   const ClientDatumSchema = Data.Object({
     state: ClientDatumStateSchema,
     token: AuthTokenSchema,
+    history_root: Data.Bytes({ minLength: 32, maxLength: 32 }),
   });
   return Data.from(encoded, ClientDatumSchema as any);
 }
@@ -605,7 +607,6 @@ async function encodeHostStateRedeemer(
   const UpdateClientSchema = Data.Object({
     client_state_siblings: SiblingHashesSchema,
     consensus_state_siblings: SiblingHashesSchema,
-    removed_consensus_state_siblings: SiblingHashesListSchema,
   });
   const HandlePacketSchema = Data.Object({
     channel_siblings: SiblingHashesSchema,
@@ -645,19 +646,6 @@ async function encodeHostStateRedeemer(
     }),
     Data.Literal('FinalizeShutdown'),
     Data.Literal('Heartbeat'),
-    Data.Object({
-      PruneConsensusState: Data.Object({
-        client_token: Data.Object({
-          policyId: Data.Bytes(),
-          name: Data.Bytes(),
-        }),
-        height: Data.Object({
-          revisionNumber: Data.Integer(),
-          revisionHeight: Data.Integer(),
-        }),
-        consensus_state_siblings: SiblingHashesSchema,
-      }),
-    }),
   ]);
   return Data.to(data, HostStateRedeemerSchema as any, { canonical: true });
 }
@@ -1023,8 +1011,14 @@ export class LucidIbcAdapter {
     LucidImporter: typeof import('@lucid-evolution/lucid'),
     private readonly lucid: LucidEvolution,
     private readonly deployment: DeploymentConfig,
+    private readonly readConsensusHistory?: IbcTreeLucidService['consensusHistoryRecords'],
   ) {
     this.LucidImporter = LucidImporter;
+  }
+
+  async consensusHistoryRecords(client: IbcTreeUtxo) {
+    if (!this.readConsensusHistory) throw new Error('Consensus history reader is unavailable');
+    return this.readConsensusHistory(client);
   }
 
   async onModuleInit(): Promise<void> {

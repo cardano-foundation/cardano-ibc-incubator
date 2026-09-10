@@ -16,20 +16,14 @@ import { LucidService } from '../lucid/lucid.service';
         hostStateNFT: IbcTreeDeployment['hostStateNFT'];
         validators?: {
           mintClientStt?: { scriptHash?: string };
-          spendConsensusState?: { address?: string };
         };
       }>('deployment');
-      const historyAddress = deployment.validators?.spendConsensusState?.address;
       const clientPolicyId = deployment.validators?.mintClientStt?.scriptHash;
-      if (!!historyAddress !== !!clientPolicyId) {
-        throw new Error('Consensus-state history requires both its validator address and client policy id');
-      }
+      if (!clientPolicyId) throw new Error('Consensus history requires the client policy id');
       return new IbcTreeStateStore({
         network: config.getOrThrow<string>('cardanoNetwork'),
         hostStateNFT: deployment.hostStateNFT,
-        ...(historyAddress && clientPolicyId
-          ? { consensusStateHistory: { address: historyAddress, policyId: clientPolicyId } }
-          : {}),
+        clientPolicyId,
       }, kupo, lucid);
     },
   }],

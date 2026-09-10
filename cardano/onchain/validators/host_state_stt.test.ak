@@ -20,7 +20,6 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
-use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
@@ -60,8 +59,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
-  HostStateRedeemer, PruneConsensusState, UpdateChannel, UpdateClient,
-  UpdateConnection,
+  HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/fuzz_dsl
@@ -748,6 +746,7 @@ fn test_client_state(latest_height: Height) -> ClientState {
 fn test_client_datum(latest_height: Int, seed: Int) -> ClientDatum {
   let height = test_height(latest_height)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: test_client_state(height),
       consensus_states: [Pair(height, test_consensus_state(seed))],
@@ -761,6 +760,7 @@ fn test_client_datum(latest_height: Int, seed: Int) -> ClientDatum {
 fn test_updated_client_datum(seed: Int) -> ClientDatum {
   let old_height = test_height(1)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: ClientState {
         ..test_client_state(old_height),
@@ -777,6 +777,7 @@ fn test_updated_client_datum(seed: Int) -> ClientDatum {
 fn test_updated_client_datum_with_consensus_insert(seed: Int) -> ClientDatum {
   let new_height = test_height(2)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: test_client_state(new_height),
       consensus_states: [Pair(new_height, test_consensus_state(seed + 1))],
@@ -1172,7 +1173,6 @@ test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
     UpdateClient {
       client_state_siblings: siblings,
       consensus_state_siblings: [],
-      removed_consensus_state_siblings: [],
     }
 
   fuzz_dsl.valid_check(
@@ -1271,11 +1271,7 @@ fn prepare_host_update_client_capacity() -> Pair<HostStateRedeemer, Transaction>
       ibc_state_root: new_root,
     }
   let redeemer: HostStateRedeemer =
-    UpdateClient {
-      client_state_siblings,
-      consensus_state_siblings,
-      removed_consensus_state_siblings: [],
-    }
+    UpdateClient { client_state_siblings, consensus_state_siblings }
 
   Pair(
     redeemer,
@@ -1299,8 +1295,6 @@ const host_update_client_capacity_fixture =
 
 test host_update_client_capacity_minimum_history_succeeds() {
   let Pair(redeemer, transaction) = host_update_client_capacity_fixture
-  let archive_token =
-    consensus_history.token(test_client_token(), test_height(1))
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
     test_client_script_hash(),
@@ -1310,96 +1304,8 @@ test host_update_client_capacity_minimum_history_succeeds() {
     None,
     redeemer,
     test_host_ref(),
-    Transaction {
-      ..transaction,
-      mint: from_asset(archive_token.policy_id, archive_token.name, 1),
-    },
+    transaction,
   )
-}
-
-fn prepare_host_prune_consensus() -> Pair<HostStateRedeemer, Transaction> {
-  let record = consensus_history.from_client(test_client_datum(1, 557))
-  let token = consensus_history.token(record.client_token, record.height)
-  let key = client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
-  let siblings = full_empty_siblings()
-  let old_root =
-    ibc_state_commitment.apply_update(
-      empty_ibc_state_root,
-      key,
-      "",
-      cbor.serialise(record.consensus_state),
-      siblings,
-    )
-  let old_state = test_host_state(old_root, 557)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      ibc_state_root: empty_ibc_state_root,
-    }
-  Pair(
-    PruneConsensusState {
-      client_token: record.client_token,
-      height: record.height,
-      consensus_state_siblings: siblings,
-    },
-    Transaction {
-      ..placeholder,
-      inputs: [
-        test_host_input(old_state),
-        Input {
-          output_reference: test_object_ref(2),
-          output: Output {
-            address: Address(Script("archive script"), None),
-            value: from_asset(token.policy_id, token.name, 1),
-            datum: InlineDatum(record),
-            reference_script: None,
-          },
-        },
-      ],
-      outputs: [test_host_output(new_state)],
-      mint: from_asset(token.policy_id, token.name, -1),
-    },
-  )
-}
-
-const host_prune_consensus_fixture = prepare_host_prune_consensus()
-
-fn check_host_prune(
-  redeemer: HostStateRedeemer,
-  tx: Transaction,
-  client_policy: PolicyId,
-) -> Bool {
-  host_state_stt.host_state_stt.spend(
-    test_nft_policy(),
-    test_client_script_hash(),
-    test_connection_script_hash(),
-    test_channel_script_hash(),
-    client_policy,
-    None,
-    redeemer,
-    test_host_ref(),
-    tx,
-  )
-}
-
-test host_prune_consensus_deletes_exact_committed_leaf() {
-  let Pair(redeemer, tx) = host_prune_consensus_fixture
-  check_host_prune(redeemer, tx, test_client_token().policy_id)
-}
-
-test host_prune_consensus_rejects_missing_burn() fail {
-  let Pair(redeemer, tx) = host_prune_consensus_fixture
-  check_host_prune(
-    redeemer,
-    Transaction { ..tx, mint: zero },
-    test_client_token().policy_id,
-  )
-}
-
-test host_prune_consensus_rejects_forged_policy() fail {
-  let Pair(redeemer, tx) = host_prune_consensus_fixture
-  check_host_prune(redeemer, tx, "another client policy")
 }
 
 test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {
@@ -1422,7 +1328,6 @@ test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {
     UpdateClient {
       client_state_siblings: siblings,
       consensus_state_siblings: siblings,
-      removed_consensus_state_siblings: [],
     }
 
   spend_host_state(

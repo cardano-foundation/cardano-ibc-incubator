@@ -1,5 +1,6 @@
 import { type LucidEvolution, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
 import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
+import type { IbcTreeLucidService, IbcTreeUtxo } from './ibcStateRoot';
 type RefUtxo = {
     txHash: string;
     outputIndex: number;
@@ -63,13 +64,31 @@ export declare class UtxosAtAddressNotFoundError extends Error {
 export declare class LucidIbcAdapter {
     private readonly lucid;
     private readonly deployment;
+    private readonly readConsensusHistory?;
     readonly LucidImporter: typeof import('@lucid-evolution/lucid');
     private referenceScripts;
     private walletSelectionScopeCounter;
     private activeWalletSelectionScopeId;
     private explicitWalletSelectionForScopeId;
     private explicitWalletSelectionAddress;
-    constructor(LucidImporter: typeof import('@lucid-evolution/lucid'), lucid: LucidEvolution, deployment: DeploymentConfig);
+    constructor(LucidImporter: typeof import('@lucid-evolution/lucid'), lucid: LucidEvolution, deployment: DeploymentConfig, readConsensusHistory?: IbcTreeLucidService['consensusHistoryRecords']);
+    consensusHistoryRecords(client: IbcTreeUtxo): Promise<{
+        datum: {
+            clientToken: {
+                policyId: string;
+                name: string;
+            };
+            height: {
+                revisionNumber: bigint;
+                revisionHeight: bigint;
+            };
+            consensusState: unknown;
+            processedTime: bigint;
+            processedHeight: bigint;
+        };
+        consensusValue: string;
+        archived: boolean;
+    }[]>;
     onModuleInit(): Promise<void>;
     private loadReferenceScripts;
     private resolveReferenceScriptUtxo;

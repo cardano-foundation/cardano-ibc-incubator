@@ -8,15 +8,17 @@
     "jsr:@std/internal@^1.0.10": "1.0.12",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/internal@^1.0.9": "1.0.12",
+    "jsr:@std/path@^1.0.13": "1.1.2",
     "jsr:@std/path@^1.1.1": "1.1.2",
     "npm:@harmoniclabs/cbor@1.6.6": "1.6.6",
     "npm:@lucid-evolution/lucid@0.4.29": "0.4.29_effect@3.19.2_@harmoniclabs+cbor@1.6.6",
     "npm:@lucid-evolution/provider@0.1.90": "0.1.90_effect@3.19.2_@harmoniclabs+cbor@1.6.6",
-    "npm:@lucid-evolution/utils@*": "0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6",
-    "npm:@lucid-evolution/utils@0.1.66": "0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6",
+    "npm:@lucid-evolution/utils@*": "0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6",
+    "npm:@lucid-evolution/utils@0.1.66": "0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6",
     "npm:@noble/hashes@1.8.0": "1.8.0",
     "npm:@types/node@*": "24.2.0",
     "npm:cbor@10": "10.0.11",
+    "npm:js-sha256@0.11.1": "0.11.1",
     "npm:pg@8.16.0": "8.16.0",
     "npm:ws@*": "7.5.10",
     "npm:ws@7.5.10": "7.5.10"
@@ -35,7 +37,7 @@
       "integrity": "051968c2b1eae4d2ea9f79a08a3845740ef6af10356aff43d3e2ef11ed09fb06",
       "dependencies": [
         "jsr:@std/internal@^1.0.9",
-        "jsr:@std/path"
+        "jsr:@std/path@^1.1.1"
       ]
     },
     "@std/internal@1.0.12": {
@@ -272,7 +274,7 @@
     "@harmoniclabs/uint8array-utils@1.0.4": {
       "integrity": "sha512-Z454prSbX4geXGHyjjcn9vm6u9NsD3VJykv8f8yE1VjIXSPitaLPEnm8u2+B+GMp1chYlLilOq+kW4OvJ6y28A=="
     },
-    "@harmoniclabs/uplc@1.4.1_@harmoniclabs+bytestring@1.0.0_@harmoniclabs+cbor@1.6.6_@harmoniclabs+crypto@0.3.0_@harmoniclabs+pair@1.0.0_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6": {
+    "@harmoniclabs/uplc@1.4.1_@harmoniclabs+bytestring@1.0.0_@harmoniclabs+cbor@1.6.6_@harmoniclabs+crypto@0.3.0_@harmoniclabs+pair@1.0.0_@harmoniclabs+plutus-data@1.2.6": {
       "integrity": "sha512-sELKStjxPBPBxBMylU4oBSUe0/8eJe2HqRblNSwrMu8Fso4YpSPDqHZ33iDZ8QAadVUsT5r2EQKX0TLrj7qXvQ==",
       "dependencies": [
         "@harmoniclabs/bigint-utils",
@@ -357,10 +359,10 @@
         "@lucid-evolution/core-utils"
       ]
     },
-    "@lucid-evolution/uplc@0.2.20": {
-      "integrity": "sha512-+40qeHmjMnM4Sjdq9JAf190a1t3TMbV1vegVLQGqt2AouOkIunZfziBZwuaqcgUVVbynW+j2Qx2ijK83Pap4XQ=="
+    "@lucid-evolution/uplc@0.2.23": {
+      "integrity": "sha512-D0Qk+FnfePqqnT68IPRVy+2v1FahfkCVlgj31uoQ9aGPrwphKlvgp04UEl/lBNuzJw0avYNM8knO4hptMSFP8Q=="
     },
-    "@lucid-evolution/utils@0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6": {
+    "@lucid-evolution/utils@0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6": {
       "integrity": "sha512-sp6vsxrc0u9rYgb4ExRP4LRQM0oK6mVxqt70axK0T4DSS06KYtCqUWX6kjcOHY8jxDGfjK5RLh9hBY+Gul4OSQ==",
       "dependencies": [
         "@anastasia-labs/cardano-multiplatform-lib-browser@6.0.2-3",
@@ -782,6 +784,9 @@
         "ws"
       ]
     },
+    "js-sha256@0.11.1": {
+      "integrity": "sha512-o6WSo/LUvY2uC4j7mO50a2ms7E/EAdbP0swigLV+nzHKTTaYnaLIWJ02VdXrsJX0vGedDESQnLsOekr94ryfjg=="
+    },
     "jsbn@1.1.0": {
       "integrity": "sha512-4bYVV3aAMtDTTu4+xsDYa6sy9GyJ69/amsu9sYF2zqjiEoZA5xJi3BrfX3uY+/IekIu7MwdObdbDWpoZdBv3/A=="
     },
@@ -1125,8 +1130,14 @@
       "npm:@lucid-evolution/provider@0.1.90",
       "npm:@lucid-evolution/utils@0.1.66",
       "npm:@noble/hashes@1.8.0",
+      "npm:js-sha256@0.11.1",
       "npm:pg@8.16.0",
       "npm:ws@7.5.10"
-    ]
+    ],
+    "packageJson": {
+      "overrides": {
+        "@lucid-evolution/uplc": "0.2.23"
+      }
+    }
   }
 }

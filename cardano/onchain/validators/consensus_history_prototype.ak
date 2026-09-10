@@ -13,8 +13,8 @@ use cardano/transaction.{OutputReference, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/client_state
-use ibc/client/ics_007_tendermint_client/consensus_history
-use ibc/client/ics_007_tendermint_client/consensus_history_commitment.{Witness} as history
+use ibc/client/ics_007_tendermint_client/consensus_history.{Witness}
+use ibc/client/ics_007_tendermint_client/consensus_history_commitment as history
 use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle

@@ -21,10 +21,11 @@ async function main(): Promise<void> {
   // intentionally retained even when they exceed the transaction-size limit.
   const artifacts = await analyzeNormalizedCapacityFixture();
   for (const { report } of artifacts) {
-    if (report.outputConsensusStates !== 1 || report.archivedConsensusStates !== 1 ||
-      report.removedConsensusStates !== 0 || report.shape.inlineDatumOutputs !== 3 ||
-      report.shape.referenceInputs !== 3 || report.shape.mintRedeemers !== 1 || report.shape.mintedAssets !== 1) {
-      throw new Error(`Capacity fixture ${report.scenario} must use a singleton client and one authenticated archive`);
+    if (report.outputConsensusStates !== 1 || report.committedHistoricalStates !== 1 ||
+      report.removedConsensusStates !== 0 || report.shape.inlineDatumOutputs !== 2 ||
+      report.shape.referenceInputs !== 3 || report.shape.mintRedeemers !== 0 ||
+      report.shape.withdrawalRedeemers !== 1 || report.shape.mintedAssets !== 0) {
+      throw new Error(`Capacity fixture ${report.scenario} must use a singleton client, history root and support withdrawal`);
     }
   }
   const expected = await renderAikenFixtureModule();

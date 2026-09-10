@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import * as Lucid from '@lucid-evolution/lucid';
 import {
-  consensusStateArchiveTokenName,
   encodeClientStateValue,
   encodeConsensusStateValue,
   encodeChannelEndValue,
@@ -212,7 +211,7 @@ describe('shared IBC state root updates', () => {
     });
   }
 
-  it('preserves archived leaves during updates and explicitly prunes exactly one authenticated leaf', async () => {
+  it('preserves historical consensus leaves and rejects implicit removals', async () => {
     const client = store.computeRootWithCreateClientUpdate(
       emptyRoot, '07-tendermint-0', Buffer.from('01', 'hex'), Buffer.from('02', 'hex'), 7n,
     );
@@ -228,24 +227,8 @@ describe('shared IBC state root updates', () => {
     assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/8')?.toString('hex'), '04');
     assert.throws(() => store.computeRootWithUpdateClientUpdate(
       update.newRoot, '07-tendermint-0', Buffer.from('05', 'hex'), [7n], undefined,
-    ), /explicit PruneConsensusState/);
-    assert.throws(() => store.computeRootWithPruneConsensusStateUpdate(
-      update.newRoot, '07-tendermint-0', 7n, Buffer.from('ff', 'hex'),
-    ), /authenticated consensus state/);
+    ), /cannot remove consensus history/);
     assert.equal(store.getCurrentRoot(), update.newRoot);
-    const prune = store.computeRootWithPruneConsensusStateUpdate(
-      update.newRoot, '07-tendermint-0', 7n, Buffer.from('02', 'hex'),
-    );
-    assert.equal(prune.consensusStateSiblings.length, 64);
-    assert.equal(store.getCurrentRoot(), update.newRoot);
-    await commitLive(store, readers, prune, 3);
-    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/7'), undefined);
-    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/8')?.toString('hex'), '04');
-    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/clientState')?.toString('hex'), '03');
-    assert.throws(() => store.computeRootWithPruneConsensusStateUpdate(
-      prune.newRoot, '07-tendermint-0', 7n, Buffer.from('02', 'hex'),
-    ), /authenticated consensus state/);
-    assert.equal(store.getCurrentRoot(), prune.newRoot);
   });
 
   it('does not change confirmed state when pruning missing packet history fails', () => {
@@ -257,162 +240,99 @@ describe('shared IBC state root updates', () => {
 });
 
 describe('deployment-bound tree stores', () => {
-  it('derives the same archive NFT name as the on-chain validator', () => {
-    assert.equal(
-      consensusStateArchiveTokenName(
-        { policyId: '11'.repeat(28), name: '22' },
-        { revisionNumber: 0n, revisionHeight: 1n },
-        Lucid,
-      ),
-      '8a9809d798ed7117cb8269bda61fb07c0cbe54b62eb0ed59ef6175b5c55dc99c',
-    );
-  });
-
-  it('rebuilds an older consensus leaf from its authenticated archive UTxO', async () => {
+  async function historyFixture() {
     const policyId = '11'.repeat(28);
     const clientToken = { policyId, name: `${'aa'.repeat(24)}30` };
     const latestHeight = { revisionNumber: 0n, revisionHeight: 8n };
-    const archivedHeight = { revisionNumber: 0n, revisionHeight: 7n };
-    const latestConsensus = sampleConsensusState('22');
-    const archivedConsensus = sampleConsensusState('33');
-    const clientState = sampleClientState(latestHeight.revisionHeight);
-    const archiveName = consensusStateArchiveTokenName(clientToken, archivedHeight, Lucid);
-    const archiveAddress = 'addr_test1_consensus_history';
-    const expected = new ICS23MerkleTree();
-    expected.set(
-      'clients/07-tendermint-0/clientState',
-      await encodeClientStateValue(clientState, Lucid),
-    );
-    expected.set(
-      'clients/07-tendermint-0/consensusStates/8',
-      await encodeConsensusStateValue(latestConsensus, Lucid),
-    );
-    expected.set(
-      'clients/07-tendermint-0/consensusStates/7',
-      await encodeConsensusStateValue(archivedConsensus, Lucid),
-    );
-
+    const olderHeight = { revisionNumber: 0n, revisionHeight: 7n };
+    const clientState = sampleClientState(8n);
+    const latest = { clientToken, height: latestHeight, consensusState: sampleConsensusState('22'), processedTime: 2000n, processedHeight: 20n };
+    const older = { ...latest, height: olderHeight, consensusState: sampleConsensusState('33'), processedTime: 1900n, processedHeight: 19n };
+    const records = await Promise.all([older, latest].map(async (datum) => ({
+      datum, consensusValue: await encodeConsensusStateValue(datum.consensusState, Lucid), archived: datum === older,
+    })));
     const clientDatum = {
-      token: clientToken,
-      state: {
-        clientState,
-        consensusStates: new Map([[latestHeight, latestConsensus]]),
-      },
+      token: clientToken, history_root: 'ab'.repeat(32),
+      state: { clientState, consensusStates: new Map([[latestHeight, latest.consensusState]]) },
     };
-    const archiveDatum = {
-      clientToken,
-      height: archivedHeight,
-      consensusState: archivedConsensus,
-      processedTime: 2_000n,
-      processedHeight: 20n,
-    };
+    const clientValue = await encodeClientStateValue(clientState, Lucid);
+    const h = new Lucid.Constr(0, [0n, 8n]);
+    const encodedClient = Lucid.Data.to(new Lucid.Constr(0, [
+      new Lucid.Constr(0, [
+        Lucid.Data.from(clientValue), new Map([[h, Lucid.Data.from(records[1].consensusValue)]]),
+        new Map([[h, latest.processedTime]]), new Map([[h, latest.processedHeight]]),
+      ]),
+      new Lucid.Constr(0, [policyId, clientToken.name]), clientDatum.history_root,
+    ]));
+    const clientUtxo = { ...hostRef(10), address: 'addr_test1_client', datum: encodedClient, assets: { [policyId + clientToken.name]: 1n } };
+    const expected = new ICS23MerkleTree();
+    expected.set('clients/07-tendermint-0/clientState', clientValue);
+    for (const entry of records) expected.set(`clients/07-tendermint-0/consensusStates/${entry.datum.height.revisionHeight}`, entry.consensusValue);
     const readers = emptyReaders();
-    readers.kupo.queryAllClientUtxos = async () => [{
-      ...hostRef(10),
-      address: 'addr_test1_client',
-      datum: 'client-datum',
-      assets: { [policyId + clientToken.name]: 1n },
-    }];
-    readers.kupo.queryAllConsensusStateUtxos = async () => [{
-      ...hostRef(11),
-      address: archiveAddress,
-      datum: 'archive-datum',
-      assets: { [policyId + archiveName]: 1n },
-    }];
+    readers.kupo.queryAllClientUtxos = async () => [clientUtxo];
+    readers.lucid.consensusHistoryRecords = async (client) => {
+      assert.equal(client.txHash, clientUtxo.txHash);
+      assert.equal(client.outputIndex, clientUtxo.outputIndex);
+      return records;
+    };
     readers.lucid.decodeDatum = async <T>(encoded: string, type: string) => {
-      if (type === 'host_state') {
-        return {
-          state: { ibc_state_root: expected.getRoot() },
-          control: { port_registry: new Map() },
-        } as T;
-      }
-      if (type === 'client' && encoded === 'client-datum') return clientDatum as T;
-      if (type === 'consensus_state' && encoded === 'archive-datum') return archiveDatum as T;
+      if (type === 'host_state') return { state: { ibc_state_root: expected.getRoot() }, control: { port_registry: new Map() } } as T;
+      if (type === 'client' && encoded === clientUtxo.datum) return clientDatum as T;
       throw new Error(`unexpected ${type} datum`);
     };
     readers.setLive(expected.getRoot(), hostRef(12));
-    const historyDeployment: IbcTreeDeployment = {
-      ...deployment,
-      consensusStateHistory: { address: archiveAddress, policyId },
-    };
-    const historyStore = new IbcTreeStateStore(historyDeployment, readers.kupo, readers.lucid);
+    const historyDeployment: IbcTreeDeployment = { ...deployment, clientPolicyId: policyId };
+    const makeStore = () => new IbcTreeStateStore(historyDeployment, readers.kupo, readers.lucid);
+    return { records, clientDatum, clientUtxo, expected, readers, makeStore };
+  }
 
-    const rebuilt = await historyStore.rebuildTreeFromChain();
-
-    assert.equal(rebuilt.root, expected.getRoot());
-    assert.equal(
-      rebuilt.tree.get('clients/07-tendermint-0/consensusStates/7')?.toString('hex'),
-      await encodeConsensusStateValue(archivedConsensus, Lucid),
-    );
+  it('rebuilds public historical and latest consensus leaves from recovered records', async () => {
+    const fixture = await historyFixture();
+    const rebuilt = await fixture.makeStore().rebuildTreeFromChain();
+    assert.equal(rebuilt.root, fixture.expected.getRoot());
+    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/7')?.toString('hex'), fixture.records[0].consensusValue);
+    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/8')?.toString('hex'), fixture.records[1].consensusValue);
   });
 
-  it('rejects unauthenticated and duplicate archived consensus records during rebuild', async () => {
-    const policyId = '11'.repeat(28);
-    const clientToken = { policyId, name: `${'aa'.repeat(24)}30` };
-    const height = { revisionNumber: 0n, revisionHeight: 7n };
-    const archiveAddress = 'addr_test1_consensus_history';
-    let decodedArchive = {
-      clientToken,
-      height,
-      consensusState: sampleConsensusState('33'),
-      processedTime: 2_000n,
-      processedHeight: 20n,
-    };
-    const clientDatum = {
-      token: clientToken,
-      state: { clientState: sampleClientState(8n), consensusStates: new Map() },
-    };
-    const readers = emptyReaders();
-    readers.kupo.queryAllClientUtxos = async () => [{
-      ...hostRef(10), datum: 'client-datum', assets: { [policyId + clientToken.name]: 1n },
-    }];
-    readers.lucid.decodeDatum = async <T>(encoded: string, type: string) => {
-      if (type === 'host_state') {
-        return { state: { ibc_state_root: emptyRoot }, control: { port_registry: new Map() } } as T;
-      }
-      if (type === 'client' && encoded === 'client-datum') return clientDatum as T;
-      if (type === 'consensus_state') return decodedArchive as T;
-      throw new Error(`unexpected ${type} datum`);
-    };
-    const validName = consensusStateArchiveTokenName(clientToken, height, Lucid);
-    const baseArchive = {
-      ...hostRef(11), address: archiveAddress, datum: 'archive-datum', assets: { [policyId + validName]: 1n },
-    };
-    const historyDeployment: IbcTreeDeployment = {
-      ...deployment,
-      consensusStateHistory: { address: archiveAddress, policyId },
-    };
+  it('rejects foreign-client, duplicate, missing and corrupted recovered records', async () => {
+    {
+      const fixture = await historyFixture();
+      fixture.records[0].datum.clientToken = { ...fixture.records[0].datum.clientToken, name: 'bb'.repeat(24) + '31' };
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /Invalid recovered consensus/);
+    }
+    {
+      const fixture = await historyFixture();
+      fixture.records.push(fixture.records[0]);
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /Duplicate consensus state path/);
+    }
+    for (const removeLatest of [false, true]) {
+      const fixture = await historyFixture();
+      fixture.records.splice(removeLatest ? 1 : 0, 1);
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /Tree rebuild failed/);
+    }
+    {
+      const fixture = await historyFixture();
+      fixture.records[0].consensusValue = 'ff';
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /Tree rebuild failed/);
+    }
+  });
 
-    readers.kupo.queryAllConsensusStateUtxos = async () => [{
-      ...baseArchive,
-      assets: { [policyId + 'ff'.repeat(32)]: 1n },
-    }];
-    await assert.rejects(
-      new IbcTreeStateStore(historyDeployment, readers.kupo, readers.lucid).rebuildTreeFromChain(),
-      /wrong NFT/,
-    );
-
-    const foreignToken = { policyId, name: `${'bb'.repeat(24)}31` };
-    decodedArchive = { ...decodedArchive, clientToken: foreignToken };
-    const foreignName = consensusStateArchiveTokenName(foreignToken, height, Lucid);
-    readers.kupo.queryAllConsensusStateUtxos = async () => [{
-      ...baseArchive,
-      assets: { [policyId + foreignName]: 1n },
-    }];
-    await assert.rejects(
-      new IbcTreeStateStore(historyDeployment, readers.kupo, readers.lucid).rebuildTreeFromChain(),
-      /failed authentication/,
-    );
-
-    decodedArchive = { ...decodedArchive, clientToken };
-    readers.kupo.queryAllConsensusStateUtxos = async () => [
-      baseArchive,
-      { ...baseArchive, ...hostRef(13) },
-    ];
-    await assert.rejects(
-      new IbcTreeStateStore(historyDeployment, readers.kupo, readers.lucid).rebuildTreeFromChain(),
-      /Duplicate consensus state path/,
-    );
+  it('requires a valid private-root datum, exact client NFT and a recovered-history reader', async () => {
+    {
+      const fixture = await historyFixture();
+      fixture.clientDatum.history_root = '';
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /valid client root/);
+    }
+    {
+      const fixture = await historyFixture();
+      fixture.readers.lucid.consensusHistoryRecords = undefined;
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /historical chain reader/);
+    }
+    {
+      const fixture = await historyFixture();
+      fixture.clientUtxo.assets[Object.keys(fixture.clientUtxo.assets)[0]] = 2n;
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /failed authentication/);
+    }
   });
 
   it('copies and freezes its deployment binding', () => {

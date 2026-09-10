@@ -23,7 +23,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership,
+  VerifyMembership, VerifyProofEnvelope,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -554,17 +554,20 @@ fn check_recv_packet_with_timeout(
   let commitment = packet_mod.commit_packet(packet)
 
   let verify_proof_redeemer: Redeemer =
-    VerifyMembership {
-      cs: client_datum_state.client_state,
-      cons_state: consensus_state,
-      height: proof_height,
-      processed_time: 0,
-      processed_height: 0,
-      delay_time_period: time_delay,
-      delay_block_period: block_delay,
-      proof: proof_commitment,
-      path: merkle_path,
-      value: commitment,
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: VerifyMembership {
+        cs: client_datum_state.client_state,
+        cons_state: consensus_state,
+        height: proof_height,
+        processed_time: 0,
+        processed_height: 0,
+        delay_time_period: time_delay,
+        delay_block_period: block_delay,
+        proof: proof_commitment,
+        path: merkle_path,
+        value: commitment,
+      },
     }
 
   let recv_packet_redeemer: Redeemer = mock_data.channel_token
@@ -1186,6 +1189,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: ClientState {
           chain_id: "vesseloracle",

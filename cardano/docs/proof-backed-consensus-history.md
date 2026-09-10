@@ -1,57 +1,44 @@
-# Proof-backed consensus history prototype
+# Proof-backed consensus history
 
-This experiment is based on [PR #734](https://github.com/cardano-foundation/cardano-ibc-incubator/pull/734). It keeps the latest checkpoint and a 32-byte root on-chain. Older records arrive with Merkle proofs instead of occupying archive UTxOs. Recovery follows the published-data and incremental-index pattern in [Cardano MPFS](https://github.com/cardano-foundation/cardano-mpfs-onchain) and its [chain follower](https://github.com/lambdasistemi/cardano-mpfs-offchain). We keep our existing 64-level SHA-256 commitment format and Tendermint verification, not MPFS's owner-signature requirement or its different tree format.
+This replaces the separate archive UTxOs proposed in [PR #734](https://github.com/cardano-foundation/cardano-ibc-incubator/pull/734). Each client output holds its latest checkpoint and a 32-byte history root. An update inserts the consumed checkpoint into that tree. Older checkpoints are supplied with Merkle proofs when needed, without creating archive outputs or locking more ADA for each retained header. This needs a fresh contract deployment, it does not upgrade existing client outputs in place. Startup requires the deployment's `proof-backed-v1` history-format marker.
 
-## What is tested
+The published-data and incremental-index pattern follows [Cardano MPFS](https://github.com/cardano-foundation/cardano-mpfs-onchain) and its [chain follower](https://github.com/lambdasistemi/cardano-mpfs-offchain). We retain our 64-level SHA-256 tree and Tendermint verification rather than adopting MPFS's tree format or owner-signature requirement. This change addresses history storage, not validator-set size.
 
-Internal leaves authenticate the client, both height components, consensus state and processing metadata. The archived record comes from the authenticated input. An absence proof prevents overwrites. Public consensus leaves are retained unchanged alongside the internal records.
+## Contracts and transaction building
 
-The emulator seeds a unique NFT and trusted checkpoint. A prototype validator combines the client and root in one output. It verifies a signed four-validator update and archives the previous checkpoint in the tree. Another transaction reads that checkpoint and checks delay metadata. Tests reject tampering, stale proofs, expiry, insufficient delay and invalid signatures.
+The spending validator still verifies Tendermint headers. The existing `recover_client` withdrawal script also checks history insertions and historical witnesses, keeping the scripts small enough to deploy. Each record authenticates its client, height, consensus state and original processing metadata. Insertion requires an absence proof. Freezing preserves the history root. Recovery retains the subject client's history and archives its previous checkpoint.
 
-Records are synthetic occupancy, not replayed headers. Lookups use one client's sequential history. Updates use the fixed signed height `2 -> 3` fixture and fill the tree with other clients' records. Historical-trust updates change only the IBC wrapper's trusted height.
+Packet and handshake transactions carry an older checkpoint's witness inside the proof redeemer. The consuming validator checks it against the authenticated client root before using the state or delay metadata. Latest-height operations need no historical witness. The public ICS-07 client and consensus values remain unchanged and old public consensus leaves are retained.
 
-## Measurements
+The Gateway and shared transaction-builder runtime use the same history codecs and index. The Gateway rebuilds private witnesses from Yaci history. The standalone builder can rebuild public consensus leaves from Kupo's spent outputs and retained datums, then checks the complete result against the live HostState root.
 
-Signed emulator transactions on an Apple M5 with 16 GB RAM, using Aiken `1.1.21` with traces disabled and pinned mainnet epoch `654` parameters. Limits are `16,384` bytes, `16,500,000` memory units and `10,000,000,000` CPU steps. Tests require an additional 750-byte size reserve and 5% execution reserve.
+## Recovery and operating requirements
 
-| Historical records | Lookup bytes | Update bytes | Lookup memory | Update memory |
-| --- | ---: | ---: | ---: | ---: |
-| 1 | 2,862 | 11,207 | 2,135,186 | 13,731,354 |
-| 100 | 2,862 | 11,207 | 2,132,780 | 13,732,342 |
-| 10,000 | 2,862 | 11,207 | 2,131,978 | 13,733,145 |
+The SQLite index is disposable. Recovery reads accepted Cardano transactions from client creation onwards and checks each predecessor and resulting root against the published outputs. It serves proofs only after reaching the independently read live client NFT output. Original processing metadata is recovered from datums, never replaced with recovery time. Public commitment bytes follow ledger `serialiseData` encoding.
 
-Updates above use a historical trusted height. At 10,000 records lookup/update CPU costs are `697,027,823` / `4,644,317,971` steps and fees are approximately `0.750` / `2.366 ADA`, including the shared reference script. An adjacent update uses `8,857` bytes and `11,326,950` memory units. These are complete prototype transactions, not production packet transfers.
+Replay commits changes and rollback information together. It resumes after interruption and rewinds on forks. Cache integrity and returned witnesses are checked, missing or corrupt history stops requests. The Gateway bounds open indexes and database waits. Each deployment and client has a separate cache identity.
 
-There are no history outputs. The prototype state needs `2.33–2.37 ADA`, with the small difference caused by height encoding. The representative separate-archive minimum multiplied by 10,000 is approximately `18,921 ADA`. These exclude fixed deployment deposits. Each witness carries 2,048 raw sibling-hash bytes before encoding and the record.
+Historical transactions must remain available from an independent source. A current UTxO snapshot or the Merkle root alone cannot recover the records. Yaci must retain spent outputs and transaction CBOR with canonical validity information. Kupo must retain spent client outputs and their datums. There is no archive pruning transaction, but disk usage, restart integrity checks and cold replay still grow with history.
 
-The incremental SQLite tree updates only the changed leaf and its 64 ancestors. At 10,000 records the combined benchmark tree took about 8–10 seconds to build and update-witness preparation took about 3 milliseconds, down from roughly 33 seconds with repeated full rebuilds. Transaction sizes and execution budgets were unchanged. This is local witness construction, not transaction confirmation latency.
+## Tests and reproduction
 
-## Recovery from transaction history
+The signed emulator tests exercise production creation, updates, freezing, recovery and use of an older state. The cold-recovery test deletes the local database and public tree, rebuilds both roots from submitted transaction CBOR, then uses the recovered checkpoint in a script-checked packet-history operation. Its connection and channel setup is seeded. Block positions are simulated, this is not a live Yaci or full-network recovery benchmark.
 
-A separate test submits initialization and a signed update with no pre-seeded history. It deletes all local index files and rebuilds both public leaves and full historical records from the accepted transaction CBOR. The recovered older checkpoint is then used in another script-checked transaction. Rebuilding these two state transactions took about 5 milliseconds. This small correctness fixture does not measure a real network's historical scan. Its block positions simulate a chain source, the emulator does not retain block history. The initial NFT is still a trusted emulator seed, not a production creation policy.
-
-The index checks every predecessor and resulting root against transaction outputs. Processing metadata comes from the consumed datum, never recovery time. Public Data encodings are preserved using a serialization adapter checked against Aiken's evaluator. Each transaction's tree changes and rollback record commit together. Recovery resumes at that checkpoint and catches up if the client advances. Saved progress cannot serve proofs until replay completes and matches the independently read live NFT output. Forks rewind to a common checkpoint, with bounded retries that preserve progress.
-
-Cache integrity is checked on opening and after another SQLite connection writes. Every returned witness is also verified against the published root. Corruption stops proof serving, recover into a fresh database from chain history instead. Tests cover interrupted cold replay, ongoing updates, same-block replacement forks and damaged leaves or nodes. The database is disposable, but some independently retained source of historical transactions remains necessary. Restart integrity checks and cold recovery still grow with retained history, warm recovery reads only the saved checkpoint and newer transactions.
-
-## Reproduce
-
-From the repository root:
+Use Node 22.13 or later and Deno 2.7 or later. The pinned `@lucid-evolution/uplc` evaluator fixes equality and serialization bugs in older emulator versions. From the repository root:
 
 ```sh
 cd cardano/onchain
 aiken build --deny --trace-level silent
-aiken check --deny --trace-level silent -m 'consensus_history_commitment.{..}'
+aiken check --deny --trace-level silent
 cd ../offchain
+deno task test:consensus-history
 deno task test:consensus-history-prototype
 ```
 
-Tests print JSON measurements and run in CI. `scripts/fixtures/mainnet-protocol-parameters.json` pins limits, prices and the Plutus V3 cost model without network calls.
+Tests print signed transaction measurements and enforce the pinned mainnet execution limits plus size and execution reserves. `scripts/fixtures/mainnet-protocol-parameters.json` supplies the parameters without a network request. The earlier prototype's measurements are not production packet-transfer measurements.
 
-For a deployed **prototype**, `deno task recover:consensus-history deployment.json history.sqlite [revisionNumber revisionHeight]` reads raw Yaci Store history and optionally prints an older record with its proof. `deployment.json` contains `clientToken: { policyId, name }`, `stateAddress` and `bootstrap: { txHash, outputIndex }`. Set `HISTORY_DB_URL`, `KUPO_URL` and `OGMIOS_URL`. Yaci must retain spent output rows and full transaction CBOR from initialization. Missing history fails recovery. A retry-limit error retains progress, rerun the same command to continue. SQL queries default to a 30-second timeout, configurable with `HISTORY_DB_QUERY_TIMEOUT_MS`. The adapter has unit tests, but has not yet been exercised against a live Yaci deployment. The command does not submit transactions or activate Gateway integration.
+With the corrected evaluator, the four-validator update used 9,428 bytes and 13.87 million memory units. Recovery used 8,078–8,086 bytes and 10.72–10.74 million memory units. The packet operation using a checkpoint recovered after deleting the database used 8,795 bytes, 11.30 million memory units and 3.57 billion CPU steps. Replaying the two fixture transactions took 7–10 milliseconds, not counting any real network scan. Reference-script deployment checks are size models, not signed publication transactions.
 
-## Before production integration
+For an independent read-only rebuild, run `deno task recover:consensus-history deployment.json history.sqlite [revisionNumber revisionHeight]`. The deployment file contains `clientToken: { policyId, name }`, `stateAddress` and `bootstrap: { txHash, outputIndex }`. Set `HISTORY_DB_URL`, `KUPO_URL` and `OGMIOS_URL`. Production layout is the default. A retry-limit error retains progress, rerun the same command to continue. SQL queries default to a 30-second timeout through `HISTORY_DB_QUERY_TIMEOUT_MS`.
 
-All 62 existing blueprint entries compile identically to the parent. Deployment and Gateway behavior are unchanged. Remaining work includes real HostState/client integration, packets, creation, recovery, freezing and pruning. Backfill needs authenticated neighbour/absence checks. The existing 64-bit path limitation and validity-bound processing time are unchanged.
-
-Combined-tree replay and rollback are implemented for the prototype's single-client output. Production recovery must additionally cover every shared HostState mutation, including connections, channels and packets, then replace archive reads in the Gateway. Historical retention, full-chain recovery time and migration still need testing. Missing records must stall requests. This addresses history storage, not large validator sets.
+The pinned Hermes signer still rejects withdrawals on client updates and expects the older recovery redeemer. Its signing policy must support the new format before end-to-end relaying works. Live Yaci recovery, a long-history recovery-time measurement and independent deployment testing also remain required before production use. The existing 64-bit tree path bound and validity-bound processing time are unchanged.
