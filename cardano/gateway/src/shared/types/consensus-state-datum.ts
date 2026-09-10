@@ -15,7 +15,7 @@ export type ConsensusStateDatum = {
 
 type LucidModule = typeof import('@lucid-evolution/lucid');
 
-export function consensusStateDatumSchema({ Data }: LucidModule) {
+function consensusStateDatumSchema({ Data }: LucidModule) {
   return Data.Object({
     clientToken: Data.Object({ policyId: Data.Bytes(), name: Data.Bytes() }),
     height: Data.Object({ revisionNumber: Data.Integer(), revisionHeight: Data.Integer() }),
@@ -49,7 +49,7 @@ export function decodeConsensusStateDatum(encoded: string, Lucid: LucidModule): 
   return Lucid.Data.from(encoded, consensusStateDatumSchema(Lucid) as never) as ConsensusStateDatum;
 }
 
-export function latestConsensusStateDatum(client: ClientDatum): ConsensusStateDatum {
+function latestConsensusStateDatum(client: ClientDatum): ConsensusStateDatum {
   const height = client.state.clientState.latestHeight;
   const consensusState = getHeightMapValue(client.state.consensusStates, height);
   const processedTime = getHeightMapValue(client.state.processedTimes, height);
