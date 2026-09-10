@@ -79,6 +79,25 @@ payload shape is materially larger than a normal update.
 
 ## Experimental multi-transaction update protocol
 
+The Gateway builds the transactions, Hermes signs and submits them, and Aiken
+verifies the signatures on-chain. Each batch advances one temporary session
+UTxO. The client itself changes only at finalization.
+
+```text
+Initialize → Verify batches of ≤6 → Complete
+                                      │ confirmed and indexed
+                                      ▼
+                         Build final tx with current inputs
+                                      │
+                                      ▼
+                         Update client + burn session NFT
+```
+
+For 45 validators, an adjacent update takes 10 transactions: initialization,
+eight batches and finalization. Skipping heights adds a trusted-validator pass.
+Staged freezing and recovery are not implemented yet, and there is no completed
+live 200- or 256-validator benchmark.
+
 Fresh deployments use a separate Tendermint client validator that does not
 accept the old single-transaction update redeemer. Existing deployments without
 the session validators keep the old behavior. The staged protocol is
@@ -93,15 +112,12 @@ commit signatures. Each transaction handles at most six validators. Phase-one
 init and advance verification ends when its last transaction writes a Complete
 session that has been confirmed and indexed.
 
-The Gateway builds the remaining phase-one transactions as one
-dependency-ordered chain. Hermes signs and submits them in order, waiting for
-node acceptance of intermediate transactions and ledger confirmation of the
-Complete session. Cardano may include dependent transactions in the same block,
-but correctness does not depend on that. The `rebuild_after_submission` marker
-then makes Hermes rebuild the original update. The Gateway reads the confirmed
-Complete session and fresh client and HostState inputs, applies a normal narrow
-validity window, and returns a separate final-only transaction. That transaction
-burns the session NFT and updates the client and HostState atomically.
+Hermes signs each phase before submitting its transactions in order, waiting
+for node acceptance of intermediate transactions. These may land in the same
+block. After the Complete session is confirmed and indexed,
+`rebuild_after_submission` makes Hermes request the original update again. The
+Gateway uses fresh client and HostState inputs and a narrow validity window for
+the final transaction, which updates both atomically and burns the session NFT.
 
 The session datum is the source of progress after a restart. The Gateway checks
 live UTxOs through Ogmios, loads their datums through the indexer, resumes at the
