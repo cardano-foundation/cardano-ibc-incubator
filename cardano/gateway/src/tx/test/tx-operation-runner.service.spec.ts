@@ -1,5 +1,3 @@
-import { TRANSACTION_SET_COLLATERAL } from '~@/config/constant.config';
-
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
 
 describe('TxOperationRunnerService', () => {
@@ -114,7 +112,8 @@ describe('TxOperationRunnerService', () => {
     expect(lucidService.endWalletSelectionScope).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledWith({
       localUPLCEval: false,
-      setCollateral: TRANSACTION_SET_COLLATERAL,
+      // Keep normal completion below Hermes's default 10 ADA collateral cap.
+      setCollateral: 5_000_000n,
     });
     expect(ibcTreePendingUpdatesService.register).toHaveBeenCalledWith(
       'txhash-create-client',
@@ -412,11 +411,11 @@ describe('TxOperationRunnerService', () => {
     expect(result.links.map((link) => link.unsignedTxHash)).toEqual(['first-hash', 'second-hash']);
     expect(firstBuilder.chain).toHaveBeenCalledWith({
       localUPLCEval: false,
-      setCollateral: TRANSACTION_SET_COLLATERAL,
+      setCollateral: 5_000_000n,
     });
     expect(secondBuilder.chain).toHaveBeenCalledWith({
       localUPLCEval: false,
-      setCollateral: TRANSACTION_SET_COLLATERAL,
+      setCollateral: 5_000_000n,
       presetWalletInputs: firstWalletInputs,
     });
     expect(walletContextService.selectWalletFromAddressWithRetry).toHaveBeenCalledTimes(1);
