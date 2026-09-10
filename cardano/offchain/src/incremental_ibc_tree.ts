@@ -44,6 +44,42 @@ function innerHash(left: string, right: string): string {
   ).toString("hex");
 }
 
+function leafHash(digest: Buffer, value: string): string {
+  return value === ""
+    ? EMPTY_HASH
+    : hash(Buffer.from([0]), digest, hash(Buffer.from(value, "hex")))
+      .toString("hex");
+}
+
+/** Pure membership/exclusion check; malformed inputs throw, mismatch is false. */
+export function verifyIbcTreeWitness(
+  key: string,
+  valueHex: string,
+  siblings: readonly string[],
+  expectedRoot: string,
+): boolean {
+  const digest = keyDigest(key);
+  const value = normalizeValue(valueHex);
+  const root = normalizeValue(expectedRoot);
+  if (root.length !== 64) throw new Error("IBC tree root must be 32-byte hex");
+  if (!Array.isArray(siblings) || siblings.length !== DEPTH) {
+    throw new Error("IBC tree witness must have exactly 64 siblings");
+  }
+  let index = digest.readBigUInt64BE();
+  let current = leafHash(digest, value);
+  for (const encoded of siblings) {
+    const sibling = normalizeValue(encoded);
+    if (sibling.length !== 64) {
+      throw new Error("IBC tree sibling must be 32-byte hex");
+    }
+    current = (index & 1n) === 0n
+      ? innerHash(current, sibling)
+      : innerHash(sibling, current);
+    index >>= 1n;
+  }
+  return current === root;
+}
+
 /**
  * Persistent, incremental version of DeploymentIbcTree's SHA-256 depth-64 tree.
  * Node coordinates are fixed-width hexadecimal TEXT, avoiding SQLite's signed
@@ -56,7 +92,9 @@ function innerHash(left: string, right: string): string {
  * transaction. Nothing is cached, so external rollback is immediately visible.
  * With concurrent database writers, the caller must wrap related root/value/
  * witness reads in one transaction to obtain a consistent SQLite snapshot.
- * The database is trusted local storage, not an authenticated input itself.
+ * assertIntegrity() checks this disposable cache's internal consistency in a
+ * read-only snapshot. It does not authenticate its root against chain state;
+ * callers must do that separately, and recheck after external database writes.
  */
 export class IncrementalIbcTree {
   private readonly leafAtPath: StatementSync;
@@ -129,6 +167,29 @@ export class IncrementalIbcTree {
     ]);
   }
 
+  /**
+   * Verify every leaf and every stored node, including the root. Ordered SQLite
+   * index scans use constant JS memory and O(stored nodes) hashing; this belongs
+   * at database open/recovery, not on the warm set() path. No cache is repaired
+   * from potentially corrupted leaves. The caller's transaction is preserved.
+   */
+  assertIntegrity(): void {
+    this.db.exec("SAVEPOINT ibc_tree_integrity");
+    try {
+      this.checkIntegrity();
+      this.db.exec("RELEASE ibc_tree_integrity");
+    } catch (cause) {
+      this.db.exec(
+        "ROLLBACK TO ibc_tree_integrity; RELEASE ibc_tree_integrity",
+      );
+      throw new Error(
+        "IBC tree cache integrity check failed; rebuild the disposable cache " +
+          "from authenticated chain history before using it",
+        { cause },
+      );
+    }
+  }
+
   /** Leaf-to-root siblings, including a valid exclusion witness for absent keys. */
   getSiblings(key: string): string[] {
     let index = keyDigest(key).readBigUInt64BE();
@@ -158,10 +219,7 @@ export class IncrementalIbcTree {
             value,
           );}
 
-        let current = value === ""
-          ? EMPTY_HASH
-          : hash(Buffer.from([0]), digest, hash(Buffer.from(value, "hex")))
-            .toString("hex");
+        let current = leafHash(digest, value);
         this.storeNode(0, index, current);
         for (let height = 0; height < DEPTH; height++) {
           const sibling = this.nodeHash(height, index ^ 1n);
@@ -185,6 +243,84 @@ export class IncrementalIbcTree {
       throw new Error("IBC tree 64-bit path collision");
     }
     return row?.value as string | undefined;
+  }
+
+  private checkIntegrity(): void {
+    // Comparing the complete ordered node sequence, rather than only checking
+    // each existing parent's children, also detects missing parents and orphans.
+    const nodes = this.db.prepare(
+      "SELECT height, path, hash FROM ibc_tree_nodes ORDER BY height, path",
+    ).iterate();
+    try {
+      let next = nodes.next();
+      const expectNode = (height: number, path: string, digest: string) => {
+        if (
+          next.done || next.value.height !== height ||
+          next.value.path !== path || next.value.hash !== digest
+        ) {
+          throw new Error(
+            `Inconsistent tree node at height ${height}, ${path}`,
+          );
+        }
+        next = nodes.next();
+      };
+
+      for (
+        const leaf of this.db.prepare(
+          "SELECT key, path, value FROM ibc_tree_leaves ORDER BY path",
+        ).iterate()
+      ) {
+        if (!(leaf.key instanceof Uint8Array)) {
+          throw new Error("Invalid tree leaf key encoding");
+        }
+        const rawKey = Buffer.from(leaf.key);
+        const key = rawKey.toString("utf8");
+        if (!Buffer.from(key, "utf8").equals(rawKey)) {
+          throw new Error("Invalid tree leaf UTF-8");
+        }
+        const digest = keyDigest(key);
+        const path = pathHex(digest.readBigUInt64BE());
+        if (leaf.path !== path) {
+          throw new Error("Malformed or colliding tree leaf path");
+        }
+        const value = normalizeValue(leaf.value as string);
+        if (value === "" || value !== leaf.value) {
+          throw new Error("Invalid tree leaf value encoding");
+        }
+        expectNode(0, path, leafHash(digest, value));
+      }
+
+      const children = this.db.prepare(
+        "SELECT path, hash FROM ibc_tree_nodes WHERE height = ? ORDER BY path",
+      );
+      for (let height = 1; height <= DEPTH; height++) {
+        let parent: bigint | undefined;
+        let left = EMPTY_HASH;
+        let right = EMPTY_HASH;
+        for (const child of children.iterate(height - 1)) {
+          // The preceding level has already matched the entire expected
+          // sequence, so these child coordinates and digests are validated.
+          const index = BigInt(`0x${child.path}`);
+          const childParent = index >> 1n;
+          if (parent !== childParent) {
+            if (parent !== undefined) {
+              expectNode(height, pathHex(parent), innerHash(left, right));
+            }
+            parent = childParent;
+            left = EMPTY_HASH;
+            right = EMPTY_HASH;
+          }
+          if ((index & 1n) === 0n) left = child.hash as string;
+          else right = child.hash as string;
+        }
+        if (parent !== undefined) {
+          expectNode(height, pathHex(parent), innerHash(left, right));
+        }
+      }
+      if (!next.done) throw new Error("Unexpected extra tree node");
+    } finally {
+      nodes.return?.();
+    }
   }
 
   private nodeHash(height: number, index: bigint): string {

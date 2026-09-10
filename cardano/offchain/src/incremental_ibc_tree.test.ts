@@ -8,7 +8,10 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { DeploymentIbcTree } from "./deployment.ts";
-import { IncrementalIbcTree } from "./incremental_ibc_tree.ts";
+import {
+  IncrementalIbcTree,
+  verifyIbcTreeWitness,
+} from "./incremental_ibc_tree.ts";
 
 const EMPTY_HASH = "00".repeat(32);
 const VECTOR_KEY = "internal/consensus-history/v1/" +
@@ -46,10 +49,98 @@ function rootFromWitness(
   return current.toString("hex");
 }
 
+Deno.test("tree witness verifier authenticates inclusion exclusion and the shared vector", () => {
+  const siblings = Array(64).fill(EMPTY_HASH);
+  assert(verifyIbcTreeWitness(VECTOR_KEY, VECTOR_VALUE, siblings, VECTOR_ROOT));
+  assert(verifyIbcTreeWitness("absent", "", siblings, EMPTY_HASH));
+  assert(
+    verifyIbcTreeWitness(
+      VECTOR_KEY,
+      VECTOR_VALUE.toUpperCase(),
+      siblings,
+      VECTOR_ROOT.toUpperCase(),
+    ),
+  );
+  assert(
+    !verifyIbcTreeWitness("other-key", VECTOR_VALUE, siblings, VECTOR_ROOT),
+  );
+  assert(!verifyIbcTreeWitness(VECTOR_KEY, "ff", siblings, VECTOR_ROOT));
+  assert(!verifyIbcTreeWitness(VECTOR_KEY, "", siblings, VECTOR_ROOT));
+  assert(!verifyIbcTreeWitness(VECTOR_KEY, VECTOR_VALUE, siblings, EMPTY_HASH));
+  const changed = [...siblings];
+  changed[0] = "11".repeat(32);
+  assert(!verifyIbcTreeWitness(VECTOR_KEY, VECTOR_VALUE, changed, VECTOR_ROOT));
+
+  const db = new DatabaseSync(":memory:");
+  try {
+    const tree = new IncrementalIbcTree(db);
+    tree.set(VECTOR_KEY, VECTOR_VALUE);
+    tree.set("second", "ff");
+    assert(
+      verifyIbcTreeWitness(
+        VECTOR_KEY,
+        VECTOR_VALUE,
+        tree.getSiblings(VECTOR_KEY),
+        tree.getRoot(),
+      ),
+    );
+    assert(
+      verifyIbcTreeWitness(
+        "absent",
+        "",
+        tree.getSiblings("absent"),
+        tree.getRoot(),
+      ),
+    );
+    assert(
+      !verifyIbcTreeWitness(VECTOR_KEY, VECTOR_VALUE, siblings, tree.getRoot()),
+    );
+  } finally {
+    db.close();
+  }
+});
+
+Deno.test("tree witness verifier rejects malformed inputs", () => {
+  const siblings = Array(64).fill(EMPTY_HASH);
+  for (const size of [0, 63, 65]) {
+    assertThrows(
+      () =>
+        verifyIbcTreeWitness(
+          VECTOR_KEY,
+          VECTOR_VALUE,
+          Array(size).fill(EMPTY_HASH),
+          VECTOR_ROOT,
+        ),
+      Error,
+      "exactly 64 siblings",
+    );
+  }
+  for (const invalid of ["", "00", "00".repeat(33), "g0".repeat(32)]) {
+    assertThrows(() =>
+      verifyIbcTreeWitness(VECTOR_KEY, VECTOR_VALUE, siblings, invalid)
+    );
+    assertThrows(() =>
+      verifyIbcTreeWitness(
+        VECTOR_KEY,
+        VECTOR_VALUE,
+        [invalid, ...siblings.slice(1)],
+        VECTOR_ROOT,
+      )
+    );
+  }
+  assertThrows(() =>
+    verifyIbcTreeWitness(VECTOR_KEY, "f", siblings, VECTOR_ROOT)
+  );
+  assertThrows(() =>
+    verifyIbcTreeWitness("\ud800", VECTOR_VALUE, siblings, VECTOR_ROOT)
+  );
+});
+
 Deno.test("incremental tree matches the shared Aiken commitment vector", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const tree = new IncrementalIbcTree(db);
+    tree.assertIntegrity();
     assertEquals(tree.getRoot(), EMPTY_HASH);
     assertEquals(tree.get(VECTOR_KEY), undefined);
     assertEquals(tree.entries(), []);
@@ -66,6 +157,7 @@ Deno.test("incremental tree matches the shared Aiken commitment vector", () => {
       rootFromWitness("absent", "", tree.getSiblings("absent")),
       VECTOR_ROOT,
     );
+    tree.assertIntegrity();
   } finally {
     db.close();
   }
@@ -117,6 +209,7 @@ Deno.test("incremental tree matches rebuild roots and siblings through determini
       }
     }
     assertEquals(new Map(tree.entries()), expected);
+    tree.assertIntegrity();
     for (const key of expected.keys()) tree.set(key, "");
     assertEquals(tree.getRoot(), EMPTY_HASH);
     assertEquals(tree.entries(), []);
@@ -126,6 +219,7 @@ Deno.test("incremental tree matches rebuild roots and siblings through determini
     );
     tree.set("already-absent", "");
     assertEquals(tree.getRoot(), EMPTY_HASH);
+    tree.assertIntegrity();
   } finally {
     db.close();
   }
@@ -173,6 +267,7 @@ Deno.test("incremental tree fails closed on path collisions including exclusion 
     assertThrows(() => tree.getSiblings("target"), Error, "path collision");
     assertEquals(tree.getRoot(), root);
     assertEquals(tree.entries(), [["other-full-key", "01"]]);
+    assertThrows(() => tree.assertIntegrity(), Error, "rebuild");
     assertThrows(() =>
       db.prepare(
         "INSERT INTO ibc_tree_leaves (key, path, value) VALUES (?, ?, ?)",
@@ -203,6 +298,7 @@ Deno.test("incremental tree persists roots leaves and witnesses across database 
     const second = new DatabaseSync(path);
     try {
       const tree = new IncrementalIbcTree(second);
+      tree.assertIntegrity();
       assertEquals(tree.getRoot(), root);
       assertEquals(tree.get(VECTOR_KEY), VECTOR_VALUE);
       assertEquals(tree.get("second"), "42");
@@ -230,7 +326,10 @@ Deno.test("incremental tree respects caller rollback and commit without cached s
     assert(db.isTransaction);
     assertEquals(secondView.getRoot(), tree.getRoot());
     assertNotEquals(tree.getRoot(), VECTOR_ROOT);
+    tree.assertIntegrity();
+    assert(db.isTransaction);
     db.exec("ROLLBACK");
+    tree.assertIntegrity();
     assertEquals(tree.getRoot(), VECTOR_ROOT);
     assertEquals(secondView.getRoot(), VECTOR_ROOT);
     assertEquals(tree.get(VECTOR_KEY), VECTOR_VALUE);
@@ -284,6 +383,116 @@ Deno.test("incremental tree rolls back partial SQL failures without aborting cal
   }
 });
 
+Deno.test("incremental tree integrity rejects damaged leaves and missing extra or damaged nodes", async (t) => {
+  const cases: Array<[string, (db: DatabaseSync) => void]> = [
+    ["changed leaf value", (db) => {
+      db.exec("UPDATE ibc_tree_leaves SET value = 'ff'");
+    }],
+    ["missing leaf", (db) => {
+      db.exec("DELETE FROM ibc_tree_leaves");
+    }],
+    ["incorrect leaf path", (db) => {
+      db.exec("UPDATE ibc_tree_leaves SET path = 'ffffffffffffffff'");
+    }],
+    ["invalid UTF-8 key", (db) => {
+      db.prepare("UPDATE ibc_tree_leaves SET key = ?").run(
+        new Uint8Array([0xff]),
+      );
+    }],
+    ["malformed leaf hex", (db) => {
+      db.exec("PRAGMA ignore_check_constraints = ON");
+      db.exec("UPDATE ibc_tree_leaves SET value = 'aZ'");
+    }],
+    ["noncanonical leaf hex", (db) => {
+      db.exec("PRAGMA ignore_check_constraints = ON");
+      db.exec("UPDATE ibc_tree_leaves SET value = 'AB'");
+    }],
+    ["damaged leaf node", (db) => {
+      db.prepare("UPDATE ibc_tree_nodes SET hash = ? WHERE height = 0")
+        .run("11".repeat(32));
+    }],
+    ["damaged internal node", (db) => {
+      db.prepare("UPDATE ibc_tree_nodes SET hash = ? WHERE height = 12")
+        .run("11".repeat(32));
+    }],
+    ["missing internal node", (db) => {
+      db.exec("DELETE FROM ibc_tree_nodes WHERE height = 12");
+    }],
+    ["missing leaf node", (db) => {
+      db.exec("DELETE FROM ibc_tree_nodes WHERE height = 0");
+    }],
+    ["missing root", (db) => {
+      db.exec("DELETE FROM ibc_tree_nodes WHERE height = 64");
+    }],
+    ["damaged root", (db) => {
+      db.prepare("UPDATE ibc_tree_nodes SET hash = ? WHERE height = 64")
+        .run("11".repeat(32));
+    }],
+    ["extra root coordinate", (db) => {
+      db.prepare("INSERT INTO ibc_tree_nodes VALUES (64, ?, ?)").run(
+        "0000000000000001",
+        "11".repeat(32),
+      );
+    }],
+    ["extra leaf node", (db) => {
+      db.prepare("INSERT INTO ibc_tree_nodes VALUES (0, ?, ?)").run(
+        "0000000000000000",
+        "11".repeat(32),
+      );
+    }],
+    ["out-of-range node height", (db) => {
+      db.exec("PRAGMA ignore_check_constraints = ON");
+      db.prepare("INSERT INTO ibc_tree_nodes VALUES (65, ?, ?)").run(
+        "0000000000000000",
+        "11".repeat(32),
+      );
+    }],
+  ];
+  for (const [name, corrupt] of cases) {
+    await t.step(name, () => {
+      const db = new DatabaseSync(":memory:");
+      try {
+        const tree = new IncrementalIbcTree(db);
+        tree.set(VECTOR_KEY, VECTOR_VALUE);
+        db.exec("BEGIN");
+        corrupt(db);
+        const before = db.prepare("SELECT total_changes() AS n").get()?.n;
+        assertThrows(
+          () => tree.assertIntegrity(),
+          Error,
+          "rebuild the disposable cache from authenticated chain history",
+        );
+        assert(db.isTransaction);
+        assertEquals(
+          db.prepare("SELECT total_changes() AS n").get()?.n,
+          before,
+        );
+        db.exec("ROLLBACK");
+        tree.assertIntegrity();
+        assertEquals(tree.getRoot(), VECTOR_ROOT);
+      } finally {
+        db.close();
+      }
+    });
+  }
+});
+
+Deno.test("incremental tree integrity does not authenticate a consistently substituted cache", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const tree = new IncrementalIbcTree(db);
+    tree.set(VECTOR_KEY, VECTOR_VALUE);
+    const authenticatedRoot = tree.getRoot();
+    tree.set(VECTOR_KEY, "ff");
+    // Integrity establishes internal consistency only. The caller must still
+    // compare the root/proofs against the current authenticated on-chain state.
+    tree.assertIntegrity();
+    assertNotEquals(tree.getRoot(), authenticatedRoot);
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("incremental tree updates only one path with 10,000 persisted leaves", () => {
   const db = new DatabaseSync(":memory:");
   try {
@@ -296,6 +505,13 @@ Deno.test("incremental tree updates only one path with 10,000 persisted leaves",
     assert(db.isTransaction);
     db.exec("COMMIT");
     assertEquals(tree.entries().length, 10_000);
+    const integrityStarted = performance.now();
+    tree.assertIntegrity();
+    console.log(
+      `10,000-leaf integrity scan: ${
+        (performance.now() - integrityStarted).toFixed(1)
+      }ms`,
+    );
     const changes = () =>
       db.prepare("SELECT total_changes() AS n").get()?.n as number;
     const before = changes();
