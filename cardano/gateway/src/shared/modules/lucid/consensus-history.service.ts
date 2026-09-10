@@ -13,7 +13,7 @@ import { ConsensusHistoryWitness, ConsensusStateDatum } from '../../types/consen
 import { Height } from '../../types/height';
 import { GrpcFailedPreconditionException, GrpcNotFoundException } from '../../../exception/grpc_exceptions';
 
-export function fromHistoryRecord(record: ConsensusHistoryRecord): ConsensusStateDatum {
+function fromHistoryRecord(record: ConsensusHistoryRecord): ConsensusStateDatum {
   return {
     ...record,
     consensusState: {
