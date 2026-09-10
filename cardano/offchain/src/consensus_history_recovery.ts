@@ -28,7 +28,10 @@ import {
   encodeConsensusHistoryRecord,
   recordFromConstr,
 } from "./consensus_history_commitment.ts";
-import { IncrementalIbcTree } from "./incremental_ibc_tree.ts";
+import {
+  IncrementalIbcTree,
+  verifyIbcTreeWitness,
+} from "./incremental_ibc_tree.ts";
 import { publicClientCommitmentValues } from "./plutus_serialise.ts";
 
 // Decoder for consensus_history_prototype.State, not the production HostState
@@ -40,19 +43,31 @@ export interface HistoryDeployment {
   readonly bootstrap: { readonly txHash: string; readonly outputIndex: number };
 }
 
-export interface HistoryTransaction {
+export interface HistoryPoint {
   readonly txHash: string;
   readonly blockHash: string;
   readonly blockHeight: number;
   readonly slot: number;
   readonly transactionIndex: number;
+}
+
+export interface HistoryTransaction extends HistoryPoint {
   readonly cbor: string;
 }
+
+/** The saved point is no longer on the source's canonical chain. */
+export class HistoryIntersectionError extends Error {}
+
+/** A pinned source snapshot rolled back while it was being consumed. */
+export class HistorySnapshotChangedError extends Error {}
 
 export interface HistorySource {
   // Canonical, ordered, full transactions, including spent state outputs. The
   // source must preserve history independently of this disposable database.
-  transactions(): AsyncIterable<HistoryTransaction>;
+  // Resume INCLUSIVELY at an independently checked canonical point. An orphaned
+  // point throws HistoryIntersectionError before yielding any transactions.
+  // A lagging source must fail without declaring the saved point orphaned.
+  transactions(after?: HistoryPoint): AsyncIterable<HistoryTransaction>;
   // Read the unique live NFT output independently of the rebuilt database.
   currentState(): Promise<UTxO>;
 }
@@ -243,6 +258,8 @@ export class ConsensusHistoryRecovery {
   #ready = false;
   #recovering = false;
   #closed = false;
+  #checkedDataVersion: number | undefined;
+  #publishedRoot: string | undefined;
 
   constructor(path: string, deployment: HistoryDeployment) {
     this.#deployment = structuredClone(deployment);
@@ -303,90 +320,152 @@ export class ConsensusHistoryRecovery {
     }
   }
 
-  async recover(source: HistorySource): Promise<{
+  async recover(
+    source: HistorySource,
+    options: { maxPasses?: number } = {},
+  ): Promise<{
     root: string;
     transactions: number;
     milliseconds: number;
   }> {
     this.open();
     if (this.#recovering) throw new Error("history recovery already running");
+    const maxPasses = natural(options.maxPasses ?? 8, "recovery pass limit");
+    if (maxPasses < 1) throw new Error("recovery pass limit must be positive");
     this.#recovering = true;
     this.#ready = false;
     const started = performance.now();
-    let activeTransaction = false;
     try {
-      const anchor = structuredClone(await source.currentState());
-      this.checkOutput(anchor);
-      this.#db.exec("BEGIN IMMEDIATE");
-      activeTransaction = true;
-      let sequence = 0;
-      let previous: HistoryTransaction | undefined;
+      this.atomic(() => this.checkCache());
       let replayed = 0;
-      for await (const evidence of source.transactions()) {
-        if (
-          previous &&
-          (evidence.blockHeight < previous.blockHeight ||
-            evidence.slot < previous.slot ||
-            (evidence.blockHeight === previous.blockHeight &&
-              (evidence.blockHash !== previous.blockHash ||
-                evidence.slot !== previous.slot ||
-                evidence.transactionIndex <= previous.transactionIndex)))
-        ) throw new Error("historical transactions are not in canonical order");
-        const { tx, rawOutputs } = transaction(evidence);
-        previous = evidence;
-        const candidates = outputs(tx, evidence, this.#unit, rawOutputs);
-        if (candidates.length === 0) {
-          // Unrelated history is harmless. Spending the live state without a
-          // continuation is not a supported transition for this prototype.
-          const current = this.row(sequence);
-          if (current && this.spends(tx, current)) {
-            throw new Error(
-              "unsupported history transition without state output",
-            );
+      let passes = 0;
+      while (passes < maxPasses) {
+        passes++;
+        const checkpoint = this.tip();
+        const point = checkpoint && this.point(checkpoint);
+        let sequence = checkpoint ? checkpoint.sequence - 1 : 0;
+        let previous: HistoryTransaction | undefined;
+        try {
+          for await (const evidence of source.transactions(point)) {
+            if (
+              point && !previous &&
+              (evidence.txHash !== point.txHash ||
+                evidence.blockHash !== point.blockHash ||
+                evidence.blockHeight !== point.blockHeight ||
+                evidence.slot !== point.slot ||
+                evidence.transactionIndex !== point.transactionIndex)
+            ) {
+              throw new Error(
+                "history source did not resume at the saved point",
+              );
+            }
+            if (
+              previous &&
+              (evidence.blockHeight < previous.blockHeight ||
+                evidence.slot < previous.slot ||
+                (evidence.blockHeight === previous.blockHeight &&
+                  (evidence.blockHash !== previous.blockHash ||
+                    evidence.slot !== previous.slot ||
+                    evidence.transactionIndex <= previous.transactionIndex)))
+            ) {
+              throw new Error(
+                "historical transactions are not in canonical order",
+              );
+            }
+            const { tx, rawOutputs } = transaction(evidence);
+            const resuming = point !== undefined && previous === undefined;
+            previous = evidence;
+            const candidates = outputs(tx, evidence, this.#unit, rawOutputs);
+            if (candidates.length === 0) {
+              const current = this.row(sequence);
+              if (resuming || (current && this.spends(tx, current))) {
+                throw new Error(
+                  "unsupported history transition without state output",
+                );
+              }
+              continue;
+            }
+            if (candidates.length !== 1) {
+              throw new Error("ambiguous historical state NFT outputs");
+            }
+            const output = candidates[0];
+            this.checkOutput(output);
+            sequence++;
+            // Commit the tree, exact output and undo together. These durable
+            // checkpoints are not permission to serve proofs: publication still
+            // requires a fully consumed canonical source and a live root match.
+            this.atomic(() => {
+              this.checkCache();
+              if (resuming) {
+                this.matchAnchor(output, this.row(sequence)!);
+              } else {
+                if ((this.tip()?.sequence ?? 0) !== sequence - 1) {
+                  throw new Error(
+                    "history database changed during recovery, retry",
+                  );
+                }
+                this.apply(sequence, evidence, tx, output);
+                replayed++;
+              }
+            });
           }
+        } catch (error) {
+          if (
+            error instanceof HistoryIntersectionError && checkpoint && !previous
+          ) {
+            this.atomic(() => {
+              this.checkCache();
+              const current = this.tip();
+              if (current?.tx_hash !== checkpoint.tx_hash) {
+                throw new Error(
+                  "history database changed during recovery, retry",
+                );
+              }
+              this.rewind(checkpoint.sequence - 1);
+              this.checkCache();
+            });
+            // Each lost intersection removes one saved point. Deep rollbacks
+            // also obey the pass limit and resume on the next recovery call.
+            continue;
+          }
+          if (error instanceof HistorySnapshotChangedError) {
+            continue;
+          }
+          throw error;
+        }
+        if (!previous) {
+          throw new Error(
+            "history is missing the bootstrap or saved transaction",
+          );
+        }
+        const tip = this.tip();
+        if (!tip) {
+          throw new Error("history is missing the bootstrap transaction");
+        }
+        const anchor = structuredClone(await source.currentState());
+        this.checkOutput(anchor);
+        if (ref(anchor) !== `${tip.tx_hash}#${tip.output_index}`) continue;
+        this.matchAnchor(anchor, tip);
+        const fresh = structuredClone(await source.currentState());
+        this.checkOutput(fresh);
+        if (ref(fresh) !== ref(anchor) || fresh.datum !== anchor.datum) {
           continue;
         }
-        if (candidates.length !== 1) {
-          throw new Error("ambiguous historical state NFT outputs");
-        }
-        const output = candidates[0];
-        this.checkOutput(output);
-        sequence++;
-        const cached = this.row(sequence);
-        if (
-          cached?.tx_hash === evidence.txHash &&
-          cached.output_index === output.outputIndex &&
-          cached.block_hash === evidence.blockHash &&
-          cached.block_height === evidence.blockHeight &&
-          cached.slot === evidence.slot &&
-          cached.transaction_index === evidence.transactionIndex &&
-          cached.datum === output.datum
-        ) continue;
-        this.rewind(sequence - 1);
-        this.apply(sequence, evidence, tx, output);
-        replayed++;
+        this.atomic(() => {
+          this.checkCache();
+          this.matchAnchor(fresh, this.tip()!);
+          this.#publishedRoot = this.#tree.getRoot();
+        });
+        this.#ready = true;
+        return {
+          root: this.#publishedRoot!,
+          transactions: replayed,
+          milliseconds: Math.round(performance.now() - started),
+        };
       }
-      this.rewind(sequence);
-      const tip = this.row(sequence);
-      if (!tip) throw new Error("history is missing the bootstrap transaction");
-      this.matchAnchor(anchor, tip);
-      const fresh = structuredClone(await source.currentState());
-      this.checkOutput(fresh);
-      if (ref(fresh) !== ref(anchor) || fresh.datum !== anchor.datum) {
-        throw new Error("live state changed during history recovery, retry");
-      }
-      this.matchAnchor(fresh, tip);
-      this.#db.exec("COMMIT");
-      activeTransaction = false;
-      this.#ready = true;
-      return {
-        root: this.#tree.getRoot(),
-        transactions: replayed,
-        milliseconds: Math.round(performance.now() - started),
-      };
-    } catch (error) {
-      if (activeTransaction) this.#db.exec("ROLLBACK");
-      throw error;
+      throw new Error(
+        "history has not caught up to the live state, progress saved; retry",
+      );
     } finally {
       this.#recovering = false;
     }
@@ -405,10 +484,19 @@ export class ConsensusHistoryRecovery {
       token.name !== this.#deployment.clientToken.name
     ) throw new Error("witness requested for a different client");
     this.#db.exec("BEGIN");
+    let checkingCache = true;
     try {
+      this.checkCache();
+      if (this.#tree.getRoot() !== this.#publishedRoot) {
+        throw new Error(
+          "history changed since live state validation, recover again",
+        );
+      }
+      checkingCache = false;
       const key = consensusHistoryKey(token, height);
       const value = this.#tree.get(key);
       if (value === undefined) throw new Error("historical record not found");
+      checkingCache = true;
       const witness = {
         root: this.#tree.getRoot(),
         key,
@@ -416,9 +504,22 @@ export class ConsensusHistoryRecovery {
         record: decodeConsensusHistoryRecord(value),
         siblings: this.#tree.getSiblings(key),
       };
+      if (
+        consensusHistoryKey(
+            witness.record.clientToken,
+            witness.record.height,
+          ) !== key ||
+        encodeConsensusHistoryRecord(witness.record) !== value ||
+        !verifyIbcTreeWitness(key, value, witness.siblings, witness.root)
+      ) {
+        throw new Error(
+          "history cache is inconsistent, rebuild from chain history",
+        );
+      }
       this.#db.exec("COMMIT");
       return witness;
     } catch (error) {
+      if (checkingCache) this.#ready = false;
       this.#db.exec("ROLLBACK");
       throw error;
     }
@@ -441,6 +542,55 @@ export class ConsensusHistoryRecovery {
     return this.#db.prepare(
       "SELECT * FROM history_journal WHERE sequence = ?",
     ).get(sequence) as JournalRow | undefined;
+  }
+
+  private tip(): JournalRow | undefined {
+    return this.#db.prepare(
+      "SELECT * FROM history_journal ORDER BY sequence DESC LIMIT 1",
+    ).get() as JournalRow | undefined;
+  }
+
+  private point(row: JournalRow): HistoryPoint {
+    return {
+      txHash: row.tx_hash,
+      blockHash: row.block_hash,
+      blockHeight: row.block_height,
+      slot: row.slot,
+      transactionIndex: row.transaction_index,
+    };
+  }
+
+  private atomic<T>(operation: () => T): T {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = operation();
+      this.#db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private checkCache(): void {
+    // Own commits leave data_version unchanged. Audit once per connection and
+    // again after another connection writes, not once per header. Call inside a
+    // transaction so the audit and subsequent reads use one SQLite snapshot.
+    const version = this.#db.prepare("PRAGMA data_version").get()!
+      .data_version as number;
+    if (version !== this.#checkedDataVersion) {
+      this.#tree.assertIntegrity();
+      this.#checkedDataVersion = version;
+    }
+    const tip = this.tip();
+    const expected = tip
+      ? state(tip.datum, this.#deployment).root
+      : "00".repeat(32);
+    if (this.#tree.getRoot() !== expected) {
+      throw new Error(
+        "history cache checkpoint is inconsistent, rebuild from chain history",
+      );
+    }
   }
 
   private checkOutput(output: UTxO): void {

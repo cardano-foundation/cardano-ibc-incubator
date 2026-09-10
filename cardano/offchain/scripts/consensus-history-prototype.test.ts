@@ -24,6 +24,7 @@ import {
 import {
   ConsensusHistoryRecovery,
   type HistoryDeployment,
+  HistoryIntersectionError,
   type HistorySource,
   type HistoryTransaction,
 } from "../src/consensus_history_recovery.ts";
@@ -454,8 +455,18 @@ async function setup(
     source(): HistorySource {
       const retained = structuredClone(transactions);
       return {
-        async *transactions() {
-          for (const transaction of retained) yield transaction;
+        async *transactions(after) {
+          const start = after
+            ? retained.findIndex((tx) =>
+              tx.txHash === after.txHash && tx.blockHash === after.blockHash &&
+              tx.blockHeight === after.blockHeight && tx.slot === after.slot &&
+              tx.transactionIndex === after.transactionIndex
+            )
+            : 0;
+          if (start < 0) {
+            throw new HistoryIntersectionError("simulated source rollback");
+          }
+          for (const transaction of retained.slice(start)) yield transaction;
         },
         currentState: () => lucid.utxoByUnit(UNIT),
       };
