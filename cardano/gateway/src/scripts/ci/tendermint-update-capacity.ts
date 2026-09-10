@@ -349,14 +349,15 @@ async function encodeRepresentativeDatums(
   // Start with one unexpired trusted state and retain it when prepending the
   // target state. This is the smallest valid no-pruning UpdateClient output.
   const states = outputConsensusStates(header, trustedConsensusState);
-  const txValidFromNs =
-    ((header.signedHeader.header.time - CLIENT_MAX_CLOCK_DRIFT_NS) / 1_000_000n + 1_000n) * 1_000_000n;
+  // Match the upper bound in spending_client_capacity.test.ak.
+  const txValidToNs =
+    ((trustedConsensusState.timestamp + 1_209_600_000_000_000n) / 1_000_000n - 1_000n) * 1_000_000n;
   const processedTimes = new Map<Height, bigint>([
-    [states[0][0], txValidFromNs],
+    [states[0][0], txValidToNs],
     [states[1][0], 0n],
   ]);
   const processedHeights = new Map<Height, bigint>([
-    [states[0][0], txValidFromNs / 4_000_000_000n],
+    [states[0][0], txValidToNs / 4_000_000_000n],
     [states[1][0], 0n],
   ]);
   const clientDatum: ClientDatum = {
@@ -389,7 +390,7 @@ async function encodeRepresentativeDatums(
       next_connection_sequence: 1n,
       next_channel_sequence: 1n,
       bound_port: [],
-      last_update_time: txValidFromNs / 1_000_000n,
+      last_update_time: txValidToNs / 1_000_000n,
     },
     nft_policy: HOST_STATE_POLICY_ID,
     deployer: 'f6'.repeat(28),

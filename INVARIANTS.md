@@ -205,6 +205,22 @@ header and must be rejected, proving these invariants:
   the head of their lists, so bounded truncation cannot evict them independently
   of `latest_height`.
 
+### Connection Delay Anchors
+
+Fixed regressions in `validators/client_delay.test.ak` and
+`validators/spending_client_capacity.test.ak` enforce the processing-time anchor:
+
+- Creation and updates record the finite upper validity bound, in nanoseconds,
+  and derive processing height from it.
+- A backdated lower bound cannot satisfy a nonzero delay immediately after
+  processing; real membership and non-membership proofs remain blocked until
+  both time and block delays have passed.
+- Zero-delay connections remain immediately usable.
+- Header verification and history pruning retain their lower-bound time input.
+
+See [Tendermint connection delays](docs/tendermint-connection-delays.md) for the
+elapsed-time guarantee and deployment requirements for historical metadata.
+
 ### HostState Coupling
 
 Covered by `contract.client.update.invalid_wrong_host_redeemer` and

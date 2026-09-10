@@ -242,6 +242,7 @@ fn matches_previous_history_update(input: ClientDatum) -> Bool {
     previous_history_update(input, new_header),
     new_header,
     1,
+    1,
   )
 }
 
@@ -393,6 +394,7 @@ test metadata_update_looks_up_before_capacity_truncation() {
       output,
       capacity_history_header,
       1,
+      1,
     ),
     list.length(output.state.consensus_states) == max_consensus_state_size,
     list.length(output.state.processed_times) == max_consensus_state_size,
@@ -458,9 +460,9 @@ test metadata_update_rejects_changed_metadata_order_or_value() {
       },
     }
   and {
-    client_datum.update_state(input, output, new_header, 1),
-    !client_datum.update_state(input, reordered, new_header, 1),
-    !client_datum.update_state(input, changed, new_header, 1),
+    client_datum.update_state(input, output, new_header, 1, 1),
+    !client_datum.update_state(input, reordered, new_header, 1, 1),
+    !client_datum.update_state(input, changed, new_header, 1, 1),
   }
 }
 
@@ -533,6 +535,7 @@ test prop_client_update_accepts_adjacent(seed via fuzz.int()) {
       output_client_datum,
       mock_header,
       0,
+      0,
     ),
   )
     |> fuzz_dsl.assert_valid
@@ -581,6 +584,7 @@ test prop_client_update_accepts_non_adjacent(seed via fuzz.int()) {
       output_client_datum,
       mock_header,
       0,
+      0,
     ),
   )
     |> fuzz_dsl.assert_valid
@@ -626,6 +630,7 @@ test prop_client_update_rejects_historical_height(seed via fuzz.int()) {
       input_client_datum,
       output_client_datum,
       mock_header,
+      0,
       0,
     ),
   )
@@ -678,6 +683,7 @@ test prop_client_update_rejects_wrong_consensus_state(seed via fuzz.int()) {
       input_client_datum,
       output_client_datum,
       mock_header,
+      0,
       0,
     ),
   )
@@ -939,6 +945,7 @@ test test_update_state_succeed_01() {
     output_client_datum,
     mock_header,
     0,
+    0,
   )
 }
 
@@ -991,6 +998,7 @@ test test_update_state_rejects_historical_update() {
     input_client_datum,
     output_client_datum,
     mock_header,
+    0,
     0,
   )
 }
@@ -1109,6 +1117,7 @@ test test_update_state_succeed_03() {
     output_client_datum,
     mock_header,
     tx_valid_from,
+    tx_valid_from,
   )
 }
 
@@ -1164,6 +1173,7 @@ test test_update_state_return_false_01() {
     output_client_datum,
     mock_header,
     0,
+    0,
   )
 }
 
@@ -1215,6 +1225,7 @@ test test_update_state_return_false_02() {
     input_client_datum,
     output_client_datum,
     mock_header,
+    0,
     0,
   )
 }
@@ -1299,6 +1310,7 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
     input_client_datum,
     output_client_datum,
     mock_header,
+    0,
     0,
   )
 }

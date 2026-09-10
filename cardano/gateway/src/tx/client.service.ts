@@ -140,9 +140,17 @@ export class ClientService {
       throw new GrpcInternalException(`client tx failed: invalid slot configuration for network ${network}`);
     }
 
-    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE, {
+    const validity = await computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE, {
       backdateMs,
     });
+    // Lucid encodes slots, and validators see their start times. In particular,
+    // the helper's end-of-slot validToTime is not the on-chain upper bound.
+    const { slotToUnixTime, unixTimeToSlot } = this.lucidService.LucidImporter;
+    return {
+      ...validity,
+      validFromTime: slotToUnixTime(network, unixTimeToSlot(network, validity.validFromTime)),
+      validToTime: slotToUnixTime(network, validity.validToSlot),
+    };
   }
 
   private isZeroHeight(height: Height): boolean {
@@ -241,13 +249,13 @@ export class ClientService {
       await this.refreshWalletContext(constructedAddress, 'createClientBuilder');
       const { validFromTime: validFromTimestamp, validToTime: validToTimestamp } =
         await this.computeTxValidityWindow(60_000);
-      const txValidFromNs = BigInt(validFromTimestamp) * 1_000_000n;
+      const txValidToNs = BigInt(validToTimestamp) * 1_000_000n;
       // Build unsigned create client transaction
       const { unsignedTx: unsignedCreateClientTx, clientId, pendingTreeUpdate } = await this.buildUnsignedCreateClientTx(
         clientState,
         consensusState,
         constructedAddress,
-        txValidFromNs,
+        txValidToNs,
       );
 
       this.logger.log(`[DEBUG] Setting validity: validFrom=${new Date(validFromTimestamp).toISOString()}, validTo=${new Date(validToTimestamp).toISOString()}`);
@@ -441,6 +449,7 @@ export class ClientService {
         clientTokenUnit,
         currentClientUtxo,
         txValidFrom: txValidFromNs,
+        txValidTo: BigInt(validToTimeMs) * 1_000_000n,
       };
 
       await this.refreshWalletContext(constructedAddress, 'updateClientBuilder');
@@ -783,7 +792,7 @@ export class ClientService {
       currentConsStateInArray.map(([height]) => [
         height,
         height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
-          ? updateClientOperator.txValidFrom
+          ? updateClientOperator.txValidTo
           : getHeightMapValue(currentClientDatumState.processedTimes, height) ?? 0n,
       ]),
     );
@@ -791,7 +800,7 @@ export class ClientService {
       currentConsStateInArray.map(([height]) => [
         height,
         height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
-          ? getProcessedHeight(updateClientOperator.txValidFrom)
+          ? getProcessedHeight(updateClientOperator.txValidTo)
           : getHeightMapValue(currentClientDatumState.processedHeights, height) ?? 0n,
       ]),
     );
@@ -1072,7 +1081,7 @@ export class ClientService {
     clientState: ClientState,
     consensusState: ConsensusState,
     constructedAddress: string,
-    txValidFromNs: bigint,
+    txValidToNs: bigint,
   ): Promise<{ unsignedTx: TxBuilder; clientId: bigint; pendingTreeUpdate: PendingTreeUpdate }> {
     // The HostState NFT identifies the single coordinator UTxO for this update.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
@@ -1147,8 +1156,8 @@ export class ClientService {
     const clientDatumState: ClientDatumState = {
       clientState: clientState,
       consensusStates: new Map([[clientState.latestHeight, consensusState]]),
-      processedTimes: new Map([[clientState.latestHeight, txValidFromNs]]),
-      processedHeights: new Map([[clientState.latestHeight, getProcessedHeight(txValidFromNs)]]),
+      processedTimes: new Map([[clientState.latestHeight, txValidToNs]]),
+      processedHeights: new Map([[clientState.latestHeight, getProcessedHeight(txValidToNs)]]),
     };
 
     const clientTokenName = this.generateClientTokenName(hostStateDatum);

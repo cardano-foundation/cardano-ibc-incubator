@@ -217,7 +217,9 @@ fn verify_delay_period_passed(
   and {
     delay_time_period >= 0,
     delay_block_period >= 0,
-    current_time >= processed_time + delay_time_period,
-    current_height >= processed_height + delay_block_period,
+    // Zero-delay connections need no waiting, including when processing was
+    // anchored to an upper validity bound that has not been reached yet.
+    delay_time_period == 0 || current_time >= processed_time + delay_time_period,
+    delay_block_period == 0 || current_height >= processed_height + delay_block_period,
   }
 }
