@@ -709,40 +709,46 @@ test succeed_recv_packet_maximum_ics20_packet() {
 test prop_tx_recv_packet_accepts_atomic_successor_and_callback(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"regression.tx.packet.recv.valid_atomic_successor_callback")
+  fuzz.label(@"regression.contract.packet.recv.valid_atomic_successor_callback")
   check_recv_packet(True, False, True, True, True, True)
 }
 
 test prop_tx_recv_packet_rejects_missing_application_callback(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.recv.invalid_missing_application_callback")
+  fuzz.label(
+    @"regression.contract.packet.recv.invalid_missing_application_callback",
+  )
   check_recv_packet(False, False, True, True, True, True)
 }
 
 test prop_tx_recv_packet_rejects_moved_port_binding(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.tx.packet.recv.invalid_moved_port_binding")
+  fuzz.label(@"regression.contract.packet.recv.invalid_moved_port_binding")
   check_recv_packet(True, False, True, True, False, True)
 }
 
 test prop_tx_recv_packet_rejects_unrelated_successor_mutation(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.recv.invalid_unrelated_successor_mutation")
+  fuzz.label(
+    @"regression.contract.packet.recv.invalid_unrelated_successor_mutation",
+  )
   check_recv_packet(True, True, True, True, True, True)
 }
 
 test prop_tx_recv_packet_rejects_callback_packet_data_mismatch(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.recv.invalid_callback_packet_data")
+  fuzz.label(@"regression.contract.packet.recv.invalid_callback_packet_data")
   check_recv_packet(True, False, False, True, True, True)
 }
 
 test prop_tx_recv_packet_rejects_callback_acknowledgement_mismatch(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.recv.invalid_callback_acknowledgement")
+  fuzz.label(
+    @"regression.contract.packet.recv.invalid_callback_acknowledgement",
+  )
   check_recv_packet(True, False, True, False, True, True)
 }
 

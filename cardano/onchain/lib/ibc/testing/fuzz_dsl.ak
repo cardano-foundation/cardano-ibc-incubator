@@ -35,9 +35,10 @@ pub type TxFixture {
   }
 }
 
-// Transaction-shaped fixture for deeper tx.* properties. The fields mirror the
-// Cardano transaction surface closely enough to compose multi-validator checks,
-// while still carrying model_before/model_after for state-machine assertions.
+// A transaction context for explicitly selected helper or handler checks.
+// The assertions below only inspect the supplied Boolean results. They do not
+// dispatch Mint/Spend purposes or prove that every required script was run.
+// Complete transaction properties live in offchain/src/testing/transaction-fuzz.ts.
 pub type ProtocolTxFixture {
   ProtocolTxFixture {
     inputs: List<Input>,
@@ -231,7 +232,7 @@ pub fn to_transaction(fixture: ProtocolTxFixture) -> Transaction {
   }
 }
 
-pub fn run_all_relevant_validators(fixture: TxFixture) -> Bool {
+pub fn all_checks_accept(fixture: TxFixture) -> Bool {
   // Empty check lists are rejected so a valid fixture cannot accidentally pass
   // without executing any contract predicate.
   and {
@@ -240,7 +241,7 @@ pub fn run_all_relevant_validators(fixture: TxFixture) -> Bool {
   }
 }
 
-pub fn run_any_relevant_validator_rejected(fixture: TxFixture) -> Bool {
+pub fn any_check_rejects(fixture: TxFixture) -> Bool {
   // Rejection properties only need one relevant validator to reject the
   // mutation, matching how a composed transaction fails on-chain.
   and {
@@ -249,14 +250,14 @@ pub fn run_any_relevant_validator_rejected(fixture: TxFixture) -> Bool {
   }
 }
 
-pub fn run_all_protocol_validators(fixture: ProtocolTxFixture) -> Bool {
+pub fn all_protocol_checks_accept(fixture: ProtocolTxFixture) -> Bool {
   and {
     !list.is_empty(fixture.checks),
     list.all(fixture.checks, fn(check) { check.accepted }),
   }
 }
 
-pub fn run_any_protocol_validator_rejected(fixture: ProtocolTxFixture) -> Bool {
+pub fn any_protocol_check_rejects(fixture: ProtocolTxFixture) -> Bool {
   and {
     !list.is_empty(fixture.checks),
     list.any(fixture.checks, fn(check) { !check.accepted }),
@@ -265,8 +266,8 @@ pub fn run_any_protocol_validator_rejected(fixture: ProtocolTxFixture) -> Bool {
 
 pub fn expect_outcome(fixture: TxFixture, expected: ExpectedOutcome) -> Bool {
   when expected is {
-    Accept -> run_all_relevant_validators(fixture)
-    Reject -> run_any_relevant_validator_rejected(fixture)
+    Accept -> all_checks_accept(fixture)
+    Reject -> any_check_rejects(fixture)
   }
 }
 
@@ -275,8 +276,8 @@ pub fn expect_protocol_outcome(
   expected: ExpectedOutcome,
 ) -> Bool {
   when expected is {
-    Accept -> run_all_protocol_validators(fixture)
-    Reject -> run_any_protocol_validator_rejected(fixture)
+    Accept -> all_protocol_checks_accept(fixture)
+    Reject -> any_protocol_check_rejects(fixture)
   }
 }
 
@@ -288,10 +289,10 @@ pub fn assert_rejected(fixture: TxFixture) -> Bool {
   expect_outcome(fixture, Reject)
 }
 
-pub fn assert_protocol_valid(fixture: ProtocolTxFixture) -> Bool {
+pub fn assert_protocol_checks_accept(fixture: ProtocolTxFixture) -> Bool {
   expect_protocol_outcome(fixture, Accept)
 }
 
-pub fn assert_protocol_rejected(fixture: ProtocolTxFixture) -> Bool {
+pub fn assert_protocol_checks_reject(fixture: ProtocolTxFixture) -> Bool {
   expect_protocol_outcome(fixture, Reject)
 }

@@ -42,7 +42,9 @@ const minPercentBps = Number(
 );
 const requiredLabels = config.requiredLabels ?? [];
 const allowedKindPrefixes = config.allowedKindPrefixes ?? ["regression", "fuzz"];
-const allowedDepthPrefixes = config.allowedDepthPrefixes ?? ["unit", "contract", "tx", "model"];
+// Direct Aiken handler calls are contract coverage. Compiled transaction
+// execution is checked separately by the offchain transaction properties.
+const allowedDepthPrefixes = config.allowedDepthPrefixes ?? ["unit", "contract", "model"];
 
 // The checker is intentionally configurable from CI env vars so local smoke
 // checks can use max-success=1 while CI keeps the production thresholds.
