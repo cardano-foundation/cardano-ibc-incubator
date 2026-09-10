@@ -7,10 +7,15 @@ import {
   getAddressDetails,
   Lucid,
   type Script,
+  type TxSignBuilder,
   type UTxO,
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
-import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
+import {
+  Emulator,
+  generateEmulatorAccount,
+  generateEmulatorAccountFromPrivateKey,
+} from "@lucid-evolution/provider";
 import { DeploymentIbcTree } from "../src/deployment.ts";
 import { generateTokenName, readValidator } from "../src/utils.ts";
 import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
@@ -63,6 +68,7 @@ async function fixture(
   canonicalEncoding = true,
   packetRecovery = false,
   outputCanonicalEncoding = canonicalEncoding,
+  captureSignerFixture?: (value: Record<string, unknown>) => void,
 ) {
   const encodeStored = (value: Data) =>
     Data.to<Data>(value, undefined, { canonical: canonicalEncoding });
@@ -70,7 +76,9 @@ async function fixture(
     serialisePlutusData(encodeStored(value));
   const encodeOutput = (value: Data) =>
     Data.to<Data>(value, undefined, { canonical: outputCanonicalEncoding });
-  const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
+  const account = captureSignerFixture
+    ? generateEmulatorAccountFromPrivateKey({ lovelace: 1_000_000_000n })
+    : generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account]);
   if (normalUpdate) {
     emulator.time = adjacentFixture.recommended_emulator_time_ms;
@@ -80,7 +88,9 @@ async function fixture(
   emulator.protocolParameters.maxTxExMem = 16_500_000n;
   emulator.protocolParameters.maxTxExSteps = 10_000_000_000n;
   const lucid = await Lucid(emulator, "Preprod");
-  lucid.selectWallet.fromSeed(account.seedPhrase);
+  if (captureSignerFixture) {
+    lucid.selectWallet.fromPrivateKey(account.privateKey);
+  } else lucid.selectWallet.fromSeed(account.seedPhrase);
   const dummy = "44".repeat(28);
   const applyBytes = (title: string, params: string[]) =>
     readValidator(
@@ -105,7 +115,7 @@ async function fixture(
   const packet = packetRecovery
     ? await historyPacketFixture(lucid, HOST_POLICY, HOST_NAME, clientPolicyId)
     : undefined;
-  const [hostScript, , hostAddress] = applyBytes(
+  const [hostScript, hostHash, hostAddress] = applyBytes(
     "host_state_stt.host_state_stt.spend",
     [
       HOST_POLICY,
@@ -122,6 +132,25 @@ async function fixture(
     await (await registration.sign.withWallet().complete()).submit();
     emulator.awaitBlock();
   }
+  let signerFunding: UTxO | undefined;
+  if (captureSignerFixture) {
+    // Hermes requires disjoint spending/collateral inputs. Fund fees from a
+    // small real output, leaving the larger wallet output for Lucid collateral.
+    const split = await lucid.newTx().pay.ToAddress(account.address, {
+      lovelace: 10_000_000n,
+    }).complete();
+    const signed = await split.sign.withWallet().complete();
+    assertEquals(await signed.submit(), signed.toHash());
+    emulator.awaitBlock();
+    signerFunding = (await lucid.utxosAt(account.address)).find((utxo) =>
+      utxo.txHash === signed.toHash() && utxo.assets.lovelace === 10_000_000n
+    );
+    assert(signerFunding);
+  }
+  const newFundedTx = () => {
+    const tx = lucid.newTx();
+    return signerFunding ? tx.collectFrom([signerFunding]) : tx;
+  };
   const clientName = await generateTokenName(
     { policy_id: HOST_POLICY, name: HOST_NAME },
     fromText("ibc_client"),
@@ -176,7 +205,10 @@ async function fixture(
       txHash: (nextRef++).toString(16).padStart(64, "0"),
       outputIndex: 0,
       address,
-      assets: { lovelace: 30_000_000n, ...assets },
+      assets: {
+        lovelace: captureSignerFixture ? 5_000_000n : 30_000_000n,
+        ...assets,
+      },
       datum,
       scriptRef,
     };
@@ -191,6 +223,94 @@ async function fixture(
   const references = [hostScript, clientPolicy, recoveryScript].map((script) =>
     seed(account.address, {}, Data.void(), script)
   );
+  function signerEvidence(
+    name: "update" | "recovery",
+    completed: TxSignBuilder,
+    clientReference: UTxO,
+  ) {
+    if (!captureSignerFixture) return undefined;
+    const outRef = (utxo: UTxO) => ({
+      tx_hash: utxo.txHash,
+      output_index: utxo.outputIndex,
+    });
+    const resolve = (inputs: CML.TransactionInputList | undefined) => {
+      const result = [];
+      for (let index = 0; index < (inputs?.len() ?? 0); index++) {
+        const input = inputs!.get(index);
+        const txHash = input.transaction_id().to_hex();
+        const outputIndex = Number(input.index());
+        // Trusted test-chain state, never values supplied by the candidate.
+        const entry = emulator.ledger[txHash + outputIndex];
+        assert(entry && !entry.spent);
+        const utxo = entry.utxo;
+        result.push({
+          ...outRef(utxo),
+          address: CML.Address.from_bech32(utxo.address).to_hex(),
+          lovelace: utxo.assets.lovelace.toString(),
+          assets: Object.entries(utxo.assets).filter(([unit]) =>
+            unit !== "lovelace"
+          ).map(([unit, quantity]) => ({
+            policy_id: unit.slice(0, 56),
+            asset_name: unit.slice(56),
+            quantity: quantity.toString(),
+          })),
+        });
+      }
+      return result;
+    };
+    const body = completed.toTransaction().body();
+    const regular = resolve(body.inputs());
+    const collateral = resolve(body.collateral_inputs());
+    const regularRefs = new Set(
+      regular.map((input) => `${input.tx_hash}#${input.output_index}`),
+    );
+    assert(
+      collateral.every((input) =>
+        !regularRefs.has(`${input.tx_hash}#${input.output_index}`)
+      ),
+    );
+    return {
+      name,
+      unsigned_tx_cbor: completed.toCBOR(),
+      signer_address: account.address,
+      operation: `/ibc.core.client.v1.Msg${
+        name === "update" ? "Update" : "Recover"
+      }Client`,
+      client_id: "07-tendermint-0",
+      ...(name === "recovery"
+        ? { substitute_client_id: "07-tendermint-1" }
+        : {}),
+      manifest: {
+        consensus_history_format: "proof-backed-v1",
+        validators: {
+          host_state_stt: {
+            address: hostAddress,
+            script_hash: hostHash,
+            ref_utxo: outRef(references[0]),
+          },
+          spend_client: {
+            address: clientAddress,
+            script_hash: clientHash,
+            ref_utxo: outRef(clientReference),
+          },
+          recover_client: {
+            script_hash: recoveryHash,
+            ref_utxo: outRef(references[2]),
+          },
+          mint_client_stt: {
+            script_hash: clientPolicyId,
+            ref_utxo: outRef(references[1]),
+          },
+        },
+        host_state_nft: { policy_id: HOST_POLICY, token_name: HOST_NAME },
+      },
+      resolved_inputs: {
+        regular,
+        collateral,
+        reference: resolve(body.reference_inputs()),
+      },
+    };
+  }
   let tree = new DeploymentIbcTree();
   tree.set("clients/07-tendermint-0/clientState", encodePublic(clientState));
   tree.set(consensusKey(latestHeight), encodePublic(latestConsensus));
@@ -406,7 +526,7 @@ async function fixture(
     const recoveryReferences = [clientScript].map((script) =>
       seed(account.address, {}, Data.void(), script)
     );
-    const builder = lucid.newTx().readFrom([
+    const builder = newFundedTx().readFrom([
       substitute,
       references[0],
       references[2],
@@ -453,6 +573,11 @@ async function fixture(
       .validFrom(now).validTo(now + 30_000).addSignerKey(signer);
 
     const completed = await builder.complete({ localUPLCEval: true });
+    const signerFixture = signerEvidence(
+      "recovery",
+      completed,
+      recoveryReferences[0],
+    );
     const signed = await completed.sign.withWallet().complete();
     const units = CML.compute_total_ex_units(
       signed.toTransaction().witness_set().redeemers()!,
@@ -470,6 +595,7 @@ async function fixture(
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
     assertEquals(signed.toTransaction().body().mint(), undefined);
+    if (signerFixture) captureSignerFixture!(signerFixture);
     assertEquals(
       (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
       encodeOutput(
@@ -546,7 +672,7 @@ async function fixture(
       Data.void(),
       clientScript,
     );
-    const completed = await lucid.newTx().readFrom([
+    const completed = await newFundedTx().readFrom([
       references[0],
       references[2],
       clientReference,
@@ -582,6 +708,7 @@ async function fixture(
       .validFrom(updateNow).validTo(updateNow + 30_000).complete({
         localUPLCEval: true,
       });
+    const signerFixture = signerEvidence("update", completed, clientReference);
     const signed = await completed.sign.withWallet().complete();
     const units = CML.compute_total_ex_units(
       signed.toTransaction().witness_set().redeemers()!,
@@ -599,6 +726,7 @@ async function fixture(
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
     retain(signed.toHash(), signed.toCBOR());
+    if (signerFixture) captureSignerFixture!(signerFixture);
     assertEquals(signed.toTransaction().body().mint(), undefined);
     assertEquals(
       (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
@@ -941,4 +1069,54 @@ Deno.test("a production packet uses an old consensus state after deleting all lo
   const context = await fixture(0, false, false, true, true, true, true, false);
   console.log(JSON.stringify(await context.update()));
   console.log(JSON.stringify(await context.coldRecoverAndPrune()));
+});
+
+// Regenerate the Hermes policy fixtures with:
+// IBC_HERMES_SIGNER_FIXTURE=/absolute/output.json deno task test:consensus-history --filter="export Hermes"
+// Only accepted transactions are exported. No private keys or script bodies.
+const signerFixturePath = Deno.env.get("IBC_HERMES_SIGNER_FIXTURE");
+Deno.test({
+  name: "export Hermes signer fixtures from accepted production transactions",
+  ignore: !signerFixturePath,
+  async fn() {
+    const cases: Record<string, unknown>[] = [];
+    const capture = (value: Record<string, unknown>) => cases.push(value);
+    await (await fixture(
+      1,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      capture,
+    ))
+      .update();
+    await (await fixture(
+      1,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      capture,
+    ))
+      .recover();
+    assertEquals(cases.length, 2);
+    await Deno.writeTextFile(
+      signerFixturePath!,
+      JSON.stringify(
+        {
+          source:
+            "cardano-ibc-incubator/cardano/offchain/scripts/consensus-history.test.ts",
+          cases,
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+  },
 });
