@@ -1,4 +1,8 @@
-import { loadHostStateValidator } from "./deployment-plan.ts";
+import {
+  DEPLOYMENT_PLAN_FIXTURE,
+  loadDeploymentPlan,
+  loadHostStateValidator,
+} from "./deployment-plan.ts";
 import { assertEquals, assertNotEquals } from "@std/assert";
 import {
   Data,
@@ -10,12 +14,10 @@ import {
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 
 import {
-  buildChannelValidators,
   buildReferenceValidatorBatches,
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
   GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
-  loadHostStateValidator,
   loadTransferModuleValidator,
   loadStagedTendermintValidators,
   selectDeploymentCollateralHoldback,
@@ -56,17 +58,16 @@ Deno.test("generic module deployments pin the spend handler from the blueprint",
   );
 });
 
-Deno.test("every deployed channel operation is a mint-only policy", () => {
+Deno.test("every deployed channel operation is a mint-only policy", async () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
-  const { referredScripts } = buildChannelValidators(
+  const { spendingChannel: { referredScripts } } = await loadDeploymentPlan(
     lucid,
-    "11".repeat(28),
-    "22".repeat(28),
-    "33".repeat(28),
-    "44".repeat(28),
-    "55".repeat(28),
+    {
+      ...DEPLOYMENT_PLAN_FIXTURE,
+      benchmarkVoucherEnabled: false,
+    },
   );
   assertEquals(Object.keys(referredScripts).length, 9);
   for (const name of Object.keys(referredScripts)) {
@@ -96,7 +97,7 @@ Deno.test("chan_close_confirm is a mint-only policy in the compiled blueprint", 
   );
 });
 
-Deno.test("client deployment pins the recovery withdrawal validator", () => {
+Deno.test("legacy client validator pins the recovery withdrawal validator", () => {
   const recoveryValidator = blueprint.validators.find(
     ({ title }) => title === "recover_client.recover_client.withdraw",
   ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
@@ -133,7 +134,7 @@ Deno.test("HostState deployment pins the state-token minting policies", () => {
   );
 });
 
-Deno.test("applied client validator fits a mainnet reference-script transaction", () => {
+Deno.test("applied legacy client validator fits a mainnet reference-script transaction", () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
@@ -453,6 +454,9 @@ Deno.test("fully applied production HostState fits the reference publication gua
     "22".repeat(28),
     "33".repeat(28),
     "44".repeat(28),
+    "55".repeat(28),
+    "66".repeat(28),
+    "77".repeat(28),
   );
   const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
   assertEquals(report.oversized, false, JSON.stringify(report));

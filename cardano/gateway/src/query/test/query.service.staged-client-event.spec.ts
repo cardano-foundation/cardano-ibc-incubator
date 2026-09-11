@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import crypto from 'crypto';
 
 import { Logger } from '@nestjs/common';
@@ -253,6 +254,7 @@ async function stagedHistoryFixture(
     {} as MithrilService,
     {} as DenomTraceService,
     {} as any,
+    createTestTreeStore(),
   );
 
   return {
@@ -354,6 +356,7 @@ describe('QueryService staged client event history', () => {
       {} as MithrilService,
       {} as DenomTraceService,
       {} as any,
+      createTestTreeStore(),
     );
     const parseEventClient = jest.spyOn(service as any, '_parseEventClient').mockResolvedValue([
       {

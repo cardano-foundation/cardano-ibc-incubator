@@ -114,6 +114,7 @@ type StagedTendermintSeedReservation = {
   activeBuilds: number;
   issuedChain: boolean;
 };
+import { isDeepStrictEqual } from 'node:util';
 
 @Injectable()
 export class ClientService {
@@ -209,7 +210,7 @@ export class ClientService {
       throw new GrpcInternalException(`client tx failed: invalid slot configuration for network ${network}`);
     }
 
-    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, timeToLiveMs, {
+    const validity = await computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, timeToLiveMs, {
       backdateMs,
     });
     // Lucid encodes slots, and validators see their start times. In particular,
@@ -220,6 +221,14 @@ export class ClientService {
       validFromTime: slotToUnixTime(network, unixTimeToSlot(network, validity.validFromTime)),
       validToTime: slotToUnixTime(network, validity.validToSlot),
     };
+  }
+
+  private tendermintUpdateSafeBackdateMs(clientDatum: ClientDatum): number {
+    const maxClockDriftMs = clientDatum.state.clientState.maxClockDrift / 1_000_000n;
+    const maxBackdateMarginMs = 1_000n;
+    const maxBackdateCapMs = 60_000n;
+    const maxAllowedBackdateMs = maxClockDriftMs > maxBackdateMarginMs ? maxClockDriftMs - maxBackdateMarginMs : 0n;
+    return Number(maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs);
   }
 
   private isZeroHeight(height: Height): boolean {
@@ -306,14 +315,6 @@ export class ClientService {
       processedHeight,
     };
   }
-
-  private tendermintUpdateSafeBackdateMs(clientDatum: ClientDatum): number {
-    const maxClockDriftMs = clientDatum.state.clientState.maxClockDrift / 1_000_000n;
-    const maxBackdateMarginMs = 1_000n;
-    const maxBackdateCapMs = 60_000n;
-    const maxAllowedBackdateMs = maxClockDriftMs > maxBackdateMarginMs ? maxClockDriftMs - maxBackdateMarginMs : 0n;
-    return Number(maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs);
-  }
   /**
    * Processes the creation of a client tx.
    * @param data The message containing client creation data.
@@ -328,11 +329,12 @@ export class ClientService {
         await this.computeTxValidityWindow(60_000);
       const txValidToNs = BigInt(validToTimestamp) * 1_000_000n;
       // Build unsigned create client transaction
-      const {
-        unsignedTx: unsignedCreateClientTx,
-        clientId,
-        pendingTreeUpdate,
-      } = await this.buildUnsignedCreateClientTx(clientState, consensusState, constructedAddress, txValidFromNs);
+      const { unsignedTx: unsignedCreateClientTx, clientId, pendingTreeUpdate } = await this.buildUnsignedCreateClientTx(
+        clientState,
+        consensusState,
+        constructedAddress,
+        txValidToNs,
+      );
 
       this.logger.log(
         `[DEBUG] Setting validity: validFrom=${new Date(validFromTimestamp).toISOString()}, validTo=${new Date(validToTimestamp).toISOString()}`,
@@ -966,6 +968,7 @@ export class ClientService {
     const finalOperator: UpdateClientOperatorDto = {
       ...updateClientOperator,
       txValidFrom: BigInt(validityWindow.validFromTime) * 1_000_000n,
+      txValidTo: BigInt(validToTimeMs) * 1_000_000n,
     };
     const validity = {
       apply: (builder: TxBuilder) => builder.validFrom(validityWindow.validFromTime).validTo(validToTimeMs),
@@ -1428,6 +1431,121 @@ export class ClientService {
       datum.owner.toLowerCase(),
     );
   }
+
+  async recoverClient(data: MsgRecoverClient): Promise<MsgRecoverClientResponse> {
+    try {
+      const { subjectClientId, substituteClientId, constructedAddress } =
+        validateAndFormatRecoverClientParams(data);
+      if (this.lucidService.hasStagedTendermintClient()) {
+        throw new GrpcFailedPreconditionException(
+          'Tendermint client recovery is not supported by the staged client protocol',
+        );
+      }
+      const recoveryConfig = this.configService.get('deployment')?.validators?.recoverClient;
+      if (!recoveryConfig?.address || !recoveryConfig?.refUtxo) {
+        throw new GrpcFailedPreconditionException(
+          'Tendermint client recovery is not configured for this deployment',
+        );
+      }
+
+      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+      if (!hostStateUtxo.datum) {
+        throw new GrpcInternalException('HostState UTXO has no datum');
+      }
+      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+        hostStateUtxo.datum,
+        'host_state',
+      );
+
+      let signerKeyHash: string;
+      try {
+        const paymentCredential = this.lucidService.getPaymentCredential(constructedAddress);
+        if (!paymentCredential || paymentCredential.type !== 'Key') {
+          throw new Error('signer does not use a key payment credential');
+        }
+        signerKeyHash = paymentCredential.hash;
+      } catch {
+        throw new GrpcInvalidArgumentException('Recover client signer is not a valid Cardano address');
+      }
+      if (signerKeyHash.toLowerCase() !== hostStateDatum.deployer.toLowerCase()) {
+        throw new GrpcFailedPreconditionException(
+          'Recover client signer does not match the deployment recovery authority',
+        );
+      }
+
+      const subjectClientTokenUnit = this.lucidService.getClientTokenUnit(subjectClientId);
+      const substituteClientTokenUnit = this.lucidService.getClientTokenUnit(substituteClientId);
+      const [subjectClientUtxo, substituteClientUtxo] = await Promise.all([
+        this.lucidService.findUtxoByUnit(subjectClientTokenUnit),
+        this.lucidService.findUtxoByUnit(substituteClientTokenUnit),
+      ]);
+      const [subjectClientDatum, substituteClientDatum] = await Promise.all([
+        this.lucidService.decodeDatum<ClientDatum>(subjectClientUtxo.datum!, 'client'),
+        this.lucidService.decodeDatum<ClientDatum>(substituteClientUtxo.datum!, 'client'),
+      ]);
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow(60_000);
+
+      await this.refreshWalletContext(constructedAddress, 'recoverClientBuilder');
+      const { unsignedTx, pendingTreeUpdate } = await this.buildUnsignedRecoverClientTx({
+        subjectClientId,
+        substituteClientId,
+        constructedAddress,
+        subjectClientDatum,
+        substituteClientDatum,
+        subjectClientTokenUnit,
+        subjectClientUtxo,
+        substituteClientUtxo,
+        hostStateUtxo,
+        hostStateDatum,
+        signerKeyHash,
+        txValidTo: BigInt(validToTime) * 1_000_000n,
+      });
+      const { unsignedTxBytes } = await this.txOperationRunnerService.run({
+        operationName: 'recoverClient',
+        unsignedTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'recoverClient',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+        syntheticEvents: [
+          {
+            type: EVENT_TYPE_CLIENT.RECOVER_CLIENT,
+            attributes: [
+              { key: ATTRIBUTE_KEY_CLIENT.SUBJECT_CLIENT_ID, value: `${CLIENT_ID_PREFIX}-${subjectClientId}` },
+              { key: ATTRIBUTE_KEY_CLIENT.CLIENT_TYPE, value: CLIENT_ID_PREFIX },
+              {
+                key: ATTRIBUTE_KEY_CLIENT.SUBSTITUTE_CLIENT_ID,
+                value: `${CLIENT_ID_PREFIX}-${substituteClientId}`,
+              },
+            ],
+          },
+        ],
+      });
+
+      return {
+        unsigned_tx: {
+          type_url: '',
+          value: unsignedTxBytes,
+        },
+      } as MsgRecoverClientResponse;
+    } catch (error) {
+      this.logger.error(`recoverClient: ${error}`);
+      if (!(error instanceof RpcException)) {
+        throw new GrpcInternalException(`An unexpected error occurred. ${error.stack}`);
+      }
+      throw error;
+    }
+  }
+
   public async buildUnsignedUpdateOnMisbehaviour(
     updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
@@ -1581,9 +1699,9 @@ export class ClientService {
         hash: header.signedHeader.header.appHash,
       },
     };
-    const processedTimeNs = stagedFinalization?.processedTimeNs ?? updateClientOperator.txValidFrom;
+    const processedTimeNs = stagedFinalization?.processedTimeNs ?? updateClientOperator.txValidTo;
     let currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries()).filter(
-      ([_, consState]) => !isExpired(newClientState, consState.timestamp, processedTimeNs),
+      ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
     );
 
     if (currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight)) {
@@ -1979,13 +2097,14 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } = computeRootWithCreateClientUpdate(
-      hostStateDatum.state.ibc_state_root,
-      clientId,
-      clientStateValue,
-      consensusStateValue,
-      consensusHeight,
-    );
+    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
+      this.ibcTreeStore.computeRootWithCreateClientUpdate(
+        hostStateDatum.state.ibc_state_root,
+        clientId,
+        clientStateValue,
+        consensusStateValue,
+        consensusHeight,
+      );
 
     // Create an updated HostState datum with:
     // - Incremented version (STT monotonicity requirement)

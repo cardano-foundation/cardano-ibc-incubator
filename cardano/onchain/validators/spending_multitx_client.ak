@@ -117,6 +117,7 @@ validator spend_multitx_client(
             client_datum,
             updated_datum,
             header_from_plan(session_datum.plan),
+            tx_valid_from / 1_000_000,
             // A staged chain can remain valid for many minutes. Recording its
             // lower bound would let a later proof count time spent building
             // the chain toward the IBC delay period. The upper bound is at or

@@ -1,4 +1,5 @@
 import { createTestTreeContext, createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
+import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { SubmissionService } from '../submission.service';
 
 describe('SubmissionService confirmation strictness regressions', () => {
@@ -35,6 +36,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
         queryClientEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }),
         queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }),
       } as any,
+      createTestTreeStore(),
     );
   });
 
@@ -55,7 +57,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
   it('does not finalize the IBC tree if confirmed HostState lookup fails', async () => {
     const pending = { expectedNewRoot: 'expected-root', commit: jest.fn() };
     pendingUpdates.peek.mockReturnValueOnce(pending);
-    jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('hoststate unavailable'));
+    jest.spyOn(service as any, 'readConfirmedTxHostState').mockRejectedValueOnce(new Error('hoststate unavailable'));
 
     await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 9999)).rejects.toThrow(
       'hoststate unavailable',
@@ -63,17 +65,27 @@ describe('SubmissionService confirmation strictness regressions', () => {
     expect(pendingUpdates.commit).not.toHaveBeenCalled();
   });
 
-  it('persists snapshots only after committing the exact pending entry', async () => {
-    const pending = { expectedNewRoot: 'ab'.repeat(32), commit: jest.fn() };
+  it('persists the exact confirmed snapshot only after committing the exact pending entry', async () => {
+    const fixture = createTestTreeContext();
+    const tree = new ICS23MerkleTree();
+    tree.set('ports/transfer', '01');
+    const current = await fixture.restore(tree);
+    (service as any).ibcTreeStore = fixture.store;
+    const commit = jest.fn().mockResolvedValue({ published: true, snapshot: current });
+    const pending = { expectedNewRoot: current.root, commit };
     pendingUpdates.peek.mockReturnValueOnce(pending);
-    jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('ab'.repeat(32));
+    pendingUpdates.commit.mockImplementation((_txHash, update, hostState) => update.commit(hostState));
+    jest.spyOn(service as any, 'readConfirmedTxHostState').mockResolvedValueOnce({
+      root: current.root, outputIndex: current.hostState.outputIndex, datumCborHex: 'd87980',
+    });
 
-    await (service as any).applyPendingIbcTreeUpdate('deadbeef', current.hostState.txHash, 9999);
+    await (service as any).applyPendingIbcTreeUpdate('deadbeef', current.hostState.txHash, 9999n);
 
-    expect(pendingUpdates.commit).toHaveBeenCalledWith('tx-hash-abc', pending);
+    expect(pendingUpdates.commit).toHaveBeenCalledWith(current.hostState.txHash, pending, current.hostState);
+    expect(commit).toHaveBeenCalledWith(current.hostState);
     expect(treeCache.saveAliases).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.arrayContaining(['current', `root:${'ab'.repeat(32)}`, 'height:9999']),
+      expect.anything(), [`root:${current.root}`, `host-state:${current.hostState.txHash}#0`], current.hostState,
     );
+    expect(treeCache.saveAliases).toHaveBeenLastCalledWith(expect.anything(), ['current'], current.hostState);
   });
 });

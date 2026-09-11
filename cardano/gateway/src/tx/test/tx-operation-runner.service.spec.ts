@@ -426,8 +426,7 @@ describe('TxOperationRunnerService', () => {
       ['first-hash', firstPending],
       ['second-hash', finalPending],
     ]);
-    expect(txEventsService.register).toHaveBeenCalledWith('second-hash', finalEvents);
-    expect(txEventsService.registerByExpectedRoot).toHaveBeenCalledWith('final-root', finalEvents);
+    expect(txEventsService.register).toHaveBeenCalledWith('second-hash', finalEvents, 'final-root');
   });
 
   it('does not register partial chain metadata when a later link fails', async () => {

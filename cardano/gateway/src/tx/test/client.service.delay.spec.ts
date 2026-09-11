@@ -135,6 +135,7 @@ describe('ClientService connection-delay processing metadata', () => {
       validFromTime: zeroTime + 990_500,
       validToSlot: zeroSlot + 1600,
       validToTime: zeroTime + 1_600_999,
+      slotConfig: Lucid.SLOT_CONFIG_NETWORK.Preprod,
     });
 
     const result = await (service as any).computeTxValidityWindow(9500);

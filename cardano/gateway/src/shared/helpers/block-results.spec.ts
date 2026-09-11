@@ -80,6 +80,7 @@ describe('normalizeTxsResultFromClientDatum', () => {
       EVENT_TYPE_CLIENT.UPDATE_CLIENT,
       '0',
       null,
+      undefined,
       stagedHeader,
     );
 

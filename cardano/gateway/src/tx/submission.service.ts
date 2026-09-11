@@ -5,7 +5,7 @@ import { GrpcInternalException, GrpcInvalidArgumentException } from '../exceptio
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
 import { TxEventsService } from './tx-events.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
-import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { IbcTreePendingUpdatesService, PendingTreeStateUpdate, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import {
   CURRENT_IBC_TREE_CACHE_ID,
   IbcTreeCacheService,
@@ -155,7 +155,7 @@ export class SubmissionService {
     const confirmedBodyCborHex = this.verifyObservedTransactionEvidence(txHash, evidence);
 
     if (pending.kind === 'tree_neutral') {
-      if (!this.ibcTreePendingUpdatesService.commit(txHash, pending)) {
+      if (!(await this.ibcTreePendingUpdatesService.commitNeutral(txHash, pending))) {
         throw new GrpcInternalException(
           `Pending tree-neutral update for confirmed tx ${txHash} changed during observation`,
         );
@@ -351,7 +351,7 @@ export class SubmissionService {
     let pending = this.ibcTreePendingUpdatesService.peek(txHash);
     let pendingKey = txHash;
     let pendingWasTakenByRoot = false;
-    let confirmedRoot: string | undefined;
+    let confirmedHostState: ConfirmedHostStateEvidence | undefined;
 
     // Best-effort: if hashes don't line up due to encoding/formatting, compute the canonical body hash.
     if (!pending) {
@@ -403,17 +403,36 @@ export class SubmissionService {
       );
     }
 
+    if (pending.kind === 'tree_neutral') {
+      throw new GrpcInternalException(`Tree-neutral staged transaction ${txHash} requires exact ObserveTx confirmation`);
+    }
+    let publication: Awaited<ReturnType<PendingTreeStateUpdate['commit']>> | undefined;
     if (pendingWasTakenByRoot) {
-      pending.commit();
-    } else if (!this.ibcTreePendingUpdatesService.commit(pendingKey, pending)) {
+      try {
+        publication = await pending.commit({ txHash, outputIndex: confirmedHostState.outputIndex });
+      } catch (error) {
+        // Root lookup removed this entry; keep a failed live-state lookup retryable
+        // without overwriting a registration that arrived during the await.
+        if (!this.ibcTreePendingUpdatesService.peek(txHash)) {
+          this.ibcTreePendingUpdatesService.register(txHash, pending);
+        }
+        throw error;
+      }
+    } else {
+      publication = await this.ibcTreePendingUpdatesService.commit(pendingKey, pending, {
+        txHash,
+        outputIndex: confirmedHostState.outputIndex,
+      });
+    }
+    if (!publication) {
       throw new GrpcInternalException(`Pending IBC update for confirmed tx ${txHash} changed during finalization`);
     }
 
-    await this.persistIbcTreeUpdate(confirmedRoot, txHash, confirmedBlockNo);
+    await this.persistIbcTreeUpdate(publication.snapshot, txHash, confirmedBlockNo);
     return confirmedRoot;
   }
 
-  private async persistIbcTreeUpdate(confirmedRoot: string, txHash: string, confirmedBlockNo: bigint): Promise<void> {
+  private async persistIbcTreeUpdate(snapshot: IbcTreeSnapshot, txHash: string, confirmedBlockNo: bigint): Promise<void> {
     if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
     this.treeCacheWrite = this.treeCacheWrite.then(async () => {
       // A late confirmation owns its historical tree, never the current tree.

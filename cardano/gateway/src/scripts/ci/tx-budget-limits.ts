@@ -54,21 +54,20 @@ export function subtractBaselineExUnits(measured: ExUnits, baseline: ExUnits): E
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
-    // Every applied reference output independently passes the mandatory
-    // deployment guard. This is the separate conservative signing estimate.
+    // Every applied reference independently passes the production guard.
     signedBytesEstimate: 15_890,
   },
   send_packet_at_commitment_capacity: {
-    mem: 38_093_446,
-    steps: 12_037_221_558,
+    mem: 38_099_098,
+    steps: 12_039_331_774,
   },
   recv_packet_at_history_capacity: {
     mem: 40_602_892,
     steps: 12_714_931_716,
   },
   prune_packet_history_at_capacity: {
-    // Includes state-token authentication and the shared timeout helper.
-    // The public-network limits are unchanged.
+    // Re-measured with authenticated state threads and the shared timeout
+    // root helper. The public-network limits are unchanged.
     mem: 25_214_354,
   },
   trace_registry_rollover: {
@@ -78,8 +77,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
   first_seen_voucher_receive_at_capacity: {
     unsignedBytes: 20_615,
     signedBytesEstimate: 20_875,
-    mem: 83_090_764,
-    steps: 27_585_360_530,
+    mem: 83_093_590,
+    steps: 27_586_415_638,
   },
   first_seen_voucher_mint: {
     mem: 33_842_210,

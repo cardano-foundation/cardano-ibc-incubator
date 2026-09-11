@@ -343,7 +343,9 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
       dummyHash,
       dummyHash,
       dummyHash,
-      dummyHash,
+      "21".repeat(28),
+      "22".repeat(28),
+      "23".repeat(28),
     );
   const [, referenceValidatorHash, referenceAddress] = readValidator(
     "reference_validator.refer_only.else",

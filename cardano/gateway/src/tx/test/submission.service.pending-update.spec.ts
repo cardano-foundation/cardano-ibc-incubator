@@ -23,11 +23,12 @@ describe('SubmissionService pending update strictness', () => {
       { saveAliases: jest.fn() } as any,
       { findTxByHash: jest.fn(), findTransactionEvidenceByHash: jest.fn() } as any,
       {} as any,
+      createTestTreeStore(),
     );
   });
 
   it('fails hard when a confirmed transaction has no pending update entry', async () => {
-    jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('root-at-tx');
+    jest.spyOn(service as any, 'readConfirmedTxHostState').mockResolvedValueOnce({ root: 'root-at-tx', outputIndex: 0, datumCborHex: 'd87980' });
 
     await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123', 1234)).rejects.toThrow(
       'Missing pending IBC update',
@@ -40,7 +41,7 @@ describe('SubmissionService pending update strictness', () => {
   it('fails hard on confirmed root lookup error without consuming the exact pending entry', async () => {
     const pending = { expectedNewRoot: 'fallback-root', commit: jest.fn() };
     pendingUpdates.peek.mockReturnValueOnce(pending);
-    jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('tx root decode error'));
+    jest.spyOn(service as any, 'readConfirmedTxHostState').mockRejectedValueOnce(new Error('tx root decode error'));
 
     await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 1234)).rejects.toThrow(
       'tx root decode error',

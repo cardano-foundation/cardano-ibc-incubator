@@ -14,6 +14,7 @@ import { Emulator } from "@lucid-evolution/provider";
 import {
   DEPLOYMENT_PLAN_FIXTURE,
   loadDeploymentPlan,
+  loadStagedTendermintValidators,
 } from "./deployment-plan.ts";
 import {
   buildReferenceValidatorSizeReport,
@@ -81,6 +82,28 @@ Deno.test("the optional benchmark policy is inventoried and pins the registry va
   }
 });
 
+Deno.test("the deployment inventory uses the staged client and session policy graph", async () => {
+  const plan = await loadDeploymentPlan(lucidLoader, inputs);
+  const staged = loadStagedTendermintValidators(lucidLoader, plan.hostNft.hash);
+  assertEquals(plan.sessionSpend.hash, staged.sessionSpend.scriptHash);
+  assertEquals(plan.sessionMint.hash, staged.sessionMint.policyId);
+  assertEquals(plan.spendClient.hash, staged.clientSpend.scriptHash);
+  assertEquals(
+    plan.spendClient.title,
+    "spending_multitx_client.spend_multitx_client.spend",
+  );
+  for (
+    const validator of [
+      plan.sessionSpend,
+      plan.sessionMint,
+      plan.spendClient,
+      plan.recoverClient,
+    ]
+  ) {
+    assert(plan.referenceValidators.includes(validator));
+  }
+});
+
 Deno.test("the plan carries nonce changes through the full applied dependency graph", async () => {
   const original = await loadDeploymentPlan(lucidLoader, inputs);
   const hostChanged = await loadDeploymentPlan(lucidLoader, {
@@ -92,6 +115,8 @@ Deno.test("the plan carries nonce changes through the full applied dependency gr
       "hostNft",
       "hostState",
       "mintPort",
+      "sessionSpend",
+      "sessionMint",
       "spendClient",
       "spendConnection",
       "spendTransferModule",

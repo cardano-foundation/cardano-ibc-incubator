@@ -58,8 +58,9 @@ use ibc/core/ics_025_handler_interface/host_state.{
   max_bound_ports, min_shutdown_grace_period_ms, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, CreateClient, EnterShutdown, FinalizeShutdown, HandlePacket,
-  Heartbeat, HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
+  BindPort, CreateClient, CreateConnection, EnterShutdown, FinalizeShutdown,
+  HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel, UpdateClient,
+  UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/fuzz_dsl
@@ -613,7 +614,9 @@ fn spend_host_state_with_signatories(
     test_client_script_hash(),
     test_connection_script_hash(),
     test_channel_script_hash(),
-    test_client_token().policy_id,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     test_host_ref(),
@@ -634,7 +637,9 @@ fn spend_host_state_with_channel_redeemer(
     test_client_script_hash(),
     test_connection_script_hash(),
     test_channel_script_hash(),
-    test_client_token().policy_id,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     test_host_ref(),
@@ -1375,11 +1380,14 @@ test host_update_client_rejects_datum_token_missing_from_output() fail {
   )
 }
 
-fn host_update_client_capacity_context() -> (
-  HostStateRedeemer,
-  List<Input>,
-  List<Output>,
-) {
+/// Deterministic companion for the Tendermint UpdateClient capacity report.
+///
+/// Keep this as a unit test (rather than a property test) so `aiken check`
+/// emits stable execution units for the complete 64-level client-state and
+/// consensus-state root transition. Consensus-state removals are deliberately
+/// empty: issue #613 measures validator-set capacity independently of the
+/// pruning growth tracked by issue #557.
+fn prepare_host_update_client_capacity() -> Pair<HostStateRedeemer, Transaction> {
   let seed = 613
   let input_client_datum = test_client_datum(1, seed)
   let output_client_datum =
@@ -1461,7 +1469,7 @@ fn host_update_client_capacity_context() -> (
       removed_consensus_state_siblings: [],
     }
 
-  (
+  Pair(
     redeemer,
     Transaction {
       ..placeholder,
@@ -1481,23 +1489,6 @@ fn host_update_client_capacity_context() -> (
 const host_update_client_capacity_fixture =
   prepare_host_update_client_capacity()
 
-test host_update_client_capacity_minimum_history_succeeds() {
-  let Pair(redeemer, transaction) = host_update_client_capacity_fixture
-  host_state_stt.host_state_stt.spend(
-    test_nft_policy(),
-    test_client_script_hash(),
-    test_connection_script_hash(),
-    test_channel_script_hash(),
-    "mock client policy",
-    "mock connection policy",
-    "mock channel policy",
-    None,
-    redeemer,
-    test_host_ref(),
-    transaction,
-  )
-}
-
 fn host_update_client_capacity_fixture_is_constructed(
   redeemer: HostStateRedeemer,
   inputs: List<Input>,
@@ -1514,7 +1505,8 @@ fn host_update_client_capacity_fixture_is_constructed(
 }
 
 test host_update_client_capacity_fixture_setup_baseline() {
-  let (redeemer, inputs, outputs) = host_update_client_capacity_context()
+  let Pair(redeemer, transaction) = host_update_client_capacity_fixture
+  let Transaction { inputs, outputs, .. } = transaction
   host_update_client_capacity_fixture_is_constructed(redeemer, inputs, outputs)
 }
 
@@ -1526,7 +1518,8 @@ test host_update_client_capacity_fixture_setup_baseline() {
 /// empty: issue #613 measures validator-set capacity independently of the
 /// pruning growth tracked by issue #557.
 test host_update_client_capacity_minimum_history_succeeds() {
-  let (redeemer, inputs, outputs) = host_update_client_capacity_context()
+  let Pair(redeemer, transaction) = host_update_client_capacity_fixture
+  let Transaction { inputs, outputs, .. } = transaction
   expect
     host_update_client_capacity_fixture_is_constructed(
       redeemer,
@@ -1534,7 +1527,19 @@ test host_update_client_capacity_minimum_history_succeeds() {
       outputs,
     )
 
-  spend_host_state(redeemer, inputs, outputs)
+  host_state_stt.host_state_stt.spend(
+    test_nft_policy(),
+    test_client_script_hash(),
+    test_connection_script_hash(),
+    test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
+    None,
+    redeemer,
+    test_host_ref(),
+    transaction,
+  )
 }
 
 test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {
@@ -3669,7 +3674,9 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
-    dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3763,7 +3770,9 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
-    dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3878,7 +3887,9 @@ test host_state_cannot_move_nft_to_different_address() fail {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
-    dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -3986,7 +3997,9 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
-    dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -4056,7 +4069,9 @@ test host_state_bind_port_fails_if_output_missing() fail {
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
-    dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -4150,7 +4165,9 @@ fn validate_test_enter_shutdown(
     dummy_script_hash,
     dummy_script_hash,
     dummy_script_hash,
-    dummy_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     input_ref,
@@ -4266,23 +4283,7 @@ fn test_shutdown_host_input(grace_period_end: Int) -> Input {
         ),
       ),
       reference_script: None,
-    }
-
-  let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
-
-  let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
-
-  host_state_stt.host_state_stt.spend(
-    nft_policy,
-    dummy_script_hash,
-    dummy_script_hash,
-    dummy_script_hash,
-    dummy_script_hash,
-    None,
-    redeemer,
-    input_ref,
-    transaction,
+    },
   )
 }
 
@@ -4373,95 +4374,22 @@ test host_state_finalize_shutdown_rejects_nft_output_with_burn() fail {
       datum: NoDatum,
       reference_script: None,
     }
-
-  host_state_stt.host_state_stt.spend(
-    nft_policy,
-    dummy_script_hash,
-    dummy_script_hash,
-    dummy_script_hash,
-    dummy_script_hash,
-    None,
-    FinalizeShutdown,
-    input_ref,
-    transaction,
+  validate_test_finalize_shutdown(
+    from_asset(nft_policy, host_state_token_name, -1),
+    [nft_output],
+    grace_period_end,
+    grace_period_end,
   )
 }
 
 test host_state_finalize_shutdown_fails_before_grace_period() fail {
-  let nft_policy: PolicyId =
-    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
-  let host_script_hash =
-    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
-  let dummy_script_hash =
-    #"a15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b372"
-  let host_address = Address(Script(host_script_hash), None)
-  let reclaimed_address = Address(Script(dummy_script_hash), None)
-  let grace_period_end = 5000
-
-  let old_state =
-    HostState {
-      version: 1,
-      ibc_state_root: empty_ibc_state_root,
-      next_client_sequence: 0,
-      next_connection_sequence: 0,
-      next_channel_sequence: 0,
-      bound_port: [],
-      last_update_time: 2000,
-    }
-
-  let input_ref =
-    OutputReference {
-      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
-      output_index: 0,
-    }
-
-  let host_input =
-    Input(
-      input_ref,
-      Output {
-        address: host_address,
-        value: from_asset(nft_policy, host_state_token_name, 1),
-        datum: InlineDatum(
-          test_host_state_datum_with_shutdown(
-            old_state,
-            nft_policy,
-            ShuttingDown {
-              initiated_at: old_state.last_update_time,
-              grace_period_end,
-            },
-          ),
-        ),
-        reference_script: None,
-      },
-    )
-
-  let reclaimed_output =
-    Output {
-      address: reclaimed_address,
-      value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: NoDatum,
-      reference_script: None,
-    }
-
-  let transaction =
-    Transaction {
-      ..placeholder,
-      inputs: [host_input],
-      outputs: [reclaimed_output],
-      extra_signatories: [trusted_deployer],
-      validity_range: interval.after(grace_period_end - 1),
-    }
-
-  host_state_stt.host_state_stt.spend(
-    nft_policy,
-    dummy_script_hash,
-    dummy_script_hash,
-    dummy_script_hash,
-    dummy_script_hash,
-    None,
-    FinalizeShutdown,
-    input_ref,
-    transaction,
+  let nft_policy = test_nft_policy()
+  let grace_period_end = 2000 + min_shutdown_grace_period_ms
+  validate_test_finalize_shutdown(
+    from_asset(nft_policy, host_state_token_name, -1),
+    [],
+    grace_period_end - 1,
+    grace_period_end,
   )
 }
 
@@ -4581,7 +4509,9 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
     host_script_hash,
     host_script_hash,
     channel_script_hash,
-    host_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     host_ref,
@@ -4716,7 +4646,9 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
     host_script_hash,
     host_script_hash,
     channel_script_hash,
-    host_script_hash,
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
     None,
     redeemer,
     host_ref,

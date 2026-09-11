@@ -198,6 +198,7 @@ type ReferenceScripts = {
   mintIdentifier: UTxO;
   spendConnection: UTxO;
   spendClient: UTxO;
+  recoverClient?: UTxO;
   spendTendermintUpdateSession?: UTxO;
   mintTendermintUpdateSession?: UTxO;
   spendMockModule?: UTxO;
@@ -243,6 +244,7 @@ export class LucidService implements OnModuleInit {
       spendTraceRegistry: deploymentConfig.validators.spendTraceRegistry
         ?.refUtxo,
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
+      recoverClient: deploymentConfig.validators.recoverClient?.refUtxo,
       spendTendermintUpdateSession: deploymentConfig.validators
         .spendTendermintUpdateSession?.refUtxo,
       mintTendermintUpdateSession: deploymentConfig.validators
@@ -1178,6 +1180,62 @@ export class LucidService implements OnModuleInit {
         deploymentConfig.validators.spendClient.address,
         { kind: "inline", value: encodedNewClientDatum },
         { [clientTokenUnit]: 1n },
+      )
+      .addSignerKey(signerKeyHash);
+  }
+
+  public createUnsignedRecoverClientTransaction(
+    hostStateUtxo: UTxO,
+    encodedHostStateRedeemer: string,
+    subjectClientUtxo: UTxO,
+    encodedSpendClientRedeemer: string,
+    substituteClientUtxo: UTxO,
+    encodedRecoverClientWithdrawalRedeemer: string,
+    encodedUpdatedHostStateDatum: string,
+    encodedRecoveredClientDatum: string,
+    subjectClientTokenUnit: string,
+    signerKeyHash: string,
+  ): TxBuilder {
+    const deploymentConfig = this.configService.get("deployment");
+    const recoveryConfig = deploymentConfig.validators.recoverClient;
+    const recoveryReferenceScript = this.referenceScripts.recoverClient;
+    if (!recoveryConfig?.address || !recoveryReferenceScript) {
+      throw new GrpcInternalException(
+        "Tendermint client recovery is not configured for this deployment",
+      );
+    }
+
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
+      deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...hostStateUtxo,
+      datum: hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    return this.newTxBuilder()
+      .readFrom([
+        this.referenceScripts.hostStateStt,
+        this.referenceScripts.spendClient,
+        recoveryReferenceScript,
+        substituteClientUtxo,
+      ])
+      .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
+      .collectFrom([subjectClientUtxo], encodedSpendClientRedeemer)
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        { kind: "inline", value: encodedUpdatedHostStateDatum },
+        { [hostStateNFT]: 1n },
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendClient.address,
+        { kind: "inline", value: encodedRecoveredClientDatum },
+        { [subjectClientTokenUnit]: 1n },
+      )
+      .withdraw(
+        recoveryConfig.address,
+        0n,
+        encodedRecoverClientWithdrawalRedeemer,
       )
       .addSignerKey(signerKeyHash);
   }

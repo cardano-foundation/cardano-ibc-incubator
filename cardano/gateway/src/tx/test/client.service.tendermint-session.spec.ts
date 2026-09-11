@@ -1,3 +1,4 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import * as Lucid from '@lucid-evolution/lucid';
 import { BinaryReader } from '@cardano-ibc/proto-types/build/binary';
 
@@ -284,7 +285,7 @@ function makeHarness() {
     error: jest.fn(),
   };
   const configService = { get: jest.fn() };
-  const service = new ClientService(logger as any, configService as any, lucidService, runner);
+  const service = new ClientService(logger as any, configService as any, lucidService, runner, createTestTreeStore());
   const computeValidityWindow = jest.spyOn(service as any, 'computeTxValidityWindow').mockResolvedValue({
     currentSlot: 1,
     currentLedgerTime: TEST_CURRENT_LEDGER_TIME_MS,

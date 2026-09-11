@@ -108,8 +108,7 @@ import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_rede
 import { Packet } from '@shared/types/channel/packet';
 import {
   decodeMintClientRedeemer,
-  decodeSpendClientRedeemer,
-  SpendClientRedeemer,
+  findSpendClientRedeemer,
 } from '@shared/types/client-redeemer';
 import type { Header as TendermintHeader } from '@shared/types/header';
 import {
@@ -225,7 +224,7 @@ function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
 }
 @Injectable()
 export class QueryService {
-  private readonly txEvidenceCache = new Map<string, Promise<HistoryTxEvidence>>();
+  private readonly txEvidenceCache: BoundedCache<string, Promise<HistoryTxEvidence>>;
 
   constructor(
     private readonly logger: Logger,
@@ -240,7 +239,7 @@ export class QueryService {
     private readonly ibcTreeStore: IbcTreeStateStore,
     @Optional() @Inject(MetricsService) metricsService?: MetricsService,
   ) {
-    this.txRedeemerCache = new BoundedCache({
+    this.txEvidenceCache = new BoundedCache({
       maxEntries: TX_REDEEMER_CACHE_MAX_ENTRIES,
       ttlMs: TX_REDEEMER_CACHE_TTL_MS,
       onSizeChange: (size) => metricsService?.setCacheEntries(TX_REDEEMER_CACHE_METRIC, size),
@@ -286,10 +285,18 @@ export class QueryService {
 
   private async getTransactionEvidence(txHash: string): Promise<HistoryTxEvidence> {
     const cacheKey = txHash.toLowerCase();
-    if (!this.txEvidenceCache.has(cacheKey)) {
-      this.txEvidenceCache.set(cacheKey, this.miniProtocalsService.fetchTransactionEvidence(cacheKey));
+    let lookup = this.txEvidenceCache.get(cacheKey);
+    if (!lookup) {
+      lookup = this.miniProtocalsService.fetchTransactionEvidence(cacheKey);
+      this.txEvidenceCache.set(cacheKey, lookup);
     }
-    return this.txEvidenceCache.get(cacheKey)!;
+
+    try {
+      return await lookup;
+    } catch (error) {
+      this.txEvidenceCache.deleteIfValue(cacheKey, lookup);
+      throw error;
+    }
   }
 
   private async getTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
@@ -1451,19 +1458,14 @@ export class QueryService {
           }
 
           const redeemers = await this.getTransactionRedeemers(clientUtxo.txHash);
-          const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
-          let spendClientRedeemerData: SpendClientRedeemer = 'Other';
-          if (spendClientRedeemer) {
-            try {
-              spendClientRedeemerData = decodeSpendClientRedeemer(
-                spendClientRedeemer.data,
-                this.lucidService.LucidImporter,
-              );
-            } catch {
-              spendClientRedeemerData = 'Other';
-            }
-          }
           const stagedHeader = await this.recoverStagedTendermintHeader(clientUtxo, clientDatum, redeemers);
+          const spendClientRedeemerData = stagedHeader
+            ? undefined
+            : findSpendClientRedeemer(redeemers, this.lucidService.LucidImporter);
+          const substituteClientId =
+            typeof spendClientRedeemerData === 'object' && 'RecoverClient' in spendClientRedeemerData
+              ? getIdByTokenName(spendClientRedeemerData.RecoverClient.substitute_token.name, tokenBase, CLIENT_PREFIX)
+              : undefined;
           const eventClient = this.clientEventType(redeemers, stagedHeader);
 
           const txsResult = normalizeTxsResultFromClientDatum(
@@ -1471,6 +1473,7 @@ export class QueryService {
             eventClient,
             clientId,
             spendClientRedeemerData,
+            substituteClientId,
             stagedHeader,
           );
           return txsResult as unknown as ResponseDeliverTx;

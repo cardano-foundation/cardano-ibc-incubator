@@ -1,16 +1,17 @@
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { SubmissionService } from '../submission.service';
 
 const TX_HASH = 'ab'.repeat(32);
 
 describe('SubmissionService staged ObserveTx', () => {
   let service: SubmissionService;
-  let pendingUpdates: { peek: jest.Mock; commit: jest.Mock; takeByExpectedRoot: jest.Mock };
+  let pendingUpdates: { peek: jest.Mock; commitNeutral: jest.Mock; takeByExpectedRoot: jest.Mock };
   let history: { findTxByHash: jest.Mock; findTransactionEvidenceByHash: jest.Mock };
 
   beforeEach(() => {
     pendingUpdates = {
       peek: jest.fn(),
-      commit: jest.fn().mockReturnValue(true),
+      commitNeutral: jest.fn().mockResolvedValue(true),
       takeByExpectedRoot: jest.fn(),
     };
     history = { findTxByHash: jest.fn(), findTransactionEvidenceByHash: jest.fn() };
@@ -22,6 +23,7 @@ describe('SubmissionService staged ObserveTx', () => {
       { saveAliases: jest.fn() } as any,
       history as any,
       {} as any,
+      createTestTreeStore(),
     );
   });
 
@@ -45,7 +47,7 @@ describe('SubmissionService staged ObserveTx', () => {
     });
 
     expect(verifyEvidence).toHaveBeenCalledWith(TX_HASH, { blockNo: 1234 });
-    expect(pendingUpdates.commit).toHaveBeenCalledWith(TX_HASH, pending);
+    expect(pendingUpdates.commitNeutral).toHaveBeenCalledWith(TX_HASH, pending);
     expect(applyTreeUpdate).not.toHaveBeenCalled();
   });
 
@@ -58,7 +60,7 @@ describe('SubmissionService staged ObserveTx', () => {
     });
 
     await expect(service.observeTransaction({ tx_hash: TX_HASH })).rejects.toThrow('body hash mismatch');
-    expect(pendingUpdates.commit).not.toHaveBeenCalled();
+    expect(pendingUpdates.commitNeutral).not.toHaveBeenCalled();
   });
 
   it('coalesces concurrent observations of the same phase boundary', async () => {
@@ -81,6 +83,6 @@ describe('SubmissionService staged ObserveTx', () => {
       { tx_hash: TX_HASH, height: '0-1234', events: [] },
     ]);
     expect((service as any).waitForIndexedTransactionEvidence).toHaveBeenCalledTimes(1);
-    expect(pendingUpdates.commit).toHaveBeenCalledTimes(1);
+    expect(pendingUpdates.commitNeutral).toHaveBeenCalledTimes(1);
   });
 });

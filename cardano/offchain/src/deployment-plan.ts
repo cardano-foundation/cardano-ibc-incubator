@@ -34,6 +34,96 @@ export type DeploymentPlanInputs = {
   benchmarkVoucherEnabled: boolean;
 };
 
+export const loadStagedTendermintValidators = (
+  lucid: LucidEvolution,
+  hostStateNftPolicyId: string,
+) => {
+  const [sessionSpendValidator, sessionSpendScriptHash, sessionSpendAddress] =
+    readValidator(
+      "spending_tendermint_update_session.spend_tendermint_update_session.spend",
+      lucid,
+      [hostStateNftPolicyId],
+      Data.Tuple([Data.Bytes()]) as unknown as [string],
+    );
+
+  const [sessionMintValidator, sessionMintPolicyId, sessionMintAddress] =
+    readValidator(
+      "minting_tendermint_update_session.mint_tendermint_update_session.mint",
+      lucid,
+      [sessionSpendScriptHash],
+      Data.Tuple([Data.Bytes()]) as unknown as [string],
+    );
+
+  const [clientSpendValidator, clientSpendScriptHash, clientSpendAddress] =
+    readValidator(
+      "spending_multitx_client.spend_multitx_client.spend",
+      lucid,
+      [hostStateNftPolicyId, sessionMintPolicyId],
+      Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+    );
+
+  return {
+    sessionSpend: {
+      validator: sessionSpendValidator,
+      scriptHash: sessionSpendScriptHash,
+      address: sessionSpendAddress,
+    },
+    sessionMint: {
+      validator: sessionMintValidator,
+      policyId: sessionMintPolicyId,
+      address: sessionMintAddress,
+    },
+    clientSpend: {
+      validator: clientSpendValidator,
+      scriptHash: clientSpendScriptHash,
+      address: clientSpendAddress,
+    },
+  };
+};
+
+export const buildChannelValidators = (
+  lucid: LucidEvolution,
+  mintClientPolicyId: string,
+  mintConnectionPolicyId: string,
+  mintPortPolicyId: string,
+  verifyProofScriptHash: string,
+  hostStateNftPolicyId: string,
+) => {
+  const names = [
+    "chan_open_ack",
+    "chan_open_confirm",
+    "chan_close_init",
+    "chan_close_confirm",
+    "recv_packet",
+    "send_packet",
+    "timeout_packet",
+    "acknowledge_packet",
+    "prune_packet_history",
+  ];
+  const load = (title: string, args: string[]): PlannedValidator => {
+    const [script, hash, address] = readValidator(title, lucid, args);
+    return { title, publication: "runtime", script, hash, address };
+  };
+  const referredScripts: Record<string, PlannedValidator> = {};
+  for (const name of names) {
+    const args = name === "prune_packet_history"
+      ? [mintClientPolicyId, mintConnectionPolicyId, verifyProofScriptHash]
+      : [mintClientPolicyId, mintConnectionPolicyId, mintPortPolicyId];
+    if (
+      !["prune_packet_history", "send_packet", "chan_close_init"].includes(name)
+    ) {
+      args.push(verifyProofScriptHash);
+    }
+    if (name !== "prune_packet_history") args.push(hostStateNftPolicyId);
+    referredScripts[name] = load(`spending_channel/${name}.${name}.mint`, args);
+  }
+  const base = load("spending_channel.spend_channel.spend", [
+    ...Object.values(referredScripts).map(({ hash }) => hash),
+    hostStateNftPolicyId,
+  ]);
+  return { base, referredScripts };
+};
+
 /** Load the fully applied HostState used by production deployment. */
 export const loadHostStateValidator = (
   lucid: LucidEvolution,
@@ -41,17 +131,31 @@ export const loadHostStateValidator = (
   clientHash: string,
   connectionHash: string,
   channelHash: string,
+  clientMintPolicyId: string,
+  connectionMintPolicyId: string,
+  channelMintPolicyId: string,
 ) =>
   readValidator(
     "host_state_stt.host_state_stt.spend",
     lucid,
-    [hostPolicy, clientHash, connectionHash, channelHash],
+    [
+      hostPolicy,
+      clientHash,
+      connectionHash,
+      channelHash,
+      clientMintPolicyId,
+      connectionMintPolicyId,
+      channelMintPolicyId,
+    ],
     Data.Tuple([
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
-    ]) as unknown as [string, string, string, string],
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [string, string, string, string, string, string, string],
   );
 
 /**
@@ -106,14 +210,36 @@ export const loadDeploymentPlan = async (
     "runtime",
     bytes(hostPolicy),
   );
-  const credential = Data.Enum([
-    Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
-    Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
-  ]);
-  const spendClient = load("spending_client.spend_client.spend", "runtime", [
-    hostPolicy,
-    { Script: [recoverClient.hash] },
-  ], Data.Tuple([Data.Bytes(), credential]));
+  // The legacy recovery authority remains registered, but the staged client
+  // authenticates start/continue/finalize work through its session policy.
+  const staged = loadStagedTendermintValidators(lucid, hostPolicy);
+  const sessionSpend = register(
+    "spending_tendermint_update_session.spend_tendermint_update_session.spend",
+    "runtime",
+    [
+      staged.sessionSpend.validator,
+      staged.sessionSpend.scriptHash,
+      staged.sessionSpend.address,
+    ],
+  );
+  const sessionMint = register(
+    "minting_tendermint_update_session.mint_tendermint_update_session.mint",
+    "runtime",
+    [
+      staged.sessionMint.validator,
+      staged.sessionMint.policyId,
+      staged.sessionMint.address,
+    ],
+  );
+  const spendClient = register(
+    "spending_multitx_client.spend_multitx_client.spend",
+    "runtime",
+    [
+      staged.clientSpend.validator,
+      staged.clientSpend.scriptHash,
+      staged.clientSpend.address,
+    ],
+  );
   const mintClient = load(
     "minting_client_stt.mint_client_stt.mint",
     "runtime",
@@ -129,36 +255,15 @@ export const loadDeploymentPlan = async (
     "runtime",
     bytes(mintClient.hash, verifyProof.hash, spendConnection.hash, hostPolicy),
   );
-  const channelHandlers = {
-    chan_open_ack: "chan_open_ack.mint",
-    chan_open_confirm: "chan_open_confirm.spend",
-    chan_close_init: "chan_close_init.spend",
-    chan_close_confirm: "chan_close_confirm.spend",
-    recv_packet: "recv_packet.mint",
-    send_packet: "send_packet.mint",
-    timeout_packet: "timeout_packet.mint",
-    acknowledge_packet: "acknowledge_packet.mint",
-    prune_packet_history: "prune_packet_history.mint",
-  };
-  const referredScripts: Record<string, PlannedValidator> = {};
-  for (const [name, handler] of Object.entries(channelHandlers)) {
-    const args = name === "prune_packet_history"
-      ? bytes(mintClient.hash, mintConnection.hash, verifyProof.hash)
-      : bytes(mintClient.hash, mintConnection.hash, mintPort.hash);
-    if (
-      !["prune_packet_history", "send_packet", "chan_close_init"].includes(name)
-    ) args.push(verifyProof.hash);
-    if (name !== "prune_packet_history") args.push(hostPolicy);
-    referredScripts[name] = load(
-      `spending_channel/${name}.${handler}`,
-      "runtime",
-      args,
-    );
-  }
-  const spendChannel = load("spending_channel.spend_channel.spend", "runtime", [
-    ...Object.values(referredScripts).map((script) => script.hash),
+  const { base: spendChannel, referredScripts } = buildChannelValidators(
+    lucid,
+    mintClient.hash,
+    mintConnection.hash,
+    mintPort.hash,
+    verifyProof.hash,
     hostPolicy,
-  ]);
+  );
+  validators.push(...Object.values(referredScripts), spendChannel);
   const mintChannel = load(
     "minting_channel_stt.mint_channel_stt.mint",
     "runtime",
@@ -180,6 +285,9 @@ export const loadDeploymentPlan = async (
       spendClient.hash,
       spendConnection.hash,
       spendChannel.hash,
+      mintClient.hash,
+      mintConnection.hash,
+      mintChannel.hash,
     ),
   );
   const mintIdentifier = load(
@@ -291,6 +399,8 @@ export const loadDeploymentPlan = async (
     verifyProof,
     mintPort,
     recoverClient,
+    sessionSpend,
+    sessionMint,
     spendClient,
     mintClient,
     spendConnection,

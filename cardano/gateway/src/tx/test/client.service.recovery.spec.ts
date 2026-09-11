@@ -113,6 +113,7 @@ describe('ClientService recovery transaction', () => {
     const config = { get: jest.fn().mockReturnValue(deployment) } as unknown as ConfigService;
     const lucid: any = {
       LucidImporter: Lucid,
+      hasStagedTendermintClient: jest.fn().mockReturnValue(false),
       findUtxoAtHostStateNFT: jest.fn(),
       getPaymentCredential: jest.fn(),
       getClientTokenUnit: jest.fn((id: string) => `unit-${id}`),
@@ -201,6 +202,20 @@ describe('ClientService recovery transaction', () => {
     expect(runner.run).toHaveBeenCalledWith(
       expect.objectContaining({ operationName: 'recoverClient', pendingTreeUpdate: buildResult.pendingTreeUpdate }),
     );
+  });
+
+  it('rejects staged deployments before attempting legacy recovery', async () => {
+    const { service, lucid } = serviceContext();
+    lucid.hasStagedTendermintClient.mockReturnValue(true);
+
+    await expect(
+      service.recoverClient({
+        subject_client_id: '07-tendermint-1',
+        substitute_client_id: '07-tendermint-2',
+        signer: 'addr_test1authority',
+      }),
+    ).rejects.toThrow('not supported by the staged client protocol');
+    expect(lucid.findUtxoAtHostStateNFT).not.toHaveBeenCalled();
   });
 
   it('fails clearly when recovery is not deployed', async () => {

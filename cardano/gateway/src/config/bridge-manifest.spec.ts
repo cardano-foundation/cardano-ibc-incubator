@@ -253,6 +253,40 @@ describe('bridge manifest normalization', () => {
     );
   });
 
+  it('keeps handler files without a recovery validator loadable', () => {
+    const current = buildHandlerJsonDeployment();
+    const { recoverClient: _recoverClient, ...legacyValidators } = current.validators;
+
+    const loaded = normalizeHandlerJsonDeploymentConfig(
+      { ...current, validators: legacyValidators },
+      {
+        chain_id: 'cardano-devnet',
+        network_magic: 42,
+        network: 'Custom',
+      },
+    );
+
+    expect(loaded.deployment.validators.recoverClient).toBeUndefined();
+    expect(loaded.bridgeManifest.validators.recover_client).toBeUndefined();
+  });
+
+  it('keeps manifests without a recovery validator loadable', () => {
+    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    }).bridgeManifest;
+    const { recover_client: _recoverClient, ...legacyValidators } = current.validators;
+
+    const loaded = normalizeBridgeManifestConfig({
+      ...current,
+      validators: legacyValidators,
+    });
+
+    expect(loaded.deployment.validators.recoverClient).toBeUndefined();
+    expect(loaded.bridgeManifest.validators.recover_client).toBeUndefined();
+  });
+
   it('defaults handler files without a codec capability to the legacy validators', () => {
     const { ics20PacketCodec: _codec, ...legacyHandler } = buildHandlerJsonDeployment();
 
