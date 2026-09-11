@@ -48,12 +48,9 @@ State commitments and settlement are separate properties. Two competing forks ca
 
 The STT architecture addresses the application-state commitment problem, but it does not remove the consensus asymmetry. It makes `ibc_state_root` a script-enforced commitment to Cardano IBC state. A counterparty still needs a defensible way to decide which Cardano transaction and HostState output are canonical. The current probabilistic client makes that decision using its compiled settlement policy. This does not provide parity with Tendermint finality.
 
-There are also some open questions about ramifications of the Ouroboros Peras upgrade, which at the time of writing are described as:
+[IOG's October 14, 2024 explanation of Ouroboros Peras](https://www.iog.io/blog/posts/2024/10/14/ouroboros-peras-the-next-step-in-the-journey-of-cardano-s-protocol-1/) describes a voting layer that can accelerate settlement. It also describes a cooldown after a voting round fails to reach quorum. During that period the chain relies on Praos, with the cooldown length chosen to limit the advantage an attacker could have gained from the failed round.
 
-""... after a failed voting round, Peras enters a cooldown period during which voting is suspended and the protocol essentially proceeds as Praos. The length of the cooldown period must be sufficiently long to ensure that any adversarial advantage gained from an unfavorable distribution of votes in the failed round will be neutralized by the end of cooldown. There is a tradeoff between the boost provided by votes and the length of the cooldown period. The higher the boost, the higher the potential damage caused by an unsuccessful voting round, and thus, the longer before voting may be resumed..."
-
-The implications for Cardano IBC remain to be quantified. Faster native settlement could permit stronger or lower-latency probabilistic acceptance parameters, but those parameters must be studied and updated explicitly.
-
+This describes the protocol design at that date. It does not establish a latency improvement for this bridge. Lowering the client's acceptance thresholds would require a separate analysis of the deployed protocol and the evidence this client verifies.
 
 # Asymmetries and Architectural Considerations
 
