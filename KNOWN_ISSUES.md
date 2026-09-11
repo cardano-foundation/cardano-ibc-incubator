@@ -2,7 +2,7 @@
 
 Author: Julius Tranquilli, https://github.com/jtranq
 
-This document tracks engineering challenges caused by asymmetries between Cardano and Cosmos, including differences in transaction semantics and consensus algorithms. **It was reviewed on July 10, 2026.** The maintained Cardano client is the experimental `08-cardano-probabilistic` client. The older Mithril client is deprecated, disabled, and retained only as historical design reference and for type compatibility.
+This document tracks engineering challenges caused by asymmetries between Cardano and Cosmos, including differences in transaction semantics and consensus algorithms. **Reviewed against [`main` at `107866a9`](https://github.com/cardano-foundation/cardano-ibc-incubator/commit/107866a998fb8a469c5b11379ee32f692815009b) on September 10, 2026.** The maintained Cardano client is the experimental `08-cardano-probabilistic` client. The older Mithril client is deprecated, disabled, and retained only as historical design reference and for type compatibility.
 
 ## Introduction
 
