@@ -487,7 +487,7 @@ fn run_atomic_recovery_with_policy(
       host_update_redeemer,
     )
 
-  and {
+  expect
     spending_client.spend_client.spend(
       host_policy,
       address.Script(recovery_script_hash),
@@ -513,6 +513,8 @@ fn run_atomic_recovery_with_policy(
       connection_script_hash,
       channel_script_hash,
       client_policy,
+      "unused connection minting policy",
+      "unused channel minting policy",
       Some(old_host_datum),
       host_update_redeemer,
       host_reference,
@@ -880,9 +882,7 @@ test spend_client_rejects_missing_recovery_withdrawal() fail {
   )
 }
 
-fn spend_with_forged_recovery_support(
-  support: RecoverClientWithdrawalRedeemer,
-) -> Bool {
+fn spend_with_forged_recovery_support(support: Redeemer) -> Bool {
   let subject = expired_subject()
   let substitute = active_substitute()
   let tx =
@@ -1032,4 +1032,94 @@ test recovery_retains_nonempty_subject_history_not_substitute_history() {
     ),
     output.history_root != substitute.history_root,
   }
+}
+
+test spend_client_rejects_malformed_recovery_withdrawal() fail {
+  spend_with_forged_recovery_support(Void)
+}
+
+test unrelated_valid_recovery_cannot_authorize_a_real_client_spend() {
+  let subject = expired_subject()
+  let substitute = active_substitute()
+  let fake_subject =
+    ClientDatum {
+      ..subject,
+      token: AuthToken { ..subject.token, policy_id: other_client_policy },
+    }
+  let fake_substitute =
+    ClientDatum {
+      ..substitute,
+      token: AuthToken { ..substitute.token, policy_id: other_client_policy },
+    }
+  let fake_reference = OutputReference { ..subject_reference, output_index: 1 }
+  let fake_substitute_reference =
+    OutputReference { ..substitute_reference, output_index: 1 }
+  let tx =
+    recovery_transaction(
+      subject,
+      substitute,
+      expected_recovered(subject, substitute),
+      client_script_hash,
+      [deployer],
+      True,
+      False,
+    )
+  let fake_spend_redeemer: Redeemer =
+    RecoverClient {
+      substitute_token: fake_substitute.token,
+      history_siblings: list.repeat(ibc_state_commitment.empty_hash, 64),
+    }
+  let fake_withdrawal_redeemer: Redeemer =
+    recovery_redeemer(fake_subject, fake_substitute)
+  let tx =
+    Transaction {
+      ..tx,
+      inputs: [
+        Input {
+          output_reference: fake_reference,
+          output: client_output(fake_subject, other_client_script_hash),
+        },
+        ..tx.inputs
+      ],
+      reference_inputs: [
+        Input {
+          output_reference: fake_substitute_reference,
+          output: client_output(fake_substitute, other_client_script_hash),
+        },
+        ..tx.reference_inputs
+      ],
+      outputs: [
+        client_output(
+          expected_recovered(fake_subject, fake_substitute),
+          other_client_script_hash,
+        ),
+        ..tx.outputs
+      ],
+      redeemers: [
+        Pair(Spend(fake_reference), fake_spend_redeemer),
+        Pair(
+          Withdraw(address.Script(recovery_script_hash)),
+          fake_withdrawal_redeemer,
+        ),
+        ..tx.redeemers
+      ],
+    }
+  expect
+    recover_client.recover_client.withdraw(
+      host_policy,
+      recovery_redeemer(fake_subject, fake_substitute),
+      address.Script(recovery_script_hash),
+      tx,
+    )
+  !spending_client.spend_client.spend(
+    host_policy,
+    address.Script(recovery_script_hash),
+    Some(subject),
+    RecoverClient {
+      substitute_token: substitute.token,
+      history_siblings: list.repeat(ibc_state_commitment.empty_hash, 64),
+    },
+    subject_reference,
+    tx,
+  )
 }

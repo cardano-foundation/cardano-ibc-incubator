@@ -123,6 +123,8 @@ async function fixture(
       dummy,
       packet?.channelHash ?? dummy,
       clientPolicyId,
+      packet?.connectionPolicy ?? dummy,
+      packet?.channelPolicy ?? dummy,
     ],
   );
   const rewardAddress = validatorToRewardAddress("Preprod", recoveryScript);
@@ -143,7 +145,10 @@ async function fixture(
     : BigInt(historyCount + 1);
   const now = emulator.now();
   const nowNs = BigInt(now) * 1_000_000n;
-  const initialProcessedHeight = createClient ? nowNs / 4_000_000_000n : 1n;
+  const initialProcessedTime = createClient ? nowNs + 30_000_000_000n : nowNs;
+  const initialProcessedHeight = createClient
+    ? initialProcessedTime / 4_000_000_000n
+    : 1n;
   const oldConsensus = consensus(
     nowNs - (unexpired ? TRUSTING_PERIOD / 2n : 2n * TRUSTING_PERIOD),
   );
@@ -170,7 +175,7 @@ async function fixture(
     new Constr(0, [
       clientState,
       new Map([[height(latestHeight), latestConsensus]]),
-      new Map([[height(latestHeight), nowNs]]),
+      new Map([[height(latestHeight), initialProcessedTime]]),
       new Map([[height(latestHeight), initialProcessedHeight]]),
     ]),
     clientToken,
@@ -495,7 +500,7 @@ async function fixture(
       clientToken,
       height(latestHeight),
       latestConsensus,
-      mutation === "changed-metadata" ? nowNs + 1n : nowNs,
+      initialProcessedTime + (mutation === "changed-metadata" ? 1n : 0n),
       initialProcessedHeight,
     ]);
     const archivedRecord = recordFromConstr(archived);
@@ -595,7 +600,7 @@ async function fixture(
   }
   async function update(wrongProcessingTime = false) {
     const updateNow = emulator.now();
-    const updateNowNs = BigInt(updateNow) * 1_000_000n;
+    const updateValidToNs = BigInt(updateNow + 30_000) * 1_000_000n;
     const newHeight = adjacentTmHeader.fields[2] as bigint;
     const newConsensus = new Constr(0, [
       adjacentTmHeader.fields[3],
@@ -613,9 +618,9 @@ async function fixture(
         new Map([[height(newHeight), newConsensus]]),
         new Map([[
           height(newHeight),
-          updateNowNs + (wrongProcessingTime ? 1n : 0n),
+          updateValidToNs + (wrongProcessingTime ? 1n : 0n),
         ]]),
-        new Map([[height(newHeight), updateNowNs / 4_000_000_000n]]),
+        new Map([[height(newHeight), updateValidToNs / 4_000_000_000n]]),
       ]),
       clientToken,
     ]);
@@ -637,7 +642,7 @@ async function fixture(
       clientToken,
       height(latestHeight),
       latestConsensus,
-      nowNs,
+      initialProcessedTime,
       initialProcessedHeight,
     ]);
     const archivedRecord = recordFromConstr(archived);

@@ -374,8 +374,9 @@ async function setup(
       nextValidatorsHash: tmHeader.fields[8] as string,
       root: tmHeader.fields[10] as string,
     };
-    nextTip.processedTime = NOW_NS + (mutation === "metadata" ? 1n : 0n);
-    nextTip.processedHeight = NOW_NS / 4_000_000_000n;
+    nextTip.processedTime = NOW_NS + 30_000_000_000n +
+      (mutation === "metadata" ? 1n : 0n);
+    nextTip.processedHeight = nextTip.processedTime / 4_000_000_000n;
     const nextClient = clientDatum(nextTip);
     const clientSiblings = await tree.getSiblings(clientKey);
     tree.set(

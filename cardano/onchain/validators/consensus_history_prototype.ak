@@ -99,7 +99,7 @@ validator consensus_history_prototype(client_token: AuthToken) {
         old.client,
         next.client,
         redeemer.header,
-        valid_from,
+        valid_to,
       )
     let client_id =
       bytearray.concat(

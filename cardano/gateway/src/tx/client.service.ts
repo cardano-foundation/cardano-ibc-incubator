@@ -476,6 +476,7 @@ export class ClientService {
         currentClientUtxo,
         txValidFrom: txValidFromNs,
         historyWitnesses,
+        txValidTo: BigInt(validToTimeMs) * 1_000_000n,
       };
 
       await this.refreshWalletContext(constructedAddress, 'updateClientBuilder');
@@ -783,8 +784,8 @@ export class ClientService {
       },
     };
     const newConsStates = new Map([[newHeight, newConsState]]);
-    const newProcessedTimes = new Map([[newHeight, updateClientOperator.txValidFrom]]);
-    const newProcessedHeights = new Map([[newHeight, getProcessedHeight(updateClientOperator.txValidFrom)]]);
+    const newProcessedTimes = new Map([[newHeight, updateClientOperator.txValidTo]]);
+    const newProcessedHeights = new Map([[newHeight, getProcessedHeight(updateClientOperator.txValidTo)]]);
     const newClientDatum: ClientDatum = {
       ...updateClientOperator.clientDatum,
       history_root: insertion.newRoot,

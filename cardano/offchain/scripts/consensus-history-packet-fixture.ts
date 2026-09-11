@@ -132,6 +132,8 @@ export async function historyPacketFixture(
   let references: UTxO[];
   return {
     channelHash,
+    connectionPolicy,
+    channelPolicy,
     root: leafHash(fromText("ibc"), subtreeRoot, "00"),
     seed(seed: Seed, address: string) {
       // Connection and channel setup is seeded. Client creation/update and the

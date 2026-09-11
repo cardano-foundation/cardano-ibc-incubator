@@ -19,7 +19,7 @@ use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership, VerifyNonMembership,
+  VerifyMembership, VerifyNonMembership, VerifyProofEnvelope,
 }
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
 use ibc/core/ics_003_connection_semantics/types/params
@@ -33,6 +33,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{CreateClient}
+use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/math
 use minting_client_stt
 use verifying_proof
@@ -98,6 +99,7 @@ fn initial_client() -> ClientDatum {
       merkle.get_sdk_specs(),
     )
   ClientDatum {
+    history_root: ibc_state_commitment.empty_hash,
     token: AuthToken {
       policy_id: client_policy,
       name: auth.generate_token_name(
@@ -156,18 +158,13 @@ fn updated_client(processed_time: Int) -> ClientDatum {
       },
       consensus_states: [
         Pair(new_height, header.consensus_state(next_header())),
-        ..input.state.consensus_states
       ],
-      processed_times: [
-        Pair(new_height, processed_time),
-        ..input.state.processed_times
-      ],
+      processed_times: [Pair(new_height, processed_time)],
       processed_heights: [
         Pair(
           new_height,
           client_datum.processed_height_from_time(processed_time),
         ),
-        ..input.state.processed_heights
       ],
     },
   }
@@ -262,10 +259,10 @@ fn process_client(create: Bool) -> ClientDatum {
         initial_client(),
         datum,
         next_header(),
-        valid_from,
         valid_to,
       )
     }
+
   datum
 }
 
@@ -337,7 +334,7 @@ fn verify_with_delays(
       }
     }
   verifying_proof.verify_proof.mint(
-    redeemer,
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
     proof_policy,
     Transaction {
       ..placeholder,
@@ -356,7 +353,6 @@ test update_client_rejects_backdated_processed_metadata() {
     initial_client(),
     updated_client(valid_from * 1_000_000),
     next_header(),
-    valid_from,
     valid_to,
   )
 }

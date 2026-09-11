@@ -94,8 +94,9 @@ validator mint_client_stt(
         |> client_datum.is_initialized_valid(client_token)
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-    let tx_valid_from = validator_utils.get_tx_valid_from(validity_range)
-    let processed_time = tx_valid_from * 1_000_000
+    // The lower bound may be arbitrarily old. Anchor connection delays to the
+    // latest possible inclusion time, just as for UpdateClient.
+    let processed_time = tx_valid_to * 1_000_000
     let processed_height =
       client_datum.processed_height_from_time(processed_time)
     let latest_height =

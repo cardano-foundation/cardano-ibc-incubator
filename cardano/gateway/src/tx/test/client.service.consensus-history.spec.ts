@@ -49,12 +49,12 @@ describe('ClientService consensus history transitions', () => {
     const { service, lucid, client, clientUtxo, tree } = await context();
     await service.buildUnsignedUpdateClientTx({
       clientId: '0', clientDatum: client, clientTokenUnit: 'client-unit', currentClientUtxo: clientUtxo,
-      constructedAddress: 'funding-address', txValidFrom: 350n,
+      constructedAddress: 'funding-address', txValidFrom: 350n, txValidTo: 450n,
       header: { trustedHeight: height(2n), signedHeader: { header: { height: 3n, time: 360n, nextValidatorsHash: '44'.repeat(32), appHash: '55'.repeat(32) } } } as any,
     });
     const output = lucid.encode.mock.calls.find(([, type]) => type === 'client')![0] as ClientDatum;
     expect([...output.state.consensusStates.keys()]).toEqual([height(3n)]);
-    expect([...output.state.processedTimes.values()]).toEqual([350n]);
+    expect([...output.state.processedTimes.values()]).toEqual([450n]);
     expect(output.history_root).toBe('66'.repeat(32));
     const spend = lucid.encode.mock.calls.find(([, type]) => type === 'spendClientRedeemer')![0] as any;
     expect(spend.UpdateClient.history_siblings).toHaveLength(64);

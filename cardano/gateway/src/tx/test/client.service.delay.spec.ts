@@ -27,6 +27,7 @@ const height = (revisionHeight: bigint) => ({ revisionNumber: 0n, revisionHeight
 
 function initialDatum(): ClientDatum {
   return {
+    history_root: '00'.repeat(32),
     token: { policyId: '11'.repeat(28), name: '01' },
     state: {
       clientState: {
@@ -41,17 +42,12 @@ function initialDatum(): ClientDatum {
       },
       consensusStates: new Map([
         [height(2n), { timestamp: validFromNs, next_validators_hash: 'aa', root: { hash: 'bb' } }],
-        // This older state expires inside the validity interval. Pruning must
-        // still use the lower bound, independently of the new processing time.
-        [height(1n), { timestamp: validFromNs - 950_000_000_000n, next_validators_hash: 'cc', root: { hash: 'dd' } }],
       ]),
       processedTimes: new Map([
         [height(2n), 101n],
-        [height(1n), 99n],
       ]),
       processedHeights: new Map([
         [height(2n), 11n],
-        [height(1n), 9n],
       ]),
     },
   };
@@ -99,6 +95,9 @@ async function context(input?: ClientDatum) {
   } as unknown as ConfigService;
   const lucid: any = {
     LucidImporter: Lucid,
+    prepareConsensusHistoryUpdate: jest.fn().mockResolvedValue({
+      newRoot: '66'.repeat(32), siblings: Array(64).fill('00'.repeat(32)),
+    }),
     findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({ ...hostRef, datum: 'host' }),
     decodeDatum: jest.fn().mockResolvedValue(hostDatum),
     encode: jest.fn().mockImplementation(function (data: unknown, type: string) {
@@ -180,7 +179,7 @@ describe('ClientService connection-delay processing metadata', () => {
     expect(builder.validTo).toHaveBeenCalledWith(validToMs);
   });
 
-  it('records the update upper bound and retains history using the lower bound', async () => {
+  it('records the update upper bound in the singleton live checkpoint', async () => {
     const input = initialDatum();
     const { service, lucid } = await context(input);
     const header = initializeHeader(headerMockBuilder.build());
@@ -202,8 +201,9 @@ describe('ClientService connection-delay processing metadata', () => {
 
     const cbor = lucid.createUnsignedUpdateClientTransaction.mock.calls[0][5];
     const output = await decodeClientDatum(cbor, Lucid);
-    expect([...output.state.consensusStates.keys()]).toEqual([height(3n), height(2n), height(1n)]);
-    expect([...output.state.processedTimes.values()]).toEqual([validToNs, 101n, 99n]);
-    expect([...output.state.processedHeights.values()]).toEqual([validToNs / 4_000_000_000n, 11n, 9n]);
+    expect([...output.state.consensusStates.keys()]).toEqual([height(3n)]);
+    expect([...output.state.processedTimes.values()]).toEqual([validToNs]);
+    expect([...output.state.processedHeights.values()]).toEqual([validToNs / 4_000_000_000n]);
+    expect(output.history_root).toBe('66'.repeat(32));
   });
 });

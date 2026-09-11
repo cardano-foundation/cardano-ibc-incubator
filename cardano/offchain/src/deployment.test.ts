@@ -14,6 +14,7 @@ import blueprint from "../../onchain/plutus.json" with { type: "json" };
 import {
   assertReferenceValidatorsFit,
   assertSignedReferenceTransactionFits,
+  buildChannelValidators,
   buildReferenceValidatorBatches,
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
@@ -209,8 +210,12 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
       "22".repeat(28),
       "33".repeat(28),
       clientPolicyId,
+      "44".repeat(28),
+      "55".repeat(28),
     ],
-    Data.Tuple(Array.from({ length: 5 }, () => Data.Bytes())) as unknown as [
+    Data.Tuple(Array.from({ length: 7 }, () => Data.Bytes())) as unknown as [
+      string,
+      string,
       string,
       string,
       string,
@@ -258,7 +263,9 @@ Deno.test("consensus history is committed by the client without an archive scrip
     "spend_client_script_hash",
     "spend_connection_script_hash",
     "spend_channel_script_hash",
-    "client_mint_policy_id",
+    "client_policy_id",
+    "connection_policy_id",
+    "channel_policy_id",
   ]);
 });
 
@@ -282,7 +289,7 @@ Deno.test("applied HostState validator fits a mainnet reference-script transacti
     16_384,
   );
 
-  assertEquals(hostStateReport.oversized, false);
+  assertEquals(hostStateReport.exceedsEstimatedSingleTxBudget, false);
 });
 
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {

@@ -48,22 +48,22 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
   },
   send_packet_at_commitment_capacity: {
     // Existing unsupported capacity model, remeasured after proof-backed
-    // history/witness-envelope integration and removing the redundant singleton
-    // check. These are full Aiken fixture estimates, not supported ledger flows.
+    // history/witness-envelope integration and state-thread authentication.
+    // These are full Aiken fixture estimates, not supported ledger flows.
     // Network limits and execution/size reserves are unchanged.
-    mem: 38_257_823,
-    steps: 12_088_544_688,
+    mem: 38_222_583,
+    steps: 12_071_164_053,
   },
   recv_packet_at_history_capacity: {
     // The same already-unsupported capacity fixture now includes proof-backed
     // history dispatch and the VerifyProofEnvelope rather than archive UTxOs.
-    mem: 40_930_575,
-    steps: 12_835_088_040,
+    mem: 40_889_150,
+    steps: 12_808_621_227,
   },
   prune_packet_history_at_capacity: {
-    // Packet-history pruning is unchanged; its existing unsupported capacity
-    // fixture uses the new consensus-history witness/envelope proof consumer.
-    mem: 25_427_902,
+    // Main's state-thread authentication adds 2,694 memory units to this
+    // already unsupported capacity fixture. Network limits are unchanged.
+    mem: 25_430_596,
   },
   trace_registry_rollover: {
     mem: 25_643_260,
@@ -74,8 +74,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
     // six modeled bytes; execution inherits the updated RecvPacket component.
     unsignedBytes: 20_621,
     signedBytesEstimate: 20_881,
-    mem: 83_473_293,
-    steps: 27_721_323_739,
+    mem: 83_431_868,
+    steps: 27_694_856_926,
   },
   first_seen_voucher_mint: {
     mem: 33_842_210,

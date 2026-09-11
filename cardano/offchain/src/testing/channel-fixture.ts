@@ -329,6 +329,7 @@ export async function channelFixture(
       new Map([[HEIGHT, 0n]]),
     ),
     clientToken,
+    "00".repeat(32),
   );
   const connectionDatum = record(
     record(
@@ -533,7 +534,7 @@ export async function channelFixture(
     );
     tx = tx.readFrom([reference(verifyScript)]).mintAssets({
       [verifyPolicy]: 1n,
-    }, encode(verifyRedeemer));
+    }, encode(record(verifyRedeemer, variant(1))));
   }
   return {
     tx,

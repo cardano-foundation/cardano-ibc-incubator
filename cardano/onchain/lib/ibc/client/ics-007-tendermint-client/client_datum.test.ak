@@ -269,7 +269,6 @@ test prop_client_update_accepts_adjacent(seed via fuzz.int()) {
       output_client_datum,
       mock_header,
       0,
-      0,
     ),
   )
     |> fuzz_dsl.assert_valid
@@ -311,7 +310,6 @@ test prop_client_update_accepts_non_adjacent(seed via fuzz.int()) {
       output_client_datum,
       mock_header,
       0,
-      0,
     ),
   )
     |> fuzz_dsl.assert_valid
@@ -350,7 +348,6 @@ test prop_client_update_rejects_historical_height(seed via fuzz.int()) {
       input_client_datum,
       output_client_datum,
       mock_header,
-      0,
       0,
     ),
   )
@@ -396,7 +393,6 @@ test prop_client_update_rejects_wrong_consensus_state(seed via fuzz.int()) {
       input_client_datum,
       output_client_datum,
       mock_header,
-      0,
       0,
     ),
   )
@@ -659,7 +655,6 @@ test test_update_state_succeed_01() {
     output_client_datum,
     mock_header,
     0,
-    0,
   )
 }
 
@@ -712,7 +707,6 @@ test test_update_state_rejects_historical_update() {
     input_client_datum,
     output_client_datum,
     mock_header,
-    0,
     0,
   )
 }
@@ -795,7 +789,6 @@ test test_update_state_return_false_01() {
     output_client_datum,
     mock_header,
     0,
-    0,
   )
 }
 
@@ -847,7 +840,6 @@ test test_update_state_return_false_02() {
     input_client_datum,
     output_client_datum,
     mock_header,
-    0,
     0,
   )
 }
@@ -932,7 +924,6 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
     input_client_datum,
     output_client_datum,
     mock_header,
-    0,
     0,
   )
 }

@@ -1,6 +1,6 @@
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{OutputReference, Redeemer, ScriptPurpose, Transaction}
+use cardano/transaction.{Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,

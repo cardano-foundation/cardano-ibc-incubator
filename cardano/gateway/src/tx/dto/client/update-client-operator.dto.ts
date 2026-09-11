@@ -14,6 +14,7 @@ export type UpdateClientOperatorDto = {
   currentClientUtxo: UTxO;
   txValidFrom: bigint;
   historyWitnesses?: ConsensusHistoryWitness[];
+  txValidTo: bigint;
 };
 
 export type UpdateOnMisbehaviourOperatorDto = {

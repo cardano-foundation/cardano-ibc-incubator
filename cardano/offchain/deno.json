@@ -12,7 +12,8 @@
     "@harmoniclabs/cbor": "npm:@harmoniclabs/cbor@1.6.6",
     "js-sha256": "npm:js-sha256@0.11.1",
     "ws": "npm:ws@7.5.10",
-    "pg": "npm:pg@8.16.0"
+    "pg": "npm:pg@8.16.0",
+    "fast-check": "npm:fast-check@3.23.2"
   },
   "nodeModulesDir": "auto",
   "lint": {

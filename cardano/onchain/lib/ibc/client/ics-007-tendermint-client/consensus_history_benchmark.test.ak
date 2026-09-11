@@ -23,8 +23,6 @@ type Fixture {
   next_header: Header,
 }
 
-const tx_valid_from = 1000
-
 const tx_valid_to = 2000
 
 const trusting_period = 1_000_000_000_000
@@ -111,7 +109,7 @@ fn fixture(count: Int, expire_alternate: Bool) -> Fixture {
 // checkpoints live outside this transaction and require no expiry traversal.
 fn singleton_output(input: ClientDatum, next_header: Header) -> ClientDatum {
   let next_height = header.get_height(next_header)
-  let processed_time = tx_valid_from * 1_000_000
+  let processed_time = tx_valid_to * 1_000_000
   ClientDatum {
     ..input,
     state: ClientDatumState {
@@ -137,13 +135,7 @@ fn current(f: Fixture) -> Bool {
       HeaderCase(f.next_header),
       f.input.state.consensus_states,
     ),
-    client_datum.update_state(
-      f.input,
-      f.output,
-      f.next_header,
-      tx_valid_from,
-      tx_valid_to,
-    ),
+    client_datum.update_state(f.input, f.output, f.next_header, tx_valid_to),
   }
 }
 

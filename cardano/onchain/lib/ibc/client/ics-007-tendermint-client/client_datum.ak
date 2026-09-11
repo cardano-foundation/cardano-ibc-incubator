@@ -75,7 +75,6 @@ pub fn update_state(
   input_datum: ClientDatum,
   output_datum: ClientDatum,
   header: Header,
-  tx_valid_from: Int,
   tx_valid_to: Int,
 ) -> Bool {
   expect has_singleton_history(input_datum)
@@ -83,7 +82,9 @@ pub fn update_state(
     False
   } else {
     let header_height = header_mod.get_height(header)
-    let processed_time = tx_valid_from * 1_000_000
+    // Inclusion cannot be later than the upper bound, even if the lower bound
+    // is backdated. Start the connection delay from that conservative bound.
+    let processed_time = tx_valid_to * 1_000_000
     let input_state = input_datum.state.client_state
     let output_state = output_datum.state.client_state
     expect [Pair(_, output_consensus)] = output_datum.state.consensus_states

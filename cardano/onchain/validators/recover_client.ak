@@ -100,7 +100,7 @@ validator recover_client(host_state_nft_policy_id: PolicyId) {
                 subject_datum,
                 recovered_datum,
                 header,
-                validator_utils.get_tx_valid_from(validity_range),
+                valid_to / 1_000_000,
               ),
               preserve_checkpoint(
                 subject_datum,

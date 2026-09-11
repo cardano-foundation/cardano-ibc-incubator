@@ -35,6 +35,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/utils/validator_utils
 use recover_client
 use spending_client
 
@@ -579,4 +580,60 @@ test support_rejects_tampered_historical_processing_metadata() fail {
 
 test support_rejects_history_witness_against_wrong_client_root() fail {
   check_historical_support(False, True)
+}
+
+test update_client_rejects_lower_bound_processing_metadata() {
+  let fixture = adjacent_all_signed_fixture
+  let valid_from =
+    validator_utils.get_tx_valid_from(fixture.transaction.validity_range)
+  let valid_to =
+    validator_utils.get_tx_valid_to(fixture.transaction.validity_range)
+  expect valid_to - valid_from > 60_000
+  expect [client_output, ..other_outputs] = fixture.transaction.outputs
+  expect InlineDatum(data) = client_output.datum
+  expect datum: ClientDatum = data
+  expect [Pair(height, _), ..old_times] = datum.state.processed_times
+  expect [_, ..old_heights] = datum.state.processed_heights
+  let backdated =
+    ClientDatum {
+      ..datum,
+      state: ClientDatumState {
+        ..datum.state,
+        processed_times: [Pair(height, valid_from * 1_000_000), ..old_times],
+        processed_heights: [
+          Pair(
+            height,
+            client_datum_mod.processed_height_from_time(valid_from * 1_000_000),
+          ),
+          ..old_heights
+        ],
+      },
+    }
+  !check_update_client_capacity(
+    CapacityFixture {
+      ..fixture,
+      transaction: Transaction {
+        ..fixture.transaction,
+        outputs: [
+          Output { ..client_output, datum: InlineDatum(backdated) },
+          ..other_outputs
+        ],
+      },
+    },
+  )
+}
+
+test update_client_requires_finite_upper_bound() fail {
+  let fixture = adjacent_all_signed_fixture
+  let valid_from =
+    validator_utils.get_tx_valid_from(fixture.transaction.validity_range)
+  check_update_client_capacity(
+    CapacityFixture {
+      ..fixture,
+      transaction: Transaction {
+        ..fixture.transaction,
+        validity_range: interval.after(valid_from),
+      },
+    },
+  )
 }
