@@ -7,6 +7,7 @@ exports.encodeConnectionEndValue = encodeConnectionEndValue;
 exports.encodeChannelEndValue = encodeChannelEndValue;
 exports.encodeModuleRegistration = encodeModuleRegistration;
 const ics23MerkleTree_1 = require("./ics23MerkleTree");
+const plutusSerialise_1 = require("./plutusSerialise");
 class StaleIbcTreeStateError extends Error {
     constructor(message = 'IBC tree state changed while the operation was in progress') {
         super(message);
@@ -14,6 +15,12 @@ class StaleIbcTreeStateError extends Error {
     }
 }
 exports.StaleIbcTreeStateError = StaleIbcTreeStateError;
+function normalizeHex(value) {
+    return value.toLowerCase();
+}
+function utxoLabel(utxo) {
+    return `${utxo.txHash}#${utxo.outputIndex}`;
+}
 async function encodeClientStateValue(clientState, Lucid) {
     const { Data } = Lucid;
     const RationalSchema = Data.Object({
@@ -161,6 +168,7 @@ class IbcTreeStateStore {
                 policyId: deployment.hostStateNFT.policyId,
                 name: deployment.hostStateNFT.name,
             }),
+            ...(deployment.clientPolicyId ? { clientPolicyId: deployment.clientPolicyId } : {}),
         });
     }
     isTreeAligned(onChainRoot, hostState) {
@@ -380,22 +388,74 @@ class IbcTreeStateStore {
                 tree.set(`ports/${portId}`, portValue);
             }
         }
+        const clientIdsByTokenUnit = new Map();
+        const consensusPaths = new Set();
         const clientUtxos = await kupoService.queryAllClientUtxos();
         for (const clientUtxo of clientUtxos) {
             if (!clientUtxo.datum) {
                 continue;
             }
             const clientDatum = await lucidService.decodeDatum(clientUtxo.datum, 'client');
-            const clientUnit = Object.keys(clientUtxo.assets || {}).find((unit) => unit !== 'lovelace');
+            const clientUnit = Object.keys(clientUtxo.assets || {}).find((unit) => unit !== 'lovelace' &&
+                (!this.deployment.clientPolicyId ||
+                    normalizeHex(unit).startsWith(normalizeHex(this.deployment.clientPolicyId))));
             if (!clientUnit || clientUnit.length < 56 + 48 + 2) {
                 continue;
             }
+            if (this.deployment.clientPolicyId) {
+                const expectedPolicy = normalizeHex(this.deployment.clientPolicyId);
+                const clientPolicyUnits = Object.keys(clientUtxo.assets || {}).filter((unit) => unit !== 'lovelace' && normalizeHex(unit).startsWith(expectedPolicy));
+                const datumUnit = clientDatum.token
+                    ? normalizeHex(clientDatum.token.policyId + clientDatum.token.name)
+                    : undefined;
+                if (clientPolicyUnits.length !== 1 ||
+                    clientUtxo.assets[clientUnit] !== 1n ||
+                    !datumUnit ||
+                    datumUnit !== normalizeHex(clientUnit)) {
+                    throw new Error(`Client UTxO ${utxoLabel(clientUtxo)} failed authentication during tree rebuild`);
+                }
+            }
             const tokenName = clientUnit.slice(56);
             const postfixHex = tokenName.slice(48);
-            const clientSequence = BigInt(Buffer.from(postfixHex, 'hex').toString('utf8'));
+            const clientSequenceText = Buffer.from(postfixHex, 'hex').toString('utf8');
+            if (!/^\d+$/.test(clientSequenceText)) {
+                if (this.deployment.clientPolicyId) {
+                    throw new Error(`Client UTxO ${utxoLabel(clientUtxo)} has an invalid sequence token`);
+                }
+                continue;
+            }
+            const clientSequence = BigInt(clientSequenceText);
             const clientId = `07-tendermint-${clientSequence.toString()}`;
-            const clientStateValue = Buffer.from(await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter), 'hex');
+            const normalizedClientUnit = normalizeHex(clientUnit);
+            if (clientIdsByTokenUnit.has(normalizedClientUnit)) {
+                throw new Error(`Duplicate client authentication token ${clientUnit} during tree rebuild`);
+            }
+            clientIdsByTokenUnit.set(normalizedClientUnit, clientId);
+            const clientStateValue = Buffer.from(this.deployment.clientPolicyId
+                ? (0, plutusSerialise_1.publicClientCommitmentValues)(clientUtxo.datum, 'production').clientValue
+                : await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter), 'hex');
             tree.set(`clients/${clientId}/clientState`, clientStateValue);
+            if (this.deployment.clientPolicyId) {
+                if (!/^[0-9a-f]{64}$/.test(clientDatum.history_root ?? '') || !lucidService.consensusHistoryRecords) {
+                    throw new Error('Proof-backed consensus history requires a valid client root and historical chain reader');
+                }
+                const records = await lucidService.consensusHistoryRecords(clientUtxo);
+                if (records.length === 0)
+                    throw new Error(`No consensus records recovered for '${clientId}'`);
+                for (const { datum: record, consensusValue } of records) {
+                    if (normalizeHex(record.clientToken.policyId + record.clientToken.name) !== normalizedClientUnit ||
+                        record.height.revisionNumber < 0n || record.height.revisionHeight <= 0n ||
+                        !/^(?:[0-9a-f]{2})+$/.test(consensusValue)) {
+                        throw new Error(`Invalid recovered consensus record for '${clientId}'`);
+                    }
+                    const path = `clients/${clientId}/consensusStates/${record.height.revisionHeight}`;
+                    if (consensusPaths.has(path))
+                        throw new Error(`Duplicate consensus state path '${path}' during tree rebuild`);
+                    tree.set(path, Buffer.from(consensusValue, 'hex'));
+                    consensusPaths.add(path);
+                }
+                continue;
+            }
             const consensusStates = clientDatum.state.consensusStates;
             const entries = consensusStates instanceof Map
                 ? Array.from(consensusStates.entries())
@@ -404,8 +464,13 @@ class IbcTreeStateStore {
                 const heightStr = typeof heightKey === 'object' && heightKey !== null
                     ? `${heightKey.revisionHeight || 0}`
                     : String(heightKey);
+                const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
+                if (consensusPaths.has(consensusPath)) {
+                    throw new Error(`Duplicate consensus state path '${consensusPath}' during tree rebuild`);
+                }
                 const consensusValue = Buffer.from(await encodeConsensusStateValue(consensusState, lucidService.LucidImporter), 'hex');
-                tree.set(`clients/${clientId}/consensusStates/${heightStr}`, consensusValue);
+                tree.set(consensusPath, consensusValue);
+                consensusPaths.add(consensusPath);
             }
         }
         const connectionUtxos = await kupoService.queryAllConnectionUtxos();
@@ -498,6 +563,9 @@ class IbcTreeStateStore {
         };
     }
     computeRootWithUpdateClientUpdate(oldRoot, clientId, newClientStateValue, removedConsensusHeights, addedConsensusState) {
+        if (removedConsensusHeights.length !== 0) {
+            throw new Error('UpdateClient cannot remove consensus history');
+        }
         const version = this.version;
         const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
         // 1) Client state update.
@@ -507,19 +575,8 @@ class IbcTreeStateStore {
         }
         const clientStateSiblings = speculativeTree.getSiblings(clientPath).map((h) => h.toString('hex'));
         speculativeTree.set(clientPath, newClientStateValue);
-        // 2) Consensus state deletions (in the order provided by the caller).
+        // Archiving a tip changes its UTxO location, not its commitment leaf.
         const removedConsensusStateSiblings = [];
-        for (const height of removedConsensusHeights) {
-            const heightStr = String(height);
-            const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
-            if (!speculativeTree.get(consensusPath)) {
-                throw new Error(`UpdateClient root update expects existing consensusState at '${consensusPath}', but it was not found in the tree`);
-            }
-            const siblings = speculativeTree.getSiblings(consensusPath).map((h) => h.toString('hex'));
-            removedConsensusStateSiblings.push(siblings);
-            // Deletion is modeled as "set to empty", which collapses back to the empty hash on-chain.
-            speculativeTree.set(consensusPath, Buffer.alloc(0));
-        }
         // 3) Optional consensus state insertion (exactly one for normal UpdateClient, none for misbehaviour).
         let consensusStateSiblings = [];
         if (addedConsensusState) {

@@ -475,7 +475,7 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version: v2.9.6
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -513,6 +513,14 @@ jobs:
       - name: Test shutdown finalization
         working-directory: cardano/offchain
         run: deno task test:shutdown
+
+      - name: Test production proof-backed consensus history
+        working-directory: cardano/offchain
+        run: deno task test:consensus-history
+
+      - name: Test proof-backed consensus history prototype
+        working-directory: cardano/offchain
+        run: deno task test:consensus-history-prototype
 
   aiken-static:
     name: Cardano Onchain Aiken Static
@@ -663,15 +671,24 @@ jobs:
               -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
               -m prop_tx_packet_send_
           - suite: channel-packet-recv-callback
+            timeout_minutes: 30
             match_tests: >-
               -m prop_tx_recv_packet_rejects_missing_application_callback
               -m prop_tx_recv_packet_rejects_callback_packet_data_mismatch
               -m prop_tx_recv_packet_rejects_callback_acknowledgement_mismatch
-          - suite: channel-packet-recv-successor
+          # Each of these properties composes a full HostState transition.
+          # Give them independent timeouts without reducing the 500 cases each.
+          - suite: channel-packet-recv-successor-valid
             timeout_minutes: 30
             match_tests: >-
               -m prop_tx_recv_packet_accepts_atomic_successor_and_callback
+          - suite: channel-packet-recv-port-binding
+            timeout_minutes: 30
+            match_tests: >-
               -m prop_tx_recv_packet_rejects_moved_port_binding
+          - suite: channel-packet-recv-successor-mutation
+            timeout_minutes: 30
+            match_tests: >-
               -m prop_tx_recv_packet_rejects_unrelated_successor_mutation
           - suite: transfer-contract
             match_tests: >-
@@ -885,7 +902,7 @@ jobs:
             --exact-match \
             -m 'ibc/core/ics_003_connection_semantics/connection_datum.{test_is_conn_open_try_valid_succeed}' \
             -m 'spending_transfer_module.{on_chan_open_try_succeed}' \
-            -m 'spending_connection.{conn_open_ack_succeed}' \
+            -m 'spending_connection.{conn_open_ack_accepts_authenticated_history_witness}' \
             -m 'spending_channel.{send_packet_succeed}' \
             -m 'spending_channel/send_packet.{succeed_send_packet}' \
             -m 'ibc/core/ics_004/channel_datum_test/validate_send_packet.{succeed_at_packet_commitment_capacity}' \
@@ -929,6 +946,9 @@ jobs:
             -m 'spending_client_capacity.{update_client_capacity_adjacent_all_signed_45_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_adjacent_mixed_45_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_non_adjacent_mixed_45_succeeds}' \
+            -m 'spending_client_capacity.{support_capacity_adjacent_all_signed_45_succeeds}' \
+            -m 'spending_client_capacity.{support_capacity_adjacent_mixed_45_succeeds}' \
+            -m 'spending_client_capacity.{support_capacity_non_adjacent_mixed_45_succeeds}' \
             -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
             -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
             > ../../aiken-check.json

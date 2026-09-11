@@ -1,20 +1,15 @@
-use aiken/collection/list
-use aiken/collection/pairs
-use aiken/math
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
-use ibc/client/ics_007_tendermint_client/cometbft/constants.{
-  max_consensus_state_size,
-}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
-use ibc/client/ics_007_tendermint_client/height_set
 use ibc/core/ics_003_connection_semantics/types/params
+use ibc/core/ics_025_handler_interface/ibc_state_commitment
 
 pub type ClientDatum {
   state: ClientDatumState,
   token: AuthToken,
+  history_root: ByteArray,
 }
 
 pub type ClientDatumState {
@@ -24,30 +19,35 @@ pub type ClientDatumState {
   processed_heights: Pairs<Height, Int>,
 }
 
-pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
-  let ClientDatum { state, token } = datum
-  let ClientDatumState {
-    client_state,
-    consensus_states,
-    processed_times,
-    processed_heights,
-  } = state
-
-  // validate client state
-  expect client_state_mod.validate(client_state)
-
-  // validate consensus states
-  let latest_height = client_state_mod.get_latest_height(client_state)
-
-  when consensus_states is {
-    [height_consensus_state] -> and {
-        // TODO: add consensus_state.validate_basic()
-        height_consensus_state.1st == latest_height,
-        pairs.has_key(processed_times, latest_height),
-        pairs.has_key(processed_heights, latest_height),
-        token == auth_token,
+/// The live client contains only its tip; older immutable checkpoints are
+/// authenticated against history_root using transaction-provided witnesses.
+pub fn has_singleton_history(datum: ClientDatum) -> Bool {
+  when
+    (
+      datum.state.consensus_states,
+      datum.state.processed_times,
+      datum.state.processed_heights,
+    )
+  is {
+    (
+      [Pair(consensus_height, _)],
+      [Pair(time_height, _)],
+      [Pair(processed_height, _)],
+    ) -> and {
+        heights_match(consensus_height, datum.state.client_state.latest_height),
+        heights_match(time_height, consensus_height),
+        heights_match(processed_height, consensus_height),
       }
     _ -> False
+  }
+}
+
+pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
+  and {
+    client_state_mod.validate(datum.state.client_state),
+    has_singleton_history(datum),
+    tokens_match(datum.token, auth_token),
+    datum.history_root == ibc_state_commitment.empty_hash,
   }
 }
 
@@ -55,96 +55,53 @@ pub fn processed_height_from_time(processed_time: Int) -> Int {
   processed_time / params.max_expected_time_per_block
 }
 
+fn tokens_match(left: AuthToken, right: AuthToken) -> Bool {
+  left.policy_id == right.policy_id && left.name == right.name
+}
+
+fn heights_match(left: Height, right: Height) -> Bool {
+  left.revision_number == right.revision_number && left.revision_height == right.revision_height
+}
+
+fn same_history(left: ClientDatumState, right: ClientDatumState) -> Bool {
+  and {
+    left.consensus_states == right.consensus_states,
+    left.processed_times == right.processed_times,
+    left.processed_heights == right.processed_heights,
+  }
+}
+
 pub fn update_state(
   input_datum: ClientDatum,
   output_datum: ClientDatum,
   header: Header,
-  tx_valid_from: Int,
   tx_valid_to: Int,
 ) -> Bool {
-  let header_height = header_mod.get_height(header)
-
-  let input_datum_cons_state = input_datum.state.consensus_states
-
-  expect (!pairs.has_key(input_datum_cons_state, header_height))?
-
-  let input_height =
-    input_datum.state.client_state |> client_state_mod.get_latest_height()
-  // Ordinary updates must be submitted in increasing height order. This keeps
-  // the consensus state named by latest_height at the head of every bounded
-  // history list, so truncation cannot evict it while leaving latest_height
-  // unchanged.
-  let advances_latest_height =
-    height.compare(header_height, input_height) == Greater
-  let expected_client_state =
-    ClientState {
-      ..input_datum.state.client_state,
-      latest_height: header_height,
+  expect has_singleton_history(input_datum)
+  if !has_singleton_history(output_datum) {
+    False
+  } else {
+    let header_height = header_mod.get_height(header)
+    // Inclusion cannot be later than the upper bound, even if the lower bound
+    // is backdated. Start the connection delay from that conservative bound.
+    let processed_time = tx_valid_to * 1_000_000
+    let input_state = input_datum.state.client_state
+    let output_state = output_datum.state.client_state
+    expect [Pair(_, output_consensus)] = output_datum.state.consensus_states
+    expect [Pair(_, output_time)] = output_datum.state.processed_times
+    expect [Pair(_, output_height)] = output_datum.state.processed_heights
+    and {
+      tokens_match(input_datum.token, output_datum.token),
+      recovery_parameters_match(input_state, output_state),
+      heights_match(input_state.frozen_height, output_state.frozen_height),
+      heights_match(output_state.latest_height, header_height),
+      height.compare(header_height, input_state.latest_height) == Greater,
+      output_consensus.timestamp == header_mod.get_time(header),
+      output_consensus.next_validators_hash == header.signed_header.header.next_validators_hash,
+      output_consensus.root.hash == header.signed_header.header.app_hash,
+      output_time == processed_time,
+      output_height == processed_height_from_time(processed_time),
     }
-
-  let expected_cons_state =
-    list.filter(
-      input_datum_cons_state,
-      fn(item) {
-        !client_state_mod.is_expired(
-          input_datum.state.client_state,
-          item.2nd.timestamp,
-          tx_valid_from * 1_000_000,
-        )
-      },
-    )
-  // Metadata is not required to have the same order, length or multiplicity as
-  // consensus_states. Index membership once, but preserve each list's filtering
-  // and truncation behavior instead of assuming positional alignment.
-  let cs_len = list.length(expected_cons_state)
-  // Reference the index directly in both filters. Hiding construction inside a
-  // shared predicate regressed measured execution costs in Aiken v1.1.21.
-  let retained = height_set.from_list(pairs.keys(expected_cons_state), cs_len)
-  let expected_processed_times =
-    list.filter(
-      input_datum.state.processed_times,
-      fn(item) { height_set.contains(retained, item.1st) },
-    )
-  let expected_processed_heights =
-    list.filter(
-      input_datum.state.processed_heights,
-      fn(item) { height_set.contains(retained, item.1st) },
-    )
-
-  // Inclusion cannot be later than the upper bound. Starting the delay here
-  // guarantees the full connection delay even when the lower bound is backdated.
-  let processed_time = tx_valid_to * 1_000_000
-  let processed_height = processed_height_from_time(processed_time)
-
-  let expected_cons_state =
-    [
-      Pair(header_height, header_mod.consensus_state(header)),
-      ..expected_cons_state
-    ]
-      |> list.slice(from: 0, to: math.min(max_consensus_state_size - 1, cs_len))
-  let expected_processed_times =
-    [Pair(header_height, processed_time), ..expected_processed_times]
-      |> list.slice(from: 0, to: math.min(max_consensus_state_size - 1, cs_len))
-  let expected_processed_heights =
-    [Pair(header_height, processed_height), ..expected_processed_heights]
-      |> list.slice(from: 0, to: math.min(max_consensus_state_size - 1, cs_len))
-
-  let expected_updated_output =
-    ClientDatum {
-      ..input_datum,
-      state: ClientDatumState {
-        client_state: expected_client_state,
-        consensus_states: expected_cons_state,
-        processed_times: expected_processed_times,
-        processed_heights: expected_processed_heights,
-      },
-    }
-
-  // The HostState root commits the exact datum encoding, and Gateway builds
-  // this output in the same canonical order as the validator.
-  and {
-    advances_latest_height,
-    expected_updated_output == output_datum,
   }
 }
 
@@ -152,33 +109,28 @@ pub fn update_state_on_misbehaviour(
   input_datum: ClientDatum,
   output_datum: ClientDatum,
 ) -> Bool {
-  // frozen_height is same for all misbehaviour
-  let frozen_height = Height { revision_number: 0, revision_height: 1 }
-
-  let expected_datum =
-    ClientDatum {
-      ..input_datum,
-      state: ClientDatumState {
-        ..input_datum.state,
-        client_state: ClientState {
-          ..input_datum.state.client_state,
-          frozen_height,
-        },
-      },
-    }
-
-  expected_datum == output_datum
+  expect has_singleton_history(input_datum)
+  let input_state = input_datum.state.client_state
+  let output_state = output_datum.state.client_state
+  and {
+    tokens_match(input_datum.token, output_datum.token),
+    recovery_parameters_match(input_state, output_state),
+    heights_match(input_state.latest_height, output_state.latest_height),
+    output_state.frozen_height.revision_number == 0,
+    output_state.frozen_height.revision_height == 1,
+    same_history(input_datum.state, output_datum.state),
+    input_datum.history_root == output_datum.history_root,
+  }
 }
 
-/// Immutable Tendermint parameters must remain unchanged when an inactive
-/// client adopts a trusted checkpoint from a substitute client.
 pub fn recovery_parameters_match(
   subject: ClientState,
   substitute: ClientState,
 ) -> Bool {
   and {
     subject.chain_id == substitute.chain_id,
-    subject.trust_level == substitute.trust_level,
+    subject.trust_level.numerator == substitute.trust_level.numerator,
+    subject.trust_level.denominator == substitute.trust_level.denominator,
     subject.trusting_period == substitute.trusting_period,
     subject.unbonding_period == substitute.unbonding_period,
     subject.max_clock_drift == substitute.max_clock_drift,
@@ -186,118 +138,34 @@ pub fn recovery_parameters_match(
   }
 }
 
-fn recovered_histories_match(
-  input_consensus_states: Pairs<Height, ConsensusState>,
-  input_processed_times: Pairs<Height, Int>,
-  input_processed_heights: Pairs<Height, Int>,
-  output_consensus_states: Pairs<Height, ConsensusState>,
-  output_processed_times: Pairs<Height, Int>,
-  output_processed_heights: Pairs<Height, Int>,
-  remaining: Int,
-) -> Bool {
-  when input_consensus_states is {
-    [] -> and {
-        input_processed_times == [],
-        input_processed_heights == [],
-        output_consensus_states == [],
-        output_processed_times == [],
-        output_processed_heights == [],
-      }
-    [input_consensus, ..input_consensus_rest] -> {
-      expect [input_time, ..input_time_rest] = input_processed_times
-      expect [input_height, ..input_height_rest] = input_processed_heights
-      expect input_consensus.1st == input_time.1st
-      expect input_consensus.1st == input_height.1st
-
-      if remaining <= 0 {
-        and {
-          input_consensus_rest == [],
-          input_time_rest == [],
-          input_height_rest == [],
-          output_consensus_states == [],
-          output_processed_times == [],
-          output_processed_heights == [],
-        }
-      } else {
-        expect [output_consensus, ..output_consensus_rest] =
-          output_consensus_states
-        expect [output_time, ..output_time_rest] = output_processed_times
-        expect [output_height, ..output_height_rest] = output_processed_heights
-
-        and {
-          input_consensus == output_consensus,
-          input_time == output_time,
-          input_height == output_height,
-          recovered_histories_match(
-            input_consensus_rest,
-            input_time_rest,
-            input_height_rest,
-            output_consensus_rest,
-            output_time_rest,
-            output_height_rest,
-            remaining - 1,
-          ),
-        }
-      }
-    }
-  }
-}
-
-/// Replace the subject's trusted tip with the substitute's latest checkpoint.
-/// Existing subject history is retained. At the capacity bound only the final
-/// entry is evicted, which keeps the HostState deletion proof bounded to one.
+/// Recovery replaces the tip and archives the old subject checkpoint under the
+/// subject's identity. Substitute processing metadata is preserved exactly.
 pub fn recover_state(
   subject: ClientDatum,
   substitute: ClientDatum,
   output: ClientDatum,
 ) -> Bool {
-  let subject_state = subject.state
-  let substitute_state = substitute.state
-  let subject_client_state = subject_state.client_state
-  let substitute_client_state = substitute_state.client_state
-  let substitute_height = substitute_client_state.latest_height
-
-  expect
-    recovery_parameters_match(subject_client_state, substitute_client_state)
-  expect
-    height.compare(substitute_height, subject_client_state.latest_height) == Greater
-  expect !pairs.has_key(subject_state.consensus_states, substitute_height)
-
-  expect Some(substitute_consensus_state) =
-    pairs.get_first(substitute_state.consensus_states, substitute_height)
-  expect Some(substitute_processed_time) =
-    pairs.get_first(substitute_state.processed_times, substitute_height)
-  expect Some(substitute_processed_height) =
-    pairs.get_first(substitute_state.processed_heights, substitute_height)
-
-  expect [output_consensus_head, ..output_consensus_tail] =
-    output.state.consensus_states
-  expect [output_time_head, ..output_time_tail] = output.state.processed_times
-  expect [output_height_head, ..output_height_tail] =
-    output.state.processed_heights
-
-  let expected_client_state =
-    ClientState {
-      ..subject_client_state,
-      frozen_height: height.zero_height(),
-      latest_height: substitute_height,
-    }
-  let retained_history_size = max_consensus_state_size - 1
-
+  expect has_singleton_history(subject)
+  expect has_singleton_history(substitute)
   and {
-    output.token == subject.token,
-    output.state.client_state == expected_client_state,
-    output_consensus_head == Pair(substitute_height, substitute_consensus_state),
-    output_time_head == Pair(substitute_height, substitute_processed_time),
-    output_height_head == Pair(substitute_height, substitute_processed_height),
-    recovered_histories_match(
-      subject_state.consensus_states,
-      subject_state.processed_times,
-      subject_state.processed_heights,
-      output_consensus_tail,
-      output_time_tail,
-      output_height_tail,
-      retained_history_size,
+    recovery_parameters_match(
+      subject.state.client_state,
+      substitute.state.client_state,
     ),
+    height.compare(
+      substitute.state.client_state.latest_height,
+      subject.state.client_state.latest_height,
+    ) == Greater,
+    tokens_match(output.token, subject.token),
+    recovery_parameters_match(
+      subject.state.client_state,
+      output.state.client_state,
+    ),
+    heights_match(
+      output.state.client_state.latest_height,
+      substitute.state.client_state.latest_height,
+    ),
+    height.is_zero(output.state.client_state.frozen_height),
+    same_history(output.state, substitute.state),
   }
 }

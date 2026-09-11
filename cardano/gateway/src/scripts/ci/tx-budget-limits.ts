@@ -40,31 +40,42 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
+    // Proof-backed history adds the witness verifier to consumer scripts. The
+    // existing conservative deployment model remains below 16,384 bytes, but
+    // above the unchanged 750-byte reserve; it is not a new ledger-size waiver.
     unsignedBytes: 15_818,
     signedBytesEstimate: 16_078,
   },
   send_packet_at_commitment_capacity: {
-    mem: 38_182_438,
-    steps: 12_062_695_649,
+    // Existing unsupported capacity model, remeasured after proof-backed
+    // history/witness-envelope integration and state-thread authentication.
+    // These are full Aiken fixture estimates, not supported ledger flows.
+    // Network limits and execution/size reserves are unchanged.
+    mem: 38_222_583,
+    steps: 12_071_164_053,
   },
   recv_packet_at_history_capacity: {
-    mem: 40_602_692,
-    steps: 12_714_899_716,
+    // The same already-unsupported capacity fixture now includes proof-backed
+    // history dispatch and the VerifyProofEnvelope rather than archive UTxOs.
+    mem: 40_889_150,
+    steps: 12_808_621_227,
   },
   prune_packet_history_at_capacity: {
-    // Authenticating the state token and input script adds 8,304 memory units
-    // to this existing overrun. The public-network limits are unchanged.
-    mem: 25_214_154,
+    // Main's state-thread authentication adds 2,694 memory units to this
+    // already unsupported capacity fixture. Network limits are unchanged.
+    mem: 25_430_596,
   },
   trace_registry_rollover: {
     mem: 25_643_260,
     steps: 10_897_080_470,
   },
   first_seen_voucher_receive_at_capacity: {
-    unsignedBytes: 20_615,
-    signedBytesEstimate: 20_875,
-    mem: 83_145_410,
-    steps: 27_601_135_415,
+    // Already unsupported in both size and execution. The proof envelope adds
+    // six modeled bytes; execution inherits the updated RecvPacket component.
+    unsignedBytes: 20_621,
+    signedBytesEstimate: 20_881,
+    mem: 83_431_868,
+    steps: 27_694_856_926,
   },
   first_seen_voucher_mint: {
     mem: 33_842_210,

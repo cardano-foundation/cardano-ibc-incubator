@@ -3,20 +3,26 @@
   "specifiers": {
     "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@^1.0.11": "1.0.19",
+    "jsr:@std/collections@^1.1.3": "1.3.0",
     "jsr:@std/crypto@^1.0.5": "1.0.5",
     "jsr:@std/fs@^1.0.13": "1.0.19",
     "jsr:@std/internal@^1.0.10": "1.0.12",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/internal@^1.0.9": "1.0.12",
+    "jsr:@std/path@^1.0.13": "1.1.2",
     "jsr:@std/path@^1.1.1": "1.1.2",
-    "npm:@lucid-evolution/lucid@0.4.29": "0.4.29_effect@3.19.2_fast-check@3.23.2",
-    "npm:@lucid-evolution/provider@0.1.90": "0.1.90_effect@3.19.2",
-    "npm:@lucid-evolution/utils@*": "0.1.66_effect@3.19.2_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6",
-    "npm:@lucid-evolution/utils@0.1.66": "0.1.66_effect@3.19.2_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6",
+    "jsr:@std/toml@1.0.11": "1.0.11",
+    "npm:@harmoniclabs/cbor@1.6.6": "1.6.6",
+    "npm:@lucid-evolution/lucid@0.4.29": "0.4.29_effect@3.19.2_fast-check@3.23.2_@harmoniclabs+cbor@1.6.6",
+    "npm:@lucid-evolution/provider@0.1.90": "0.1.90_effect@3.19.2_@harmoniclabs+cbor@1.6.6",
+    "npm:@lucid-evolution/utils@*": "0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6",
+    "npm:@lucid-evolution/utils@0.1.66": "0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6",
     "npm:@noble/hashes@1.8.0": "1.8.0",
     "npm:@types/node@*": "24.2.0",
     "npm:cbor@10": "10.0.11",
     "npm:fast-check@3.23.2": "3.23.2",
+    "npm:js-sha256@0.11.1": "0.11.1",
+    "npm:pg@8.16.0": "8.16.0",
     "npm:ws@*": "7.5.10",
     "npm:ws@7.5.10": "7.5.10"
   },
@@ -27,6 +33,9 @@
         "jsr:@std/internal@^1.0.12"
       ]
     },
+    "@std/collections@1.3.0": {
+      "integrity": "eb36b43d784477ea0b476483ac034a14bdd182aff921c812ecf662a1fcef9498"
+    },
     "@std/crypto@1.0.5": {
       "integrity": "0dcfbb319fe0bba1bd3af904ceb4f948cde1b92979ec1614528380ed308a3b40"
     },
@@ -34,7 +43,7 @@
       "integrity": "051968c2b1eae4d2ea9f79a08a3845740ef6af10356aff43d3e2ef11ed09fb06",
       "dependencies": [
         "jsr:@std/internal@^1.0.9",
-        "jsr:@std/path"
+        "jsr:@std/path@^1.1.1"
       ]
     },
     "@std/internal@1.0.12": {
@@ -44,6 +53,12 @@
       "integrity": "c0b13b97dfe06546d5e16bf3966b1cadf92e1cc83e56ba5476ad8b498d9e3038",
       "dependencies": [
         "jsr:@std/internal@^1.0.10"
+      ]
+    },
+    "@std/toml@1.0.11": {
+      "integrity": "e084988b872ca4bad6aedfb7350f6eeed0e8ba88e9ee5e1590621c5b5bb8f715",
+      "dependencies": [
+        "jsr:@std/collections"
       ]
     }
   },
@@ -271,7 +286,7 @@
     "@harmoniclabs/uint8array-utils@1.0.4": {
       "integrity": "sha512-Z454prSbX4geXGHyjjcn9vm6u9NsD3VJykv8f8yE1VjIXSPitaLPEnm8u2+B+GMp1chYlLilOq+kW4OvJ6y28A=="
     },
-    "@harmoniclabs/uplc@1.4.1_@harmoniclabs+bytestring@1.0.0_@harmoniclabs+cbor@1.6.6_@harmoniclabs+crypto@0.3.0_@harmoniclabs+pair@1.0.0_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6": {
+    "@harmoniclabs/uplc@1.4.1_@harmoniclabs+bytestring@1.0.0_@harmoniclabs+cbor@1.6.6_@harmoniclabs+crypto@0.3.0_@harmoniclabs+pair@1.0.0_@harmoniclabs+plutus-data@1.2.6": {
       "integrity": "sha512-sELKStjxPBPBxBMylU4oBSUe0/8eJe2HqRblNSwrMu8Fso4YpSPDqHZ33iDZ8QAadVUsT5r2EQKX0TLrj7qXvQ==",
       "dependencies": [
         "@harmoniclabs/bigint-utils",
@@ -303,7 +318,7 @@
     "@lucid-evolution/crc8@0.1.8": {
       "integrity": "sha512-88+/S6n+sPgxYtG05rvbJDVb8MoFGzckkR3p26uGrzngYzlJGfxBWIzNhVwfI2mgINPo2C5lkZW3GYnfY0MjuA=="
     },
-    "@lucid-evolution/lucid@0.4.29_effect@3.19.2_fast-check@3.23.2": {
+    "@lucid-evolution/lucid@0.4.29_effect@3.19.2_fast-check@3.23.2_@harmoniclabs+cbor@1.6.6": {
       "integrity": "sha512-+9pXlHivIGE4xJC6EZ62vtOBfgHgPpbJHgd7d6Ztk3lmbBwsM1PZVQ1WSE2upXSvqGE8KT/99IxmZ3kKfbtDUg==",
       "dependencies": [
         "@anastasia-labs/cardano-multiplatform-lib-browser@6.0.2-3",
@@ -331,7 +346,7 @@
         "@sinclair/typebox"
       ]
     },
-    "@lucid-evolution/provider@0.1.90_effect@3.19.2": {
+    "@lucid-evolution/provider@0.1.90_effect@3.19.2_@harmoniclabs+cbor@1.6.6": {
       "integrity": "sha512-8vzVDlWJiDfuvuE2Un18N5uTK8qDkVB5GiglwoDV/qgBNRljQjiih53LbhcGa4KMXgufjZNyNDH854jFkJ95cg==",
       "dependencies": [
         "@anastasia-labs/cardano-multiplatform-lib-browser@6.0.2-3",
@@ -356,10 +371,10 @@
         "@lucid-evolution/core-utils"
       ]
     },
-    "@lucid-evolution/uplc@0.2.20": {
-      "integrity": "sha512-+40qeHmjMnM4Sjdq9JAf190a1t3TMbV1vegVLQGqt2AouOkIunZfziBZwuaqcgUVVbynW+j2Qx2ijK83Pap4XQ=="
+    "@lucid-evolution/uplc@0.2.23": {
+      "integrity": "sha512-D0Qk+FnfePqqnT68IPRVy+2v1FahfkCVlgj31uoQ9aGPrwphKlvgp04UEl/lBNuzJw0avYNM8knO4hptMSFP8Q=="
     },
-    "@lucid-evolution/utils@0.1.66_effect@3.19.2_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6": {
+    "@lucid-evolution/utils@0.1.66_effect@3.19.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6": {
       "integrity": "sha512-sp6vsxrc0u9rYgb4ExRP4LRQM0oK6mVxqt70axK0T4DSS06KYtCqUWX6kjcOHY8jxDGfjK5RLh9hBY+Gul4OSQ==",
       "dependencies": [
         "@anastasia-labs/cardano-multiplatform-lib-browser@6.0.2-3",
@@ -378,7 +393,7 @@
         "effect"
       ]
     },
-    "@lucid-evolution/wallet@0.1.72": {
+    "@lucid-evolution/wallet@0.1.72_@harmoniclabs+cbor@1.6.6": {
       "integrity": "sha512-keGeDV4jUX2MAld79zAGja4mFNQ9FP4HJM8OB8DEnakewTVG4fk38SMSfvuQAh6yH8ZxTNoGUphrMSeVFU4OjQ==",
       "dependencies": [
         "@anastasia-labs/cardano-multiplatform-lib-browser@6.0.2-3",
@@ -781,6 +796,9 @@
         "ws"
       ]
     },
+    "js-sha256@0.11.1": {
+      "integrity": "sha512-o6WSo/LUvY2uC4j7mO50a2ms7E/EAdbP0swigLV+nzHKTTaYnaLIWJ02VdXrsJX0vGedDESQnLsOekr94ryfjg=="
+    },
     "jsbn@1.1.0": {
       "integrity": "sha512-4bYVV3aAMtDTTu4+xsDYa6sy9GyJ69/amsu9sYF2zqjiEoZA5xJi3BrfX3uY+/IekIu7MwdObdbDWpoZdBv3/A=="
     },
@@ -861,8 +879,70 @@
         "to-buffer"
       ]
     },
+    "pg-cloudflare@1.4.0": {
+      "integrity": "sha512-Vo7z/6rrQYxpNRylp4Tlob2elzbh+N/MOQbxFVWCxS7oEx6jF53GTJFxK2WWpKuBRkmiin4Mt+xofFDjx09R0A=="
+    },
+    "pg-connection-string@2.14.0": {
+      "integrity": "sha512-XwWDGcLRGCXAR8F/AM5bG7Q+A3Wm2s6QeEjlOKZLlH3UYcguiqCWKyWXVag5TLTIjR7oOJUY8kcADaZgWPyLeg=="
+    },
+    "pg-int8@1.0.1": {
+      "integrity": "sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw=="
+    },
+    "pg-pool@3.14.0_pg@8.16.0": {
+      "integrity": "sha512-gKtPkFdQPU3DksooVLi9LsjZxrsBUZIpa+7aVx+LV5pNh0KzP4Zleud2po+ConrxbuXGBJ6Hfer6hdgpIBpBaw==",
+      "dependencies": [
+        "pg"
+      ]
+    },
+    "pg-protocol@1.16.0": {
+      "integrity": "sha512-sILXutLVjCLjcDuOmvhX5e2Z4cS5qG/6Bu3VkpFwdf/633ElGLpEh9bgmuI5I4sqKqkifQiGyiCcx1HdtrK7tg=="
+    },
+    "pg-types@2.2.0": {
+      "integrity": "sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA==",
+      "dependencies": [
+        "pg-int8",
+        "postgres-array",
+        "postgres-bytea",
+        "postgres-date",
+        "postgres-interval"
+      ]
+    },
+    "pg@8.16.0": {
+      "integrity": "sha512-7SKfdvP8CTNXjMUzfcVTaI+TDzBEeaUnVwiVGZQD1Hh33Kpev7liQba9uLd4CfN8r9mCVsD0JIpq03+Unpz+kg==",
+      "dependencies": [
+        "pg-connection-string",
+        "pg-pool",
+        "pg-protocol",
+        "pg-types",
+        "pgpass"
+      ],
+      "optionalDependencies": [
+        "pg-cloudflare"
+      ]
+    },
+    "pgpass@1.0.5": {
+      "integrity": "sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug==",
+      "dependencies": [
+        "split2"
+      ]
+    },
     "possible-typed-array-names@1.1.0": {
       "integrity": "sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg=="
+    },
+    "postgres-array@2.0.0": {
+      "integrity": "sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA=="
+    },
+    "postgres-bytea@1.0.1": {
+      "integrity": "sha512-5+5HqXnsZPE65IJZSMkZtURARZelel2oXUEO8rH83VS/hxH5vv1uHquPg5wZs8yMAfdv971IU+kcPUczi7NVBQ=="
+    },
+    "postgres-date@1.0.7": {
+      "integrity": "sha512-suDmjLVQg78nMK2UZ454hAG+OAW+HQPZ6n++TNDUX+L0+uUlLywnoxJKDou51Zm+zTCjrCl0Nq6J9C5hP9vK/Q=="
+    },
+    "postgres-interval@1.2.0": {
+      "integrity": "sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==",
+      "dependencies": [
+        "xtend"
+      ]
     },
     "process-nextick-args@2.0.1": {
       "integrity": "sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag=="
@@ -934,6 +1014,9 @@
         "to-buffer"
       ],
       "bin": true
+    },
+    "split2@4.2.0": {
+      "integrity": "sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg=="
     },
     "sprintf-js@1.1.3": {
       "integrity": "sha512-Oo+0REFV59/rz3gfJNKQiBlwfHaSESl1pcGyABQsnnIfWOFt6JNj5gCog2U6MLZ//IGYD+nA8nI+mTShREReaA=="
@@ -1043,6 +1126,9 @@
     },
     "ws@7.5.10": {
       "integrity": "sha512-+dbF1tHwZpXcbOJdVOkzLDxZP1ailvSxM6ZweXTegylPny803bFhA+vqBYw4s31NSAk4S2Qz+AKXK9a4wkdjcQ=="
+    },
+    "xtend@4.0.2": {
+      "integrity": "sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ=="
     }
   },
   "workspace": {
@@ -1051,12 +1137,21 @@
       "jsr:@std/crypto@^1.0.5",
       "jsr:@std/fs@^1.0.13",
       "jsr:@std/path@^1.0.13",
+      "jsr:@std/toml@1.0.11",
+      "npm:@harmoniclabs/cbor@1.6.6",
       "npm:@lucid-evolution/lucid@0.4.29",
       "npm:@lucid-evolution/provider@0.1.90",
       "npm:@lucid-evolution/utils@0.1.66",
       "npm:@noble/hashes@1.8.0",
       "npm:fast-check@3.23.2",
+      "npm:js-sha256@0.11.1",
+      "npm:pg@8.16.0",
       "npm:ws@7.5.10"
-    ]
+    ],
+    "packageJson": {
+      "overrides": {
+        "@lucid-evolution/uplc": "0.2.23"
+      }
+    }
   }
 }

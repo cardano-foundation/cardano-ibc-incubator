@@ -30,7 +30,6 @@ import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { sumLovelaceFromUtxos } from './helper/helper';
-import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelCloseConfirmParams,
@@ -694,7 +693,8 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionClientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyWitnesses } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [channelOpenTryOperator.proofHeight]);
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     if (!isValidProofHeight(heightsArray, channelOpenTryOperator.proofHeight)) {
       throw new GrpcInternalException(
@@ -806,6 +806,7 @@ export class ChannelService {
     const encodedVerifyProofRedeemer = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
 
     const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings } =
@@ -927,7 +928,8 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyWitnesses } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [channelOpenAckOperator.proofHeight]);
 
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
@@ -1066,6 +1068,7 @@ export class ChannelService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
 
     const moduleConfig = this.getModuleConfig(portId);
@@ -1160,7 +1163,8 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyWitnesses } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [channelOpenConfirmOperator.proofHeight]);
 
     // ChannelOpenConfirm must prove the counterparty's acknowledged channel end
     // against a concrete client consensus state before we mark the local side Open.
@@ -1286,6 +1290,7 @@ export class ChannelService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
     const moduleConfig = this.getModuleConfig(portId);
     const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
@@ -1512,7 +1517,8 @@ export class ChannelService {
     const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const { clientDatum, historyWitnesses } =
+      await this.lucidService.resolveClientAtHeights(clientUtxo, [channelCloseConfirmOperator.proofHeight]);
 
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     if (!isValidProofHeight(heightsArray, channelCloseConfirmOperator.proofHeight)) {
@@ -1632,6 +1638,7 @@ export class ChannelService {
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
+      historyWitnesses[0] ?? null,
     );
 
     const moduleConfig = this.getModuleConfig(portId);

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import * as Lucid from '@lucid-evolution/lucid';
 import {
+  encodeClientStateValue,
+  encodeConsensusStateValue,
   encodeChannelEndValue,
   IbcTreeStateStore,
   StaleIbcTreeStateError,
@@ -57,6 +59,27 @@ function gate() {
   let release!: () => void;
   const promise = new Promise<void>((resolve) => { release = resolve; });
   return { promise, release };
+}
+
+function sampleClientState(latestHeight: bigint) {
+  return {
+    chainId: Buffer.from('chain-1').toString('hex'),
+    trustLevel: { numerator: 1n, denominator: 3n },
+    trustingPeriod: 1_000n,
+    unbondingPeriod: 2_000n,
+    maxClockDrift: 10n,
+    frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
+    latestHeight: { revisionNumber: 0n, revisionHeight: latestHeight },
+    proofSpecs: [],
+  };
+}
+
+function sampleConsensusState(marker: string) {
+  return {
+    timestamp: 1_000n,
+    next_validators_hash: marker.repeat(32),
+    root: { hash: marker.repeat(32) },
+  };
 }
 
 describe('shared IBC state root updates', () => {
@@ -188,24 +211,23 @@ describe('shared IBC state root updates', () => {
     });
   }
 
-  it('retains the client-update existence checks and consensus deletion order', async () => {
+  it('preserves historical consensus leaves and rejects implicit removals', async () => {
     const client = store.computeRootWithCreateClientUpdate(
       emptyRoot, '07-tendermint-0', Buffer.from('01', 'hex'), Buffer.from('02', 'hex'), 7n,
     );
     await commitLive(store, readers, client);
     const update = store.computeRootWithUpdateClientUpdate(
-      client.newRoot, '07-tendermint-0', Buffer.from('03', 'hex'), [7n],
+      client.newRoot, '07-tendermint-0', Buffer.from('03', 'hex'), [],
       { height: 8n, value: Buffer.from('04', 'hex') },
     );
     assert.equal(store.getCurrentRoot(), client.newRoot);
-    assert.equal(update.removedConsensusStateSiblings.length, 1);
-    assert.equal(update.removedConsensusStateSiblings[0].length, 64);
+    assert.deepEqual(update.removedConsensusStateSiblings, []);
     await commitLive(store, readers, update, 2);
-    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/7'), undefined);
+    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/7')?.toString('hex'), '02');
     assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/8')?.toString('hex'), '04');
     assert.throws(() => store.computeRootWithUpdateClientUpdate(
       update.newRoot, '07-tendermint-0', Buffer.from('05', 'hex'), [7n], undefined,
-    ), /existing consensusState/);
+    ), /cannot remove consensus history/);
     assert.equal(store.getCurrentRoot(), update.newRoot);
   });
 
@@ -218,6 +240,101 @@ describe('shared IBC state root updates', () => {
 });
 
 describe('deployment-bound tree stores', () => {
+  async function historyFixture() {
+    const policyId = '11'.repeat(28);
+    const clientToken = { policyId, name: `${'aa'.repeat(24)}30` };
+    const latestHeight = { revisionNumber: 0n, revisionHeight: 8n };
+    const olderHeight = { revisionNumber: 0n, revisionHeight: 7n };
+    const clientState = sampleClientState(8n);
+    const latest = { clientToken, height: latestHeight, consensusState: sampleConsensusState('22'), processedTime: 2000n, processedHeight: 20n };
+    const older = { ...latest, height: olderHeight, consensusState: sampleConsensusState('33'), processedTime: 1900n, processedHeight: 19n };
+    const records = await Promise.all([older, latest].map(async (datum) => ({
+      datum, consensusValue: await encodeConsensusStateValue(datum.consensusState, Lucid), archived: datum === older,
+    })));
+    const clientDatum = {
+      token: clientToken, history_root: 'ab'.repeat(32),
+      state: { clientState, consensusStates: new Map([[latestHeight, latest.consensusState]]) },
+    };
+    const clientValue = await encodeClientStateValue(clientState, Lucid);
+    const h = new Lucid.Constr(0, [0n, 8n]);
+    const encodedClient = Lucid.Data.to(new Lucid.Constr(0, [
+      new Lucid.Constr(0, [
+        Lucid.Data.from(clientValue), new Map([[h, Lucid.Data.from(records[1].consensusValue)]]),
+        new Map([[h, latest.processedTime]]), new Map([[h, latest.processedHeight]]),
+      ]),
+      new Lucid.Constr(0, [policyId, clientToken.name]), clientDatum.history_root,
+    ]));
+    const clientUtxo = { ...hostRef(10), address: 'addr_test1_client', datum: encodedClient, assets: { [policyId + clientToken.name]: 1n } };
+    const expected = new ICS23MerkleTree();
+    expected.set('clients/07-tendermint-0/clientState', clientValue);
+    for (const entry of records) expected.set(`clients/07-tendermint-0/consensusStates/${entry.datum.height.revisionHeight}`, entry.consensusValue);
+    const readers = emptyReaders();
+    readers.kupo.queryAllClientUtxos = async () => [clientUtxo];
+    readers.lucid.consensusHistoryRecords = async (client) => {
+      assert.equal(client.txHash, clientUtxo.txHash);
+      assert.equal(client.outputIndex, clientUtxo.outputIndex);
+      return records;
+    };
+    readers.lucid.decodeDatum = async <T>(encoded: string, type: string) => {
+      if (type === 'host_state') return { state: { ibc_state_root: expected.getRoot() }, control: { port_registry: new Map() } } as T;
+      if (type === 'client' && encoded === clientUtxo.datum) return clientDatum as T;
+      throw new Error(`unexpected ${type} datum`);
+    };
+    readers.setLive(expected.getRoot(), hostRef(12));
+    const historyDeployment: IbcTreeDeployment = { ...deployment, clientPolicyId: policyId };
+    const makeStore = () => new IbcTreeStateStore(historyDeployment, readers.kupo, readers.lucid);
+    return { records, clientDatum, clientUtxo, expected, readers, makeStore };
+  }
+
+  it('rebuilds public historical and latest consensus leaves from recovered records', async () => {
+    const fixture = await historyFixture();
+    const rebuilt = await fixture.makeStore().rebuildTreeFromChain();
+    assert.equal(rebuilt.root, fixture.expected.getRoot());
+    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/7')?.toString('hex'), fixture.records[0].consensusValue);
+    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/8')?.toString('hex'), fixture.records[1].consensusValue);
+  });
+
+  it('rejects foreign-client, duplicate, missing and corrupted recovered records', async () => {
+    {
+      const fixture = await historyFixture();
+      fixture.records[0].datum.clientToken = { ...fixture.records[0].datum.clientToken, name: 'bb'.repeat(24) + '31' };
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /Invalid recovered consensus/);
+    }
+    {
+      const fixture = await historyFixture();
+      fixture.records.push(fixture.records[0]);
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /Duplicate consensus state path/);
+    }
+    for (const removeLatest of [false, true]) {
+      const fixture = await historyFixture();
+      fixture.records.splice(removeLatest ? 1 : 0, 1);
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /Tree rebuild failed/);
+    }
+    {
+      const fixture = await historyFixture();
+      fixture.records[0].consensusValue = 'ff';
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /Tree rebuild failed/);
+    }
+  });
+
+  it('requires a valid private-root datum, exact client NFT and a recovered-history reader', async () => {
+    {
+      const fixture = await historyFixture();
+      fixture.clientDatum.history_root = '';
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /valid client root/);
+    }
+    {
+      const fixture = await historyFixture();
+      fixture.readers.lucid.consensusHistoryRecords = undefined;
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /historical chain reader/);
+    }
+    {
+      const fixture = await historyFixture();
+      fixture.clientUtxo.assets[Object.keys(fixture.clientUtxo.assets)[0]] = 2n;
+      await assert.rejects(fixture.makeStore().rebuildTreeFromChain(), /failed authentication/);
+    }
+  });
+
   it('copies and freezes its deployment binding', () => {
     const binding = { network: 'Preview', hostStateNFT: { policyId: 'aa'.repeat(28), name: '01' } };
     const readers = emptyReaders();

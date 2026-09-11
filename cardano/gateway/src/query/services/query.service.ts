@@ -7,6 +7,10 @@ import {
   QueryClientStatesResponse,
   QueryConsensusStateRequest,
   QueryConsensusStateResponse,
+  QueryConsensusStatesRequest,
+  QueryConsensusStatesResponse,
+  QueryConsensusStateHeightsRequest,
+  QueryConsensusStateHeightsResponse,
   QueryLatestHeightRequest,
   QueryLatestHeightResponse,
   QueryNewClientRequest,
@@ -32,7 +36,10 @@ import {
   StakeDistributionEntry,
 } from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
 import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
-import { IdentifiedClientState } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/client';
+import {
+  ConsensusStateWithHeight,
+  IdentifiedClientState,
+} from '@cardano-ibc/proto-types/build/ibc/core/client/v1/client';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
@@ -40,6 +47,8 @@ import { decodeHostStateDatum, HostStateDatum } from '@shared/types/host-state-d
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
+import { ConsensusState } from '@shared/types/consensus-state';
+import { Height } from '@shared/types/height';
 import {
   GATEWAY_GRPC_ERROR_CODE,
   GrpcFailedPreconditionException,
@@ -144,11 +153,26 @@ import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.servic
 import { ProofQueryOptions } from '../helpers/query-height';
 import { BoundedCache } from '../../shared/helpers/bounded-cache';
 import { MetricsService } from '../../health/metrics.service';
+import { getHeightMapValue } from '../../shared/helpers/verify';
+import { validPagination } from '../helpers/helper';
+import {
+  decodePaginationKey,
+  generatePaginationKey,
+  getPaginationParams,
+} from '../../shared/helpers/pagination';
+import { PaginationKeyDto } from '../dtos/pagination.dto';
 
 type ParsedTxRedeemer = {
   type: string;
   data: string;
   index: bigint;
+};
+
+type StoredConsensusState = {
+  height: Height;
+  consensusState: ConsensusState;
+  processedTime: bigint;
+  processedHeight: bigint;
 };
 
 // Packet status responses keep raw attributes so callers can inspect partially decoded events.
@@ -184,6 +208,17 @@ export const TX_REDEEMER_CACHE_TTL_MS = 60 * 60 * 1000;
 const TX_REDEEMER_CACHE_METRIC = 'tx_redeemers';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const consensusHeightKey = (height: Height): string =>
+  `${height.revisionNumber.toString()}/${height.revisionHeight.toString()}`;
+
+const compareConsensusHeights = (left: Height, right: Height): number => {
+  if (left.revisionNumber !== right.revisionNumber) {
+    return left.revisionNumber < right.revisionNumber ? -1 : 1;
+  }
+  if (left.revisionHeight === right.revisionHeight) return 0;
+  return left.revisionHeight < right.revisionHeight ? -1 : 1;
+};
 
 function getPacketFromSpendChannelRedeemer(redeemer: SpendChannelRedeemer): Packet | undefined {
   if (typeof redeemer === 'string') return undefined;
@@ -620,6 +655,137 @@ export class QueryService {
     return [clientDatum, spendClientUTXO];
   }
 
+  private async getConsensusStatesAtProofContext(
+    clientId: string,
+    proofContext: {
+      proofHeight: bigint;
+      tree: { get(path: string): Buffer | undefined };
+    },
+    requestedHeight?: Height | 'latest',
+  ): Promise<{ clientDatum: ClientDatum; records: StoredConsensusState[] }> {
+    const [clientDatum] = await this.getClientDatum(clientId, proofContext.proofHeight);
+    const resolvedRequestedHeight =
+      requestedHeight === 'latest' ? clientDatum.state.clientState.latestHeight : requestedHeight;
+    const expectedClientUnit = this.lucidService.getClientAuthTokenUnit(BigInt(clientId));
+    const expectedClientToken: AuthToken = {
+      policyId: expectedClientUnit.slice(0, 56),
+      name: expectedClientUnit.slice(56),
+    };
+    if (
+      clientDatum.token.policyId.toLowerCase() !== expectedClientToken.policyId.toLowerCase() ||
+      clientDatum.token.name.toLowerCase() !== expectedClientToken.name.toLowerCase()
+    ) {
+      throw new GrpcFailedPreconditionException(
+        `Client ${clientId} datum does not match its canonical authentication token`,
+      );
+    }
+
+    // The private index is recovered against today's live NFT. Its immutable
+    // records can also answer an older query, but ONLY when that exact public
+    // value exists in the selected HostState tree. Never substitute today's root.
+    const liveClient = await this.lucidService.findUtxoByUnit(expectedClientUnit);
+    const history = await this.lucidService.consensusHistoryRecords(liveClient);
+    const requestedKey = resolvedRequestedHeight ? consensusHeightKey(resolvedRequestedHeight) : undefined;
+    const latestHeight = clientDatum.state.clientState.latestHeight;
+    const records = new Map<string, StoredConsensusState>();
+    const recordPaths = new Set<string>();
+    for (const { datum: record, consensusValue } of history) {
+      if (
+        record.clientToken.policyId.toLowerCase() !== expectedClientToken.policyId.toLowerCase() ||
+        record.clientToken.name.toLowerCase() !== expectedClientToken.name.toLowerCase() ||
+        record.height.revisionNumber < 0n || record.height.revisionHeight <= 0n ||
+        record.processedTime < 0n || record.processedHeight < 0n
+      ) {
+        throw new GrpcFailedPreconditionException(`Consensus-state history for client ${clientId} failed authentication`);
+      }
+      // Public paths contain revision height only. Bind the revision to the
+      // selected client datum and exclude records newer than that datum.
+      if (
+        record.height.revisionNumber !== latestHeight.revisionNumber ||
+        compareConsensusHeights(record.height, latestHeight) > 0
+      ) continue;
+      const key = consensusHeightKey(record.height);
+      if (requestedKey && key !== requestedKey) continue;
+      const pathHeight = record.height.revisionHeight.toString();
+      const path = `clients/07-tendermint-${clientId}/consensusStates/${pathHeight}`;
+      const committedValue = proofContext.tree.get(path);
+      if (!committedValue || committedValue.length === 0) {
+        // The record was not present at this historical anchor. This also
+        // preserves read compatibility with older, already-pruned snapshots.
+        continue;
+      }
+      if (
+        !/^(?:[0-9a-f]{2})+$/i.test(consensusValue) ||
+        !committedValue.equals(Buffer.from(consensusValue, 'hex'))
+      ) {
+        throw new GrpcFailedPreconditionException(
+          `Consensus-state history ${clientId}@${key} does not match the committed IBC state root`,
+        );
+      }
+      if (records.has(key) || recordPaths.has(pathHeight)) {
+        throw new GrpcFailedPreconditionException(`Duplicate consensus-state history record for ${clientId}@${key}`);
+      }
+      records.set(key, {
+        height: record.height,
+        consensusState: record.consensusState,
+        processedTime: record.processedTime,
+        processedHeight: record.processedHeight,
+      });
+      recordPaths.add(pathHeight);
+    }
+
+    return {
+      clientDatum,
+      records: [...records.values()].sort((left, right) => compareConsensusHeights(left.height, right.height)),
+    };
+  }
+
+  private paginateConsensusStates(
+    records: StoredConsensusState[],
+    paginationRequest: QueryConsensusStatesRequest['pagination'],
+  ): {
+    records: StoredConsensusState[];
+    pagination: { next_key: Uint8Array; total: bigint };
+  } {
+    const pagination = getPaginationParams(validPagination(paginationRequest));
+    const {
+      'pagination.key': key = '',
+      'pagination.limit': limit = '100',
+      'pagination.count_total': countTotal = false,
+      'pagination.reverse': reverse = false,
+    } = pagination;
+    let { 'pagination.offset': offset = '0' } = pagination;
+    if (key) offset = decodePaginationKey(key);
+
+    const ordered = reverse ? [...records].reverse() : records;
+    const from = Number(offset);
+    const pageLimit = Number(limit);
+    const to = Math.min(from + pageLimit, ordered.length);
+    const nextKey = to < ordered.length
+      ? generatePaginationKey({ offset: to } as PaginationKeyDto)
+      : new Uint8Array();
+    return {
+      records: ordered.slice(from, to),
+      pagination: {
+        next_key: nextKey,
+        total: countTotal ? BigInt(ordered.length) : 0n,
+      },
+    };
+  }
+
+  private normalizeStoredConsensusState(record: StoredConsensusState): ConsensusStateTendermint {
+    const normalized = normalizeConsensusStateFromDatum(
+      new Map([[record.height, record.consensusState]]),
+      record.height.revisionHeight,
+    );
+    if (!normalized) {
+      throw new GrpcInternalException(
+        `Unable to encode Consensus State at height ${consensusHeightKey(record.height)}`,
+      );
+    }
+    return normalized;
+  }
+
   async queryClientStates(_request: QueryClientStatesRequest): Promise<QueryClientStatesResponse> {
     this.logger.log('queryClientStates');
 
@@ -754,31 +920,47 @@ export class QueryService {
     );
     const { client_id: clientId } = validQueryConsensusStateParam(request);
     const proofContext = await this.getProofContext('queryConsensusState', options.queryHeight);
-    const [clientDatum] = await this.getClientDatum(
+    const requestedHeight: Height | 'latest' = request.latest_height
+      ? 'latest'
+      : {
+          revisionNumber: request.revision_number,
+          revisionHeight: request.revision_height,
+        };
+    const { clientDatum, records } = await this.getConsensusStatesAtProofContext(
       clientId,
-      proofContext.proofHeight,
+      proofContext,
+      requestedHeight,
     );
-
-    // Consensus height: identifies which consensus state entry to retrieve
-    // If latest_height is true, use the latest consensus state for this client.
-    let heightReq: bigint;
-    if (request.latest_height) {
-      heightReq = clientDatum.state.clientState.latestHeight.revisionHeight;
-      this.logger.log(`queryConsensusState: Using latest consensus height: ${heightReq}`);
-    } else {
-      // Canonical IBC request provides revision_number + revision_height.
-      // We key consensus states by revision_height in the on-chain datum.
-      heightReq = request.revision_height;
+    const selectedHeight =
+      requestedHeight === 'latest' ? clientDatum.state.clientState.latestHeight : requestedHeight;
+    if (requestedHeight === 'latest') {
+      this.logger.log(
+        `queryConsensusState: Using latest consensus height: ${consensusHeightKey(selectedHeight)}`,
+      );
     }
-    const consensusStateTendermint = normalizeConsensusStateFromDatum(clientDatum.state.consensusStates, heightReq);
-    if (!consensusStateTendermint)
-      throw new GrpcNotFoundException(`Unable to find Consensus State at height ${heightReq}`);
+    const record = records.find(
+      ({ height }) => consensusHeightKey(height) === consensusHeightKey(selectedHeight),
+    );
+    if (!record) {
+      throw new GrpcNotFoundException(
+        `Unable to find Consensus State at height ${consensusHeightKey(selectedHeight)}`,
+      );
+    }
+    const consensusStateTendermint = normalizeConsensusStateFromDatum(
+      new Map([[record.height, record.consensusState]]),
+      record.height.revisionHeight,
+    );
+    if (!consensusStateTendermint) {
+      throw new GrpcInternalException(
+        `Unable to encode Consensus State at height ${consensusHeightKey(record.height)}`,
+      );
+    }
     const consensusStateAny: Any = {
       type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
     // Generate ICS-23 proof from the IBC state tree.
-    const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${heightReq}`;
+    const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${record.height.revisionHeight}`;
 
     await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     const tree = proofContext.tree;
@@ -789,7 +971,7 @@ export class QueryService {
       consensusProof = serializeExistenceProof(existenceProof);
 
       this.logger.log(
-        `Generated ICS-23 proof for consensus state ${clientId}@${heightReq}, proof size: ${consensusProof.length} bytes`,
+        `Generated ICS-23 proof for consensus state ${clientId}@${consensusHeightKey(record.height)}, proof size: ${consensusProof.length} bytes`,
       );
     } catch (error) {
       this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
@@ -805,6 +987,53 @@ export class QueryService {
       },
     };
     return response as unknown as QueryConsensusStateResponse;
+  }
+
+  async queryConsensusStates(
+    request: QueryConsensusStatesRequest,
+    options: ProofQueryOptions = {},
+  ): Promise<QueryConsensusStatesResponse> {
+    const { client_id: clientId } = validQueryClientStateParam({
+      client_id: request.client_id,
+    } as QueryClientStateRequest);
+    const proofContext = await this.getProofContext('queryConsensusStates', options.queryHeight);
+    const { records } = await this.getConsensusStatesAtProofContext(clientId, proofContext);
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const page = this.paginateConsensusStates(records, request.pagination);
+    const consensusStates: ConsensusStateWithHeight[] = page.records.map((record) => ({
+      height: {
+        revision_number: record.height.revisionNumber,
+        revision_height: record.height.revisionHeight,
+      },
+      consensus_state: {
+        type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
+        value: ConsensusStateTendermint.encode(this.normalizeStoredConsensusState(record)).finish(),
+      },
+    }));
+    return {
+      consensus_states: consensusStates,
+      pagination: page.pagination,
+    };
+  }
+
+  async queryConsensusStateHeights(
+    request: QueryConsensusStateHeightsRequest,
+    options: ProofQueryOptions = {},
+  ): Promise<QueryConsensusStateHeightsResponse> {
+    const { client_id: clientId } = validQueryClientStateParam({
+      client_id: request.client_id,
+    } as QueryClientStateRequest);
+    const proofContext = await this.getProofContext('queryConsensusStateHeights', options.queryHeight);
+    const { records } = await this.getConsensusStatesAtProofContext(clientId, proofContext);
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const page = this.paginateConsensusStates(records, request.pagination);
+    return {
+      consensus_state_heights: page.records.map(({ height }) => ({
+        revision_number: height.revisionNumber,
+        revision_height: height.revisionHeight,
+      })),
+      pagination: page.pagination,
+    };
   }
 
   async queryBlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse> {

@@ -27,12 +27,10 @@ import {
   CLIENT_ID_PREFIX,
   CLIENT_PREFIX,
   EVENT_TYPE_CLIENT,
-  MAX_CONSENSUS_STATE_SIZE,
 } from 'src/constant';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from 'src/shared/types/client-datum';
 import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
 import { Height } from 'src/shared/types/height';
-import { isExpired } from '@shared/helpers/client-state';
 import {
   ClientMessage,
   getClientMessageFromTendermint,
@@ -57,6 +55,10 @@ import { toHex } from '../shared/helpers/hex';
 import type { GatewayEvent } from './tx-events.service';
 import { getHeightMapValue, getProcessedHeight } from '../shared/helpers/verify';
 import { isDeepStrictEqual } from 'node:util';
+import {
+  latestOnlyClientDatum,
+} from '../shared/types/consensus-state-datum';
+import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 
 @Injectable()
 export class ClientService {
@@ -209,8 +211,8 @@ export class ClientService {
     if (!this.recoveryParametersMatch(subjectState, substituteState)) {
       throw new GrpcFailedPreconditionException('Subject and substitute client parameters do not match');
     }
-    if (subjectDatum.state.consensusStates.size > MAX_CONSENSUS_STATE_SIZE) {
-      throw new GrpcFailedPreconditionException('Subject client consensus-state history exceeds the configured limit');
+    if (subjectDatum.state.consensusStates.size !== 1 || substituteDatum.state.consensusStates.size !== 1) {
+      throw new GrpcFailedPreconditionException('Client recovery requires latest-only client datums');
     }
     const consensusKeys = Array.from(subjectDatum.state.consensusStates.keys());
     const processedTimeKeys = Array.from(subjectDatum.state.processedTimes.keys());
@@ -330,11 +332,34 @@ export class ClientService {
       const clientTokenUnit = this.lucidService.getClientTokenUnit(clientId);
       // Find the UTXO for the client token
       const currentClientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-      // Retrieve the current client datum from the UTXO
-      const currentClientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(
-        currentClientUtxo.datum!,
-        'client',
+      const message = getClientMessageFromTendermint(clientMessage);
+      const headers = 'HeaderCase' in message ? message.HeaderCase :
+        message.MisbehaviourCase.flatMap((misbehaviour) => [misbehaviour.header1, misbehaviour.header2]);
+      let { clientDatum: currentClientDatum, historyWitnesses } = await this.lucidService.resolveClientAtHeights(
+        currentClientUtxo,
+        headers.map((header) => header.trustedHeight),
       );
+      // A conflicting header can target a retained historical height. Include that
+      // record as well as its trust anchor when it exists.
+      if ('HeaderCase' in message) {
+        const target = {
+          revisionNumber: headers[0].trustedHeight.revisionNumber,
+          revisionHeight: headers[0].signedHeader.header.height,
+        };
+        if (!this.isHeightGreater(target, currentClientDatum.state.clientState.latestHeight) &&
+          getHeightMapValue(currentClientDatum.state.consensusStates, target) === undefined) {
+          try {
+            const resolved = await this.lucidService.resolveClientAtHeights(
+              currentClientUtxo,
+              [...headers.map((header) => header.trustedHeight), target],
+            );
+            currentClientDatum = resolved.clientDatum;
+            historyWitnesses = resolved.historyWitnesses;
+          } catch (error) {
+            if (!(error instanceof GrpcNotFoundException)) throw error;
+          }
+        }
+      }
 
       if (!verifyClientMessage(clientMessage, currentClientDatum)) {
         throw new GrpcInvalidArgumentException('Invalid client message');
@@ -352,6 +377,7 @@ export class ClientService {
           clientDatum: currentClientDatum,
           clientTokenUnit,
           currentClientUtxo,
+          historyWitnesses,
         };
 
         const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } =
@@ -449,6 +475,7 @@ export class ClientService {
         clientTokenUnit,
         currentClientUtxo,
         txValidFrom: txValidFromNs,
+        historyWitnesses,
         txValidTo: BigInt(validToTimeMs) * 1_000_000n,
       };
 
@@ -623,6 +650,8 @@ export class ClientService {
     const spendClientRedeemer: SpendClientRedeemer = {
       UpdateClient: {
         msg: clientMessage,
+        history_witnesses: updateOnMisbehaviourOperator.historyWitnesses ?? [],
+        history_siblings: [],
       },
     };
 
@@ -634,13 +663,13 @@ export class ClientService {
       } as Height,
     };
 
-    const newClientDatum: ClientDatum = {
+    const newClientDatum: ClientDatum = latestOnlyClientDatum({
       ...updateOnMisbehaviourOperator.clientDatum,
       state: {
         ...updateOnMisbehaviourOperator.clientDatum.state,
         clientState: newClientState,
       },
-    };
+    });
 
     // Root correctness enforcement (HostState update)
     //
@@ -660,33 +689,17 @@ export class ClientService {
     // The IBC client identifier used in the commitment tree matches the on-chain convention.
     const ibcClientId = `07-tendermint-${updateOnMisbehaviourOperator.clientId}`;
 
-    // Determine consensus-state removals/insertions by diffing input vs output.
-    // We compare by full (revisionNumber, revisionHeight) equality to match on-chain `pairs.has_key`.
-    const outputFullKeys = new Set(
-      Array.from(newClientDatum.state.consensusStates.keys()).map(
-        (h) => `${h.revisionNumber.toString()}-${h.revisionHeight.toString()}`,
-      ),
-    );
-
-    const removedConsensusHeights: string[] = [];
-    for (const [height] of currentClientDatumState.consensusStates.entries()) {
-      const fullKey = `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`;
-      if (!outputFullKeys.has(fullKey)) {
-        removedConsensusHeights.push(height.revisionHeight.toString());
-      }
-    }
-
     const newClientStateValue = Buffer.from(
       await encodeClientStateValue(newClientState, this.lucidService.LucidImporter),
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
+    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
       this.ibcTreeStore.computeRootWithUpdateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         ibcClientId,
         newClientStateValue,
-        removedConsensusHeights,
+        [],
         undefined,
       );
 
@@ -704,7 +717,6 @@ export class ClientService {
       UpdateClient: {
         client_state_siblings: clientStateSiblings,
         consensus_state_siblings: consensusStateSiblings,
-        removed_consensus_state_siblings: removedConsensusStateSiblings,
       },
     };
 
@@ -721,6 +733,7 @@ export class ClientService {
       encodedNewClientDatum,
       updateOnMisbehaviourOperator.clientTokenUnit,
       updateOnMisbehaviourOperator.constructedAddress,
+      await this.lucidService.encode({ CheckClientHistory: { subject_token: newClientDatum.token } }, 'recoverClientWithdrawalRedeemer'),
     );
     return {
       unsignedTx,
@@ -736,12 +749,15 @@ export class ClientService {
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const currentClientDatumState = updateClientOperator.clientDatum.state;
     const header = updateClientOperator.header;
+    const insertion = await this.lucidService.prepareConsensusHistoryUpdate(updateClientOperator.currentClientUtxo);
     // Create a SpendClientRedeemer using the provided header
     const spendClientRedeemer: SpendClientRedeemer = {
       UpdateClient: {
         msg: {
           HeaderCase: [header],
         },
+        history_witnesses: updateClientOperator.historyWitnesses ?? [],
+        history_siblings: insertion.siblings,
       },
     };
     const headerHeight = header.signedHeader.header.height;
@@ -767,45 +783,12 @@ export class ClientService {
         hash: header.signedHeader.header.appHash,
       },
     };
-    let currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries()).filter(
-      ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
-    );
-
-    if (currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight)) {
-      console.dir(
-        {
-          proofHeight: headerHeight,
-          currentConsStateInArray,
-        },
-        { depth: 10 },
-      );
-      throw new GrpcInternalException(`Client already created at height: ${headerHeight}`);
-    }
-
-    currentConsStateInArray.unshift([newHeight, newConsState]);
-    if (currentConsStateInArray.length > MAX_CONSENSUS_STATE_SIZE) {
-      currentConsStateInArray = currentConsStateInArray.splice(0, MAX_CONSENSUS_STATE_SIZE);
-    }
-
-    const newConsStates = new Map(currentConsStateInArray);
-    const newProcessedTimes = new Map(
-      currentConsStateInArray.map(([height]) => [
-        height,
-        height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
-          ? updateClientOperator.txValidTo
-          : getHeightMapValue(currentClientDatumState.processedTimes, height) ?? 0n,
-      ]),
-    );
-    const newProcessedHeights = new Map(
-      currentConsStateInArray.map(([height]) => [
-        height,
-        height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
-          ? getProcessedHeight(updateClientOperator.txValidTo)
-          : getHeightMapValue(currentClientDatumState.processedHeights, height) ?? 0n,
-      ]),
-    );
+    const newConsStates = new Map([[newHeight, newConsState]]);
+    const newProcessedTimes = new Map([[newHeight, updateClientOperator.txValidTo]]);
+    const newProcessedHeights = new Map([[newHeight, getProcessedHeight(updateClientOperator.txValidTo)]]);
     const newClientDatum: ClientDatum = {
       ...updateClientOperator.clientDatum,
+      history_root: insertion.newRoot,
       state: {
         clientState: newClientState,
         consensusStates: newConsStates,
@@ -816,9 +799,8 @@ export class ClientService {
 
     // Root correctness enforcement (HostState update)
     //
-    // This transaction changes client state and (usually) adds a new consensus state while
-    // pruning older ones. The HostState root must commit to those changes, otherwise a
-    // counterparty cannot verify proofs about the updated client.
+    // The archived tip keeps its existing commitment leaf. Only the new tip and
+    // client state alter the public root.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
       throw new GrpcInternalException('HostState UTXO has no datum');
@@ -831,58 +813,22 @@ export class ClientService {
 
     const ibcClientId = `07-tendermint-${updateClientOperator.clientId}`;
 
-    const inputFullKeys = new Set(
-      Array.from(currentClientDatumState.consensusStates.keys()).map(
-        (h) => `${h.revisionNumber.toString()}-${h.revisionHeight.toString()}`,
-      ),
-    );
-    const outputFullKeys = new Set(
-      Array.from(newClientDatum.state.consensusStates.keys()).map(
-        (h) => `${h.revisionNumber.toString()}-${h.revisionHeight.toString()}`,
-      ),
-    );
-
-    const removedConsensusHeights: string[] = [];
-    for (const [height] of currentClientDatumState.consensusStates.entries()) {
-      const fullKey = `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`;
-      if (!outputFullKeys.has(fullKey)) {
-        removedConsensusHeights.push(height.revisionHeight.toString());
-      }
-    }
-
-    let addedConsensusState:
-      | {
-          height: string;
-          value: Buffer;
-        }
-      | undefined = undefined;
-    for (const [height, consensusState] of newClientDatum.state.consensusStates.entries()) {
-      const fullKey = `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`;
-      if (!inputFullKeys.has(fullKey)) {
-        if (addedConsensusState) {
-          throw new GrpcInternalException('UpdateClient should add at most one consensus state');
-        }
-        addedConsensusState = {
-          height: height.revisionHeight.toString(),
-          value: Buffer.from(
-            await encodeConsensusStateValue(consensusState, this.lucidService.LucidImporter),
-            'hex',
-          ),
-        };
-      }
-    }
+    const addedConsensusState = {
+      height: newHeight.revisionHeight.toString(),
+      value: Buffer.from(await encodeConsensusStateValue(newConsState, this.lucidService.LucidImporter), 'hex'),
+    };
 
     const newClientStateValue = Buffer.from(
       await encodeClientStateValue(newClientState, this.lucidService.LucidImporter),
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
+    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
       this.ibcTreeStore.computeRootWithUpdateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         ibcClientId,
         newClientStateValue,
-        removedConsensusHeights,
+        [],
         addedConsensusState,
       );
 
@@ -900,7 +846,6 @@ export class ClientService {
       UpdateClient: {
         client_state_siblings: clientStateSiblings,
         consensus_state_siblings: consensusStateSiblings,
-        removed_consensus_state_siblings: removedConsensusStateSiblings,
       },
     };
 
@@ -917,6 +862,7 @@ export class ClientService {
       encodedNewClientDatum,
       updateClientOperator.clientTokenUnit,
       updateClientOperator.constructedAddress,
+      await this.lucidService.encode({ CheckClientHistory: { subject_token: newClientDatum.token } }, 'recoverClientWithdrawalRedeemer'),
     );
     return {
       unsignedTx,
@@ -942,19 +888,8 @@ export class ClientService {
       );
     }
 
-    const subjectHistory = Array.from(operator.subjectClientDatum.state.consensusStates.entries()).map(
-      ([height, consensusState]) => {
-        const processedTime = getHeightMapValue(operator.subjectClientDatum.state.processedTimes, height);
-        const processedHeight = getHeightMapValue(operator.subjectClientDatum.state.processedHeights, height);
-        if (processedTime === undefined || processedHeight === undefined) {
-          throw new GrpcFailedPreconditionException(
-            'Subject client consensus-state history is missing processed metadata',
-          );
-        }
-        return { height, consensusState, processedTime, processedHeight };
-      },
-    );
-    const retainedHistory = [recoveryState, ...subjectHistory].slice(0, MAX_CONSENSUS_STATE_SIZE);
+    const insertion = await this.lucidService.prepareConsensusHistoryUpdate(operator.subjectClientUtxo);
+    const retainedHistory = [recoveryState];
     const newClientState: ClientState = {
       ...operator.subjectClientDatum.state.clientState,
       frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
@@ -962,6 +897,7 @@ export class ClientService {
     };
     const recoveredClientDatum: ClientDatum = {
       ...operator.subjectClientDatum,
+      history_root: insertion.newRoot,
       state: {
         clientState: newClientState,
         consensusStates: new Map(
@@ -977,23 +913,6 @@ export class ClientService {
     };
 
     await this.ensureTreeAligned(operator.hostStateDatum.state.ibc_state_root, operator.hostStateUtxo);
-    const outputHeightKeys = new Set(
-      retainedHistory.map(
-        ({ height }) => `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`,
-      ),
-    );
-    const removedConsensusHeights = Array.from(
-      operator.subjectClientDatum.state.consensusStates.keys(),
-    )
-      .filter(
-        (height) =>
-          !outputHeightKeys.has(`${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`),
-      )
-      .map((height) => height.revisionHeight.toString());
-    if (removedConsensusHeights.length > 1) {
-      throw new GrpcInternalException('RecoverClient should prune at most one consensus state');
-    }
-
     const newClientStateValue = Buffer.from(
       await encodeClientStateValue(newClientState, this.lucidService.LucidImporter),
       'hex',
@@ -1006,12 +925,12 @@ export class ClientService {
       ),
     };
     const ibcClientId = `${CLIENT_ID_PREFIX}-${operator.subjectClientId}`;
-    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
+    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
       this.ibcTreeStore.computeRootWithUpdateClientUpdate(
         operator.hostStateDatum.state.ibc_state_root,
         ibcClientId,
         newClientStateValue,
-        removedConsensusHeights,
+        [],
         addedConsensusState,
       );
 
@@ -1028,12 +947,12 @@ export class ClientService {
       UpdateClient: {
         client_state_siblings: clientStateSiblings,
         consensus_state_siblings: consensusStateSiblings,
-        removed_consensus_state_siblings: removedConsensusStateSiblings,
       },
     };
     const spendClientRedeemer: SpendClientRedeemer = {
       RecoverClient: {
         substitute_token: operator.substituteClientDatum.token,
+        history_siblings: insertion.siblings,
       },
     };
     const withdrawalRedeemer = {
@@ -1164,6 +1083,7 @@ export class ClientService {
 
     const clientDatum: ClientDatum = {
       state: clientDatumState,
+      history_root: '00'.repeat(32),
       token: {
         policyId: mintClientScriptHash,
         name: clientTokenName,

@@ -9,7 +9,9 @@ use cardano/transaction.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
-use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
+use ibc/client/ics_007_tendermint_client/client_redeemer.{
+  MintClient, MintClientRedeemer,
+}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
@@ -18,7 +20,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   CreateClient, HostStateRedeemer,
-}
+} as host_redeemer
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
@@ -55,10 +57,11 @@ validator mint_client_stt(
   host_state_nft_policy_id: PolicyId,
 ) {
   mint(
-    _redeemer: MintClientRedeemer,
+    redeemer: MintClientRedeemer,
     client_mint_policy_id: PolicyId,
     transaction: Transaction,
   ) {
+    let MintClient = redeemer
     let Transaction { inputs, outputs, mint, validity_range, redeemers, .. } =
       transaction
 

@@ -14,6 +14,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
   VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
+  VerifyProofEnvelope,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -349,59 +350,62 @@ fn check_timeout_unordered_packet(
       path: merkle_path,
     }
   let verify_proof_redeemer: Redeemer =
-    if use_timeout_on_close {
-      let expected_remote_channel =
-        Channel {
-          state: chan_state_mod.Closed,
-          ordering: chan_order_mod.Unordered,
-          counterparty: ChannelCounterparty {
-            port_id: input_channel_datum.port_id,
-            channel_id,
-          },
-          connection_hops: [connection_datum.state.counterparty.connection_id],
-          version: input_channel_datum.state.channel.version,
-        }
-      let close_membership =
-        VerifyMembershipParams {
-          cs: client_datum.state.client_state,
-          cons_state,
-          height: proof_height,
-          processed_time: 0,
-          processed_height: 0,
-          delay_time_period: 0,
-          delay_block_period: 0,
-          proof: proof_close,
-          path: merkle.apply_prefix(
-            connection_datum.state.counterparty.prefix,
-            merkle.new_merkle_path(
-              [
-                channel_keys.channel_path(
-                  packet.destination_port,
-                  packet.destination_channel,
-                ),
-              ],
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: if use_timeout_on_close {
+        let expected_remote_channel =
+          Channel {
+            state: chan_state_mod.Closed,
+            ordering: chan_order_mod.Unordered,
+            counterparty: ChannelCounterparty {
+              port_id: input_channel_datum.port_id,
+              channel_id,
+            },
+            connection_hops: [connection_datum.state.counterparty.connection_id],
+            version: input_channel_datum.state.channel.version,
+          }
+        let close_membership =
+          VerifyMembershipParams {
+            cs: client_datum.state.client_state,
+            cons_state,
+            height: proof_height,
+            processed_time: 0,
+            processed_height: 0,
+            delay_time_period: 0,
+            delay_block_period: 0,
+            proof: proof_close,
+            path: merkle.apply_prefix(
+              connection_datum.state.counterparty.prefix,
+              merkle.new_merkle_path(
+                [
+                  channel_keys.channel_path(
+                    packet.destination_port,
+                    packet.destination_channel,
+                  ),
+                ],
+              ),
             ),
-          ),
-          value: channel_pb.marshal_for_channel(
-            channel.convert_to_channel_proto(expected_remote_channel),
-          ).2nd,
+            value: channel_pb.marshal_for_channel(
+              channel.convert_to_channel_proto(expected_remote_channel),
+            ).2nd,
+          }
+        BatchVerifyMembershipAndNonMembership {
+          memberships: [close_membership],
+          non_memberships: [receipt_non_membership],
         }
-      BatchVerifyMembershipAndNonMembership {
-        memberships: [close_membership],
-        non_memberships: [receipt_non_membership],
-      }
-    } else {
-      VerifyNonMembership {
-        cs: receipt_non_membership.cs,
-        cons_state: receipt_non_membership.cons_state,
-        height: receipt_non_membership.height,
-        processed_time: receipt_non_membership.processed_time,
-        processed_height: receipt_non_membership.processed_height,
-        delay_time_period: receipt_non_membership.delay_time_period,
-        delay_block_period: receipt_non_membership.delay_block_period,
-        proof: receipt_non_membership.proof,
-        path: receipt_non_membership.path,
-      }
+      } else {
+        VerifyNonMembership {
+          cs: receipt_non_membership.cs,
+          cons_state: receipt_non_membership.cons_state,
+          height: receipt_non_membership.height,
+          processed_time: receipt_non_membership.processed_time,
+          processed_height: receipt_non_membership.processed_height,
+          delay_time_period: receipt_non_membership.delay_time_period,
+          delay_block_period: receipt_non_membership.delay_block_period,
+          proof: receipt_non_membership.proof,
+          path: receipt_non_membership.path,
+        }
+      },
     }
 
   let timeout_packet_redeemer: Redeemer = mock_data.channel_token
@@ -616,17 +620,20 @@ test succeed_timeout_ordered_packet() {
     )
 
   let verify_proof_redeemer: Redeemer =
-    VerifyMembership {
-      cs: client_datum.state.client_state,
-      cons_state,
-      height: proof_height,
-      processed_time: 0,
-      processed_height: 0,
-      delay_time_period: 0,
-      delay_block_period: 0,
-      proof: proof_unreceived,
-      path: merkle_path,
-      value: from_int_big_endian(next_sequence_recv, 8),
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: VerifyMembership {
+        cs: client_datum.state.client_state,
+        cons_state,
+        height: proof_height,
+        processed_time: 0,
+        processed_height: 0,
+        delay_time_period: 0,
+        delay_block_period: 0,
+        proof: proof_unreceived,
+        path: merkle_path,
+        value: from_int_big_endian(next_sequence_recv, 8),
+      },
     }
 
   let timeout_packet_redeemer: Redeemer = mock_data.channel_token
@@ -846,7 +853,11 @@ test timeout_on_close_recovers_second_future_packet_from_closed_ordered_channel(
       ).2nd,
     }
   let verify_proof_redeemer: Redeemer =
-    BatchVerifyMembership([common_membership, close_membership])
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: BatchVerifyMembership([common_membership, close_membership]),
+    }
+
   let timeout_packet_redeemer: Redeemer = mock_data.channel_token
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [

@@ -1,5 +1,6 @@
 import {
   DEFAULT_HANDLER_JSON_PATH,
+  CONSENSUS_HISTORY_FORMAT,
   ICS20_PACKET_CODEC,
   bridgeManifestsEqual,
   loadBridgeConfigFromEnv,
@@ -23,6 +24,7 @@ function buildValidator(name: string) {
 function buildHandlerJsonDeployment() {
   return {
     deployedAt: '2026-04-01T12:34:56.000Z',
+    consensusHistoryFormat: CONSENSUS_HISTORY_FORMAT,
     ics20PacketCodec: ICS20_PACKET_CODEC.STRICT,
     hostStateNFT: {
       policyId: 'host-policy',
@@ -83,6 +85,18 @@ function buildHandlerJsonDeployment() {
 }
 
 describe('bridge manifest normalization', () => {
+  it.each([undefined, null, '', 'archive-nft-v1', 'proof-backed-v2'])('rejects missing or unsupported history format %s before accepting old contracts', (format) => {
+    const current = buildHandlerJsonDeployment();
+    expect(() => normalizeHandlerJsonDeploymentConfig({ ...current, consensusHistoryFormat: format }, {
+      chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom',
+    })).toThrow('fresh proof-backed deployment is required');
+    const normalized = normalizeHandlerJsonDeploymentConfig(current, {
+      chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom',
+    });
+    expect(() => normalizeBridgeManifestConfig({ ...normalized.bridgeManifest, consensus_history_format: format }))
+      .toThrow('fresh proof-backed deployment is required');
+  });
+
   it('normalizes handler.json into the public manifest and internal deployment config', () => {
     const loaded = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
@@ -92,6 +106,7 @@ describe('bridge manifest normalization', () => {
 
     expect(loaded.bridgeManifest).toMatchObject({
       schema_version: 4,
+      consensus_history_format: CONSENSUS_HISTORY_FORMAT,
       deployment_id: 'cardano-devnet:host-policy.host-token',
       deployed_at: '2026-04-01T12:34:56.000Z',
       ics20_packet_codec: ICS20_PACKET_CODEC.STRICT,
@@ -163,6 +178,23 @@ describe('bridge manifest normalization', () => {
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
   });
 
+  it('rejects obsolete archive-NFT deployment fields rather than silently dropping them', () => {
+    const current = buildHandlerJsonDeployment();
+    const identity = { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' };
+    expect(() => normalizeHandlerJsonDeploymentConfig(
+      { ...current, validators: { ...current.validators, spendConsensusState: buildValidator('archive') } },
+      identity,
+    )).toThrow(/fresh proof-backed deployment is required/);
+    const normalized = normalizeHandlerJsonDeploymentConfig(
+      current,
+      { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+    );
+    expect(() => normalizeBridgeManifestConfig({
+      ...normalized.bridgeManifest,
+      validators: { ...normalized.bridgeManifest.validators, spend_consensus_state: {} },
+    })).toThrow(/fresh proof-backed deployment is required/);
+  });
+
   it('keeps handler files without a recovery validator loadable', () => {
     const current = buildHandlerJsonDeployment();
     const { recoverClient: _recoverClient, ...legacyValidators } = current.validators;
@@ -197,7 +229,7 @@ describe('bridge manifest normalization', () => {
     expect(loaded.bridgeManifest.validators.recover_client).toBeUndefined();
   });
 
-  it('defaults handler files without a codec capability to the legacy validators', () => {
+  it('defaults a proof-backed handler without a packet codec to legacy packet encoding', () => {
     const { ics20PacketCodec: _codec, ...legacyHandler } = buildHandlerJsonDeployment();
 
     const loaded = normalizeHandlerJsonDeploymentConfig(legacyHandler, {
@@ -210,7 +242,7 @@ describe('bridge manifest normalization', () => {
     expect(loaded.bridgeManifest.ics20_packet_codec).toBe(ICS20_PACKET_CODEC.LEGACY);
   });
 
-  it('defaults schema-v4 manifests without a codec capability to the legacy validators', () => {
+  it('defaults a proof-backed schema-v4 manifest without a packet codec to legacy packet encoding', () => {
     const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,

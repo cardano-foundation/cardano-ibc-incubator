@@ -35,7 +35,7 @@ describe('Redeemer encoding regression', () => {
   it('keeps client recovery constructors aligned with Aiken', async () => {
     const subjectToken = { policyId: '11'.repeat(28), name: 'aa' };
     const substituteToken = { policyId: '22'.repeat(28), name: 'bb' };
-    const spendRedeemer = { RecoverClient: { substitute_token: substituteToken } } as const;
+    const spendRedeemer = { RecoverClient: { substitute_token: substituteToken, history_siblings: [] as string[] } } as const;
     const withdrawalRedeemer = {
       RecoverClientWithdrawal: {
         subject_token: subjectToken,
@@ -152,7 +152,7 @@ describe('Redeemer encoding regression', () => {
     expect(encoded).toBe('d87980');
   });
 
-  it('keeps VerifyProof redeemer encoding stable', () => {
+  it('wraps the unchanged VerifyProof payload with an absent history witness', () => {
     const encoded = encodeVerifyProofRedeemer(
       {
         VerifyMembership: {
@@ -185,7 +185,7 @@ describe('Redeemer encoding regression', () => {
     );
 
     expect(encoded).toBe(
-      'd8798ad879884a656e747279706f696e74d879820103187818f00ad879820000d8798200183280d87983187b41aad8798141bbd87982000b00000000d8798180d879818243696263447061746847636f6e74656e74',
+      'd87982d8798ad879884a656e747279706f696e74d879820103187818f00ad879820000d8798200183280d87983187b41aad8798141bbd87982000b00000000d8798180d879818243696263447061746847636f6e74656e74d87a80',
     );
   });
 
@@ -200,7 +200,7 @@ describe('Redeemer encoding regression', () => {
       Lucid,
     );
 
-    expect(encoded).toBe('d87d828080');
+    expect(encoded).toBe('d87982d87d828080d87a80');
   });
 
   it('encodes channel close-confirm module callback with the close-confirm constructor', async () => {

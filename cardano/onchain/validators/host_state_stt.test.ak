@@ -750,6 +750,7 @@ fn test_client_state(latest_height: Height) -> ClientState {
 fn test_client_datum(latest_height: Int, seed: Int) -> ClientDatum {
   let height = test_height(latest_height)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: test_client_state(height),
       consensus_states: [Pair(height, test_consensus_state(seed))],
@@ -762,10 +763,13 @@ fn test_client_datum(latest_height: Int, seed: Int) -> ClientDatum {
 
 fn test_updated_client_datum(seed: Int) -> ClientDatum {
   let old_height = test_height(1)
-  let new_height = test_height(2)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
-      client_state: test_client_state(new_height),
+      client_state: ClientState {
+        ..test_client_state(old_height),
+        frozen_height: old_height,
+      },
       consensus_states: [Pair(old_height, test_consensus_state(seed))],
       processed_times: [Pair(old_height, 0)],
       processed_heights: [Pair(old_height, 0)],
@@ -775,17 +779,14 @@ fn test_updated_client_datum(seed: Int) -> ClientDatum {
 }
 
 fn test_updated_client_datum_with_consensus_insert(seed: Int) -> ClientDatum {
-  let old_height = test_height(1)
   let new_height = test_height(2)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: test_client_state(new_height),
-      consensus_states: [
-        Pair(new_height, test_consensus_state(seed + 1)),
-        Pair(old_height, test_consensus_state(seed)),
-      ],
-      processed_times: [Pair(new_height, 1), Pair(old_height, 0)],
-      processed_heights: [Pair(new_height, 1), Pair(old_height, 0)],
+      consensus_states: [Pair(new_height, test_consensus_state(seed + 1))],
+      processed_times: [Pair(new_height, 1)],
+      processed_heights: [Pair(new_height, 1)],
     },
     token: test_client_token(),
   }
@@ -1175,8 +1176,7 @@ test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
   let redeemer: HostStateRedeemer =
     UpdateClient {
       client_state_siblings: siblings,
-      consensus_state_siblings: siblings,
-      removed_consensus_state_siblings: [],
+      consensus_state_siblings: [],
     }
 
   fuzz_dsl.valid_check(
@@ -1275,11 +1275,7 @@ fn prepare_host_update_client_capacity() -> Pair<HostStateRedeemer, Transaction>
       ibc_state_root: new_root,
     }
   let redeemer: HostStateRedeemer =
-    UpdateClient {
-      client_state_siblings,
-      consensus_state_siblings,
-      removed_consensus_state_siblings: [],
-    }
+    UpdateClient { client_state_siblings, consensus_state_siblings }
 
   Pair(
     redeemer,
@@ -1338,7 +1334,6 @@ test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {
     UpdateClient {
       client_state_siblings: siblings,
       consensus_state_siblings: siblings,
-      removed_consensus_state_siblings: [],
     }
 
   spend_host_state(

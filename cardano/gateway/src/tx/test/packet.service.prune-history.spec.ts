@@ -74,6 +74,7 @@ function createService(ordering: 'Unordered' | 'Ordered' | 'None' = 'Unordered')
   const clientUtxo = { txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} };
   const unsignedTx = { tag: 'unsigned-prune' };
   const lucidService: any = {
+    resolveClientAtHeights: jest.fn().mockImplementation(async (clientUtxo: unknown) => ({ clientUtxo, clientDatum, historyWitnesses: [] })),
     getChannelTokenUnit: jest.fn().mockReturnValue(['channel-policy', 'channel-name']),
     getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy', 'connection-name']),
     getClientTokenUnit: jest.fn().mockReturnValue('client-unit'),

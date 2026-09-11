@@ -28,7 +28,6 @@ const BindPortSchema = Data.Object({
 const UpdateClientSchema = Data.Object({
   client_state_siblings: SiblingHashesSchema,
   consensus_state_siblings: SiblingHashesSchema,
-  removed_consensus_state_siblings: Data.Array(SiblingHashesSchema),
 });
 
 const UpdateChannelSchema = Data.Object({

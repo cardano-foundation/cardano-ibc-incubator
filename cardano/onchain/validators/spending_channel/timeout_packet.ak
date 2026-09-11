@@ -1,7 +1,7 @@
 use aiken/collection/pairs
 use aiken/primitive/bytearray.{from_int_big_endian}
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Mint, Redeemer, ScriptPurpose, Transaction}
+use cardano/transaction.{Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -12,7 +12,6 @@ use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
   VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
-  VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -139,6 +138,9 @@ validator timeout_packet(
         client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+        validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+        Some(proof_height),
+        validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).history_witness,
       )
     trace @"timeout_packet: reference_inputs contain Connection utxo"
     trace @"timeout_packet: reference_inputs contain Client utxo"
@@ -267,9 +269,8 @@ fn validate_timeout_unordered_packet_proof(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  let verify_proof_redeemer =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
   let time_delay = connection.delay_period
   let block_delay = verify_mod.get_block_delay(connection)
@@ -317,9 +318,8 @@ fn validate_timeout_ordered_packet_proof(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  let verify_proof_redeemer =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
   let time_delay = connection.delay_period
   let block_delay = verify_mod.get_block_delay(connection)
@@ -370,9 +370,8 @@ fn validate_timeout_on_close_proofs(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  let verify_proof_redeemer =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)

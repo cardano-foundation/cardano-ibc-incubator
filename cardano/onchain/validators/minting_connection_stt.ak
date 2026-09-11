@@ -5,7 +5,7 @@ use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
+  InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -15,7 +15,7 @@ use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
+  BatchVerifyMembership, VerifyMembershipParams,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{
@@ -109,6 +109,19 @@ validator mint_connection_stt(
         connection_output_datum.token.name,
         client_minting_policy_id,
         connection_output_datum.state.client_id,
+        validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+        when redeemer is {
+          ConnOpenTry { proof_height, .. } -> Some(proof_height)
+          ConnOpenInit -> None
+        },
+        when redeemer is {
+          ConnOpenTry { .. } ->
+            validator_utils.verify_proof_envelope(
+              redeemers,
+              verify_proof_policy_id,
+            ).history_witness
+          ConnOpenInit -> None
+        },
       )
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
@@ -228,9 +241,8 @@ fn validate_conn_open_try_proof(
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  let verify_proof_redeemer =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
   verify_proof_redeemer == BatchVerifyMembership(
     [

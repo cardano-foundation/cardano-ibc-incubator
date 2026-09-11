@@ -1,18 +1,22 @@
 import { type Data } from '@lucid-evolution/lucid';
 import { AuthToken } from './auth-token';
 import { ClientMessage } from './msgs/client-message';
+import { ConsensusHistoryWitness, consensusHistoryWitnessSchema } from './consensus-state-datum';
 
-type MintClientRedeemer = 'MintClient';
+export type MintClientRedeemer = 'MintClient';
 
 export type SpendClientRedeemer =
   | {
       UpdateClient: {
         msg: ClientMessage;
+        history_witnesses: ConsensusHistoryWitness[];
+        history_siblings: string[];
       };
     }
   | {
       RecoverClient: {
         substitute_token: AuthToken;
+        history_siblings: string[];
       };
     };
 
@@ -20,9 +24,10 @@ export function decodeMintClientRedeemer(
   mintClientRedeemer: string,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): MintClientRedeemer {
-  const { Data } = Lucid;
-  const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
-  Data.from(mintClientRedeemer, MintClientRedeemerSchema as unknown as undefined);
+  const decoded = Lucid.Data.from<Data>(mintClientRedeemer);
+  if (!(decoded instanceof Lucid.Constr) || decoded.index !== 0 || decoded.fields.length !== 0) {
+    throw new Error('Invalid client mint redeemer');
+  }
   return 'MintClient';
 }
 
@@ -30,14 +35,8 @@ export async function encodeMintClientRedeemer(
   mintClientRedeemer: MintClientRedeemer,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
-  const { Data } = Lucid;
-  const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
-  if (mintClientRedeemer !== 'MintClient') {
-    throw new Error(`Unsupported mint client redeemer: ${String(mintClientRedeemer)}`);
-  }
-  return Data.to(undefined, MintClientRedeemerSchema as unknown as undefined, {
-    canonical: true,
-  });
+  if (mintClientRedeemer !== 'MintClient') throw new Error('Invalid client mint redeemer');
+  return Lucid.Data.void();
 }
 
 export async function encodeSpendClientRedeemer(
@@ -128,10 +127,10 @@ export async function encodeSpendClientRedeemer(
 
   const SpendClientRedeemerSchema = Data.Enum([
     Data.Object({
-      UpdateClient: Data.Object({ msg: ClientMessageSchema }),
+      UpdateClient: Data.Object({ msg: ClientMessageSchema, history_witnesses: Data.Array(consensusHistoryWitnessSchema(Lucid)), history_siblings: Data.Array(Data.Bytes()) }),
     }),
     Data.Object({
-      RecoverClient: Data.Object({ substitute_token: AuthTokenSchema }),
+      RecoverClient: Data.Object({ substitute_token: AuthTokenSchema, history_siblings: Data.Array(Data.Bytes()) }),
     }),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
@@ -227,10 +226,10 @@ export function decodeSpendClientRedeemer(
 
   const SpendClientRedeemerSchema = Data.Enum([
     Data.Object({
-      UpdateClient: Data.Object({ msg: ClientMessageSchema }),
+      UpdateClient: Data.Object({ msg: ClientMessageSchema, history_witnesses: Data.Array(consensusHistoryWitnessSchema(Lucid)), history_siblings: Data.Array(Data.Bytes()) }),
     }),
     Data.Object({
-      RecoverClient: Data.Object({ substitute_token: AuthTokenSchema }),
+      RecoverClient: Data.Object({ substitute_token: AuthTokenSchema, history_siblings: Data.Array(Data.Bytes()) }),
     }),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;

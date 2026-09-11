@@ -32,6 +32,8 @@ describe('normalizeTxsResultFromClientDatum', () => {
     const updateHeader = initializeHeader(headerMsg);
     const redeemer: SpendClientRedeemer = {
       UpdateClient: {
+        history_witnesses: [],
+        history_siblings: [],
         msg: {
           HeaderCase: [updateHeader],
         },
@@ -70,6 +72,8 @@ describe('normalizeTxsResultFromClientDatum', () => {
     );
     const redeemer: SpendClientRedeemer = {
       UpdateClient: {
+        history_witnesses: [],
+        history_siblings: [],
         msg: {
           MisbehaviourCase: [{ client_id: '07-tendermint-0', header1, header2 }],
         },
@@ -88,6 +92,7 @@ describe('normalizeTxsResultFromClientDatum', () => {
     const clientDatum = clientDatumMockBuilder.build();
     const redeemer: SpendClientRedeemer = {
       RecoverClient: {
+        history_siblings: [],
         substitute_token: {
           policyId: '11'.repeat(28),
           name: '22'.repeat(24) + Buffer.from('9').toString('hex'),

@@ -33,15 +33,6 @@ pub type HostStateRedeemer {
     // For updates that do not add a consensus state (e.g., misbehaviour), this should
     // be an empty list.
     consensus_state_siblings: List<ByteArray>,
-    // Sibling hashes for consensus state deletions.
-    //
-    // The spend_client validator may prune or expire old consensus states.
-    // Each removed consensus state is a deletion in the commitment tree.
-    //
-    // This is a list-of-lists:
-    // - outer list: one entry per removed consensus state (in input order)
-    // - inner list: the `merkle_depth_bits` sibling hashes for that key update
-    removed_consensus_state_siblings: List<List<ByteArray>>,
   }
   UpdateConnection {
     // Sibling hashes for the `connections/{id}` key update.

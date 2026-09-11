@@ -25,6 +25,7 @@ import {
   scoreDescendantBlocks,
   StabilityMetrics,
   StabilityPolicy,
+  PoolRegistrationNetworkIdentity,
 } from './stability-scoring';
 
 declare const cardanoHeightBrand: unique symbol;
@@ -269,6 +270,14 @@ function getAssumedPoolRegistrationSlot(): bigint | undefined {
   return configuredSlot ? BigInt(configuredSlot) : undefined;
 }
 
+function poolRegistrationNetworkIdentity(): PoolRegistrationNetworkIdentity {
+  return {
+    chainId: process.env.CARDANO_CHAIN_ID,
+    networkMagic: process.env.CARDANO_NETWORK_MAGIC,
+    chainNetworkMagic: process.env.CARDANO_CHAIN_NETWORK_MAGIC,
+  };
+}
+
 export async function loadStakeWeightedStabilityEvidenceByHeight({
   historyService,
   height,
@@ -339,7 +348,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   );
 
   let acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock, undefined, poolRegistrationNetworkIdentity());
   let metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedEpochStakeDistribution, stabilityPolicy, {
     poolRegistrationCutoffSlot,
   });
@@ -591,7 +600,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   );
 
   const acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock, undefined, poolRegistrationNetworkIdentity());
   const metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedAnchorStakeDistribution, stabilityPolicy, {
     poolRegistrationCutoffSlot,
   });

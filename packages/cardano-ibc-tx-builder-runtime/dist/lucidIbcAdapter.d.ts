@@ -1,5 +1,6 @@
 import { type LucidEvolution, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
 import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
+import type { IbcTreeLucidService, IbcTreeUtxo } from './ibcStateRoot';
 type RefUtxo = {
     txHash: string;
     outputIndex: number;
@@ -55,17 +56,39 @@ type DeploymentConfig = {
         };
     };
 };
-export type CodecType = 'client' | 'connection' | 'channel' | 'transferEscrow' | 'transferModule' | 'host_state' | 'host_state_redeemer' | 'spendChannelRedeemer' | 'iBCModuleRedeemer' | 'transferIBCModuleRedeemer' | 'mintVoucherRedeemer' | 'mintPortRedeemer' | 'transferEscrowShardRedeemer';
+export type CodecType = 'client' | 'consensus_state' | 'connection' | 'channel' | 'transferEscrow' | 'transferModule' | 'host_state' | 'host_state_redeemer' | 'spendChannelRedeemer' | 'iBCModuleRedeemer' | 'transferIBCModuleRedeemer' | 'mintVoucherRedeemer' | 'mintPortRedeemer' | 'transferEscrowShardRedeemer';
+export declare class UtxosAtAddressNotFoundError extends Error {
+    readonly addressOrCredential: string;
+    constructor(addressOrCredential: string);
+}
 export declare class LucidIbcAdapter {
     private readonly lucid;
     private readonly deployment;
+    private readonly readConsensusHistory?;
     readonly LucidImporter: typeof import('@lucid-evolution/lucid');
     private referenceScripts;
     private walletSelectionScopeCounter;
     private activeWalletSelectionScopeId;
     private explicitWalletSelectionForScopeId;
     private explicitWalletSelectionAddress;
-    constructor(LucidImporter: typeof import('@lucid-evolution/lucid'), lucid: LucidEvolution, deployment: DeploymentConfig);
+    constructor(LucidImporter: typeof import('@lucid-evolution/lucid'), lucid: LucidEvolution, deployment: DeploymentConfig, readConsensusHistory?: IbcTreeLucidService['consensusHistoryRecords']);
+    consensusHistoryRecords(client: IbcTreeUtxo): Promise<{
+        datum: {
+            clientToken: {
+                policyId: string;
+                name: string;
+            };
+            height: {
+                revisionNumber: bigint;
+                revisionHeight: bigint;
+            };
+            consensusState: unknown;
+            processedTime: bigint;
+            processedHeight: bigint;
+        };
+        consensusValue: string;
+        archived: boolean;
+    }[]>;
     onModuleInit(): Promise<void>;
     private loadReferenceScripts;
     private resolveReferenceScriptUtxo;
@@ -93,4 +116,5 @@ export declare class LucidIbcAdapter {
     createUnsignedSendPacketBurnTx(dto: any): TxBuilder;
     private generateTokenName;
 }
+export declare function findUtxosAtAllowEmpty(lucidService: Pick<LucidIbcAdapter, 'findUtxoAt'>, addressOrCredential: string): Promise<UTxO[]>;
 export type { AuthToken, DeploymentConfig };

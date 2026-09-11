@@ -12,7 +12,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
 }
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, VerifyMembership, VerifyMembershipParams,
-  VerifyNonMembership,
+  VerifyNonMembership, VerifyProofEnvelope,
 }
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
@@ -333,7 +333,7 @@ test verify_non_membership_succeed() {
     }
 
   verifying_proof.verify_proof.mint(
-    redeemer,
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
     #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
     proof_marker_tx(#"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663"),
   )
@@ -362,7 +362,7 @@ test verify_membership_fails_when_delay_time_period_is_nonzero() fail {
     }
 
   verifying_proof.verify_proof.mint(
-    redeemer,
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
     #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
     proof_marker_tx(#"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663"),
   )
@@ -525,7 +525,7 @@ test verify_membership_succeed() {
     }
 
   verifying_proof.verify_proof.mint(
-    redeemer,
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
     #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
     proof_marker_tx(#"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663"),
   )
@@ -689,7 +689,7 @@ test batch_verify_membership_succeed() {
 
   let redeemer = BatchVerifyMembership([item])
   verifying_proof.verify_proof.mint(
-    redeemer,
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
     #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
     proof_marker_tx(#"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663"),
   )
@@ -879,7 +879,7 @@ test try_non_mock_data() {
     }
 
   verifying_proof.verify_proof.mint(
-    redeemer,
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
     #"fab5154f5008ec54a97b7693db78924e4bb9ccdbea2ea7db282bedb2",
     proof_marker_tx(#"fab5154f5008ec54a97b7693db78924e4bb9ccdbea2ea7db282bedb2"),
   )

@@ -234,8 +234,8 @@ The following components are required to run the project:
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Aiken](https://aiken-lang.org/installation-instructions)
-- [Node.js](https://nodejs.org/en/download/) `>= v20.0.0`
-- [deno](https://docs.deno.com/runtime/manual/getting_started/installation)
+- [Node.js](https://nodejs.org/en/download/) `>= v22.13.0`
+- [deno](https://docs.deno.com/runtime/manual/getting_started/installation) 2.7 or newer, required for the offchain evaluator dependency override
 - [golang](https://golang.org/doc/install)
 - [Rust & Cargo](https://www.rust-lang.org/tools/install)
 

@@ -5,6 +5,8 @@ export type RecoverClientWithdrawalRedeemer = {
     subject_token: AuthToken;
     substitute_token: AuthToken;
   };
+} | {
+  CheckClientHistory: { subject_token: AuthToken };
 };
 
 export function encodeRecoverClientWithdrawalRedeemer(
@@ -16,12 +18,12 @@ export function encodeRecoverClientWithdrawalRedeemer(
     policyId: Data.Bytes(),
     name: Data.Bytes(),
   });
-  const RedeemerSchema = Data.Object({
-    subject_token: AuthTokenSchema,
-    substitute_token: AuthTokenSchema,
-  });
-  const TRecoverClientWithdrawalRedeemer =
-    RedeemerSchema as unknown as RecoverClientWithdrawalRedeemer['RecoverClientWithdrawal'];
-
-  return Data.to(redeemer.RecoverClientWithdrawal, TRecoverClientWithdrawalRedeemer, { canonical: true });
+  const RedeemerSchema = Data.Enum([
+    Data.Object({ RecoverClientWithdrawal: Data.Object({
+      subject_token: AuthTokenSchema,
+      substitute_token: AuthTokenSchema,
+    }) }),
+    Data.Object({ CheckClientHistory: Data.Object({ subject_token: AuthTokenSchema }) }),
+  ]);
+  return Data.to(redeemer, RedeemerSchema as unknown as RecoverClientWithdrawalRedeemer, { canonical: true });
 }

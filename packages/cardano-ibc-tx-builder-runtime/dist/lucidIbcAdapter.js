@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LucidIbcAdapter = void 0;
+exports.LucidIbcAdapter = exports.UtxosAtAddressNotFoundError = void 0;
+exports.findUtxosAtAllowEmpty = findUtxosAtAllowEmpty;
 const lucid_1 = require("@lucid-evolution/lucid");
 const js_sha3_1 = require("js-sha3");
 const acknowledgementCodec_1 = require("./acknowledgementCodec");
@@ -8,7 +9,7 @@ const sendPacketEscrow_1 = require("./sendPacketEscrow");
 const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
 const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
 const CONNECTION_TOKEN_PREFIX = '636f6e6e656374696f6e'; // fromText('connection')
-const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'transferEscrow', 'transferModule', 'host_state'];
+const DECODABLE_DATUM_TYPES = ['client', 'consensus_state', 'connection', 'channel', 'transferEscrow', 'transferModule', 'host_state'];
 const ENCODABLE_DATUM_TYPES = [
     'channel',
     'transferEscrow',
@@ -174,8 +175,33 @@ async function decodeClientDatum(encoded, Lucid) {
     const ClientDatumSchema = Data.Object({
         state: ClientDatumStateSchema,
         token: AuthTokenSchema,
+        history_root: Data.Bytes({ minLength: 32, maxLength: 32 }),
     });
     return Data.from(encoded, ClientDatumSchema);
+}
+async function decodeConsensusStateDatum(encoded, Lucid) {
+    const { Data } = Lucid;
+    const AuthTokenSchema = Data.Object({
+        policyId: Data.Bytes(),
+        name: Data.Bytes(),
+    });
+    const HeightSchema = Data.Object({
+        revisionNumber: Data.Integer(),
+        revisionHeight: Data.Integer(),
+    });
+    const ConsensusStateSchema = Data.Object({
+        timestamp: Data.Integer(),
+        next_validators_hash: Data.Bytes(),
+        root: Data.Object({ hash: Data.Bytes() }),
+    });
+    const ConsensusStateDatumSchema = Data.Object({
+        clientToken: AuthTokenSchema,
+        height: HeightSchema,
+        consensusState: ConsensusStateSchema,
+        processedTime: Data.Integer(),
+        processedHeight: Data.Integer(),
+    });
+    return Data.from(encoded, ConsensusStateDatumSchema);
 }
 async function decodeConnectionDatum(encoded, Lucid) {
     const { Data } = Lucid;
@@ -451,7 +477,6 @@ async function encodeHostStateRedeemer(data, Lucid) {
     const UpdateClientSchema = Data.Object({
         client_state_siblings: SiblingHashesSchema,
         consensus_state_siblings: SiblingHashesSchema,
-        removed_consensus_state_siblings: SiblingHashesListSchema,
     });
     const HandlePacketSchema = Data.Object({
         channel_siblings: SiblingHashesSchema,
@@ -486,6 +511,11 @@ async function encodeHostStateRedeemer(data, Lucid) {
         Data.Object({ UpdateConnection: CreateConnectionSchema }),
         Data.Object({ UpdateChannel: UpdateChannelSchema }),
         Data.Object({ HandlePacket: HandlePacketSchema }),
+        Data.Object({
+            EnterShutdown: Data.Object({ grace_period_end: Data.Integer() }),
+        }),
+        Data.Literal('FinalizeShutdown'),
+        Data.Literal('Heartbeat'),
     ]);
     return Data.to(data, HostStateRedeemerSchema, { canonical: true });
 }
@@ -786,19 +816,35 @@ function encodeTransferEscrowShardRedeemer(data, Lucid) {
         canonical: true,
     });
 }
+class UtxosAtAddressNotFoundError extends Error {
+    addressOrCredential;
+    constructor(addressOrCredential) {
+        super(`Unable to find UTxO at ${addressOrCredential}`);
+        this.addressOrCredential = addressOrCredential;
+        this.name = 'UtxosAtAddressNotFoundError';
+    }
+}
+exports.UtxosAtAddressNotFoundError = UtxosAtAddressNotFoundError;
 class LucidIbcAdapter {
     lucid;
     deployment;
+    readConsensusHistory;
     LucidImporter;
     referenceScripts;
     walletSelectionScopeCounter = 0;
     activeWalletSelectionScopeId = null;
     explicitWalletSelectionForScopeId = null;
     explicitWalletSelectionAddress = null;
-    constructor(LucidImporter, lucid, deployment) {
+    constructor(LucidImporter, lucid, deployment, readConsensusHistory) {
         this.lucid = lucid;
         this.deployment = deployment;
+        this.readConsensusHistory = readConsensusHistory;
         this.LucidImporter = LucidImporter;
+    }
+    async consensusHistoryRecords(client) {
+        if (!this.readConsensusHistory)
+            throw new Error('Consensus history reader is unavailable');
+        return this.readConsensusHistory(client);
     }
     async onModuleInit() {
         this.referenceScripts = await this.loadReferenceScripts();
@@ -891,7 +937,7 @@ class LucidIbcAdapter {
         const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
         const utxos = await this.lucid.utxosAt(normalizedAddress);
         if (utxos.length === 0) {
-            throw new Error(`Unable to find UTxO at ${addressOrCredential}`);
+            throw new UtxosAtAddressNotFoundError(addressOrCredential);
         }
         return utxos;
     }
@@ -1004,6 +1050,8 @@ class LucidIbcAdapter {
         switch (type) {
             case 'client':
                 return (await decodeClientDatum(encodedDatum, this.LucidImporter));
+            case 'consensus_state':
+                return (await decodeConsensusStateDatum(encodedDatum, this.LucidImporter));
             case 'connection':
                 return (await decodeConnectionDatum(encodedDatum, this.LucidImporter));
             case 'channel':
@@ -1117,3 +1165,14 @@ class LucidIbcAdapter {
     }
 }
 exports.LucidIbcAdapter = LucidIbcAdapter;
+async function findUtxosAtAllowEmpty(lucidService, addressOrCredential) {
+    try {
+        return await lucidService.findUtxoAt(addressOrCredential);
+    }
+    catch (error) {
+        if (error instanceof UtxosAtAddressNotFoundError) {
+            return [];
+        }
+        throw error;
+    }
+}

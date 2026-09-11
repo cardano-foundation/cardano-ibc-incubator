@@ -37,6 +37,12 @@ type StabilityScoringOptions = {
 const STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS = 1_767_225_600_000_000_000n; // 2026-01-01T00:00:00Z
 const DEFAULT_CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
 
+export type PoolRegistrationNetworkIdentity = {
+  chainId?: string;
+  networkMagic?: string;
+  chainNetworkMagic?: string;
+};
+
 export function assertEpochStakeDistributionAvailable(
   epochStakeDistribution: HistoryStakeDistributionEntry[],
   context: string,
@@ -68,12 +74,18 @@ export function getStabilityPolicy(): StabilityPolicy {
 export function computePoolRegistrationCutoffSlot(
   anchorBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
   slotLengthNs: bigint = DEFAULT_CARDANO_SLOT_LENGTH_NS,
+  identity?: PoolRegistrationNetworkIdentity,
 ): bigint {
   if (slotLengthNs <= 0n) {
     throw new Error('Cardano slot length must be greater than zero');
   }
   const systemStartUnixNs = anchorBlock.timestampUnixNs - anchorBlock.slotNo * slotLengthNs;
   if (STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS <= systemStartUnixNs) {
+    // Fresh managed devnets record their bootstrap pools at slot 1. Admit only
+    // that registration, never later pools or an ambiguously configured network.
+    if (identity?.chainId === 'cardano-devnet' && identity.networkMagic === '42' && identity.chainNetworkMagic === '42') {
+      return 2n;
+    }
     return 0n;
   }
   const delta = STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS - systemStartUnixNs;

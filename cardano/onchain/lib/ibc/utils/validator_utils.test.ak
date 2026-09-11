@@ -885,6 +885,7 @@ fn setup_validate_referred_client() -> (
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
@@ -935,7 +936,42 @@ test validate_referred_client_succeed() {
     referrer_token_name,
     client_minting_policy_id,
     client_id,
+    0,
+    None,
+    None,
   ) == client_datum
+}
+
+test validate_referred_client_rejects_wrong_datum_token_identity() fail {
+  let (
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    client_id,
+    client_datum,
+  ) = setup_validate_referred_client()
+  expect [client_input, ..] = reference_inputs
+  let wrong_datum =
+    ClientDatum {
+      ..client_datum,
+      token: AuthToken { ..client_datum.token, name: "wrong client" },
+    }
+  let client_input =
+    Input {
+      ..client_input,
+      output: Output { ..client_input.output, datum: InlineDatum(wrong_datum) },
+    }
+  let result =
+    validator_utils.validate_referred_client(
+      [client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      client_id,
+      0,
+      None,
+      None,
+    )
+  result == result
 }
 
 test validate_referred_client_if_not_found_client_input() fail {
@@ -955,6 +991,9 @@ test validate_referred_client_if_not_found_client_input() fail {
       referrer_token_name,
       client_minting_policy_id,
       client_id,
+      0,
+      None,
+      None,
     )
   result == result
 }
@@ -984,6 +1023,9 @@ test validate_referred_client_if_found_datum_is_not_client_datum() fail {
       referrer_token_name,
       client_minting_policy_id,
       client_id,
+      0,
+      None,
+      None,
     )
   result == result
 }
@@ -1217,6 +1259,9 @@ fn validate_referred_connection_and_client(
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
+    0,
+    None,
+    None,
   )
 }
 
@@ -1381,6 +1426,38 @@ test validate_referred_connection_and_client_rejects_wrong_derived_client_token(
       },
     }
 
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input, client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_wrong_datum_token_identity() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+  let wrong_datum =
+    ClientDatum {
+      ..client_datum,
+      token: AuthToken { ..client_datum.token, name: "wrong client" },
+    }
+  let client_input =
+    Input {
+      ..client_input,
+      output: Output { ..client_input.output, datum: InlineDatum(wrong_datum) },
+    }
   let result =
     validate_referred_connection_and_client(
       [connection_input, client_input],

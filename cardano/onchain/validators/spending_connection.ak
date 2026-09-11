@@ -1,7 +1,7 @@
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
-  Input, Mint, OutputReference, Redeemer, ScriptPurpose, Transaction,
+  Input, OutputReference, Redeemer, ScriptPurpose, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -11,7 +11,7 @@ use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership, VerifyProofRedeemer,
+  VerifyMembership,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -27,6 +27,15 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/utils/validator_utils
+
+fn conn_open_ack_proof_height(
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
+) -> Height {
+  expect VerifyMembership { height, .. } =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
+  height
+}
 
 validator spend_connection(
   client_minting_policy_id: PolicyId,
@@ -96,6 +105,13 @@ validator spend_connection(
         datum.token.name,
         client_minting_policy_id,
         datum.state.client_id,
+        validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+        when redeemer is {
+          ConnOpenConfirm { proof_height, .. } -> Some(proof_height)
+          ConnOpenAck ->
+            Some(conn_open_ack_proof_height(redeemers, verify_proof_policy_id))
+        },
+        validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).history_witness,
       )
     trace @"spend_connection: validator_utils.validate_referred_client"
 
@@ -200,9 +216,8 @@ fn validate_conn_open_ack_proof(
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  let verify_proof_redeemer =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
   let valid_proof_redeemer =
     when verify_proof_redeemer is {
@@ -301,9 +316,8 @@ fn validate_conn_open_confirm_proof(
   expect Some(processed_height) =
     pairs.get_first(client_datum_state.processed_heights, proof_height)
 
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  let verify_proof_redeemer =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
   (verify_proof_redeemer == VerifyMembership {
     cs: client_datum_state.client_state,

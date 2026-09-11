@@ -5,7 +5,7 @@ use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
+  InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -15,7 +15,7 @@ use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership, VerifyProofRedeemer,
+  VerifyMembership,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd} as connection_end_mod
@@ -65,14 +65,10 @@ fn spent_host_state_for_create_channel(
 ) -> Bool {
   expect Some(spend_redeemer) =
     pairs.get_first(redeemers, Spend(host_state_input.output_reference))
-  expect host_redeemer: HostStateRedeemer = spend_redeemer
-
   // Channel token minting is paired with the HostState transition that consumes
   // next_channel_sequence and commits the channel/sequence paths.
-  when host_redeemer is {
-    CreateChannel { .. } -> True
-    _ -> False
-  }
+  expect CreateChannel { .. }: HostStateRedeemer = spend_redeemer
+  True
 }
 
 validator mint_channel_stt(
@@ -112,6 +108,7 @@ validator mint_channel_stt(
 
     expect [connection_id] = channel_output_datum.state.channel.connection_hops
 
+    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     let (connection_datum, client_datum) =
       validator_utils.validate_referred_connection_and_client(
         reference_inputs,
@@ -119,9 +116,21 @@ validator mint_channel_stt(
         client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+        tx_valid_to * 1_000_000,
+        when redeemer is {
+          ChanOpenTry { proof_height, .. } -> Some(proof_height)
+          ChanOpenInit -> None
+        },
+        when redeemer is {
+          ChanOpenTry { .. } ->
+            validator_utils.verify_proof_envelope(
+              redeemers,
+              verify_proof_policy_id,
+            ).history_witness
+          ChanOpenInit -> None
+        },
       )
 
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     let client_state_active =
       client_state.status(
         client_datum.state.client_state,
@@ -152,9 +161,7 @@ validator mint_channel_stt(
       order.string(channel_output_datum.state.channel.ordering)
         |> version.verify_supported_feature(connection_version, _)
 
-    let channel_id =
-      string_utils.int_to_string(channel_id_sequence)
-        |> channel_keys.format_channel_identifier()
+    let channel_id = channel_keys.format_channel_identifier(id_str)
 
     let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
@@ -256,9 +263,8 @@ fn validate_chan_open_try_proof(
       channel.convert_to_channel_proto(expected_channel),
     ).2nd
 
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  let verify_proof_redeemer =
+    validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
   verify_proof_redeemer == VerifyMembership {
     cs: client_datum_state.client_state,

@@ -1,18 +1,25 @@
-import { assertEquals, assertNotEquals } from "@std/assert";
+import { assertEquals, assertNotEquals, assertThrows } from "@std/assert";
 import {
   Data,
   fromText,
+  Lucid,
   type LucidEvolution,
   type Script,
+  type UTxO,
+  validatorToAddress,
 } from "@lucid-evolution/lucid";
+import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 
 import {
+  assertReferenceValidatorsFit,
+  assertSignedReferenceTransactionFits,
   buildChannelValidators,
   buildReferenceValidatorBatches,
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
   GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+  selectDeploymentCollateralHoldback,
   sortPortRegistrations,
 } from "./deployment.ts";
 import { generatePortTokenName, readValidator } from "./utils.ts";
@@ -23,6 +30,63 @@ const makeValidator = (byteLength: number): Script => ({
 });
 
 const EMPTY_HASH = "00".repeat(32);
+
+const collateralCandidate = (
+  outputIndex: number,
+  lovelace: bigint,
+  nativeToken = false,
+): UTxO => ({
+  txHash: EMPTY_HASH,
+  outputIndex,
+  address: "unused-wallet-address",
+  assets: nativeToken ? { lovelace, ["11".repeat(28)]: 1n } : { lovelace },
+});
+
+Deno.test("deployment collateral reserves the smallest sufficient ADA-only input and leaves large funding available", () => {
+  const largeFunding = collateralCandidate(0, 29_176_000_000n);
+  const collateral = collateralCandidate(1, 5_000_000n);
+  const wallet = [
+    largeFunding,
+    collateralCandidate(2, 7_000_000n),
+    collateralCandidate(3, 4_999_999n),
+    collateral,
+    collateralCandidate(4, 5_000_000n, true),
+  ];
+  const originalOrder = [...wallet];
+  const holdback = selectDeploymentCollateralHoldback(wallet);
+  assertEquals(holdback, [collateral]);
+  const spendable = wallet.filter((utxo) => !holdback.includes(utxo));
+  assertEquals(spendable.includes(largeFunding), true);
+  assertEquals(
+    spendable.reduce((sum, utxo) => sum + utxo.assets.lovelace, 0n) >=
+      70_592_000n,
+    true,
+  );
+  assertEquals(wallet, originalOrder);
+});
+
+Deno.test("deployment collateral preserves descending ADA-only multi-input fallback and three-input limit", () => {
+  const largest = collateralCandidate(0, 3_000_000n);
+  const next = collateralCandidate(1, 2_000_000n);
+  assertEquals(
+    selectDeploymentCollateralHoldback([
+      collateralCandidate(2, 1_000_000n),
+      next,
+      collateralCandidate(3, 100_000_000n, true),
+      largest,
+    ]),
+    [largest, next],
+  );
+  assertEquals(
+    selectDeploymentCollateralHoldback(
+      Array.from(
+        { length: 4 },
+        (_, index) => collateralCandidate(index, 1_500_000n),
+      ),
+    ),
+    [],
+  );
+});
 
 Deno.test("generatePortTokenName matches the cross-language transfer vector", () => {
   assertEquals(
@@ -131,15 +195,78 @@ Deno.test("applied client validator fits a mainnet reference-script transaction"
       ]),
     ]) as unknown as [string, { Script: [string] }],
   );
+  const [clientPolicy, clientPolicyId] = readValidator(
+    "minting_client_stt.mint_client_stt.mint",
+    lucid,
+    [spendClientScriptHash, hostPolicy],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+  );
+  const [hostValidator] = readValidator(
+    "host_state_stt.host_state_stt.spend",
+    lucid,
+    [
+      hostPolicy,
+      spendClientScriptHash,
+      "22".repeat(28),
+      "33".repeat(28),
+      clientPolicyId,
+      "44".repeat(28),
+      "55".repeat(28),
+    ],
+    Data.Tuple(Array.from({ length: 7 }, () => Data.Bytes())) as unknown as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ],
+  );
   const report = buildReferenceValidatorSizeReport(
-    [recoveryValidator, spendClientValidator],
+    [
+      recoveryValidator,
+      spendClientValidator,
+      clientPolicy,
+      hostValidator,
+    ],
     16_384,
   );
   const spendClientReport = report.find(
     ({ scriptHash }) => scriptHash === spendClientScriptHash,
   );
 
-  assertEquals(spendClientReport?.oversized, false);
+  assertEquals(spendClientReport?.exceedsEstimatedSingleTxBudget, false);
+  assertEquals(
+    report.filter(({ exceedsEstimatedSingleTxBudget }) =>
+      exceedsEstimatedSingleTxBudget
+    ),
+    [],
+    "each production reference script must fit the deployment transaction margin",
+  );
+});
+
+Deno.test("consensus history is committed by the client without an archive script", () => {
+  const parameters = (title: string) =>
+    blueprint.validators.find((validator) => validator.title === title)
+      ?.parameters?.map((parameter) => parameter.title);
+  assertEquals(
+    parameters("spending_consensus_state.spend_consensus_state.spend"),
+    undefined,
+  );
+  assertEquals(parameters("minting_client_stt.mint_client_stt.mint"), [
+    "spend_client_script_hash",
+    "host_state_nft_policy_id",
+  ]);
+  assertEquals(parameters("host_state_stt.host_state_stt.spend"), [
+    "nft_policy",
+    "spend_client_script_hash",
+    "spend_connection_script_hash",
+    "spend_channel_script_hash",
+    "client_policy_id",
+    "connection_policy_id",
+    "channel_policy_id",
+  ]);
 });
 
 Deno.test("applied HostState validator fits a mainnet reference-script transaction", () => {
@@ -162,7 +289,7 @@ Deno.test("applied HostState validator fits a mainnet reference-script transacti
     16_384,
   );
 
-  assertEquals(hostStateReport.oversized, false);
+  assertEquals(hostStateReport.exceedsEstimatedSingleTxBudget, false);
 });
 
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {
@@ -318,11 +445,11 @@ Deno.test("buildReferenceValidatorSizeReport allows single validators that excee
   assertEquals(report[0].index, 0);
   assertEquals(report[0].scriptBytes, 1_200);
   assertEquals(report[0].estimatedReferenceOutputBytes, 1_400);
-  assertEquals(report[0].oversized, false);
-  assertEquals(report[1].oversized, false);
+  assertEquals(report[0].exceedsEstimatedSingleTxBudget, false);
+  assertEquals(report[1].exceedsEstimatedSingleTxBudget, false);
 });
 
-Deno.test("buildReferenceValidatorSizeReport flags validators that cannot fit alone", () => {
+Deno.test("reference preflight treats the conservative single-script margin as advisory", () => {
   const validators = [
     makeValidator(5_000),
     makeValidator(100),
@@ -333,8 +460,88 @@ Deno.test("buildReferenceValidatorSizeReport flags validators that cannot fit al
   assertEquals(report[0].index, 0);
   assertEquals(report[0].scriptBytes, 5_000);
   assertEquals(report[0].estimatedReferenceOutputBytes, 5_200);
-  assertEquals(report[0].oversized, true);
-  assertEquals(report[1].oversized, false);
+  assertEquals(report[0].exceedsEstimatedSingleTxBudget, true);
+  assertEquals(report[0].intrinsicallyOversized, false);
+  assertEquals(report[1].exceedsEstimatedSingleTxBudget, false);
+  assertReferenceValidatorsFit(validators, 5_600);
+});
+
+Deno.test("reference preflight rejects scripts intrinsically at or above the ledger size limit", () => {
+  for (const size of [16_384, 16_385]) {
+    const validators = [makeValidator(size)];
+    assertEquals(
+      buildReferenceValidatorSizeReport(validators, 16_384)[0]
+        .intrinsicallyOversized,
+      true,
+    );
+    assertThrows(
+      () => assertReferenceValidatorsFit(validators, 16_384),
+      Error,
+      "script bytes alone at or above maxTxSize 16384",
+    );
+  }
+});
+
+Deno.test("exact signed reference size guard includes witnesses and never permits overflow", () => {
+  assertSignedReferenceTransactionFits(16_036, 16_384, "timeout", []);
+  assertSignedReferenceTransactionFits(15_947, 16_384, "channel", []);
+  assertSignedReferenceTransactionFits(16_384, 16_384, "boundary", []);
+  assertThrows(
+    () => assertSignedReferenceTransactionFits(16_385, 16_384, "overflow", []),
+    Error,
+    "above maxTxSize 16384",
+  );
+});
+
+Deno.test("applied timeout and channel mint scripts fit signed single-reference transactions", async () => {
+  const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
+  const provider = new Emulator([account]);
+  const lucid = await Lucid(provider, "Custom");
+  lucid.selectWallet.fromSeed(account.seedPhrase);
+  const maxTxSize = lucid.config().protocolParameters!.maxTxSize;
+  assertEquals(maxTxSize, 16_384);
+  const [referenceValidator] = readValidator(
+    "reference_validator.refer_only.else",
+    lucid,
+    ["11".repeat(28)],
+  );
+  const referenceAddress = validatorToAddress("Custom", referenceValidator);
+  // Live non-submitting diagnostics with the same-length dummy parameters and
+  // one real funded input + normal change measured 16036 / 15947 signed bytes.
+  // This regression rebuilds both production scripts, without pinning incidental
+  // wallet address/CBOR sizes or submitting any transaction.
+  for (
+    const [title, parameterCount] of [
+      ["spending_channel/timeout_packet.timeout_packet.mint", 5],
+      ["minting_channel_stt.mint_channel_stt.mint", 6],
+    ] as const
+  ) {
+    const [validator] = readValidator(
+      title,
+      lucid,
+      Array(parameterCount).fill("11".repeat(28)),
+    );
+    assertReferenceValidatorsFit([validator], maxTxSize);
+    const completed = await lucid.newTx().pay.ToContract(
+      referenceAddress,
+      {
+        kind: "inline",
+        value: Data.void(),
+      },
+      { lovelace: 1_000_000n },
+      validator,
+    ).complete();
+    const signed = await completed.sign.withWallet().complete();
+    assertEquals(signed.toTransaction().body().inputs().len(), 1);
+    assertEquals(signed.toTransaction().body().outputs().len(), 2);
+    assertEquals(signed.toCBOR().length > completed.toCBOR().length, true);
+    assertSignedReferenceTransactionFits(
+      signed.toCBOR().length / 2,
+      maxTxSize,
+      title,
+      [validator],
+    );
+  }
 });
 
 Deno.test("DeploymentIbcTree commits leaves with key hash included", async () => {
