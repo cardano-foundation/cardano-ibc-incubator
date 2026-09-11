@@ -25,6 +25,7 @@ env:
 jobs:
   aiken-changes:
     name: Detect Aiken Changes
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -254,16 +255,18 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          mapfile -t changed_files < <(
+          # Capture the output first so a failed API page fails the step.
+          changed_paths=$(
             gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" \
               --paginate \
-              --jq '.[].filename'
+              --jq '.[] | .filename, (.previous_filename // empty)'
           )
 
-          if [ "${#changed_files[@]}" -eq 0 ]; then
+          if [ -z "${changed_paths}" ]; then
             echo "No changed files found for docs branch PR ${PR_NUMBER}."
             exit 1
           fi
+          mapfile -t changed_files <<<"${changed_paths}"
 
           non_docs_files=()
           for file in "${changed_files[@]}"; do
