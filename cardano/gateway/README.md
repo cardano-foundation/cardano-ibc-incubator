@@ -197,6 +197,20 @@ recomputes the confirmed transaction-body hash, verifies its HostState root agai
 pending update created while building that transaction, and only then commits the update and
 returns the inclusion height and events. Signed CBOR is not part of this RPC contract.
 
+### API request limits
+
+HTTP and RPC handlers share a per-process limit of `100` requests per second and `8`
+simultaneous requests. Set `GATEWAY_API_RATE_LIMIT` and `GATEWAY_API_MAX_CONCURRENT` to
+positive integers to tune these limits. The rate limit allows a burst of one second's budget
+and refills continuously. Excess requests receive HTTP `429` or gRPC `RESOURCE_EXHAUSTED`
+without starting the handler. There is no waiting queue. A disconnected request keeps its
+concurrency slot until its handler finishes.
+
+Query RPCs and REST remain accessible without a token. These limits do not bound the cost of
+a single proof or reserve capacity for Hermes. Keep the Gateway on a trusted network or put
+public endpoints behind a proxy with authentication and per-client limits. The optional
+`GRPC_AUTH_TOKEN_FILE` still protects only transaction-building and submission RPCs.
+
 ## Test
 
 ```bash
