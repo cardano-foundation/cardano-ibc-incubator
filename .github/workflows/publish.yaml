@@ -15,7 +15,8 @@ permissions:
 
 jobs:
   pull-request-build:
-    if: github.event_name == 'pull_request'
+    # The docs-only guard in ci.yml runs only for PRs targeting main.
+    if: ${{ github.event_name == 'pull_request' && (github.base_ref != 'main' || !startsWith(github.head_ref, 'docs/')) }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
