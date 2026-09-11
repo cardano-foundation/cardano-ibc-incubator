@@ -536,7 +536,7 @@ export const createDeployment = async (
   referredValidators.push(mintConnectionSttValidator);
 
   // load spend channel validator
-  const spendingChannel = await deploySpendChannel(
+  const spendingChannel = buildChannelValidators(
     lucid,
     mintClientSttPolicyId,
     mintConnectionSttPolicyId,
@@ -2489,7 +2489,7 @@ const deployHostState = async (
   };
 };
 
-const deploySpendChannel = async (
+export const buildChannelValidators = (
   lucid: LucidEvolution,
   mintClientPolicyId: PolicyId,
   mintConnectionPolicyId: PolicyId,
@@ -2499,9 +2499,9 @@ const deploySpendChannel = async (
 ) => {
   const referredValidators = {
     chan_open_ack: "chan_open_ack.mint",
-    chan_open_confirm: "chan_open_confirm.spend",
-    chan_close_init: "chan_close_init.spend",
-    chan_close_confirm: "chan_close_confirm.spend",
+    chan_open_confirm: "chan_open_confirm.mint",
+    chan_close_init: "chan_close_init.mint",
+    chan_close_confirm: "chan_close_confirm.mint",
     recv_packet: "recv_packet.mint",
     send_packet: "send_packet.mint",
     timeout_packet: "timeout_packet.mint",
@@ -2536,7 +2536,7 @@ const deploySpendChannel = async (
 
     if (moduleCallbackValidators.has(name)) args.push(hostStateNftPolicyId);
 
-    const [script, hash] = await readValidator(
+    const [script, hash] = readValidator(
       `spending_channel/${name}.${validator}`,
       lucid,
       args,
@@ -2548,7 +2548,7 @@ const deploySpendChannel = async (
     };
   }
 
-  const [script, hash, address] = await readValidator(
+  const [script, hash, address] = readValidator(
     "spending_channel.spend_channel.spend",
     lucid,
     [

@@ -502,6 +502,14 @@ jobs:
         working-directory: cardano/offchain
         run: deno task test:deployment
 
+      - name: Evaluate channel actions with compiled validators
+        working-directory: cardano/offchain
+        run: deno task test:channels
+
+      - name: Fuzz channel transactions with compiled validators
+        working-directory: cardano/offchain
+        run: deno task test:channels:fuzz
+
       - name: Test shutdown finalization
         working-directory: cardano/offchain
         run: deno task test:shutdown

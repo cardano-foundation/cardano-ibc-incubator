@@ -860,71 +860,73 @@ fn send_packet_spending_channel_tx_duplicate_continuation() -> fuzz_dsl.Protocol
 test prop_tx_packet_send_spending_channel_accepts_host_marker(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"regression.tx.packet.send.valid_channel_host_marker")
+  fuzz.label(@"regression.contract.packet.send.valid_channel_host_marker")
 
   // This is intentionally tx.* depth: it composes the channel spend with the
   // HostState co-spend and SendPacket operation marker instead of only checking
   // the channel datum transition helper.
   send_packet_spending_channel_tx()
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_packet_send_rejects_missing_operation_marker(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.send.invalid_missing_operation_marker")
+  fuzz.label(
+    @"regression.contract.packet.send.invalid_missing_operation_marker",
+  )
 
   // tx.* depth for the channel side: the channel spend sees the HostState
   // co-spend redeemer, module co-spend redeemer, and marker mint together. The
   // near-valid mutation removes the exact SendPacket marker mint.
   send_packet_spending_channel_tx_missing_marker()
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_packet_send_rejects_extra_operation_marker(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.send.invalid_extra_operation_marker")
+  fuzz.label(@"regression.contract.packet.send.invalid_extra_operation_marker")
   send_packet_spending_channel_tx_extra_marker()
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_packet_send_rejects_wrong_operation_policy(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.send.invalid_wrong_operation_policy")
+  fuzz.label(@"regression.contract.packet.send.invalid_wrong_operation_policy")
   send_packet_spending_channel_tx_wrong_policy()
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_packet_send_rejects_wrong_marker_redeemer(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.send.invalid_wrong_marker_redeemer")
+  fuzz.label(@"regression.contract.packet.send.invalid_wrong_marker_redeemer")
   send_packet_spending_channel_tx_wrong_token()
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_packet_send_rejects_wrong_host_state_action(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.send.invalid_wrong_host_state_action")
+  fuzz.label(@"regression.contract.packet.send.invalid_wrong_host_state_action")
   send_packet_spending_channel_tx_wrong_host_action()
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_packet_send_rejects_missing_continuation(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.tx.packet.send.invalid_missing_continuation")
+  fuzz.label(@"regression.contract.packet.send.invalid_missing_continuation")
   send_packet_spending_channel_tx_missing_continuation()
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_tx_packet_send_rejects_duplicate_continuation(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"regression.tx.packet.send.invalid_duplicate_continuation")
+  fuzz.label(@"regression.contract.packet.send.invalid_duplicate_continuation")
   send_packet_spending_channel_tx_duplicate_continuation()
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test chan_open_ack_succeed() {

@@ -499,7 +499,7 @@ test prop_packet_send_accepts_valid_near_context(_seed via fuzz.int()) {
   packet
     |> build_send_packet_fixture
     |> run_send_packet_transition
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {
@@ -519,7 +519,7 @@ test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {
     packet
       |> build_send_packet_fixture
       |> run_send_packet_transition
-      |> fuzz_dsl.assert_protocol_valid,
+      |> fuzz_dsl.assert_protocol_checks_accept,
     run_ack_packet_transition(
       sent_model.channel,
       acked_model.channel,
@@ -528,7 +528,7 @@ test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {
       acknowledgement_bytes,
       fuzz_dsl.no_mutation(),
     )
-      |> fuzz_dsl.assert_protocol_valid,
+      |> fuzz_dsl.assert_protocol_checks_accept,
     acked_model.channel.state.next_sequence_send == packet.sequence + 1,
     !pairs.has_key(acked_model.channel.state.packet_commitment, packet.sequence),
   }
@@ -562,7 +562,7 @@ test prop_model_packet_send_recv_ack_sequence(_seed via fuzz.int()) {
     outbound_packet
       |> build_send_packet_fixture
       |> run_send_packet_transition
-      |> fuzz_dsl.assert_protocol_valid,
+      |> fuzz_dsl.assert_protocol_checks_accept,
     run_recv_packet_transition(
       sent_model.channel,
       received_model.channel,
@@ -570,7 +570,7 @@ test prop_model_packet_send_recv_ack_sequence(_seed via fuzz.int()) {
       recv_ack,
       fuzz_dsl.no_mutation(),
     )
-      |> fuzz_dsl.assert_protocol_valid,
+      |> fuzz_dsl.assert_protocol_checks_accept,
     run_ack_packet_transition(
       received_model.channel,
       acked_model.channel,
@@ -579,7 +579,7 @@ test prop_model_packet_send_recv_ack_sequence(_seed via fuzz.int()) {
       acknowledgement_bytes,
       fuzz_dsl.no_mutation(),
     )
-      |> fuzz_dsl.assert_protocol_valid,
+      |> fuzz_dsl.assert_protocol_checks_accept,
     pairs.has_key(
       acked_model.channel.state.packet_receipt,
       inbound_packet.sequence,
@@ -610,7 +610,7 @@ test prop_model_packet_send_timeout_sequence(_seed via fuzz.int()) {
     packet
       |> build_send_packet_fixture
       |> run_send_packet_transition
-      |> fuzz_dsl.assert_protocol_valid,
+      |> fuzz_dsl.assert_protocol_checks_accept,
     run_timeout_packet_transition(
       sent_model.channel,
       timed_out_model.channel,
@@ -618,7 +618,7 @@ test prop_model_packet_send_timeout_sequence(_seed via fuzz.int()) {
       packet.timeout_timestamp,
       fuzz_dsl.no_mutation(),
     )
-      |> fuzz_dsl.assert_protocol_valid,
+      |> fuzz_dsl.assert_protocol_checks_accept,
     timed_out_model.channel.state.channel.state == Open,
     !pairs.has_key(
       timed_out_model.channel.state.packet_commitment,
@@ -638,7 +638,7 @@ test prop_packet_send_rejects_wrong_sequence(_seed via fuzz.int()) {
     |> build_send_packet_fixture
     |> mutate_wrong_sequence
     |> run_send_packet_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_packet_send_rejects_missing_commitment_root_update(
@@ -657,7 +657,7 @@ test prop_packet_send_rejects_missing_commitment_root_update(
     |> build_send_packet_fixture
     |> mutate_missing_commitment_root_update
     |> run_send_packet_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_packet_send_rejects_wrong_transfer_callback(_seed via fuzz.int()) {
@@ -669,7 +669,7 @@ test prop_packet_send_rejects_wrong_transfer_callback(_seed via fuzz.int()) {
     |> build_send_packet_fixture
     |> mutate_wrong_transfer_callback
     |> run_send_packet_transition
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_packet_recv_accepts_valid_receipt(_seed via fuzz.int()) {
@@ -694,7 +694,7 @@ test prop_packet_recv_accepts_valid_receipt(_seed via fuzz.int()) {
     ack,
     fuzz_dsl.no_mutation(),
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_packet_recv_rejects_duplicate_receipt(_seed via fuzz.int()) {
@@ -727,7 +727,7 @@ test prop_packet_recv_rejects_duplicate_receipt(_seed via fuzz.int()) {
     ack,
     fuzz_dsl.mutation("duplicate_receipt"),
   )
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_packet_send_rejects_commitment_capacity_overflow(_seed via fuzz.int()) {
@@ -761,7 +761,7 @@ test prop_packet_send_rejects_commitment_capacity_overflow(_seed via fuzz.int())
       channel_redeemer: SendPacket { packet },
     },
   )
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_packet_recv_rejects_history_capacity_overflow(_seed via fuzz.int()) {
@@ -800,7 +800,7 @@ test prop_packet_recv_rejects_history_capacity_overflow(_seed via fuzz.int()) {
     ack,
     fuzz_dsl.mutation("history_capacity_overflow"),
   )
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_packet_ack_accepts_success_ack(_seed via fuzz.int()) {
@@ -817,7 +817,7 @@ test prop_packet_ack_accepts_success_ack(_seed via fuzz.int()) {
     acknowledgement_mod.marshal_json(ack),
     fuzz_dsl.no_mutation(),
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_packet_ack_accepts_error_ack(_seed via fuzz.int()) {
@@ -834,7 +834,7 @@ test prop_packet_ack_accepts_error_ack(_seed via fuzz.int()) {
     acknowledgement_mod.marshal_json(ack),
     fuzz_dsl.no_mutation(),
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_packet_ack_rejects_wrong_ack_bytes(_seed via fuzz.int()) {
@@ -851,7 +851,7 @@ test prop_packet_ack_rejects_wrong_ack_bytes(_seed via fuzz.int()) {
     "wrong-ack-bytes",
     fuzz_dsl.mutation("wrong_ack_bytes"),
   )
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }
 
 test prop_packet_timeout_accepts_unordered(_seed via fuzz.int()) {
@@ -865,7 +865,7 @@ test prop_packet_timeout_accepts_unordered(_seed via fuzz.int()) {
     100,
     fuzz_dsl.no_mutation(),
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_packet_timeout_accepts_ordered(_seed via fuzz.int()) {
@@ -879,7 +879,7 @@ test prop_packet_timeout_accepts_ordered(_seed via fuzz.int()) {
     100,
     fuzz_dsl.no_mutation(),
   )
-    |> fuzz_dsl.assert_protocol_valid
+    |> fuzz_dsl.assert_protocol_checks_accept
 }
 
 test prop_packet_timeout_rejects_before_timeout(_seed via fuzz.int()) {
@@ -893,5 +893,5 @@ test prop_packet_timeout_rejects_before_timeout(_seed via fuzz.int()) {
     99,
     fuzz_dsl.mutation("before_timeout"),
   )
-    |> fuzz_dsl.assert_protocol_rejected
+    |> fuzz_dsl.assert_protocol_checks_reject
 }

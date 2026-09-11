@@ -8,6 +8,7 @@ import {
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 
 import {
+  buildChannelValidators,
   buildReferenceValidatorBatches,
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
@@ -45,17 +46,29 @@ Deno.test("generic module deployments pin the spend handler from the blueprint",
   );
 });
 
-Deno.test("send_packet is a mint-only policy in the compiled blueprint", () => {
-  assertEquals(
-    blueprint.validators
-      .map(({ title }) => title)
-      .filter((title) => title.startsWith("spending_channel/send_packet."))
-      .sort(),
-    [
-      "spending_channel/send_packet.send_packet.else",
-      "spending_channel/send_packet.send_packet.mint",
-    ],
+Deno.test("every deployed channel operation is a mint-only policy", () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const { referredScripts } = buildChannelValidators(
+    lucid,
+    "11".repeat(28),
+    "22".repeat(28),
+    "33".repeat(28),
+    "44".repeat(28),
+    "55".repeat(28),
   );
+  assertEquals(Object.keys(referredScripts).length, 9);
+  for (const name of Object.keys(referredScripts)) {
+    const prefix = `spending_channel/${name}.${name}`;
+    assertEquals(
+      blueprint.validators
+        .map(({ title }) => title)
+        .filter((title) => title.startsWith(prefix + "."))
+        .sort(),
+      [prefix + ".else", prefix + ".mint"],
+    );
+  }
 });
 
 Deno.test("client deployment pins the recovery withdrawal validator", () => {
