@@ -99,9 +99,13 @@ Balance queries through the Hermes Cardano chain endpoint are not implemented. T
 
 As a practical example, commands such as relayer wallet balance checks should not be expected to work uniformly for Cardano the way they do for Cosmos SDK chains. Operational scripts should use Cardano-specific balance inspection paths instead.
 
-### ICS-31 Cross-Chain Queries
+### ICS-31 and Asynchronous Cross-Chain Queries
 
-ICS-31 cross-chain queries are a work in progress for Cardano, but will need to be implemented on a per-chain basis. Much of the basic infrastructure exists for cross-chain queries with Cheqd, but still must be tested and validated against each supported counterparty chain.
+[ICS-31](https://github.com/cosmos/ibc/blob/main/spec/app/ics-031-crosschain-queries/README.md) describes queries where a relayer reads the remote chain through RPC and submits the result with a proof to the querying chain. It does not require an IBC packet round trip or a transaction on the queried chain. The [Hermes Cardano endpoint](https://github.com/cardano-foundation/hermes-relayer/blob/e20533b9bebb209d0f8485e7bd2ba7f1b2d805c7/crates/relayer/src/chain/cardano/endpoint.rs#L2937) returns an unsupported error for this query interface.
+
+The Cheqd integration uses a separate asynchronous query design. It sends query requests in IBC packets on `icq-1` channels and returns results in acknowledgements. The repository includes a reusable [Cosmos query host](cosmos/async-icq-v10/README.md) on `icqhost` and a [Cardano host service](cardano/gateway/src/tx/async-icq-host.service.ts) for an allowlist of IBC queries. The [Cheqd adapter](cardano/gateway/src/api/cheqd-icq.service.ts) supplies query paths and request and response handling for Cheqd's modules.
+
+Adding another counterparty requires compatible host wiring, allowed query paths, and application-specific data handling. The packet transport can be reused. Each integration still needs testing on the intended route, and the asynchronous query support does not implement the Hermes ICS-31 interface.
 
 ### Client Upgrade
 
