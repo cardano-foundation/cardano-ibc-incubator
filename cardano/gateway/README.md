@@ -28,22 +28,20 @@
 
 ## Published Container Image
 
-The Cardano Gateway image is published to GitHub Container Registry after Gateway-relevant changes are merged to `main`.
+The shared [image workflow](../../.github/workflows/publish.yaml) publishes same-repository PR images to the configured private registry. Fork and Dependabot PRs build without publishing or registry credentials. Ordinary merges to `main` do not publish images.
 
-```bash
-docker pull ghcr.io/cardano-foundation/cardano-ibc-incubator/cardano-gateway:main
-```
+Public Gateway releases use Git tags such as `gateway/v2.0.2`, matching the version in `package.json`. The tag must point to a commit already on `main`. The published image is named `cardano-ibc-gateway` and its Docker tag omits the `gateway/` prefix, for example `v2.0.2`. The GitHub Release lists the published public image references, digests and pull commands.
 
-Published tags:
+The exact tagged commit must have a successful `main` CI run. Release images are smoke-tested before that same image is pushed. Gateway startup uses isolated test databases and node/indexer fixtures, not a live Cardano network. Hermes runs its version and offline configuration checks, and the swap client serves its runtime configuration, page and static assets. For example, repeat the gateway check locally with `node scripts/ci/image-smoke.mjs gateway cardano-ibc-gateway:latest` and Docker running.
 
-- `main`: latest image built from the `main` branch
-- `sha-<commit>`: immutable image for a specific commit
-- `v*`: release tag image when a matching Git tag is pushed
+Release publishing refuses to overwrite an existing version in any registry. Deploy using the `image@sha256:...` reference from the release, and keep the previous digest for rollback. If only GitHub Release creation fails, rerun that failed job. A partially published image release needs recovery from the existing digest, not another build over the same version.
+
+A repository administrator must import [the release tag ruleset](../../.github/release-tag-ruleset.json) in Settings → Rules → Rulesets to prevent component tags from being moved or deleted. The file alone does not activate protection. Registry administrators should also enable immutable release tags where supported and restrict public image writers. The workflow's preflight checks do not prevent another publisher racing a push.
 
 Published images include tracked bridge manifests at `/usr/src/app/manifests`.
 For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json`
 to start the Gateway against the shared Cardano preprod bridge deployment.
-Tagged GitHub releases also attach a `cardano-gateway-manifests-<tag>.tar.gz`
+Gateway GitHub releases also attach a `cardano-gateway-manifests-<version-tag>.tar.gz`
 archive containing the same tracked manifest files.
 
 ## SendPacket Escrow Flow
