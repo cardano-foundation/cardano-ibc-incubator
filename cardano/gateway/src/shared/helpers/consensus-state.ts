@@ -18,8 +18,8 @@ export function normalizeConsensusStateFromDatum(
   }
   const consensus: ConsensusStateTendermint = {
     timestamp: Timestamp.fromPartial({
-      seconds: BigInt(Math.round(Number(consensusState.timestamp) / 1e9)),
-      nanos: Number(consensusState.timestamp) % 1e9,
+      seconds: consensusState.timestamp / 1_000_000_000n,
+      nanos: Number(consensusState.timestamp % 1_000_000_000n),
     }),
     /** commitment root (i.e app hash) */
     root: {
