@@ -1,6 +1,6 @@
-# Known Issues, Asymmetries, and Architectural Considerations
+# Architectural Challenges
 
-Author: Julius Tranquilli, https://github.com/floor-licker
+Author: Julius Tranquilli, https://github.com/jtranq
 
 This document tracks engineering challenges caused by asymmetries between Cardano and Cosmos, including differences in transaction semantics and consensus algorithms. **It was reviewed on July 10, 2026.** The maintained Cardano client is the experimental `08-cardano-probabilistic` client. The older Mithril client is deprecated, disabled, and retained only as historical design reference and for type compatibility.
 
