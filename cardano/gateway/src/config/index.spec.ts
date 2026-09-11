@@ -68,3 +68,90 @@ describe('Cardano network defaults', () => {
     );
   });
 });
+
+describe('Public network stability configuration', () => {
+  const originalEnv = process.env;
+  const endpoint = 'https://koios.example/api/v1';
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    for (const name of [
+      'CARDANO_NETWORK_MAGIC',
+      'CARDANO_LIGHT_CLIENT_MODE',
+      'CARDANO_EPOCH_PARAMS_ENDPOINT',
+      'CARDANO_STABILITY_ASSUME_STATIC_STAKE',
+      'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT',
+      'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE',
+      'CARDANO_EPOCH_NONCE_GENESIS',
+    ]) {
+      delete process.env[name];
+    }
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it.each([undefined, '', '   ', '///'])('requires a usable Mainnet snapshot endpoint: %p', (value) => {
+    process.env.CARDANO_NETWORK_MAGIC = '764824073';
+    if (value !== undefined) process.env.CARDANO_EPOCH_PARAMS_ENDPOINT = value;
+
+    expect(() => loadConfig()).toThrow(
+      'CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on Mainnet',
+    );
+  });
+
+  describe.each([
+    ['Mainnet', '764824073'],
+    ['Preprod', '1'],
+    ['Preview', '2'],
+  ])('%s', (network, magic) => {
+    beforeEach(() => {
+      process.env.CARDANO_NETWORK_MAGIC = magic;
+      process.env.CARDANO_EPOCH_PARAMS_ENDPOINT = endpoint;
+    });
+
+    it.each([
+      ['CARDANO_STABILITY_ASSUME_STATIC_STAKE', '1'],
+      ['CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', '0'],
+      ['CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', ''],
+      ['CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', '11'.repeat(32)],
+    ])('rejects the development override %s=%p', (name, value) => {
+      process.env[name] = value;
+
+      expect(() => loadConfig()).toThrow(`${name} must be unset on ${network}`);
+    });
+
+    it('accepts the snapshot endpoint with static stake disabled', () => {
+      process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE = '0';
+      // Public deployments can retain the genesis value without enabling a nonce fallback.
+      process.env.CARDANO_EPOCH_NONCE_GENESIS = '22'.repeat(32);
+
+      expect(loadConfig()).toMatchObject({
+        cardanoNetwork: network,
+        cardanoLightClientMode: 'stake-weighted-stability',
+        cardanoEpochParamsEndpoint: endpoint,
+      });
+    });
+  });
+
+  it('does not require a stake snapshot endpoint in Mithril mode', () => {
+    process.env.CARDANO_NETWORK_MAGIC = '764824073';
+    process.env.CARDANO_LIGHT_CLIENT_MODE = 'mithril';
+
+    expect(loadConfig().cardanoLightClientMode).toBe('mithril');
+  });
+
+  it('keeps the explicit local devnet assumptions available', () => {
+    process.env.CARDANO_NETWORK_MAGIC = '42';
+    process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE = '1';
+    process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
+    process.env.CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE = '11'.repeat(32);
+
+    expect(loadConfig()).toMatchObject({
+      cardanoNetwork: 'Custom',
+      cardanoLightClientMode: 'stake-weighted-stability',
+      cardanoEpochParamsEndpoint: undefined,
+    });
+  });
+});

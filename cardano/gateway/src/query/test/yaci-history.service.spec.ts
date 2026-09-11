@@ -656,7 +656,6 @@ describe('YaciHistoryService', () => {
   });
 
   it('reconstructs a completed historical epoch when public Ogmios can no longer acquire it', async () => {
-    process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
     configServiceMock.get.mockImplementation((key: string) => {
       if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
       if (key === 'cardanoNetwork') return 'Preprod';
@@ -794,16 +793,21 @@ describe('YaciHistoryService stake snapshot source selection', () => {
     slotLeader: 'pool1anchorpool',
   };
 
-  const configureNetwork = (network?: 'Preprod') => {
+  const configureNetwork = (
+    network?: 'Preprod' | 'Preview' | 'Mainnet',
+    endpoint: string | null = 'https://preprod.koios.rest/api/v1',
+  ) => {
     configServiceMock.get.mockImplementation((key: string) => {
       if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
       if (key === 'cardanoNetwork') return network;
       if (key === 'cardanoChainId') {
-        return network ? 'cardano-preprod' : 'cardano-devnet';
+        return `cardano-${network?.toLowerCase() || 'devnet'}`;
       }
-      if (key === 'cardanoChainNetworkMagic') return network ? 1 : 42;
+      if (key === 'cardanoChainNetworkMagic') {
+        return network ? { Preprod: 1, Preview: 2, Mainnet: 764824073 }[network] : 42;
+      }
       if (key === 'cardanoEpochParamsEndpoint') {
-        return 'https://preprod.koios.rest/api/v1';
+        return endpoint ?? undefined;
       }
       if (key === 'cardanoPoolRegistrationHistoryEndpoint') {
         return network ? 'https://preprod.koios.rest/api/v1' : undefined;
@@ -834,8 +838,96 @@ describe('YaciHistoryService stake snapshot source selection', () => {
     jest.resetAllMocks();
     delete process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
     delete process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE;
+    delete process.env.CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE;
+    delete process.env.CARDANO_EPOCH_NONCE_GENESIS;
     Reflect.deleteProperty(globalThis, 'fetch');
   });
+
+  const liveStakeDistribution = [
+    { poolId: 'pool1live', ...exactStake(8n, 100n), vrfKeyHash: 'aa'.repeat(32) },
+    { poolId: 'pool1other', ...exactStake(92n, 100n), vrfKeyHash: 'bb'.repeat(32) },
+  ];
+
+  it.each([
+    ['CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', false],
+    ['CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', true],
+    ['CARDANO_EPOCH_NONCE_GENESIS', false],
+    ['CARDANO_EPOCH_NONCE_GENESIS', true],
+  ] as const)(
+    'rejects Mainnet without a snapshot endpoint with %s and static stake %p',
+    async (nonceSetting, staticStake) => {
+      configureNetwork('Mainnet', null);
+      process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
+      process.env[nonceSetting] = '11'.repeat(32);
+      if (staticStake) process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE = '1';
+      entityManagerMock.query
+        .mockResolvedValueOnce([{ start_slot: '1000' }])
+        .mockResolvedValueOnce([{ start_slot: '1200' }]);
+      (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+        ...defaultVerificationData,
+        stakeDistribution: liveStakeDistribution,
+      });
+
+      await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
+        'CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on Mainnet',
+      );
+      expect(queryEpochContextAtPoint).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['Mainnet', 'Preprod', 'Preview'] as const)(
+    'rejects static stake on %s before querying Ogmios',
+    async (network) => {
+      configureNetwork(network);
+      process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE = '1';
+
+      await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
+        `CARDANO_STABILITY_ASSUME_STATIC_STAKE must be unset on ${network}`,
+      );
+      expect(queryEpochContextAtPoint).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['Mainnet', 'Preprod', 'Preview'] as const)(
+    'refuses live stake in the snapshot selector when the %s endpoint is missing',
+    async (network) => {
+      configureNetwork(network, null);
+
+      await expect((service as any).findCurrentEpochStakeSnapshot(block, liveStakeDistribution)).rejects.toThrow(
+        `CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on ${network}`,
+      );
+    },
+  );
+
+  it.each(['CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_NONCE_GENESIS'])(
+    'keeps the local static-stake fallback with %s',
+    async (nonceSetting) => {
+      configureNetwork(undefined, null);
+      process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
+      process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE = '1';
+      process.env[nonceSetting] = '11'.repeat(32);
+      entityManagerMock.query
+        .mockResolvedValueOnce([{ start_slot: '1000' }])
+        .mockResolvedValueOnce([{ start_slot: '1200' }]);
+      (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+        ...defaultVerificationData,
+        stakeDistribution: liveStakeDistribution,
+      });
+
+      await expect(service.findEpochContextAtBlock(block)).resolves.toMatchObject({
+        stakeDistribution: liveStakeDistribution.map((entry) => ({ ...entry, firstRegistrationSlot: 1n })),
+      });
+      expect(queryEpochContextAtPoint).toHaveBeenCalledWith(
+        'ws://ogmios.local',
+        { slot: block.slotNo, hash: block.hash },
+        '11'.repeat(32),
+        true,
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not use the local stale-point fallback from a registration-slot assumption alone', async () => {
     process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
@@ -1010,7 +1102,7 @@ describe('YaciHistoryService stake snapshot source selection', () => {
   });
 });
 
-describe('YaciHistoryService current epoch stake snapshots', () => {
+describe.each(['Preprod', 'Preview', 'Mainnet'])('Current epoch stake snapshots on %s', (network) => {
   let service: YaciHistoryService;
   let entityManagerMock: { query: jest.Mock };
 
@@ -1028,7 +1120,7 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
     const configServiceMock = {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
-        if (key === 'cardanoNetwork') return 'Preprod';
+        if (key === 'cardanoNetwork') return network;
         if (key === 'cardanoEpochParamsEndpoint') {
           return 'https://preprod.koios.rest/api/v1';
         }

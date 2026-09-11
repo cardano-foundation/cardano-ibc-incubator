@@ -3,6 +3,7 @@ import { Inject, Injectable, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EntityManager } from "typeorm";
 import { bech32 } from "bech32";
+import { validatePublicNetworkStabilityConfig } from "../../config";
 import { GrpcNotFoundException } from "~@/exception/grpc_exceptions";
 import { CLIENT_PREFIX } from "../../constant";
 import {
@@ -492,6 +493,10 @@ export class YaciHistoryService implements HistoryService {
   async findEpochContextAtBlock(
     block: HistoryBlock,
   ): Promise<HistoryEpochContextAtBlock | null> {
+    validatePublicNetworkStabilityConfig(
+      this.configService.get<string>("cardanoNetwork"),
+      this.configService.get<string>("cardanoEpochParamsEndpoint"),
+    );
     const slotBounds = await this.findEpochSlotBounds(block.epochNo);
     if (!slotBounds) {
       return null;
@@ -642,9 +647,14 @@ export class YaciHistoryService implements HistoryService {
       cardanoNetwork === "Preview" || cardanoNetwork === "Mainnet";
     const endpoint = this.configService.get<string>(
       "cardanoEpochParamsEndpoint",
-    )?.replace(/\/+$/, "");
-    if (!isPublicNetwork || !endpoint) {
+    )?.trim().replace(/\/+$/, "");
+    if (!isPublicNetwork) {
       return ogmiosStakeDistribution;
+    }
+    if (!endpoint) {
+      throw new Error(
+        `CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on ${cardanoNetwork}`,
+      );
     }
 
     const cacheKey = this.epochNonceCacheKey(block.epochNo);
