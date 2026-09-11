@@ -3343,7 +3343,7 @@ test on_chan_close_init_given_any_input_returns_false() {
   ) == False
 }
 
-test on_chan_close_confirm_given_any_input_returns_false() {
+test on_chan_close_confirm_rejects_missing_channel_spend() fail {
   let fake_data = setup()
 
   //==========================arrange inputs=========================
@@ -3378,7 +3378,7 @@ test on_chan_close_confirm_given_any_input_returns_false() {
     module_redeemer,
     fake_data.module_input.output_reference,
     transaction,
-  ) == False
+  )
 }
 
 test transfer_escrow_zero_balance_shard_reuse_succeeds() {

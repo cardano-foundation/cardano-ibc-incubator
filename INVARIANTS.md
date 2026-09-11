@@ -362,6 +362,28 @@ invariants:
 - ChanCloseConfirm must close an open channel.
 - A closed channel does not satisfy the send-packet open-channel gate.
 
+The fixed regressions in
+`validators/spending_channel/transfer_close_confirm.test.ak` additionally run
+the transfer callback, close-confirm mint policy, channel spending validator,
+HostState update, and ICS-23 proof verifier on the same transaction. They prove:
+
+- An authenticated proof of a closed counterparty channel permits local
+  ICS-20 close-confirm and commits the closed channel end in HostState.
+- A proof of an open counterparty channel, an invalid proof, or an absent or
+  malformed close-confirm marker cannot authorize closure.
+- The callback requires the exact channel token, close-confirm spend
+  redeemer, and successor for this port. That spend requires the mint policy
+  to bind the registered callback and closed continuation, preserving the
+  remaining channel datum.
+- The transfer module root retains its address, capability tokens, datum, and
+  non-ADA assets; ADA can only stay constant or increase for minimum-UTxO needs.
+- Escrow shards cannot be spent using a channel close callback, and transfer
+  close-init remains rejected even with a valid channel context.
+
+The off-chain deployment test checks that close-confirm exposes a mint handler
+in the compiled blueprint. Gateway close-confirm builder tests cover both mock
+and transfer modules and require their original datum and full value to survive.
+
 ## Packet Lifecycle
 
 Required CI label suffixes:
