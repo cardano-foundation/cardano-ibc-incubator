@@ -61,17 +61,7 @@ The following IBC features are not currently supported by the Cardano bridge pat
 
 Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake.
 
-Channel upgradability was released in ibc-go v8.1.0. Channel upgradability allows IBC channels to upgrade and leverage new features without having to coordinate a network upgrade or open a new channel and thereby forego token fungibility.
-
-By enabling this feature, chains can:
-
-1. Add fee middleware on existing channels to incentivize IBC relayers.
-2. Adopt future application protocol versions where both channel ends support them. The previously proposed ICS-20 v2 is now marked deprecated in the canonical IBC standards index.
-3. Migrate from ordered Interchain Accounts (ICA) channels to unordered ones.
-4. Change connection hops if the application stack allows it.
-5. Prune stale acknowledgements and packet receipts to reduce disk overhead.
-
-Read more about channel upgradeability here: https://ibcprotocol.dev/blog/introducing-ibc-channel-upgradability
+`ibc-go` v8.1.0 introduced channel upgradability. Compatible applications could change the channel version, ordering, or connection without replacing the channel. Upstream v10 later removed channel upgradability and ICS-29 fee middleware. Support on a Cosmos counterparty therefore depends on its version and application stack. See the [v8.1 migration guide](https://github.com/cosmos/ibc-go/blob/main/docs/docs/05-migrations/12-v8-to-v8_1.md) and [v10 changelog](https://github.com/cosmos/ibc-go/blob/v10.2.0/CHANGELOG.md).
 
 Cardano IBC now provides a narrower, Cardano-local cleanup operation for packet
 history without implementing the channel-upgrade handshake. After the source
@@ -89,13 +79,13 @@ therefore requires a fresh bridge deployment and new channels. Existing
 Channel and HostState UTxOs cannot be migrated to the new validator addresses
 in place.
 
-Full channel upgrade support may still be a target for further development.
+Adding channel upgrades here would require a compatible counterparty implementation. A newer `ibc-go` version does not by itself imply support for that handshake.
 
 ### ICS-29 Fee Middleware
 
-The Cardano relayer endpoint does not implement the fee middleware queries needed to discover incentivized packets, and counterparty payee registration is not implemented as a meaningful Cardano operation. This means relayer incentives cannot currently rely on the standard ICS-29 packet fee flow for Cardano-connected channels. Operators should assume fees and relayer compensation need to be handled outside of ICS-29 until explicit support is added.
+The Cardano relayer endpoint cannot query incentivized packets and its counterparty payee registration method does not register a payee. It therefore does not provide a Cardano-side ICS-29 fee interface.
 
-This may be a target for further development.
+ICS-29 is also [deprecated in the IBC standards index](https://github.com/cosmos/ibc/blob/main/README.md#app-1), and `ibc-go` v10 removed its fee middleware. For routes to older Cosmos counterparties, relayer compensation must be assessed against that chain's fee configuration and the channel's negotiated capabilities.
 
 ### Host Consensus State Query
 
