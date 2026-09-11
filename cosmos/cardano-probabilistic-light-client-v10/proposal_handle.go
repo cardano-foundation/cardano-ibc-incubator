@@ -17,6 +17,7 @@ import (
 )
 
 type recoveryInvariantClientState struct {
+	DevnetPoolRegistrationPolicy     bool
 	UpgradePath                      []string
 	HostStateNftPolicyId             []byte
 	HostStateNftTokenName            []byte
@@ -236,6 +237,9 @@ func IsMatchingClientState(subject, substitute ClientState) bool {
 
 func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 	return recoveryInvariantClientState{
+		// Chain IDs may change during recovery, but the eligibility policy must
+		// not switch between the public rule and post-cutoff devnet genesis rule.
+		DevnetPoolRegistrationPolicy:     cs.usesDevnetPoolRegistrationCutoff(),
 		UpgradePath:                      append([]string(nil), cs.UpgradePath...),
 		HostStateNftPolicyId:             bytes.Clone(cs.HostStateNftPolicyId),
 		HostStateNftTokenName:            bytes.Clone(cs.HostStateNftTokenName),

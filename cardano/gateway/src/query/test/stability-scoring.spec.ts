@@ -2,11 +2,62 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
   assertStabilityThresholds,
+  computePoolRegistrationCutoffSlot,
   computeStabilityMetrics,
   getStabilityPolicy,
   StabilityPolicy,
+  PoolRegistrationNetworkIdentity,
 } from '../services/stability-scoring';
 import { HistoryBlock, HistoryStakeDistributionEntry } from '../services/history.service';
+
+describe('pool registration cutoff network binding', () => {
+  const cutoff = 1_767_225_600_000_000_000n;
+  const devnet = { chainId: 'cardano-devnet', networkMagic: '42', chainNetworkMagic: '42' };
+  const anchor = (start: bigint, slotLength = 1_000_000_000n) => ({ slotNo: 1000n, timestampUnixNs: start + 1000n * slotLength });
+
+  it.each([cutoff, cutoff + 1n, cutoff + 86_400_000_000_000n])('admits only bootstrap registrations for a bound fresh devnet starting at %s', (start) => {
+    expect(computePoolRegistrationCutoffSlot(anchor(start), undefined, devnet)).toBe(2n);
+  });
+
+  const nonDevnets: Array<[string, PoolRegistrationNetworkIdentity | undefined]> = [
+    ['missing identity', undefined], ['empty identity', {}],
+    ['missing chain ID', { ...devnet, chainId: undefined }],
+    ['missing network magic', { ...devnet, networkMagic: undefined }],
+    ['missing chain network magic', { ...devnet, chainNetworkMagic: undefined }],
+    ['suffixed chain ID', { ...devnet, chainId: 'cardano-devnet-1' }],
+    ['case changed chain ID', { ...devnet, chainId: 'Cardano-devnet' }],
+    ['padded chain ID', { ...devnet, chainId: 'cardano-devnet ' }],
+    ['preprod chain ID', { ...devnet, chainId: 'cardano-preprod' }],
+    ['padded network magic', { ...devnet, networkMagic: '042' }],
+    ...['1', '2', '764824073'].flatMap((magic): Array<[string, PoolRegistrationNetworkIdentity]> => [
+      [`public network ${magic}`, { ...devnet, networkMagic: magic, chainNetworkMagic: magic }],
+      [`mismatched network ${magic}/42`, { ...devnet, networkMagic: magic }],
+      [`mismatched network 42/${magic}`, { ...devnet, chainNetworkMagic: magic }],
+    ]),
+  ];
+  it.each(nonDevnets)('keeps the existing post-cutoff rule for %s', (_label, identity) => {
+    expect(computePoolRegistrationCutoffSlot(anchor(cutoff), undefined, identity)).toBe(0n);
+  });
+
+  it('uses system start rather than the anchor date and leaves older networks unchanged', () => {
+    const old = anchor(cutoff - 100_000_000_000n);
+    expect(old.timestampUnixNs > cutoff).toBe(true);
+    for (const identity of [devnet, ...nonDevnets.map(([, value]) => value)]) {
+      expect(computePoolRegistrationCutoffSlot(old, undefined, identity)).toBe(100n);
+    }
+    expect(computePoolRegistrationCutoffSlot(anchor(cutoff - 7_000_000_000n, 2_000_000_000n), 2_000_000_000n, devnet)).toBe(4n);
+    expect(() => computePoolRegistrationCutoffSlot(old, 0n, devnet)).toThrow('greater than zero');
+  });
+
+  it.each([1n, 2n, 3n, 10_000n, 0n, -1n, undefined])('does not widen registration eligibility beyond slot 1: %s', (slot) => {
+    const registration = { poolId: 'pool', stake: 1n, relativeStakeNumerator: 1n, relativeStakeDenominator: 1n,
+      vrfKeyHash: '11'.repeat(32), firstRegistrationSlot: slot };
+    const metrics = () => computeStabilityMetrics([{ ...anchor(cutoff), height: 1, hash: 'block', prevHash: 'anchor', epochNo: 0, slotLeader: 'pool' }],
+      [registration], getStabilityPolicy(), { poolRegistrationCutoffSlot: computePoolRegistrationCutoffSlot(anchor(cutoff), undefined, devnet) });
+    if (slot === undefined || slot <= 0n) expect(metrics).toThrow('First registration slot missing');
+    else expect(metrics().qualifiedUniquePoolsCount).toBe(slot === 1n ? 1 : 0);
+  });
+});
 
 describe('stability-scoring', () => {
   const poolRegistrationCutoffSlot = 10_000n;

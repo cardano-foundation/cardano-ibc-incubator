@@ -177,6 +177,81 @@ describe('stability-evidence', () => {
     }),
   } as Partial<HistoryService>;
 
+  describe('fresh devnet registration cutoff in both evidence loaders', () => {
+    const envNames = ['CARDANO_CHAIN_ID', 'CARDANO_NETWORK_MAGIC', 'CARDANO_CHAIN_NETWORK_MAGIC', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT'];
+    let savedEnv: Array<[string, string | undefined]>;
+    beforeEach(() => {
+      savedEnv = envNames.map((name) => [name, process.env[name]]);
+      envNames.forEach((name) => { delete process.env[name]; });
+    });
+    afterEach(() => {
+      for (const [name, value] of savedEnv) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    });
+
+    const configure = (chainId?: string, networkMagic?: string, chainNetworkMagic?: string) => {
+      [chainId, networkMagic, chainNetworkMagic].forEach((value, index) => {
+        if (value !== undefined) process.env[envNames[index]] = value;
+      });
+    };
+    const freshHistory = (firstRegistrationSlot: bigint | undefined = 1n, start = 1_767_225_600_000_000_000n): HistoryService => {
+      const atStart = <T extends { slotNo: bigint }>(block: T) => ({ ...block, timestampUnixNs: start + block.slotNo * 1_000_000_000n });
+      return {
+        ...historyServiceMock,
+        findBlockByHeight: jest.fn(async (height: bigint) => atStart(height === 97n
+          ? { ...anchorBlock, height: 97, hash: 'hash-97', slotNo: 970n }
+          : anchorBlock)),
+        findDescendantBlocks: jest.fn(async () => descendantBlocks.map(atStart)),
+        findBridgeBlocks: jest.fn(async () => bridgeBlocks.map(atStart)),
+        findEpochContextAtBlock: jest.fn(async () => ({ ...anchorEpochContext,
+          stakeDistribution: epochStakeDistribution.map((entry) => ({ ...entry, firstRegistrationSlot })) })),
+        findFirstPoolRegistrationSlots: jest.fn(async () => new Map()),
+      } as unknown as HistoryService;
+    };
+
+    for (const loader of ['height', 'header'] as const) {
+      const load = (historyService = freshHistory()) => loader === 'height'
+        ? loadStakeWeightedStabilityEvidenceByHeight({ historyService, height: 100n, stabilityPolicy })
+        : loadStakeWeightedStabilityHeaderEvidence({ historyService, height: 100n, trustedHeight: 97n, stabilityPolicy });
+
+      it(`${loader}: admits known slot-1 bootstrap pools with all three devnet identity settings`, async () => {
+        configure('cardano-devnet', '42', '42');
+        expect((await load()).descendantBlocks).toHaveLength(3);
+      });
+
+      it.each([
+        ['cardano-devnet', '1', '1'], ['cardano-devnet', '2', '2'], ['cardano-devnet', '764824073', '764824073'],
+        ['cardano-devnet-1', '42', '42'], [undefined, '42', '42'], ['cardano-devnet', undefined, '42'],
+        ['cardano-devnet', '42', undefined], ['cardano-devnet', '42', '1'], ['cardano-devnet', '2', '42'],
+      ])(`${loader}: fails closed for identity %s/%s/%s`, async (chainId, networkMagic, chainNetworkMagic) => {
+        configure(chainId, networkMagic, chainNetworkMagic);
+        await expectGrpcError(load(), status.FAILED_PRECONDITION, 'HEIGHT_NOT_ACCEPTED');
+      });
+
+      it(`${loader}: does not admit pools registered after bootstrap`, async () => {
+        configure('cardano-devnet', '42', '42');
+        await expectGrpcError(load(freshHistory(2n)), status.FAILED_PRECONDITION, 'HEIGHT_NOT_ACCEPTED');
+      });
+
+      it.each([0n, undefined])(`${loader}: still rejects missing or zero registration slots: %s`, async (slot) => {
+        configure('cardano-devnet', '42', '42');
+        const history = freshHistory(0n);
+        if (slot === undefined) {
+          (history.findEpochContextAtBlock as jest.Mock).mockResolvedValue({ ...anchorEpochContext,
+            stakeDistribution: epochStakeDistribution.map((entry) => ({ ...entry, firstRegistrationSlot: undefined })) });
+        }
+        await expect(load(history)).rejects.toThrow('First registration slot missing');
+      });
+
+      it(`${loader}: preserves the old cutoff for a pre-January devnet genesis`, async () => {
+        configure('cardano-devnet', '42', '42');
+        expect((await load(freshHistory(2n, 1_767_225_500_000_000_000n))).descendantBlocks).toHaveLength(3);
+      });
+    }
+  });
+
   it('loads a canonical stability evidence object from a height', async () => {
     const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
       historyService: historyServiceMock as HistoryService,

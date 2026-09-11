@@ -16,6 +16,7 @@ import (
 )
 
 const poolRegistrationCutoffUnixNs uint64 = 1_767_225_600_000_000_000 // 2026-01-01T00:00:00Z
+const devnetPoolRegistrationCutoffSlotExclusive uint64 = 2
 
 func (cs *ClientState) VerifyClientMessage(
 	ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore,
@@ -468,6 +469,13 @@ func checkedAddStake(current, addition uint64) (uint64, bool) {
 	return sum, carry == 0
 }
 
+// The exact devnet identity and post-cutoff genesis are trusted client-creation
+// parameters. Only its slot-1 genesis registration is eligible; public networks
+// and every pre-cutoff genesis retain the fixed calendar rule.
+func (cs ClientState) usesDevnetPoolRegistrationCutoff() bool {
+	return cs.ChainId == "cardano-devnet" && cs.SystemStartUnixNs >= poolRegistrationCutoffUnixNs
+}
+
 func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
 	if cs == nil {
 		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "client state missing")
@@ -477,6 +485,9 @@ func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
 	}
 	if cs.SlotLengthNs == 0 {
 		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
+	}
+	if cs.usesDevnetPoolRegistrationCutoff() {
+		return devnetPoolRegistrationCutoffSlotExclusive, nil
 	}
 	if poolRegistrationCutoffUnixNs <= cs.SystemStartUnixNs {
 		return 0, nil
