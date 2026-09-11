@@ -1469,6 +1469,9 @@ export class YaciHistoryService implements HistoryService {
       "cardanoEpochParamsEndpoint",
     )?.replace(/\/+$/, "");
     if (!endpoint) {
+      if (this.isExplicitLocalDevnet()) {
+        return this.fetchLocalEpochNonce(epoch);
+      }
       const localEpochNonceOverride = normalizeHex(
         process.env.CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE,
       );
@@ -1518,6 +1521,93 @@ export class YaciHistoryService implements HistoryService {
     } finally {
       this.epochNonceLookups.deleteIfValue(cacheKey, lookup);
     }
+  }
+
+  private isExplicitLocalDevnet(): boolean {
+    // Never infer this exception from the configuration's local defaults.
+    return process.env.CARDANO_CHAIN_ID === "cardano-devnet" &&
+      process.env.CARDANO_NETWORK_MAGIC === "42" &&
+      process.env.CARDANO_CHAIN_NETWORK_MAGIC === "42" &&
+      this.configService.get<string>("cardanoChainId") === "cardano-devnet" &&
+      this.configService.get<number>("cardanoChainNetworkMagic") === 42 &&
+      this.configService.get<string>("cardanoNetwork") === "Custom";
+  }
+
+  private async fetchLocalEpochNonce(epoch: number): Promise<string> {
+    if (!Number.isSafeInteger(epoch) || epoch < 0) {
+      throw new Error("Local Cardano epoch must be a non-negative safe integer");
+    }
+    const genesisNonce = normalizeHex(process.env.CARDANO_EPOCH_NONCE_GENESIS);
+    if (!/^[0-9a-f]{64}$/.test(genesisNonce)) {
+      throw new Error("Local Cardano genesis nonce must be configured from the actual node genesis hash");
+    }
+
+    // The optional Yaci epoch-nonce module reconstructs these values from the
+    // retained chain and removes them on rollback. Do not cache by epoch here:
+    // a rollback across an epoch boundary can replace the corresponding nonce.
+    const rows = await this.entityManager.query(
+      `
+        SELECT n.epoch, n.nonce, b.hash AS block_hash, b.epoch AS block_epoch,
+               genesis.nonce AS genesis_nonce, gb.hash AS genesis_block_hash,
+               gb.epoch AS genesis_block_epoch,
+               (
+                 SELECT COUNT(DISTINCT history.epoch)::text
+                 FROM epoch_nonce history
+                 JOIN block history_block
+                   ON history_block.number = history.block
+                  AND history_block.slot = history.slot
+                  AND history_block.epoch = history.epoch
+                 WHERE history.epoch BETWEEN 0 AND $1
+                   AND history.nonce ~* '^[0-9a-f]{64}$'
+                   AND history_block.hash ~* '^[0-9a-f]{64}$'
+               ) AS canonical_epoch_count
+        FROM epoch_nonce n
+        LEFT JOIN block b ON b.number = n.block AND b.slot = n.slot
+        LEFT JOIN epoch_nonce genesis ON genesis.epoch = 0
+        LEFT JOIN block gb ON gb.number = genesis.block AND gb.slot = genesis.slot
+        WHERE n.epoch = $1
+      `,
+      [epoch],
+    );
+    if (rows.length === 0) {
+      // Only epoch zero may use its actual genesis hash before replay reaches
+      // the first block. The legacy unscoped override is never a later nonce.
+      if (epoch === 0) return genesisNonce;
+      throw new Error(
+        `Local Cardano nonce for epoch ${epoch} is not indexed; enable store.epoch-nonce.enabled and replay Yaci from genesis`,
+      );
+    }
+    const row = rows[0];
+    const nonce = normalizeHex(row.nonce);
+    if (
+      rows.length !== 1 || parseNonNegativeBigInt(row.epoch) !== BigInt(epoch) ||
+      parseNonNegativeBigInt(row.block_epoch) !== BigInt(epoch) ||
+      !/^[0-9a-f]{64}$/.test(normalizeHex(row.block_hash)) ||
+      !/^[0-9a-f]{64}$/.test(nonce) ||
+      parseNonNegativeBigInt(row.genesis_block_epoch) !== 0n ||
+      !/^[0-9a-f]{64}$/.test(normalizeHex(row.genesis_block_hash)) ||
+      normalizeHex(row.genesis_nonce) !== genesisNonce ||
+      (epoch === 0 && nonce !== genesisNonce)
+    ) {
+      throw new Error(
+        `Local Cardano nonce evidence for epoch ${epoch} is invalid or belongs to another genesis; rebuild the disposable Yaci index from the exact node genesis files`,
+      );
+    }
+    // Yaci can lose a transition row on a boundary rollback without recreating
+    // it on replacement blocks. A later row must not conceal that missing
+    // prerequisite. Epoch is the nonce primary key; distinct canonical epochs
+    // in [0, epoch] must cover the entire interval, without loading rows into JS.
+    const canonicalEpochCount = row.canonical_epoch_count;
+    if (
+      typeof canonicalEpochCount !== "string" ||
+      !/^(0|[1-9][0-9]*)$/.test(canonicalEpochCount) ||
+      BigInt(canonicalEpochCount) !== BigInt(epoch) + 1n
+    ) {
+      throw new Error(
+        `Local Cardano nonce history through epoch ${epoch} is incomplete or non-canonical; rebuild the disposable Yaci index from the exact node genesis files`,
+      );
+    }
+    return nonce;
   }
 
   private epochNonceCacheKey(epoch: number): string {
