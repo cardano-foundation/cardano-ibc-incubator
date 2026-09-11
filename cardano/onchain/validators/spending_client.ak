@@ -123,6 +123,7 @@ validator spend_client(
             updated_datum,
             header,
             tx_valid_from,
+            tx_valid_to,
           )?
         }
       }

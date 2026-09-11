@@ -30,6 +30,8 @@ type Fixture {
 
 const tx_valid_from = 1000
 
+const tx_valid_to = 2000
+
 const trusting_period = 1_000_000_000_000
 
 const one = fixture(1, False)
@@ -124,7 +126,7 @@ fn legacy_output(input: ClientDatum, next_header: Header) -> ClientDatum {
   let heights =
     list.filter(input.state.processed_heights, fn(p) { list.has(keys, p.1st) })
   let end = math.min(max_consensus_state_size - 1, list.length(retained))
-  let processed_time = tx_valid_from * 1_000_000
+  let processed_time = tx_valid_to * 1_000_000
   ClientDatum {
     ..input,
     state: ClientDatumState {
@@ -163,7 +165,13 @@ fn current(f: Fixture) -> Bool {
       HeaderCase(f.next_header),
       f.input.state.consensus_states,
     ),
-    client_datum.update_state(f.input, f.output, f.next_header, tx_valid_from),
+    client_datum.update_state(
+      f.input,
+      f.output,
+      f.next_header,
+      tx_valid_from,
+      tx_valid_to,
+    ),
   }
 }
 

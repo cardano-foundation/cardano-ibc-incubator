@@ -44,9 +44,12 @@ type MockData {
   input: Input,
 }
 
-fn processed_time_for_update(header: Header, client_state: ClientState) -> Int {
+fn processed_time_for_update(
+  consensus_state: ConsensusState,
+  client_state: ClientState,
+) -> Int {
   (
-    ( header.signed_header.header.time - client_state.max_clock_drift ) / 1_000_000 + 1000
+    ( consensus_state.timestamp + client_state.trusting_period ) / 1_000_000 - 1000
   ) * 1_000_000
 }
 
@@ -903,14 +906,20 @@ fn check_update_client_verify_adjacent(
         processed_times: [
           Pair(
             header_mod.get_height(header),
-            processed_time_for_update(header, client_datum.state.client_state),
+            processed_time_for_update(
+              consensus_state,
+              client_datum.state.client_state,
+            ),
           ),
         ],
         processed_heights: [
           Pair(
             header_mod.get_height(header),
             client_datum_mod.processed_height_from_time(
-              processed_time_for_update(header, client_datum.state.client_state),
+              processed_time_for_update(
+                consensus_state,
+                client_datum.state.client_state,
+              ),
             ),
           ),
         ],
@@ -1181,14 +1190,20 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
         processed_times: [
           Pair(
             header_mod.get_height(header),
-            processed_time_for_update(header, client_datum.state.client_state),
+            processed_time_for_update(
+              consensus_state,
+              client_datum.state.client_state,
+            ),
           ),
         ],
         processed_heights: [
           Pair(
             header_mod.get_height(header),
             client_datum_mod.processed_height_from_time(
-              processed_time_for_update(header, client_datum.state.client_state),
+              processed_time_for_update(
+                consensus_state,
+                client_datum.state.client_state,
+              ),
             ),
           ),
         ],
@@ -1439,14 +1454,20 @@ test update_client_verify_non_adjacent_succeed() {
         processed_times: [
           Pair(
             header_mod.get_height(header),
-            processed_time_for_update(header, client_datum.state.client_state),
+            processed_time_for_update(
+              consensus_state,
+              client_datum.state.client_state,
+            ),
           ),
         ],
         processed_heights: [
           Pair(
             header_mod.get_height(header),
             client_datum_mod.processed_height_from_time(
-              processed_time_for_update(header, client_datum.state.client_state),
+              processed_time_for_update(
+                consensus_state,
+                client_datum.state.client_state,
+              ),
             ),
           ),
         ],

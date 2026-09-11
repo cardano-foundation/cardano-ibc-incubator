@@ -12,6 +12,7 @@ export type UpdateClientOperatorDto = {
   clientTokenUnit: string;
   currentClientUtxo: UTxO;
   txValidFrom: bigint;
+  txValidTo: bigint;
 };
 
 export type UpdateOnMisbehaviourOperatorDto = {

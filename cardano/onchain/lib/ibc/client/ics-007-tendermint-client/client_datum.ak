@@ -60,6 +60,7 @@ pub fn update_state(
   output_datum: ClientDatum,
   header: Header,
   tx_valid_from: Int,
+  tx_valid_to: Int,
 ) -> Bool {
   let header_height = header_mod.get_height(header)
 
@@ -110,7 +111,9 @@ pub fn update_state(
       fn(item) { height_set.contains(retained, item.1st) },
     )
 
-  let processed_time = tx_valid_from * 1_000_000
+  // Inclusion cannot be later than the upper bound. Starting the delay here
+  // guarantees the full connection delay even when the lower bound is backdated.
+  let processed_time = tx_valid_to * 1_000_000
   let processed_height = processed_height_from_time(processed_time)
 
   let expected_cons_state =

@@ -32,6 +32,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/utils/validator_utils
 use spending_client
 
 type MockData {
@@ -121,12 +122,6 @@ fn setup() -> MockData {
   }
 }
 
-fn processed_time_for_update(header: Header, client_state: ClientState) -> Int {
-  (
-    ( header.signed_header.header.time - client_state.max_clock_drift ) / 1_000_000 + 1000
-  ) * 1_000_000
-}
-
 fn update_client_output_datum(
   client_datum: ClientDatum,
   output: Output,
@@ -179,7 +174,8 @@ fn prepare_update_client_capacity(
       output: update_client_output_datum(client_datum, mock.input.output),
     }
   let header_height = header_mod.get_height(header)
-  let processed_time = processed_time_for_update(header, client_state)
+  let processed_time =
+    ( ( trusted_timestamp + client_state.trusting_period ) / 1_000_000 - 1000 ) * 1_000_000
   let updated_datum =
     ClientDatum {
       ..client_datum,
@@ -288,4 +284,60 @@ test update_client_capacity_adjacent_mixed_45_succeeds() {
 
 test update_client_capacity_non_adjacent_mixed_45_succeeds() {
   check_update_client_capacity(non_adjacent_mixed_fixture)
+}
+
+test update_client_rejects_lower_bound_processing_metadata() {
+  let fixture = adjacent_all_signed_fixture
+  let valid_from =
+    validator_utils.get_tx_valid_from(fixture.transaction.validity_range)
+  let valid_to =
+    validator_utils.get_tx_valid_to(fixture.transaction.validity_range)
+  expect valid_to - valid_from > 60_000
+  expect [client_output, ..other_outputs] = fixture.transaction.outputs
+  expect InlineDatum(data) = client_output.datum
+  expect datum: ClientDatum = data
+  expect [Pair(height, _), ..old_times] = datum.state.processed_times
+  expect [_, ..old_heights] = datum.state.processed_heights
+  let backdated =
+    ClientDatum {
+      ..datum,
+      state: ClientDatumState {
+        ..datum.state,
+        processed_times: [Pair(height, valid_from * 1_000_000), ..old_times],
+        processed_heights: [
+          Pair(
+            height,
+            client_datum_mod.processed_height_from_time(valid_from * 1_000_000),
+          ),
+          ..old_heights
+        ],
+      },
+    }
+  !check_update_client_capacity(
+    CapacityFixture {
+      ..fixture,
+      transaction: Transaction {
+        ..fixture.transaction,
+        outputs: [
+          Output { ..client_output, datum: InlineDatum(backdated) },
+          ..other_outputs
+        ],
+      },
+    },
+  )
+}
+
+test update_client_requires_finite_upper_bound() fail {
+  let fixture = adjacent_all_signed_fixture
+  let valid_from =
+    validator_utils.get_tx_valid_from(fixture.transaction.validity_range)
+  check_update_client_capacity(
+    CapacityFixture {
+      ..fixture,
+      transaction: Transaction {
+        ..fixture.transaction,
+        validity_range: interval.after(valid_from),
+      },
+    },
+  )
 }
