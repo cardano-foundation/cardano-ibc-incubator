@@ -146,6 +146,26 @@ Separately, a counterparty must decide that a specific HostState update transact
 
 Height semantics must therefore be explicit. The proof height is the accepted Cardano anchor block number for the HostState root, not a Cardano slot number or necessarily the live chain tip. This asymmetry affects query semantics, proof heights, timeouts, and relayer waiting behaviour.
 
+## Tendermint Updates Across Transactions
+
+A 45-validator Tendermint update already exceeds Cardano's transaction size and execution limits in our [Injective benchmark](docs/tendermint-update-capacity.md#results). We explored SP1 to replace the validator evidence with a compact proof. Our [SP1 benchmark](https://github.com/cardano-foundation/cardano-ibc-incubator/pull/663#issuecomment-5530901453) reached about two minutes per proof on infrastructure estimated at $1,000–$2,000 per month. We set that approach aside because of the operating cost.
+
+[PR #710](https://github.com/cardano-foundation/cardano-ibc-incubator/pull/710) implements staged verification and is awaiting merge. It follows the same broad idea as [IBC Eureka's Solana client](https://github.com/cosmos/ibc-contracts/blob/2f11033999d57993f68d901e40a1e50fd350a1a2/ibc-solana/programs/ics07-tendermint/README.md#chunked-upload-instructions): verify signatures across transactions and retain authenticated results for the final update. The Gateway builds the transactions and Hermes signs and submits them. Each batch checks at most six validators and their commit signatures on-chain. It spends a temporary session UTxO and recreates it with the same NFT and updated verification progress and voting-power totals. The scripts keep every batch bound to the same header and require the validator-set hashes and voting-power thresholds to match before the session becomes `Complete`. The client changes only in the final transaction, which checks the session against the current client and time bounds then updates the client and HostState atomically and burns the session NFT.
+
+For a 45-validator update to the next height, this takes ten transactions. Multiple session transactions can land in the same block.
+
+```mermaid
+flowchart TD
+    A["Tx 1: create session UTxO and NFT"]
+    B["Txs 2–9: eight batches of at most six validators<br/>Each spends and recreates the session UTxO"]
+    C["Last batch writes Complete<br/>Wait for confirmation and indexing"]
+    D["Gateway builds the final transaction<br/>using current client and HostState inputs"]
+    E["Tx 10: recheck client and time bounds<br/>Update client + HostState and burn session NFT"]
+    A --> B --> C --> D --> E
+```
+
+Skipping heights adds a pass over the trusted validator set and checks that enough of its voting power also signed the target header. Our batches depend on one another through the session UTxO, while Solana can preverify signatures in parallel. The [staged protocol](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/c5f72b66dbc42149b6db9fa8f109e7d66f4b3282/docs/tendermint-update-capacity.md) caps each validator set at `256`. A live 200- or 256-validator update has not yet been completed. Staged client freezing and recovery are not implemented yet.
+
 ## UTXO Contention
 
 TLDR: Root-changing IBC transactions are serialized through the canonical HostState UTxO. This is a throughput and liveness constraint independent of the selected Cardano light-client mode. Sharding or carefully constrained batching remains future work.
