@@ -77,6 +77,21 @@ Deno.test("every deployed channel operation is a mint-only policy", () => {
   }
 });
 
+Deno.test("chan_close_confirm is a mint-only policy in the compiled blueprint", () => {
+  assertEquals(
+    blueprint.validators
+      .map(({ title }) => title)
+      .filter((title) =>
+        title.startsWith("spending_channel/chan_close_confirm.")
+      )
+      .sort(),
+    [
+      "spending_channel/chan_close_confirm.chan_close_confirm.else",
+      "spending_channel/chan_close_confirm.chan_close_confirm.mint",
+    ],
+  );
+});
+
 Deno.test("client deployment pins the recovery withdrawal validator", () => {
   const recoveryValidator = blueprint.validators.find(
     ({ title }) => title === "recover_client.recover_client.withdraw",

@@ -217,9 +217,16 @@ fn module_callback(
       }
     }
 
-    OnChanOpenConfirm { channel_id } -> {
-      expect Some(_) =
-        transfer_channel_callback.validate_chan_open_confirm(
+    OnChanOpenConfirm { channel_id } | OnChanCloseConfirm { channel_id } -> {
+      let is_close =
+        when cb is {
+          OnChanCloseConfirm { .. } -> True
+          _ -> False
+        }
+      // Both confirmations bind the channel spend and successor to this port.
+      // The channel's operation policy verifies its proof and exact transition.
+      expect
+        transfer_channel_callback.validate_chan_confirm(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -227,15 +234,12 @@ fn module_callback(
           outputs,
           port_id,
           channel_id,
+          is_close,
         )
-      and {
-        transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
-        transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)?,
-      }
+      transfer_escrow.validate_preserved_module_state(spent_input, spend)
     }
 
     OnChanCloseInit { .. } -> False
-    OnChanCloseConfirm { .. } -> False
     OnRecvPacket { channel_id, packet_data, acknowledgement, data } -> {
       trace @"spend_transfer_module: Callback.OnRecvPacket branch"
 
@@ -246,7 +250,7 @@ fn module_callback(
       expect fungible_token_packet_data.validate_basic(data)
       trace @"spend_transfer_module: redeemer data is valid"
 
-      expect Some(channel_redeemer) =
+      let channel_redeemer =
         transfer_channel_callback.extract_channel_redeemer(
           inputs,
           redeemers,
@@ -381,7 +385,7 @@ fn module_callback(
     OnTimeoutPacket { channel_id, packet_data, data } -> {
       trace @"spend_transfer_module: Callback.OnTimeoutPacket branch"
 
-      expect Some(channel_redeemer) =
+      let channel_redeemer =
         transfer_channel_callback.extract_channel_redeemer(
           inputs,
           redeemers,
@@ -422,7 +426,7 @@ fn module_callback(
     OnAcknowledgementPacket { channel_id, packet_data, acknowledgement, data } -> {
       trace @"spend_transfer_module: Callback.OnAcknowledgementPacket branch"
 
-      expect Some(channel_redeemer) =
+      let channel_redeemer =
         transfer_channel_callback.extract_channel_redeemer(
           inputs,
           redeemers,
@@ -488,7 +492,7 @@ fn module_operator(
       expect fungible_token_packet_data.validate_basic(data)
       trace @"spend_transfer_module: redeemer data is valid"
 
-      expect Some(channel_redeemer) =
+      let channel_redeemer =
         transfer_channel_callback.extract_channel_redeemer(
           inputs,
           redeemers,

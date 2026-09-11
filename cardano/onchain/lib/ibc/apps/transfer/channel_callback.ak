@@ -5,8 +5,8 @@ use cardano/transaction.{Input, Mint, Output, Redeemer, ScriptPurpose, Spend}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
-  ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry, MintChannelRedeemer,
-  SpendChannelRedeemer,
+  ChanCloseConfirm, ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry,
+  MintChannelRedeemer, SpendChannelRedeemer,
 }
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/keys as channel_keys
@@ -164,7 +164,7 @@ pub fn validate_chan_open_ack(
   Some((channel_datum.state.channel, counterparty_version))
 }
 
-pub fn validate_chan_open_confirm(
+pub fn validate_chan_confirm(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
@@ -172,8 +172,9 @@ pub fn validate_chan_open_confirm(
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
-) -> Option<Channel> {
-  let (channel_datum, spend_channel_redeemer) =
+  is_close: Bool,
+) -> Bool {
+  let (_, spend_channel_redeemer) =
     channel_transition(
       inputs,
       redeemers,
@@ -183,8 +184,11 @@ pub fn validate_chan_open_confirm(
       port_id,
       channel_id,
     )
-  expect ChanOpenConfirm { .. } = spend_channel_redeemer
-  Some(channel_datum.state.channel)
+  when spend_channel_redeemer is {
+    ChanOpenConfirm { .. } -> !is_close
+    ChanCloseConfirm { .. } -> is_close
+    _ -> False
+  }
 }
 
 pub fn extract_channel_redeemer(
@@ -193,7 +197,7 @@ pub fn extract_channel_redeemer(
   channel_minting_policy_id: PolicyId,
   host_state_nft: AuthToken,
   channel_id: ByteArray,
-) -> Option<SpendChannelRedeemer> {
+) -> SpendChannelRedeemer {
   let (_, spend_channel_redeemer) =
     require_channel_redeemer(
       inputs,
@@ -202,7 +206,7 @@ pub fn extract_channel_redeemer(
       host_state_nft,
       channel_id,
     )
-  Some(spend_channel_redeemer)
+  spend_channel_redeemer
 }
 
 pub fn channel_auth_token(
