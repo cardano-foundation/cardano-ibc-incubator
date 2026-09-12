@@ -39,4 +39,6 @@ RUN npm ci --legacy-peer-deps
 # Creates a "dist" folder with the production build
 RUN npm run build
 
+USER node
+
 CMD ["node", "dist/main.js"]
