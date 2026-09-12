@@ -6,8 +6,9 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   IBCModuleRedeemer, ModuleDataV1, ModuleOperatorV1, OnAcknowledgementPacket,
   OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm,
   OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnSendPacket, OnTimeoutPacket,
-  Operator, OtherModuleData, OtherModuleOperator,
+  Operator, OtherModuleData, OtherModuleOperator, ReclaimModule,
 }
+use ibc/utils/shutdown
 use ibc/utils/validator_utils
 
 pub type MockModulePacketData {
@@ -25,33 +26,43 @@ validator spend_mock_module(host_state_nft_policy_id: PolicyId) {
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, outputs, .. } = transaction
-
-    // A generic module witness is only meaningful as part of an authenticated
-    // IBC state transition. Requiring the HostState thread prevents standalone
-    // spends from removing a registered module's capability tokens.
-    let (host_state_input, _) =
-      validator_utils.require_host_state_thread(
-        inputs,
-        outputs,
+    if redeemer == ReclaimModule {
+      shutdown.reclaim(
+        transaction,
+        spent_output_ref,
         host_state_nft_policy_id,
+        assets.zero,
       )
-    expect InlineDatum(_) = host_state_input.output.datum
-
-    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
-    // One byte-identical continuation prevents moving, splitting, or mutating the registered module witness.
-    expect [continuing_output] =
-      list.filter(
-        outputs,
-        fn(output) { output_is_exact_continuation(output, spent_input.output) },
-      )
-
-    and {
-      output_is_exact_continuation(continuing_output, spent_input.output),
-      when redeemer is {
-        Callback(callback) -> validate_callback(callback)
-        Operator(operator) -> validate_operator(operator)
-      },
+    } else {
+      let Transaction { inputs, outputs, .. } = transaction
+      // A generic module witness is only meaningful as part of an authenticated
+      // IBC state transition. Requiring the HostState thread prevents standalone
+      // spends from removing a registered module's capability tokens.
+      let (host_state_input, _) =
+        validator_utils.require_host_state_thread(
+          inputs,
+          outputs,
+          host_state_nft_policy_id,
+        )
+      expect InlineDatum(_) = host_state_input.output.datum
+      expect Some(spent_input) =
+        transaction.find_input(inputs, spent_output_ref)
+      // One byte-identical continuation prevents moving, splitting, or mutating the registered module witness.
+      expect [continuing_output] =
+        list.filter(
+          outputs,
+          fn(output) {
+            output_is_exact_continuation(output, spent_input.output)
+          },
+        )
+      and {
+        output_is_exact_continuation(continuing_output, spent_input.output),
+        when redeemer is {
+          ReclaimModule -> fail
+          Callback(callback) -> validate_callback(callback)
+          Operator(operator) -> validate_operator(operator)
+        },
+      }
     }
   }
 

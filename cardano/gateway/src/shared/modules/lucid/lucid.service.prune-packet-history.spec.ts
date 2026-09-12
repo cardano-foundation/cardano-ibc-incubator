@@ -38,8 +38,11 @@ describe('LucidService prune packet history transaction', () => {
     };
 
     const dto: any = {
-      hostStateUtxo: { ...utxo('host', 0), datum: 'host-datum', datumHash: 'hash' },
-      channelUtxo: utxo('channel', 0),
+      hostStateUtxo: {
+        ...utxo('host', 0), datum: 'host-datum', datumHash: 'hash',
+        assets: { lovelace: 8_000_000n, 'host-policyhost-name': 1n, reserve: 7n },
+      },
+      channelUtxo: { ...utxo('channel', 0), assets: { lovelace: 9_000_000n, 'channel-token': 1n } },
       connectionUtxo: utxo('connection', 0),
       clientUtxo: utxo('client', 0),
       encodedHostStateRedeemer: 'host-redeemer',
@@ -62,6 +65,13 @@ describe('LucidService prune packet history transaction', () => {
     ]);
     expect(tx.readFrom).toHaveBeenNthCalledWith(2, [dto.connectionUtxo, dto.clientUtxo]);
     expect(tx.collectFrom).toHaveBeenCalledTimes(2);
+    // Pruning shrinks the datum but does not authorize a refund of its reserve.
+    expect(tx.pay.ToContract).toHaveBeenCalledWith(
+      'host-address', { kind: 'inline', value: 'updated-host' }, dto.hostStateUtxo.assets,
+    );
+    expect(tx.pay.ToContract).toHaveBeenCalledWith(
+      'channel-address', { kind: 'inline', value: 'updated-channel' }, dto.channelUtxo.assets,
+    );
     expect(tx.mintAssets).toHaveBeenCalledWith(
       { 'prune-policy': 1n },
       'encoded-auth-token',

@@ -563,6 +563,7 @@ export const createDeployment = async (
       verifyProofPolicyId,
       spendingChannel.base.hash,
       mintHostStateNFTPolicyId,
+      recoverClientScriptHash,
     ],
     Data.Tuple([
       Data.Bytes(),
@@ -571,7 +572,9 @@ export const createDeployment = async (
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
+      Data.Bytes(),
     ]) as unknown as [
+      string,
       string,
       string,
       string,
@@ -691,6 +694,7 @@ export const createDeployment = async (
     mintTransferEscrowShard.validator,
     mintVoucher.validator,
     spendTransferModule.validator,
+    voucherMetadata.validator,
   );
   const traceRegistryBenchmarkVoucher = await loadTraceRegistryBenchmarkVoucher(
     lucid,
@@ -705,6 +709,7 @@ export const createDeployment = async (
     traceRegistryDirectoryAuthToken,
     mintVoucher.policyId,
     traceRegistryBenchmarkVoucher?.policyId ?? "",
+    mintHostStateNFTPolicyId,
     traceRegistryNonceUtxos,
   );
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
@@ -868,7 +873,11 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[mintPortPolicyId],
       },
       voucherMetadata: {
+        title: "voucher_metadata.voucher_metadata.spend",
+        script: voucherMetadata.validator.script,
+        scriptHash: voucherMetadata.scriptHash,
         address: voucherMetadata.address,
+        refUtxo: refUtxosInfo[voucherMetadata.scriptHash],
       },
       ...(traceRegistryBenchmarkVoucher
         ? {
@@ -1742,8 +1751,14 @@ export const loadTransferModuleValidator = (
   mintChannelPolicyId: string,
   mintVoucherPolicyId: string,
   hostStateNftPolicyId: string,
-) =>
-  readValidator(
+) => {
+  const [, shutdownScriptHash] = readValidator(
+    "recover_client.recover_client.withdraw",
+    lucid,
+    [hostStateNftPolicyId],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+  return readValidator(
     "spending_transfer_module.spend_transfer_module.spend",
     lucid,
     [
@@ -1754,10 +1769,12 @@ export const loadTransferModuleValidator = (
       mintChannelPolicyId,
       mintVoucherPolicyId,
       hostStateNftPolicyId,
+      shutdownScriptHash,
     ],
     Data.Tuple([
       AuthTokenSchema,
       AuthTokenSchema,
+      Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
@@ -1771,8 +1788,10 @@ export const loadTransferModuleValidator = (
       string,
       string,
       string,
+      string,
     ],
   );
+};
 
 const deployTransferModule = async (
   lucid: LucidEvolution,
@@ -1804,11 +1823,16 @@ const deployTransferModule = async (
     name: identifierTokenName,
   };
   const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
-  const [, voucherMetadataScriptHash, voucherMetadataAddress] =
-    await readValidator(
-      "voucher_metadata.voucher_metadata.else",
-      lucid,
-    );
+  const [
+    voucherMetadataValidator,
+    voucherMetadataScriptHash,
+    voucherMetadataAddress,
+  ] = await readValidator(
+    "voucher_metadata.voucher_metadata.spend",
+    lucid,
+    [hostStateNFT.policy_id],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
   const [mintVoucherValidator, mintVoucherPolicyId] = await readValidator(
     "minting_voucher.mint_voucher.mint",
     lucid,
@@ -1852,8 +1876,11 @@ const deployTransferModule = async (
   ] = await readValidator(
     "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint",
     lucid,
-    [portToken],
-    Data.Tuple([AuthTokenSchema]) as unknown as [AuthToken],
+    [portToken, hostStateNFT.policy_id],
+    Data.Tuple([AuthTokenSchema, Data.Bytes()]) as unknown as [
+      AuthToken,
+      string,
+    ],
   );
 
   const [
@@ -1935,9 +1962,7 @@ const deployTransferModule = async (
             canonical: true,
           }),
         },
-        {
-          [hostStateUnit]: 1n,
-        },
+        hostStateUtxo.assets,
       )
       .pay.ToContract(
         spendTransferModuleAddress,
@@ -1970,6 +1995,8 @@ const deployTransferModule = async (
       policyId: mintTransferEscrowShardPolicyId,
     },
     voucherMetadata: {
+      validator: voucherMetadataValidator,
+      scriptHash: voucherMetadataScriptHash,
       address: voucherMetadataAddress,
     },
     spendTransferModule: {
@@ -2089,9 +2116,7 @@ const deployGenericModule = async (
             canonical: true,
           }),
         },
-        {
-          [hostStateUnit]: 1n,
-        },
+        hostStateUtxo.assets,
       )
       .pay.ToAddress(
         spendModuleAddress,
@@ -2124,6 +2149,7 @@ const deployTraceRegistry = async (
   directoryAuthToken: AuthToken,
   mintVoucherPolicyId: string,
   benchmarkVoucherPolicyId: string,
+  hostStatePolicyId: string,
   nonceUtxos: UTxO[],
 ) => {
   console.log("Create Trace Registry");
@@ -2152,15 +2178,18 @@ const deployTraceRegistry = async (
       directoryAuthToken,
       mintVoucherPolicyId,
       benchmarkVoucherPolicyId,
+      hostStatePolicyId,
     ],
     Data.Tuple([
       Data.Bytes(),
       AuthTokenSchema,
       Data.Bytes(),
       Data.Bytes(),
+      Data.Bytes(),
     ]) as unknown as [
       string,
       AuthToken,
+      string,
       string,
       string,
     ],

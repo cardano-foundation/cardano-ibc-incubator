@@ -32,8 +32,11 @@ describe('LucidService recover client wiring', () => {
 
   it('spends the subject, reads the substitute and invokes the recovery withdrawal', () => {
     const { service, txBuilder } = setup();
-    const host = { txHash: 'host', outputIndex: 0, datum: 'host-datum', datumHash: 'hash' };
-    const subject = { txHash: 'subject', outputIndex: 0 };
+    const host = {
+      txHash: 'host', outputIndex: 0, datum: 'host-datum', datumHash: 'hash',
+      assets: { lovelace: 8_000_000n, 'host-policyhost-token': 1n, reserve: 7n },
+    };
+    const subject = { txHash: 'subject', outputIndex: 0, assets: { lovelace: 9_000_000n, 'subject-unit': 1n } };
     const substitute = { txHash: 'substitute', outputIndex: 0 };
 
     const result = service.createUnsignedRecoverClientTransaction(
@@ -64,6 +67,31 @@ describe('LucidService recover client wiring', () => {
     expect(txBuilder.collectFrom).toHaveBeenNthCalledWith(2, [subject], 'subject-redeemer');
     expect(txBuilder.withdraw).toHaveBeenCalledWith('stake_test1recovery', 0n, 'withdrawal-redeemer');
     expect(txBuilder.addSignerKey).toHaveBeenCalledWith('signer-key-hash');
+    expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
+      'addr_test1host', { kind: 'inline', value: 'new-host-datum' }, host.assets,
+    );
+    expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
+      'addr_test1client', { kind: 'inline', value: 'new-subject-datum' }, subject.assets,
+    );
+  });
+
+  it('preserves the client and HostState reserves during a normal client update', () => {
+    const { service, txBuilder } = setup();
+    const host = {
+      txHash: 'host', outputIndex: 0, datum: 'host-datum',
+      assets: { lovelace: 8_000_000n, 'host-policyhost-token': 1n, reserve: 7n },
+    };
+    const client = { txHash: 'client', outputIndex: 0, assets: { lovelace: 9_000_000n, 'client-unit': 1n } };
+    service.createUnsignedUpdateClientTransaction(
+      host, 'host-redeemer', client, 'client-redeemer',
+      'new-host-datum', 'new-client-datum', 'client-unit', 'signer',
+    );
+    expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
+      'addr_test1host', { kind: 'inline', value: 'new-host-datum' }, host.assets,
+    );
+    expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
+      'addr_test1client', { kind: 'inline', value: 'new-client-datum' }, client.assets,
+    );
   });
 
   it('fails clearly when the recovery validator is absent from the deployment', () => {

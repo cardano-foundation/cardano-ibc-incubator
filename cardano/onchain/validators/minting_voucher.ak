@@ -4,13 +4,13 @@ use aiken/collection/pairs
 use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
-use cardano/address.{from_script, from_verification_key}
+use cardano/address.{Script, from_script, from_verification_key}
 use cardano/assets.{AssetName, PolicyId, quantity_of, tokens}
 use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
 }
 use ibc/apps/transfer/mint_voucher_redeemer.{
-  BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
+  BurnVoucher, MintVoucher, MintVoucherRedeemer, ReclaimMetadata, RefundVoucher,
 }
 use ibc/apps/transfer/trace_registry.{
   Directory, InsertTrace, RolloverInsertTrace, Shard, TraceRegistryDatum,
@@ -30,6 +30,7 @@ use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/utils/shutdown
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
@@ -49,6 +50,33 @@ validator mint_voucher(
       transaction
 
     when redeemer is {
+      ReclaimMetadata -> {
+        expect _ = shutdown.authority(transaction, host_state_nft_policy_id)
+        expect shutdown.burns_only(mint, voucher_minting_policy_id)
+        list.all(
+          tokens(mint, voucher_minting_policy_id) |> dict.to_pairs,
+          fn(entry) {
+            let Pair(name, quantity) = entry
+            and {
+              voucher_asset_name.is_voucher_reference_token_name(name),
+              quantity == -1,
+              list.any(
+                inputs,
+                fn(input) {
+                  input.output.address.payment_credential == Script(
+                    voucher_metadata_script_hash,
+                  ) && quantity_of(
+                    input.output.value,
+                    voucher_minting_policy_id,
+                    name,
+                  ) == 1
+                },
+              ),
+            }
+          },
+        )
+      }
+
       MintVoucher {
         packet_source_port,
         packet_source_channel,

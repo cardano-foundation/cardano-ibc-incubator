@@ -2017,6 +2017,7 @@ export class PacketService {
               convertString2Hex(unescrowDenom),
               requestedDenomToken,
               transferAmount,
+              -transferAmount,
             );
             if (transferEscrowShard.kind !== 'existing') {
               throw new GrpcInvalidArgumentException(
@@ -2524,6 +2525,7 @@ export class PacketService {
         convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
         requestedDenomToken,
         transferAmount,
+        -transferAmount,
       );
       if (transferEscrowShard.kind !== 'existing') {
         throw new GrpcInvalidArgumentException(
@@ -2761,12 +2763,13 @@ export class PacketService {
           this.lucidService.findUtxoAtWithUnit(address, unit),
         tryFindUtxosAt: (address, options) =>
           this.lucidService.tryFindUtxosAt(address, options),
-        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount, balanceDelta) =>
           this.findTransferEscrowShard(
             channelId,
             packetDenom,
             denomToken,
             requiredAmount,
+            balanceDelta,
           ),
         createUnsignedSendPacketBurnTx: (dto) =>
           this.lucidService.createUnsignedSendPacketBurnTx(
@@ -3245,6 +3248,7 @@ export class PacketService {
         fTokenPacketData.denom,
         requestedDenomToken,
         transferAmount,
+        -transferAmount,
       );
       if (transferEscrowShard.kind !== 'existing') {
         throw new GrpcInvalidArgumentException(
@@ -3683,6 +3687,7 @@ export class PacketService {
     packetDenom: string,
     denomToken: string,
     requiredAmount?: bigint,
+    balanceDelta?: bigint,
   ): Promise<TransferEscrowShardLookup> {
     const deployment = this.configService.get('deployment');
     return findTransferEscrowShardWithPackage(
@@ -3704,6 +3709,7 @@ export class PacketService {
       packetDenom,
       denomToken,
       requiredAmount,
+      balanceDelta,
     );
   }
   private getTransferModuleIdentifier(): string {

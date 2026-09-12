@@ -329,6 +329,7 @@ fn check_module(f: Fixture) -> Bool {
     mock.channel_minting_policy_id,
     "mock voucher policy id",
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     f.module_redeemer,
     mock.module_input.output_reference,
@@ -730,6 +731,7 @@ test transfer_close_confirm_rejects_escrow_shard_callback() fail {
     TransferEscrowDatum {
       channel_id: setup().channel_id,
       denom: "6c6f76656c616365",
+      escrowed_amount: 0,
     }
   let shard =
     Output {

@@ -127,7 +127,6 @@ validator chan_close_confirm(
 
     and {
       channel_token == datum.token,
-      auth.contain_auth_token(updated_output, datum.token),
       channel_datum_mod.validate_chan_close_confirm(datum, updated_datum),
       valid_chan_close,
     }

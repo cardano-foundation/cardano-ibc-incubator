@@ -176,7 +176,6 @@ validator acknowledge_packet(
 
     and {
       channel_token == datum.token,
-      auth.contain_auth_token(updated_output, datum.token),
       is_connection_state_open,
       is_client_status_active,
       is_cur_chan_open,

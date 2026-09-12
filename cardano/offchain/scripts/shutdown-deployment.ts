@@ -1,4 +1,11 @@
 import {
+  assertNoDeploymentState,
+  assertStateDrained,
+  buildReclaimEscrowTx,
+  buildReclaimStateTx,
+  scanDeploymentState,
+} from "../src/shutdown.ts";
+import {
   applyDoubleCborEncoding,
   Data,
   fromUnit,
@@ -36,7 +43,12 @@ import {
   type HostStateRedeemer as HostStateRedeemerType,
 } from "../types/index.ts";
 
-type Command = "status" | "enter" | "reclaim-reference-scripts" | "finalize";
+type Command =
+  | "status"
+  | "enter"
+  | "reclaim-state"
+  | "reclaim-reference-scripts"
+  | "finalize";
 
 type ScriptArgs = {
   command: Command;
@@ -542,6 +554,7 @@ function usage(): never {
       "Usage:",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts status [--handler-json <path>]",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts enter (--grace-period-ms <ms> | --grace-period-end <unix-ms>) [--handler-json <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-state [--batch-size <n>] [--handler-json <path>]",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-reference-scripts [--batch-size <n>] [--handler-json <path>]",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts finalize [--handler-json <path>]",
       "",
@@ -566,6 +579,7 @@ function parseArgs(argv: string[]): ScriptArgs {
   if (
     command !== "status" &&
     command !== "enter" &&
+    command !== "reclaim-state" &&
     command !== "reclaim-reference-scripts" &&
     command !== "finalize"
   ) {
@@ -945,6 +959,15 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
       utxo: `${hostUtxo.txHash}#${hostUtxo.outputIndex}`,
       shutdown: hostDatum.control.shutdown,
     },
+    state: (await scanDeploymentState(lucid, deployment)).map((group) => ({
+      kind: group.kind,
+      remainingUtxos: group.utxos.length,
+      lovelace: group.utxos.reduce(
+        (total, utxo) => total + (utxo.assets.lovelace ?? 0n),
+        0n,
+      ),
+    })),
+    recoveryStakeRegistered: await recoveryStakeRegistered(deployment),
     referenceScripts: {
       address: referenceValidatorAddress,
       liveUtxos: referenceScriptUtxos.length,
@@ -1023,11 +1046,166 @@ async function enterShutdown(
   }));
 }
 
+async function recoveryStakeRegistered(
+  deployment: DeploymentTemplate,
+): Promise<boolean> {
+  const recovery = deployment.validators.recoverClient;
+  if (!recovery) return false;
+  const ogmiosUrl = Deno.env.get("OGMIOS_URL");
+  if (!ogmiosUrl) {
+    throw new Error(
+      "OGMIOS_URL is required to check the recovery staking deposit",
+    );
+  }
+  const response = await queryOgmiosJsonRpc(
+    ogmiosUrl,
+    "queryLedgerState/rewardAccountSummaries",
+    { keys: [recovery.address] },
+    30000,
+    5,
+  );
+  if (response.error) {
+    throw new Error(
+      `Cannot check recovery staking registration: ${toJson(response.error)}`,
+    );
+  }
+  if (response.result === null) return false;
+  if (
+    !response.result || typeof response.result !== "object" ||
+    Array.isArray(response.result)
+  ) {
+    throw new Error("Ogmios did not return recovery staking registration data");
+  }
+  return Object.keys(response.result).length !== 0;
+}
+
+export function buildReclaimRecoveryStakeTx(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+  hostUtxo: UTxO,
+  signerKeyHash: string,
+  validFrom: number,
+) {
+  const recovery = deployment.validators.recoverClient;
+  if (!recovery) throw new Error("Missing client recovery validator");
+  return lucid.newTx().readFrom([hostUtxo, recovery.refUtxo])
+    .deregister.Stake(recovery.address, Data.void())
+    .addSignerKey(signerKeyHash)
+    .validFrom(validFrom).validTo(validFrom + TX_VALIDITY_WINDOW_MS);
+}
+
+async function requireCleanupComplete(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+) {
+  assertNoDeploymentState(await scanDeploymentState(lucid, deployment));
+  if (await recoveryStakeRegistered(deployment)) {
+    throw new Error(
+      "Reclaim the client recovery staking deposit before removing scripts or finalizing shutdown",
+    );
+  }
+}
+
+async function reclaimState(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+  batchSize: number,
+) {
+  const walletAddress = await lucid.wallet().address();
+  const signer = deployerPaymentKeyHash(walletAddress);
+  const hostUtxo = await getHostStateUtxo(lucid, deployment);
+  const graceEnd = requireShutdownGracePeriodEnd(
+    decodeHostStateDatum(hostUtxo),
+  );
+  let groups = await scanDeploymentState(lucid, deployment);
+  assertStateDrained(groups, deployment);
+  requireGracePeriodElapsed(graceEnd);
+
+  // Each shard is removed from the authenticated registry before the root can close.
+  while (true) {
+    const transfer = groups.find((group) => group.kind === "transfer");
+    const policy = deployment.validators.mintTransferEscrowShard.scriptHash;
+    const shard = transfer?.utxos.find((utxo) =>
+      Object.keys(utxo.assets).some((unit) => unit.startsWith(policy))
+    );
+    if (!transfer || !shard) break;
+    const tx = await buildReclaimEscrowTx(
+      lucid,
+      deployment,
+      hostUtxo,
+      transfer,
+      shard,
+      walletAddress,
+      requireGracePeriodElapsed(graceEnd),
+    );
+    await submitTx(() => tx, lucid, "ReclaimEmptyEscrow");
+    groups = await scanDeploymentState(lucid, deployment);
+    assertStateDrained(groups, deployment);
+  }
+
+  for (
+    const kind of [
+      "channel",
+      "connection",
+      "client",
+      "transfer",
+      "module",
+      "trace",
+      "metadata",
+    ] as const
+  ) {
+    while (true) {
+      groups = await scanDeploymentState(lucid, deployment);
+      assertStateDrained(groups, deployment);
+      const group = groups.find((entry) =>
+        entry.kind === kind && entry.utxos.length > 0
+      );
+      if (!group) break;
+      const batch = {
+        ...group,
+        utxos: group.utxos.slice(0, kind === "client" ? 1 : batchSize),
+      };
+      await submitTx(
+        () =>
+          buildReclaimStateTx(
+            lucid,
+            deployment,
+            hostUtxo,
+            batch,
+            walletAddress,
+            requireGracePeriodElapsed(graceEnd),
+          ),
+        lucid,
+        `Reclaim ${kind}`,
+      );
+    }
+  }
+  if (await recoveryStakeRegistered(deployment)) {
+    await submitTx(
+      () =>
+        buildReclaimRecoveryStakeTx(
+          lucid,
+          deployment,
+          hostUtxo,
+          signer,
+          requireGracePeriodElapsed(graceEnd),
+        ),
+      lucid,
+      "ReclaimRecoveryStakingDeposit",
+    );
+  }
+  await requireCleanupComplete(lucid, deployment);
+  console.log(
+    "Deployment state and the recovery staking deposit have been reclaimed.",
+  );
+}
+
 async function reclaimReferenceScripts(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
   batchSize: number,
 ) {
+  await requireCleanupComplete(lucid, deployment);
   const walletAddress = await lucid.wallet().address();
   const signerKeyHash = deployerPaymentKeyHash(walletAddress);
   const hostUtxo = await getHostStateUtxo(lucid, deployment);
@@ -1082,6 +1260,7 @@ async function finalizeShutdown(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
 ) {
+  await requireCleanupComplete(lucid, deployment);
   const walletAddress = await lucid.wallet().address();
   const signerKeyHash = deployerPaymentKeyHash(walletAddress);
   const hostUtxo = await getHostStateUtxo(lucid, deployment);
@@ -1176,6 +1355,9 @@ async function main() {
       await enterShutdown(lucid, deployment, args);
       break;
     }
+    case "reclaim-state":
+      await reclaimState(lucid, deployment, args.batchSize);
+      break;
     case "reclaim-reference-scripts":
       await reclaimReferenceScripts(lucid, deployment, args.batchSize);
       break;

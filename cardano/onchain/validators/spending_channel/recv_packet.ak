@@ -162,7 +162,6 @@ validator recv_packet(
 
     and {
       channel_token == datum.token,
-      auth.contain_auth_token(updated_output, datum.token),
       packet_mod.validate_basic(packet)?,
       (packet.destination_port == port_id)?,
       (packet.destination_channel == channel_id)?,

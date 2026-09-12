@@ -3,12 +3,14 @@ import { type Data } from '@lucid-evolution/lucid';
 export type TransferEscrowDatum = {
   channel_id: string;
   denom: string;
+  escrowed_amount: bigint;
 };
 
 function transferEscrowDatumSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
   return Lucid.Data.Object({
     channel_id: Lucid.Data.Bytes(),
     denom: Lucid.Data.Bytes(),
+    escrowed_amount: Lucid.Data.Integer(),
   });
 }
 

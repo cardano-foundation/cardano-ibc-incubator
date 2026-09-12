@@ -8,4 +8,9 @@ pub type TransferEscrowShardRedeemer {
     data: FungibleTokenPacketData,
     registry_siblings: List<ByteArray>,
   }
+  ReclaimEscrowShard {
+    channel_id: ByteArray,
+    denom: ByteArray,
+    registry_siblings: List<ByteArray>,
+  }
 }

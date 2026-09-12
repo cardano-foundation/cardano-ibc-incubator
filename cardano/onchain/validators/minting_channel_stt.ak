@@ -3,13 +3,18 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
+use cardano/address
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
+  Withdraw,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
+}
+use ibc/client/ics_007_tendermint_client/client_redeemer.{
+  ReclaimStateWithdrawal,
 }
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
@@ -44,6 +49,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   CreateChannel, HostStateRedeemer,
 }
+use ibc/utils/shutdown
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
@@ -82,120 +88,122 @@ validator mint_channel_stt(
   verify_proof_policy_id: PolicyId,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
   host_state_nft_policy_id: PolicyId,
+  shutdown_script_hash: ByteArray,
 ) {
   mint(
-    redeemer: MintChannelRedeemer,
+    redeemer: Data,
     channel_minting_policy_id: PolicyId,
     transaction: Transaction,
   ) {
-    let Transaction {
-      inputs,
-      reference_inputs,
-      outputs,
-      mint,
-      validity_range,
-      redeemers,
-      ..
-    } = transaction
-
-    expect Some(host_state_input) =
-      find_host_state_input(inputs, host_state_nft_policy_id)
-
-    expect InlineDatum(datum) = host_state_input.output.datum
-    expect host_state_datum: HostStateDatum = datum
-    let channel_id_sequence = host_state_datum.state.next_channel_sequence
-
-    expect [channel_output] =
-      transaction.find_script_outputs(outputs, spend_channel_script_hash)
-    expect channel_output_datum: ChannelDatum =
-      validator_utils.get_inline_datum(channel_output)
-
-    expect [connection_id] = channel_output_datum.state.channel.connection_hops
-
-    let (connection_datum, client_datum) =
-      validator_utils.validate_referred_connection_and_client(
-        reference_inputs,
-        channel_output_datum.token.name,
-        client_minting_policy_id,
-        connection_minting_policy_id,
-        connection_id,
-      )
-
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-    let client_state_active =
-      client_state.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == Active
-
-    let id_str = string_utils.int_to_string(channel_id_sequence)
-    let host_state_nft =
-      AuthToken {
-        policy_id: host_state_nft_policy_id,
-        name: host_state_token_name,
-      }
-    let channel_token_name =
-      auth.generate_token_name(
-        host_state_nft,
-        channel_keys.channel_prefix,
-        id_str,
-      )
-    let channel_token =
-      AuthToken {
-        policy_id: channel_minting_policy_id,
-        name: channel_token_name,
-      }
-
-    expect [connection_version] = connection_datum.state.versions
-    let valid_feature =
-      order.string(channel_output_datum.state.channel.ordering)
-        |> version.verify_supported_feature(connection_version, _)
-
-    let channel_id =
-      string_utils.int_to_string(channel_id_sequence)
-        |> channel_keys.format_channel_identifier()
-
-    let ibc_module_redeemer =
-      validator_utils.extract_module_redeemer(
+    if shutdown.burns_only(transaction.mint, channel_minting_policy_id) {
+      expect Some(withdrawal_redeemer) =
+        pairs.get_first(
+          transaction.redeemers,
+          Withdraw(address.Script(shutdown_script_hash)),
+        )
+      let expected: Data = ReclaimStateWithdrawal
+      withdrawal_redeemer == expected
+    } else {
+      expect redeemer: MintChannelRedeemer = redeemer
+      let Transaction {
         inputs,
+        reference_inputs,
+        outputs,
+        mint,
+        validity_range,
         redeemers,
-        port_minting_policy_id,
-        channel_output_datum.port_id,
-        host_state_nft_policy_id,
-      )
-    expect Callback(ibc_module_callback) = ibc_module_redeemer
-
-    let valid_channel =
-      when redeemer is {
-        ChanOpenInit -> and {
-            validate_chan_open_init(channel_output_datum, channel_token)?,
-            (ibc_module_callback == OnChanOpenInit { channel_id })?,
-          }
-        ChanOpenTry { counterparty_version, proof_init, proof_height } -> and {
-            (connection_datum.state.state == connection_state.Open)?,
-            validate_chan_open_try(channel_output_datum, channel_token)?,
-            validate_chan_open_try_proof(
-              connection_datum.state,
-              client_datum.state,
-              channel_output_datum,
-              counterparty_version,
-              proof_init,
-              proof_height,
-              redeemers,
-              verify_proof_policy_id,
-            )?,
-            (ibc_module_callback == OnChanOpenTry { channel_id })?,
-          }
+        ..
+      } = transaction
+      expect Some(host_state_input) =
+        find_host_state_input(inputs, host_state_nft_policy_id)
+      expect InlineDatum(datum) = host_state_input.output.datum
+      expect host_state_datum: HostStateDatum = datum
+      let channel_id_sequence = host_state_datum.state.next_channel_sequence
+      expect [channel_output] =
+        transaction.find_script_outputs(outputs, spend_channel_script_hash)
+      expect channel_output_datum: ChannelDatum =
+        validator_utils.get_inline_datum(channel_output)
+      expect [connection_id] =
+        channel_output_datum.state.channel.connection_hops
+      let (connection_datum, client_datum) =
+        validator_utils.validate_referred_connection_and_client(
+          reference_inputs,
+          channel_output_datum.token.name,
+          client_minting_policy_id,
+          connection_minting_policy_id,
+          connection_id,
+        )
+      let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
+      let client_state_active =
+        client_state.status(
+          client_datum.state.client_state,
+          tx_valid_to * 1_000_000,
+          client_datum.state.consensus_states,
+        ) == Active
+      let id_str = string_utils.int_to_string(channel_id_sequence)
+      let host_state_nft =
+        AuthToken {
+          policy_id: host_state_nft_policy_id,
+          name: host_state_token_name,
+        }
+      let channel_token_name =
+        auth.generate_token_name(
+          host_state_nft,
+          channel_keys.channel_prefix,
+          id_str,
+        )
+      let channel_token =
+        AuthToken {
+          policy_id: channel_minting_policy_id,
+          name: channel_token_name,
+        }
+      expect [connection_version] = connection_datum.state.versions
+      let valid_feature =
+        order.string(channel_output_datum.state.channel.ordering)
+          |> version.verify_supported_feature(connection_version, _)
+      let channel_id =
+        string_utils.int_to_string(channel_id_sequence)
+          |> channel_keys.format_channel_identifier()
+      let ibc_module_redeemer =
+        validator_utils.extract_module_redeemer(
+          inputs,
+          redeemers,
+          port_minting_policy_id,
+          channel_output_datum.port_id,
+          host_state_nft_policy_id,
+        )
+      expect Callback(ibc_module_callback) = ibc_module_redeemer
+      let valid_channel =
+        when redeemer is {
+          ChanOpenInit -> and {
+              validate_chan_open_init(channel_output_datum, channel_token)?,
+              (ibc_module_callback == OnChanOpenInit { channel_id })?,
+            }
+          ChanOpenTry { counterparty_version, proof_init, proof_height } ->
+            and {
+              (connection_datum.state.state == connection_state.Open)?,
+              validate_chan_open_try(channel_output_datum, channel_token)?,
+              validate_chan_open_try_proof(
+                connection_datum.state,
+                client_datum.state,
+                channel_output_datum,
+                counterparty_version,
+                proof_init,
+                proof_height,
+                redeemers,
+                verify_proof_policy_id,
+              )?,
+              (ibc_module_callback == OnChanOpenTry { channel_id })?,
+            }
+        }
+      and {
+        valid_feature?,
+        client_state_active?,
+        auth.mint_auth_token(mint, channel_token)?,
+        auth.contains_only_auth_tokens(channel_output, [channel_token])?,
+        valid_channel?,
+        spent_host_state_for_create_channel(redeemers, host_state_input)?,
       }
-
-    and {
-      valid_feature?,
-      client_state_active?,
-      auth.mint_auth_token(mint, channel_token)?,
-      auth.contains_only_auth_tokens(channel_output, [channel_token])?,
-      valid_channel?,
-      spent_host_state_for_create_channel(redeemers, host_state_input)?,
     }
   }
 

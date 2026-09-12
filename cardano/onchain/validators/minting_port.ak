@@ -12,6 +12,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, HostStateRedeemer,
 }
+use ibc/utils/shutdown
 
 // Keep the existing per-module capability-token bound aligned with the
 // protocol-wide HostState bound.
@@ -38,44 +39,49 @@ fn find_host_state_input(
 
 validator mint_port(host_state_nft_policy_id: PolicyId) {
   mint(
-    redeemer: MintPortRedeemer,
+    redeemer: Data,
     port_minting_policy_id: PolicyId,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
-    trace @"mint_port: extracted context data"
-
-    let MintPortRedeemer { spend_module_script_hash, port_id } = redeemer
-
-    // The full textual identifier is authenticated by HostState and committed at
-    // `ports/{port_id}`. Hash it to the fixed 32-byte Cardano asset-name domain.
-    let port_token_name = port_keys.port_token_name(port_id)
-    let port_token =
-      AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
-
-    expect Some(host_state_input) =
-      find_host_state_input(inputs, host_state_nft_policy_id)
-    expect Some(spent_host_state_redeemer) =
-      pairs.get_first(redeemers, Spend(host_state_input.output_reference))
-    expect host_state_redeemer: HostStateRedeemer = spent_host_state_redeemer
-    // Minting must atomically bind this exact port, script, and token in HostState.
-    let valid_host_state_operator =
-      when host_state_redeemer is {
-        BindPort { port_id: bound_port_id, registration, .. } -> and {
-            bound_port_id == port_id,
-            registration.module_script_hash == spend_module_script_hash,
-            registration.port_token == port_token,
-          }
-        _ -> False
+    if shutdown.burns_only(transaction.mint, port_minting_policy_id) {
+      shutdown.reclaim_policy(
+        transaction,
+        port_minting_policy_id,
+        host_state_nft_policy_id,
+      )
+    } else {
+      expect redeemer: MintPortRedeemer = redeemer
+      let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
+      trace @"mint_port: extracted context data"
+      let MintPortRedeemer { spend_module_script_hash, port_id } = redeemer
+      // The full textual identifier is authenticated by HostState and committed at
+      // `ports/{port_id}`. Hash it to the fixed 32-byte Cardano asset-name domain.
+      let port_token_name = port_keys.port_token_name(port_id)
+      let port_token =
+        AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+      expect Some(host_state_input) =
+        find_host_state_input(inputs, host_state_nft_policy_id)
+      expect Some(spent_host_state_redeemer) =
+        pairs.get_first(redeemers, Spend(host_state_input.output_reference))
+      expect host_state_redeemer: HostStateRedeemer = spent_host_state_redeemer
+      // Minting must atomically bind this exact port, script, and token in HostState.
+      let valid_host_state_operator =
+        when host_state_redeemer is {
+          BindPort { port_id: bound_port_id, registration, .. } -> and {
+              bound_port_id == port_id,
+              registration.module_script_hash == spend_module_script_hash,
+              registration.port_token == port_token,
+            }
+          _ -> False
+        }
+      expect [module_output] =
+        transaction.find_script_outputs(outputs, spend_module_script_hash)
+      and {
+        valid_host_state_operator?,
+        auth.mint_auth_token(mint, port_token)?,
+        auth.contain_auth_token(module_output, port_token)?,
+        valid_number_of_ports(module_output, port_minting_policy_id)?,
       }
-    expect [module_output] =
-      transaction.find_script_outputs(outputs, spend_module_script_hash)
-
-    and {
-      valid_host_state_operator?,
-      auth.mint_auth_token(mint, port_token)?,
-      auth.contain_auth_token(module_output, port_token)?,
-      valid_number_of_ports(module_output, port_minting_policy_id)?,
     }
   }
 
