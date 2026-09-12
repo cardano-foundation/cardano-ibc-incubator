@@ -244,7 +244,7 @@ Deno.test("the production transfer validator fits the safe reference-script ceil
   // Keep 750 bytes for the signed transaction and 200 bytes for the reference
   // output around the script itself: 16,384 - 750 - 200 = 15,434 bytes.
   const safeReferenceScriptCeiling = 16_384 - 750 - 200;
-  assertEquals(appliedScriptBytes, 15_387);
+  assertEquals(appliedScriptBytes, 15_417);
   assertEquals(safeReferenceScriptCeiling, 15_434);
   assert(
     appliedScriptBytes <= safeReferenceScriptCeiling,

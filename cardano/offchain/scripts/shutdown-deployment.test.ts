@@ -17,6 +17,7 @@ import {
   encodeHostStateSealModuleRedeemer,
   isRetiredModulePortKey,
   lifecycleTransitionTiming,
+  MIN_SHUTDOWN_GRACE_PERIOD_MS,
   parseDeployment,
   parseOgmiosLiveReferenceOutRefs,
   reconcileReferenceUtxoViews,
@@ -26,6 +27,7 @@ import {
   requireRegisteredReferenceCount,
   retiredModulePortKey,
   selectReferenceReclaimSuffix,
+  shutdownTiming,
 } from "./shutdown-deployment.ts";
 
 const REQUIRED_REFERENCE_VALIDATORS = [
@@ -706,14 +708,14 @@ Deno.test("shutdown writes exact ledger-slot timestamps into HostState", () => {
   const shuttingDown = buildShutdownEntryDatum(
     activeDatum,
     timing.validTo,
-    900_000,
+    timing.validTo + MIN_SHUTDOWN_GRACE_PERIOD_MS,
   );
   assertEquals(shuttingDown.state.version, 8n);
   assertEquals(shuttingDown.state.last_update_time, 601_000n);
   assertEquals(shuttingDown.shutdown, {
     ShuttingDown: {
       initiated_at: 601_000n,
-      grace_period_end: 900_000n,
+      grace_period_end: BigInt(timing.validTo + MIN_SHUTDOWN_GRACE_PERIOD_MS),
     },
   });
 
@@ -734,6 +736,55 @@ Deno.test("shutdown writes exact ledger-slot timestamps into HostState", () => {
     () => lifecycleTransitionTiming(Number.MAX_SAFE_INTEGER),
     Error,
     "safe integers",
+  );
+});
+
+Deno.test("shutdown gives a full 24 hours after transaction expiry", () => {
+  const timing = shutdownTiming(1_000, { gracePeriodMs: 86_400_000 });
+  assertEquals(timing, {
+    validFrom: 1_000,
+    validTo: 601_000,
+    gracePeriodEnd: 87_001_000,
+  });
+  assertEquals(
+    shutdownTiming(1_000, { gracePeriodEnd: timing.gracePeriodEnd }),
+    timing,
+  );
+  assertEquals(
+    shutdownTiming(1_000, { gracePeriodMs: 2 * 86_400_000 }).gracePeriodEnd,
+    timing.validTo + 2 * 86_400_000,
+  );
+});
+
+Deno.test("shutdown rejects grace shorter than 24 hours after expiry", () => {
+  for (
+    const grace of [
+      { gracePeriodMs: 1 },
+      { gracePeriodMs: 86_400_000 - 1 },
+      { gracePeriodEnd: 601_000 + 86_400_000 - 1 },
+      { gracePeriodEnd: 1_000 + 86_400_000 },
+      { gracePeriodMs: Number.MAX_SAFE_INTEGER },
+      { gracePeriodEnd: Number.NaN },
+    ]
+  ) {
+    assertThrows(
+      () => shutdownTiming(1_000, grace),
+      Error,
+      "of grace after transaction expiry",
+    );
+  }
+});
+
+Deno.test("shutdown requires exactly one grace duration or deadline", () => {
+  assertThrows(() => shutdownTiming(1_000, {}), Error, "exactly one");
+  assertThrows(
+    () =>
+      shutdownTiming(1_000, {
+        gracePeriodMs: 86_400_000,
+        gracePeriodEnd: 87_001_000,
+      }),
+    Error,
+    "exactly one",
   );
 });
 

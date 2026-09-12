@@ -6027,7 +6027,11 @@ test host_state_bind_port_fails_if_output_missing() fail {
   )
 }
 
-test host_state_enter_shutdown_succeeds_with_deployer_signature() {
+fn check_host_state_enter_shutdown(
+  grace_period_end: Int,
+  initiated_at: Int,
+  signatories: List<ByteArray>,
+) -> Bool {
   let nft_policy: PolicyId =
     #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
   let host_script_hash =
@@ -6054,10 +6058,9 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
     HostState {
       ..old_state,
       version: old_state.version + 1,
-      last_update_time: 2000,
+      last_update_time: initiated_at,
     }
 
-  let grace_period_end = 5000
   let target_root =
     #"1111111111111111111111111111111111111111111111111111111111111111"
   let input_ref =
@@ -6123,7 +6126,7 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
       ..placeholder,
       inputs: [host_input],
       outputs: [host_output],
-      extra_signatories: [trusted_deployer],
+      extra_signatories: signatories,
       validity_range: interval.between(1_000, 2_000),
     }
 
@@ -6149,99 +6152,40 @@ test host_state_enter_shutdown_succeeds_with_deployer_signature() {
   )
 }
 
-test host_state_enter_shutdown_fails_without_deployer_signature() fail {
-  let nft_policy: PolicyId =
-    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
-  let host_script_hash =
-    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
-  let dummy_script_hash =
-    #"a15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b372"
-  let address = Address(Script(host_script_hash), None)
+test host_state_enter_shutdown_accepts_exactly_24_hours_after_expiry() {
+  check_host_state_enter_shutdown(2_000 + 86_400_000, 2_000, [trusted_deployer])
+}
 
-  let old_state =
-    HostState {
-      version: 0,
-      ibc_state_root: empty_ibc_state_root,
-      next_client_sequence: 0,
-      next_connection_sequence: 0,
-      next_channel_sequence: 0,
-      bound_port: [],
-      last_update_time: 1000,
-      live_client_count: 0,
-      live_connection_count: 0,
-      live_channel_count: 0,
-    }
-
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: 2000,
-    }
-
-  let grace_period_end = 5000
-  let input_ref =
-    OutputReference {
-      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
-      output_index: 0,
-    }
-
-  let host_input =
-    Input(
-      input_ref,
-      Output {
-        address,
-        value: from_asset(nft_policy, host_state_token_name, 1),
-        datum: InlineDatum(test_host_state_datum(old_state, nft_policy)),
-        reference_script: None,
-      },
-    )
-
-  let host_output =
-    Output {
-      address,
-      value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: InlineDatum(
-        test_host_state_datum_with_shutdown(
-          new_state,
-          nft_policy,
-          ShuttingDown {
-            initiated_at: new_state.last_update_time,
-            grace_period_end,
-          },
-        ),
-      ),
-      reference_script: None,
-    }
-
-  let transaction =
-    Transaction {
-      ..placeholder,
-      inputs: [host_input],
-      outputs: [host_output],
-      validity_range: interval.between(1_000, 2_000),
-    }
-
-  let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
-
-  host_state_stt.host_state_stt.spend(
-    nft_policy,
-    dummy_script_hash,
-    dummy_script_hash,
-    dummy_script_hash,
-    test_client_token().policy_id,
-    test_connection_token().policy_id,
-    test_channel_token().policy_id,
-    test_lifecycle_creation_policy(),
-    test_lifecycle_reclamation_policy(),
-    test_lifecycle_operational_policy(),
-    test_lifecycle_packet_policy(),
-    test_reference_script_hash(),
-    None,
-    redeemer,
-    input_ref,
-    transaction,
+test host_state_enter_shutdown_accepts_longer_grace() {
+  check_host_state_enter_shutdown(
+    2_000 + 2 * 86_400_000,
+    2_000,
+    [trusted_deployer],
   )
+}
+
+test host_state_enter_shutdown_rejects_one_millisecond_grace() fail {
+  check_host_state_enter_shutdown(2_001, 2_000, [trusted_deployer])
+}
+
+test host_state_enter_shutdown_rejects_less_than_24_hours() fail {
+  check_host_state_enter_shutdown(
+    2_000 + 86_400_000 - 1,
+    2_000,
+    [trusted_deployer],
+  )
+}
+
+test host_state_enter_shutdown_rejects_grace_measured_from_validity_start() fail {
+  check_host_state_enter_shutdown(1_000 + 86_400_000, 2_000, [trusted_deployer])
+}
+
+test host_state_enter_shutdown_rejects_backdated_initiation() fail {
+  check_host_state_enter_shutdown(1_001 + 86_400_000, 1_001, [trusted_deployer])
+}
+
+test host_state_enter_shutdown_fails_without_deployer_signature() fail {
+  check_host_state_enter_shutdown(2_000 + 86_400_000, 2_000, [])
 }
 
 test host_state_legacy_finalize_shutdown_is_rejected_after_grace_period() fail {

@@ -3446,51 +3446,21 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
   )
 }
 
-test on_chan_close_init_preserves_module_state() {
-  let fake_data = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [
-      fake_data.module_input,
-      fake_data.channel_input,
-      fake_data.host_state_input,
-    ]
-
-  //==========================arrange outputs=========================
-  let module_output = fake_data.module_input.output
-
-  let outputs = [module_output, fake_data.host_state_output]
-
-  //==========================arrange redeemers=========================
-  let module_redeemer: Redeemer =
-    Callback(OnChanCloseInit { channel_id: fake_data.channel_id })
+test on_chan_close_init_is_rejected_for_live_channel_with_funds() fail {
+  let (mock, _, tx) = close_confirm_fixture()
+  let callback = Callback(OnChanCloseInit { channel_id: mock.channel_id })
+  let callback_data: Redeemer = callback
   let channel_redeemer: Redeemer = ChanCloseInit
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(fake_data.module_input.output_reference), module_redeemer),
-      Pair(Spend(fake_data.channel_input.output_reference), channel_redeemer),
-    ]
-  //==========================arrange context=========================
-  let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spending_transfer_module.spend_transfer_module.spend(
-    fake_data.port_token,
-    fake_data.module_token,
-    fake_data.port_id,
-    fake_data.transfer_escrow_shard_policy_id,
-    fake_data.channel_minting_policy_id,
-    fake_data.voucher_minting_policy_id,
-    fake_data.host_state_nft_policy_id,
-    fake_data.lifecycle_marker_policy_id,
-    None,
-    module_redeemer,
-    fake_data.module_input.output_reference,
-    transaction,
+  check_channel_callback(
+    mock,
+    callback,
+    Transaction {
+      ..tx,
+      redeemers: [
+        Pair(Spend(mock.module_input.output_reference), callback_data),
+        Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      ],
+    },
   )
 }
 
@@ -3538,103 +3508,205 @@ test on_chan_close_init_rejects_module_datum_mutation() fail {
   )
 }
 
-test on_chan_close_confirm_preserves_module_state() {
-  let fake_data = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [
-      fake_data.module_input,
-      fake_data.channel_input,
-      fake_data.host_state_input,
-    ]
-
-  //==========================arrange outputs=========================
-  let module_output = fake_data.module_input.output
-
-  let outputs = [module_output, fake_data.host_state_output]
-
-  //==========================arrange redeemers=========================
-  let module_redeemer: Redeemer =
-    Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id })
-  let channel_redeemer: Redeemer =
-    ChanCloseConfirm {
-      proof_init: fake_data.proof,
-      proof_height: fake_data.proof_height,
+fn close_confirm_fixture() -> (MockData, IBCModuleRedeemer, Transaction) {
+  let mock = setup()
+  expect InlineDatum(raw_channel_datum) = mock.channel_input.output.datum
+  expect channel_datum: ChannelDatum = raw_channel_datum
+  let open_datum =
+    ChannelDatum {
+      ..channel_datum,
+      state: ChannelDatumState {
+        ..channel_datum.state,
+        channel: Channel {
+          ..channel_datum.state.channel,
+          state: chan_state_mod.Open,
+        },
+      },
     }
+  let closed_datum =
+    ChannelDatum {
+      ..open_datum,
+      state: ChannelDatumState {
+        ..open_datum.state,
+        channel: Channel {
+          ..open_datum.state.channel,
+          state: chan_state_mod.Closed,
+        },
+      },
+    }
+  let mock =
+    MockData {
+      ..mock,
+      channel_input: Input {
+        ..mock.channel_input,
+        output: Output {
+          ..mock.channel_input.output,
+          datum: InlineDatum(open_datum),
+        },
+      },
+      channel_output: Output {
+        ..mock.channel_output,
+        datum: InlineDatum(closed_datum),
+      },
+    }
+  let callback = Callback(OnChanCloseConfirm { channel_id: mock.channel_id })
+  let channel_redeemer: Redeemer =
+    ChanCloseConfirm { proof_init: mock.proof, proof_height: mock.proof_height }
+  let callback_data: Redeemer = callback
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock.module_input, mock.channel_input, mock.host_state_input],
+      outputs: [
+        mock.module_input.output,
+        mock.channel_output,
+        mock.host_state_output,
+      ],
+      redeemers: [
+        Pair(Spend(mock.module_input.output_reference), callback_data),
+        Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      ],
+    }
+  (mock, callback, tx)
+}
 
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(fake_data.module_input.output_reference), module_redeemer),
-      Pair(Spend(fake_data.channel_input.output_reference), channel_redeemer),
-    ]
-  //==========================arrange context=========================
-  let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
+fn check_channel_callback(
+  mock: MockData,
+  callback: IBCModuleRedeemer,
+  tx: Transaction,
+) -> Bool {
   spending_transfer_module.spend_transfer_module.spend(
-    fake_data.port_token,
-    fake_data.module_token,
-    fake_data.port_id,
-    fake_data.transfer_escrow_shard_policy_id,
-    fake_data.channel_minting_policy_id,
-    fake_data.voucher_minting_policy_id,
-    fake_data.host_state_nft_policy_id,
-    fake_data.lifecycle_marker_policy_id,
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.channel_minting_policy_id,
+    mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
-    module_redeemer,
-    fake_data.module_input.output_reference,
-    transaction,
+    callback,
+    mock.module_input.output_reference,
+    tx,
+  )
+}
+
+test on_chan_close_confirm_preserves_module_state() {
+  let (mock, callback, tx) = close_confirm_fixture()
+  check_channel_callback(mock, callback, tx)
+}
+
+test on_chan_close_confirm_rejects_close_init_transition() fail {
+  let (mock, callback, tx) = close_confirm_fixture()
+  let callback_data: Redeemer = callback
+  let channel_redeemer: Redeemer = ChanCloseInit
+  check_channel_callback(
+    mock,
+    callback,
+    Transaction {
+      ..tx,
+      redeemers: [
+        Pair(Spend(mock.module_input.output_reference), callback_data),
+        Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      ],
+    },
+  )
+}
+
+test on_chan_close_confirm_rejects_open_confirm_transition() fail {
+  let (mock, callback, tx) = close_confirm_fixture()
+  let callback_data: Redeemer = callback
+  let channel_redeemer: Redeemer =
+    ChanOpenConfirm { proof_ack: mock.proof, proof_height: mock.proof_height }
+  check_channel_callback(
+    mock,
+    callback,
+    Transaction {
+      ..tx,
+      redeemers: [
+        Pair(Spend(mock.module_input.output_reference), callback_data),
+        Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      ],
+    },
+  )
+}
+
+test on_chan_close_confirm_rejects_missing_channel_input() fail {
+  let (mock, callback, tx) = close_confirm_fixture()
+  check_channel_callback(
+    mock,
+    callback,
+    Transaction { ..tx, inputs: [mock.module_input, mock.host_state_input] },
+  )
+}
+
+test on_chan_close_confirm_rejects_wrong_channel_id() fail {
+  let (mock, _, tx) = close_confirm_fixture()
+  check_channel_callback(
+    mock,
+    Callback(OnChanCloseConfirm { channel_id: "channel-1" }),
+    tx,
+  )
+}
+
+test on_chan_close_confirm_rejects_wrong_input_port() fail {
+  let (mock, callback, tx) = close_confirm_fixture()
+  let wrong_port_input =
+    Input {
+      ..mock.channel_input,
+      output: channel_output_with_port(mock.channel_input.output, "other-port"),
+    }
+  check_channel_callback(
+    mock,
+    callback,
+    Transaction {
+      ..tx,
+      inputs: [mock.module_input, wrong_port_input, mock.host_state_input],
+    },
+  )
+}
+
+test on_chan_close_confirm_rejects_wrong_output_port() fail {
+  let (mock, callback, tx) = close_confirm_fixture()
+  check_channel_callback(
+    mock,
+    callback,
+    Transaction {
+      ..tx,
+      outputs: [
+        mock.module_input.output,
+        channel_output_with_port(mock.channel_output, "other-port"),
+        mock.host_state_output,
+      ],
+    },
+  )
+}
+
+test on_chan_close_confirm_rejects_missing_channel_output() fail {
+  let (mock, callback, tx) = close_confirm_fixture()
+  check_channel_callback(
+    mock,
+    callback,
+    Transaction {
+      ..tx,
+      outputs: [mock.module_input.output, mock.host_state_output],
+    },
   )
 }
 
 test on_chan_close_confirm_rejects_module_datum_mutation() fail {
-  let fake_data = setup()
-
-  let inputs =
-    [
-      fake_data.module_input,
-      fake_data.channel_input,
-      fake_data.host_state_input,
-    ]
-
-  let mutated_module_output =
-    module_output_with_voucher_delta(fake_data.module_input.output, 1)
-  let outputs = [mutated_module_output, fake_data.host_state_output]
-
-  let module_redeemer: Redeemer =
-    Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id })
-  let channel_redeemer: Redeemer =
-    ChanCloseConfirm {
-      proof_init: fake_data.proof,
-      proof_height: fake_data.proof_height,
-    }
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(fake_data.module_input.output_reference), module_redeemer),
-      Pair(Spend(fake_data.channel_input.output_reference), channel_redeemer),
-    ]
-
-  let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spending_transfer_module.spend_transfer_module.spend(
-    fake_data.port_token,
-    fake_data.module_token,
-    fake_data.port_id,
-    fake_data.transfer_escrow_shard_policy_id,
-    fake_data.channel_minting_policy_id,
-    fake_data.voucher_minting_policy_id,
-    fake_data.host_state_nft_policy_id,
-    fake_data.lifecycle_marker_policy_id,
-    None,
-    module_redeemer,
-    fake_data.module_input.output_reference,
-    transaction,
+  let (mock, callback, tx) = close_confirm_fixture()
+  check_channel_callback(
+    mock,
+    callback,
+    Transaction {
+      ..tx,
+      outputs: [
+        module_output_with_voucher_delta(mock.module_input.output, 1),
+        mock.channel_output,
+        mock.host_state_output,
+      ],
+    },
   )
 }
 

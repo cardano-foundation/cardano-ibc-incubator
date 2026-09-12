@@ -67,6 +67,8 @@ const DEFAULT_HANDLER_JSON_PATH = "./deployments/handler.json";
 const DEFAULT_REFERENCE_RECLAIM_BATCH_SIZE = 10;
 const DEFAULT_KUPMIOS_SUBMIT_TIMEOUT_MS = 60000;
 const TX_VALIDITY_WINDOW_MS = 10 * 60 * 1000;
+// Keep aligned with the on-chain minimum shutdown grace period.
+export const MIN_SHUTDOWN_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
 const HOST_STATE_PROOF_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const OGMIOS_UTXO_QUERY_BATCH_SIZE = 50;
 const RETIRED_MODULE_PORT_PREFIX = "00";
@@ -199,6 +201,28 @@ export function lifecycleTransitionTiming(validFrom: number): {
     );
   }
   return { validFrom, validTo, proofWindowEnd };
+}
+
+export function shutdownTiming(
+  validFrom: number,
+  grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
+) {
+  if (
+    (grace.gracePeriodEnd === undefined) === (grace.gracePeriodMs === undefined)
+  ) {
+    throw new Error("Specify exactly one grace period duration or end time");
+  }
+  const { validTo } = lifecycleTransitionTiming(validFrom);
+  const gracePeriodEnd = grace.gracePeriodEnd ?? validTo + grace.gracePeriodMs!;
+  if (
+    !Number.isSafeInteger(gracePeriodEnd) ||
+    gracePeriodEnd - validTo < MIN_SHUTDOWN_GRACE_PERIOD_MS
+  ) {
+    throw new Error(
+      `Shutdown requires at least ${MIN_SHUTDOWN_GRACE_PERIOD_MS} ms of grace after transaction expiry ${validTo}`,
+    );
+  }
+  return { validFrom, validTo, gracePeriodEnd };
 }
 
 export function buildShutdownEntryDatum(
@@ -2018,7 +2042,7 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
 async function enterShutdown(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
-  gracePeriodEnd: number,
+  grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
 ) {
   const hostUtxo = await getHostStateUtxo(lucid, deployment);
   const currentDatum = decodeHostStateDatum(hostUtxo);
@@ -2035,14 +2059,10 @@ async function enterShutdown(
     );
   }
 
-  const { validFrom, validTo } = lifecycleTransitionTiming(
+  const { validFrom, validTo, gracePeriodEnd } = shutdownTiming(
     ledgerAlignedValidFrom(lucid, Date.now()),
+    grace,
   );
-  if (gracePeriodEnd <= validTo) {
-    throw new Error(
-      `grace period end ${gracePeriodEnd} must be after the transaction upper validity bound ${validTo}`,
-    );
-  }
 
   const walletAddress = await lucid.wallet().address();
   const signerKeyHash = deployerPaymentKeyHash(walletAddress);
@@ -2653,9 +2673,7 @@ async function main() {
       await status(lucid, deployment);
       break;
     case "enter": {
-      const gracePeriodEnd = args.gracePeriodEnd ??
-        Date.now() + args.gracePeriodMs!;
-      await enterShutdown(lucid, deployment, gracePeriodEnd);
+      await enterShutdown(lucid, deployment, args);
       break;
     }
     case "seal":

@@ -274,10 +274,15 @@ fn module_callback(
       }
     }
 
-    OnChanOpenConfirm { channel_id } -> {
-      let updated_output = transfer_escrow.expect_module_state(spend)
-      expect Some(_) =
-        transfer_channel_callback.validate_chan_open_confirm(
+    OnChanOpenConfirm { channel_id } | OnChanCloseConfirm { channel_id } -> {
+      let is_close =
+        when cb is {
+          OnChanCloseConfirm { .. } -> True
+          _ -> False
+        }
+      // The matching channel operation validates the counterparty proof.
+      expect
+        transfer_channel_callback.validate_chan_confirm(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -285,19 +290,11 @@ fn module_callback(
           outputs,
           port_id,
           channel_id,
+          is_close,
         )
-      and {
-        transfer_value_delta.validate_output_amount(
-          spent_input,
-          updated_output,
-          assets.zero,
-        )?,
-        transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)?,
-      }
-    }
-
-    OnChanCloseInit { .. } | OnChanCloseConfirm { .. } ->
       validate_unchanged_module_root(spent_input, spend)
+    }
+    OnChanCloseInit { .. } -> False
     OnChanReclaim { .. } | OnHostStateSeal -> False
     OnRecvPacket { channel_id, packet_data, acknowledgement, data } -> {
       expect transfer_ibc_module.validate_on_chan_recv_packet(acknowledgement)

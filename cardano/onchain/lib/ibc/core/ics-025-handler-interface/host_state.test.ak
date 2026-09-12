@@ -190,7 +190,7 @@ test shutdown_entry_requires_an_exact_finalized_inventory() {
       reference_script_registration: Some(registration(3, target_root, ref_3)),
     }
   let initiated_at = 100
-  let grace_period_end = 1_000
+  let grace_period_end = initiated_at + 86_400_000
   let new =
     HostStateDatum {
       ..old,

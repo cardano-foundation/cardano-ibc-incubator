@@ -44,6 +44,9 @@ pub const host_state_token_name = "ibc_host_state"
 /// three ports and can add up to this fixed protocol-wide maximum.
 pub const max_bound_ports = 10
 
+/// Minimum drain/refund window after the shutdown transaction's latest valid time.
+pub const min_shutdown_grace_period_ms = 86_400_000
+
 /// Hard protocol bound well above the current deployment inventory (~29),
 /// preventing a signed count typo from creating an unrecoverable obligation.
 pub const max_reference_script_inventory_count = 128
@@ -697,7 +700,7 @@ pub fn validate_enter_shutdown(
   old: HostStateDatum,
   new: HostStateDatum,
   grace_period_end: Int,
-  initiated_at: Int,
+  valid_to: Int,
 ) -> Bool {
   and {
     when
@@ -712,9 +715,9 @@ pub fn validate_enter_shutdown(
     },
     validate_version_increment(old.state, new.state),
     old.shutdown |> is_active,
-    new.shutdown == ShuttingDown { initiated_at, grace_period_end },
-    new.state.last_update_time == initiated_at,
-    grace_period_end > initiated_at,
+    new.shutdown == ShuttingDown { initiated_at: valid_to, grace_period_end },
+    new.state.last_update_time == valid_to,
+    grace_period_end >= valid_to + min_shutdown_grace_period_ms,
     new.state.ibc_state_root == old.state.ibc_state_root,
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
