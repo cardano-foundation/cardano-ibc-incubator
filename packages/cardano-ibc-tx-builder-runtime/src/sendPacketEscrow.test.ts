@@ -42,10 +42,14 @@ function fixture(overrides: Partial<UnsignedSendPacketEscrowTxInput> = {}) {
     encodeAuthToken: () => 'auth-token-redeemer',
   };
   const dto: UnsignedSendPacketEscrowTxInput = {
-    hostStateUtxo: { ...utxo('host-state'), datum: 'raw-host-state', datumHash: 'cached-datum-hash' },
+    hostStateUtxo: {
+      ...utxo('host-state', { lovelace: 8_000_000n, 'host-state-token': 1n, reserve: 7n }),
+      datum: 'raw-host-state',
+      datumHash: 'cached-datum-hash',
+    },
     encodedHostStateRedeemer: 'host-state-redeemer',
     encodedUpdatedHostStateDatum: 'updated-host-state',
-    channelUTxO: utxo('channel'),
+    channelUTxO: utxo('channel', { lovelace: 9_000_000n, 'channel-token': 1n }),
     connectionUTxO: utxo('connection'),
     clientUTxO: utxo('client'),
     transferModuleReferenceUtxo: utxo('module-root', { lovelace: 5_000_000n, 'module-id': 1n, 'port-id': 1n }),
@@ -73,7 +77,7 @@ function fixture(overrides: Partial<UnsignedSendPacketEscrowTxInput> = {}) {
 }
 
 describe('shared send packet escrow transaction', () => {
-  it('creates the first shard while preserving the module-root assets and raw HostState datum', () => {
+  it('creates the first shard while preserving every continuing state balance and the raw HostState datum', () => {
     const f = fixture();
     assert.equal(createUnsignedSendPacketEscrowTx(f.dependencies, f.dto), f.tx);
     assert.deepEqual(f.calls, [
@@ -81,8 +85,8 @@ describe('shared send packet escrow transaction', () => {
       { method: 'collectFrom', args: [[{ ...f.dto.hostStateUtxo, datumHash: undefined }], 'host-state-redeemer'] },
       { method: 'collectFrom', args: [[f.dto.channelUTxO], 'channel-redeemer'] },
       { method: 'readFrom', args: [[f.dto.connectionUTxO, f.dto.clientUTxO]] },
-      { method: 'ToContract', args: ['host-state-address', { kind: 'inline', value: 'updated-host-state' }, { 'host-state-token': 1n }] },
-      { method: 'ToContract', args: ['channel-address', { kind: 'inline', value: 'updated-channel' }, { 'channel-token': 1n }] },
+      { method: 'ToContract', args: ['host-state-address', { kind: 'inline', value: 'updated-host-state' }, f.dto.hostStateUtxo.assets] },
+      { method: 'ToContract', args: ['channel-address', { kind: 'inline', value: 'updated-channel' }, f.dto.channelUTxO.assets] },
       { method: 'mintAssets', args: [{ 'send-policy': 1n }, 'auth-token-redeemer'] },
       { method: 'collectFrom', args: [[f.dto.transferModuleReferenceUtxo], 'module-redeemer'] },
       { method: 'mintAssets', args: [{ [SHARD]: 1n }, 'shard-redeemer'] },

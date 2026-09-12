@@ -411,7 +411,9 @@ fn transfer_escrow_input(
       address: module_output.address,
       value: from_asset(ada_policy_id, ada_asset_name, amount)
         |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
-      datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+      datum: InlineDatum(
+        TransferEscrowDatum { channel_id, denom, escrowed_amount: amount },
+      ),
       reference_script: None,
     },
   }
@@ -430,7 +432,9 @@ fn transfer_escrow_output(
     address: module_output.address,
     value: from_asset(ada_policy_id, ada_asset_name, amount)
       |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
-    datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+    datum: InlineDatum(
+      TransferEscrowDatum { channel_id, denom, escrowed_amount: amount },
+    ),
     reference_script: None,
   }
 }
@@ -467,7 +471,9 @@ fn transfer_native_asset_escrow_input(
       address: module_output.address,
       value: from_asset(token_policy_id, token_name, amount)
         |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
-      datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+      datum: InlineDatum(
+        TransferEscrowDatum { channel_id, denom, escrowed_amount: amount },
+      ),
       reference_script: None,
     },
   }
@@ -488,7 +494,9 @@ fn transfer_native_asset_escrow_output(
     address: module_output.address,
     value: from_asset(token_policy_id, token_name, amount)
       |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
-    datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+    datum: InlineDatum(
+      TransferEscrowDatum { channel_id, denom, escrowed_amount: amount },
+    ),
     reference_script: None,
   }
 }
@@ -612,6 +620,7 @@ fn run_transfer_module_transition(
           mock.channel_minting_policy_id,
           mock.voucher_minting_policy_id,
           mock.host_state_nft_policy_id,
+          #"00000000000000000000000000000000000000000000000000000000",
           None,
           module_redeemer,
           mock.module_input.output_reference,
@@ -1428,7 +1437,12 @@ test transfer_escrow_rejects_missing_empty_successor() fail {
       denom,
       escrow_amount,
     )
-  let datum = TransferEscrowDatum { channel_id: mock.channel_id, denom }
+  let datum =
+    TransferEscrowDatum {
+      channel_id: mock.channel_id,
+      denom,
+      escrowed_amount: escrow_amount,
+    }
 
   transfer_escrow.validate_module_escrow_transition(
     escrow_input,
@@ -1440,7 +1454,6 @@ test transfer_escrow_rejects_missing_empty_successor() fail {
     from_asset(ada_policy_id, ada_asset_name, 0),
     0 - escrow_amount,
     from_asset(ada_policy_id, ada_asset_name, 0 - escrow_amount),
-    "lovelace",
   )
 }
 
@@ -1480,6 +1493,7 @@ test on_chan_open_init_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1518,6 +1532,7 @@ test on_chan_open_init_fails_without_host_state_co_spend() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1566,6 +1581,7 @@ test on_chan_open_try_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1614,6 +1630,7 @@ test on_chan_open_ack_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1658,6 +1675,7 @@ test on_chan_open_confirm_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1739,6 +1757,7 @@ test on_recv_packet_mint_voucher_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1813,6 +1832,7 @@ fn on_recv_packet_mint_voucher_prebuilt_succeeds(
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1945,6 +1965,7 @@ test on_recv_packet_unescrow_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2062,6 +2083,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2156,6 +2178,7 @@ test transfer_escrow_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2255,6 +2278,7 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2335,6 +2359,7 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2415,6 +2440,7 @@ test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2491,6 +2517,7 @@ test transfer_burn_voucher_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2572,6 +2599,7 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2670,6 +2698,7 @@ fn check_timeout_packet_mint_voucher(use_timeout_on_close: Bool) {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2795,6 +2824,7 @@ test on_timeout_packet_unescrow_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2894,6 +2924,7 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -3003,6 +3034,7 @@ test on_recv_packet_source_fails_with_short_native_payout() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -3087,6 +3119,7 @@ test on_acknowledgement_packet_result_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -3179,6 +3212,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -3298,6 +3332,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -3336,6 +3371,7 @@ test on_chan_close_init_given_any_input_returns_false() {
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
     fake_data.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     fake_data.module_input.output_reference,
@@ -3374,6 +3410,7 @@ test on_chan_close_confirm_rejects_missing_channel_spend() fail {
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
     fake_data.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     None,
     module_redeemer,
     fake_data.module_input.output_reference,
@@ -3464,7 +3501,11 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
   let shard_datum: Data =
-    TransferEscrowDatum { channel_id: mock.channel_id, denom }
+    TransferEscrowDatum {
+      channel_id: mock.channel_id,
+      denom,
+      escrowed_amount: 0,
+    }
 
   spending_transfer_module.spend_transfer_module.spend(
     mock.port_token,
@@ -3474,6 +3515,7 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     Some(shard_datum),
     module_redeemer,
     shard_input.output_reference,

@@ -34,6 +34,7 @@ type RefUtxo = {
 };
 
 type DeploymentInfo = {
+  hostStateNFT: { policyId: string; name: string };
   validators: {
     mintVoucher: {
       scriptHash: string;
@@ -493,15 +494,18 @@ function assertBenchmarkDeploymentMatchesCurrentValidators(
           directoryAuthToken,
           deployment.validators.mintVoucher.scriptHash,
           benchmarkVoucherPolicyId,
+          deployment.hostStateNFT.policyId,
         ],
         Data.Tuple([
           Data.Bytes(),
           AuthTokenSchema,
           Data.Bytes(),
           Data.Bytes(),
+          Data.Bytes(),
         ]) as unknown as [
           string,
           { policy_id: string; name: string },
+          string,
           string,
           string,
         ],

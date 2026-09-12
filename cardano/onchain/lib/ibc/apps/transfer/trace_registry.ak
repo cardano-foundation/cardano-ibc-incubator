@@ -72,6 +72,7 @@ pub type TraceRegistryRedeemer {
     previous_active_shard_name: ByteArray,
     new_active_shard_name: ByteArray,
   }
+  ReclaimTraceRegistry
 }
 
 // The first four bits of the voucher hash pick the owning shard, so any client can

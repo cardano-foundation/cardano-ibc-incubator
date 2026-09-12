@@ -1,7 +1,7 @@
 use aiken/collection/list
 use cardano/address.{Address}
 use cardano/assets.{PolicyId, Value, quantity_of}
-use cardano/transaction.{InlineDatum, Input, Output}
+use cardano/transaction.{Input, Output}
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/value_delta
@@ -32,23 +32,11 @@ fn escrow_output_matches(
   datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
 ) -> Bool {
-  // Shard successors keep the script address and exact `{channel_id, denom}` datum.
-  // Check the derived NFT first so unrelated inline datums cannot abort shard lookup.
-  if output.address != address || !escrow_shard_has_nft(
+  output.address == address && escrow_shard_has_nft(
     output,
     datum,
     shard_policy_id,
-  ) {
-    False
-  } else {
-    when output.datum is {
-      InlineDatum(data) -> {
-        expect output_datum: TransferEscrowDatum = data
-        output_datum == datum
-      }
-      _ -> False
-    }
-  }
+  )
 }
 
 fn find_escrow_output(
@@ -136,7 +124,7 @@ pub fn transfer_escrow_datum(
   channel_id: ByteArray,
   denom: ByteArray,
 ) -> TransferEscrowDatum {
-  TransferEscrowDatum { channel_id, denom }
+  TransferEscrowDatum { channel_id, denom, escrowed_amount: 0 }
 }
 
 pub fn escrow_shard_token_name(datum: TransferEscrowDatum) -> ByteArray {
@@ -172,35 +160,6 @@ fn find_matching_escrow_input(
   }
 }
 
-fn escrow_value_is_single_asset(
-  output: Output,
-  datum: TransferEscrowDatum,
-  shard_policy_id: PolicyId,
-  escrowed_token_unit: ByteArray,
-) -> Bool {
-  let (escrowed_token_policy_id, escrowed_token_name) =
-    validator_utils.extract_token_unit(escrowed_token_unit)
-  let escrowed_quantity =
-    quantity_of(output.value, escrowed_token_policy_id, escrowed_token_name)
-  let shard_nft_value =
-    assets.from_asset(shard_policy_id, escrow_shard_token_name(datum), 1)
-  let expected_non_lovelace =
-    // Canonical shards contain no unrelated non-lovelace assets.
-    if escrowed_token_unit == "lovelace" {
-      shard_nft_value
-    } else {
-      assets.merge(
-        shard_nft_value,
-        assets.from_asset(
-          escrowed_token_policy_id,
-          escrowed_token_name,
-          escrowed_quantity,
-        ),
-      )
-    }
-  assets.match_assets(output.value, expected_non_lovelace)
-}
-
 fn validate_created_escrow_shard(
   outputs: List<Output>,
   address: Address,
@@ -208,7 +167,6 @@ fn validate_created_escrow_shard(
   shard_policy_id: PolicyId,
   mint: Value,
   transfer_amount: Int,
-  escrowed_token_unit: ByteArray,
 ) -> Bool {
   // First native send creates a canonical shard and mints exactly one shard NFT.
   expect [created_output] =
@@ -218,27 +176,15 @@ fn validate_created_escrow_shard(
         escrow_output_matches(output, address, datum, shard_policy_id)
       },
     )
-  let (escrowed_token_policy_id, escrowed_token_name) =
-    validator_utils.extract_token_unit(escrowed_token_unit)
-  let created_quantity =
-    quantity_of(
-      created_output.value,
-      escrowed_token_policy_id,
-      escrowed_token_name,
-    )
+  expect created_datum: TransferEscrowDatum =
+    validator_utils.get_inline_datum(created_output)
+  // The shard mint policy validates its value and canonical asset inventory.
+  // Bind that mandatory mint to this packet's identity and deposit amount.
   and {
     quantity_of(mint, shard_policy_id, escrow_shard_token_name(datum)) == 1,
-    escrow_value_is_single_asset(
-      created_output,
-      datum,
-      shard_policy_id,
-      escrowed_token_unit,
-    )?,
-    if escrowed_token_unit == "lovelace" {
-      // Lovelace shards may carry extra ADA for minimum-UTxO requirements.
-      created_quantity >= transfer_amount
-    } else {
-      created_quantity == transfer_amount
+    created_datum == TransferEscrowDatum {
+      ..datum,
+      escrowed_amount: transfer_amount,
     },
   }
 }
@@ -250,51 +196,36 @@ fn validate_escrow_shard_update(
   shard_policy_id: PolicyId,
   mint: Value,
   expected_value_difference: Value,
-  escrowed_token_unit: ByteArray,
+  transfer_amount: Int,
 ) -> Bool {
   expect EscrowShard { datum, updated_output } = spend
-  expect datum == expected_datum
+  expect datum.channel_id == expected_datum.channel_id
+  expect datum.denom == expected_datum.denom
 
-  let (escrowed_token_policy_id, escrowed_token_name) =
-    validator_utils.extract_token_unit(escrowed_token_unit)
-  let expected_output =
-    spent_input.output.value
-      |> assets.merge(expected_value_difference)
-  let expected_escrow_quantity =
-    quantity_of(expected_output, escrowed_token_policy_id, escrowed_token_name)
+  let accounted_amount = datum.escrowed_amount + transfer_amount
   let shard_token_name = escrow_shard_token_name(expected_datum)
   let shard_mint_quantity = quantity_of(mint, shard_policy_id, shard_token_name)
 
-  and {
-    // Validate shard canonicality before balance arithmetic.
-    escrow_shard_has_nft(spent_input.output, expected_datum, shard_policy_id)?,
-    escrow_value_is_single_asset(
-      spent_input.output,
-      expected_datum,
-      shard_policy_id,
-      escrowed_token_unit,
-    )?,
-    // The signed value delta models send as positive and refund/unescrow as negative.
-    if expected_escrow_quantity >= 0 {
-      // Empty and non-empty shards both retain their successor and NFT.
-      expect Some(output) = updated_output
-      and {
-        shard_mint_quantity == 0,
-        value_delta.validate_output_amount(
-          spent_input,
-          output,
-          expected_value_difference,
-        )?,
-        escrow_value_is_single_asset(
-          output,
-          expected_datum,
-          shard_policy_id,
-          escrowed_token_unit,
-        )?,
-      }
-    } else {
-      False
-    },
+  // The signed value delta models send as positive and refund/unescrow as negative.
+  if accounted_amount >= 0 {
+    // Empty and non-empty shards both retain their successor and NFT.
+    expect Some(output) = updated_output
+    expect updated_datum: TransferEscrowDatum =
+      validator_utils.get_inline_datum(output)
+    and {
+      updated_datum == TransferEscrowDatum {
+        ..datum,
+        escrowed_amount: accounted_amount,
+      },
+      shard_mint_quantity == 0,
+      value_delta.validate_output_amount(
+        spent_input,
+        output,
+        expected_value_difference,
+      )?,
+    }
+  } else {
+    False
   }
 }
 
@@ -305,18 +236,20 @@ fn validate_matching_escrow_input_update(
   shard_policy_id: PolicyId,
   mint: Value,
   expected_value_difference: Value,
-  escrowed_token_unit: ByteArray,
+  transfer_amount: Int,
 ) -> Bool {
   let updated_output =
     find_escrow_output(outputs, escrow_input.output, datum, shard_policy_id)
+  expect input_datum: TransferEscrowDatum =
+    validator_utils.get_inline_datum(escrow_input.output)
   validate_escrow_shard_update(
     escrow_input,
-    EscrowShard { datum, updated_output },
+    EscrowShard { datum: input_datum, updated_output },
     datum,
     shard_policy_id,
     mint,
     expected_value_difference,
-    escrowed_token_unit,
+    transfer_amount,
   )
 }
 
@@ -330,7 +263,6 @@ pub fn validate_module_escrow_transition(
   mint: Value,
   transfer_amount: Int,
   expected_value_difference: Value,
-  escrowed_token_unit: ByteArray,
 ) -> Bool {
   when spend is {
     ModuleState { updated_output, datum_changed } -> {
@@ -348,41 +280,28 @@ pub fn validate_module_escrow_transition(
           datum,
           shard_policy_id,
         )
-      let shard_mint_quantity =
-        quantity_of(mint, shard_policy_id, escrow_shard_token_name(datum))
-      // The mint policy validates the typed Merkle update; this callback only
-      // permits the module datum to change alongside that exact first mint.
-      let registry_transition_is_authorized =
-        if datum_changed {
-          shard_mint_quantity == 1
-        } else {
-          shard_mint_quantity == 0
-        }
-
       and {
         preserved_module_state?,
-        registry_transition_is_authorized?,
         when matching_escrow_input is {
           Some(escrow_input) ->
-            validate_matching_escrow_input_update(
+            !datum_changed && validate_matching_escrow_input_update(
               escrow_input,
               outputs,
               datum,
               shard_policy_id,
               mint,
               expected_value_difference,
-              escrowed_token_unit,
+              transfer_amount,
             )
-          // Only a positive native send may create a previously absent shard.
+          // The shard mint policy requires a positive initial deposit.
           None ->
-            transfer_amount > 0 && validate_created_escrow_shard(
+            datum_changed && validate_created_escrow_shard(
               outputs,
               spent_input.output.address,
               datum,
               shard_policy_id,
               mint,
               transfer_amount,
-              escrowed_token_unit,
             )
         },
       }
@@ -396,7 +315,7 @@ pub fn validate_module_escrow_transition(
         shard_policy_id,
         mint,
         expected_value_difference,
-        escrowed_token_unit,
+        transfer_amount,
       )
   }
 }

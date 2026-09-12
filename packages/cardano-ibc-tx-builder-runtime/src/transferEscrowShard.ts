@@ -18,6 +18,7 @@ type TransferModuleDatum = {
 type TransferEscrowDatum = {
   channel_id: string;
   denom: string;
+  escrowed_amount: bigint;
 };
 
 type RegistryTree = Pick<ICS23MerkleTree, 'getRoot' | 'getSiblings' | 'set'>;
@@ -149,6 +150,7 @@ export async function findTransferEscrowShard(
   packetDenom: string,
   denomToken: string,
   requiredAmount?: bigint,
+  balanceDelta: bigint = 0n,
 ): Promise<TransferEscrowShardLookup> {
   const {
     transferModuleAddress,
@@ -171,6 +173,7 @@ export async function findTransferEscrowShard(
   const encodedDatum = await dependencies.encodeTransferEscrowDatum({
     channel_id: channelId,
     denom: packetDenom,
+    escrowed_amount: balanceDelta,
   });
   const shardTokenName = transferEscrowShardTokenName(channelId, packetDenom);
   const shardTokenUnit = shardPolicyId + shardTokenName;
@@ -233,6 +236,10 @@ export async function findTransferEscrowShard(
       shardDatum = await dependencies.decodeTransferEscrowDatum(candidate.datum);
       canonicalDenomToken = escrowDenomTokenFromPacketDenom(shardDatum.denom);
       tokenName = transferEscrowShardTokenName(shardDatum.channel_id, shardDatum.denom);
+      if (typeof shardDatum.escrowed_amount !== 'bigint' || shardDatum.escrowed_amount < 0n ||
+          (candidate.assets[canonicalDenomToken] ?? 0n) < shardDatum.escrowed_amount) {
+        throw new Error('Escrow deposit balance is missing, negative, or exceeds its funds');
+      }
       canonicalDatum = await dependencies.encodeTransferEscrowDatum(shardDatum);
     } catch (error) {
       throw failedPrecondition(`Malformed escrow shard datum at ${utxoRef(candidate)}: ${String(error)}`);
@@ -271,12 +278,17 @@ export async function findTransferEscrowShard(
   const siblings = registrySiblings(tree, registryKey, failedPrecondition);
   const matchingUtxo = canonicalShards.get(shardTokenUnit);
   if (matchingUtxo) {
-    if (matchingUtxo.datum !== encodedDatum) {
-      throw failedPrecondition(`Transfer escrow shard ${shardTokenUnit} has a non-canonical datum`);
+    const currentDatum = await dependencies.decodeTransferEscrowDatum(matchingUtxo.datum!);
+    const remainingAmount = currentDatum.escrowed_amount + balanceDelta;
+    if (remainingAmount < 0n) {
+      throw invalidArgument(`Insufficient escrowed amount for ${canonicalRequestedDenom}`);
     }
+    const updatedDatum = await dependencies.encodeTransferEscrowDatum({
+      ...currentDatum, escrowed_amount: remainingAmount,
+    });
     if (
       requiredAmount !== undefined &&
-      (matchingUtxo.assets[canonicalRequestedDenom] ?? 0n) < requiredAmount
+      currentDatum.escrowed_amount < requiredAmount
     ) {
       throw invalidArgument(`Insufficient escrowed amount for ${canonicalRequestedDenom}`);
     }
@@ -284,12 +296,15 @@ export async function findTransferEscrowShard(
       kind: 'existing',
       transferModuleUtxo,
       utxo: matchingUtxo,
-      encodedDatum,
+      encodedDatum: updatedDatum,
       shardTokenUnit,
       registrySiblings: siblings,
     };
   }
 
+  if (balanceDelta < 0n) {
+    throw invalidArgument('Cannot withdraw from a missing escrow shard');
+  }
   tree.set(registryKey, TRANSFER_ESCROW_SHARD_REGISTERED_VALUE);
   const encodedUpdatedTransferModuleDatum = await dependencies.encodeTransferModuleDatum({
     escrow_shard_registry_root: registryRoot(tree, failedPrecondition),

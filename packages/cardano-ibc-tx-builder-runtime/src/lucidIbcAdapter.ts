@@ -509,13 +509,14 @@ function unknownCodecTypeError(operation: 'encode' | 'decode', type: string, sup
 }
 
 function encodeTransferEscrowDatum(
-  transferEscrowDatum: { channel_id: string; denom: string },
+  transferEscrowDatum: { channel_id: string; denom: string; escrowed_amount: bigint },
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
   const TransferEscrowDatumSchema = Data.Object({
     channel_id: Data.Bytes(),
     denom: Data.Bytes(),
+    escrowed_amount: Data.Integer(),
   });
   return Data.to(transferEscrowDatum, TransferEscrowDatumSchema as any, { canonical: true });
 }
@@ -528,6 +529,7 @@ function decodeTransferEscrowDatum(
   const TransferEscrowDatumSchema = Data.Object({
     channel_id: Data.Bytes(),
     denom: Data.Bytes(),
+    escrowed_amount: Data.Integer(),
   });
   return Data.from(encoded, TransferEscrowDatumSchema as any);
 }
@@ -1238,7 +1240,7 @@ export class LucidIbcAdapter {
       case 'channel':
         return encodeChannelDatum(data, this.LucidImporter);
       case 'transferEscrow':
-        return encodeTransferEscrowDatum(data as { channel_id: string; denom: string }, this.LucidImporter);
+        return encodeTransferEscrowDatum(data as { channel_id: string; denom: string; escrowed_amount: bigint }, this.LucidImporter);
       case 'transferModule':
         return encodeTransferModuleDatum(
           data as { escrow_shard_registry_root: string },
@@ -1315,7 +1317,6 @@ export class LucidIbcAdapter {
     if (!spendChannelAddress) {
       throw new Error('Spend channel script address is missing from deployment config');
     }
-    const hostStateNFT = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1340,12 +1341,12 @@ export class LucidIbcAdapter {
       .pay.ToContract(
         hostStateAddress,
         { kind: 'inline', value: dto.encodedUpdatedHostStateDatum },
-        { [hostStateNFT]: 1n },
+        dto.hostStateUtxo.assets,
       )
       .pay.ToContract(
         spendChannelAddress,
         { kind: 'inline', value: dto.encodedUpdatedChannelDatum },
-        { [dto.channelTokenUnit]: 1n },
+        dto.channelUTxO.assets,
       )
       .mintAssets(
         { [dto.sendPacketPolicyId]: 1n },

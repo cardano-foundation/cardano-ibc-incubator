@@ -1155,10 +1155,10 @@ validator host_state_stt(
             host_state_token_name,
             -1,
           ),
-          !list.any(
+          list.all(
             outputs,
             fn(output) {
-              quantity_of(output.value, nft_policy, host_state_token_name) != 0
+              quantity_of(output.value, nft_policy, host_state_token_name) == 0
             },
           ),
         }
@@ -1172,6 +1172,11 @@ validator host_state_stt(
         // In practice, this means the output that carries the NFT must stay at the
         // same address as the spent HostState UTxO.
         expect host_output.address == host_input.output.address
+        expect
+          validator_utils.preserves_state_value(
+            host_input.output.value,
+            host_output.value,
+          )
 
         // Each transition below preserves the authenticated input's NFT policy.
         when redeemer is {

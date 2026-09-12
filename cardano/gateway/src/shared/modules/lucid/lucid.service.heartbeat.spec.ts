@@ -12,7 +12,7 @@ describe('LucidService HostState heartbeat wiring', () => {
     );
   });
 
-  it('spends and recreates only HostState with the heartbeat redeemer', () => {
+  it('preserves surplus ADA and unrelated assets in the HostState heartbeat output', () => {
     const txBuilder: any = {};
     txBuilder.readFrom = jest.fn().mockReturnValue(txBuilder);
     txBuilder.collectFrom = jest.fn().mockReturnValue(txBuilder);
@@ -38,6 +38,7 @@ describe('LucidService HostState heartbeat wiring', () => {
       outputIndex: 0,
       datum: 'raw-host-datum',
       datumHash: 'ignored-datum-hash',
+      assets: { lovelace: 8_000_000n, 'host-policyhost-token': 1n, reserve: 7n },
     };
     const result = service.createUnsignedHostStateHeartbeatTransaction(
       hostStateUtxo,
@@ -61,7 +62,7 @@ describe('LucidService HostState heartbeat wiring', () => {
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
       'addr_test1hoststate',
       { kind: 'inline', value: 'encoded-updated-host-datum' },
-      { 'host-policyhost-token': 1n },
+      hostStateUtxo.assets,
     );
     expect(txBuilder.addSignerKey).toHaveBeenCalledWith('signer-key-hash');
   });

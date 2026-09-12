@@ -133,8 +133,6 @@ validator chan_open_ack(
     trace @"chan_open_ack: ibc module callback is valid"
 
     and {
-      auth.contain_auth_token(spent_output, datum.token),
-      auth.contain_auth_token(updated_output, datum.token),
       correct_ordering,
       channel_datum_mod.validate_chan_open_ack(datum, updated_datum),
       valid_chan_open,
