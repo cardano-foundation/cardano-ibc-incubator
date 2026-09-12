@@ -8,9 +8,9 @@ use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/client_datum as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
   RecoverClient, RecoverClientWithdrawal, RecoverClientWithdrawalRedeemer,
-  SpendClientRedeemer,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
+use ibc/client/ics_007_tendermint_client/multitx/client_redeemer as staged_client
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostStateDatum, host_state_token_name,
@@ -67,9 +67,10 @@ validator recover_client(host_state_nft_policy_id: PolicyId) {
     // The client spend must name the same substitute as the withdrawal.
     expect Some(subject_spend_redeemer) =
       pairs.get_first(redeemers, Spend(subject_input.output_reference))
-    expect RecoverClient { substitute_token: spend_substitute_token }: SpendClientRedeemer =
-      subject_spend_redeemer
-    expect spend_substitute_token == substitute_token
+    let legacy_recovery: Data = RecoverClient { substitute_token }
+    let staged_recovery: Data = staged_client.RecoverClient { substitute_token }
+    expect
+      subject_spend_redeemer == legacy_recovery || subject_spend_redeemer == staged_recovery
 
     expect [substitute_input] =
       list.filter(

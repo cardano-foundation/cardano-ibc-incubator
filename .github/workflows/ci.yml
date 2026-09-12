@@ -337,6 +337,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gateway_history_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -390,6 +405,8 @@ jobs:
         run: npm run --prefix cardano/gateway build
 
       - name: Test with coverage
+        env:
+          BRIDGE_HISTORY_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/gateway_history_test
         run: npm run --prefix cardano/gateway test:cov:ci
 
   proto-types:
@@ -875,6 +892,11 @@ jobs:
             packages/cardano-ibc-trace-registry/package-lock.json
             packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
@@ -883,6 +905,10 @@ jobs:
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
         run: aiken build --deny --trace-level silent
+
+      - name: Check and export fully applied deployment plan
+        working-directory: cardano/offchain
+        run: deno task export:deployment-plan --output ../../deployment-plan.json
 
       - name: Collect Aiken execution units
         working-directory: cardano/onchain
@@ -934,12 +960,31 @@ jobs:
             -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_at_entry_limit}' \
             -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_near_byte_limit}' \
             -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
+            -m 'host_state_stt.{host_update_client_capacity_fixture_setup_baseline}' \
             -m 'host_state_stt.{host_update_client_capacity_minimum_history_succeeds}' \
             -m 'recover_client.{recover_client_accepts_expired_subject}' \
             -m 'recover_client.{spend_client_forwards_valid_recovery}' \
+            -m 'recover_client.{staged_atomic_freeze_fixture_setup_baseline}' \
+            -m 'recover_client.{staged_atomic_freeze_all_validators_accept_real_root_transition}' \
+            -m 'recover_client.{staged_atomic_recovery_fixture_setup_baseline}' \
+            -m 'recover_client.{staged_atomic_recovery_all_validators_accept_real_root_transition}' \
             -m 'spending_client_capacity.{update_client_capacity_adjacent_all_signed_45_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_adjacent_mixed_45_succeeds}' \
             -m 'spending_client_capacity.{update_client_capacity_non_adjacent_mixed_45_succeeds}' \
+            -m 'minting_tendermint_update_session.{session_mint_fixture_setup_baseline}' \
+            -m 'minting_tendermint_update_session.{mints_one_seed_bound_session_with_exact_initial_datum}' \
+            -m 'minting_tendermint_update_session.{session_burn_fixture_setup_baseline}' \
+            -m 'minting_tendermint_update_session.{burns_only_a_token_carried_by_the_session_script}' \
+            -m 'spending_tendermint_update_session.{real_injective_six_validator_fixture_setup_baseline}' \
+            -m 'spending_tendermint_update_session.{advances_real_injective_six_validator_target_batch}' \
+            -m 'spending_tendermint_update_session.{real_non_adjacent_six_membership_fixture_setup_baseline}' \
+            -m 'spending_tendermint_update_session.{advances_real_non_adjacent_six_membership_target_batch}' \
+            -m 'spending_tendermint_update_session.{depth_eight_non_adjacent_six_membership_fixture_setup_baseline}' \
+            -m 'spending_tendermint_update_session.{advances_depth_eight_non_adjacent_six_membership_target_batch}' \
+            -m 'spending_tendermint_update_session.{session_finalize_fixture_setup_baseline}' \
+            -m 'spending_tendermint_update_session.{complete_session_requires_client_and_host_threads_and_burn}' \
+            -m 'spending_multitx_client.{completed_session_update_fixture_setup_baseline}' \
+            -m 'spending_multitx_client.{completed_session_updates_the_client_atomically}' \
             -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
             -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
             > ../../aiken-check.json

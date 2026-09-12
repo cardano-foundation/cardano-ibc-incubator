@@ -327,3 +327,32 @@ test('classifies modified comments as trivia and source additions as relevant', 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+
+test('reruns the budget gate when only applied deployment inputs change', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'deployment-change-detector-'));
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    execFileSync('git', ['config', 'user.email', 'ci@example.com'], { cwd: repo });
+    execFileSync('git', ['config', 'user.name', 'CI'], { cwd: repo });
+    execFileSync('git', ['commit', '--allow-empty', '-qm', 'base'], { cwd: repo });
+    for (const path of [
+      'cardano/offchain/src/deployment-plan.ts',
+      'cardano/offchain/scripts/export-deployment-plan.ts',
+      'cardano/offchain/deno.lock',
+      'cardano/gateway/src/scripts/ci/applied-deployment-plan.ts',
+    ]) {
+      const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+      const target = join(repo, path);
+      mkdirSync(join(target, '..'), { recursive: true });
+      writeFileSync(target, '// changed applied deployment input\n');
+      execFileSync('git', ['add', '.'], { cwd: repo });
+      execFileSync('git', ['commit', '-qm', 'deployment input'], { cwd: repo });
+      const result = classifyAikenChanges(repo, base, 'HEAD');
+      assert.equal(result.aikenFilesChanged, false, path);
+      assert.equal(result.aikenRelevantChanged, true, path);
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

@@ -58,8 +58,9 @@ use ibc/core/ics_025_handler_interface/host_state.{
   max_bound_ports, min_shutdown_grace_period_ms, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, CreateConnection, EnterShutdown, FinalizeShutdown, HandlePacket,
-  Heartbeat, HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
+  BindPort, CreateClient, CreateConnection, EnterShutdown, FinalizeShutdown,
+  HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel, UpdateClient,
+  UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/fuzz_dsl
@@ -792,7 +793,7 @@ fn test_updated_client_datum_with_consensus_insert(seed: Int) -> ClientDatum {
 }
 
 fn test_client_input(datum: ClientDatum) -> Input {
-  let token = test_client_token()
+  let token = datum.token
   Input(
     test_object_ref(1),
     Output {
@@ -805,12 +806,20 @@ fn test_client_input(datum: ClientDatum) -> Input {
 }
 
 fn test_client_output(datum: ClientDatum) -> Output {
-  let token = test_client_token()
+  let token = datum.token
   Output {
     address: Address(Script(test_client_script_hash()), None),
     value: from_asset(token.policy_id, token.name, 1),
     datum: InlineDatum(datum),
     reference_script: None,
+  }
+}
+
+fn test_client_output_without_token(datum: ClientDatum) -> Output {
+  let token = datum.token
+  Output {
+    ..test_client_output(datum),
+    value: from_asset(token.policy_id, token.name, 0),
   }
 }
 
@@ -1149,6 +1158,109 @@ fn test_handle_packet_commitment_delete_root(
   )
 }
 
+test host_create_client_rejects_counterfeit_client_policy() fail {
+  let seed = 613
+  let canonical_token = test_client_token()
+  let counterfeit_token =
+    AuthToken { ..canonical_token, policy_id: "counterfeit client mint policy" }
+  let client_datum =
+    ClientDatum { ..test_client_datum(1, seed), token: counterfeit_token }
+  let client_state_siblings = full_empty_siblings()
+  let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
+  let consensus_state_key =
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+  let client_state_value = cbor.serialise(client_datum.state.client_state)
+  let root_after_client_state =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      client_state_key,
+      "",
+      client_state_value,
+      client_state_siblings,
+    )
+  let consensus_state_siblings =
+    siblings_after_single_insert(
+      client_state_key,
+      client_state_value,
+      consensus_state_key,
+    )
+  let new_root =
+    ibc_state_commitment.apply_update(
+      root_after_client_state,
+      consensus_state_key,
+      "",
+      cbor.serialise(test_consensus_state(seed)),
+      consensus_state_siblings,
+    )
+  let old_state = test_host_state(empty_ibc_state_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+      next_client_sequence: old_state.next_client_sequence + 1,
+    }
+  let redeemer: HostStateRedeemer =
+    CreateClient { client_state_siblings, consensus_state_siblings }
+
+  spend_host_state(
+    redeemer,
+    [test_host_input(old_state)],
+    [test_host_output(new_state), test_client_output(client_datum)],
+  )
+}
+
+test host_create_client_rejects_datum_token_missing_from_output() fail {
+  let seed = 613
+  let client_datum = test_client_datum(1, seed)
+  let client_state_siblings = full_empty_siblings()
+  let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
+  let consensus_state_key =
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+  let client_state_value = cbor.serialise(client_datum.state.client_state)
+  let root_after_client_state =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      client_state_key,
+      "",
+      client_state_value,
+      client_state_siblings,
+    )
+  let consensus_state_siblings =
+    siblings_after_single_insert(
+      client_state_key,
+      client_state_value,
+      consensus_state_key,
+    )
+  let new_root =
+    ibc_state_commitment.apply_update(
+      root_after_client_state,
+      consensus_state_key,
+      "",
+      cbor.serialise(test_consensus_state(seed)),
+      consensus_state_siblings,
+    )
+  let old_state = test_host_state(empty_ibc_state_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+      next_client_sequence: old_state.next_client_sequence + 1,
+    }
+  let redeemer: HostStateRedeemer =
+    CreateClient { client_state_siblings, consensus_state_siblings }
+
+  spend_host_state(
+    redeemer,
+    [test_host_input(old_state)],
+    [
+      test_host_output(new_state),
+      test_client_output_without_token(client_datum),
+    ],
+  )
+}
+
 test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
   fuzz.label(@"fuzz.contract.host.update_client.valid")
 
@@ -1190,6 +1302,82 @@ test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
     ),
   )
     |> fuzz_dsl.assert_valid
+}
+
+test host_update_client_rejects_counterfeit_client_policy() fail {
+  let seed = 613
+  let canonical_token = test_client_token()
+  let counterfeit_token =
+    AuthToken { ..canonical_token, policy_id: "counterfeit client mint policy" }
+  let input_client_datum =
+    ClientDatum { ..test_client_datum(1, seed), token: counterfeit_token }
+  let output_client_datum =
+    ClientDatum { ..test_updated_client_datum(seed), token: counterfeit_token }
+  let siblings = full_empty_siblings()
+  let old_root = test_committed_client_root(input_client_datum, siblings)
+  let new_root =
+    test_update_client_root(
+      old_root,
+      input_client_datum,
+      output_client_datum,
+      siblings,
+    )
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+  let redeemer: HostStateRedeemer =
+    UpdateClient {
+      client_state_siblings: siblings,
+      consensus_state_siblings: siblings,
+      removed_consensus_state_siblings: [],
+    }
+
+  spend_host_state(
+    redeemer,
+    [test_host_input(old_state), test_client_input(input_client_datum)],
+    [test_host_output(new_state), test_client_output(output_client_datum)],
+  )
+}
+
+test host_update_client_rejects_datum_token_missing_from_output() fail {
+  let seed = 613
+  let input_client_datum = test_client_datum(1, seed)
+  let output_client_datum = test_updated_client_datum(seed)
+  let siblings = full_empty_siblings()
+  let old_root = test_committed_client_root(input_client_datum, siblings)
+  let new_root =
+    test_update_client_root(
+      old_root,
+      input_client_datum,
+      output_client_datum,
+      siblings,
+    )
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+  let redeemer: HostStateRedeemer =
+    UpdateClient {
+      client_state_siblings: siblings,
+      consensus_state_siblings: siblings,
+      removed_consensus_state_siblings: [],
+    }
+
+  spend_host_state(
+    redeemer,
+    [test_host_input(old_state), test_client_input(input_client_datum)],
+    [
+      test_host_output(new_state),
+      test_client_output_without_token(output_client_datum),
+    ],
+  )
 }
 
 /// Deterministic companion for the Tendermint UpdateClient capacity report.
@@ -1301,8 +1489,44 @@ fn prepare_host_update_client_capacity() -> Pair<HostStateRedeemer, Transaction>
 const host_update_client_capacity_fixture =
   prepare_host_update_client_capacity()
 
+fn host_update_client_capacity_fixture_is_constructed(
+  redeemer: HostStateRedeemer,
+  inputs: List<Input>,
+  outputs: List<Output>,
+) -> Bool {
+  expect UpdateClient { client_state_siblings, consensus_state_siblings, .. } =
+    redeemer
+  and {
+    list.length(inputs) == 2,
+    list.length(outputs) == 2,
+    list.length(client_state_siblings) == ibc_state_commitment.merkle_depth_bits,
+    list.length(consensus_state_siblings) == ibc_state_commitment.merkle_depth_bits,
+  }
+}
+
+test host_update_client_capacity_fixture_setup_baseline() {
+  let Pair(redeemer, transaction) = host_update_client_capacity_fixture
+  let Transaction { inputs, outputs, .. } = transaction
+  host_update_client_capacity_fixture_is_constructed(redeemer, inputs, outputs)
+}
+
+/// Deterministic companion for the Tendermint UpdateClient capacity report.
+///
+/// Keep this as a unit test (rather than a property test) so `aiken check`
+/// emits stable execution units for the complete 64-level client-state and
+/// consensus-state root transition. Consensus-state removals are deliberately
+/// empty: issue #613 measures validator-set capacity independently of the
+/// pruning growth tracked by issue #557.
 test host_update_client_capacity_minimum_history_succeeds() {
   let Pair(redeemer, transaction) = host_update_client_capacity_fixture
+  let Transaction { inputs, outputs, .. } = transaction
+  expect
+    host_update_client_capacity_fixture_is_constructed(
+      redeemer,
+      inputs,
+      outputs,
+    )
+
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
     test_client_script_hash(),

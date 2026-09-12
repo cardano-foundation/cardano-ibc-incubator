@@ -1,5 +1,3 @@
-import { TRANSACTION_SET_COLLATERAL } from '~@/config/constant.config';
-
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
 
 describe('TxOperationRunnerService', () => {
@@ -114,7 +112,8 @@ describe('TxOperationRunnerService', () => {
     expect(lucidService.endWalletSelectionScope).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledWith({
       localUPLCEval: false,
-      setCollateral: TRANSACTION_SET_COLLATERAL,
+      // Keep normal completion below Hermes's default 10 ADA collateral cap.
+      setCollateral: 5_000_000n,
     });
     expect(ibcTreePendingUpdatesService.register).toHaveBeenCalledWith(
       'txhash-create-client',
@@ -356,5 +355,116 @@ describe('TxOperationRunnerService', () => {
       'txhash-timeout-packet',
       pendingTreeUpdateSecond,
     );
+  });
+
+  it('holds one completion lock while threading wallet inputs through a transaction chain', async () => {
+    const {
+      service,
+      lucidService,
+      walletContextService,
+      txEventsService,
+      ibcTreePendingUpdatesService,
+    } = makeService();
+    const firstWalletInputs = [{ txHash: 'wallet-change-1', outputIndex: 0 }];
+    const secondWalletInputs = [{ txHash: 'wallet-change-2', outputIndex: 0 }];
+    const firstDerived = [{ txHash: 'first', outputIndex: 0 }];
+    const secondDerived = [{ txHash: 'second', outputIndex: 0 }];
+    const firstCompleted = { toCBOR: () => '01', toHash: () => 'first-hash' };
+    const secondCompleted = { toCBOR: () => '02', toHash: () => 'second-hash' };
+    const firstBuilder = {
+      chain: jest.fn().mockResolvedValue([firstWalletInputs, firstDerived, firstCompleted]),
+    } as any;
+    const secondBuilder = {
+      chain: jest.fn().mockResolvedValue([secondWalletInputs, secondDerived, secondCompleted]),
+    } as any;
+    const firstPending = { kind: 'tree_neutral' as const, expectedNewRoot: '', commit: jest.fn() };
+    const finalPending = { expectedNewRoot: 'final-root', commit: jest.fn() };
+    const finalEvents = [{ type: 'update_client', attributes: [] }];
+
+    const result = await service.runChain({
+      operationName: 'updateClientChain',
+      wallet: {
+        mode: 'refresh_from_address',
+        address: 'addr_test1chain',
+        context: 'updateClientChain',
+      },
+      build: async ({ complete }) => {
+        const first = await complete({
+          operationName: 'first',
+          unsignedTx: firstBuilder,
+          validity: { apply: (builder) => builder },
+          pendingTreeUpdate: firstPending,
+        });
+        expect(first.derivedOutputs).toBe(firstDerived);
+        await complete({
+          operationName: 'second',
+          unsignedTx: secondBuilder,
+          validity: { apply: (builder) => builder },
+          pendingTreeUpdate: finalPending,
+          syntheticEvents: finalEvents,
+        });
+        return 'built';
+      },
+    });
+
+    expect(result.value).toBe('built');
+    expect(result.links.map((link) => link.unsignedTxHash)).toEqual(['first-hash', 'second-hash']);
+    expect(firstBuilder.chain).toHaveBeenCalledWith({
+      localUPLCEval: false,
+      setCollateral: 5_000_000n,
+    });
+    expect(secondBuilder.chain).toHaveBeenCalledWith({
+      localUPLCEval: false,
+      setCollateral: 5_000_000n,
+      presetWalletInputs: firstWalletInputs,
+    });
+    expect(walletContextService.selectWalletFromAddressWithRetry).toHaveBeenCalledTimes(1);
+    expect(lucidService.beginWalletSelectionScope).toHaveBeenCalledTimes(1);
+    expect(lucidService.endWalletSelectionScope).toHaveBeenCalledTimes(1);
+    expect(lucidService.selectWalletFromAddress).toHaveBeenCalledWith('addr_test1chain', firstWalletInputs);
+    expect(ibcTreePendingUpdatesService.register.mock.calls).toEqual([
+      ['first-hash', firstPending],
+      ['second-hash', finalPending],
+    ]);
+    expect(txEventsService.register).toHaveBeenCalledWith('second-hash', finalEvents, 'final-root');
+  });
+
+  it('does not register partial chain metadata when a later link fails', async () => {
+    const { service, lucidService, ibcTreePendingUpdatesService } = makeService();
+    const firstBuilder = {
+      chain: jest.fn().mockResolvedValue([
+        [],
+        [],
+        { toCBOR: () => '01', toHash: () => 'first-hash' },
+      ]),
+    } as any;
+    const failure = new Error('second chain link failed');
+    const secondBuilder = { chain: jest.fn().mockRejectedValue(failure) } as any;
+
+    await expect(
+      service.runChain({
+        operationName: 'failedChain',
+        wallet: {
+          mode: 'custom_before_complete',
+          run: async () => lucidService.selectWalletFromAddress(),
+        },
+        build: async ({ complete }) => {
+          await complete({
+            operationName: 'first',
+            unsignedTx: firstBuilder,
+            validity: { apply: (builder) => builder },
+            pendingTreeUpdate: { kind: 'tree_neutral', expectedNewRoot: '', commit: jest.fn() },
+          });
+          await complete({
+            operationName: 'second',
+            unsignedTx: secondBuilder,
+            validity: { apply: (builder) => builder },
+          });
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(ibcTreePendingUpdatesService.register).not.toHaveBeenCalled();
+    expect(lucidService.endWalletSelectionScope).toHaveBeenCalledTimes(1);
   });
 });

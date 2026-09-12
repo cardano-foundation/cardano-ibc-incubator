@@ -38,9 +38,24 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
   }, common);
 }
 
+export function subtractBaselineExUnits(measured: ExUnits, baseline: ExUnits): ExUnits {
+  if (baseline.mem > measured.mem || baseline.steps > measured.steps) {
+    throw new Error(
+      `execution-unit baseline mem=${baseline.mem} steps=${baseline.steps} exceeds ` +
+        `measured mem=${measured.mem} steps=${measured.steps}`,
+    );
+  }
+
+  return {
+    mem: measured.mem - baseline.mem,
+    steps: measured.steps - baseline.steps,
+  };
+}
+
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
-    signedBytesEstimate: 15_746,
+    // Every applied reference independently passes the production guard.
+    signedBytesEstimate: 15_851,
   },
   send_packet_at_commitment_capacity: {
     mem: 38_093_446,
@@ -51,8 +66,8 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
     steps: 12_714_931_716,
   },
   prune_packet_history_at_capacity: {
-    // Includes state-token authentication and the shared timeout helper.
-    // The public-network limits are unchanged.
+    // Re-measured with authenticated state threads and the shared timeout
+    // root helper. The public-network limits are unchanged.
     mem: 25_214_354,
   },
   trace_registry_rollover: {

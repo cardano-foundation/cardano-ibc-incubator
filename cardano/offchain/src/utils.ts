@@ -19,6 +19,7 @@ import {
   ScriptHash,
   toHex,
   TxBuilder,
+  type TxSigned,
   UTxO,
   validatorToAddress,
   validatorToScriptHash,
@@ -264,6 +265,7 @@ export const submitTx = async (
   txName: string,
   logSize = true,
   localUPLCEval = false, // Default to false to use Ogmios for script evaluation
+  beforeSubmit?: (signedTx: TxSigned) => void | Promise<void>,
 ) => {
   const ADOPTION_ATTEMPTS = 6;
   const ADOPTION_TIMEOUT_MS = 30000;
@@ -361,6 +363,9 @@ export const submitTx = async (
   // attempt can succeed on-chain even when Ogmios drops the response before
   // returning the transaction id, so retries must not depend on recovering the
   // hash from the transport response.
+  // Preflight may depend on this exact body hash (for nonce output parameters).
+  // It must complete before the first submission attempt.
+  await beforeSubmit?.(signedTx);
   const txHash = signedTx.toHash();
   const walletAddress = await lucid.wallet().address();
   console.log("Submitting tx [", txName, "]: tx hash is", txHash);
@@ -779,6 +784,8 @@ export const getLiveWalletUtxos = async (
 type Validator =
   | "recoverClient"
   | "spendClient"
+  | "spendTendermintUpdateSession"
+  | "mintTendermintUpdateSession"
   | "spendConnection"
   | "spendChannel"
   | "spendMockModule"
@@ -811,6 +818,20 @@ export type DeploymentTemplate = {
       refUtxo: UTxO;
     };
     spendClient: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendTendermintUpdateSession: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintTendermintUpdateSession: {
       title: string;
       script: string;
       scriptHash: string;

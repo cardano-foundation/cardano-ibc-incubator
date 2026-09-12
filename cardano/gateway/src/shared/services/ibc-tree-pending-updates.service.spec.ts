@@ -67,4 +67,47 @@ describe('IbcTreePendingUpdatesService cache lifecycle', () => {
     release();
     await expect(confirmation).resolves.toBe(publication);
   });
+  it('does not match a tree-neutral update through the expected-root fallback', () => {
+    const service = new IbcTreePendingUpdatesService();
+    const neutralUpdate = { kind: 'tree_neutral' as const, expectedNewRoot: 'root', commit: jest.fn() };
+    const treeUpdate = { kind: 'tree_update' as const, expectedNewRoot: 'root', commit: jest.fn() };
+    service.register('neutral-tx', neutralUpdate);
+    service.register('tree-tx', treeUpdate);
+
+    expect(service.takeByExpectedRoot('root')).toBe(treeUpdate);
+    expect(service.peek('neutral-tx')).toBe(neutralUpdate);
+  });
+
+  it('retains a neutral update after failure and acknowledges its exact successful retry', async () => {
+    const service = new IbcTreePendingUpdatesService();
+    const update = {
+      kind: 'tree_neutral' as const,
+      expectedNewRoot: '',
+      commit: jest.fn().mockRejectedValueOnce(new Error('transient failure')).mockResolvedValue(undefined),
+    };
+    service.register('tx', update);
+
+    await expect(service.commitNeutral('tx', { ...update })).resolves.toBe(false);
+    expect(update.commit).not.toHaveBeenCalled();
+    await expect(service.commitNeutral('tx', update)).rejects.toThrow('transient failure');
+    expect(service.peek('tx')).toBe(update);
+    await expect(service.commitNeutral('tx', update)).resolves.toBe(true);
+    expect(service.peek('tx')).toBeUndefined();
+  });
+
+  it('waits for neutral acknowledgement and preserves a replacement registration', async () => {
+    const service = new IbcTreePendingUpdatesService();
+    let release!: () => void;
+    const wait = new Promise<void>((resolve) => { release = resolve; });
+    const update = { kind: 'tree_neutral' as const, expectedNewRoot: '', commit: jest.fn(() => wait) };
+    const replacement = { kind: 'tree_neutral' as const, expectedNewRoot: '', commit: jest.fn() };
+    service.register('tx', update);
+    const confirmation = service.commitNeutral('tx', update);
+    expect(service.peek('tx')).toBe(update);
+    service.register('tx', replacement);
+    release();
+
+    await expect(confirmation).resolves.toBe(true);
+    expect(service.peek('tx')).toBe(replacement);
+  });
 });

@@ -75,6 +75,24 @@ message SubmitSignedTxRequest {
   
   // Optional description for logging/debugging.
   string description = 2;
+
+}
+
+// TendermintUpdateTxChain carries one dependency-ordered transaction phase.
+// A phase contains tree-neutral session transactions or one final client and
+// HostState update.
+message TendermintUpdateTxChain {
+  // Envelope version. The only currently supported value is 1.
+  uint32 version = 1;
+
+  // Unsigned Cardano transaction bodies, CBOR-encoded as UTF-8 hex, in
+  // dependency order. The protocol limit is 100 entries.
+  repeated string unsigned_tx_cbor = 2;
+
+  // True when the last tree-neutral transaction is a confirmed phase boundary.
+  // Hermes must rebuild and continue the original MsgUpdateClient after either
+  // verification reaches a Complete session or session cleanup finishes.
+  bool rebuild_after_submission = 3;
 }
 
 // SubmitSignedTxResponse contains the result of submitting a signed transaction.
