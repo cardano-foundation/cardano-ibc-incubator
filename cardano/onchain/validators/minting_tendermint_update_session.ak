@@ -1,3 +1,4 @@
+use aiken/collection/dict
 use aiken/collection/list
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/address.{Script as ScriptCredential}
@@ -6,7 +7,7 @@ use cardano/transaction.{Input, Output, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/multitx/session
 use ibc/client/ics_007_tendermint_client/multitx/types.{
-  BurnSession, MintSession, MintSessionRedeemer, SessionDatum,
+  BurnSession, BurnSessions, MintSession, MintSessionRedeemer, SessionDatum,
 }
 use ibc/utils/validator_utils
 
@@ -90,6 +91,33 @@ validator mint_tendermint_update_session(
           ),
           validator_utils.no_output_contains_auth_token(outputs, token),
         }
+      }
+      BurnSessions { token_names } -> {
+        expect [first, second] = token_names
+        expect first != second
+        expect
+          assets.tokens(mint, own_policy_id) == dict.from_pairs(
+            [Pair(first, -1), Pair(second, -1)],
+          )
+        list.all(
+          token_names,
+          fn(token_name) {
+            let token = AuthToken { policy_id: own_policy_id, name: token_name }
+            expect [session_input] =
+              list.filter(
+                inputs,
+                fn(input) {
+                  is_session_input(input, session_script_hash, token)
+                },
+              )
+            expect input_datum: SessionDatum =
+              validator_utils.get_inline_datum(session_input.output)
+            and {
+              input_datum.session_token == token,
+              validator_utils.no_output_contains_auth_token(outputs, token),
+            }
+          },
+        )
       }
     }
   }

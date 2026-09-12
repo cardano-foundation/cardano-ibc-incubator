@@ -111,12 +111,13 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     expect(builder.pay.ToContract).not.toHaveBeenCalled();
   });
 
-  it('atomically burns a complete session and updates client and HostState', () => {
+  it.each([false, true])('atomically finalizes authenticated sessions, explicit evidence: %s', (evidence) => {
     const builder = createBuilder();
     const service = createService(builder);
     const host = { txHash: 'host-input', outputIndex: 0, datum: 'raw-host', datumHash: 'old-hash' };
     const client = { txHash: 'client-input', outputIndex: 0 };
     const session = { txHash: 'session-input', outputIndex: 0 };
+    const secondSession = { txHash: 'second-session-input', outputIndex: 0 };
 
     service.createUnsignedFinalizeTendermintSessionTransaction(
       host,
@@ -131,6 +132,7 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       'client-unit',
       'session-unit',
       'signer-key-hash',
+      evidence ? [{ utxo: secondSession, tokenUnit: 'second-session-unit' }] : [],
     );
 
     expect(builder.readFrom).toHaveBeenCalledWith([
@@ -144,8 +146,10 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       'host-redeemer',
     );
     expect(builder.collectFrom).toHaveBeenCalledWith([client], 'client-redeemer');
-    expect(builder.collectFrom).toHaveBeenCalledWith([session], 'finalize-session');
-    expect(builder.mintAssets).toHaveBeenCalledWith({ 'session-unit': -1n }, 'burn-session');
+    expect(builder.collectFrom).toHaveBeenCalledWith(evidence ? [session, secondSession] : [session], 'finalize-session');
+    expect(builder.mintAssets).toHaveBeenCalledWith(
+      evidence ? { 'session-unit': -1n, 'second-session-unit': -1n } : { 'session-unit': -1n }, 'burn-session',
+    );
     expect(builder.pay.ToContract).toHaveBeenCalledWith(
       'addr_test1host',
       { kind: 'inline', value: 'updated-host' },

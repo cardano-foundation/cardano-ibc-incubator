@@ -1143,6 +1143,7 @@ export class LucidService implements OnModuleInit {
     clientTokenUnit: string,
     sessionTokenUnit: string,
     signerKeyHash: string,
+    additionalSessions: Array<{ utxo: UTxO; tokenUnit: string }> = [],
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const spendSession = this.referenceScripts.spendTendermintUpdateSession;
@@ -1169,8 +1170,12 @@ export class LucidService implements OnModuleInit {
       ])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
-      .collectFrom([sessionUtxo], encodedSpendSessionRedeemer)
-      .mintAssets({ [sessionTokenUnit]: -1n }, encodedBurnSessionRedeemer)
+      .collectFrom([sessionUtxo, ...additionalSessions.map(({ utxo }) => utxo)], encodedSpendSessionRedeemer)
+      .mintAssets(
+        Object.fromEntries([sessionTokenUnit, ...additionalSessions.map(({ tokenUnit }) => tokenUnit)]
+          .map((tokenUnit) => [tokenUnit, -1n])),
+        encodedBurnSessionRedeemer,
+      )
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: encodedUpdatedHostStateDatum },

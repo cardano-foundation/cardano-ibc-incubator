@@ -217,7 +217,7 @@ describe('Tendermint update-session Lucid codecs', () => {
     expect(raw.fields[3].fields[optionField].index).toBe(expectedOptionConstructor);
   });
 
-  it('pins both MintSessionRedeemer constructors', () => {
+  it('pins all MintSessionRedeemer constructors', () => {
     const mint: MintSessionRedeemer = {
       MintSession: {
         seed: { transactionId: '91', outputIndex: 2n },
@@ -235,6 +235,10 @@ describe('Tendermint update-session Lucid codecs', () => {
     expect(encodedBurn).toBe('d87a8144deadbeef');
     expect(decodeMintSessionRedeemer(encodedMint, Lucid)).toEqual(mint);
     expect(decodeMintSessionRedeemer(encodedBurn, Lucid)).toEqual(burn);
+    const burnBoth: MintSessionRedeemer = { BurnSessions: { tokenNames: ['01', '02'] } };
+    const encodedBurnBoth = encodeMintSessionRedeemer(burnBoth, Lucid);
+    expect(rawConstructor(encodedBurnBoth).index).toBe(2);
+    expect(decodeMintSessionRedeemer(encodedBurnBoth, Lucid)).toEqual(burnBoth);
   });
 
   it('pins all SpendSessionRedeemer constructors and nested membership Options', () => {
@@ -258,7 +262,7 @@ describe('Tendermint update-session Lucid codecs', () => {
     expect(entries[1].fields[2].index).toBe(1);
   });
 
-  it('pins both SpendMultitxClientRedeemer constructors', () => {
+  it('pins all SpendMultitxClientRedeemer constructors', () => {
     const finalize: SpendMultitxClientRedeemer = {
       FinalizeUpdate: { sessionToken: { policyId: '01', name: '02' } },
     };
@@ -270,5 +274,14 @@ describe('Tendermint update-session Lucid codecs', () => {
     expect(encodedDisabled).toBe('d87a80');
     expect(decodeSpendMultitxClientRedeemer(encodedFinalize, Lucid)).toEqual(finalize);
     expect(decodeSpendMultitxClientRedeemer(encodedDisabled, Lucid)).toBe('DirectUpdateDisabled');
+    const recovery: SpendMultitxClientRedeemer = { RecoverClient: { substituteToken: { policyId: '01', name: '03' } } };
+    const evidence: SpendMultitxClientRedeemer = { FinalizeMisbehaviour: {
+      sessionToken1: { policyId: '02', name: '03' }, sessionToken2: { policyId: '02', name: '04' },
+    } };
+    for (const [value, index] of [[recovery, 2], [evidence, 3]] as const) {
+      const encoded = encodeSpendMultitxClientRedeemer(value, Lucid);
+      expect(rawConstructor(encoded).index).toBe(index);
+      expect(decodeSpendMultitxClientRedeemer(encoded, Lucid)).toEqual(value);
+    }
   });
 });

@@ -1,5 +1,6 @@
+use aiken/collection/list
 use aiken/interval
-use cardano/address.{from_script}
+use cardano/address.{Script, from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
@@ -25,16 +26,20 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
-  DirectUpdateDisabled, FinalizeUpdate,
+  DirectUpdateDisabled, FinalizeMisbehaviour, FinalizeUpdate,
 }
+use ibc/client/ics_007_tendermint_client/multitx/session
 use ibc/client/ics_007_tendermint_client/multitx/types.{
-  Cancel, CommitCore, Complete, Finalize, SessionDatum, UpdatePlan,
+  BurnSessions, Cancel, CommitCore, Complete, Finalize, SessionDatum, UpdatePlan,
 }
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/host_state_redeemer
+use ibc/utils/validator_utils
+use minting_tendermint_update_session
 use spending_multitx_client
+use spending_tendermint_update_session
 
 const validator_root =
   #"1111111111111111111111111111111111111111111111111111111111111111"
@@ -343,6 +348,7 @@ test completed_session_updates_the_client_atomically() {
   spending_multitx_client.spend_multitx_client.spend(
     host_policy,
     session_policy,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
     FinalizeUpdate { session_token },
     client_ref,
@@ -376,6 +382,7 @@ test finalization_rejects_processing_time_from_chain_lower_bound() fail {
   spending_multitx_client.spend_multitx_client.spend(
     host_policy,
     session_policy,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
     FinalizeUpdate { session_token },
     client_ref,
@@ -392,6 +399,7 @@ test direct_update_constructor_is_disabled() {
   !spending_multitx_client.spend_multitx_client.spend(
     host_policy,
     session_policy,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
     DirectUpdateDisabled,
     client_ref,
@@ -405,6 +413,7 @@ test finalization_rejects_a_session_for_another_policy() fail {
   spending_multitx_client.spend_multitx_client.spend(
     host_policy,
     #"dddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
     FinalizeUpdate { session_token },
     client_ref,
@@ -424,9 +433,485 @@ test finalization_rejects_cancel_session_redeemer() fail {
   spending_multitx_client.spend_multitx_client.spend(
     host_policy,
     session_token.policy_id,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
     FinalizeUpdate { session_token },
     client_ref,
     Transaction { ..transaction, redeemers: cancel_redeemers },
+  )
+}
+
+fn frozen_client(datum: ClientDatum) -> ClientDatum {
+  ClientDatum {
+    ..datum,
+    state: ClientDatumState {
+      ..datum.state,
+      client_state: ClientState {
+        ..datum.state.client_state,
+        frozen_height: Height { revision_number: 0, revision_height: 1 },
+      },
+    },
+  }
+}
+
+fn replace_session_header(input: Input, header: TmHeader) -> Input {
+  expect receipt: SessionDatum = validator_utils.get_inline_datum(input.output)
+  let plan =
+    UpdatePlan {
+      ..receipt.plan,
+      header,
+      commit: CommitCore {
+        ..receipt.plan.commit,
+        height: header.height,
+        block_id: BlockID {
+          ..receipt.plan.commit.block_id,
+          hash: tm_header_mod.hash(header),
+        },
+      },
+      trusted_validator_count: if header.height == receipt.plan.trusted_height.revision_height + 1 {
+        0
+      } else {
+        1
+      },
+    }
+  let phase =
+    Complete {
+      target_root: validator_root,
+      target_total_power: 10,
+      target_signed_power: 10,
+      trusted_root: if plan.trusted_validator_count == 0 {
+        None
+      } else {
+        Some(validator_root)
+      },
+      trusted_total_power: if plan.trusted_validator_count == 0 {
+        0
+      } else {
+        10
+      },
+      trusted_signed_power: if plan.trusted_validator_count == 0 {
+        0
+      } else {
+        10
+      },
+    }
+  let changed: Data = SessionDatum { ..receipt, plan, phase }
+  Input {
+    ..input,
+    output: Output { ..input.output, datum: InlineDatum(changed) },
+  }
+}
+
+fn evidence_context() -> Transaction {
+  let (_, session_policy, client, _, _, tx) = valid_context()
+  expect [client_input, first, host] = tx.inputs
+  expect receipt: SessionDatum = validator_utils.get_inline_datum(first.output)
+  let second_token = AuthToken { policy_id: session_policy, name: app_hash }
+  let second_datum: Data =
+    SessionDatum { ..receipt, session_token: second_token }
+  let second =
+    Input {
+      output_reference: output_ref(
+        #"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        0,
+      ),
+      output: Output {
+        ..first.output,
+        value: from_asset(session_policy, second_token.name, 1),
+        datum: InlineDatum(second_datum),
+      },
+    }
+  let second =
+    replace_session_header(
+      second,
+      TmHeader { ..target_header(), app_hash: validator_root },
+    )
+  let frozen: Data = frozen_client(client)
+  let finalize: Data = Finalize
+  Transaction {
+    ..tx,
+    inputs: [client_input, first, second, host],
+    outputs: [
+      Output { ..client_input.output, datum: InlineDatum(frozen) },
+      host.output,
+    ],
+    mint: assets.add(tx.mint, session_policy, second_token.name, -1),
+    extra_signatories: [receipt.owner],
+    redeemers: [Pair(Spend(second.output_reference), finalize), ..tx.redeemers],
+  }
+}
+
+fn verify_evidence(tx: Transaction) -> Bool {
+  expect [client_input, first, second, host] = tx.inputs
+  expect client: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  expect first_datum: SessionDatum =
+    validator_utils.get_inline_datum(first.output)
+  expect second_datum: SessionDatum =
+    validator_utils.get_inline_datum(second.output)
+  expect Script(host_policy) = host.output.address.payment_credential
+  // The fixture HostState address is distinct from its NFT policy.
+  expect host_policy != first_datum.session_token.policy_id
+  spending_multitx_client.spend_multitx_client.spend(
+    #"33333333333333333333333333333333333333333333333333333333",
+    first_datum.session_token.policy_id,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    Some(client),
+    FinalizeMisbehaviour {
+      session_token_1: first_datum.session_token,
+      session_token_2: second_datum.session_token,
+    },
+    client_input.output_reference,
+    tx,
+  )
+}
+
+test evidence_two_header_fixture_setup_baseline() {
+  let tx = evidence_context()
+  expect [_, first, second, _] = tx.inputs
+  first.output_reference != second.output_reference && list.length(tx.outputs) == 2
+}
+
+test evidence_two_conflicting_headers_freeze_without_changing_history() {
+  verify_evidence(evidence_context())
+}
+
+test evidence_finalization_validates_both_sessions_and_exact_burn_policy() {
+  let tx = evidence_context()
+  expect [_, first, second, _] = tx.inputs
+  expect first_datum: SessionDatum =
+    validator_utils.get_inline_datum(first.output)
+  expect second_datum: SessionDatum =
+    validator_utils.get_inline_datum(second.output)
+  expect Script(session_script) = first.output.address.payment_credential
+  and {
+    verify_evidence(tx),
+    spending_tendermint_update_session.spend_tendermint_update_session.spend(
+      #"33333333333333333333333333333333333333333333333333333333",
+      Some(first_datum),
+      Finalize,
+      first.output_reference,
+      tx,
+    ),
+    spending_tendermint_update_session.spend_tendermint_update_session.spend(
+      #"33333333333333333333333333333333333333333333333333333333",
+      Some(second_datum),
+      Finalize,
+      second.output_reference,
+      tx,
+    ),
+    minting_tendermint_update_session.mint_tendermint_update_session.mint(
+      session_script,
+      BurnSessions {
+        token_names: [
+          first_datum.session_token.name,
+          second_datum.session_token.name,
+        ],
+      },
+      first_datum.session_token.policy_id,
+      tx,
+    ),
+  }
+}
+
+test evidence_rejects_identical_headers() {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  !verify_evidence(
+    Transaction {
+      ..tx,
+      inputs: [
+        client,
+        first,
+        replace_session_header(second, target_header()),
+        host,
+      ],
+    },
+  )
+}
+
+test evidence_accepts_time_violation_regardless_of_header_order() {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  let later =
+    replace_session_header(
+      second,
+      TmHeader { ..target_header(), height: 12, time: 1_400_000_000 },
+    )
+  and {
+    verify_evidence(Transaction { ..tx, inputs: [client, first, later, host] }),
+    verify_evidence(Transaction { ..tx, inputs: [client, later, first, host] }),
+  }
+}
+
+test evidence_rejects_distinct_nonconflicting_heights() {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  let later =
+    replace_session_header(
+      second,
+      TmHeader { ..target_header(), height: 12, time: 1_600_000_000 },
+    )
+  !verify_evidence(Transaction { ..tx, inputs: [client, first, later, host] })
+}
+
+test evidence_does_not_apply_normal_header_clock_or_monotonicity_checks() {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  let early =
+    replace_session_header(
+      first,
+      TmHeader { ..target_header(), time: 500_000_000 },
+    )
+  let future =
+    replace_session_header(
+      second,
+      TmHeader { ..target_header(), time: 100_000_000_000 },
+    )
+  verify_evidence(Transaction { ..tx, inputs: [client, early, future, host] })
+}
+
+test evidence_rejects_expired_trusted_states() fail {
+  verify_evidence(
+    Transaction {
+      ..evidence_context(),
+      validity_range: interval.between(12_000, 13_000),
+    },
+  )
+}
+
+test evidence_rejects_foreign_client_session() fail {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  expect datum: SessionDatum = validator_utils.get_inline_datum(second.output)
+  let foreign: Data =
+    SessionDatum {
+      ..datum,
+      plan: UpdatePlan {
+        ..datum.plan,
+        client_token: AuthToken { ..datum.plan.client_token, name: "client-1" },
+      },
+    }
+  verify_evidence(
+    Transaction {
+      ..tx,
+      inputs: [
+        client,
+        first,
+        Input {
+          ..second,
+          output: Output { ..second.output, datum: InlineDatum(foreign) },
+        },
+        host,
+      ],
+    },
+  )
+}
+
+test evidence_rejects_incomplete_session() fail {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  expect datum: SessionDatum = validator_utils.get_inline_datum(second.output)
+  let incomplete: Data =
+    session.initial_datum(datum.session_token, datum.owner, datum.plan)
+  verify_evidence(
+    Transaction {
+      ..tx,
+      inputs: [
+        client,
+        first,
+        Input {
+          ..second,
+          output: Output { ..second.output, datum: InlineDatum(incomplete) },
+        },
+        host,
+      ],
+    },
+  )
+}
+
+test evidence_rejects_forged_trusted_consensus_state() fail {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  expect datum: SessionDatum = validator_utils.get_inline_datum(second.output)
+  let forged: Data =
+    SessionDatum {
+      ..datum,
+      plan: UpdatePlan {
+        ..datum.plan,
+        trusted_consensus_state: ConsensusState {
+          ..datum.plan.trusted_consensus_state,
+          timestamp: 900_000_000,
+        },
+      },
+    }
+  verify_evidence(
+    Transaction {
+      ..tx,
+      inputs: [
+        client,
+        first,
+        Input {
+          ..second,
+          output: Output { ..second.output, datum: InlineDatum(forged) },
+        },
+        host,
+      ],
+    },
+  )
+}
+
+test evidence_rejects_another_session_owner() fail {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  expect datum: SessionDatum = validator_utils.get_inline_datum(second.output)
+  let changed: Data =
+    SessionDatum {
+      ..datum,
+      owner: #"abababababababababababababababababababababababababababab",
+    }
+  verify_evidence(
+    Transaction {
+      ..tx,
+      inputs: [
+        client,
+        first,
+        Input {
+          ..second,
+          output: Output { ..second.output, datum: InlineDatum(changed) },
+        },
+        host,
+      ],
+    },
+  )
+}
+
+test evidence_rejects_frozen_client() fail {
+  let tx = evidence_context()
+  expect [client, ..rest] = tx.inputs
+  expect datum: ClientDatum = validator_utils.get_inline_datum(client.output)
+  let frozen: Data = frozen_client(datum)
+  verify_evidence(
+    Transaction {
+      ..tx,
+      inputs: [
+        Input {
+          ..client,
+          output: Output { ..client.output, datum: InlineDatum(frozen) },
+        },
+        ..rest
+      ],
+    },
+  )
+}
+
+test evidence_rejects_output_history_mutation() {
+  let tx = evidence_context()
+  expect [client, ..rest] = tx.outputs
+  expect datum: ClientDatum = validator_utils.get_inline_datum(client)
+  let changed: Data =
+    ClientDatum {
+      ..datum,
+      state: ClientDatumState { ..datum.state, consensus_states: [] },
+    }
+  !verify_evidence(
+    Transaction {
+      ..tx,
+      outputs: [Output { ..client, datum: InlineDatum(changed) }, ..rest],
+    },
+  )
+}
+
+test evidence_rejects_missing_burn() fail {
+  let tx = evidence_context()
+  verify_evidence(Transaction { ..tx, mint: assets.zero })
+}
+
+test evidence_rejects_missing_session_authorization() fail {
+  verify_evidence(Transaction { ..evidence_context(), redeemers: [] })
+}
+
+test evidence_rejects_additional_session_mint() fail {
+  let tx = evidence_context()
+  verify_evidence(
+    Transaction {
+      ..tx,
+      mint: assets.add(
+        tx.mint,
+        #"55555555555555555555555555555555555555555555555555555555",
+        "extra",
+        1,
+      ),
+    },
+  )
+}
+
+fn header_conflict_context() -> (
+  ClientDatum,
+  AuthToken,
+  OutputReference,
+  Transaction,
+) {
+  let (_, _, original, token, client_ref, tx) = valid_context()
+  let client = expected_client_output_datum(original)
+  expect [client_input, session_input, host] = tx.inputs
+  let old: Data = client
+  let frozen: Data = frozen_client(client)
+  let conflicting =
+    replace_session_header(
+      session_input,
+      TmHeader { ..target_header(), app_hash: validator_root },
+    )
+  (
+    client,
+    token,
+    client_ref,
+    Transaction {
+      ..tx,
+      inputs: [
+        Input {
+          ..client_input,
+          output: Output { ..client_input.output, datum: InlineDatum(old) },
+        },
+        conflicting,
+        host,
+      ],
+      outputs: [
+        Output { ..client_input.output, datum: InlineDatum(frozen) },
+        host.output,
+      ],
+    },
+  )
+}
+
+test header_conflicting_with_retained_height_freezes_client() {
+  let (client, token, client_ref, tx) = header_conflict_context()
+  spending_multitx_client.spend_multitx_client.spend(
+    #"33333333333333333333333333333333333333333333333333333333",
+    token.policy_id,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    Some(client),
+    FinalizeUpdate { session_token: token },
+    client_ref,
+    tx,
+  )
+}
+
+test header_time_violation_against_retained_height_freezes_client() {
+  let (client, token, client_ref, tx) = header_conflict_context()
+  expect [client_input, receipt, host] = tx.inputs
+  let later =
+    replace_session_header(
+      receipt,
+      TmHeader { ..target_header(), height: 12, time: 1_400_000_000 },
+    )
+  spending_multitx_client.spend_multitx_client.spend(
+    #"33333333333333333333333333333333333333333333333333333333",
+    token.policy_id,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    Some(client),
+    FinalizeUpdate { session_token: token },
+    client_ref,
+    Transaction { ..tx, inputs: [client_input, later, host] },
   )
 }

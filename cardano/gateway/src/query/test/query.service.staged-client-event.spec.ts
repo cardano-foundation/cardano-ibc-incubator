@@ -13,6 +13,12 @@ import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-p
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import type { ClientDatum } from '../../shared/types/client-datum';
+import { encodeClientDatum } from '../../shared/types/client-datum';
+import { hashSha3_256 } from '../../shared/helpers/hex';
+import { CLIENT_PREFIX } from '../../constant';
+import { clientDatumMockBuilder } from '../../tx/test/mock/client-datum';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
+import { Misbehaviour } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import type { SessionDatum, TargetEntry, UpdatePlan } from '../../shared/types/tendermint-update-session';
 import {
   encodeSessionDatum,
@@ -25,11 +31,16 @@ import { hashTendermintValidatorSet } from '../../tx/update-client-staged-payloa
 const SESSION_POLICY = '81'.repeat(28);
 const SESSION_NAME = '82'.repeat(32);
 const SESSION_ADDRESS = 'addr_test1_session';
-const CLIENT_TOKEN = { policyId: '83'.repeat(28), name: '84' };
+const HOST_TOKEN = { policyId: '85'.repeat(28), name: '01' };
+const CLIENT_NAME_PREFIX = hashSha3_256(HOST_TOKEN.policyId + HOST_TOKEN.name).slice(0, 40) +
+  hashSha3_256(CLIENT_PREFIX).slice(0, 8);
+const CLIENT_TOKEN = { policyId: '83'.repeat(28), name: CLIENT_NAME_PREFIX + '30' };
+const SUBSTITUTE_TOKEN = { ...CLIENT_TOKEN, name: CLIENT_NAME_PREFIX + '31' };
 const CLIENT_ADDRESS = 'addr_test1_client';
 const VALIDATOR_PUBLIC_KEY = '86'.repeat(32);
 const CLIENT_INPUT_TX_HASH = '22'.repeat(32);
 const SESSION_INPUT_TX_HASH = '44'.repeat(32);
+const COMPLETE_SESSION_TX_HASH = '66'.repeat(32);
 const VALIDATOR = {
   address: crypto.createHash('sha256').update(Buffer.from(VALIDATOR_PUBLIC_KEY, 'hex')).digest('hex').slice(0, 40),
   pubkey: VALIDATOR_PUBLIC_KEY,
@@ -85,10 +96,16 @@ function transactionBodyCbor(inputs: Array<{ txHash: string; outputIndex?: bigin
 }
 
 async function stagedHistoryFixture(
-  options: { bundledFinalLookalike?: boolean; bundledAdvanceLookalike?: boolean } = {},
+  options: {
+    bundledFinalLookalike?: boolean;
+    bundledAdvanceLookalike?: boolean;
+    action?: 'recovery' | 'evidence';
+    unspentReceipt?: boolean;
+  } = {},
 ) {
   const plan = sessionPlan();
   const sessionToken = { policyId: SESSION_POLICY, name: SESSION_NAME };
+  const secondSessionToken = { policyId: SESSION_POLICY, name: 'a1'.repeat(32) };
   const collectingSession: SessionDatum = {
     sessionToken,
     owner: '93'.repeat(28),
@@ -148,7 +165,14 @@ async function stagedHistoryFixture(
     {
       type: 'spend',
       index: 1n,
-      data: encodeSpendMultitxClientRedeemer({ FinalizeUpdate: { sessionToken } }, Lucid),
+      data: encodeSpendMultitxClientRedeemer(
+        options.action === 'recovery'
+          ? { RecoverClient: { substituteToken: SUBSTITUTE_TOKEN } }
+          : options.action === 'evidence'
+            ? { FinalizeMisbehaviour: { sessionToken1: sessionToken, sessionToken2: secondSessionToken } }
+            : { FinalizeUpdate: { sessionToken } },
+        Lucid,
+      ),
     },
   ];
   const advanceRedeemers = [
@@ -186,7 +210,7 @@ async function stagedHistoryFixture(
       blockNo: 18,
     },
     {
-      txHash: 'advance-tx',
+      txHash: COMPLETE_SESSION_TX_HASH,
       outputIndex: 0,
       address: SESSION_ADDRESS,
       assetsPolicy: SESSION_POLICY,
@@ -195,10 +219,23 @@ async function stagedHistoryFixture(
       blockNo: 19,
     },
   ];
+  const secondPlan = structuredClone(plan);
+  secondPlan.header.appHash = 'a2'.repeat(32);
+  const secondOutputs = [
+    {
+      ...sessionOutputs[0], txHash: '77'.repeat(32), assetsName: secondSessionToken.name,
+      datum: encodeSessionDatum({ ...collectingSession, sessionToken: secondSessionToken, plan: secondPlan }, Lucid),
+    },
+    {
+      ...sessionOutputs[1], txHash: '99'.repeat(32), assetsName: secondSessionToken.name,
+      datum: encodeSessionDatum({ ...completeSession, sessionToken: secondSessionToken, plan: secondPlan }, Lucid),
+    },
+  ];
   const historyService = {
     findUtxosByPolicyIdAndPrefixTokenName: jest.fn(async (policyId: string, tokenName: string) => {
       if (policyId === CLIENT_TOKEN.policyId && tokenName === CLIENT_TOKEN.name) return [clientInput];
       if (policyId === SESSION_POLICY && tokenName === SESSION_NAME) return sessionOutputs;
+      if (policyId === SESSION_POLICY && tokenName === secondSessionToken.name) return secondOutputs;
       return [];
     }),
   } as unknown as HistoryService;
@@ -207,17 +244,32 @@ async function stagedHistoryFixture(
       'final-tx',
       {
         // Deliberately supply the client input before the lower-hash lookalike input.
-        txBodyCborHex: transactionBodyCbor([{ txHash: CLIENT_INPUT_TX_HASH }, { txHash: '11'.repeat(32) }]),
+        txBodyCborHex: transactionBodyCbor([
+          { txHash: CLIENT_INPUT_TX_HASH }, { txHash: '11'.repeat(32) },
+          ...(options.unspentReceipt ? [] : [{ txHash: COMPLETE_SESSION_TX_HASH }]),
+          ...(options.action === 'evidence' ? [{ txHash: '99'.repeat(32) }] : []),
+        ]),
         redeemers: finalRedeemers.map((redeemer) => ({ ...redeemer, index: Number(redeemer.index) })),
       },
     ],
     [
-      'advance-tx',
+      COMPLETE_SESSION_TX_HASH,
       {
         // Deliberately supply the session input before the lower-hash lookalike input.
         txBodyCborHex: transactionBodyCbor([{ txHash: SESSION_INPUT_TX_HASH }, { txHash: '33'.repeat(32) }]),
         redeemers: advanceRedeemers,
       },
+    ],
+    [
+      '99'.repeat(32),
+      {
+        txBodyCborHex: transactionBodyCbor([{ txHash: '77'.repeat(32) }, { txHash: '33'.repeat(32) }]),
+        redeemers: advanceRedeemers,
+      },
+    ],
+    [
+      '77'.repeat(32),
+      { txBodyCborHex: transactionBodyCbor([{ txHash: '55'.repeat(32) }]), redeemers: [] },
     ],
     [
       SESSION_INPUT_TX_HASH,
@@ -236,6 +288,7 @@ async function stagedHistoryFixture(
   } as unknown as MiniProtocalsService;
   const configService = {
     get: jest.fn().mockReturnValue({
+      hostStateNFT: HOST_TOKEN,
       validators: {
         mintClientStt: { scriptHash: CLIENT_TOKEN.policyId },
         spendClient: { address: CLIENT_ADDRESS },
@@ -256,6 +309,14 @@ async function stagedHistoryFixture(
     {} as any,
     createTestTreeStore(),
   );
+  const outputDatum = clientDatumMockBuilder.withLatestHeight(0n, 9n).build();
+  outputDatum.token = CLIENT_TOKEN;
+  if (options.action === 'evidence') outputDatum.state.clientState.frozenHeight = { revisionNumber: 0n, revisionHeight: 1n };
+  const clientOutput = {
+    txHash: 'final-tx', blockNo: 20, address: CLIENT_ADDRESS,
+    assetsPolicy: CLIENT_TOKEN.policyId, assetsName: CLIENT_TOKEN.name,
+    datum: await encodeClientDatum(outputDatum, Lucid),
+  };
 
   return {
     service,
@@ -264,10 +325,58 @@ async function stagedHistoryFixture(
     finalRedeemers,
     plan,
     targetEntry,
+    clientOutput,
+    secondPlan,
   };
 }
 
 describe('QueryService staged client event history', () => {
+  it('replays staged recovery from the canonical client input rather than a bundled finalization', async () => {
+    const { service, historyService, clientOutput } = await stagedHistoryFixture({
+      action: 'recovery', bundledFinalLookalike: true,
+    });
+    const [result] = await (service as any)._parseEventClient([clientOutput]);
+    expect(result.events[0].type).toBe('recover_client');
+    expect(result.events[0].event_attribute).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'subject_client_id', value: '07-tendermint-0' }),
+      expect.objectContaining({ key: 'substitute_client_id', value: '07-tendermint-1' }),
+    ]));
+    expect(historyService.findUtxosByPolicyIdAndPrefixTokenName).not.toHaveBeenCalledWith(
+      SESSION_POLICY, expect.anything(),
+    );
+  });
+
+  it('reconstructs both staged evidence headers after process memory is gone', async () => {
+    const { service, clientOutput, plan, secondPlan } = await stagedHistoryFixture({
+      action: 'evidence', bundledFinalLookalike: true, bundledAdvanceLookalike: true,
+    });
+    const [result] = await (service as any)._parseEventClient([clientOutput]);
+    const event = result.events[0];
+    expect(event.type).toBe('client_misbehaviour');
+    expect(event.event_attribute).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'consensus_height', value: '0-1' }),
+    ]));
+    const messageAttribute = event.event_attribute.find(({ key }: { key: string }) => key === 'client_message_any_hex');
+    const message = Any.decode(Buffer.from(messageAttribute.value, 'hex'));
+    expect(message.type_url).toBe('/ibc.lightclients.tendermint.v1.Misbehaviour');
+    const evidence = Misbehaviour.decode(message.value);
+    expect(evidence.client_id).toBe('07-tendermint-0');
+    const first = evidence.header1?.signed_header;
+    const second = evidence.header2?.signed_header;
+    if (!first?.header || !first.commit || !second?.header || !second.commit) throw new Error('Missing evidence headers');
+    expect(Buffer.from(first.header.app_hash).toString('hex')).toBe(plan.header.appHash);
+    expect(Buffer.from(second.header.app_hash).toString('hex')).toBe(secondPlan.header.appHash);
+    expect(first.commit.signatures).toHaveLength(1);
+    expect(second.commit.signatures).toHaveLength(1);
+  });
+
+  it('rejects an unconsumed completed receipt when reconstructing finalization', async () => {
+    const { service, clientOutput, finalRedeemers } = await stagedHistoryFixture({ unspentReceipt: true });
+    await expect((service as any).recoverStagedTendermintHeader(
+      clientOutput, { token: CLIENT_TOKEN }, finalRedeemers,
+    )).rejects.toThrow('expected one completed session output, found 0');
+  });
+
   it('recovers a full header from the finalized session after process memory is gone', async () => {
     const { service, historyService, miniProtocalsService, finalRedeemers, plan, targetEntry } =
       await stagedHistoryFixture();
@@ -290,7 +399,7 @@ describe('QueryService staged client event history', () => {
       CLIENT_TOKEN.name,
     );
     expect(historyService.findUtxosByPolicyIdAndPrefixTokenName).toHaveBeenCalledWith(SESSION_POLICY, SESSION_NAME);
-    expect(miniProtocalsService.fetchTransactionEvidence).toHaveBeenCalledWith('advance-tx');
+    expect(miniProtocalsService.fetchTransactionEvidence).toHaveBeenCalledWith(COMPLETE_SESSION_TX_HASH);
     expect(header.signedHeader.header).toEqual(plan.header);
     expect(header.signedHeader.commit.signatures).toEqual([targetEntry.commitSig]);
     expect(header.validatorSet.validators).toEqual([VALIDATOR]);

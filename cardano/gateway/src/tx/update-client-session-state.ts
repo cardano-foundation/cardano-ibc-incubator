@@ -67,6 +67,7 @@ interface ValidateTendermintStagedFinalizationInput {
   trustedHeight: UpdatePlan['trustedHeight'];
   headerTimeNs: bigint;
   clientDatum: ClientDatum;
+  misbehaviour?: boolean;
 }
 
 /**
@@ -92,17 +93,58 @@ export function validateTendermintStagedFinalization(input: ValidateTendermintSt
   }
 
   const trustedConsensusState = resolveTrustedConsensusState(clientDatum, trustedHeight);
-  if (headerTimeNs <= trustedConsensusState.timestamp) {
+  if (!input.misbehaviour && headerTimeNs <= trustedConsensusState.timestamp) {
     throw new Error('header time must be after the trusted consensus state timestamp');
   }
-  const latestConsensusState = resolveTrustedConsensusState(clientDatum, clientState.latestHeight);
-  if (headerTimeNs <= latestConsensusState.timestamp) {
-    throw new Error('header time must be after the current latest consensus state timestamp');
-  }
   const validFromTimeNs = BigInt(validFromTimeMs) * NANOS_PER_MILLISECOND;
-  if (headerTimeNs >= validFromTimeNs + clientState.maxClockDrift) {
+  if (!input.misbehaviour && headerTimeNs >= validFromTimeNs + clientState.maxClockDrift) {
     throw new Error('header time must be before the validity lower bound plus max clock drift');
   }
+}
+
+/** A verified Header can itself prove a conflict with retained consensus history. */
+export function tendermintHeaderConflictsWithStoredState(header: Header, clientDatum: ClientDatum): boolean {
+  const candidate = header.signedHeader.header;
+  for (const [height, state] of clientDatum.state.consensusStates) {
+    if (height.revisionNumber !== header.trustedHeight.revisionNumber) continue;
+    if (height.revisionHeight === candidate.height) {
+      return state.timestamp !== candidate.time ||
+        state.next_validators_hash.toLowerCase() !== candidate.nextValidatorsHash.toLowerCase() ||
+        state.root.hash.toLowerCase() !== candidate.appHash.toLowerCase();
+    }
+  }
+  type ConsensusHeight = UpdatePlan['trustedHeight'];
+  const compareHeight = (left: ConsensusHeight, right: ConsensusHeight): bigint =>
+    left.revisionNumber === right.revisionNumber
+      ? left.revisionHeight - right.revisionHeight : left.revisionNumber - right.revisionNumber;
+  const candidateHeight = { ...header.trustedHeight, revisionHeight: candidate.height };
+  let previous: [ConsensusHeight, ConsensusState] | undefined;
+  let next: [ConsensusHeight, ConsensusState] | undefined;
+  for (const [height, state] of clientDatum.state.consensusStates) {
+    const ordering = compareHeight(height, candidateHeight);
+    if (ordering < 0n && (!previous || compareHeight(height, previous[0]) > 0n)) {
+      previous = [height, state];
+    }
+    // Match Aiken's first-lower/last-upper tie handling for duplicate logical keys.
+    if (ordering > 0n && (!next || compareHeight(height, next[0]) <= 0n)) {
+      next = [height, state];
+    }
+  }
+  return (previous !== undefined && previous[1].timestamp >= candidate.time) ||
+    (next !== undefined && next[1].timestamp <= candidate.time);
+}
+
+/** Signature checks remain in the bounded session verifier, not in this conflict predicate. */
+export function tendermintHeadersConflict(first: Header, second: Header): boolean {
+  const header1 = first.signedHeader.header;
+  const header2 = second.signedHeader.header;
+  if (header1.chainId.toLowerCase() !== header2.chainId.toLowerCase()) return false;
+  if (header1.height === header2.height) {
+    const block1 = first.signedHeader.commit.blockId;
+    const block2 = second.signedHeader.commit.blockId;
+    return block1.hash.toLowerCase() !== block2.hash.toLowerCase();
+  }
+  return header1.height > header2.height ? header1.time <= header2.time : header2.time <= header1.time;
 }
 
 /**

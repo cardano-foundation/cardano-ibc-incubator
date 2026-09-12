@@ -74,8 +74,8 @@ size and execution cost are both binding constraints.
 These measurements establish why a normal update cannot remain one transaction.
 The multi-transaction protocol below has a structural limit of 256 validators
 and checks the worst-case six-validator batch at that tree depth. Explicit
-two-header misbehaviour evidence still requires its own design because its
-payload shape is materially larger than a normal update.
+two-header misbehaviour evidence uses one verification session per header so
+the final transaction does not carry either validator set.
 
 ## Experimental multi-transaction update protocol
 
@@ -95,8 +95,11 @@ Initialize → Verify batches of ≤6 → Complete
 
 For 45 validators, an adjacent update takes 10 transactions: initialization,
 eight batches and finalization. Skipping heights adds a trusted-validator pass.
-Staged freezing and recovery are not implemented yet, and there is no completed
-live 200- or 256-validator benchmark.
+Staged updates can freeze a client when a verified header conflicts with its
+retained history. Explicit misbehaviour evidence verifies two headers in
+separate sessions, then consumes both completed sessions to freeze the client
+without changing its consensus history. There is no completed live 200- or
+256-validator benchmark.
 
 Fresh deployments use a separate Tendermint client validator that does not
 accept the old single-transaction update redeemer. Existing deployments without
@@ -161,8 +164,8 @@ transaction.
 
 These are structural counts rather than live measurements. The Aiken figures
 are isolated validator estimates rather than provider-completed transaction
-evaluations. Staged misbehaviour evidence is also not implemented; the new
-protocol currently accepts normal `Header` updates only.
+evaluations. They measure normal updates, not the additional finalization that
+consumes two sessions for explicit misbehaviour evidence.
 
 ## Local end-to-end benchmark
 
@@ -293,12 +296,9 @@ Run the benchmark command above at
 
 ## Expired or frozen client recovery
 
-The recovery path below applies to the legacy `spending_client` validator.
-Fresh deployments in this experimental branch use `spending_multitx_client`,
-which currently accepts staged finalization only and has no `RecoverClient`
-redeemer. Loading the recovery withdrawal script does not enable recovery for
-staged clients. Extending recovery to that protocol requires separate design
-and validation.
+Both the legacy and staged client validators support recovery through the same
+administrator-authorized withdrawal script. Each client validator pins that
+script and binds its withdrawal to the exact subject and substitute tokens.
 
 An expired or frozen Cardano-side Tendermint client cannot safely resume normal
 header updates because its previous trust period has ended. Recovery uses a

@@ -37,6 +37,7 @@ export type DeploymentPlanInputs = {
 export const loadStagedTendermintValidators = (
   lucid: LucidEvolution,
   hostStateNftPolicyId: string,
+  recoveryScriptHash: string,
 ) => {
   const [sessionSpendValidator, sessionSpendScriptHash, sessionSpendAddress] =
     readValidator(
@@ -58,8 +59,17 @@ export const loadStagedTendermintValidators = (
     readValidator(
       "spending_multitx_client.spend_multitx_client.spend",
       lucid,
-      [hostStateNftPolicyId, sessionMintPolicyId],
-      Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+      [hostStateNftPolicyId, sessionMintPolicyId, {
+        Script: [recoveryScriptHash],
+      }],
+      Data.Tuple([
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Enum([
+          Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
+          Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
+        ]),
+      ]) as unknown as [string, string, { Script: [string] }],
     );
 
   return {
@@ -210,9 +220,11 @@ export const loadDeploymentPlan = async (
     "runtime",
     bytes(hostPolicy),
   );
-  // The legacy recovery authority remains registered, but the staged client
-  // authenticates start/continue/finalize work through its session policy.
-  const staged = loadStagedTendermintValidators(lucid, hostPolicy);
+  const staged = loadStagedTendermintValidators(
+    lucid,
+    hostPolicy,
+    recoverClient.hash,
+  );
   const sessionSpend = register(
     "spending_tendermint_update_session.spend_tendermint_update_session.spend",
     "runtime",

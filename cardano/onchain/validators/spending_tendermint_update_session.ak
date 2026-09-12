@@ -29,12 +29,13 @@ fn require_burn(
   transaction: Transaction,
 ) -> Bool {
   and {
-    validator_utils.require_exact_marker_mint(
+    // The minting policy restricts this to one authenticated receipt, or the
+    // exact two receipts used by explicit misbehaviour evidence.
+    assets.quantity_of(
       transaction.mint,
       datum.session_token.policy_id,
       datum.session_token.name,
-      -1,
-    ),
+    ) == -1,
     validator_utils.no_output_contains_auth_token(outputs, datum.session_token),
   }
 }

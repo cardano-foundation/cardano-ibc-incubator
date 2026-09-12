@@ -381,6 +381,33 @@ test finalization_binds_live_client_and_time() {
   )
 }
 
+test explicit_evidence_rechecks_adjacent_custom_trust_threshold() {
+  let datum = completed_adjacent()
+  let client = live_client()
+  let trust = unchecked_rational.new(1, 1)
+  let changed_client =
+    ClientDatum {
+      ..client,
+      state: ClientDatumState {
+        ..client.state,
+        client_state: ClientState {
+          ..client.state.client_state,
+          trust_level: trust,
+        },
+      },
+    }
+  let changed_session =
+    SessionDatum {
+      ..datum,
+      plan: UpdatePlan { ..datum.plan, trust_level: trust },
+    }
+  !session.validate_misbehaviour_finalization(
+    changed_session,
+    changed_client,
+    TxTime { valid_from: 1577836806000000000, valid_to: 1577836807000000000 },
+  )
+}
+
 test finalization_rejects_changed_client_parameters() {
   let client = live_client()
   let changed =
@@ -409,8 +436,8 @@ test finalization_accepts_target_time_after_live_latest_consensus_time() {
   )
 }
 
-test finalization_rejects_target_time_not_after_live_latest_consensus_time() {
-  !session.validate_finalization(
+test finalization_verifies_header_with_time_violation_for_client_freezing() {
+  session.validate_finalization(
     completed_non_adjacent(),
     live_client_with_older_trusted_height(target_header().time),
     TxTime { valid_from: 1577836804000000000, valid_to: 1577836806000000000 },

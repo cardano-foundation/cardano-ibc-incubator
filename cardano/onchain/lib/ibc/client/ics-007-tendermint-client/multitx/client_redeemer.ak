@@ -9,4 +9,9 @@ pub type SpendMultitxClientRedeemer {
   /// Reserved constructor. Direct, single-transaction updates are not
   /// accepted by this deployment.
   DirectUpdateDisabled
+  RecoverClient { substitute_token: AuthToken }
+  FinalizeMisbehaviour {
+    session_token_1: AuthToken,
+    session_token_2: AuthToken,
+  }
 }

@@ -1074,8 +1074,9 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
     expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
   });
 
-  it('rejects a header at or before the live latest consensus timestamp before initialization', async () => {
+  it('stages signatures for a header whose timestamp conflicts with retained history', async () => {
     const { service, lucidService, runnerChainSpy } = makeHarness();
+    completeSessionAfterOneAdvance();
     const olderTrustedHeight = { revisionNumber: 0n, revisionHeight: 8n };
     const clientDatum = {
       ...CLIENT_DATUM,
@@ -1095,21 +1096,21 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
       clientDatum,
       header: { ...HEADER, trustedHeight: olderTrustedHeight },
     };
-    lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo()]);
+    const seed = utxo('98'.repeat(32));
+    lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo(), seed]);
+    lucidService.tryFindUtxosAt.mockResolvedValue([seed]);
 
-    await expect(
-      (service as any).updateClientWithStagedSession(
+    const response = await (service as any).updateClientWithStagedSession(
         UPDATE_MESSAGE,
         operator,
         TEST_VALID_FROM_TIME_MS,
         TEST_VALID_TO_TIME_MS,
         { revisionNumber: 0n, revisionHeight: 11n },
         TEST_CURRENT_LEDGER_TIME_MS,
-      ),
-    ).rejects.toThrow('header time must be after the current latest consensus state timestamp');
-
-    expect(runnerChainSpy).not.toHaveBeenCalled();
-    expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
+      );
+    expect(decodeChainEnvelope(response.unsigned_tx.value).rebuildAfterSubmission).toBe(true);
+    expect(runnerChainSpy).toHaveBeenCalledTimes(1);
+    expect(lucidService.createUnsignedTendermintSessionTransaction).toHaveBeenCalledTimes(1);
   });
 
   it('returns owner-authorized cleanup when finalization preflight fails for a live session', async () => {
@@ -1203,7 +1204,7 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
     expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
   });
 
-  it('rejects staged Tendermint misbehaviour before building any transaction', async () => {
+  it('rejects malformed staged Tendermint misbehaviour before building any transaction', async () => {
     const { service, lucidService } = makeHarness();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const message = {
@@ -1214,9 +1215,7 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
       },
     };
 
-    await expect(service.updateClient(message)).rejects.toThrow(
-      'Tendermint misbehaviour is not yet supported by the staged client protocol',
-    );
+    await expect(service.updateClient(message)).rejects.toThrow();
 
     expect(verifyClientMessage).not.toHaveBeenCalled();
     expect(checkForMisbehaviour).not.toHaveBeenCalled();
@@ -1262,6 +1261,128 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
     expect(verifyClientMessage).not.toHaveBeenCalled();
     expect(checkForMisbehaviour).not.toHaveBeenCalled();
     expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClientService staged Tendermint misbehaviour', () => {
+  installStagedTendermintTestSpies();
+
+  function evidenceHarness() {
+    const harness = makeHarness();
+    const header2 = structuredClone(HEADER);
+    header2.signedHeader.header.appHash = 'ee'.repeat(32);
+    header2.signedHeader.commit.blockId.hash = 'ed'.repeat(32);
+    const evidence = { client_id: UPDATE_MESSAGE.client_id, header1: HEADER, header2 };
+    jest.spyOn(MisbehaviourCodec, 'initializeMisbehaviour').mockReturnValue(evidence);
+    jest.mocked(SessionState.deriveTendermintSessionUpdatePlan).mockImplementation(({ header }) => ({
+      ...PLAN, header: header.signedHeader.header,
+      commit: { ...PLAN.commit, blockId: header.signedHeader.commit.blockId },
+    }));
+    const phase = completeSessionAfterOneAdvance();
+    const sessions = [HEADER, header2].map((header, index) => sessionUtxo({
+      sessionToken: { policyId: POLICY_ID, name: `${index + 1}0`.repeat(32) }, owner: OWNER,
+      plan: SessionState.deriveTendermintSessionUpdatePlan({ header, clientDatum: CLIENT_DATUM }), phase,
+    }, `evidence-session-${index}`));
+    const seed = utxo('99'.repeat(32));
+    let liveSessions: any[] = [];
+    harness.lucidService.queryLedgerStateUtxosAtAddresses.mockImplementation(async () => [clientUtxo(), seed, ...liveSessions]);
+    harness.lucidService.tryFindUtxosAt.mockImplementation(async (address: string) =>
+      address === SESSION_ADDRESS ? liveSessions : [seed],
+    );
+    harness.computeValidityWindow.mockImplementation(async (_backdate: number, ttl: number) => ({
+      currentSlot: 1, currentLedgerTime: TEST_CURRENT_LEDGER_TIME_MS,
+      validFromTime: TEST_VALID_FROM_TIME_MS, validToSlot: 1 + ttl / 1_000,
+      validToTime: TEST_CURRENT_LEDGER_TIME_MS + ttl, slotConfig: TEST_SLOT_CONFIG,
+    }));
+    const freeze = jest.spyOn(harness.service, 'buildUnsignedUpdateOnMisbehaviour').mockResolvedValue({
+      unsignedTx: createTxBuilder('freeze'),
+      pendingTreeUpdate: { expectedNewRoot: 'ef'.repeat(32), commit: jest.fn() },
+    });
+    const message = { ...UPDATE_MESSAGE, client_message: {
+      type_url: MisbehaviourCodec.TENDERMINT_MISBEHAVIOUR_TYPE_URL, value: new Uint8Array(),
+    } };
+    return { ...harness, evidence, message, sessions, freeze, setLiveSessions: (value: any[]) => { liveSessions = value; } };
+  }
+
+  it('verifies the first evidence header in a tree-neutral phase', async () => {
+    const { service, message, lucidService, freeze, buildFinal } = evidenceHarness();
+    const response = await service.updateClient(message);
+    expect(decodeChainEnvelope(response.unsigned_tx!.value).rebuildAfterSubmission).toBe(true);
+    const initialized = decodeSessionDatum(lucidService.createUnsignedTendermintSessionTransaction.mock.calls[0][2], Lucid);
+    expect(initialized.plan.commit.blockId).toEqual(PLAN.commit.blockId);
+    expect(freeze).not.toHaveBeenCalled();
+    expect(buildFinal).not.toHaveBeenCalled();
+    expect(verifyClientMessage).not.toHaveBeenCalled();
+  });
+
+  it('preserves the completed first session while preparing the second header', async () => {
+    const { service, message, sessions, setLiveSessions, lucidService, freeze, evidence } = evidenceHarness();
+    setLiveSessions([sessions[0]]);
+    const response = await service.updateClient(message);
+    expect(decodeChainEnvelope(response.unsigned_tx!.value).rebuildAfterSubmission).toBe(true);
+    const initialized = decodeSessionDatum(lucidService.createUnsignedTendermintSessionTransaction.mock.calls[0][2], Lucid);
+    expect(initialized.plan.commit.blockId).toEqual(evidence.header2.signedHeader.commit.blockId);
+    expect(lucidService.createUnsignedCancelTendermintSessionTransaction).not.toHaveBeenCalled();
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
+  it('bounds each evidence phase by the earlier of both trusted-state deadlines', async () => {
+    const { service, message, lucidService } = evidenceHarness();
+    const cap = SessionState.capTendermintStagedValidTo;
+    jest.spyOn(SessionState, 'capTendermintStagedValidTo')
+      .mockImplementation(cap).mockReturnValueOnce(200_000).mockReturnValueOnce(300_000);
+    await service.updateClient(message);
+    const builder = lucidService.createUnsignedTendermintSessionTransaction.mock.results[0].value;
+    expect(builder.validTo).toHaveBeenCalledWith(200_000);
+  });
+
+  it('consumes both confirmed sessions in one final freeze with one atomic event', async () => {
+    const { service, message, sessions, setLiveSessions, lucidService, freeze, txEvents, buildFinal } = evidenceHarness();
+    setLiveSessions(sessions);
+    const response = await service.updateClient(message);
+    expect(decodeChainEnvelope(response.unsigned_tx!.value)).toEqual({
+      unsignedTxCbor: [Buffer.from('cbor-freeze').toString('hex')], rebuildAfterSubmission: false,
+    });
+    expect(freeze.mock.calls[0][1]!.map(({ utxo }) => utxo.txHash)).toEqual(['evidence-session-0', 'evidence-session-1']);
+    expect(txEvents.take('freeze')![0].type).toBe(EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR);
+    expect(buildFinal).not.toHaveBeenCalled();
+    expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-conflicting evidence without paying for either session', async () => {
+    const { service, message, evidence, lucidService } = evidenceHarness();
+    evidence.header2 = structuredClone(evidence.header1);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    await expect(service.updateClient(message)).rejects.toThrow('does not prove a conflict');
+    expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects evidence naming another client', async () => {
+    const { service, message, evidence, lucidService } = evidenceHarness();
+    evidence.client_id = '07-tendermint-99';
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    await expect(service.updateClient(message)).rejects.toThrow('client ID does not match');
+    expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
+  });
+
+  it('freezes instead of cancelling a verified Header that conflicts at an already retained height', async () => {
+    const { service, sessions, setLiveSessions, freeze, buildFinal, lucidService, txEvents } = evidenceHarness();
+    const datum = structuredClone(CLIENT_DATUM);
+    datum.state.clientState.latestHeight = { revisionNumber: 0n, revisionHeight: 11n };
+    datum.state.consensusStates.set(datum.state.clientState.latestHeight, {
+      timestamp: PLAN.header.time, next_validators_hash: PLAN.header.nextValidatorsHash,
+      root: { hash: 'ff'.repeat(32) },
+    });
+    setLiveSessions([sessions[0]]);
+    const response = await (service as any).updateClientWithStagedSession(
+      UPDATE_MESSAGE, { ...updateOperator(), clientDatum: datum }, TEST_VALID_FROM_TIME_MS, TEST_VALID_TO_TIME_MS,
+      { revisionNumber: 0n, revisionHeight: 11n }, TEST_CURRENT_LEDGER_TIME_MS, TEST_SLOT_CONFIG,
+    );
+    expect(decodeChainEnvelope(response.unsigned_tx.value).rebuildAfterSubmission).toBe(false);
+    expect(freeze.mock.calls[0][1]).toHaveLength(1);
+    expect(buildFinal).not.toHaveBeenCalled();
+    expect(lucidService.createUnsignedCancelTendermintSessionTransaction).not.toHaveBeenCalled();
+    expect(txEvents.take('freeze')![0].type).toBe(EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR);
   });
 });
 

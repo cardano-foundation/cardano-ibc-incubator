@@ -524,8 +524,7 @@ export const createDeployment = async (
   const verifyProofPolicyId = plan.verifyProof.hash;
   const mintPortValidator = plan.mintPort.script;
   const mintPortPolicyId = plan.mintPort.hash;
-  // Preserve the legacy recovery authority in the manifest. The staged client
-  // does not accept a recovery redeemer; registration alone does not enable it.
+  // The staged client pins this registered withdrawal script for recovery.
   const recoverClientValidator = plan.recoverClient.script;
   const recoverClientScriptHash = plan.recoverClient.hash;
   const recoverClientAddress = validatorToRewardAddress(

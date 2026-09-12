@@ -183,6 +183,24 @@ const CAPACITY_SCENARIOS = [
 
 const STAGED_TENDERMINT_EXECUTION_SCENARIOS: StagedExecutionScenario[] = [
   {
+    id: 'tendermint_staged_freeze',
+    name: 'Staged Tendermint two-header freeze with minimum history',
+    pairs: [{
+      name: 'client, two sessions, receipt burns and HostState root transition',
+      baselineTest: 'recover_client.test.staged_atomic_freeze_fixture_setup_baseline',
+      measuredTest: 'recover_client.test.staged_atomic_freeze_all_validators_accept_real_root_transition',
+    }],
+  },
+  {
+    id: 'tendermint_staged_recovery',
+    name: 'Staged Tendermint recovery with minimum history',
+    pairs: [{
+      name: 'client, authorized recovery withdrawal and HostState root transition',
+      baselineTest: 'recover_client.test.staged_atomic_recovery_fixture_setup_baseline',
+      measuredTest: 'recover_client.test.staged_atomic_recovery_all_validators_accept_real_root_transition',
+    }],
+  },
+  {
     id: 'tendermint_staged_session_initialize',
     name: 'Staged Tendermint session initialization',
     pairs: [

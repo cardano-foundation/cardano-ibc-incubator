@@ -122,6 +122,18 @@ describe('normalizeTxsResultFromClientDatum', () => {
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX)).not.toBe('');
   });
 
+  it('reports a staged header that froze the client as misbehaviour', () => {
+    const clientDatum = clientDatumMockBuilder.withFrozenHeight(0n, 1n).build();
+    const stagedHeader = initializeHeader(headerMockBuilder.withHeight(123n).withCommitHeight(123n).build());
+    const result = normalizeTxsResultFromClientDatum(
+      clientDatum, EVENT_TYPE_CLIENT.UPDATE_CLIENT, '0', null, undefined, stagedHeader,
+    );
+    expect(result.events[0].type).toBe(EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR);
+    expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CONSENSUS_HEIGHT)).toBe('0-1');
+    const message = Any.decode(Buffer.from(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX), 'hex'));
+    expect(message.type_url).toBe('/ibc.lightclients.tendermint.v1.Header');
+  });
+
   it('reports recovery as recover_client with both client IDs', () => {
     const clientDatum = clientDatumMockBuilder.build();
     const redeemer: SpendClientRedeemer = {

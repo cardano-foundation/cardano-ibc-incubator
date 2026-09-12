@@ -18,6 +18,7 @@ import {
   GrpcInvalidArgumentException,
 } from '~@/exception/grpc_exceptions';
 import { decodeHeader, initializeHeader } from '../shared/types/header';
+import { Misbehaviour as MisbehaviourMsg } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { RpcException } from '@nestjs/microservices';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { ConfigService } from '@nestjs/config';
@@ -34,11 +35,10 @@ import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
 import { Height } from 'src/shared/types/height';
 import { isExpired } from '@shared/helpers/client-state';
 import {
-  ClientMessage,
   getClientMessageFromTendermint,
   verifyClientMessage,
 } from '../shared/types/msgs/client-message';
-import { checkForMisbehaviour, TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '@shared/types/misbehaviour/misbehaviour';
+import { checkForMisbehaviour, initializeMisbehaviour, TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '@shared/types/misbehaviour/misbehaviour';
 import { RecoverClientOperatorDto, UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import {
   validateAndFormatCreateClientParams,
@@ -74,6 +74,8 @@ import {
   deriveTendermintSessionUpdatePlan,
   initialTendermintSessionPhase,
   nextTendermintSessionAdvance,
+  tendermintHeaderConflictsWithStoredState,
+  tendermintHeadersConflict,
   validateTendermintStagedFinalization,
 } from './update-client-session-state';
 import { buildTendermintStagedPayloads } from './update-client-staged-payload';
@@ -423,9 +425,10 @@ export class ClientService {
       const stagedTendermintClient = this.lucidService.hasStagedTendermintClient();
       const clientMessageType = clientMessage.type_url;
       if (stagedTendermintClient && clientMessageType === TENDERMINT_MISBEHAVIOUR_TYPE_URL) {
-        throw new GrpcInvalidArgumentException(
-          'Tendermint misbehaviour is not yet supported by the staged client protocol',
-        );
+        return await this.updateClientWithStagedMisbehaviour(data, {
+          clientId, constructedAddress, clientMessage, clientDatum: currentClientDatum,
+          clientTokenUnit, currentClientUtxo,
+        });
       }
       if (stagedTendermintClient && clientMessageType !== TENDERMINT_HEADER_TYPE_URL) {
         throw new GrpcInvalidArgumentException(
@@ -611,6 +614,130 @@ export class ClientService {
     }
   }
 
+  private async updateClientWithStagedMisbehaviour(
+    data: MsgUpdateClient,
+    operator: UpdateOnMisbehaviourOperatorDto,
+  ): Promise<MsgUpdateClientResponse> {
+    const evidence = initializeMisbehaviour(MisbehaviourMsg.decode(operator.clientMessage.value));
+    if (evidence.client_id && evidence.client_id !== `${CLIENT_ID_PREFIX}-${operator.clientId}`) {
+      throw new GrpcInvalidArgumentException('Misbehaviour client ID does not match the requested client');
+    }
+    if (!tendermintHeadersConflict(evidence.header1, evidence.header2)) {
+      throw new GrpcInvalidArgumentException('submitted Tendermint misbehaviour does not prove a conflict');
+    }
+
+    const owner = this.requireKeyPaymentCredential(operator.constructedAddress);
+    const validity = await this.computeTxValidityWindow(
+      this.tendermintUpdateSafeBackdateMs(operator.clientDatum), TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE,
+    );
+    const operators = [evidence.header1, evidence.header2].map((header): UpdateClientOperatorDto => ({
+      ...operator, header,
+      txValidFrom: BigInt(validity.validFromTime) * 1_000_000n,
+      txValidTo: BigInt(validity.validToTime) * 1_000_000n,
+    }));
+    // Check both plans before paying for the first verification session.
+    let sharedValidTo = validity.validToTime;
+    const plans = operators.map((headerOperator) => {
+      validateTendermintStagedFinalization({
+        validFromTimeMs: validity.validFromTime,
+        trustedHeight: headerOperator.header.trustedHeight,
+        headerTimeNs: headerOperator.header.signedHeader.header.time,
+        clientDatum: operator.clientDatum,
+        misbehaviour: true,
+      });
+      sharedValidTo = Math.min(sharedValidTo, capTendermintStagedValidTo({
+        proposedValidToMs: validity.validToTime,
+        currentLedgerTimeMs: validity.currentLedgerTime,
+        trustedHeight: headerOperator.header.trustedHeight,
+        clientDatum: operator.clientDatum,
+        slotConfig: validity.slotConfig,
+        minimumRemainingValidityMs: TENDERMINT_FINALIZATION_TIME_TO_LIVE,
+      }));
+      return deriveTendermintSessionUpdatePlan(headerOperator);
+    });
+
+    const sessionAddress = this.lucidService.getTendermintUpdateSessionAddress();
+    const ledgerUtxos = await this.queryTendermintLedgerSnapshot(
+      sessionAddress, this.lucidService.credentialToAddress(operator.constructedAddress), operator.currentClientUtxo.address,
+    );
+    this.requireTendermintLedgerUtxo(ledgerUtxos, operator.currentClientUtxo, 'indexed client');
+    const completeSessions: StagedTendermintSession[] = [];
+    for (let index = 0; index < plans.length; index += 1) {
+      const live = this.matchingStagedTendermintSessions(
+        ledgerUtxos.filter((utxo) => utxo.address === sessionAddress), plans[index], owner,
+      ).filter(({ datum }) => 'Complete' in datum.phase);
+      if (live.length === 0) {
+        const headerOperator = operators[index];
+        return this.updateClientWithStagedSession(
+          data, headerOperator, validity.validFromTime, sharedValidTo,
+          { ...headerOperator.header.trustedHeight, revisionHeight: headerOperator.header.signedHeader.header.height },
+          validity.currentLedgerTime, validity.slotConfig, true,
+        );
+      }
+      const liveRefs = new Set(live.map(({ utxo }) => this.tendermintUtxoRef(utxo)));
+      const indexed = await this.findStagedTendermintSessions(
+        plans[index], owner, TENDERMINT_SESSION_MATCH_MAX_ATTEMPTS, liveRefs,
+      );
+      if (indexed.length !== live.length) {
+        throw new GrpcFailedPreconditionException('Completed evidence session is not yet indexed, retry after the indexer catches up');
+      }
+      const completed = this.orderStagedTendermintSessions(indexed)[0];
+      const { plan, phase } = completed.datum;
+      if (!('Complete' in phase)) {
+        throw new GrpcFailedPreconditionException('Evidence session is not complete in the indexer, retry after it catches up');
+      }
+      if (plan.header.height === plan.trustedHeight.revisionHeight + 1n &&
+        phase.Complete.targetSignedPower * plan.trustLevel.denominator <=
+          phase.Complete.targetTotalPower * plan.trustLevel.numerator) {
+        throw new GrpcInvalidArgumentException('Evidence header does not satisfy the client trust-level signature threshold');
+      }
+      this.releaseTendermintSessionSeed(this.tendermintSessionInitializationKey(plan, owner));
+      completeSessions.push(completed);
+    }
+    if (completeSessions[0].tokenUnit === completeSessions[1].tokenUnit) {
+      throw new GrpcInvalidArgumentException('Misbehaviour requires two distinct completed sessions');
+    }
+
+    const finalValidity = await this.computeTxValidityWindow(
+      this.tendermintUpdateSafeBackdateMs(operator.clientDatum), TENDERMINT_FINALIZATION_TIME_TO_LIVE,
+    );
+    const validTo = Math.min(...operators.map(({ header }) => capTendermintStagedValidTo({
+      proposedValidToMs: finalValidity.validToTime,
+      currentLedgerTimeMs: finalValidity.currentLedgerTime,
+      trustedHeight: header.trustedHeight,
+      clientDatum: operator.clientDatum,
+      slotConfig: finalValidity.slotConfig,
+      minimumRemainingValidityMs: TENDERMINT_FINALIZATION_TIME_TO_LIVE,
+    })));
+    const { links } = await this.txOperationRunnerService.runChain({
+      operationName: 'finalizeTendermintMisbehaviour',
+      wallet: { mode: 'refresh_from_address', address: operator.constructedAddress, context: 'finalizeTendermintMisbehaviour' },
+      build: async (chain) => {
+        const { unsignedTx, pendingTreeUpdate } = await this.buildUnsignedUpdateOnMisbehaviour(
+          operator, completeSessions.map((session) => ({
+            ...session, signerKeyHash: owner, processedTimeNs: BigInt(validTo) * 1_000_000n,
+          })),
+        );
+        await chain.complete({
+          operationName: 'finalizeTendermintMisbehaviour', unsignedTx, pendingTreeUpdate,
+          validity: { apply: (builder: TxBuilder) => builder.validFrom(finalValidity.validFromTime).validTo(validTo) },
+          completeOptions: { localUPLCEval: false, setCollateral: TRANSACTION_SET_COLLATERAL },
+          syntheticEvents: [this.buildUpdateClientSyntheticEvent(
+            EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR, operator.clientId,
+            { revisionNumber: 0n, revisionHeight: 1n }, operator.clientMessage,
+          )],
+        });
+      },
+    });
+    return {
+      unsigned_tx: {
+        type_url: TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL,
+        value: encodeTendermintUpdateTxChain(links.map((link) => link.unsignedTxCbor)),
+      },
+      client_id: Number(operator.clientId),
+    } as unknown as MsgUpdateClientResponse;
+  }
+
   private async updateClientWithStagedSession(
     data: MsgUpdateClient,
     updateClientOperator: UpdateClientOperatorDto,
@@ -619,6 +746,7 @@ export class ClientService {
     updateConsensusHeight: Height,
     currentLedgerTimeMs = validFromTimeMs,
     slotConfig: SlotConfig = { zeroTime: 0, zeroSlot: 0, slotLength: 1 },
+    prepareMisbehaviour = false,
   ): Promise<MsgUpdateClientResponse> {
     const owner = this.requireKeyPaymentCredential(updateClientOperator.constructedAddress);
     const sessionAddress = this.lucidService.getTendermintUpdateSessionAddress();
@@ -657,10 +785,14 @@ export class ClientService {
     }
 
     try {
-      validateUpdateHeaderAdvancesLatestHeight(
-        updateClientOperator.header.signedHeader.header.height,
-        updateClientOperator.clientDatum.state.clientState.latestHeight,
-      );
+      if (!prepareMisbehaviour && !tendermintHeaderConflictsWithStoredState(
+        updateClientOperator.header, updateClientOperator.clientDatum,
+      )) {
+        validateUpdateHeaderAdvancesLatestHeight(
+          updateClientOperator.header.signedHeader.header.height,
+          updateClientOperator.clientDatum.state.clientState.latestHeight,
+        );
+      }
     } catch (error) {
       if (indexedRequestSessions.length === 0) throw error;
       return this.buildTendermintSessionCancellationChain(
@@ -678,6 +810,7 @@ export class ClientService {
         trustedHeight: updateClientOperator.header.trustedHeight,
         headerTimeNs: updateClientOperator.header.signedHeader.header.time,
         clientDatum: updateClientOperator.clientDatum,
+        misbehaviour: prepareMisbehaviour,
       });
       validToTimeMs = capTendermintStagedValidTo({
         proposedValidToMs: proposedValidToTimeMs,
@@ -799,6 +932,9 @@ export class ClientService {
       }
 
       if (existingSession && 'Complete' in existingSession.datum.phase && duplicateSessions.length === 0) {
+        if (prepareMisbehaviour) {
+          throw new GrpcFailedPreconditionException('Evidence session completed while building the request, retry finalization');
+        }
         return this.buildTendermintFinalizationChain(
           data,
           updateClientOperator,
@@ -970,6 +1106,9 @@ export class ClientService {
       txValidFrom: BigInt(validityWindow.validFromTime) * 1_000_000n,
       txValidTo: BigInt(validToTimeMs) * 1_000_000n,
     };
+    const freezesClient = tendermintHeaderConflictsWithStoredState(
+      updateClientOperator.header, updateClientOperator.clientDatum,
+    );
     const validity = {
       apply: (builder: TxBuilder) => builder.validFrom(validityWindow.validFromTime).validTo(validToTimeMs),
     };
@@ -981,11 +1120,14 @@ export class ClientService {
         context: 'buildTendermintUpdateFinalization',
       },
       build: async (chain) => {
-        const { unsignedTx, pendingTreeUpdate } = await this.buildUnsignedUpdateClientTx(finalOperator, {
+        const finalization = {
           ...session,
           signerKeyHash: owner,
           processedTimeNs: BigInt(validToTimeMs) * 1_000_000n,
-        });
+        };
+        const { unsignedTx, pendingTreeUpdate } = freezesClient
+          ? await this.buildUnsignedUpdateOnMisbehaviour({ ...finalOperator, clientMessage }, [finalization])
+          : await this.buildUnsignedUpdateClientTx(finalOperator, finalization);
         await chain.complete({
           operationName: 'finalizeTendermintUpdateSession',
           unsignedTx,
@@ -997,9 +1139,9 @@ export class ClientService {
           pendingTreeUpdate,
           syntheticEvents: [
             this.buildUpdateClientSyntheticEvent(
-              EVENT_TYPE_CLIENT.UPDATE_CLIENT,
+              freezesClient ? EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR : EVENT_TYPE_CLIENT.UPDATE_CLIENT,
               updateClientOperator.clientId,
-              updateConsensusHeight,
+              freezesClient ? { revisionNumber: 0n, revisionHeight: 1n } : updateConsensusHeight,
               clientMessage,
             ),
           ],
@@ -1436,11 +1578,6 @@ export class ClientService {
     try {
       const { subjectClientId, substituteClientId, constructedAddress } =
         validateAndFormatRecoverClientParams(data);
-      if (this.lucidService.hasStagedTendermintClient()) {
-        throw new GrpcFailedPreconditionException(
-          'Tendermint client recovery is not supported by the staged client protocol',
-        );
-      }
       const recoveryConfig = this.configService.get('deployment')?.validators?.recoverClient;
       if (!recoveryConfig?.address || !recoveryConfig?.refUtxo) {
         throw new GrpcFailedPreconditionException(
@@ -1548,17 +1685,13 @@ export class ClientService {
 
   public async buildUnsignedUpdateOnMisbehaviour(
     updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto,
+    stagedFinalizations?: StagedTendermintFinalization[],
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    if (stagedFinalizations && (stagedFinalizations.length < 1 || stagedFinalizations.length > 2)) {
+      throw new GrpcInvalidArgumentException('Freezing a staged client requires one or two completed sessions');
+    }
     const currentClientDatumState = updateOnMisbehaviourOperator.clientDatum.state;
     const clientMessageAny = updateOnMisbehaviourOperator.clientMessage;
-    const clientMessage: ClientMessage = getClientMessageFromTendermint(clientMessageAny);
-
-    // Create a SpendClientRedeemer using the provided header
-    const spendClientRedeemer: SpendClientRedeemer = {
-      UpdateClient: {
-        msg: clientMessage,
-      },
-    };
 
     const newClientState: ClientState = {
       ...currentClientDatumState.clientState,
@@ -1582,6 +1715,9 @@ export class ClientService {
     // remain verifiable by a counterparty. Without this, an operator could update the
     // on-chain client datum while leaving the root unchanged.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (stagedFinalizations) {
+      await this.requireLiveTendermintFinalizationInputs(hostStateUtxo, updateOnMisbehaviourOperator.currentClientUtxo);
+    }
     if (!hostStateUtxo.datum) {
       throw new GrpcInternalException('HostState UTXO has no datum');
     }
@@ -1642,11 +1778,31 @@ export class ClientService {
       },
     };
 
-    const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer');
+    const encodedSpendClientRedeemer = stagedFinalizations
+      ? encodeSpendMultitxClientRedeemer(stagedFinalizations.length === 2
+        ? { FinalizeMisbehaviour: {
+            sessionToken1: stagedFinalizations[0].datum.sessionToken,
+            sessionToken2: stagedFinalizations[1].datum.sessionToken,
+          } }
+        : { FinalizeUpdate: { sessionToken: stagedFinalizations[0].datum.sessionToken } },
+        this.lucidService.LucidImporter)
+      : await this.lucidService.encode({ UpdateClient: { msg: getClientMessageFromTendermint(clientMessageAny) } }, 'spendClientRedeemer');
     const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
-    const unsignedTx = this.lucidService.createUnsignedUpdateClientTransaction(
+    const unsignedTx = stagedFinalizations
+      ? this.lucidService.createUnsignedFinalizeTendermintSessionTransaction(
+          hostStateUtxo, encodedHostStateRedeemer, updateOnMisbehaviourOperator.currentClientUtxo,
+          encodedSpendClientRedeemer, stagedFinalizations[0].utxo,
+          encodeSpendSessionRedeemer('Finalize', this.lucidService.LucidImporter),
+          encodeMintSessionRedeemer(stagedFinalizations.length === 2
+            ? { BurnSessions: { tokenNames: stagedFinalizations.map(({ datum }) => datum.sessionToken.name) } }
+            : { BurnSession: { tokenName: stagedFinalizations[0].datum.sessionToken.name } },
+            this.lucidService.LucidImporter),
+          encodedUpdatedHostStateDatum, encodedNewClientDatum, updateOnMisbehaviourOperator.clientTokenUnit,
+          stagedFinalizations[0].tokenUnit, stagedFinalizations[0].signerKeyHash, stagedFinalizations.slice(1),
+        )
+      : this.lucidService.createUnsignedUpdateClientTransaction(
       hostStateUtxo,
       encodedHostStateRedeemer,
       updateOnMisbehaviourOperator.currentClientUtxo,
@@ -2014,7 +2170,12 @@ export class ClientService {
     const [encodedHostStateRedeemer, encodedSpendClientRedeemer, encodedWithdrawalRedeemer] =
       await Promise.all([
         this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer'),
-        this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer'),
+        this.lucidService.hasStagedTendermintClient()
+          ? encodeSpendMultitxClientRedeemer(
+              { RecoverClient: { substituteToken: operator.substituteClientDatum.token } },
+              this.lucidService.LucidImporter,
+            )
+          : this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer'),
         this.lucidService.encode(withdrawalRedeemer, 'recoverClientWithdrawalRedeemer'),
       ]);
     const [encodedUpdatedHostStateDatum, encodedRecoveredClientDatum] = await Promise.all([

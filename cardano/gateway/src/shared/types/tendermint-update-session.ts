@@ -122,6 +122,11 @@ export type MintSessionRedeemer =
       BurnSession: {
         tokenName: string;
       };
+    }
+  | {
+      BurnSessions: {
+        tokenNames: string[];
+      };
     };
 
 export type SpendSessionRedeemer =
@@ -144,7 +149,14 @@ export type SpendMultitxClientRedeemer =
         sessionToken: AuthToken;
       };
     }
-  | 'DirectUpdateDisabled';
+  | 'DirectUpdateDisabled'
+  | { RecoverClient: { substituteToken: AuthToken } }
+  | {
+      FinalizeMisbehaviour: {
+        sessionToken1: AuthToken;
+        sessionToken2: AuthToken;
+      };
+    };
 
 /**
  * Build all schemas in one place so constructor and record-field order cannot
@@ -312,6 +324,11 @@ function createTendermintUpdateSessionSchemas(Data: LucidData) {
         tokenName: Data.Bytes(),
       }),
     }),
+    Data.Object({
+      BurnSessions: Data.Object({
+        tokenNames: Data.Array(Data.Bytes()),
+      }),
+    }),
   ]);
   const SpendSessionRedeemerSchema = Data.Enum([
     Data.Object({
@@ -334,6 +351,13 @@ function createTendermintUpdateSessionSchemas(Data: LucidData) {
       }),
     }),
     Data.Literal('DirectUpdateDisabled'),
+    Data.Object({ RecoverClient: Data.Object({ substituteToken: AuthTokenSchema }) }),
+    Data.Object({
+      FinalizeMisbehaviour: Data.Object({
+        sessionToken1: AuthTokenSchema,
+        sessionToken2: AuthTokenSchema,
+      }),
+    }),
   ]);
 
   return {

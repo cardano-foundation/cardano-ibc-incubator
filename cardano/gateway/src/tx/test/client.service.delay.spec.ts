@@ -13,6 +13,7 @@ import {
 } from '../../shared/types/client-datum';
 import { initializeHeader } from '../../shared/types/header';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
+import { decodeMintSessionRedeemer, decodeSpendMultitxClientRedeemer } from '../../shared/types/tendermint-update-session';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { ClientService } from '../client.service';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
@@ -206,5 +207,40 @@ describe('ClientService connection-delay processing metadata', () => {
     expect([...output.state.consensusStates.keys()]).toEqual([height(3n), height(2n), height(1n)]);
     expect([...output.state.processedTimes.values()]).toEqual([validToNs, 101n, 99n]);
     expect([...output.state.processedHeights.values()]).toEqual([validToNs / 4_000_000_000n, 11n, 9n]);
+  });
+
+  it.each([1, 2])('freezes with %i completed sessions without rewriting retained history or delay metadata', async (count) => {
+    const input = initialDatum();
+    const { service, lucid } = await context(input);
+    const clientUtxo = { txHash: '01'.repeat(32), outputIndex: 0 } as Lucid.UTxO;
+    lucid.queryLedgerStateUtxosAtAddresses = jest.fn().mockResolvedValue([
+      { txHash: '00'.repeat(32), outputIndex: 0 }, clientUtxo,
+    ]);
+    lucid.createUnsignedFinalizeTendermintSessionTransaction = jest.fn().mockReturnValue({});
+    const sessions = Array.from({ length: count }, (_, index) => ({
+      utxo: { txHash: '02'.repeat(32), outputIndex: index },
+      datum: { sessionToken: { policyId: 'ab'.repeat(28), name: `0${index + 1}` } },
+      tokenUnit: 'ab'.repeat(28) + `0${index + 1}`,
+      signerKeyHash: 'cd'.repeat(28), processedTimeNs: validToNs,
+    }));
+    await service.buildUnsignedUpdateOnMisbehaviour({
+      clientId: '0', constructedAddress: 'addr_test1signer', clientDatum: input,
+      currentClientUtxo: clientUtxo, clientTokenUnit: input.token.policyId + input.token.name,
+      // The final transaction only consumes authenticated receipts, not message signatures.
+      clientMessage: { type_url: '/ibc.lightclients.tendermint.v1.Misbehaviour', value: new Uint8Array() },
+    }, sessions as any);
+    const args = lucid.createUnsignedFinalizeTendermintSessionTransaction.mock.calls[0];
+    const output = await decodeClientDatum(args[8], Lucid);
+    expect(output).toEqual({
+      ...input, state: { ...input.state, clientState: { ...input.state.clientState, frozenHeight: height(1n) } },
+    });
+    expect(decodeSpendMultitxClientRedeemer(args[3], Lucid)).toEqual(count === 1
+      ? { FinalizeUpdate: { sessionToken: sessions[0].datum.sessionToken } }
+      : { FinalizeMisbehaviour: { sessionToken1: sessions[0].datum.sessionToken, sessionToken2: sessions[1].datum.sessionToken } });
+    expect(decodeMintSessionRedeemer(args[6], Lucid)).toEqual(count === 1
+      ? { BurnSession: { tokenName: '01' } }
+      : { BurnSessions: { tokenNames: ['01', '02'] } });
+    expect(args[12]).toEqual(sessions.slice(1));
+    expect(lucid.createUnsignedUpdateClientTransaction).not.toHaveBeenCalled();
   });
 });

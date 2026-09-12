@@ -62,6 +62,7 @@ import { UtxoDto } from '../dtos/utxo.dto';
 import {
   CHANNEL_ID_PREFIX,
   CHANNEL_TOKEN_PREFIX,
+  CLIENT_ID_PREFIX,
   CLIENT_PREFIX,
   CONNECTION_TOKEN_PREFIX,
   EVENT_TYPE_CHANNEL,
@@ -109,6 +110,7 @@ import { Packet } from '@shared/types/channel/packet';
 import {
   decodeMintClientRedeemer,
   findSpendClientRedeemer,
+  type SpendClientRedeemer,
 } from '@shared/types/client-redeemer';
 import type { Header as TendermintHeader } from '@shared/types/header';
 import {
@@ -118,6 +120,7 @@ import {
   sameTendermintUpdatePlan,
   type SessionDatum,
   type SpendSessionRedeemer,
+  type SpendMultitxClientRedeemer,
 } from '@shared/types/tendermint-update-session';
 import { reconstructStagedTendermintHeader } from '@shared/helpers/staged-tendermint-event';
 import type { GatewayEvent } from '../../tx/tx-events.service';
@@ -359,24 +362,31 @@ export class QueryService {
     return indexes[0] ?? null;
   }
 
-  private async findStagedFinalizationSessionToken(
+  private async findStagedClientRedeemer(
     clientUtxo: UtxoDto,
     clientDatum: ClientDatum,
     redeemers: ParsedTxRedeemer[],
-  ): Promise<AuthToken | null> {
+  ): Promise<SpendMultitxClientRedeemer | null> {
     const deploymentConfig = this.configService.get('deployment');
     const expectedPolicyId = deploymentConfig.validators.mintTendermintUpdateSession?.scriptHash;
     if (!expectedPolicyId) return null;
+    const isStagedAction = (decoded: SpendMultitxClientRedeemer): boolean => {
+      if (typeof decoded === 'string') return false;
+      if ('RecoverClient' in decoded) {
+        return decoded.RecoverClient.substituteToken.policyId.toLowerCase() ===
+          deploymentConfig.validators.mintClientStt?.scriptHash?.toLowerCase();
+      }
+      const tokens = 'FinalizeUpdate' in decoded
+        ? [decoded.FinalizeUpdate.sessionToken]
+        : [decoded.FinalizeMisbehaviour.sessionToken1, decoded.FinalizeMisbehaviour.sessionToken2];
+      return tokens.every((token) => token.policyId.toLowerCase() === expectedPolicyId.toLowerCase());
+    };
 
     const containsFinalization = redeemers.some((redeemer) => {
       if (redeemer.type !== REDEEMER_TYPE.SPEND) return false;
       try {
         const decoded = decodeSpendMultitxClientRedeemer(redeemer.data, this.lucidService.LucidImporter);
-        return (
-          typeof decoded !== 'string' &&
-          'FinalizeUpdate' in decoded &&
-          decoded.FinalizeUpdate.sessionToken.policyId.toLowerCase() === expectedPolicyId.toLowerCase()
-        );
+        return isStagedAction(decoded);
       } catch {
         return false;
       }
@@ -411,13 +421,7 @@ export class QueryService {
 
     try {
       const decoded = decodeSpendMultitxClientRedeemer(clientRedeemer.data, this.lucidService.LucidImporter);
-      if (
-        typeof decoded !== 'string' &&
-        'FinalizeUpdate' in decoded &&
-        decoded.FinalizeUpdate.sessionToken.policyId.toLowerCase() === expectedPolicyId.toLowerCase()
-      ) {
-        return decoded.FinalizeUpdate.sessionToken;
-      }
+      if (isStagedAction(decoded)) return decoded;
     } catch {
       // A client input using the legacy redeemer belongs to the direct protocol.
     }
@@ -429,8 +433,16 @@ export class QueryService {
     clientDatum: ClientDatum,
     finalRedeemers: ParsedTxRedeemer[],
   ): Promise<TendermintHeader | null> {
-    const sessionToken = await this.findStagedFinalizationSessionToken(clientUtxo, clientDatum, finalRedeemers);
-    if (!sessionToken) return null;
+    const redeemer = await this.findStagedClientRedeemer(clientUtxo, clientDatum, finalRedeemers);
+    if (!redeemer || typeof redeemer === 'string' || !('FinalizeUpdate' in redeemer)) return null;
+    return this.recoverStagedSessionHeader(clientUtxo, clientDatum, redeemer.FinalizeUpdate.sessionToken);
+  }
+
+  private async recoverStagedSessionHeader(
+    clientUtxo: UtxoDto,
+    clientDatum: ClientDatum,
+    sessionToken: AuthToken,
+  ): Promise<TendermintHeader> {
 
     const deploymentConfig = this.configService.get('deployment');
     const sessionAddress = deploymentConfig.validators.spendTendermintUpdateSession?.address;
@@ -466,8 +478,10 @@ export class QueryService {
       }
     }
 
+    const finalInputs = await this.getCanonicalTransactionInputs(clientUtxo.txHash);
     const completeOutputs = decodedOutputs.filter(
-      ({ datum }) =>
+      ({ utxo, datum }) =>
+        finalInputs.some((input) => input.txHash === utxo.txHash.toLowerCase() && input.outputIndex === utxo.outputIndex) &&
         'Complete' in datum.phase &&
         datum.plan.clientToken.policyId.toLowerCase() === clientDatum.token.policyId.toLowerCase() &&
         datum.plan.clientToken.name.toLowerCase() === clientDatum.token.name.toLowerCase(),
@@ -1458,10 +1472,31 @@ export class QueryService {
           }
 
           const redeemers = await this.getTransactionRedeemers(clientUtxo.txHash);
-          const stagedHeader = await this.recoverStagedTendermintHeader(clientUtxo, clientDatum, redeemers);
-          const spendClientRedeemerData = stagedHeader
-            ? undefined
-            : findSpendClientRedeemer(redeemers, this.lucidService.LucidImporter);
+          const stagedRedeemer = await this.findStagedClientRedeemer(clientUtxo, clientDatum, redeemers);
+          let stagedHeader: TendermintHeader | null = null;
+          let spendClientRedeemerData: SpendClientRedeemer | undefined;
+          if (stagedRedeemer && typeof stagedRedeemer !== 'string') {
+            if ('RecoverClient' in stagedRedeemer) {
+              spendClientRedeemerData = {
+                RecoverClient: { substitute_token: stagedRedeemer.RecoverClient.substituteToken },
+              };
+            } else if ('FinalizeMisbehaviour' in stagedRedeemer) {
+              const { sessionToken1, sessionToken2 } = stagedRedeemer.FinalizeMisbehaviour;
+              const [header1, header2] = await Promise.all([
+                this.recoverStagedSessionHeader(clientUtxo, clientDatum, sessionToken1),
+                this.recoverStagedSessionHeader(clientUtxo, clientDatum, sessionToken2),
+              ]);
+              spendClientRedeemerData = {
+                UpdateClient: { msg: { MisbehaviourCase: [{ client_id: `${CLIENT_ID_PREFIX}-${clientId}`, header1, header2 }] } },
+              };
+            } else {
+              stagedHeader = await this.recoverStagedSessionHeader(
+                clientUtxo, clientDatum, stagedRedeemer.FinalizeUpdate.sessionToken,
+              );
+            }
+          } else {
+            spendClientRedeemerData = findSpendClientRedeemer(redeemers, this.lucidService.LucidImporter);
+          }
           const substituteClientId =
             typeof spendClientRedeemerData === 'object' && 'RecoverClient' in spendClientRedeemerData
               ? getIdByTokenName(spendClientRedeemerData.RecoverClient.substitute_token.name, tokenBase, CLIENT_PREFIX)

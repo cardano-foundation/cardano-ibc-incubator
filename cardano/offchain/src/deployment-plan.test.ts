@@ -84,7 +84,11 @@ Deno.test("the optional benchmark policy is inventoried and pins the registry va
 
 Deno.test("the deployment inventory uses the staged client and session policy graph", async () => {
   const plan = await loadDeploymentPlan(lucidLoader, inputs);
-  const staged = loadStagedTendermintValidators(lucidLoader, plan.hostNft.hash);
+  const staged = loadStagedTendermintValidators(
+    lucidLoader,
+    plan.hostNft.hash,
+    plan.recoverClient.hash,
+  );
   assertEquals(plan.sessionSpend.hash, staged.sessionSpend.scriptHash);
   assertEquals(plan.sessionMint.hash, staged.sessionMint.policyId);
   assertEquals(plan.spendClient.hash, staged.clientSpend.scriptHash);

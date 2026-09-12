@@ -227,6 +227,11 @@ export function normalizeTxsResultFromClientDatum(
         revisionNumber: updateHeader.trustedHeight.revisionNumber,
         revisionHeight: updateHeader.signedHeader.header.height,
       };
+      const frozenHeight = ClientDatum.state.clientState.frozenHeight;
+      if (frozenHeight.revisionNumber !== 0n || frozenHeight.revisionHeight !== 0n) {
+        eventType = EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR;
+        consensusHeight = frozenHeight;
+      }
     } else if ('MisbehaviourCase' in clientMessage) {
       const misbehaviour = clientMessage.MisbehaviourCase[0];
       if (!misbehaviour) {

@@ -233,7 +233,12 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
   const hostPolicy = "11".repeat(28);
-  const staged = loadStagedTendermintValidators(lucid, hostPolicy);
+  const recoveryScriptHash = "33".repeat(28);
+  const staged = loadStagedTendermintValidators(
+    lucid,
+    hostPolicy,
+    recoveryScriptHash,
+  );
 
   const [, expectedSessionMintPolicyId] = readValidator(
     "minting_tendermint_update_session.mint_tendermint_update_session.mint",
@@ -244,8 +249,15 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
   const [, expectedClientSpendScriptHash] = readValidator(
     "spending_multitx_client.spend_multitx_client.spend",
     lucid,
-    [hostPolicy, staged.sessionMint.policyId],
-    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+    [hostPolicy, staged.sessionMint.policyId, { Script: [recoveryScriptHash] }],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Enum([
+        Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
+        Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
+      ]),
+    ]) as unknown as [string, string, { Script: [string] }],
   );
 
   assertEquals(staged.sessionMint.policyId, expectedSessionMintPolicyId);
@@ -254,6 +266,7 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
   const otherHost = loadStagedTendermintValidators(
     lucid,
     "22".repeat(28),
+    recoveryScriptHash,
   );
   assertNotEquals(
     staged.sessionSpend.scriptHash,
@@ -263,6 +276,20 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
   assertNotEquals(
     staged.clientSpend.scriptHash,
     otherHost.clientSpend.scriptHash,
+  );
+  const otherRecovery = loadStagedTendermintValidators(
+    lucid,
+    hostPolicy,
+    "44".repeat(28),
+  );
+  assertEquals(
+    staged.sessionSpend.scriptHash,
+    otherRecovery.sessionSpend.scriptHash,
+  );
+  assertEquals(staged.sessionMint.policyId, otherRecovery.sessionMint.policyId);
+  assertNotEquals(
+    staged.clientSpend.scriptHash,
+    otherRecovery.clientSpend.scriptHash,
   );
   assertEquals(
     buildReferenceValidatorSizeReport(

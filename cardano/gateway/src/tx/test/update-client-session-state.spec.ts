@@ -20,6 +20,8 @@ import {
   TENDERMINT_UPDATE_EXPIRY_SAFETY_MARGIN_MS,
   TENDERMINT_UPDATE_MIN_REMAINING_VALIDITY_MS,
   tendermintMerkleAccumulatorRoot,
+  tendermintHeaderConflictsWithStoredState,
+  tendermintHeadersConflict,
   validateTendermintStagedFinalization,
 } from '../update-client-session-state';
 import {
@@ -309,7 +311,7 @@ describe('pure Tendermint update-session state transitions', () => {
     ).toThrow('header time must be after the trusted consensus state timestamp');
   });
 
-  it('rejects a header that is not newer than the live latest consensus state', () => {
+  it('allows a header at the latest timestamp to reach authenticated conflict detection', () => {
     const scenario = capacityFixture.scenarios.adjacent_all_signed;
     const header = fixtureHeader(scenario);
     const trustedConsensusState = fixtureConsensusState(scenario);
@@ -333,7 +335,90 @@ describe('pure Tendermint update-session state transitions', () => {
         headerTimeNs,
         clientDatum,
       }),
-    ).toThrow('header time must be after the current latest consensus state timestamp');
+    ).not.toThrow();
+  });
+
+  it('uses the ICS-07 evidence timing rules instead of normal update timing', () => {
+    const scenario = capacityFixture.scenarios.adjacent_all_signed;
+    const header = fixtureHeader(scenario);
+    const consensusState = fixtureConsensusState(scenario);
+    const clientDatum = fixtureClientDatum(header, consensusState);
+    for (const headerTimeNs of [consensusState.timestamp, 10n ** 25n]) {
+      expect(() => validateTendermintStagedFinalization({
+        validFromTimeMs: 1_700_000_000_000,
+        trustedHeight: header.trustedHeight, headerTimeNs, clientDatum, misbehaviour: true,
+      })).not.toThrow();
+    }
+  });
+
+  it('distinguishes retained consensus-state conflicts from identical retries', () => {
+    const scenario = capacityFixture.scenarios.adjacent_all_signed;
+    const header = fixtureHeader(scenario);
+    const clientDatum = fixtureClientDatum(header, fixtureConsensusState(scenario));
+    clientDatum.state.consensusStates.set({
+      ...header.trustedHeight, revisionHeight: header.signedHeader.header.height,
+    }, {
+      timestamp: header.signedHeader.header.time,
+      next_validators_hash: header.signedHeader.header.nextValidatorsHash,
+      root: { hash: header.signedHeader.header.appHash },
+    });
+    expect(tendermintHeaderConflictsWithStoredState(header, clientDatum)).toBe(false);
+    const conflicting = structuredClone(header);
+    conflicting.signedHeader.header.appHash = 'ff'.repeat(32);
+    expect(tendermintHeaderConflictsWithStoredState(conflicting, clientDatum)).toBe(true);
+  });
+
+  it('finds timestamp inversions on either side of a retained height', () => {
+    const scenario = capacityFixture.scenarios.adjacent_all_signed;
+    const header = fixtureHeader(scenario);
+    const clientDatum = fixtureClientDatum(header, fixtureConsensusState(scenario));
+    const timestamp = header.signedHeader.header.time;
+    clientDatum.state.consensusStates = new Map([
+      [{ ...header.trustedHeight, revisionHeight: header.signedHeader.header.height - 1n },
+        { timestamp, next_validators_hash: '11'.repeat(32), root: { hash: '' } }],
+    ]);
+    expect(tendermintHeaderConflictsWithStoredState(header, clientDatum)).toBe(true);
+    clientDatum.state.consensusStates = new Map([
+      [{ ...header.trustedHeight, revisionHeight: header.signedHeader.header.height + 1n },
+        { timestamp, next_validators_hash: '11'.repeat(32), root: { hash: '' } }],
+    ]);
+    expect(tendermintHeaderConflictsWithStoredState(header, clientDatum)).toBe(true);
+  });
+
+  it('detects equivocation and timestamp inversions between two evidence headers', () => {
+    const header = fixtureHeader(capacityFixture.scenarios.adjacent_all_signed);
+    const other = structuredClone(header);
+    expect(tendermintHeadersConflict(header, other)).toBe(false);
+    other.signedHeader.commit.blockId.partSetHeader.hash = 'ee'.repeat(32);
+    expect(tendermintHeadersConflict(header, other)).toBe(false);
+    other.signedHeader.commit.blockId.hash = 'ff'.repeat(32);
+    expect(tendermintHeadersConflict(header, other)).toBe(true);
+    other.signedHeader.header.height += 1n;
+    expect(tendermintHeadersConflict(header, other)).toBe(true);
+    expect(tendermintHeadersConflict(other, header)).toBe(true);
+    other.signedHeader.header.time += 1n;
+    expect(tendermintHeadersConflict(header, other)).toBe(false);
+  });
+
+  it('orders conflict-detection neighbors by full revision and preserves Aiken tie handling', () => {
+    const header = fixtureHeader(capacityFixture.scenarios.adjacent_all_signed);
+    header.trustedHeight.revisionNumber = 1n;
+    const datum = fixtureClientDatum(header, fixtureConsensusState(capacityFixture.scenarios.adjacent_all_signed));
+    const state = { timestamp: header.signedHeader.header.time, next_validators_hash: '11'.repeat(32), root: { hash: '' } };
+    datum.state.consensusStates = new Map([
+      [{ revisionNumber: 0n, revisionHeight: 999_999n }, state],
+    ]);
+    expect(tendermintHeaderConflictsWithStoredState(header, datum)).toBe(true);
+    datum.state.consensusStates = new Map([
+      [{ revisionNumber: 2n, revisionHeight: 1n }, { ...state, timestamp: state.timestamp + 1n }],
+      [{ revisionNumber: 2n, revisionHeight: 1n }, state],
+    ]);
+    expect(tendermintHeaderConflictsWithStoredState(header, datum)).toBe(true);
+    datum.state.consensusStates = new Map([
+      [{ revisionNumber: 0n, revisionHeight: 1n }, { ...state, timestamp: state.timestamp - 1n }],
+      [{ revisionNumber: 0n, revisionHeight: 1n }, state],
+    ]);
+    expect(tendermintHeaderConflictsWithStoredState(header, datum)).toBe(false);
   });
 
   it('rejects a header at the max-clock-drift boundary', () => {

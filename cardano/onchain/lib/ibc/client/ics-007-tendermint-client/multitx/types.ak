@@ -131,6 +131,8 @@ pub type MintSessionRedeemer {
     plan: UpdatePlan,
   }
   BurnSession { token_name: ByteArray }
+  /// Explicit two-header evidence consumes both independently verified receipts.
+  BurnSessions { token_names: List<ByteArray> }
 }
 
 pub type SpendSessionRedeemer {

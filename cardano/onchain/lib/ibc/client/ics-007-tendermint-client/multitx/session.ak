@@ -598,7 +598,7 @@ pub fn is_complete_valid(datum: SessionDatum) -> Bool {
 /// transaction's time range. This deliberately repeats every time-sensitive
 /// header check at finalization; work done in earlier transactions never gets
 /// to freeze a stale notion of "now" or of the current client state.
-pub fn validate_finalization(
+fn validate_live_session(
   datum: SessionDatum,
   client_datum: ClientDatum,
   tx_time: TxTime,
@@ -607,16 +607,6 @@ pub fn validate_finalization(
   let current_state = client_datum.state.client_state
   expect [trusted_consensus_state] =
     pairs.get_all(client_datum.state.consensus_states, plan.trusted_height)
-  expect [latest_consensus_state] =
-    pairs.get_all(
-      client_datum.state.consensus_states,
-      current_state.latest_height,
-    )
-  let target_height =
-    height_mod.Height {
-      revision_number: height_mod.parse_chain_id(plan.header.chain_id),
-      revision_height: plan.header.height,
-    }
 
   and {
     is_complete_valid(datum),
@@ -632,14 +622,40 @@ pub fn validate_finalization(
       tx_time.valid_to,
       client_datum.state.consensus_states,
     ) == Active,
-    height_mod.compare(target_height, current_state.latest_height) == Greater,
-    target_height.revision_number == plan.trusted_height.revision_number,
-    plan.header.time > trusted_consensus_state.timestamp,
-    // A higher-height header with an equal or earlier timestamp is Header-case
-    // Tendermint misbehaviour. The staged protocol cannot freeze clients yet,
-    // so reject it rather than install a non-monotonic consensus state.
-    plan.header.time > latest_consensus_state.timestamp,
     trusted_consensus_state.timestamp + current_state.trusting_period > tx_time.valid_to,
-    plan.header.time < tx_time.valid_from + current_state.max_clock_drift,
   }
+}
+
+/// A normal Header must pass its time checks even when it proves a conflict
+/// with retained history. The client validator decides whether to update or
+/// freeze only after this verification succeeds.
+pub fn validate_finalization(
+  datum: SessionDatum,
+  client_datum: ClientDatum,
+  tx_time: TxTime,
+) -> Bool {
+  and {
+    validate_live_session(datum, client_datum, tx_time),
+    datum.plan.header.time > datum.plan.trusted_consensus_state.timestamp,
+    datum.plan.header.time < tx_time.valid_from + datum.plan.max_clock_drift,
+  }
+}
+
+/// ICS-07 explicit evidence authenticates both commits against unexpired
+/// trusted states, without normal Header timestamp monotonicity/clock checks.
+/// Applying those checks here would discard the time violations being proved.
+pub fn validate_misbehaviour_finalization(
+  datum: SessionDatum,
+  client_datum: ClientDatum,
+  tx_time: TxTime,
+) -> Bool {
+  expect validate_live_session(datum, client_datum, tx_time)
+  expect Complete { target_signed_power, target_total_power, .. } = datum.phase
+  // Adjacent normal updates require >2/3, but explicit evidence must also
+  // satisfy a deployment's potentially higher custom trust level.
+  !is_adjacent(datum.plan) || trusted_quorum(
+    datum.plan,
+    target_signed_power,
+    target_total_power,
+  )
 }

@@ -17,11 +17,12 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/multitx/session
 use ibc/client/ics_007_tendermint_client/multitx/types.{
-  BurnSession, CommitCore, MintSession, MintSessionRedeemer, SessionDatum,
-  UpdatePlan,
+  BurnSession, BurnSessions, CommitCore, MintSession, MintSessionRedeemer,
+  SessionDatum, UpdatePlan,
 }
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
+use ibc/utils/validator_utils
 use minting_tendermint_update_session
 
 const validator_root =
@@ -394,5 +395,138 @@ test burns_only_a_token_carried_by_the_session_script() {
     BurnSession { token_name: token.name },
     own_policy_id,
     transaction,
+  )
+}
+
+fn dual_burn_context() -> (ByteArray, PolicyId, List<ByteArray>, Transaction) {
+  let (script, first_token, policy, tx) = burn_context()
+  expect [first] = tx.inputs
+  expect first_datum: SessionDatum =
+    validator_utils.get_inline_datum(first.output)
+  let second_token = AuthToken { policy_id: policy, name: validator_root }
+  let second_datum: Data =
+    SessionDatum { ..first_datum, session_token: second_token }
+  let second =
+    Input {
+      output_reference: OutputReference {
+        ..first.output_reference,
+        output_index: 1,
+      },
+      output: Output {
+        ..first.output,
+        value: from_asset(policy, second_token.name, 1),
+        datum: InlineDatum(second_datum),
+      },
+    }
+  (
+    script,
+    policy,
+    [first_token.name, second_token.name],
+    Transaction {
+      ..tx,
+      inputs: [first, second],
+      mint: assets.add(tx.mint, policy, second_token.name, -1),
+    },
+  )
+}
+
+test burns_two_authenticated_sessions() {
+  let (script, policy, names, tx) = dual_burn_context()
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: names },
+    policy,
+    tx,
+  )
+}
+
+test rejects_duplicate_session_burn_names() fail {
+  let (script, policy, names, tx) = dual_burn_context()
+  expect [first, _] = names
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: [first, first] },
+    policy,
+    tx,
+  )
+}
+
+test rejects_two_session_burn_with_missing_input() fail {
+  let (script, policy, names, tx) = dual_burn_context()
+  expect [first, _] = tx.inputs
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: names },
+    policy,
+    Transaction { ..tx, inputs: [first] },
+  )
+}
+
+test rejects_two_session_burn_from_wrong_address() fail {
+  let (script, policy, names, tx) = dual_burn_context()
+  expect [first, second] = tx.inputs
+  let forged =
+    Input {
+      ..second,
+      output: Output {
+        ..second.output,
+        address: from_script(
+          #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ),
+      },
+    }
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: names },
+    policy,
+    Transaction { ..tx, inputs: [first, forged] },
+  )
+}
+
+test rejects_two_session_burn_with_wrong_datum_token() {
+  let (script, policy, names, tx) = dual_burn_context()
+  expect [first, second] = tx.inputs
+  let forged =
+    Input {
+      ..second,
+      output: Output { ..second.output, datum: first.output.datum },
+    }
+  !minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: names },
+    policy,
+    Transaction { ..tx, inputs: [first, forged] },
+  )
+}
+
+test rejects_two_session_burn_with_retained_token() {
+  let (script, policy, names, tx) = dual_burn_context()
+  expect [first, _] = tx.inputs
+  !minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: names },
+    policy,
+    Transaction { ..tx, outputs: [first.output] },
+  )
+}
+
+test rejects_two_session_burn_with_additional_mint() fail {
+  let (script, policy, names, tx) = dual_burn_context()
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: names },
+    policy,
+    Transaction { ..tx, mint: assets.add(tx.mint, policy, "extra", 1) },
+  )
+}
+
+test rejects_two_session_burn_with_wrong_quantity() fail {
+  let (script, policy, names, tx) = dual_burn_context()
+  expect [first, _] = names
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: names },
+    policy,
+    Transaction { ..tx, mint: assets.add(tx.mint, policy, first, -1) },
   )
 }
