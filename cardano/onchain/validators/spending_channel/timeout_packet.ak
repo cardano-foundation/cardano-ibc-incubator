@@ -245,7 +245,6 @@ validator timeout_packet(
 
     and {
       channel_token == datum.token,
-      auth.contain_auth_token(updated_output, datum.token),
       is_valid_packet,
       channel_datum_mod.validate_timeout_packet(datum, updated_datum, packet),
       commitment == packet_mod.commit_packet(packet),

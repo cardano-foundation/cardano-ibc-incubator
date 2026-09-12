@@ -39,6 +39,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   CreateConnection, HostStateRedeemer,
 }
+use ibc/utils/shutdown
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
@@ -77,92 +78,94 @@ validator mint_connection_stt(
   host_state_nft_policy_id: PolicyId,
 ) {
   mint(
-    redeemer: MintConnectionRedeemer,
+    redeemer: Data,
     connection_minting_policy_id: PolicyId,
     transaction: Transaction,
   ) {
-    let Transaction {
-      inputs,
-      reference_inputs,
-      outputs,
-      mint,
-      validity_range,
-      redeemers,
-      ..
-    } = transaction
-
-    expect Some(host_state_input) =
-      find_host_state_input(inputs, host_state_nft_policy_id)
-
-    expect InlineDatum(datum) = host_state_input.output.datum
-    expect host_state_datum: HostStateDatum = datum
-    let connection_id_sequence = host_state_datum.state.next_connection_sequence
-
-    expect [connection_output] =
-      transaction.find_script_outputs(outputs, spend_connection_script_hash)
-    expect connection_output_datum: ConnectionDatum =
-      validator_utils.get_inline_datum(connection_output)
-
-    let client_datum =
-      validator_utils.validate_referred_client(
+    if shutdown.burns_only(transaction.mint, connection_minting_policy_id) {
+      shutdown.reclaim_policy(
+        transaction,
+        connection_minting_policy_id,
+        host_state_nft_policy_id,
+      )
+    } else {
+      expect redeemer: MintConnectionRedeemer = redeemer
+      let Transaction {
+        inputs,
         reference_inputs,
-        connection_output_datum.token.name,
-        client_minting_policy_id,
-        connection_output_datum.state.client_id,
-      )
-
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-    let client_state_active =
-      client_state.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == Active
-
-    let id_str = string_utils.int_to_string(connection_id_sequence)
-    let host_state_nft =
-      AuthToken {
-        policy_id: host_state_nft_policy_id,
-        name: host_state_token_name,
+        outputs,
+        mint,
+        validity_range,
+        redeemers,
+        ..
+      } = transaction
+      expect Some(host_state_input) =
+        find_host_state_input(inputs, host_state_nft_policy_id)
+      expect InlineDatum(datum) = host_state_input.output.datum
+      expect host_state_datum: HostStateDatum = datum
+      let connection_id_sequence =
+        host_state_datum.state.next_connection_sequence
+      expect [connection_output] =
+        transaction.find_script_outputs(outputs, spend_connection_script_hash)
+      expect connection_output_datum: ConnectionDatum =
+        validator_utils.get_inline_datum(connection_output)
+      let client_datum =
+        validator_utils.validate_referred_client(
+          reference_inputs,
+          connection_output_datum.token.name,
+          client_minting_policy_id,
+          connection_output_datum.state.client_id,
+        )
+      let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
+      let client_state_active =
+        client_state.status(
+          client_datum.state.client_state,
+          tx_valid_to * 1_000_000,
+          client_datum.state.consensus_states,
+        ) == Active
+      let id_str = string_utils.int_to_string(connection_id_sequence)
+      let host_state_nft =
+        AuthToken {
+          policy_id: host_state_nft_policy_id,
+          name: host_state_token_name,
+        }
+      let connection_token_name =
+        auth.generate_token_name(
+          host_state_nft,
+          conn_keys.connection_prefix,
+          id_str,
+        )
+      let connection_token =
+        AuthToken {
+          policy_id: connection_minting_policy_id,
+          name: connection_token_name,
+        }
+      let valid_connection =
+        when redeemer is {
+          ConnOpenInit ->
+            is_conn_open_init_valid(connection_output_datum, connection_token)
+          ConnOpenTry { client_state, proof_init, proof_client, proof_height } ->
+            and {
+              is_conn_open_try_valid(connection_output_datum, connection_token)?,
+              validate_conn_open_try_proof(
+                client_datum.state,
+                connection_output_datum.state,
+                client_state,
+                proof_init,
+                proof_client,
+                proof_height,
+                redeemers,
+                verify_proof_policy_id,
+              )?,
+            }
+        }
+      and {
+        client_state_active?,
+        auth.mint_auth_token(mint, connection_token)?,
+        auth.contains_only_auth_tokens(connection_output, [connection_token])?,
+        valid_connection?,
+        spent_host_state_for_create_connection(redeemers, host_state_input)?,
       }
-    let connection_token_name =
-      auth.generate_token_name(
-        host_state_nft,
-        conn_keys.connection_prefix,
-        id_str,
-      )
-    let connection_token =
-      AuthToken {
-        policy_id: connection_minting_policy_id,
-        name: connection_token_name,
-      }
-
-    let valid_connection =
-      when redeemer is {
-        ConnOpenInit ->
-          is_conn_open_init_valid(connection_output_datum, connection_token)
-        ConnOpenTry { client_state, proof_init, proof_client, proof_height } ->
-          and {
-            is_conn_open_try_valid(connection_output_datum, connection_token)?,
-            validate_conn_open_try_proof(
-              client_datum.state,
-              connection_output_datum.state,
-              client_state,
-              proof_init,
-              proof_client,
-              proof_height,
-              redeemers,
-              verify_proof_policy_id,
-            )?,
-          }
-      }
-
-    and {
-      client_state_active?,
-      auth.mint_auth_token(mint, connection_token)?,
-      auth.contains_only_auth_tokens(connection_output, [connection_token])?,
-      valid_connection?,
-      spent_host_state_for_create_connection(redeemers, host_state_input)?,
     }
   }
 

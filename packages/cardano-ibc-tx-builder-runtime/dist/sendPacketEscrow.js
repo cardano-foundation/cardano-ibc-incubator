@@ -29,8 +29,8 @@ function createUnsignedSendPacketEscrowTx(dependencies, dto) {
         .collectFrom([{ ...dto.hostStateUtxo, datumHash: undefined }], dto.encodedHostStateRedeemer)
         .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
         .readFrom([dto.connectionUTxO, dto.clientUTxO])
-        .pay.ToContract(dependencies.hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, { [dependencies.hostStateTokenUnit]: 1n })
-        .pay.ToContract(dto.spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
+        .pay.ToContract(dependencies.hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, dto.hostStateUtxo.assets)
+        .pay.ToContract(dto.spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, dto.channelUTxO.assets)
         .mintAssets({ [dto.sendPacketPolicyId]: 1n }, dependencies.encodeAuthToken(dto.channelToken));
     if (dto.transferEscrowUtxo) {
         tx

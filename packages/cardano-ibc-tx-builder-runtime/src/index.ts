@@ -1449,6 +1449,7 @@ async function findTransferEscrowShard(
   packetDenom: string,
   denomToken: string,
   requiredAmount?: bigint,
+  balanceDelta?: bigint,
 ) {
   const deployment = context.deployment;
   return findTransferEscrowShardFromRegistry(
@@ -1463,6 +1464,7 @@ async function findTransferEscrowShard(
         context.lucidService.decodeDatum<{
           channel_id: string;
           denom: string;
+          escrowed_amount: bigint;
         }>(encodedDatum, 'transferEscrow'),
       encodeTransferModuleDatum: (datum) =>
         context.lucidService.encode(datum, 'transferModule'),
@@ -1475,6 +1477,7 @@ async function findTransferEscrowShard(
     packetDenom,
     denomToken,
     requiredAmount,
+    balanceDelta,
   );
 }
 
@@ -1778,9 +1781,9 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
         encode: (value, kind) => context.lucidService.encode(value, kind as never),
         findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
         tryFindUtxosAt: getWalletUtxos,
-        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount, balanceDelta) =>
           timed(logger, scope, 'find transfer escrow shard', () =>
-            findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount),
+            findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount, balanceDelta),
           ),
         createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
         createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),

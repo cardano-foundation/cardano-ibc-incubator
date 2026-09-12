@@ -144,7 +144,11 @@ fn create_transaction_with_registry(
       value: from_asset(ada_policy_id, ada_asset_name, 1000)
         |> add(mock.transfer_escrow_shard_policy_id, mock.shard_token_name, 1),
       datum: InlineDatum(
-        TransferEscrowDatum { channel_id: mock.channel_id, denom: mock.denom },
+        TransferEscrowDatum {
+          channel_id: mock.channel_id,
+          denom: mock.denom,
+          escrowed_amount: 1000,
+        },
       ),
       reference_script: None,
     }
@@ -189,6 +193,7 @@ test create_transfer_escrow_shard_succeeds() {
   expect decoded_redeemer: TransferEscrowShardRedeemer = redeemer
   minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint(
     mock.transfer_port_token,
+    #"00000000000000000000000000000000000000000000000000000000",
     decoded_redeemer,
     mock.transfer_escrow_shard_policy_id,
     transaction,
@@ -247,6 +252,7 @@ test create_second_transfer_escrow_shard_succeeds() {
 
   minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint(
     second.transfer_port_token,
+    #"00000000000000000000000000000000000000000000000000000000",
     decoded_redeemer,
     second.transfer_escrow_shard_policy_id,
     transaction,
@@ -262,6 +268,7 @@ test create_transfer_escrow_shard_rejects_reference_only_root() fail {
   expect decoded_redeemer: TransferEscrowShardRedeemer = redeemer
   minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint(
     mock.transfer_port_token,
+    #"00000000000000000000000000000000000000000000000000000000",
     decoded_redeemer,
     mock.transfer_escrow_shard_policy_id,
     transaction,
@@ -286,6 +293,7 @@ test create_transfer_escrow_shard_rejects_replay() fail {
   expect decoded_redeemer: TransferEscrowShardRedeemer = redeemer
   minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint(
     mock.transfer_port_token,
+    #"00000000000000000000000000000000000000000000000000000000",
     decoded_redeemer,
     mock.transfer_escrow_shard_policy_id,
     replay,

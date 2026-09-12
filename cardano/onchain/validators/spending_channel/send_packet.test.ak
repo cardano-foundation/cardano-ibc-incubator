@@ -233,6 +233,7 @@ fn check_send_packet_with_data(
         TransferEscrowDatum {
           channel_id: "channel-0",
           denom: transfer_data.denom,
+          escrowed_amount: 1000,
         },
       ),
       reference_script: None,
@@ -388,6 +389,7 @@ fn check_send_packet_with_data(
             mock_data.channel_minting_policy_id,
             "mock voucher policy",
             mock_data.host_state_nft_policy_id,
+            #"00000000000000000000000000000000000000000000000000000000",
             None,
             typed_module_redeemer,
             registered_module_input.output_reference,
@@ -395,6 +397,7 @@ fn check_send_packet_with_data(
           )?,
           minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint(
             port_token,
+            #"00000000000000000000000000000000000000000000000000000000",
             shard_mint_redeemer,
             transfer_escrow_shard_policy_id,
             transaction,

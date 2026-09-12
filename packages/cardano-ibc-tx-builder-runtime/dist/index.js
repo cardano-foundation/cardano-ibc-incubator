@@ -968,7 +968,7 @@ function dedupeUtxos(utxos) {
 function utxoRef(utxo) {
     return `${utxo.txHash}#${utxo.outputIndex}`;
 }
-async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount) {
+async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount, balanceDelta) {
     const deployment = context.deployment;
     return (0, transferEscrowShard_1.findTransferEscrowShard)({
         transferModuleAddress: deployment.modules.transfer.address,
@@ -979,7 +979,7 @@ async function findTransferEscrowShard(context, channelId, packetDenom, denomTok
         decodeTransferEscrowDatum: (encodedDatum) => context.lucidService.decodeDatum(encodedDatum, 'transferEscrow'),
         encodeTransferModuleDatum: (datum) => context.lucidService.encode(datum, 'transferModule'),
         decodeTransferModuleDatum: (encodedDatum) => context.lucidService.decodeDatum(encodedDatum, 'transferModule'),
-    }, channelId, packetDenom, denomToken, requiredAmount);
+    }, channelId, packetDenom, denomToken, requiredAmount, balanceDelta);
 }
 async function ensureTreeAlignedForRoot(context, onChainRoot, hostStateUtxo) {
     const snapshot = await context.treeStore.getAlignedSnapshot();
@@ -1215,7 +1215,7 @@ function createTxBuilderRuntime(config) {
             encode: (value, kind) => context.lucidService.encode(value, kind),
             findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
             tryFindUtxosAt: getWalletUtxos,
-            findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) => timed(logger, scope, 'find transfer escrow shard', () => findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount)),
+            findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount, balanceDelta) => timed(logger, scope, 'find transfer escrow shard', () => findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount, balanceDelta)),
             createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto),
             createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto),
             invalidArgument: (message) => new Error(message),

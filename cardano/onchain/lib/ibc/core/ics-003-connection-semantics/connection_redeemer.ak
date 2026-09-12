@@ -14,4 +14,5 @@ pub type MintConnectionRedeemer {
 pub type SpendConnectionRedeemer {
   ConnOpenAck
   ConnOpenConfirm { proof_ack: MerkleProof, proof_height: Height }
+  ReclaimConnection
 }

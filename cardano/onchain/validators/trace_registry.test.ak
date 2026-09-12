@@ -136,6 +136,7 @@ fn run_trace_registry_spend(
     test_directory_auth_token(),
     test_voucher_policy_id(),
     test_disabled_benchmark_voucher_policy_id(),
+    #"00000000000000000000000000000000000000000000000000000000",
     Some(datum),
     redeemer,
     spent_output_ref,
@@ -155,6 +156,7 @@ fn run_trace_registry_spend_with_benchmark(
     test_directory_auth_token(),
     test_voucher_policy_id(),
     benchmark_policy_id,
+    #"00000000000000000000000000000000000000000000000000000000",
     Some(datum),
     redeemer,
     spent_output_ref,
@@ -175,6 +177,52 @@ type TestInsertFixture {
   archived_shard_reference_input: Input,
   updated_output: Output,
   valid_mint: Value,
+}
+
+fn state_value_trace_append(output_lovelace: Int) -> Bool {
+  let fixture = test_insert_fixture(0)
+  let input = fixture.spent_input
+  let output = fixture.updated_output
+  let input =
+    Input {
+      ..input,
+      output: Output {
+        ..input.output,
+        value: assets.merge(input.output.value, assets.from_lovelace(8_000_000)),
+      },
+    }
+  let output =
+    Output {
+      ..output,
+      value: assets.merge(output.value, assets.from_lovelace(output_lovelace)),
+    }
+  run_trace_registry_spend(
+    Shard(
+      TraceRegistryShardDatum {
+        bucket_index: fixture.bucket_index,
+        entries: [],
+      },
+    ),
+    InsertTrace {
+      voucher_hash: fixture.voucher_hash,
+      full_denom: fixture.full_denom,
+    },
+    input.output_reference,
+    test_insert_transaction(
+      input,
+      [fixture.directory_input],
+      output,
+      fixture.valid_mint,
+    ),
+  )
+}
+
+test state_value_trace_append_rejects_surplus_ada_sweep() fail {
+  state_value_trace_append(2_000_000)
+}
+
+test state_value_trace_append_accepts_datum_growth_top_up() {
+  state_value_trace_append(10_000_000)
 }
 
 fn choose_insert_full_denom(seed: Int) -> ByteArray {

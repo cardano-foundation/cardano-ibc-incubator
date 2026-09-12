@@ -8,6 +8,7 @@ type TransferModuleDatum = {
 type TransferEscrowDatum = {
     channel_id: string;
     denom: string;
+    escrowed_amount: bigint;
 };
 type RegistryTree = Pick<ICS23MerkleTree, 'getRoot' | 'getSiblings' | 'set'>;
 type ErrorFactory = (message: string) => Error;
@@ -31,5 +32,5 @@ export declare function transferEscrowShardTokenName(channelId: string, packetDe
 export declare function transferEscrowShardRegistryKey(tokenName: string): string;
 export declare function escrowDenomTokenFromPacketDenom(encodedDenom: string): string;
 export declare function getTransferModuleRootFromAddressScan(utxos: UTxO[], transferModuleIdentifier: string, failedPrecondition?: ErrorFactory): UTxO;
-export declare function findTransferEscrowShard(dependencies: TransferEscrowShardRegistryDependencies, channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint): Promise<TransferEscrowShardLookup>;
+export declare function findTransferEscrowShard(dependencies: TransferEscrowShardRegistryDependencies, channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint, balanceDelta?: bigint): Promise<TransferEscrowShardLookup>;
 export {};

@@ -655,6 +655,7 @@ fn run_first_seen_voucher_mint_tx(
           fixture.mock_data.directory_auth_token,
           fixture.mock_data.voucher_minting_policy_id,
           "",
+          #"00000000000000000000000000000000000000000000000000000000",
           Some(fixture.trace_registry_datum),
           fixture.trace_registry_redeemer,
           fixture.trace_registry_spent_output_ref,

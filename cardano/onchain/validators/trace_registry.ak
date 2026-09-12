@@ -29,15 +29,16 @@ use aiken/primitive/bytearray
 use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{Input, Output, OutputReference, Transaction}
 use ibc/apps/transfer/trace_registry.{
-  AdvanceDirectory, Directory, InsertTrace, RolloverInsertTrace, Shard,
-  TraceRegistryDatum, TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum,
-  TraceRegistryEntry, TraceRegistryRedeemer, TraceRegistryShardDatum,
-  bucket_index_for_hash, directory_is_within_capacity, entry_is_admissible,
-  full_denom_is_within_limits, max_archived_shards_per_bucket,
-  shard_is_within_capacity,
+  AdvanceDirectory, Directory, InsertTrace, ReclaimTraceRegistry,
+  RolloverInsertTrace, Shard, TraceRegistryDatum, TraceRegistryDirectoryBucket,
+  TraceRegistryDirectoryDatum, TraceRegistryEntry, TraceRegistryRedeemer,
+  TraceRegistryShardDatum, bucket_index_for_hash, directory_is_within_capacity,
+  entry_is_admissible, full_denom_is_within_limits,
+  max_archived_shards_per_bucket, shard_is_within_capacity,
 }
 use ibc/apps/transfer/voucher_asset_name
 use ibc/auth.{AuthToken}
+use ibc/utils/shutdown
 use ibc/utils/validator_utils
 
 validator spend_trace_registry(
@@ -45,6 +46,7 @@ validator spend_trace_registry(
   directory_auth_token: AuthToken,
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   spend(
     datum: Option<TraceRegistryDatum>,
@@ -52,83 +54,90 @@ validator spend_trace_registry(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, reference_inputs, outputs, mint, .. } =
-      transaction
-
-    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
-    let spent_output = spent_input.output
-    expect Some(datum) = datum
-
-    when datum is {
-      Shard(old_shard) ->
-        when redeemer is {
-          InsertTrace { voucher_hash, full_denom } ->
-            validate_insert_trace(
-              old_shard,
-              voucher_hash,
-              full_denom,
-              spent_output,
-              reference_inputs,
-              outputs,
-              mint,
-              shard_nft_policy_id,
-              directory_auth_token,
-              voucher_minting_policy_id,
-              benchmark_voucher_minting_policy_id,
-            )
-
-          RolloverInsertTrace {
-            voucher_hash,
-            full_denom,
-            new_active_shard_name,
-          } ->
-            validate_rollover_insert_trace(
-              old_shard,
+    if redeemer == ReclaimTraceRegistry {
+      and {
+        shutdown.burns_script_tokens(transaction, shard_nft_policy_id),
+        shutdown.reclaim(
+          transaction,
+          spent_output_ref,
+          host_state_nft_policy_id,
+          assets.zero,
+        ),
+      }
+    } else {
+      let Transaction { inputs, reference_inputs, outputs, mint, .. } =
+        transaction
+      expect Some(spent_input) =
+        transaction.find_input(inputs, spent_output_ref)
+      let spent_output = spent_input.output
+      expect Some(datum) = datum
+      when datum is {
+        Shard(old_shard) ->
+          when redeemer is {
+            InsertTrace { voucher_hash, full_denom } ->
+              validate_insert_trace(
+                old_shard,
+                voucher_hash,
+                full_denom,
+                spent_output,
+                reference_inputs,
+                outputs,
+                mint,
+                shard_nft_policy_id,
+                directory_auth_token,
+                voucher_minting_policy_id,
+                benchmark_voucher_minting_policy_id,
+              )
+            RolloverInsertTrace {
               voucher_hash,
               full_denom,
               new_active_shard_name,
-              spent_output,
-              inputs,
-              reference_inputs,
-              outputs,
-              mint,
-              shard_nft_policy_id,
-              directory_auth_token,
-              voucher_minting_policy_id,
-              benchmark_voucher_minting_policy_id,
-            )
-
-          _ -> fail
-        }
-
-      Directory(old_directory) ->
-        when redeemer is {
-          AdvanceDirectory {
-            bucket_index,
-            voucher_hash,
-            full_denom,
-            previous_active_shard_name,
-            new_active_shard_name,
-          } ->
-            validate_advance_directory(
-              old_directory,
+            } ->
+              validate_rollover_insert_trace(
+                old_shard,
+                voucher_hash,
+                full_denom,
+                new_active_shard_name,
+                spent_output,
+                inputs,
+                reference_inputs,
+                outputs,
+                mint,
+                shard_nft_policy_id,
+                directory_auth_token,
+                voucher_minting_policy_id,
+                benchmark_voucher_minting_policy_id,
+              )
+            _ -> fail
+          }
+        Directory(old_directory) ->
+          when redeemer is {
+            AdvanceDirectory {
               bucket_index,
               voucher_hash,
               full_denom,
               previous_active_shard_name,
               new_active_shard_name,
-              spent_output,
-              reference_inputs,
-              outputs,
-              mint,
-              shard_nft_policy_id,
-              directory_auth_token,
-              voucher_minting_policy_id,
-              benchmark_voucher_minting_policy_id,
-            )
-
-          _ -> fail
-        }
+            } ->
+              validate_advance_directory(
+                old_directory,
+                bucket_index,
+                voucher_hash,
+                full_denom,
+                previous_active_shard_name,
+                new_active_shard_name,
+                spent_output,
+                reference_inputs,
+                outputs,
+                mint,
+                shard_nft_policy_id,
+                directory_auth_token,
+                voucher_minting_policy_id,
+                benchmark_voucher_minting_policy_id,
+              )
+            _ -> fail
+          }
+      }
     }
   }
 
@@ -184,6 +193,11 @@ fn validate_insert_trace(
     )
   expect Shard(updated_datum): TraceRegistryDatum =
     validator_utils.get_inline_datum(updated_output)
+  expect
+    validator_utils.preserves_state_value(
+      spent_output.value,
+      updated_output.value,
+    )
 
   let bucket_index_matches_hash =
     old_datum.bucket_index == bucket_index_for_hash(voucher_hash)
@@ -289,6 +303,11 @@ fn validate_rollover_insert_trace(
     )
   expect Shard(archived_datum): TraceRegistryDatum =
     validator_utils.get_inline_datum(archived_output)
+  expect
+    validator_utils.preserves_state_value(
+      spent_output.value,
+      archived_output.value,
+    )
 
   let new_active_token =
     AuthToken { policy_id: shard_nft_policy_id, name: new_active_shard_name }
@@ -429,6 +448,11 @@ fn validate_advance_directory(
     )
   expect Directory(updated_directory): TraceRegistryDatum =
     validator_utils.get_inline_datum(updated_output)
+  expect
+    validator_utils.preserves_state_value(
+      spent_output.value,
+      updated_output.value,
+    )
   expect directory_is_within_capacity(old_directory)
   expect directory_is_within_capacity(updated_directory)
 

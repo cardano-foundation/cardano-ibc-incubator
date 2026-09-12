@@ -39,35 +39,38 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
 }
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
+  // Includes state value conservation, shutdown dispatch and escrow accounting.
+  // These are measured silent-build baselines for existing capacity overruns.
+  // Public ledger limits and reference publication guards remain unchanged.
   reference_script_deployment: {
-    signedBytesEstimate: 15_746,
+    signedBytesEstimate: 15_644,
   },
   send_packet_at_commitment_capacity: {
-    mem: 38_093_446,
-    steps: 12_037_221_558,
+    mem: 38_066_206,
+    steps: 12_010_016_315,
   },
   recv_packet_at_history_capacity: {
-    mem: 40_602_892,
-    steps: 12_714_931_716,
+    mem: 40_701_472,
+    steps: 12_749_666_736,
   },
   prune_packet_history_at_capacity: {
     // Includes state-token authentication and the shared timeout helper.
     // The public-network limits are unchanged.
-    mem: 25_214_354,
+    mem: 25_273_704,
   },
   trace_registry_rollover: {
-    mem: 25_643_260,
-    steps: 10_897_080_470,
+    mem: 25_809_676,
+    steps: 10_953_775_373,
   },
   first_seen_voucher_receive_at_capacity: {
     unsignedBytes: 20_615,
     signedBytesEstimate: 20_875,
-    mem: 83_090_764,
-    steps: 27_585_360_530,
+    mem: 83_337_668,
+    steps: 27_650_228_187,
   },
   first_seen_voucher_mint: {
-    mem: 33_842_210,
-    steps: 12_321_606_174,
+    mem: 33_991_716,
+    steps: 12_353_165_462,
   },
 };
 

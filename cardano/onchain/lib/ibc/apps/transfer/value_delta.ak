@@ -8,14 +8,6 @@ pub fn validate_output_amount(
   output: Output,
   additional_value: Value,
 ) -> Bool {
-  let lovelace_input = assets.lovelace_of(locked_input.output.value)
-  trace @"lovelace_input": lovelace_input
-
-  trace @"additional_value": additional_value
-
-  let lovelace_output = assets.lovelace_of(output.value)
-  trace @"lovelace_output": lovelace_output
-
   let expected_output =
     locked_input.output.value
       |> assets.merge(additional_value)
@@ -24,11 +16,10 @@ pub fn validate_output_amount(
 }
 
 pub fn validate_output_value(output: Output, expected_output: Value) -> Bool {
-  let lovelace_output = assets.lovelace_of(output.value)
-  let expected_lovelace_output = assets.lovelace_of(expected_output)
-  trace @"expected_lovelace_output": expected_lovelace_output
   and {
-    (lovelace_output >= expected_lovelace_output)?,
-    assets.match_assets(output.value, expected_output)?,
+    assets.lovelace_of(output.value) >= assets.lovelace_of(expected_output),
+    assets.without_lovelace(output.value) == assets.without_lovelace(
+      expected_output,
+    ),
   }
 }

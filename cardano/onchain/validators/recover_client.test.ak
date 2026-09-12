@@ -856,6 +856,78 @@ test recovery_parameters_require_exact_immutable_fields() {
   }
 }
 
+fn state_value_recovery(output_ada: Int, output_reserve: Int) -> Bool {
+  let subject = expired_subject()
+  let substitute = active_substitute()
+  let transaction =
+    recovery_transaction(
+      subject,
+      substitute,
+      expected_recovered(subject, substitute),
+      client_script_hash,
+      [deployer],
+      True,
+      True,
+    )
+  expect [host_input, subject_input] = transaction.inputs
+  expect [subject_output, host_output] = transaction.outputs
+  let subject_input =
+    Input {
+      ..subject_input,
+      output: Output {
+        ..subject_input.output,
+        value: subject_input.output.value
+          |> assets.merge(assets.from_lovelace(8_000_000))
+          |> assets.add("reserve policy", "reserve", 7),
+      },
+    }
+  let subject_output =
+    Output {
+      ..subject_output,
+      value: subject_output.value
+        |> assets.merge(assets.from_lovelace(output_ada))
+        |> assets.add("reserve policy", "reserve", output_reserve),
+    }
+  let transaction =
+    Transaction {
+      ..transaction,
+      inputs: [host_input, subject_input],
+      outputs: [subject_output, host_output],
+    }
+  and {
+    spending_client.spend_client.spend(
+      host_policy,
+      address.Script(recovery_script_hash),
+      Some(subject),
+      RecoverClient { substitute_token: substitute.token },
+      subject_reference,
+      transaction,
+    ),
+    recover_client.recover_client.withdraw(
+      host_policy,
+      recovery_redeemer(subject, substitute),
+      address.Script(recovery_script_hash),
+      transaction,
+    ),
+  }
+}
+
+test state_value_recovery_preserves_existing_unrelated_assets() {
+  state_value_recovery(8_000_000, 7)
+}
+
+test state_value_recovery_allows_ada_top_up() {
+  state_value_recovery(10_000_000, 7)
+}
+
+test state_value_recovery_rejects_ada_sweep() fail {
+  state_value_recovery(2_000_000, 7)
+}
+
+test state_value_recovery_rejects_unrelated_asset_sweep() fail {
+  state_value_recovery(8_000_000, 0)
+}
+
 test recover_client_accepts_expired_subject() {
   let subject = expired_subject()
   let substitute = active_substitute()

@@ -97,12 +97,14 @@ describe('Lucid handshake proof authorization', () => {
 
   it('adds the pinned verify-proof reference and mint to ConnectionOpenConfirm', () => {
     const { service, builder, references } = harness();
+    const host = utxo('host-input', { lovelace: 8_000_000n, 'host-policyhost-name': 1n, reserve: 7n });
+    const connection = utxo('connection-input', { lovelace: 9_000_000n, 'connection-token': 1n });
 
     service.createUnsignedConnectionOpenConfirmTransaction(
-      utxo('host-input'),
+      host,
       'host-redeemer',
       'host-datum',
-      utxo('connection-input'),
+      connection,
       'connection-redeemer',
       'connection-token',
       utxo('client-input'),
@@ -112,6 +114,12 @@ describe('Lucid handshake proof authorization', () => {
       'signer',
     );
 
+    expect(builder.pay.ToContract).toHaveBeenCalledWith(
+      'host-address', { kind: 'inline', value: 'host-datum' }, host.assets,
+    );
+    expect(builder.pay.ToContract).toHaveBeenCalledWith(
+      'connection-address', { kind: 'inline', value: 'connection-datum' }, connection.assets,
+    );
     expect(builder.readFrom).toHaveBeenNthCalledWith(1, [
       references.spendConnection,
       references.verifyProof,
