@@ -1,0 +1,68 @@
+name: Sync partner binary upgrade
+
+on:
+  issues:
+    types: [opened, reopened, transferred, labeled, unlabeled]
+  pull_request_target:
+    types: [opened, reopened, labeled, unlabeled]
+  label:
+    types: [edited, deleted]
+  pull_request:
+    paths:
+      - ".github/workflows/partner-binary-upgrade.yml"
+      - "scripts/ci/sync-partner-binary-upgrade*"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/partner-binary-upgrade.yml"
+      - "scripts/ci/sync-partner-binary-upgrade*"
+  schedule:
+    # Covers project additions, manual field edits, and missed label events.
+    - cron: "3-58/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/ci/sync-partner-binary-upgrade.test.mjs
+
+  sync:
+    if: >-
+      github.event_name != 'pull_request' &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      github.event.label.name == 'partner-binary-upgrade')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: partner-binary-upgrade-project-32
+      cancel-in-progress: false
+    steps:
+      # Privileged jobs always execute the default branch, including fork PR events.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reconcile project from current issue and PR labels
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Configure PROJECT_SYNC_TOKEN with organization Projects write access; see docs/project-label-sync.md."
+            exit 1
+          fi
+          node scripts/ci/sync-partner-binary-upgrade.mjs --apply
