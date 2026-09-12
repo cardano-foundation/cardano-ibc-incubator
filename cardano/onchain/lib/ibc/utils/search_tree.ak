@@ -29,6 +29,7 @@ pub fn from_sorted(items: List<a>, count: Int) -> SearchTree<a> {
 /// Compare the query with each entry; matches must be true exactly when the
 /// comparison is Equal. Native equality avoids full ordering work in leaves.
 /// Equal keys return the first sorted entry, even across node partitions.
+/// Every returned entry is checked with matches.
 pub fn find(
   self: SearchTree<a>,
   compare: fn(a) -> Ordering,
@@ -42,7 +43,12 @@ pub fn find(
         Greater -> find(right, compare, matches)
         Equal ->
           when find(left, compare, matches) is {
-            None -> Some(pivot)
+            None ->
+              if matches(pivot) {
+                Some(pivot)
+              } else {
+                None
+              }
             found -> found
           }
       }
