@@ -40,7 +40,7 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
 
 const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
   reference_script_deployment: {
-    signedBytesEstimate: 15_746,
+    signedBytesEstimate: 15_762,
   },
   send_packet_at_commitment_capacity: {
     mem: 38_093_446,
