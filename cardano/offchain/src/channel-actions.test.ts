@@ -1,8 +1,38 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { Data, validatorToAddress } from "@lucid-evolution/lucid";
-import { channelActions, channelFixture } from "./testing/channel-fixture.ts";
+import {
+  channelActions,
+  channelFixture,
+  defaultChannelParameters,
+} from "./testing/channel-fixture.ts";
 
 const encode = (data: Data) => Data.to(data);
+
+// ChannelCloseConfirm delegates continuation checks to its operation policy,
+// so cover both the regular spending path and the delegated close path.
+for (const action of [channelActions[2], channelActions[5]]) {
+  for (
+    const mutation of [
+      "host_ada_sweep",
+      "channel_ada_sweep",
+      "host_asset_sweep",
+      "channel_asset_sweep",
+    ] as const
+  ) {
+    Deno.test(action.name + " rejects " + mutation, async () => {
+      const { tx } = await channelFixture(
+        action,
+        defaultChannelParameters,
+        mutation,
+      );
+      await assertRejects(
+        () => tx.complete({ localUPLCEval: true }),
+        Error,
+        "failed script execution",
+      );
+    });
+  }
+}
 
 for (const action of channelActions) {
   Deno.test(

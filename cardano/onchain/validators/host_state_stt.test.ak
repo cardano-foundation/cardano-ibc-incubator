@@ -4781,3 +4781,56 @@ test root_updates_remain_allowed_during_shutdown() {
     host_state.validate_update_only_root,
   )
 }
+
+fn state_value_heartbeat(input_extra: Value, output_extra: Value) -> Bool {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+  let input = test_host_input(old_state)
+  let output = test_host_output(new_state)
+  let input =
+    Input {
+      ..input,
+      output: Output {
+        ..input.output,
+        value: assets.merge(input.output.value, input_extra),
+      },
+    }
+  let output =
+    Output { ..output, value: assets.merge(output.value, output_extra) }
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [input],
+    [output],
+    [trusted_deployer],
+  )
+}
+
+test state_value_host_state_rejects_surplus_ada_sweep() fail {
+  state_value_heartbeat(
+    assets.from_lovelace(8_000_000),
+    assets.from_lovelace(2_000_000),
+  )
+}
+
+test state_value_host_state_rejects_unrelated_asset_sweep() fail {
+  let reserve = assets.from_lovelace(8_000_000)
+  state_value_heartbeat(
+    assets.add(reserve, "unrelated policy", "reserve", 7),
+    reserve,
+  )
+}
+
+test state_value_host_state_accepts_full_reserves_and_ada_top_up() {
+  let reserve =
+    assets.from_lovelace(8_000_000)
+      |> assets.add("unrelated policy", "reserve", 7)
+  state_value_heartbeat(
+    reserve,
+    assets.merge(reserve, assets.from_lovelace(2_000_000)),
+  )
+}

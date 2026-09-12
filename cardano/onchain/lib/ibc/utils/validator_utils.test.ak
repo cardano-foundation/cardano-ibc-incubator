@@ -1528,3 +1528,56 @@ test validate_referred_connection_and_client_requires_client_reference() fail {
     )
   result == result
 }
+
+test state_value_rejects_lovelace_removed_from_continuation() fail {
+  let (input, output, token) = setup_find_unique_continuation_output()
+  let input =
+    Output {
+      ..input,
+      value: assets.merge(input.value, assets.from_lovelace(8_000_000)),
+    }
+  let output =
+    Output {
+      ..output,
+      value: assets.merge(output.value, assets.from_lovelace(2_000_000)),
+    }
+  validator_utils.find_unique_continuation_output(input, [output], token) == output
+}
+
+test state_value_rejects_unrelated_asset_removed_from_continuation() fail {
+  let (input, output, token) = setup_find_unique_continuation_output()
+  let input =
+    Output {
+      ..input,
+      value: assets.add(input.value, "unrelated policy", "reserve", 7),
+    }
+  validator_utils.find_unique_continuation_output(input, [output], token) == output
+}
+
+test state_value_rejects_unrelated_asset_added_to_continuation() fail {
+  let (input, output, token) = setup_find_unique_continuation_output()
+  let output =
+    Output {
+      ..output,
+      value: assets.add(output.value, "unrelated policy", "dust", 1),
+    }
+  validator_utils.find_unique_continuation_output(input, [output], token) == output
+}
+
+test state_value_preserves_reserves_and_allows_datum_growth_top_up() {
+  let (input, output, token) = setup_find_unique_continuation_output()
+  let input =
+    Output {
+      ..input,
+      value: input.value
+        |> assets.merge(assets.from_lovelace(8_000_000))
+        |> assets.add("unrelated policy", "reserve", 7),
+    }
+  let output =
+    Output {
+      ..output,
+      datum: InlineDatum([1, 2, 3, 4, 5]),
+      value: assets.merge(input.value, assets.from_lovelace(2_000_000)),
+    }
+  validator_utils.find_unique_continuation_output(input, [output], token) == output
+}

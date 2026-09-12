@@ -443,8 +443,17 @@ pub fn require_exact_marker_mint(
   )
 }
 
+/// Continuing state owns its existing value. ADA may be added to fund a larger
+/// datum, but no reserve may be swept and the non-ADA inventory must stay exact.
+pub fn preserves_state_value(spent_value: Value, updated_value: Value) -> Bool {
+  and {
+    assets.lovelace_of(updated_value) >= assets.lovelace_of(spent_value),
+    assets.expect_match_assets(updated_value, spent_value),
+  }
+}
+
 /// Finds the single updated state output for a spent state UTxO.
-/// The output must stay at the same validator address and carry the same auth token.
+/// It must retain its address, auth token, and value (allowing ADA top-ups).
 pub fn find_unique_continuation_output(
   spent_output: Output,
   outputs: List<Output>,
@@ -452,8 +461,8 @@ pub fn find_unique_continuation_output(
 ) -> Output {
   // The updated state output is identified by both its validator address and auth token.
   // This allows unrelated state UTxOs to share the same script address safely.
-  expect auth.contain_auth_token(spent_output, token)?
-
+  // The output token check plus exact inventory preservation authenticates
+  // the input token too; checking it again would duplicate work.
   expect [updated_output] =
     list.filter(
       outputs,
@@ -464,6 +473,7 @@ pub fn find_unique_continuation_output(
         )
       },
     )
+  expect preserves_state_value(spent_output.value, updated_output.value)
   updated_output
 }
 

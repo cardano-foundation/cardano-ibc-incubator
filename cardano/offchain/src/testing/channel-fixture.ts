@@ -59,7 +59,11 @@ export type ChannelMutation =
   | "none"
   | "missing_marker"
   | "extra_marker"
-  | "wrong_marker_name";
+  | "wrong_marker_name"
+  | "host_ada_sweep"
+  | "channel_ada_sweep"
+  | "host_asset_sweep"
+  | "channel_asset_sweep";
 
 export const channelActions = [
   {
@@ -222,6 +226,11 @@ export async function channelFixture(
     verifyPolicy,
     hostPolicy,
   );
+  const [, shutdownScriptHash] = readValidator(
+    "recover_client.recover_client.withdraw",
+    lucid,
+    [hostPolicy],
+  );
   const [channelMint, channelPolicy] = readValidator(
     "minting_channel_stt.mint_channel_stt.mint",
     lucid,
@@ -232,6 +241,7 @@ export async function channelFixture(
       verifyPolicy,
       channelScripts.base.hash,
       hostPolicy,
+      shutdownScriptHash,
     ],
   );
   const [moduleScript, moduleHash, moduleAddress] = readValidator(
@@ -242,7 +252,15 @@ export async function channelFixture(
   const [hostScript, , hostAddress] = readValidator(
     "host_state_stt.host_state_stt.spend",
     lucid,
-    [hostPolicy, hash("55"), hash("66"), channelScripts.base.hash],
+    [
+      hostPolicy,
+      hash("55"),
+      hash("66"),
+      channelScripts.base.hash,
+      clientPolicy,
+      connectionPolicy,
+      channelPolicy,
+    ],
   );
   const channelToken = record(
     channelPolicy,
@@ -435,10 +453,15 @@ export async function channelFixture(
       next_channel_sequence: BigInt(parameters.channelSequence) + 1n,
     },
   };
+  const unrelatedAsset = hash("fe") + fromText("reserve");
   const host = seed(hostAddress, {
     lovelace: 10_000_000n,
     [hostPolicy + hostToken.name]: 1n,
+    ...(mutation === "host_asset_sweep" ? { [unrelatedAsset]: 7n } : {}),
   }, Data.to(hostDatum, HostStateDatum));
+  const hostOutputAssets = { ...host.assets };
+  if (mutation === "host_ada_sweep") hostOutputAssets.lovelace = 5_000_000n;
+  if (mutation === "host_asset_sweep") delete hostOutputAssets[unrelatedAsset];
   const module = seed(moduleAddress, {
     lovelace: 10_000_000n,
     [portPolicy + portToken.name]: 1n,
@@ -470,7 +493,7 @@ export async function channelFixture(
     .pay.ToContract(hostAddress, {
       kind: "inline",
       value: Data.to(newHostDatum, HostStateDatum),
-    }, host.assets)
+    }, hostOutputAssets)
     .pay.ToContract(
       moduleAddress,
       { kind: "inline", value: module.datum! },
@@ -479,7 +502,10 @@ export async function channelFixture(
     .pay.ToContract(channelScripts.base.address, {
       kind: "inline",
       value: encode(channelDatum(action.after)),
-    }, { lovelace: 10_000_000n, [tokenUnit(channelToken)]: 1n })
+    }, {
+      lovelace: mutation === "channel_ada_sweep" ? 5_000_000n : 10_000_000n,
+      [tokenUnit(channelToken)]: 1n,
+    })
     .validFrom(now).validTo(now + 60_000);
 
   if (isCreate) {
@@ -493,6 +519,7 @@ export async function channelFixture(
     const channel = seed(channelScripts.base.address, {
       lovelace: 10_000_000n,
       [tokenUnit(channelToken)]: 1n,
+      ...(mutation === "channel_asset_sweep" ? { [unrelatedAsset]: 7n } : {}),
     }, encode(channelDatum(action.before)));
     const redeemer = action.name === "ChanOpenAck"
       ? variant(0, fromText(VERSION), membership.proof, HEIGHT)

@@ -163,6 +163,7 @@ fn run_boundary_append(
     test_directory_auth_token(),
     test_voucher_policy_id(),
     "",
+    #"00000000000000000000000000000000000000000000000000000000",
     Some(Shard(TraceRegistryShardDatum { bucket_index, entries: old_entries })),
     InsertTrace { voucher_hash, full_denom },
     test_output_ref(0),

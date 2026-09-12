@@ -967,13 +967,11 @@ export class LucidService implements OnModuleInit {
     encodedSpendClientRedeemer: string,
     encodedUpdatedHostStateDatum: string,
     encodedNewClientDatum: string,
-    clientTokenUnit: string,
+    _clientTokenUnit: string,
     _constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
 
     // Keep the datum bytes exactly as they exist on-chain. This avoids any chance
     // that a client-side re-encoding changes the bytes being validated.
@@ -992,16 +990,12 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: encodedUpdatedHostStateDatum },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendClient.address,
         { kind: "inline", value: encodedNewClientDatum },
-        {
-          [clientTokenUnit]: 1n,
-        },
+        currentClientUtxo.assets,
       );
 
     return tx;
@@ -1016,7 +1010,7 @@ export class LucidService implements OnModuleInit {
     encodedRecoverClientWithdrawalRedeemer: string,
     encodedUpdatedHostStateDatum: string,
     encodedRecoveredClientDatum: string,
-    subjectClientTokenUnit: string,
+    _subjectClientTokenUnit: string,
     signerKeyHash: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
@@ -1028,8 +1022,6 @@ export class LucidService implements OnModuleInit {
       );
     }
 
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
       datum: hostStateUtxo.datum,
@@ -1048,12 +1040,12 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: encodedUpdatedHostStateDatum },
-        { [hostStateNFT]: 1n },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendClient.address,
         { kind: "inline", value: encodedRecoveredClientDatum },
-        { [subjectClientTokenUnit]: 1n },
+        subjectClientUtxo.assets,
       )
       .withdraw(
         recoveryConfig.address,
@@ -1070,8 +1062,6 @@ export class LucidService implements OnModuleInit {
     signerKeyHash: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
       datum: hostStateUtxo.datum,
@@ -1084,7 +1074,7 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: encodedUpdatedHostStateDatum },
-        { [hostStateNFT]: 1n },
+        hostStateUtxoWithRawDatum.assets,
       )
       .addSignerKey(signerKeyHash);
   }
@@ -1170,9 +1160,7 @@ export class LucidService implements OnModuleInit {
     addPayToContract(
       deploymentConfig.validators.hostStateStt.address,
       encodedUpdatedHostStateDatum,
-      {
-        [hostStateNFT]: 1n,
-      },
+      hostStateUtxoWithRawDatum.assets,
     );
 
     // Create new Client UTXO
@@ -1200,8 +1188,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
       datum: hostStateUtxo.datum,
@@ -1231,9 +1217,7 @@ export class LucidService implements OnModuleInit {
     addPayToContract(
       deploymentConfig.validators.hostStateStt.address,
       encodedUpdatedHostStateDatum,
-      {
-        [hostStateNFT]: 1n,
-      },
+      hostStateUtxoWithRawDatum.assets,
     );
     addPayToContract(
       deploymentConfig.validators.spendConnection.address,
@@ -1258,8 +1242,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
       datum: hostStateUtxo.datum,
@@ -1296,9 +1278,7 @@ export class LucidService implements OnModuleInit {
     addPayToContract(
       deploymentConfig.validators.hostStateStt.address,
       encodedUpdatedHostStateDatum,
-      {
-        [hostStateNFT]: 1n,
-      },
+      hostStateUtxoWithRawDatum.assets,
     );
     addPayToContract(
       deploymentConfig.validators.spendConnection.address,
@@ -1314,8 +1294,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1346,16 +1324,12 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: dto.encodedUpdatedHostStateDatum },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendConnection.address,
         { kind: "inline", value: dto.encodedUpdatedConnectionDatum },
-        {
-          [dto.connectionTokenUnit]: 1n,
-        },
+        connectionUtxoWithRawDatum.assets,
       )
       .mintAssets(
         {
@@ -1371,7 +1345,7 @@ export class LucidService implements OnModuleInit {
     encodedUpdatedHostStateDatum: string,
     connectionUtxo: UTxO,
     encodedSpendConnectionRedeemer: string,
-    connectionTokenUnit: string,
+    _connectionTokenUnit: string,
     clientUtxo: UTxO,
     encodedUpdatedConnectionDatum: string,
     verifyProofPolicyId: string,
@@ -1380,8 +1354,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
       datum: hostStateUtxo.datum,
@@ -1409,16 +1381,12 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: encodedUpdatedHostStateDatum },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendConnection.address,
         { kind: "inline", value: encodedUpdatedConnectionDatum },
-        {
-          [connectionTokenUnit]: 1n,
-        },
+        connectionUtxoWithRawDatum.assets,
       )
       .mintAssets(
         {
@@ -1533,8 +1501,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1558,7 +1524,7 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: dto.encodedUpdatedHostStateDatum },
-        { [hostStateNFT]: 1n },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -1576,8 +1542,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1615,9 +1579,7 @@ export class LucidService implements OnModuleInit {
     addPayToContract(
       deploymentConfig.validators.hostStateStt.address,
       dto.encodedUpdatedHostStateDatum,
-      {
-        [hostStateNFT]: 1n,
-      },
+      hostStateUtxoWithRawDatum.assets,
     );
     addPayToContract(
       deploymentConfig.validators.spendChannel.address,
@@ -1636,8 +1598,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1661,9 +1621,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -1671,9 +1629,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         {
@@ -1697,8 +1653,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1721,9 +1675,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -1731,9 +1683,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         {
@@ -1751,8 +1701,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1778,9 +1726,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -1788,9 +1734,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         {
@@ -1815,8 +1759,6 @@ export class LucidService implements OnModuleInit {
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1840,9 +1782,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -1850,9 +1790,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         {
@@ -1878,8 +1816,6 @@ export class LucidService implements OnModuleInit {
     const transferEscrowUtxo = this.requireTransferEscrowUtxo(
       dto.transferEscrowUtxo,
     );
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1911,9 +1847,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -1921,9 +1855,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .pay.ToAddress(dto.receiverAddress, {
         [dto.denomToken]: dto.transferAmount,
@@ -1956,8 +1888,6 @@ export class LucidService implements OnModuleInit {
 
   public createUnsignedRecvPacketTx(dto: UnsignedRecvPacketDto): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -1982,9 +1912,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -1992,9 +1920,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         {
@@ -2018,8 +1944,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedPrunePacketHistoryDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2039,12 +1963,12 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: dto.encodedUpdatedHostStateDatum },
-        { [hostStateNFT]: 1n },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         { kind: "inline", value: dto.encodedUpdatedChannelDatum },
-        { [dto.channelTokenUnit]: 1n },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         { [dto.prunePacketHistoryPolicyId]: 1n },
@@ -2060,8 +1984,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedRecvPacketModuleDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2087,9 +2009,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -2097,9 +2017,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         {
@@ -2123,8 +2041,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedRecvPacketMintDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2171,9 +2087,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -2181,9 +2095,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .pay.ToAddress(dto.receiverAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
@@ -2264,8 +2176,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedAckPacketSucceedDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2295,9 +2205,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -2305,9 +2213,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         {
@@ -2331,8 +2237,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedAckPacketModuleDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2357,9 +2261,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -2367,9 +2269,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .pay.ToContract(this.getModuleAddress(dto.moduleKey), undefined, {
         ...dto.moduleUtxo.assets,
@@ -2397,8 +2297,6 @@ export class LucidService implements OnModuleInit {
     const transferEscrowUtxo = this.requireTransferEscrowUtxo(
       dto.transferEscrowUtxo,
     );
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2430,9 +2328,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -2440,9 +2336,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
@@ -2476,8 +2370,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedAckPacketMintDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2524,9 +2416,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -2534,9 +2424,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
@@ -2599,8 +2487,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedSendPacketModuleDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2624,9 +2510,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -2634,9 +2518,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .mintAssets(
         {
@@ -2654,8 +2536,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedSendPacketBurnDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2689,9 +2569,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -2699,9 +2577,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUTxO.assets,
       )
       .mintAssets(
         {
@@ -2723,8 +2599,6 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedTimeoutPacketMintDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2770,9 +2644,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         dto.spendChannelAddress,
@@ -2780,9 +2652,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
@@ -2832,8 +2702,6 @@ export class LucidService implements OnModuleInit {
     const transferEscrowUtxo = this.requireTransferEscrowUtxo(
       dto.transferEscrowUtxo,
     );
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
-      deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2864,9 +2732,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedHostStateDatum,
         },
-        {
-          [hostStateNFT]: 1n,
-        },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         dto.spendChannelAddress,
@@ -2874,9 +2740,7 @@ export class LucidService implements OnModuleInit {
           kind: "inline",
           value: dto.encodedUpdatedChannelDatum,
         },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
+        dto.channelUtxo.assets,
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,

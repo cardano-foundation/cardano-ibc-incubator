@@ -19,7 +19,7 @@ const PACKET_DENOM = Buffer.from(Buffer.from('lovelace').toString('hex')).toStri
 const SHARD_TOKEN_NAME = transferEscrowShardTokenName(CHANNEL_ID, PACKET_DENOM);
 const SHARD_TOKEN_UNIT = SHARD_POLICY_ID + SHARD_TOKEN_NAME;
 
-const encodedEscrowDatum = (channelId: string, denom: string) => `escrow:${channelId}:${denom}`;
+const encodedEscrowDatum = (channelId: string, denom: string, amount = 0n) => `escrow:${channelId}:${denom}:${amount}`;
 const encodedModuleDatum = (root: string) => `module:${root}`;
 
 const rootUtxo = (root: string) => ({
@@ -66,7 +66,7 @@ function createService(findUtxoAt: jest.Mock): PacketService {
     findUtxoAt,
     encode: jest.fn().mockImplementation(async (value: any, type: string) => {
       if (type === 'transferEscrow') {
-        return encodedEscrowDatum(value.channel_id, value.denom);
+        return encodedEscrowDatum(value.channel_id, value.denom, value.escrowed_amount);
       }
       if (type === 'transferModule') {
         return encodedModuleDatum(value.escrow_shard_registry_root);
@@ -78,8 +78,8 @@ function createService(findUtxoAt: jest.Mock): PacketService {
         return { escrow_shard_registry_root: datum.slice('module:'.length) };
       }
       if (type === 'transferEscrow' && datum.startsWith('escrow:')) {
-        const [, channel_id, denom] = datum.split(':');
-        return { channel_id, denom };
+        const [, channel_id, denom, amount] = datum.split(':');
+        return { channel_id, denom, escrowed_amount: BigInt(amount) };
       }
       throw new Error(`Malformed ${type} datum`);
     }),

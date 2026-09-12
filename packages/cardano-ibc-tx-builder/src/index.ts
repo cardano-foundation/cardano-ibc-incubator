@@ -242,6 +242,7 @@ export type SendPacketBuildDependencies<TreeCommit = () => void> = {
     packetDenom: string,
     denomToken: string,
     requiredAmount?: bigint,
+    balanceDelta?: bigint,
   ) => Promise<TransferEscrowShardLookup>;
   createUnsignedSendPacketBurnTx: (
     dto: UnsignedSendPacketBurnTxInput,
@@ -471,6 +472,8 @@ export async function buildUnsignedSendPacketTx<TreeCommit = () => void>(
     convertStringToHex(sendPacketOperator.sourceChannel),
     convertStringToHex(packetDenom),
     denomToken,
+    undefined,
+    sendPacketOperator.token.amount,
   );
 
   const unsignedTx = deps.createUnsignedSendPacketEscrowTx({

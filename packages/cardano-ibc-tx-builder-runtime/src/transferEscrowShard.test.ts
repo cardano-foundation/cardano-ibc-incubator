@@ -36,8 +36,8 @@ function utxo(
   } as UTxO;
 }
 
-function encodedEscrowDatum(channelId: string, denom: string): string {
-  return `escrow:${channelId}:${denom}`;
+function encodedEscrowDatum(channelId: string, denom: string, amount = 0n): string {
+  return `escrow:${channelId}:${denom}:${amount}`;
 }
 
 function encodedModuleDatum(root: string): string {
@@ -81,13 +81,13 @@ function dependencies(
     shardPolicyId: SHARD_POLICY_ID,
     findUtxosAt,
     encodeTransferEscrowDatum: async (datum) =>
-      encodedEscrowDatum(datum.channel_id, datum.denom),
+      encodedEscrowDatum(datum.channel_id, datum.denom, datum.escrowed_amount),
     decodeTransferEscrowDatum: async (datum) => {
-      const [prefix, channel_id, denom] = datum.split(':');
+      const [prefix, channel_id, denom, amount] = datum.split(':');
       if (prefix !== 'escrow' || !channel_id || !denom) {
         throw new Error('bad escrow datum');
       }
-      return { channel_id, denom };
+      return { channel_id, denom, escrowed_amount: BigInt(amount) };
     },
     encodeTransferModuleDatum: async (datum) =>
       encodedModuleDatum(datum.escrow_shard_registry_root),
@@ -135,6 +135,31 @@ describe('transfer escrow shard registry lookup', () => {
           .map((sibling) => sibling.toString('hex')),
       );
     }
+  });
+
+  it('updates the recorded principal when depositing and paying out tokens', async () => {
+    const existing = shard();
+    existing.assets[DENOM_TOKEN] = 50n;
+    existing.datum = encodedEscrowDatum(CHANNEL_ID, PACKET_DENOM, 50n);
+    const deps = dependencies(async () => [moduleRoot(existingRegistryRoot()), existing]);
+    const deposit = await findTransferEscrowShard(deps, CHANNEL_ID, PACKET_DENOM, DENOM_TOKEN, undefined, 10n);
+    assert.equal(deposit.encodedDatum, encodedEscrowDatum(CHANNEL_ID, PACKET_DENOM, 60n));
+    const payout = await findTransferEscrowShard(deps, CHANNEL_ID, PACKET_DENOM, DENOM_TOKEN, 50n, -50n);
+    assert.equal(payout.encodedDatum, encodedEscrowDatum(CHANNEL_ID, PACKET_DENOM, 0n));
+    const created = await findTransferEscrowShard(dependencies(async () => [moduleRoot()]), CHANNEL_ID, PACKET_DENOM, DENOM_TOKEN, undefined, 10n);
+    assert.equal(created.encodedDatum, encodedEscrowDatum(CHANNEL_ID, PACKET_DENOM, 10n));
+  });
+
+  it('does not count an ADA escrow reserve as a withdrawable deposit', async () => {
+    const denom = Buffer.from(Buffer.from('lovelace').toString('hex')).toString('hex');
+    const name = transferEscrowShardTokenName(CHANNEL_ID, denom);
+    const tree = new ICS23MerkleTree();
+    tree.set(transferEscrowShardRegistryKey(name), Buffer.from([1]));
+    const existing = utxo('ada-shard', 0, {lovelace: 2_000_100n, [SHARD_POLICY_ID + name]: 1n}, encodedEscrowDatum(CHANNEL_ID, denom, 100n));
+    const deps = dependencies(async () => [moduleRoot(tree.getRoot()), existing]);
+    await assert.rejects(() => findTransferEscrowShard(deps, CHANNEL_ID, denom, 'lovelace', 101n, -101n));
+    const payout = await findTransferEscrowShard(deps, CHANNEL_ID, denom, 'lovelace', 100n, -100n);
+    assert.equal(payout.encodedDatum, encodedEscrowDatum(CHANNEL_ID, denom, 0n));
   });
 
   it('treats a legacy root without a datum as an empty registry', async () => {

@@ -1,9 +1,10 @@
 use aiken/collection/list
+use aiken/collection/pairs
 use aiken/primitive/bytearray
 use aiken/primitive/int
-use cardano/address.{from_verification_key}
+use cardano/address.{Script, from_verification_key}
 use cardano/assets.{PolicyId, quantity_of}
-use cardano/transaction.{Input, Output, OutputReference, Transaction}
+use cardano/transaction.{Input, Output, OutputReference, Transaction, Withdraw}
 use ibc/apps/transfer/channel_callback as transfer_channel_callback
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/escrow.{TransferModuleSpend}
@@ -16,6 +17,9 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/client_redeemer.{
+  ReclaimTransferWithdrawal, RecoverClientWithdrawalRedeemer,
+}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, TimeoutOnClose, TimeoutPacket,
@@ -30,7 +34,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   IBCModuleRedeemer, ModuleDataV1, ModuleOperatorV1, OnAcknowledgementPacket,
   OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm,
   OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnSendPacket, OnTimeoutPacket,
-  Operator,
+  Operator, ReclaimModule,
 }
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
@@ -44,6 +48,7 @@ validator spend_transfer_module(
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
+  shutdown_script_hash: ByteArray,
 ) {
   spend(
     _datum: Option<Data>,
@@ -51,62 +56,85 @@ validator spend_transfer_module(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, outputs, .. } = transaction
-
-    // Transfer state transitions must be committed through HostState.
-    let (host_state_input, _) =
-      validator_utils.require_host_state_thread(
-        inputs,
-        outputs,
-        host_state_nft_policy_id,
-      )
-    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
-    // Classify whether this spend is root state or a packet escrow shard.
-    let spend =
-      transfer_escrow.classify_transfer_module_spend(
-        spent_input.output,
-        transaction.outputs,
-        port_token,
-        module_token,
-        transfer_escrow_shard_policy_id,
-      )
-
-    // Channel auth tokens are minted by `mint_channel_stt` using the HostState NFT
-    // as the base token. The transfer module must derive the *same* token name when
-    // locating the channel UTxO in the transaction.
-    let host_state_nft =
-      AuthToken {
-        policy_id: host_state_nft_policy_id,
-        name: host_state_token_name,
-      }
-
     when redeemer is {
-      Callback(cb) ->
-        module_callback(
-          cb,
-          host_state_nft,
-          spent_input,
-          transaction,
-          spend,
-          host_state_input,
-          port_id,
-          transfer_escrow_shard_policy_id,
-          channel_minting_policy_id,
-          voucher_minting_policy_id,
-        )
-      Operator(op) ->
-        module_operator(
-          decode_transfer_operator(op),
-          None,
-          host_state_nft,
-          spent_input,
-          transaction,
-          spend,
-          host_state_input,
-          transfer_escrow_shard_policy_id,
-          channel_minting_policy_id,
-          voucher_minting_policy_id,
-        )
+      ReclaimModule -> {
+        expect Some(actual) =
+          pairs.get_first(
+            transaction.redeemers,
+            Withdraw(Script(shutdown_script_hash)),
+          )
+        expect ReclaimTransferWithdrawal {
+          port_unit,
+          module_unit,
+          escrow_policy,
+        }: RecoverClientWithdrawalRedeemer = actual
+        and {
+          port_unit == bytearray.concat(port_token.policy_id, port_token.name),
+          module_unit == bytearray.concat(
+            module_token.policy_id,
+            module_token.name,
+          ),
+          escrow_policy == transfer_escrow_shard_policy_id,
+        }
+      }
+      _ -> {
+        let Transaction { inputs, outputs, .. } = transaction
+        // Transfer state transitions must be committed through HostState.
+        let (host_state_input, _) =
+          validator_utils.require_host_state_thread(
+            inputs,
+            outputs,
+            host_state_nft_policy_id,
+          )
+        expect Some(spent_input) =
+          transaction.find_input(inputs, spent_output_ref)
+        // Classify whether this spend is root state or a packet escrow shard.
+        let spend =
+          transfer_escrow.classify_transfer_module_spend(
+            spent_input.output,
+            transaction.outputs,
+            port_token,
+            module_token,
+            transfer_escrow_shard_policy_id,
+          )
+        // Channel auth tokens are minted by `mint_channel_stt` using the HostState NFT
+        // as the base token. The transfer module must derive the *same* token name when
+        // locating the channel UTxO in the transaction.
+        let host_state_nft =
+          AuthToken {
+            policy_id: host_state_nft_policy_id,
+            name: host_state_token_name,
+          }
+        when redeemer is {
+          ReclaimModule -> fail
+          Callback(cb) ->
+            module_callback(
+              cb,
+              host_state_nft,
+              spent_input,
+              transaction,
+              spend,
+              host_state_input,
+              port_id,
+              transfer_escrow_shard_policy_id,
+              channel_minting_policy_id,
+              voucher_minting_policy_id,
+            )
+          Operator(op) ->
+            module_operator(
+              decode_transfer_operator(op),
+              None,
+              host_state_nft,
+              spent_input,
+              transaction,
+              spend,
+              host_state_input,
+              transfer_escrow_shard_policy_id,
+              channel_minting_policy_id,
+              voucher_minting_policy_id,
+            )
+        }
+      }
     }
   }
 
@@ -318,7 +346,6 @@ fn module_callback(
             mint,
             0 - transfer_amount,
             expected_escrow_value_difference,
-            escrowed_token_unit,
           )
 
         expect Some(receiver_public_key_hash) =
@@ -503,9 +530,13 @@ fn module_operator(
       expect SendPacket { packet } = channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect or {
-          send_callback == None,
-          send_callback == Some((packet.data, packet_mod.commit_packet(packet))),
+      expect
+        when send_callback is {
+          None -> True
+          Some((packet_data, commitment)) -> and {
+              packet_data == packet.data,
+              commitment == packet_mod.commit_packet(packet),
+            }
         }
 
       expect fungible_token_packet_data.matches_valid_bytes(data, packet.data)
@@ -563,7 +594,6 @@ fn module_operator(
             mint,
             transfer_amount,
             expected_escrow_value_difference,
-            escrowed_token_unit,
           )
 
         valid_transfer_amount
