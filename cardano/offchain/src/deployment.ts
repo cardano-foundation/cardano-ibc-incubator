@@ -1652,47 +1652,6 @@ async function createReferenceUtxos(
   }
 }
 
-export const loadTransferModuleValidator = (
-  lucid: LucidEvolution,
-  portToken: AuthToken,
-  identifierToken: AuthToken,
-  portId: string,
-  mintTransferEscrowShardPolicyId: string,
-  mintChannelPolicyId: string,
-  mintVoucherPolicyId: string,
-  hostStateNftPolicyId: string,
-) =>
-  readValidator(
-    "spending_transfer_module.spend_transfer_module.spend",
-    lucid,
-    [
-      portToken,
-      identifierToken,
-      portId,
-      mintTransferEscrowShardPolicyId,
-      mintChannelPolicyId,
-      mintVoucherPolicyId,
-      hostStateNftPolicyId,
-    ],
-    Data.Tuple([
-      AuthTokenSchema,
-      AuthTokenSchema,
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [
-      AuthToken,
-      AuthToken,
-      string,
-      string,
-      string,
-      string,
-      string,
-    ],
-  );
-
 const deployTransferModule = async (
   lucid: LucidEvolution,
   hostStateStt: {
@@ -2196,39 +2155,6 @@ const deployTraceRegistryDirectory = async (
     name: directoryAuthToken.name,
   };
 };
-
-export const loadHostStateValidator = (
-  lucid: LucidEvolution,
-  hostPolicy: string,
-  clientHash: string,
-  connectionHash: string,
-  channelHash: string,
-  clientPolicy: string,
-  connectionPolicy: string,
-  channelPolicy: string,
-) =>
-  readValidator(
-    "host_state_stt.host_state_stt.spend",
-    lucid,
-    [
-      hostPolicy,
-      clientHash,
-      connectionHash,
-      channelHash,
-      clientPolicy,
-      connectionPolicy,
-      channelPolicy,
-    ],
-    Data.Tuple([
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [string, string, string, string, string, string, string],
-  );
 
 const deployHostState = async (
   lucid: LucidEvolution,

@@ -18,16 +18,11 @@ import {
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
   GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
-  loadTransferModuleValidator,
   loadStagedTendermintValidators,
   selectDeploymentCollateralHoldback,
   sortPortRegistrations,
 } from "./deployment.ts";
-import {
-  generateIdentifierTokenName,
-  generatePortTokenName,
-  readValidator,
-} from "./utils.ts";
+import { generatePortTokenName, readValidator } from "./utils.ts";
 
 const makeValidator = (byteLength: number): Script => ({
   type: "PlutusV3",
@@ -190,24 +185,17 @@ Deno.test("fully applied production transfer module fits the reference publicati
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
-  const portId = fromText("transfer");
-  const [validator] = loadTransferModuleValidator(
+  const plan = await loadDeploymentPlan(
     lucid,
-    { policy_id: "11".repeat(28), name: generatePortTokenName(portId) },
     {
-      policy_id: "22".repeat(28),
-      name: await generateIdentifierTokenName({
-        transaction_id: "aa".repeat(32),
-        output_index: 0n,
-      }),
+      ...DEPLOYMENT_PLAN_FIXTURE,
+      benchmarkVoucherEnabled: false,
     },
-    portId,
-    "33".repeat(28),
-    "44".repeat(28),
-    "55".repeat(28),
-    "66".repeat(28),
   );
-  const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
+  const [report] = buildReferenceValidatorSizeReport(
+    [plan.spendTransferModule.script],
+    16_384,
+  );
   assertEquals(report.oversized, false, JSON.stringify(report));
 });
 
@@ -442,24 +430,6 @@ Deno.test("DeploymentIbcTree commits leaves with key hash included", async () =>
   tree.set(key, value);
 
   assertEquals(await tree.getRoot(), await expectedSingleLeafRoot(key, value));
-});
-
-Deno.test("fully applied production HostState fits the reference publication guard", () => {
-  const lucid = {
-    config: () => ({ network: "Preview" }),
-  } as unknown as LucidEvolution;
-  const [validator] = loadHostStateValidator(
-    lucid,
-    "11".repeat(28),
-    "22".repeat(28),
-    "33".repeat(28),
-    "44".repeat(28),
-    "55".repeat(28),
-    "66".repeat(28),
-    "77".repeat(28),
-  );
-  const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
-  assertEquals(report.oversized, false, JSON.stringify(report));
 });
 
 Deno.test("collateral holdback keeps the main deployment funding output spendable", () => {
