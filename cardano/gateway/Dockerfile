@@ -24,17 +24,17 @@ COPY --from=protos /usr/src/proto-types /usr/proto-types
 COPY ./manifests /usr/src/app/manifests
 
 # Build local file dependencies that publish compiled artifacts from dist/.
-RUN npm install --package-lock=false --prefix /usr/packages/cardano-ibc-trace-registry \
+RUN npm ci --prefix /usr/packages/cardano-ibc-trace-registry \
   && npm run --prefix /usr/packages/cardano-ibc-trace-registry build
 
-RUN npm ci --prefix /usr/packages/cardano-ibc-tx-builder --legacy-peer-deps \
+RUN npm ci --prefix /usr/packages/cardano-ibc-tx-builder \
   && npm run --prefix /usr/packages/cardano-ibc-tx-builder build \
-  && npm ci --prefix /usr/packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps \
+  && npm ci --prefix /usr/packages/cardano-ibc-tx-builder-runtime \
   && npm run --prefix /usr/packages/cardano-ibc-tx-builder-runtime build \
-  && npm prune --prefix /usr/packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
+  && npm prune --prefix /usr/packages/cardano-ibc-tx-builder-runtime --omit=dev
 
 # Install app dependencies
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 # Creates a "dist" folder with the production build
 RUN npm run build
