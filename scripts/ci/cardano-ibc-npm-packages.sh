@@ -87,7 +87,7 @@ NODE
 build_and_test_packages() {
   for package_dir in "${package_dirs[@]}"; do
     echo "Installing ${package_dir}"
-    npm ci --prefix "${package_dir}" --legacy-peer-deps
+    npm ci --prefix "${package_dir}"
 
     echo "Building ${package_dir}"
     npm run --prefix "${package_dir}" build
