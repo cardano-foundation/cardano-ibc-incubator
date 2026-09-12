@@ -3241,15 +3241,7 @@ fn ensure_gateway_dependencies(
         optional_progress_bar,
     );
 
-    let lockfile_present = gateway_dir.join("package-lock.json").exists();
-
-    let install_args: Vec<&str> = if lockfile_present {
-        vec!["ci", "--legacy-peer-deps"]
-    } else {
-        vec!["install", "--package-lock=false", "--legacy-peer-deps"]
-    };
-
-    execute_script(gateway_dir, "npm", install_args, None)?;
+    execute_script(gateway_dir, "npm", vec!["ci"], None)?;
 
     Ok(())
 }
@@ -3295,12 +3287,7 @@ fn ensure_gateway_built(
         }
 
         if !package_dir.join("node_modules").exists() {
-            execute_script(
-                &package_dir,
-                "npm",
-                vec!["install", "--package-lock=false", "--legacy-peer-deps"],
-                None,
-            )?;
+            execute_script(&package_dir, "npm", vec!["ci"], None)?;
         }
 
         // Tracked dist files still need the package's runtime dependencies.
