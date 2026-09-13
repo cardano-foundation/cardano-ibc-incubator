@@ -383,14 +383,16 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefix cardano/gateway --legacy-peer-deps
 
-      - name: Check collateral selection against Hermes policy
-        run: npm run --prefix cardano/gateway test:lucid-collateral
-
       - name: Lint
         run: npm run --prefix cardano/gateway lint:check
 
       - name: Build
         run: npm run --prefix cardano/gateway build
+
+      - name: Check Lucid wallet and collateral selection
+        run: |
+          npm run --prefix cardano/gateway test:lucid-collateral
+          npm run --prefix cardano/gateway test:lucid-wallet
 
       - name: Test with coverage
         run: npm run --prefix cardano/gateway test:cov:ci

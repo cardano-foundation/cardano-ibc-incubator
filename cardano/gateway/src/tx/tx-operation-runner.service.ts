@@ -140,6 +140,8 @@ export class TxOperationRunnerService {
       try {
         await this.applyWalletInstruction(plan.wallet);
         this.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, plan.operationName);
+        // Lucid newTx() captures its wallet before this serialized refresh.
+        txWithValidity.lucidConfig().wallet = this.lucidService.lucid.wallet();
 
         return (await txWithValidity.complete({
           localUPLCEval: false,
