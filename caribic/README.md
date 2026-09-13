@@ -80,6 +80,12 @@ pairing. Run the transfer demo with explicit options:
 `caribic demo token-swap --chain cosmos --network v8-classic`.
 The local swap UI supports only Osmosis, so DevKit skips it and uses the Cosmos CLI demo.
 
+A Cardano-native token round trip has passed on this profile. Receiving Cosmos
+`utest` for the first time still fails when Cardano has to create its denomination
+record. The combined transaction used 22,164,136 memory units against the ledger
+limit of 16,500,000. That receive path is unchanged by this profile and needs a
+separate fix before the Cosmos-native token round trip can pass.
+
 Caribic writes host addresses to `.caribic/devkit/endpoints.env` and container
 addresses to `.caribic/devkit/container-endpoints.env`. Deployment, Gateway
 and Hermes setup consume these endpoints. Host tools can source `endpoints.env` with
