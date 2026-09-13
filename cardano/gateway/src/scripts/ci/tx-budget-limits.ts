@@ -59,12 +59,6 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
     mem: 25_643_260,
     steps: 10_897_080_470,
   },
-  first_seen_voucher_receive_at_capacity: {
-    unsignedBytes: 20_615,
-    signedBytesEstimate: 20_875,
-    mem: 83_090_764,
-    steps: 27_585_360_530,
-  },
   first_seen_voucher_mint: {
     mem: 33_842_210,
     steps: 12_321_606_174,
