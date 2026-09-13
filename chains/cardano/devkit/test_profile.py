@@ -51,6 +51,7 @@ class ProfileTests(unittest.TestCase):
             self.assertNotIn("--volumes", args[0])
             self.assertNotIn("COMPOSE_FILE", kwargs["env"])
             self.assertNotIn("COMPOSE_PROJECT_NAME", kwargs["env"])
+            self.assertEqual(args[0][-1], "stop")
 
     def test_reset_deletes_only_profile_artifacts_after_compose_succeeds(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -59,11 +60,13 @@ class ProfileTests(unittest.TestCase):
             note = runtime.state / "my-note.txt"
             report.write_text("{}")
             note.write_text("keep")
-            with patch.object(runtime, "compose", side_effect=RuntimeError("Docker unavailable")):
+            with patch("subprocess.run") as run, patch.object(runtime, "compose", side_effect=RuntimeError("Docker unavailable")):
+                run.return_value.stdout = ""
                 with self.assertRaises(RuntimeError):
                     runtime.reset()
             self.assertTrue(report.exists())
-            with patch.object(runtime, "compose") as compose, patch.object(runtime, "start"):
+            with patch("subprocess.run") as run, patch.object(runtime, "compose") as compose, patch.object(runtime, "start"):
+                run.return_value.stdout = ""
                 runtime.reset()
                 compose.assert_called_once_with("down", "--volumes", "--remove-orphans")
             self.assertFalse(report.exists())

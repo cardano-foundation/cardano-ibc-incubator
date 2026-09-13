@@ -1,6 +1,8 @@
+name: ${GATEWAY_COMPOSE_PROJECT:-gateway}
+
 services:
   app:
-    container_name: gateway-app
+    container_name: ${GATEWAY_CONTAINER_NAME:-gateway-app}
     build:
       context: ../..
       dockerfile: cardano/gateway/Dockerfile
@@ -23,7 +25,7 @@ services:
       - .env
 
   bridge-history-sync:
-    container_name: gateway-bridge-history-sync
+    container_name: ${GATEWAY_HISTORY_CONTAINER_NAME:-gateway-bridge-history-sync}
     build:
       context: ../..
       dockerfile: cardano/gateway/Dockerfile
@@ -41,4 +43,4 @@ services:
 networks:
   cardano_network:
     external: true
-    name: cardano_ibc_net
+    name: ${CARDANO_DOCKER_NETWORK:-cardano_ibc_net}

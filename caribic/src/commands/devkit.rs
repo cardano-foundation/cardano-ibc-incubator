@@ -1,8 +1,8 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum DevkitAction {
-    /// Start the experimental single-producer network and its history service
+    /// Start the five-producer network and its history services
     Start,
     /// Stop this checkout's DevKit containers and retain their data
     Stop,
@@ -22,13 +22,5 @@ pub fn run_devkit(project_root: &Path, action: DevkitAction) -> Result<(), Strin
         DevkitAction::Status => "status",
         DevkitAction::Test => "test",
     };
-    let status = Command::new("python3")
-        .arg(project_root.join("chains/cardano/devkit/profile.py"))
-        .arg(action)
-        .status()
-        .map_err(|error| format!("Failed to run DevKit profile, Python 3 is required: {error}"))?;
-    if !status.success() {
-        return Err(format!("DevKit {action} failed ({status})"));
-    }
-    Ok(())
+    crate::local_runtime::run(project_root, action, &[])
 }

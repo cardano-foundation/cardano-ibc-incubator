@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Caribic's isolated, experimental Yaci DevKit runtime. Python stdlib only."""
+"""Provision Caribic's five-producer Cardano network through Yaci DevKit."""
 
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
@@ -24,8 +25,11 @@ PORTS = {
     "DEVKIT_KUPO_PORT": "11442",
     "DEVKIT_HISTORY_PORT": "18081",
     "DEVKIT_HISTORY_DB_PORT": "15432",
+    "DEVKIT_GATEWAY_DB_PORT": "15433",
+    "DEVKIT_NONCE_PORT": "18082",
 }
 DEFAULTS = {**PORTS, "DEVKIT_HOST": "127.0.0.1"}
+PRODUCERS = tuple(f"producer-{index}" for index in range(2, 6))
 
 
 def read_settings(path):
@@ -118,6 +122,8 @@ class Runtime:
         if not settings:
             settings = {**DEFAULTS, **read_settings(PROFILE / ".env")}
             settings.update({key: os.environ[key] for key in DEFAULTS if key in os.environ})
+        else:
+            settings = {**DEFAULTS, **settings}
         self.settings = validate_settings(settings)
 
     def compose(self, *args, capture=False):
@@ -126,6 +132,9 @@ class Runtime:
         env = {key: value for key, value in os.environ.items()
                if not key.startswith("COMPOSE_") and key not in DEFAULTS}
         env.update(self.settings)
+        clock_path = self.state / "clock-offset"
+        if clock_path.exists():
+            env["DEVKIT_CLOCK_OFFSET"] = clock_path.read_text().strip()
         result = subprocess.run(
             ["docker", "compose", "--project-name", self.project,
              "--file", str(PROFILE / "compose.yaml"), *args],
@@ -157,7 +166,7 @@ class Runtime:
         ogmios = self.endpoint("DEVKIT_OGMIOS_PORT")
         kupo = self.endpoint("DEVKIT_KUPO_PORT")
         values = {
-            "CARDANO_CHAIN_ID": "cardano-devkit",
+            "CARDANO_CHAIN_ID": "cardano-devnet",
             "CARDANO_NETWORK_MAGIC": "42", "CARDANO_CHAIN_NETWORK_MAGIC": "42",
             "CARDANO_CHAIN_HOST": host, "CARDANO_CHAIN_PORT": self.settings["DEVKIT_NODE_PORT"],
             "OGMIOS_ENDPOINT": ogmios, "KUPO_ENDPOINT": kupo,
@@ -168,15 +177,117 @@ class Runtime:
             "HISTORY_DB_HOST": host, "HISTORY_DB_PORT": self.settings["DEVKIT_HISTORY_DB_PORT"],
             "HISTORY_DB_NAME": "yaci_store", "HISTORY_DB_USERNAME": "yaci",
             "HISTORY_DB_PASSWORD": "devkit", "CARDANO_EPOCH_LENGTH": "600",
+            "GATEWAY_DB_HOST": host, "GATEWAY_DB_PORT": self.settings["DEVKIT_GATEWAY_DB_PORT"],
+            "GATEWAY_DB_NAME": "gateway_app", "GATEWAY_DB_USERNAME": "postgres",
+            "GATEWAY_DB_PASSWORD": "postgres",
+            "CARDANO_EPOCH_PARAMS_ENDPOINT": self.endpoint("DEVKIT_NONCE_PORT"),
+            "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT": self.endpoint("DEVKIT_NONCE_PORT"),
         }
         write_env(self.state / "endpoints.env", values)
+        container = {**values, "OGMIOS_ENDPOINT": "http://devkit:1337",
+                     "KUPO_ENDPOINT": "http://devkit:1442",
+                     "OGMIOS_URL": "http://devkit:1337", "KUPO_URL": "http://devkit:1442",
+                     "CARDANO_CHAIN_HOST": "devkit", "CARDANO_CHAIN_PORT": "3001",
+                     "YACI_STORE_ENDPOINT": "http://history:8080",
+                     "HISTORY_DB_HOST": "history-db", "HISTORY_DB_PORT": "5432",
+                     "GATEWAY_DB_HOST": "gateway-db", "GATEWAY_DB_PORT": "5432",
+                     "CARDANO_EPOCH_PARAMS_ENDPOINT": "http://nonce:8080",
+                     "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT": "http://nonce:8080",
+                     "CARDANO_DOCKER_NETWORK": self.project + "_default",
+                     "GATEWAY_COMPOSE_PROJECT": self.project + "-gateway",
+                     "GATEWAY_CONTAINER_NAME": self.project + "-gateway-app",
+                     "GATEWAY_HISTORY_CONTAINER_NAME": self.project + "-bridge-history-sync",
+                     "DAPP_COMPOSE_PROJECT": self.project + "-dapps",
+                     # Only the initial pool is seeded in genesis. The four peers
+                     # must retain their actual indexed registration slots.
+                     "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT": "1"}
+        write_env(self.state / "container-endpoints.env", container)
+
+    def fund(self, address, lovelace, outputs=1):
+        if lovelace < 2_000_000 or not 1 <= outputs <= 100 or lovelace // outputs < 2_000_000:
+            raise ValueError("Funding requires at least 2 ADA per output and at most 100 outputs")
+        utxos = json.loads(self.cli("query", "utxo", "--address", address,
+                                   "--testnet-magic", "42", "--output-json"))
+        balance = sum(row["value"]["lovelace"] for row in utxos.values())
+        portion = lovelace // outputs
+        usable = sum(row["value"].keys() == {"lovelace"} and row["value"]["lovelace"] >= portion
+                     for row in utxos.values())
+        if balance >= lovelace and (outputs == 1 or usable >= outputs):
+            return
+        count = max(1, outputs - usable)
+        amount = max(portion, (max(0, lovelace - balance) + count - 1) // count)
+        # Use a temporary recipient of the native faucet to split funding in one
+        # transaction. No deployer signing key is needed by network provisioning.
+        path = "/tmp/caribic-devkit-fund"
+        self.compose("exec", "-T", "devkit", "mkdir", "-p", path)
+        try:
+            self.cli("address", "key-gen", "--verification-key-file", path + "/payment.vkey",
+                     "--signing-key-file", path + "/payment.skey")
+            source = self.cli("address", "build", "--payment-verification-key-file",
+                              path + "/payment.vkey", "--testnet-magic", "42")
+            result = http(self.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/addresses/topup",
+                          {"address": source, "adaAmount": (amount * count + 3_000_000) / 1_000_000}, timeout=90)
+            if result.get("status") is not True:
+                raise RuntimeError("DevKit faucet rejected funding")
+            inputs = wait_for("faucet inclusion", lambda: json.loads(self.cli(
+                "query", "utxo", "--address", source, "--testnet-magic", "42", "--output-json")))
+            args = ["conway", "transaction", "build", "--testnet-magic", "42"]
+            for tx_in in inputs:
+                args.extend(("--tx-in", tx_in))
+            for _ in range(count):
+                args.extend(("--tx-out", f"{address}+{amount}"))
+            self.cli(*args, "--change-address", address, "--out-file", path + "/tx.body")
+            self.cli("conway", "transaction", "sign", "--tx-body-file", path + "/tx.body",
+                     "--signing-key-file", path + "/payment.skey", "--out-file", path + "/tx.signed")
+            self.cli("conway", "transaction", "submit", "--testnet-magic", "42",
+                     "--tx-file", path + "/tx.signed")
+            tx_id = self.cli("conway", "transaction", "txid", "--tx-file", path + "/tx.signed")
+            wait_for("funding inclusion", lambda: any(key.startswith(tx_id + "#") for key in
+                     json.loads(self.cli("query", "utxo", "--address", address,
+                                         "--testnet-magic", "42", "--output-json"))))
+        finally:
+            self.compose("exec", "-T", "devkit", "rm", "-rf", path)
+
+    def start_producers(self):
+        # Register sequentially, the native faucet spends shared inputs.
+        for service in PRODUCERS:
+            self.compose("up", "-d", "--build", service)
+            address = wait_for(f"{service} keys", lambda: self.compose(
+                "exec", "-T", service, "cat", "/clusters/pool-keys/default/payment.addr", capture=True))
+            pool_id = self.compose("exec", "-T", service, "cardano-cli", "stake-pool", "id",
+                                   "--cold-verification-key-file", "/clusters/pool-keys/default/cold.vkey",
+                                   capture=True)
+            stake_address = self.compose("exec", "-T", service, "cardano-cli", "stake-address", "build",
+                                         "--stake-verification-key-file", "/clusters/pool-keys/default/stake.vkey",
+                                         "--testnet-magic", "42", capture=True)
+            wait_for(f"{service} registration and delegation", lambda:
+                     self.pool_registered(pool_id, stake_address), timeout=300)
+            self.compose("exec", "-T", service, "touch", "/clusters/registered")
+            self.fund(address, 300_000_000_000)
+        wait_for("five active block producers", self.producers_ready, timeout=2100)
+
+    def pool_registered(self, pool_id, stake_address):
+        rows = json.loads(self.cli("query", "stake-address-info", "--address", stake_address,
+                                   "--testnet-magic", "42"))
+        return any(row.get("delegation") == pool_id for row in rows)
+
+    def producers_ready(self):
+        snapshot = json.loads(self.cli("query", "stake-snapshot", "--all-stake-pools", "--testnet-magic", "42"))
+        active = {pool: value["stakeSet"] for pool, value in snapshot.get("pools", {}).items()
+                  if value.get("stakeSet", 0) > 0}
+        if len(active) != 5:
+            return False
+        count = self.sql("SELECT count(DISTINCT slot_leader) FROM "
+                         "(SELECT slot_leader FROM block ORDER BY number DESC LIMIT 100) recent")
+        return int(count) == 5
 
     def start(self):
         started = time.monotonic()
         profile_hash = hashlib.sha256(b"".join(
             path.read_bytes() for path in (
                 PROFILE / "Dockerfile", PROFILE / "compose.yaml", PROFILE / "node.properties",
-                PROFILE / "entrypoint.sh", PROFILE.parent / "yaci/config/application.properties",
+                PROFILE / "entrypoint.sh", PROFILE / "cardano-cli.sh",
+                PROFILE / "nonce.py", PROFILE / "admin_proxy.py", PROFILE.parent / "yaci/config/application.properties",
             )
         )).hexdigest()
         marker = self.state / "profile.sha256"
@@ -184,10 +295,17 @@ class Runtime:
             raise RuntimeError("DevKit configuration changed, run `caribic devkit reset` to recreate its data")
         marker.write_text(profile_hash)
         write_env(self.settings_path, self.settings)
+        clock_path = self.state / "clock-offset"
+        if not clock_path.exists():
+            # Registration must precede the existing light-client cutoff. Share
+            # one offset across processes and retain it when restarting the chain.
+            target = datetime(2025, 12, 31, tzinfo=timezone.utc).timestamp()
+            clock_path.write_text(f"{int(target - time.time()):+d}s")
         self.compose("up", "-d", "--build", "devkit")
         admin = self.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/admin/devnet"
         wait_for("DevKit genesis", lambda: http(admin + "/genesis/shelley"))
         wait_for("Ogmios block production", lambda: block_production_ready(self.endpoint("DEVKIT_OGMIOS_PORT")))
+        self.compose("up", "-d", "--build", "nonce", "gateway-db")
         self.compose("exec", "-T", "devkit", "sh", "-c",
                      "for era in byron shelley alonzo conway; do "
                      "cp /clusters/nodes/default/node/genesis/$era-genesis.json "
@@ -202,6 +320,7 @@ class Runtime:
         wait_for("Kupo", lambda: http(self.endpoint("DEVKIT_KUPO_PORT") + "/health"))
         wait_for("Yaci history", lambda:
                  http(self.endpoint("DEVKIT_HISTORY_PORT") + "/api/v1/blocks/latest").get("epoch", 0) >= 1)
+        self.start_producers()
         genesis = {era: http(admin + "/genesis/" + era) for era in ("byron", "shelley", "alonzo", "conway")}
         write_json(self.state / "genesis.json", genesis)
         report = {
@@ -214,7 +333,7 @@ class Runtime:
         }
         write_json(self.state / "startup.json", report)
         print(f"DevKit is ready. Endpoints: {self.state / 'endpoints.env'}")
-        print("Experimental single-producer profile. Full IBC workflows still require `caribic start`.")
+        print("Five active producers, Ogmios, Kupo, chain history and epoch nonces are ready.")
 
     def resources(self):
         ids = self.compose("ps", "-q", capture=True).split()
@@ -225,13 +344,22 @@ class Runtime:
         return [json.loads(line) for line in result.stdout.splitlines()]
 
     def stop(self):
-        self.compose("down", "--remove-orphans")
+        # Gateway and dapps may still be attached to this externally consumed
+        # network when `caribic stop network` is used.
+        self.compose("stop")
 
     def reset(self):
         settings = validate_settings({**DEFAULTS, **read_settings(PROFILE / ".env"),
                                       **{key: os.environ[key] for key in DEFAULTS if key in os.environ}})
+        attached = subprocess.run(
+            ["docker", "ps", "--filter", "network=" + self.project + "_default",
+             "--format", '{{.Label "com.docker.compose.project"}}'],
+            text=True, capture_output=True, check=True,
+        ).stdout.splitlines()
+        if any(project != self.project for project in attached):
+            raise RuntimeError("Stop the bridge services before resetting their DevKit network")
         self.compose("down", "--volumes", "--remove-orphans")
-        for name in ("runtime.env", "endpoints.env", "startup.json", "genesis.json", "test.json", "profile.sha256"):
+        for name in ("runtime.env", "endpoints.env", "container-endpoints.env", "startup.json", "genesis.json", "test.json", "profile.sha256", "clock-offset"):
             (self.state / name).unlink(missing_ok=True)
         self.settings = settings
         self.start()
@@ -239,7 +367,6 @@ class Runtime:
     def status(self):
         self.compose("ps", "--all")
         print(f"Endpoints: {self.state / 'endpoints.env'}")
-        print("Full bridge workflow: unsupported by this single-producer profile.")
         for name in ("startup.json", "test.json"):
             path = self.state / name
             if path.exists():
@@ -257,15 +384,28 @@ class Runtime:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("start", "stop", "reset", "status", "test"))
+    parser.add_argument("action", choices=("start", "stop", "reset", "status", "test", "cli", "fund", "running"))
+    parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     runtime = Runtime()
+    if args.action == "running":
+        sys.exit(0 if runtime.compose("ps", "--status", "running", "-q", capture=True) else 1)
     with (runtime.state / "lock").open("w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("Another DevKit command is running in this checkout")
-        getattr(runtime, args.action)()
+        if args.action == "cli":
+            print(runtime.cli(*args.arguments))
+        elif args.action == "fund":
+            funding = argparse.ArgumentParser()
+            funding.add_argument("address")
+            funding.add_argument("lovelace", type=int)
+            funding.add_argument("--outputs", type=int, default=1)
+            values = funding.parse_args(args.arguments)
+            runtime.fund(values.address, values.lovelace, values.outputs)
+        else:
+            getattr(runtime, args.action)()
 
 
 if __name__ == "__main__":
@@ -273,4 +413,4 @@ if __name__ == "__main__":
         main()
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"DevKit: {error}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)

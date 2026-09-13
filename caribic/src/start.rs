@@ -126,7 +126,8 @@ fn ibc_swap_base_path() -> Result<String, String> {
 }
 
 fn running_dapp_env_value(key: &str) -> Option<String> {
-    let container_name = docker_running_container_name(IBC_SWAP_DAPP_SERVICE)?;
+    let container_name =
+        crate::stop::dapp_container_name(Path::new(&config::get_config().project_root))?;
     let output = DockerCli::new(Path::new("."))
         .raw_output(
             [
@@ -212,7 +213,7 @@ pub(crate) fn ensure_cardano_network_switch_is_safe(
     }
 
     let running = cardano_network_switch_blockers(
-        crate::stop::cardano_runtime_is_running(project_root_path),
+        crate::stop::cardano_runtime_is_running(project_root_path)?,
         crate::stop::gateway_is_running(project_root_path),
         crate::stop::relayer_is_running(project_root_path),
         crate::stop::dapp_is_running(project_root_path),
@@ -439,8 +440,16 @@ fn hermes_signing_sources(
 ) -> Result<HermesSigningSources, Box<dyn std::error::Error>> {
     if cardano_chain_id == "cardano-devnet" {
         return Ok(HermesSigningSources {
-            kupo_url: "http://localhost:1442".to_string(),
-            ogmios_url: "http://localhost:1337".to_string(),
+            kupo_url: crate::local_runtime::endpoint(
+                project_root,
+                "KUPO_URL",
+                "http://localhost:1442",
+            )?,
+            ogmios_url: crate::local_runtime::endpoint(
+                project_root,
+                "OGMIOS_URL",
+                "http://localhost:1337",
+            )?,
             kupo_api_key: None,
             ogmios_api_key: None,
         });
@@ -1254,6 +1263,24 @@ pub async fn start_local_cardano_network(
         return Err("Mithril setup is deprecated, disabled, and not maintained. Use the default stake-weighted-stability light-client mode.".into());
     }
 
+    if network == config::CoreCardanoNetwork::Local
+        && crate::local_runtime::selected(project_root_path)
+            == crate::local_runtime::LocalRuntime::Devkit
+    {
+        let chain_dir = project_root_path.join("chains/cardano");
+        fs::write(chain_dir.join(".caribic-network"), "local\n")?;
+        fs::write(chain_dir.join(".env"), "CARDANO_RUNTIME_NETWORK=local\nCARDANO_LOCAL_RUNTIME=devkit\nCARDANO_CHAIN_ID=cardano-devnet\nCARDANO_CHAIN_NETWORK_MAGIC=42\n")?;
+        crate::local_runtime::run(
+            project_root_path,
+            if clean { "reset" } else { "start" },
+            &[],
+        )?;
+        crate::local_runtime::seed(project_root_path)?;
+        prepare_db_sync_and_gateway(&chain_dir, clean, network, "stake-weighted-stability")?;
+        copy_cardano_env_file(&project_root_path.join("cardano"))?;
+        return Ok(None);
+    }
+
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -1650,6 +1677,10 @@ pub async fn deploy_contracts(
 
     wait_for_local_offchain_wallet_utxos(project_root_path, &optional_progress_bar)?;
 
+    let local_kupo =
+        crate::local_runtime::endpoint(project_root_path, "KUPO_URL", "http://localhost:1442")?;
+    let local_ogmios =
+        crate::local_runtime::endpoint(project_root_path, "OGMIOS_URL", "http://localhost:1337")?;
     let deployment_result = execute_script(
         offchain_dir.as_path(),
         "deno",
@@ -1666,8 +1697,8 @@ pub async fn deploy_contracts(
             "index.ts",
         ]),
         Some(vec![
-            ("KUPO_URL", "http://localhost:1442"),
-            ("OGMIOS_URL", "http://localhost:1337"),
+            ("KUPO_URL", local_kupo.as_str()),
+            ("OGMIOS_URL", local_ogmios.as_str()),
             ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
         ]),
     );
@@ -1817,9 +1848,13 @@ fn wait_for_local_offchain_wallet_utxos(
     const POLL_INTERVAL_SECS: u64 = 5;
 
     let offchain_dir = project_root_path.join("cardano").join("offchain");
+    let local_kupo =
+        crate::local_runtime::endpoint(project_root_path, "KUPO_URL", "http://localhost:1442")?;
+    let local_ogmios =
+        crate::local_runtime::endpoint(project_root_path, "OGMIOS_URL", "http://localhost:1337")?;
     let local_kupmios_env = vec![
-        ("KUPO_URL", "http://localhost:1442"),
-        ("OGMIOS_URL", "http://localhost:1337"),
+        ("KUPO_URL", local_kupo.as_str()),
+        ("OGMIOS_URL", local_ogmios.as_str()),
         ("CARDANO_NETWORK_MAGIC", "42"),
     ];
 
@@ -2578,6 +2613,13 @@ pub async fn ensure_managed_cardano_runtime(
     clean: bool,
     network: config::CoreCardanoNetwork,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if network == config::CoreCardanoNetwork::Local
+        && crate::local_runtime::selected(project_root_path)
+            == crate::local_runtime::LocalRuntime::Devkit
+    {
+        start_local_cardano_network(project_root_path, clean, false, network).await?;
+        return Ok(());
+    }
     let cardano_dir = project_root_path.join("chains/cardano");
     let active_network = config::active_core_cardano_network(project_root_path);
 
@@ -3318,7 +3360,9 @@ fn ensure_gateway_built(
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
-    const SHARED_CARDANO_NETWORK: &str = "cardano_ibc_net";
+    let shared_cardano_network =
+        crate::setup::read_gateway_env_value(&gateway_dir.join(".env"), "CARDANO_DOCKER_NETWORK")?
+            .unwrap_or_else(|| "cardano_ibc_net".to_string());
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -3339,20 +3383,20 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     ensure_gateway_built(gateway_dir, &optional_progress_bar)?;
 
     let network_exists = DockerCli::new(Path::new("."))
-        .raw_output(["network", "inspect", SHARED_CARDANO_NETWORK].as_slice())
+        .raw_output(["network", "inspect", shared_cardano_network.as_str()].as_slice())
         .is_ok();
     if !network_exists {
         log_or_show_progress(
             &format!(
                 "Creating shared Docker network '{}' for gateway dependencies",
-                SHARED_CARDANO_NETWORK
+                shared_cardano_network.as_str()
             ),
             &optional_progress_bar,
         );
         execute_script(
             gateway_dir,
             "docker",
-            vec!["network", "create", SHARED_CARDANO_NETWORK],
+            vec!["network", "create", shared_cardano_network.as_str()],
             None,
         )?;
     }
@@ -3575,6 +3619,32 @@ fn run_dapp_compose_command(
         )
         .env("IBC_SWAP_CARDANO_CHAIN_ID", cardano_chain_id)
         .env("IBC_SWAP_CARDANO_IBC_CHAIN_ID", cardano_ibc_chain_id);
+
+    let project_root = dapps_dir.parent().ok_or("Failed to derive project root")?;
+    if core_cardano_network == config::CoreCardanoNetwork::Local
+        && crate::local_runtime::is_devkit(project_root)
+    {
+        let endpoints = crate::local_runtime::environment(project_root, true)?;
+        let required = |key: &str| {
+            endpoints
+                .get(key)
+                .ok_or_else(|| format!("DevKit endpoint {key} is missing"))
+        };
+        command.env(
+            "CARDANO_DOCKER_NETWORK",
+            required("CARDANO_DOCKER_NETWORK")?,
+        );
+        command.env("CARDANO_DOCKER_NETWORK_EXTERNAL", "true");
+        command.env("COMPOSE_PROJECT_NAME", required("DAPP_COMPOSE_PROJECT")?);
+        command.env(
+            "IBC_SWAP_KUPMIOS_INTERNAL_URL",
+            format!(
+                "{},{}",
+                required("KUPO_ENDPOINT")?,
+                required("OGMIOS_ENDPOINT")?
+            ),
+        );
+    }
 
     if core_cardano_network.is_public_testnet() {
         let project_root_path = dapps_dir
@@ -3886,6 +3956,7 @@ struct HealthServiceStatus {
 
 struct HealthContext {
     core_cardano_network: config::CoreCardanoNetwork,
+    project_root: PathBuf,
     gateway_env_path: PathBuf,
 }
 
@@ -3893,6 +3964,7 @@ fn build_health_context(project_root_path: &Path) -> HealthContext {
     let core_cardano_network = config::active_core_cardano_network(project_root_path);
     HealthContext {
         core_cardano_network,
+        project_root: project_root_path.to_path_buf(),
         gateway_env_path: project_root_path.join("cardano/gateway/.env"),
     }
 }
@@ -3956,6 +4028,40 @@ fn run_core_health_check(
     check_type: CoreHealthCheckType,
     context: &HealthContext,
 ) -> (bool, String) {
+    if crate::local_runtime::is_devkit(&context.project_root) {
+        let endpoints = match crate::local_runtime::environment(&context.project_root, false) {
+            Ok(endpoints) => endpoints,
+            Err(error) => return (false, error),
+        };
+        let url_check = |key: &str, label: &str| {
+            endpoints
+                .get(key)
+                .map(|url| check_external_url_port(url, label))
+                .unwrap_or_else(|| (false, format!("Missing DevKit {key}")))
+        };
+        let port_check = |host: &str, port: &str, label: &str| match (
+            endpoints.get(host),
+            endpoints.get(port),
+        ) {
+            (Some(host), Some(port)) => check_external_host_port(host, port, label),
+            _ => (false, format!("Missing DevKit {host}/{port}")),
+        };
+        return match check_type {
+            CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
+            CoreHealthCheckType::Dapp => check_dapp_service_readiness(),
+            CoreHealthCheckType::CardanoNode => {
+                port_check("CARDANO_CHAIN_HOST", "CARDANO_CHAIN_PORT", "Cardano")
+            }
+            CoreHealthCheckType::Postgres => {
+                port_check("GATEWAY_DB_HOST", "GATEWAY_DB_PORT", "Gateway database")
+            }
+            CoreHealthCheckType::Yaci => url_check("YACI_STORE_ENDPOINT", "Yaci Store"),
+            CoreHealthCheckType::Kupo => url_check("KUPO_URL", "Kupo"),
+            CoreHealthCheckType::Ogmios => url_check("OGMIOS_URL", "Ogmios"),
+            CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
+        };
+    }
+
     if context.core_cardano_network.is_public_testnet() {
         return match check_type {
             CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
@@ -4410,8 +4516,11 @@ fn check_gateway_http_readiness() -> (bool, String) {
 }
 
 fn check_gateway_service_readiness() -> (bool, String) {
-    if docker_running_container_name("gateway-app").is_none() {
-        return (false, "Container not running".to_string());
+    if !crate::stop::gateway_is_running(Path::new(&config::get_config().project_root)) {
+        return (
+            false,
+            "Gateway container is not running in this checkout".to_string(),
+        );
     }
 
     if !is_port_accessible(5001) {
@@ -4436,8 +4545,11 @@ fn check_gateway_service_readiness() -> (bool, String) {
 }
 
 fn check_dapp_service_readiness() -> (bool, String) {
-    if docker_running_container_name(IBC_SWAP_DAPP_SERVICE).is_none() {
-        return (false, "Container not running".to_string());
+    if !crate::stop::dapp_is_running(Path::new(&config::get_config().project_root)) {
+        return (
+            false,
+            "Dapp container is not running in this checkout".to_string(),
+        );
     }
 
     let port = match ibc_swap_host_port() {

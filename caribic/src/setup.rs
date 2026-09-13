@@ -2376,7 +2376,19 @@ fn write_gateway_env_for_network(
     // `--clean` resets managed containers and data, not operator-owned public
     // endpoint credentials/checkpoints. Only local devnet configuration is
     // safely disposable.
-    if !gateway_env.exists() || (clean && network == config::CoreCardanoNetwork::Local) {
+    let local_runtime_changed = network == config::CoreCardanoNetwork::Local
+        && gateway_env.exists()
+        && read_gateway_env_value(&gateway_env, "CARDANO_LOCAL_RUNTIME")?
+            .unwrap_or_else(|| "legacy".to_string())
+            != if crate::local_runtime::is_devkit(&project_root) {
+                "devkit"
+            } else {
+                "legacy"
+            };
+    if !gateway_env.exists()
+        || local_runtime_changed
+        || (clean && network == config::CoreCardanoNetwork::Local)
+    {
         let options = fs_extra::file::CopyOptions::new().overwrite(true);
         copy(gateway_dir.join(".env.example"), &gateway_env, &options)?;
     }
@@ -2385,6 +2397,7 @@ fn write_gateway_env_for_network(
     let shared_gateway_network_defaults = [
         (CARDANO_RUNTIME_NETWORK_KEY, network.as_str()),
         ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
+        ("CARDANO_DOCKER_NETWORK", "cardano_ibc_net"),
         ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
         ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
         ("CARDANO_LIGHT_CLIENT_MODE", light_client_mode),
@@ -2400,7 +2413,60 @@ fn write_gateway_env_for_network(
     }
 
     match network {
+        config::CoreCardanoNetwork::Local if crate::local_runtime::is_devkit(&project_root) => {
+            let endpoints = crate::local_runtime::environment(&project_root, true)?;
+            for key in [
+                "OGMIOS_ENDPOINT",
+                "KUPO_ENDPOINT",
+                "YACI_STORE_ENDPOINT",
+                "HISTORY_DB_HOST",
+                "HISTORY_DB_PORT",
+                "HISTORY_DB_PASSWORD",
+                "GATEWAY_DB_HOST",
+                "GATEWAY_DB_PORT",
+                "GATEWAY_DB_PASSWORD",
+                "CARDANO_CHAIN_HOST",
+                "CARDANO_CHAIN_PORT",
+                "CARDANO_EPOCH_LENGTH",
+                "CARDANO_EPOCH_PARAMS_ENDPOINT",
+                "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT",
+                "CARDANO_DOCKER_NETWORK",
+                "GATEWAY_COMPOSE_PROJECT",
+            ] {
+                if endpoints.get(key).is_none_or(|value| value.is_empty()) {
+                    return Err(format!("DevKit container endpoint {key} is missing").into());
+                }
+            }
+            for (key, value) in endpoints {
+                set_or_append_env_var(&gateway_env, &key, &value)?;
+            }
+            for key in [
+                "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE",
+                "CARDANO_EPOCH_NONCE_GENESIS",
+                "CARDANO_STABILITY_ASSUME_STATIC_STAKE",
+                "KUPO_API_KEY",
+                "OGMIOS_API_KEY",
+                "GATEWAY_RUNTIME_KUPO_ENDPOINT",
+                "GATEWAY_RUNTIME_KUPO_API_KEY",
+                "CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT",
+            ] {
+                remove_env_var(&gateway_env, key)?;
+            }
+            set_or_append_env_var(&gateway_env, "CARDANO_LOCAL_RUNTIME", "devkit")?;
+            set_or_append_env_var(
+                &gateway_env,
+                "CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS",
+                "315360000",
+            )?;
+            set_or_append_env_var(
+                &gateway_env,
+                "CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS",
+                "128",
+            )?;
+        }
         config::CoreCardanoNetwork::Local => {
+            set_or_append_env_var(&gateway_env, "CARDANO_DOCKER_NETWORK", "cardano_ibc_net")?;
+            set_or_append_env_var(&gateway_env, "CARDANO_LOCAL_RUNTIME", "legacy")?;
             let local_gateway_defaults = [
                 ("HISTORY_DB_HOST", "yaci-store-postgres"),
                 ("HISTORY_DB_PORT", "5432"),
@@ -2444,6 +2510,7 @@ fn write_gateway_env_for_network(
             )?;
         }
         config::CoreCardanoNetwork::Preprod | config::CoreCardanoNetwork::Preview => {
+            remove_env_var(&gateway_env, "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT")?;
             // These flags permit deliberately approximate local-dev fallbacks. They must
             // never survive a switch to a public testnet, where historical epoch
             // evidence is reconstructed from the configured public data provider.
@@ -2768,6 +2835,13 @@ pub fn prepare_db_sync_and_gateway(
     network: config::CoreCardanoNetwork,
     light_client_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if network == config::CoreCardanoNetwork::Local
+        && crate::local_runtime::is_devkit(&cardano_dir.join("../.."))
+    {
+        // DevKit already provisions the genesis files and databases. The bridge consumes
+        // its exported connection settings instead of the legacy node layout.
+        return write_gateway_env_for_network(cardano_dir, clean, network, light_client_mode);
+    }
     if matches!(network, config::CoreCardanoNetwork::Local) {
         let devnet_dir = cardano_dir.join("devnet");
         let cardano_node_db = devnet_dir.join("cardano-node-db.json");

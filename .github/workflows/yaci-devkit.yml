@@ -1,4 +1,4 @@
-name: Yaci DevKit experiment
+name: Yaci DevKit bridge network
 
 on:
   pull_request:
@@ -7,7 +7,11 @@ on:
       - chains/cardano/devkit/**
       - chains/cardano/yaci/config/**
       - caribic/**
-      - cardano/gateway/src/query/services/stability-scoring.ts
+      - cardano/gateway/src/query/services/**
+      - cardano/gateway/src/config/**
+      - cardano/gateway/docker-compose.yml
+      - dapps/docker-compose.yml
+      - cosmos/cardano-probabilistic-light-client-core/**
   workflow_dispatch:
 
 permissions:
@@ -20,7 +24,7 @@ concurrency:
 jobs:
   devkit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.91.1
@@ -30,13 +34,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cosmos/cardano-probabilistic-light-client-core/go.mod
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client-core/go.sum
       - name: Build Caribic and check profile isolation
         run: |
           cargo build --locked --manifest-path caribic/Cargo.toml
           python3 -m unittest discover -s chains/cardano/devkit -p 'test_*.py'
-      - name: Start in a clean environment and submit a payment
+          go -C cosmos/cardano-probabilistic-light-client-core test ./cmd/verify-blocks
+      - name: Start five producers and verify their native block evidence
         run: |
-          caribic/target/debug/caribic devkit start
+          caribic/target/debug/caribic start network --local-runtime devkit
           caribic/target/debug/caribic devkit test
           mkdir -p devkit-results/first
           cp .caribic/devkit/*.json devkit-results/first/
@@ -67,10 +76,12 @@ jobs:
           from profile import Runtime
           first = json.loads(Path('devkit-results/first/startup.json').read_text())
           current = json.loads(Path('.caribic/devkit/startup.json').read_text())
-          assert current['system_start'] != first['system_start']
           assert current['genesis_config_sha256'] == first['genesis_config_sha256']
           tx = json.loads(Path('devkit-results/first/test.json').read_text())['payment']['transaction_id']
           assert Runtime().sql(f"SELECT count(*) FROM transaction_cbor WHERE tx_hash = '{tx}'") == '0'
+          old_pools = set(json.loads(Path('devkit-results/first/test.json').read_text())['native_verification']['verified_producers'])
+          new_pools = set(json.loads(Path('.caribic/devkit/test.json').read_text())['native_verification']['verified_producers'])
+          assert len(old_pools & new_pools) == 1, 'Only the fixed genesis pool should survive reset'
           PY
           mkdir -p devkit-results/reset
           cp .caribic/devkit/*.json devkit-results/reset/

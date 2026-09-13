@@ -1,13 +1,27 @@
+x-node: &node
+  build:
+    context: ..
+    dockerfile: devkit/Dockerfile
+    target: devkit
+  init: true
+  entrypoint: [sh, /profile/entrypoint.sh]
+  environment: &node-environment
+    DEVKIT_CLOCK_OFFSET: ${DEVKIT_CLOCK_OFFSET:-+0s}
+    DEVKIT_PEER: "true"
+    yaci_store_enabled: "false"
+    ogmios_enabled: "false"
+    kupo_enabled: "false"
+  stop_grace_period: 30s
+
 services:
   devkit:
-    build:
-      context: ..
-      dockerfile: devkit/Dockerfile
-      target: devkit
-    init: true
-    entrypoint: [sh, /profile/entrypoint.sh]
+    <<: *node
+    networks:
+      default:
+        aliases: [devkit.local]
     environment:
-      yaci_store_enabled: "false"
+      <<: *node-environment
+      DEVKIT_PEER: "false"
       ogmios_enabled: "true"
       kupo_enabled: "true"
     ports:
@@ -18,7 +32,45 @@ services:
     volumes:
       - cluster-data:/clusters
       - genesis-data:/export
-    stop_grace_period: 30s
+  producer-2:
+    <<: *node
+    volumes:
+      - producer-2-data:/clusters
+  producer-3:
+    <<: *node
+    volumes:
+      - producer-3-data:/clusters
+  producer-4:
+    <<: *node
+    volumes:
+      - producer-4-data:/clusters
+  producer-5:
+    <<: *node
+    volumes:
+      - producer-5-data:/clusters
+  nonce:
+    <<: *node
+    entrypoint: [python3, /profile/nonce.py]
+    ports:
+      - "127.0.0.1:${DEVKIT_NONCE_PORT:-18082}:8080"
+    volumes:
+      - cluster-data:/clusters:ro
+      - nonce-data:/data
+  gateway-db:
+    image: postgres:15@sha256:9b1d34adbce1dd07ee6e94b4a2cf698884b89bd44a6c9c12f5da8f3acbfe4957
+    environment:
+      POSTGRES_DB: gateway_app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:${DEVKIT_GATEWAY_DB_PORT:-15433}:5432"
+    volumes:
+      - gateway-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d gateway_app]
+      interval: 3s
+      timeout: 3s
+      retries: 30
   history-db:
     image: postgres:15@sha256:9b1d34adbce1dd07ee6e94b4a2cf698884b89bd44a6c9c12f5da8f3acbfe4957
     environment:
@@ -61,6 +113,12 @@ services:
       - history-logs:/app/logs
 volumes:
   cluster-data:
+  producer-2-data:
+  producer-3-data:
+  producer-4-data:
+  producer-5-data:
+  nonce-data:
+  gateway-data:
   genesis-data:
   history-data:
   history-cache:

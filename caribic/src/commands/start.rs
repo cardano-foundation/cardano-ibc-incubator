@@ -118,6 +118,7 @@ pub async fn run_start(
     clean: bool,
     with_mithril: bool,
     network: Option<String>,
+    local_runtime: Option<crate::local_runtime::LocalRuntime>,
     chain_flags: Vec<String>,
 ) -> Result<(), String> {
     let start_elapsed_timer = Instant::now();
@@ -146,6 +147,15 @@ pub async fn run_start(
     let core_cardano_profile = config::cardano_network_profile(core_cardano_network);
 
     crate::start::ensure_cardano_network_switch_is_safe(project_root_path, core_cardano_network)?;
+    if let Some(runtime) = local_runtime {
+        if core_cardano_network != config::CoreCardanoNetwork::Local {
+            return Err("--local-runtime is only valid with --network local".to_string());
+        }
+        if !start_network && crate::local_runtime::selected(project_root_path) != runtime {
+            return Err("Start the network when selecting a different local runtime".to_string());
+        }
+        crate::local_runtime::select(project_root_path, runtime)?;
+    }
 
     if matches!(target, Some(StartTarget::Relayer | StartTarget::Dapp))
         || (core_cardano_network == config::CoreCardanoNetwork::Local
@@ -276,6 +286,9 @@ pub async fn run_start(
             Ok(handle) => {
                 mithril_genesis_handle = handle;
                 let managed_services = match core_cardano_network {
+                    config::CoreCardanoNetwork::Local if crate::local_runtime::is_devkit(project_root_path) => {
+                        "Yaci DevKit five-producer network, Ogmios, Kupo, Yaci Store, databases"
+                    }
                     config::CoreCardanoNetwork::Local => {
                         "cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres"
                     }

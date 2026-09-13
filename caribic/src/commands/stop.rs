@@ -46,7 +46,7 @@ pub fn run_stop(
             stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             bridge_down(project_root_path);
-            network_down(project_root_path, core_cardano_network);
+            network_down(project_root_path, core_cardano_network)?;
             logger::log("\nAll services stopped successfully");
         }
         Some(StopTarget::Bridge) => {
@@ -58,7 +58,7 @@ pub fn run_stop(
             logger::log("\nIBC Swap dapp stopped successfully");
         }
         Some(StopTarget::Network) => {
-            network_down(project_root_path, core_cardano_network);
+            network_down(project_root_path, core_cardano_network)?;
             logger::log("\nCardano Network stopped successfully");
         }
         Some(StopTarget::Demo) => {
@@ -125,12 +125,16 @@ fn stop_all_managed_optional_chain_networks(
 }
 
 /// Stops the local Cardano network and Mithril services.
-fn network_down(project_root_path: &Path, active_network: config::CoreCardanoNetwork) {
-    stop::stop_cardano_network(project_root_path);
+fn network_down(
+    project_root_path: &Path,
+    active_network: config::CoreCardanoNetwork,
+) -> Result<(), String> {
+    stop::stop_cardano_network(project_root_path)?;
 
     if active_network.uses_local_mithril() {
         stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
     }
+    Ok(())
 }
 
 /// Stops bridge-facing components that are safe to restart independently.

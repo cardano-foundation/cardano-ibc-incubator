@@ -649,6 +649,10 @@ export class YaciHistoryService implements HistoryService {
       "cardanoEpochParamsEndpoint",
     )?.trim().replace(/\/+$/, "");
     if (!isPublicNetwork) {
+      const localEndpoint = this.configService.get<string>("cardanoLocalEpochContextEndpoint")?.trim();
+      if (localEndpoint) {
+        return this.findLocalEpochStakeSnapshot(localEndpoint, block.epochNo, ogmiosStakeDistribution);
+      }
       return ogmiosStakeDistribution;
     }
     if (!endpoint) {
@@ -695,6 +699,74 @@ export class YaciHistoryService implements HistoryService {
     } finally {
       this.currentEpochStakeSnapshotLookups.deleteIfValue(cacheKey, lookup);
     }
+  }
+
+  private async findLocalEpochStakeSnapshot(
+    endpoint: string,
+    epoch: number,
+    ogmiosStakeDistribution: HistoryStakeDistributionEntry[],
+  ): Promise<HistoryStakeDistributionEntry[]> {
+    const url = new URL(`${endpoint.replace(/\/+$/, "")}/epoch_stake`);
+    url.searchParams.set("_epoch_no", epoch.toString());
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(EPOCH_PARAMS_LOOKUP_TIMEOUT_MS),
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`Local epoch stake lookup failed for epoch ${epoch}: HTTP ${response.status}`);
+    }
+    const body: unknown = await response.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new Error("Local epoch stake response must be an object");
+    }
+    const snapshot = body as Record<string, unknown>;
+    if (snapshot.epoch_no !== epoch) {
+      throw new Error(`Local epoch stake response does not match epoch ${epoch}`);
+    }
+    const positiveStake = (value: unknown): bigint => {
+      if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) {
+        throw new Error("Local epoch stake values must be positive decimal strings");
+      }
+      return BigInt(value);
+    };
+    const totalStake = positiveStake(snapshot.total_active_stake);
+    if (!Array.isArray(snapshot.pools) || snapshot.pools.length === 0) {
+      throw new Error(`Local epoch stake response has no active pools for epoch ${epoch}`);
+    }
+    // Pool VRF keys are still acquired from Ogmios at the requested block. Only
+    // the epoch-frozen Set stake replaces the live ledger wallet distribution.
+    const vrfByPool = new Map(ogmiosStakeDistribution.map((entry) => [entry.poolId, entry.vrfKeyHash]));
+    const seen = new Set<string>();
+    const distribution = snapshot.pools.map((row: unknown): HistoryStakeDistributionEntry => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        throw new Error("Local epoch stake contains an invalid pool row");
+      }
+      const pool = row as Record<string, unknown>;
+      if (typeof pool.pool_id_hex !== "string" || !/^[0-9a-f]{56}$/i.test(pool.pool_id_hex)) {
+        throw new Error("Local epoch stake contains an invalid pool id");
+      }
+      const poolId = normalizePoolId(pool.pool_id_hex);
+      if (seen.has(poolId)) {
+        throw new Error(`Local epoch stake contains duplicate pool ${poolId}`);
+      }
+      seen.add(poolId);
+      const stake = positiveStake(pool.active_stake);
+      const vrfKeyHash = vrfByPool.get(poolId);
+      if (!vrfKeyHash || !/^[0-9a-f]{64}$/.test(vrfKeyHash)) {
+        throw new Error(`Ogmios VRF key is unavailable for local epoch pool ${poolId}`);
+      }
+      return {
+        poolId,
+        stake,
+        vrfKeyHash,
+        relativeStakeNumerator: stake,
+        relativeStakeDenominator: totalStake,
+      };
+    });
+    if (distribution.reduce((total, pool) => total + pool.stake, 0n) !== totalStake) {
+      throw new Error(`Local epoch stake total does not match active stake for epoch ${epoch}`);
+    }
+    return distribution.sort((left, right) => left.poolId.localeCompare(right.poolId));
   }
 
   private async buildCurrentEpochStakeSnapshot(
@@ -900,6 +972,10 @@ export class YaciHistoryService implements HistoryService {
       throw new Error(
         `Ogmios can no longer acquire epoch ${block.epochNo}, and no historical stake-distribution endpoint is configured for ${cardanoNetwork}`,
       );
+    }
+
+    if (this.configService.get<string>("cardanoLocalEpochContextEndpoint")?.trim()) {
+      throw new Error(`Ogmios can no longer acquire epoch ${block.epochNo} for local epoch stake VRF keys`);
     }
 
     if (

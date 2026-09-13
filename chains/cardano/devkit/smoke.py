@@ -1,8 +1,9 @@
-"""Real transaction and chain-data checks for the experimental DevKit profile."""
+"""Verify transactions and native block evidence from all five DevKit producers."""
 
 import json
 import re
 import socket
+import subprocess
 
 from profile import http, normalized_genesis, wait_for
 
@@ -60,6 +61,59 @@ def submit_payment(runtime):
         runtime.compose("exec", "-T", "devkit", "rm", "-rf", path)
 
 
+def verify_producer_blocks(runtime, shelley):
+    binary = runtime.state / "verify-blocks"
+    subprocess.run(["go", "build", "-o", str(binary), "./cmd/verify-blocks"],
+                   cwd=runtime.root / "cosmos/cardano-probabilistic-light-client-core", check=True)
+
+    def sample():
+        tip = json.loads(runtime.cli("query", "tip", "--testnet-magic", "42"))
+        epoch = tip["epoch"]
+        snapshot = json.loads(runtime.cli("query", "stake-snapshot", "--all-stake-pools", "--testnet-magic", "42"))
+        stakes = {pool: value["stakeSet"] for pool, value in snapshot["pools"].items() if value["stakeSet"] > 0}
+        total = snapshot["total"]["stakeSet"]
+        require(len(stakes) == 5 and sum(stakes.values()) == total, "Expected five active Set stakes")
+        rows = json.loads(runtime.sql(
+            "SELECT json_agg(row_to_json(sample)) FROM (SELECT DISTINCT ON (b.slot_leader) "
+            "b.slot_leader, b.number, b.hash, b.slot, encode(c.cbor_data, 'hex') AS cbor "
+            "FROM block b JOIN block_cbor c ON c.block_hash = b.hash "
+            f"WHERE b.epoch = {epoch} ORDER BY b.slot_leader, b.number DESC) sample")) or []
+        if {row["slot_leader"] for row in rows} != set(stakes):
+            return None
+        endpoint = runtime.endpoint("DEVKIT_NONCE_PORT")
+        nonce = http(f"{endpoint}/epoch_params?_epoch_no={epoch}")[0]["nonce"]
+        observed = http(f"{endpoint}/epoch_stake?_epoch_no={epoch}")
+        require(int(observed["total_active_stake"]) == total and
+                {pool["pool_id_hex"]: int(pool["active_stake"]) for pool in observed["pools"]} == stakes,
+                "Epoch history does not match the native Set snapshot")
+        if json.loads(runtime.cli("query", "tip", "--testnet-magic", "42"))["epoch"] != epoch:
+            return None
+        return epoch, nonce, stakes, total, rows
+
+    epoch, nonce, stakes, total, rows = wait_for("blocks from all five producers in the current epoch", sample, timeout=600)
+    request = {
+        "slots_per_kes_period": shelley["slotsPerKESPeriod"],
+        "max_kes_evolutions": shelley["maxKESEvolutions"],
+        "active_slot_numerator": 1, "active_slot_denominator": 4,
+        "blocks": [{"block_cbor": row["cbor"], "epoch_nonce": nonce,
+                    "stake_numerator": stakes[row["slot_leader"]], "stake_denominator": total} for row in rows],
+    }
+    result = subprocess.run([str(binary)], input=json.dumps(request), text=True, capture_output=True)
+    require(result.returncode == 0, f"Native block verification failed: {result.stderr.strip()}")
+    verified = json.loads(result.stdout)
+    require(verified["verified_blocks"] == 5, "Not all producers were cryptographically verified")
+    metadata = verified["blocks"]
+    require(len(metadata) == len(rows), "Native verification omitted block metadata")
+    for actual, row in zip(metadata, rows):
+        require(actual == {"block_hash": row["hash"], "block_number": row["number"],
+                           "slot": row["slot"], "pool_id_hex": row["slot_leader"]},
+                "Authenticated block header differs from the indexed producer, height, slot or hash")
+    require({block["pool_id_hex"] for block in metadata} == set(stakes),
+            "Authenticated headers do not contain all five active producers")
+    return {"epoch": epoch, "verified_producers": sorted(stakes), "verified_blocks": 5,
+            "epoch_nonce": nonce, "active_stake": total, "blocks": metadata}
+
+
 def run_smoke(runtime):
     genesis = json.loads((runtime.state / "genesis.json").read_text())
     shelley = genesis["shelley"]
@@ -107,6 +161,7 @@ def run_smoke(runtime):
     require(bool(block.get("vrf_result", {}).get("proof")), "Missing VRF proof in Yaci")
     nonce = json.loads(runtime.cli("query", "protocol-state", "--testnet-magic", "42"))["epochNonce"]
     require(re.fullmatch(r"[0-9a-f]{64}", nonce), "Missing Cardano epoch nonce")
+    verification = verify_producer_blocks(runtime, shelley)
     payment = submit_payment(runtime)
     return {
         "genesis_config_sha256": normalized_genesis(genesis),
@@ -115,11 +170,11 @@ def run_smoke(runtime):
         "payment": payment,
         "evidence": {"contiguous_blocks": len(rows), "raw_block_cbor": True,
                      "praos_fields_present": True, "epoch_nonce": nonce, "distinct_producers": len(producers)},
+        "native_verification": verification,
         "bridge_compatibility": {
-            "status": "unsupported",
+            "status": "network_ready",
             "required_distinct_pools": policy["threshold_unique_pools"],
-            "reason": "This profile provisions one producer. The Gateway requires multiple qualified pools.",
-            "not_exercised_by_smoke_test": ["Praos cryptographic verification", "Bridge Projection",
+            "not_exercised_by_smoke_test": ["Bridge Projection",
                                            "IBC client, connection and channel handshakes", "ICS-20 transfer, acknowledgement, timeout and refund"],
         },
     }
