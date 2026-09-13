@@ -71,6 +71,7 @@ func TestRunAuthenticatesEveryBlock(t *testing.T) {
 					BlockNumber: 7_981_223,
 					Slot:        76_204_984,
 					PoolIDHex:   "cf69a3eca039d537acd46d5864a54dd8953f0c14be957350905834aa",
+					VRFKeyHash:  "a7af95217a8eb597af07c1bd5d622cbc765fe5d3ef8235382b84e9bcf8e3a3eb",
 				}
 				if result.VerifiedBlocks != 1 || len(result.Blocks) != 1 || result.Blocks[0] != want {
 					t.Fatalf("unexpected authenticated metadata: %+v", result)

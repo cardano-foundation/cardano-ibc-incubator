@@ -72,6 +72,36 @@ class ProfileTests(unittest.TestCase):
             self.assertFalse(report.exists())
             self.assertEqual(note.read_text(), "keep")
 
+    def test_dependent_network_identity_survives_restart_but_rotates_on_reset(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            genesis = {"byron": {"startTime": 1767139200},
+                       "shelley": {"systemStart": "2025-12-31T00:00:00Z", "networkMagic": 42}}
+            def export_id():
+                (runtime.state / "clock-offset").write_text("-123s")
+                with patch("profile.http", side_effect=lambda url: genesis[url.rsplit("/", 1)[-1]]):
+                    runtime.export_endpoints()
+                values = dict(line.split("=", 1) for line in (runtime.state / "endpoints.env").read_text().splitlines())
+                self.assertEqual(values["CARDANO_LOCAL_CLOCK_OFFSET"], "-123s")
+                self.assertEqual(values["CARDANO_SYSTEM_START"], genesis["shelley"]["systemStart"])
+                return values["CARDANO_LOCAL_NETWORK_ID"]
+            first = export_id()
+            self.assertEqual(export_id(), first)
+            with patch("subprocess.run") as run, patch.object(runtime, "compose"), patch.object(runtime, "start"):
+                run.return_value.stdout = ""
+                runtime.reset()
+            self.assertNotEqual(export_id(), first)
+
+    def test_conway_delegation_is_confirmed_from_the_native_cli_response(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            response = [{"address": "stake_test1owner", "delegationDeposit": 2000000,
+                         "rewardAccountBalance": 0, "stakeDelegation": "pool1registered",
+                         "voteDelegation": None}]
+            with patch.object(runtime, "cli", return_value=json.dumps(response)):
+                self.assertTrue(runtime.pool_registered("pool1registered", "stake_test1owner"))
+                self.assertFalse(runtime.pool_registered("pool1other", "stake_test1owner"))
+
     def test_genesis_fingerprint_ignores_only_start_time(self):
         genesis = {"byron": {"startTime": 1}, "shelley": {"systemStart": "one", "networkMagic": 42}}
         reset = json.loads(json.dumps(genesis))

@@ -10,6 +10,7 @@ import (
 	"os"
 
 	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
+	"golang.org/x/crypto/blake2b"
 )
 
 type blockEvidence struct {
@@ -32,6 +33,7 @@ type blockMetadata struct {
 	BlockNumber uint64 `json:"block_number"`
 	Slot        uint64 `json:"slot"`
 	PoolIDHex   string `json:"pool_id_hex"`
+	VRFKeyHash  string `json:"vrf_key_hash"`
 }
 
 type response struct {
@@ -66,7 +68,7 @@ func run(input io.Reader, output io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("block %d: decode block: %w", i, err)
 		}
-		valid, _, err := core.VerifyNativeBlock(block, nonce, req.SlotsPerKESPeriod, req.MaxKESEvolutions,
+		valid, result, err := core.VerifyNativeBlock(block, nonce, req.SlotsPerKESPeriod, req.MaxKESEvolutions,
 			core.PraosLeaderEligibilityParameters{
 				StakeNumerator:        evidence.StakeNumerator,
 				StakeDenominator:      evidence.StakeDenominator,
@@ -79,11 +81,13 @@ func run(input io.Reader, output io.Writer) error {
 		if !valid {
 			return fmt.Errorf("block %d (height %d): verification failed", i, block.BlockNumber())
 		}
+		vrfKeyHash := blake2b.Sum256(result.VrfKey)
 		metadata = append(metadata, blockMetadata{
 			BlockHash:   block.Hash(),
 			BlockNumber: block.BlockNumber(),
 			Slot:        block.SlotNumber(),
 			PoolIDHex:   block.IssuerVkey().Hash().String(),
+			VRFKeyHash:  hex.EncodeToString(vrfKeyHash[:]),
 		})
 	}
 	return json.NewEncoder(output).Encode(response{VerifiedBlocks: len(metadata), Blocks: metadata})

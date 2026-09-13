@@ -66,6 +66,8 @@ def verify_producer_blocks(runtime, shelley):
     subprocess.run(["go", "build", "-o", str(binary), "./cmd/verify-blocks"],
                    cwd=runtime.root / "cosmos/cardano-probabilistic-light-client-core", check=True)
 
+    window_size = stability_requirements(runtime.root)["threshold_depth"] + 1
+
     def sample():
         tip = json.loads(runtime.cli("query", "tip", "--testnet-magic", "42"))
         epoch = tip["epoch"]
@@ -74,23 +76,29 @@ def verify_producer_blocks(runtime, shelley):
         total = snapshot["total"]["stakeSet"]
         require(len(stakes) == 5 and sum(stakes.values()) == total, "Expected five active Set stakes")
         rows = json.loads(runtime.sql(
-            "SELECT json_agg(row_to_json(sample)) FROM (SELECT DISTINCT ON (b.slot_leader) "
-            "b.slot_leader, b.number, b.hash, b.slot, encode(c.cbor_data, 'hex') AS cbor "
+            "SELECT json_agg(row_to_json(sample)) FROM (SELECT "
+            "b.slot_leader, b.number, b.hash, b.prev_hash, b.slot, encode(c.cbor_data, 'hex') AS cbor "
             "FROM block b JOIN block_cbor c ON c.block_hash = b.hash "
-            f"WHERE b.epoch = {epoch} ORDER BY b.slot_leader, b.number DESC) sample")) or []
-        if {row["slot_leader"] for row in rows} != set(stakes):
+            f"WHERE b.epoch = {epoch} ORDER BY b.number DESC LIMIT {window_size}) sample")) or []
+        if len(rows) != window_size or {row["slot_leader"] for row in rows} != set(stakes):
             return None
+        for newer, older in zip(rows, rows[1:]):
+            require(newer["number"] == older["number"] + 1 and newer["prev_hash"] == older["hash"],
+                    "Native verification window is not contiguous")
         endpoint = runtime.endpoint("DEVKIT_NONCE_PORT")
         nonce = http(f"{endpoint}/epoch_params?_epoch_no={epoch}")[0]["nonce"]
         observed = http(f"{endpoint}/epoch_stake?_epoch_no={epoch}")
         require(int(observed["total_active_stake"]) == total and
                 {pool["pool_id_hex"]: int(pool["active_stake"]) for pool in observed["pools"]} == stakes,
                 "Epoch history does not match the native Set snapshot")
+        vrf_keys = {pool["pool_id_hex"]: pool["vrf_key_hash"] for pool in observed["pools"]}
+        require(all(re.fullmatch(r"[0-9a-f]{64}", key) for key in vrf_keys.values()),
+                "Epoch history is missing the registered VRF key hashes")
         if json.loads(runtime.cli("query", "tip", "--testnet-magic", "42"))["epoch"] != epoch:
             return None
-        return epoch, nonce, stakes, total, rows
+        return epoch, nonce, stakes, total, vrf_keys, rows
 
-    epoch, nonce, stakes, total, rows = wait_for("blocks from all five producers in the current epoch", sample, timeout=600)
+    epoch, nonce, stakes, total, vrf_keys, rows = wait_for("a stability window with all five producers in the current epoch", sample, timeout=600)
     request = {
         "slots_per_kes_period": shelley["slotsPerKESPeriod"],
         "max_kes_evolutions": shelley["maxKESEvolutions"],
@@ -101,16 +109,17 @@ def verify_producer_blocks(runtime, shelley):
     result = subprocess.run([str(binary)], input=json.dumps(request), text=True, capture_output=True)
     require(result.returncode == 0, f"Native block verification failed: {result.stderr.strip()}")
     verified = json.loads(result.stdout)
-    require(verified["verified_blocks"] == 5, "Not all producers were cryptographically verified")
+    require(verified["verified_blocks"] == window_size, "Not all stability window blocks were cryptographically verified")
     metadata = verified["blocks"]
     require(len(metadata) == len(rows), "Native verification omitted block metadata")
     for actual, row in zip(metadata, rows):
         require(actual == {"block_hash": row["hash"], "block_number": row["number"],
-                           "slot": row["slot"], "pool_id_hex": row["slot_leader"]},
-                "Authenticated block header differs from the indexed producer, height, slot or hash")
+                           "slot": row["slot"], "pool_id_hex": row["slot_leader"],
+                           "vrf_key_hash": vrf_keys[row["slot_leader"]]},
+                "Authenticated block header differs from the indexed metadata or registered VRF key")
     require({block["pool_id_hex"] for block in metadata} == set(stakes),
             "Authenticated headers do not contain all five active producers")
-    return {"epoch": epoch, "verified_producers": sorted(stakes), "verified_blocks": 5,
+    return {"epoch": epoch, "verified_producers": sorted(stakes), "verified_blocks": window_size,
             "epoch_nonce": nonce, "active_stake": total, "blocks": metadata}
 
 

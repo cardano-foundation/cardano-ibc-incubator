@@ -151,8 +151,8 @@ mod tests {
 
     #[test]
     fn failed_runtime_probes_are_not_treated_as_a_stopped_network() {
-        assert_eq!(classify_running_status(Some(0)).unwrap(), true);
-        assert_eq!(classify_running_status(Some(1)).unwrap(), false);
+        assert!(classify_running_status(Some(0)).unwrap());
+        assert!(!classify_running_status(Some(1)).unwrap());
         for failed_status in [Some(2), Some(127), None] {
             let error = classify_running_status(failed_status).unwrap_err();
             assert!(error.contains("Cannot determine whether DevKit is running"));

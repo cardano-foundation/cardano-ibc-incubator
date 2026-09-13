@@ -14,6 +14,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 
 PROFILE = Path(__file__).resolve().parent
@@ -165,7 +166,19 @@ class Runtime:
         host = self.settings["DEVKIT_HOST"]
         ogmios = self.endpoint("DEVKIT_OGMIOS_PORT")
         kupo = self.endpoint("DEVKIT_KUPO_PORT")
+        admin = self.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/admin/devnet/genesis/"
+        genesis = {era: http(admin + era) for era in ("byron", "shelley")}
+        instance_path = self.state / "instance-id"
+        if not instance_path.exists():
+            instance_path.write_text(uuid.uuid4().hex)
+        # Fixed genesis keys/timing can repeat on reset. Bind dependent Cosmos
+        # state to this network instance as well as its actual genesis.
+        network_id = hashlib.sha256((json.dumps(genesis, sort_keys=True, separators=(",", ":"))
+                                     + instance_path.read_text()).encode()).hexdigest()
         values = {
+            "CARDANO_LOCAL_CLOCK_OFFSET": (self.state / "clock-offset").read_text().strip(),
+            "CARDANO_SYSTEM_START": genesis["shelley"]["systemStart"],
+            "CARDANO_LOCAL_NETWORK_ID": network_id,
             "CARDANO_CHAIN_ID": "cardano-devnet",
             "CARDANO_NETWORK_MAGIC": "42", "CARDANO_CHAIN_NETWORK_MAGIC": "42",
             "CARDANO_CHAIN_HOST": host, "CARDANO_CHAIN_PORT": self.settings["DEVKIT_NODE_PORT"],
@@ -269,7 +282,7 @@ class Runtime:
     def pool_registered(self, pool_id, stake_address):
         rows = json.loads(self.cli("query", "stake-address-info", "--address", stake_address,
                                    "--testnet-magic", "42"))
-        return any(row.get("delegation") == pool_id for row in rows)
+        return any(row.get("stakeDelegation") == pool_id for row in rows)
 
     def producers_ready(self):
         snapshot = json.loads(self.cli("query", "stake-snapshot", "--all-stake-pools", "--testnet-magic", "42"))
@@ -319,7 +332,7 @@ class Runtime:
                  timeout=780)
         wait_for("Kupo", lambda: http(self.endpoint("DEVKIT_KUPO_PORT") + "/health"))
         wait_for("Yaci history", lambda:
-                 http(self.endpoint("DEVKIT_HISTORY_PORT") + "/api/v1/blocks/latest").get("epoch", 0) >= 1)
+                 http(self.endpoint("DEVKIT_HISTORY_PORT") + "/api/v1/blocks/latest").get("epoch", 0) >= 1, timeout=600)
         self.start_producers()
         genesis = {era: http(admin + "/genesis/" + era) for era in ("byron", "shelley", "alonzo", "conway")}
         write_json(self.state / "genesis.json", genesis)
@@ -359,7 +372,7 @@ class Runtime:
         if any(project != self.project for project in attached):
             raise RuntimeError("Stop the bridge services before resetting their DevKit network")
         self.compose("down", "--volumes", "--remove-orphans")
-        for name in ("runtime.env", "endpoints.env", "container-endpoints.env", "startup.json", "genesis.json", "test.json", "profile.sha256", "clock-offset"):
+        for name in ("runtime.env", "endpoints.env", "container-endpoints.env", "startup.json", "genesis.json", "test.json", "profile.sha256", "clock-offset", "instance-id"):
             (self.state / name).unlink(missing_ok=True)
         self.settings = settings
         self.start()

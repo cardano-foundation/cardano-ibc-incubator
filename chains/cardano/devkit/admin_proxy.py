@@ -28,7 +28,8 @@ def forward(method, path, headers, body, upstream="http://127.0.0.1:10000"):
     attempts = 5 if first_page_utxos(method, path) else 1
     for attempt in range(attempts):
         try:
-            response = urlopen(request, timeout=10)
+            # The native faucet waits for inclusion before returning its POST.
+            response = urlopen(request, timeout=10 if method in ("GET", "HEAD") else 90)
         except HTTPError as error:
             # Preserve native API failures, including their response bodies.
             response = error
@@ -49,8 +50,20 @@ def forward(method, path, headers, body, upstream="http://127.0.0.1:10000"):
 def handler_for(upstream="http://127.0.0.1:10000"):
     class Handler(BaseHTTPRequestHandler):
         def proxy(self):
-            length = int(self.headers.get("Content-Length", "0"))
-            body = self.rfile.read(length) if length else None
+            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+                chunks = []
+                while True:
+                    size = int(self.rfile.readline().split(b";", 1)[0].strip(), 16)
+                    if size == 0:
+                        while self.rfile.readline().strip():
+                            pass
+                        break
+                    chunks.append(self.rfile.read(size))
+                    self.rfile.read(2)
+                body = b"".join(chunks)
+            else:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length) if length else None
             try:
                 status, headers, content = forward(self.command, self.path, self.headers, body, upstream)
             except (OSError, URLError) as error:

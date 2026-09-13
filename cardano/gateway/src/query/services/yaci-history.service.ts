@@ -651,7 +651,7 @@ export class YaciHistoryService implements HistoryService {
     if (!isPublicNetwork) {
       const localEndpoint = this.configService.get<string>("cardanoLocalEpochContextEndpoint")?.trim();
       if (localEndpoint) {
-        return this.findLocalEpochStakeSnapshot(localEndpoint, block.epochNo, ogmiosStakeDistribution);
+        return this.findLocalEpochStakeSnapshot(localEndpoint, block.epochNo);
       }
       return ogmiosStakeDistribution;
     }
@@ -704,7 +704,6 @@ export class YaciHistoryService implements HistoryService {
   private async findLocalEpochStakeSnapshot(
     endpoint: string,
     epoch: number,
-    ogmiosStakeDistribution: HistoryStakeDistributionEntry[],
   ): Promise<HistoryStakeDistributionEntry[]> {
     const url = new URL(`${endpoint.replace(/\/+$/, "")}/epoch_stake`);
     url.searchParams.set("_epoch_no", epoch.toString());
@@ -733,9 +732,6 @@ export class YaciHistoryService implements HistoryService {
     if (!Array.isArray(snapshot.pools) || snapshot.pools.length === 0) {
       throw new Error(`Local epoch stake response has no active pools for epoch ${epoch}`);
     }
-    // Pool VRF keys are still acquired from Ogmios at the requested block. Only
-    // the epoch-frozen Set stake replaces the live ledger wallet distribution.
-    const vrfByPool = new Map(ogmiosStakeDistribution.map((entry) => [entry.poolId, entry.vrfKeyHash]));
     const seen = new Set<string>();
     const distribution = snapshot.pools.map((row: unknown): HistoryStakeDistributionEntry => {
       if (!row || typeof row !== "object" || Array.isArray(row)) {
@@ -751,9 +747,9 @@ export class YaciHistoryService implements HistoryService {
       }
       seen.add(poolId);
       const stake = positiveStake(pool.active_stake);
-      const vrfKeyHash = vrfByPool.get(poolId);
-      if (!vrfKeyHash || !/^[0-9a-f]{64}$/.test(vrfKeyHash)) {
-        throw new Error(`Ogmios VRF key is unavailable for local epoch pool ${poolId}`);
+      const vrfKeyHash = pool.vrf_key_hash;
+      if (typeof vrfKeyHash !== "string" || !/^[0-9a-f]{64}$/.test(vrfKeyHash)) {
+        throw new Error(`Frozen VRF key is unavailable for local epoch pool ${poolId}`);
       }
       return {
         poolId,
@@ -974,8 +970,9 @@ export class YaciHistoryService implements HistoryService {
       );
     }
 
-    if (this.configService.get<string>("cardanoLocalEpochContextEndpoint")?.trim()) {
-      throw new Error(`Ogmios can no longer acquire epoch ${block.epochNo} for local epoch stake VRF keys`);
+    const localEndpoint = this.configService.get<string>("cardanoLocalEpochContextEndpoint")?.trim();
+    if (localEndpoint) {
+      return this.findObservedLocalEpochContext(block, slotBounds, ogmiosEndpoint, epochNonce, localEndpoint);
     }
 
     if (
@@ -994,6 +991,39 @@ export class YaciHistoryService implements HistoryService {
     throw new Error(
       `Ogmios can no longer acquire epoch ${block.epochNo}, and no historical stake-distribution fallback is configured`,
     );
+  }
+
+  private async findObservedLocalEpochContext(
+    block: HistoryBlock,
+    slotBounds: { currentEpochStartSlot: bigint; currentEpochEndSlotExclusive: bigint },
+    ogmiosEndpoint: string,
+    epochNonce: string,
+    endpoint: string,
+  ): Promise<HistoryEpochContextAtBlock> {
+    // Genesis parameters are constant for this chain. Stake and VRF keys must
+    // come from the recorded epoch, even when Ogmios has forgotten its blocks.
+    const [verification, stakeDistribution] = await Promise.all([
+      queryCurrentEpochVerificationData(ogmiosEndpoint, epochNonce),
+      this.findLocalEpochStakeSnapshot(endpoint, block.epochNo),
+    ]);
+    const firstRegistrationSlots = await this.findKnownPoolRegistrationSlots(
+      stakeDistribution.map((entry) => entry.poolId),
+    );
+    return {
+      epoch: block.epochNo,
+      stakeDistribution: stakeDistribution.map((entry) => ({
+        ...entry,
+        firstRegistrationSlot: firstRegistrationSlots.get(entry.poolId) ?? null,
+      })),
+      verificationContext: {
+        epochNonce: verification.epochNonce,
+        slotsPerKesPeriod: verification.slotsPerKesPeriod,
+        maxKesEvolutions: verification.maxKesEvolutions,
+        activeSlotCoefficientNumerator: verification.activeSlotCoefficientNumerator,
+        activeSlotCoefficientDenominator: verification.activeSlotCoefficientDenominator,
+        ...slotBounds,
+      },
+    };
   }
 
   private async findHistoricalEpochContextFallback(

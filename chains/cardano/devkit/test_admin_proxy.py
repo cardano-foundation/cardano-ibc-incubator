@@ -1,4 +1,5 @@
 from collections import Counter
+from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 import unittest
@@ -87,6 +88,23 @@ class AdminProxyTests(unittest.TestCase):
         with self.request(UTXOS, body) as response:
             self.assertEqual(response.read(), b"[]")
         self.assertEqual(self.calls[("POST", UTXOS)], 1)
+        self.assertEqual(self.bodies[-1], body)
+
+    def test_native_chunked_post_body_is_forwarded_once(self):
+        path = "/local-cluster/api/addresses/topup"
+        body = b'{"address":"addr_test1example","adaAmount":1010}'
+        self.responses[("POST", path)] = [(200, "application/json", b"[]")]
+        connection = HTTPConnection("127.0.0.1", self.proxy.server_port, timeout=5)
+        self.addCleanup(connection.close)
+        try:
+            connection.request("POST", path, body=[body[:12], body[12:]],
+                               headers={"Content-Type": "application/json"}, encode_chunked=True)
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.read(), b"[]")
+        finally:
+            connection.close()
+        self.assertEqual(self.calls[("POST", path)], 1)
         self.assertEqual(self.bodies[-1], body)
 
     def test_download_bytes_headers_and_http_errors_are_preserved(self):

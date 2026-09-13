@@ -1,5 +1,8 @@
 #!/bin/sh
 set -eu
+if [ "${DEVKIT_PEER:-false}" != true ]; then
+    python3 /profile/admin_proxy.py &
+fi
 export FAKETIME="${DEVKIT_CLOCK_OFFSET:?Missing persisted local network clock}"
 export FAKETIME_DONT_FAKE_MONOTONIC=1
 for library in /usr/lib/*/faketime/libfaketime.so.1; do
@@ -8,9 +11,6 @@ for library in /usr/lib/*/faketime/libfaketime.so.1; do
         break
     fi
 done
-if [ "${DEVKIT_PEER:-false}" != true ]; then
-    python3 /profile/admin_proxy.py &
-fi
 if [ "${DEVKIT_PEER:-false}" = true ] && [ ! -f /clusters/pool-keys/default/opcert.cert ]; then
     printf 'join --admin-url http://devkit.local:10001 --bp --overwrite --overwrite--pool-keys\nstart\nregister-pool\n' > /tmp/devkit.commands
 elif [ -f /clusters/nodes/default/cluster-info.json ]; then

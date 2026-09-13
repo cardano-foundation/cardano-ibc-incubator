@@ -25,14 +25,16 @@ class NonceHistory:
         self.last_success = None
         if self.path.exists():
             saved = json.loads(self.path.read_text())
-            if saved.get("version") not in (1, 2):
+            if saved.get("version") not in (1, 2, 3):
                 raise ValueError("Unsupported epoch nonce history format")
             self.genesis = saved["genesis"]
             for epoch, nonce in saved["nonces"].items():
                 if not re.fullmatch(r"0|[1-9][0-9]*", epoch) or not valid_nonce(nonce):
                     raise ValueError("Invalid saved epoch nonce")
                 self.nonces[int(epoch)] = nonce.lower()
-            for epoch, snapshot in saved.get("stakes", {}).items():
+            # Older files did not retain frozen VRF keys. Keep their nonces,
+            # but never fill historical keys from a later pool registration.
+            for epoch, snapshot in (saved.get("stakes", {}) if saved["version"] == 3 else {}).items():
                 if not re.fullmatch(r"0|[1-9][0-9]*", epoch) or int(epoch) not in self.nonces:
                     raise ValueError("Saved stake snapshot has no matching epoch nonce")
                 self.stakes[int(epoch)] = validate_snapshot(snapshot)
@@ -44,7 +46,7 @@ class NonceHistory:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".tmp")
         with temporary.open("w") as output:
-            json.dump({"version": 2, "genesis": self.genesis,
+            json.dump({"version": 3, "genesis": self.genesis,
                        "nonces": {str(key): value for key, value in sorted(self.nonces.items())},
                        "stakes": {str(key): value for key, value in sorted(self.stakes.items())},
                        "conflicts": sorted(self.conflicts)}, output)
@@ -154,7 +156,19 @@ def validate_snapshot(snapshot):
                                  [(pool["pool_id_hex"], pool["active_stake"]) for pool in snapshot["pools"]])
     if normalized is None:
         raise ValueError("Active stake snapshot must have positive total stake")
-    return normalized
+    return attach_vrf_keys(normalized, {pool["pool_id_hex"].lower(): {"vrf": pool.get("vrf_key_hash")}
+                                       for pool in snapshot["pools"]})
+
+
+def attach_vrf_keys(snapshot, pool_params):
+    if snapshot is None:
+        return None
+    for pool in snapshot["pools"]:
+        vrf = pool_params.get(pool["pool_id_hex"], {}).get("vrf")
+        if not valid_nonce(vrf):
+            raise ValueError("Frozen Set VRF key is unavailable for active pool " + pool["pool_id_hex"])
+        pool["vrf_key_hash"] = vrf.lower()
+    return snapshot
 
 
 def cli_query(query, magic, *args):
@@ -172,14 +186,16 @@ def observe(history, genesis_directory, query=cli_query):
     before = query("tip", magic)
     state = query("protocol-state", magic)
     raw_snapshot = query("stake-snapshot", magic, "--all-stake-pools")
+    ledger = query("ledger-state", magic)
     after = query("tip", magic)
     epoch = before.get("epoch")
-    if epoch is None or epoch != after.get("epoch"):
+    if epoch is None or epoch != after.get("epoch") or epoch != ledger.get("lastEpoch"):
         raise ValueError("Epoch changed during nonce query")
     if before.get("slot") is None or after.get("slot") is None or after["slot"] < before["slot"]:
         raise ValueError("Cardano tip rolled back during nonce query")
     snapshot = normalize_stake(raw_snapshot["total"]["stakeSet"],
                                [(pool_id, values["stakeSet"]) for pool_id, values in raw_snapshot["pools"].items()])
+    snapshot = attach_vrf_keys(snapshot, ledger["stateBefore"]["esSnapshots"]["pstakeSet"]["poolParams"])
     history.record(identity, epoch, state.get("epochNonce"), snapshot)
 
 
