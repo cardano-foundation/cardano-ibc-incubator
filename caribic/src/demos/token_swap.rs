@@ -13,6 +13,18 @@ pub async fn run_token_swap_demo(
     chain: Option<OptionalChainId>,
     network: Option<&str>,
 ) -> Result<(), String> {
+    if crate::local_runtime::is_devkit(project_root_path) {
+        if chain != Some(OptionalChainId::Cosmos) {
+            return Err("The DevKit token-swap demo requires --chain cosmos --network v8-classic, the only fixture with a matching Cardano clock. Select that fixture or use the legacy Cardano runtime.".into());
+        }
+        crate::chains::cosmos_profiles::validate_route_state(
+            project_root_path,
+            network.unwrap_or("v8-classic"),
+        )?;
+        return start::with_devkit_heartbeat(project_root_path, || {
+            run_token_swap_demo_without_daemon(project_root_path, chain, network)
+        });
+    }
     let relayer_path = project_root_path.join("relayer");
     let uses_direct_cosmos_relay =
         chain.unwrap_or(OptionalChainId::Osmosis) == OptionalChainId::Cosmos;
@@ -267,7 +279,44 @@ fn run_direct_injective_token_swap(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::process::Command;
+
+    #[tokio::test]
+    async fn devkit_demo_rejects_unsupported_and_default_counterparts_before_daemon_actions() {
+        let root = std::env::temp_dir().join(format!(
+            "caribic-demo-preflight-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join(".caribic")).unwrap();
+        std::fs::write(root.join(".caribic-network"), "local\n").unwrap();
+        std::fs::write(root.join(".caribic/local-runtime"), "devkit\n").unwrap();
+        for chain in [
+            None,
+            Some(OptionalChainId::Osmosis),
+            Some(OptionalChainId::Injective),
+        ] {
+            let error = run_token_swap_demo(&root, chain, None).await.unwrap_err();
+            assert!(
+                error.contains(
+                    "DevKit token-swap demo requires --chain cosmos --network v8-classic"
+                ),
+                "{error}"
+            );
+        }
+        let error = run_token_swap_demo(&root, Some(OptionalChainId::Cosmos), Some("v10-classic"))
+            .await
+            .unwrap_err();
+        assert!(
+            error.contains("supported only by the local v8-classic Cosmos fixture"),
+            "{error}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn cosmos_profile_demo_script_is_fail_closed() {

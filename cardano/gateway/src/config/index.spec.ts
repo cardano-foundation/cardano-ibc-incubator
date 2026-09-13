@@ -83,6 +83,7 @@ describe('Public network stability configuration', () => {
       'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT',
       'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE',
       'CARDANO_EPOCH_NONCE_GENESIS',
+      'CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT',
     ]) {
       delete process.env[name];
     }
@@ -116,6 +117,7 @@ describe('Public network stability configuration', () => {
       ['CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', '0'],
       ['CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', ''],
       ['CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', '11'.repeat(32)],
+      ['CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT', 'http://nonce:8080'],
     ])('rejects the development override %s=%p', (name, value) => {
       process.env[name] = value;
 
@@ -153,5 +155,16 @@ describe('Public network stability configuration', () => {
       cardanoLightClientMode: 'stake-weighted-stability',
       cardanoEpochParamsEndpoint: undefined,
     });
+  });
+});
+
+
+describe('Local epoch snapshot configuration', () => {
+  const originalEnv = process.env;
+  afterEach(() => { process.env = originalEnv; });
+
+  it('passes the explicit local adapter endpoint to the history service', () => {
+    process.env = { CARDANO_NETWORK_MAGIC: '42', CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT: 'http://nonce:8080' };
+    expect(loadConfig().cardanoLocalEpochContextEndpoint).toBe('http://nonce:8080');
   });
 });

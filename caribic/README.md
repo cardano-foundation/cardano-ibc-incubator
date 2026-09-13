@@ -18,6 +18,104 @@ cargo install --path .
 ```
 ## Commands overview
 
+### `caribic start --local-runtime devkit`
+
+This experimental option uses Yaci DevKit to provision the local Cardano network.
+DevKit creates the first producer and joins four additional producers through its
+native commands. It generates their keys and genesis, configures joining peers
+and registers their pools. Caribic adds connections from the first producer back
+to those peers through Docker addresses, funds them and waits until all five have
+active stake and produce blocks. The chain still uses the existing `local` identity
+and `cardano-devnet` ID.
+
+In addition to the usual Caribic prerequisites, install Docker Compose, Python 3
+and Node 22 or newer. DevKit `0.10.6`, Ogmios `6.12.0` and Kupo `2.10.0` are pinned.
+The node uses the same `10.1.4-3` image as the existing local setup because DevKit's
+bundled static node cannot use the clock override required by pool-age policy.
+DevKit's bundled Store is disabled. The profile reuses the repository's Yaci Store
+`2.0.2.1`, PostgreSQL history schema and Bridge Projection.
+
+```bash
+caribic stop
+caribic start --local-runtime devkit
+caribic devkit test
+caribic devkit status
+```
+
+The selected runtime persists for subsequent Caribic commands. Stop the stack
+before changing it. `caribic devkit start` and `caribic devkit stop` operate on the
+DevKit network alone. `caribic devkit reset` deletes its chain and history and
+creates a fresh network, so stop the bridge stack before resetting it.
+Each checkout's DevKit network has its own Compose project and volumes. Copy
+[`chains/cardano/devkit/.env.example`](../chains/cardano/devkit/.env.example) to
+`chains/cardano/devkit/.env` from the repository root for port overrides. The
+selected ports persist until reset.
+
+Genesis parameters are fixed: magic `42`, protocol version `10`, one-second slots,
+600-slot epochs, active slot coefficient `0.25` and security parameter `48`.
+The initial accounts and genesis pool use DevKit's fixed keys. The four additional
+producers get new keys on each fresh reset. All nodes share a clock offset starting
+on December 31, 2025 so pool registrations satisfy the existing cutoff. The offset
+persists across restart. Cold startup waits for Conway and for the new delegations
+to become active, then checks that all five producers appear in recent history.
+This takes at least three epochs, so it is slower than placing all five pools in
+genesis as the existing setup does.
+
+On a four-CPU arm64 Docker VM, three samples of the five-producer DevKit stack
+used about 1.9 GiB of memory and 33–127% CPU in Docker's reporting, where 100%
+is one CPU. Samples of the existing setup used about 1.7 GiB and 25–205% CPU. Other
+work was running during both measurements, so these are observations rather than
+a controlled performance comparison. The existing setup was observed ready within
+six minutes with cached images. Clean CI runs took about 30–31 minutes to start
+DevKit, which is not directly comparable to that cached local run. CI saves startup
+measurements as artifacts.
+
+DevKit currently supports bridge pairing only with Cosmos `v8-classic`. Start it
+with `caribic chain start --chain cosmos --network v8-classic`. This local fixture
+shares the DevKit clock through a separate image.
+Its saved state is tied to that Cardano network, so after resetting Cardano also
+restart Cosmos with `--chain-flag stateful=false` to reset its state. Other Cosmos
+profiles, Osmosis and Injective require the legacy Cardano runtime for bridge
+pairing. Run the transfer demo with explicit options:
+`caribic demo token-swap --chain cosmos --network v8-classic`.
+The local swap UI supports only Osmosis, so DevKit skips it and uses the Cosmos CLI demo.
+
+A Cardano-native token round trip has passed on this profile. Receiving Cosmos
+`utest` for the first time still fails when Cardano has to create its denomination
+record. The combined transaction used 22,164,136 memory units against the ledger
+limit of 16,500,000. That receive path is unchanged by this profile and needs a
+separate fix before the Cosmos-native token round trip can pass.
+
+Caribic writes host addresses to `.caribic/devkit/endpoints.env` and container
+addresses to `.caribic/devkit/container-endpoints.env`. Deployment, Gateway
+and Hermes setup consume these endpoints. Host tools can source `endpoints.env` with
+`set -a` enabled to export its variables.
+Starting the DevKit network through Caribic also funds the configured accounts and
+splits the default fixture deployer's funds into 40 outputs so deployment
+transactions have enough separate inputs. If you set `DEPLOYER_SK`, fund that wallet or add its address to the
+configured accounts.
+
+A local HTTP service records the node's actual epoch nonce and active `Set` stake
+snapshot for each observed epoch. The Gateway uses those snapshots for exact stake
+fractions instead of assuming current wallet balances equal the epoch's stake.
+Missing historical evidence fails rather than substituting the current epoch.
+
+`caribic devkit test` submits a payment through Ogmios and checks Kupo and Yaci
+history. It also runs the bridge's native block verifier against 25 consecutive
+blocks containing all five producers, checking signatures and leader eligibility
+with the actual epoch stake and registered VRF keys.
+Results and startup measurements are saved under `.caribic/devkit/`. This test does
+not cover IBC handshakes or ICS-20 transfer, acknowledgement, timeout and refund.
+Run the paired Cosmos workflow above to exercise the bridge. `legacy` remains the
+default.
+
+To return to the existing local network setup:
+
+```bash
+caribic stop
+caribic start --local-runtime legacy
+```
+
 ### `caribic check`
 
 Verifies Docker, Aiken, Deno, Go, and the native Hermes build toolchain on Linux. It does not currently probe Node.js or Rust/Cargo.
@@ -38,7 +136,8 @@ Starts services. Run `caribic --help` to see an actively maintained exhaustive l
 
 With no target, `caribic start` behaves like `caribic start all`: it starts the
 network and bridge stack (including Gateway and Hermes), then starts the IBC
-Swap dapp after those dependencies are ready.
+Swap dapp after those dependencies are ready. The DevKit runtime skips the dapp
+because it supports the Cosmos CLI workflow.
 
 Examples:
 

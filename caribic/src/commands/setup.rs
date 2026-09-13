@@ -27,6 +27,40 @@ fn run_setup_route(
     to: TransferRouteChainArg,
     to_network: Option<String>,
 ) -> Result<(), String> {
+    if crate::local_runtime::is_devkit(project_root_path) {
+        for (chain, network) in [(&from, &from_network), (&to, &to_network)] {
+            if matches!(chain, TransferRouteChainArg::Cosmos) {
+                crate::chains::cosmos_profiles::validate_route_state(
+                    project_root_path,
+                    network.as_deref().unwrap_or("v8-classic"),
+                )?;
+            }
+        }
+        if !matches!(from, TransferRouteChainArg::Cardano) {
+            return Err(format!(
+                "Only Cardano-sourced token-transfer routes are currently supported, got '{}'.",
+                RouteChain::from(from).display_name()
+            ));
+        }
+        if matches!(to, TransferRouteChainArg::Cardano) {
+            return Err("Cardano-to-Cardano token-transfer route setup is not supported.".into());
+        }
+        if !matches!(to, TransferRouteChainArg::Cosmos) {
+            return Err("DevKit token-transfer routes require Cosmos v8-classic, the only fixture with a matching Cardano clock. Select Cosmos v8-classic or use the legacy Cardano runtime.".into());
+        }
+        let route = start::with_devkit_heartbeat(project_root_path, || {
+            route_setup::setup_transfer_route(
+                project_root_path,
+                RouteEndpoint::new(from.into(), from_network),
+                RouteEndpoint::new(to.into(), to_network),
+            )
+        })?;
+        logger::log("PASS: Token-transfer route is ready");
+        for line in route.summary_lines() {
+            logger::log(&format!("  - {}", line));
+        }
+        return Ok(());
+    }
     let relayer_path = project_root_path.join("relayer");
     let relayer_was_running = matches!(
         start::check_health_target(project_root_path, HealthTarget::Core(CoreServiceId::Hermes)),
@@ -72,5 +106,63 @@ impl From<TransferRouteChainArg> for RouteChain {
             TransferRouteChainArg::Injective => Self::Injective,
             TransferRouteChainArg::Osmosis => Self::Osmosis,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_devkit_cosmos_endpoint_fails_before_starting_hermes() {
+        let root = std::env::temp_dir().join(format!(
+            "caribic-route-preflight-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join(".caribic")).unwrap();
+        std::fs::write(root.join(".caribic-network"), "local\n").unwrap();
+        std::fs::write(root.join(".caribic/local-runtime"), "devkit\n").unwrap();
+        for (from, from_network, to, to_network) in [
+            (
+                TransferRouteChainArg::Cardano,
+                None,
+                TransferRouteChainArg::Cosmos,
+                Some("v10-classic".into()),
+            ),
+            (
+                TransferRouteChainArg::Cosmos,
+                Some("v10-classic".into()),
+                TransferRouteChainArg::Cardano,
+                None,
+            ),
+        ] {
+            let error = run_setup_route(&root, from, from_network, to, to_network).unwrap_err();
+            assert!(
+                error.contains("supported only by the local v8-classic Cosmos fixture"),
+                "{error}"
+            );
+        }
+        for destination in [
+            TransferRouteChainArg::Osmosis,
+            TransferRouteChainArg::Injective,
+        ] {
+            let error = run_setup_route(
+                &root,
+                TransferRouteChainArg::Cardano,
+                None,
+                destination,
+                None,
+            )
+            .unwrap_err();
+            assert!(
+                error.contains("DevKit token-transfer routes require Cosmos v8-classic"),
+                "{error}"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

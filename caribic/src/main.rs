@@ -14,6 +14,7 @@ mod config;
 mod demos;
 mod install;
 mod light_client_test;
+mod local_runtime;
 mod logger;
 mod process;
 mod route_setup;
@@ -37,7 +38,7 @@ pub(crate) enum LightClientTest {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
-    /// Starts everything (network + bridge + IBC Swap dapp)
+    /// Starts the network and bridge, plus the IBC Swap dapp where supported
     All,
     /// Starts the managed Cardano network/runtime services
     Network,
@@ -138,11 +139,16 @@ enum SetupCommand {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Inspect or manage the Yaci DevKit local network
+    Devkit {
+        #[arg(value_enum)]
+        action: commands::devkit::DevkitAction,
+    },
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts the network, bridge, and IBC Swap dapp; optionally specify: all, network, bridge, gateway, dapp, relayer (mithril is disabled)
+    /// Starts bridge components. No argument starts the network and bridge, plus the IBC Swap dapp where supported. DevKit uses the Cosmos CLI workflow
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -155,6 +161,9 @@ enum Commands {
         /// Optional network profile for the managed Cardano runtime (local, preprod, preview)
         #[arg(long)]
         network: Option<String>,
+        /// Local network provisioner, remembered for this checkout (default: legacy)
+        #[arg(long, value_enum)]
+        local_runtime: Option<local_runtime::LocalRuntime>,
         /// Chain-specific KEY=VALUE flag (repeatable); use `caribic chain start --chain <id>` for optional chains
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
@@ -396,6 +405,7 @@ async fn main() {
 
     // Dispatch each subcommand to its module-level handler.
     let command_result: Result<(), String> = match args.command {
+        Commands::Devkit { action } => commands::devkit::run_devkit(project_root_path, action),
         Commands::Check => commands::run_check().await,
         Commands::Install => commands::run_install(project_root_path),
         Commands::Chains => commands::run_chains(),
@@ -415,8 +425,19 @@ async fn main() {
             clean,
             with_mithril,
             network,
+            local_runtime,
             chain_flag,
-        } => commands::run_start(target, clean, with_mithril, network, chain_flag).await,
+        } => {
+            commands::run_start(
+                target,
+                clean,
+                with_mithril,
+                network,
+                local_runtime,
+                chain_flag,
+            )
+            .await
+        }
         Commands::Keys { command } => commands::run_keys(project_root_path, command),
         Commands::HealthCheck { service } => {
             commands::run_health_check(project_root_path, service.as_deref())
@@ -490,6 +511,31 @@ async fn main() {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+
+    #[test]
+    fn devkit_is_a_local_provider_not_a_different_cardano_network() {
+        let args = Args::try_parse_from([
+            "caribic",
+            "start",
+            "network",
+            "--network",
+            "local",
+            "--local-runtime",
+            "devkit",
+        ])
+        .unwrap();
+        match args.command {
+            Commands::Start {
+                network,
+                local_runtime,
+                ..
+            } => {
+                assert_eq!(network.as_deref(), Some("local"));
+                assert_eq!(local_runtime, Some(local_runtime::LocalRuntime::Devkit));
+            }
+            _ => panic!("expected start command"),
+        }
+    }
 
     #[test]
     fn light_client_flag_defaults_to_recover_client() {

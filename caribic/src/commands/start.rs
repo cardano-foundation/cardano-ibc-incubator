@@ -19,6 +19,7 @@ use crate::{
 const HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS: u64 = 10;
 const HERMES_BUILD_POLL_INTERVAL_SECS: u64 = 2;
 const MITHRIL_DEPRECATED_ERROR: &str = "ERROR: Mithril setup is deprecated, disabled, and not maintained. Use the default stake-weighted-stability light-client mode. The Mithril source remains in-tree for historical reference only.";
+const DEVKIT_DAPP_LIMITATION: &str = "The local swap UI requires the legacy Cardano runtime paired with Local Osmosis. For DevKit use `caribic demo token-swap --chain cosmos --network v8-classic`.";
 
 fn requires_injective_testnet_route(network: config::CoreCardanoNetwork) -> bool {
     network.is_public_testnet()
@@ -108,8 +109,21 @@ fn target_requires_runtime_deployer_sk(target: Option<StartTarget>) -> bool {
         || target == Some(StartTarget::Relayer)
 }
 
-fn target_starts_dapp(target: Option<&StartTarget>) -> bool {
-    target.is_none() || matches!(target, Some(StartTarget::All) | Some(StartTarget::Dapp))
+fn target_starts_dapp(
+    target: Option<&StartTarget>,
+    network: config::CoreCardanoNetwork,
+    runtime: crate::local_runtime::LocalRuntime,
+) -> Result<bool, String> {
+    if network == config::CoreCardanoNetwork::Local
+        && runtime == crate::local_runtime::LocalRuntime::Devkit
+    {
+        return if matches!(target, Some(StartTarget::Dapp)) {
+            Err(DEVKIT_DAPP_LIMITATION.into())
+        } else {
+            Ok(false)
+        };
+    }
+    Ok(target.is_none() || matches!(target, Some(StartTarget::All) | Some(StartTarget::Dapp)))
 }
 
 /// Starts the requested target and orchestrates the network, bridge, and dapp components.
@@ -118,6 +132,7 @@ pub async fn run_start(
     clean: bool,
     with_mithril: bool,
     network: Option<String>,
+    local_runtime: Option<crate::local_runtime::LocalRuntime>,
     chain_flags: Vec<String>,
 ) -> Result<(), String> {
     let start_elapsed_timer = Instant::now();
@@ -133,7 +148,6 @@ pub async fn run_start(
     let start_all = target.is_none() || target == Some(StartTarget::All);
     let start_network = start_all || target == Some(StartTarget::Network);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
-    let start_dapp_target = target_starts_dapp(target.as_ref());
 
     if !chain_flags.is_empty() {
         return Err(
@@ -144,8 +158,22 @@ pub async fn run_start(
 
     let core_cardano_network = config::CoreCardanoNetwork::parse(network.as_deref())?;
     let core_cardano_profile = config::cardano_network_profile(core_cardano_network);
+    let start_dapp_target = target_starts_dapp(
+        target.as_ref(),
+        core_cardano_network,
+        local_runtime.unwrap_or_else(|| crate::local_runtime::selected(project_root_path)),
+    )?;
 
     crate::start::ensure_cardano_network_switch_is_safe(project_root_path, core_cardano_network)?;
+    if let Some(runtime) = local_runtime {
+        if core_cardano_network != config::CoreCardanoNetwork::Local {
+            return Err("--local-runtime is only valid with --network local".to_string());
+        }
+        if !start_network && crate::local_runtime::selected(project_root_path) != runtime {
+            return Err("Start the network when selecting a different local runtime".to_string());
+        }
+        crate::local_runtime::select(project_root_path, runtime)?;
+    }
 
     if matches!(target, Some(StartTarget::Relayer | StartTarget::Dapp))
         || (core_cardano_network == config::CoreCardanoNetwork::Local
@@ -276,6 +304,9 @@ pub async fn run_start(
             Ok(handle) => {
                 mithril_genesis_handle = handle;
                 let managed_services = match core_cardano_network {
+                    config::CoreCardanoNetwork::Local if crate::local_runtime::is_devkit(project_root_path) => {
+                        "Yaci DevKit five-producer network, Ogmios, Kupo, Yaci Store, databases"
+                    }
                     config::CoreCardanoNetwork::Local => {
                         "cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres"
                     }
@@ -647,6 +678,9 @@ pub async fn run_start(
         }
     }
 
+    if start_all && !start_dapp_target {
+        logger::log(&format!("Skipping swap UI. {DEVKIT_DAPP_LIMITATION}"));
+    }
     if start_dapp_target {
         ensure_active_cardano_runtime_identity(project_root_path, core_cardano_network)?;
         match start_dapp(project_root_path, clean, core_cardano_network) {
@@ -722,17 +756,29 @@ fn format_elapsed_duration(duration: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::{requires_injective_testnet_route, target_starts_dapp};
-    use crate::{config::CoreCardanoNetwork, StartTarget};
+    use crate::{config::CoreCardanoNetwork, local_runtime::LocalRuntime, StartTarget};
 
     #[test]
     fn default_and_all_targets_start_the_dapp() {
-        assert!(target_starts_dapp(None));
-        assert!(target_starts_dapp(Some(&StartTarget::All)));
+        for network in [
+            CoreCardanoNetwork::Local,
+            CoreCardanoNetwork::Preprod,
+            CoreCardanoNetwork::Preview,
+        ] {
+            for target in [None, Some(&StartTarget::All)] {
+                assert!(target_starts_dapp(target, network, LocalRuntime::Legacy).unwrap());
+            }
+        }
     }
 
     #[test]
     fn standalone_dapp_target_starts_the_dapp() {
-        assert!(target_starts_dapp(Some(&StartTarget::Dapp)));
+        assert!(target_starts_dapp(
+            Some(&StartTarget::Dapp),
+            CoreCardanoNetwork::Local,
+            LocalRuntime::Legacy
+        )
+        .unwrap());
     }
 
     #[test]
@@ -744,7 +790,40 @@ mod tests {
             StartTarget::Relayer,
             StartTarget::Mithril,
         ] {
-            assert!(!target_starts_dapp(Some(&target)));
+            assert!(!target_starts_dapp(
+                Some(&target),
+                CoreCardanoNetwork::Local,
+                LocalRuntime::Legacy
+            )
+            .unwrap());
+        }
+    }
+
+    #[test]
+    fn devkit_dispatch_skips_default_ui_and_rejects_explicit_ui_without_affecting_public_networks()
+    {
+        for target in [
+            None,
+            Some(&StartTarget::All),
+            Some(&StartTarget::Network),
+            Some(&StartTarget::Bridge),
+        ] {
+            assert!(
+                !target_starts_dapp(target, CoreCardanoNetwork::Local, LocalRuntime::Devkit)
+                    .unwrap()
+            );
+        }
+        let error = target_starts_dapp(
+            Some(&StartTarget::Dapp),
+            CoreCardanoNetwork::Local,
+            LocalRuntime::Devkit,
+        )
+        .unwrap_err();
+        assert!(error.contains("legacy Cardano runtime paired with Local Osmosis"));
+        for network in [CoreCardanoNetwork::Preprod, CoreCardanoNetwork::Preview] {
+            for target in [None, Some(&StartTarget::All), Some(&StartTarget::Dapp)] {
+                assert!(target_starts_dapp(target, network, LocalRuntime::Devkit).unwrap());
+            }
         }
     }
 

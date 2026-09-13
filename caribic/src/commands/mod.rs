@@ -5,6 +5,7 @@ pub mod chains;
 pub mod check;
 pub mod create;
 pub mod demo;
+pub mod devkit;
 pub mod health;
 pub mod install;
 pub mod keys;

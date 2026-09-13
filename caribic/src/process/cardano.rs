@@ -1,11 +1,12 @@
 use crate::config;
 use crate::process::docker::DockerCli;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Output;
 
 pub struct CardanoCli {
     docker: DockerCli,
     network_magic: String,
+    project_root: PathBuf,
 }
 
 impl CardanoCli {
@@ -22,6 +23,7 @@ impl CardanoCli {
         Self {
             docker: DockerCli::new(cardano_dir),
             network_magic: network_magic.to_string(),
+            project_root: cardano_dir.join("../.."),
         }
     }
 
@@ -48,15 +50,24 @@ impl CardanoCli {
     }
 
     pub fn exec_output(&self, cardano_cli_args: &[&str]) -> Result<Output, String> {
-        // Caribic runs Cardano queries against the managed devnet container rather than a host
-        // install, so every typed Cardano call funnels through `docker compose exec`.
-        let mut args = vec!["cardano-cli"];
-        args.extend_from_slice(cardano_cli_args);
-        self.docker
-            .compose_exec_no_tty_output("cardano-node", args.as_slice())
+        let output = self.exec_output_allow_failure(cardano_cli_args)?;
+        if output.status.success() {
+            Ok(output)
+        } else {
+            Err(format!(
+                "Cardano CLI failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ))
+        }
     }
 
     pub fn exec_output_allow_failure(&self, cardano_cli_args: &[&str]) -> Result<Output, String> {
+        if crate::local_runtime::is_devkit(&self.project_root) {
+            return crate::local_runtime::command(&self.project_root, "cli")
+                .args(cardano_cli_args)
+                .output()
+                .map_err(|error| error.to_string());
+        }
         let mut args = vec!["cardano-cli"];
         args.extend_from_slice(cardano_cli_args);
         self.docker

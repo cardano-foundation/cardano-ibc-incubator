@@ -89,34 +89,64 @@ fn remove_named_containers(names: &[String], label: &str) {
     }
 }
 
+pub(crate) fn gateway_project(root: &Path) -> String {
+    crate::setup::read_gateway_env_value(
+        &root.join("cardano/gateway/.env"),
+        "GATEWAY_COMPOSE_PROJECT",
+    )
+    .ok()
+    .flatten()
+    .filter(|project| !project.is_empty())
+    .unwrap_or_else(|| "gateway".to_string())
+}
+
+fn dapp_project(root: &Path) -> String {
+    if crate::local_runtime::is_devkit(root) {
+        if let Ok(mut env) = crate::local_runtime::environment(root, true) {
+            if let Some(project) = env.remove("DAPP_COMPOSE_PROJECT") {
+                return project;
+            }
+        }
+    }
+    "dapps".to_string()
+}
+
 pub(crate) fn gateway_is_running(project_root_path: &Path) -> bool {
     !compose_project_container_names(
         project_root_path.join("cardano/gateway").as_path(),
-        "gateway",
+        &gateway_project(project_root_path),
         None,
         false,
     )
     .is_empty()
 }
 
-pub(crate) fn dapp_is_running(project_root_path: &Path) -> bool {
-    !compose_project_container_names(
+pub(crate) fn dapp_container_name(project_root_path: &Path) -> Option<String> {
+    compose_project_container_names(
         project_root_path.join("dapps").as_path(),
-        "dapps",
+        &dapp_project(project_root_path),
         Some("ibc-swap-client"),
         false,
     )
-    .is_empty()
+    .into_iter()
+    .next()
 }
 
-pub(crate) fn cardano_runtime_is_running(project_root_path: &Path) -> bool {
-    !compose_project_container_names(
+pub(crate) fn dapp_is_running(project_root_path: &Path) -> bool {
+    dapp_container_name(project_root_path).is_some()
+}
+
+pub(crate) fn cardano_runtime_is_running(project_root_path: &Path) -> Result<bool, String> {
+    if crate::local_runtime::is_devkit(project_root_path) {
+        return crate::local_runtime::containers_running(project_root_path);
+    }
+    Ok(!compose_project_container_names(
         project_root_path.join("chains/cardano").as_path(),
         "cardano",
         None,
         false,
     )
-    .is_empty()
+    .is_empty())
 }
 
 pub(crate) fn relayer_is_running(project_root_path: &Path) -> bool {
@@ -138,7 +168,12 @@ pub(crate) fn relayer_is_running(project_root_path: &Path) -> bool {
 // using the same project name can be selected even when its working directory differs.
 pub fn stop_gateway(project_root_path: &Path) {
     let gateway_path = project_root_path.join("cardano/gateway");
-    let containers = compose_project_container_names(gateway_path.as_path(), "gateway", None, true);
+    let containers = compose_project_container_names(
+        gateway_path.as_path(),
+        &gateway_project(project_root_path),
+        None,
+        true,
+    );
     remove_named_containers(containers.as_slice(), "Gateway");
 }
 
@@ -147,17 +182,21 @@ pub fn stop_dapp(project_root_path: &Path) {
     let dapps_path = project_root_path.join("dapps");
     let containers = compose_project_container_names(
         dapps_path.as_path(),
-        "dapps",
+        &dapp_project(project_root_path),
         Some(IBC_SWAP_DAPP_SERVICE),
         true,
     );
     remove_named_containers(containers.as_slice(), "IBC Swap dapp");
 }
 
-pub fn stop_cardano_network(project_root_path: &Path) {
+pub fn stop_cardano_network(project_root_path: &Path) -> Result<(), String> {
+    if crate::local_runtime::is_devkit(project_root_path) {
+        return crate::local_runtime::run(project_root_path, "stop", &[]);
+    }
     let cardano_path = project_root_path.join("chains/cardano");
     let containers = compose_project_container_names(cardano_path.as_path(), "cardano", None, true);
     remove_named_containers(containers.as_slice(), "Cardano network");
+    Ok(())
 }
 
 pub fn stop_relayer(relayer_path: &Path) {

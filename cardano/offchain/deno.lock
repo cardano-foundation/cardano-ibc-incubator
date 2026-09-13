@@ -8,6 +8,7 @@
     "jsr:@std/internal@^1.0.10": "1.0.12",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/internal@^1.0.9": "1.0.12",
+    "jsr:@std/path@^1.0.13": "1.1.2",
     "jsr:@std/path@^1.1.1": "1.1.2",
     "npm:@lucid-evolution/lucid@0.4.29": "0.4.29_effect@3.19.2_fast-check@3.23.2",
     "npm:@lucid-evolution/provider@0.1.90": "0.1.90_effect@3.19.2",
@@ -34,7 +35,7 @@
       "integrity": "051968c2b1eae4d2ea9f79a08a3845740ef6af10356aff43d3e2ef11ed09fb06",
       "dependencies": [
         "jsr:@std/internal@^1.0.9",
-        "jsr:@std/path"
+        "jsr:@std/path@^1.1.1"
       ]
     },
     "@std/internal@1.0.12": {

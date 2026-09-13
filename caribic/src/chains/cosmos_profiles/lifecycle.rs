@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use super::clock::FixtureClock;
 use super::config::CosmosProfileConfig;
 use crate::process::docker::DockerCli;
 use crate::utils::wait_for_health_check;
@@ -16,9 +17,11 @@ pub(super) fn prepare(
     stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     validate_assets(project_root_path)?;
+    let clock = FixtureClock::selected(project_root_path, profile)?;
     let state_dir = profile.state_dir(project_root_path);
 
     if stateful {
+        clock.validate_retained_state(&state_dir)?;
         fs::create_dir_all(state_dir.as_path())?;
         return Ok(());
     }
@@ -37,16 +40,25 @@ pub(super) async fn start(
     profile: CosmosProfileConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let compose_dir = compose_dir(project_root_path);
-    DockerCli::new(compose_dir.as_path()).compose_ok(&[
-        "-f",
-        COMPOSE_FILE,
-        "--profile",
-        profile.name,
-        "up",
-        "--build",
-        "-d",
-        profile.service,
-    ])?;
+    let clock = FixtureClock::selected(project_root_path, profile)?;
+    clock.validate_retained_state(&profile.state_dir(project_root_path))?;
+    let environment = clock.environment();
+    let environment_refs: Vec<_> = environment
+        .iter()
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
+    DockerCli::new(compose_dir.as_path())
+        .with_envs(&environment_refs)
+        .compose_ok(&[
+            "-f",
+            COMPOSE_FILE,
+            "--profile",
+            profile.name,
+            "up",
+            "--build",
+            "-d",
+            profile.service,
+        ])?;
 
     let status_url = profile.status_url();
     let expected_chain_id = profile.chain_id;
@@ -145,6 +157,8 @@ fn validate_assets(project_root_path: &Path) -> Result<(), Box<dyn std::error::E
         "config/node_key.json",
         "config/priv_validator_key.json",
         "scripts/setup_profile.sh",
+        "scripts/local_clock.sh",
+        "scripts/patch_local_clock.sh",
     ] {
         let path = profile_root.join(required_file);
         if !path.is_file() {

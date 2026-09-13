@@ -9,7 +9,8 @@ use crate::{
         cosmos_profiles::{
             chain_id as cosmos_profile_chain_id,
             configure_hermes_for_classic_route as configure_cosmos_profile_hermes,
-            semantics as cosmos_profile_semantics, IbcSemantics,
+            semantics as cosmos_profile_semantics,
+            validate_route_state as validate_cosmos_route_state, IbcSemantics,
         },
         injective::{
             configure_hermes_for_demo as configure_injective_hermes_for_demo,
@@ -150,6 +151,9 @@ fn setup_transfer_route_with_reuse(
                 active_cardano_network.as_str()
             ));
         }
+    }
+    if destination.chain == RouteChain::Cosmos {
+        validate_cosmos_route_state(project_root_path, destination_network)?;
     }
     if active_cardano_network == config::CoreCardanoNetwork::Local {
         setup::refresh_local_gateway_epoch_nonce(project_root_path)
@@ -579,6 +583,8 @@ fn query_transfer_channel_end_status(
         }
     };
 
+    ensure_channel_query_proof_ready(&output.stdout, &output.stderr)?;
+
     if !output.status.success() {
         logger::verbose(&format!(
             "Hermes query channel end failed for chain={chain_id}, channel={channel_id}: {}",
@@ -620,6 +626,26 @@ fn query_transfer_channel_end_status(
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
     }))
+}
+
+fn ensure_channel_query_proof_ready(stdout: &[u8], stderr: &[u8]) -> Result<(), String> {
+    for output in [stdout, stderr] {
+        let message = String::from_utf8_lossy(output);
+        if [
+            "HEIGHT_NOT_ACCEPTED",
+            "waiting_for_stability",
+            "Current HostState root is not yet stability-accepted",
+        ]
+        .iter()
+        .any(|reason| message.contains(reason))
+        {
+            return Err(format!(
+                "Channel query is waiting for Gateway proof readiness: {}",
+                message.trim()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn extract_transfer_channel_id_for_ports(
@@ -1190,6 +1216,85 @@ fn create_direct_transfer_channel_on_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unaccepted_channel_proofs_are_not_treated_as_absent_routes() {
+        for error in [
+            r#"{"status":"error","result":"HEIGHT_NOT_ACCEPTED: depth 5 < 24"}"#,
+            "Gateway waiting_for_stability",
+            "Current HostState root is not yet stability-accepted for proof generation",
+        ] {
+            for (stdout, stderr) in [(error.as_bytes(), &b""[..]), (&b""[..], error.as_bytes())] {
+                assert!(ensure_channel_query_proof_ready(stdout, stderr)
+                    .unwrap_err()
+                    .contains(error));
+            }
+        }
+        assert!(ensure_channel_query_proof_ready(
+            br#"{"status":"success","result":{"state":"OPEN"}}"#,
+            b""
+        )
+        .is_ok());
+        assert!(ensure_channel_query_proof_ready(b"", b"channel not found").is_ok());
+    }
+
+    #[test]
+    fn cosmos_routes_reject_old_clock_bindings_before_queries_or_reuse() {
+        const ROOT_ENV: &str = "CARIBIC_ROUTE_CLOCK_TEST_ROOT";
+        if let Some(root) = std::env::var_os(ROOT_ENV) {
+            let root = std::path::PathBuf::from(root);
+            for runtime in ["devkit", "legacy"] {
+                std::fs::write(root.join(".caribic/local-runtime"), runtime).unwrap();
+                for allow_reuse in [true, false] {
+                    let error = setup_transfer_route_with_reuse(
+                        &root,
+                        RouteEndpoint::new(RouteChain::Cardano, None),
+                        RouteEndpoint::new(RouteChain::Cosmos, Some("v8-classic".into())),
+                        allow_reuse,
+                    )
+                    .unwrap_err();
+                    assert!(error.contains("another local clock or Cardano network"));
+                    assert!(error.contains("--chain-flag stateful=false"));
+                }
+            }
+            return;
+        }
+
+        let root = std::env::temp_dir().join(format!("caribic-route-clock-{}", std::process::id()));
+        let state = root.join("cosmos-state/v8-classic");
+        std::fs::create_dir_all(root.join(".caribic/devkit")).unwrap();
+        std::fs::create_dir_all(state.join("config")).unwrap();
+        std::fs::write(state.join("config/genesis.json"), "{}").unwrap();
+        std::fs::write(
+            root.join(".caribic/devkit/endpoints.env"),
+            "CARDANO_LOCAL_CLOCK_OFFSET=-22178336s\nCARDANO_SYSTEM_START=2025-12-31T00:00:00Z\nCARDANO_LOCAL_NETWORK_ID=current-network\n",
+        ).unwrap();
+        std::fs::write(
+            state.join(".caribic-local-clock.json"),
+            serde_json::json!({
+                "mode": "devkit", "offset": "-22178336s",
+                "cardano_network_id": "previous-network",
+                "cosmos_genesis_time": "2025-12-30T23:59:00Z",
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // Isolate the state-directory override from concurrent tests and real fixtures.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "route_setup::tests::cosmos_routes_reject_old_clock_bindings_before_queries_or_reuse"])
+            .env(ROOT_ENV, &root)
+            .env("COSMOS_PROFILES_STATE_DIR", root.join("cosmos-state"))
+            .output()
+            .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
 
     #[test]
     fn classic_cosmos_profiles_resolve_to_revisioned_chain_ids() {

@@ -7,6 +7,7 @@ use crate::chains::{
     ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
 
+mod clock;
 mod config;
 mod hermes;
 mod lifecycle;
@@ -148,6 +149,12 @@ pub(crate) fn configure_hermes_for_classic_route(
         .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?
         .config();
     hermes::configure_classic_profile(project_root_path, *profile)
+}
+
+pub(crate) fn validate_route_state(project_root_path: &Path, profile: &str) -> Result<(), String> {
+    let profile = CosmosTestProfile::parse(profile)?.config();
+    clock::FixtureClock::selected(project_root_path, *profile)?
+        .validate_retained_state(&profile.state_dir(project_root_path))
 }
 
 pub(crate) fn semantics(profile: &str) -> Result<IbcSemantics, String> {
@@ -332,7 +339,12 @@ mod tests {
                 .get(config.service)
                 .expect("profile service present in compose file");
             assert_eq!(compose_service.profiles, vec![config.name]);
-            assert_eq!(compose_service.image, manifest_profile.image);
+            let expected_image = if config.name == "v8-classic" {
+                format!("${{COSMOS_V8_CLASSIC_IMAGE:-{}}}", manifest_profile.image)
+            } else {
+                manifest_profile.image.clone()
+            };
+            assert_eq!(compose_service.image, expected_image);
             assert_eq!(compose_service.build.context, "../..");
             assert_eq!(compose_service.build.dockerfile, "chains/cosmos/Dockerfile");
             assert_eq!(
