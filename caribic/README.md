@@ -66,8 +66,9 @@ used about 1.9 GiB of memory and 33–127% CPU in Docker's reporting, where 100%
 is one CPU. Samples of the existing setup used about 1.7 GiB and 25–205% CPU. Other
 work was running during both measurements, so these are observations rather than
 a controlled performance comparison. The existing setup was observed ready within
-six minutes with cached images. We do not yet have a comparable clean DevKit
-startup measurement. CI saves startup measurements as artifacts.
+six minutes with cached images. Clean CI runs took about 30–31 minutes to start
+DevKit, which is not directly comparable to that cached local run. CI saves startup
+measurements as artifacts.
 
 DevKit currently supports bridge pairing only with Cosmos `v8-classic`. Start it
 with `caribic chain start --chain cosmos --network v8-classic`. This local fixture
@@ -83,9 +84,9 @@ Caribic writes host addresses to `.caribic/devkit/endpoints.env` and container
 addresses to `.caribic/devkit/container-endpoints.env`. Deployment, Gateway
 and Hermes setup consume these endpoints. Host tools can source `endpoints.env` with
 `set -a` enabled to export its variables.
-Bridge startup also funds the configured accounts and splits the default fixture
-deployer's funds into 40 outputs so deployment transactions have enough separate
-inputs. If you set `DEPLOYER_SK`, fund that wallet or add its address to the
+Starting the DevKit network through Caribic also funds the configured accounts and
+splits the default fixture deployer's funds into 40 outputs so deployment
+transactions have enough separate inputs. If you set `DEPLOYER_SK`, fund that wallet or add its address to the
 configured accounts.
 
 A local HTTP service records the node's actual epoch nonce and active `Set` stake
@@ -129,7 +130,8 @@ Starts services. Run `caribic --help` to see an actively maintained exhaustive l
 
 With no target, `caribic start` behaves like `caribic start all`: it starts the
 network and bridge stack (including Gateway and Hermes), then starts the IBC
-Swap dapp after those dependencies are ready.
+Swap dapp after those dependencies are ready. The DevKit runtime skips the dapp
+because it supports the Cosmos CLI workflow.
 
 Examples:
 

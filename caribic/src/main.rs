@@ -38,7 +38,7 @@ pub(crate) enum LightClientTest {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
-    /// Starts everything (network + bridge + IBC Swap dapp)
+    /// Starts the network and bridge, plus the IBC Swap dapp where supported
     All,
     /// Starts the managed Cardano network/runtime services
     Network,
@@ -148,7 +148,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts the network, bridge, and IBC Swap dapp; optionally specify: all, network, bridge, gateway, dapp, relayer (mithril is disabled)
+    /// Starts bridge components. No argument starts the network and bridge, plus the IBC Swap dapp where supported. DevKit uses the Cosmos CLI workflow
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
