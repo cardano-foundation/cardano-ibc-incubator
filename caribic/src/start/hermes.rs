@@ -188,7 +188,7 @@ fn run_hermes_command_with_progress_and_timeout(
 }
 
 /// Resolves the Hermes binary from the relayer build output and fails if missing.
-fn require_relayer_hermes_binary() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub(super) fn require_relayer_hermes_binary() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let project_root = PathBuf::from(config::get_config().project_root);
     let hermes_binary = project_root.join("relayer/target/release/hermes");
     if !hermes_binary.exists() {
