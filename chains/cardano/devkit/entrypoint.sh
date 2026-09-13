@@ -4,7 +4,9 @@ if [ "${DEVKIT_PEER:-false}" != true ]; then
     python3 /profile/admin_proxy.py &
 fi
 export FAKETIME="${DEVKIT_CLOCK_OFFSET:?Missing persisted local network clock}"
-export FAKETIME_DONT_FAKE_MONOTONIC=1
+# With libfaketime 0.9.10, setting this to 1 makes the native Java CLI's
+# timed waits expire immediately and keeps its background threads busy.
+export FAKETIME_DONT_FAKE_MONOTONIC=0
 for library in /usr/lib/*/faketime/libfaketime.so.1; do
     if [ -r "$library" ]; then
         export LD_PRELOAD="$library"

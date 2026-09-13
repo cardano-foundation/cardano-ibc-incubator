@@ -350,7 +350,8 @@ class Runtime:
             path.read_bytes() for path in (
                 PROFILE / "Dockerfile", PROFILE / "compose.yaml", PROFILE / "node.properties",
                 PROFILE / "entrypoint.sh", PROFILE / "cardano-cli.sh",
-                PROFILE / "nonce.py", PROFILE / "admin_proxy.py", PROFILE.parent / "yaci/config/application.properties",
+                PROFILE / "nonce.py", PROFILE / "admin_proxy.py", PROFILE / "cardano_node.py",
+                PROFILE.parent / "yaci/config/application.properties",
             )
         )).hexdigest()
         marker = self.state / "profile.sha256"

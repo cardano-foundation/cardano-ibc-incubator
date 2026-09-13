@@ -34,18 +34,30 @@ services:
       - genesis-data:/export
   producer-2:
     <<: *node
+    networks:
+      default:
+        aliases: [producer-2.local]
     volumes:
       - producer-2-data:/clusters
   producer-3:
     <<: *node
+    networks:
+      default:
+        aliases: [producer-3.local]
     volumes:
       - producer-3-data:/clusters
   producer-4:
     <<: *node
+    networks:
+      default:
+        aliases: [producer-4.local]
     volumes:
       - producer-4-data:/clusters
   producer-5:
     <<: *node
+    networks:
+      default:
+        aliases: [producer-5.local]
     volumes:
       - producer-5-data:/clusters
   nonce:

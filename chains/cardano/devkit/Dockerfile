@@ -7,7 +7,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libfaketime python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=devkit-tools /app /app
-RUN ln -sf /usr/local/bin/cardano-node /app/cardano-bin/cardano-node \
+RUN ln -sf /profile/cardano_node.py /app/cardano-bin/cardano-node \
     && mv /app/cardano-bin/cardano-cli /app/cardano-bin/cardano-cli.bin
 COPY devkit/cardano-cli.sh /app/cardano-bin/cardano-cli
 RUN chmod +x /app/cardano-bin/cardano-cli
@@ -18,6 +18,8 @@ WORKDIR /app
 COPY devkit/entrypoint.sh /profile/entrypoint.sh
 COPY devkit/nonce.py /profile/nonce.py
 COPY devkit/admin_proxy.py /profile/admin_proxy.py
+COPY devkit/cardano_node.py /profile/cardano_node.py
+RUN chmod +x /profile/cardano_node.py
 COPY devkit/node.properties /app/config/node.properties
 
 FROM bloxbean/yaci-store:2.0.2.1@sha256:9a75cb006db1710a9de02b566de158d8d561058328b8e1219531d2c2c79778e9 AS history

@@ -62,12 +62,14 @@ This takes at least three epochs, so it is slower than placing all five pools in
 genesis as the existing setup does.
 
 In one comparison on a four-CPU arm64 Docker VM with cached images and other work
-running, both network profiles used about 1.7 GiB of memory. DevKit kept almost all
-four CPUs busy because its native CLI's
-timers interact badly with the current clock override. The existing profile was
-observed ready within six minutes. The interrupted DevKit debugging run does not
-provide a comparable startup measurement. CI saves its clean startup measurements
-as artifacts.
+running, both network profiles used about 1.7 GiB of memory. That DevKit run kept
+almost all four CPUs busy because the clock setting broke its native CLI's timed
+waits. The setting is now corrected. A separate single-producer control showed
+those threads sleeping while Cardano blocks advanced, but it does not establish
+the corrected five-producer resource usage. The existing profile was observed
+ready within six minutes. The interrupted DevKit debugging run does not provide
+a comparable startup measurement. CI saves its clean startup measurements as
+artifacts.
 
 For a paired Cosmos chain, use `caribic chain start --chain cosmos --network
 v8-classic`. This local fixture shares the DevKit clock through a separate image.

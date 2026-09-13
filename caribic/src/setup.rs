@@ -2334,6 +2334,27 @@ pub fn resolve_external_cardano_deploy_endpoints(
     Ok((ogmios, kupo))
 }
 
+fn restore_gateway_defaults_after_devkit(
+    project_root: &Path,
+    gateway_env: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if read_gateway_env_value(gateway_env, "CARDANO_LOCAL_RUNTIME")?.as_deref() != Some("devkit") {
+        return Ok(());
+    }
+    let defaults = project_root.join("cardano/gateway/.env.example");
+    for (key, generated) in crate::local_runtime::environment(project_root, true)? {
+        // Preserve endpoints or credentials the operator has already replaced.
+        if read_gateway_env_value(gateway_env, &key)?.as_deref() != Some(&generated) {
+            continue;
+        }
+        match read_gateway_env_value(&defaults, &key)?.filter(|value| !value.is_empty()) {
+            Some(value) => set_or_append_env_var(gateway_env, &key, &value)?,
+            None => remove_env_var(gateway_env, &key)?,
+        }
+    }
+    remove_env_var(gateway_env, "CARDANO_LOCAL_RUNTIME")
+}
+
 fn write_gateway_env_for_network(
     cardano_dir: &Path,
     clean: bool,
@@ -2393,6 +2414,10 @@ fn write_gateway_env_for_network(
         copy(gateway_dir.join(".env.example"), &gateway_env, &options)?;
     }
     secure_env_file_permissions(&gateway_env)?;
+
+    if network.is_public_testnet() {
+        restore_gateway_defaults_after_devkit(&project_root, &gateway_env)?;
+    }
 
     let shared_gateway_network_defaults = [
         (CARDANO_RUNTIME_NETWORK_KEY, network.as_str()),
@@ -2925,7 +2950,8 @@ pub fn prepare_db_sync_and_gateway(
 #[cfg(test)]
 mod tests {
     use super::{
-        cardano_runtime_state_paths, remove_env_var, set_env_var_if_absent,
+        cardano_runtime_state_paths, parse_env_file, remove_env_var,
+        restore_gateway_defaults_after_devkit, set_env_var_if_absent,
         validate_active_cardano_runtime_env, validate_external_http_endpoint,
         validate_override_network_marker, validate_public_testnet_network_values,
         CARDANO_RUNTIME_NETWORK_KEY,
@@ -3113,6 +3139,58 @@ mod tests {
             "CARDANO_EPOCH_PARAMS_ENDPOINT=https://koios-proxy.example/api/v1\n"
         );
         fs::remove_file(env_path).expect("temporary env should be removable");
+    }
+
+    #[test]
+    fn leaving_devkit_restores_service_defaults_and_preserves_public_configuration() {
+        let root = std::env::temp_dir().join(format!(
+            "caribic-leave-devkit-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join(".caribic/devkit")).unwrap();
+        fs::create_dir_all(root.join("cardano/gateway")).unwrap();
+        let generated = "CARDANO_EPOCH_PARAMS_ENDPOINT=http://nonce:8080\nYACI_STORE_ENDPOINT=http://history:8080\nGATEWAY_DB_PASSWORD=postgres\nGATEWAY_COMPOSE_PROJECT=owned-devkit-gateway\nOGMIOS_ENDPOINT=http://devkit:1337\n";
+        fs::write(
+            root.join(".caribic/devkit/container-endpoints.env"),
+            generated,
+        )
+        .unwrap();
+        fs::write(
+            root.join("cardano/gateway/.env.example"),
+            "CARDANO_EPOCH_PARAMS_ENDPOINT=\nYACI_STORE_ENDPOINT=http://yaci-store:8080\nGATEWAY_DB_PASSWORD=legacy-password\nOGMIOS_ENDPOINT=http://ogmios:1337\n",
+        ).unwrap();
+        let env = root.join("cardano/gateway/.env");
+        fs::write(&env, format!(
+            "CARDANO_LOCAL_RUNTIME=devkit\n{}CARDANO_KOIOS_API_KEY=operator-key\nYACI_SYNC_START_SLOT=12345\n",
+            generated.replace("OGMIOS_ENDPOINT=http://devkit:1337", "OGMIOS_ENDPOINT=https://operator.example")
+        )).unwrap();
+        restore_gateway_defaults_after_devkit(&root, &env).unwrap();
+        set_env_var_if_absent(
+            &env,
+            "CARDANO_EPOCH_PARAMS_ENDPOINT",
+            "https://preview.koios.rest/api/v1",
+        )
+        .unwrap();
+        let values = parse_env_file(&env).unwrap();
+        assert_eq!(
+            values["CARDANO_EPOCH_PARAMS_ENDPOINT"],
+            "https://preview.koios.rest/api/v1"
+        );
+        assert_eq!(values["YACI_STORE_ENDPOINT"], "http://yaci-store:8080");
+        assert_eq!(values["GATEWAY_DB_PASSWORD"], "legacy-password");
+        assert_eq!(values["OGMIOS_ENDPOINT"], "https://operator.example");
+        assert_eq!(values["CARDANO_KOIOS_API_KEY"], "operator-key");
+        assert_eq!(values["YACI_SYNC_START_SLOT"], "12345");
+        assert!(!values.contains_key("GATEWAY_COMPOSE_PROJECT"));
+        assert!(!values.contains_key("CARDANO_LOCAL_RUNTIME"));
+        let contents = fs::read_to_string(&env).unwrap();
+        restore_gateway_defaults_after_devkit(&root, &env).unwrap();
+        assert_eq!(fs::read_to_string(&env).unwrap(), contents);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
