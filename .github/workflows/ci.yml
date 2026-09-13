@@ -389,10 +389,11 @@ jobs:
       - name: Build
         run: npm run --prefix cardano/gateway build
 
-      - name: Check Lucid wallet and collateral selection
+      - name: Check Lucid transaction compatibility
         run: |
           npm run --prefix cardano/gateway test:lucid-collateral
           npm run --prefix cardano/gateway test:lucid-wallet
+          npm run --prefix cardano/gateway test:lucid-ogmios
 
       - name: Test with coverage
         run: npm run --prefix cardano/gateway test:cov:ci

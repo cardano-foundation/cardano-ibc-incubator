@@ -6,9 +6,10 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "postinstall": "node scripts/patch-lucid-collateral.cjs",
+    "postinstall": "node scripts/patch-lucid-collateral.cjs && node scripts/patch-lucid-ogmios.cjs",
     "test:lucid-collateral": "node --test scripts/lucid-collateral.test.mjs",
     "test:lucid-wallet": "node --test scripts/lucid-wallet.test.mjs",
+    "test:lucid-ogmios": "node --test scripts/lucid-ogmios.test.mjs",
     "build": "nest build",
     "benchmark:denom-registry": "ts-node -r tsconfig-paths/register src/scripts/test/denom-registry-benchmark.ts",
     "check:tendermint-update-capacity-fixture": "ts-node -r tsconfig-paths/register src/scripts/test/generate-injective-tendermint-capacity-fixture.ts --check",
