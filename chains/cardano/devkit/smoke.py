@@ -23,6 +23,22 @@ def stability_requirements(root):
     return result
 
 
+def verify_genesis_security(genesis):
+    require(genesis["byron"].get("protocolConsts", {}).get("k") ==
+            genesis["shelley"].get("securityParam") == 48,
+            "Byron k and Shelley securityParam must both be 48 for retained ledger queries")
+
+
+def verify_ledger_retention(runtime, rows, depth):
+    require(len(rows) == depth + 1 and rows[0]["number"] - rows[-1]["number"] == depth,
+            "Missing indexed descendants for the retained ledger query")
+    point = {"slot": rows[-1]["slot"], "id": rows[-1]["hash"]}
+    acquired = runtime.ogmios("acquireLedgerState", {"point": point})
+    require(acquired.get("acquired") == "ledgerState" and acquired.get("point") == point,
+            "Ogmios did not acquire the exact block at the required stability depth")
+    return {"block_number": rows[-1]["number"], "descendants": depth, "point": point}
+
+
 def submit_payment(runtime):
     # Keys stay inside the disposable container and are never logged/exported.
     path = "/tmp/caribic-devkit-test"
@@ -132,6 +148,7 @@ def verify_producer_blocks(runtime, shelley):
 
 def run_smoke(runtime):
     genesis = json.loads((runtime.state / "genesis.json").read_text())
+    verify_genesis_security(genesis)
     shelley = genesis["shelley"]
     expected = {"networkMagic": 42, "slotLength": 1, "epochLength": 600,
                 "activeSlotsCoeff": 0.25, "securityParam": 48}
@@ -171,6 +188,7 @@ def run_smoke(runtime):
     require(None not in producers and "" not in producers, "Missing block producer identity")
     intersection = runtime.ogmios("findIntersection", {"points": [{"slot": rows[0]["slot"], "id": rows[0]["hash"]}]})
     require(intersection["intersection"]["id"] == rows[0]["hash"], "Ogmios and Yaci disagree on the chain")
+    retained = verify_ledger_retention(runtime, rows, depth)
     block = http(runtime.endpoint("DEVKIT_HISTORY_PORT") + "/api/v1/blocks/latest")
     for key in ("block_vrf", "issuer_vkey", "op_cert", "op_cert_sigma"):
         require(bool(block.get(key)), f"Missing Praos field in Yaci: {key}")
@@ -185,7 +203,8 @@ def run_smoke(runtime):
         "funded_genesis_accounts": len(shelley["initialFunds"]),
         "payment": payment,
         "evidence": {"contiguous_blocks": len(rows), "raw_block_cbor": True,
-                     "praos_fields_present": True, "epoch_nonce": nonce, "distinct_producers": len(producers)},
+                     "praos_fields_present": True, "epoch_nonce": nonce, "distinct_producers": len(producers),
+                     "retained_ledger_state": retained},
         "native_verification": verification,
         "bridge_compatibility": {
             "status": "network_ready",

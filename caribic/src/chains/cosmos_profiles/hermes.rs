@@ -33,10 +33,9 @@ pub(super) fn configure_classic_profile(
         .into());
     }
 
-    let synchronized_clock = matches!(
-        FixtureClock::selected(project_root_path, profile)?,
-        FixtureClock::Devkit { .. }
-    );
+    let clock = FixtureClock::selected(project_root_path, profile)?;
+    clock.validate_retained_state(&profile.state_dir(project_root_path))?;
+    let synchronized_clock = matches!(clock, FixtureClock::Devkit { .. });
     hermes_support::ensure_cosmos_chain_in_hermes_config(
         &hermes_profile(profile, synchronized_clock),
         &format!(

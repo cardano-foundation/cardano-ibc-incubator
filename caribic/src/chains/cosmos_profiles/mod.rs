@@ -151,6 +151,12 @@ pub(crate) fn configure_hermes_for_classic_route(
     hermes::configure_classic_profile(project_root_path, *profile)
 }
 
+pub(crate) fn validate_route_state(project_root_path: &Path, profile: &str) -> Result<(), String> {
+    let profile = CosmosTestProfile::parse(profile)?.config();
+    clock::FixtureClock::selected(project_root_path, *profile)?
+        .validate_retained_state(&profile.state_dir(project_root_path))
+}
+
 pub(crate) fn semantics(profile: &str) -> Result<IbcSemantics, String> {
     Ok(CosmosTestProfile::parse(profile)?.config().semantics)
 }

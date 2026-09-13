@@ -1944,6 +1944,10 @@ pub(crate) fn query_epoch_nonce(
 pub(crate) fn refresh_local_gateway_epoch_nonce(
     project_root_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if crate::local_runtime::is_devkit(project_root_path) {
+        // DevKit supplies the actual nonce for each epoch through its adapter.
+        return Ok(());
+    }
     let cardano_dir = project_root_path.join("chains").join("cardano");
     let gateway_dir = project_root_path.join("cardano").join("gateway");
     let gateway_env = gateway_dir.join(".env");
@@ -2189,6 +2193,16 @@ fn is_local_or_container_host(host: &str) -> bool {
             "kupo",
             "ogmios",
             "ogmios-proxy",
+            "devkit",
+            "devkit.local",
+            "producer-2",
+            "producer-2.local",
+            "producer-3",
+            "producer-3.local",
+            "producer-4",
+            "producer-4.local",
+            "producer-5",
+            "producer-5.local",
         ]
         .iter()
         .any(|container_host| host.eq_ignore_ascii_case(container_host))
@@ -2950,7 +2964,8 @@ pub fn prepare_db_sync_and_gateway(
 #[cfg(test)]
 mod tests {
     use super::{
-        cardano_runtime_state_paths, parse_env_file, remove_env_var,
+        cardano_runtime_state_paths, parse_env_file, refresh_local_gateway_epoch_nonce,
+        remove_env_var, resolve_public_testnet_history_relay,
         restore_gateway_defaults_after_devkit, set_env_var_if_absent,
         validate_active_cardano_runtime_env, validate_external_http_endpoint,
         validate_override_network_marker, validate_public_testnet_network_values,
@@ -3191,6 +3206,57 @@ mod tests {
         restore_gateway_defaults_after_devkit(&root, &env).unwrap();
         assert_eq!(fs::read_to_string(&env).unwrap(), contents);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn devkit_route_refresh_leaves_epoch_adapter_configuration_unchanged() {
+        let root = std::env::temp_dir().join(format!(
+            "caribic-devkit-nonce-refresh-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join(".caribic")).unwrap();
+        fs::create_dir_all(root.join("cardano/gateway")).unwrap();
+        fs::write(root.join(".caribic/local-runtime"), "devkit\n").unwrap();
+        let env = root.join("cardano/gateway/.env");
+        let original = "CARDANO_EPOCH_PARAMS_ENDPOINT=http://nonce:8080\nCARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT=http://nonce:8080\n";
+        fs::write(&env, original).unwrap();
+
+        // No CLI script or Compose file exists, so querying or restarting would fail.
+        refresh_local_gateway_epoch_nonce(&root).unwrap();
+        assert_eq!(fs::read_to_string(env).unwrap(), original);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn public_relay_preflight_rejects_devkit_docker_hosts() {
+        let env = std::env::temp_dir().join(format!(
+            "caribic-devkit-public-relay-{}.env",
+            std::process::id()
+        ));
+        let mut hosts = vec!["devkit".to_string(), "devkit.local".to_string()];
+        for index in 2..=5 {
+            hosts.extend([
+                format!("producer-{index}"),
+                format!("producer-{index}.local"),
+            ]);
+        }
+        for host in hosts {
+            fs::write(
+                &env,
+                format!("CARDANO_CHAIN_HOST={host}\nCARDANO_CHAIN_PORT=3001\n"),
+            )
+            .unwrap();
+            let error = resolve_public_testnet_history_relay(&env, CoreCardanoNetwork::Preview)
+                .unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("cannot use local CARDANO_CHAIN_HOST"));
+            assert!(
+                validate_external_http_endpoint(&format!("http://{host}:1337"), "Ogmios").is_err()
+            );
+        }
+        assert!(validate_external_http_endpoint("https://devkit.example.com", "Ogmios").is_ok());
+        fs::remove_file(env).unwrap();
     }
 
     #[test]
