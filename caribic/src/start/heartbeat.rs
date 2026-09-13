@@ -65,9 +65,26 @@ fn gateway_readiness_url(root: &Path) -> Result<String, String> {
     if !crate::stop::gateway_is_running(root) {
         return Err("Gateway is not running in this checkout".into());
     }
-    let output =
-        DockerCli::new(&root.join("cardano/gateway")).compose_output(&["port", "app", "8000"])?;
+    let output = crate::process::runner::run_ok_output(&mut gateway_port_command(root)?)?;
     published_gateway_url(String::from_utf8_lossy(&output.stdout).trim())
+}
+
+fn gateway_port_command(root: &Path) -> Result<Command, String> {
+    let directory = root.join("cardano/gateway");
+    let file = directory
+        .join("docker-compose.yml")
+        .canonicalize()
+        .map_err(|error| format!("Cannot locate the Gateway Compose file: {error}"))?;
+    // Match the project inspected by gateway_is_running, even when the caller
+    // exports COMPOSE_PROJECT_NAME or COMPOSE_FILE for another stack.
+    let mut command = DockerCli::new(&directory).compose_command(&[]);
+    command
+        .arg("--project-name")
+        .arg(crate::stop::gateway_project(root))
+        .arg("--file")
+        .arg(file)
+        .args(["port", "app", "8000"]);
+    Ok(command)
 }
 
 fn published_gateway_url(address: &str) -> Result<String, String> {
@@ -586,6 +603,41 @@ while True:
             None
         )
         .starts_with("ibc_relayer=warn,ibc_relayer_cli=warn,"));
+    }
+
+    #[test]
+    fn gateway_port_lookup_pins_the_same_project_and_repository_compose_file() {
+        let fixture = Fixture::new(false);
+        let directory = fixture.0.join("cardano/gateway");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join(".env"),
+            "GATEWAY_COMPOSE_PROJECT=owned-devkit-gateway\n",
+        )
+        .unwrap();
+        let file = directory.join("docker-compose.yml");
+        fs::write(&file, "services: {}\n").unwrap();
+        let mut command = gateway_port_command(&fixture.0).unwrap();
+        command.env("COMPOSE_PROJECT_NAME", "unrelated-project");
+        command.env("COMPOSE_FILE", "/unrelated/docker-compose.yml");
+        let arguments: Vec<_> = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            arguments,
+            [
+                "compose",
+                "--project-name",
+                "owned-devkit-gateway",
+                "--file",
+                file.canonicalize().unwrap().to_str().unwrap(),
+                "port",
+                "app",
+                "8000",
+            ]
+        );
+        assert_eq!(command.get_current_dir(), Some(directory.as_path()));
     }
 
     #[test]

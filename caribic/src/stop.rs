@@ -89,7 +89,7 @@ fn remove_named_containers(names: &[String], label: &str) {
     }
 }
 
-fn gateway_project(root: &Path) -> String {
+pub(crate) fn gateway_project(root: &Path) -> String {
     crate::setup::read_gateway_env_value(
         &root.join("cardano/gateway/.env"),
         "GATEWAY_COMPOSE_PROJECT",
