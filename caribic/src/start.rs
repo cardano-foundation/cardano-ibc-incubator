@@ -1696,11 +1696,12 @@ pub async fn deploy_contracts(
             "--allow-write",
             "index.ts",
         ]),
-        Some(vec![
-            ("KUPO_URL", local_kupo.as_str()),
-            ("OGMIOS_URL", local_ogmios.as_str()),
-            ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
-        ]),
+        Some(local_offchain_environment(
+            crate::local_runtime::is_devkit(project_root_path),
+            &local_kupo,
+            &local_ogmios,
+            &network_magic,
+        )),
     );
 
     if let Err(error) = deployment_result {
@@ -1840,6 +1841,31 @@ fn restore_handler_json(
     Ok(())
 }
 
+fn local_offchain_environment<'a>(
+    devkit: bool,
+    kupo: &'a str,
+    ogmios: &'a str,
+    network_magic: &'a str,
+) -> Vec<(&'static str, &'a str)> {
+    let mut environment = vec![
+        ("KUPO_URL", kupo),
+        ("OGMIOS_URL", ogmios),
+        ("CARDANO_NETWORK_MAGIC", network_magic),
+    ];
+    if devkit {
+        // Offchain gives these optional overrides precedence over OGMIOS_URL.
+        // Empty child values also suppress stale provider credentials while
+        // retaining an explicitly selected DEPLOYER_SK.
+        environment.extend([
+            ("OGMIOS_HTTP_URL", ""),
+            ("OGMIOS_WS_URL", ""),
+            ("KUPO_API_KEY", ""),
+            ("OGMIOS_API_KEY", ""),
+        ]);
+    }
+    environment
+}
+
 fn wait_for_local_offchain_wallet_utxos(
     project_root_path: &Path,
     optional_progress_bar: &Option<ProgressBar>,
@@ -1852,11 +1878,12 @@ fn wait_for_local_offchain_wallet_utxos(
         crate::local_runtime::endpoint(project_root_path, "KUPO_URL", "http://localhost:1442")?;
     let local_ogmios =
         crate::local_runtime::endpoint(project_root_path, "OGMIOS_URL", "http://localhost:1337")?;
-    let local_kupmios_env = vec![
-        ("KUPO_URL", local_kupo.as_str()),
-        ("OGMIOS_URL", local_ogmios.as_str()),
-        ("CARDANO_NETWORK_MAGIC", "42"),
-    ];
+    let local_kupmios_env = local_offchain_environment(
+        crate::local_runtime::is_devkit(project_root_path),
+        &local_kupo,
+        &local_ogmios,
+        "42",
+    );
 
     for attempt in 1..=MAX_ATTEMPTS {
         let probe = execute_script(
@@ -4697,9 +4724,9 @@ mod tests {
     use super::{
         cardano_network_switch_blockers, demeter_endpoint_requires_header_key,
         hermes_signing_sources, ibc_swap_dapp_url_for, inject_bridge_manifest_path,
-        inject_hermes_signing_sources, managed_cardano_service_plan, normalize_ibc_swap_base_path,
-        ogmios_http_url, persist_optional_hermes_api_key, redact_endpoint_in_message,
-        redact_external_endpoint, require_bridge_manifest_path,
+        inject_hermes_signing_sources, local_offchain_environment, managed_cardano_service_plan,
+        normalize_ibc_swap_base_path, ogmios_http_url, persist_optional_hermes_api_key,
+        redact_endpoint_in_message, redact_external_endpoint, require_bridge_manifest_path,
         resolve_hermes_signing_endpoint_auth, snapshot_hermes_bridge_manifest,
         write_owner_only_file, DemeterSigningAuthentication, HermesSigningSources,
         PUBLIC_TESTNET_FORBIDDEN_LOCAL_SERVICES,
@@ -4715,6 +4742,54 @@ mod tests {
             ogmios: true,
             cardano_node: true,
             postgres: true,
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn devkit_offchain_children_override_stale_endpoints_without_replacing_the_deployer() {
+        for devkit in [false, true] {
+            let output = std::process::Command::new("sh")
+                .args([
+                    "-c",
+                    r#"printf '%s\n' "$KUPO_URL" "$OGMIOS_URL" "$OGMIOS_HTTP_URL" "$OGMIOS_WS_URL" "$KUPO_API_KEY" "$OGMIOS_API_KEY" "$DEPLOYER_SK""#,
+                ])
+                .env("KUPO_URL", "http://localhost:1442")
+                .env("OGMIOS_URL", "http://localhost:1337")
+                .env("OGMIOS_HTTP_URL", "http://localhost:1337")
+                .env("OGMIOS_WS_URL", "ws://localhost:1337")
+                .env("KUPO_API_KEY", "old-kupo-key")
+                .env("OGMIOS_API_KEY", "old-ogmios-key")
+                .env("DEPLOYER_SK", "explicit-deployer")
+                .envs(local_offchain_environment(
+                    devkit,
+                    "http://127.0.0.1:11442",
+                    "http://127.0.0.1:11337",
+                    "42",
+                ))
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let output = String::from_utf8(output.stdout).unwrap();
+            let values: Vec<_> = output.lines().collect();
+            assert_eq!(
+                &values[..2],
+                ["http://127.0.0.1:11442", "http://127.0.0.1:11337"]
+            );
+            assert_eq!(values[6], "explicit-deployer");
+            if devkit {
+                assert_eq!(&values[2..6], ["", "", "", ""]);
+            } else {
+                assert_eq!(
+                    &values[2..6],
+                    [
+                        "http://localhost:1337",
+                        "ws://localhost:1337",
+                        "old-kupo-key",
+                        "old-ogmios-key"
+                    ]
+                );
+            }
         }
     }
 

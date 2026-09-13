@@ -12,7 +12,6 @@ import re
 import subprocess
 import sys
 import time
-import urllib.error
 import urllib.request
 import uuid
 
@@ -229,29 +228,38 @@ class Runtime:
             return
         count = max(1, outputs - usable)
         amount = max(portion, (max(0, lovelace - balance) + count - 1) // count)
-        # Use a temporary recipient of the native faucet to split funding in one
-        # transaction. No deployer signing key is needed by network provisioning.
+        # Spend DevKit's existing genesis funds directly. Its HTTP faucet can
+        # fail during local-state queries even when the node has usable funds.
+        inputs = []
+        for key in range(1, 4):
+            key_path = f"/clusters/nodes/default/utxo-keys/utxo{key}"
+            source = self.cli("address", "build", "--payment-verification-key-file",
+                              key_path + ".vkey", "--testnet-magic", "42")
+            available = json.loads(self.cli("query", "utxo", "--address", source,
+                                           "--testnet-magic", "42", "--output-json"))
+            inputs, total = [], 0
+            for tx_in, row in sorted(available.items(), key=lambda item: (-item[1]["value"]["lovelace"], item[0])):
+                if row["value"].keys() != {"lovelace"}:
+                    continue
+                inputs.append(tx_in)
+                total += row["value"]["lovelace"]
+                if total >= amount * count + 3_000_000:
+                    break
+            if total >= amount * count + 3_000_000:
+                break
+        else:
+            raise RuntimeError("DevKit genesis wallets have insufficient confirmed ADA for funding")
         path = "/tmp/caribic-devkit-fund"
         self.compose("exec", "-T", "devkit", "mkdir", "-p", path)
         try:
-            self.cli("address", "key-gen", "--verification-key-file", path + "/payment.vkey",
-                     "--signing-key-file", path + "/payment.skey")
-            source = self.cli("address", "build", "--payment-verification-key-file",
-                              path + "/payment.vkey", "--testnet-magic", "42")
-            result = http(self.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/addresses/topup",
-                          {"address": source, "adaAmount": (amount * count + 3_000_000) / 1_000_000}, timeout=90)
-            if result.get("status") is not True:
-                raise RuntimeError("DevKit faucet rejected funding")
-            inputs = wait_for("faucet inclusion", lambda: json.loads(self.cli(
-                "query", "utxo", "--address", source, "--testnet-magic", "42", "--output-json")))
             args = ["conway", "transaction", "build", "--testnet-magic", "42"]
             for tx_in in inputs:
                 args.extend(("--tx-in", tx_in))
             for _ in range(count):
                 args.extend(("--tx-out", f"{address}+{amount}"))
-            self.cli(*args, "--change-address", address, "--out-file", path + "/tx.body")
+            self.cli(*args, "--change-address", source, "--out-file", path + "/tx.body")
             self.cli("conway", "transaction", "sign", "--tx-body-file", path + "/tx.body",
-                     "--signing-key-file", path + "/payment.skey", "--out-file", path + "/tx.signed")
+                     "--signing-key-file", key_path + ".skey", "--out-file", path + "/tx.signed")
             self.cli("conway", "transaction", "submit", "--testnet-magic", "42",
                      "--tx-file", path + "/tx.signed")
             tx_id = self.cli("conway", "transaction", "txid", "--tx-file", path + "/tx.signed")
@@ -264,6 +272,7 @@ class Runtime:
     def start_producers(self):
         # Register sequentially, the native faucet spends shared inputs.
         for service in PRODUCERS:
+            self.assert_pool_registration_window(service)
             self.compose("up", "-d", "--build", service)
             address = wait_for(f"{service} keys", lambda: self.compose(
                 "exec", "-T", service, "cat", "/clusters/pool-keys/default/payment.addr", capture=True))
@@ -273,11 +282,52 @@ class Runtime:
             stake_address = self.compose("exec", "-T", service, "cardano-cli", "stake-address", "build",
                                          "--stake-verification-key-file", "/clusters/pool-keys/default/stake.vkey",
                                          "--testnet-magic", "42", capture=True)
-            wait_for(f"{service} registration and delegation", lambda:
-                     self.pool_registered(pool_id, stake_address), timeout=300)
+            self.wait_for_pool_registration(service, pool_id, stake_address)
             self.compose("exec", "-T", service, "touch", "/clusters/registered")
             self.fund(address, 300_000_000_000)
         wait_for("five active block producers", self.producers_ready, timeout=2100)
+
+    def assert_pool_registration_window(self, service):
+        offset = int((self.state / "clock-offset").read_text().strip().removesuffix("s"))
+        cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+        if time.time() + offset < cutoff:
+            return
+        # A stopped peer retains its successful registration marker. Check it
+        # before starting the native shell, which otherwise registers immediately.
+        container = self.compose("ps", "--all", "-q", service, capture=True)
+        if container and subprocess.run(["docker", "cp", container + ":/clusters/registered", "-"],
+                                        capture_output=True).returncode == 0:
+            return
+        raise RuntimeError(f"{service} registration is unfinished and the saved chain clock has passed "
+                           "the pool registration cutoff, run `caribic devkit reset`")
+
+    def wait_for_pool_registration(self, service, pool_id, stake_address):
+        container = self.compose("ps", "-q", service, capture=True)
+        started = subprocess.run(["docker", "inspect", "--format", "{{.State.StartedAt}}", container],
+                                 text=True, capture_output=True, check=True).stdout.strip()
+        restarted = False
+
+        def registered():
+            nonlocal restarted
+            if self.pool_registered(pool_id, stake_address):
+                return True
+            if not restarted:
+                logs = self.compose("logs", "--no-color", "--since", started, service, capture=True)
+                failed = any(error in logs for error in (
+                    "com.bloxbean.cardano.client.api.exception.ApiRuntimeException:",
+                    "com.bloxbean.cardano.client.exception.InsufficientBalanceException:",
+                    "org.springframework.web.client.HttpServerErrorException$InternalServerError:",
+                    "org.springframework.web.client.HttpServerErrorException$BadGateway:",
+                ))
+                if failed:
+                    # The native shell leaves its web server running after a
+                    # command failure. Restart only this peer, retaining its keys.
+                    print(f"{service} native registration failed, restarting that peer once...", flush=True)
+                    self.compose("restart", service)
+                    restarted = True
+            return False
+
+        wait_for(f"{service} registration and delegation", registered, timeout=600)
 
     def pool_registered(self, pool_id, stake_address):
         rows = json.loads(self.cli("query", "stake-address-info", "--address", stake_address,
@@ -331,9 +381,9 @@ class Runtime:
                  http(self.endpoint("DEVKIT_OGMIOS_PORT") + "/health").get("currentEra") == "conway",
                  timeout=780)
         wait_for("Kupo", lambda: http(self.endpoint("DEVKIT_KUPO_PORT") + "/health"))
+        self.start_producers()
         wait_for("Yaci history", lambda:
                  http(self.endpoint("DEVKIT_HISTORY_PORT") + "/api/v1/blocks/latest").get("epoch", 0) >= 1, timeout=600)
-        self.start_producers()
         genesis = {era: http(admin + "/genesis/" + era) for era in ("byron", "shelley", "alonzo", "conway")}
         write_json(self.state / "genesis.json", genesis)
         report = {

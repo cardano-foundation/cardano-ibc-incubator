@@ -47,7 +47,7 @@ The selected runtime persists for subsequent Caribic commands. Stop the stack
 before changing it. `caribic devkit start` and `caribic devkit stop` operate on the
 DevKit network alone. `caribic devkit reset` deletes its chain and history and
 creates a fresh network, so stop the bridge stack before resetting it.
-Each checkout has its own Compose project and volumes. Copy
+Each checkout's DevKit network has its own Compose project and volumes. Copy
 [`chains/cardano/devkit/.env.example`](../chains/cardano/devkit/.env.example) to `.env`
 for port overrides. The selected ports persist until reset.
 
@@ -58,6 +58,15 @@ producers get new keys on each fresh reset. All nodes share a clock offset start
 on December 31, 2025 so pool registrations satisfy the existing cutoff. The offset
 persists across restart. Cold startup waits for Conway and for the new delegations
 to become active, then checks that all five producers appear in recent history.
+This takes at least three epochs, so it is slower than placing all five pools in
+genesis as the existing setup does.
+
+For a paired Cosmos chain, use `caribic chain start --chain cosmos --network
+v8-classic`. This local fixture shares the DevKit clock through a separate image.
+Its saved state is tied to that Cardano network, so after resetting Cardano also
+restart Cosmos with `--chain-flag stateful=false` to reset its state. Other Cosmos
+profiles still require the legacy Cardano runtime. `caribic demo token-swap --chain
+cosmos --network v8-classic` creates the route and runs the maintained transfer demo.
 
 Caribic writes host addresses to `.caribic/devkit/endpoints.env` and container
 addresses to `.caribic/devkit/container-endpoints.env`. Deployment, Gateway, Hermes
@@ -72,8 +81,9 @@ fractions instead of assuming current wallet balances equal the epoch's stake.
 Missing historical evidence fails rather than substituting the current epoch.
 
 `caribic devkit test` submits a payment through Ogmios and checks Kupo and Yaci
-history. It also runs the bridge's native block verifier against a block from each
-producer, checking signatures and leader eligibility with the actual epoch stake.
+history. It also runs the bridge's native block verifier against 25 consecutive
+blocks containing all five producers, checking signatures and leader eligibility
+with the actual epoch stake and registered VRF keys.
 Results and startup measurements are saved under `.caribic/devkit/`. This test does
 not cover IBC handshakes or ICS-20 transfer, acknowledgement, timeout and refund.
 Those workflows still require end-to-end verification before replacing `legacy`.

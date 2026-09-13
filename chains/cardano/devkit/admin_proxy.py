@@ -1,4 +1,4 @@
-"""Retry DevKit's transient empty UTxO reads without repeating transactions."""
+"""Retry DevKit's transient ledger reads without repeating transactions."""
 
 import json
 import re
@@ -25,7 +25,9 @@ def forward(method, path, headers, body, upstream="http://127.0.0.1:10000"):
     headers = {key: value for key, value in headers.items()
                if key.lower() not in HOP_HEADERS | {"host", "content-length"}}
     request = Request(upstream + path, data=body, headers=headers, method=method)
-    attempts = 5 if first_page_utxos(method, path) else 1
+    epoch_query = method == "GET" and re.fullmatch(
+        r"/local-cluster/api/epochs/(?:latest|(?:[0-9]+/)?parameters)", urlsplit(path).path)
+    attempts = 5 if first_page_utxos(method, path) or epoch_query else 1
     for attempt in range(attempts):
         try:
             # The native faucet waits for inclusion before returning its POST.
@@ -35,13 +37,14 @@ def forward(method, path, headers, body, upstream="http://127.0.0.1:10000"):
             response = error
         with response:
             status, response_headers, content = response.status, list(response.headers.items()), response.read()
-        if status != 200 or attempt + 1 == attempts:
+        retry_error = epoch_query and status in (500, 502, 503, 504)
+        if status != 200 and not retry_error or attempt + 1 == attempts:
             break
         try:
             empty = json.loads(content) == []
         except (ValueError, UnicodeDecodeError):
             empty = False
-        if not empty:
+        if not empty and not retry_error:
             break
         time.sleep(0.2)
     return status, response_headers, content

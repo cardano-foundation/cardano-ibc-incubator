@@ -32,9 +32,7 @@ def submit_payment(runtime):
                     "--signing-key-file", path + "/payment.skey")
         address = runtime.cli("address", "build", "--payment-verification-key-file",
                               path + "/payment.vkey", "--testnet-magic", "42")
-        topup = http(runtime.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/addresses/topup",
-                     {"address": address, "adaAmount": 10}, timeout=60)
-        require(topup.get("status") is True, "DevKit faucet failed")
+        runtime.fund(address, 10_000_000)
         utxos = wait_for("faucet transaction inclusion", lambda:
                         json.loads(runtime.cli("query", "utxo", "--address", address,
                                                "--testnet-magic", "42", "--output-json")))
@@ -59,6 +57,15 @@ def submit_payment(runtime):
                 "ogmios_submission": True, "kupo_inclusion": True, "yaci_transaction_cbor": True}
     finally:
         runtime.compose("exec", "-T", "devkit", "rm", "-rf", path)
+
+
+def raw_block_cbor(indexed_hex):
+    # Match Gateway's normalizeYaciBlockCbor: Yaci can retain the
+    # [blockType, rawBlockCbor] envelope around the signed block.
+    encoded = bytes.fromhex(indexed_hex)
+    if len(encoded) >= 3 and encoded[0] == 0x82 and encoded[1] <= 0x17:
+        return encoded[2:].hex()
+    return indexed_hex
 
 
 def verify_producer_blocks(runtime, shelley):
@@ -103,7 +110,7 @@ def verify_producer_blocks(runtime, shelley):
         "slots_per_kes_period": shelley["slotsPerKESPeriod"],
         "max_kes_evolutions": shelley["maxKESEvolutions"],
         "active_slot_numerator": 1, "active_slot_denominator": 4,
-        "blocks": [{"block_cbor": row["cbor"], "epoch_nonce": nonce,
+        "blocks": [{"block_cbor": raw_block_cbor(row["cbor"]), "epoch_nonce": nonce,
                     "stake_numerator": stakes[row["slot_leader"]], "stake_denominator": total} for row in rows],
     }
     result = subprocess.run([str(binary)], input=json.dumps(request), text=True, capture_output=True)

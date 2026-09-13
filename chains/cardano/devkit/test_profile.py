@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
@@ -8,6 +9,167 @@ from profile import DEFAULTS, Runtime, block_production_ready, normalized_genesi
 
 
 class ProfileTests(unittest.TestCase):
+    def test_late_unfinished_registration_is_refused_before_starting_the_peer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            (runtime.state / "clock-offset").write_text("-100s")
+            cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+            with patch("profile.time.time", return_value=cutoff + 100), \
+                    patch.object(runtime, "compose", return_value="") as docker:
+                with self.assertRaisesRegex(RuntimeError, "registration cutoff.*reset"):
+                    runtime.start_producers()
+            self.assertEqual([call.args[0] for call in docker.call_args_list], ["ps"])
+
+    def test_completed_registration_can_restart_after_cutoff_but_partial_registration_cannot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            (runtime.state / "clock-offset").write_text("+0s")
+            cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+            with patch("profile.time.time", return_value=cutoff + 60), \
+                    patch.object(runtime, "compose", return_value="stopped-peer"), \
+                    patch("profile.subprocess.run") as copy:
+                copy.return_value.returncode = 0
+                runtime.assert_pool_registration_window("producer-2")
+                copy.return_value.returncode = 1
+                with self.assertRaisesRegex(RuntimeError, "registration is unfinished"):
+                    runtime.assert_pool_registration_window("producer-3")
+            self.assertEqual(copy.call_args.args[0], ["docker", "cp", "stopped-peer:/clusters/registered", "-"])
+
+    def test_backdated_registration_before_cutoff_does_not_require_a_completed_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            (runtime.state / "clock-offset").write_text("-100s")
+            cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+            with patch("profile.time.time", return_value=cutoff), patch.object(runtime, "compose") as docker:
+                runtime.assert_pool_registration_window("producer-2")
+            docker.assert_not_called()
+
+    def test_failed_native_registration_restarts_only_its_peer_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+
+            def compose(*args, **kwargs):
+                if args[0] == "ps":
+                    return "producer-container"
+                if args[0] == "logs":
+                    return "com.bloxbean.cardano.client.api.exception.ApiRuntimeException: Error fetching protocol params"
+
+            def probe_wait(_label, probe, timeout):
+                self.assertFalse(probe())
+                self.assertFalse(probe())
+                self.assertTrue(probe())
+
+            with patch.object(runtime, "compose", side_effect=compose) as docker, \
+                    patch.object(runtime, "pool_registered", side_effect=[False, False, True]), \
+                    patch("profile.subprocess.run") as inspect, patch("profile.wait_for", side_effect=probe_wait):
+                inspect.return_value.stdout = "2026-09-13T17:00:00Z\n"
+                runtime.wait_for_pool_registration("producer-4", "pool-id", "stake-address")
+            self.assertEqual([call.args for call in docker.call_args_list if call.args[0] == "restart"],
+                             [("restart", "producer-4")])
+            self.assertIn(("logs", "--no-color", "--since", "2026-09-13T17:00:00Z", "producer-4"),
+                          [call.args for call in docker.call_args_list])
+
+    def test_slow_native_registration_and_completed_registration_are_not_restarted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+
+            def probe_wait(_label, probe, timeout):
+                self.assertFalse(probe())
+                self.assertTrue(probe())
+
+            with patch.object(runtime, "compose", return_value="Waiting for transaction inclusion") as docker, \
+                    patch.object(runtime, "pool_registered", side_effect=[False, True]), \
+                    patch("profile.subprocess.run") as inspect, patch("profile.wait_for", side_effect=probe_wait):
+                inspect.return_value.stdout = "2026-09-13T17:00:00Z\n"
+                runtime.wait_for_pool_registration("producer-4", "pool-id", "stake-address")
+            self.assertFalse(any(call.args[0] == "restart" for call in docker.call_args_list))
+
+    def test_native_topup_server_error_restarts_only_the_failed_peer_once(self):
+        for error in ("InternalServerError", "BadGateway"):
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as folder:
+                runtime = Runtime(Path(folder))
+                def compose(*args, **kwargs):
+                    if args[0] == "ps":
+                        return "producer-container"
+                    if args[0] == "logs":
+                        return f"org.springframework.web.client.HttpServerErrorException${error}: topup failed"
+                def probe_wait(_label, probe, timeout):
+                    self.assertFalse(probe())
+                    self.assertFalse(probe())
+                    self.assertTrue(probe())
+                with patch.object(runtime, "compose", side_effect=compose) as docker, \
+                        patch.object(runtime, "pool_registered", side_effect=[False, False, True]), \
+                        patch("profile.subprocess.run") as inspect, patch("profile.wait_for", side_effect=probe_wait):
+                    inspect.return_value.stdout = "2026-09-13T17:00:00Z\n"
+                    runtime.wait_for_pool_registration("producer-3", "pool-id", "stake-address")
+                self.assertEqual([call.args for call in docker.call_args_list if call.args[0] == "restart"],
+                                 [("restart", "producer-3")])
+
+    def test_funding_splits_confirmed_native_wallet_inputs_and_returns_its_change(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            recipient_queries = 0
+
+            def cli(*args):
+                nonlocal recipient_queries
+                if args[:2] == ("query", "utxo"):
+                    if args[3] == "utxo1-address":
+                        return json.dumps({"tokens#0": {"value": {"lovelace": 500_000_000, "policy": {"asset": 1}}},
+                                           "small#0": {"value": {"lovelace": 1_000_000}}})
+                    if args[3] == "utxo2-address":
+                        return json.dumps({"native#0": {"value": {"lovelace": 15_000_000}},
+                                           "native#1": {"value": {"lovelace": 20_000_000}},
+                                           "unused#0": {"value": {"lovelace": 1_000_000}}})
+                    recipient_queries += 1
+                    return json.dumps({("existing#0" if recipient_queries == 1 else "funding-tx#0"):
+                                       {"value": {"lovelace": 10_000_000}}})
+                if args[:2] == ("address", "build"):
+                    return Path(args[3]).stem + "-address"
+                if args[:3] == ("conway", "transaction", "txid"):
+                    return "funding-tx"
+                return ""
+
+            with patch.object(runtime, "compose"), patch.object(runtime, "cli", side_effect=cli) as query, \
+                    patch("profile.http") as faucet:
+                runtime.fund("recipient-address", 40_000_000, outputs=4)
+            calls = [call.args for call in query.call_args_list]
+            build = next(call for call in calls if call[:3] == ("conway", "transaction", "build"))
+            self.assertEqual([build[i + 1] for i, arg in enumerate(build) if arg == "--tx-in"],
+                             ["native#1", "native#0"])
+            self.assertEqual([build[i + 1] for i, arg in enumerate(build) if arg == "--tx-out"],
+                             ["recipient-address+10000000"] * 3)
+            self.assertEqual(build[build.index("--change-address") + 1], "utxo2-address")
+            sign = next(call for call in calls if call[:3] == ("conway", "transaction", "sign"))
+            self.assertEqual(sign[sign.index("--signing-key-file") + 1],
+                             "/clusters/nodes/default/utxo-keys/utxo2.skey")
+            self.assertFalse(any(call[:2] == ("address", "key-gen") for call in calls))
+            self.assertEqual(sum(call[:3] == ("conway", "transaction", "submit") for call in calls), 1)
+            faucet.assert_not_called()
+            self.assertEqual(recipient_queries, 2)
+
+    def test_funding_does_not_submit_without_enough_confirmed_native_funds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            def cli(*args):
+                return "{}" if args[:2] == ("query", "utxo") else "native-address"
+            with patch.object(runtime, "cli", side_effect=cli) as query, \
+                    patch.object(runtime, "compose") as docker, patch("profile.http") as faucet:
+                with self.assertRaisesRegex(RuntimeError, "insufficient confirmed ADA"):
+                    runtime.fund("recipient-address", 10_000_000)
+            self.assertFalse(any(call.args[:2] == ("conway", "transaction") for call in query.call_args_list))
+            docker.assert_not_called()
+            faucet.assert_not_called()
+
+    def test_funding_preserves_an_already_funded_recipient(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            existing = {f"existing#{i}": {"value": {"lovelace": 10_000_000}} for i in range(4)}
+            with patch.object(runtime, "cli", return_value=json.dumps(existing)) as query, \
+                    patch.object(runtime, "compose") as docker:
+                runtime.fund("recipient-address", 40_000_000, outputs=4)
+            query.assert_called_once()
+            docker.assert_not_called()
+
     def test_readiness_requires_a_connected_node_with_a_real_block(self):
         for health in ({"lastKnownTip": "origin"},
                        {"connectionStatus": "disconnected", "lastKnownTip": {"height": 7}}):

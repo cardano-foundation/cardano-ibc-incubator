@@ -76,7 +76,9 @@ pub fn run_stop(
             logger::log("\nRelayer stopped successfully");
         }
         Some(StopTarget::Mithril) => {
-            if core_cardano_network.uses_local_mithril() {
+            if crate::local_runtime::is_devkit(project_root_path) {
+                logger::log("DevKit does not start Mithril services");
+            } else if core_cardano_network.uses_local_mithril() {
                 stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
                 logger::log(
                     "\nMithril stopped successfully (mithril-aggregator, mithril-signer-1, mithril-signer-2)",
@@ -131,7 +133,7 @@ fn network_down(
 ) -> Result<(), String> {
     stop::stop_cardano_network(project_root_path)?;
 
-    if active_network.uses_local_mithril() {
+    if active_network.uses_local_mithril() && !crate::local_runtime::is_devkit(project_root_path) {
         stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
     }
     Ok(())

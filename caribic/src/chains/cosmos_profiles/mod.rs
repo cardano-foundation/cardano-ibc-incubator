@@ -7,6 +7,7 @@ use crate::chains::{
     ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
 
+mod clock;
 mod config;
 mod hermes;
 mod lifecycle;
@@ -332,7 +333,12 @@ mod tests {
                 .get(config.service)
                 .expect("profile service present in compose file");
             assert_eq!(compose_service.profiles, vec![config.name]);
-            assert_eq!(compose_service.image, manifest_profile.image);
+            let expected_image = if config.name == "v8-classic" {
+                format!("${{COSMOS_V8_CLASSIC_IMAGE:-{}}}", manifest_profile.image)
+            } else {
+                manifest_profile.image.clone()
+            };
+            assert_eq!(compose_service.image, expected_image);
             assert_eq!(compose_service.build.context, "../..");
             assert_eq!(compose_service.build.dockerfile, "chains/cosmos/Dockerfile");
             assert_eq!(

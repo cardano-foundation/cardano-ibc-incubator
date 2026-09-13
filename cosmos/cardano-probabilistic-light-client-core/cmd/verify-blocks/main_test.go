@@ -35,6 +35,9 @@ func TestRunAuthenticatesEveryBlock(t *testing.T) {
 		valid  bool
 	}{
 		{name: "real block", valid: true},
+		{name: "unstripped transport envelope", mutate: func(req *request) {
+			req.Blocks[0].BlockCBOR = "8206" + req.Blocks[0].BlockCBOR
+		}},
 		{name: "wrong nonce", mutate: func(req *request) {
 			req.Blocks[0].EpochNonce = strings.Repeat("00", 32)
 		}},

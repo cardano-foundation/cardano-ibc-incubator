@@ -77,6 +77,26 @@ class AdminProxyTests(unittest.TestCase):
             self.assertEqual(response.read(), b"[]")
         self.assertEqual(self.calls[("GET", UTXOS)], 5)
 
+    def test_transient_epoch_query_errors_retry_before_returning_native_parameters(self):
+        for path in ("/local-cluster/api/epochs/latest", "/local-cluster/api/epochs/4/parameters",
+                     "/local-cluster/api/epochs/parameters"):
+            self.responses[("GET", path)] = [(500, "application/json", b'{"error":"Local query race"}'),
+                                              (200, "application/json", b'{"pool_deposit":"500000000"}')]
+            with self.request(path) as response:
+                self.assertEqual(response.read(), b'{"pool_deposit":"500000000"}')
+            self.assertEqual(self.calls[("GET", path)], 2)
+
+    def test_persistent_epoch_error_is_bounded_and_posts_are_not_repeated(self):
+        path = "/local-cluster/api/epochs/4/parameters"
+        for method, body, expected_calls in (("GET", None, 5), ("POST", b"{}", 1)):
+            self.responses[(method, path)] = [(500, "application/json", b'{"error":"unavailable"}')]
+            with self.assertRaises(HTTPError) as failure:
+                self.request(path, body)
+            with failure.exception as response:
+                self.assertEqual(response.code, 500)
+                self.assertEqual(response.read(), b'{"error":"unavailable"}')
+            self.assertEqual(self.calls[(method, path)], expected_calls)
+
     def test_later_pages_other_paths_and_posts_are_never_retried(self):
         for path in (UTXOS + "?page=2", UTXOS + "?page=0", UTXOS + "?page=1&page=2", "/other/utxos"):
             self.responses[("GET", path)] = [(200, "application/json", b"[]")]

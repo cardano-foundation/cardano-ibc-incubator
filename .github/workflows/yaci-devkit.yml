@@ -6,6 +6,7 @@ on:
       - .github/workflows/yaci-devkit.yml
       - chains/cardano/devkit/**
       - chains/cardano/yaci/config/**
+      - chains/cosmos/**
       - caribic/**
       - cardano/gateway/src/query/services/**
       - cardano/gateway/src/config/**
@@ -42,6 +43,7 @@ jobs:
         run: |
           cargo build --locked --manifest-path caribic/Cargo.toml
           python3 -m unittest discover -s chains/cardano/devkit -p 'test_*.py'
+          python3 -m unittest discover -s chains/cosmos/scripts -p 'test_local_clock.py'
           go -C cosmos/cardano-probabilistic-light-client-core test ./cmd/verify-blocks
       - name: Start five producers and verify their native block evidence
         run: |
@@ -88,6 +90,15 @@ jobs:
       - name: Inspect and stop this profile
         if: always()
         run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'chains/cardano/devkit')
+          from profile import Runtime
+          output = Path('devkit-results')
+          output.mkdir(exist_ok=True)
+          (output / 'compose.log').write_text(Runtime().compose('logs', '--no-color', '--tail', '200', capture=True))
+          PY
           python3 chains/cardano/devkit/profile.py status
           python3 chains/cardano/devkit/profile.py stop
       - uses: actions/upload-artifact@v4
