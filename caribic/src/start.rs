@@ -4461,6 +4461,10 @@ fn summarize_text(body: &str) -> String {
 }
 
 fn check_gateway_http_readiness_once() -> (bool, String) {
+    check_gateway_http_readiness_at("http://127.0.0.1:8000/health/ready")
+}
+
+fn check_gateway_http_readiness_at(url: &str) -> (bool, String) {
     let output = Command::new("curl")
         .args([
             "-sS",
@@ -4472,7 +4476,7 @@ fn check_gateway_http_readiness_once() -> (bool, String) {
             "30",
             "-w",
             "\n%{http_code}",
-            "http://127.0.0.1:8000/health/ready",
+            url,
         ])
         .output();
 

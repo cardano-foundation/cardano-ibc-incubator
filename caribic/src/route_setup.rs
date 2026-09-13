@@ -583,6 +583,8 @@ fn query_transfer_channel_end_status(
         }
     };
 
+    ensure_channel_query_proof_ready(&output.stdout, &output.stderr)?;
+
     if !output.status.success() {
         logger::verbose(&format!(
             "Hermes query channel end failed for chain={chain_id}, channel={channel_id}: {}",
@@ -624,6 +626,26 @@ fn query_transfer_channel_end_status(
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
     }))
+}
+
+fn ensure_channel_query_proof_ready(stdout: &[u8], stderr: &[u8]) -> Result<(), String> {
+    for output in [stdout, stderr] {
+        let message = String::from_utf8_lossy(output);
+        if [
+            "HEIGHT_NOT_ACCEPTED",
+            "waiting_for_stability",
+            "Current HostState root is not yet stability-accepted",
+        ]
+        .iter()
+        .any(|reason| message.contains(reason))
+        {
+            return Err(format!(
+                "Channel query is waiting for Gateway proof readiness: {}",
+                message.trim()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn extract_transfer_channel_id_for_ports(
@@ -1194,6 +1216,27 @@ fn create_direct_transfer_channel_on_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unaccepted_channel_proofs_are_not_treated_as_absent_routes() {
+        for error in [
+            r#"{"status":"error","result":"HEIGHT_NOT_ACCEPTED: depth 5 < 24"}"#,
+            "Gateway waiting_for_stability",
+            "Current HostState root is not yet stability-accepted for proof generation",
+        ] {
+            for (stdout, stderr) in [(error.as_bytes(), &b""[..]), (&b""[..], error.as_bytes())] {
+                assert!(ensure_channel_query_proof_ready(stdout, stderr)
+                    .unwrap_err()
+                    .contains(error));
+            }
+        }
+        assert!(ensure_channel_query_proof_ready(
+            br#"{"status":"success","result":{"state":"OPEN"}}"#,
+            b""
+        )
+        .is_ok());
+        assert!(ensure_channel_query_proof_ready(b"", b"channel not found").is_ok());
+    }
 
     #[test]
     fn cosmos_routes_reject_old_clock_bindings_before_queries_or_reuse() {

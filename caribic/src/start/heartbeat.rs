@@ -11,7 +11,7 @@ static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
 use crate::{
     chains::hermes_support,
-    process::{hermes::HermesCli, system::SystemChecks},
+    process::{docker::DockerCli, hermes::HermesCli, system::SystemChecks},
 };
 
 pub(crate) fn with_devkit_heartbeat<T>(
@@ -20,6 +20,11 @@ pub(crate) fn with_devkit_heartbeat<T>(
 ) -> Result<T, String> {
     if !crate::local_runtime::is_devkit(root) {
         return operation();
+    }
+    let gateway_url = gateway_readiness_url(root)?;
+    let health = crate::config::get_config().health;
+    if health.gateway_max_retries == 0 || health.gateway_retry_interval_ms == 0 {
+        return Err("Gateway readiness retry count and interval must be positive".into());
     }
     let binary = super::hermes::require_relayer_hermes_binary().map_err(|e| e.to_string())?;
     let config = hermes_support::hermes_config_path().ok_or("Hermes configuration is missing")?;
@@ -35,7 +40,16 @@ pub(crate) fn with_devkit_heartbeat<T>(
     let result = (|| {
         heartbeat = Some(HeartbeatProcess::spawn(&binary, &config)?);
         heartbeat.as_mut().unwrap().wait_ready()?;
-        operation()
+        heartbeat.as_mut().unwrap().run_when_proof_ready(
+            health.gateway_max_retries,
+            Duration::from_millis(
+                health
+                    .gateway_retry_interval_ms
+                    .max(super::GATEWAY_HTTP_READINESS_RETRY_INTERVAL_MILLIS),
+            ),
+            || super::check_gateway_http_readiness_at(&gateway_url),
+            operation,
+        )
     })();
     let cleanup = heartbeat.as_mut().map_or(Ok(()), HeartbeatProcess::stop);
     drop(heartbeat);
@@ -45,6 +59,94 @@ pub(crate) fn with_devkit_heartbeat<T>(
         }
         Ok(())
     })
+}
+
+fn gateway_readiness_url(root: &Path) -> Result<String, String> {
+    if !crate::stop::gateway_is_running(root) {
+        return Err("Gateway is not running in this checkout".into());
+    }
+    let output =
+        DockerCli::new(&root.join("cardano/gateway")).compose_output(&["port", "app", "8000"])?;
+    published_gateway_url(String::from_utf8_lossy(&output.stdout).trim())
+}
+
+fn published_gateway_url(address: &str) -> Result<String, String> {
+    let (host, port) = address
+        .rsplit_once(':')
+        .ok_or("Gateway has no published HTTP port")?;
+    let port = port
+        .parse::<u16>()
+        .ok()
+        .filter(|port| *port > 0)
+        .ok_or("Gateway has an invalid published HTTP port")?;
+    let host = host.trim_matches(['[', ']']);
+    let host = host
+        .parse::<std::net::IpAddr>()
+        .map_err(|_| "Gateway has an invalid published HTTP address")?;
+    let host = if host.is_unspecified() {
+        if host.is_ipv4() {
+            "127.0.0.1".into()
+        } else {
+            "[::1]".into()
+        }
+    } else if host.is_ipv6() {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    Ok(format!("http://{host}:{port}/health/ready"))
+}
+
+fn completed_heartbeat_check(log: &str) -> bool {
+    log.lines().any(|line| {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            return false;
+        };
+        let span = &event["span"];
+        if span["name"] != "worker.cardano.host_state_heartbeat"
+            || span["chain"] != "cardano-devnet"
+        {
+            return false;
+        }
+        let fields = &event["fields"];
+        let Some(epoch) = fields["current_epoch"].as_u64() else {
+            return false;
+        };
+        match fields["message"].as_str() {
+            Some("submitted Cardano HostState epoch heartbeat") => true,
+            Some("Cardano HostState heartbeat is not required") => {
+                fields["host_state_epoch"].as_u64() == Some(epoch)
+            }
+            _ => false,
+        }
+    })
+}
+
+fn heartbeat_log_filter(source: &str, inherited: Option<&str>) -> String {
+    let mut section = "";
+    let level = source
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            if line.starts_with('[') {
+                section = line;
+            }
+            let (key, value) = line.split_once('=')?;
+            (section == "[global]" && key.trim() == "log_level").then(|| {
+                value
+                    .split('#')
+                    .next()
+                    .unwrap_or(value)
+                    .trim()
+                    .trim_matches(['\'', '"'])
+            })
+        })
+        .unwrap_or("info");
+    let default = format!("ibc_relayer={level},ibc_relayer_cli={level}");
+    format!(
+        "{},ibc_relayer::supervisor::spawn=info,ibc_relayer::worker::heartbeat=debug",
+        inherited.unwrap_or(&default)
+    )
 }
 
 fn finish_operation<T>(
@@ -152,6 +254,12 @@ impl HeartbeatProcess {
         owned.child = Some(
             Command::new(binary)
                 .args(["--config", config_path, "--json", "start", "--full-scan"])
+                // Preserve configured logging and make the first successful no-op
+                // heartbeat check visible without enabling unrelated DEBUG output.
+                .env(
+                    "RUST_LOG",
+                    heartbeat_log_filter(&original, std::env::var("RUST_LOG").ok().as_deref()),
+                )
                 .stdin(Stdio::null())
                 .stdout(stdout)
                 .stderr(stderr)
@@ -159,6 +267,65 @@ impl HeartbeatProcess {
                 .map_err(|e| format!("Failed to start DevKit heartbeat: {e}"))?,
         );
         Ok(owned)
+    }
+
+    fn run_when_proof_ready<T>(
+        &mut self,
+        attempts: u32,
+        interval: Duration,
+        mut probe: impl FnMut() -> (bool, String),
+        operation: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut last_status =
+            "Waiting for the first completed HostState heartbeat check".to_string();
+        for attempt in 0..attempts {
+            let child = self.child.as_mut().ok_or("Heartbeat process is missing")?;
+            if child
+                .try_wait()
+                .map_err(|error| error.to_string())?
+                .is_some()
+            {
+                return Err(format!(
+                    "DevKit heartbeat exited before proof readiness:\n{}",
+                    self.log_tail()
+                ));
+            }
+            let log = fs::read_to_string(self.directory.join("hermes.log")).unwrap_or_default();
+            // A ready old root can precede the worker's initial submission. Its
+            // completed check must come first, then the Gateway accepts the root.
+            if completed_heartbeat_check(&log) {
+                let (ready, status) = probe();
+                last_status = status;
+                if ready
+                    && child
+                        .try_wait()
+                        .map_err(|error| error.to_string())?
+                        .is_none()
+                {
+                    return operation();
+                }
+            }
+            if attempt + 1 < attempts {
+                thread::sleep(interval);
+            }
+        }
+        Err(format!(
+            "DevKit Gateway did not become proof-ready: {last_status}\n{}",
+            self.log_tail()
+        ))
+    }
+
+    fn log_tail(&self) -> String {
+        fs::read_to_string(self.directory.join("hermes.log"))
+            .unwrap_or_default()
+            .lines()
+            .rev()
+            .take(8)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn wait_ready(&mut self) -> Result<(), String> {
@@ -226,9 +393,18 @@ impl Drop for HeartbeatProcess {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::{cell::Cell, os::unix::fs::PermissionsExt};
+    use std::{cell::Cell, io::Write, os::unix::fs::PermissionsExt};
 
     const TEMPLATE: &str = include_str!("../../config/hermes-config.example.toml");
+    const CHECK_COMPLETE: &str = r#"{"fields":{"message":"Cardano HostState heartbeat is not required","current_epoch":4,"host_state_epoch":4},"span":{"chain":"cardano-devnet","name":"worker.cardano.host_state_heartbeat"}}"#;
+
+    fn append_completed_check(path: &Path) {
+        writeln!(
+            OpenOptions::new().append(true).open(path).unwrap(),
+            "{CHECK_COMPLETE}"
+        )
+        .unwrap();
+    }
 
     struct Fixture(PathBuf);
 
@@ -302,6 +478,114 @@ while True:
                 .is_err()
         );
         assert!(heartbeat_config(&TEMPLATE.replace("clear_on_start = true", "")).is_err());
+    }
+
+    #[test]
+    fn proof_gate_waits_for_completed_check_then_gateway_acceptance() {
+        let fixture = Fixture::new(false);
+        let mut process = fixture.spawn();
+        process.wait_ready().unwrap();
+        let pid = process.child.as_ref().unwrap().id();
+        let log = process.directory.join("hermes.log");
+        let completed = log.clone();
+        let writer = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            append_completed_check(&completed);
+        });
+        let probes = Cell::new(0);
+        let entered = Cell::new(false);
+        process
+            .run_when_proof_ready(
+                100,
+                Duration::from_millis(10),
+                || {
+                    assert!(completed_heartbeat_check(
+                        &fs::read_to_string(&log).unwrap()
+                    ));
+                    probes.set(probes.get() + 1);
+                    (probes.get() >= 3, "waiting_for_stability".into())
+                },
+                || {
+                    assert_eq!(probes.get(), 3);
+                    assert!(SystemChecks::process_command(pid).is_some());
+                    entered.set(true);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        writer.join().unwrap();
+        assert!(entered.get());
+        assert_eq!(process.child.as_ref().unwrap().id(), pid);
+    }
+
+    #[test]
+    fn failed_proof_gate_never_enters_operation_and_reaps_only_owned_child() {
+        let fixture = Fixture::new(false);
+        let mut other = fixture.spawn();
+        other.wait_ready().unwrap();
+        for completed in [false, true] {
+            let mut process = fixture.spawn();
+            process.wait_ready().unwrap();
+            if completed {
+                append_completed_check(&process.directory.join("hermes.log"));
+            }
+            let pid = process.child.as_ref().unwrap().id();
+            let directory = process.directory.clone();
+            let result = process.run_when_proof_ready(
+                2,
+                Duration::ZERO,
+                || {
+                    // Before a completed check an old accepted root must not be consulted.
+                    assert!(completed);
+                    (false, "HEIGHT_NOT_ACCEPTED: depth 5 < 24".into())
+                },
+                || -> Result<(), String> { panic!("operation entered before readiness") },
+            );
+            let error = result.unwrap_err();
+            assert!(error.contains(if completed {
+                "HEIGHT_NOT_ACCEPTED"
+            } else {
+                "first completed"
+            }));
+            drop(process);
+            assert!(!directory.exists());
+            assert!(SystemChecks::process_command(pid).is_none());
+            assert!(other.child.as_mut().unwrap().try_wait().unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn heartbeat_readiness_uses_owned_port_and_completed_cardano_checks() {
+        assert_eq!(
+            published_gateway_url("0.0.0.0:18000").unwrap(),
+            "http://127.0.0.1:18000/health/ready"
+        );
+        assert_eq!(
+            published_gateway_url("[::]:8000").unwrap(),
+            "http://[::1]:8000/health/ready"
+        );
+        assert!(published_gateway_url("8000").is_err());
+        assert!(completed_heartbeat_check(CHECK_COMPLETE));
+        for event in [
+            CHECK_COMPLETE.replace("cardano-devnet", "another-chain"),
+            CHECK_COMPLETE.replace("\"host_state_epoch\":4", "\"host_state_epoch\":3"),
+            "spawning Wallet worker: wallet::cardano-devnet".into(),
+        ] {
+            assert!(!completed_heartbeat_check(&event));
+        }
+        assert!(completed_heartbeat_check(&CHECK_COMPLETE.replace(
+            "Cardano HostState heartbeat is not required",
+            "submitted Cardano HostState epoch heartbeat"
+        )));
+        let inherited = heartbeat_log_filter(TEMPLATE, Some("ibc_relayer=trace,other=warn"));
+        assert!(inherited.starts_with("ibc_relayer=trace,other=warn,"));
+        assert!(inherited.ends_with("ibc_relayer::worker::heartbeat=debug"));
+        assert!(inherited.contains("ibc_relayer::supervisor::spawn=info"));
+        assert!(heartbeat_log_filter(
+            &TEMPLATE.replace("log_level = 'info'", "log_level = 'warn'"),
+            None
+        )
+        .starts_with("ibc_relayer=warn,ibc_relayer_cli=warn,"));
     }
 
     #[test]
@@ -396,9 +680,19 @@ while True:
         );
         assert!(binary.is_absolute() && config.is_absolute());
         let original = fs::read(&config).unwrap();
+        let gateway_url = std::env::var("CARIBIC_TEST_GATEWAY_READY_URL")
+            .expect("explicit isolated Gateway readiness URL required");
         let mut process = HeartbeatProcess::spawn(&binary, &config).unwrap();
         let directory = process.directory.clone();
         process.wait_ready().unwrap();
+        process
+            .run_when_proof_ready(
+                60,
+                Duration::from_secs(5),
+                || super::super::check_gateway_http_readiness_at(&gateway_url),
+                || Ok(()),
+            )
+            .unwrap();
         process.stop().unwrap();
         assert!(process
             .child
