@@ -40,9 +40,6 @@ caribic stop
 caribic start --local-runtime devkit
 caribic devkit test
 caribic devkit status
-caribic stop
-# Return to the existing local network setup.
-caribic start --local-runtime legacy
 ```
 
 The selected runtime persists for subsequent Caribic commands. Stop the stack
@@ -50,8 +47,9 @@ before changing it. `caribic devkit start` and `caribic devkit stop` operate on 
 DevKit network alone. `caribic devkit reset` deletes its chain and history and
 creates a fresh network, so stop the bridge stack before resetting it.
 Each checkout's DevKit network has its own Compose project and volumes. Copy
-[`chains/cardano/devkit/.env.example`](../chains/cardano/devkit/.env.example) to `.env`
-for port overrides. The selected ports persist until reset.
+[`chains/cardano/devkit/.env.example`](../chains/cardano/devkit/.env.example) to
+`chains/cardano/devkit/.env` from the repository root for port overrides. The
+selected ports persist until reset.
 
 Genesis parameters are fixed: magic `42`, protocol version `10`, one-second slots,
 600-slot epochs, active slot coefficient `0.25` and security parameter `48`.
@@ -63,27 +61,31 @@ to become active, then checks that all five producers appear in recent history.
 This takes at least three epochs, so it is slower than placing all five pools in
 genesis as the existing setup does.
 
-On a four-CPU arm64 Docker VM, three samples of the corrected five-producer DevKit
-stack used about 1.6 GiB of memory and 46–99% CPU in Docker's reporting, where 100%
+On a four-CPU arm64 Docker VM, three samples of the five-producer DevKit stack
+used about 1.9 GiB of memory and 33–127% CPU in Docker's reporting, where 100%
 is one CPU. Samples of the existing setup used about 1.7 GiB and 25–205% CPU. Other
 work was running during both measurements, so these are observations rather than
 a controlled performance comparison. The existing setup was observed ready within
 six minutes with cached images. We do not yet have a comparable clean DevKit
 startup measurement. CI saves startup measurements as artifacts.
 
-For a paired Cosmos chain, use `caribic chain start --chain cosmos --network
-v8-classic`. This local fixture shares the DevKit clock through a separate image.
+DevKit currently supports bridge pairing only with Cosmos `v8-classic`. Start it
+with `caribic chain start --chain cosmos --network v8-classic`. This local fixture
+shares the DevKit clock through a separate image.
 Its saved state is tied to that Cardano network, so after resetting Cardano also
 restart Cosmos with `--chain-flag stateful=false` to reset its state. Other Cosmos
-profiles still require the legacy Cardano runtime. `caribic demo token-swap --chain
-cosmos --network v8-classic` creates the route and runs the maintained transfer demo.
+profiles, Osmosis and Injective require the legacy Cardano runtime for bridge
+pairing. Run the transfer demo with explicit options:
+`caribic demo token-swap --chain cosmos --network v8-classic`.
 
 Caribic writes host addresses to `.caribic/devkit/endpoints.env` and container
 addresses to `.caribic/devkit/container-endpoints.env`. Deployment, Gateway, Hermes
 and dapp setup consume these endpoints. Host tools can source `endpoints.env` with
 `set -a` enabled to export its variables.
-Bridge startup also funds the configured accounts and splits the deployer's funds
-into 40 outputs so deployment transactions have enough separate inputs.
+Bridge startup also funds the configured accounts and splits the default fixture
+deployer's funds into 40 outputs so deployment transactions have enough separate
+inputs. If you set `DEPLOYER_SK`, fund that wallet or add its address to the
+configured accounts.
 
 A local HTTP service records the node's actual epoch nonce and active `Set` stake
 snapshot for each observed epoch. The Gateway uses those snapshots for exact stake
@@ -98,6 +100,13 @@ Results and startup measurements are saved under `.caribic/devkit/`. This test d
 not cover IBC handshakes or ICS-20 transfer, acknowledgement, timeout and refund.
 Run the paired Cosmos workflow above to exercise the bridge. `legacy` remains the
 default.
+
+To return to the existing local network setup:
+
+```bash
+caribic stop
+caribic start --local-runtime legacy
+```
 
 ### `caribic check`
 
