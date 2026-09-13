@@ -99,6 +99,28 @@ describe('transaction budget limits', () => {
     ]);
   });
 
+  it('requires combined first-seen receive-voucher minting to be split away from the normal receive tx', () => {
+    const result = checkTransactionBudgets(
+      [
+        scenario({
+          id: 'first_seen_voucher_receive_at_capacity',
+          name: 'Combined modeled first-seen voucher RecvPacket path at packet and history capacity',
+          unsignedBytes: 20_615,
+          signedBytesEstimate: 20_875,
+          exUnits: { mem: 83_090_764, steps: 27_585_360_530 },
+        }),
+      ],
+      limits,
+      {},
+    );
+
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        'Combined modeled first-seen voucher RecvPacket path at packet and history capacity: unsigned bytes 20615 exceeds safe budget 15634',
+      ]),
+    );
+  });
+
   it('rejects a transaction-size increase above its recorded ceiling', () => {
     const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_001 })], limits, {
       scenario: { signedBytesEstimate: 16_000 },
