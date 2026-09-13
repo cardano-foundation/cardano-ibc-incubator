@@ -1,14 +1,84 @@
 import json
+import shlex
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from profile import DEFAULTS, Runtime, block_production_ready, normalized_genesis, validate_settings, write_env
+from profile import DEFAULTS, PRODUCERS, Runtime, block_production_ready, normalized_genesis, validate_settings, write_env
 
 
 class ProfileTests(unittest.TestCase):
+    def test_saved_peers_resume_before_readiness_without_starting_unfinished_registrations(self):
+        original_run = subprocess.run
+        for retained in (PRODUCERS, ("producer-2", "producer-4"), ()):
+            with self.subTest(retained=retained), tempfile.TemporaryDirectory() as folder:
+                runtime = Runtime(Path(folder))
+                volumes = {}
+                for service in PRODUCERS:
+                    volume = Path(folder) / service
+                    volumes[f"{runtime.project}_{service}-data"] = volume
+                    for name in ("nodes/default/cluster-info.json", "pool-keys/default/opcert.cert"):
+                        path = volume / name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text("native state")
+                    if service in retained:
+                        (volume / "registered").touch()
+
+                def run(args, **kwargs):
+                    if args[:3] == ["docker", "volume", "ls"]:
+                        self.assertIn(f"label=com.docker.compose.project={runtime.project}", args)
+                        return subprocess.CompletedProcess(args, 0, "\n".join(volumes), "")
+                    self.assertEqual(args[:3], ["docker", "run", "--rm"])
+                    self.assertEqual(args[args.index("--network") + 1], "none")
+                    self.assertIn("--read-only", args)
+                    mount = args[args.index("--mount") + 1]
+                    self.assertTrue(mount.endswith(",dst=/retained,readonly"))
+                    volume_name = mount.split("src=", 1)[1].split(",", 1)[0]
+                    script = args[-1].replace("/retained", shlex.quote(str(volumes[volume_name])))
+                    return original_run(["sh", "-c", script], capture_output=True)
+
+                class ReadinessReached(Exception):
+                    pass
+
+                def readiness(label, _probe, **kwargs):
+                    self.assertEqual(label, "DevKit genesis")
+                    starts = [call.args for call in docker.call_args_list if call.args[0] == "up"]
+                    expected = [("up", "-d", "--build", "devkit")]
+                    if retained:
+                        expected.append(("up", "-d", "--build", *retained))
+                    self.assertEqual(starts, expected)
+                    raise ReadinessReached()
+
+                with patch("profile.subprocess.run", side_effect=run), \
+                        patch.object(runtime, "compose", return_value="sha256:owned-node-image") as docker, \
+                        patch("profile.wait_for", side_effect=readiness):
+                    with self.assertRaises(ReadinessReached):
+                        runtime.start()
+
+    def test_fresh_start_does_not_create_or_launch_peer_inspection_containers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            with patch("profile.subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run, \
+                    patch.object(runtime, "compose") as docker:
+                runtime.resume_provisioned_producers()
+            self.assertEqual(run.call_count, 1)
+            docker.assert_not_called()
+
+    def test_failed_retained_state_inspection_does_not_assume_a_fresh_peer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            volume = f"{runtime.project}_producer-2-data"
+            responses = [subprocess.CompletedProcess([], 0, volume + "\n", ""),
+                         subprocess.CompletedProcess([], 125, b"", b"daemon unavailable")]
+            with patch("profile.subprocess.run", side_effect=responses), \
+                    patch.object(runtime, "compose", return_value="owned-image") as docker:
+                with self.assertRaisesRegex(RuntimeError, "Cannot inspect retained producer-2.*daemon unavailable"):
+                    runtime.resume_provisioned_producers()
+            self.assertEqual([call.args for call in docker.call_args_list], [("images", "-q", "devkit")])
+
     def test_late_unfinished_registration_is_refused_before_starting_the_peer(self):
         with tempfile.TemporaryDirectory() as folder:
             runtime = Runtime(Path(folder))

@@ -288,6 +288,38 @@ class Runtime:
             self.fund(address, 300_000_000_000)
         wait_for("five active block producers", self.producers_ready, timeout=2100)
 
+    def resume_provisioned_producers(self):
+        # After delegation, main holds only one fifth of the stake. Resume saved
+        # peers before its native next-block wait, including after container removal.
+        volumes = set(subprocess.run(
+            ["docker", "volume", "ls", "--filter", f"label=com.docker.compose.project={self.project}",
+             "--format", "{{.Name}}"], text=True, capture_output=True, check=True).stdout.splitlines())
+        candidates = [(service, f"{self.project}_{service}-data") for service in PRODUCERS
+                      if f"{self.project}_{service}-data" in volumes]
+        if not candidates:
+            return
+        image = self.compose("images", "-q", "devkit", capture=True).splitlines()
+        if len(image) != 1:
+            raise RuntimeError("Cannot identify this DevKit instance's node image for retained peer inspection")
+        retained = []
+        for service, volume in candidates:
+            result = subprocess.run(
+                ["docker", "run", "--rm", "--network", "none", "--read-only",
+                 "--mount", f"type=volume,src={volume},dst=/retained,readonly",
+                 "--entrypoint", "sh", image[0], "-c",
+                 "test -f /retained/registered && "
+                 "test -s /retained/nodes/default/cluster-info.json && "
+                 "test -s /retained/pool-keys/default/opcert.cert"], capture_output=True)
+            if result.returncode == 0:
+                retained.append(service)
+            elif result.returncode != 1:
+                raise RuntimeError(f"Cannot inspect retained {service} state: "
+                                   + result.stderr.decode(errors="replace").strip())
+        if retained:
+            # Only completed registrations start together. Unfinished peers still
+            # join/register sequentially in start_producers, using the native faucet.
+            self.compose("up", "-d", "--build", *retained)
+
     def assert_pool_registration_window(self, service):
         offset = int((self.state / "clock-offset").read_text().strip().removesuffix("s"))
         cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
@@ -367,6 +399,7 @@ class Runtime:
             target = datetime(2025, 12, 31, tzinfo=timezone.utc).timestamp()
             clock_path.write_text(f"{int(target - time.time()):+d}s")
         self.compose("up", "-d", "--build", "devkit")
+        self.resume_provisioned_producers()
         admin = self.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/admin/devnet"
         wait_for("DevKit genesis", lambda: http(admin + "/genesis/shelley"))
         wait_for("Ogmios block production", lambda: block_production_ready(self.endpoint("DEVKIT_OGMIOS_PORT")))
