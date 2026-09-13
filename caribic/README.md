@@ -22,9 +22,11 @@ cargo install --path .
 
 This experimental option uses Yaci DevKit to provision the local Cardano network.
 DevKit creates the first producer and joins four additional producers through its
-native commands. It generates their keys, configures peers and registers their
-pools. Caribic funds them and waits until all five have active stake and produce
-blocks. The chain still uses the existing `local` identity and `cardano-devnet` ID.
+native commands. It generates their keys and genesis, configures joining peers
+and registers their pools. Caribic adds connections from the first producer back
+to those peers through Docker addresses, funds them and waits until all five have
+active stake and produce blocks. The chain still uses the existing `local` identity
+and `cardano-devnet` ID.
 
 In addition to the usual Caribic prerequisites, install Docker Compose, Python 3
 and Node 22 or newer. DevKit `0.10.6`, Ogmios `6.11.2` and Kupo `2.10.0` are pinned.
@@ -61,15 +63,13 @@ to become active, then checks that all five producers appear in recent history.
 This takes at least three epochs, so it is slower than placing all five pools in
 genesis as the existing setup does.
 
-In one comparison on a four-CPU arm64 Docker VM with cached images and other work
-running, both network profiles used about 1.7 GiB of memory. That DevKit run kept
-almost all four CPUs busy because the clock setting broke its native CLI's timed
-waits. The setting is now corrected. A separate single-producer control showed
-those threads sleeping while Cardano blocks advanced, but it does not establish
-the corrected five-producer resource usage. The existing profile was observed
-ready within six minutes. The interrupted DevKit debugging run does not provide
-a comparable startup measurement. CI saves its clean startup measurements as
-artifacts.
+On a four-CPU arm64 Docker VM, three samples of the corrected five-producer DevKit
+stack used about 1.6 GiB of memory and 46–99% CPU in Docker's reporting, where 100%
+is one CPU. Samples of the existing setup used about 1.7 GiB and 25–205% CPU. Other
+work was running during both measurements, so these are observations rather than
+a controlled performance comparison. The existing setup was observed ready within
+six minutes with cached images. We do not yet have a comparable clean DevKit
+startup measurement. CI saves startup measurements as artifacts.
 
 For a paired Cosmos chain, use `caribic chain start --chain cosmos --network
 v8-classic`. This local fixture shares the DevKit clock through a separate image.
