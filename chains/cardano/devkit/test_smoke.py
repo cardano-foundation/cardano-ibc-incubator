@@ -18,19 +18,31 @@ class LedgerRetentionTests(unittest.TestCase):
                 for number in range(124, 99, -1)]
         point = {"slot": 400, "id": f"{100:064x}"}
         runtime = Mock()
-        runtime.ogmios.return_value = {"acquired": "ledgerState", "point": point}
+        counters = {"pool1example": 0}
+        runtime.ogmios.return_value = {"acquisition": {"acquired": "ledgerState", "point": point}, "query": counters}
         self.assertEqual(verify_ledger_retention(runtime, rows, 24), {
-            "block_number": 100, "descendants": 24, "point": point,
+            "block_number": 100, "descendants": 24, "point": point, "operational_certificate_counters": counters,
         })
-        runtime.ogmios.assert_called_once_with("acquireLedgerState", {"point": point})
-        runtime.ogmios.return_value = {"acquired": "ledgerState", "point": {
+        runtime.ogmios.assert_called_once_with("acquireLedgerState", {"point": point},
+                                               follow_up="queryLedgerState/operationalCertificates")
+        runtime.ogmios.return_value = {"acquisition": {"acquired": "ledgerState", "point": {
             "slot": rows[0]["slot"], "id": rows[0]["hash"],
-        }}
+        }}, "query": counters}
         with self.assertRaisesRegex(RuntimeError, "exact block"):
             verify_ledger_retention(runtime, rows, 24)
         runtime.ogmios.side_effect = RuntimeError("Target point is too old")
         with self.assertRaisesRegex(RuntimeError, "too old"):
             verify_ledger_retention(runtime, rows, 24)
+
+    def test_requires_operational_certificate_counters_from_the_acquired_connection(self):
+        row = {"number": 1, "slot": 4, "hash": "11" * 32}
+        runtime = Mock()
+        for value in ({}, [], {"pool1example": -1}, {"pool1example": True}):
+            runtime.ogmios.return_value = {"acquisition": {
+                "acquired": "ledgerState", "point": {"slot": row["slot"], "id": row["hash"]},
+            }, "query": value}
+            with self.subTest(value=value), self.assertRaisesRegex(RuntimeError, "certificate counters"):
+                verify_ledger_retention(runtime, [row], 0)
 
 
 class BlockCborBoundaryTests(unittest.TestCase):

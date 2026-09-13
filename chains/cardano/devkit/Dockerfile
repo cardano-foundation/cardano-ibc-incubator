@@ -1,4 +1,5 @@
 FROM bloxbean/yaci-cli:0.10.6@sha256:054643c8a2b6610c40beee492505344e87761860ef60c3abadd02102fac06a03 AS devkit-tools
+FROM cardanosolutions/ogmios:v6.12.0@sha256:78d49ddc5a11aa68f68c689c781b578d5674f863089a66ccef4117053755bb6c AS ogmios-tools
 
 # Use the same dynamically linked node as the maintained local profile. The
 # bundled static node cannot use the local clock required by pool-age policy.
@@ -7,6 +8,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libfaketime python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=devkit-tools /app /app
+# Gateway's exact-block certificate counter query requires Ogmios 6.12.
+COPY --from=ogmios-tools /bin/ogmios /app/ogmios/bin/ogmios
+RUN /app/ogmios/bin/ogmios --version
 RUN ln -sf /profile/cardano_node.py /app/cardano-bin/cardano-node \
     && mv /app/cardano-bin/cardano-cli /app/cardano-bin/cardano-cli.bin
 COPY devkit/cardano-cli.sh /app/cardano-bin/cardano-cli

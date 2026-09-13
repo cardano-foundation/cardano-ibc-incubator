@@ -33,10 +33,17 @@ def verify_ledger_retention(runtime, rows, depth):
     require(len(rows) == depth + 1 and rows[0]["number"] - rows[-1]["number"] == depth,
             "Missing indexed descendants for the retained ledger query")
     point = {"slot": rows[-1]["slot"], "id": rows[-1]["hash"]}
-    acquired = runtime.ogmios("acquireLedgerState", {"point": point})
+    response = runtime.ogmios("acquireLedgerState", {"point": point},
+                              follow_up="queryLedgerState/operationalCertificates")
+    acquired = response["acquisition"]
     require(acquired.get("acquired") == "ledgerState" and acquired.get("point") == point,
             "Ogmios did not acquire the exact block at the required stability depth")
-    return {"block_number": rows[-1]["number"], "descendants": depth, "point": point}
+    counters = response["query"]
+    require(isinstance(counters, dict) and bool(counters) and
+            all(isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                for value in counters.values()), "Missing operational certificate counters at the acquired block")
+    return {"block_number": rows[-1]["number"], "descendants": depth, "point": point,
+            "operational_certificate_counters": counters}
 
 
 def submit_payment(runtime):

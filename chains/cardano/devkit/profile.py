@@ -148,9 +148,10 @@ class Runtime:
     def endpoint(self, port):
         return f'http://{self.settings["DEVKIT_HOST"]}:{self.settings[port]}'
 
-    def ogmios(self, method, params=None):
+    def ogmios(self, method, params=None, follow_up=None):
         response = subprocess.run(
-            ["node", str(PROFILE / "ogmios.mjs"), self.endpoint("DEVKIT_OGMIOS_PORT"), method],
+            ["node", str(PROFILE / "ogmios.mjs"), self.endpoint("DEVKIT_OGMIOS_PORT"), method,
+             *([follow_up] if follow_up else [])],
             input=json.dumps(params or {}), text=True, capture_output=True, timeout=20,
         )
         if response.returncode:

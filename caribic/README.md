@@ -29,7 +29,7 @@ active stake and produce blocks. The chain still uses the existing `local` ident
 and `cardano-devnet` ID.
 
 In addition to the usual Caribic prerequisites, install Docker Compose, Python 3
-and Node 22 or newer. DevKit `0.10.6`, Ogmios `6.11.2` and Kupo `2.10.0` are pinned.
+and Node 22 or newer. DevKit `0.10.6`, Ogmios `6.12.0` and Kupo `2.10.0` are pinned.
 The node uses the same `10.1.4-3` image as the existing local setup because DevKit's
 bundled static node cannot use the clock override required by pool-age policy.
 DevKit's bundled Store is disabled. The profile reuses the repository's Yaci Store
