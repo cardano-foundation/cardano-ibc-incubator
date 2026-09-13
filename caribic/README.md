@@ -18,6 +18,69 @@ cargo install --path .
 ```
 ## Commands overview
 
+### `caribic devkit <start|stop|reset|status|test>`
+
+This is an optional experimental Cardano profile for transaction and chain-data
+tests. Yaci DevKit provisions the node, Ogmios and Kupo. Yaci Store indexes the
+chain. This profile disables DevKit's bundled Store and reuses this repository's
+Yaci Store `2.0.2.1` configuration and PostgreSQL history schema.
+
+Install Docker Compose, Python 3 and Node 22 or newer, then build Caribic as above.
+The [DevKit `0.10.6` release](https://github.com/bloxbean/yaci-devkit/releases/tag/v0.10.6)
+is pinned by image digest for AMD64 and ARM64. It includes Cardano node `10.1.4`,
+Ogmios `6.11.2` and Kupo `2.10.0`.
+
+```bash
+caribic devkit start
+caribic devkit test
+caribic devkit status
+caribic devkit stop
+# Delete only this checkout's DevKit chain and history, then start a new chain.
+caribic devkit reset
+```
+
+Each checkout gets its own Compose project and volumes. The default local network
+can keep running alongside it. `stop` preserves the chain and history. `reset`
+deletes both. Configuration changes to the pinned profile require a reset.
+Optional port overrides are in
+[`chains/cardano/devkit/.env.example`](../chains/cardano/devkit/.env.example).
+Copy it to `.env` before the first start. The selected ports persist until reset.
+
+The profile uses network magic `42`, protocol version `10`, one-second slots,
+600-slot epochs, an active slot coefficient of `0.25` and security parameter `48`.
+It retains DevKit's fixed genesis accounts and single genesis pool. A reset keeps
+those settings and keys but chooses a new start time. The genesis snapshot and a
+fingerprint excluding start time are recorded under `.caribic/devkit/`.
+The first start takes about ten minutes plus image downloads because it waits for
+the Babbage-to-Conway transition at epoch 1. Time shifting is disabled to avoid
+DevKit's time-shift workaround for fast era transitions.
+
+Host tools can load `.caribic/devkit/endpoints.env` with `set -a`,
+`source .caribic/devkit/endpoints.env`, then `set +a`. It contains the Gateway's
+`OGMIOS_ENDPOINT`, `KUPO_ENDPOINT`, `YACI_STORE_ENDPOINT` and `HISTORY_DB_*`
+settings, the offchain deployer's `OGMIOS_URL` and `KUPO_URL`, and the raw Cardano
+relay address. These are host endpoints. They do not reconfigure an existing
+Gateway container, Hermes configuration or dapp. Do not reuse a deployment or
+client from the other local network, even though both use magic `42`.
+
+`test` signs a payment inside the disposable node container, submits it through
+Ogmios and checks its output in Kupo and its CBOR in Yaci. It also checks contiguous
+block history, raw block CBOR, Praos fields and the epoch nonce. Results, startup
+timings and container resource samples are saved as JSON. The DevKit CI workflow
+repeats these checks on a clean runner and checks restart and reset behavior.
+
+This profile does **not** yet support the normal bridge workflow. The Gateway
+requires five qualified pools and this profile has one producer. Collecting
+Praos fields does not establish that the probabilistic light client accepts them.
+Full light-client verification, automated Bridge Projection coverage, Hermes and dapp integration,
+IBC handshakes and ICS-20 transfer, acknowledgement, timeout and refund coverage
+are still required before this can replace the existing multi-producer profile.
+Use `caribic start` for those workflows.
+
+A manual check also deployed the bridge and indexed its state with the existing
+Bridge Projection. That check needed the deployer balance split into multiple
+outputs. It is not yet part of the automated profile test.
+
 ### `caribic check`
 
 Verifies Docker, Aiken, Deno, Go, and the native Hermes build toolchain on Linux. It does not currently probe Node.js or Rust/Cargo.

@@ -1,0 +1,89 @@
+name: Yaci DevKit experiment
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/yaci-devkit.yml
+      - chains/cardano/devkit/**
+      - chains/cardano/yaci/config/**
+      - caribic/**
+      - cardano/gateway/src/query/services/stability-scoring.ts
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devkit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  devkit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: caribic
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build Caribic and check profile isolation
+        run: |
+          cargo build --locked --manifest-path caribic/Cargo.toml
+          python3 -m unittest discover -s chains/cardano/devkit -p 'test_*.py'
+      - name: Start in a clean environment and submit a payment
+        run: |
+          caribic/target/debug/caribic devkit start
+          caribic/target/debug/caribic devkit test
+          mkdir -p devkit-results/first
+          cp .caribic/devkit/*.json devkit-results/first/
+      - name: Verify restart retains the chain and history
+        run: |
+          caribic/target/debug/caribic devkit stop
+          caribic/target/debug/caribic devkit start
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, 'chains/cardano/devkit')
+          from profile import Runtime
+          first = json.loads(Path('devkit-results/first/startup.json').read_text())
+          current = json.loads(Path('.caribic/devkit/startup.json').read_text())
+          assert current['system_start'] == first['system_start']
+          assert current['genesis_config_sha256'] == first['genesis_config_sha256']
+          tx = json.loads(Path('devkit-results/first/test.json').read_text())['payment']['transaction_id']
+          assert Runtime().sql(f"SELECT count(*) FROM transaction_cbor WHERE tx_hash = '{tx}'") == '1'
+          PY
+      - name: Verify reset recreates the same configuration and clears history
+        run: |
+          caribic/target/debug/caribic devkit reset
+          caribic/target/debug/caribic devkit test
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, 'chains/cardano/devkit')
+          from profile import Runtime
+          first = json.loads(Path('devkit-results/first/startup.json').read_text())
+          current = json.loads(Path('.caribic/devkit/startup.json').read_text())
+          assert current['system_start'] != first['system_start']
+          assert current['genesis_config_sha256'] == first['genesis_config_sha256']
+          tx = json.loads(Path('devkit-results/first/test.json').read_text())['payment']['transaction_id']
+          assert Runtime().sql(f"SELECT count(*) FROM transaction_cbor WHERE tx_hash = '{tx}'") == '0'
+          PY
+          mkdir -p devkit-results/reset
+          cp .caribic/devkit/*.json devkit-results/reset/
+      - name: Inspect and stop this profile
+        if: always()
+        run: |
+          python3 chains/cardano/devkit/profile.py status
+          python3 chains/cardano/devkit/profile.py stop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: devkit-results
+          path: |
+            devkit-results/
+            .caribic/devkit/*.json
+          include-hidden-files: true

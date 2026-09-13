@@ -138,6 +138,11 @@ enum SetupCommand {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Manage the experimental Yaci DevKit profile (not yet a full bridge network)
+    Devkit {
+        #[arg(value_enum)]
+        action: commands::devkit::DevkitAction,
+    },
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
@@ -396,6 +401,7 @@ async fn main() {
 
     // Dispatch each subcommand to its module-level handler.
     let command_result: Result<(), String> = match args.command {
+        Commands::Devkit { action } => commands::devkit::run_devkit(project_root_path, action),
         Commands::Check => commands::run_check().await,
         Commands::Install => commands::run_install(project_root_path),
         Commands::Chains => commands::run_chains(),

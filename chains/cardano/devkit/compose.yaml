@@ -1,0 +1,67 @@
+services:
+  devkit:
+    build:
+      context: ..
+      dockerfile: devkit/Dockerfile
+      target: devkit
+    init: true
+    entrypoint: [sh, /profile/entrypoint.sh]
+    environment:
+      yaci_store_enabled: "false"
+      ogmios_enabled: "true"
+      kupo_enabled: "true"
+    ports:
+      - "127.0.0.1:${DEVKIT_ADMIN_PORT:-10080}:10000"
+      - "127.0.0.1:${DEVKIT_NODE_PORT:-13001}:3001"
+      - "127.0.0.1:${DEVKIT_OGMIOS_PORT:-11337}:1337"
+      - "127.0.0.1:${DEVKIT_KUPO_PORT:-11442}:1442"
+    volumes:
+      - cluster-data:/clusters
+      - genesis-data:/export
+    stop_grace_period: 30s
+  history-db:
+    image: postgres:15@sha256:9b1d34adbce1dd07ee6e94b4a2cf698884b89bd44a6c9c12f5da8f3acbfe4957
+    environment:
+      POSTGRES_DB: yaci_store
+      POSTGRES_USER: yaci
+      POSTGRES_PASSWORD: devkit
+    ports:
+      - "127.0.0.1:${DEVKIT_HISTORY_DB_PORT:-15432}:5432"
+    volumes:
+      - history-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U yaci -d yaci_store]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  history:
+    build:
+      context: ..
+      dockerfile: devkit/Dockerfile
+      target: history
+    depends_on:
+      history-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${DEVKIT_HISTORY_PORT:-18081}:8080"
+    environment:
+      SPRING_CONFIG_ADDITIONAL_LOCATION: /app/config/application.properties
+      CARDANO_CHAIN_HOST: devkit
+      CARDANO_CHAIN_PORT: 3001
+      CARDANO_CHAIN_NETWORK_MAGIC: 42
+      HISTORY_DB_HOST: history-db
+      HISTORY_DB_PORT: 5432
+      HISTORY_DB_NAME: yaci_store
+      HISTORY_DB_USERNAME: yaci
+      HISTORY_DB_PASSWORD: devkit
+      JAVA_TOOL_OPTIONS: -Xmx512m
+    volumes:
+      - genesis-data:/app/genesis:ro
+      - history-cache:/app/data
+      - history-logs:/app/logs
+volumes:
+  cluster-data:
+  genesis-data:
+  history-data:
+  history-cache:
+  history-logs:
