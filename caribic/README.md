@@ -77,10 +77,11 @@ restart Cosmos with `--chain-flag stateful=false` to reset its state. Other Cosm
 profiles, Osmosis and Injective require the legacy Cardano runtime for bridge
 pairing. Run the transfer demo with explicit options:
 `caribic demo token-swap --chain cosmos --network v8-classic`.
+The local swap UI supports only Osmosis, so DevKit skips it and uses the Cosmos CLI demo.
 
 Caribic writes host addresses to `.caribic/devkit/endpoints.env` and container
-addresses to `.caribic/devkit/container-endpoints.env`. Deployment, Gateway, Hermes
-and dapp setup consume these endpoints. Host tools can source `endpoints.env` with
+addresses to `.caribic/devkit/container-endpoints.env`. Deployment, Gateway
+and Hermes setup consume these endpoints. Host tools can source `endpoints.env` with
 `set -a` enabled to export its variables.
 Bridge startup also funds the configured accounts and splits the default fixture
 deployer's funds into 40 outputs so deployment transactions have enough separate
