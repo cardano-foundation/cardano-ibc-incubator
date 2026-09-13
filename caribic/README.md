@@ -61,6 +61,14 @@ to become active, then checks that all five producers appear in recent history.
 This takes at least three epochs, so it is slower than placing all five pools in
 genesis as the existing setup does.
 
+In one comparison on a four-CPU arm64 Docker VM with cached images and other work
+running, both network profiles used about 1.7 GiB of memory. DevKit kept almost all
+four CPUs busy because its native CLI's
+timers interact badly with the current clock override. The existing profile was
+observed ready within six minutes. The interrupted DevKit debugging run does not
+provide a comparable startup measurement. CI saves its clean startup measurements
+as artifacts.
+
 For a paired Cosmos chain, use `caribic chain start --chain cosmos --network
 v8-classic`. This local fixture shares the DevKit clock through a separate image.
 Its saved state is tied to that Cardano network, so after resetting Cardano also
@@ -86,7 +94,8 @@ blocks containing all five producers, checking signatures and leader eligibility
 with the actual epoch stake and registered VRF keys.
 Results and startup measurements are saved under `.caribic/devkit/`. This test does
 not cover IBC handshakes or ICS-20 transfer, acknowledgement, timeout and refund.
-Those workflows still require end-to-end verification before replacing `legacy`.
+Run the paired Cosmos workflow above to exercise the bridge. `legacy` remains the
+default.
 
 ### `caribic check`
 
