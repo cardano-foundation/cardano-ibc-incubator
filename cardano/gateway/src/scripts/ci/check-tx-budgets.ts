@@ -625,6 +625,32 @@ async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
   };
 }
 
+function buildScenarioReport(
+  validators: Map<string, BlueprintValidator>,
+  aikenTests: Map<string, ExUnits>,
+  scenario: ScenarioInput,
+): ScenarioReport {
+  const unsignedBytes = estimateUnsignedBytes(validators, scenario);
+  const aikenTestMaxGroups = measureAikenTestMaxGroups(aikenTests, scenario.aikenTestMaxGroups ?? []);
+  return {
+    id: scenario.id,
+    name: scenario.name,
+    unsignedBytes,
+    signedBytesEstimate: unsignedBytes + DEFAULT_SIGNED_WITNESS_ESTIMATE_BYTES,
+    redeemers: scenario.redeemers,
+    datums: scenario.datums,
+    largestProofPayloadBytes: scenario.largestProofPayloadBytes,
+    inputCount: scenario.inputCount,
+    nonScriptReferenceInputCount: scenario.nonScriptReferenceInputCount ?? 0,
+    outputCount: scenario.outputCount,
+    mintPolicyCount: scenario.mintPolicyCount,
+    scriptReferenceCount: scenario.referenceScriptTitles.length,
+    inlineScriptCount: scenario.inlineScriptTitles?.length ?? 0,
+    aikenTestMaxGroups,
+    exUnits: sumScenarioExUnits(sumExUnits(aikenTests, scenario.aikenTests), aikenTestMaxGroups),
+  };
+}
+
 async function buildScenarios(
   validators: Map<string, BlueprintValidator>,
   aikenTests: Map<string, ExUnits>,
@@ -1172,25 +1198,7 @@ async function buildScenarios(
   const reports: ScenarioReport[] = [];
   for (const scenario of scenarios) {
     try {
-      const unsignedBytes = estimateUnsignedBytes(validators, scenario);
-      const aikenTestMaxGroups = measureAikenTestMaxGroups(aikenTests, scenario.aikenTestMaxGroups ?? []);
-      reports.push({
-        id: scenario.id,
-        name: scenario.name,
-        unsignedBytes,
-        signedBytesEstimate: unsignedBytes + DEFAULT_SIGNED_WITNESS_ESTIMATE_BYTES,
-        redeemers: scenario.redeemers,
-        datums: scenario.datums,
-        largestProofPayloadBytes: scenario.largestProofPayloadBytes,
-        inputCount: scenario.inputCount,
-        nonScriptReferenceInputCount: scenario.nonScriptReferenceInputCount ?? 0,
-        outputCount: scenario.outputCount,
-        mintPolicyCount: scenario.mintPolicyCount,
-        scriptReferenceCount: scenario.referenceScriptTitles.length,
-        inlineScriptCount: scenario.inlineScriptTitles?.length ?? 0,
-        aikenTestMaxGroups,
-        exUnits: sumScenarioExUnits(sumExUnits(aikenTests, scenario.aikenTests), aikenTestMaxGroups),
-      });
+      reports.push(buildScenarioReport(validators, aikenTests, scenario));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (allowMissingInputs && (message.startsWith('Missing validator') || message.startsWith('Missing Aiken'))) {
