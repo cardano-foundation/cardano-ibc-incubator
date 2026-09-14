@@ -24,9 +24,9 @@ type BudgetCheckResult = {
   knownViolations: string[];
 };
 
-export type BudgetMetric = keyof ExUnits | 'unsignedBytes' | 'signedBytesEstimate';
+type BudgetMetric = keyof ExUnits | 'unsignedBytes' | 'signedBytesEstimate';
 
-export type KnownBudgetOverruns = Readonly<Record<string, ReadonlyArray<BudgetMetric>>>;
+type KnownBudgetOverruns = Readonly<Record<string, ReadonlyArray<BudgetMetric>>>;
 
 export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<ReadonlyArray<ExUnits>>): ExUnits {
   return groups.reduce((sum, alternatives) => {
