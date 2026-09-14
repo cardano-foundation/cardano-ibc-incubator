@@ -117,6 +117,10 @@ export interface ObserveTxRequest {
    * Blake2b-256 hash of the Cardano transaction body, encoded as 64 hex digits.
    */
   tx_hash: string;
+  /**
+   * Allows observation of a confirmed transaction that intentionally has no
+   * HostState update, such as a first-seen voucher trace-registration prelude.
+   */
   allow_untracked: boolean;
 }
 /**
