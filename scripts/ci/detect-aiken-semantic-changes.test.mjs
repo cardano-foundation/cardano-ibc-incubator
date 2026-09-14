@@ -281,6 +281,16 @@ test('classifies modified comments as trivia and source additions as relevant', 
       true,
     );
 
+    const offchainDir = join(repo, 'cardano/offchain/src');
+    mkdirSync(offchainDir, { recursive: true });
+    writeFileSync(join(offchainDir, 'packet-budgets.test.ts'), '// complete transaction budgets\n');
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'test: change complete transaction budgets'], { cwd: repo });
+    assert.equal(
+      classifyAikenChanges(repo, txBudgetLimitsChanged, 'HEAD').aikenRelevantChanged,
+      true,
+    );
+
     const capacityFixtureDir = join(
       repo,
       'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity',
