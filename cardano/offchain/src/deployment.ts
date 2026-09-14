@@ -95,14 +95,6 @@ const getPaymentCredentialHash = (address: string): string => {
 const isAdaOnlyUtxo = (utxo: UTxO): boolean =>
   Object.keys(utxo.assets).every((unit) => unit === "lovelace");
 
-const sortUtxosByLovelaceDesc = (utxos: UTxO[]): UTxO[] =>
-  [...utxos].sort((a, b) => {
-    const aLovelace = utxoLovelace(a);
-    const bLovelace = utxoLovelace(b);
-    if (aLovelace === bLovelace) return 0;
-    return aLovelace < bLovelace ? 1 : -1;
-  });
-
 const sortUtxosByLovelaceAsc = (utxos: UTxO[]): UTxO[] =>
   [...utxos].sort((a, b) => {
     const aLovelace = utxoLovelace(a);
@@ -969,8 +961,8 @@ const mergeWalletUtxos = (utxos: UTxO[]): UTxO[] => {
 
 export const selectDeploymentCollateralHoldback = (utxos: UTxO[]): UTxO[] => {
   const candidateGroups = [
-    sortUtxosByLovelaceDesc(utxos.filter(isAdaOnlyUtxo)),
-    sortUtxosByLovelaceDesc(utxos),
+    sortUtxosByLovelaceAsc(utxos.filter(isAdaOnlyUtxo)),
+    sortUtxosByLovelaceAsc(utxos),
   ];
 
   for (const candidates of candidateGroups) {
