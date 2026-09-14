@@ -168,10 +168,8 @@ function mapOgmiosCostModels(plutusCostModels: unknown): Record<string, number[]
     mappedModels[lucidName] = toCostModelArray(rawModel as unknown[] | Record<string, unknown>);
   }
 
-  for (const [ogmiosName, lucidName] of modelNames.slice(0, 2)) {
-    if (mappedModels[lucidName].length === 0) {
-      throw new Error(`Ogmios protocol parameters response is missing a non-empty ${ogmiosName} cost model`);
-    }
+  if (Object.values(mappedModels).every((model) => model.length === 0)) {
+    throw new Error('Ogmios protocol parameters response is missing a non-empty Plutus cost model');
   }
 
   return mappedModels;
@@ -950,11 +948,10 @@ export const LucidClient = {
       provider.evaluateTx = async (tx: string, additionalUTxOs?: any[]) => {
         try {
           return await retryRuntimeProviderOperation(
-            () =>
-              evaluateTxWithOgmiosScriptRefFallback(
-                (fallbackAdditionalUTxOs) => originalEvaluateTx(tx, fallbackAdditionalUTxOs),
-                additionalUTxOs,
-              ),
+            // Gateway inputs have already been indexed by Kupo and are resolvable
+            // by Ogmios. Lucid 0.4's non-empty auxiliary UTxO encoding is not
+            // accepted by Ogmios 7, so do not forward the redundant list.
+            () => originalEvaluateTx(tx),
             'Kupmios.evaluateTx',
           );
         } catch (error) {

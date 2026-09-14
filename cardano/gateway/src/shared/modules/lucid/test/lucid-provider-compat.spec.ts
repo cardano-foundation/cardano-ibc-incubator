@@ -94,6 +94,25 @@ describe('Ogmios protocol parameter compatibility', () => {
     ).resolves.toBeDefined();
   });
 
+  it('accepts a protocol 11 response where Plutus V2 is unavailable', async () => {
+    const mapped = mapOgmiosProtocolParameters(
+      protocolParameters({
+        utxoCostPerByte: 4310,
+        plutusCostModels: {
+          'plutus:v1': [1, 2],
+          'plutus:v3': [3, 4],
+        },
+      }),
+    );
+
+    expect(mapped.costModels).toEqual({
+      PlutusV1: [1, 2],
+      PlutusV2: [],
+      PlutusV3: [3, 4],
+    });
+    await expect(Lucid(undefined, 'Custom', { presetProtocolParameters: mapped })).resolves.toBeDefined();
+  });
+
   it('rejects malformed responses instead of silently manufacturing parameters', () => {
     expect(() => mapOgmiosProtocolParameters(undefined)).toThrow('missing result');
     expect(() => mapOgmiosProtocolParameters(protocolParameters())).toThrow(
@@ -105,18 +124,7 @@ describe('Ogmios protocol parameter compatibility', () => {
           utxoCostPerByte: 4310,
         }),
       ),
-    ).toThrow('missing a non-empty plutus:v1 cost model');
-    expect(() =>
-      mapOgmiosProtocolParameters(
-        protocolParameters({
-          utxoCostPerByte: 4310,
-          plutusCostModels: {
-            'plutus:v1': [1, 2],
-            'plutus:v2': [],
-          },
-        }),
-      ),
-    ).toThrow('missing a non-empty plutus:v2 cost model');
+    ).toThrow('missing a non-empty Plutus cost model');
     expect(() =>
       mapOgmiosProtocolParameters(
         protocolParameters({
