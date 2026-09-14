@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { loadSync, ServiceDefinition } from '@grpc/proto-loader';
+import { createGrpcOptions } from '../../grpc-client.options';
 import { ClientState, ConsensusState } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { ChannelService } from '../services/channel.service';
@@ -541,6 +543,37 @@ describe('proof-bearing services with captured query heights', () => {
 
     expect(normalizeConsensusStateFromDatum).toHaveBeenCalledWith(expect.any(Map), 77n);
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/77');
+    expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
+
+  it.each([449n, 9_007_199_254_740_993n])('looks up a consensus height %s received over protobuf without losing precision', async (height) => {
+    const options = createGrpcOptions({}).options;
+    const definition = loadSync(options.protoPath!, options.loader);
+    const method = (definition['ibc.core.client.v1.Query'] as ServiceDefinition).ConsensusState;
+    const request = method.requestDeserialize(method.requestSerialize({
+      client_id: '07-tendermint-0', revision_number: '1',
+      revision_height: height.toString(), latest_height: false,
+    })) as Parameters<QueryService['queryConsensusState']>[0];
+    expect(typeof request.revision_height).toBe('object');
+    expect(request.revision_height.toString()).toBe(height.toString());
+    const datum = new Map([[{ revisionNumber: 1n, revisionHeight: height }, {
+      timestamp: 1_000_000_001n, root: { hash: 'ab'.repeat(32) }, next_validators_hash: 'cd'.repeat(32),
+    }]]);
+    (decodeClientDatum as jest.Mock).mockResolvedValue({
+      state: { clientState: { latestHeight: { revisionNumber: 1n, revisionHeight: height } }, consensusStates: datum },
+    });
+    (normalizeConsensusStateFromDatum as jest.Mock).mockImplementation(
+      jest.requireActual('@shared/helpers/consensus-state').normalizeConsensusStateFromDatum,
+    );
+    const deps = makeDeps();
+    const service = new QueryService(
+      deps.logger, deps.configService, deps.lucidService, {} as KupoService,
+      deps.historyService, {} as MiniProtocalsService, deps.mithrilService,
+      {} as DenomTraceService, deps.ibcTreeCacheService as any, deps.treeStore,
+    );
+    const response = await service.queryConsensusState(request, { queryHeight: HISTORICAL_HEIGHT });
+    expect(ConsensusState.decode(response.consensus_state!.value).timestamp).toEqual({ seconds: 1n, nanos: 1 });
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(`clients/07-tendermint-0/consensusStates/${height}`);
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 

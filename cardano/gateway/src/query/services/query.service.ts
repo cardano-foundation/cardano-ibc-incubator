@@ -1031,7 +1031,8 @@ export class QueryService {
     } else {
       // Canonical IBC request provides revision_number + revision_height.
       // We key consensus states by revision_height in the on-chain datum.
-      heightReq = request.revision_height;
+      // The gRPC loader returns Long values, while datum height keys are bigint.
+      heightReq = BigInt(request.revision_height?.toString() ?? '0');
     }
     const consensusStateTendermint = normalizeConsensusStateFromDatum(clientDatum.state.consensusStates, heightReq);
     if (!consensusStateTendermint)
