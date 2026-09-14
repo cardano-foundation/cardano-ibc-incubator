@@ -1099,8 +1099,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.120.0
+        # Keep compiler upgrades separate from Dependabot action updates.
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
+          toolchain: "1.91.1"
           components: rustfmt, clippy
 
       - name: Cache cargo
@@ -1158,8 +1160,10 @@ jobs:
           sudo apt-get install -y protobuf-compiler
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.120.0
+        # Keep compiler upgrades separate from Dependabot action updates.
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
+          toolchain: "1.85.0"
           components: rustfmt, clippy
 
       - name: Cache cargo
