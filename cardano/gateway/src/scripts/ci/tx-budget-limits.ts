@@ -24,7 +24,9 @@ type BudgetCheckResult = {
   knownViolations: string[];
 };
 
-type KnownBudgetCeiling = Partial<ExUnits> & Partial<Pick<BudgetScenario, 'unsignedBytes' | 'signedBytesEstimate'>>;
+export type BudgetMetric = keyof ExUnits | 'unsignedBytes' | 'signedBytesEstimate';
+
+export type KnownBudgetOverruns = Readonly<Record<string, ReadonlyArray<BudgetMetric>>>;
 
 export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<ReadonlyArray<ExUnits>>): ExUnits {
   return groups.reduce((sum, alternatives) => {
@@ -38,40 +40,21 @@ export function addMaxAlternativeExUnits(common: ExUnits, groups: ReadonlyArray<
   }, common);
 }
 
-const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>> = {
-  // Includes state value conservation, shutdown dispatch and escrow accounting.
-  // These are measured silent-build baselines for existing capacity overruns.
-  // Public ledger limits and reference publication guards remain unchanged.
-  reference_script_deployment: {
-    signedBytesEstimate: 15_644,
-  },
-  send_packet_at_commitment_capacity: {
-    mem: 38_066_206,
-    steps: 12_010_016_315,
-  },
-  recv_packet_at_history_capacity: {
-    mem: 40_701_472,
-    steps: 12_749_666_736,
-  },
-  prune_packet_history_at_capacity: {
-    // Includes state-token authentication and the shared timeout helper.
-    // The public-network limits are unchanged.
-    mem: 25_273_704,
-  },
-  trace_registry_rollover: {
-    mem: 25_809_676,
-    steps: 10_953_775_373,
-  },
-  first_seen_voucher_mint: {
-    mem: 33_991_716,
-    steps: 12_353_165_462,
-  },
+const KNOWN_BUDGET_OVERRUNS: KnownBudgetOverruns = {
+  reference_script_deployment: ['signedBytesEstimate'],
+  send_packet_at_commitment_capacity: ['mem', 'steps'],
+  recv_packet_at_history_capacity: ['mem', 'steps'],
+  prune_packet_history_at_capacity: ['mem'],
+  trace_registry_rollover: ['mem', 'steps'],
+  first_seen_voucher_mint: ['mem', 'steps'],
 };
 
 export function checkTransactionBudgets(
   reports: BudgetScenario[],
   limits: BudgetLimits,
-  knownCeilings: Readonly<Record<string, KnownBudgetCeiling>> = KNOWN_BUDGET_OVERRUN_CEILINGS,
+  baselineReports: BudgetScenario[] = [],
+  knownOverruns: KnownBudgetOverruns = KNOWN_BUDGET_OVERRUNS,
+  allowBaselineRegressions = false,
 ): BudgetCheckResult {
   const failures: string[] = [];
   const knownViolations: string[] = [];
@@ -79,82 +62,79 @@ export function checkTransactionBudgets(
   const safeMem = Math.floor((limits.maxTxExMem * (10_000 - limits.exUnitHeadroomBps)) / 10_000);
   const safeSteps = Math.floor((limits.maxTxExSteps * (10_000 - limits.exUnitHeadroomBps)) / 10_000);
   const reportsById = new Map(reports.map((report) => [report.id, report]));
+  const baselinesById = new Map(baselineReports.map((report) => [report.id, report]));
 
   if (reportsById.size !== reports.length) {
     failures.push('transaction budget scenario IDs must be unique');
   }
 
-  for (const scenarioId of Object.keys(knownCeilings)) {
+  if (baselinesById.size !== baselineReports.length) {
+    failures.push('base transaction budget scenario IDs must be unique');
+  }
+
+  for (const scenarioId of Object.keys(knownOverruns)) {
     if (!reportsById.has(scenarioId)) {
-      failures.push(`known-overrun ceiling references missing scenario: ${scenarioId}`);
+      failures.push(`known-overrun allowance references missing scenario: ${scenarioId}`);
     }
   }
 
   const checkExUnits = (report: BudgetScenario, metric: keyof ExUnits, label: string, safeBudget: number): void => {
     const actual = report.exUnits[metric];
-    const knownCeiling = knownCeilings[report.id]?.[metric];
+    const baseline = baselinesById.get(report.id)?.exUnits[metric];
+    const isKnownOverrun = knownOverruns[report.id]?.includes(metric) ?? false;
 
     if (actual <= safeBudget) {
-      if (knownCeiling !== undefined) {
+      if (isKnownOverrun) {
         failures.push(
-          `${report.name}: ${label} now fit safe budget ${safeBudget}; remove stale known-overrun ceiling ${knownCeiling}`,
+          `${report.name}: ${label} now fit safe budget ${safeBudget}; remove the stale known-overrun allowance`,
         );
       }
       return;
     }
 
-    if (knownCeiling === undefined) {
+    if (!isKnownOverrun) {
       failures.push(`${report.name}: ${label} ${actual} exceed safe budget ${safeBudget}`);
       return;
     }
 
-    if (actual > knownCeiling) {
+    if (baseline !== undefined && actual > baseline && !allowBaselineRegressions) {
       failures.push(
-        `${report.name}: ${label} ${actual} exceed known-overrun ceiling ${knownCeiling} (safe budget ${safeBudget})`,
+        `${report.name}: ${label} regressed from base ${baseline} to ${actual} (safe budget ${safeBudget})`,
       );
       return;
     }
 
-    if (actual < knownCeiling) {
-      failures.push(
-        `${report.name}: ${label} improved from known-overrun ceiling ${knownCeiling} to ${actual}; lower the ceiling to ${actual}`,
-      );
-      return;
-    }
-
-    knownViolations.push(
-      `${report.name}: ${label} ${actual} exceed safe budget ${safeBudget} (regression ceiling ${knownCeiling})`,
-    );
+    const comparison =
+      baseline === undefined
+        ? 'base measurement unavailable'
+        : actual > baseline
+          ? `approved increase from base ${baseline}`
+          : `base ${baseline}`;
+    knownViolations.push(`${report.name}: ${label} ${actual} exceed safe budget ${safeBudget} (${comparison})`);
   };
 
   const checkSize = (report: BudgetScenario, metric: 'unsignedBytes' | 'signedBytesEstimate', label: string): void => {
     const actual = report[metric];
-    const knownCeiling = knownCeilings[report.id]?.[metric];
+    const baseline = baselinesById.get(report.id)?.[metric];
+    const isKnownOverrun = knownOverruns[report.id]?.includes(metric) ?? false;
 
     if (actual <= safeTxSize) {
-      if (knownCeiling !== undefined) {
+      if (isKnownOverrun) {
         failures.push(
-          `${report.name}: ${label} now fit safe budget ${safeTxSize}; remove stale known-overrun ceiling ${knownCeiling}`,
+          `${report.name}: ${label} now fit safe budget ${safeTxSize}; remove the stale known-overrun allowance`,
         );
       }
       return;
     }
 
-    if (knownCeiling === undefined) {
+    if (!isKnownOverrun) {
       failures.push(`${report.name}: ${label} ${actual} exceeds safe budget ${safeTxSize}`);
       return;
     }
 
-    if (actual > knownCeiling) {
+    if (baseline !== undefined && actual > baseline && !allowBaselineRegressions) {
       failures.push(
-        `${report.name}: ${label} ${actual} exceed known-overrun ceiling ${knownCeiling} (safe budget ${safeTxSize}, ledger maximum ${limits.maxTxSize})`,
-      );
-      return;
-    }
-
-    if (actual < knownCeiling) {
-      failures.push(
-        `${report.name}: ${label} improved from known-overrun ceiling ${knownCeiling} to ${actual}; lower the ceiling to ${actual}`,
+        `${report.name}: ${label} regressed from base ${baseline} to ${actual} (safe budget ${safeTxSize}, ledger maximum ${limits.maxTxSize})`,
       );
       return;
     }
@@ -163,7 +143,13 @@ export function checkTransactionBudgets(
       actual > limits.maxTxSize
         ? `exceed ledger maximum ${limits.maxTxSize}`
         : `exceed safe budget ${safeTxSize} with ${limits.txHeadroomBytes}-byte reserve`;
-    knownViolations.push(`${report.name}: ${label} ${actual} ${status} (regression ceiling ${knownCeiling})`);
+    const comparison =
+      baseline === undefined
+        ? 'base measurement unavailable'
+        : actual > baseline
+          ? `approved increase from base ${baseline}`
+          : `base ${baseline}`;
+    knownViolations.push(`${report.name}: ${label} ${actual} ${status} (${comparison})`);
   };
 
   for (const report of reports) {

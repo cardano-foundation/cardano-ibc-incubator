@@ -37,65 +37,101 @@ describe('transaction budget limits', () => {
   });
 
   it('accepts an ordinary scenario within the public-network limits', () => {
-    expect(checkTransactionBudgets([scenario()], limits, {})).toEqual({
+    expect(checkTransactionBudgets([scenario()], limits, [], {})).toEqual({
       failures: [],
       knownViolations: [],
     });
   });
 
-  it('reports a known violation at its exact regression ceiling', () => {
-    const result = checkTransactionBudgets([scenario({ exUnits: { mem: 20_000_000, steps: 1_000_000_000 } })], limits, {
-      scenario: { mem: 20_000_000 },
-    });
+  it('reports a known violation that matches its base measurement', () => {
+    const current = scenario({ exUnits: { mem: 20_000_000, steps: 1_000_000_000 } });
+    const result = checkTransactionBudgets([current], limits, [current], { scenario: ['mem'] });
 
     expect(result.failures).toEqual([]);
-    expect(result.knownViolations).toHaveLength(1);
-  });
-
-  it('rejects a one-unit regression above a known ceiling', () => {
-    const result = checkTransactionBudgets([scenario({ exUnits: { mem: 20_000_001, steps: 1_000_000_000 } })], limits, {
-      scenario: { mem: 20_000_000 },
-    });
-
-    expect(result.failures).toEqual([
-      'Scenario: memory ex units 20000001 exceed known-overrun ceiling 20000000 (safe budget 15675000)',
+    expect(result.knownViolations).toEqual([
+      'Scenario: memory ex units 20000000 exceed safe budget 15675000 (base 20000000)',
     ]);
   });
 
-  it('requires an improved overrun to lower its ceiling immediately', () => {
-    const result = checkTransactionBudgets([scenario({ exUnits: { mem: 19_999_999, steps: 1_000_000_000 } })], limits, {
-      scenario: { mem: 20_000_000 },
-    });
+  it('rejects a one-unit regression from the base measurement', () => {
+    const result = checkTransactionBudgets(
+      [scenario({ exUnits: { mem: 20_000_001, steps: 1_000_000_000 } })],
+      limits,
+      [scenario({ exUnits: { mem: 20_000_000, steps: 1_000_000_000 } })],
+      { scenario: ['mem'] },
+    );
 
     expect(result.failures).toEqual([
-      'Scenario: memory ex units improved from known-overrun ceiling 20000000 to 19999999; lower the ceiling to 19999999',
+      'Scenario: memory ex units regressed from base 20000000 to 20000001 (safe budget 15675000)',
     ]);
   });
 
-  it('rejects a new over-limit scenario without a ceiling', () => {
+  it('accepts a reviewed regression without changing a numerical ceiling', () => {
+    const result = checkTransactionBudgets(
+      [scenario({ exUnits: { mem: 20_000_001, steps: 1_000_000_000 } })],
+      limits,
+      [scenario({ exUnits: { mem: 20_000_000, steps: 1_000_000_000 } })],
+      { scenario: ['mem'] },
+      true,
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.knownViolations).toEqual([
+      'Scenario: memory ex units 20000001 exceed safe budget 15675000 (approved increase from base 20000000)',
+    ]);
+  });
+
+  it('accepts an improvement without requiring a new checked-in number', () => {
+    const result = checkTransactionBudgets(
+      [scenario({ exUnits: { mem: 19_999_999, steps: 1_000_000_000 } })],
+      limits,
+      [scenario({ exUnits: { mem: 20_000_000, steps: 1_000_000_000 } })],
+      { scenario: ['mem'] },
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.knownViolations).toEqual([
+      'Scenario: memory ex units 19999999 exceed safe budget 15675000 (base 20000000)',
+    ]);
+  });
+
+  it('reports an allowed overrun when a base measurement is unavailable', () => {
     const result = checkTransactionBudgets(
       [scenario({ exUnits: { mem: 20_000_000, steps: 1_000_000_000 } })],
       limits,
+      [],
+      { scenario: ['mem'] },
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.knownViolations).toEqual([
+      'Scenario: memory ex units 20000000 exceed safe budget 15675000 (base measurement unavailable)',
+    ]);
+  });
+
+  it('rejects a new over-limit scenario even when reviewed regressions are allowed', () => {
+    const result = checkTransactionBudgets(
+      [scenario({ exUnits: { mem: 20_000_000, steps: 1_000_000_000 } })],
+      limits,
+      [],
       {},
+      true,
     );
 
     expect(result.failures).toEqual(['Scenario: memory ex units 20000000 exceed safe budget 15675000']);
   });
 
-  it('rejects a transaction-size overrun without an exact ceiling', () => {
-    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_000 })], limits, {});
-
-    expect(result.failures).toEqual(['Scenario: signed bytes estimate 16000 exceeds safe budget 15634']);
-  });
-
-  it('ratchets a known transaction-size headroom violation', () => {
-    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_000 })], limits, {
-      scenario: { signedBytesEstimate: 16_000 },
-    });
+  it('compares an allowed transaction-size overrun with the base', () => {
+    const result = checkTransactionBudgets(
+      [scenario({ signedBytesEstimate: 16_000 })],
+      limits,
+      [scenario({ signedBytesEstimate: 16_001 })],
+      { scenario: ['signedBytesEstimate'] },
+    );
 
     expect(result.failures).toEqual([]);
     expect(result.knownViolations).toEqual([
-      'Scenario: signed bytes estimate 16000 exceed safe budget 15634 with 750-byte reserve (regression ceiling 16000)',
+      'Scenario: signed bytes estimate 16000 exceed safe budget 15634 with 750-byte reserve (base 16001)',
     ]);
   });
 
@@ -111,6 +147,7 @@ describe('transaction budget limits', () => {
         }),
       ],
       limits,
+      [],
       {},
     );
 
@@ -121,56 +158,46 @@ describe('transaction budget limits', () => {
     );
   });
 
-  it('rejects a transaction-size increase above its recorded ceiling', () => {
-    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_001 })], limits, {
-      scenario: { signedBytesEstimate: 16_000 },
-    });
+  it('rejects a transaction-size regression from the base', () => {
+    const result = checkTransactionBudgets(
+      [scenario({ signedBytesEstimate: 16_001 })],
+      limits,
+      [scenario({ signedBytesEstimate: 16_000 })],
+      { scenario: ['signedBytesEstimate'] },
+    );
 
     expect(result.failures).toEqual([
-      'Scenario: signed bytes estimate 16001 exceed known-overrun ceiling 16000 (safe budget 15634, ledger maximum 16384)',
+      'Scenario: signed bytes estimate regressed from base 16000 to 16001 (safe budget 15634, ledger maximum 16384)',
     ]);
   });
 
-  it('requires a transaction-size improvement to lower its ceiling', () => {
-    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 15_999 })], limits, {
-      scenario: { signedBytesEstimate: 16_000 },
-    });
-
-    expect(result.failures).toEqual([
-      'Scenario: signed bytes estimate improved from known-overrun ceiling 16000 to 15999; lower the ceiling to 15999',
-    ]);
-  });
-
-  it('removes a stale size ceiling once the safe budget is met', () => {
-    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 15_634 })], limits, {
-      scenario: { signedBytesEstimate: 16_000 },
-    });
-
-    expect(result.failures).toEqual([
-      'Scenario: signed bytes estimate now fit safe budget 15634; remove stale known-overrun ceiling 16000',
-    ]);
-  });
-
-  it('identifies a ratcheted transaction that exceeds the ledger maximum', () => {
-    const result = checkTransactionBudgets([scenario({ signedBytesEstimate: 16_500 })], limits, {
-      scenario: { signedBytesEstimate: 16_500 },
+  it('identifies an allowed modeled transaction that exceeds the ledger maximum', () => {
+    const current = scenario({ signedBytesEstimate: 16_500 });
+    const result = checkTransactionBudgets([current], limits, [current], {
+      scenario: ['signedBytesEstimate'],
     });
 
     expect(result.failures).toEqual([]);
     expect(result.knownViolations).toEqual([
-      'Scenario: signed bytes estimate 16500 exceed ledger maximum 16384 (regression ceiling 16500)',
+      'Scenario: signed bytes estimate 16500 exceed ledger maximum 16384 (base 16500)',
     ]);
   });
 
-  it('rejects stale and orphaned ceilings', () => {
-    const result = checkTransactionBudgets([scenario()], limits, {
-      scenario: { mem: 20_000_000 },
-      removed_scenario: { steps: 20_000_000_000 },
+  it('requires a stale allowance to be removed once the safe budget is met', () => {
+    const result = checkTransactionBudgets([scenario()], limits, [], {
+      scenario: ['mem'],
+      removed_scenario: ['steps'],
     });
 
     expect(result.failures).toEqual([
-      'known-overrun ceiling references missing scenario: removed_scenario',
-      'Scenario: memory ex units now fit safe budget 15675000; remove stale known-overrun ceiling 20000000',
+      'known-overrun allowance references missing scenario: removed_scenario',
+      'Scenario: memory ex units now fit safe budget 15675000; remove the stale known-overrun allowance',
     ]);
+  });
+
+  it('rejects duplicate base scenario IDs', () => {
+    const result = checkTransactionBudgets([scenario()], limits, [scenario(), scenario()], {});
+
+    expect(result.failures).toEqual(['base transaction budget scenario IDs must be unique']);
   });
 });
