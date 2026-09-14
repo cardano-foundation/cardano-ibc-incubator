@@ -34,7 +34,7 @@ const scenarios = [
 
 for (const { name, build } of scenarios) {
   Deno.test(`${name} fits ledger limits`, async () => {
-    const { tx, emulator } = await build();
+    const { tx, emulator, lucid } = await build();
     // Emulator.evaluateTx only echoes budgets. This evaluates the compiled UPLC.
     const completed = await tx.complete({ localUPLCEval: true });
     const signed = await completed.sign.withWallet().complete();
@@ -42,18 +42,20 @@ for (const { name, build } of scenarios) {
     assert(redeemers, "transaction must execute scripts");
     const units = CML.compute_total_ex_units(redeemers);
     const bytes = signed.toCBOR().length / 2;
+    const limits = lucid.config().protocolParameters;
+    assert(limits);
     console.log({ bytes, memory: units.mem(), cpu: units.steps() });
     assert(
-      bytes <= 16_384,
-      `signed transaction is ${bytes} bytes, limit is 16384`,
+      bytes <= limits.maxTxSize,
+      `signed transaction is ${bytes} bytes, limit is ${limits.maxTxSize}`,
     );
     assert(
-      units.mem() <= 16_500_000n,
-      `memory is ${units.mem()}, limit is 16500000`,
+      units.mem() <= limits.maxTxExMem,
+      `memory is ${units.mem()}, limit is ${limits.maxTxExMem}`,
     );
     assert(
-      units.steps() <= 10_000_000_000n,
-      `CPU is ${units.steps()}, limit is 10000000000`,
+      units.steps() <= limits.maxTxExSteps,
+      `CPU is ${units.steps()}, limit is ${limits.maxTxExSteps}`,
     );
     await signed.submit();
     emulator.awaitBlock();

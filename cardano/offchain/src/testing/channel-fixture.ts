@@ -1,3 +1,9 @@
+import alonzo from "../../../../chains/cardano/config/devnet/genesis-alonzo.json" with {
+  type: "json",
+};
+import shelley from "../../../../chains/cardano/config/devnet/genesis-shelley.json" with {
+  type: "json",
+};
 import {
   applyDoubleCborEncoding,
   Constr,
@@ -208,9 +214,9 @@ export async function channelFixture(
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account], {
     ...PROTOCOL_PARAMETERS_DEFAULT,
-    maxTxSize: 16_384,
-    maxTxExMem: 16_500_000n,
-    maxTxExSteps: 10_000_000_000n,
+    maxTxSize: shelley.protocolParams.maxTxSize,
+    maxTxExMem: BigInt(alonzo.maxTxExUnits.exUnitsMem),
+    maxTxExSteps: BigInt(alonzo.maxTxExUnits.exUnitsSteps),
   });
   const lucid = await Lucid(emulator, "Custom");
   lucid.selectWallet.fromSeed(account.seedPhrase);
