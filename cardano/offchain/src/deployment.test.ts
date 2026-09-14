@@ -31,6 +31,23 @@ const makeValidator = (byteLength: number): Script => ({
 
 const EMPTY_HASH = "00".repeat(32);
 
+Deno.test("deployment collateral preserves the large funding UTxO", () => {
+  const utxo = (txHash: string, lovelace: bigint): UTxO =>
+    ({
+      txHash,
+      outputIndex: 0,
+      assets: { lovelace },
+      address: "addr_test1collateral",
+    }) as UTxO;
+  const selected = selectDeploymentCollateralHoldback([
+    utxo("large", 29_000_000_000n),
+    utxo("collateral", 6_000_000n),
+    utxo("small", 2_000_000n),
+  ]);
+
+  assertEquals(selected.map(({ txHash }) => txHash), ["collateral"]);
+});
+
 Deno.test("generatePortTokenName matches the cross-language transfer vector", () => {
   assertEquals(
     generatePortTokenName(fromText("transfer")),
