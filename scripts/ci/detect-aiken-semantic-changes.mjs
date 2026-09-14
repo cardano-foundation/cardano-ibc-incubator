@@ -8,6 +8,8 @@ import { pathToFileURL } from 'node:url';
 const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
 
 const aikenInfrastructurePaths = new Set([
+  'chains/cardano/config/devnet/genesis-alonzo.json',
+  'chains/cardano/config/devnet/genesis-shelley.json',
   'scripts/ci/aiken-fuzz-required-labels.json',
   'scripts/ci/check-aiken-fuzz-coverage.mjs',
   'scripts/ci/check-aiken-fuzz-imports.sh',

@@ -58,8 +58,13 @@ mod tests {
         assert_eq!(shelley["protocolParams"]["maxBlockHeaderSize"], 1_100);
 
         let ci = read(".github/workflows/ci.yml");
-        assert!(ci.contains("CARDANO_TX_BUDGET_MAX_TX_EX_MEM: 16500000"));
-        assert!(ci.contains("CARDANO_TX_BUDGET_MAX_TX_EX_STEPS: 10000000000"));
+        assert!(ci.contains("run: deno task test:tx-budgets"));
+        let fixture = read("cardano/offchain/src/testing/channel-fixture.ts");
+        assert!(fixture.contains("chains/cardano/config/devnet/genesis-alonzo.json"));
+        assert!(fixture.contains("chains/cardano/config/devnet/genesis-shelley.json"));
+        assert!(fixture.contains("maxTxSize: shelley.protocolParams.maxTxSize"));
+        assert!(fixture.contains("maxTxExMem: BigInt(alonzo.maxTxExUnits.exUnitsMem)"));
+        assert!(fixture.contains("maxTxExSteps: BigInt(alonzo.maxTxExUnits.exUnitsSteps)"));
     }
 
     #[test]
