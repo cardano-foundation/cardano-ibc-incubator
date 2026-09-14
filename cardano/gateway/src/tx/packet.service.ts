@@ -132,7 +132,7 @@ import {
   type TransferEscrowShardLookup,
 } from '@cardano-ibc/tx-builder-runtime/transferEscrowShard';
 
-export const TRACE_REGISTRY_PRELUDE_TYPE_URL = '/ibc.cardano.v1.TraceRegistryPrelude';
+const TRACE_REGISTRY_PRELUDE_TYPE_URL = '/ibc.cardano.v1.TraceRegistryPrelude';
 
 function uint64ToBigEndianHex(value: bigint): string {
   const bytes = Buffer.alloc(8);
