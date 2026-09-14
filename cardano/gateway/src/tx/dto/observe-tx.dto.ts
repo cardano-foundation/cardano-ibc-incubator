@@ -6,6 +6,7 @@ import { GatewayEvent } from '../tx-events.service';
  */
 export interface ObserveTxRequest {
   tx_hash: string;
+  allow_untracked?: boolean;
 }
 
 export interface ObserveTxResponse {

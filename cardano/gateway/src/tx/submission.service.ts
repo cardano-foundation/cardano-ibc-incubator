@@ -127,6 +127,11 @@ export class SubmissionService {
 
     const pending = this.ibcTreePendingUpdatesService.peek(txHash);
     if (!pending) {
+      if (request.allow_untracked === true) {
+        const observation = await this.observeUntrackedTransaction(txHash);
+        this.cacheCompletedObservation(txHash, observation);
+        return observation;
+      }
       throw new GrpcInternalException(
         `Missing exact pending IBC update for tx ${txHash}; refusing to observe a transaction the Gateway did not build`,
       );
@@ -148,6 +153,17 @@ export class SubmissionService {
 
     this.observationInFlight.set(txHash, observation);
     return observation;
+  }
+
+  private async observeUntrackedTransaction(txHash: string): Promise<ObserveTxResponse> {
+    const evidence = await this.waitForIndexedTransactionEvidence(txHash);
+    this.verifyObservedTransactionEvidence(txHash, evidence);
+    const events = await this.findIndexedIbcEvents(txHash);
+    return {
+      tx_hash: txHash,
+      height: `0-${evidence.blockNo}`,
+      events,
+    };
   }
 
   private async observeTransactionOnce(txHash: string, pending: PendingTreeUpdate): Promise<ObserveTxResponse> {

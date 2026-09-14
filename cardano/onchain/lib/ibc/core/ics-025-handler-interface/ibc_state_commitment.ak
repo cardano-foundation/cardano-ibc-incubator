@@ -29,7 +29,6 @@
 
 use aiken/builtin
 use aiken/primitive/bytearray
-use ibc/utils/bits
 
 /// Number of bits taken from `sha256(key)` to define the path.
 ///
@@ -102,21 +101,13 @@ pub fn inner_hash(left: ByteArray, right: ByteArray) -> ByteArray {
   }
 }
 
-/// Read a single bit from a hash, using a stable and well-defined bit order.
-///
-/// We interpret the first 8 bytes of `sha256(key)` as a 64-bit big-endian number.
-/// `bit_index = 0` reads the least significant bit of that number.
-fn bit_at(hash: ByteArray, bit_index: Int) -> Int {
-  // `merkle_depth_bits` is at most 64, so we only look at the first 8 bytes.
-  //
-  // We count bytes from the end of that 8-byte segment so that bit 0 starts at
-  // the least significant end (byte 7, bit 0).
-  let byte_index = 7 - bit_index / 8
-  let bit_in_byte = bit_index % 8
-
-  let byte = builtin.index_bytearray(hash, byte_index)
-  // Shift the selected bit down to position 0 and mask it to 0/1.
-  bits.shr(byte, bit_in_byte) % 2
+// Consume the first eight hash bytes from the least significant bit upward.
+// Decoding the path once avoids extracting a byte and computing a power of two
+// at every level of both the old and new root calculations.
+fn key_path(key: ByteArray) -> Int {
+  builtin.sha2_256(key)
+    |> builtin.slice_bytearray(0, 8, _)
+    |> builtin.bytearray_to_integer(True, _)
 }
 
 /// Compute a root from:
@@ -129,12 +120,11 @@ pub fn compute_root(
   siblings: List<ByteArray>,
 ) -> ByteArray {
   expect bytearray.length(leaf) == hash_size_bytes
-  let key_hash = builtin.sha2_256(key)
-  compute_root_go(key_hash, leaf, siblings, 0)
+  compute_root_go(key_path(key), leaf, siblings, 0)
 }
 
 fn compute_root_go(
-  key_hash: ByteArray,
+  path: Int,
   current: ByteArray,
   siblings: List<ByteArray>,
   depth: Int,
@@ -147,7 +137,7 @@ fn compute_root_go(
     expect [sibling, ..rest] = siblings
     expect bytearray.length(sibling) == hash_size_bytes
 
-    let direction_bit = bit_at(key_hash, depth)
+    let direction_bit = path % 2
     let next =
       if direction_bit == 0 {
         // 0 means "current node is on the left".
@@ -157,7 +147,7 @@ fn compute_root_go(
         inner_hash(sibling, current)
       }
 
-    compute_root_go(key_hash, next, rest, depth + 1)
+    compute_root_go(path / 2, next, rest, depth + 1)
   }
 }
 

@@ -5,9 +5,10 @@ use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
-  ChanOpenConfirm, PrunePacketHistory, RecvPacket, SendPacket,
+  ChanOpenConfirm, PrunePacketHistory, ReclaimChannel, RecvPacket, SendPacket,
   SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
 }
+use ibc/utils/shutdown
 use ibc/utils/validator_utils
 
 validator spend_channel(
@@ -35,6 +36,10 @@ validator spend_channel(
     let spent_output = spent_input.output
 
     when redeemer is {
+      ReclaimChannel -> and {
+          datum.state.packet_commitment == [],
+          shutdown.burns_token(transaction, datum.token),
+        }
       ChanOpenAck { .. } ->
         validate_operation_witness(
           transaction,

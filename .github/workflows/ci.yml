@@ -35,12 +35,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -297,10 +297,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -315,10 +315,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -354,10 +354,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -379,24 +379,24 @@ jobs:
           npm ci --prefix packages/cardano-ibc-planner
           npm run --prefix packages/cardano-ibc-planner build
 
-          npm ci --prefix packages/cardano-ibc-tx-builder --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder
           npm run --prefix packages/cardano-ibc-tx-builder build
 
-          npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-trace-registry
           npm run --prefix packages/cardano-ibc-trace-registry build
 
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
           npm run --prefix packages/cardano-ibc-tx-builder-runtime build
 
       - name: Prune package-local installs for gateway
         run: |
           rm -rf packages/cardano-ibc-planner/node_modules
-          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev --legacy-peer-deps
-          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev --legacy-peer-deps
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev
+          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev
 
       - name: Install dependencies
-        run: npm ci --prefix cardano/gateway --legacy-peer-deps
+        run: npm ci --prefix cardano/gateway
 
       - name: Lint
         run: npm run --prefix cardano/gateway lint:check
@@ -420,10 +420,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -443,10 +443,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -464,20 +464,20 @@ jobs:
 
       - name: Build tx builder
         run: |
-          npm ci --prefix packages/cardano-ibc-tx-builder --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder
           npm run --prefix packages/cardano-ibc-tx-builder build
           npm test --prefix packages/cardano-ibc-tx-builder
           npm prune --omit=dev --prefix packages/cardano-ibc-tx-builder
 
       - name: Build trace registry
         run: |
-          npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-trace-registry
           npm run --prefix packages/cardano-ibc-trace-registry build
           npm test --prefix packages/cardano-ibc-trace-registry
 
       - name: Build tx builder runtime
         run: |
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
           npm run --prefix packages/cardano-ibc-tx-builder-runtime build
           npm test --prefix packages/cardano-ibc-tx-builder-runtime
 
@@ -490,7 +490,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -546,7 +546,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -589,7 +589,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -603,7 +603,7 @@ jobs:
 
       - name: Upload smoke report
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aiken-smoke
           path: aiken-smoke.json
@@ -756,7 +756,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -775,7 +775,7 @@ jobs:
             > ../../aiken-${{ matrix.suite }}.json
 
       - name: Upload property report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aiken-fuzz-${{ matrix.suite }}
           path: aiken-${{ matrix.suite }}.json
@@ -840,17 +840,17 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
         if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
       - name: Download fuzz reports
         if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: aiken-fuzz-*
           path: aiken-fuzz-reports
@@ -878,10 +878,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -911,83 +916,11 @@ jobs:
         run: deno task export:deployment-plan --output ../../deployment-plan.json
 
       - name: Collect Aiken execution units
-        working-directory: cardano/onchain
-        run: |
-          # Keep traces consistent with production builds. These test-derived
-          # regression estimates are not evaluations of complete transactions.
-          aiken check \
-            --deny \
-            --trace-level silent \
-            --plain-numbers \
-            --exact-match \
-            -m 'ibc/core/ics_003_connection_semantics/connection_datum.{test_is_conn_open_try_valid_succeed}' \
-            -m 'spending_transfer_module.{on_chan_open_try_succeed}' \
-            -m 'spending_connection.{conn_open_ack_succeed}' \
-            -m 'spending_channel.{send_packet_succeed}' \
-            -m 'spending_channel/send_packet.{succeed_send_packet}' \
-            -m 'ibc/core/ics_004/channel_datum_test/validate_send_packet.{succeed_at_packet_commitment_capacity}' \
-            -m 'host_state_stt.{host_state_handle_packet_send_succeeds_at_commitment_capacity}' \
-            -m 'spending_transfer_module.{transfer_escrow_succeed}' \
-            -m 'minting_transfer_escrow_shard.{create_transfer_escrow_shard_succeeds}' \
-            -m 'spending_channel.{recv_packet_succeed}' \
-            -m 'spending_channel/recv_packet.{succeed_recv_packet}' \
-            -m 'ibc/core/ics_004/channel_datum_test/validate_recv_packet.{succeed_at_packet_history_capacity}' \
-            -m 'host_state_stt.{host_state_handle_packet_recv_succeeds_at_history_capacity}' \
-            -m 'host_state_stt.{host_state_handle_packet_acknowledgement_succeeds_at_history_capacity}' \
-            -m 'verifying_proof.{verify_membership_succeed}' \
-            -m 'spending_channel/recv_packet.{succeed_recv_packet_maximum_ics20_packet}' \
-            -m 'spending_transfer_module.{on_recv_packet_mint_voucher_maximum_ics20_packet_succeed}' \
-            -m 'spending_transfer_module.{on_recv_packet_mint_voucher_maximum_v8_ics20_packet_succeed}' \
-            -m 'minting_voucher.{test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_at_entry_limit}' \
-            -m 'minting_voucher.{test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_near_byte_limit}' \
-            -m 'minting_voucher.{test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_at_entry_limit}' \
-            -m 'minting_voucher.{test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_near_byte_limit}' \
-            -m 'spending_channel.{prune_packet_history_succeed}' \
-            -m 'spending_channel/prune_packet_history.{prune_packet_history_succeeds_at_capacity_boundary}' \
-            -m 'spending_channel/prune_packet_history.{prune_packet_history_accepts_ordered_channel_at_capacity}' \
-            -m 'host_state_stt.{host_state_prune_packet_history_succeeds_at_full_packet_history_capacity}' \
-            -m 'host_state_stt.{host_state_ordered_prune_succeeds_at_full_packet_history_capacity}' \
-            -m 'verifying_proof.{verify_non_membership_succeed}' \
-            -m 'spending_channel.{acknowledge_packet_succeed}' \
-            -m 'spending_channel/acknowledge_packet.{succeed_acknowledge_packet}' \
-            -m 'spending_transfer_module.{on_acknowledgement_packet_result_succeed}' \
-            -m 'spending_channel.{timeout_packet_succeed}' \
-            -m 'spending_channel/timeout_packet.{succeed_timeout_unordered_packet}' \
-            -m 'spending_transfer_module.{on_timeout_packet_mint_voucher_succeed}' \
-            -m 'trace_registry.{trace_registry_insert_trace_succeeds_with_matching_voucher_mint}' \
-            -m 'trace_registry_rollover.{trace_registry_rollover_insert_succeeds_and_preserves_old_shard}' \
-            -m 'trace_registry_rollover.{trace_registry_advance_directory_succeeds_for_valid_rollover}' \
-            -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_at_entry_limit}' \
-            -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_near_byte_limit}' \
-            -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
-            -m 'host_state_stt.{host_update_client_capacity_fixture_setup_baseline}' \
-            -m 'host_state_stt.{host_update_client_capacity_minimum_history_succeeds}' \
-            -m 'recover_client.{recover_client_accepts_expired_subject}' \
-            -m 'recover_client.{spend_client_forwards_valid_recovery}' \
-            -m 'recover_client.{staged_atomic_freeze_fixture_setup_baseline}' \
-            -m 'recover_client.{staged_atomic_freeze_all_validators_accept_real_root_transition}' \
-            -m 'recover_client.{staged_atomic_recovery_fixture_setup_baseline}' \
-            -m 'recover_client.{staged_atomic_recovery_all_validators_accept_real_root_transition}' \
-            -m 'spending_client_capacity.{update_client_capacity_adjacent_all_signed_45_succeeds}' \
-            -m 'spending_client_capacity.{update_client_capacity_adjacent_mixed_45_succeeds}' \
-            -m 'spending_client_capacity.{update_client_capacity_non_adjacent_mixed_45_succeeds}' \
-            -m 'minting_tendermint_update_session.{session_mint_fixture_setup_baseline}' \
-            -m 'minting_tendermint_update_session.{mints_one_seed_bound_session_with_exact_initial_datum}' \
-            -m 'minting_tendermint_update_session.{session_burn_fixture_setup_baseline}' \
-            -m 'minting_tendermint_update_session.{burns_only_a_token_carried_by_the_session_script}' \
-            -m 'spending_tendermint_update_session.{real_injective_six_validator_fixture_setup_baseline}' \
-            -m 'spending_tendermint_update_session.{advances_real_injective_six_validator_target_batch}' \
-            -m 'spending_tendermint_update_session.{real_non_adjacent_six_membership_fixture_setup_baseline}' \
-            -m 'spending_tendermint_update_session.{advances_real_non_adjacent_six_membership_target_batch}' \
-            -m 'spending_tendermint_update_session.{depth_eight_non_adjacent_six_membership_fixture_setup_baseline}' \
-            -m 'spending_tendermint_update_session.{advances_depth_eight_non_adjacent_six_membership_target_batch}' \
-            -m 'spending_tendermint_update_session.{session_finalize_fixture_setup_baseline}' \
-            -m 'spending_tendermint_update_session.{complete_session_requires_client_and_host_threads_and_burn}' \
-            -m 'spending_multitx_client.{completed_session_update_fixture_setup_baseline}' \
-            -m 'spending_multitx_client.{completed_session_updates_the_client_atomically}' \
-            -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
-            -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
-            > ../../aiken-check.json
+        run: bash scripts/ci/collect-cardano-tx-budget-units.sh "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/aiken-check.json"
+
+      - name: Enforce ledger limits on evaluated and signed transactions
+        working-directory: cardano/offchain
+        run: deno task test:tx-budgets
 
       - name: Build proto types
         run: |
@@ -996,10 +929,10 @@ jobs:
 
       - name: Install gateway and runtime dependencies
         run: |
-          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev --legacy-peer-deps
-          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev --legacy-peer-deps
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
-          npm ci --prefix cardano/gateway --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev
+          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev
+          npm ci --prefix cardano/gateway
 
       - name: Check frozen Tendermint capacity fixture
         run: npm run --prefix cardano/gateway check:tendermint-update-capacity-fixture
@@ -1007,15 +940,11 @@ jobs:
       - name: Check generated Aiken capacity fixture
         run: npm run --prefix cardano/gateway check:tendermint-update-capacity-aiken
 
-      - name: Check transaction size and ex-unit budgets
+      - name: Report synthetic transaction cost estimates
         env:
           CARDANO_TX_BUDGET_MAX_TX_SIZE: 16384
-          CARDANO_TX_BUDGET_HEADROOM_BYTES: 750
-          CARDANO_TX_BUDGET_MAX_TX_EX_MEM: 16500000
-          CARDANO_TX_BUDGET_MAX_TX_EX_STEPS: 10000000000
-          CARDANO_TX_BUDGET_EX_UNIT_HEADROOM_BPS: 500
           CARDANO_TX_BUDGET_AIKEN_CHECK_JSON: ../../aiken-check.json
-        run: npm run --prefix cardano/gateway check:tx-budgets
+        run: npm run --prefix cardano/gateway report:tx-budget-models
 
   generated-artifacts:
     name: Generated Artifacts
@@ -1026,19 +955,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: proto-types/package-lock.json
 
       - name: Setup Go for ICS-20 vectors
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.25.13"
           cache-dependency-path: |
@@ -1104,10 +1033,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.25.13"
           cache-dependency-path: ${{ matrix.module.path }}/go.sum
@@ -1134,10 +1063,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -1152,15 +1081,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.91.1
+        # Keep compiler upgrades separate from Dependabot action updates.
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
+          toolchain: "1.91.1"
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -1204,7 +1135,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -1214,12 +1145,14 @@ jobs:
           sudo apt-get install -y protobuf-compiler
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.85.0
+        # Keep compiler upgrades separate from Dependabot action updates.
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
+          toolchain: "1.85.0"
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry

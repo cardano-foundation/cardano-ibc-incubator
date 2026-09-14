@@ -286,6 +286,7 @@ export const loadDeploymentPlan = async (
       verifyProof.hash,
       spendChannel.hash,
       hostPolicy,
+      recoverClient.hash,
     ),
   );
   const hostState = register(
@@ -315,8 +316,9 @@ export const loadDeploymentPlan = async (
     name: await generateIdentifierTokenName(inputs.transferModuleNonce),
   };
   const voucherMetadata = load(
-    "voucher_metadata.voucher_metadata.else",
-    "inline",
+    "voucher_metadata.voucher_metadata.spend",
+    "runtime",
+    bytes(hostPolicy),
   );
   const mintVoucher = load(
     "minting_voucher.mint_voucher.mint",
@@ -344,8 +346,8 @@ export const loadDeploymentPlan = async (
   const mintTransferEscrowShard = load(
     "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint",
     "runtime",
-    [portToken],
-    Data.Tuple([AuthTokenSchema]),
+    [portToken, hostPolicy],
+    Data.Tuple([AuthTokenSchema, Data.Bytes()]),
   );
   const spendTransferModule = load(
     "spending_transfer_module.spend_transfer_module.spend",
@@ -358,10 +360,12 @@ export const loadDeploymentPlan = async (
       mintChannel.hash,
       mintVoucher.hash,
       hostPolicy,
+      recoverClient.hash,
     ],
     Data.Tuple([
       AuthTokenSchema,
       AuthTokenSchema,
+      Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
@@ -383,8 +387,15 @@ export const loadDeploymentPlan = async (
       directoryAuthToken,
       mintVoucher.hash,
       benchmarkVoucher?.hash ?? "",
+      hostPolicy,
     ],
-    Data.Tuple([Data.Bytes(), AuthTokenSchema, Data.Bytes(), Data.Bytes()]),
+    Data.Tuple([
+      Data.Bytes(),
+      AuthTokenSchema,
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]),
   );
   const genericModule = load(
     GENERIC_MODULE_SPEND_VALIDATOR_TITLE,

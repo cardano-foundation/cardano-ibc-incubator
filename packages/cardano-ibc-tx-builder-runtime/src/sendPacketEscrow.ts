@@ -56,12 +56,12 @@ export function createUnsignedSendPacketEscrowTx(
     .pay.ToContract(
       dependencies.hostStateAddress,
       { kind: 'inline', value: dto.encodedUpdatedHostStateDatum },
-      { [dependencies.hostStateTokenUnit]: 1n },
+      dto.hostStateUtxo.assets,
     )
     .pay.ToContract(
       dto.spendChannelAddress,
       { kind: 'inline', value: dto.encodedUpdatedChannelDatum },
-      { [dto.channelTokenUnit]: 1n },
+      dto.channelUTxO.assets,
     )
     .mintAssets(
       { [dto.sendPacketPolicyId]: 1n },

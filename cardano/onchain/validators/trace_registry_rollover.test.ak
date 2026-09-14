@@ -126,6 +126,7 @@ fn run_trace_registry_spend(
     test_directory_auth_token(),
     test_voucher_policy_id(),
     test_disabled_benchmark_voucher_policy_id(),
+    #"00000000000000000000000000000000000000000000000000000000",
     Some(datum),
     redeemer,
     spent_output_ref,
@@ -149,6 +150,98 @@ type TestRolloverFixture {
   new_active_output: Output,
   updated_directory_output: Output,
   mint: Value,
+}
+
+fn state_value_trace_rollover(directory: Bool, output_lovelace: Int) -> Bool {
+  let fixture = test_rollover_fixture(0)
+  let input =
+    if directory {
+      fixture.spent_directory_input
+    } else {
+      fixture.spent_shard_input
+    }
+  let output =
+    if directory {
+      fixture.updated_directory_output
+    } else {
+      fixture.archived_output
+    }
+  let input =
+    Input {
+      ..input,
+      output: Output {
+        ..input.output,
+        value: assets.merge(input.output.value, assets.from_lovelace(8_000_000)),
+      },
+    }
+  let output =
+    Output {
+      ..output,
+      value: assets.merge(output.value, assets.from_lovelace(output_lovelace)),
+    }
+  let fixture =
+    if directory {
+      TestRolloverFixture {
+        ..fixture,
+        spent_directory_input: input,
+        updated_directory_output: output,
+      }
+    } else {
+      TestRolloverFixture {
+        ..fixture,
+        spent_shard_input: input,
+        archived_output: output,
+      }
+    }
+  let transaction =
+    test_rollover_shard_transaction(
+      fixture,
+      fixture.archived_output,
+      fixture.new_active_output,
+      fixture.updated_directory_output,
+      fixture.mint,
+    )
+  if directory {
+    run_trace_registry_spend(
+      Directory(fixture.old_directory),
+      AdvanceDirectory {
+        bucket_index: fixture.bucket_index,
+        voucher_hash: fixture.voucher_hash,
+        full_denom: fixture.full_denom,
+        previous_active_shard_name: fixture.previous_active_shard_name,
+        new_active_shard_name: fixture.new_active_shard_name,
+      },
+      input.output_reference,
+      transaction,
+    )
+  } else {
+    run_trace_registry_spend(
+      Shard(fixture.old_shard),
+      RolloverInsertTrace {
+        voucher_hash: fixture.voucher_hash,
+        full_denom: fixture.full_denom,
+        new_active_shard_name: fixture.new_active_shard_name,
+      },
+      input.output_reference,
+      transaction,
+    )
+  }
+}
+
+test state_value_trace_rollover_rejects_archived_shard_ada_sweep() fail {
+  state_value_trace_rollover(False, 2_000_000)
+}
+
+test state_value_trace_rollover_rejects_directory_ada_sweep() fail {
+  state_value_trace_rollover(True, 2_000_000)
+}
+
+test state_value_trace_rollover_accepts_preserved_archived_reserve() {
+  state_value_trace_rollover(False, 8_000_000)
+}
+
+test state_value_trace_rollover_accepts_directory_growth_top_up() {
+  state_value_trace_rollover(True, 10_000_000)
 }
 
 type TraceRegistryModel {

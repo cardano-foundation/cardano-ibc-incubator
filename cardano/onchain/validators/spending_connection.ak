@@ -16,7 +16,7 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
-  ConnOpenAck, ConnOpenConfirm, SpendConnectionRedeemer,
+  ConnOpenAck, ConnOpenConfirm, ReclaimConnection, SpendConnectionRedeemer,
 }
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
@@ -26,6 +26,7 @@ use ibc/core/ics_003_connection_semantics/verify as verify_mod
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
+use ibc/utils/shutdown
 use ibc/utils/validator_utils
 
 validator spend_connection(
@@ -39,118 +40,105 @@ validator spend_connection(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction {
-      inputs,
-      outputs,
-      reference_inputs,
-      validity_range,
-      redeemers,
-      ..
-    } = transaction
-
-    // Connection handshakes must use the matching HostState root verifier branch.
-    expect _ =
-      validator_utils.require_host_state_redeemer(
+    if redeemer == ReclaimConnection {
+      expect Some(datum) = datum
+      shutdown.burns_token(transaction, datum.token)
+    } else {
+      let Transaction {
         inputs,
         outputs,
-        redeemers,
-        host_state_nft_policy_id,
-        validator_utils.ExpectUpdateConnection,
-      )
-
-    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
-    let spent_output = spent_input.output
-
-    expect Some(datum) = datum
-
-    expect auth.contain_auth_token(spent_output, datum.token)
-    trace @"spend_connection: input contains auth token"
-
-    let updated_output =
-      validator_utils.find_unique_continuation_output(
-        spent_output,
-        outputs,
-        datum.token,
-      )
-    expect updated_datum: ConnectionDatum =
-      validator_utils.get_inline_datum(updated_output)
-    trace @"spend_connection: found connection output"
-
-    expect auth.contains_only_auth_tokens(updated_output, [datum.token])
-    trace @"spend_connection: output contains connection token"
-
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-    trace @"spend_connection: extract tx valid_to"
-
-    let connection_sequence = auth.extract_token_sequence(datum.token.name)
-    let connection_id =
-      conn_keys.format_connection_identifier(connection_sequence)
-    trace @"spend_connection: extract connection_id"
-
-    // Both connection-spend variants authenticate the same referred client and
-    // require it to be active. Resolve that shared state once before dispatching
-    // to the branch-specific proof and transition checks.
-    let client_datum =
-      validator_utils.validate_referred_client(
         reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        datum.state.client_id,
-      )
-    trace @"spend_connection: validator_utils.validate_referred_client"
-
-    let connection_state_active =
-      client_state.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == Active
-    trace @"spend_connection: client status is active"
-
-    when redeemer is {
-      ConnOpenAck -> {
-        trace @"spend_connection: ConnOpenAck branch"
-
-        let valid_connection =
-          validate_conn_open_ack_proof(
-            client_datum.state,
-            connection_id,
-            updated_datum.state,
-            redeemers,
-            verify_proof_policy_id,
-          )
-
-        and {
-          valid_connection?,
-          connection_datum.is_connection_open_ack_valid(datum, updated_datum)?,
-          connection_state_active?,
+        validity_range,
+        redeemers,
+        ..
+      } = transaction
+      // Connection handshakes must use the matching HostState root verifier branch.
+      expect _ =
+        validator_utils.require_host_state_redeemer(
+          inputs,
+          outputs,
+          redeemers,
+          host_state_nft_policy_id,
+          validator_utils.ExpectUpdateConnection,
+        )
+      expect Some(spent_input) =
+        transaction.find_input(inputs, spent_output_ref)
+      let spent_output = spent_input.output
+      expect Some(datum) = datum
+      let updated_output =
+        validator_utils.find_unique_continuation_output(
+          spent_output,
+          outputs,
+          datum.token,
+        )
+      expect updated_datum: ConnectionDatum =
+        validator_utils.get_inline_datum(updated_output)
+      trace @"spend_connection: found connection output"
+      let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
+      trace @"spend_connection: extract tx valid_to"
+      let connection_sequence = auth.extract_token_sequence(datum.token.name)
+      let connection_id =
+        conn_keys.format_connection_identifier(connection_sequence)
+      trace @"spend_connection: extract connection_id"
+      // Both connection-spend variants authenticate the same referred client and
+      // require it to be active. Resolve that shared state once before dispatching
+      // to the branch-specific proof and transition checks.
+      let client_datum =
+        validator_utils.validate_referred_client(
+          reference_inputs,
+          datum.token.name,
+          client_minting_policy_id,
+          datum.state.client_id,
+        )
+      trace @"spend_connection: validator_utils.validate_referred_client"
+      let connection_state_active =
+        client_state.status(
+          client_datum.state.client_state,
+          tx_valid_to * 1_000_000,
+          client_datum.state.consensus_states,
+        ) == Active
+      trace @"spend_connection: client status is active"
+      when redeemer is {
+        ReclaimConnection -> fail
+        ConnOpenAck -> {
+          trace @"spend_connection: ConnOpenAck branch"
+          let valid_connection =
+            validate_conn_open_ack_proof(
+              client_datum.state,
+              connection_id,
+              updated_datum.state,
+              redeemers,
+              verify_proof_policy_id,
+            )
+          and {
+            valid_connection?,
+            connection_datum.is_connection_open_ack_valid(datum, updated_datum)?,
+            connection_state_active?,
+          }
         }
-      }
-      ConnOpenConfirm { proof_ack, proof_height } -> {
-        trace @"spend_connection: ConnOpenConfirm branch"
-
-        let is_connection_open =
-          connection_datum.is_connection_open_confirm_valid(
-            datum,
-            updated_datum,
-          )
-        trace @"spend_connection: connection datum is updated valid"
-
-        let valid_connection =
-          validate_conn_open_confirm_proof(
-            client_datum.state,
-            connection_id,
-            updated_datum.state,
-            proof_ack,
-            proof_height,
-            redeemers,
-            verify_proof_policy_id,
-          )
-
-        and {
-          connection_state_active?,
-          is_connection_open?,
-          valid_connection?,
+        ConnOpenConfirm { proof_ack, proof_height } -> {
+          trace @"spend_connection: ConnOpenConfirm branch"
+          let is_connection_open =
+            connection_datum.is_connection_open_confirm_valid(
+              datum,
+              updated_datum,
+            )
+          trace @"spend_connection: connection datum is updated valid"
+          let valid_connection =
+            validate_conn_open_confirm_proof(
+              client_datum.state,
+              connection_id,
+              updated_datum.state,
+              proof_ack,
+              proof_height,
+              redeemers,
+              verify_proof_policy_id,
+            )
+          and {
+            connection_state_active?,
+            is_connection_open?,
+            valid_connection?,
+          }
         }
       }
     }

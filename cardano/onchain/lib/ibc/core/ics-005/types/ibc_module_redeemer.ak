@@ -54,4 +54,5 @@ pub type IBCModuleOperator {
 pub type IBCModuleRedeemer {
   Callback(IBCModuleCallback)
   Operator(IBCModuleOperator)
+  ReclaimModule
 }

@@ -109,7 +109,6 @@ validator prune_packet_history(
 
     and {
       channel_token == datum.token,
-      auth.contain_auth_token(updated_output, datum.token),
       channel.state == channel_state_mod.Open,
       channel.ordering == channel_order_mod.Unordered || channel.ordering == channel_order_mod.Ordered,
       connection_datum.state.state == connection_state_mod.Open,

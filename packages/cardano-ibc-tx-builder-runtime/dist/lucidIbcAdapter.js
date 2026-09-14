@@ -407,6 +407,7 @@ function encodeTransferEscrowDatum(transferEscrowDatum, Lucid) {
     const TransferEscrowDatumSchema = Data.Object({
         channel_id: Data.Bytes(),
         denom: Data.Bytes(),
+        escrowed_amount: Data.Integer(),
     });
     return Data.to(transferEscrowDatum, TransferEscrowDatumSchema, { canonical: true });
 }
@@ -415,6 +416,7 @@ function decodeTransferEscrowDatum(encoded, Lucid) {
     const TransferEscrowDatumSchema = Data.Object({
         channel_id: Data.Bytes(),
         denom: Data.Bytes(),
+        escrowed_amount: Data.Integer(),
     });
     return Data.from(encoded, TransferEscrowDatumSchema);
 }
@@ -1080,7 +1082,6 @@ class LucidIbcAdapter {
         if (!spendChannelAddress) {
             throw new Error('Spend channel script address is missing from deployment config');
         }
-        const hostStateNFT = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
         const hostStateUtxoWithRawDatum = {
             ...dto.hostStateUtxo,
             datum: dto.hostStateUtxo.datum,
@@ -1098,8 +1099,8 @@ class LucidIbcAdapter {
             .collectFrom([dto.senderVoucherTokenUtxo])
             .readFrom([dto.connectionUTxO, dto.clientUTxO])
             .mintAssets({ [dto.voucherTokenUnit]: -BigInt(dto.transferAmount) }, dto.encodedMintVoucherRedeemer)
-            .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, { [hostStateNFT]: 1n })
-            .pay.ToContract(spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
+            .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, dto.hostStateUtxo.assets)
+            .pay.ToContract(spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, dto.channelUTxO.assets)
             .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
         return tx;
     }

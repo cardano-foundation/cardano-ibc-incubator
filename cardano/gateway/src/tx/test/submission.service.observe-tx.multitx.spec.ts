@@ -51,6 +51,24 @@ describe('SubmissionService staged ObserveTx', () => {
     expect(applyTreeUpdate).not.toHaveBeenCalled();
   });
 
+  it('observes an explicitly allowed trace prelude without committing staged state', async () => {
+    jest.spyOn(service as any, 'waitForIndexedTransactionEvidence').mockResolvedValue({ blockNo: 1234 });
+    const verifyEvidence = jest.spyOn(service as any, 'verifyObservedTransactionEvidence').mockReturnValue('body-cbor');
+    const indexedEvents = jest.spyOn(service as any, 'findIndexedIbcEvents').mockResolvedValue([]);
+    const applyTreeUpdate = jest.spyOn(service as any, 'applyExactPendingIbcTreeUpdate');
+
+    await expect(service.observeTransaction({ tx_hash: TX_HASH, allow_untracked: true })).resolves.toEqual({
+      tx_hash: TX_HASH,
+      height: '0-1234',
+      events: [],
+    });
+
+    expect(verifyEvidence).toHaveBeenCalledWith(TX_HASH, { blockNo: 1234 });
+    expect(indexedEvents).toHaveBeenCalledWith(TX_HASH);
+    expect(pendingUpdates.commitNeutral).not.toHaveBeenCalled();
+    expect(applyTreeUpdate).not.toHaveBeenCalled();
+  });
+
   it('does not consume a tree-neutral registration if exact evidence verification fails', async () => {
     const pending = { kind: 'tree_neutral' as const, expectedNewRoot: '', commit: jest.fn() };
     pendingUpdates.peek.mockReturnValue(pending);

@@ -82,7 +82,7 @@ fn module_input() -> Input {
 }
 
 fn escrow_datum(channel_id: ByteArray, denom: ByteArray) -> TransferEscrowDatum {
-  TransferEscrowDatum { channel_id, denom }
+  TransferEscrowDatum { channel_id, denom, escrowed_amount: 0 }
 }
 
 fn escrow_output(
@@ -96,7 +96,12 @@ fn escrow_output(
     address: from_script("transfer-module"),
     value: from_asset(native_policy_id, native_token_name, quantity)
       |> add(shard_policy_id, shard_token_name, 1),
-    datum: InlineDatum(escrow_datum(channel_id, denom)),
+    datum: InlineDatum(
+      TransferEscrowDatum {
+        ..escrow_datum(channel_id, denom),
+        escrowed_amount: quantity,
+      },
+    ),
     reference_script: None,
   }
 }
@@ -225,7 +230,10 @@ fn native_escrow_contract(
   transfer_escrow.validate_module_escrow_transition(
     input,
     EscrowShard {
-      datum: escrow_datum(actual_channel_id, denom),
+      datum: TransferEscrowDatum {
+        ..escrow_datum(actual_channel_id, denom),
+        escrowed_amount: input_quantity,
+      },
       updated_output: Some(output),
     },
     [input],
@@ -235,7 +243,6 @@ fn native_escrow_contract(
     empty_mint(),
     delta,
     native_value(delta),
-    native_policy_id |> bytearray.concat(native_token_name),
   )
 }
 
@@ -256,7 +263,10 @@ fn native_unescrow_contract(
     transfer_escrow.validate_module_escrow_transition(
       input,
       EscrowShard {
-        datum: escrow_datum(channel_id, denom),
+        datum: TransferEscrowDatum {
+          ..escrow_datum(channel_id, denom),
+          escrowed_amount: escrow_quantity,
+        },
         updated_output: Some(output),
       },
       [input],
@@ -266,7 +276,6 @@ fn native_unescrow_contract(
       empty_mint(),
       0 - amount,
       native_value(amount) |> assets.negate(),
-      native_policy_id |> bytearray.concat(native_token_name),
     )?,
     delta == payout_quantity,
     delta == amount,
@@ -586,4 +595,72 @@ test prop_transfer_rejects_invalid_receiver_address(_seed via fuzz.int()) {
     receiver_address("not a hex address") != None,
   )
     |> fuzz_dsl.assert_rejected
+}
+
+fn ada_escrow_transition(
+  delta: Int,
+  reserve_delta: Int,
+  updated_principal: Int,
+) -> Bool {
+  let datum =
+    TransferEscrowDatum {
+      channel_id,
+      denom: "6c6f76656c616365",
+      escrowed_amount: 1000,
+    }
+  let nft = transfer_escrow_shard.shard_token_name(channel_id, datum.denom)
+  let input =
+    Input {
+      ..module_input(),
+      output: Output {
+        ..module_output(
+          assets.from_lovelace(2_001_000) |> assets.add(shard_policy_id, nft, 1),
+        ),
+        datum: InlineDatum(datum),
+      },
+    }
+  let output =
+    Output {
+      ..input.output,
+      value: assets.from_lovelace(2_001_000 + delta + reserve_delta)
+        |> assets.add(shard_policy_id, nft, 1),
+      datum: InlineDatum(
+        TransferEscrowDatum { ..datum, escrowed_amount: updated_principal },
+      ),
+    }
+  transfer_escrow.validate_module_escrow_transition(
+    input,
+    EscrowShard { datum, updated_output: Some(output) },
+    [input],
+    [output],
+    datum,
+    shard_policy_id,
+    assets.zero,
+    delta,
+    assets.from_lovelace(delta),
+  )
+}
+
+test ada_escrow_deposit_tracks_principal_separately_from_reserve() {
+  ada_escrow_transition(500, 0, 1500)
+}
+
+test ada_escrow_full_payout_retains_reserve_and_clears_principal() {
+  ada_escrow_transition(-1000, 0, 0)
+}
+
+test ada_escrow_top_up_changes_reserve_without_increasing_principal() {
+  ada_escrow_transition(-500, 1000, 500)
+}
+
+test ada_escrow_rejects_spending_reserve_as_user_principal() {
+  !ada_escrow_transition(-1001, 0, -1)
+}
+
+test ada_escrow_rejects_dropping_reserve_during_payout() {
+  !ada_escrow_transition(-500, -1, 500)
+}
+
+test ada_escrow_rejects_clearing_principal_without_paying_it_out() {
+  !ada_escrow_transition(0, 0, 0)
 }

@@ -66,7 +66,6 @@ pub fn validate_refund_packet_token(
         mint,
         0 - transfer_amount,
         expected_escrow_value_difference,
-        escrowed_token_unit,
       )
 
     trace @"spend_transfer_module (validate_refund_packet_token): unescrowed amount is valid"

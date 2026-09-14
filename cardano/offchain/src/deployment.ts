@@ -823,7 +823,11 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[mintPortPolicyId],
       },
       voucherMetadata: {
+        title: "voucher_metadata.voucher_metadata.spend",
+        script: voucherMetadata.validator.script,
+        scriptHash: voucherMetadata.scriptHash,
         address: voucherMetadata.address,
+        refUtxo: refUtxosInfo[voucherMetadata.scriptHash],
       },
       ...(traceRegistryBenchmarkVoucher
         ? {
@@ -1680,6 +1684,8 @@ const deployTransferModule = async (
     name: identifierTokenName,
   };
   const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
+  const voucherMetadataValidator = plan.voucherMetadata.script;
+  const voucherMetadataScriptHash = plan.voucherMetadata.hash;
   const voucherMetadataAddress = plan.voucherMetadata.address;
   const mintVoucherValidator = plan.mintVoucher.script;
   const mintVoucherPolicyId = plan.mintVoucher.hash;
@@ -1766,9 +1772,7 @@ const deployTransferModule = async (
             canonical: true,
           }),
         },
-        {
-          [hostStateUnit]: 1n,
-        },
+        hostStateUtxo.assets,
       )
       .pay.ToContract(
         spendTransferModuleAddress,
@@ -1801,6 +1805,8 @@ const deployTransferModule = async (
       policyId: mintTransferEscrowShardPolicyId,
     },
     voucherMetadata: {
+      validator: voucherMetadataValidator,
+      scriptHash: voucherMetadataScriptHash,
       address: voucherMetadataAddress,
     },
     spendTransferModule: {
@@ -1913,9 +1919,7 @@ const deployGenericModule = async (
             canonical: true,
           }),
         },
-        {
-          [hostStateUnit]: 1n,
-        },
+        hostStateUtxo.assets,
       )
       .pay.ToAddress(
         spendModuleAddress,

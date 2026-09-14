@@ -50,4 +50,5 @@ pub type SpendChannelRedeemer {
     proof_height: Height,
     next_sequence_recv: Int,
   }
+  ReclaimChannel
 }
