@@ -132,6 +132,8 @@ import {
   type TransferEscrowShardLookup,
 } from '@cardano-ibc/tx-builder-runtime/transferEscrowShard';
 
+const TRACE_REGISTRY_PRELUDE_TYPE_URL = '/ibc.cardano.v1.TraceRegistryPrelude';
+
 function uint64ToBigEndianHex(value: bigint): string {
   const bytes = Buffer.alloc(8);
   bytes.writeBigUInt64BE(value);
@@ -1275,7 +1277,7 @@ export class PacketService {
       const { constructedAddress, recvPacketOperator } = validateAndFormatRecvPacketParams(data);
       await this.refreshWalletContext(constructedAddress, 'recvPacketBuilder');
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedRecvPacketTx, pendingTreeUpdate } = await this.buildUnsignedRecvPacketTx(
+      const { unsignedTx: unsignedRecvPacketTx, pendingTreeUpdate, traceRegistryPrelude } = await this.buildUnsignedRecvPacketTx(
         recvPacketOperator,
         constructedAddress,
       );
@@ -1335,7 +1337,7 @@ export class PacketService {
       const response: MsgTransferResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
-          type_url: '',
+          type_url: traceRegistryPrelude ? TRACE_REGISTRY_PRELUDE_TYPE_URL : '',
           value: cborHexBytes,
         },
       };
@@ -1681,7 +1683,11 @@ export class PacketService {
   async buildUnsignedRecvPacketTx(
     recvPacketOperator: RecvPacketOperator,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+  ): Promise<{
+    unsignedTx: TxBuilder;
+    pendingTreeUpdate?: PendingTreeUpdate;
+    traceRegistryPrelude?: boolean;
+  }> {
     const channelSequence: string = recvPacketOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -2205,6 +2211,21 @@ export class PacketService {
                   traceRegistryKind: initialUpdate.kind,
                 }),
             );
+
+            if (traceRegistryUpdate.kind !== 'existing') {
+              return {
+                unsignedTx: this.lucidService.createUnsignedTraceRegistryUpdateTx(
+                  traceRegistryUpdate,
+                  {
+                    voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
+                    voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
+                    encodedVoucherMetadataDatum: voucherMintDetails.encodedVoucherMetadataDatum,
+                    encodedMintVoucherRedeemer,
+                  },
+                ),
+                traceRegistryPrelude: true,
+              };
+            }
 
             this.debugLogRecvPacketPlan('mint_voucher', {
               spendInputs: [

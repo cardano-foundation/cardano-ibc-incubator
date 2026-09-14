@@ -117,6 +117,11 @@ export interface ObserveTxRequest {
    * Blake2b-256 hash of the Cardano transaction body, encoded as 64 hex digits.
    */
   tx_hash: string;
+  /**
+   * Allows observation of a confirmed transaction that intentionally has no
+   * HostState update, such as a first-seen voucher trace-registration prelude.
+   */
+  allow_untracked: boolean;
 }
 /**
  * ObserveTxResponse contains the confirmed inclusion height and IBC events.
@@ -616,6 +621,7 @@ export const SubmitSignedTxResponse = {
 function createBaseObserveTxRequest(): ObserveTxRequest {
   return {
     tx_hash: "",
+    allow_untracked: false,
   };
 }
 /**
@@ -631,6 +637,9 @@ export const ObserveTxRequest = {
     if (message.tx_hash !== "") {
       writer.uint32(10).string(message.tx_hash);
     }
+    if (message.allow_untracked === true) {
+      writer.uint32(16).bool(message.allow_untracked);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ObserveTxRequest {
@@ -643,6 +652,9 @@ export const ObserveTxRequest = {
         case 1:
           message.tx_hash = reader.string();
           break;
+        case 2:
+          message.allow_untracked = reader.bool();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -653,16 +665,19 @@ export const ObserveTxRequest = {
   fromJSON(object: any): ObserveTxRequest {
     const obj = createBaseObserveTxRequest();
     if (isSet(object.tx_hash)) obj.tx_hash = String(object.tx_hash);
+    if (isSet(object.allow_untracked)) obj.allow_untracked = Boolean(object.allow_untracked);
     return obj;
   },
   toJSON(message: ObserveTxRequest): unknown {
     const obj: any = {};
     message.tx_hash !== undefined && (obj.tx_hash = message.tx_hash);
+    message.allow_untracked !== undefined && (obj.allow_untracked = message.allow_untracked);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ObserveTxRequest>, I>>(object: I): ObserveTxRequest {
     const message = createBaseObserveTxRequest();
     message.tx_hash = object.tx_hash ?? "";
+    message.allow_untracked = object.allow_untracked ?? false;
     return message;
   },
 };

@@ -364,24 +364,24 @@ jobs:
           npm ci --prefix packages/cardano-ibc-planner
           npm run --prefix packages/cardano-ibc-planner build
 
-          npm ci --prefix packages/cardano-ibc-tx-builder --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder
           npm run --prefix packages/cardano-ibc-tx-builder build
 
-          npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-trace-registry
           npm run --prefix packages/cardano-ibc-trace-registry build
 
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
           npm run --prefix packages/cardano-ibc-tx-builder-runtime build
 
       - name: Prune package-local installs for gateway
         run: |
           rm -rf packages/cardano-ibc-planner/node_modules
-          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev --legacy-peer-deps
-          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev --legacy-peer-deps
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev
+          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev
 
       - name: Install dependencies
-        run: npm ci --prefix cardano/gateway --legacy-peer-deps
+        run: npm ci --prefix cardano/gateway
 
       - name: Lint
         run: npm run --prefix cardano/gateway lint:check
@@ -447,20 +447,20 @@ jobs:
 
       - name: Build tx builder
         run: |
-          npm ci --prefix packages/cardano-ibc-tx-builder --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder
           npm run --prefix packages/cardano-ibc-tx-builder build
           npm test --prefix packages/cardano-ibc-tx-builder
           npm prune --omit=dev --prefix packages/cardano-ibc-tx-builder
 
       - name: Build trace registry
         run: |
-          npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-trace-registry
           npm run --prefix packages/cardano-ibc-trace-registry build
           npm test --prefix packages/cardano-ibc-trace-registry
 
       - name: Build tx builder runtime
         run: |
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
           npm run --prefix packages/cardano-ibc-tx-builder-runtime build
           npm test --prefix packages/cardano-ibc-tx-builder-runtime
 
@@ -951,10 +951,10 @@ jobs:
 
       - name: Install gateway and runtime dependencies
         run: |
-          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev --legacy-peer-deps
-          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev --legacy-peer-deps
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev --legacy-peer-deps
-          npm ci --prefix cardano/gateway --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev
+          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev
+          npm ci --prefix cardano/gateway
 
       - name: Check frozen Tendermint capacity fixture
         run: npm run --prefix cardano/gateway check:tendermint-update-capacity-fixture
