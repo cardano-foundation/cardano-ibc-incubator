@@ -94,6 +94,10 @@ message SubmitSignedTxResponse {
 message ObserveTxRequest {
   // Blake2b-256 hash of the Cardano transaction body, encoded as 64 hex digits.
   string tx_hash = 1;
+
+  // Allows observation of a confirmed transaction that intentionally has no
+  // HostState update, such as a first-seen voucher trace-registration prelude.
+  bool allow_untracked = 2;
 }
 
 // ObserveTxResponse contains the confirmed inclusion height and IBC events.

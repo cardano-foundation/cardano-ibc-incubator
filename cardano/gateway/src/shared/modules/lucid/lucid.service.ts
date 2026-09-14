@@ -9,6 +9,7 @@ import {
 } from "@lucid-evolution/lucid";
 import { LUCID_CLIENT, LUCID_IMPORTER } from "./lucid.provider";
 import type { UnsignedSendPacketEscrowTxInput } from "@cardano-ibc/tx-builder";
+import type { TraceRegistryInsertContext } from "src/query/services/denom-trace.service";
 import { createUnsignedSendPacketEscrowTx } from "@cardano-ibc/tx-builder-runtime/sendPacketEscrow";
 import {
   CHANNEL_TOKEN_PREFIX,
@@ -2223,6 +2224,39 @@ export class LucidService implements OnModuleInit {
       );
     }
 
+    return tx;
+  }
+
+  /**
+   * Build the first transaction of a first-seen voucher receive. This only
+   * updates the on-chain denom trace registry. The relayer submits this
+   * transaction and calls RecvPacket again after it is confirmed, at which
+   * point the normal voucher mint path can use the registry mapping as a
+   * witness without carrying the registry write in the same transaction.
+   */
+  public createUnsignedTraceRegistryUpdateTx(
+    update: Exclude<TraceRegistryInsertContext, { kind: "existing" }>,
+    voucher: {
+      voucherReferenceTokenUnit: string;
+      voucherMetadataAddress: string;
+      encodedVoucherMetadataDatum: string;
+      encodedMintVoucherRedeemer: string;
+    },
+  ): TxBuilder {
+    const tx = this.newTxBuilder();
+    tx.readFrom([
+      this.referenceScripts.hostStateStt,
+      this.referenceScripts.mintVoucher,
+    ]);
+    this.applyTraceRegistryUpdate(tx, { traceRegistryUpdate: update });
+    tx.mintAssets(
+      { [voucher.voucherReferenceTokenUnit]: 1n },
+      voucher.encodedMintVoucherRedeemer,
+    ).pay.ToContract(
+      voucher.voucherMetadataAddress,
+      { kind: "inline", value: voucher.encodedVoucherMetadataDatum },
+      { [voucher.voucherReferenceTokenUnit]: 1n },
+    );
     return tx;
   }
 
