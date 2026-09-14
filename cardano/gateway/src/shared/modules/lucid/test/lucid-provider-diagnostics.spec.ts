@@ -86,7 +86,7 @@ describe('Lucid provider evaluation diagnostics', () => {
     await expect(provider.evaluateTx('a100', additionalUTxOs)).resolves.toBe(result);
 
     expect(evaluateTx).toHaveBeenCalledTimes(1);
-    expect(evaluateTx).toHaveBeenCalledWith('a100', additionalUTxOs);
+    expect(evaluateTx).toHaveBeenCalledWith('a100');
     expect(evaluateTx.mock.contexts[0]).toBe(provider);
     expect(record).not.toHaveBeenCalled();
     expect(await fs.promises.readdir(temporaryDirectory)).toEqual([]);
@@ -108,7 +108,7 @@ describe('Lucid provider evaluation diagnostics', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(evaluateTx).toHaveBeenCalledTimes(1);
-    expect(evaluateTx).toHaveBeenCalledWith('a100', additionalUTxOs);
+    expect(evaluateTx).toHaveBeenCalledWith('a100');
     expect(evaluateTx.mock.contexts[0]).toBe(provider);
     expect(toJSON).not.toHaveBeenCalled();
     expect(writeFileSync).not.toHaveBeenCalled();
@@ -170,7 +170,7 @@ describe('Lucid provider evaluation diagnostics', () => {
     await expect(provider.evaluateTx('a100')).rejects.toBe(error);
     await drainDiagnostics();
 
-    expect(evaluateTx).toHaveBeenCalledWith('a100', undefined);
+    expect(evaluateTx).toHaveBeenCalledWith('a100');
     const [filename] = await fs.promises.readdir(directory);
     expect(JSON.parse(await fs.promises.readFile(join(directory, filename), 'utf8')).details).toEqual({
       txCbor: 'a100',
