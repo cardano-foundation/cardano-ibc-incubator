@@ -278,7 +278,7 @@ describe('Tendermint update-session Lucid codecs', () => {
     const evidence: SpendMultitxClientRedeemer = { FinalizeMisbehaviour: {
       sessionToken1: { policyId: '02', name: '03' }, sessionToken2: { policyId: '02', name: '04' },
     } };
-    for (const [value, index] of [[recovery, 2], [evidence, 3]] as const) {
+    for (const [value, index] of [[recovery, 2], [evidence, 3], ['ReclaimClient', 4]] as const) {
       const encoded = encodeSpendMultitxClientRedeemer(value, Lucid);
       expect(rawConstructor(encoded).index).toBe(index);
       expect(decodeSpendMultitxClientRedeemer(encoded, Lucid)).toEqual(value);

@@ -62,6 +62,9 @@ export async function scanDeploymentState(
   lucid: Pick<LucidEvolution, "utxosAt">,
   deployment: DeploymentTemplate,
 ): Promise<ShutdownStateGroup[]> {
+  // Session NFTs represent independently owned verification work, not bridge
+  // state. Anyone can mint them, so they must not veto deployment shutdown.
+  // Their owners can still cancel them using inline scripts after shutdown.
   const definitions = [
     ["channel", deployment.validators.spendChannel],
     ["connection", deployment.validators.spendConnection],
@@ -287,10 +290,21 @@ export function buildReclaimStateTx(
   const assets: Record<string, bigint> = {};
   for (const utxo of group.utxos) addAssets(assets, utxo.assets);
   addAssets(assets, burns);
+  const clientTitle = deployment.validators.spendClient.title;
+  if (
+    group.kind === "client" && ![
+      "spending_client.spend_client.spend",
+      "spending_multitx_client.spend_multitx_client.spend",
+    ].includes(clientTitle)
+  ) {
+    throw new Error(`Unknown client validator for shutdown: ${clientTitle}`);
+  }
   const index: Record<StateKind, number> = {
     channel: 10,
     connection: 2,
-    client: 2,
+    client: clientTitle === "spending_multitx_client.spend_multitx_client.spend"
+      ? 4
+      : 2,
     transfer: 2,
     module: 2,
     trace: 3,

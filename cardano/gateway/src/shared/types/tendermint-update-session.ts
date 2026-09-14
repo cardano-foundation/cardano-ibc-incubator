@@ -156,7 +156,8 @@ export type SpendMultitxClientRedeemer =
         sessionToken1: AuthToken;
         sessionToken2: AuthToken;
       };
-    };
+    }
+  | 'ReclaimClient';
 
 /**
  * Build all schemas in one place so constructor and record-field order cannot
@@ -358,6 +359,7 @@ function createTendermintUpdateSessionSchemas(Data: LucidData) {
         sessionToken2: AuthTokenSchema,
       }),
     }),
+    Data.Literal('ReclaimClient'),
   ]);
 
   return {

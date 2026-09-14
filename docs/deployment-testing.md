@@ -18,18 +18,30 @@ sizes and execution budgets.
 3. `deno task export:deployment-plan --output ../../deployment-plan.json` exports
    both fully applied inventories. The Gateway budget check requires this fresh
    artifact and verifies its blueprint SHA-256. Every reference must satisfy the
-   same 15,634-byte output guard (16,384 minus the 750-byte reserve). A runtime
-   budget exception cannot bypass this deployment check.
+   same 15,634-byte output guard (16,384 minus the 750-byte reserve).
 4. Aiken tests check HostState authorization, state transitions, client token
    authenticity, shutdown behavior, packet timeouts, and transfer value
    preservation. Property tests exercise negative cases as well as valid updates.
 
 The CI reference-deployment report uses the largest **applied** output estimate,
-then adds its existing conservative signing allowance. Its modeled signing
-reserve ratchet is separate from the mandatory reference-output guard and the
-actual signed-transaction ledger limit. Any remaining runtime budget overruns
-remain visible in the report; passing deployment checks does not prove that every
+then adds its conservative signing allowance. Synthetic execution estimates are
+diagnostic only. `deno task test:tx-budgets` enforces ledger limits on evaluated,
+signed transactions. Passing these checks does not prove that every
 maximum-capacity IBC operation fits the ledger.
+
+`deno task test:shutdown` evaluates complete cleanup transactions for both legacy
+and staged clients, including refunds and recovery staking-deposit reclamation.
+It also checks that staged cleanup rejects active deployments, an unelapsed
+grace period, missing authority, missing token burns, incorrect refunds and
+legacy reclaim redeemers. Staged reclaim uses constructor 4; existing staged
+update, recovery and misbehaviour constructors keep their indices.
+
+Verification sessions are independently owned deposits, not bridge state.
+Session owners should cancel unfinished work before reference scripts are
+removed. Cancellation remains possible afterward by attaching the session spend
+and mint scripts from the deployment manifest directly. Session creation is
+permissionless, so unrelated sessions cannot prevent an administrator from
+shutting down the bridge. Cleanup does not spend those deposits.
 
 ## Local verification
 
@@ -43,6 +55,8 @@ Then from `cardano/offchain`:
 
 ```sh
 deno task test:deployment
+deno task test:shutdown
+deno task test:tx-budgets
 deno task export:deployment-plan --output ../../deployment-plan.json
 ```
 

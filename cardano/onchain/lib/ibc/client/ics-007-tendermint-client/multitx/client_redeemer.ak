@@ -14,4 +14,6 @@ pub type SpendMultitxClientRedeemer {
     session_token_1: AuthToken,
     session_token_2: AuthToken,
   }
+  /// Deployment shutdown only; authorization and refunds are enforced by the state-token policy.
+  ReclaimClient
 }

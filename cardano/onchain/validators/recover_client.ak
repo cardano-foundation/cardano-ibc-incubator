@@ -130,7 +130,8 @@ validator recover_client(host_state_nft_policy_id: PolicyId) {
         expect Some(subject_spend_redeemer) =
           pairs.get_first(redeemers, Spend(subject_input.output_reference))
         let legacy_recovery: Data = RecoverClient { substitute_token }
-        let staged_recovery: Data = staged_client.RecoverClient { substitute_token }
+        let staged_recovery: Data =
+          staged_client.RecoverClient { substitute_token }
         expect
           subject_spend_redeemer == legacy_recovery || subject_spend_redeemer == staged_recovery
         expect [substitute_input] =
@@ -155,7 +156,6 @@ validator recover_client(host_state_nft_policy_id: PolicyId) {
             outputs,
             subject_token,
           )
-        expect auth.contains_only_auth_tokens(subject_output, [subject_token])
         expect recovered_datum: ClientDatum =
           validator_utils.get_inline_datum(subject_output)
         let valid_to =

@@ -17,7 +17,7 @@ use ibc/client/ics_007_tendermint_client/misbehaviour.{Misbehaviour}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase, MisbehaviourCase}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
-  DirectUpdateDisabled, FinalizeMisbehaviour, FinalizeUpdate, RecoverClient,
+  FinalizeMisbehaviour, FinalizeUpdate, ReclaimClient, RecoverClient,
   SpendMultitxClientRedeemer,
 }
 use ibc/client/ics_007_tendermint_client/multitx/session
@@ -70,7 +70,7 @@ fn finalized_session(
 }
 
 /// Completed sessions authenticate normal headers and conflicting-header
-/// evidence. Every transition, including administrative recovery, updates the
+/// evidence. Every client update, including administrative recovery, updates the
 /// canonical client and HostState together.
 validator spend_multitx_client(
   host_state_nft_policy_id: PolicyId,
@@ -87,122 +87,128 @@ validator spend_multitx_client(
       transaction
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     expect Some(client_datum) = datum
-    expect auth.contain_auth_token(spent_input.output, client_datum.token)
-    let updated_output =
-      validator_utils.find_unique_continuation_output(
-        spent_input.output,
-        outputs,
-        client_datum.token,
-      )
-    expect auth.contains_only_auth_tokens(updated_output, [client_datum.token])
-    expect updated_datum: ClientDatum =
-      validator_utils.get_inline_datum(updated_output)
-    let (_, _) =
-      validator_utils.require_host_state_redeemer(
-        inputs,
-        outputs,
-        redeemers,
-        host_state_nft_policy_id,
-        validator_utils.ExpectUpdateClient,
-      )
-
+    let client_token = client_datum.token
+    expect auth.contain_auth_token(spent_input.output, client_token)
     when redeemer is {
-      DirectUpdateDisabled -> False
-      RecoverClient { substitute_token } -> {
-        expect Some(withdrawal_redeemer) =
-          pairs.get_first(redeemers, Withdraw(recover_client_credential))
-        let expected: Data =
-          RecoverClientWithdrawal {
-            subject_token: client_datum.token,
-            substitute_token,
-          }
-        withdrawal_redeemer == expected
-      }
-      FinalizeUpdate { session_token } -> {
-        let receipt =
-          finalized_session(session_token, session_mint_policy_id, transaction)
-        let tx_time =
-          TxTime {
-            valid_from: validator_utils.get_tx_valid_from(validity_range) * 1_000_000,
-            valid_to: validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
-          }
-        expect session.validate_finalization(receipt, client_datum, tx_time)
-        expect
-          validator_utils.require_exact_marker_mint(
-            mint,
-            session_mint_policy_id,
-            session_token.name,
-            -1,
+      ReclaimClient ->
+        // The state-token policy enforces shutdown authority, grace and refunds.
+        assets.quantity_of(mint, client_token.policy_id, client_token.name) == -1
+      _ -> {
+        let updated_output =
+          validator_utils.find_unique_continuation_output(
+            spent_input.output,
+            outputs,
+            client_token,
           )
-        let header = header_from_plan(receipt.plan)
-        if misbehaviour_handle.check_for_misbehaviour(
-          HeaderCase(header),
-          client_datum.state.consensus_states,
-        ) {
-          client_datum_mod.update_state_on_misbehaviour(
-            client_datum,
-            updated_datum,
-          )
-        } else {
-          client_datum_mod.update_state(
-            client_datum,
-            updated_datum,
-            header,
-            tx_time.valid_from / 1_000_000,
-            tx_time.valid_to / 1_000_000,
-          )
-        }
-      }
-      FinalizeMisbehaviour { session_token_1, session_token_2 } -> {
-        expect session_token_1 != session_token_2
-        let first =
-          finalized_session(
-            session_token_1,
-            session_mint_policy_id,
-            transaction,
-          )
-        let second =
-          finalized_session(
-            session_token_2,
-            session_mint_policy_id,
-            transaction,
-          )
-        expect first.owner == second.owner
-        expect
-          assets.tokens(mint, session_mint_policy_id) == dict.from_pairs(
-            [Pair(session_token_1.name, -1), Pair(session_token_2.name, -1)],
+        expect auth.contains_only_auth_tokens(updated_output, [client_token])
+        expect updated_datum: ClientDatum =
+          validator_utils.get_inline_datum(updated_output)
+        let (_, _) =
+          validator_utils.require_host_state_redeemer(
+            inputs,
+            outputs,
+            redeemers,
+            host_state_nft_policy_id,
+            validator_utils.ExpectUpdateClient,
           )
         let tx_time =
           TxTime {
             valid_from: validator_utils.get_tx_valid_from(validity_range) * 1_000_000,
             valid_to: validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
           }
-        and {
-          session.validate_misbehaviour_finalization(
-            first,
-            client_datum,
-            tx_time,
-          ),
-          session.validate_misbehaviour_finalization(
-            second,
-            client_datum,
-            tx_time,
-          ),
-          misbehaviour_handle.check_for_misbehaviour(
-            MisbehaviourCase(
-              Misbehaviour {
-                // Client identity is bound by both authenticated plans.
-                client_id: #"",
-                header1: header_from_plan(first.plan),
-                header2: header_from_plan(second.plan),
-              },
-            ),
-            client_datum.state.consensus_states,
-          ),
-          client_datum_mod.update_state_on_misbehaviour(
-            client_datum,
-            updated_datum,
-          ),
+        when redeemer is {
+          RecoverClient { substitute_token } -> {
+            expect Some(withdrawal_redeemer) =
+              pairs.get_first(redeemers, Withdraw(recover_client_credential))
+            let expected: Data =
+              RecoverClientWithdrawal {
+                subject_token: client_token,
+                substitute_token,
+              }
+            withdrawal_redeemer == expected
+          }
+          FinalizeUpdate { session_token } -> {
+            let receipt =
+              finalized_session(
+                session_token,
+                session_mint_policy_id,
+                transaction,
+              )
+            expect session.validate_finalization(receipt, client_datum, tx_time)
+            expect
+              validator_utils.require_exact_marker_mint(
+                mint,
+                session_mint_policy_id,
+                session_token.name,
+                -1,
+              )
+            let header = header_from_plan(receipt.plan)
+            if misbehaviour_handle.check_for_misbehaviour(
+              HeaderCase(header),
+              client_datum.state.consensus_states,
+            ) {
+              client_datum_mod.update_state_on_misbehaviour(
+                client_datum,
+                updated_datum,
+              )
+            } else {
+              client_datum_mod.update_state(
+                client_datum,
+                updated_datum,
+                header,
+                tx_time.valid_from / 1_000_000,
+                tx_time.valid_to / 1_000_000,
+              )
+            }
+          }
+          FinalizeMisbehaviour { session_token_1, session_token_2 } -> {
+            expect session_token_1 != session_token_2
+            let first =
+              finalized_session(
+                session_token_1,
+                session_mint_policy_id,
+                transaction,
+              )
+            let second =
+              finalized_session(
+                session_token_2,
+                session_mint_policy_id,
+                transaction,
+              )
+            expect first.owner == second.owner
+            expect
+              assets.tokens(mint, session_mint_policy_id) == dict.from_pairs(
+                [Pair(session_token_1.name, -1), Pair(session_token_2.name, -1)],
+              )
+            and {
+              session.validate_misbehaviour_finalization(
+                first,
+                client_datum,
+                tx_time,
+              ),
+              session.validate_misbehaviour_finalization(
+                second,
+                client_datum,
+                tx_time,
+              ),
+              misbehaviour_handle.check_for_misbehaviour(
+                MisbehaviourCase(
+                  Misbehaviour {
+                    // Client identity is bound by both authenticated plans.
+                    client_id: #"",
+                    header1: header_from_plan(first.plan),
+                    header2: header_from_plan(second.plan),
+                  },
+                ),
+                client_datum.state.consensus_states,
+              ),
+              client_datum_mod.update_state_on_misbehaviour(
+                client_datum,
+                updated_datum,
+              ),
+            }
+          }
+          _ -> False
         }
       }
     }
