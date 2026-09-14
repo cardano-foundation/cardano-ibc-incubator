@@ -233,93 +233,10 @@ fn escape_json_string(
 ) -> ByteArray {
   let value_length = length(value)
   if go_html_safe {
-    if needs_no_go_escape(value) {
-      value
-    } else {
-      escape_go_json_bytes(value, value_length - 1, value_length, #"")
-    }
-  } else if needs_no_basic_escape(value) {
-    value
+    escape_go_json_bytes(value, value_length - 1, value_length, #"")
   } else {
-    escape_basic_json_bytes(
-      value,
-      value_length - 1,
-      value_length,
-      #"",
-      uppercase_control_hex,
-    )
+    escape_basic_json_bytes(value, value_length - 1, value_length, #"", uppercase_control_hex)
   }
-}
-
-/// Test the common Go JSON path with packed byte operations before falling
-/// back to the recursive escaper. Treating every E2 byte as a possible
-/// U+2028/U+2029 prefix is conservative: false positives only take the slow
-/// path and cannot change the encoded bytes.
-fn needs_no_go_escape(value: ByteArray) -> Bool {
-  let value_length = length(value)
-  and {
-    needs_no_basic_escape(value),
-    has_no_byte(value, value_length, 38),
-    has_no_byte(value, value_length, 60),
-    has_no_byte(value, value_length, 62),
-    has_no_byte(value, value_length, 226),
-  }
-}
-
-fn has_no_byte(value: ByteArray, value_length: Int, byte: Int) -> Bool {
-  has_no_zero_byte(
-    builtin.xor_bytearray(
-      False,
-      value,
-      builtin.replicate_byte(value_length, byte),
-    ),
-  )
-}
-
-fn needs_no_basic_escape(value: ByteArray) -> Bool {
-  let value_length = length(value)
-
-  has_no_zero_byte(
-    builtin.and_bytearray(
-      False,
-      value,
-      builtin.replicate_byte(value_length, 96),
-    )
-      |> concat(
-          builtin.xor_bytearray(
-            False,
-            value |> concat(value),
-            builtin.replicate_byte(value_length, 34)
-              |> concat(builtin.replicate_byte(value_length, 92)),
-          ),
-        ),
-  )
-}
-
-fn has_no_zero_byte(value: ByteArray) -> Bool {
-  let value_length = length(value) + 1
-  let value = value |> push(2)
-  let decremented =
-    builtin.integer_to_bytearray(
-      True,
-      value_length,
-      builtin.bytearray_to_integer(True, value) - builtin.bytearray_to_integer(
-        True,
-        builtin.replicate_byte(value_length, 1),
-      ),
-    )
-
-  builtin.count_set_bits(
-    builtin.and_bytearray(
-      False,
-      builtin.and_bytearray(
-        False,
-        decremented,
-        builtin.complement_bytearray(value),
-      ),
-      builtin.replicate_byte(value_length, 128),
-    ),
-  ) == 0
 }
 
 /// Scan without rebuilding ordinary runs byte-by-byte. A complete safe run is
