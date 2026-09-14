@@ -3,10 +3,8 @@ import * as path from 'node:path';
 
 import * as Lucid from '@lucid-evolution/lucid';
 
-import { encodeAuthToken } from '@shared/types/auth-token';
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
-import { encodeTransferIBCModuleRedeemer } from '@shared/types/apps/transfer/transfer-ibc-module-redeemer';
 import { encodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import {
   encodeMintConnectionRedeemer,
@@ -498,32 +496,6 @@ function voucherRedeemer(
   );
 }
 
-async function recvTransferModuleRedeemer(packet: BudgetPacket, data: BudgetFungibleTokenPacketData): Promise<string> {
-  return encodeTransferIBCModuleRedeemer(
-    {
-      Callback: [
-        {
-          OnRecvPacket: {
-            channel_id: packet.destination_channel,
-            packet_data: packet.data,
-            acknowledgement: {
-              response: {
-                AcknowledgementResult: {
-                  result: '01',
-                },
-              },
-            },
-            data: {
-              ModuleDataV1: [data],
-            },
-          },
-        },
-      ],
-    },
-    Lucid,
-  );
-}
-
 function createTransferEscrowShardRedeemer(): string {
   const encodedPacketDenom = Buffer.from('6c6f76656c616365').toString('hex');
   const fungibleTokenPacketData = Lucid.Data.Object({
@@ -591,138 +563,6 @@ function traceDirectoryDatum(archivedCount: number): string {
     },
     Lucid,
   );
-}
-
-async function buildFirstSeenVoucherReceiveAtCapacityScenario(): Promise<ScenarioInput> {
-  return {
-    id: 'first_seen_voucher_receive_at_capacity',
-    name: 'Combined modeled first-seen voucher RecvPacket path at packet and history capacity',
-    // HostState, channel, transfer module, and active trace shard are spent.
-    inputCount: 4,
-    // Connection, client, trace directory, and eight archived trace shards
-    // are read as data-bearing reference inputs in addition to the scripts.
-    nonScriptReferenceInputCount: 3 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket,
-    // HostState, channel, transfer module, trace shard, voucher payout, and
-    // CIP-68 reference-token metadata are all recreated or paid here.
-    outputCount: 6,
-    mintPolicyCount: 3,
-    referenceScriptTitles: [
-      'host_state_stt.host_state_stt.spend',
-      'spending_channel.spend_channel.spend',
-      'spending_transfer_module.spend_transfer_module.spend',
-      'trace_registry.spend_trace_registry.spend',
-      'minting_voucher.mint_voucher.mint',
-      'spending_channel/recv_packet.recv_packet.mint',
-      'verifying_proof.verify_proof.mint',
-    ],
-    redeemers: [
-      sized(
-        'spend channel RecvPacket with 512-byte packet',
-        await encodeSpendChannelRedeemer(
-          {
-            RecvPacket: {
-              packet: MAXIMUM_ICS20_PACKET.packet as never,
-              proof_commitment: proofPayload(1536) as never,
-              proof_height: HEIGHT,
-            },
-          },
-          Lucid,
-        ),
-      ),
-      sized('verify proof', verifyProofRedeemer(1536, 32)),
-      // RecvPacket updates receipt and acknowledgement paths at capacity.
-      dataBytes('host state HandlePacket redeemer', 4_600),
-      sized(
-        'transfer module OnRecvPacket',
-        await recvTransferModuleRedeemer(MAXIMUM_ICS20_PACKET.packet, MAXIMUM_ICS20_PACKET.data),
-      ),
-      sized(
-        'mint voucher with 512-byte packet fields',
-        voucherRedeemer('MintVoucher', MAXIMUM_ICS20_PACKET.packet, MAXIMUM_ICS20_PACKET.data),
-      ),
-      sized(
-        'trace registry InsertTrace',
-        encodeTraceRegistryRedeemer(
-          {
-            InsertTrace: {
-              voucher_hash: hexOfBytes(28, '44'),
-              full_denom: 'port-99/channel-99/ibc/usdt',
-            },
-          },
-          Lucid,
-        ),
-      ),
-      sized(
-        'recv packet policy auth token',
-        encodeAuthToken(
-          {
-            policyId: hexOfBytes(28, '45'),
-            name: hexOfBytes(32, '46'),
-          },
-          Lucid,
-        ),
-      ),
-    ],
-    datums: [
-      dataBytes('updated host state datum', 1000),
-      dataBytes('updated channel datum at history capacity', 2_800),
-      dataBytes('transfer module datum', 32),
-      dataBytes('max encoded trace shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes),
-      dataBytes('CIP-68 voucher metadata datum', 900),
-    ],
-    largestProofPayloadBytes: 1536,
-    aikenTests: [
-      'spending_channel.test.recv_packet_succeed',
-      'spending_channel/recv_packet.test.succeed_recv_packet_maximum_ics20_packet',
-      'ibc/core/ics_004/channel_datum_test/validate_recv_packet.succeed_at_packet_history_capacity',
-      'host_state_stt.test.host_state_handle_packet_recv_succeeds_at_history_capacity',
-      'host_state_stt.test.host_state_handle_packet_acknowledgement_succeeds_at_history_capacity',
-      'verifying_proof.test.verify_membership_succeed',
-    ],
-    // The v10 late match builds and rejects the ibc-rs struct-order candidate
-    // first, while the v8 late match builds and rejects the Cardano
-    // sorted-order candidate first. Pair both profiles with both bounded
-    // archive shapes without charging mutually exclusive paths in one tx.
-    aikenTestMaxGroups: [
-      {
-        name: 'ICS-20 wire profile and archive shape',
-        alternatives: [
-          {
-            name: 'ibc-go v10 late match, archive entry limit',
-            tests: [
-              'spending_transfer_module.test.on_recv_packet_mint_voucher_maximum_ics20_packet_succeed',
-              'minting_voucher.test.test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_at_entry_limit',
-              'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
-            ],
-          },
-          {
-            name: 'ibc-go v10 late match, archive byte limit',
-            tests: [
-              'spending_transfer_module.test.on_recv_packet_mint_voucher_maximum_ics20_packet_succeed',
-              'minting_voucher.test.test_mint_voucher_maximum_v10_ics20_packet_with_eight_archives_near_byte_limit',
-              'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_near_byte_limit',
-            ],
-          },
-          {
-            name: 'ibc-go v8 late match, archive entry limit',
-            tests: [
-              'spending_transfer_module.test.on_recv_packet_mint_voucher_maximum_v8_ics20_packet_succeed',
-              'minting_voucher.test.test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_at_entry_limit',
-              'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
-            ],
-          },
-          {
-            name: 'ibc-go v8 late match, archive byte limit',
-            tests: [
-              'spending_transfer_module.test.on_recv_packet_mint_voucher_maximum_v8_ics20_packet_succeed',
-              'minting_voucher.test.test_mint_voucher_maximum_v8_ics20_packet_with_eight_archives_near_byte_limit',
-              'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_near_byte_limit',
-            ],
-          },
-        ],
-      },
-    ],
-  };
 }
 
 async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
@@ -1238,7 +1078,9 @@ async function buildScenarios(
       ],
       nonScriptReferenceInputCount: TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1,
     },
-    await buildFirstSeenVoucherReceiveAtCapacityScenario(),
+    // First-seen voucher receives are intentionally split into a trace-registry
+    // prelude and a normal receive transaction. The component scenarios below
+    // keep their individual budget ratchets without combining both paths.
     {
       id: 'first_seen_voucher_mint',
       name: 'First-seen voucher mint component at packet capacity',
