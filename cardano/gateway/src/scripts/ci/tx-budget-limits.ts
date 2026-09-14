@@ -43,7 +43,7 @@ const KNOWN_BUDGET_OVERRUN_CEILINGS: Readonly<Record<string, KnownBudgetCeiling>
   // These are measured silent-build baselines for existing capacity overruns.
   // Public ledger limits and reference publication guards remain unchanged.
   reference_script_deployment: {
-    signedBytesEstimate: 15_762,
+    signedBytesEstimate: 15_644,
   },
   send_packet_at_commitment_capacity: {
     mem: 38_066_206,
