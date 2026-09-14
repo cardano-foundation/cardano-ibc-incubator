@@ -5,7 +5,6 @@ import * as Lucid from '@lucid-evolution/lucid';
 
 import { readAppliedDeploymentPlan, type AppliedReferenceValidator } from './applied-deployment-plan';
 
-import { encodeAuthToken } from '@shared/types/auth-token';
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { encodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
