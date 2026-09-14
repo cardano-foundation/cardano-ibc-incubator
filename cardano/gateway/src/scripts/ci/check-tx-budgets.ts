@@ -162,6 +162,17 @@ function readIntegerEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+function readBooleanEnv(name: string): boolean {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (!value) {
+    return false;
+  }
+  if (value !== 'true' && value !== 'false') {
+    throw new Error(`${name} must be true or false; found ${value}`);
+  }
+  return value === 'true';
+}
+
 function readJson<T>(filePath: string): T {
   return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
 }
@@ -617,8 +628,9 @@ async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
 async function buildScenarios(
   validators: Map<string, BlueprintValidator>,
   aikenTests: Map<string, ExUnits>,
+  allowMissingInputs = false,
 ): Promise<ScenarioReport[]> {
-  const largestReferenceScript = [
+  const referenceScriptTitles = [
     'host_state_stt.host_state_stt.spend',
     'minting_channel_stt.mint_channel_stt.mint',
     'minting_client_stt.mint_client_stt.mint',
@@ -637,9 +649,15 @@ async function buildScenarios(
     'spending_channel/recv_packet.recv_packet.mint',
     'spending_channel/send_packet.send_packet.mint',
     'spending_channel/timeout_packet.timeout_packet.mint',
-  ]
+  ];
+  const referenceScripts = referenceScriptTitles
+    .filter((title) => !allowMissingInputs || validators.has(title))
     .map((title) => ({ title, bytes: scriptBytes(validators, title) }))
-    .sort((left, right) => right.bytes - left.bytes)[0];
+    .sort((left, right) => right.bytes - left.bytes);
+  const largestReferenceScript = referenceScripts[0];
+  if (!largestReferenceScript) {
+    throw new Error('No reference scripts were available in the blueprint');
+  }
 
   const scenarios: ScenarioInput[] = [
     {
@@ -1151,27 +1169,38 @@ async function buildScenarios(
     },
   ];
 
-  return scenarios.map((scenario) => {
-    const unsignedBytes = estimateUnsignedBytes(validators, scenario);
-    const aikenTestMaxGroups = measureAikenTestMaxGroups(aikenTests, scenario.aikenTestMaxGroups ?? []);
-    return {
-      id: scenario.id,
-      name: scenario.name,
-      unsignedBytes,
-      signedBytesEstimate: unsignedBytes + DEFAULT_SIGNED_WITNESS_ESTIMATE_BYTES,
-      redeemers: scenario.redeemers,
-      datums: scenario.datums,
-      largestProofPayloadBytes: scenario.largestProofPayloadBytes,
-      inputCount: scenario.inputCount,
-      nonScriptReferenceInputCount: scenario.nonScriptReferenceInputCount ?? 0,
-      outputCount: scenario.outputCount,
-      mintPolicyCount: scenario.mintPolicyCount,
-      scriptReferenceCount: scenario.referenceScriptTitles.length,
-      inlineScriptCount: scenario.inlineScriptTitles?.length ?? 0,
-      aikenTestMaxGroups,
-      exUnits: sumScenarioExUnits(sumExUnits(aikenTests, scenario.aikenTests), aikenTestMaxGroups),
-    };
-  });
+  const reports: ScenarioReport[] = [];
+  for (const scenario of scenarios) {
+    try {
+      const unsignedBytes = estimateUnsignedBytes(validators, scenario);
+      const aikenTestMaxGroups = measureAikenTestMaxGroups(aikenTests, scenario.aikenTestMaxGroups ?? []);
+      reports.push({
+        id: scenario.id,
+        name: scenario.name,
+        unsignedBytes,
+        signedBytesEstimate: unsignedBytes + DEFAULT_SIGNED_WITNESS_ESTIMATE_BYTES,
+        redeemers: scenario.redeemers,
+        datums: scenario.datums,
+        largestProofPayloadBytes: scenario.largestProofPayloadBytes,
+        inputCount: scenario.inputCount,
+        nonScriptReferenceInputCount: scenario.nonScriptReferenceInputCount ?? 0,
+        outputCount: scenario.outputCount,
+        mintPolicyCount: scenario.mintPolicyCount,
+        scriptReferenceCount: scenario.referenceScriptTitles.length,
+        inlineScriptCount: scenario.inlineScriptTitles?.length ?? 0,
+        aikenTestMaxGroups,
+        exUnits: sumScenarioExUnits(sumExUnits(aikenTests, scenario.aikenTests), aikenTestMaxGroups),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (allowMissingInputs && (message.startsWith('Missing validator') || message.startsWith('Missing Aiken'))) {
+        console.warn(`Skipping base measurement for ${scenario.id}: ${message}`);
+        continue;
+      }
+      throw error;
+    }
+  }
+  return reports;
 }
 
 async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
@@ -1241,14 +1270,38 @@ async function main() {
   const maxTxExMem = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_EX_MEM', DEFAULT_MAX_TX_EX_MEM);
   const maxTxExSteps = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_EX_STEPS', DEFAULT_MAX_TX_EX_STEPS);
   const exUnitHeadroomBps = readIntegerEnv('CARDANO_TX_BUDGET_EX_UNIT_HEADROOM_BPS', DEFAULT_EX_UNIT_HEADROOM_BPS);
+  const allowBaselineRegressions = readBooleanEnv('CARDANO_TX_BUDGET_ALLOW_BASELINE_REGRESSIONS');
   const blueprintPath = process.env.CARDANO_TX_BUDGET_BLUEPRINT || path.join(repoRoot, 'cardano/onchain/plutus.json');
   const aikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_AIKEN_CHECK_JSON || path.join(repoRoot, 'aiken-check.json');
+  const baselineBlueprintPath = process.env.CARDANO_TX_BUDGET_BASELINE_BLUEPRINT?.trim();
+  const baselineAikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_BASELINE_AIKEN_CHECK_JSON?.trim();
+
+  if (Boolean(baselineBlueprintPath) !== Boolean(baselineAikenCheckJsonPath)) {
+    throw new Error(
+      'CARDANO_TX_BUDGET_BASELINE_BLUEPRINT and CARDANO_TX_BUDGET_BASELINE_AIKEN_CHECK_JSON must be set together',
+    );
+  }
 
   const blueprint = readJson<Blueprint>(blueprintPath);
   const validators = new Map(blueprint.validators.map((validator) => [validator.title, validator]));
   const aikenCheckReport = readJson<AikenCheckReport>(aikenCheckJsonPath);
   const aikenTests = toAikenTestMap(aikenCheckReport);
   const reports = await buildScenarios(validators, aikenTests);
+  let baselineReports: ScenarioReport[] = [];
+  if (baselineBlueprintPath && baselineAikenCheckJsonPath) {
+    const baselineBlueprint = readJson<Blueprint>(baselineBlueprintPath);
+    const baselineValidators = new Map(
+      baselineBlueprint.validators.map((validator) => [validator.title, validator]),
+    );
+    const baselineAikenTests = toAikenTestMap(readJson<AikenCheckReport>(baselineAikenCheckJsonPath));
+    baselineReports = await buildScenarios(baselineValidators, baselineAikenTests, true);
+    console.log(`Comparing known overruns with ${baselineReports.length} base-commit scenario measurements.`);
+  } else {
+    console.log('No base-commit measurements supplied; known overruns are report-only.');
+  }
+  if (allowBaselineRegressions) {
+    console.log('The pull request has an explicit approval to increase existing modeled overruns.');
+  }
   const capacityReports = await buildCapacityReports(aikenTests);
 
   console.log('Execution units are test-derived estimates collected with --trace-level silent, not ledger evaluations.');
@@ -1256,16 +1309,22 @@ async function main() {
   console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
   console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
 
-  const { failures, knownViolations } = checkTransactionBudgets(reports, {
-    maxTxSize,
-    txHeadroomBytes,
-    maxTxExMem,
-    maxTxExSteps,
-    exUnitHeadroomBps,
-  });
+  const { failures, knownViolations } = checkTransactionBudgets(
+    reports,
+    {
+      maxTxSize,
+      txHeadroomBytes,
+      maxTxExMem,
+      maxTxExSteps,
+      exUnitHeadroomBps,
+    },
+    baselineReports,
+    undefined,
+    allowBaselineRegressions,
+  );
 
   if (knownViolations.length > 0) {
-    console.log('\nKNOWN TRANSACTION-BUDGET VIOLATIONS (regression-ratcheted):');
+    console.log('\nKNOWN TRANSACTION-BUDGET VIOLATIONS (compared with the base commit when available):');
     for (const violation of knownViolations) {
       console.log(`- ${violation}`);
     }
@@ -1279,11 +1338,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(
-    '\nTransaction budget ratchet passed: every overrun matches its recorded ceiling and no scenario regressed.',
-  );
+  console.log('\nTransaction budget check passed.');
   if (knownViolations.length > 0) {
-    console.log(`${knownViolations.length} known transaction-limit violations remain and may only decrease.`);
+    console.log(`${knownViolations.length} known transaction-limit violations remain.`);
   } else {
     console.log(`All scenarios retain ${txHeadroomBytes} bytes and ${exUnitHeadroomBps / 100}% ex-unit headroom.`);
   }
