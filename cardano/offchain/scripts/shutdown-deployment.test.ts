@@ -12,6 +12,7 @@ import {
 } from "@lucid-evolution/lucid";
 import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
 import { type DeploymentTemplate, readValidator } from "../src/utils.ts";
+import { loadHostStateValidator } from "../src/deployment-plan.ts";
 import {
   HostStateDatum,
   HostStateNftRedeemer,
@@ -335,10 +336,9 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
     Data.Tuple([OutputReferenceSchema]) as unknown as [typeof nonce],
   );
   const dummyHash = "20".repeat(28);
-  const [hostValidator, hostValidatorHash, hostAddress] = readValidator(
-    "host_state_stt.host_state_stt.spend",
-    lucid,
-    [
+  const [hostValidator, hostValidatorHash, hostAddress] =
+    loadHostStateValidator(
+      lucid,
       nftPolicyId,
       dummyHash,
       dummyHash,
@@ -346,17 +346,7 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
       "21".repeat(28),
       "22".repeat(28),
       "23".repeat(28),
-    ],
-    Data.Tuple([
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [string, string, string, string, string, string, string],
-  );
+    );
   const [, referenceValidatorHash, referenceAddress] = readValidator(
     "reference_validator.refer_only.else",
     lucid,

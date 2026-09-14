@@ -58,4 +58,23 @@ aiken check \
   -m 'spending_client_capacity.{update_client_capacity_non_adjacent_mixed_45_succeeds}' \
   -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
   -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
+  -m 'host_state_stt.{host_update_client_capacity_fixture_setup_baseline}' \
+  -m 'recover_client.{staged_atomic_freeze_fixture_setup_baseline}' \
+  -m 'recover_client.{staged_atomic_freeze_all_validators_accept_real_root_transition}' \
+  -m 'recover_client.{staged_atomic_recovery_fixture_setup_baseline}' \
+  -m 'recover_client.{staged_atomic_recovery_all_validators_accept_real_root_transition}' \
+  -m 'minting_tendermint_update_session.{session_mint_fixture_setup_baseline}' \
+  -m 'minting_tendermint_update_session.{mints_one_seed_bound_session_with_exact_initial_datum}' \
+  -m 'minting_tendermint_update_session.{session_burn_fixture_setup_baseline}' \
+  -m 'minting_tendermint_update_session.{burns_only_a_token_carried_by_the_session_script}' \
+  -m 'spending_tendermint_update_session.{real_injective_six_validator_fixture_setup_baseline}' \
+  -m 'spending_tendermint_update_session.{advances_real_injective_six_validator_target_batch}' \
+  -m 'spending_tendermint_update_session.{real_non_adjacent_six_membership_fixture_setup_baseline}' \
+  -m 'spending_tendermint_update_session.{advances_real_non_adjacent_six_membership_target_batch}' \
+  -m 'spending_tendermint_update_session.{depth_eight_non_adjacent_six_membership_fixture_setup_baseline}' \
+  -m 'spending_tendermint_update_session.{advances_depth_eight_non_adjacent_six_membership_target_batch}' \
+  -m 'spending_tendermint_update_session.{session_finalize_fixture_setup_baseline}' \
+  -m 'spending_tendermint_update_session.{complete_session_requires_client_and_host_threads_and_burn}' \
+  -m 'spending_multitx_client.{completed_session_update_fixture_setup_baseline}' \
+  -m 'spending_multitx_client.{completed_session_updates_the_client_atomically}' \
   > "$output_json"

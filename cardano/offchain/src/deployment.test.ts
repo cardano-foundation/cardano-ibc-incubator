@@ -1,27 +1,28 @@
+import {
+  DEPLOYMENT_PLAN_FIXTURE,
+  loadDeploymentPlan,
+  loadHostStateValidator,
+} from "./deployment-plan.ts";
 import { assertEquals, assertNotEquals } from "@std/assert";
 import {
   Data,
   fromText,
   type LucidEvolution,
   type Script,
+  type UTxO,
 } from "@lucid-evolution/lucid";
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 
 import {
-  buildChannelValidators,
   buildReferenceValidatorBatches,
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
   GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
-  loadHostStateValidator,
-  loadTransferModuleValidator,
+  loadStagedTendermintValidators,
+  selectDeploymentCollateralHoldback,
   sortPortRegistrations,
 } from "./deployment.ts";
-import {
-  generateIdentifierTokenName,
-  generatePortTokenName,
-  readValidator,
-} from "./utils.ts";
+import { generatePortTokenName, readValidator } from "./utils.ts";
 
 const makeValidator = (byteLength: number): Script => ({
   type: "PlutusV3",
@@ -52,17 +53,16 @@ Deno.test("generic module deployments pin the spend handler from the blueprint",
   );
 });
 
-Deno.test("every deployed channel operation is a mint-only policy", () => {
+Deno.test("every deployed channel operation is a mint-only policy", async () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
-  const { referredScripts } = buildChannelValidators(
+  const { spendingChannel: { referredScripts } } = await loadDeploymentPlan(
     lucid,
-    "11".repeat(28),
-    "22".repeat(28),
-    "33".repeat(28),
-    "44".repeat(28),
-    "55".repeat(28),
+    {
+      ...DEPLOYMENT_PLAN_FIXTURE,
+      benchmarkVoucherEnabled: false,
+    },
   );
   assertEquals(Object.keys(referredScripts).length, 9);
   for (const name of Object.keys(referredScripts)) {
@@ -92,7 +92,7 @@ Deno.test("chan_close_confirm is a mint-only policy in the compiled blueprint", 
   );
 });
 
-Deno.test("client deployment pins the recovery withdrawal validator", () => {
+Deno.test("legacy client validator pins the recovery withdrawal validator", () => {
   const recoveryValidator = blueprint.validators.find(
     ({ title }) => title === "recover_client.recover_client.withdraw",
   ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
@@ -129,7 +129,7 @@ Deno.test("HostState deployment pins the state-token minting policies", () => {
   );
 });
 
-Deno.test("applied client validator fits a mainnet reference-script transaction", () => {
+Deno.test("applied legacy client validator fits a mainnet reference-script transaction", () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
@@ -185,24 +185,17 @@ Deno.test("fully applied production transfer module fits the reference publicati
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
-  const portId = fromText("transfer");
-  const [validator] = loadTransferModuleValidator(
+  const plan = await loadDeploymentPlan(
     lucid,
-    { policy_id: "11".repeat(28), name: generatePortTokenName(portId) },
     {
-      policy_id: "22".repeat(28),
-      name: await generateIdentifierTokenName({
-        transaction_id: "aa".repeat(32),
-        output_index: 0n,
-      }),
+      ...DEPLOYMENT_PLAN_FIXTURE,
+      benchmarkVoucherEnabled: false,
     },
-    portId,
-    "33".repeat(28),
-    "44".repeat(28),
-    "55".repeat(28),
-    "66".repeat(28),
   );
-  const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
+  const [report] = buildReferenceValidatorSizeReport(
+    [plan.spendTransferModule.script],
+    16_384,
+  );
   assertEquals(report.oversized, false, JSON.stringify(report));
 });
 
@@ -233,6 +226,82 @@ Deno.test("mock and icq share the host-policy-bound generic module hash", () => 
 
   assertEquals(mockHash, icqHash);
   assertNotEquals(mockHash, otherHostHash);
+});
+
+Deno.test("staged Tendermint validators preserve their hash dependencies", () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const hostPolicy = "11".repeat(28);
+  const recoveryScriptHash = "33".repeat(28);
+  const staged = loadStagedTendermintValidators(
+    lucid,
+    hostPolicy,
+    recoveryScriptHash,
+  );
+
+  const [, expectedSessionMintPolicyId] = readValidator(
+    "minting_tendermint_update_session.mint_tendermint_update_session.mint",
+    lucid,
+    [staged.sessionSpend.scriptHash],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
+  );
+  const [, expectedClientSpendScriptHash] = readValidator(
+    "spending_multitx_client.spend_multitx_client.spend",
+    lucid,
+    [hostPolicy, staged.sessionMint.policyId, { Script: [recoveryScriptHash] }],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Enum([
+        Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
+        Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
+      ]),
+    ]) as unknown as [string, string, { Script: [string] }],
+  );
+
+  assertEquals(staged.sessionMint.policyId, expectedSessionMintPolicyId);
+  assertEquals(staged.clientSpend.scriptHash, expectedClientSpendScriptHash);
+
+  const otherHost = loadStagedTendermintValidators(
+    lucid,
+    "22".repeat(28),
+    recoveryScriptHash,
+  );
+  assertNotEquals(
+    staged.sessionSpend.scriptHash,
+    otherHost.sessionSpend.scriptHash,
+  );
+  assertNotEquals(staged.sessionMint.policyId, otherHost.sessionMint.policyId);
+  assertNotEquals(
+    staged.clientSpend.scriptHash,
+    otherHost.clientSpend.scriptHash,
+  );
+  const otherRecovery = loadStagedTendermintValidators(
+    lucid,
+    hostPolicy,
+    "44".repeat(28),
+  );
+  assertEquals(
+    staged.sessionSpend.scriptHash,
+    otherRecovery.sessionSpend.scriptHash,
+  );
+  assertEquals(staged.sessionMint.policyId, otherRecovery.sessionMint.policyId);
+  assertNotEquals(
+    staged.clientSpend.scriptHash,
+    otherRecovery.clientSpend.scriptHash,
+  );
+  assertEquals(
+    buildReferenceValidatorSizeReport(
+      [
+        staged.sessionSpend.validator,
+        staged.sessionMint.validator,
+        staged.clientSpend.validator,
+      ],
+      16_384,
+    ).map(({ oversized }) => oversized),
+    [false, false, false],
+  );
 });
 
 Deno.test("sortPortRegistrations uses canonical bytes-key ordering", () => {
@@ -388,4 +457,17 @@ Deno.test("DeploymentIbcTree commits leaves with key hash included", async () =>
   tree.set(key, value);
 
   assertEquals(await tree.getRoot(), await expectedSingleLeafRoot(key, value));
+});
+
+Deno.test("collateral holdback keeps the main deployment funding output spendable", () => {
+  const utxos = [99_176_454_853n, 5_158_925n, 5_936_517n, 2_358_421n].map((
+    lovelace,
+    outputIndex,
+  ) => ({
+    txHash: "11".repeat(32),
+    outputIndex,
+    address: "test",
+    assets: { lovelace },
+  } as UTxO));
+  assertEquals(selectDeploymentCollateralHoldback(utxos), [utxos[1]]);
 });

@@ -6,6 +6,7 @@ import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { StaleIbcTreeStateError } from '../../shared/helpers/ibc-state-root';
 import { createTestTreeContext } from '../../shared/testing/ibc-tree-test-store';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from '../../shared/types/client-datum';
+import { decodeSpendMultitxClientRedeemer } from '../../shared/types/tendermint-update-session';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { ClientService } from '../client.service';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
@@ -113,6 +114,7 @@ describe('ClientService recovery transaction', () => {
     const config = { get: jest.fn().mockReturnValue(deployment) } as unknown as ConfigService;
     const lucid: any = {
       LucidImporter: Lucid,
+      hasStagedTendermintClient: jest.fn().mockReturnValue(false),
       findUtxoAtHostStateNFT: jest.fn(),
       getPaymentCredential: jest.fn(),
       getClientTokenUnit: jest.fn((id: string) => `unit-${id}`),
@@ -174,8 +176,9 @@ describe('ClientService recovery transaction', () => {
     };
   }
 
-  it('builds an authorized recovery response', async () => {
+  it.each([false, true])('builds an authorized recovery response with staged=%s', async (staged) => {
     const { service, lucid, runner } = serviceContext();
+    lucid.hasStagedTendermintClient.mockReturnValue(staged);
     const hostUtxo = { datum: 'host' };
     const subjectUtxo = { datum: 'subject' };
     const substituteUtxo = { datum: 'substitute' };
@@ -216,8 +219,9 @@ describe('ClientService recovery transaction', () => {
     ).rejects.toThrow('not configured');
   });
 
-  it('rejects a signer that is not the recovery authority', async () => {
+  it.each([false, true])('rejects a signer that is not the recovery authority with staged=%s', async (staged) => {
     const { service, lucid } = serviceContext();
+    lucid.hasStagedTendermintClient.mockReturnValue(staged);
     lucid.findUtxoAtHostStateNFT.mockResolvedValue({ datum: 'host' });
     lucid.decodeDatum.mockResolvedValue({ deployer: 'deployer', state: {} });
     lucid.getPaymentCredential.mockReturnValue({ type: 'Key', hash: 'someone-else' });
@@ -229,6 +233,34 @@ describe('ClientService recovery transaction', () => {
         signer: 'addr_test1authority',
       }),
     ).rejects.toThrow('does not match');
+  });
+
+  it('encodes staged recovery with the substitute token and retains the authority withdrawal', async () => {
+    const { service, lucid, treeContext } = serviceContext();
+    lucid.hasStagedTendermintClient.mockReturnValue(true);
+    const tree = new ICS23MerkleTree();
+    tree.set('clients/07-tendermint-1/clientState', Buffer.from('old-client'));
+    const hostStateUtxo = { txHash: 'aa'.repeat(32), outputIndex: 0, address: 'host', assets: {} };
+    await treeContext.restore(tree, hostStateUtxo);
+    const operator = recoveryOperator(tree, hostStateUtxo);
+
+    await service.buildUnsignedRecoverClientTx(operator);
+
+    const args = lucid.createUnsignedRecoverClientTransaction.mock.calls[0];
+    expect(decodeSpendMultitxClientRedeemer(args[3], Lucid)).toEqual({
+      RecoverClient: { substituteToken: operator.substituteClientDatum.token },
+    });
+    expect(args[5]).toBe('encoded-recoverClientWithdrawalRedeemer');
+    expect(lucid.encode).toHaveBeenCalledWith(
+      {
+        RecoverClientWithdrawal: {
+          subject_token: operator.subjectClientDatum.token,
+          substitute_token: operator.substituteClientDatum.token,
+        },
+      },
+      'recoverClientWithdrawalRedeemer',
+    );
+    expect(lucid.encode).not.toHaveBeenCalledWith(expect.anything(), 'spendClientRedeemer');
   });
 
   it('caps subject history at 300 entries and commits the matching root update', async () => {

@@ -3,6 +3,8 @@ import * as path from 'node:path';
 
 import * as Lucid from '@lucid-evolution/lucid';
 
+import { readAppliedDeploymentPlan, type AppliedReferenceValidator } from './applied-deployment-plan';
+
 import { encodeMintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { encodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { encodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
@@ -23,7 +25,11 @@ import {
   formatCapacityReport,
   loadNormalizedCapacityFixture,
 } from './tendermint-update-capacity';
-import { addMaxAlternativeExUnits, type ExUnits } from './tx-budget-limits';
+import {
+  addMaxAlternativeExUnits,
+  type ExUnits,
+  subtractBaselineExUnits,
+} from './tx-budget-limits';
 
 type BlueprintValidator = {
   title: string;
@@ -81,6 +87,33 @@ type AikenTestMaxGroup = {
   alternatives: AikenTestAlternative[];
 };
 
+type PairedAikenTest = {
+  name: string;
+  baselineTest: string;
+  measuredTest: string;
+};
+
+type StagedExecutionScenario = {
+  id: string;
+  name: string;
+  pairs: PairedAikenTest[];
+};
+
+type StagedExecutionReport = {
+  id: string;
+  name: string;
+  unsignedBytes: number;
+  signedBytesEstimate: number;
+  exUnits: ExUnits;
+  pairs: Array<
+    PairedAikenTest & {
+      baseline: ExUnits;
+      measured: ExUnits;
+      marginal: ExUnits;
+    }
+  >;
+};
+
 type ScenarioInput = {
   id: string;
   name: string;
@@ -128,7 +161,6 @@ const TX_INPUT_BYTES = 44;
 const TX_OUTPUT_BYTES = 80;
 const TX_MINT_POLICY_BYTES = 45;
 const TX_REFERENCE_INPUT_BYTES = 44;
-const REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES = 200;
 
 const CAPACITY_HOST_STATE_AIKEN_TEST = 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds';
 const CAPACITY_SCENARIOS = [
@@ -145,6 +177,100 @@ const CAPACITY_SCENARIOS = [
     aikenTest: 'spending_client_capacity.test.update_client_capacity_non_adjacent_mixed_45_succeeds',
   },
 ] as const;
+
+const STAGED_TENDERMINT_EXECUTION_SCENARIOS: StagedExecutionScenario[] = [
+  {
+    id: 'tendermint_staged_freeze',
+    name: 'Staged Tendermint two-header freeze with minimum history',
+    pairs: [{
+      name: 'client, two sessions, receipt burns and HostState root transition',
+      baselineTest: 'recover_client.test.staged_atomic_freeze_fixture_setup_baseline',
+      measuredTest: 'recover_client.test.staged_atomic_freeze_all_validators_accept_real_root_transition',
+    }],
+  },
+  {
+    id: 'tendermint_staged_recovery',
+    name: 'Staged Tendermint recovery with minimum history',
+    pairs: [{
+      name: 'client, authorized recovery withdrawal and HostState root transition',
+      baselineTest: 'recover_client.test.staged_atomic_recovery_fixture_setup_baseline',
+      measuredTest: 'recover_client.test.staged_atomic_recovery_all_validators_accept_real_root_transition',
+    }],
+  },
+  {
+    id: 'tendermint_staged_session_initialize',
+    name: 'Staged Tendermint session initialization',
+    pairs: [
+      {
+        name: 'session NFT mint',
+        baselineTest: 'minting_tendermint_update_session.test.session_mint_fixture_setup_baseline',
+        measuredTest: 'minting_tendermint_update_session.test.mints_one_seed_bound_session_with_exact_initial_datum',
+      },
+    ],
+  },
+  {
+    id: 'tendermint_staged_adjacent_six_validator_batch',
+    name: 'Staged Tendermint adjacent six-validator batch',
+    pairs: [
+      {
+        name: 'six target validators and signatures',
+        baselineTest: 'spending_tendermint_update_session.test.real_injective_six_validator_fixture_setup_baseline',
+        measuredTest: 'spending_tendermint_update_session.test.advances_real_injective_six_validator_target_batch',
+      },
+    ],
+  },
+  {
+    id: 'tendermint_staged_non_adjacent_six_validator_batch',
+    name: 'Staged Tendermint skipped-height six-validator batch',
+    pairs: [
+      {
+        name: 'six target validators, signatures, and trusted memberships',
+        baselineTest: 'spending_tendermint_update_session.test.real_non_adjacent_six_membership_fixture_setup_baseline',
+        measuredTest: 'spending_tendermint_update_session.test.advances_real_non_adjacent_six_membership_target_batch',
+      },
+    ],
+  },
+  {
+    id: 'tendermint_staged_depth_eight_six_validator_batch',
+    name: 'Staged Tendermint 256-validator depth-eight six-validator batch',
+    pairs: [
+      {
+        name: 'six target validators, signatures, and depth-eight trusted memberships',
+        baselineTest:
+          'spending_tendermint_update_session.test.depth_eight_non_adjacent_six_membership_fixture_setup_baseline',
+        measuredTest:
+          'spending_tendermint_update_session.test.advances_depth_eight_non_adjacent_six_membership_target_batch',
+      },
+    ],
+  },
+  {
+    id: 'tendermint_staged_finalize',
+    name: 'Staged Tendermint minimum-history finalization',
+    pairs: [
+      {
+        name: 'HostState root transition',
+        baselineTest: 'host_state_stt.test.host_update_client_capacity_fixture_setup_baseline',
+        measuredTest: 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds',
+      },
+      {
+        name: 'client state transition',
+        baselineTest: 'spending_multitx_client.test.completed_session_update_fixture_setup_baseline',
+        measuredTest: 'spending_multitx_client.test.completed_session_updates_the_client_atomically',
+      },
+      {
+        name: 'session completion authorization',
+        baselineTest: 'spending_tendermint_update_session.test.session_finalize_fixture_setup_baseline',
+        measuredTest:
+          'spending_tendermint_update_session.test.complete_session_requires_client_and_host_threads_and_burn',
+      },
+      {
+        name: 'session NFT burn',
+        baselineTest: 'minting_tendermint_update_session.test.session_burn_fixture_setup_baseline',
+        measuredTest: 'minting_tendermint_update_session.test.burns_only_a_token_carried_by_the_session_script',
+      },
+    ],
+  },
+];
 
 function readIntegerEnv(name: string, fallback: number): number {
   const value = process.env[name]?.trim();
@@ -219,6 +345,37 @@ function sumExUnits(aikenTests: Map<string, ExUnits>, testNames: string[]): ExUn
       }),
       { mem: 0, steps: 0 },
     );
+}
+
+function buildStagedExecutionReports(aikenTests: Map<string, ExUnits>): StagedExecutionReport[] {
+  return STAGED_TENDERMINT_EXECUTION_SCENARIOS.map((scenario) => {
+    const pairs = scenario.pairs.map((pair) => {
+      const baseline = requiredAikenTestUnits(aikenTests, pair.baselineTest);
+      const measured = requiredAikenTestUnits(aikenTests, pair.measuredTest);
+      return {
+        ...pair,
+        baseline,
+        measured,
+        marginal: subtractBaselineExUnits(measured, baseline),
+      };
+    });
+    const exUnits = pairs.reduce(
+      (sum, pair) => ({
+        mem: sum.mem + pair.marginal.mem,
+        steps: sum.steps + pair.marginal.steps,
+      }),
+      { mem: 0, steps: 0 },
+    );
+
+    return {
+      id: scenario.id,
+      name: scenario.name,
+      unsignedBytes: 0,
+      signedBytesEstimate: 0,
+      exUnits,
+      pairs,
+    };
+  });
 }
 
 function estimateUnsignedBytes(validators: Map<string, BlueprintValidator>, scenario: ScenarioInput): number {
@@ -639,39 +796,16 @@ function buildScenarioReport(
 async function buildScenarios(
   validators: Map<string, BlueprintValidator>,
   aikenTests: Map<string, ExUnits>,
+  deploymentReferences: AppliedReferenceValidator[],
 ): Promise<ScenarioReport[]> {
-  const referenceScriptTitles = [
-    'host_state_stt.host_state_stt.spend',
-    'minting_channel_stt.mint_channel_stt.mint',
-    'minting_client_stt.mint_client_stt.mint',
-    'minting_connection_stt.mint_connection_stt.mint',
-    'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
-    'minting_voucher.mint_voucher.mint',
-    'recover_client.recover_client.withdraw',
-    'spending_channel.spend_channel.spend',
-    'spending_client.spend_client.spend',
-    'spending_connection.spend_connection.spend',
-    'spending_transfer_module.spend_transfer_module.spend',
-    'trace_registry.spend_trace_registry.spend',
-    'spending_channel/acknowledge_packet.acknowledge_packet.mint',
-    'spending_channel/chan_open_ack.chan_open_ack.mint',
-    'spending_channel/prune_packet_history.prune_packet_history.mint',
-    'spending_channel/recv_packet.recv_packet.mint',
-    'spending_channel/send_packet.send_packet.mint',
-    'spending_channel/timeout_packet.timeout_packet.mint',
-  ];
-  const referenceScripts = referenceScriptTitles
-    .map((title) => ({ title, bytes: scriptBytes(validators, title) }))
-    .sort((left, right) => right.bytes - left.bytes);
-  const largestReferenceScript = referenceScripts[0];
-  if (!largestReferenceScript) {
-    throw new Error('No reference scripts were available in the blueprint');
-  }
+  const largestReferenceScript = [...deploymentReferences].sort(
+    (left, right) => right.estimatedReferenceOutputBytes - left.estimatedReferenceOutputBytes,
+  )[0];
 
   const scenarios: ScenarioInput[] = [
     {
       id: 'reference_script_deployment',
-      name: 'reference script deployment',
+      name: `fully applied reference deployment (${largestReferenceScript.mode}: ${largestReferenceScript.title})`,
       inputCount: 1,
       outputCount: 1,
       mintPolicyCount: 0,
@@ -681,7 +815,7 @@ async function buildScenarios(
       datums: [dataBytes('reference datum', 0)],
       largestProofPayloadBytes: 0,
       aikenTests: [],
-      unsignedBytesOverride: largestReferenceScript.bytes + REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES,
+      unsignedBytesOverride: largestReferenceScript.estimatedReferenceOutputBytes,
     },
     {
       id: 'bind_port_at_global_cap',
@@ -1231,6 +1365,21 @@ function printReport(reports: ScenarioReport[], maxTxSize: number): void {
   }
 }
 
+function printStagedExecutionReports(reports: StagedExecutionReport[]): void {
+  console.log('\nStaged Tendermint paired execution-unit estimates (diagnostic only)');
+  for (const report of reports) {
+    console.log(`\n${report.name}`);
+    for (const pair of report.pairs) {
+      console.log(
+        `  ${pair.name}: measured mem=${pair.measured.mem} steps=${pair.measured.steps}; ` +
+          `baseline mem=${pair.baseline.mem} steps=${pair.baseline.steps}; ` +
+          `marginal mem=${pair.marginal.mem} steps=${pair.marginal.steps}`,
+      );
+    }
+    console.log(`  total marginal: mem=${report.exUnits.mem} steps=${report.exUnits.steps}`);
+  }
+}
+
 function formatPayloads(payloads: SizedPayload[]): string {
   if (payloads.length === 0) {
     return 'none';
@@ -1242,11 +1391,19 @@ async function main() {
   const maxTxSize = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_SIZE', DEFAULT_MAX_TX_SIZE);
   const blueprintPath = process.env.CARDANO_TX_BUDGET_BLUEPRINT || path.join(repoRoot, 'cardano/onchain/plutus.json');
   const aikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_AIKEN_CHECK_JSON || path.join(repoRoot, 'aiken-check.json');
+
+  const deploymentPlanPath = process.env.CARDANO_TX_BUDGET_DEPLOYMENT_PLAN || path.join(repoRoot, 'deployment-plan.json');
+  const deploymentReferences = readAppliedDeploymentPlan(deploymentPlanPath, blueprintPath, maxTxSize, 750);
+
   const blueprint = readJson<Blueprint>(blueprintPath);
   const validators = new Map(blueprint.validators.map((validator) => [validator.title, validator]));
-  const aikenTests = toAikenTestMap(readJson<AikenCheckReport>(aikenCheckJsonPath));
-  const reports = await buildScenarios(validators, aikenTests);
+  const aikenCheckReport = readJson<AikenCheckReport>(aikenCheckJsonPath);
+  const aikenTests = toAikenTestMap(aikenCheckReport);
+  const reports = await buildScenarios(validators, aikenTests, deploymentReferences);
   const capacityReports = await buildCapacityReports(aikenTests);
+  const stagedExecutionReports = buildStagedExecutionReports(aikenTests);
+  console.log(`Production deployment preflight passed for ${deploymentReferences.length} fully applied references across both modes.`);
+  printStagedExecutionReports(stagedExecutionReports);
 
   console.log(
     'These synthetic estimates include Aiken test setup and overlapping validation. They do not measure complete transactions.',

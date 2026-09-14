@@ -36,7 +36,10 @@ const encode = (data: Data) => Data.to(data);
 const hash = (byte: string) => byte.repeat(28);
 const EMPTY_ROOT = "00".repeat(32);
 
-async function fixture(escrowAmount = 0n) {
+async function fixture(
+  escrowAmount = 0n,
+  clientMode: "legacy" | "staged" = "staged",
+) {
   const account = generateEmulatorAccount({ lovelace: 10_000_000_000n });
   const referenceAccount = generateEmulatorAccount({});
   const emulator = new Emulator([account]);
@@ -105,10 +108,23 @@ async function fixture(escrowAmount = 0n) {
     type: "PlutusV3",
     script: recoverClient.script,
   });
-  const spendClient = validator("spending_client.spend_client.spend", [
-    hostPolicy,
-    { Script: [recoverClient.scriptHash] },
-  ]);
+  const spendTendermintUpdateSession = validator(
+    "spending_tendermint_update_session.spend_tendermint_update_session.spend",
+    [hostPolicy],
+  );
+  const mintTendermintUpdateSession = validator(
+    "minting_tendermint_update_session.mint_tendermint_update_session.mint",
+    [spendTendermintUpdateSession.scriptHash],
+  );
+  const spendClient = clientMode === "staged"
+    ? validator("spending_multitx_client.spend_multitx_client.spend", [
+      hostPolicy,
+      mintTendermintUpdateSession.scriptHash,
+      { Script: [recoverClient.scriptHash] },
+    ])
+    : validator("spending_client.spend_client.spend", [hostPolicy, {
+      Script: [recoverClient.scriptHash],
+    }]);
   const mintClientStt = validator("minting_client_stt.mint_client_stt.mint", [
     spendClient.scriptHash,
     hostPolicy,
@@ -260,6 +276,8 @@ async function fixture(escrowAmount = 0n) {
     validators: {
       recoverClient,
       spendClient,
+      spendTendermintUpdateSession,
+      mintTendermintUpdateSession,
       mintClientStt,
       spendConnection,
       mintConnectionStt,
@@ -410,96 +428,102 @@ async function fixture(escrowAmount = 0n) {
   };
 }
 
-Deno.test("shutdown reclaims every state family and its recovery staking deposit", async () => {
-  const f = await fixture();
-  let groups = await scanDeploymentState(f.lucid, f.deployment);
-  assertThrows(() => assertNoDeploymentState(groups), Error, "before removing");
-  const transfer = groups.find((group) => group.kind === "transfer")!;
-  await f.submit(
-    await buildReclaimEscrowTx(
-      f.lucid,
-      f.deployment,
-      f.hostUtxo,
-      transfer,
-      f.shard,
-      f.account.address,
-      f.emulator.now(),
-    ),
-  ).catch((cause) => {
-    throw new Error("Escrow cleanup failed", { cause });
-  });
-  for (
-    const kind of [
-      "channel",
-      "connection",
-      "client",
-      "transfer",
-      "module",
-      "trace",
-      "metadata",
-    ] as const
-  ) {
-    groups = await scanDeploymentState(f.lucid, f.deployment);
-    const group = groups.find((entry) => entry.kind === kind)!;
-    assert(group.utxos.length > 0);
-    const refund = group.utxos.reduce(
-      (total, utxo) => total + utxo.assets.lovelace,
-      0n,
+for (const clientMode of ["legacy", "staged"] as const) {
+  Deno.test(`shutdown reclaims every state family and its recovery staking deposit (${clientMode})`, async () => {
+    const f = await fixture(0n, clientMode);
+    let groups = await scanDeploymentState(f.lucid, f.deployment);
+    assertThrows(
+      () => assertNoDeploymentState(groups),
+      Error,
+      "before removing",
     );
-    const before = (await f.lucid.utxosAt(f.account.address)).reduce(
-      (total, utxo) => total + utxo.assets.lovelace,
-      0n,
-    );
+    const transfer = groups.find((group) => group.kind === "transfer")!;
     await f.submit(
-      buildReclaimStateTx(
+      await buildReclaimEscrowTx(
         f.lucid,
         f.deployment,
         f.hostUtxo,
-        group,
+        transfer,
+        f.shard,
         f.account.address,
         f.emulator.now(),
       ),
     ).catch((cause) => {
-      throw new Error(`${kind} cleanup failed`, { cause });
+      throw new Error("Escrow cleanup failed", { cause });
     });
-    assertEquals((await f.lucid.utxosAt(group.validator.address)).length, 0);
-    const after = (await f.lucid.utxosAt(f.account.address)).reduce(
-      (total, utxo) => total + utxo.assets.lovelace,
-      0n,
+    for (
+      const kind of [
+        "channel",
+        "connection",
+        "client",
+        "transfer",
+        "module",
+        "trace",
+        "metadata",
+      ] as const
+    ) {
+      groups = await scanDeploymentState(f.lucid, f.deployment);
+      const group = groups.find((entry) => entry.kind === kind)!;
+      assert(group.utxos.length > 0);
+      const refund = group.utxos.reduce(
+        (total, utxo) => total + utxo.assets.lovelace,
+        0n,
+      );
+      const before = (await f.lucid.utxosAt(f.account.address)).reduce(
+        (total, utxo) => total + utxo.assets.lovelace,
+        0n,
+      );
+      await f.submit(
+        buildReclaimStateTx(
+          f.lucid,
+          f.deployment,
+          f.hostUtxo,
+          group,
+          f.account.address,
+          f.emulator.now(),
+        ),
+      ).catch((cause) => {
+        throw new Error(`${kind} cleanup failed`, { cause });
+      });
+      assertEquals((await f.lucid.utxosAt(group.validator.address)).length, 0);
+      const after = (await f.lucid.utxosAt(f.account.address)).reduce(
+        (total, utxo) => total + utxo.assets.lovelace,
+        0n,
+      );
+      assert(after > before + refund - 2_000_000n);
+    }
+    assertNoDeploymentState(await scanDeploymentState(f.lucid, f.deployment));
+    const credential = f.deployment.validators.recoverClient!;
+    assert(f.emulator.chain[credential.address].registeredStake);
+    const balance = async () =>
+      (await f.lucid.utxosAt(f.account.address)).reduce(
+        (total, utxo) => total + utxo.assets.lovelace,
+        0n,
+      );
+    const before = await balance();
+    const body = await f.submit(
+      buildReclaimRecoveryStakeTx(
+        f.lucid,
+        f.deployment,
+        f.hostUtxo,
+        f.hostDatum.deployer,
+        f.emulator.now(),
+      ),
     );
-    assert(after > before + refund - 2_000_000n);
-  }
-  assertNoDeploymentState(await scanDeploymentState(f.lucid, f.deployment));
-  const credential = f.deployment.validators.recoverClient!;
-  assert(f.emulator.chain[credential.address].registeredStake);
-  const balance = async () =>
-    (await f.lucid.utxosAt(f.account.address)).reduce(
-      (total, utxo) => total + utxo.assets.lovelace,
-      0n,
+    // The pinned emulator only updates its stake map for pre-Conway certificates.
+    // Evaluate the actual Conway deregistration and check its deposit refund.
+    const certificate = body.certs()!.get(0).as_unreg_cert()!;
+    assertEquals(
+      certificate.stake_credential().as_script()!.to_hex(),
+      credential.scriptHash,
     );
-  const before = await balance();
-  const body = await f.submit(
-    buildReclaimRecoveryStakeTx(
-      f.lucid,
-      f.deployment,
-      f.hostUtxo,
-      f.hostDatum.deployer,
-      f.emulator.now(),
-    ),
-  );
-  // The pinned emulator only updates its stake map for pre-Conway certificates.
-  // Evaluate the actual Conway deregistration and check its deposit refund.
-  const certificate = body.certs()!.get(0).as_unreg_cert()!;
-  assertEquals(
-    certificate.stake_credential().as_script()!.to_hex(),
-    credential.scriptHash,
-  );
-  assertEquals(
-    certificate.deposit(),
-    f.lucid.config().protocolParameters!.keyDeposit,
-  );
-  assertEquals(await balance(), before + certificate.deposit() - body.fee());
-});
+    assertEquals(
+      certificate.deposit(),
+      f.lucid.config().protocolParameters!.keyDeposit,
+    );
+    assertEquals(await balance(), before + certificate.deposit() - body.fee());
+  });
+}
 
 Deno.test("shutdown blocks user deposits even when an escrow has enough ADA to pay a refund", async () => {
   const f = await fixture(1n);
@@ -575,3 +599,101 @@ Deno.test("shutdown rejects outstanding channel packets before reclaiming depend
     .addSignerKey(f.hostDatum.deployer).validFrom(f.emulator.now());
   await assertRejects(() => tx.complete({ localUPLCEval: true }));
 });
+
+Deno.test("independent session deposits cannot veto bridge-state cleanup", async () => {
+  const f = await fixture();
+  const session = f.deployment.validators.spendTendermintUpdateSession;
+  const sessionUnit =
+    f.deployment.validators.mintTendermintUpdateSession.scriptHash + "01";
+  f.seed(
+    session.address,
+    { lovelace: 5_000_000n, [sessionUnit]: 1n },
+    Data.void(),
+  );
+  const groups = await scanDeploymentState(f.lucid, f.deployment);
+  assert(groups.every((group) => group.validator.address !== session.address));
+  assertStateDrained(groups, f.deployment);
+  assertEquals((await f.lucid.utxosAt(session.address)).length, 1);
+});
+
+Deno.test("shutdown refuses an unknown client validator instead of guessing its redeemer", async () => {
+  const f = await fixture();
+  const group = (await scanDeploymentState(f.lucid, f.deployment)).find((
+    { kind },
+  ) => kind === "client")!;
+  f.deployment.validators.spendClient.title = "unknown.spend";
+  assertThrows(
+    () =>
+      buildReclaimStateTx(
+        f.lucid,
+        f.deployment,
+        f.hostUtxo,
+        group,
+        f.account.address,
+        f.now,
+      ),
+    Error,
+    "Unknown client validator",
+  );
+});
+
+for (
+  const mutation of [
+    "active",
+    "grace-period",
+    "missing-authority",
+    "missing-burn",
+    "legacy-redeemer",
+    "wrong-refund",
+  ] as const
+) {
+  Deno.test(`staged client reclaim rejects ${mutation} at ledger evaluation`, async () => {
+    const f = await fixture();
+    const group = (await scanDeploymentState(f.lucid, f.deployment)).find((
+      { kind },
+    ) => kind === "client")!;
+    const client = group.utxos[0];
+    const policy = f.deployment.validators.mintClientStt;
+    const unit = Object.keys(client.assets).find((unit) =>
+      unit.startsWith(policy.scriptHash)
+    )!;
+    if (mutation === "active") {
+      f.hostUtxo.datum = Data.to({
+        ...f.hostDatum,
+        control: { ...f.hostDatum.control, shutdown: "Active" },
+      }, HostStateDatum);
+    }
+    if (mutation === "grace-period") {
+      f.hostUtxo.datum = Data.to({
+        ...f.hostDatum,
+        control: {
+          ...f.hostDatum.control,
+          shutdown: {
+            ShuttingDown: {
+              initiated_at: BigInt(f.now),
+              grace_period_end: BigInt(f.now + 86_400_000),
+            },
+          },
+        },
+      }, HostStateDatum);
+    }
+    const refundAddress = mutation === "wrong-refund"
+      ? generateEmulatorAccount({}).address
+      : f.account.address;
+    const tx = f.lucid.newTx()
+      .readFrom([f.hostUtxo, group.validator.refUtxo!, policy.refUtxo])
+      .collectFrom(
+        [client],
+        encode(new Constr(mutation === "legacy-redeemer" ? 2 : 4, [])),
+      )
+      .pay.ToAddress(refundAddress, { lovelace: client.assets.lovelace })
+      .validFrom(f.now).validTo(f.now + 600_000);
+    if (mutation !== "missing-burn") {
+      tx.mintAssets({ [unit]: -1n }, Data.void());
+    }
+    if (mutation !== "missing-authority") tx.addSignerKey(f.hostDatum.deployer);
+    await assertRejects(() =>
+      tx.complete({ localUPLCEval: true, changeAddress: refundAddress })
+    );
+  });
+}

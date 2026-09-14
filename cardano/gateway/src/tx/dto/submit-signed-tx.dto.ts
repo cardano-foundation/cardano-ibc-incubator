@@ -8,7 +8,7 @@ export interface SubmitSignedTxRequest {
    * This is the completed, signed Cardano transaction ready for submission.
    */
   signed_tx_cbor: string;
-  
+
   /**
    * Optional metadata for logging/debugging.
    */
@@ -23,12 +23,12 @@ export interface SubmitSignedTxResponse {
    * Transaction hash (Blake2b-256 hash of the signed transaction).
    */
   tx_hash: string;
-  
+
   /**
    * Block height at which the transaction was confirmed (if available).
    */
   height?: string;
-  
+
   /**
    * Raw transaction events (optional, for IBC event parsing).
    */
@@ -40,4 +40,3 @@ export interface SubmitSignedTxResponse {
     }>;
   }>;
 }
-

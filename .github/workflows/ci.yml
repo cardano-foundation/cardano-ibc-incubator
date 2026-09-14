@@ -337,6 +337,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gateway_history_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -390,6 +405,8 @@ jobs:
         run: npm run --prefix cardano/gateway build
 
       - name: Test with coverage
+        env:
+          BRIDGE_HISTORY_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/gateway_history_test
         run: npm run --prefix cardano/gateway test:cov:ci
 
   proto-types:
@@ -880,6 +897,11 @@ jobs:
             packages/cardano-ibc-trace-registry/package-lock.json
             packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
@@ -888,6 +910,10 @@ jobs:
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
         run: aiken build --deny --trace-level silent
+
+      - name: Check and export fully applied deployment plan
+        working-directory: cardano/offchain
+        run: deno task export:deployment-plan --output ../../deployment-plan.json
 
       - name: Collect Aiken execution units
         run: bash scripts/ci/collect-cardano-tx-budget-units.sh "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/aiken-check.json"

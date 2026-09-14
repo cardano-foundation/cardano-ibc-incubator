@@ -8,10 +8,19 @@ export const PENDING_TREE_UPDATE_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const PENDING_TREE_UPDATE_CACHE_METRIC = 'ibc_tree_pending_updates';
 
-export type PendingTreeUpdate = {
+export type PendingTreeStateUpdate = {
+  kind?: 'tree_update';
   expectedNewRoot: string;
   commit: StateRootResult['commit'];
 };
+
+type PendingTreeNeutralUpdate = {
+  kind: 'tree_neutral';
+  expectedNewRoot: string;
+  commit: () => void | Promise<void>;
+};
+
+export type PendingTreeUpdate = PendingTreeStateUpdate | PendingTreeNeutralUpdate;
 
 @Injectable()
 export class IbcTreePendingUpdatesService {
@@ -43,17 +52,29 @@ export class IbcTreePendingUpdatesService {
     txHash: string,
     expectedUpdate: PendingTreeUpdate,
     hostState: IbcTreeHostStateRef,
-  ): Promise<Awaited<ReturnType<PendingTreeUpdate['commit']>> | undefined> {
+  ): Promise<Awaited<ReturnType<PendingTreeStateUpdate['commit']>> | undefined> {
     if (!txHash) return undefined;
     const key = txHash.toLowerCase();
     const update = this.pendingByTxHash.get(key);
-    if (update !== expectedUpdate) return undefined;
+    if (update !== expectedUpdate || update.kind === 'tree_neutral') return undefined;
 
     const result = await update.commit(hostState);
     // Expiry or eviction while the live lookup awaited cannot undo confirmation.
     // Leave any replacement entry intact but return the successful result.
     this.pendingByTxHash.deleteIfValue(key, update);
     return result;
+  }
+
+  /** Acknowledge an exact staged transaction after its body/hash is confirmed. */
+  async commitNeutral(txHash: string, expectedUpdate: PendingTreeNeutralUpdate): Promise<boolean> {
+    if (!txHash) return false;
+    const key = txHash.toLowerCase();
+    const update = this.pendingByTxHash.get(key);
+    if (update !== expectedUpdate || update.kind !== 'tree_neutral') return false;
+
+    await update.commit();
+    this.pendingByTxHash.deleteIfValue(key, update);
+    return true;
   }
 
   take(txHash: string): PendingTreeUpdate | undefined {
@@ -66,6 +87,8 @@ export class IbcTreePendingUpdatesService {
     // Hash-based lookup can miss when external signers alter final body shape.
     // Root matching remains strict because expectedNewRoot is derived from the
     // exact in-memory tree mutation we prepared before signing.
-    return this.pendingByTxHash.findAndTake((update) => update.expectedNewRoot === expectedNewRoot);
+    return this.pendingByTxHash.findAndTake(
+      (update) => update.kind !== 'tree_neutral' && update.expectedNewRoot === expectedNewRoot,
+    );
   }
 }

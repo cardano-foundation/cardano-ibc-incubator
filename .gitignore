@@ -74,3 +74,10 @@ packages/*/dist/
 # Local Blockfrost study outputs
 studies/cardano_probabilistic_finality/cache*/
 studies/cardano_probabilistic_finality/out*/
+
+# Generated production deployment size inventory
+/deployment-plan.json
+/.deployment-smoke/
+
+# Generated Aiken execution-budget report
+/aiken-check.json
