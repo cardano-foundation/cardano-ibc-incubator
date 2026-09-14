@@ -23,6 +23,7 @@
     "lint": "deno lint",
     "check": "deno check index.ts src/*.ts src/testing/*.ts scripts/*.ts types/**/*.ts",
     "test:deployment": "deno test --allow-env --allow-read src/deployment.test.ts",
+    "test:tx-budgets": "deno test --allow-env --allow-read src/packet-budgets.test.ts",
     "test:channels": "deno test --allow-env --allow-read src/channel-actions.test.ts",
     "test:channels:fuzz": "deno test --allow-env --allow-read src/channel-actions.fuzz.test.ts",
     "test:shutdown": "deno test --allow-env --allow-read scripts/shutdown-deployment.test.ts src/shutdown.test.ts",

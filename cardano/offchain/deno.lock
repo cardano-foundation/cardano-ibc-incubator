@@ -356,8 +356,8 @@
         "@lucid-evolution/core-utils"
       ]
     },
-    "@lucid-evolution/uplc@0.2.20": {
-      "integrity": "sha512-+40qeHmjMnM4Sjdq9JAf190a1t3TMbV1vegVLQGqt2AouOkIunZfziBZwuaqcgUVVbynW+j2Qx2ijK83Pap4XQ=="
+    "@lucid-evolution/uplc@0.2.21": {
+      "integrity": "sha512-eNhfaekB/ZKMCPU4TUiD96WEj1crswjSoIF6DdTciqy64AXIwt3u5yETFidiERbBn4EM3JyFCTLKU66vC0TcNA=="
     },
     "@lucid-evolution/utils@0.1.66_effect@3.19.2_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6": {
       "integrity": "sha512-sp6vsxrc0u9rYgb4ExRP4LRQM0oK6mVxqt70axK0T4DSS06KYtCqUWX6kjcOHY8jxDGfjK5RLh9hBY+Gul4OSQ==",

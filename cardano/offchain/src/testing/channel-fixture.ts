@@ -5,6 +5,7 @@ import {
   fromHex,
   fromText,
   Lucid,
+  PROTOCOL_PARAMETERS_DEFAULT,
   type Script,
   toHex,
   type UTxO,
@@ -171,7 +172,7 @@ const proofSpecs = [
   record(leaf("00"), record([0n, 1n], 32n, 1n, 1n, "", 1n), 0n, 0n, variant(0)),
 ];
 
-async function membershipProof(key: string, value: string) {
+export async function membershipProof(key: string, value: string) {
   const makeLeaf = async (prefix: string, key: string, value: string) =>
     await sha256(
       prefix + varint(key.length / 2) + key + "20" + await sha256(value),
@@ -205,7 +206,12 @@ export async function channelFixture(
   const REMOTE_KEY = "channelEnds/ports/" + REMOTE_PORT + "/channels/" +
     REMOTE_CHANNEL;
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
-  const emulator = new Emulator([account]);
+  const emulator = new Emulator([account], {
+    ...PROTOCOL_PARAMETERS_DEFAULT,
+    maxTxSize: 16_384,
+    maxTxExMem: 16_500_000n,
+    maxTxExSteps: 10_000_000_000n,
+  });
   const lucid = await Lucid(emulator, "Custom");
   lucid.selectWallet.fromSeed(account.seedPhrase);
   const now = emulator.now();
@@ -572,5 +578,26 @@ export async function channelFixture(
     seed,
     reference,
     account,
+    packetContext: {
+      clientState,
+      consensus,
+      clientDatum,
+      client,
+      connection,
+      hostDatum,
+      host,
+      hostScript,
+      hostAddress,
+      verifyScript,
+      verifyPolicy,
+      channelDatum,
+      module,
+      moduleScript,
+      moduleAddress,
+      portToken,
+      moduleToken,
+      hostPolicy,
+      shutdownScriptHash,
+    },
   };
 }
