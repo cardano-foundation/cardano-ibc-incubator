@@ -23,7 +23,7 @@ import {
   formatCapacityReport,
   loadNormalizedCapacityFixture,
 } from './tendermint-update-capacity';
-import { addMaxAlternativeExUnits, checkTransactionBudgets, type ExUnits } from './tx-budget-limits';
+import { addMaxAlternativeExUnits, type ExUnits } from './tx-budget-limits';
 
 type BlueprintValidator = {
   title: string;
@@ -121,11 +121,7 @@ type ScenarioReport = {
 
 const repoRoot = path.resolve(__dirname, '../../../../..');
 const DEFAULT_MAX_TX_SIZE = 16_384;
-const DEFAULT_TX_HEADROOM_BYTES = 750;
 const DEFAULT_SIGNED_WITNESS_ESTIMATE_BYTES = 260;
-const DEFAULT_MAX_TX_EX_MEM = 16_500_000;
-const DEFAULT_MAX_TX_EX_STEPS = 10_000_000_000;
-const DEFAULT_EX_UNIT_HEADROOM_BPS = 500;
 
 const TX_BASE_BYTES = 360;
 const TX_INPUT_BYTES = 44;
@@ -160,17 +156,6 @@ function readIntegerEnv(name: string, fallback: number): number {
     throw new Error(`${name} must be a positive safe integer; found ${value}`);
   }
   return parsed;
-}
-
-function readBooleanEnv(name: string): boolean {
-  const value = process.env[name]?.trim().toLowerCase();
-  if (!value) {
-    return false;
-  }
-  if (value !== 'true' && value !== 'false') {
-    throw new Error(`${name} must be true or false; found ${value}`);
-  }
-  return value === 'true';
 }
 
 function readJson<T>(filePath: string): T {
@@ -654,7 +639,6 @@ function buildScenarioReport(
 async function buildScenarios(
   validators: Map<string, BlueprintValidator>,
   aikenTests: Map<string, ExUnits>,
-  allowMissingInputs = false,
 ): Promise<ScenarioReport[]> {
   const referenceScriptTitles = [
     'host_state_stt.host_state_stt.spend',
@@ -677,7 +661,6 @@ async function buildScenarios(
     'spending_channel/timeout_packet.timeout_packet.mint',
   ];
   const referenceScripts = referenceScriptTitles
-    .filter((title) => !allowMissingInputs || validators.has(title))
     .map((title) => ({ title, bytes: scriptBytes(validators, title) }))
     .sort((left, right) => right.bytes - left.bytes);
   const largestReferenceScript = referenceScripts[0];
@@ -1195,20 +1178,7 @@ async function buildScenarios(
     },
   ];
 
-  const reports: ScenarioReport[] = [];
-  for (const scenario of scenarios) {
-    try {
-      reports.push(buildScenarioReport(validators, aikenTests, scenario));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (allowMissingInputs && (message.startsWith('Missing validator') || message.startsWith('Missing Aiken'))) {
-        console.warn(`Skipping base measurement for ${scenario.id}: ${message}`);
-        continue;
-      }
-      throw error;
-    }
-  }
-  return reports;
+  return scenarios.map((scenario) => buildScenarioReport(validators, aikenTests, scenario));
 }
 
 async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
@@ -1236,17 +1206,13 @@ async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
   );
 }
 
-function printReport(reports: ScenarioReport[], maxTxSize: number, txHeadroomBytes: number): void {
-  const safeTxSize = maxTxSize - txHeadroomBytes;
-  console.log(
-    `Cardano transaction budget report (ledger max=${maxTxSize}, CI safe size=${safeTxSize}, reserve=${txHeadroomBytes})`,
-  );
+function printReport(reports: ScenarioReport[], maxTxSize: number): void {
+  console.log(`Cardano transaction cost estimates (diagnostic only, ledger size limit=${maxTxSize})`);
   for (const report of reports) {
     console.log(`\n${report.name}`);
     console.log(`  unsigned bytes: ${report.unsignedBytes}`);
     console.log(`  signed bytes estimate: ${report.signedBytesEstimate}`);
     console.log(`  ledger size margin: ${maxTxSize - report.signedBytesEstimate}`);
-    console.log(`  CI reserve margin: ${safeTxSize - report.signedBytesEstimate}`);
     console.log(`  ex units: mem=${report.exUnits.mem} steps=${report.exUnits.steps}`);
     console.log(`  redeemer sizes: ${formatPayloads(report.redeemers)}`);
     console.log(`  datum sizes: ${formatPayloads(report.datums)}`);
@@ -1274,84 +1240,24 @@ function formatPayloads(payloads: SizedPayload[]): string {
 
 async function main() {
   const maxTxSize = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_SIZE', DEFAULT_MAX_TX_SIZE);
-  const txHeadroomBytes = readIntegerEnv('CARDANO_TX_BUDGET_HEADROOM_BYTES', DEFAULT_TX_HEADROOM_BYTES);
-  const maxTxExMem = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_EX_MEM', DEFAULT_MAX_TX_EX_MEM);
-  const maxTxExSteps = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_EX_STEPS', DEFAULT_MAX_TX_EX_STEPS);
-  const exUnitHeadroomBps = readIntegerEnv('CARDANO_TX_BUDGET_EX_UNIT_HEADROOM_BPS', DEFAULT_EX_UNIT_HEADROOM_BPS);
-  const allowBaselineRegressions = readBooleanEnv('CARDANO_TX_BUDGET_ALLOW_BASELINE_REGRESSIONS');
   const blueprintPath = process.env.CARDANO_TX_BUDGET_BLUEPRINT || path.join(repoRoot, 'cardano/onchain/plutus.json');
   const aikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_AIKEN_CHECK_JSON || path.join(repoRoot, 'aiken-check.json');
-  const baselineBlueprintPath = process.env.CARDANO_TX_BUDGET_BASELINE_BLUEPRINT?.trim();
-  const baselineAikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_BASELINE_AIKEN_CHECK_JSON?.trim();
-
-  if (Boolean(baselineBlueprintPath) !== Boolean(baselineAikenCheckJsonPath)) {
-    throw new Error(
-      'CARDANO_TX_BUDGET_BASELINE_BLUEPRINT and CARDANO_TX_BUDGET_BASELINE_AIKEN_CHECK_JSON must be set together',
-    );
-  }
-
   const blueprint = readJson<Blueprint>(blueprintPath);
   const validators = new Map(blueprint.validators.map((validator) => [validator.title, validator]));
-  const aikenCheckReport = readJson<AikenCheckReport>(aikenCheckJsonPath);
-  const aikenTests = toAikenTestMap(aikenCheckReport);
+  const aikenTests = toAikenTestMap(readJson<AikenCheckReport>(aikenCheckJsonPath));
   const reports = await buildScenarios(validators, aikenTests);
-  let baselineReports: ScenarioReport[] = [];
-  if (baselineBlueprintPath && baselineAikenCheckJsonPath) {
-    const baselineBlueprint = readJson<Blueprint>(baselineBlueprintPath);
-    const baselineValidators = new Map(
-      baselineBlueprint.validators.map((validator) => [validator.title, validator]),
-    );
-    const baselineAikenTests = toAikenTestMap(readJson<AikenCheckReport>(baselineAikenCheckJsonPath));
-    baselineReports = await buildScenarios(baselineValidators, baselineAikenTests, true);
-    console.log(`Comparing known overruns with ${baselineReports.length} base-commit scenario measurements.`);
-  } else {
-    console.log('No base-commit measurements supplied; known overruns are report-only.');
-  }
-  if (allowBaselineRegressions) {
-    console.log('The pull request has an explicit approval to increase existing modeled overruns.');
-  }
   const capacityReports = await buildCapacityReports(aikenTests);
 
-  console.log('Execution units are test-derived estimates collected with --trace-level silent, not ledger evaluations.');
-  printReport(reports, maxTxSize, txHeadroomBytes);
-  console.log('\nInjective Tendermint UpdateClient capacity report (report-only; not a budget gate)');
-  console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
-
-  const { failures, knownViolations } = checkTransactionBudgets(
-    reports,
-    {
-      maxTxSize,
-      txHeadroomBytes,
-      maxTxExMem,
-      maxTxExSteps,
-      exUnitHeadroomBps,
-    },
-    baselineReports,
-    undefined,
-    allowBaselineRegressions,
+  console.log(
+    'These synthetic estimates include Aiken test setup and overlapping validation. They do not measure complete transactions.',
   );
-
-  if (knownViolations.length > 0) {
-    console.log('\nKNOWN TRANSACTION-BUDGET VIOLATIONS (compared with the base commit when available):');
-    for (const violation of knownViolations) {
-      console.log(`- ${violation}`);
-    }
-  }
-
-  if (failures.length > 0) {
-    console.error('\nTransaction budget check failed:');
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log('\nTransaction budget check passed.');
-  if (knownViolations.length > 0) {
-    console.log(`${knownViolations.length} known transaction-limit violations remain.`);
-  } else {
-    console.log(`All scenarios retain ${txHeadroomBytes} bytes and ${exUnitHeadroomBps / 100}% ex-unit headroom.`);
-  }
+  printReport(reports, maxTxSize);
+  console.log('\nInjective Tendermint UpdateClient capacity estimates (diagnostic only)');
+  console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
+  console.log('\nLedger-limit enforcement runs separately through cardano/offchain deno task test:tx-budgets.');
+  console.log(
+    'Complete-transaction coverage does not yet include registry rollover, first-seen voucher minting or Injective capacity profiles.',
+  );
 }
 
 void main().catch((error) => {

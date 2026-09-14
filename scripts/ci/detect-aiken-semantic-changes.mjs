@@ -31,6 +31,7 @@ const aikenInfrastructurePaths = new Set([
 
 function isAikenInfrastructurePath(path) {
   return (
+    path.startsWith('cardano/offchain/') ||
     path.startsWith('.github/actions/') ||
     path.startsWith('.github/workflows/') ||
     path.startsWith('cardano/gateway/src/shared/types/') ||
