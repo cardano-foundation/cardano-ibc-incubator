@@ -7,18 +7,25 @@ import { pathToFileURL } from 'node:url';
 
 const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
 
-const aikenInfrastructurePaths = new Set([
-  'chains/cardano/config/devnet/genesis-alonzo.json',
-  'chains/cardano/config/devnet/genesis-shelley.json',
+const aikenFuzzInfrastructurePaths = new Set([
   'scripts/ci/aiken-fuzz-required-labels.json',
   'scripts/ci/check-aiken-fuzz-coverage.mjs',
   'scripts/ci/check-aiken-fuzz-imports.sh',
-  'scripts/ci/check-aiken-wire-schema.mjs',
-  'scripts/ci/check-aiken-wire-schema.test.mjs',
-  'scripts/ci/check-generated-artifacts-clean.sh',
+  'scripts/ci/check-aiken-layering.sh',
   'scripts/ci/detect-aiken-semantic-changes.mjs',
   'scripts/ci/detect-aiken-semantic-changes.test.mjs',
   'scripts/ci/merge-aiken-check-reports.mjs',
+]);
+
+const aikenInfrastructurePaths = new Set([
+  ...aikenFuzzInfrastructurePaths,
+  'chains/cardano/config/devnet/genesis-alonzo.json',
+  'chains/cardano/config/devnet/genesis-shelley.json',
+  'chains/cardano/config/devnet/genesis-conway.json',
+  'scripts/ci/collect-cardano-tx-budget-units.sh',
+  'scripts/ci/check-aiken-wire-schema.mjs',
+  'scripts/ci/check-aiken-wire-schema.test.mjs',
+  'scripts/ci/check-generated-artifacts-clean.sh',
   'cardano/gateway/src/scripts/ci/check-tx-budgets.ts',
   'cardano/gateway/src/scripts/ci/applied-deployment-plan.ts',
   'cardano/gateway/src/scripts/ci/tendermint-update-capacity.ts',
@@ -38,13 +45,60 @@ function isAikenInfrastructurePath(path) {
     path.startsWith('.github/actions/') ||
     path.startsWith('.github/workflows/') ||
     // Production parameter loading and transaction construction feed the size gate.
-    path.startsWith('cardano/offchain/') ||
+    path.startsWith('packages/cardano-ibc-tx-builder') ||
+    path.startsWith('packages/cardano-ibc-trace-registry/') ||
     path.startsWith('cardano/gateway/src/shared/types/') ||
     path.startsWith(
       'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/',
     ) ||
     aikenInfrastructurePaths.has(path)
   );
+}
+
+// Only skip a workflow-triggered suite when the edit is confined to existing
+// job blocks. Global settings, unknown layouts and shared YAML references are
+// deliberately treated as affecting every suite.
+export function classifyCiWorkflowChange(before, after) {
+  const full = { relevant: true, fuzz: true };
+  const split = (source) => {
+    if (typeof source !== 'string' || /(?:^|:\s+|-\s+)[&*][\w-]|^---|^\.\.\.|\t/m.test(source)) return null;
+    const boundary = source.indexOf('\njobs:\n');
+    if (boundary < 0) return null;
+    const body = source.slice(boundary + '\njobs:\n'.length);
+    const jobs = new Map();
+    let current;
+    for (const line of body.split('\n')) {
+      const match = /^  ([a-zA-Z][a-zA-Z0-9_-]*):\s*$/.exec(line);
+      if (match) {
+        current = match[1];
+        if (jobs.has(current)) return null;
+        jobs.set(current, line);
+      } else if (line.trim() && (!current || !/^    |^\s*#/.test(line))) {
+        return null;
+      } else if (current) {
+        jobs.set(current, `${jobs.get(current)}\n${line}`);
+      }
+    }
+    return { prefix: source.slice(0, boundary), jobs };
+  };
+  const previous = split(before);
+  const next = split(after);
+  if (!previous || !next || previous.prefix !== next.prefix) return full;
+  const names = new Set([...previous.jobs.keys(), ...next.jobs.keys()]);
+  let relevant = false;
+  for (const name of names) {
+    if (!previous.jobs.has(name) || !next.jobs.has(name)) return full;
+    const oldJob = previous.jobs.get(name);
+    const newJob = next.jobs.get(name);
+    if (oldJob === newJob) continue;
+    if (name === 'aiken' || name.startsWith('aiken-')) return full;
+    if (['tx-budgets', 'deno-offchain', 'generated-artifacts'].includes(name)) {
+      relevant = true;
+    } else if (/aiken|cardano\/onchain/i.test(`${oldJob}\n${newJob}`)) {
+      return full;
+    }
+  }
+  return { relevant, fuzz: false };
 }
 
 function runGit(repoRoot, args, encoding = 'utf8') {
@@ -190,10 +244,21 @@ export function classifyAikenChanges(repoRoot, baseRef, headRef) {
   const files = changedPaths(repoRoot, baseRef, headRef);
   const reasons = [];
   let aikenFilesChanged = false;
+  let aikenFuzzChanged = false;
 
   for (const path of files) {
+    if (path === '.github/workflows/ci.yml') {
+      const before = readTreeBlob(repoRoot, baseRef, path);
+      const after = readTreeBlob(repoRoot, headRef, path);
+      const scope = classifyCiWorkflowChange(before?.source, after?.source);
+      if (scope.relevant) reasons.push(`${path} affects Aiken CI`);
+      aikenFuzzChanged ||= scope.fuzz;
+      continue;
+    }
     if (isAikenInfrastructurePath(path)) {
       reasons.push(`${path} affects Aiken CI`);
+      aikenFuzzChanged ||= aikenFuzzInfrastructurePaths.has(path) ||
+        path.startsWith('.github/actions/') || path.startsWith('.github/workflows/');
       continue;
     }
     if (!path.startsWith('cardano/onchain/')) {
@@ -201,6 +266,7 @@ export function classifyAikenChanges(repoRoot, baseRef, headRef) {
     }
     if (!path.endsWith('.ak')) {
       reasons.push(`${path} is a non-source Aiken project change`);
+      aikenFuzzChanged = true;
       continue;
     }
 
@@ -209,10 +275,12 @@ export function classifyAikenChanges(repoRoot, baseRef, headRef) {
     const after = readTreeBlob(repoRoot, headRef, path);
     if (!before || !after || before.mode !== after.mode) {
       reasons.push(`${path} was added, deleted, renamed, or changed mode`);
+      aikenFuzzChanged = true;
       continue;
     }
     if (before.source === null || after.source === null) {
       reasons.push(`${path} is not a regular source file`);
+      aikenFuzzChanged = true;
       continue;
     }
     if (
@@ -220,12 +288,14 @@ export function classifyAikenChanges(repoRoot, baseRef, headRef) {
       aikenSemanticSignature(after.source)
     ) {
       reasons.push(`${path} changed outside ordinary comments and whitespace`);
+      aikenFuzzChanged = true;
     }
   }
 
   return {
     aikenFilesChanged,
     aikenRelevantChanged: reasons.length > 0,
+    aikenFuzzChanged,
     changedFiles: files,
     reasons,
   };
