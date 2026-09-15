@@ -290,6 +290,21 @@ both `epoch_context_challenges` and the private checkpoint metadata.
 This change mitigates #715's operational race and intentionally leaves its
 native epoch-authentication requirement open.
 
+## Host-Chain Software Upgrades
+
+A Cosmos binary replacement runs the selected verifier against existing
+`08-cardano-probabilistic-N` stores. A compatible update preserves the client,
+connection and channel IDs; it requires neither a new Cardano `CreateClient`
+nor an Aiken redeployment or replacement voucher denomination. Creating a new
+client does not retarget an existing connection.
+
+See the [software-upgrade contract](./probabilistic-client-software-upgrades.md)
+for stable type URLs, historical-state decoding, private store keys, verifier
+activation, app migrations and the exact-artifact acceptance gate for #603.
+The [external fixtures](../tests/probabilistic-upgrade/README.md) test published
+modules without changing their runtime code. This software-upgrade path is
+separate from substitute recovery and the unsupported IBC `MsgUpgradeClient`.
+
 ## Substitute-Client Recovery
 
 An expired or frozen probabilistic client can be recovered from a compatible,

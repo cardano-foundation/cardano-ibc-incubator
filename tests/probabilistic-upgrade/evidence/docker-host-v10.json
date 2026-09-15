@@ -1,0 +1,34 @@
+{
+  "scope": "Docker lifecycle smoke only; no completed IBC route or packet flow",
+  "before": {
+    "binary_sha256": "ad4f309ad582c5b86ca9c7c762eedea3eb73d9bdce5ce5198fa6806f70b29238",
+    "image_id": "sha256:e4af9e27034e41fa780a4f8501c148727fd6b70599e5136e8c95b7b108773cf7",
+    "modules": {
+      "adapter": {
+        "version": "v0.1.4",
+        "commit": "e232bfd422084aed79a0a88ae876e863b1190cff"
+      },
+      "core": {
+        "version": "v0.1.5",
+        "commit": "e232bfd422084aed79a0a88ae876e863b1190cff"
+      }
+    }
+  },
+  "after": {
+    "binary_sha256": "58cfcf8f8921b641192962eb5592a417d092059ca385cf7b1dca06cfee6af5ce",
+    "image_id": "sha256:1b43dd441bfd8e1362bb4b187a59f9be3338f4a96e78798f206fd1de1d3d2391",
+    "modules": {
+      "adapter": {
+        "version": "v0.1.4",
+        "commit": "e232bfd422084aed79a0a88ae876e863b1190cff"
+      },
+      "core": {
+        "version": "v0.1.5",
+        "commit": "e232bfd422084aed79a0a88ae876e863b1190cff"
+      }
+    }
+  },
+  "height_before": "3",
+  "height_after": "4",
+  "genesis_sha256": "0a4390429092a9089e2cd45f91ba35ebb8a0fc7286db4bf666d9897879666235"
+}
