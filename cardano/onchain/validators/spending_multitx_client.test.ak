@@ -576,6 +576,47 @@ test evidence_two_conflicting_headers_freeze_without_changing_history() {
   verify_evidence(evidence_context())
 }
 
+test evidence_accepts_reversed_session_token_order() {
+  let tx = evidence_context()
+  expect [client, first, second, host] = tx.inputs
+  verify_evidence(Transaction { ..tx, inputs: [client, second, first, host] })
+}
+
+test evidence_accepts_mint_under_an_unrelated_policy() {
+  let tx = evidence_context()
+  verify_evidence(
+    Transaction {
+      ..tx,
+      mint: assets.add(
+        tx.mint,
+        #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "unrelated",
+        1,
+      ),
+    },
+  )
+}
+
+test evidence_rejects_duplicate_session_tokens() fail {
+  let tx = evidence_context()
+  expect [client_input, first, _, _] = tx.inputs
+  expect client: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  expect receipt: SessionDatum = validator_utils.get_inline_datum(first.output)
+  spending_multitx_client.spend_multitx_client.spend(
+    #"33333333333333333333333333333333333333333333333333333333",
+    receipt.session_token.policy_id,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    Some(client),
+    FinalizeMisbehaviour {
+      session_token_1: receipt.session_token,
+      session_token_2: receipt.session_token,
+    },
+    client_input.output_reference,
+    tx,
+  )
+}
+
 test evidence_finalization_validates_both_sessions_and_exact_burn_policy() {
   let tx = evidence_context()
   expect [_, first, second, _] = tx.inputs
@@ -844,6 +885,72 @@ test evidence_rejects_additional_session_mint() fail {
       ),
     },
   )
+}
+
+test evidence_rejects_additional_session_burn() fail {
+  let tx = evidence_context()
+  verify_evidence(
+    Transaction {
+      ..tx,
+      mint: assets.add(
+        tx.mint,
+        #"55555555555555555555555555555555555555555555555555555555",
+        "extra",
+        -1,
+      ),
+    },
+  )
+}
+
+test evidence_rejects_wrong_first_burn_quantity() fail {
+  let tx = evidence_context()
+  expect [_, first, _, _] = tx.inputs
+  expect receipt: SessionDatum = validator_utils.get_inline_datum(first.output)
+  verify_evidence(
+    Transaction {
+      ..tx,
+      mint: assets.add(
+        tx.mint,
+        receipt.session_token.policy_id,
+        receipt.session_token.name,
+        -1,
+      ),
+    },
+  )
+}
+
+test evidence_rejects_wrong_second_burn_quantity() fail {
+  let tx = evidence_context()
+  expect [_, _, second, _] = tx.inputs
+  expect receipt: SessionDatum = validator_utils.get_inline_datum(second.output)
+  verify_evidence(
+    Transaction {
+      ..tx,
+      mint: assets.add(
+        tx.mint,
+        receipt.session_token.policy_id,
+        receipt.session_token.name,
+        -1,
+      ),
+    },
+  )
+}
+
+test evidence_rejects_replacement_burn_with_same_entry_count() fail {
+  let tx = evidence_context()
+  expect [_, _, second, _] = tx.inputs
+  expect receipt: SessionDatum = validator_utils.get_inline_datum(second.output)
+  // Still two burns under the session policy, but one authenticated session
+  // token is missing. Cardinality alone must never authorize finalization.
+  let mint =
+    tx.mint
+      |> assets.add(
+          receipt.session_token.policy_id,
+          receipt.session_token.name,
+          1,
+        )
+      |> assets.add(receipt.session_token.policy_id, "replacement", -1)
+  verify_evidence(Transaction { ..tx, mint })
 }
 
 fn header_conflict_context() -> (
