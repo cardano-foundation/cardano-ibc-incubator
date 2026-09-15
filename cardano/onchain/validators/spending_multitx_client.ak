@@ -176,10 +176,12 @@ validator spend_multitx_client(
                 transaction,
               )
             expect first.owner == second.owner
-            expect
-              assets.tokens(mint, session_mint_policy_id) == dict.from_pairs(
-                [Pair(session_token_1.name, -1), Pair(session_token_2.name, -1)],
-              )
+            // Both distinct session tokens were authenticated above, including
+            // their policy and exact -1 quantities. Two entries under that
+            // policy therefore exclude any additional mint or burn.
+            expect [_,
+              _] =
+              mint |> assets.tokens(session_mint_policy_id) |> dict.to_pairs()
             and {
               session.validate_misbehaviour_finalization(
                 first,

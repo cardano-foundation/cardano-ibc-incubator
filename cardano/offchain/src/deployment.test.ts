@@ -216,6 +216,25 @@ Deno.test("fully applied production transfer module fits the reference publicati
   assertEquals(report.oversized, false, JSON.stringify(report));
 });
 
+Deno.test("fully applied multitx client reserves 200 extra bytes below the publication guard", async () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const plan = await loadDeploymentPlan(lucid, {
+    ...DEPLOYMENT_PLAN_FIXTURE,
+    benchmarkVoucherEnabled: false,
+  });
+  // Keep the existing publication overhead allowance, plus an extra 200 bytes.
+  // Before the exact-burn optimization this script had only 133 bytes spare.
+  // The transaction suite separately signs and submits the production builder's
+  // reference publication to an emulator with the real 16,384-byte limit.
+  const [report] = buildReferenceValidatorSizeReport(
+    [plan.spendClient.script],
+    16_384 - 200,
+  );
+  assertEquals(report.oversized, false, JSON.stringify(report));
+});
+
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
