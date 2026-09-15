@@ -15,7 +15,7 @@ const HEIGHT = record(1n, 10n);
 
 // The source tree has a single key immediately after the absent packet key.
 // Its membership proof also proves that there is no smaller key in that tree.
-async function absenceProof(key: string) {
+export async function absenceProof(key: string) {
   const membership = await membershipProof(key + "30", fromText("resolved"));
   const proofs = membership.proof.fields[0] as Constr<Data>[];
   const right = (proofs[0].fields[0] as Constr<Data>).fields[0];
