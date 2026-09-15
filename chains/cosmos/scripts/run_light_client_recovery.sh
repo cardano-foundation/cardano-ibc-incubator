@@ -934,6 +934,12 @@ run_forward_token_transfer() {
     bash "$DIRECT_TOKEN_SWAP_SCRIPT"
 }
 
+# The software-upgrade scenario reuses the same query and transfer assertions.
+# Sourcing defines helpers only; executing still runs the recovery scenario.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="${CARIBIC_PROJECT_ROOT:-$(cd "$script_dir/../../.." && pwd -P)}"
 HERMES_BIN="${HERMES_BIN:-$repo_root/relayer/target/release/hermes}"

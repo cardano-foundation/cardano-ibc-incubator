@@ -39,13 +39,16 @@ RUN /usr/local/bin/patch-cardano-light-client /src/ibc-go /cardano-ibc \
          cd /src/ibc-go/simapp && go mod tidy; \
        fi
 
+ARG HOST_BUILD_VERSION
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd /src/ibc-go \
+    && set -- \
+    && if [ -n "${HOST_BUILD_VERSION}" ]; then set -- "VERSION=${HOST_BUILD_VERSION}"; fi \
     && if [ "${IBC_GO_MAJOR}" = "8" ]; then \
-         BUILD_TAGS=muslc make build; \
+         BUILD_TAGS=muslc make build "$@"; \
        else \
-         make build; \
+         make build "$@"; \
        fi \
     && install -Dm755 /src/ibc-go/build/simd /out/simd
 
