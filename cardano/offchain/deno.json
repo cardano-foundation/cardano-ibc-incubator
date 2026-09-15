@@ -33,7 +33,7 @@
     "test:tx-budgets": "deno test --allow-env --allow-read src/packet-budgets.test.ts",
     "test:channels": "deno test --allow-env --allow-read src/channel-actions.test.ts",
     "test:channels:fuzz": "deno test --allow-env --allow-read src/channel-actions.fuzz.test.ts",
-    "test:shutdown": "deno test --allow-env --allow-read scripts/shutdown-deployment.test.ts src/shutdown.test.ts src/shutdown-model.test.ts",
+    "test:shutdown": "deno test --allow-env --allow-read scripts/shutdown-deployment.test.ts src/shutdown.test.ts src/shutdown-model.test.ts src/shutdown-drain.test.ts",
     "test:shutdown:fuzz": "deno test --allow-env --allow-read src/shutdown.fuzz.test.ts",
     "test:consensus-history": "deno test --allow-env --allow-read --allow-write scripts/consensus-history.test.ts",
     "test:consensus-history-index": "deno test --allow-env --allow-read --allow-write src/consensus_history_commitment.test.ts src/incremental_ibc_tree.test.ts src/plutus_serialise.test.ts src/consensus_history_recovery.test.ts src/consensus_history_yaci.test.ts scripts/recover-consensus-history.test.ts",

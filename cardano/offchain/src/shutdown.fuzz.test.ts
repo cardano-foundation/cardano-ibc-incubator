@@ -3,6 +3,7 @@ import {
   runTransactionCase,
   transactionFuzzParameters,
 } from "./testing/transaction-fuzz.ts";
+import type { DrainMode } from "./testing/shutdown-drain.ts";
 
 const action = (...kinds: string[]) =>
   fc.record({
@@ -57,6 +58,26 @@ Deno.test("populated snapshots reclaim state deposits without burning user vouch
       async (sample) => {
         await runTransactionCase(
           new URL("./testing/shutdown-state-case.worker.ts", import.meta.url),
+          sample,
+        );
+      },
+    ),
+    transactionFuzzParameters(),
+  );
+});
+
+Deno.test("shutdown drains funded escrow before returning all deployment ADA", async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.record({
+        mode: fc.constantFrom<DrainMode>("timeout", "error-ack", "return"),
+        amount: fc.bigInt({ min: 2_000_000n, max: 100_000_000n }),
+        graceDays: fc.integer({ min: 1, max: 3 }),
+        settleNearDeadline: fc.boolean(),
+      }),
+      async (sample) => {
+        await runTransactionCase(
+          new URL("./testing/shutdown-drain.worker.ts", import.meta.url),
           sample,
         );
       },
