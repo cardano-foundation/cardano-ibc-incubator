@@ -52,9 +52,8 @@ pub fn validate_refund_packet_token(
       assets.from_asset(
         escrowed_token_policy_id,
         escrowed_token_name,
-        transfer_amount,
+        -transfer_amount,
       )
-        |> assets.negate()
     let correct_transfer_amount =
       transfer_escrow.validate_module_escrow_transition(
         spent_input,

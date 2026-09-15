@@ -330,9 +330,8 @@ fn module_callback(
           assets.from_asset(
             escrowed_token_policy_id,
             escrowed_token_name,
-            transfer_amount,
+            -transfer_amount,
           )
-            |> assets.negate()
 
         // Negative shard deltas retain an empty registered shard when depleted.
         let valid_transfer_amount =
@@ -467,32 +466,27 @@ fn module_callback(
 
       let tf_data = decode_transfer_packet_data(data)
       // The acknowledgement marker binds these callback bytes to this packet.
+      expect fungible_token_packet_data.matches_bytes(tf_data, packet_data)
+      expect acknowledgement_mod.marshal_json(acknowledgement) == channel_ack
       when acknowledgement.response is {
-        AcknowledgementError { .. } -> and {
-            // Only error acknowledgements trigger transfer refunds.
-            fungible_token_packet_data.matches_bytes(tf_data, packet_data),
-            acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
-            transfer_refund.validate_refund_packet_token(
-              voucher_minting_policy_id,
-              inputs,
-              outputs,
-              redeemers,
-              spent_input,
-              spend,
-              shard_policy_id,
-              mint,
-              tf_data,
-              packet.source_port,
-              packet.source_channel,
-            ),
-          }
+        AcknowledgementError { .. } ->
+          // Only error acknowledgements trigger transfer refunds.
+          transfer_refund.validate_refund_packet_token(
+            voucher_minting_policy_id,
+            inputs,
+            outputs,
+            redeemers,
+            spent_input,
+            spend,
+            shard_policy_id,
+            mint,
+            tf_data,
+            packet.source_port,
+            packet.source_channel,
+          )
         _ ->
           // Ack success leaves transfer supply unchanged.
-          and {
-            transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
-            fungible_token_packet_data.matches_bytes(tf_data, packet_data)?,
-            (acknowledgement_mod.marshal_json(acknowledgement) == channel_ack)?,
-          }
+          transfer_escrow.validate_preserved_module_state(spent_input, spend)
       }
     }
   }
