@@ -1,7 +1,8 @@
-use cardano/assets.{from_asset}
+use cardano/assets.{add, from_asset}
 use cardano/transaction.{
-  Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
+  Input, Mint, Output, Redeemer, ScriptPurpose, Spend, Transaction,
 }
+use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
@@ -35,6 +36,35 @@ use spending_channel/chan_open_ack
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
 test succeed_chan_open_ack() {
+  check_chan_open_ack(setup().channel_token)
+}
+
+test reject_chan_open_ack_with_different_token_policy() {
+  let channel_token = setup().channel_token
+  !check_chan_open_ack(
+    AuthToken { ..channel_token, policy_id: "different policy" },
+  )
+}
+
+test reject_chan_open_ack_with_different_token_name() {
+  let channel_token = setup().channel_token
+  !check_chan_open_ack(AuthToken { ..channel_token, name: "different name" })
+}
+
+// Keep both tokens in the input and continuation so a mismatch cannot fail
+// merely because the selected asset is absent or the output loses value.
+fn with_selector_token(output: Output, token: AuthToken) -> Output {
+  if auth.contain_auth_token(output, token) {
+    output
+  } else {
+    Output {
+      ..output,
+      value: add(output.value, token.policy_id, token.name, 1),
+    }
+  }
+}
+
+fn check_chan_open_ack(channel_token: AuthToken) -> Bool {
   let mock_data = setup()
 
   //========================arrange inputs=======================
@@ -66,6 +96,12 @@ test succeed_chan_open_ack() {
 
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
+
+  let channel_input =
+    Input {
+      ..channel_input,
+      output: with_selector_token(channel_input.output, channel_token),
+    }
 
   let inputs =
     [mock_data.host_state_input, mock_data.module_input, channel_input]
@@ -123,7 +159,7 @@ test succeed_chan_open_ack() {
       mock_data.channel_token,
     )
 
-  let outputs = [channel_output]
+  let outputs = [with_selector_token(channel_output, channel_token)]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -283,7 +319,7 @@ test succeed_chan_open_ack() {
       value: channel_bz,
     }
 
-  let chan_open_ack_redeemer: Redeemer = mock_data.channel_token
+  let chan_open_ack_redeemer: Redeemer = channel_token
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -311,7 +347,7 @@ test succeed_chan_open_ack() {
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
     mock_data.host_state_nft_policy_id,
-    mock_data.channel_token,
+    channel_token,
     mock_data.chan_open_ack_policy_id,
     transaction,
   )
