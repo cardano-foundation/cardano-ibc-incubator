@@ -1792,9 +1792,8 @@ const deployTransferModule = async (
       .collectFrom([nonceUtxo], Data.void())
       .collectFrom(
         [hostStateUtxo],
-        Data.to(hostStateUpdate.redeemer, HostStateRedeemer, {
-          canonical: true,
-        }),
+        // Match the registration CBOR committed by buildBindPortHostStateUpdate.
+        Data.to(hostStateUpdate.redeemer, HostStateRedeemer),
       )
       .mintAssets(
         {
@@ -1806,7 +1805,8 @@ const deployTransferModule = async (
         {
           [identifierTokenUnit]: 1n,
         },
-        Data.to(outputReference, OutputReference, { canonical: true }),
+        // Match the nonce CBOR hashed by generateIdentifierTokenName.
+        Data.to(outputReference, OutputReference),
       )
       .pay.ToContract(
         hostStateStt.address,
@@ -1939,9 +1939,7 @@ const deployGenericModule = async (
       .collectFrom([nonceUtxo], Data.void())
       .collectFrom(
         [hostStateUtxo],
-        Data.to(hostStateUpdate.redeemer, HostStateRedeemer, {
-          canonical: true,
-        }),
+        Data.to(hostStateUpdate.redeemer, HostStateRedeemer),
       )
       .mintAssets(
         {
@@ -1953,7 +1951,7 @@ const deployGenericModule = async (
         {
           [identifierTokenUnit]: 1n,
         },
-        Data.to(outputReference, OutputReference, { canonical: true }),
+        Data.to(outputReference, OutputReference),
       )
       .pay.ToContract(
         hostStateStt.address,
@@ -2107,7 +2105,7 @@ const deployTraceRegistryShard = async (
           {
             [shardTokenUnit]: 1n,
           },
-          Data.to(outputReference, OutputReference, { canonical: true }),
+          Data.to(outputReference, OutputReference),
         )
         .pay.ToContract(
           traceRegistryAddress,
@@ -2181,7 +2179,7 @@ const deployTraceRegistryDirectory = async (
           {
             [directoryTokenUnit]: 1n,
           },
-          Data.to(outputReference, OutputReference, { canonical: true }),
+          Data.to(outputReference, OutputReference),
         )
         .pay.ToContract(
           traceRegistryAddress,
