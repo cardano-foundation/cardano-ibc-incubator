@@ -975,7 +975,7 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
   }));
 }
 
-async function enterShutdown(
+export async function enterShutdown(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
   grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
