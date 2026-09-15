@@ -567,6 +567,10 @@ jobs:
         working-directory: cardano/offchain
         run: deno task test:shutdown
 
+      - name: Fuzz shutdown sequences and populated state cleanup
+        working-directory: cardano/offchain
+        run: deno task test:shutdown:fuzz
+
       - name: Test production proof-backed consensus history
         working-directory: cardano/offchain
         run: deno task test:consensus-history
@@ -616,7 +620,6 @@ jobs:
         with:
           name: funds-fuzz-${{ matrix.suite }}
           path: funds-fuzz.log
-
   aiken-static:
     name: Cardano Onchain Aiken Static
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && ((github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && (needs.aiken-changes.outputs.aiken_files_changed == 'true' || needs.aiken-changes.outputs.aiken_changed == 'true')) }}
