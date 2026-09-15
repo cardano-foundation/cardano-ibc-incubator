@@ -32,6 +32,7 @@ jobs:
       aiken_changed: ${{ steps.detect.outputs.aiken_changed }}
       aiken_files_changed: ${{ steps.detect.outputs.aiken_files_changed }}
       aiken_pr_changed: ${{ steps.detect.outputs.aiken_pr_changed }}
+      aiken_fuzz_changed: ${{ steps.detect.outputs.aiken_fuzz_changed }}
 
     steps:
       - name: Checkout
@@ -67,6 +68,7 @@ jobs:
               echo "aiken_changed=$1"
               echo "aiken_files_changed=$2"
               echo "aiken_pr_changed=$3"
+              echo "aiken_fuzz_changed=${4:-true}"
             } >> "$GITHUB_OUTPUT"
           }
 
@@ -75,6 +77,7 @@ jobs:
               type == "object" and
               (.aikenFilesChanged | type == "boolean") and
               (.aikenRelevantChanged | type == "boolean") and
+              (.aikenFuzzChanged | type == "boolean") and
               (.changedFiles | type == "array" and all(.[]; type == "string")) and
               (.reasons | type == "array" and all(.[]; type == "string"))
             ' >/dev/null <<<"$1"
@@ -123,6 +126,10 @@ jobs:
           aiken_files_changed=$(jq -r '.aikenFilesChanged' <<<"${full_pr}")
           aiken_changed=$(jq -r '.aikenRelevantChanged' <<<"${classification}")
           aiken_pr_changed=$(jq -r '.aikenRelevantChanged' <<<"${full_pr}")
+          # Use the full PR until the existing reuse check attests a successful
+          # previous run against the same base. A budget-only update must not
+          # hide an earlier untested validator change.
+          aiken_fuzz_changed=$(jq -r '.aikenFuzzChanged' <<<"${full_pr}")
           jq -r '.reasons[]?' <<<"${classification}"
 
           # A synchronize event compares only the newly pushed commits. If the
@@ -228,6 +235,7 @@ jobs:
               fi
 
               if [ "${can_reuse}" = "true" ]; then
+                aiken_fuzz_changed=false
                 echo "The latest update changed only Aiken comments/whitespace or unrelated files."
                 echo "Reusing successful Aiken checks from ${EVENT_BEFORE_SHA}."
               else
@@ -235,7 +243,7 @@ jobs:
               fi
           fi
 
-          set_outputs "${aiken_changed}" "${aiken_files_changed}" "${aiken_pr_changed}"
+          set_outputs "${aiken_changed}" "${aiken_files_changed}" "${aiken_pr_changed}" "${aiken_fuzz_changed}"
           if [ "${aiken_changed}" = "true" ]; then
             echo "Aiken-relevant changes detected."
           else
@@ -580,7 +588,7 @@ jobs:
 
   aiken-smoke:
     name: Cardano Onchain Aiken Smoke
-    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
     needs: aiken-changes
     runs-on: ubuntu-latest
     # The expanded suite can spend fourteen minutes collecting on hosted
@@ -613,7 +621,7 @@ jobs:
 
   aiken-fuzz:
     name: Cardano Onchain Aiken Property/Fuzz (${{ matrix.suite }})
-    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
     needs: aiken-changes
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes || 20 }}
@@ -797,6 +805,7 @@ jobs:
           AIKEN_CHANGED: ${{ needs.aiken-changes.outputs.aiken_changed }}
           AIKEN_FILES_CHANGED: ${{ needs.aiken-changes.outputs.aiken_files_changed }}
           AIKEN_PR_CHANGED: ${{ needs.aiken-changes.outputs.aiken_pr_changed }}
+          AIKEN_FUZZ_CHANGED: ${{ needs.aiken-changes.outputs.aiken_fuzz_changed }}
           NEEDS_JSON: ${{ toJson(needs) }}
         run: |
           node - <<'NODE'
@@ -808,6 +817,7 @@ jobs:
             'AIKEN_CHANGED',
             'AIKEN_FILES_CHANGED',
             'AIKEN_PR_CHANGED',
+            'AIKEN_FUZZ_CHANGED',
           ]) {
             if (!['true', 'false'].includes(process.env[name])) {
               console.error(`${name} has invalid value ${JSON.stringify(process.env[name])}.`);
@@ -818,8 +828,6 @@ jobs:
             ? [
                 'aiken-changes',
                 'aiken-static',
-                'aiken-smoke',
-                'aiken-fuzz',
                 'tx-budgets',
                 'generated-artifacts',
               ]
@@ -828,6 +836,9 @@ jobs:
                 ...(process.env.AIKEN_FILES_CHANGED === 'true' ? ['aiken-static'] : []),
                 'generated-artifacts',
               ];
+          if (process.env.AIKEN_FUZZ_CHANGED === 'true') {
+            required.push('aiken-static', 'aiken-smoke', 'aiken-fuzz');
+          }
           const failed = required
             .filter((name) => needs[name]?.result !== 'success')
             .map((name) => [name, needs[name]])
@@ -852,7 +863,7 @@ jobs:
           node-version: 22
 
       - name: Download fuzz reports
-        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
+        if: ${{ needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
         uses: actions/download-artifact@v8
         with:
           pattern: aiken-fuzz-*
@@ -860,13 +871,13 @@ jobs:
           merge-multiple: true
 
       - name: Merge fuzz reports
-        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
+        if: ${{ needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
         run: node scripts/ci/merge-aiken-check-reports.mjs aiken-fuzz-reports aiken-fuzz.json
 
       # Labels are enforced globally, not per shard. That lets shard boundaries
       # follow runtime and protocol ownership without weakening coverage rules.
       - name: Check fuzz label coverage
-        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
+        if: ${{ needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
         run: node scripts/ci/check-aiken-fuzz-coverage.mjs aiken-fuzz.json
 
       - name: Attest Aiken base ${{ github.event.pull_request.base.sha || github.sha }}
