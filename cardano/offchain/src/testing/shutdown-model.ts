@@ -572,7 +572,7 @@ export async function deploymentScenario() {
         );
         return group.kind;
       },
-      async finish() {
+      async finish(userRefundAddress = address) {
         while (
           await api.cleanup(0)
         ) { /* Re-query after each submitted transaction. */ }
@@ -625,7 +625,7 @@ export async function deploymentScenario() {
           ),
           "final burn",
         );
-        api.assertAllAdaReturned(address);
+        api.assertAllAdaReturned(userRefundAddress);
       },
       lucid,
       emulator,

@@ -38,7 +38,7 @@ update, recovery and misbehaviour constructors keep their indices.
 
 ### Shutdown properties
 
-`deno task test:shutdown:fuzz` runs two shrinking properties against the compiled
+`deno task test:shutdown:fuzz` runs three shrinking properties against the compiled
 validators, with local UPLC evaluation and signed transaction size and execution
 budget checks:
 
@@ -62,6 +62,19 @@ budget checks:
   rejection of a mutated client reclaim (authority, burn, refund or shutdown
   timing). These assumed snapshots test cleanup
   policies; they do not demonstrate how the populated state was reached.
+- **Drain before reclamation:** begin with an active snapshot containing funded
+  native escrow and either an outstanding outbound packet or a proven incoming
+  return. Fund snapshot deposits from the real deployment wallet, preserving
+  total ADA. Evaluate a valid native deposit while active, then enter shutdown and
+  require that deposit to fail script evaluation. Execute a timeout refund, an
+  error-acknowledgement refund, or an incoming native return with verified ICS-23
+  proofs. Assert the exact payout to a separate user wallet, zero escrow balance,
+  and no outstanding local packet commitment. Reclaim the emptied shard, all
+  other deployment state, references and staking deposit, then check the entire
+  ledger against genesis ADA minus transaction fees. Amounts, grace periods and
+  settlement near the grace deadline vary; no ledger state is seeded or edited
+  after shutdown entry. The three deterministic drain scenarios also run under
+  `test:shutdown`.
 
 The default is 20 cases per property. Failures print a seed, shrink path and
 counterexample. Replay only the failed property, for example:
@@ -73,9 +86,11 @@ TX_FUZZ_SEED=611 TX_FUZZ_PATH='<reported path>' deno task test:shutdown:fuzz --f
 
 The generated deployment sequences currently stop at channel initialization;
 they do not generate client update sessions or end-to-end transfer histories.
-The snapshot property assumes packet commitments and escrow balances have been
-settled. Existing negative tests check that outstanding packets and user deposits
-block reclamation. Consequently these results establish tested reclamation paths,
+The populated-snapshot property assumes settlement; the drain property executes
+the native settlement paths from an unsettled starting snapshot. It does not yet
+generate voucher-return sends or the preceding transfer/client-update history.
+Existing negative tests check that outstanding packets and user deposits block
+reclamation. Consequently these results establish tested reclamation paths,
 not an unconditional claim that any deployment can immediately return every ADA
 deposit. In particular, independently owned session deposits remain subject to
 the cancellation behavior described below. No lifecycle fields or accounting
