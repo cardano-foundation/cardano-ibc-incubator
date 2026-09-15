@@ -88,6 +88,17 @@ message ClientState {
   // consensus state.
   uint64 latest_checkpoint_slot = 28;
   uint64 latest_checkpoint_timestamp = 29;
+  // Pending epoch roots cannot verify IBC proofs before their deadline.
+  // Initialize replaces any caller-supplied values with host-assigned times.
+  repeated EpochContextChallenge epoch_context_challenges = 30;
+}
+
+// Host-chain timestamps assigned by the verifier, never by an update header.
+message EpochContextChallenge {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  uint64 usable_after_unix_ns = 2;
 }
 
 message ConsensusState {

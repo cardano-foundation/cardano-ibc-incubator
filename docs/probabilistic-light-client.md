@@ -205,6 +205,91 @@ network. Public deployments use the configured current-epoch and historical
 stake snapshot sources and must not enable this fallback when delegations can
 change.
 
+## Epoch Context Challenge Window
+
+The v8 and v10 adapters enforce a compiled `3 * time.Minute` delay before an
+epoch's roots can verify IBC membership or non-membership proofs. It is measured
+using Cosmos host block timestamps, independently of Cardano slots, relayer
+clocks, packet connection delays, or the number of host blocks.
+
+When the first verified update introducing an epoch commits, the client records
+`epoch_context_challenges = [{epoch, usable_after_unix_ns}, ...]` in its client
+state. The deadline is the inclusion block's Unix-nanosecond timestamp plus
+180 seconds. Subsequent updates in that epoch can advance the checkpoint and
+store consensus roots, but those roots remain unusable for IBC until the
+original deadline. Matching resubmissions do not reset it. Older epochs with
+elapsed deadlines remain usable. At the deadline, an unfrozen client's roots
+become eligible for proof verification without a separate activation transaction.
+The usual proof, trusting-period and connection-delay requirements still apply.
+`LatestHeight` and consensus-state queries can therefore expose a **pending**
+root; they alone are not evidence that a packet proof is usable.
+
+Before advancing into a new epoch, the verifier saves the previous checkpoint,
+its epoch context and operational-certificate counters in private client-store
+metadata (`epochChallengeCheckpoint/<8-byte big-endian epoch>`). Misbehaviour
+verification can use that snapshot even after ordinary updates move beyond a
+rootless checkpoint. Competing histories need not cross the epoch boundary at
+the same block height. The snapshot is exported with IBC client metadata and
+retained while its proposed epoch context is retained. Another epoch rollover
+is prohibited while the previous epoch is pending.
+
+### Relayers and independent challengers
+
+Hermes commits epoch proposals as standalone updates before preparing packet
+transactions. Otherwise a packet rejected during the window would roll back the
+proposal and its deadline in the same Cosmos transaction. Hermes queries the
+stored deadlines and waits for the destination chain's committed timestamp;
+local wall-clock passage never releases a pending proof. It checks client status
+while waiting so a challenge freeze stops packet preparation. Proposals can be
+submitted ahead of packet activity with ordinary client-update operations when
+the required history is available; this change does not add an epoch scheduler.
+
+An independent, continuously running witness must monitor client updates,
+construct a conflicting qualifying header, and submit `Misbehaviour` through
+`MsgUpdateClient`. Configure Hermes' `misbehaviour_witness_gateway_url` to an
+independent Gateway/node and enable `require_update_event_headers_for_misbehaviour`.
+The primary Gateway fallback does not provide independent observation.
+
+For probabilistic challenges, Hermes requests `QueryIBCHeader` with
+`checkpoint_only = true`. Gateway returns exact-height rootless evidence and
+its epoch context, even if the actual block at the disputed height has no
+HostState transaction. It does not truncate that request to a different catch-up
+height. Block/epoch conflicts count as evidence; omission of HostState fields
+in an otherwise matching rootless witness does not.
+
+This is an operational mitigation, **not epoch authentication**. An honest
+observer must have qualifying evidence and obtain transaction inclusion before
+fraudulent proof use. Three minutes may be shorter than evidence production:
+the existing challenge path still enforces 24 descendants, five qualifying
+pools, and 511 basis points of stake. Outages, host-chain halts, censorship and
+transaction congestion can consume the response window. No challenge within
+180 seconds is not proof that the context is genuine. An attacker can also
+submit internally consistent conflicting evidence against an honest proposal
+and freeze the bridge. A freeze cannot unwind earlier IBC operations.
+
+### Bootstrap, recovery and deployment
+
+`Initialize` discards caller-supplied challenge deadlines and assigns fresh
+host-clock deadlines to the initial contexts. This prevents immediate use of
+bootstrap roots, but the bootstrap checkpoint and context still require an
+independent trust decision: there is no earlier trusted checkpoint from which
+the verifier can prove that a fabricated initial checkpoint is wrong.
+Authority-controlled substitute recovery likewise starts new windows on the
+subject client and clears its previous challenge checkpoints. It cannot copy
+an elapsed substitute deadline to make imported roots immediately usable.
+
+Deploy the new Cosmos binary, Gateway/protobuf bindings and companion Hermes
+change together. Existing protobuf states still decode, but roots with no
+host-assigned deadline fail closed. An existing active client can establish a
+window with a verified update in its current checkpoint epoch before rolling
+onward; if such an update is unavailable, use an audited host app-state
+migration or authority-controlled recovery/recreation. Do not populate elapsed
+deadlines from untrusted relayer input. Genesis export/import must preserve
+both `epoch_context_challenges` and the private checkpoint metadata.
+
+This change mitigates #715's operational race and intentionally leaves its
+native epoch-authentication requirement open.
+
 ## Substitute-Client Recovery
 
 An expired or frozen probabilistic client can be recovered from a compatible,

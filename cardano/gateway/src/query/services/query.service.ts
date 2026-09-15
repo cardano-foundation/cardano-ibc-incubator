@@ -763,6 +763,7 @@ export class QueryService {
       system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
       epoch_contexts: [currentEpochContext],
+      epoch_context_challenges: [], // Assigned by the Cosmos host during Initialize.
       active_slot_coefficient_numerator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientNumerator,
       active_slot_coefficient_denominator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientDenominator,
       latest_checkpoint_height: {
@@ -2139,7 +2140,28 @@ export class QueryService {
     }
     const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(BigInt(trustedHeight), BigInt(height));
 
-    const stabilityHeader = await this.buildBoundedStabilityHeader(effectiveTrustedHeight, BigInt(height));
+    // A challenger must be able to authenticate the actual block at a claimed
+    // height even when that block contains no HostState transaction.
+    let stabilityHeader: ProbabilisticHeader;
+    if (request.checkpoint_only) {
+      const evidence = await loadStakeWeightedStabilityHeaderEvidence({
+        historyService: this.historyService,
+        height: BigInt(height),
+        trustedHeight: effectiveTrustedHeight,
+        logger: this.logger,
+      });
+      stabilityHeader = await this.buildStabilityHeader(evidence, true);
+      stabilityHeader.new_epoch_context = this.toStabilityEpochContext(
+        Number(evidence.anchorEpoch),
+        evidence.epochStakeDistribution,
+        evidence.epochVerificationContext,
+      );
+      if (ProbabilisticHeader.encode(stabilityHeader).finish().length > this.getStabilityCheckpointMaxHeaderBytes()) {
+        throw new GrpcFailedPreconditionException('Exact challenge header exceeds the configured header-size limit');
+      }
+    } else {
+      stabilityHeader = await this.buildBoundedStabilityHeader(effectiveTrustedHeight, BigInt(height));
+    }
 
     return {
       header: {

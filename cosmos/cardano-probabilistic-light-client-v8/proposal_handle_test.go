@@ -223,6 +223,11 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	recoveredConsensus, found := GetConsensusState(subjectStore, cdc, substitute.LatestHeight)
 	require.True(t, found)
 	require.EqualValues(t, 9, recoveredConsensus.AcceptedEpoch)
+	require.Len(t, recoveredClient.EpochContextChallenges, 2)
+	for _, challenge := range recoveredClient.EpochContextChallenges {
+		require.Equal(t, uint64(ctx.BlockTime().Add(3*time.Minute).UnixNano()), challenge.UsableAfterUnixNs)
+		require.ErrorIs(t, recoveredClient.verifyEpochUsable(ctx, challenge.Epoch), ErrEpochContextPending)
+	}
 
 	processedHeight, found := GetProcessedHeight(subjectStore, substitute.LatestHeight)
 	require.True(t, found)

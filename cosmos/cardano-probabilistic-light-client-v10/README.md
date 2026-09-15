@@ -70,3 +70,12 @@ Consumers can then require it with:
 ```sh
 go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10@v0.1.4
 ```
+
+## Epoch challenge deployment
+
+New epoch roots are quarantined for three minutes of Cosmos host time, including
+bootstrap and recovery. Updates can advance while pending, but IBC proof use is
+blocked. This requires the companion Gateway/Hermes changes to commit proposals
+separately and wait on host-assigned deadlines. Legacy states without deadlines
+fail closed for proof use. See [operation, migration and remaining trust
+assumptions](../../docs/probabilistic-light-client.md#epoch-context-challenge-window).

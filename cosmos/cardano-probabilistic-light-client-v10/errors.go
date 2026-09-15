@@ -3,6 +3,7 @@ package probabilistic
 import errorsmod "cosmossdk.io/errors"
 
 var (
+	ErrEpochContextPending        = errorsmod.Register(ModuleName, 20, "epoch context challenge window has not elapsed")
 	ErrInvalidChainID             = errorsmod.Register(ModuleName, 2, "invalid chain-id")
 	ErrInvalidTrustingPeriod      = errorsmod.Register(ModuleName, 3, "invalid trusting period")
 	ErrInvalidHeaderHeight        = errorsmod.Register(ModuleName, 4, "invalid probabilistic header height")
