@@ -361,6 +361,23 @@ describe('QueryService stability anchor contract', () => {
     expect(header.descendant_blocks.every((block) => block.header_cbor.length === 860)).toBe(true);
   });
 
+  it('serves exact rootless challenge evidence when the real block has no HostState transaction', async () => {
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue(null);
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue(
+      Array.from({ length: 25 }, (_, index) => Buffer.from([index + 1])),
+    );
+    const response = await service.queryIBCHeader({ height: 100n, trusted_height: 99n, checkpoint_only: true });
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.is_checkpoint).toBe(true);
+    expect(header.anchor_block?.height?.revision_height).toBe(100n);
+    expect(header.anchor_block?.block_cbor).toHaveLength(0);
+    expect(header.anchor_block?.header_cbor).toHaveLength(860);
+    expect(header.host_state_tx_hash).toBe('');
+    expect(header.new_epoch_context?.epoch).toBe(7n);
+    expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
+  });
+
   it('fits a minimum root update by keeping full CBOR only on its HostState anchor', async () => {
     historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
       txHash: 'host-state-tx',

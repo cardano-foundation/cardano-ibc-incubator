@@ -159,6 +159,16 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	if err := syncCurrentEpochFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
 	}
+	// Recovery installs a new trusted bootstrap. Never copy a substitute's
+	// elapsed deadlines to release roots immediately on the subject client.
+	for _, challenge := range cs.EpochContextChallenges {
+		if challenge != nil {
+			subjectClientStore.Delete(epochChallengeCheckpointKey(challenge.Epoch))
+		}
+	}
+	if err := cs.resetEpochChallenges(ctx); err != nil {
+		return err
+	}
 	setClientState(subjectClientStore, cdc, &cs)
 	return nil
 }

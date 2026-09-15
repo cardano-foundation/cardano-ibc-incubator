@@ -625,6 +625,7 @@ func (cs *ClientState) persistCheckpoint(
 		return err
 	}
 	cs.setLatestCheckpoint(anchorHeight, anchor.hash, anchor.epoch, anchor.slot, anchor.timestamp)
+	cs.pruneEpochChallenges(clientStore)
 	setClientState(clientStore, cdc, cs)
 	return nil
 }

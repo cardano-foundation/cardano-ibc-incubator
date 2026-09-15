@@ -102,6 +102,7 @@ func (cs *ClientState) verifyHeaderWithMode(
 	}
 
 	var trustedBlock *trustedBlockState
+	var challengeContexts []*EpochContext
 	var err error
 	if mode.enforceForwardUpdate {
 		if err := cs.validateCheckpointFields(); err != nil {
@@ -135,15 +136,24 @@ func (cs *ClientState) verifyHeaderWithMode(
 			return err
 		}
 	} else {
-		trustedBlock, err = cs.trustedBlockStateAtHeight(clientStore, cdc, header.TrustedHeight)
+		trustedBlock, challengeContexts, err = cs.challengeTrustedBlock(clientStore, cdc, header)
 		if err != nil {
 			return err
+		}
+		if trustedBlock == nil {
+			trustedBlock, err = cs.trustedBlockStateAtHeight(clientStore, cdc, header.TrustedHeight)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
 	currentEpochContexts, err := cs.normalizedEpochContexts()
 	if err != nil {
 		return err
+	}
+	if challengeContexts != nil {
+		currentEpochContexts = challengeContexts
 	}
 	epochContexts, err := mergeEpochContexts(currentEpochContexts, header.NewEpochContext)
 	if err != nil {
@@ -165,6 +175,14 @@ func (cs *ClientState) verifyHeaderWithMode(
 
 	if err := verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader); err != nil {
 		return err
+	}
+
+	// Do not let a speculative epoch roll over again and discard the original
+	// challenge checkpoint before observers have had their response window.
+	if mode.enforceForwardUpdate && authenticatedHeader.anchorBlock.epoch > trustedBlock.epoch {
+		if err := cs.verifyEpochUsable(ctx, trustedBlock.epoch); err != nil {
+			return err
+		}
 	}
 
 	if err := verifyBridgeContinuity(authenticatedHeader, trustedBlock); err != nil {
@@ -543,6 +561,11 @@ func (cs *ClientState) UpdateState(
 	clientStore storetypes.KVStore,
 	clientMsg exported.ClientMessage,
 ) []exported.Height {
+	return cs.updateStateWithAuthenticator(ctx, cdc, clientStore, clientMsg, nil)
+}
+
+// The authenticator seam matches verification tests; production always uses nil.
+func (cs *ClientState) updateStateWithAuthenticator(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, clientMsg exported.ClientMessage, authenticateHeader headerAuthenticator) []exported.Height {
 	header, ok := clientMsg.(*ProbabilisticHeader)
 	if !ok {
 		panic(fmt.Errorf("expected type %T, got %T", &ProbabilisticHeader{}, clientMsg))
@@ -559,7 +582,10 @@ func (cs *ClientState) UpdateState(
 	if err != nil {
 		panic(fmt.Errorf("trusted block state missing for verified ProbabilisticHeader at height %s: %w", header.TrustedHeight.String(), err))
 	}
-	authenticatedHeader, err := cs.authenticateHeaderBlocksWithContexts(
+	if authenticateHeader == nil {
+		authenticateHeader = cs.authenticateHeaderBlocksWithContexts
+	}
+	authenticatedHeader, err := authenticateHeader(
 		header,
 		epochContexts,
 		trustedBlock.operationalCertificateCounters,
@@ -576,6 +602,9 @@ func (cs *ClientState) UpdateState(
 		panic(fmt.Errorf("missing anchor epoch context for verified ProbabilisticHeader epoch %d", authenticatedHeader.anchorBlock.epoch))
 	}
 
+	if err := cs.beginEpochChallenge(ctx, cdc, clientStore, authenticatedHeader.anchorBlock.epoch, trustedBlock); err != nil {
+		panic(fmt.Errorf("failed to start epoch challenge: %w", err))
+	}
 	height := NewHeight(0, header.AnchorBlock.Height.RevisionHeight)
 	if header.IsCheckpoint {
 		if err := cs.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader); err != nil {
@@ -616,6 +645,7 @@ func (cs *ClientState) UpdateState(
 	if err := syncCurrentEpochFields(cs, retainedEpochContexts, authenticatedHeader.anchorBlock.epoch); err != nil {
 		panic(fmt.Errorf("failed to persist rollover epoch contexts after verified ProbabilisticHeader: %w", err))
 	}
+	cs.pruneEpochChallenges(clientStore)
 	cs.LatestHeight = height
 	if err := cs.persistOperationalCertificateCounterSnapshot(
 		clientStore,

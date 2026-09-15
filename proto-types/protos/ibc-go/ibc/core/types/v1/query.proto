@@ -70,6 +70,8 @@ message QueryTransactionByHashResponse {
 message QueryIBCHeaderRequest {
   uint64 trusted_height = 1;
   uint64 height = 2;
+  // Exact rootless evidence for independent probabilistic misbehaviour checks.
+  bool checkpoint_only = 3;
 }
 
 message QueryIBCHeaderResponse {
