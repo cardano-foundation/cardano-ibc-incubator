@@ -1,7 +1,10 @@
+use aiken/collection/list
 use aiken/fuzz
 use aiken/primitive/bytearray
 use aiken/primitive/string
-use cardano/address.{from_script, from_verification_key}
+use cardano/address.{
+  Address, from_script, from_verification_key, with_delegation_key,
+}
 use cardano/assets.{PolicyId, ada_asset_name, ada_policy_id, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
@@ -2932,28 +2935,20 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
   )
 }
 
-test on_recv_packet_source_fails_with_short_native_payout() fail {
+// Receive 100 native tokens while retaining 50 in escrow. Caller-supplied
+// wallet inputs/outputs exercise the receiver's net receipt through the validator.
+fn validate_source_recv_payout(
+  receiver: ByteArray,
+  wallet_inputs: List<Output>,
+  wallet_outputs: List<Output>,
+) -> Bool {
   let mock = setup()
   let transfer_amount = 100
   let remaining_escrow = 50
-  let receiver = mock.cardano_public_key_hash
   let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   let native_token_name = "coin"
   let denom = native_asset_denom()
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
-  let receiver_output =
-    Output {
-      address: from_verification_key(receiver_public_key_hash),
-      value: from_asset(
-        native_policy_id,
-        native_token_name,
-        transfer_amount - 1,
-      ),
-      datum: NoDatum,
-      reference_script: None,
-    }
   let source_port = "port-0"
   let source_channel = "channel-0"
   let prefixed_denom =
@@ -2982,14 +2977,28 @@ test on_recv_packet_source_fails_with_short_native_payout() fail {
     )
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
+      |> list.concat(
+          list.indexed_map(
+            wallet_inputs,
+            fn(index, output) {
+              Input {
+                output_reference: OutputReference {
+                  ..mock.module_input.output_reference,
+                  output_index: 100 + index,
+                },
+                output,
+              }
+            },
+          ),
+        )
   let outputs =
     [
       mock.module_output,
       escrow_output,
       receive_channel_output(mock),
-      receiver_output,
       mock.host_state_output,
     ]
+      |> list.concat(wallet_outputs)
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
   let (ftpd, packet) =
     build_packet(
@@ -3039,6 +3048,137 @@ test on_recv_packet_source_fails_with_short_native_payout() fail {
     module_redeemer,
     mock.module_input.output_reference,
     transaction,
+  )
+}
+
+fn source_recv_payout(address: Address, amount: Int) -> Output {
+  Output {
+    address,
+    value: from_asset("aaaaaaaaaaaaaaaaaaaaaaaaaaaa", "coin", amount),
+    datum: NoDatum,
+    reference_script: None,
+  }
+}
+
+fn source_recv_receiver_address(receiver: ByteArray) -> Address {
+  expect Some(key_hash) = string_utils.hex_string_to_bytes(receiver)
+  from_verification_key(key_hash)
+}
+
+test on_recv_packet_source_fails_with_short_native_payout() fail {
+  let receiver = setup().cardano_public_key_hash
+  validate_source_recv_payout(
+    receiver,
+    [],
+    [source_recv_payout(source_recv_receiver_address(receiver), 99)],
+  )
+}
+
+test on_recv_packet_source_accepts_split_payout() {
+  let receiver = setup().cardano_public_key_hash
+  let address = source_recv_receiver_address(receiver)
+  validate_source_recv_payout(
+    receiver,
+    [],
+    [source_recv_payout(address, 60), source_recv_payout(address, 40)],
+  )
+}
+
+test on_recv_packet_source_accepts_payout_in_either_order() {
+  let receiver = setup().cardano_public_key_hash
+  let address = source_recv_receiver_address(receiver)
+  let small = source_recv_payout(address, 1)
+  let full = source_recv_payout(address, 100)
+  and {
+    validate_source_recv_payout(receiver, [], [small, full]),
+    validate_source_recv_payout(receiver, [], [full, small]),
+  }
+}
+
+test on_recv_packet_source_accepts_base_address_payout() {
+  let receiver = setup().cardano_public_key_hash
+  let base =
+    source_recv_receiver_address(receiver)
+      |> with_delegation_key("ssssssssssssssssssssssssssss")
+  validate_source_recv_payout(receiver, [], [source_recv_payout(base, 100)])
+}
+
+test on_recv_packet_source_accepts_net_receipt_across_stake_credentials() {
+  let receiver = setup().cardano_public_key_hash
+  let enterprise = source_recv_receiver_address(receiver)
+  let base = enterprise |> with_delegation_key("ssssssssssssssssssssssssssss")
+  let other_base =
+    enterprise |> with_delegation_key("tttttttttttttttttttttttttttt")
+  validate_source_recv_payout(
+    receiver,
+    [source_recv_payout(enterprise, 20), source_recv_payout(base, 30)],
+    [source_recv_payout(enterprise, 60), source_recv_payout(other_base, 90)],
+  )
+}
+
+test on_recv_packet_source_rejects_existing_funds_as_payout() fail {
+  let receiver = setup().cardano_public_key_hash
+  let enterprise = source_recv_receiver_address(receiver)
+  let base = enterprise |> with_delegation_key("ssssssssssssssssssssssssssss")
+  // Outputs exceed the transfer, but the payment key only gains 99 tokens.
+  validate_source_recv_payout(
+    receiver,
+    [source_recv_payout(enterprise, 20), source_recv_payout(base, 30)],
+    [source_recv_payout(enterprise, 100), source_recv_payout(base, 49)],
+  )
+}
+
+test on_recv_packet_source_rejects_payout_to_another_key() fail {
+  let receiver = setup().cardano_public_key_hash
+  validate_source_recv_payout(
+    receiver,
+    [],
+    [
+      source_recv_payout(
+        from_verification_key("oooooooooooooooooooooooooooo"),
+        100,
+      ),
+    ],
+  )
+}
+
+test on_recv_packet_source_rejects_script_credential_with_receiver_hash() fail {
+  let receiver = setup().cardano_public_key_hash
+  expect Some(key_hash) = string_utils.hex_string_to_bytes(receiver)
+  validate_source_recv_payout(
+    receiver,
+    [],
+    [source_recv_payout(from_script(key_hash), 100)],
+  )
+}
+
+test on_recv_packet_source_rejects_wrong_asset_payout() fail {
+  let receiver = setup().cardano_public_key_hash
+  let payout = source_recv_payout(source_recv_receiver_address(receiver), 99)
+  let payout =
+    Output {
+      ..payout,
+      value: payout.value |> add("aaaaaaaaaaaaaaaaaaaaaaaaaaaa", "other", 100),
+    }
+  validate_source_recv_payout(receiver, [], [payout])
+}
+
+test on_recv_packet_source_rejects_short_receiver_hash() fail {
+  // Even a matching synthetic address must not bypass the 28-byte check.
+  let receiver = setup().cardano_public_key_hash |> bytearray.take(54)
+  validate_source_recv_payout(
+    receiver,
+    [],
+    [source_recv_payout(source_recv_receiver_address(receiver), 100)],
+  )
+}
+
+test on_recv_packet_source_rejects_long_receiver_hash() fail {
+  let receiver = setup().cardano_public_key_hash |> bytearray.concat("aa")
+  validate_source_recv_payout(
+    receiver,
+    [],
+    [source_recv_payout(source_recv_receiver_address(receiver), 100)],
   )
 }
 
