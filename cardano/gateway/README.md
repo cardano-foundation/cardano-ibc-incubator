@@ -110,6 +110,10 @@ The Docker image sets `CONSENSUS_HISTORY_CACHE_DIR` to `/var/lib/cardano-ibc/con
 
 For deployments outside this Compose file, mount a persistent volume at the same path. A new Docker named volume inherits the directory's ownership from the image. An existing volume or host bind mount must be writable by the image's `node` user (UID/GID `1000:1000`). Removing the volume, including with `docker compose down --volumes`, discards the caches and requires replay from retained Yaci history.
 
+The public IBC tree has a separate cache: in-memory trees and compressed snapshots in the Gateway PostgreSQL table `ibc_state_tree_cache`. If a proof query requests a past height whose snapshot is missing or invalid, the Gateway reconstructs the tree from retained Yaci outputs and spends at that block. It includes historical client consensus leaves, connections, channels, packet state and port registrations, then verifies the result against the historical HostState root before serving the proof. The verified snapshot is cached by root and HostState output reference; rebuilding it does not replace the live transaction-building tree. This uses the existing databases and needs no additional container or volume.
+
+Historical public-tree reconstruction requires Yaci's raw `address_utxo` rows (including spent outputs, assets and inline datums), canonical `transaction` and `block` rows, and `tx_input` spend history from this deployment's creation through the requested block. The bridge projection or a current UTxO snapshot alone is insufficient. Reconstruction reads one consistent, read-only database snapshot, excludes failed/orphaned transactions and future outputs/spends, and checks for a rollback before returning. Incomplete history or a root mismatch stops the proof request; restore or replay Yaci history before retrying. Concurrent requests for the same height and HostState share a rebuild, with at most four different rebuilds in progress and a 30-second timeout per SQL statement. The first request after cache loss takes longer as history grows.
+
 ## Cardano Data Plane
 
 The Gateway now uses two Cardano data planes with different responsibilities:
@@ -117,7 +121,7 @@ The Gateway now uses two Cardano data planes with different responsibilities:
 - Live data plane: `Ogmios + Kupo + Mithril`
 - Historical data plane: `Yaci Store + bridge-specific projection`
 
-The Yaci-backed projection is the Gateway's authoritative history backend. It stores the bridge-specific evidence the Gateway needs instead of querying a generic historical Cardano schema directly.
+The Yaci-backed projection stores bridge-specific evidence for routine historical queries. Cache reconstruction also reads retained raw Yaci history: transaction bodies for private consensus witnesses, and historical outputs/spends for public IBC trees.
 
 Current bridge history tables include:
 

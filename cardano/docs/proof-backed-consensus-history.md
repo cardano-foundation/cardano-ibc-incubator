@@ -22,11 +22,17 @@ The SQLite index is disposable. Recovery reads accepted Cardano transactions fro
 
 Replay commits changes and rollback information together. It resumes after interruption and rewinds on forks. Cache integrity and returned witnesses are checked, missing or corrupt history stops requests. The Gateway bounds open indexes and database waits. Each deployment and client has a separate cache identity.
 
+The public IBC tree is separate from each client's private history tree. Its in-memory state and PostgreSQL `ibc_state_tree_cache` snapshots are also rebuildable. A historical proof query with a missing or invalid snapshot reconstructs the public tree at the requested Cardano block from retained Yaci outputs and their spend history. It uses the production leaf encoders for historical consensus states, clients, connections, channels, packets and ports, and requires the computed root to match that block's HostState datum. Only verified trees are served and cached by root and HostState output reference. Historical reconstruction never replaces the live transaction-building tree and does not add a database service or volume.
+
+For this historical fallback, retain raw `address_utxo` rows with assets and inline datums, `tx_input` spend records, and canonical `transaction`/`block` data from deployment creation. Reads use a repeatable-read, read-only snapshot and reject a changed canonical block after reconstruction. Same-block spends, later updates and failed transactions are accounted for when selecting the state at the requested height. Missing data or a root mismatch fails the request; the Gateway cannot reconstruct records from a root alone. Repeated requests share an in-progress rebuild, up to four distinct rebuilds may run concurrently, and individual SQL statements time out after 30 seconds. Cold reconstruction time and memory grow with retained public state and history.
+
 Historical transactions must remain available from an independent source. A current UTxO snapshot or the Merkle root alone cannot recover the records. Yaci must retain spent outputs and transaction CBOR with canonical validity information. Kupo must retain spent client outputs and their datums. There is no archive pruning transaction, but disk usage, restart integrity checks and cold replay still grow with history.
 
 ## Tests and reproduction
 
 The signed emulator tests exercise production creation, updates, freezing, recovery and use of an older state. The cold-recovery test deletes the local database and public tree, rebuilds both roots from submitted transaction CBOR, then uses the recovered checkpoint in a script-checked packet-history operation. Its connection and channel setup is seeded. Block positions are simulated, this is not a live Yaci or full-network recovery benchmark.
+
+Gateway PostgreSQL integration tests reconstruct earlier public roots from raw Yaci-shaped fixtures, including retained consensus leaves, packet pruning, same-block spends, future updates, failed/orphaned transactions, pagination and incomplete history. Proof-query tests cover cache reuse, root verification, rollback rejection and isolation from the live tree. These tests run with `BRIDGE_HISTORY_TEST_DATABASE_URL` set to an isolated PostgreSQL test database, as in CI; they do not replace live recovery validation.
 
 Use Node 22.13 or later and Deno 2.9.6, matching CI. The pinned `@lucid-evolution/uplc` evaluator fixes equality and serialization bugs in older emulator versions. From the repository root:
 

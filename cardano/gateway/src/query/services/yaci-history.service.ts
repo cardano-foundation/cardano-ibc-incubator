@@ -27,6 +27,9 @@ import {
   HistoryTxRedeemer,
 } from "./history.service";
 
+import { reconstructHistoricalIbcTree } from './historical-ibc-tree';
+import { StaleIbcTreeStateError, type IbcTreeHostStateRef, type IbcTreeSnapshot } from '../../shared/helpers/ibc-state-root';
+
 type BridgeUtxoHistoryRow = {
   address: string;
   tx_hash: string;
@@ -200,6 +203,41 @@ class HistoricalStakeLookupError extends Error {
 @Injectable()
 export class YaciHistoryService implements HistoryService {
   private poolRegistrationCacheTableReady = false;
+  private readonly historicalTreeRebuilds = new Map<string, Promise<IbcTreeSnapshot>>();
+
+  async rebuildIbcStateTreeAtBlock(height: bigint, hostState: IbcTreeHostStateRef): Promise<IbcTreeSnapshot> {
+    const captured = { ...hostState };
+    const key = `${height}:${captured.txHash}#${captured.outputIndex}`;
+    let pending = this.historicalTreeRebuilds.get(key);
+    if (!pending) {
+      if (this.historicalTreeRebuilds.size >= 4) {
+        throw new Error('Historical IBC tree rebuild capacity reached; retry later');
+      }
+      pending = (async () => {
+        const snapshot = await this.entityManager.transaction('REPEATABLE READ', async (manager) => {
+          await manager.query('SET TRANSACTION READ ONLY');
+          await manager.query('SET LOCAL statement_timeout = 30000');
+          return reconstructHistoricalIbcTree(
+            manager, this.configService.getOrThrow('deployment'), this.configService.getOrThrow('cardanoNetwork'),
+            this.lucidService, height, captured,
+          );
+        });
+        // A rollback during the read snapshot must not publish an orphaned tree.
+        const canonical = await this.entityManager.query('SELECT hash FROM block WHERE number = $1', [height.toString()]);
+        if (canonical.length !== 1 || canonical[0].hash !== snapshot.blockHash) {
+          throw new StaleIbcTreeStateError('Requested historical block changed during IBC tree reconstruction');
+        }
+        return { root: snapshot.root, hostState: snapshot.hostState, tree: snapshot.tree };
+      })();
+      this.historicalTreeRebuilds.set(key, pending);
+    }
+    try {
+      const snapshot = await pending;
+      return { ...snapshot, tree: snapshot.tree.clone() };
+    } finally {
+      if (this.historicalTreeRebuilds.get(key) === pending) this.historicalTreeRebuilds.delete(key);
+    }
+  }
   private readonly epochNonceCache: BoundedCache<string, string>;
   private readonly epochNonceLookups: BoundedCache<string, Promise<string>>;
   private readonly historicalEpochContextCache: BoundedCache<
