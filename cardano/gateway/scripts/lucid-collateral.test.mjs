@@ -15,9 +15,14 @@ function references(inputs) {
 
 for (const [format, lucidModule] of [['ESM', esm], ['CommonJS', require('@lucid-evolution/lucid')]]) {
   const { Lucid, Emulator, generateEmulatorAccount, Data, mintingPolicyToId } = lucidModule;
-  async function setup(count, expensive = false) {
+  async function setup(count, expensive = false, highFee = false) {
     const account = generateEmulatorAccount({ lovelace: 750_000_000n });
     const emulator = new Emulator(Array.from({ length: count }, () => account));
+    if (highFee) {
+      // Model the >3.4 ADA fee of live staged finalization without publishing
+      // its large reference scripts. This requires more than 5 ADA collateral.
+      emulator.protocolParameters = { ...emulator.protocolParameters, minFeeB: 3_400_000 };
+    }
     if (expensive) {
       // A provider evaluation can raise fees enough to require a second input.
       emulator.evaluateTx = async () => [{
@@ -51,6 +56,13 @@ for (const [format, lucidModule] of [['ESM', esm], ['CommonJS', require('@lucid-
   test(`${format}: collateral excludes the ordinary funding input`, async () => {
     const { tx, options } = await setup(4);
     check(await tx.complete(options), 1);
+  });
+
+  test(`${format}: collateral covers a finalization fee above the old 5 ADA floor`, async () => {
+    const { tx, options } = await setup(4, false, true);
+    const completed = await tx.complete(options);
+    assert.ok(completed.toTransaction().body().fee() * 150n > 5_000_000n * 100n);
+    check(completed, 1);
   });
 
   test(`${format}: additional fee funding leaves selected collateral reserved`, async () => {
