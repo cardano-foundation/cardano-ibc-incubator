@@ -1,6 +1,6 @@
 /// <reference no-default-lib="true" />
 /// <reference lib="deno.worker" />
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import {
   sendPacketFixture,
   type SendParameters,
@@ -49,8 +49,14 @@ async function checkCase(sample: FundsCase) {
       history,
     );
     // Native token payouts are exact. ADA payouts include ledger minimum ADA.
+    const received = await receiverBalance(f);
     if (sample.parameters.asset) {
-      assertEquals(await receiverBalance(f), refunded);
+      assertEquals(received, refunded);
+    } else {
+      assert(
+        received >= refunded,
+        "ADA recipients must receive the full principal",
+      );
     }
   };
   await audit();
@@ -94,11 +100,16 @@ async function checkCase(sample: FundsCase) {
     for (const mutation of ["wrong_callback", "wrong_proof"] as const) {
       await assertTransactionRejected(await settle(f, packet, kind, mutation));
     }
-    if (kind !== "ack" && sample.parameters.asset) {
-      for (const mutation of ["short", "excess", "wrong_recipient"] as const) {
-        await assertTransactionRejected(
-          await settle(f, packet, kind, mutation),
-        );
+    if (kind !== "ack") {
+      await assertTransactionRejected(
+        await settle(f, packet, kind, "wrong_recipient"),
+      );
+      if (sample.parameters.asset) {
+        for (const mutation of ["short", "excess"] as const) {
+          await assertTransactionRejected(
+            await settle(f, packet, kind, mutation),
+          );
+        }
       }
     }
     // Reset the simulated counterparty consensus after the wrong-proof case.
@@ -133,17 +144,21 @@ async function checkCase(sample: FundsCase) {
     stage = `receive ${amount} sequence ${sequence}`;
     const valid = await receiveNative(f, amount, sequence);
     const completed = await valid.tx.complete({ localUPLCEval: true });
-    for (const mutation of ["wrong_callback", "wrong_proof"] as const) {
+    for (
+      const mutation of [
+        "wrong_callback",
+        "wrong_proof",
+        "wrong_recipient",
+      ] as const
+    ) {
       await assertTransactionRejected(
         await receiveNative(f, amount, sequence, mutation),
       );
     }
     if (sample.parameters.asset) {
-      for (const mutation of ["short", "wrong_recipient"] as const) {
-        await assertTransactionRejected(
-          await receiveNative(f, amount, sequence, mutation),
-        );
-      }
+      await assertTransactionRejected(
+        await receiveNative(f, amount, sequence, "short"),
+      );
     }
     await receiveNative(f, amount, sequence);
     await (await completed.sign.withWallet().complete()).submit();

@@ -59,8 +59,8 @@ The native model checks exact escrow principal and reserves, exact native-token
 refunds, and preservation of module state, registry root, HostState assets and
 channel ADA. Sequence counters, receipt/acknowledgement inventories and protected
 HostState/channel fields are checked against the model as well. Voucher metadata and unrelated native escrow remain unchanged.
-ADA recipient outputs may include additional minimum ADA; exact escrow
-principal is checked separately. The current native receive guard permits
+ADA recipient outputs must deliver at least the refunded principal and may
+include additional minimum ADA; exact escrow principal is checked separately. The current native receive guard permits
 wallet-funded excess payments, so excess receive payments are not asserted to
 fail.
 
