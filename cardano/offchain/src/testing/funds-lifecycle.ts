@@ -349,7 +349,10 @@ export async function settle(
     .collectFrom([c.channel], encode(channelRedeemer))
     .collectFrom([c.module], encode(callback))
     .mintAssets({ [operation.hash]: 1n }, encode(f.channelToken))
-    .mintAssets({ [f.packetContext.verifyPolicy]: 1n }, encode(verify))
+    .mintAssets(
+      { [f.packetContext.verifyPolicy]: 1n },
+      encode(record(verify, variant(1))),
+    )
     .pay.ToContract(f.packetContext.hostAddress, {
       kind: "inline",
       value: Data.to(newHost, HostStateDatum),
@@ -589,18 +592,21 @@ export async function receiveNative(
     .mintAssets(
       { [f.packetContext.verifyPolicy]: 1n },
       encode(
-        variant(
-          0,
-          f.packetContext.clientState,
-          f.packetContext.consensus,
-          HEIGHT,
-          0n,
-          0n,
-          0n,
-          0n,
-          proof.proof,
-          record([fromText("ibc"), proofKey]),
-          commitment,
+        record(
+          variant(
+            0,
+            f.packetContext.clientState,
+            f.packetContext.consensus,
+            HEIGHT,
+            0n,
+            0n,
+            0n,
+            0n,
+            proof.proof,
+            record([fromText("ibc"), proofKey]),
+            commitment,
+          ),
+          variant(1),
         ),
       ),
     )
