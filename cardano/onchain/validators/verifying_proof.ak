@@ -21,6 +21,8 @@ validator verify_proof {
     let current_time = tx_valid_from * 1_000_000
     let current_height = client_datum.processed_height_from_time(current_time)
 
+    // Require exactly one empty-name token to trigger proof verification; minting under other policies is unrestricted by this check.
+    // Example: minting { this_policy: { "": 1 }, other_policy: { "token": 5 } } passes this check; { this_policy: { "": 2 } } fails.
     expect
       validator_utils.require_exact_marker_mint(
         transaction.mint,
