@@ -4,11 +4,23 @@ import {
   transactionFuzzParameters,
 } from "./testing/transaction-fuzz.ts";
 
+const profile = Deno.env.get("FUNDS_FUZZ_PROFILE") ?? "pr";
+if (profile !== "pr" && profile !== "deep") {
+  throw new Error("FUNDS_FUZZ_PROFILE must be pr or deep");
+}
+const commands = profile === "deep"
+  ? { minLength: 12, maxLength: 24 }
+  : { minLength: 1, maxLength: 6 };
+const voucherPackets = profile === "deep"
+  ? { minLength: 12, maxLength: 24 }
+  : { minLength: 3, maxLength: 5 };
+
 function fundsFuzzParameters() {
   const parameters = transactionFuzzParameters();
   const seed = parameters.seed ?? crypto.getRandomValues(new Int32Array(1))[0];
   console.log("Funds fuzz replay:", {
     seed,
+    profile,
     path: parameters.path,
     runs: parameters.numRuns,
   });
@@ -61,7 +73,7 @@ for (const native of [false, true]) {
               index: fc.nat(100),
               settlement: fc.constantFrom("ack", "error", "timeout"),
             }),
-            { minLength: 1, maxLength: 6 },
+            commands,
           ),
         }),
         checkHistory,
@@ -76,6 +88,16 @@ Deno.test("compiled voucher histories preserve supply through mint, burn and ref
     fc.asyncProperty(
       fc.record({
         voucherBase: text,
+        destinations: fc.tuple(
+          fc.record({
+            hash: fc.hexaString({ minLength: 56, maxLength: 56 }),
+            script: fc.constant(false),
+          }),
+          fc.record({
+            hash: fc.hexaString({ minLength: 56, maxLength: 56 }),
+            script: fc.constant(true),
+          }),
+        ),
         parameters: fc.record({
           amount: fc.constant(2_000_000n),
           reserve: fc.bigInt({ min: 3_000_000n, max: 8_000_000n }),
@@ -86,14 +108,14 @@ Deno.test("compiled voucher histories preserve supply through mint, burn and ref
           memo: text,
           asset: fc.constant(""),
         }),
-        amounts: fc.array(amount, { minLength: 3, maxLength: 5 }),
+        amounts: fc.array(amount, voucherPackets),
         commands: fc.array(
           fc.record({
             send: fc.boolean(),
             index: fc.nat(100),
             settlement: fc.constantFrom("ack", "error", "timeout"),
           }),
-          { minLength: 1, maxLength: 6 },
+          commands,
         ),
       }),
       checkHistory,

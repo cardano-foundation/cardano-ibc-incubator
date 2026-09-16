@@ -588,6 +588,9 @@ jobs:
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
         run: aiken build --deny --trace-level silent
+      - name: Test accounting oracles
+        working-directory: cardano/offchain
+        run: deno task test:funds:oracles
       - name: Fuzz funds histories with compiled validators
         working-directory: cardano/offchain
         env:
