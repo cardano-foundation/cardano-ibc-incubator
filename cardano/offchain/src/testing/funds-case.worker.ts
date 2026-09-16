@@ -28,10 +28,14 @@ export interface FundsCase {
 }
 
 let stage = "initialize";
+function enterStage(next: string) {
+  stage = next;
+  console.log("Funds stage:", stage);
+}
 
 async function checkCase(sample: FundsCase) {
   const f = await sendPacketFixture(sample.parameters);
-  stage = "initial send";
+  enterStage("initial send");
   await assertTransactionAccepted(f);
   const history = {
     nextSend: sample.parameters.sequence + 1n,
@@ -69,7 +73,7 @@ async function checkCase(sample: FundsCase) {
       "wrong_commitment",
     ] as const
   ) {
-    stage = `initial send mutation ${mutation}`;
+    enterStage(`initial send mutation ${mutation}`);
     await assertTransactionRejected(
       await sendPacketFixture(sample.parameters, mutation),
     );
@@ -77,7 +81,7 @@ async function checkCase(sample: FundsCase) {
   let cursor = 0;
   const send = async () => {
     const amount = sample.amounts[cursor++ % sample.amounts.length];
-    stage = `send ${amount}`;
+    enterStage(`send ${amount}`);
     const valid = await nextSend(f, amount);
     const completed = await valid.tx.complete({ localUPLCEval: true });
     for (const mutation of ["short", "excess", "wrong_callback"] as const) {
@@ -94,7 +98,7 @@ async function checkCase(sample: FundsCase) {
   const resolve = async (index: number, kind: Settlement) => {
     const chosen = index % pending.length;
     const packet = pending[chosen];
-    stage = `${kind} packet ${packet.packet.fields[0]}`;
+    enterStage(`${kind} packet ${packet.packet.fields[0]}`);
     const valid = await settle(f, packet, kind);
     const completed = await valid.tx.complete({ localUPLCEval: true });
     for (const mutation of ["wrong_callback", "wrong_proof"] as const) {
@@ -141,7 +145,7 @@ async function checkCase(sample: FundsCase) {
   }
   while (pending.length) await resolve(pending.length - 1, "error");
   const receive = async (amount: bigint, sequence: bigint, replay: boolean) => {
-    stage = `receive ${amount} sequence ${sequence}`;
+    enterStage(`receive ${amount} sequence ${sequence}`);
     const valid = await receiveNative(f, amount, sequence);
     const completed = await valid.tx.complete({ localUPLCEval: true });
     for (
@@ -194,7 +198,7 @@ self.onmessage = async ({ data }: MessageEvent<FundsCase>) => {
 
 async function checkVoucherCase(sample: FundsCase) {
   const f = await sendPacketFixture(sample.parameters);
-  stage = "voucher setup native send";
+  enterStage("voucher setup native send");
   await assertTransactionAccepted(f);
   const history = {
     nextSend: sample.parameters.sequence + 1n,
@@ -221,7 +225,7 @@ async function checkVoucherCase(sample: FundsCase) {
     assertEquals(metadata.assets, voucher.metadata.assets);
   };
   const total = sample.amounts.reduce((a, b) => a + b, 0n) * 3n;
-  stage = "voucher receive mint";
+  enterStage("voucher receive mint");
   const receive = await receiveNative(f, total, 1n, "none", voucher);
   const received = await receive.tx.complete({ localUPLCEval: true });
   for (
@@ -250,7 +254,7 @@ async function checkVoucherCase(sample: FundsCase) {
   let sentCount = 0;
   const send = async () => {
     const amount = sample.amounts[sentCount++];
-    stage = `voucher burn ${amount}`;
+    enterStage(`voucher burn ${amount}`);
     const send = await nextSend(f, amount, "none", voucher);
     const sent = await send.tx.complete({ localUPLCEval: true });
     for (const mutation of ["short", "excess", "wrong_callback"] as const) {
@@ -275,7 +279,7 @@ async function checkVoucherCase(sample: FundsCase) {
     const kind = remaining === missing.size
       ? missing.values().next().value!
       : requested;
-    stage = `voucher ${kind}`;
+    enterStage(`voucher ${kind}`);
     const settled = await settle(f, packet, kind, "none", voucher);
     const completed = await settled.tx.complete({ localUPLCEval: true });
     for (const mutation of ["wrong_callback", "wrong_proof"] as const) {
