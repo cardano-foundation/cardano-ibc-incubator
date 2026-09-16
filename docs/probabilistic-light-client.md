@@ -158,6 +158,10 @@ The `ProbabilisticHeader` carries:
 - `host_state_tx_hash`
 - `host_state_tx_output_index`
 - `new_epoch_context` when the anchor rolls into `epoch N+1`
+- `is_checkpoint` (proto field 12): rootless checkpoints advance trusted block
+  tracking without extracting a HostState root, creating an IBC consensus state,
+  or renewing the trusting period. Checkpoint headers leave `host_state_tx_hash`
+  empty and `host_state_tx_output_index` at zero.
 
 The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`. The new part is that `trusted_height` is now real: `bridge_blocks` must connect the already-trusted consensus block hash at `trusted_height` to the new `anchor_block`, and only the post-anchor `descendant_blocks` are used for the probabilistic score.
 
