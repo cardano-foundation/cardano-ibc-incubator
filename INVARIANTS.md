@@ -85,8 +85,7 @@ of semantic coverage, and syntactically using a seed alone does not establish it
 Aiken `ProtocolTxFixture` checks only explicitly invoked handlers. Compiled
 transaction coverage comes from the Deno channel and funds jobs, all required
 by the stable `Cardano Onchain Aiken` aggregate. The critical-guard mutation job is
-also required when Aiken fuzzing runs. See [fuzz assurance](cardano/docs/fuzz-assurance.md)
-for scope, replay commands, and remaining limits.
+also required when Aiken fuzzing runs.
 
 ## Composable Fixtures
 
@@ -1298,5 +1297,4 @@ by the harness rather than advanced through client update transactions.
 Randomized first-seen voucher registration, cross-channel histories, ordered
 funds histories and end-to-end client/connection lifecycles remain outside this
 model. Neither passing iterations nor the four targeted mutants establish
-sufficient assurance for production custody. See the precise scope and replay
-instructions in [fuzz assurance](cardano/docs/fuzz-assurance.md).
+sufficient assurance for production custody.
