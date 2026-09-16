@@ -13,6 +13,7 @@ import {
 import { HostStateDatum, HostStateRedeemer } from "../../types/index.ts";
 import { DeploymentIbcTree } from "../deployment.ts";
 import { membershipProof } from "./channel-fixture.ts";
+import { assertPacketInventories } from "./funds-oracle.ts";
 import { absenceProof } from "./packet-budget-fixture.ts";
 import { type sendPacketFixture } from "./send-budget-fixture.ts";
 
@@ -423,7 +424,7 @@ export async function settle(
 export async function assertFundsState(
   f: FundsFixture,
   expectedEscrow: bigint,
-  pending: bigint[],
+  pending: FundsPacket[],
   history: { nextSend: bigint; transitions: bigint; received: bigint[] },
 ) {
   const c = await current(f);
@@ -439,10 +440,7 @@ export async function assertFundsState(
     f.funds.parameters.reserve +
       (f.funds.parameters.asset ? 0n : expectedEscrow),
   );
-  assertEquals(
-    [...((c.state.fields[4] as Map<bigint, Data>).keys())].sort(),
-    [...pending].sort(),
-  );
+  assertPacketInventories(c.state, pending, history.received);
   assertEquals(c.module.assets, f.packetContext.module.assets);
   assertEquals(
     c.module.datum,
@@ -454,12 +452,6 @@ export async function assertFundsState(
     assertEquals(c.state.fields[index], initial.fields[index]);
   }
   assertEquals(c.state.fields[1], history.nextSend);
-  for (const index of [5, 6]) {
-    assertEquals(
-      [...(c.state.fields[index] as Map<bigint, Data>).keys()].sort(),
-      [...history.received].sort(),
-    );
-  }
   assertEquals(c.hostDatum, {
     ...f.funds.hostDatum,
     state: {

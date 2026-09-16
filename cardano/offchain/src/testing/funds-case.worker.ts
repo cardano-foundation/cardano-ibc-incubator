@@ -1,6 +1,8 @@
 /// <reference no-default-lib="true" />
 /// <reference lib="deno.worker" />
 import { assert, assertEquals } from "@std/assert";
+import { credentialToAddress } from "@lucid-evolution/lucid";
+import { assertLedgerSupply, ledgerBalances } from "./funds-oracle.ts";
 import {
   sendPacketFixture,
   type SendParameters,
@@ -23,6 +25,7 @@ import {
 export interface FundsCase {
   parameters: SendParameters;
   voucherBase?: string;
+  destinations?: { hash: string; script: boolean }[];
   amounts: bigint[];
   commands: { send: boolean; index: number; settlement: Settlement }[];
 }
@@ -35,6 +38,10 @@ function enterStage(next: string) {
 
 async function checkCase(sample: FundsCase) {
   const f = await sendPacketFixture(sample.parameters);
+  const nativeSupply = [
+    ...ledgerBalances(f.emulator, f.funds.assetUnit).values(),
+  ]
+    .reduce((a, b) => a + b, 0n);
   enterStage("initial send");
   await assertTransactionAccepted(f);
   const history = {
@@ -49,12 +56,13 @@ async function checkCase(sample: FundsCase) {
     await assertFundsState(
       f,
       escrow,
-      pending.map((p) => p.packet.fields[0] as bigint),
+      pending,
       history,
     );
     // Native token payouts are exact. ADA payouts include ledger minimum ADA.
     const received = await receiverBalance(f);
     if (sample.parameters.asset) {
+      assertLedgerSupply(f.emulator, f.funds.assetUnit, nativeSupply);
       assertEquals(received, refunded);
     } else {
       assert(
@@ -208,15 +216,16 @@ async function checkVoucherCase(sample: FundsCase) {
   const voucher = await knownVoucher(f, sample.voucherBase!);
   const pending = [] as ReturnType<typeof firstPacket>[];
   let supply = 0n;
+  const distributed = new Map<string, bigint>();
   const audit = async () => {
-    const utxos = await f.lucid.utxosAt(f.account.address);
-    assertEquals(
-      utxos.reduce((n, u) => n + (u.assets[voucher.unit] ?? 0n), 0n),
-      supply,
-    );
+    assertLedgerSupply(f.emulator, voucher.unit, supply);
+    const away = [...distributed.values()].reduce((a, b) => a + b, 0n);
+    const expected = new Map(distributed);
+    if (supply > away) expected.set(f.account.address, supply - away);
+    assertEquals(ledgerBalances(f.emulator, voucher.unit), expected);
     await assertFundsState(f, sample.parameters.amount, [
-      1n,
-      ...pending.map((p) => p.packet.fields[0] as bigint),
+      firstPacket(f),
+      ...pending,
     ], history);
     const metadata = await f.lucid.utxoByUnit(
       Object.keys(voucher.metadata.assets).find((unit) => unit !== "lovelace")!,
@@ -251,6 +260,25 @@ async function checkVoucherCase(sample: FundsCase) {
   await assertTransactionRejected(
     await receiveNative(f, total, 1n, "none", voucher),
   );
+  // Move some received vouchers outside the signing wallet before burning or
+  // refunding. The model must preserve every destination's balance throughout.
+  for (const destination of sample.destinations ?? []) {
+    const address = credentialToAddress("Custom", {
+      type: destination.script ? "Script" : "Key",
+      hash: destination.hash,
+    });
+    const amount = total / 8n;
+    enterStage(`distribute vouchers to ${address}`);
+    const tx = f.lucid.newTx().pay.ToAddress(address, {
+      lovelace: 2_000_000n,
+      [voucher.unit]: amount,
+    });
+    const completed = await tx.complete({ localUPLCEval: true });
+    await (await completed.sign.withWallet().complete()).submit();
+    f.emulator.awaitBlock();
+    distributed.set(address, (distributed.get(address) ?? 0n) + amount);
+    await audit();
+  }
   let sentCount = 0;
   const send = async () => {
     const amount = sample.amounts[sentCount++];

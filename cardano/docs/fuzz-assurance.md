@@ -37,6 +37,12 @@ cd cardano/onchain
 aiken check --deny --max-success 500 --seed 674 --exact-match -m prop_funds_native_send_amount
 ```
 
+Repository merge rules are separate from these workflow dependencies. To enforce
+this CI policy, require both `Cardano Onchain Aiken` and `Docs Branch Guard` in
+branch protection. The `docs/` branch exception relies on the latter check to
+reject non-documentation changes. A workflow definition alone does not establish
+that either check is required.
+
 ## Compiled funds histories
 
 `cardano/offchain/src/funds-lifecycle.fuzz.test.ts` generates ADA, native-token
@@ -54,7 +60,12 @@ protocol replay handling rather than merely spending an old UTxO twice.
 
 Voucher histories execute the real voucher policy: receive/mint, send/burn,
 successful acknowledgement, and remint on error/timeout. An independent model
-checks exact voucher supply and outstanding commitments after each submission.
+checks voucher supply across every unspent emulator output and exact balances
+at the signing wallet and two generated destinations, one key address and one
+script address. Vouchers move to those destinations before burns and refunds.
+Packet commitments are recomputed from the sent packets using a separate
+ICS-04 encoding implementation. Receipts and acknowledgement values are checked
+as well as their sequence keys after each protocol submission.
 The native model checks exact escrow principal and reserves, exact native-token
 refunds, and preservation of module state, registry root, HostState assets and
 channel ADA. Sequence counters, receipt/acknowledgement inventories and protected
@@ -77,7 +88,19 @@ areas remain useful, but are not equivalent to compiled history coverage.
 
 CI runs five histories per asset family in separate shards; the local default is
 twenty. Seeds and original cases are logged before evaluation so interrupted
-shrinking also leaves a reproducible input. Build the
+shrinking also leaves a reproducible input.
+
+The separate `Funds Fuzz Campaign` workflow runs nightly on the default branch
+and supports manual dispatch. It runs 60 histories across six independent shards
+with fresh seeds. Its `deep` profile generates 12–24 random commands rather than
+1–6 and gives voucher histories 12–24 outgoing packets rather than 3–5. Forced
+terminal operations, draining pending packets, receives and negative cases add
+transactions beyond those command counts. Each shard has a three-hour timeout.
+Logs include the commit, profile, seed, cases and operation progress and are
+uploaded on failure too, with 90-day retention. This is a randomized campaign,
+not execution-coverage-guided exploration. It does not maintain a coverage corpus.
+
+Replay needs the same commit and profile as the failing run. Build the
 blueprint and use the normal repository dependency setup before running:
 
 ```sh
@@ -85,8 +108,10 @@ cd cardano/onchain
 aiken build --deny --trace-level silent
 cd ../offchain
 TX_FUZZ_RUNS=5 TX_FUZZ_SEED=674 deno task test:funds:fuzz
-# Replay the failing test using fast-check's reported seed and shrink path:
-TX_FUZZ_RUNS=5 TX_FUZZ_SEED=674 TX_FUZZ_PATH='0:1:2' deno test --allow-env --allow-read --filter 'compiled native token' src/funds-lifecycle.fuzz.test.ts
+# Run the deeper profile locally:
+FUNDS_FUZZ_PROFILE=deep TX_FUZZ_RUNS=10 deno task test:funds:fuzz
+# Replay with the original profile and fast-check's reported seed and shrink path:
+FUNDS_FUZZ_PROFILE=pr TX_FUZZ_RUNS=5 TX_FUZZ_SEED=674 TX_FUZZ_PATH='0:1:2' deno test --allow-env --allow-read --filter 'compiled native token' src/funds-lifecycle.fuzz.test.ts
 ```
 
 ## Critical guard mutations

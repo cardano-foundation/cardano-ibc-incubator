@@ -1268,6 +1268,8 @@ proves these invariants:
 
 ## Follow-Up Tasks
 
+- Add execution-coverage feedback and a retained corpus of cases that reach new
+  behavior. The scheduled campaign currently samples fresh random histories.
 - Extend compiled funds histories to ordered channels, multiple channels, and
   first-seen voucher registration with trace-registry rollover.
 - Exercise client creation, updates and misbehaviour together with packet
