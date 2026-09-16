@@ -18,6 +18,8 @@ import {
 } from "@lucid-evolution/provider";
 import { DeploymentIbcTree } from "../src/deployment.ts";
 import { generateTokenName, readValidator } from "../src/utils.ts";
+import { loadStagedTendermintValidators } from "../src/deployment-plan.ts";
+import { submitHistorySession } from "./consensus-history-staged-fixture.ts";
 import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
 import {
   ConsensusHistoryRecovery,
@@ -77,7 +79,9 @@ async function fixture(
   outputCanonicalEncoding = canonicalEncoding,
   captureSignerFixture?: (value: Record<string, unknown>) => void,
   initialConsensusBytes?: { root: string; nextValidatorsHash: string },
+  stagedMode?: "adjacent" | "non-adjacent",
 ) {
+  const trustingPeriod = stagedMode ? 600_000_000_000n : TRUSTING_PERIOD;
   const encodeStored = (value: Data) =>
     Data.to<Data>(value, undefined, { canonical: canonicalEncoding });
   const encodePublic = (value: Data) =>
@@ -122,11 +126,20 @@ async function fixture(
     "recover_client.recover_client.withdraw",
     [HOST_POLICY],
   );
-  const [clientScript, clientHash, clientAddress] = readValidator(
-    "spending_client.spend_client.spend",
-    lucid,
-    [HOST_POLICY, new Constr(1, [recoveryHash])],
-  );
+  const staged = stagedMode
+    ? loadStagedTendermintValidators(lucid, HOST_POLICY, recoveryHash)
+    : undefined;
+  const [clientScript, clientHash, clientAddress] = staged
+    ? [
+      staged.clientSpend.validator,
+      staged.clientSpend.scriptHash,
+      staged.clientSpend.address,
+    ]
+    : readValidator(
+      "spending_client.spend_client.spend",
+      lucid,
+      [HOST_POLICY, new Constr(1, [recoveryHash])],
+    );
   const [clientPolicy, clientPolicyId] = applyBytes(
     "minting_client_stt.mint_client_stt.mint",
     [clientHash, HOST_POLICY],
@@ -160,7 +173,7 @@ async function fixture(
   );
   const clientToken = new Constr(0, [clientPolicyId, clientName]);
   const latestHeight = normalUpdate && historyCount === 0
-    ? 2n
+    ? stagedMode === "non-adjacent" ? 1n : 2n
     : BigInt(historyCount + 1);
   const now = emulator.now();
   const nowNs = BigInt(now) * 1_000_000n;
@@ -169,7 +182,7 @@ async function fixture(
     ? initialProcessedTime / 4_000_000_000n
     : 1n;
   const oldConsensus = consensus(
-    nowNs - (unexpired ? TRUSTING_PERIOD / 2n : 2n * TRUSTING_PERIOD),
+    nowNs - (unexpired ? trustingPeriod / 2n : 2n * trustingPeriod),
   );
   const latestConsensus = normalUpdate
     ? new Constr(0, [
@@ -187,8 +200,8 @@ async function fixture(
   const clientState = new Constr(0, [
     fromText(normalUpdate ? "testchain2-1" : "chain-0"),
     new Constr(0, [1n, 3n]),
-    TRUSTING_PERIOD,
-    2n * TRUSTING_PERIOD,
+    trustingPeriod,
+    2n * trustingPeriod,
     1_000_000_000n,
     new Constr(0, [0n, 0n]),
     height(latestHeight),
@@ -232,6 +245,11 @@ async function fixture(
   const references = [hostScript, clientPolicy, recoveryScript].map((script) =>
     seed(account.address, {}, Data.void(), script)
   );
+  const sessionReferences = staged
+    ? [staged.sessionMint.validator, staged.sessionSpend.validator].map((
+      script,
+    ) => seed(account.address, {}, Data.void(), script))
+    : [];
   function signerEvidence(
     name: "update" | "recovery",
     completed: TxSignBuilder,
@@ -563,7 +581,9 @@ async function fixture(
       )
       .collectFrom(
         [client],
-        encodeStored(new Constr(1, [substituteToken, historySiblings])),
+        encodeStored(
+          new Constr(staged ? 2 : 1, [substituteToken, historySiblings]),
+        ),
       )
       .withdraw(
         rewardAddress,
@@ -634,6 +654,20 @@ async function fixture(
     };
   }
   async function update(wrongProcessingTime = false) {
+    const session = staged
+      ? await submitHistorySession({
+        lucid,
+        emulator,
+        scripts: staged,
+        references: sessionReferences,
+        clientToken,
+        trustedHeight: height(latestHeight),
+        trustedConsensus: latestConsensus,
+        clientState,
+        header: adjacentHeader,
+        owner: signer,
+      })
+      : undefined;
     const updateNow = emulator.now();
     const updateValidToNs = BigInt(updateNow + 30_000) * 1_000_000n;
     const newHeight = adjacentTmHeader.fields[2] as bigint;
@@ -695,7 +729,7 @@ async function fixture(
       Data.void(),
       clientScript,
     );
-    const completed = await lucid.newTx().readFrom([
+    let builder = lucid.newTx().readFrom([
       references[0],
       references[2],
       clientReference,
@@ -716,10 +750,18 @@ async function fixture(
       .collectFrom(
         [client],
         encodeStored(
-          new Constr(0, [adjacentRedeemer.fields[0], [], historySiblings]),
+          new Constr(0, [
+            session?.token ?? adjacentRedeemer.fields[0],
+            [],
+            historySiblings,
+          ]),
         ),
       )
-      .withdraw(rewardAddress, 0n, encodeStored(new Constr(1, [clientToken])))
+      .withdraw(
+        rewardAddress,
+        0n,
+        encodeStored(new Constr(staged ? 4 : 1, [clientToken])),
+      )
       .pay.ToContract(clientAddress, {
         kind: "inline",
         value: encodeOutput(nextClient),
@@ -728,9 +770,11 @@ async function fixture(
         kind: "inline",
         value: Data.to(nextHost, HostStateDatum, { canonical: true }),
       }, host.assets)
-      .validFrom(updateNow).validTo(updateNow + 30_000).complete({
-        localUPLCEval: true,
-      });
+      .validFrom(updateNow).validTo(updateNow + 30_000);
+    if (session) builder = session.finalize(builder);
+    const completed = await builder.complete({
+      localUPLCEval: true,
+    });
     const signerFixture = signerEvidence("update", completed, clientReference);
     const signed = await completed.sign.withWallet().complete();
     const units = CML.compute_total_ex_units(
@@ -750,11 +794,28 @@ async function fixture(
     emulator.awaitBlock();
     retain(signed.toHash(), signed.toCBOR());
     if (signerFixture) captureSignerFixture!(signerFixture);
-    assertEquals(signed.toTransaction().body().mint(), undefined);
+    if (session) {
+      assert(signed.toTransaction().body().mint());
+      assertEquals(
+        (await lucid.utxosAt(staged!.sessionSpend.address)).length,
+        0,
+      );
+      console.log(
+        JSON.stringify({ stagedMode, sessions: session.measurements }),
+      );
+    } else assertEquals(signed.toTransaction().body().mint(), undefined);
     assertEquals(
       (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
       encodeOutput(nextClient),
     );
+    if (session) {
+      return {
+        operation: `staged ${stagedMode} update`,
+        bytes,
+        memory: Number(units.mem()),
+        steps: Number(units.steps()),
+      };
+    }
     // Replaying the same valid header must not be accepted as misbehaviour.
     const frozenState = new Constr(0, [
       ...newState.fields.slice(0, 5),
@@ -828,7 +889,22 @@ async function fixture(
       steps: Number(units.steps()),
     };
   }
-  async function freezeConflictingHeader() {
+  async function freezeConflictingHeader(wrongWitness = false) {
+    const session = staged
+      ? await submitHistorySession({
+        lucid,
+        emulator,
+        scripts: staged,
+        references: sessionReferences,
+        clientToken,
+        trustedHeight: histories[1].fields[1] as Constr<Data>,
+        trustedConsensus: histories[1].fields[2] as Constr<Data>,
+        clientState,
+        header: adjacentHeader,
+        owner: signer,
+      })
+      : undefined;
+    const freezeNow = emulator.now();
     const frozenState = new Constr(0, [
       ...clientState.fields.slice(0, 5),
       new Constr(0, [0n, 1n]),
@@ -860,7 +936,7 @@ async function fixture(
       Data.void(),
       clientScript,
     );
-    const completed = await lucid.newTx().readFrom([
+    let builder = lucid.newTx().readFrom([
       references[0],
       references[2],
       clientReference,
@@ -882,10 +958,12 @@ async function fixture(
         [client],
         encodeStored(
           new Constr(0, [
-            adjacentRedeemer.fields[0],
+            session?.token ?? adjacentRedeemer.fields[0],
             [
               new Constr(0, [
-                histories[1],
+                wrongWitness
+                  ? new Constr(0, [...histories[1].fields.slice(0, 3), 1n, 1n])
+                  : histories[1],
                 await historyTree.getSiblings(
                   consensusHistoryKey(
                     recordFromConstr(histories[1]).clientToken,
@@ -898,7 +976,11 @@ async function fixture(
           ]),
         ),
       )
-      .withdraw(rewardAddress, 0n, encodeStored(new Constr(1, [clientToken])))
+      .withdraw(
+        rewardAddress,
+        0n,
+        encodeStored(new Constr(staged ? 4 : 1, [clientToken])),
+      )
       .pay.ToContract(clientAddress, {
         kind: "inline",
         value: encodeOutput(frozenClient),
@@ -907,7 +989,9 @@ async function fixture(
         kind: "inline",
         value: Data.to(frozenHost, HostStateDatum, { canonical: true }),
       }, host.assets)
-      .validFrom(now).validTo(now + 30_000).complete({ localUPLCEval: true });
+      .validFrom(freezeNow).validTo(freezeNow + 30_000);
+    if (session) builder = session.finalize(builder);
+    const completed = await builder.complete({ localUPLCEval: true });
     const signed = await completed.sign.withWallet().complete();
     const units = CML.compute_total_ex_units(
       signed.toTransaction().witness_set().redeemers()!,
@@ -1068,6 +1152,126 @@ async function fixture(
   };
 }
 
+Deno.test("signed staged clients initialize, verify real signatures and finalize both update modes", async () => {
+  for (const mode of ["adjacent", "non-adjacent"] as const) {
+    const context = await fixture(
+      0,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      undefined,
+      undefined,
+      mode,
+    );
+    console.log(JSON.stringify(await context.update()));
+  }
+});
+
+Deno.test("signed staged recovery stays bounded across 1, 100 and 10000 historical checkpoints", async () => {
+  const sizes: number[] = [];
+  for (const count of [1, 100, 10_000]) {
+    const context = await fixture(
+      count,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      undefined,
+      undefined,
+      "non-adjacent",
+    );
+    const result = await context.recover();
+    console.log(JSON.stringify(result));
+    sizes.push(result.bytes);
+  }
+  assert(Math.max(...sizes) - Math.min(...sizes) < 100);
+});
+
+Deno.test("signed staged finalization rejects forged metadata and recovery roots", async () => {
+  for (
+    const mutation of [
+      "missing-history",
+      "changed-metadata",
+      "wrong-root",
+    ] as const
+  ) {
+    const context = await fixture(
+      1,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      undefined,
+      undefined,
+      "non-adjacent",
+    );
+    await assertRejects(() => context.recover(mutation));
+  }
+  const context = await fixture(
+    0,
+    false,
+    false,
+    true,
+    true,
+    true,
+    false,
+    true,
+    undefined,
+    undefined,
+    "adjacent",
+  );
+  await assertRejects(() => context.update(true));
+});
+
+Deno.test("signed staged conflict freezes with an authenticated historical witness", async () => {
+  for (const wrongWitness of [true, false]) {
+    const context = await fixture(
+      2,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      undefined,
+      undefined,
+      "adjacent",
+    );
+    if (wrongWitness) {
+      await assertRejects(() => context.freezeConflictingHeader(true));
+    } else await context.freezeConflictingHeader();
+  }
+});
+
+Deno.test("signed staged update uses an old checkpoint after deleting both history caches", async () => {
+  const context = await fixture(
+    0,
+    false,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    undefined,
+    undefined,
+    "adjacent",
+  );
+  console.log(JSON.stringify(await context.update()));
+  console.log(JSON.stringify(await context.coldRecoverAndPrune()));
+});
+
 Deno.test("cold recovery retains consensus bytes accepted by signed client creation", async () => {
   for (
     const initialConsensusBytes of [
@@ -1089,6 +1293,7 @@ Deno.test("cold recovery retains consensus bytes accepted by signed client creat
       true,
       undefined,
       initialConsensusBytes,
+      "adjacent",
     );
     await context.coldRecoverCreation();
   }
