@@ -7,6 +7,7 @@ use crate::utils::default_config_path;
 use clap::Parser;
 use clap::Subcommand;
 
+mod bridge_history;
 mod chains;
 mod check;
 mod commands;

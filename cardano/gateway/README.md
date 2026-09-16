@@ -41,8 +41,9 @@ Published tags:
 - `v*`: release tag image when a matching Git tag is pushed
 
 Published images include tracked bridge manifests at `/usr/src/app/manifests`.
-For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json`
-to start the Gateway against the shared Cardano preprod bridge deployment.
+For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preview/cardano-preview-bridge-manifest.json`
+to start the Gateway against the shared Cardano Preview bridge deployment.
+Preview is the only bundled bridge deployment; Preprod requires an operator-supplied compatible manifest or a fresh deployment.
 Tagged GitHub releases also attach a `cardano-gateway-manifests-<tag>.tar.gz`
 archive containing the same tracked manifest files.
 
@@ -113,6 +114,8 @@ For deployments outside this Compose file, mount a persistent volume at the same
 The public IBC tree has a separate cache: in-memory trees and compressed snapshots in the Gateway PostgreSQL table `ibc_state_tree_cache`. If a proof query requests a past height whose snapshot is missing or invalid, the Gateway reconstructs the tree from retained Yaci outputs and spends at that block. It includes historical client consensus leaves, connections, channels, packet state and port registrations, then verifies the result against the historical HostState root before serving the proof. The verified snapshot is cached by root and HostState output reference; rebuilding it does not replace the live transaction-building tree. This uses the existing databases and needs no additional container or volume.
 
 Historical public-tree reconstruction requires Yaci's raw `address_utxo` rows (including spent outputs, assets and inline datums), canonical `transaction` and `block` rows, and `tx_input` spend history from this deployment's creation through the requested block. The bridge projection or a current UTxO snapshot alone is insufficient. Reconstruction reads one consistent, read-only database snapshot, excludes failed/orphaned transactions and future outputs/spends, and checks for a rollback before returning. Incomplete history or a root mismatch stops the proof request; restore or replay Yaci history before retrying. Concurrent requests for the same height and HostState share a rebuild, with at most four different rebuilds in progress and a 30-second timeout per SQL statement. The first request after cache loss takes longer as history grows.
+
+Public manifests and public handler startup require `history.format: "cardano-history-v1"`, an explicit replay checkpoint and the original HostState creation output. Startup verifies retained deployment history before restoring/rebuilding the tree, and waits for providers and verified tree state before serving requests.
 
 ## Cardano Data Plane
 

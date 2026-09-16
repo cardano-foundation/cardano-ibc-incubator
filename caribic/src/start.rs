@@ -756,6 +756,14 @@ pub fn start_relayer(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bridge_manifest_path =
         require_bridge_manifest_path(bridge_manifest_path, cardano_chain_id)?;
+    let public_network = match cardano_chain_id {
+        "cardano-preprod" => Some(config::CoreCardanoNetwork::Preprod),
+        "cardano-preview" => Some(config::CoreCardanoNetwork::Preview),
+        _ => None,
+    };
+    if let Some(network) = public_network {
+        crate::bridge_history::read_checkpoint(&bridge_manifest_path, network)?;
+    }
 
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -2096,7 +2104,10 @@ pub async fn deploy_public_cardano_bridge(
         .unwrap_or(false);
 
     if !force_public_redeploy {
-        if public_handler_path.exists() && public_manifest_path.exists() {
+        if public_manifest_path.exists() {
+            // Joining an existing bridge needs only its verified public manifest.
+            // A missing private handler must never trigger a fresh deployment.
+            crate::bridge_history::read_checkpoint(&public_manifest_path, network)?;
             log_or_show_progress(
                 &format!(
                     "{} Reusing existing {} bridge artifacts",
@@ -2256,7 +2267,19 @@ pub async fn deploy_public_cardano_bridge(
         &optional_progress_bar,
     );
 
+    let history_checkpoint =
+        crate::setup::resolve_public_testnet_yaci_checkpoint(&gateway_env_path, network)?;
+    let history_block_no = history_checkpoint
+        .block_no
+        .as_deref()
+        .ok_or("Deployment requires YACI_SYNC_START_BLOCK_NO")?;
     let mut offchain_env = vec![
+        ("YACI_SYNC_START_SLOT", history_checkpoint.slot.as_str()),
+        (
+            "YACI_SYNC_START_BLOCKHASH",
+            history_checkpoint.block_hash.as_str(),
+        ),
+        ("YACI_SYNC_START_BLOCK_NO", history_block_no),
         ("DEPLOYER_SK", deployer_sk),
         ("KUPO_URL", kupo_url.as_str()),
         (
@@ -2586,6 +2609,22 @@ pub async fn ensure_managed_cardano_runtime(
         && active_network == network
         && !clean
     {
+        if network.is_public_testnet() {
+            // Reapply the manifest boundary even when this network is already
+            // running. Otherwise a recent follower/database (or old port mapping)
+            // could survive a switch to an older deployment's manifest.
+            crate::setup::write_cardano_runtime_selection(
+                cardano_dir.as_path(),
+                network,
+                local_cardano_spo_count(false, network),
+            )?;
+            execute_script(
+                cardano_dir.as_path(),
+                "docker",
+                vec!["compose", "up", "-d", "yaci-store-postgres", "yaci-store"],
+                None,
+            )?;
+        }
         return Ok(());
     }
 
@@ -3391,6 +3430,16 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
                 .into(),
         );
     }
+    let history_wait_seconds = crate::setup::read_gateway_env_value(
+        &gateway_dir.join(".env"),
+        "BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS",
+    )?
+    .unwrap_or_else(|| "7200".to_string())
+    .parse::<u64>()?;
+    if history_wait_seconds == 0 || history_wait_seconds > 86400 {
+        return Err("BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS must be between 1 and 86400".into());
+    }
+    let max_retries = max_retries.max((history_wait_seconds * 1000 / interval_ms + 2) as u32);
     let mut gateway_ready = false;
     let mut last_gateway_status = "Gateway readiness checks have not completed yet".to_string();
 

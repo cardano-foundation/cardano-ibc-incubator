@@ -281,19 +281,10 @@ pub fn is_left_neighbor(
 ) -> Bool {
   neighbors_from_root(
     spec,
-    path_from_root(left),
-    path_from_root(right),
+    list.reverse(left),
+    list.reverse(right),
     list.length(left),
   )
-}
-
-fn path_from_root(path: List<InnerOp>) -> List<InnerOp> {
-  when list.reverse(path) is {
-    // The previous initial slice(0, length - 2) retained a singleton's top
-    // step as its remaining branch. Preserve that behavior here.
-    [step] -> [step, step]
-    reversed -> reversed
-  }
 }
 
 fn neighbors_from_root(

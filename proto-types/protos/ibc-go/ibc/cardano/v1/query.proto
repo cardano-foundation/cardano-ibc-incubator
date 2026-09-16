@@ -55,6 +55,9 @@ message QueryBridgeManifestRequest {}
 
 message QueryBridgeManifestResponse {
   BridgeManifest manifest = 1;
+  // Complete public JSON document, including history bootstrap and capabilities.
+  // New bootstrap consumers must use this instead of the legacy typed subset.
+  string manifest_json = 2;
 }
 
 message BridgeManifest {

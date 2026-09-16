@@ -490,6 +490,33 @@ pub fn resolve_public_testnet_yaci_checkpoint(
         ],
         network,
     )?;
+    let profile = config::cardano_network_profile(network);
+    let force_deploy = std::env::var(format!(
+        "CARIBIC_FORCE_{}_DEPLOY",
+        network.as_str().to_uppercase()
+    ))
+    .or_else(|_| std::env::var("CARIBIC_FORCE_CARDANO_DEPLOY"))
+    .is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    });
+    if let Some(path) = profile
+        .bridge_manifest_path
+        .as_deref()
+        .filter(|p| !force_deploy && Path::new(p).is_file())
+    {
+        let point = crate::bridge_history::read_checkpoint(Path::new(path), network)?;
+        // The deployment boundary wins over stale/recent operator checkpoints.
+        // Storage is already namespaced by this point, so changing it cannot
+        // accidentally reuse a database that began after deployment.
+        return Ok(YaciSyncCheckpoint {
+            slot: point.slot.to_string(),
+            block_hash: point.block_hash,
+            block_no: Some(point.block_height.to_string()),
+        });
+    }
     let gateway_values = if gateway_env.exists() {
         parse_env_file(gateway_env)?
     } else {
@@ -2576,8 +2603,9 @@ fn write_gateway_env_for_network(
     let manifest_container_path = profile
         .bridge_manifest_path
         .as_deref()
-        .filter(|path| Path::new(path).exists())
-        .and_then(|path| gateway_container_artifact_path(project_root.as_path(), path));
+        .filter(|path| Path::new(path).is_file())
+        .map(|path| prepare_gateway_manifest(project_root.as_path(), Path::new(path)))
+        .transpose()?;
     let handler_container_path =
         gateway_container_artifact_path(project_root.as_path(), profile.handler_json_path.as_str())
             .ok_or("Failed to derive deployment artifact container path")?;
@@ -2597,6 +2625,31 @@ fn write_gateway_env_for_network(
     secure_env_file_permissions(&gateway_env)?;
 
     Ok(())
+}
+
+fn prepare_gateway_manifest(
+    project_root: &Path,
+    source: &Path,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let project_root = project_root.canonicalize()?;
+    let source = source.canonicalize()?;
+    let deployments = project_root.join("cardano/offchain/deployments");
+    let manifests = project_root.join("manifests");
+    let mounted_source = if source.starts_with(&deployments) || source.starts_with(&manifests) {
+        source
+    } else {
+        // An operator can keep the trusted manifest outside the checkout.
+        // Snapshot it into the existing read-only Gateway artifact mount.
+        fs::create_dir_all(&deployments)?;
+        let snapshot = deployments.join("imported-bridge-manifest.json");
+        fs::copy(source, &snapshot)?;
+        snapshot
+    };
+    gateway_container_artifact_path(
+        &project_root,
+        mounted_source.to_str().ok_or("Invalid manifest path")?,
+    )
+    .ok_or_else(|| "Failed to resolve mounted bridge manifest".into())
 }
 
 fn gateway_container_artifact_path(project_root: &Path, artifact_path: &str) -> Option<String> {
@@ -2850,6 +2903,30 @@ pub fn prepare_db_sync_and_gateway(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn imported_manifest_is_available_in_the_gateway_mount_without_a_handler() {
+        let root =
+            std::env::temp_dir().join(format!("caribic-manifest-mount-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("project")).unwrap();
+        let source = root.join("trusted.json");
+        std::fs::write(&source, "{\"history\":{}}").unwrap();
+        let mapped = super::prepare_gateway_manifest(&root.join("project"), &source).unwrap();
+        assert_eq!(
+            mapped,
+            "/usr/src/app/cardano/offchain/deployments/imported-bridge-manifest.json"
+        );
+        assert_eq!(
+            std::fs::read(
+                root.join("project/cardano/offchain/deployments/imported-bridge-manifest.json")
+            )
+            .unwrap(),
+            std::fs::read(source).unwrap()
+        );
+        assert!(!root
+            .join("project/cardano/offchain/deployments/handler.json")
+            .exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use super::{
         cardano_runtime_state_paths, remove_env_var, set_env_var_if_absent,
         validate_active_cardano_runtime_env, validate_external_http_endpoint,

@@ -159,6 +159,7 @@ function normalizeBridgeManifest(manifest) {
         deployment: {
             deployedAt: manifest.deployed_at,
             consensusHistoryFormat: manifest.consensus_history_format,
+            ...(manifest.history ? { history: manifest.history } : {}),
             ics20PacketCodec,
             hostStateNFT: {
                 policyId: manifest.host_state_nft.policy_id,

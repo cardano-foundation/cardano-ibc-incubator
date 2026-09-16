@@ -326,6 +326,10 @@ For preprod and preview, Caribic never starts its local `cardano-node`, Kupo, Og
 
 The built-in profiles carry the correct chain identities and protocol magic (`1` for preprod and `2` for preview), so no custom Caribic config is needed. Rebuild the CLI with `cargo install --path caribic --force` after changing branches.
 
+Preview is the only bundled bridge deployment. The obsolete Preprod manifest, handler and cost report have been removed. The Preprod profile's default artifact paths are output locations for a fresh deployment; joining an existing Preprod bridge requires supplying a compatible manifest with history-bootstrap metadata.
+
+To run a relayer for an existing deployment, set the selected network profile's `bridge_manifest_path` to that deployment's trusted public manifest and use `caribic start relayer --network preprod` (or `preview`). Relayer startup requires the manifest, signing key and configured endpoints; it does not require `handler.json`. Hermes snapshots the manifest and uses it for independent signing checks. This command starts the relayer against an already configured Gateway; it does not deploy contracts or synchronize the Gateway's history. Configure the Gateway and history services separately for the same deployment. Public manifests must include the verified `history` replay checkpoint and HostState creation output. Caribic uses that deployment checkpoint even when a recent checkpoint remains in the environment.
+
 ### 2. Configure the preprod endpoints in the gateway env
 
 `caribic start --network preprod` validates `cardano/gateway/.env` and refuses to launch the public Cardano runtime if required endpoints are missing or malformed. Create/extend `cardano/gateway/.env` (start from `.env.example`) with a raw preprod relay and your external Kupo/Ogmios endpoints:

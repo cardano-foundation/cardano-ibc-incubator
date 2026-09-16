@@ -1,4 +1,9 @@
 import {
+  type HistoryBootstrap,
+  requireHistoryBootstrap,
+  requireHistoryStart,
+} from "../../../packages/cardano-ibc-tx-builder-runtime/src/historyBootstrap.ts";
+import {
   type DeploymentPlan,
   GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
   loadDeploymentPlan,
@@ -301,6 +306,18 @@ export const createDeployment = async (
   mode?: string,
 ) => {
   console.log("Create deployment info");
+  // Resolve the replay boundary before submitting any deployment transaction.
+  // Public deployments reuse the stable checkpoint selected for their Yaci follower.
+  const networkMagic = Number(Deno.env.get("CARDANO_NETWORK_MAGIC") || 42);
+  const historyStart: HistoryBootstrap["start"] =
+    [1, 2, 764824073].includes(networkMagic)
+      ? {
+        slot: Number(Deno.env.get("YACI_SYNC_START_SLOT")),
+        block_hash: Deno.env.get("YACI_SYNC_START_BLOCKHASH") || "",
+        block_height: Number(Deno.env.get("YACI_SYNC_START_BLOCK_NO")),
+      }
+      : "origin";
+  requireHistoryStart(historyStart, networkMagic);
   const walletAddress = await lucid.wallet().address();
   const deployerPaymentKeyHash = getPaymentCredentialHash(walletAddress);
   const deploymentReportEnabled = mode !== undefined && mode != EMULATOR_ENV;
@@ -554,6 +571,7 @@ export const createDeployment = async (
   const {
     hostStateStt,
     hostStateNFT,
+    hostStateMintOutput,
   } = await deployHostState(
     lucid,
     hostStateNonceUtxo,
@@ -719,6 +737,11 @@ export const createDeployment = async (
   const deploymentInfo: DeploymentTemplate = {
     deployedAt,
     consensusHistoryFormat: "proof-backed-v1",
+    history: requireHistoryBootstrap({
+      format: "cardano-history-v1",
+      start: historyStart,
+      host_state_nft_mint: hostStateMintOutput,
+    }, networkMagic),
     ics20PacketCodec: "ics20-classic-json-v1",
     validators: {
       recoverClient: {
@@ -2264,8 +2287,13 @@ const deployHostState = async (
   );
 
   console.log("HostState NFT minted and HostState UTXO created");
+  const mintedHost = await lucid.utxoByUnit(hostStateNFTUnit);
 
   return {
+    hostStateMintOutput: {
+      tx_hash: mintedHost.txHash,
+      output_index: mintedHost.outputIndex,
+    },
     hostStateStt: {
       validator: hostStateSttValidator,
       scriptHash: hostStateSttScriptHash,

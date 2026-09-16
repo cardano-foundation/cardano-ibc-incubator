@@ -1,3 +1,4 @@
+import { requireHistoryBootstrap, type HistoryBootstrap } from '@cardano-ibc/tx-builder-runtime/historyBootstrap';
 type RefUtxo = {
   txHash: string;
   outputIndex: number;
@@ -71,6 +72,7 @@ function requireConsensusHistoryFormat(value: unknown): typeof CONSENSUS_HISTORY
 export type DeploymentConfig = {
   deployedAt: string;
   consensusHistoryFormat: typeof CONSENSUS_HISTORY_FORMAT;
+  history?: HistoryBootstrap;
   ics20PacketCodec: Ics20PacketCodec;
   hostStateNFT: AuthToken;
   validators: {
@@ -167,6 +169,7 @@ export type BridgeManifest = {
   consensus_history_format: typeof CONSENSUS_HISTORY_FORMAT;
   deployment_id: string;
   deployed_at: string;
+  history?: HistoryBootstrap;
   ics20_packet_codec: Ics20PacketCodec;
   cardano: {
     chain_id: string;
@@ -621,6 +624,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   return {
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
     consensusHistoryFormat,
+    ...(deploymentAny.history ? { history: requireHistoryBootstrap(deploymentAny.history, 42) } : {}),
     // Packet wire encoding is independent of the required client-history ABI.
     // Keep its legacy default only after validating the proof-backed marker.
     ics20PacketCodec:
@@ -687,6 +691,9 @@ export function normalizeHandlerJsonDeploymentConfig(
 ): LoadedBridgeConfig {
   const normalizedDeployment = requireSttDeploymentConfig(deployment);
   const normalizedCardano = requireCardanoIdentity(cardano);
+  if ([1, 2, 764824073].includes(normalizedCardano.network_magic) || normalizedDeployment.history) {
+    normalizedDeployment.history = requireHistoryBootstrap(normalizedDeployment.history, normalizedCardano.network_magic);
+  }
 
   // Normalize deployment JSON once so both startup sources feed the same public
   // manifest and internal deployment object into the rest of the Gateway.
@@ -697,6 +704,7 @@ export function normalizeHandlerJsonDeploymentConfig(
       consensus_history_format: normalizedDeployment.consensusHistoryFormat,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
+      ...(normalizedDeployment.history ? { history: normalizedDeployment.history } : {}),
       ics20_packet_codec: normalizedDeployment.ics20PacketCodec,
       cardano: normalizedCardano,
       host_state_nft: deploymentAuthTokenToManifest(normalizedDeployment.hostStateNFT),
@@ -758,6 +766,7 @@ export function normalizeHandlerJsonDeploymentConfig(
 
 export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeConfig {
   const manifestAny = requireObject(manifest, 'bridgeManifest');
+  const cardano = requireCardanoIdentity(requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity);
   const validators = requireObject(manifestAny.validators, 'validators');
   if ('spend_consensus_state' in validators) {
     throw new Error('Archive-NFT consensus history is no longer supported; a fresh proof-backed deployment is required');
@@ -779,12 +788,14 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     consensus_history_format: consensusHistoryFormat,
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
     deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
+    ...([1, 2, 764824073].includes(cardano.network_magic) || manifestAny.history
+      ? { history: requireHistoryBootstrap(manifestAny.history, cardano.network_magic) } : {}),
     // The packet codec remains independent of the required history capability.
     ics20_packet_codec:
       manifestAny.ics20_packet_codec === undefined
         ? ICS20_PACKET_CODEC.LEGACY
         : requireIcs20PacketCodec(manifestAny.ics20_packet_codec, 'ics20_packet_codec'),
-    cardano: requireCardanoIdentity(requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity),
+    cardano,
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
     validators: {
       host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
@@ -853,6 +864,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     deployment: {
       deployedAt: bridgeManifest.deployed_at,
       consensusHistoryFormat,
+      ...(bridgeManifest.history ? { history: bridgeManifest.history } : {}),
       ics20PacketCodec: bridgeManifest.ics20_packet_codec,
       hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
       validators: {

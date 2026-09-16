@@ -1,9 +1,5 @@
-# Preprod Manifests
+# Preprod deployment artifacts
 
-This directory stores tracked bridge deployment artifacts for the shared Cardano preprod bridge.
+No Preprod deployment artifacts are bundled. The obsolete deployment manifest, handler and cost report have been removed. The repository's current shared deployment is on [Preview](../preview/cardano-preview-bridge-manifest.json).
 
-- `cardano-preprod-handler.json`: full Cardano-side deployment artifact emitted by the offchain deployer
-- `cardano-preprod-bridge-manifest.json`: public bridge manifest exported from the handler artifact
-- `cardano-preprod-deployment-costs.json`: deployment transaction hashes, fees, and locked-ADA totals captured during the latest tracked preprod deployment
-
-These files are intended to let other collaborators reuse the same Cardano preprod deployment without redeploying contracts.
+Caribic retains this directory as the default output location for a fresh Preprod deployment. To join an existing Preprod bridge, configure the Preprod profile's `bridge_manifest_path` with a trusted, compatible manifest containing the required history-bootstrap metadata.

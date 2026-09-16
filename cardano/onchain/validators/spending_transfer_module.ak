@@ -2,7 +2,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/primitive/bytearray
 use aiken/primitive/int
-use cardano/address.{Script, from_verification_key}
+use cardano/address.{Script, VerificationKey}
 use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{Input, Output, OutputReference, Transaction, Withdraw}
 use ibc/apps/transfer/channel_callback as transfer_channel_callback
@@ -349,7 +349,8 @@ fn module_callback(
 
         expect Some(receiver_public_key_hash) =
           string_utils.hex_string_to_bytes(data.receiver)
-        let receiver_address = from_verification_key(receiver_public_key_hash)
+        expect bytearray.length(receiver_public_key_hash) == 28
+        let receiver_credential = VerificationKey(receiver_public_key_hash)
 
         trace @"spend_transfer_module: start channel logic for transfer module"
         let channel_sequence =
@@ -379,20 +380,36 @@ fn module_callback(
         // This callback independently owns the transfer-value effects and the
         // exact channel-token binding, so repeating that datum transition here
         // would add no protocol-level protection.
-        expect Some(payout_output) =
-          list.find(outputs, fn(output) { output.address == receiver_address })
-
         let derived_channel_sequence =
           auth.extract_token_sequence(updated_channel_datum.token.name)
+
+        // Count the net receipt across every address controlled by the payment
+        // key, regardless of staking credentials or payout output ordering.
+        let accumulate_receiver_token =
+          fn(acc: Int, output: Output) {
+            if output.address.payment_credential == receiver_credential {
+              acc + quantity_of(
+                output.value,
+                escrowed_token_policy_id,
+                escrowed_token_name,
+              )
+            } else {
+              acc
+            }
+          }
+        let prev_receiver_token =
+          list.reduce(
+            inputs,
+            0,
+            fn(acc, input) { accumulate_receiver_token(acc, input.output) },
+          )
+        let post_receiver_token =
+          list.reduce(outputs, 0, accumulate_receiver_token)
 
         and {
           valid_transfer_amount?,
           (derived_channel_sequence == channel_sequence)?,
-          (quantity_of(
-            payout_output.value,
-            escrowed_token_policy_id,
-            escrowed_token_name,
-          ) >= transfer_amount)?,
+          (post_receiver_token - prev_receiver_token >= transfer_amount)?,
         }
       } else {
         // Non-source receive mints vouchers.
