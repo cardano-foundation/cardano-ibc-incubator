@@ -76,6 +76,7 @@ async function fixture(
   packetRecovery = false,
   outputCanonicalEncoding = canonicalEncoding,
   captureSignerFixture?: (value: Record<string, unknown>) => void,
+  initialConsensusBytes?: { root: string; nextValidatorsHash: string },
 ) {
   const encodeStored = (value: Data) =>
     Data.to<Data>(value, undefined, { canonical: canonicalEncoding });
@@ -179,6 +180,10 @@ async function fixture(
     : recovery
     ? oldConsensus
     : consensus(nowNs - 1_000_000_000n);
+  if (initialConsensusBytes) {
+    latestConsensus.fields[1] = initialConsensusBytes.nextValidatorsHash;
+    latestConsensus.fields[2] = new Constr(0, [initialConsensusBytes.root]);
+  }
   const clientState = new Constr(0, [
     fromText(normalUpdate ? "testchain2-1" : "chain-0"),
     new Constr(0, [1n, 3n]),
@@ -925,6 +930,48 @@ async function fixture(
     histories,
     client,
     tree,
+    async coldRecoverCreation() {
+      assert(createClient);
+      const recovered = new ConsensusHistoryRecovery(":memory:", {
+        clientToken: { policyId: clientPolicyId, name: clientName },
+        stateAddress: clientAddress,
+        bootstrap,
+      });
+      try {
+        await recovered.recover({
+          async *transactions() {
+            for (const tx of transactions) yield tx;
+          },
+          currentState: () => lucid.utxoByUnit(clientPolicyId + clientName),
+        });
+        const rebuilt = new DeploymentIbcTree();
+        rebuilt.set(
+          "clients/07-tendermint-0/clientState",
+          recovered.current().clientValue,
+        );
+        for await (const entry of recovered.records()) {
+          rebuilt.set(
+            consensusKey(entry.record.height.revisionHeight),
+            entry.consensusValue,
+          );
+        }
+        const liveHost = await lucid.utxoByUnit(HOST_POLICY + HOST_NAME);
+        assertEquals(
+          await rebuilt.getRoot(),
+          Data.from(liveHost.datum!, HostStateDatum).state.ibc_state_root,
+        );
+        assertEquals(
+          recovered.current().record.consensusState.root,
+          initialConsensusBytes!.root,
+        );
+        assertEquals(
+          recovered.current().record.consensusState.nextValidatorsHash,
+          initialConsensusBytes!.nextValidatorsHash,
+        );
+      } finally {
+        recovered.close();
+      }
+    },
     async coldRecoverAndPrune() {
       assert(packet && createClient);
       const directory = await Deno.makeTempDir({
@@ -1020,6 +1067,32 @@ async function fixture(
     },
   };
 }
+
+Deno.test("cold recovery retains consensus bytes accepted by signed client creation", async () => {
+  for (
+    const initialConsensusBytes of [
+      { root: "33", nextValidatorsHash: "22".repeat(32) },
+      { root: "33".repeat(64), nextValidatorsHash: "22".repeat(32) },
+      { root: "33".repeat(65), nextValidatorsHash: "22".repeat(32) },
+      { root: "33".repeat(32), nextValidatorsHash: "" },
+      { root: "", nextValidatorsHash: "22" },
+    ]
+  ) {
+    const context = await fixture(
+      0,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      undefined,
+      initialConsensusBytes,
+    );
+    await context.coldRecoverCreation();
+  }
+});
 
 Deno.test("signed production recovery stays bounded at 1, 100 and 10000 historical records", async () => {
   const sizes: number[] = [];

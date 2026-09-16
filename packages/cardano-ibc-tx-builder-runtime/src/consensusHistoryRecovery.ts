@@ -178,8 +178,10 @@ function state(datum: string, deployment: HistoryDeployment): State {
     record.clientToken.policyId !== deployment.clientToken.policyId ||
     record.clientToken.name !== deployment.clientToken.name
   ) throw new Error("checkpoint belongs to a different client");
-  hash(record.consensusState.nextValidatorsHash, "next validators hash");
-  hash(record.consensusState.root, "consensus root");
+  // Replay the bytes accepted by the client contracts. Consensus app roots are
+  // opaque bytes, unlike our fixed-size private history root. Applying stricter
+  // offchain hash lengths here makes accepted clients unrecoverable and can
+  // prevent rebuilding the shared public IBC tree.
   return {
     root: hash(root, "state root"),
     ...publicClientCommitmentValues(datum),
