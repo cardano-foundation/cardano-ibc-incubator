@@ -1,6 +1,5 @@
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
-use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, Value, add, from_asset, zero}
@@ -858,11 +857,7 @@ fn send_packet_spending_channel_tx_duplicate_continuation() -> fuzz_dsl.Protocol
   )
 }
 
-test prop_tx_packet_send_spending_channel_accepts_host_marker(
-  _seed via fuzz.int(),
-) {
-  fuzz.label(@"regression.contract.packet.send.valid_channel_host_marker")
-
+test regression_tx_packet_send_spending_channel_accepts_host_marker() {
   // This is intentionally tx.* depth: it composes the channel spend with the
   // HostState co-spend and SendPacket operation marker instead of only checking
   // the channel datum transition helper.
@@ -870,13 +865,7 @@ test prop_tx_packet_send_spending_channel_accepts_host_marker(
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_tx_packet_send_rejects_missing_operation_marker(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(
-    @"regression.contract.packet.send.invalid_missing_operation_marker",
-  )
-
+test regression_tx_packet_send_rejects_missing_operation_marker() fail {
   // tx.* depth for the channel side: the channel spend sees the HostState
   // co-spend redeemer, module co-spend redeemer, and marker mint together. The
   // near-valid mutation removes the exact SendPacket marker mint.
@@ -884,48 +873,32 @@ test prop_tx_packet_send_rejects_missing_operation_marker(
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_tx_packet_send_rejects_extra_operation_marker(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(@"regression.contract.packet.send.invalid_extra_operation_marker")
+test regression_tx_packet_send_rejects_extra_operation_marker() fail {
   send_packet_spending_channel_tx_extra_marker()
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_tx_packet_send_rejects_wrong_operation_policy(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(@"regression.contract.packet.send.invalid_wrong_operation_policy")
+test regression_tx_packet_send_rejects_wrong_operation_policy() fail {
   send_packet_spending_channel_tx_wrong_policy()
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_tx_packet_send_rejects_wrong_marker_redeemer(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(@"regression.contract.packet.send.invalid_wrong_marker_redeemer")
+test regression_tx_packet_send_rejects_wrong_marker_redeemer() fail {
   send_packet_spending_channel_tx_wrong_token()
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_tx_packet_send_rejects_wrong_host_state_action(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(@"regression.contract.packet.send.invalid_wrong_host_state_action")
+test regression_tx_packet_send_rejects_wrong_host_state_action() fail {
   send_packet_spending_channel_tx_wrong_host_action()
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_tx_packet_send_rejects_missing_continuation(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.packet.send.invalid_missing_continuation")
+test regression_tx_packet_send_rejects_missing_continuation() fail {
   send_packet_spending_channel_tx_missing_continuation()
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_tx_packet_send_rejects_duplicate_continuation(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(@"regression.contract.packet.send.invalid_duplicate_continuation")
+test regression_tx_packet_send_rejects_duplicate_continuation() fail {
   send_packet_spending_channel_tx_duplicate_continuation()
     |> fuzz_dsl.assert_protocol_checks_accept
 }

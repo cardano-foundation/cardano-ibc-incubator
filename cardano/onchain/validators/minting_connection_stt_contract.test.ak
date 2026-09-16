@@ -1,5 +1,4 @@
 use aiken/cbor
-use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
@@ -452,9 +451,7 @@ fn run_conn_open_try_transition(
       )
 }
 
-test prop_tx_conn_open_try_accepts_valid_full_transition(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.conn.open_try.valid_full_transition")
-
+test regression_tx_conn_open_try_accepts_valid_full_transition() {
   // tx.* depth: the same ConnOpenTry transaction is checked by connection
   // minting, HostState CreateConnection, and the connection datum transition.
   build_conn_open_try_fixture(
@@ -466,13 +463,7 @@ test prop_tx_conn_open_try_accepts_valid_full_transition(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_conn_open_try_rejects_wrong_counterparty_client_state(
-  _seed via fuzz.int(),
-) {
-  fuzz.label(
-    @"regression.contract.conn.open_try.invalid_wrong_client_state_proof",
-  )
-
+test regression_conn_open_try_rejects_wrong_counterparty_client_state() {
   // Near-valid ConnOpenTry: the local connection datum and proof plumbing are
   // valid, but the counterparty client state bytes differ from the proof value.
   build_conn_open_try_fixture(

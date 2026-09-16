@@ -646,8 +646,21 @@ fn native_send_escrow_fixture(
   mutation: fuzz_dsl.Mutation,
   callback_mutation: SendCallbackMutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
+  native_send_escrow_fixture_amount(
+    1234,
+    escrow_amount,
+    mutation,
+    callback_mutation,
+  )
+}
+
+fn native_send_escrow_fixture_amount(
+  transfer_amount: Int,
+  escrow_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+  callback_mutation: SendCallbackMutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
-  let transfer_amount = 1234
   let sender =
     when callback_mutation is {
       UndecodableSender -> "zz"
@@ -736,8 +749,14 @@ fn native_send_escrow_fixture(
 fn recv_source_unescrow_fixture(
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
+  recv_source_unescrow_fixture_amount(1234, mutation)
+}
+
+fn recv_source_unescrow_fixture_amount(
+  transfer_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
-  let transfer_amount = 1234
   let receiver = mock.cardano_public_key_hash
   expect Some(receiver_public_key_hash) =
     string_utils.hex_string_to_bytes(receiver)
@@ -823,8 +842,15 @@ fn timeout_unescrow_fixture(
   refund_amount: Int,
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
+  timeout_unescrow_fixture_amount(1234, refund_amount, mutation)
+}
+
+fn timeout_unescrow_fixture_amount(
+  transfer_amount: Int,
+  refund_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
-  let transfer_amount = 1234
   let sender = mock.cardano_public_key_hash
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
   let receiver_output =
@@ -911,9 +937,23 @@ fn native_asset_timeout_fixture(
   remaining_escrow_amount: Int,
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
+  native_asset_timeout_fixture_amount(
+    100,
+    150,
+    receiver_amount,
+    remaining_escrow_amount,
+    mutation,
+  )
+}
+
+fn native_asset_timeout_fixture_amount(
+  transfer_amount: Int,
+  input_escrow_amount: Int,
+  receiver_amount: Int,
+  remaining_escrow_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
-  let transfer_amount = 100
-  let input_escrow_amount = 150
   let sender = mock.cardano_public_key_hash
   let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   let native_token_name = "coin"
@@ -1052,8 +1092,14 @@ fn ack_success_fixture(
 fn voucher_send_burn_fixture(
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
+  voucher_send_burn_fixture_amount(1234, mutation)
+}
+
+fn voucher_send_burn_fixture_amount(
+  transfer_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
-  let transfer_amount = 1234
   let receiver = mock.cosmos_address
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
@@ -1106,6 +1152,13 @@ fn voucher_send_burn_fixture(
 fn voucher_recv_sink_fixture(
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
+  voucher_recv_sink_fixture_amount(1234, mutation)
+}
+
+fn voucher_recv_sink_fixture_amount(
+  transfer_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
@@ -1114,7 +1167,7 @@ fn voucher_recv_sink_fixture(
   let (ftpd, packet) =
     build_packet(
       "atom",
-      1234,
+      transfer_amount,
       mock.cosmos_address,
       mock.cardano_public_key_hash,
       "port-0",
@@ -1161,6 +1214,13 @@ fn voucher_recv_sink_fixture(
 fn voucher_error_ack_refund_fixture(
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
+  voucher_error_ack_refund_fixture_amount(1234, mutation)
+}
+
+fn voucher_error_ack_refund_fixture_amount(
+  transfer_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let receiver = mock.cardano_public_key_hash
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
@@ -1174,7 +1234,7 @@ fn voucher_error_ack_refund_fixture(
   let (ftpd, packet) =
     build_packet(
       denom,
-      1234,
+      transfer_amount,
       mock.cosmos_address,
       receiver,
       source_port,
@@ -1220,13 +1280,7 @@ fn voucher_error_ack_refund_fixture(
   run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
 }
 
-test prop_transfer_module_native_send_escrow_increases_exactly(
-  _seed via fuzz.int(),
-) {
-  fuzz.label(
-    @"regression.contract.transfer.native_send.escrow_increases_exactly",
-  )
-
+test regression_transfer_module_native_send_escrow_increases_exactly() {
   // Native SendPacket should move exactly the sent amount into escrow. This is
   // the positive baseline that the value-delta mutations below deviate from.
   native_send_escrow_fixture(1234, fuzz_dsl.no_mutation(), ExactSendCallback)
@@ -1251,13 +1305,7 @@ test transfer_send_rejects_wrong_length_sender() fail {
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(
-    @"regression.contract.transfer.invalid_wrong_escrow_delta_rejected",
-  )
-
+test regression_transfer_module_native_send_rejects_wrong_escrow_delta() fail {
   // One-lovelace-short escrow is near-valid enough to exercise the same path,
   // but it must fail because transfer accounting is exact, not lower-bound.
   native_send_escrow_fixture(
@@ -1295,29 +1343,19 @@ test transfer_module_rejects_moving_registered_port_credential() fail {
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_recv_source_unescrows_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.transfer.recv_source.unescrows_exactly")
-
+test regression_transfer_module_recv_source_unescrows_exactly() {
   // Source-chain receive releases escrow instead of minting voucher supply.
   recv_source_unescrow_fixture(fuzz_dsl.no_mutation())
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_native_timeout_refunds_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.transfer.native_timeout.refund_exactly")
-
+test regression_transfer_module_native_timeout_refunds_exactly() {
   // Timeout on native escrow should restore the original sender balance exactly.
   timeout_unescrow_fixture(1234, fuzz_dsl.no_mutation())
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_native_timeout_rejects_wrong_refund_amount(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(
-    @"regression.contract.transfer.invalid_wrong_native_refund_amount_rejected",
-  )
-
+test regression_transfer_module_native_timeout_rejects_wrong_refund_amount() fail {
   // Wrong refund amount is a fund-moving bug class; the mutation keeps the rest
   // of the timeout shape valid so the amount check is the decisive guard.
   native_asset_timeout_fixture(
@@ -1328,46 +1366,32 @@ test prop_transfer_module_native_timeout_rejects_wrong_refund_amount(
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_native_ack_has_no_refund(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.transfer.native_ack.no_refund")
-
+test regression_transfer_module_native_ack_has_no_refund() {
   // Successful ack confirms delivery; it must not also refund native escrow.
   ack_success_fixture(fuzz_dsl.no_mutation())
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.transfer.voucher_send.burns_exactly")
-
+test regression_transfer_module_voucher_send_burns_exactly() {
   // Sending a voucher back toward its source burns voucher supply rather than
   // increasing native escrow.
   voucher_send_burn_fixture(fuzz_dsl.no_mutation())
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.transfer.recv_sink.mints_voucher_exactly")
-
+test regression_transfer_module_recv_sink_mints_voucher_exactly() {
   // Sink-chain receive creates voucher supply only for the packet amount.
   voucher_recv_sink_fixture(fuzz_dsl.no_mutation())
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_voucher_error_ack_remints_exactly(
-  _seed via fuzz.int(),
-) {
-  fuzz.label(@"regression.contract.transfer.voucher_error_ack.remints_exactly")
-
+test regression_transfer_module_voucher_error_ack_remints_exactly() {
   // Error ack reverses a voucher send by reminting the burned voucher amount.
   voucher_error_ack_refund_fixture(fuzz_dsl.no_mutation())
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_transfer_module_root_rejects_capability_relocation(
-  _seed via fuzz.int(),
-) fail {
-  fuzz.label(@"regression.contract.transfer.invalid_capability_relocation")
-
+test regression_transfer_module_root_rejects_capability_relocation() fail {
   let mock = setup()
   let relocated_output =
     Output {
@@ -3769,4 +3793,115 @@ test channel_callback_rejects_wrong_spend_redeemer_constructor() fail {
     mock,
     [Pair(Spend(mock.channel_input.output_reference), wrong)],
   )
+}
+
+// Amount buckets are deliberately balanced; labels record the generated value,
+// rather than an unconditional claim about which scenario was exercised.
+fn funds_amount() -> Fuzzer<Int> {
+  fuzz.either(
+    fuzz.int_between(1, 100),
+    fuzz.int_between(1_000_000, 1_000_000_000_000),
+  )
+}
+
+fn label_funds_amount(amount: Int) {
+  if amount <= 100 {
+    fuzz.label(@"fuzz.contract.funds.amount.small")
+  } else {
+    fuzz.label(@"fuzz.contract.funds.amount.large")
+  }
+}
+
+test prop_funds_native_send_amount(amount via funds_amount()) {
+  label_funds_amount(amount)
+  native_send_escrow_fixture_amount(
+    amount,
+    amount,
+    fuzz_dsl.no_mutation(),
+    ExactSendCallback,
+  )
+    |> fuzz_dsl.assert_protocol_checks_accept
+}
+
+test prop_funds_native_send_short(amount via funds_amount()) fail {
+  label_funds_amount(amount)
+  native_send_escrow_fixture_amount(
+    amount,
+    amount - 1,
+    fuzz_dsl.mutation("short"),
+    ExactSendCallback,
+  )
+    |> fuzz_dsl.assert_protocol_checks_accept
+}
+
+test prop_funds_native_send_excess(amount via funds_amount()) fail {
+  label_funds_amount(amount)
+  native_send_escrow_fixture_amount(
+    amount,
+    amount + 1,
+    fuzz_dsl.mutation("excess"),
+    ExactSendCallback,
+  )
+    |> fuzz_dsl.assert_protocol_checks_accept
+}
+
+test prop_funds_native_recv_amount(amount via funds_amount()) {
+  label_funds_amount(amount)
+  recv_source_unescrow_fixture_amount(amount, fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_checks_accept
+}
+
+fn refund_parameters() -> Fuzzer<(Int, Int)> {
+  fuzz.both(funds_amount(), fuzz.int_between(0, 1_000_000))
+}
+
+test prop_funds_asset_refund_amount(sample via refund_parameters()) {
+  let (amount, remaining) = sample
+  label_funds_amount(amount)
+  native_asset_timeout_fixture_amount(
+    amount,
+    amount + remaining,
+    amount,
+    remaining,
+    fuzz_dsl.no_mutation(),
+  )
+    |> fuzz_dsl.assert_protocol_checks_accept
+}
+
+test prop_funds_asset_refund_short(sample via refund_parameters()) fail {
+  let (amount, remaining) = sample
+  label_funds_amount(amount)
+  native_asset_timeout_fixture_amount(
+    amount,
+    amount + remaining,
+    amount - 1,
+    remaining,
+    fuzz_dsl.mutation("short"),
+  )
+    |> fuzz_dsl.assert_protocol_checks_accept
+}
+
+test prop_funds_asset_refund_excess(sample via refund_parameters()) fail {
+  let (amount, remaining) = sample
+  label_funds_amount(amount)
+  native_asset_timeout_fixture_amount(
+    amount,
+    amount + remaining,
+    amount + 1,
+    remaining,
+    fuzz_dsl.mutation("excess"),
+  )
+    |> fuzz_dsl.assert_protocol_checks_accept
+}
+
+test prop_funds_voucher_callbacks_amount(amount via funds_amount()) {
+  label_funds_amount(amount)
+  and {
+    voucher_send_burn_fixture_amount(amount, fuzz_dsl.no_mutation())
+      |> fuzz_dsl.assert_protocol_checks_accept,
+    voucher_recv_sink_fixture_amount(amount, fuzz_dsl.no_mutation())
+      |> fuzz_dsl.assert_protocol_checks_accept,
+    voucher_error_ack_refund_fixture_amount(amount, fuzz_dsl.no_mutation())
+      |> fuzz_dsl.assert_protocol_checks_accept,
+  }
 }

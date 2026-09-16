@@ -1,175 +1,94 @@
 #!/usr/bin/env node
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const [, , reportPathArg, configPathArg] = process.argv;
-
-if (!reportPathArg) {
-  console.error(
-    "Usage: node scripts/ci/check-aiken-fuzz-coverage.mjs <aiken-check-json> [config-json]",
-  );
-  process.exit(2);
-}
-
-function findRepoRoot(start) {
-  let current = start;
-  while (true) {
-    if (fs.existsSync(path.join(current, ".git"))) {
-      return current;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return start;
-    }
-    current = parent;
+const identity = (module, test) => `${module.name}.${test.title}`;
+export function checkCoverage(report, smoke, config) {
+  const failures = [];
+  const rows = [];
+  const tests = new Map();
+  const minIterations = config.minIterations;
+  const minCount = config.minCount;
+  for (const [name, value] of Object.entries({ minIterations, minCount })) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new Error(`Invalid ${name}`);
   }
-}
-
-const repoRoot = findRepoRoot(process.cwd());
-const reportPath = path.resolve(process.cwd(), reportPathArg);
-const configPath = path.resolve(
-  repoRoot,
-  configPathArg ?? "scripts/ci/aiken-fuzz-required-labels.json",
-);
-
-const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
-const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-
-const minCount = Number(process.env.AIKEN_FUZZ_MIN_LABEL_COUNT ?? config.minCount ?? 1);
-const minPercentBps = Number(
-  process.env.AIKEN_FUZZ_MIN_LABEL_PERCENT_BPS ?? config.minPercentBps ?? 0,
-);
-const requiredLabels = config.requiredLabels ?? [];
-const allowedKindPrefixes = config.allowedKindPrefixes ?? ["regression", "fuzz"];
-// Direct Aiken handler calls are contract coverage. Compiled transaction
-// execution is checked separately by the offchain transaction properties.
-const allowedDepthPrefixes = config.allowedDepthPrefixes ?? ["unit", "contract", "model"];
-
-// The checker is intentionally configurable from CI env vars so local smoke
-// checks can use max-success=1 while CI keeps the production thresholds.
-if (!Number.isSafeInteger(minCount) || minCount < 1) {
-  throw new Error(`Invalid minCount: ${minCount}`);
-}
-if (!Number.isSafeInteger(minPercentBps) || minPercentBps < 0 || minPercentBps > 10_000) {
-  throw new Error(`Invalid minPercentBps: ${minPercentBps}`);
-}
-if (
-  !Array.isArray(allowedKindPrefixes) ||
-  allowedKindPrefixes.length === 0 ||
-  !allowedKindPrefixes.every((prefix) => typeof prefix === "string" && prefix.length > 0)
-) {
-  throw new Error("allowedKindPrefixes must be a non-empty array of strings.");
-}
-if (
-  !Array.isArray(allowedDepthPrefixes) ||
-  allowedDepthPrefixes.length === 0 ||
-  !allowedDepthPrefixes.every((prefix) => typeof prefix === "string" && prefix.length > 0)
-) {
-  throw new Error("allowedDepthPrefixes must be a non-empty array of strings.");
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-const labelPrefixPattern = new RegExp(
-  `^(${allowedKindPrefixes.map(escapeRegExp).join("|")})\\.(${allowedDepthPrefixes.map(escapeRegExp).join("|")})\\.`,
-);
-
-const propertyTests = [];
-const labelCounts = new Map();
-let totalLabels = 0;
-
-// Aiken only adds `iterations` to property tests. Unit tests may still appear
-// in the JSON report, but they are not part of fuzz label coverage.
-for (const module of report.modules ?? []) {
-  for (const test of module.tests ?? []) {
-    if (typeof test.iterations !== "number") {
+  const prefix = /^(fuzz|regression)\.(unit|contract|model)\./;
+  for (const module of report.modules ?? []) {
+    for (const test of module.tests ?? []) {
+      if (test.iterations === undefined) continue;
+      const name = identity(module, test);
+      if (tests.has(name)) failures.push(`Duplicate deep property: ${name}`);
+      tests.set(name, test);
+      if (test.status !== 'pass') failures.push(`Failed property: ${name}`);
+      if (!Number.isSafeInteger(test.iterations) || test.iterations < minIterations) {
+        failures.push(`${name}: needs at least ${minIterations} iterations`);
+      }
+      if (!Object.keys(test.labels ?? {}).length) failures.push(`${name}: missing labels`);
+      for (const [label, count] of Object.entries(test.labels ?? {})) {
+        if (!prefix.test(label)) failures.push(`${name}: invalid label ${label}`);
+        if (!Number.isSafeInteger(count) || count < 0 || count > test.iterations) {
+          failures.push(`${name}: invalid count for ${label}`);
+        }
+        rows.push({ property: name, label, count, iterations: test.iterations });
+      }
+    }
+  }
+  if (!tests.size) failures.push('No deep properties found');
+  const expected = new Set();
+  for (const module of smoke.modules ?? []) {
+    for (const test of module.tests ?? []) {
+      if (test.status !== 'pass') failures.push(`Failed smoke test: ${identity(module, test)}`);
+      if (test.iterations === undefined) continue;
+      const name = identity(module, test);
+      expected.add(name);
+      if (!tests.has(name)) failures.push(`Property missing from deep reports: ${name}`);
+    }
+  }
+  if (!expected.size) failures.push('Smoke report contains no properties');
+  for (const name of tests.keys()) {
+    if (!expected.has(name)) failures.push(`Deep property absent from smoke report: ${name}`);
+  }
+  // Required labels attest that named scenarios ran, not semantic diversity.
+  for (const label of config.requiredLabels ?? []) {
+    const producers = rows.filter((row) => row.label === label);
+    if (!producers.length) failures.push(`Required label not observed: ${label}`);
+    for (const row of producers) {
+      if (row.count < minCount) failures.push(`${row.property}: ${label} below ${minCount}`);
+    }
+  }
+  // Distribution rules are local to one generator/property. Unrelated tests
+  // cannot dilute a bucket, and multiple producers cannot mask starvation.
+  for (const [title, buckets] of Object.entries(config.distributions ?? {})) {
+    const producers = [...tests].filter(([, test]) => test.title === title);
+    if (producers.length !== 1) {
+      failures.push(`Distribution requires exactly one property: ${title}`);
       continue;
     }
-
-    const testName = `${module.name}.${test.title}`;
-    const labels = test.labels ?? {};
-    propertyTests.push({ testName, labels });
-
-    for (const [label, count] of Object.entries(labels)) {
-      const numericCount = Number(count);
-      labelCounts.set(label, (labelCounts.get(label) ?? 0) + numericCount);
-      totalLabels += numericCount;
+    const [name, test] = producers[0];
+    for (const [label, minPercentBps] of Object.entries(buckets)) {
+      if (!Number.isSafeInteger(minPercentBps) || minPercentBps < 1 || minPercentBps > 10000) {
+        throw new Error(`Invalid distribution threshold: ${title}/${label}`);
+      }
+      const count = test.labels?.[label] ?? 0;
+      if (count < minCount || count * 10000 < minPercentBps * test.iterations) {
+        failures.push(`${name}: generator bucket ${label} is underrepresented`);
+      }
     }
   }
+  return { failures, rows };
 }
 
-const failures = [];
-
-if (propertyTests.length === 0) {
-  failures.push("No Aiken property tests were found.");
-}
-
-for (const label of requiredLabels) {
-  if (!labelPrefixPattern.test(label)) {
-    failures.push(
-      `Required Aiken label '${label}' must use kind.depth form where kind is one of ${allowedKindPrefixes.join(", ")} and depth is one of ${allowedDepthPrefixes.join(", ")}.`,
-    );
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const [, , reportPath, smokePath, configPath = 'scripts/ci/aiken-fuzz-required-labels.json'] = process.argv;
+  if (!reportPath || !smokePath) throw new Error('Usage: check-aiken-fuzz-coverage.mjs <deep.json> <smoke.json> [config.json]');
+  const read = (path) => JSON.parse(readFileSync(path, 'utf8'));
+  const { failures, rows } = checkCoverage(read(reportPath), read(smokePath), read(configPath));
+  console.table(rows);
+  if (failures.length) {
+    console.error(failures.join('\n'));
+    process.exitCode = 1;
+  } else {
+    console.log('All properties received deep execution; local label requirements passed.');
   }
 }
-
-for (const { testName, labels } of propertyTests) {
-  // A property test without a label can pass forever while exercising only a
-  // boring generator path; treat that as a coverage failure.
-  if (Object.keys(labels).length === 0) {
-    failures.push(`${testName} is a property test without fuzz labels.`);
-  }
-}
-
-for (const label of labelCounts.keys()) {
-  if (!labelPrefixPattern.test(label)) {
-    failures.push(
-      `Observed Aiken label '${label}' must use kind.depth form where kind is one of ${allowedKindPrefixes.join(", ")} and depth is one of ${allowedDepthPrefixes.join(", ")}.`,
-    );
-  }
-}
-
-for (const label of requiredLabels) {
-  const count = labelCounts.get(label) ?? 0;
-  const percentBps = totalLabels === 0 ? 0 : Math.floor((count * 10_000) / totalLabels);
-
-  // Count proves the branch appeared at all; percentage catches labels that are
-  // technically present but starved by an imbalanced generator.
-  if (count === 0) {
-    failures.push(`Required Aiken label '${label}' was not observed.`);
-  } else if (count < minCount) {
-    failures.push(`Aiken label '${label}' count ${count} is below minimum ${minCount}.`);
-  }
-
-  if (percentBps < minPercentBps) {
-    failures.push(
-      `Aiken label '${label}' share ${(percentBps / 100).toFixed(2)}% is below minimum ${(minPercentBps / 100).toFixed(2)}%.`,
-    );
-  }
-}
-
-const rows = [...labelCounts.entries()]
-  .sort(([left], [right]) => left.localeCompare(right))
-  .map(([label, count]) => {
-    const percentBps = totalLabels === 0 ? 0 : Math.floor((count * 10_000) / totalLabels);
-    return { label, count, percent: `${(percentBps / 100).toFixed(2)}%` };
-  });
-
-console.log("Aiken property label coverage");
-console.log(`property tests: ${propertyTests.length}`);
-console.log(`total labels: ${totalLabels}`);
-console.table(rows);
-
-if (failures.length > 0) {
-  console.error("\nAiken property label coverage check failed:");
-  for (const failure of failures) {
-    console.error(`- ${failure}`);
-  }
-  process.exit(1);
-}
-
-console.log(
-  `Aiken property label coverage check passed with minCount=${minCount}, minPercent=${(minPercentBps / 100).toFixed(2)}%.`,
-);

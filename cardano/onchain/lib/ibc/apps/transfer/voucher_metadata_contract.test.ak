@@ -1,6 +1,5 @@
 use aiken/builtin
 use aiken/crypto
-use aiken/fuzz
 use aiken/primitive/bytearray
 use aiken/primitive/string
 use cardano/assets.{AssetName, PolicyId, Value, add, from_asset}
@@ -124,10 +123,9 @@ fn existing_mapping_mint_is_valid(mint: Value) -> Bool {
   assets.match_assets(mint, expected)
 }
 
-test prop_voucher_first_mint_accepts_valid_metadata(_seed via fuzz.int()) {
+test regression_voucher_first_mint_accepts_valid_metadata() {
   // These are pure metadata-shape checks. The minting policy tests carry the
   // contract.* labels for validator-level voucher metadata coverage.
-  fuzz.label(@"regression.unit.voucher.first_mint.valid_metadata")
 
   fuzz_dsl.valid_check(
     "voucher",
@@ -142,9 +140,7 @@ test prop_voucher_first_mint_accepts_valid_metadata(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_voucher_first_mint_rejects_wrong_name(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.voucher.first_mint.invalid_wrong_name")
-
+test regression_voucher_first_mint_rejects_wrong_name() {
   fuzz_dsl.mutated_check(
     "voucher",
     "first_mint",
@@ -166,9 +162,7 @@ test prop_voucher_first_mint_rejects_wrong_name(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_voucher_first_mint_rejects_wrong_ticker(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.voucher.first_mint.invalid_wrong_ticker")
-
+test regression_voucher_first_mint_rejects_wrong_ticker() {
   fuzz_dsl.mutated_check(
     "voucher",
     "first_mint",
@@ -190,9 +184,7 @@ test prop_voucher_first_mint_rejects_wrong_ticker(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_voucher_first_mint_rejects_wrong_description(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.voucher.first_mint.invalid_wrong_description")
-
+test regression_voucher_first_mint_rejects_wrong_description() {
   fuzz_dsl.mutated_check(
     "voucher",
     "first_mint",
@@ -214,9 +206,7 @@ test prop_voucher_first_mint_rejects_wrong_description(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_voucher_first_mint_rejects_wrong_full_denom(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.voucher.first_mint.invalid_wrong_full_denom")
-
+test regression_voucher_first_mint_rejects_wrong_full_denom() {
   fuzz_dsl.mutated_check(
     "voucher",
     "first_mint",
@@ -238,9 +228,7 @@ test prop_voucher_first_mint_rejects_wrong_full_denom(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_voucher_first_mint_rejects_wrong_policy(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.voucher.first_mint.invalid_wrong_policy")
-
+test regression_voucher_first_mint_rejects_wrong_policy() {
   fuzz_dsl.mutated_check(
     "voucher",
     "first_mint",
@@ -262,11 +250,7 @@ test prop_voucher_first_mint_rejects_wrong_policy(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_voucher_first_mint_rejects_wrong_reference_asset(_seed via fuzz.int()) {
-  fuzz.label(
-    @"regression.unit.voucher.first_mint.invalid_wrong_reference_asset",
-  )
-
+test regression_voucher_first_mint_rejects_wrong_reference_asset() {
   fuzz_dsl.mutated_check(
     "voucher",
     "first_mint",
@@ -281,9 +265,7 @@ test prop_voucher_first_mint_rejects_wrong_reference_asset(_seed via fuzz.int())
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_voucher_existing_mint_rejects_reference_nft(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.voucher.existing_mint.rejects_reference_nft")
-
+test regression_voucher_existing_mint_rejects_reference_nft() {
   let mint =
     from_asset(voucher_policy_id, user_token_name(), transfer_amount)
       |> add(voucher_policy_id, reference_token_name(), 1)

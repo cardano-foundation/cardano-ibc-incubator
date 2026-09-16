@@ -162,9 +162,7 @@ test prop_client_misbehaviour_rejects_same_header(seed via fuzz.int()) {
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_client_misbehaviour_rejects_wrong_client_id(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.client.misbehaviour.invalid_wrong_client_id")
-
+test regression_client_misbehaviour_rejects_wrong_client_id() {
   // This remains unit.* depth on purpose: the production misbehaviour path is
   // already size-sensitive, so the canonical client-id predicate is covered
   // directly instead of being duplicated inside the largest validator.

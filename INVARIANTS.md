@@ -2,8 +2,9 @@
 
 This document records the protocol invariants currently exercised by the
 Aiken labeled property/regression suite, with fuzzed cases in key areas. It is
-intentionally limited to invariants that are covered by existing property tests
-and their CI-enforced labels.
+a catalog of existing regression and generated checks. CI enforces the generated
+property inventory and selected distributions; the catalog is not a completeness
+or production-safety claim.
 
 ## Index
 
@@ -64,31 +65,28 @@ and their CI-enforced labels.
 
 ## Label Kinds And Depths
 
-CI-enforced labels use `kind.depth.domain...`:
+Fixed regression fixtures run as ordinary unit tests in the smoke suite. They do
+not consume deep fuzz iterations or contribute labels to the fuzz coverage gate.
+The historical scenario suffixes below remain a description of those regressions;
+they are not all mandatory fuzz labels.
 
-- `regression.*` labels cover deterministic property-style regression checks.
-  These tests may run under Aiken's property-test harness for label accounting,
-  but the generated value is intentionally not material to the fixture.
-- `fuzz.*` labels cover cases where a generated value materially changes the
-  fixture, state transition, proof, or mutation.
+Generated properties use `fuzz.unit.*`, `fuzz.contract.*`, or `fuzz.model.*` labels.
+Some existing generated properties retain `regression.*` labels; a label's name is
+not evidence of diversity. CI discovers every property from source, rejects
+unused/discarded generated parameters, and compares deep reports with the actual
+smoke inventory. Every property must receive the minimum deep execution budget.
 
-- `unit.*` labels cover pure module logic and small isolated helpers.
-- `contract.*` labels cover validator-facing or near-valid transition fixtures.
-- `tx.*` labels cover transaction-shaped fixtures that execute every validator
-  or minting policy currently represented in that fixture.
-- `model.*` labels cover multi-step state-machine sequences.
+Required scenario labels attest execution only. Distribution requirements in
+`scripts/ci/aiken-fuzz-required-labels.json` are measured against the iterations of
+one named property, never the total labels of unrelated tests. Amount and capacity
+buckets are labelled from actual generated values. These checks are not a proof
+of semantic coverage, and syntactically using a seed alone does not establish it.
 
-The full label shape is therefore examples like
-`regression.unit.transfer.native_ack.no_refund` or
-`fuzz.contract.trace.rollover.invalid_old_shard_not_preserved`. The coverage
-checker rejects labels that do not use this kind/depth convention. It also
-requires `tx` and `model` coverage through the required label catalog so the
-suite cannot regress back to only helper and single-contract coverage.
-
-The "Required CI label suffixes" below omit the leading `regression.` or
-`fuzz.` kind when the surrounding prose is about the invariant rather than the
-generator quality. The exact enforced labels live in
-`scripts/ci/aiken-fuzz-required-labels.json`.
+Aiken `ProtocolTxFixture` checks only explicitly invoked handlers. Compiled
+transaction coverage comes from the Deno channel and funds jobs, all required
+by the stable `Cardano Onchain Aiken` aggregate. The critical-guard mutation job is
+also required when Aiken fuzzing runs. See [fuzz assurance](cardano/docs/fuzz-assurance.md)
+for scope, replay commands, and remaining limits.
 
 ## Composable Fixtures
 
@@ -163,7 +161,7 @@ The fuzz suite currently covers:
 
 ## Client Update, Recovery, And Misbehaviour
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `unit.client.update.valid_adjacent`
 - `unit.client.update.valid_non_adjacent`
@@ -283,7 +281,7 @@ not updateable.
 
 ## Connection And Channel Handshakes
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `unit.conn.open_try.valid`
 - `unit.conn.open_try.invalid_missing_client_proof`
@@ -386,7 +384,7 @@ and transfer modules and require their original datum and full value to survive.
 
 ## Packet Lifecycle
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `unit.packet.send.valid`
 - `unit.packet.send.invalid_wrong_sequence`
@@ -646,7 +644,7 @@ then assert the final modeled state. They prove these invariants:
 
 ## Transfer Module Accounting
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `unit.transfer.native_send.escrow_increases_exactly`
 - `unit.transfer.native_timeout.refund_exactly`
@@ -784,7 +782,7 @@ invariants:
 
 ## Voucher Metadata
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `unit.voucher.first_mint.valid_metadata`
 - `unit.voucher.first_mint.invalid_wrong_name`
@@ -885,7 +883,7 @@ invariant:
 
 ## Verifying Proof
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `contract.proof.membership.valid`
 - `contract.proof.membership.invalid_wrong_path`
@@ -946,7 +944,7 @@ key from the proof. They prove these invariants:
 
 ## HostState Root Transitions
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `contract.host.bind_port.invalid_unauthorized`
 - `unit.host.bind_port.invalid_capacity`
@@ -1061,7 +1059,7 @@ The mutations prove these invariants:
 
 ## Trace Registry Append
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `contract.trace.append.valid`
 - `contract.trace.append.invalid_missing_voucher_mint`
@@ -1163,7 +1161,7 @@ These boundary fixtures prove these invariants:
 
 ## Trace Registry Rollover
 
-Required CI label suffixes:
+Historical scenario suffixes:
 
 - `contract.trace.rollover.valid`
 - `contract.trace.rollover.invalid_non_target_bucket_changed`
@@ -1270,43 +1268,33 @@ proves these invariants:
 
 ## Follow-Up Tasks
 
-These are the next useful improvements for the invariant suite:
-
-- Rename remaining deterministic `fuzz.*` labels to `regression.*`, or make the
-  generated seed materially change the fixture. This keeps the coverage report
-  honest about which properties are generated fuzz cases and which are labeled
-  regression checks.
-- Add `assert_rejected_by` and `assert_rejected_only_by` helpers to the fuzz
-  DSL. These should let mutation tests prove that a near-valid transaction
-  fails for the intended validator or predicate, not just because any check in
-  the composed fixture rejected it.
-- Expand `tx.*` coverage for packet and transfer flows. Prioritize full
-  transaction-shaped packet receive, acknowledgement, timeout, voucher mint,
-  voucher refund, and native escrow/refund flows, because these are the paths
-  that move user funds.
-- Make `ModelState` carry real protocol state instead of only protocol and
-  transition names. Start with a bounded packet lifecycle model containing:
-  channel state, packet commitments, packet receipts, packet acknowledgements,
-  escrow and voucher balances, and the HostState root.
-- Add cross-language golden fixtures for exact bytes shared by Aiken, Gateway,
-  Hermes, and Cosmos. These should cover CBOR, protobuf, commitment bytes,
-  proof paths, voucher asset names, and CIP-68 metadata so the implementations
-  cannot silently drift from each other.
+- Extend compiled funds histories to ordered channels, multiple channels, and
+  first-seen voucher registration with trace-registry rollover.
+- Exercise client creation, updates and misbehaviour together with packet
+  histories rather than supplying an authenticated counterparty reference state.
+- Add more independent guard mutants, including proof-path binding and
+  authorization checks. The current four mutants are a detection baseline,
+  not a mutation score for the protocol.
+- Add `assert_rejected_by` helpers to the Aiken fixture DSL to identify the
+  intended rejecting predicate in composed handler tests.
+- Add cross-language golden fixtures for shared CBOR, protobuf, commitments,
+  proof paths, voucher asset names and CIP-68 metadata.
 
 ## Current Coverage Boundary
 
-The current fuzzing suite does not yet provide property-level invariant
-coverage for:
+Aiken handler fixtures execute the handlers explicitly called by each test.
+Fixed packet model sequences remain regression tests. Labels describe scenarios;
+they do not establish whole-transaction or state-space coverage.
 
-- client creation or update,
-- full end-to-end connection handshake validator contexts,
-- full end-to-end channel handshake validator contexts,
-- full end-to-end receive, acknowledgement, and timeout packet validator
-  contexts beyond the composed SendPacket atomicity fixture and first-seen
-  sink voucher mint tx fixture,
-- full end-to-end voucher metadata validator contexts beyond first-seen
-  voucher mint plus trace-registry coupling,
-- misbehaviour freezing.
+The Deno suite executes compiled validators for channel actions and bounded
+funds histories on a single unordered channel. It checks overlapping packets,
+varied settlement order, replay rejection, escrow and voucher accounting, and
+preservation of unrelated state after submitted transactions. Voucher histories
+start with registered metadata. Counterparty consensus references are supplied
+by the harness rather than advanced through client update transactions.
 
-Those areas may have unit or integration tests elsewhere, but they are not
-currently represented in the CI-enforced Aiken fuzz label catalog.
+Randomized first-seen voucher registration, cross-channel histories, ordered
+funds histories and end-to-end client/connection lifecycles remain outside this
+model. Neither passing iterations nor the four targeted mutants establish
+sufficient assurance for production custody. See the precise scope and replay
+instructions in [fuzz assurance](cardano/docs/fuzz-assurance.md).

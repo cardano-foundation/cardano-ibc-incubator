@@ -2267,19 +2267,25 @@ test host_state_handle_packet_recv_succeeds_at_history_capacity() {
 }
 
 test prop_host_handle_packet_rejects_history_capacity_overflow(
-  seed via fuzz.int(),
+  seed via capacity_receipt_count(),
 ) fail {
   fuzz.label(@"fuzz.contract.host.handle_packet.invalid_history_capacity")
 
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+  let receipt_count = seed
+  let acknowledgement_count = max_packet_entries_per_channel - receipt_count
+  if receipt_count < max_packet_entries_per_channel / 2 {
+    fuzz.label(@"fuzz.contract.host.capacity.ack_dominant")
+  } else {
+    fuzz.label(@"fuzz.contract.host.capacity.receipt_dominant")
+  }
+  let sequence = max_packet_entries_per_channel + 1
   let packet = test_packet(sequence)
   let acknowledgement = "new acknowledgement"
   let siblings = full_empty_siblings()
   let old_root = empty_ibc_state_root
-  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_receipts = packet_entries(1, receipt_count, "")
   let existing_acknowledgements =
-    packet_entries(1, half_capacity, "existing acknowledgement")
+    packet_entries(1, acknowledgement_count, "existing acknowledgement")
   let input_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
@@ -2444,19 +2450,25 @@ test host_state_handle_packet_acknowledgement_succeeds_at_history_capacity() {
 }
 
 test prop_host_handle_packet_rejects_acknowledgement_capacity_overflow(
-  seed via fuzz.int(),
+  seed via capacity_receipt_count(),
 ) fail {
   fuzz.label(@"fuzz.contract.host.handle_packet.invalid_ack_capacity")
 
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+  let receipt_count = seed
+  let acknowledgement_count = max_packet_entries_per_channel - receipt_count
+  if receipt_count < max_packet_entries_per_channel / 2 {
+    fuzz.label(@"fuzz.contract.host.capacity.ack_dominant")
+  } else {
+    fuzz.label(@"fuzz.contract.host.capacity.receipt_dominant")
+  }
+  let sequence = max_packet_entries_per_channel + 1
   let packet = test_packet(sequence)
   let acknowledgement = "new acknowledgement"
   let siblings = full_empty_siblings()
   let old_root = empty_ibc_state_root
-  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_receipts = packet_entries(1, receipt_count, "")
   let existing_acknowledgements =
-    packet_entries(1, half_capacity - 1, "existing acknowledgement")
+    packet_entries(1, acknowledgement_count - 1, "existing acknowledgement")
   let input_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
@@ -2612,12 +2624,18 @@ test host_state_handle_packet_send_succeeds_at_commitment_capacity() {
 }
 
 test prop_host_handle_packet_rejects_commitment_capacity_overflow(
-  seed via fuzz.int(),
+  seed via capacity_receipt_count(),
 ) fail {
   fuzz.label(@"fuzz.contract.host.handle_packet.invalid_commitment_capacity")
 
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+  let receipt_count = seed
+  let acknowledgement_count = max_packet_entries_per_channel - receipt_count
+  if receipt_count < max_packet_entries_per_channel / 2 {
+    fuzz.label(@"fuzz.contract.host.capacity.ack_dominant")
+  } else {
+    fuzz.label(@"fuzz.contract.host.capacity.receipt_dominant")
+  }
+  let sequence = max_packet_entries_per_channel + 1
   let packet = test_packet(sequence)
   let commitment = packet_mod.commit_packet(packet)
   let siblings = full_empty_siblings()
@@ -2631,9 +2649,9 @@ test prop_host_handle_packet_rejects_commitment_capacity_overflow(
       cbor.serialise(sequence),
       siblings,
     )
-  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_receipts = packet_entries(1, receipt_count, "")
   let existing_acknowledgements =
-    packet_entries(1, half_capacity, "existing acknowledgement")
+    packet_entries(1, acknowledgement_count, "existing acknowledgement")
   let input_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
@@ -5050,4 +5068,8 @@ test state_value_host_state_accepts_full_reserves_and_ada_top_up() {
     reserve,
     assets.merge(reserve, assets.from_lovelace(2_000_000)),
   )
+}
+
+fn capacity_receipt_count() -> Fuzzer<Int> {
+  fuzz.int_between(1, max_packet_entries_per_channel - 1)
 }

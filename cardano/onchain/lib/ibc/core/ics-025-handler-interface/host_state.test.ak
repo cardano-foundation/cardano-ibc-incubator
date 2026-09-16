@@ -97,6 +97,7 @@ fn rejects_protected_field_changes(
 }
 
 test sequence_transitions_preserve_protected_fields(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.host.state.protected_fields")
   let old = fixture(seed)
   // Root and time can change independently of these field checks. The spending
   // validator separately verifies the root against the operation's witnesses.
@@ -149,6 +150,7 @@ test sequence_transitions_preserve_protected_fields(seed via fuzz.int()) {
 }
 
 test shutdown_permits_root_updates_but_no_creation(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.host.state.shutdown")
   let old = fixture(seed)
   let old =
     HostStateDatum {
