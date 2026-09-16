@@ -10,6 +10,7 @@ import {
 import {
   assertTransactionAccepted,
   assertTransactionRejected,
+  completeTransaction,
 } from "./transaction-fuzz.ts";
 import {
   assertFundsState,
@@ -91,7 +92,7 @@ async function checkCase(sample: FundsCase) {
     const amount = sample.amounts[cursor++ % sample.amounts.length];
     enterStage(`send ${amount}`);
     const valid = await nextSend(f, amount);
-    const completed = await valid.tx.complete({ localUPLCEval: true });
+    const completed = await completeTransaction(valid.tx);
     for (const mutation of ["short", "excess", "wrong_callback"] as const) {
       await assertTransactionRejected(await nextSend(f, amount, mutation));
     }
@@ -108,7 +109,7 @@ async function checkCase(sample: FundsCase) {
     const packet = pending[chosen];
     enterStage(`${kind} packet ${packet.packet.fields[0]}`);
     const valid = await settle(f, packet, kind);
-    const completed = await valid.tx.complete({ localUPLCEval: true });
+    const completed = await completeTransaction(valid.tx);
     for (const mutation of ["wrong_callback", "wrong_proof"] as const) {
       await assertTransactionRejected(await settle(f, packet, kind, mutation));
     }
@@ -155,7 +156,7 @@ async function checkCase(sample: FundsCase) {
   const receive = async (amount: bigint, sequence: bigint, replay: boolean) => {
     enterStage(`receive ${amount} sequence ${sequence}`);
     const valid = await receiveNative(f, amount, sequence);
-    const completed = await valid.tx.complete({ localUPLCEval: true });
+    const completed = await completeTransaction(valid.tx);
     for (
       const mutation of [
         "wrong_callback",
@@ -236,7 +237,7 @@ async function checkVoucherCase(sample: FundsCase) {
   const total = sample.amounts.reduce((a, b) => a + b, 0n) * 3n;
   enterStage("voucher receive mint");
   const receive = await receiveNative(f, total, 1n, "none", voucher);
-  const received = await receive.tx.complete({ localUPLCEval: true });
+  const received = await completeTransaction(receive.tx);
   for (
     const mutation of [
       "short",
@@ -273,7 +274,7 @@ async function checkVoucherCase(sample: FundsCase) {
       lovelace: 2_000_000n,
       [voucher.unit]: amount,
     });
-    const completed = await tx.complete({ localUPLCEval: true });
+    const completed = await completeTransaction(tx);
     await (await completed.sign.withWallet().complete()).submit();
     f.emulator.awaitBlock();
     distributed.set(address, (distributed.get(address) ?? 0n) + amount);
@@ -284,7 +285,7 @@ async function checkVoucherCase(sample: FundsCase) {
     const amount = sample.amounts[sentCount++];
     enterStage(`voucher burn ${amount}`);
     const send = await nextSend(f, amount, "none", voucher);
-    const sent = await send.tx.complete({ localUPLCEval: true });
+    const sent = await completeTransaction(send.tx);
     for (const mutation of ["short", "excess", "wrong_callback"] as const) {
       await assertTransactionRejected(
         await nextSend(f, amount, mutation, voucher),
@@ -309,7 +310,7 @@ async function checkVoucherCase(sample: FundsCase) {
       : requested;
     enterStage(`voucher ${kind}`);
     const settled = await settle(f, packet, kind, "none", voucher);
-    const completed = await settled.tx.complete({ localUPLCEval: true });
+    const completed = await completeTransaction(settled.tx);
     for (const mutation of ["wrong_callback", "wrong_proof"] as const) {
       await assertTransactionRejected(
         await settle(f, packet, kind, mutation, voucher),

@@ -688,6 +688,8 @@ jobs:
         working-directory: cardano/onchain
     strategy:
       fail-fast: false
+      # Avoid a burst of dependency resolution requests from every property.
+      max-parallel: 8
       matrix: ${{ fromJson(needs.aiken-changes.outputs.property_matrix) }}
 
     steps:

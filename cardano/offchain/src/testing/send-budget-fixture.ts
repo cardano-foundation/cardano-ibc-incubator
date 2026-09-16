@@ -8,6 +8,7 @@ import {
   toHex,
   type UTxO,
 } from "@lucid-evolution/lucid";
+import { isolateEvaluation } from "./isolated-evaluation.ts";
 import { blake2b } from "@noble/hashes/blake2b";
 import { HostStateDatum, HostStateRedeemer } from "../../types/index.ts";
 import { DeploymentIbcTree } from "../deployment.ts";
@@ -76,6 +77,7 @@ export async function sendPacketFixture(
     channelToken,
     packetContext: context,
   } = fixture;
+  isolateEvaluation(lucid, emulator);
   // Histories reuse immutable reference scripts. Creating wallet-owned copies
   // for every mutation otherwise grows coin-selection input and WASM memory
   // throughout a case, and lets fee selection spend future script references.

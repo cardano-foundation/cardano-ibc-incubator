@@ -1,3 +1,5 @@
+import { completeTransaction } from "./isolated-evaluation.ts";
+export { completeTransaction } from "./isolated-evaluation.ts";
 import { assert, assertRejects } from "@std/assert";
 import type { TxBuilder } from "@lucid-evolution/lucid";
 import type { Emulator } from "@lucid-evolution/provider";
@@ -36,9 +38,9 @@ export async function runTransactionCase(
 export async function assertTransactionAccepted(
   { tx, emulator }: TransactionFixture,
 ): Promise<string> {
-  // Emulator.evaluateTx only echoes budgets. This must evaluate the compiled
-  // scripts locally before the emulator can accept the transaction.
-  const completed = await tx.complete({ localUPLCEval: true });
+  // Require real compiled evaluation, either locally or in the isolated worker,
+  // before allowing the emulator to accept the transaction.
+  const completed = await completeTransaction(tx);
   assert(completed.toTransaction().witness_set().redeemers());
   const signed = await completed.sign.withWallet().complete();
   const txHash = await signed.submit();
@@ -52,7 +54,7 @@ export async function assertTransactionRejected(
   // A builder or fixture error must fail the property. Only rejection by an
   // executed script demonstrates that a protocol mutation was caught.
   await assertRejects(
-    () => tx.complete({ localUPLCEval: true }),
+    () => completeTransaction(tx),
     Error,
     "failed script execution",
   );
