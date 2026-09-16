@@ -1,6 +1,5 @@
 use aiken/collection/list
 use aiken/collection/pairs
-use aiken/fuzz
 use aiken/interval
 use cardano/address.{Credential, Script, from_script}
 use cardano/assets.{PolicyId, from_asset}
@@ -1619,9 +1618,7 @@ test update_client_verify_non_adjacent_succeed() {
   )
 }
 
-test prop_client_update_rejects_wrong_host_redeemer(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.client.update.invalid_wrong_host_redeemer")
-
+test regression_client_update_rejects_wrong_host_redeemer() fail {
   let mock = setup()
   let transaction =
     Transaction {
@@ -1645,9 +1642,7 @@ test prop_client_update_rejects_wrong_host_redeemer(_seed via fuzz.int()) fail {
   )
 }
 
-test prop_client_update_rejects_missing_host_state(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.client.update.invalid_missing_host_state")
-
+test regression_client_update_rejects_missing_host_state() fail {
   let mock = setup()
   let transaction =
     Transaction {

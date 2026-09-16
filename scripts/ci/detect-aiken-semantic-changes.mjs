@@ -8,6 +8,10 @@ import { pathToFileURL } from 'node:url';
 const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
 
 const aikenFuzzInfrastructurePaths = new Set([
+  'scripts/ci/check-aiken-mutations.mjs',
+  'scripts/ci/aiken-property-inventory.mjs',
+  'scripts/ci/aiken-property-inventory.test.mjs',
+  'scripts/ci/check-aiken-fuzz-coverage.test.mjs',
   'scripts/ci/aiken-fuzz-required-labels.json',
   'scripts/ci/check-aiken-fuzz-coverage.mjs',
   'scripts/ci/check-aiken-fuzz-imports.sh',

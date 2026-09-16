@@ -1,7 +1,6 @@
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
-use aiken/fuzz
 use aiken/interval
 use aiken/primitive/bytearray
 use cardano/address
@@ -1424,9 +1423,7 @@ test recover_client_accepts_frozen_subject() {
   )
 }
 
-test prop_client_recovery_accepts_expired_subject(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.client.recovery.valid_expired")
-
+test regression_client_recovery_accepts_expired_subject() {
   let subject = expired_subject()
   let substitute = active_substitute()
   run_recovery(
@@ -1438,9 +1435,7 @@ test prop_client_recovery_accepts_expired_subject(_seed via fuzz.int()) {
   )
 }
 
-test prop_client_recovery_accepts_frozen_subject(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.client.recovery.valid_frozen")
-
+test regression_client_recovery_accepts_frozen_subject() {
   let subject = frozen_subject()
   let substitute = active_substitute()
   run_recovery(
@@ -1464,9 +1459,7 @@ test recover_client_rejects_missing_authority() fail {
   )
 }
 
-test prop_client_recovery_rejects_missing_authority(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.client.recovery.invalid_missing_authority")
-
+test regression_client_recovery_rejects_missing_authority() fail {
   let subject = expired_subject()
   let substitute = active_substitute()
   run_recovery(

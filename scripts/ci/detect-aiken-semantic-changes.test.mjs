@@ -81,8 +81,8 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
   const run = (fuzz, overrides = {}, changed = 'true') => {
     const needs = Object.fromEntries([
       'aiken-changes', 'aiken-static', 'generated-artifacts', 'tx-budgets',
-      'aiken-smoke', 'aiken-fuzz',
-    ].map((name) => [name, { result: !fuzz && ['aiken-smoke', 'aiken-fuzz'].includes(name) ? 'skipped' : 'success' }]));
+      'aiken-smoke', 'aiken-fuzz', 'aiken-mutations', 'deno-offchain', 'deno-funds',
+    ].map((name) => [name, { result: !fuzz && ['aiken-smoke', 'aiken-fuzz', 'aiken-mutations'].includes(name) ? 'skipped' : 'success' }]));
     for (const [name, result] of Object.entries(overrides)) needs[name] = { result };
     return execFileSync(process.execPath, ['-e', script], {
       env: {
@@ -97,10 +97,15 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
     });
   };
   assert.doesNotThrow(() => run(false));
+  assert.throws(() => run(false, { 'deno-offchain': 'failure' }));
+  assert.throws(() => run(true, { 'deno-offchain': 'skipped' }));
+  assert.throws(() => run(false, { 'deno-funds': 'failure' }));
+  assert.throws(() => run(true, { 'deno-funds': 'skipped' }));
   assert.throws(() => run(false, { 'tx-budgets': 'failure' }));
   assert.throws(() => run(false, { 'tx-budgets': 'skipped' }));
   assert.doesNotThrow(() => run(true));
   assert.throws(() => run(true, { 'aiken-fuzz': 'skipped' }));
+  assert.throws(() => run(true, { 'aiken-mutations': 'failure' }));
   assert.throws(() => run(true, { 'aiken-smoke': 'failure' }));
   assert.throws(() => run(false, {}, 'invalid'));
   assert.doesNotThrow(() => run(false, { 'tx-budgets': 'skipped', 'aiken-static': 'skipped' }, 'false'));
