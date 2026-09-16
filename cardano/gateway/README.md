@@ -41,8 +41,9 @@ Published tags:
 - `v*`: release tag image when a matching Git tag is pushed
 
 Published images include tracked bridge manifests at `/usr/src/app/manifests`.
-For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json`
-to start the Gateway against the shared Cardano preprod bridge deployment.
+For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preview/cardano-preview-bridge-manifest.json`
+to start the Gateway against the shared Cardano Preview bridge deployment.
+Preview is the only bundled bridge deployment; Preprod requires an operator-supplied compatible manifest or a fresh deployment.
 Tagged GitHub releases also attach a `cardano-gateway-manifests-<tag>.tar.gz`
 archive containing the same tracked manifest files.
 
