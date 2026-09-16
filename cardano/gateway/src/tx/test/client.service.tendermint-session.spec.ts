@@ -155,6 +155,7 @@ const UPDATE_MESSAGE = {
 
 function createTxBuilder(hash: string, cbor = `cbor-${hash}`, derivedOutputs: any[] = []): any {
   const builder: any = {};
+  builder.collectFrom = jest.fn().mockReturnValue(builder);
   builder.validFrom = jest.fn().mockReturnValue(builder);
   builder.validTo = jest.fn().mockReturnValue(builder);
   const completed = {
@@ -242,6 +243,7 @@ function makeHarness() {
   let stagedOutputIndex = 0;
   const lucidService: any = {
     LucidImporter: Lucid,
+    lucid: { wallet: () => ({ getUtxos: async () => [utxo('signer-funding')] }) },
     beginWalletSelectionScope: jest.fn().mockReturnValue(1),
     assertWalletSelectionScopeSatisfied: jest.fn(),
     endWalletSelectionScope: jest.fn(),
@@ -711,6 +713,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
       Buffer.from('cbor-finalize-hash', 'utf8').toString('hex'),
     ]);
     expect(decodeChainEnvelope(response.unsigned_tx.value).rebuildAfterSubmission).toBe(false);
+    expect(finalBuilder.collectFrom).toHaveBeenCalledWith([utxo('signer-funding')]);
     expect(finalBuilder.validFrom).toHaveBeenCalledWith(TEST_VALID_FROM_TIME_MS);
     expect(finalBuilder.validTo).toHaveBeenCalledWith(TEST_FINAL_VALID_TO_TIME_MS);
     expect(computeValidityWindow).toHaveBeenCalledWith(29_000, TENDERMINT_FINALIZATION_TIME_TO_LIVE);

@@ -755,6 +755,7 @@ export class ClientService {
         );
         await chain.complete({
           operationName: 'finalizeTendermintMisbehaviour', unsignedTx, pendingTreeUpdate,
+          requireWalletInput: true,
           validity: { apply: (builder: TxBuilder) => builder.validFrom(finalValidity.validFromTime).validTo(validTo) },
           completeOptions: { localUPLCEval: false, setCollateral: TRANSACTION_SET_COLLATERAL },
           syntheticEvents: [this.buildUpdateClientSyntheticEvent(
@@ -1006,6 +1007,8 @@ export class ClientService {
             linkCount += 1;
             return chain.complete({
               operationName,
+              // Initialization already collects its signer-owned NFT seed.
+              requireWalletInput: operationName !== 'initializeTendermintUpdateSession',
               unsignedTx: buildUnsignedTx(),
               validity,
               completeOptions: {
@@ -1165,6 +1168,7 @@ export class ClientService {
           : await this.buildUnsignedUpdateClientTx(finalOperator, finalization);
         await chain.complete({
           operationName: 'finalizeTendermintUpdateSession',
+          requireWalletInput: true,
           unsignedTx,
           validity,
           completeOptions: {
@@ -1223,6 +1227,7 @@ export class ClientService {
         for (const session of this.orderStagedTendermintSessions(sessions).reverse()) {
           await chain.complete({
             operationName: 'cancelStaleTendermintUpdateSession',
+            requireWalletInput: true,
             unsignedTx: this.buildUnsignedCancelTendermintSession(session.utxo),
             validity,
             completeOptions: {

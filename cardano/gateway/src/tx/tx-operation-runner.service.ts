@@ -64,6 +64,8 @@ export type TxOperationRunnerResult<TExtraResponseFields = Record<string, never>
 
 type TxChainLinkPlan = {
   operationName: string;
+  /** Hermes requires an ordinary signer input even when script inputs fund the transaction. */
+  requireWalletInput?: boolean;
   unsignedTx: TxBuilder;
   validity: TxValidityPolicy;
   completeOptions?: TxCompleteOptions;
@@ -150,6 +152,16 @@ export class TxOperationRunnerService {
           complete: async (link) => {
             if (walletInputs && plan.wallet.mode === 'refresh_from_address') {
               this.lucidService.selectWalletFromAddress(plan.wallet.address, walletInputs);
+            }
+            if (link.requireWalletInput) {
+              const available = walletInputs ?? await this.lucidService.lucid.wallet().getUtxos();
+              // Prefer ADA-only inputs to avoid pulling unrelated wallet assets into a stage.
+              const funding = available.find((utxo) => Object.keys(utxo.assets).every((unit) => unit === 'lovelace'))
+                ?? available[0];
+              if (!funding) {
+                throw new Error(`${link.operationName} requires an ordinary signer wallet input`);
+              }
+              link.unsignedTx.collectFrom([funding]);
             }
             const txWithValidity = link.validity.apply(link.unsignedTx);
             const [updatedWalletInputs, derivedOutputs, completedUnsignedTx] = await txWithValidity.chain({

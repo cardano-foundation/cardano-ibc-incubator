@@ -430,6 +430,51 @@ describe('TxOperationRunnerService', () => {
     expect(txEventsService.register).toHaveBeenCalledWith('second-hash', finalEvents, 'final-root');
   });
 
+  it('collects signer funding for self-funded stages from the current dependency wallet', async () => {
+    const { service, lucidService } = makeService();
+    const tokenInput = { txHash: 'token', outputIndex: 0, assets: { lovelace: 20_000_000n, token: 1n } };
+    const funding = { txHash: 'funding', outputIndex: 0, assets: { lovelace: 20_000_000n } };
+    const change = { txHash: 'stage-one', outputIndex: 1, assets: { lovelace: 19_000_000n } };
+    const getUtxos = jest.fn().mockResolvedValue([tokenInput, funding]);
+    lucidService.lucid = { wallet: () => ({ getUtxos }) };
+    const first = {
+      collectFrom: jest.fn(),
+      chain: jest.fn().mockResolvedValue([[change], [], { toCBOR: () => '01', toHash: () => 'stage-one' }]),
+    } as any;
+    const second = {
+      collectFrom: jest.fn(),
+      chain: jest.fn().mockResolvedValue([[], [], { toCBOR: () => '02', toHash: () => 'stage-two' }]),
+    } as any;
+    await service.runChain({
+      operationName: 'selfFundedSessions',
+      wallet: { mode: 'refresh_from_address', address: 'signer', context: 'test' },
+      build: async ({ complete }) => {
+        for (const unsignedTx of [first, second]) {
+          await complete({ operationName: 'stage', requireWalletInput: true, unsignedTx,
+            validity: { apply: (builder) => builder } });
+        }
+      },
+    });
+    expect(first.collectFrom).toHaveBeenCalledWith([funding]);
+    expect(second.collectFrom).toHaveBeenCalledWith([change]);
+    expect(getUtxos).toHaveBeenCalledTimes(1);
+    expect(second.chain).toHaveBeenCalledWith(expect.objectContaining({ presetWalletInputs: [change] }));
+  });
+
+  it('refuses a self-funded stage when the signer has no ordinary input', async () => {
+    const { service, lucidService, ibcTreePendingUpdatesService } = makeService();
+    lucidService.lucid = { wallet: () => ({ getUtxos: async () => [] }) };
+    const builder = { collectFrom: jest.fn(), chain: jest.fn() } as any;
+    await expect(service.runChain({
+      operationName: 'selfFundedSession',
+      wallet: { mode: 'refresh_from_address', address: 'signer', context: 'test' },
+      build: async ({ complete }) => complete({ operationName: 'finalize', requireWalletInput: true,
+        unsignedTx: builder, validity: { apply: (tx) => tx } }),
+    })).rejects.toThrow('requires an ordinary signer wallet input');
+    expect(builder.chain).not.toHaveBeenCalled();
+    expect(ibcTreePendingUpdatesService.register).not.toHaveBeenCalled();
+  });
+
   it('does not register partial chain metadata when a later link fails', async () => {
     const { service, lucidService, ibcTreePendingUpdatesService } = makeService();
     const firstBuilder = {
