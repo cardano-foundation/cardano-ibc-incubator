@@ -40,25 +40,6 @@ fn ensure_public_testnet_relayer_route(
     })
 }
 
-fn require_public_bridge_artifact(
-    network: config::CoreCardanoNetwork,
-    artifact_path: &Path,
-    label: &str,
-) -> Result<(), String> {
-    if artifact_path.exists() {
-        return Ok(());
-    }
-
-    Err(format!(
-        "ERROR: Missing required {} {} at {}.\nProvide an existing {} bridge deployment artifact before starting against --network {}.",
-        network.as_str(),
-        label,
-        artifact_path.display(),
-        network.as_str(),
-        network.as_str()
-    ))
-}
-
 fn require_public_gateway_bootstrap_artifact(
     network: config::CoreCardanoNetwork,
     manifest_path: Option<&str>,
@@ -222,14 +203,6 @@ pub async fn run_start(
     }
 
     if target == Some(StartTarget::Relayer) {
-        if core_cardano_network.is_public_testnet() {
-            require_public_bridge_artifact(
-                core_cardano_network,
-                Path::new(core_cardano_profile.handler_json_path.as_str()),
-                "handler.json",
-            )?;
-        }
-
         match start_relayer(
             project_root_path.join("relayer").as_path(),
             project_root_path.join("relayer/.env.example").as_path(),
