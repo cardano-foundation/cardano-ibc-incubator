@@ -7,12 +7,14 @@ later used for reverse lookup under the on-chain registry design.
 
 - Canonical denom example: `transfer/channel-7/ada`
 - Computed IBC denom hash: `ibc/295902A2AC8AF68262566DB16795B73ED2D2B31C5B05FFF6A3299008DCB42FB1`
-- Voucher token-name hash example: `a161cbad47f75408e7e815be862b38abe795ed21523749cae06a37696e79b892`
+- Voucher denom hash (`blake2b_224`, 28 bytes): `e642eadec7484f574b3f69ed0efecfe09b4530787b72417084675d8f`
+- Voucher user token name (CIP-67 fungible-token label + denom hash, 32 bytes):
+  `0014df10e642eadec7484f574b3f69ed0efecfe09b4530787b72417084675d8f`
 
 ```mermaid
 flowchart TB
-  A["Input denom:<br/>transfer/channel-7/ada"] --> B["Normalize denom"]
-  B --> C["Build voucher token name:<br/>blake2b_224(full denom)<br/>a161cbad...6e79b892"]
+  A["Canonical full denom:<br/>transfer/channel-7/ada"] --> B["Encode exact UTF-8 bytes"]
+  B --> C["Compute voucher denom hash:<br/>blake2b_224(full denom)<br/>e642eade...84675d8f"]
   C --> D["Select bucket by first four bits<br/>of voucher hash"]
   D --> E["Read directory to find active shard"]
   E --> F["Same tx mints voucher and,<br/>if first-seen, appends or rolls over<br/>voucher_hash -> full_denom"]

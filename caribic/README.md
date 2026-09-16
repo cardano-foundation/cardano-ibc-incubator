@@ -176,15 +176,13 @@ exercise.
 If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
 
 Operator-facing retry/timeout tuning is configurable in one place: `caribic/config/default-config.json` by default.
-For example:
+The shipped Gateway health-check defaults are:
 
 ```json
 {
   "health": {
-    "cosmos_max_retries": 60,
-    "cosmos_retry_interval_ms": 10000,
-    "gateway_max_retries": 180,
-    "gateway_retry_interval_ms": 2000
+    "gateway_max_retries": 60,
+    "gateway_retry_interval_ms": 1000
   }
 }
 ```
