@@ -86,10 +86,31 @@ describe('Lucid provider evaluation diagnostics', () => {
     await expect(provider.evaluateTx('a100', additionalUTxOs)).resolves.toBe(result);
 
     expect(evaluateTx).toHaveBeenCalledTimes(1);
-    expect(evaluateTx).toHaveBeenCalledWith('a100');
+    expect(evaluateTx).toHaveBeenCalledWith('a100', additionalUTxOs);
     expect(evaluateTx.mock.contexts[0]).toBe(provider);
     expect(record).not.toHaveBeenCalled();
     expect(await fs.promises.readdir(temporaryDirectory)).toEqual([]);
+  });
+
+  it('evaluates an unsubmitted session dependency even when a reference script needs ledger fallback', async () => {
+    const session = { txHash: 'session-init', outputIndex: 0, datum: 'd87980', assets: { lovelace: 2_000_000n } };
+    const change = { txHash: 'session-init', outputIndex: 1, assets: { lovelace: 10_000_000n } };
+    const reference = { txHash: 'published-script', outputIndex: 0, scriptRef: { type: 'PlutusV3', script: '00' } };
+    const result = [{ redeemer_tag: 'spend', redeemer_index: 0, ex_units: { mem: 512534, steps: 176524731 } }];
+    const evaluateTx = jest.fn(async (_tx: string, inputs?: unknown[]) => {
+      // The session and its change do not exist on-chain until the earlier link
+      // is submitted. Resolving only indexed inputs cannot evaluate this spend.
+      if (!inputs?.includes(session) || !inputs.includes(change)) {
+        throw new Error('Unknown transaction input: session-init#0');
+      }
+      if (inputs.includes(reference)) throw new Error("Invalid request: couldn't decode plutus script.");
+      return result;
+    });
+    const provider = await createProvider(evaluateTx);
+
+    await expect(provider.evaluateTx('session-advance', [session, change, reference])).resolves.toBe(result);
+    expect(evaluateTx).toHaveBeenCalledTimes(2);
+    expect(evaluateTx).toHaveBeenLastCalledWith('session-advance', [session, change]);
   });
 
   it('preserves the original rejection without serializing or writing diagnostics by default', async () => {
@@ -108,7 +129,7 @@ describe('Lucid provider evaluation diagnostics', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(evaluateTx).toHaveBeenCalledTimes(1);
-    expect(evaluateTx).toHaveBeenCalledWith('a100');
+    expect(evaluateTx).toHaveBeenCalledWith('a100', additionalUTxOs);
     expect(evaluateTx.mock.contexts[0]).toBe(provider);
     expect(toJSON).not.toHaveBeenCalled();
     expect(writeFileSync).not.toHaveBeenCalled();
@@ -170,7 +191,7 @@ describe('Lucid provider evaluation diagnostics', () => {
     await expect(provider.evaluateTx('a100')).rejects.toBe(error);
     await drainDiagnostics();
 
-    expect(evaluateTx).toHaveBeenCalledWith('a100');
+    expect(evaluateTx).toHaveBeenCalledWith('a100', undefined);
     const [filename] = await fs.promises.readdir(directory);
     expect(JSON.parse(await fs.promises.readFile(join(directory, filename), 'utf8')).details).toEqual({
       txCbor: 'a100',

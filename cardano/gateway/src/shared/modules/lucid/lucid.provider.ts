@@ -948,10 +948,12 @@ export const LucidClient = {
       provider.evaluateTx = async (tx: string, additionalUTxOs?: any[]) => {
         try {
           return await retryRuntimeProviderOperation(
-            // Gateway inputs have already been indexed by Kupo and are resolvable
-            // by Ogmios. Lucid 0.4's non-empty auxiliary UTxO encoding is not
-            // accepted by Ogmios 7, so do not forward the redundant list.
-            () => originalEvaluateTx(tx),
+            // Staged transactions consume outputs of earlier, not-yet-submitted
+            // links. Preserve these inputs when asking the node to evaluate them.
+            () => evaluateTxWithOgmiosScriptRefFallback(
+              (inputs) => originalEvaluateTx(tx, inputs),
+              additionalUTxOs,
+            ),
             'Kupmios.evaluateTx',
           );
         } catch (error) {
