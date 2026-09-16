@@ -440,9 +440,13 @@ function summarizeError(error: unknown): string {
 }
 
 function isOgmiosPlutusScriptDecodeError(error: unknown): boolean {
-  return collectErrorSignals(error).some((signal) =>
-    signal.toLowerCase().includes(OGMIOS_PLUTUS_SCRIPT_DECODE_ERROR_MARKER),
-  );
+  const signals = collectErrorSignals(error).map((signal) => signal.toLowerCase());
+  return signals.some((signal) => signal.includes(OGMIOS_PLUTUS_SCRIPT_DECODE_ERROR_MARKER)) ||
+    // Ogmios 7 can collapse a rejected Plutus reference-script decoder to this
+    // JSON-RPC error. The caller only retries when script references were supplied;
+    // the node must still resolve them and successfully evaluate the transaction.
+    (signals.some((signal) => signal.includes('-32600')) &&
+      signals.some((signal) => signal.includes('invalid request: empty.')));
 }
 
 export async function evaluateTxWithOgmiosScriptRefFallback<T>(
