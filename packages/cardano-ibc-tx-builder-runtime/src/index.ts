@@ -1,3 +1,4 @@
+import type { HistoryBootstrap } from './historyBootstrap';
 import crypto from 'crypto';
 import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
@@ -99,6 +100,7 @@ type DeploymentTraceRegistry = {
 
 type DeploymentConfig = {
   deployedAt: string;
+  history?: HistoryBootstrap;
   ics20PacketCodec: 'legacy-cardano-json' | 'ics20-classic-json-v1';
   hostStateNFT: AuthToken;
   validators: {
@@ -127,6 +129,7 @@ type DeploymentConfig = {
 type BridgeManifest = {
   schema_version: number;
   deployed_at: string;
+  history?: HistoryBootstrap;
   ics20_packet_codec?: 'legacy-cardano-json' | 'ics20-classic-json-v1';
   cardano: {
     network: string;
@@ -470,6 +473,7 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
     },
     deployment: {
       deployedAt: manifest.deployed_at,
+      ...(manifest.history ? { history: manifest.history } : {}),
       ics20PacketCodec,
       hostStateNFT: {
         policyId: manifest.host_state_nft.policy_id,

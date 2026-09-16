@@ -379,7 +379,7 @@ pub async fn run_start(
                 .await
                 {
                     Ok(_) => logger::log(&format!(
-                        "PASS: IBC smart contracts deployed to Cardano {} and deployment artifacts exported",
+                        "PASS: Bridge deployment ready on Cardano {}",
                         core_cardano_network.as_str()
                     )),
                     Err(error) => {

@@ -19,6 +19,7 @@
     "./ics23MerkleTree": { "types": "./dist/ics23MerkleTree.d.ts", "default": "./dist/ics23MerkleTree.js" },
     "./ibcStateRoot": { "types": "./dist/ibcStateRoot.d.ts", "default": "./dist/ibcStateRoot.js" },
     "./transferEscrowShard": { "types": "./dist/transferEscrowShard.d.ts", "default": "./dist/transferEscrowShard.js" },
+    "./historyBootstrap": { "types": "./dist/historyBootstrap.d.ts", "default": "./dist/historyBootstrap.js" },
     "./sendPacketEscrow": { "types": "./dist/sendPacketEscrow.d.ts", "default": "./dist/sendPacketEscrow.js" }
   },
   "typesVersions": {
@@ -26,6 +27,7 @@
       "ics23MerkleTree": ["dist/ics23MerkleTree.d.ts"],
       "ibcStateRoot": ["dist/ibcStateRoot.d.ts"],
       "transferEscrowShard": ["dist/transferEscrowShard.d.ts"],
+      "historyBootstrap": ["dist/historyBootstrap.d.ts"],
       "sendPacketEscrow": ["dist/sendPacketEscrow.d.ts"]
     }
   },

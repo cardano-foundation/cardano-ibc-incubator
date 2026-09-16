@@ -104,6 +104,8 @@ The Gateway's historical Cardano reads now go through the Yaci-backed bridge his
 
 `HISTORY_DB_*` is the Gateway's database config surface for the historical backend.
 
+Public manifests and public handler startup require `history.format: "cardano-history-v1"`, an explicit replay checkpoint and the original HostState creation output. Startup verifies retained deployment history before restoring/rebuilding the tree, and waits for providers and verified tree state before serving requests. See [manifest history bootstrap](../docs/bridge-manifest-history.md) for the format, export/upgrade commands and cold-start timeout.
+
 ## Cardano Data Plane
 
 The Gateway now uses two Cardano data planes with different responsibilities:
