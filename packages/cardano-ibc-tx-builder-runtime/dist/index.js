@@ -16,6 +16,7 @@ const trace_registry_1 = require("@cardano-ibc/trace-registry");
 const ws_1 = __importDefault(require("ws"));
 const asyncMutex_1 = require("./asyncMutex");
 const ibcStateRoot_1 = require("./ibcStateRoot");
+const consensusHistoryKupo_1 = require("./consensusHistoryKupo");
 const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
 const transferEscrowShard_1 = require("./transferEscrowShard");
 var asyncMutex_2 = require("./asyncMutex");
@@ -139,6 +140,9 @@ function mapValidator(validator) {
     };
 }
 function normalizeBridgeManifest(manifest) {
+    if (manifest.consensus_history_format !== 'proof-backed-v1') {
+        throw new Error('A fresh proof-backed deployment is required: missing or unsupported consensus-history format. Regenerate deployment artifacts; adding a marker does not migrate old contracts.');
+    }
     if (manifest.schema_version !== 4) {
         throw new Error('Unsupported bridge manifest schema_version: expected 4');
     }
@@ -154,6 +158,7 @@ function normalizeBridgeManifest(manifest) {
         },
         deployment: {
             deployedAt: manifest.deployed_at,
+            consensusHistoryFormat: manifest.consensus_history_format,
             ...(manifest.history ? { history: manifest.history } : {}),
             ics20PacketCodec,
             hostStateNFT: {
@@ -1083,10 +1088,17 @@ function createTxBuilderRuntime(config) {
         const kupmiosHeaders = withKupoStringQuantityHeader(normalizedKupmiosHeaders);
         const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
         const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, kupmiosHeaders, config.fetchImpl ?? fetch);
-        const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
+        if (bridgeManifest.validators.spend_consensus_state) {
+            throw new Error('Archive-UTxO deployments are not supported, deploy the proof-backed client contracts');
+        }
+        const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment, (0, consensusHistoryKupo_1.createKupoConsensusHistoryReader)(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader }));
         await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
-        const treeStore = new ibcStateRoot_1.IbcTreeStateStore({ network: cardanoNetwork, hostStateNFT: deployment.hostStateNFT }, kupoService, lucidService);
+        const treeStore = new ibcStateRoot_1.IbcTreeStateStore({
+            network: cardanoNetwork,
+            hostStateNFT: deployment.hostStateNFT,
+            clientPolicyId: deployment.validators.mintClientStt.scriptHash,
+        }, kupoService, lucidService);
         await timed(logger, '[context]', 'rebuild IBC state tree', () => treeStore.rebuildTreeFromChain());
         logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
         return {

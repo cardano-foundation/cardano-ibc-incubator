@@ -3,15 +3,18 @@ use aiken/collection/list
 use aiken/collection/pairs
 use cardano/address.{Credential}
 use cardano/assets.{PolicyId}
-use cardano/transaction.{OutputReference, Spend, Transaction, Withdraw}
+use cardano/transaction.{
+  OutputReference, Redeemer, ScriptPurpose, Spend, Transaction, Withdraw,
+}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum} as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  RecoverClientWithdrawal,
+  CheckStagedClientHistory, RecoverClientWithdrawal,
 } as legacy_client_redeemer
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set
+use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/client/ics_007_tendermint_client/misbehaviour.{Misbehaviour}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle
@@ -69,6 +72,17 @@ fn finalized_session(
   datum
 }
 
+fn expect_history_withdrawal(
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  credential: Credential,
+  token: AuthToken,
+) -> Bool {
+  expect Some(raw) = pairs.get_first(redeemers, Withdraw(credential))
+  let expected: Data = CheckStagedClientHistory { subject_token: token }
+  expect raw == expected
+  True
+}
+
 /// Completed sessions authenticate normal headers and conflicting-header
 /// evidence. Every client update, including administrative recovery, updates the
 /// canonical client and HostState together.
@@ -94,13 +108,13 @@ validator spend_multitx_client(
         // The state-token policy enforces shutdown authority, grace and refunds.
         assets.quantity_of(mint, client_token.policy_id, client_token.name) == -1
       _ -> {
+        expect client_datum_mod.has_singleton_history(client_datum)
         let updated_output =
           validator_utils.find_unique_continuation_output(
             spent_input.output,
             outputs,
             client_token,
           )
-        expect auth.contains_only_auth_tokens(updated_output, [client_token])
         expect updated_datum: ClientDatum =
           validator_utils.get_inline_datum(updated_output)
         let (_, _) =
@@ -117,7 +131,7 @@ validator spend_multitx_client(
             valid_to: validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
           }
         when redeemer is {
-          RecoverClient { substitute_token } -> {
+          RecoverClient { substitute_token, .. } -> {
             expect Some(withdrawal_redeemer) =
               pairs.get_first(redeemers, Withdraw(recover_client_credential))
             let expected: Data =
@@ -127,14 +141,35 @@ validator spend_multitx_client(
               }
             withdrawal_redeemer == expected
           }
-          FinalizeUpdate { session_token } -> {
+          FinalizeUpdate { session_token, history_witnesses, .. } -> {
+            expect
+              expect_history_withdrawal(
+                redeemers,
+                recover_client_credential,
+                client_token,
+              )
             let receipt =
               finalized_session(
                 session_token,
                 session_mint_policy_id,
                 transaction,
               )
-            expect session.validate_finalization(receipt, client_datum, tx_time)
+            let header = header_from_plan(receipt.plan)
+            let proof_states =
+              consensus_history.message_witness_states(
+                client_datum,
+                history_witnesses,
+                HeaderCase(header),
+              )
+            let proof_client =
+              ClientDatum {
+                ..client_datum,
+                state: client_datum_mod.ClientDatumState {
+                  ..client_datum.state,
+                  consensus_states: proof_states,
+                },
+              }
+            expect session.validate_finalization(receipt, proof_client, tx_time)
             expect
               validator_utils.require_exact_marker_mint(
                 mint,
@@ -142,10 +177,9 @@ validator spend_multitx_client(
                 session_token.name,
                 -1,
               )
-            let header = header_from_plan(receipt.plan)
             if misbehaviour_handle.check_for_misbehaviour(
               HeaderCase(header),
-              client_datum.state.consensus_states,
+              proof_states,
             ) {
               client_datum_mod.update_state_on_misbehaviour(
                 client_datum,
@@ -156,12 +190,21 @@ validator spend_multitx_client(
                 client_datum,
                 updated_datum,
                 header,
-                tx_time.valid_from / 1_000_000,
                 tx_time.valid_to / 1_000_000,
               )
             }
           }
-          FinalizeMisbehaviour { session_token_1, session_token_2 } -> {
+          FinalizeMisbehaviour {
+            session_token_1,
+            session_token_2,
+            history_witnesses,
+          } -> {
+            expect
+              expect_history_withdrawal(
+                redeemers,
+                recover_client_credential,
+                client_token,
+              )
             expect session_token_1 != session_token_2
             let first =
               finalized_session(
@@ -175,6 +218,28 @@ validator spend_multitx_client(
                 session_mint_policy_id,
                 transaction,
               )
+            let msg =
+              MisbehaviourCase(
+                Misbehaviour {
+                  client_id: #"",
+                  header1: header_from_plan(first.plan),
+                  header2: header_from_plan(second.plan),
+                },
+              )
+            let proof_states =
+              consensus_history.message_witness_states(
+                client_datum,
+                history_witnesses,
+                msg,
+              )
+            let proof_client =
+              ClientDatum {
+                ..client_datum,
+                state: client_datum_mod.ClientDatumState {
+                  ..client_datum.state,
+                  consensus_states: proof_states,
+                },
+              }
             expect first.owner == second.owner
             // Both distinct session tokens were authenticated above, including
             // their policy and exact -1 quantities. Two entries under that
@@ -185,12 +250,12 @@ validator spend_multitx_client(
             and {
               session.validate_misbehaviour_finalization(
                 first,
-                client_datum,
+                proof_client,
                 tx_time,
               ),
               session.validate_misbehaviour_finalization(
                 second,
-                client_datum,
+                proof_client,
                 tx_time,
               ),
               misbehaviour_handle.check_for_misbehaviour(
@@ -202,7 +267,7 @@ validator spend_multitx_client(
                     header2: header_from_plan(second.plan),
                   },
                 ),
-                client_datum.state.consensus_states,
+                proof_states,
               ),
               client_datum_mod.update_state_on_misbehaviour(
                 client_datum,

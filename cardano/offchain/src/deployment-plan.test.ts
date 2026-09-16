@@ -171,11 +171,13 @@ Deno.test("every reference in both production deployment modes satisfies the pub
       plan.referenceValidators.map(({ script }) => script),
       16_384,
     );
-    const oversized = report.filter(({ oversized }) => oversized).map((
+    const intrinsicallyOversized = report.filter(({ intrinsicallyOversized }) =>
+      intrinsicallyOversized
+    ).map((
       entry,
     ) => ({ title: plan.referenceValidators[entry.index].title, ...entry }));
     assertEquals(
-      oversized,
+      intrinsicallyOversized,
       [],
       `benchmarkVoucherEnabled=${benchmarkVoucherEnabled}`,
     );

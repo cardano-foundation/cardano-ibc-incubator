@@ -9,6 +9,7 @@ import { MithrilService } from "../../shared/modules/mithril/mithril.service";
 import { HistoryService } from "./history.service";
 import { loadStakeWeightedStabilityEvidenceForTxHash } from "./stability-evidence";
 import {
+  ibcTreeCacheIdForHostState,
   ibcTreeCacheIdForHeight,
   ibcTreeCacheIdForRoot,
   IbcTreeCacheService,
@@ -173,25 +174,31 @@ export async function resolveProofContextForQuery({
   );
   const root = hostStateDatum.state.ibc_state_root.toLowerCase();
 
-  const cached =
+  let cached =
     (await ibcTreeCacheService.load(ibcTreeCacheIdForRoot(root))) ??
       (await ibcTreeCacheService.load(
         ibcTreeCacheIdForHeight(requestedHeight),
       ));
 
-  if (!cached) {
-    throw new GrpcNotFoundException(
-      `Not found: no cached IBC state tree for proof height ${requestedHeight.toString()} and root ${
-        root.substring(0, 16)
-      }...`,
-    );
+  const hostState = { txHash: hostStateUtxo.txHash, outputIndex: hostStateUtxo.outputIndex };
+  if (!cached || cached.root.toLowerCase() !== root) {
+    const rebuilt = await deps.historyService.rebuildIbcStateTreeAtBlock(requestedHeight, hostState);
+    if (rebuilt.root !== root || rebuilt.tree.getRoot() !== root ||
+      rebuilt.hostState.txHash !== hostState.txHash || rebuilt.hostState.outputIndex !== hostState.outputIndex) {
+      throw new GrpcInternalException(`Reconstructed IBC tree does not match HostState at proof height ${requestedHeight}`);
+    }
+    await assertProofContextHostState({ proofHeight: requestedHeight, root, hostState }, deps.historyService, deps.lucidService);
+    cached = rebuilt;
+    try {
+      // Root/ref aliases are reusable across heights and never replace "current".
+      await ibcTreeCacheService.saveAliases(rebuilt.tree, [
+        ibcTreeCacheIdForRoot(root), ibcTreeCacheIdForHostState(hostState),
+      ], hostState);
+    } catch (error) {
+      deps.logger.warn(`Could not cache reconstructed historical IBC tree: ${error.message}`);
+    }
   }
-
-  if (cached.root.toLowerCase() !== root) {
-    throw new GrpcInternalException(
-      `Cached IBC state tree root mismatch for proof height ${requestedHeight.toString()}: expected ${root}, got ${cached.root}`,
-    );
-  }
+  await assertProofContextHostState({ proofHeight: requestedHeight, root, hostState }, deps.historyService, deps.lucidService);
 
   return {
     historical: true,

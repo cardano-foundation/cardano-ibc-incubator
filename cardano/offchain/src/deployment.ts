@@ -736,6 +736,7 @@ export const createDeployment = async (
 
   const deploymentInfo: DeploymentTemplate = {
     deployedAt,
+    consensusHistoryFormat: "proof-backed-v1",
     history: requireHistoryBootstrap({
       format: "cardano-history-v1",
       start: historyStart,
@@ -1135,7 +1136,8 @@ export type ReferenceValidatorSizeReportEntry = {
   scriptHash: string;
   scriptBytes: number;
   estimatedReferenceOutputBytes: number;
-  oversized: boolean;
+  exceedsEstimatedSingleTxBudget: boolean;
+  intrinsicallyOversized: boolean;
 };
 
 export const buildReferenceValidatorSizeReport = (
@@ -1154,7 +1156,9 @@ export const buildReferenceValidatorSizeReport = (
         scriptHash: validatorReportHash(validator),
         scriptBytes,
         estimatedReferenceOutputBytes,
-        oversized: estimatedReferenceOutputBytes > singleValidatorBudget,
+        exceedsEstimatedSingleTxBudget:
+          estimatedReferenceOutputBytes > singleValidatorBudget,
+        intrinsicallyOversized: scriptBytes >= maxTxSize,
       };
     })
     .sort((left, right) =>
@@ -1185,22 +1189,36 @@ const logReferenceValidatorSizeReport = (
       entry.scriptHash,
       `script=${entry.scriptBytes}`,
       `estimatedRefOutput=${entry.estimatedReferenceOutputBytes}`,
-      entry.oversized ? "OVERSIZED" : "",
+      entry.intrinsicallyOversized
+        ? "INTRINSICALLY OVERSIZED"
+        : entry.exceedsEstimatedSingleTxBudget
+        ? "NEAR LIMIT: exact signed size required"
+        : "",
     );
   }
 };
 
-const assertReferenceValidatorsFit = (
+export const assertReferenceValidatorsFit = (
   validators: Script[],
   maxTxSize: number,
 ) => {
-  const oversized = buildReferenceValidatorSizeReport(validators, maxTxSize)
-    .filter((entry) => entry.oversized);
+  const report = buildReferenceValidatorSizeReport(validators, maxTxSize);
+  const oversized = report.filter((entry) => entry.intrinsicallyOversized);
   if (oversized.length === 0) {
+    const nearLimit = report.filter((entry) =>
+      entry.exceedsEstimatedSingleTxBudget
+    );
+    if (nearLimit.length > 0) {
+      // These are batching estimates, not measured signed transaction sizes.
+      // Near-limit single scripts use dedicated funding; the exact signed-size
+      // guard below remains mandatory before any reference transaction submits.
+      console.warn(
+        `Reference preflight: ${nearLimit.length} validator(s) exceed the conservative single-reference estimate; proceeding with dedicated single-script funding and exact signed-size validation against maxTxSize ${maxTxSize}.`,
+      );
+    }
     return;
   }
 
-  const singleValidatorBudget = referenceSingleValidatorBudget(maxTxSize);
   const details = oversized
     .map((entry) =>
       `#${
@@ -1209,8 +1227,22 @@ const assertReferenceValidatorsFit = (
     )
     .join("\n");
   throw new Error(
-    `Reference script deployment preflight failed: ${oversized.length} validator(s) exceed the safe single-reference-transaction budget (${singleValidatorBudget} bytes after signing headroom).\n${details}\nBuild production validators with silent traces or split/refactor the oversized validator before deployment.`,
+    `Reference script deployment preflight failed: ${oversized.length} validator(s) have script bytes alone at or above maxTxSize ${maxTxSize}.\n${details}\nBuild production validators with silent traces or split/refactor the oversized validator before deployment.`,
   );
+};
+
+export const assertSignedReferenceTransactionFits = (
+  signedBytes: number,
+  maxTxSize: number,
+  batchLabel: string,
+  validators: Script[],
+) => {
+  if (signedBytes > maxTxSize) {
+    const hashes = validators.map(validatorToScriptHash).join(", ");
+    throw new Error(
+      `Reference batch ${batchLabel} completed at ${signedBytes} bytes, above maxTxSize ${maxTxSize}. Validators: ${hashes}`,
+    );
+  }
 };
 
 const assertDeploymentReferenceValidatorsFit = (
@@ -1491,16 +1523,12 @@ async function createReferenceUtxos(
             splitBatch = true;
             break;
           }
-          if (signedBytes > maxTxSize) {
-            const hashes = batch.validators
-              .map((validator) => validatorToScriptHash(validator))
-              .join(", ");
-            throw new Error(
-              `Reference batch ${batch.startIndex + 1}-${
-                batch.startIndex + batch.validators.length
-              } completed at ${signedBytes} bytes, above maxTxSize ${maxTxSize}. Validators: ${hashes}`,
-            );
-          }
+          assertSignedReferenceTransactionFits(
+            signedBytes,
+            maxTxSize,
+            batchLabel,
+            batch.validators,
+          );
           lastBuildError = null;
           break;
         } catch (error) {

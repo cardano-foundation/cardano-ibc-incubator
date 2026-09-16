@@ -1,3 +1,4 @@
+use aiken/cbor
 use aiken/collection/list
 use aiken/fuzz
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
@@ -56,6 +57,30 @@ fn check_with_client_id(
 
 fn check(header1: Header, header2: Header) -> Bool {
   check_with_client_id("07-tendermint-0", header1, header2)
+}
+
+test matching_header_with_definite_encoded_consensus_is_not_misbehaviour() {
+  // The Gateway stores canonical definite arrays. The equality check compares
+  // the checkpoint's fields, not its encoding against a fresh constructor.
+  expect Some(raw) = cbor.deserialise(#"d87983181e4111d879814122")
+  expect stored: ConsensusState = raw
+  let base = test_header(3, 30, #"01")
+  let matching =
+    Header {
+      ..base,
+      signed_header: SignedHeader {
+        ..base.signed_header,
+        header: tm_header.TmHeader {
+          ..base.signed_header.header,
+          next_validators_hash: #"11",
+          app_hash: #"22",
+        },
+      },
+    }
+  !misbehaviour_handle.check_for_misbehaviour(
+    HeaderCase(matching),
+    [Pair(Height { revision_number: 1, revision_height: 3 }, stored)],
+  )
 }
 
 test two_valid_monotonic_headers_in_normal_order_are_not_misbehaviour() {

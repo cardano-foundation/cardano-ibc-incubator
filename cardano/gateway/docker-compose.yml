@@ -12,9 +12,11 @@ services:
       PORT: 8000
       # The host-side port mapping below supplies the plaintext trust boundary.
       GRPC_HOST: 0.0.0.0
+      CONSENSUS_HISTORY_CACHE_DIR: /var/lib/cardano-ibc/consensus-history
     networks:
       - cardano_network
     volumes:
+      - consensus-history:/var/lib/cardano-ibc/consensus-history
       - ./dist:/usr/src/app/dist
       - ../../chains/mithrils/data/aggregator/stores:/usr/chains/mithrils/data/aggregator/stores
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments:ro
@@ -37,6 +39,9 @@ services:
       - ../../manifests:/usr/src/app/manifests:ro
     env_file:
       - .env
+
+volumes:
+  consensus-history:
 
 networks:
   cardano_network:

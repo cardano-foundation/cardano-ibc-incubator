@@ -7,7 +7,15 @@ pub fn get_consensus_state(
   consensus_states: Pairs<Height, ConsensusState>,
   height: Height,
 ) -> Option<ConsensusState> {
-  pairs.get_first(consensus_states, height)
+  when consensus_states is {
+    [] -> None
+    [Pair(stored_height, state), ..rest] ->
+      if height_mod.equal(stored_height, height) {
+        Some(state)
+      } else {
+        get_consensus_state(rest, height)
+      }
+  }
 }
 
 /// Find the nearest lower and higher heights without sorting the store.

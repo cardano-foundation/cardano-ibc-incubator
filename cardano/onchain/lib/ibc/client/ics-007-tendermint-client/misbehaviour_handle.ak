@@ -1,4 +1,3 @@
-use aiken/collection/pairs
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -24,8 +23,11 @@ pub fn check_for_misbehaviour(
       when
         store.get_consensus_state(consensus_states, header_mod.get_height(h))
       is {
-        Some(existing_cons_state) ->
-          existing_cons_state != header_mod.consensus_state(h)
+        Some(existing_cons_state) -> or {
+            existing_cons_state.timestamp != header_mod.get_time(h),
+            existing_cons_state.next_validators_hash != h.signed_header.header.next_validators_hash,
+            existing_cons_state.root.hash != h.signed_header.header.app_hash,
+          }
         None -> {
           let
             previous,
@@ -79,9 +81,15 @@ pub fn verify_misbehaviour(
   expect misbehaviour_mod.validate_basic(misbehaviour)
 
   expect Some(cons_state1) =
-    pairs.get_first(consensus_states, misbehaviour.header1.trusted_height)
+    store.get_consensus_state(
+      consensus_states,
+      misbehaviour.header1.trusted_height,
+    )
   expect Some(cons_state2) =
-    pairs.get_first(consensus_states, misbehaviour.header2.trusted_height)
+    store.get_consensus_state(
+      consensus_states,
+      misbehaviour.header2.trusted_height,
+    )
 
   expect
     check_misbehaviour_header(

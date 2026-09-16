@@ -5,6 +5,7 @@ import { ClientDatumState } from './client-datum-state';
 export type ClientDatum = {
   state: ClientDatumState;
   token: AuthToken;
+  history_root: string;
 };
 export async function encodeClientDatum(
   clientDatum: ClientDatum,
@@ -82,6 +83,7 @@ export async function encodeClientDatum(
       dataMap(mapEntries(clientDatum.state.processedHeights).map(([key, value]) => [height(key), int(value)])),
     ]),
     authToken(clientDatum.token),
+    bytes(clientDatum.history_root),
   ]).to_cbor_hex();
 }
 
@@ -155,6 +157,7 @@ export async function decodeClientDatum(
   const ClientDatumSchema = Data.Object({
     state: ClientDatumStateSchema,
     token: AuthTokenSchema,
+    history_root: Data.Bytes({ minLength: 32, maxLength: 32 }),
   });
   type TClientDatum = Data.Static<typeof ClientDatumSchema>;
   const TClientDatum = ClientDatumSchema as unknown as ClientDatum;

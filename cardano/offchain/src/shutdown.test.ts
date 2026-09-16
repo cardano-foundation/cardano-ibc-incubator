@@ -347,7 +347,9 @@ async function fixture(
   seed(
     spendClient.address,
     stateValue(mintClientStt.scriptHash, "11"),
-    encode(record(record(), token(mintClientStt.scriptHash, "11"))),
+    encode(
+      record(record(), token(mintClientStt.scriptHash, "11"), "00".repeat(32)),
+    ),
   );
   seed(
     spendConnection.address,
@@ -541,7 +543,7 @@ Deno.test("shutdown blocks user deposits even when an escrow has enough ADA to p
   )!;
   const recovery = f.deployment.validators.recoverClient!;
   const withdrawal = encode(
-    new Constr(2, [
+    new Constr(3, [
       registration.port_token.policy_id + registration.port_token.name,
       registration.module_token.policy_id + registration.module_token.name,
       f.deployment.validators.mintTransferEscrowShard.scriptHash,
@@ -594,7 +596,7 @@ Deno.test("shutdown rejects outstanding channel packets before reclaiming depend
     ])
     .collectFrom([f.channel], encode(new Constr(10, [])))
     .mintAssets({ [unit]: -1n }, Data.void())
-    .withdraw(recovery.address, 0n, encode(new Constr(1, [])))
+    .withdraw(recovery.address, 0n, encode(new Constr(2, [])))
     .pay.ToAddress(f.account.address, { lovelace: f.channel.assets.lovelace })
     .addSignerKey(f.hostDatum.deployer).validFrom(f.emulator.now());
   await assertRejects(() => tx.complete({ localUPLCEval: true }));

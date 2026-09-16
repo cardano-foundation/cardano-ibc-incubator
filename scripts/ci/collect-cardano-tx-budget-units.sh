@@ -12,7 +12,7 @@ aiken check \
   --exact-match \
   -m 'ibc/core/ics_003_connection_semantics/connection_datum.{test_is_conn_open_try_valid_succeed}' \
   -m 'spending_transfer_module.{on_chan_open_try_succeed}' \
-  -m 'spending_connection.{conn_open_ack_succeed}' \
+  -m 'spending_connection.{conn_open_ack_accepts_authenticated_history_witness}' \
   -m 'spending_channel.{send_packet_succeed}' \
   -m 'spending_channel/send_packet.{succeed_send_packet}' \
   -m 'ibc/core/ics_004/channel_datum_test/validate_send_packet.{succeed_at_packet_commitment_capacity}' \
@@ -56,6 +56,9 @@ aiken check \
   -m 'spending_client_capacity.{update_client_capacity_adjacent_all_signed_45_succeeds}' \
   -m 'spending_client_capacity.{update_client_capacity_adjacent_mixed_45_succeeds}' \
   -m 'spending_client_capacity.{update_client_capacity_non_adjacent_mixed_45_succeeds}' \
+  -m 'spending_client_capacity.{support_capacity_adjacent_all_signed_45_succeeds}' \
+  -m 'spending_client_capacity.{support_capacity_adjacent_mixed_45_succeeds}' \
+  -m 'spending_client_capacity.{support_capacity_non_adjacent_mixed_45_succeeds}' \
   -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
   -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
   -m 'host_state_stt.{host_update_client_capacity_fixture_setup_baseline}' \

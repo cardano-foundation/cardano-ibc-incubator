@@ -1,5 +1,5 @@
 # Image proto type
-FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5b621 AS protos
+FROM node:22@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d AS protos
 
 WORKDIR /usr/src/proto-types
 
@@ -10,7 +10,7 @@ RUN npm ci
 RUN npm run build
 
 # Base image
-FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5b621
+FROM node:22@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d
 
 ARG MAIN_CONTEXT=cardano/gateway
 # Create app directory
@@ -38,6 +38,11 @@ RUN npm ci
 
 # Creates a "dist" folder with the production build
 RUN npm run build
+
+ENV CONSENSUS_HISTORY_CACHE_DIR=/var/lib/cardano-ibc/consensus-history
+# Docker initializes an empty named volume from this directory, including its
+# ownership. The Gateway must be able to create SQLite files as the node user.
+RUN install -d -o node -g node -m 0700 "$CONSENSUS_HISTORY_CACHE_DIR"
 
 USER node
 

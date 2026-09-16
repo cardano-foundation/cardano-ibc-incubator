@@ -11,7 +11,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyNonMembership, VerifyProofRedeemer,
+  VerifyNonMembership, VerifyProofEnvelope, VerifyProofRedeemer,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
@@ -467,7 +467,8 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
     }
   let channel_redeemer_data: Redeemer = channel_redeemer
   let host_redeemer_data: Redeemer = host_redeemer
-  let verify_redeemer_data: Redeemer = verify_redeemer
+  let verify_redeemer_data: Redeemer =
+    VerifyProofEnvelope { proof: verify_redeemer, history_witness: None }
   let marker_redeemer: Redeemer = mock.channel_token
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -530,7 +531,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
     )
   let verify_proof_valid =
     verifying_proof.verify_proof.mint(
-      verify_redeemer,
+      VerifyProofEnvelope { proof: verify_redeemer, history_witness: None },
       mock.verify_proof_policy_id,
       transaction,
     )

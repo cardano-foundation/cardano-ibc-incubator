@@ -264,18 +264,18 @@ describe('Tendermint update-session Lucid codecs', () => {
 
   it('pins all SpendMultitxClientRedeemer constructors', () => {
     const finalize: SpendMultitxClientRedeemer = {
-      FinalizeUpdate: { sessionToken: { policyId: '01', name: '02' } },
+      FinalizeUpdate: { historyWitnesses: [], historySiblings: [], sessionToken: { policyId: '01', name: '02' } },
     };
 
     const encodedFinalize = encodeSpendMultitxClientRedeemer(finalize, Lucid);
     const encodedDisabled = encodeSpendMultitxClientRedeemer('DirectUpdateDisabled', Lucid);
 
-    expect(encodedFinalize).toBe('d87981d8798241014102');
+    expect(encodedFinalize).toBe('d87983d87982410141028080');
     expect(encodedDisabled).toBe('d87a80');
     expect(decodeSpendMultitxClientRedeemer(encodedFinalize, Lucid)).toEqual(finalize);
     expect(decodeSpendMultitxClientRedeemer(encodedDisabled, Lucid)).toBe('DirectUpdateDisabled');
-    const recovery: SpendMultitxClientRedeemer = { RecoverClient: { substituteToken: { policyId: '01', name: '03' } } };
-    const evidence: SpendMultitxClientRedeemer = { FinalizeMisbehaviour: {
+    const recovery: SpendMultitxClientRedeemer = { RecoverClient: { historySiblings: [], substituteToken: { policyId: '01', name: '03' } } };
+    const evidence: SpendMultitxClientRedeemer = { FinalizeMisbehaviour: { historyWitnesses: [],
       sessionToken1: { policyId: '02', name: '03' }, sessionToken2: { policyId: '02', name: '04' },
     } };
     for (const [value, index] of [[recovery, 2], [evidence, 3], ['ReclaimClient', 4]] as const) {

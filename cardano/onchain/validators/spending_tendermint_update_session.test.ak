@@ -181,7 +181,7 @@ fn real_adjacent_batch() -> (SessionDatum, List<TargetEntry>) {
   expect Some(data) =
     cbor.deserialise(adjacent_all_signed_spend_client_redeemer_cbor)
   expect redeemer: SpendClientRedeemer = data
-  expect UpdateTendermintClient{msg: HeaderCase(header)} = redeemer
+  expect UpdateTendermintClient { msg: HeaderCase(header), .. } = redeemer
   let target_validators = header.validator_set.validators
   let signed_header = header.signed_header
   let tm_header = signed_header.header
@@ -461,7 +461,7 @@ fn real_non_adjacent_batch() -> (SessionDatum, List<TargetEntry>) {
   expect Some(data) =
     cbor.deserialise(non_adjacent_mixed_spend_client_redeemer_cbor)
   expect redeemer: SpendClientRedeemer = data
-  expect UpdateTendermintClient{msg: HeaderCase(header)} = redeemer
+  expect UpdateTendermintClient { msg: HeaderCase(header), .. } = redeemer
   let target_validators = header.validator_set.validators
   let trusted_validators = header.trusted_validators.validators
   let signed_header = header.signed_header
@@ -654,7 +654,7 @@ fn depth_eight_non_adjacent_batch() -> (SessionDatum, List<TargetEntry>) {
   expect Some(data) =
     cbor.deserialise(non_adjacent_mixed_spend_client_redeemer_cbor)
   expect redeemer: SpendClientRedeemer = data
-  expect UpdateTendermintClient{msg: HeaderCase(header)} = redeemer
+  expect UpdateTendermintClient { msg: HeaderCase(header), .. } = redeemer
   let target_validators = header.validator_set.validators
   let signed_header = header.signed_header
   let tm_header = signed_header.header
@@ -1043,11 +1043,8 @@ fn finalize_context() -> (PolicyId, SessionDatum, OutputReference, Transaction) 
     }
   let host_input = Input { output_reference: host_ref, output: host_output }
   let host_redeemer: Redeemer =
-    UpdateClient {
-      client_state_siblings: [],
-      consensus_state_siblings: [],
-      removed_consensus_state_siblings: [],
-    }
+    UpdateClient { client_state_siblings: [], consensus_state_siblings: [] }
+
   let transaction =
     Transaction {
       ..transaction.placeholder,

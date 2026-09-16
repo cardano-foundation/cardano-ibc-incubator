@@ -168,6 +168,7 @@
     }
   },
   "overrides": {
+    "@lucid-evolution/uplc": "0.2.23",
     "@nestjs/swagger": {
       "js-yaml": "5.2.2"
     },
