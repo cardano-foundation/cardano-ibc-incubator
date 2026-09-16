@@ -404,13 +404,13 @@ Required CI label suffixes:
 - `unit.packet.timeout.invalid_before_timeout`
 - `tx.packet.send.valid_channel_host_marker`
 - `tx.packet.send.invalid_missing_operation_marker`
-- `tx.packet.recv.valid_atomic_successor_callback`
-- `tx.packet.recv.invalid_missing_application_callback`
-- `tx.packet.recv.invalid_moved_port_binding`
-- `tx.packet.recv.invalid_unrelated_successor_mutation`
-- `tx.packet.recv.invalid_callback_packet_data`
-- `tx.packet.recv.invalid_callback_acknowledgement`
-- `tx.packet.recv.valid_sink_mints_voucher`
+- `contract.packet.recv.valid_atomic_successor_callback`
+- `contract.packet.recv.invalid_missing_application_callback`
+- `contract.packet.recv.invalid_moved_port_binding`
+- `contract.packet.recv.invalid_unrelated_successor_mutation`
+- `contract.packet.recv.invalid_callback_packet_data`
+- `contract.packet.recv.invalid_callback_acknowledgement`
+- `contract.packet.recv.valid_sink_mints_voucher`
 - `model.packet.send_ack.valid_sequence`
 - `model.packet.send_recv_ack`
 - `model.packet.send_timeout`
@@ -484,10 +484,10 @@ checks over the same transaction, including exact escrow accounting.
 ### RecvPacket
 
 Covered by `unit.packet.recv.valid_receipt`,
-`unit.packet.recv.invalid_duplicate_receipt`, and the `tx.packet.recv.*`
+`unit.packet.recv.invalid_duplicate_receipt`, and the `contract.packet.recv.*`
 receive-transition labels listed above, with the collection bound covered by
 `unit.packet.recv.invalid_history_capacity`. Sink-chain voucher mint coupling
-is additionally covered by `tx.packet.recv.valid_sink_mints_voucher`. The real
+is additionally covered by `contract.packet.recv.valid_sink_mints_voucher`. The real
 receive policy's timeout boundary is covered by `succeed_recv_packet`,
 `recv_packet_rejects_height_only_timeout`, and
 `recv_packet_rejects_mixed_height_and_timestamp_timeout`.
@@ -843,7 +843,7 @@ They prove these invariants:
 ### First Mint Transaction Coupling
 
 Covered by `tx.voucher.first_mint.valid_registry_coupled`,
-`tx.packet.recv.valid_sink_mints_voucher`, and
+`contract.packet.recv.valid_sink_mints_voucher`, and
 `tx.voucher.first_mint.invalid_wrong_metadata_registry_coupled`.
 
 The transaction-level property builds the first-seen voucher mint transaction
@@ -1298,15 +1298,25 @@ These are the next useful improvements for the invariant suite:
 The current fuzzing suite does not yet provide property-level invariant
 coverage for:
 
-- client creation or update,
+- client creation,
 - full end-to-end connection handshake validator contexts,
 - full end-to-end channel handshake validator contexts,
 - full end-to-end receive, acknowledgement, and timeout packet validator
-  contexts beyond the composed SendPacket atomicity fixture and first-seen
-  sink voucher mint tx fixture,
+  contexts beyond the composed SendPacket atomicity fixture, receive
+  successor/callback contract fixtures, and first-seen sink voucher mint
+  contract fixture,
 - full end-to-end voucher metadata validator contexts beyond first-seen
   voucher mint plus trace-registry coupling,
-- misbehaviour freezing.
+- full validator contexts for misbehaviour freezing.
 
-Those areas may have unit or integration tests elsewhere, but they are not
-currently represented in the CI-enforced Aiken fuzz label catalog.
+Client update logic is covered by `fuzz.unit.client.update.*` and the
+HostState-binding checks by `regression.contract.client.update.*`. The receive
+successor/callback fixtures run the receive marker and HostState `HandlePacket`
+validators together; their current CI labels are
+`regression.contract.packet.recv.*`. Misbehaviour detection also has unit-level
+coverage under `fuzz.unit.client.misbehaviour.*` and
+`regression.unit.client.misbehaviour.*`. These checks do not establish full
+end-to-end coverage for every validator in those operations.
+
+The gaps above describe coverage beyond these existing CI-enforced checks;
+there may also be unit or integration tests elsewhere.

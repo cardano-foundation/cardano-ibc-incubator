@@ -25,8 +25,9 @@ pub const max_directory_datum_bytes = 6_144
 const max_asset_name_bytes = 32
 
 // A single registry entry is the canonical reversible mapping for one Cardano
-// voucher asset name. `voucher_hash` is the voucher token name bytes, and
-// `full_denom` is the exact ICS-20 trace string whose sha3-256 hash produced it.
+// voucher asset name. `voucher_hash` is the 28-byte denom hash without the
+// 4-byte CIP-67 label. `full_denom` is the exact ICS-20 trace string whose
+// blake2b_224 hash produced it.
 pub type TraceRegistryEntry {
   voucher_hash: ByteArray,
   full_denom: ByteArray,

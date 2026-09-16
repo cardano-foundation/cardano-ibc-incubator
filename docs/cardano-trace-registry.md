@@ -7,7 +7,8 @@ reverse a voucher asset hash back into the canonical ICS-20 full denom trace.
 
 Cardano voucher asset names are fixed-size token-name bytes, while ICS-20 denom
 traces are variable-length strings that can grow at every hop. Cardano therefore
-uses a hash of the full denom trace as the voucher token name.
+uses a 4-byte CIP-67 label followed by the 28-byte `blake2b_224` hash of the full
+denom trace as the 32-byte voucher token name.
 
 That keeps voucher asset identifiers compact and deterministic, but it also means
 the original full denom string cannot be recovered from the asset id alone. The
@@ -22,9 +23,10 @@ The canonical mapping is:
 
 Where:
 
-- `voucher_hash` is the Cardano voucher token name bytes
+- `voucher_hash` is the 28-byte denom hash, i.e. the token name without its
+  4-byte CIP-67 label
 - `full_denom` is the exact ICS-20 trace string whose `blake2b_224` hash produced
-  that token name
+  `voucher_hash`
 
 Everything else is derived from that canonical value:
 
