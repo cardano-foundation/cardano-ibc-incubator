@@ -11,12 +11,20 @@ on:
 # Builds only need repository contents. The trusted publishing job grants its
 # own package permission below instead of exposing it to pull-request code.
 permissions:
+  actions: read
   contents: read
 
 jobs:
+  docs-update:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/check-docs-update.yml
+    with:
+      workflow: .github/workflows/publish.yaml
+
   pull-request-build:
     # The docs-only guard in ci.yml runs only for PRs targeting main.
-    if: ${{ github.event_name == 'pull_request' && (github.base_ref != 'main' || !startsWith(github.head_ref, 'docs/')) }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name == 'pull_request' && (github.base_ref != 'main' || !startsWith(github.head_ref, 'docs/'))) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

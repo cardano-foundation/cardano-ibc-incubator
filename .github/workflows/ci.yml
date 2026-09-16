@@ -23,9 +23,15 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  docs-update:
+    uses: ./.github/workflows/check-docs-update.yml
+    with:
+      workflow: .github/workflows/ci.yml
+
   aiken-changes:
     name: Detect Aiken Changes
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -307,7 +313,8 @@ jobs:
 
   repo-invariants:
     name: Repository Invariants
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -325,7 +332,8 @@ jobs:
 
   quality-ratchets:
     name: Quality Ratchets
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -349,7 +357,8 @@ jobs:
 
   gateway:
     name: Cardano Gateway
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -430,7 +439,8 @@ jobs:
 
   proto-types:
     name: Proto Types
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -456,7 +466,8 @@ jobs:
 
   typescript-packages:
     name: TypeScript Packages
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -502,8 +513,8 @@ jobs:
 
   deno-offchain:
     name: Cardano Offchain Deno
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
-    needs: aiken-changes
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -563,8 +574,8 @@ jobs:
 
   deno-funds:
     name: Cardano Compiled Funds (${{ matrix.suite }})
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
-    needs: aiken-changes
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
@@ -605,8 +616,8 @@ jobs:
 
   aiken-static:
     name: Cardano Onchain Aiken Static
-    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && (needs.aiken-changes.outputs.aiken_files_changed == 'true' || needs.aiken-changes.outputs.aiken_changed == 'true') }}
-    needs: aiken-changes
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && ((github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && (needs.aiken-changes.outputs.aiken_files_changed == 'true' || needs.aiken-changes.outputs.aiken_changed == 'true')) }}
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -646,8 +657,8 @@ jobs:
 
   aiken-smoke:
     name: Cardano Onchain Aiken Smoke
-    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
-    needs: aiken-changes
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && ((github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true') }}
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     # The expanded suite can spend fourteen minutes collecting on hosted
     # runners. Leave time for execution while keeping every test in this pass.
@@ -679,8 +690,8 @@ jobs:
 
   aiken-fuzz:
     name: Cardano Onchain Aiken Property/Fuzz (${{ matrix.suite }})
-    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
-    needs: aiken-changes
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && ((github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true') }}
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -723,8 +734,8 @@ jobs:
 
   aiken-mutations:
     name: Cardano Critical Guard Mutations
-    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
-    needs: aiken-changes
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && ((github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true') }}
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -751,7 +762,7 @@ jobs:
     name: Cardano Onchain Aiken
     if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs:
-      [aiken-changes, aiken-static, aiken-smoke, aiken-fuzz, tx-budgets, generated-artifacts, deno-offchain, deno-funds, aiken-mutations]
+      [docs-update, aiken-changes, aiken-static, aiken-smoke, aiken-fuzz, tx-budgets, generated-artifacts, deno-offchain, deno-funds, aiken-mutations]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -762,6 +773,7 @@ jobs:
           AIKEN_FILES_CHANGED: ${{ needs.aiken-changes.outputs.aiken_files_changed }}
           AIKEN_PR_CHANGED: ${{ needs.aiken-changes.outputs.aiken_pr_changed }}
           AIKEN_FUZZ_CHANGED: ${{ needs.aiken-changes.outputs.aiken_fuzz_changed }}
+          RUN_JOBS: ${{ needs.docs-update.outputs.run_jobs }}
           NEEDS_JSON: ${{ toJson(needs) }}
         run: |
           node - <<'NODE'
@@ -769,6 +781,15 @@ jobs:
           // "Cardano Onchain Aiken" while the actual work happens in parallel
           // prerequisite jobs.
           const needs = JSON.parse(process.env.NEEDS_JSON);
+          if (needs['docs-update']?.result !== 'success' ||
+              !['true', 'false'].includes(process.env.RUN_JOBS)) {
+            console.error('Documentation gate did not succeed.');
+            process.exit(1);
+          }
+          if (process.env.RUN_JOBS === 'false') {
+            console.log('Reusing successful checks for unchanged code and base.');
+            process.exit(0);
+          }
           for (const name of [
             'AIKEN_CHANGED',
             'AIKEN_FILES_CHANGED',
@@ -847,8 +868,8 @@ jobs:
 
   tx-budgets:
     name: Cardano Tx Budgets
-    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
-    needs: aiken-changes
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && ((github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true') }}
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -924,8 +945,8 @@ jobs:
 
   generated-artifacts:
     name: Generated Artifacts
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
-    needs: aiken-changes
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -980,7 +1001,8 @@ jobs:
 
   go:
     name: Go (${{ matrix.module.name }})
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -1033,7 +1055,8 @@ jobs:
 
   light-client-parity:
     name: Light Client Parity
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -1051,7 +1074,8 @@ jobs:
 
   rust:
     name: Rust
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -1105,7 +1129,8 @@ jobs:
 
   hermes-relayer:
     name: Hermes Relayer
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 60
 

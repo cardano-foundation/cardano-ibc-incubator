@@ -1,0 +1,43 @@
+name: Check documentation update
+
+on:
+  workflow_call:
+    inputs:
+      workflow:
+        required: true
+        type: string
+    outputs:
+      run_jobs:
+        value: ${{ jobs.check.outputs.run_jobs }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  check:
+    name: Check documentation update
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_jobs: ${{ steps.classify.outputs.run_jobs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Test documentation gate
+        run: node --test scripts/ci/check-docs-update.test.mjs
+      - name: Check whether previous workflow results can be reused
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_PATH: ${{ inputs.workflow }}
+        run: node scripts/ci/check-docs-update.mjs
+      - name: Attest workflow base ${{ github.event.pull_request.base.sha || github.sha }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: echo "Workflow base is ${BASE_SHA}."
