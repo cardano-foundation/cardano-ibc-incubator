@@ -106,6 +106,10 @@ The Gateway's historical Cardano reads now go through the Yaci-backed bridge his
 
 Proof-backed consensus history requires Node.js 22.13 or newer and retained Yaci transaction bodies/validity data. `CONSENSUS_HISTORY_CACHE_DIR` selects the writable, disposable per-client SQLite cache directory (default `.consensus-history`); deleting it triggers authenticated chain replay, not loss of on-chain history. `CONSENSUS_HISTORY_MAX_OPEN_INDEXES` bounds open caches (default `64`), and `CONSENSUS_HISTORY_TIMEOUT_MS` bounds each SQL, connection-acquisition, and live-provider wait (default `30000`).
 
+The Docker image sets `CONSENSUS_HISTORY_CACHE_DIR` to `/var/lib/cardano-ibc/consensus-history` and creates that directory for the unprivileged `node` user. Docker Compose mounts the `consensus-history` named volume there, so the SQLite indexes survive Gateway container replacement. SQLite runs inside the Gateway; it does not need a separate service. The bridge-history-sync container does not use this volume.
+
+For deployments outside this Compose file, mount a persistent volume at the same path. A new Docker named volume inherits the directory's ownership from the image. An existing volume or host bind mount must be writable by the image's `node` user (UID/GID `1000:1000`). Removing the volume, including with `docker compose down --volumes`, discards the caches and requires replay from retained Yaci history.
+
 ## Cardano Data Plane
 
 The Gateway now uses two Cardano data planes with different responsibilities:

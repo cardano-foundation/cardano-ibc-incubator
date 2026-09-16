@@ -39,6 +39,11 @@ RUN npm ci
 # Creates a "dist" folder with the production build
 RUN npm run build
 
+ENV CONSENSUS_HISTORY_CACHE_DIR=/var/lib/cardano-ibc/consensus-history
+# Docker initializes an empty named volume from this directory, including its
+# ownership. The Gateway must be able to create SQLite files as the node user.
+RUN install -d -o node -g node -m 0700 "$CONSENSUS_HISTORY_CACHE_DIR"
+
 USER node
 
 CMD ["node", "dist/main.js"]
