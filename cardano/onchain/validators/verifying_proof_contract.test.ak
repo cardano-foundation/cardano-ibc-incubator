@@ -11,7 +11,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
   VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
-  VerifyProofRedeemer,
+  VerifyProofEnvelope, VerifyProofRedeemer,
 }
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
@@ -261,7 +261,7 @@ fn membership_redeemer(item: VerifyMembershipParams) -> VerifyProofRedeemer {
 
 fn verify(redeemer: VerifyProofRedeemer) -> Bool {
   verifying_proof.verify_proof.mint(
-    redeemer,
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
     proof_policy_id,
     proof_marker_tx(proof_policy_id),
   )

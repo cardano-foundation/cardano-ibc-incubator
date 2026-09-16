@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 /**
  * Represents an inner step of a proof.
  *

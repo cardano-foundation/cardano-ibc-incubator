@@ -73,8 +73,8 @@ function assertSignedTransactionFits(signed: TxSigned, label: string) {
   assertEquals(transaction.witness_set().vkeywitnesses()?.len(), 1);
   const signedBytes = signed.toCBOR().length / 2;
   assert(
-    signedBytes <= MAX_TX_SIZE,
-    `${label}: signed transaction is ${signedBytes} bytes, above ${MAX_TX_SIZE}`,
+    signedBytes <= MAX_TX_SIZE - 200,
+    `${label}: signed transaction is ${signedBytes} bytes, leaving less than 200 bytes below ${MAX_TX_SIZE}`,
   );
   console.log(
     `${label}: ${signedBytes} signed bytes, fee ${body.fee()} lovelace`,

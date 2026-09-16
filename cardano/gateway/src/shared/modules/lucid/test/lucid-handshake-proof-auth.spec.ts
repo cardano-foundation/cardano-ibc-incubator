@@ -93,6 +93,7 @@ describe('Lucid handshake proof authorization', () => {
       { 'verify-policy': 1n },
       'verify-redeemer',
     );
+    expect(builder.readFrom).toHaveBeenCalledWith([utxo('client-input')]);
   });
 
   it('adds the pinned verify-proof reference and mint to ConnectionOpenConfirm', () => {
@@ -130,6 +131,7 @@ describe('Lucid handshake proof authorization', () => {
       { 'verify-policy': 1n },
       'verify-redeemer',
     );
+    expect(builder.readFrom).toHaveBeenCalledWith([utxo('client-input')]);
   });
 
   it('adds the pinned verify-proof reference and mint to ChannelOpenTry', () => {

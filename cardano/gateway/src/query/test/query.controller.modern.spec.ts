@@ -23,6 +23,8 @@ describe('QueryController (modern)', () => {
       queryClientState: jest.fn(),
       queryClientStates: jest.fn(),
       queryConsensusState: jest.fn(),
+      queryConsensusStates: jest.fn(),
+      queryConsensusStateHeights: jest.fn(),
       latestHeight: jest.fn(),
       queryNewClient: jest.fn(),
       queryBlockResults: jest.fn(),
@@ -117,6 +119,23 @@ describe('QueryController (modern)', () => {
       'queryConsensusState',
       { client_id: 'c0', revision_number: 1n, revision_height: 2n },
       { ok: 1 },
+    );
+  });
+
+  it('delegates consensus-state list queries to QueryService', async () => {
+    await expectDelegation(
+      'queryConsensusStates',
+      queryServiceMock,
+      'queryConsensusStates',
+      { client_id: 'c0' },
+      { consensus_states: [] },
+    );
+    await expectDelegation(
+      'queryConsensusStateHeights',
+      queryServiceMock,
+      'queryConsensusStateHeights',
+      { client_id: 'c0' },
+      { consensus_state_heights: [] },
     );
   });
 

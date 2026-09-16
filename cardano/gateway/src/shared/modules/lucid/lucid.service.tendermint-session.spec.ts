@@ -4,6 +4,7 @@ function createBuilder(): any {
   const builder: any = {};
   builder.readFrom = jest.fn().mockReturnValue(builder);
   builder.collectFrom = jest.fn().mockReturnValue(builder);
+  builder.withdraw = jest.fn().mockReturnValue(builder);
   builder.mintAssets = jest.fn().mockReturnValue(builder);
   builder.addSignerKey = jest.fn().mockReturnValue(builder);
   builder.pay = { ToContract: jest.fn().mockReturnValue(builder) };
@@ -18,6 +19,7 @@ function createService(builder: any): any {
       validators: {
         hostStateStt: { address: 'addr_test1host' },
         spendClient: { address: 'addr_test1client' },
+        recoverClient: { address: 'stake_test1history' },
         spendTendermintUpdateSession: {
           address: 'addr_test1session',
           scriptHash: 'session-spend-policy',
@@ -32,6 +34,7 @@ function createService(builder: any): any {
   service.referenceScripts = {
     hostStateStt: { txHash: 'host-ref', outputIndex: 0 },
     spendClient: { txHash: 'client-ref', outputIndex: 0 },
+    recoverClient: { txHash: 'history-ref', outputIndex: 0 },
     spendTendermintUpdateSession: { txHash: 'session-spend-ref', outputIndex: 0 },
     mintTendermintUpdateSession: { txHash: 'session-mint-ref', outputIndex: 0 },
   };
@@ -132,6 +135,7 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       'client-unit',
       'session-unit',
       'signer-key-hash',
+      'history-redeemer',
       evidence ? [{ utxo: secondSession, tokenUnit: 'second-session-unit' }] : [],
     );
 
@@ -140,6 +144,7 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       service.referenceScripts.spendClient,
       service.referenceScripts.spendTendermintUpdateSession,
       service.referenceScripts.mintTendermintUpdateSession,
+      service.referenceScripts.recoverClient,
     ]);
     expect(builder.collectFrom).toHaveBeenCalledWith(
       [{ ...host, datum: 'raw-host', datumHash: undefined }],
@@ -160,6 +165,7 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       { kind: 'inline', value: 'updated-client' },
       { 'client-unit': 1n },
     );
+    expect(builder.withdraw).toHaveBeenCalledWith('stake_test1history', 0n, 'history-redeemer');
     expect(builder.addSignerKey).toHaveBeenCalledWith('signer-key-hash');
   });
 });

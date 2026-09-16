@@ -6,7 +6,6 @@ import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { StaleIbcTreeStateError } from '../../shared/helpers/ibc-state-root';
 import { createTestTreeContext } from '../../shared/testing/ibc-tree-test-store';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from '../../shared/types/client-datum';
-import { decodeSpendMultitxClientRedeemer } from '../../shared/types/tendermint-update-session';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { ClientService } from '../client.service';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
@@ -26,6 +25,7 @@ function clientDatum(
 ): ClientDatum {
   const latest = height(latestHeight);
   return {
+    history_root: '00'.repeat(32),
     token: { policyId: '11'.repeat(28), name: Buffer.from(latestHeight.toString()).toString('hex') },
     state: {
       clientState: {
@@ -115,6 +115,7 @@ describe('ClientService recovery transaction', () => {
     const lucid: any = {
       LucidImporter: Lucid,
       hasStagedTendermintClient: jest.fn().mockReturnValue(false),
+      prepareConsensusHistoryUpdate: jest.fn().mockResolvedValue({ newRoot: '44'.repeat(32), siblings: [] }),
       findUtxoAtHostStateNFT: jest.fn(),
       getPaymentCredential: jest.fn(),
       getClientTokenUnit: jest.fn((id: string) => `unit-${id}`),
@@ -235,52 +236,14 @@ describe('ClientService recovery transaction', () => {
     ).rejects.toThrow('does not match');
   });
 
-  it('encodes staged recovery with the substitute token and retains the authority withdrawal', async () => {
-    const { service, lucid, treeContext } = serviceContext();
-    lucid.hasStagedTendermintClient.mockReturnValue(true);
-    const tree = new ICS23MerkleTree();
-    tree.set('clients/07-tendermint-1/clientState', Buffer.from('old-client'));
-    const hostStateUtxo = { txHash: 'aa'.repeat(32), outputIndex: 0, address: 'host', assets: {} };
-    await treeContext.restore(tree, hostStateUtxo);
-    const operator = recoveryOperator(tree, hostStateUtxo);
-
-    await service.buildUnsignedRecoverClientTx(operator);
-
-    const args = lucid.createUnsignedRecoverClientTransaction.mock.calls[0];
-    expect(decodeSpendMultitxClientRedeemer(args[3], Lucid)).toEqual({
-      RecoverClient: { substituteToken: operator.substituteClientDatum.token },
-    });
-    expect(args[5]).toBe('encoded-recoverClientWithdrawalRedeemer');
-    expect(lucid.encode).toHaveBeenCalledWith(
-      {
-        RecoverClientWithdrawal: {
-          subject_token: operator.subjectClientDatum.token,
-          substitute_token: operator.substituteClientDatum.token,
-        },
-      },
-      'recoverClientWithdrawalRedeemer',
-    );
-    expect(lucid.encode).not.toHaveBeenCalledWith(expect.anything(), 'spendClientRedeemer');
-  });
-
-  it('caps subject history at 300 entries and commits the matching root update', async () => {
+  it('archives the subject tip, keeps all 300 commitment leaves, and writes only the recovery tip', async () => {
     const { service, lucid, treeContext } = serviceContext();
     const subject = clientDatum(300n, 0n, { frozen: true });
-    const consensusEntries: Array<[ReturnType<typeof height>, any]> = [];
-    const timeEntries: Array<[ReturnType<typeof height>, bigint]> = [];
-    const heightEntries: Array<[ReturnType<typeof height>, bigint]> = [];
     const tree = new ICS23MerkleTree();
     tree.set('clients/07-tendermint-1/clientState', Buffer.from('old-client'));
     for (let value = 300n; value >= 1n; value--) {
-      const key = height(value);
-      consensusEntries.push([key, { timestamp: 0n, next_validators_hash: 'aa', root: { hash: 'bb' } }]);
-      timeEntries.push([key, value]);
-      heightEntries.push([key, value]);
       tree.set(`clients/07-tendermint-1/consensusStates/${value}`, Buffer.from([Number(value % 255n)]));
     }
-    subject.state.consensusStates = new Map(consensusEntries);
-    subject.state.processedTimes = new Map(timeEntries);
-    subject.state.processedHeights = new Map(heightEntries);
     const hostStateUtxo = { txHash: 'aa'.repeat(32), outputIndex: 0, address: 'host', assets: {} };
     await treeContext.restore(tree, hostStateUtxo);
     const recoveredDatums: ClientDatum[] = [];
@@ -294,15 +257,21 @@ describe('ClientService recovery transaction', () => {
     );
 
     const recovered = recoveredDatums[0];
-    expect(recovered.state.consensusStates.size).toBe(300);
+    expect(recovered.state.consensusStates.size).toBe(1);
     expect(Array.from(recovered.state.consensusStates.keys())[0]).toEqual(height(301n));
-    expect(Array.from(recovered.state.consensusStates.keys()).at(-1)).toEqual(height(2n));
+    expect(recovered.state.processedTimes.size).toBe(1);
+    expect(recovered.state.processedHeights.size).toBe(1);
+    expect(lucid.prepareConsensusHistoryUpdate).toHaveBeenCalledTimes(1);
+    expect(recovered.history_root).toBe('44'.repeat(32));
+    expect(lucid.encode).toHaveBeenCalledWith(
+      { RecoverClient: { substitute_token: clientDatum(301n, 150n).token, history_siblings: [] } },
+      'spendClientRedeemer',
+    );
     const expectedTree = tree.clone();
     expectedTree.set(
       'clients/07-tendermint-1/clientState',
       Buffer.from(await encodeClientStateValue(recovered.state.clientState, Lucid), 'hex'),
     );
-    expectedTree.set('clients/07-tendermint-1/consensusStates/1', Buffer.alloc(0));
     expectedTree.set(
       'clients/07-tendermint-1/consensusStates/301',
       Buffer.from(await encodeConsensusStateValue(Array.from(recovered.state.consensusStates.values())[0], Lucid), 'hex'),

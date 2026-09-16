@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "engines": { "deno": ">=2.7.0" },
+  "overrides": {
+    "@lucid-evolution/uplc": "0.2.23"
+  }
+}

@@ -38,3 +38,6 @@ lerna-debug.log*
 .env
 
 src/deployment/
+
+# Disposable consensus history indexes, rebuilt from accepted Cardano transactions.
+/.consensus-history/

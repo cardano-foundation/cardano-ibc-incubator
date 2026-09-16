@@ -72,6 +72,7 @@
     "ws": "8.21.0"
   },
   "overrides": {
+    "@lucid-evolution/uplc": "0.2.23",
     "axios": "$axios",
     "ip-address": "10.4.0",
     "postcss": "8.5.23",

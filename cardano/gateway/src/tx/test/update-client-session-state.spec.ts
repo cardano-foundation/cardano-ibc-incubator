@@ -115,6 +115,7 @@ function fixtureConsensusState(scenario: any): ConsensusState {
 
 function fixtureClientDatum(header: Header, consensusState: ConsensusState): ClientDatum {
   return {
+    history_root: '00'.repeat(32),
     token: { policyId: 'aa'.repeat(28), name: 'bb'.repeat(32) },
     state: {
       clientState: {

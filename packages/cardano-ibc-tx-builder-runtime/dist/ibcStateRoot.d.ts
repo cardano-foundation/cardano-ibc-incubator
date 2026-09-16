@@ -6,8 +6,9 @@ export type IbcTreeDeployment = Readonly<{
         policyId: string;
         name: string;
     }>;
+    clientPolicyId?: string;
 }>;
-export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets' | 'txHash' | 'outputIndex'>;
+export type IbcTreeUtxo = Pick<UTxO, 'datum' | 'assets' | 'txHash' | 'outputIndex'> & Partial<Pick<UTxO, 'address'>>;
 export type IbcTreeHostStateRef = Readonly<Pick<UTxO, 'txHash' | 'outputIndex'>>;
 export type IbcTreeSnapshot = Readonly<{
     root: string;
@@ -31,9 +32,29 @@ export interface IbcTreeKupoService {
 }
 export interface IbcTreeLucidService {
     readonly LucidImporter: typeof import('@lucid-evolution/lucid');
+    consensusHistoryRecords?(client: IbcTreeUtxo): Promise<Array<{
+        datum: ConsensusStateDatumLike;
+        consensusValue: string;
+        archived: boolean;
+    }>>;
     findUtxoAtHostStateNFT(): Promise<IbcTreeUtxo | undefined>;
-    decodeDatum<T>(encodedDatum: string, type: 'host_state' | 'client' | 'connection' | 'channel'): Promise<T>;
+    decodeDatum<T>(encodedDatum: string, type: 'host_state' | 'client' | 'consensus_state' | 'connection' | 'channel'): Promise<T>;
 }
+type AuthTokenLike = {
+    policyId: string;
+    name: string;
+};
+type HeightLike = {
+    revisionNumber: bigint;
+    revisionHeight: bigint;
+};
+type ConsensusStateDatumLike = {
+    clientToken: AuthTokenLike;
+    height: HeightLike;
+    consensusState: unknown;
+    processedTime: bigint;
+    processedHeight: bigint;
+};
 type ChannelStateLike = {
     channel: any;
     next_sequence_send: bigint;

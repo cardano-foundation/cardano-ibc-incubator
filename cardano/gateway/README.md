@@ -104,6 +104,8 @@ The Gateway's historical Cardano reads now go through the Yaci-backed bridge his
 
 `HISTORY_DB_*` is the Gateway's database config surface for the historical backend.
 
+Proof-backed consensus history requires Node.js 22.13 or newer and retained Yaci transaction bodies/validity data. `CONSENSUS_HISTORY_CACHE_DIR` selects the writable, disposable per-client SQLite cache directory (default `.consensus-history`); deleting it triggers authenticated chain replay, not loss of on-chain history. `CONSENSUS_HISTORY_MAX_OPEN_INDEXES` bounds open caches (default `64`), and `CONSENSUS_HISTORY_TIMEOUT_MS` bounds each SQL, connection-acquisition, and live-provider wait (default `30000`).
+
 ## Cardano Data Plane
 
 The Gateway now uses two Cardano data planes with different responsibilities:

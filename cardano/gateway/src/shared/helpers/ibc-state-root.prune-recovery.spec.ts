@@ -18,6 +18,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
   it('rebuilds from live datums alone and can receive another packet', async () => {
     const consensusHeight = { revisionNumber: 0n, revisionHeight: 81n };
     const clientDatum: ClientDatum = {
+      history_root: '00'.repeat(32),
       state: {
         clientState: {
           chainId: toHex('counterparty-0'),

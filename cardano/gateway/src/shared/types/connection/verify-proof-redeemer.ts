@@ -4,6 +4,7 @@ import { ConsensusState } from '../consensus-state';
 import { VerifyMembershipParams } from './verify-membership-params';
 import { VerifyNonMembershipParams } from './verify-non-membership-params';
 import { ClientState } from '../client-state-types';
+import { ConsensusHistoryWitness, consensusHistoryWitnessSchema } from '../consensus-state-datum';
 import {
   createConsensusStateSchema,
   createHeightSchema,
@@ -54,6 +55,7 @@ export type VerifyProofRedeemer =
 export function encodeVerifyProofRedeemer(
   verifyProofRedeemer: VerifyProofRedeemer,
   Lucid: typeof import('@lucid-evolution/lucid'),
+  historyWitness: ConsensusHistoryWitness | null = null,
 ) {
   const { Data } = Lucid;
   const ClientStateSchema = createTendermintClientStateSchema(Data);
@@ -127,5 +129,9 @@ export function encodeVerifyProofRedeemer(
     }),
   ]);
 
-  return Data.to(verifyProofRedeemer, VerifyProofRedeemerSchema as unknown as VerifyProofRedeemer, { canonical: true });
+  const envelopeSchema = Data.Object({
+    proof: VerifyProofRedeemerSchema,
+    history_witness: Data.Nullable(consensusHistoryWitnessSchema(Lucid)),
+  });
+  return Data.to({ proof: verifyProofRedeemer, history_witness: historyWitness } as never, envelopeSchema as never, { canonical: true });
 }

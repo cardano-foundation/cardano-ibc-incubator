@@ -47,7 +47,11 @@ for (const benchmarkVoucherEnabled of [false, true]) {
     plan.referenceValidators.map(({ script }) => script),
     16_384,
   );
-  for (const item of report.filter(({ oversized }) => oversized)) {
+  for (
+    const item of report.filter(({ intrinsicallyOversized }) =>
+      intrinsicallyOversized
+    )
+  ) {
     failures.push(
       `${name}: ${
         plan.referenceValidators[item.index].title

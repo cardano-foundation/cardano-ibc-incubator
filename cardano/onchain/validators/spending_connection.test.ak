@@ -1,3 +1,4 @@
+use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
@@ -13,11 +14,14 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
+use ibc/client/ics_007_tendermint_client/consensus_history.{
+  ConsensusStateDatum, Witness,
+}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership,
+  VerifyMembership, VerifyProofEnvelope,
 }
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -37,6 +41,7 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
+use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 use spending_connection
@@ -170,6 +175,7 @@ fn setup() -> MockData {
 
   let client_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state,
         consensus_states: [Pair(proof_height, cons_state)],
@@ -263,7 +269,7 @@ fn host_state_update_connection_redeemer() -> Redeemer {
   redeemer
 }
 
-test conn_open_ack_succeed() {
+test conn_open_ack_accepts_authenticated_history_witness() {
   let mock = setup()
 
   //========================arrange inputs=======================
@@ -299,8 +305,34 @@ test conn_open_ack_succeed() {
       },
     }
 
+  let latest_height = Height { revision_number: 0, revision_height: 188486 }
+  let latest_cons_state =
+    ConsensusState { ..cons_state, timestamp: cons_state.timestamp + 1 }
   let client_input =
-    test_utils.update_client(proof_height, cons_state, mock.client_input)
+    test_utils.update_client(
+      latest_height,
+      latest_cons_state,
+      mock.client_input,
+    )
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  let record =
+    ConsensusStateDatum {
+      client_token: client_datum.token,
+      height: proof_height,
+      consensus_state: cons_state,
+      processed_time: 0,
+      processed_height: 0,
+    }
+  let history_siblings = list.repeat(tree.empty_hash, tree.merkle_depth_bits)
+  let history_root =
+    consensus_history.insert(tree.empty_hash, record, history_siblings)
+  let client_datum = ClientDatum { ..client_datum, history_root }
+  let client_input =
+    Input {
+      ..client_input,
+      output: Output { ..client_input.output, datum: InlineDatum(client_datum) },
+    }
 
   let reference_inputs = [client_input]
 
@@ -329,9 +361,6 @@ test conn_open_ack_succeed() {
   let proof_try = MerkleProof { proofs: [] }
 
   let connection_redeemer: Redeemer = ConnOpenAck
-
-  expect client_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_input.output)
 
   let client_datum_state = client_datum.state
   let connection = output_conn_datum.state
@@ -368,21 +397,21 @@ test conn_open_ack_succeed() {
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
-  expect Some(consensus_state) =
-    pairs.get_first(client_datum_state.consensus_states, proof_height)
-
   let verify_proof_redeemer: Redeemer =
-    VerifyMembership {
-      cs: client_datum_state.client_state,
-      cons_state: consensus_state,
-      height: proof_height,
-      processed_time: 0,
-      processed_height: 0,
-      delay_time_period: time_delay,
-      delay_block_period: block_delay,
-      proof: proof_try,
-      path: conn_merkle_path,
-      value: expected_connection_bz,
+    VerifyProofEnvelope {
+      history_witness: Some(Witness { record, siblings: history_siblings }),
+      proof: VerifyMembership {
+        cs: client_datum_state.client_state,
+        cons_state,
+        height: proof_height,
+        processed_time: 0,
+        processed_height: 0,
+        delay_time_period: time_delay,
+        delay_block_period: block_delay,
+        proof: proof_try,
+        path: conn_merkle_path,
+        value: expected_connection_bz,
+      },
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -496,18 +525,22 @@ fn run_conn_open_confirm(client_is_active: Bool) -> Bool {
   let connection_redeemer: Redeemer =
     ConnOpenConfirm { proof_ack, proof_height }
   let verify_proof_redeemer: Redeemer =
-    VerifyMembership {
-      cs: client_datum_state.client_state,
-      cons_state: consensus_state,
-      height: proof_height,
-      processed_time: 0,
-      processed_height: 0,
-      delay_time_period: connection.delay_period,
-      delay_block_period: verify_mod.get_block_delay(connection),
-      proof: proof_ack,
-      path: conn_merkle_path,
-      value: expected_connection_bz,
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: VerifyMembership {
+        cs: client_datum_state.client_state,
+        cons_state: consensus_state,
+        height: proof_height,
+        processed_time: 0,
+        processed_height: 0,
+        delay_time_period: connection.delay_period,
+        delay_block_period: verify_mod.get_block_delay(connection),
+        proof: proof_ack,
+        path: conn_merkle_path,
+        value: expected_connection_bz,
+      },
     }
+
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(Spend(conn_input.output_reference), connection_redeemer),
@@ -659,17 +692,20 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
     pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let verify_proof_redeemer: Redeemer =
-    VerifyMembership {
-      cs: client_datum_state.client_state,
-      cons_state: consensus_state,
-      height: proof_height,
-      processed_time: 0,
-      processed_height: 0,
-      delay_time_period: time_delay,
-      delay_block_period: block_delay,
-      proof: proof_try,
-      path: conn_merkle_path,
-      value: expected_connection_bz,
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: VerifyMembership {
+        cs: client_datum_state.client_state,
+        cons_state: consensus_state,
+        height: proof_height,
+        processed_time: 0,
+        processed_height: 0,
+        delay_time_period: time_delay,
+        delay_block_period: block_delay,
+        proof: proof_try,
+        path: conn_merkle_path,
+        value: expected_connection_bz,
+      },
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =

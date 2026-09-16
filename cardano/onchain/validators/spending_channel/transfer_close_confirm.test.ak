@@ -21,7 +21,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership, VerifyProofRedeemer,
+  VerifyMembership, VerifyProofEnvelope, VerifyProofRedeemer,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
@@ -285,7 +285,8 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
   let channel_data: Redeemer = channel_redeemer
   let module_data: Redeemer = module_redeemer
   let host_data: Redeemer = host_redeemer
-  let verify_data: Redeemer = verify_redeemer
+  let verify_data: Redeemer =
+    VerifyProofEnvelope { proof: verify_redeemer, history_witness: None }
   let token_data: Redeemer = mock.channel_token
   let tx =
     Transaction {
@@ -353,7 +354,7 @@ fn check_marker(f: Fixture) -> Bool {
 
 fn check_proof(f: Fixture) -> Bool {
   verifying_proof.verify_proof.mint(
-    f.verify_redeemer,
+    VerifyProofEnvelope { proof: f.verify_redeemer, history_witness: None },
     setup().verify_proof_policy_id,
     f.tx,
   )
@@ -482,7 +483,8 @@ test transfer_close_confirm_rejects_invalid_proof() fail {
       value,
       proof: invalid_proof,
     }
-  let verify_data: Redeemer = verify_redeemer
+  let verify_data: Redeemer =
+    VerifyProofEnvelope { proof: verify_redeemer, history_witness: None }
   let invalid =
     with_channel_redeemer(
       f,

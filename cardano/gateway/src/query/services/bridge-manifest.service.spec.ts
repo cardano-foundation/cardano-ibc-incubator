@@ -24,6 +24,7 @@ function manifest(): BridgeManifest {
 
   return {
     schema_version: 4,
+    consensus_history_format: 'proof-backed-v1',
     deployment_id: 'cardano-devnet:host-policy.host-token',
     deployed_at: '2026-04-01T12:34:56.000Z',
     ics20_packet_codec: ICS20_PACKET_CODEC.STRICT,

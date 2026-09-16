@@ -6,13 +6,13 @@ use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
   VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
-  VerifyProofRedeemer,
+  VerifyProofEnvelope,
 }
 use ibc/utils/validator_utils
 
 validator verify_proof {
   mint(
-    redeemer: VerifyProofRedeemer,
+    redeemer: VerifyProofEnvelope,
     policy_id: PolicyId,
     transaction: Transaction,
   ) {
@@ -29,7 +29,7 @@ validator verify_proof {
         1,
       )
 
-    when redeemer is {
+    when redeemer.proof is {
       VerifyMembership {
         cs,
         cons_state,

@@ -8,6 +8,10 @@ import {
   QueryClientStatesResponse,
   QueryConsensusStateRequest,
   QueryConsensusStateResponse,
+  QueryConsensusStatesRequest,
+  QueryConsensusStatesResponse,
+  QueryConsensusStateHeightsRequest,
+  QueryConsensusStateHeightsResponse,
   QueryLatestHeightRequest,
   QueryLatestHeightResponse,
   QueryNewClientRequest,
@@ -116,6 +120,26 @@ export class QueryController {
       queryHeight: getQueryHeightFromMetadata(metadata),
     });
     return response;
+  }
+
+  @GrpcMethod('Query', 'ConsensusStates')
+  async queryConsensusStates(
+    data: QueryConsensusStatesRequest,
+    metadata?: Metadata,
+  ): Promise<QueryConsensusStatesResponse> {
+    return this.queryService.queryConsensusStates(data, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
+  }
+
+  @GrpcMethod('Query', 'ConsensusStateHeights')
+  async queryConsensusStateHeights(
+    data: QueryConsensusStateHeightsRequest,
+    metadata?: Metadata,
+  ): Promise<QueryConsensusStateHeightsResponse> {
+    return this.queryService.queryConsensusStateHeights(data, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
   }
 
   @GrpcMethod('Query', 'LatestHeight')

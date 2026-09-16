@@ -183,7 +183,7 @@ const STAGED_TENDERMINT_EXECUTION_SCENARIOS: StagedExecutionScenario[] = [
     id: 'tendermint_staged_freeze',
     name: 'Staged Tendermint two-header freeze with minimum history',
     pairs: [{
-      name: 'client, two sessions, receipt burns and HostState root transition',
+      name: 'client, history support, two sessions, receipt burns and HostState root transition',
       baselineTest: 'recover_client.test.staged_atomic_freeze_fixture_setup_baseline',
       measuredTest: 'recover_client.test.staged_atomic_freeze_all_validators_accept_real_root_transition',
     }],
@@ -253,7 +253,7 @@ const STAGED_TENDERMINT_EXECUTION_SCENARIOS: StagedExecutionScenario[] = [
         measuredTest: 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds',
       },
       {
-        name: 'client state transition',
+        name: 'client state transition and history support',
         baselineTest: 'spending_multitx_client.test.completed_session_update_fixture_setup_baseline',
         measuredTest: 'spending_multitx_client.test.completed_session_updates_the_client_atomically',
       },
@@ -582,15 +582,15 @@ const CONSENSUS_STATE = {
 
 const RECOVERY_SUBJECT_TOKEN = {
   policyId: hexOfBytes(28, '21'),
-  name: hexOfBytes(8, '22'),
+  name: hexOfBytes(32, '22'),
 };
 
 const RECOVERY_SUBSTITUTE_TOKEN = {
   policyId: RECOVERY_SUBJECT_TOKEN.policyId,
-  name: hexOfBytes(8, '23'),
+  name: hexOfBytes(32, '23'),
 };
 
-function verifyProofRedeemer(proofBytes: number, valueBytes = 128): string {
+function verifyProofRedeemer(proofBytes: number, valueBytes = 128, historical = false): string {
   return encodeVerifyProofRedeemer(
     {
       VerifyMembership: {
@@ -607,6 +607,11 @@ function verifyProofRedeemer(proofBytes: number, valueBytes = 128): string {
       },
     },
     Lucid,
+    historical ? { record: {
+      clientToken: RECOVERY_SUBJECT_TOKEN, height: HEIGHT,
+      consensusState: CONSENSUS_STATE, processedTime: 1_234_567_890_000_000_000n,
+      processedHeight: 123_456_789n,
+    }, siblings: Array(64).fill(hexOfBytes(32, '00')) } : null,
   );
 }
 
@@ -739,7 +744,10 @@ async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
       dataBytes('host state UpdateClient redeemer', 4_600),
       sized(
         'spend client RecoverClient',
-        await encodeSpendClientRedeemer({ RecoverClient: { substitute_token: RECOVERY_SUBSTITUTE_TOKEN } }, Lucid),
+        await encodeSpendClientRedeemer({ RecoverClient: {
+          substitute_token: RECOVERY_SUBSTITUTE_TOKEN,
+          history_siblings: Array(64).fill('00'.repeat(32)),
+        } }, Lucid),
       ),
       sized(
         'recover client withdrawal',
@@ -756,7 +764,7 @@ async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
     ],
     datums: [
       dataBytes('updated host state datum', 1_000),
-      dataBytes('recovered client datum with two consensus states', 1_000),
+      dataBytes('recovered client datum with one consensus state and history root', 750),
     ],
     largestProofPayloadBytes: 4_096,
     aikenTests: [
@@ -884,6 +892,9 @@ async function buildScenarios(
       id: 'conn_open_ack',
       name: 'ConnOpenAck',
       inputCount: 3,
+      // History is proved inside the existing verify-proof carrier. Only the
+      // live authenticated client datum is referenced; there is no archive UTxO.
+      nonScriptReferenceInputCount: 1,
       outputCount: 3,
       mintPolicyCount: 1,
       referenceScriptTitles: [
@@ -893,12 +904,12 @@ async function buildScenarios(
       ],
       redeemers: [
         sized('spend connection ConnOpenAck', await encodeSpendConnectionRedeemer('ConnOpenAck', Lucid)),
-        sized('verify proof', verifyProofRedeemer(1536)),
+        sized('verify proof with historical membership witness', verifyProofRedeemer(1536, 128, true)),
         dataBytes('host state redeemer', 512),
       ],
       datums: [dataBytes('updated host state datum', 1000), dataBytes('connection datum', 768)],
-      largestProofPayloadBytes: 1536,
-      aikenTests: ['spending_connection.test.conn_open_ack_succeed'],
+      largestProofPayloadBytes: 1536 + 64 * 32,
+      aikenTests: ['spending_connection.test.conn_open_ack_accepts_authenticated_history_witness'],
     },
     await buildMinimumHistoryRecoveryScenario(),
     {
@@ -1318,6 +1329,8 @@ async function buildScenarios(
 async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
   const fixture = loadNormalizedCapacityFixture();
   const hostState = requiredAikenTestUnits(aikenTests, CAPACITY_HOST_STATE_AIKEN_TEST);
+  // Measure the exact capacity fixture's spending and support scripts separately;
+  // combined positive/negative tests must not be double-counted as components.
 
   return Promise.all(
     CAPACITY_SCENARIOS.map(async ({ fixtureName, aikenTest }) => {
@@ -1326,12 +1339,15 @@ async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
         throw new Error(`Missing normalized Tendermint capacity scenario: ${fixtureName}`);
       }
       const spendClient = requiredAikenTestUnits(aikenTests, aikenTest);
+      const clientSupport = requiredAikenTestUnits(aikenTests,
+        `spending_client_capacity.test.support_capacity_${fixtureName}_45_succeeds`);
       const artifact = await analyzeCapacityScenario(
         fixtureName,
         scenario,
         {
           hostState: { mem: BigInt(hostState.mem), steps: BigInt(hostState.steps) },
           spendClient: { mem: BigInt(spendClient.mem), steps: BigInt(spendClient.steps) },
+          clientSupport: { mem: BigInt(clientSupport.mem), steps: BigInt(clientSupport.steps) },
         },
         'aiken-unit-tests',
       );
@@ -1393,7 +1409,9 @@ async function main() {
   const aikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_AIKEN_CHECK_JSON || path.join(repoRoot, 'aiken-check.json');
 
   const deploymentPlanPath = process.env.CARDANO_TX_BUDGET_DEPLOYMENT_PLAN || path.join(repoRoot, 'deployment-plan.json');
-  const deploymentReferences = readAppliedDeploymentPlan(deploymentPlanPath, blueprintPath, maxTxSize, 750);
+  // Dedicated reference funding avoids the conservative 750-byte wallet/change
+  // allowance. Signed production publications enforce a 200-byte reserve too.
+  const deploymentReferences = readAppliedDeploymentPlan(deploymentPlanPath, blueprintPath, maxTxSize, 200);
 
   const blueprint = readJson<Blueprint>(blueprintPath);
   const validators = new Map(blueprint.validators.map((validator) => [validator.title, validator]));

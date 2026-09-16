@@ -18,6 +18,11 @@
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./ics23MerkleTree": { "types": "./dist/ics23MerkleTree.d.ts", "default": "./dist/ics23MerkleTree.js" },
     "./ibcStateRoot": { "types": "./dist/ibcStateRoot.d.ts", "default": "./dist/ibcStateRoot.js" },
+    "./consensusHistory": { "types": "./dist/consensusHistory.d.ts", "default": "./dist/consensusHistory.js" },
+    "./consensusHistoryRecovery": { "types": "./dist/consensusHistoryRecovery.d.ts", "default": "./dist/consensusHistoryRecovery.js" },
+    "./consensusHistoryYaci": { "types": "./dist/consensusHistoryYaci.d.ts", "default": "./dist/consensusHistoryYaci.js" },
+    "./incrementalIbcTree": { "types": "./dist/incrementalIbcTree.d.ts", "default": "./dist/incrementalIbcTree.js" },
+    "./plutusSerialise": { "types": "./dist/plutusSerialise.d.ts", "default": "./dist/plutusSerialise.js" },
     "./transferEscrowShard": { "types": "./dist/transferEscrowShard.d.ts", "default": "./dist/transferEscrowShard.js" },
     "./sendPacketEscrow": { "types": "./dist/sendPacketEscrow.d.ts", "default": "./dist/sendPacketEscrow.js" }
   },
@@ -25,6 +30,11 @@
     "*": {
       "ics23MerkleTree": ["dist/ics23MerkleTree.d.ts"],
       "ibcStateRoot": ["dist/ibcStateRoot.d.ts"],
+      "consensusHistory": ["dist/consensusHistory.d.ts"],
+      "consensusHistoryRecovery": ["dist/consensusHistoryRecovery.d.ts"],
+      "consensusHistoryYaci": ["dist/consensusHistoryYaci.d.ts"],
+      "incrementalIbcTree": ["dist/incrementalIbcTree.d.ts"],
+      "plutusSerialise": ["dist/plutusSerialise.d.ts"],
       "transferEscrowShard": ["dist/transferEscrowShard.d.ts"],
       "sendPacketEscrow": ["dist/sendPacketEscrow.d.ts"]
     }
@@ -36,6 +46,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test dist/*.test.js"
+  },
+  "overrides": {
+    "@lucid-evolution/uplc": "0.2.23"
   },
   "dependencies": {
     "@cardano-ibc/trace-registry": "file:../cardano-ibc-trace-registry",

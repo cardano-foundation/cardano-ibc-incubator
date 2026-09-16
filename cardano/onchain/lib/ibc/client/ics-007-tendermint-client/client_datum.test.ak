@@ -1,7 +1,5 @@
 use aiken/collection/list
-use aiken/collection/pairs
 use aiken/fuzz
-use aiken/math
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -12,9 +10,6 @@ use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
 }
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header
-use ibc/client/ics_007_tendermint_client/cometbft/constants.{
-  max_consensus_state_size,
-}
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
@@ -133,6 +128,7 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
       name: mock_auth_token_name,
     }
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: mock_client_state,
       consensus_states: mock_consensus_states,
@@ -157,332 +153,77 @@ fn positive_seed(seed: Int) -> Int {
   }
 }
 
-// Keep the previous list-membership algorithm as an independent test oracle.
-fn previous_history_update(
-  input: ClientDatum,
-  new_header: Header,
-) -> ClientDatum {
-  let header_height = header.get_height(new_header)
-  let retained =
-    list.filter(
-      input.state.consensus_states,
-      fn(entry) {
-        !client_state.is_expired(
-          input.state.client_state,
-          entry.2nd.timestamp,
-          1_000_000,
-        )
-      },
-    )
-  let retained_keys = pairs.keys(retained)
-  let last_index = math.min(max_consensus_state_size - 1, list.length(retained))
-  ClientDatum {
-    ..input,
-    state: ClientDatumState {
-      client_state: ClientState {
-        ..input.state.client_state,
-        latest_height: header_height,
-      },
-      consensus_states: [
-        Pair(header_height, header.consensus_state(new_header)),
-        ..retained
-      ]
-        |> list.slice(0, last_index),
-      processed_times: [
-        Pair(header_height, 1_000_000),
-        ..list.filter(
-          input.state.processed_times,
-          fn(entry) { list.has(retained_keys, entry.1st) },
-        )
-      ]
-        |> list.slice(0, last_index),
-      processed_heights: [
-        Pair(header_height, client_datum.processed_height_from_time(1_000_000)),
-        ..list.filter(
-          input.state.processed_heights,
-          fn(entry) { list.has(retained_keys, entry.1st) },
-        )
-      ]
-        |> list.slice(0, last_index),
-    },
-  }
-}
-
-fn history_fixture(
-  consensus: Pairs<Height, Int>,
-  times: Pairs<Height, Int>,
-  blocks: Pairs<Height, Int>,
-) -> ClientDatum {
-  let base = get_mock_client_datum(height.new_height(0, 1000))
-  expect [Pair(_, template)] = base.state.consensus_states
-  ClientDatum {
-    ..base,
-    state: ClientDatumState {
-      ..base.state,
-      consensus_states: list.map(
-        consensus,
-        fn(entry) {
-          Pair(entry.1st, ConsensusState { ..template, timestamp: entry.2nd })
-        },
-      ),
-      processed_times: times,
-      processed_heights: blocks,
-    },
-  }
-}
-
-fn history_header() -> Header {
-  get_mock_header(height.new_height(0, 1001))
-}
-
-fn matches_previous_history_update(input: ClientDatum) -> Bool {
-  let new_header = history_header()
-  client_datum.update_state(
-    input,
-    previous_history_update(input, new_header),
-    new_header,
-    1,
-    1,
-  )
-}
-
-fn fuzz_history_height() -> Fuzzer<Height> {
-  fuzz.map2(
-    fuzz.int_between(-2, 2),
-    fuzz.int_between(-3, 12),
-    height.new_height,
-  )
-}
-
-fn fuzz_history_metadata() -> Fuzzer<Pairs<Height, Int>> {
-  fuzz.list_between(
-    fuzz.map2(
-      fuzz_history_height(),
-      fuzz.int_between(-100, 100),
-      fn(key, value) { Pair(key, value) },
-    ),
-    0,
-    64,
-  )
-}
-
-fn fuzz_client_history() -> Fuzzer<ClientDatum> {
-  fuzz.map3(
-    fuzz.list_between(
-      fuzz.map2(
-        fuzz_history_height(),
-        fuzz.int_between(998998, 999002),
-        fn(key, timestamp) { Pair(key, timestamp) },
-      ),
-      0,
-      64,
-    ),
-    fuzz_history_metadata(),
-    fuzz_history_metadata(),
-    history_fixture,
-  )
-}
-
-test prop_client_update_metadata_matches_previous_membership(
-  input via fuzz_client_history(),
-) {
-  fuzz.label(@"fuzz.unit.client.history.metadata_membership")
-  matches_previous_history_update(input)
-}
-
-test metadata_update_preserves_independent_order_duplicates_and_missing_entries() {
-  let a = height.new_height(0, 1)
-  let b = height.new_height(0, 2)
-  let c = height.new_height(1, 2)
-  let unrelated = height.new_height(0, 99)
-  let input =
-    history_fixture(
-      [Pair(b, 999001), Pair(a, 999000), Pair(b, 998999), Pair(c, 999002)],
-      [Pair(unrelated, 90), Pair(c, -7), Pair(b, 33), Pair(b, 34)],
-      [Pair(c, -8)],
-    )
-  let output = previous_history_update(input, history_header())
-  and {
-    matches_previous_history_update(input),
-    pairs.keys(output.state.consensus_states) == [
-      height.new_height(0, 1001),
-      b,
-      c,
-    ],
-    list.drop(output.state.processed_times, 1) == [Pair(c, -7), Pair(b, 33)],
-    list.drop(output.state.processed_heights, 1) == [Pair(c, -8)],
-  }
-}
-
-test metadata_update_retains_duplicate_metadata_when_one_matching_state_expires() {
-  let a = height.new_height(0, 1)
-  let b = height.new_height(0, 2)
-  let input =
-    history_fixture(
-      [Pair(a, 999000), Pair(a, 999001), Pair(b, 999001)],
-      [Pair(a, 11), Pair(a, 22), Pair(b, 33)],
-      [Pair(b, 44), Pair(a, 55)],
-    )
-  let output = previous_history_update(input, history_header())
-  and {
-    matches_previous_history_update(input),
-    list.drop(output.state.processed_times, 1) == [Pair(a, 11), Pair(a, 22)],
-  }
-}
-
-test metadata_update_matches_previous_membership_at_index_boundary() {
-  let large = 340282366920938463463374607431768211456
-  list.all(
-    [16, 17],
-    fn(count) {
-      let states =
-        list.range(1, count)
-          |> list.map(fn(n) { Pair(height.new_height(-n, large - n), 999001) })
-      let metadata =
-        states
-          |> list.reverse
-          |> list.flat_map(
-              fn(entry) { [Pair(entry.1st, 11), Pair(entry.1st, -22)] },
-            )
-      let missing = Pair(height.new_height(0, large - 1), 99)
-      matches_previous_history_update(
-        history_fixture(states, [missing, ..metadata], list.drop(metadata, 3)),
-      )
-    },
-  )
-}
-
-test metadata_update_empty_singleton_and_exact_expiry_boundary() {
-  let key = height.new_height(0, 1)
-  let metadata = [Pair(key, 11), Pair(key, 22)]
-  list.all(
-    [
-      history_fixture([], metadata, []),
-      history_fixture([Pair(key, 999000)], metadata, metadata),
-      history_fixture([Pair(key, 999001)], metadata, []),
-    ],
-    matches_previous_history_update,
-  )
-}
-
-// Keep the large fixture and legacy oracle out of the test's generated code.
-// The test still runs the production update against the oracle's exact output.
-const capacity_history_input = make_capacity_history_input()
-
-const capacity_history_header = history_header()
-
-const capacity_history_output =
-  previous_history_update(capacity_history_input, capacity_history_header)
-
-fn make_capacity_history_input() -> ClientDatum {
-  let keys =
-    list.range(1, max_consensus_state_size + 5)
-      |> list.map(fn(n) { height.new_height(0, n) })
-  history_fixture(
-    list.map(keys, fn(key) { Pair(key, 999001) }),
-    list.map(list.reverse(keys), fn(key) { Pair(key, key.revision_height) }),
-    [],
-  )
-}
-
-test metadata_update_looks_up_before_capacity_truncation() {
-  let output = capacity_history_output
-  expect [_, first_metadata, ..] = output.state.processed_times
-  and {
-    client_datum.update_state(
-      capacity_history_input,
-      output,
-      capacity_history_header,
-      1,
-      1,
-    ),
-    list.length(output.state.consensus_states) == max_consensus_state_size,
-    list.length(output.state.processed_times) == max_consensus_state_size,
-    list.length(output.state.processed_heights) == 1,
-    first_metadata.1st == height.new_height(0, max_consensus_state_size + 5),
-    !pairs.has_key(output.state.consensus_states, first_metadata.1st),
-  }
-}
-
-test metadata_update_preserves_full_signed_unbounded_height_keys() {
-  let large = 340282366920938463463374607431768211456
-  let keys =
-    [
-      height.new_height(-1, large),
-      height.new_height(large, -1),
-      height.new_height(0, 1),
-      height.new_height(1, 1),
-    ]
-  matches_previous_history_update(
-    history_fixture(
-      list.map(keys, fn(key) { Pair(key, 999001) }),
-      list.map(list.reverse(keys), fn(key) { Pair(key, -large) }),
-      [Pair(height.new_height(2, 1), large)],
-    ),
-  )
-}
-
-test metadata_update_rejects_existing_header_even_when_expired() fail {
-  matches_previous_history_update(
-    history_fixture([Pair(height.new_height(0, 1001), 0)], [], []),
-  )
-}
-
-test metadata_update_rejects_changed_metadata_order_or_value() {
-  let a = height.new_height(0, 1)
-  let b = height.new_height(0, 2)
-  let input =
-    history_fixture(
-      [Pair(a, 999001), Pair(b, 999001)],
-      [Pair(b, 22), Pair(a, 11)],
-      [],
-    )
-  let new_header = history_header()
-  let output = previous_history_update(input, new_header)
-  expect [head, Pair(key, value), ..rest] = output.state.processed_times
-  let reordered =
-    ClientDatum {
-      ..output,
-      state: ClientDatumState {
-        ..output.state,
-        processed_times: [
-          head,
-          ..list.reverse(list.drop(output.state.processed_times, 1))
-        ],
-      },
-    }
-  let changed =
-    ClientDatum {
-      ..output,
-      state: ClientDatumState {
-        ..output.state,
-        processed_times: [head, Pair(key, value + 1), ..rest],
-      },
-    }
-  and {
-    client_datum.update_state(input, output, new_header, 1, 1),
-    !client_datum.update_state(input, reordered, new_header, 1, 1),
-    !client_datum.update_state(input, changed, new_header, 1, 1),
-  }
-}
-
-test initialization_still_allows_extra_and_duplicate_metadata() {
-  let key = height.new_height(0, 99)
-  let input = get_mock_client_datum(key)
-  let input =
+test initialization_rejects_extra_and_duplicate_metadata() fail {
+  let input = get_mock_client_datum(height.new_height(0, 99))
+  let invalid =
     ClientDatum {
       ..input,
       state: ClientDatumState {
         ..input.state,
         processed_times: [
-          Pair(key, 0),
-          Pair(height.new_height(-1, 1), -1),
-          Pair(key, 99),
+          Pair(input.state.client_state.latest_height, 0),
+          Pair(input.state.client_state.latest_height, 99),
         ],
-        processed_heights: [Pair(key, 0), Pair(key, 99)],
       },
     }
-  client_datum.is_initialized_valid(input, input.token)
+  client_datum.is_initialized_valid(invalid, invalid.token)
+}
+
+test update_rejects_legacy_multi_entry_cache() fail {
+  let input = get_mock_client_datum(height.new_height(0, 99))
+  let invalid =
+    ClientDatum {
+      ..input,
+      state: ClientDatumState {
+        ..input.state,
+        consensus_states: list.concat(
+          input.state.consensus_states,
+          input.state.consensus_states,
+        ),
+      },
+    }
+  client_datum.update_state(
+    invalid,
+    input,
+    get_mock_header(height.new_height(0, 100)),
+    1,
+  )
+}
+
+test update_does_not_copy_old_processing_metadata() {
+  let input = get_mock_client_datum(height.new_height(0, 99))
+  let next = get_mock_header(height.new_height(0, 100))
+  let next_height = header.get_height(next)
+  let output =
+    ClientDatum {
+      ..input,
+      state: ClientDatumState {
+        client_state: ClientState {
+          ..input.state.client_state,
+          latest_height: next_height,
+        },
+        consensus_states: [Pair(next_height, header.consensus_state(next))],
+        processed_times: [Pair(next_height, 1_000_000)],
+        processed_heights: [
+          Pair(next_height, client_datum.processed_height_from_time(1_000_000)),
+        ],
+      },
+    }
+  and {
+    client_datum.update_state(input, output, next, 1),
+    !client_datum.update_state(
+      input,
+      ClientDatum {
+        ..output,
+        state: ClientDatumState {
+          ..output.state,
+          processed_times: input.state.processed_times,
+        },
+      },
+      next,
+      1,
+    ),
+  }
 }
 
 fn fuzz_height(seed: Int, offset: Int) -> Height {
@@ -513,16 +254,9 @@ test prop_client_update_accepts_adjacent(seed via fuzz.int()) {
             header.get_height(mock_header),
             header.consensus_state(mock_header),
           ),
-          ..input_client_datum.state.consensus_states
         ],
-        processed_times: [
-          Pair(header_height, 0),
-          ..input_client_datum.state.processed_times
-        ],
-        processed_heights: [
-          Pair(header_height, 0),
-          ..input_client_datum.state.processed_heights
-        ],
+        processed_times: [Pair(header_height, 0)],
+        processed_heights: [Pair(header_height, 0)],
       },
     }
 
@@ -534,7 +268,6 @@ test prop_client_update_accepts_adjacent(seed via fuzz.int()) {
       input_client_datum,
       output_client_datum,
       mock_header,
-      0,
       0,
     ),
   )
@@ -562,16 +295,9 @@ test prop_client_update_accepts_non_adjacent(seed via fuzz.int()) {
             header.get_height(mock_header),
             header.consensus_state(mock_header),
           ),
-          ..input_client_datum.state.consensus_states
         ],
-        processed_times: [
-          Pair(header_height, 0),
-          ..input_client_datum.state.processed_times
-        ],
-        processed_heights: [
-          Pair(header_height, 0),
-          ..input_client_datum.state.processed_heights
-        ],
+        processed_times: [Pair(header_height, 0)],
+        processed_heights: [Pair(header_height, 0)],
       },
     }
 
@@ -583,7 +309,6 @@ test prop_client_update_accepts_non_adjacent(seed via fuzz.int()) {
       input_client_datum,
       output_client_datum,
       mock_header,
-      0,
       0,
     ),
   )
@@ -608,16 +333,9 @@ test prop_client_update_rejects_historical_height(seed via fuzz.int()) {
             header.get_height(mock_header),
             header.consensus_state(mock_header),
           ),
-          ..input_client_datum.state.consensus_states
         ],
-        processed_times: [
-          Pair(header_height, 0),
-          ..input_client_datum.state.processed_times
-        ],
-        processed_heights: [
-          Pair(header_height, 0),
-          ..input_client_datum.state.processed_heights
-        ],
+        processed_times: [Pair(header_height, 0)],
+        processed_heights: [Pair(header_height, 0)],
       },
     }
 
@@ -630,7 +348,6 @@ test prop_client_update_rejects_historical_height(seed via fuzz.int()) {
       input_client_datum,
       output_client_datum,
       mock_header,
-      0,
       0,
     ),
   )
@@ -661,16 +378,9 @@ test prop_client_update_rejects_wrong_consensus_state(seed via fuzz.int()) {
         },
         consensus_states: [
           Pair(header.get_height(mock_header), wrong_consensus_state),
-          ..input_client_datum.state.consensus_states
         ],
-        processed_times: [
-          Pair(header_height, 0),
-          ..input_client_datum.state.processed_times
-        ],
-        processed_heights: [
-          Pair(header_height, 0),
-          ..input_client_datum.state.processed_heights
-        ],
+        processed_times: [Pair(header_height, 0)],
+        processed_heights: [Pair(header_height, 0)],
       },
     }
 
@@ -683,7 +393,6 @@ test prop_client_update_rejects_wrong_consensus_state(seed via fuzz.int()) {
       input_client_datum,
       output_client_datum,
       mock_header,
-      0,
       0,
     ),
   )
@@ -724,6 +433,7 @@ test test_is_initialized_valid_success() {
     }
   let mock_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
@@ -779,6 +489,7 @@ test test_is_initialized_valid_fail_with_invalid_client_state() fail {
     }
   let mock_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
@@ -818,6 +529,7 @@ test test_is_initialized_valid_fail_with_invalid_consensus_states() fail {
     }
   let mock_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
@@ -872,6 +584,7 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
     }
   let mock_datum =
     ClientDatum {
+      history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
@@ -912,7 +625,6 @@ test test_update_state_succeed_01() {
             header.get_height(mock_header),
             header.consensus_state(mock_header),
           ),
-          ..mock_client_datum.state.consensus_states
         ],
         processed_times: list.map(
           [
@@ -920,7 +632,6 @@ test test_update_state_succeed_01() {
               header.get_height(mock_header),
               header.consensus_state(mock_header),
             ),
-            ..mock_client_datum.state.consensus_states
           ],
           fn(pair) { Pair(pair.1st, 0) },
         ),
@@ -930,7 +641,6 @@ test test_update_state_succeed_01() {
               header.get_height(mock_header),
               header.consensus_state(mock_header),
             ),
-            ..mock_client_datum.state.consensus_states
           ],
           fn(pair) { Pair(pair.1st, 0) },
         ),
@@ -944,7 +654,6 @@ test test_update_state_succeed_01() {
     input_client_datum,
     output_client_datum,
     mock_header,
-    0,
     0,
   )
 }
@@ -999,126 +708,33 @@ test test_update_state_rejects_historical_update() {
     output_client_datum,
     mock_header,
     0,
-    0,
   )
 }
 
-/// Prune timeout consensus states.
-test test_update_state_succeed_03() {
-  let mock_header_latest_height =
-    Height { revision_number: 0, revision_height: 100 }
-  let mock_input_latest_height =
-    Height { revision_number: 0, revision_height: 99 }
-  let mock_client_datum = get_mock_client_datum(mock_input_latest_height)
-  let mock_header = get_mock_header(mock_header_latest_height)
-
-  let pruned_cons_state =
-    ConsensusState {
-      timestamp: 1710908451898 * 1_000_000,
-      next_validators_hash: mock_next_validators_hash,
-      root: merkle.new_merkle_root(mock_app_hash),
-    }
-  let mock_client_datum =
+/// Old expiry backlog is absent from the live datum and cannot block this transition.
+test update_keeps_singleton_even_after_old_tip_expires() {
+  let input = get_mock_client_datum(height.new_height(0, 99))
+  let next = get_mock_header(height.new_height(0, 100))
+  let h = header.get_height(next)
+  let processing_time = 100_000_000_000
+  let output =
     ClientDatum {
-      ..mock_client_datum,
-      state: ClientDatumState {
-        ..mock_client_datum.state,
-        consensus_states: [
-          Pair(
-            Height { revision_number: 0, revision_height: 88 },
-            pruned_cons_state,
-          ),
-          ..mock_client_datum.state.consensus_states
-        ],
-        processed_times: list.map(
-          [
-            Pair(
-              Height { revision_number: 0, revision_height: 88 },
-              pruned_cons_state,
-            ),
-            ..mock_client_datum.state.consensus_states
-          ],
-          fn(pair) { Pair(pair.1st, 0) },
-        ),
-        processed_heights: list.map(
-          [
-            Pair(
-              Height { revision_number: 0, revision_height: 88 },
-              pruned_cons_state,
-            ),
-            ..mock_client_datum.state.consensus_states
-          ],
-          fn(pair) { Pair(pair.1st, 0) },
-        ),
-      },
-    }
-  let tx_valid_from =
-    (
-      pruned_cons_state.timestamp + mock_client_datum.state.client_state.trusting_period
-    ) / 1_000_000 - 100000000
-
-  let expected_cons_state =
-    list.filter(
-      mock_client_datum.state.consensus_states,
-      fn(item) {
-        !client_state.is_expired(
-          mock_client_datum.state.client_state,
-          item.2nd.timestamp,
-          tx_valid_from * 1_000_000,
-        )
-      },
-    )
-      |> list.push(
-          Pair(
-            header.get_height(mock_header),
-            header.consensus_state(mock_header),
-          ),
-        )
-
-  let input_client_datum = mock_client_datum
-  let output_client_datum =
-    ClientDatum {
-      ..mock_client_datum,
+      ..input,
       state: ClientDatumState {
         client_state: ClientState {
-          ..mock_client_datum.state.client_state,
-          latest_height: mock_header_latest_height,
+          ..input.state.client_state,
+          latest_height: h,
         },
-        consensus_states: expected_cons_state,
-        processed_times: list.map(
-          expected_cons_state,
-          fn(pair) {
-            if pair.1st == header.get_height(mock_header) {
-              Pair(pair.1st, tx_valid_from * 1_000_000)
-            } else {
-              Pair(pair.1st, 0)
-            }
-          },
-        ),
-        processed_heights: list.map(
-          expected_cons_state,
-          fn(pair) {
-            if pair.1st == header.get_height(mock_header) {
-              Pair(
-                pair.1st,
-                client_datum.processed_height_from_time(
-                  tx_valid_from * 1_000_000,
-                ),
-              )
-            } else {
-              Pair(pair.1st, 0)
-            }
-          },
-        ),
+        consensus_states: [Pair(h, header.consensus_state(next))],
+        processed_times: [Pair(h, processing_time)],
+        processed_heights: [
+          Pair(h, client_datum.processed_height_from_time(processing_time)),
+        ],
       },
     }
-  client_datum.update_state(
-    input_client_datum,
-    output_client_datum,
-    mock_header,
-    tx_valid_from,
-    tx_valid_from,
-  )
+  // Client status remains the spending validator's responsibility. This tests
+  // only that history replacement never embeds an expiry cleanup operation.
+  client_datum.update_state(input, output, next, processing_time / 1_000_000)
 }
 
 /// Header height is less or equal than input client state latest height
@@ -1173,7 +789,6 @@ test test_update_state_return_false_01() {
     output_client_datum,
     mock_header,
     0,
-    0,
   )
 }
 
@@ -1225,7 +840,6 @@ test test_update_state_return_false_02() {
     input_client_datum,
     output_client_datum,
     mock_header,
-    0,
     0,
   )
 }
@@ -1310,7 +924,6 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
     input_client_datum,
     output_client_datum,
     mock_header,
-    0,
     0,
   )
 }

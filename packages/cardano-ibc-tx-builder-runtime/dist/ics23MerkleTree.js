@@ -14,14 +14,15 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ICS23MerkleTree = void 0;
 const js_sha256_1 = require("js-sha256");
+const node_buffer_1 = require("node:buffer");
 const MERKLE_DEPTH_BITS = 64;
 const HASH_SIZE_BYTES = 32;
-const EMPTY_HASH = Buffer.alloc(HASH_SIZE_BYTES, 0);
+const EMPTY_HASH = node_buffer_1.Buffer.alloc(HASH_SIZE_BYTES, 0);
 function sha256Bytes(data) {
-    return Buffer.from(js_sha256_1.sha256.array(data));
+    return node_buffer_1.Buffer.from(js_sha256_1.sha256.array(data));
 }
 function keyHash(key) {
-    return sha256Bytes(Buffer.from(key, 'utf8'));
+    return sha256Bytes(node_buffer_1.Buffer.from(key, 'utf8'));
 }
 function leafHash(key, value) {
     // On-chain we treat the empty value as "absent" and map it to the all-zero hash.
@@ -29,14 +30,14 @@ function leafHash(key, value) {
         return EMPTY_HASH;
     // leaf = sha256(0x00 || sha256(key) || sha256(value))
     const valueHash = sha256Bytes(value);
-    return sha256Bytes(Buffer.concat([Buffer.from([0x00]), keyHash(key), valueHash]));
+    return sha256Bytes(node_buffer_1.Buffer.concat([node_buffer_1.Buffer.from([0x00]), keyHash(key), valueHash]));
 }
 function innerHash(left, right) {
     // Empty subtree compression: if both children are empty, parent is empty.
     if (left.equals(EMPTY_HASH) && right.equals(EMPTY_HASH))
         return EMPTY_HASH;
     // inner = sha256(0x01 || left || right)
-    return sha256Bytes(Buffer.concat([Buffer.from([0x01]), left, right]));
+    return sha256Bytes(node_buffer_1.Buffer.concat([node_buffer_1.Buffer.from([0x01]), left, right]));
 }
 function keyIndex64(key) {
     // The on-chain code uses the first 64 bits of `sha256(key)` to define the path.
@@ -55,13 +56,13 @@ class ICS23MerkleTree {
     clone() {
         const cloned = new ICS23MerkleTree();
         for (const [key, value] of this.leaves) {
-            cloned.leaves.set(key, Buffer.from(value));
+            cloned.leaves.set(key, node_buffer_1.Buffer.from(value));
         }
         cloned.dirty = true;
         return cloned;
     }
     set(key, value) {
-        const valueBuffer = typeof value === 'string' ? Buffer.from(value, 'hex') : value;
+        const valueBuffer = typeof value === 'string' ? node_buffer_1.Buffer.from(value, 'hex') : value;
         // Empty values are treated as "absent" in this commitment scheme, so we
         // model them as deletion to avoid ambiguous state.
         if (valueBuffer.length === 0) {
@@ -101,7 +102,7 @@ class ICS23MerkleTree {
         for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
             const siblingIndex = index ^ 1n;
             const siblingHash = this.nodesByHeight[height].get(siblingIndex) ?? EMPTY_HASH;
-            siblings.push(Buffer.from(siblingHash));
+            siblings.push(node_buffer_1.Buffer.from(siblingHash));
             index >>= 1n;
         }
         return siblings;
@@ -125,21 +126,21 @@ class ICS23MerkleTree {
             if (isLeftChild) {
                 path.push({
                     hash: 1, // SHA-256
-                    prefix: Buffer.from([0x01]),
+                    prefix: node_buffer_1.Buffer.from([0x01]),
                     suffix: siblingHash,
                 });
             }
             else {
                 path.push({
                     hash: 1, // SHA-256
-                    prefix: Buffer.concat([Buffer.from([0x01]), siblingHash]),
-                    suffix: Buffer.alloc(0),
+                    prefix: node_buffer_1.Buffer.concat([node_buffer_1.Buffer.from([0x01]), siblingHash]),
+                    suffix: node_buffer_1.Buffer.alloc(0),
                 });
             }
             index >>= 1n;
         }
         return {
-            key: Buffer.from(key, 'utf8'),
+            key: node_buffer_1.Buffer.from(key, 'utf8'),
             value,
             // These fields are carried through for compatibility and potential future
             // tooling. Our current verification logic does not rely on them.
@@ -148,7 +149,7 @@ class ICS23MerkleTree {
                 prehash_key: 0,
                 prehash_value: 0,
                 length: 0,
-                prefix: Buffer.alloc(0),
+                prefix: node_buffer_1.Buffer.alloc(0),
             },
             path,
         };
@@ -174,33 +175,33 @@ class ICS23MerkleTree {
             if (isLeftChild) {
                 path.push({
                     hash: 1,
-                    prefix: Buffer.from([0x01]),
+                    prefix: node_buffer_1.Buffer.from([0x01]),
                     suffix: siblingHash,
                 });
             }
             else {
                 path.push({
                     hash: 1,
-                    prefix: Buffer.concat([Buffer.from([0x01]), siblingHash]),
-                    suffix: Buffer.alloc(0),
+                    prefix: node_buffer_1.Buffer.concat([node_buffer_1.Buffer.from([0x01]), siblingHash]),
+                    suffix: node_buffer_1.Buffer.alloc(0),
                 });
             }
             index >>= 1n;
         }
         const emptyValueProof = {
-            key: Buffer.from(key, 'utf8'),
-            value: Buffer.alloc(0),
+            key: node_buffer_1.Buffer.from(key, 'utf8'),
+            value: node_buffer_1.Buffer.alloc(0),
             leaf: {
                 hash: 1,
                 prehash_key: 0,
                 prehash_value: 0,
                 length: 0,
-                prefix: Buffer.alloc(0),
+                prefix: node_buffer_1.Buffer.alloc(0),
             },
             path,
         };
         return {
-            key: Buffer.from(key, 'utf8'),
+            key: node_buffer_1.Buffer.from(key, 'utf8'),
             left: emptyValueProof,
             right: null,
         };
@@ -240,7 +241,7 @@ class ICS23MerkleTree {
     static fromJSON(data) {
         const tree = new ICS23MerkleTree();
         for (const [key, value] of Object.entries(data.leaves)) {
-            tree.set(key, Buffer.from(value, 'hex'));
+            tree.set(key, node_buffer_1.Buffer.from(value, 'hex'));
         }
         return tree;
     }

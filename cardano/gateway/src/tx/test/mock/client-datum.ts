@@ -13,6 +13,7 @@ class ClientDatumMockBuilder {
   }
   private setDefault(): void {
     this.clientDatum = {
+      history_root: '00'.repeat(32),
       state: {
         clientState: {
           chainId: '73696465636861696e',

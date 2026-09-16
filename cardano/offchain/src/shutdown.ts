@@ -248,7 +248,7 @@ function transferWithdrawal(
   const registration = host.control.port_registry.get(fromText("transfer"));
   if (!registration) throw new Error("Missing transfer module registration");
   return encode(
-    new Constr(2, [
+    new Constr(3, [
       registration.port_token.policy_id + registration.port_token.name,
       registration.module_token.policy_id + registration.module_token.name,
       deployment.validators.mintTransferEscrowShard.scriptHash,
@@ -325,7 +325,7 @@ export function buildReclaimStateTx(
       recovery.address,
       0n,
       group.kind === "channel"
-        ? encode(new Constr(1, []))
+        ? encode(new Constr(2, []))
         : transferWithdrawal(host, deployment),
     );
   }

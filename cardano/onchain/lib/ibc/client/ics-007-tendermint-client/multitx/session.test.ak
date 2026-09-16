@@ -326,6 +326,7 @@ fn completed_non_adjacent() -> SessionDatum {
 fn live_client() -> ClientDatum {
   let trusted_height = Height { revision_number: 1, revision_height: 2 }
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     token: client_token(),
     state: ClientDatumState {
       client_state: ClientState {

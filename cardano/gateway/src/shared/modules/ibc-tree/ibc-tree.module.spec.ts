@@ -23,6 +23,7 @@ import { IbcTreeCacheService } from '../../services/ibc-tree-cache.service';
 import { TreeInitService } from '../../services/tree-init.service';
 import { KupoService } from '../kupo/kupo.service';
 import { LucidService } from '../lucid/lucid.service';
+import { ConsensusHistoryService } from '../lucid/consensus-history.service';
 import { LucidModule } from '../lucid/lucid.module';
 import { LUCID_CLIENT, LUCID_IMPORTER } from '../lucid/lucid.provider';
 import { IbcTreeModule } from './ibc-tree.module';
@@ -34,7 +35,10 @@ import { IbcTreeModule } from './ibc-tree.module';
 class TestHealthModule {}
 
 async function createContext(policyByte: string) {
-  const deployment = { hostStateNFT: { policyId: policyByte.repeat(28), name: '01' } };
+  const deployment = {
+    hostStateNFT: { policyId: policyByte.repeat(28), name: '01' },
+    validators: { mintClientStt: { scriptHash: 'cc'.repeat(28) } },
+  };
   const kupo = {
     queryAllClientUtxos: jest.fn(async () => []),
     queryAllConnectionUtxos: jest.fn(async () => []),
@@ -58,6 +62,7 @@ async function createContext(policyByte: string) {
     .overrideProvider(ConfigService).useValue(new ConfigService({ cardanoNetwork: 'Custom', deployment }))
     .overrideProvider(KupoService).useValue(kupo)
     .overrideProvider(LucidService).useValue(lucid)
+    .overrideProvider(ConsensusHistoryService).useValue({})
     .overrideProvider(LUCID_CLIENT).useValue({})
     .overrideProvider(LUCID_IMPORTER).useValue(Lucid)
     .overrideProvider(IbcTreeCacheService).useValue(cache)

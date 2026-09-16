@@ -12,6 +12,7 @@
 // This matches the on-chain `ibc_state_commitment.ak` logic used by `host_state_stt`.
 
 import { sha256 } from 'js-sha256';
+import { Buffer } from 'node:buffer';
 
 const MERKLE_DEPTH_BITS = 64;
 const HASH_SIZE_BYTES = 32;

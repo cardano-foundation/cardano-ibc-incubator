@@ -27,6 +27,16 @@ However, distributed states also bring some challenges, one of which is identify
 
 By leveraging both the spending validator and minting policy, we can effectively create, update and query states of IBC on Cardano. You can refer to the previous section and notice that all semantic of IBC specs are also implemented with both these types of mentioned validator script.
 
+## Tendermint consensus history
+
+The active client UTXO contains only the latest consensus state and its processing time and height. An advancing update or recovery moves the previous state into a separate immutable UTXO. Its NFT is minted by the client policy and identifies the client and height. Older proofs reference the required historical UTXO instead of loading the whole history. Moving a state out of the active datum does not remove its IBC commitment.
+
+`POST /api/consensus-state-history/prune` builds an unsigned transaction for one expired historical state. It takes `signer`, `client_id` and `height` with `revision_number` and `revision_height`. Anyone can sign and submit cleanup, which burns the archive NFT and removes its commitment. It cannot delete the latest or an unexpired state. The archive's ADA pays for cleanup and the pruner receives any remainder. Ordinary client updates never wait for a cleanup backlog. Finish archive cleanup before finalizing shutdown, burning the HostState NFT makes any remaining archives unspendable.
+
+This requires a new deployment and new clients. Existing deployment files remain readable, but they cannot use these transactions without the new scripts. There is no automatic migration of existing clients, connections or channels. The commitment paths and proof format used by Cosmos remain unchanged.
+
+Build the production scripts with `aiken build --trace-level silent` in `cardano/onchain`, then run `deno task test:consensus-history` in `cardano/offchain`. The tests sign, locally evaluate and submit transactions to an emulator using the repository's public-network execution limits. Pruning is 3,209 bytes with either 1 or 300 archived states. Recovery is 6,323 and 6,333 bytes respectively. A separate four-validator update is 7,500 bytes. Tests also cover resumed cleanup, conflicting-header freezing and invalid mutations. These are transaction tests, not a live-network benchmark. Historical storage still costs ADA and HostState updates still share one UTXO. This change does not remove validator-set size limits.
+
 ## Reference scripts
 
 Every time a script is used, the transaction which caused the usage must supply the whole script as part of the transaction. This not only increases the transaction fee but also makes the transaction reach its size limit more frequently. That is why Cardano introduced CIP-33 Reference scripts. This CIP allows scripts to be attached to UTXOs and used to satisfy the requirement of providing the scripts during validation.
