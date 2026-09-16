@@ -145,10 +145,10 @@ jobs:
 
           - \`/usr/src/app/manifests\`
 
-          For example, a preprod Gateway can be started with:
+          For example, a Preview Gateway can be started with:
 
           \`\`\`bash
-          BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json
+          BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preview/cardano-preview-bridge-manifest.json
           \`\`\`
 
           The tracked manifests are also attached to this release as:
