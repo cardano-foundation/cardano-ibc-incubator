@@ -59,13 +59,16 @@ docker exec cardano-node cardano-cli query stake-snapshot --all-stake-pools --te
 
 The local stake-pool scripts live in this directory:
 [regis-spo.sh](regis-spo.sh) and [deregis-spo.sh](deregis-spo.sh). From the
-repository root, their invocation paths are:
+repository root, register a pool with:
 
 ```sh
-cd chains/cardano
-./regis-spo.sh alice
-./deregis-spo.sh alice
+cd chains/cardano && ./regis-spo.sh alice
 ```
 
-The retirement script submits a transaction requesting retirement in the next
-epoch. These scripts use local devnet paths and network magic `42`.
+To request retirement in the next epoch, run from the repository root:
+
+```sh
+cd chains/cardano && ./deregis-spo.sh alice
+```
+
+These scripts use local devnet paths and network magic `42`.
