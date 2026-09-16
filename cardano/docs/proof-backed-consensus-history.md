@@ -28,7 +28,7 @@ Historical transactions must remain available from an independent source. A curr
 
 The signed emulator tests exercise production creation, updates, freezing, recovery and use of an older state. The cold-recovery test deletes the local database and public tree, rebuilds both roots from submitted transaction CBOR, then uses the recovered checkpoint in a script-checked packet-history operation. Its connection and channel setup is seeded. Block positions are simulated, this is not a live Yaci or full-network recovery benchmark.
 
-Use Node 22.13 or later and Deno 2.7 or later. The pinned `@lucid-evolution/uplc` evaluator fixes equality and serialization bugs in older emulator versions. From the repository root:
+Use Node 22.13 or later and Deno 2.9.6, matching CI. The pinned `@lucid-evolution/uplc` evaluator fixes equality and serialization bugs in older emulator versions. From the repository root:
 
 ```sh
 cd cardano/onchain
@@ -36,16 +36,16 @@ aiken build --deny --trace-level silent
 aiken check --deny --trace-level silent
 cd ../offchain
 deno task test:consensus-history
-deno task test:consensus-history-prototype
+deno task test:consensus-history-index
 ```
 
-Tests print signed transaction measurements and enforce the pinned mainnet execution limits plus size and execution reserves. `scripts/fixtures/mainnet-protocol-parameters.json` supplies the parameters without a network request. The earlier prototype's measurements are not production packet-transfer measurements.
+Tests print signed transaction measurements and enforce the pinned mainnet execution limits plus size and execution reserves. `scripts/fixtures/mainnet-protocol-parameters.json` supplies the parameters without a network request. The transaction suite uses the production validators and includes recovery with 1, 100 and 10,000 seeded historical records. The index suite covers commitments, serialization, replay, rollback, interrupted recovery and cache integrity using the production client datum. The retired combined-tree validator and recovery mode are no longer included.
 
-With the corrected evaluator, the four-validator update used 9,428 bytes and 13.87 million memory units. Recovery used 8,078–8,086 bytes and 10.72–10.74 million memory units. The packet operation using a checkpoint recovered after deleting the database used 8,795 bytes, 11.30 million memory units and 3.57 billion CPU steps. Replaying the two fixture transactions took 7–10 milliseconds, not counting any real network scan. Those historical reference-script measurements used size models. The integration with main also passes signed production reference-script publication tests against the 16,384-byte transaction limit.
+Use the measurements printed by the current test run for transaction sizes, execution units and replay timings. The fixtures pin network parameters and use seeded state; they do not measure live relay throughput. Signed reference-script publication is checked separately by `deno task test:deployment` against the 16,384-byte transaction limit.
 
-For an independent read-only rebuild, run `deno task recover:consensus-history deployment.json history.sqlite [revisionNumber revisionHeight]`. The deployment file contains `clientToken: { policyId, name }`, `stateAddress` and `bootstrap: { txHash, outputIndex }`. Set `HISTORY_DB_URL`, `KUPO_URL` and `OGMIOS_URL`. Production layout is the default. A retry-limit error retains progress, rerun the same command to continue. SQL queries default to a 30-second timeout through `HISTORY_DB_QUERY_TIMEOUT_MS`.
+For an independent read-only rebuild, run `deno task recover:consensus-history deployment.json history.sqlite [revisionNumber revisionHeight]`. The deployment file contains `clientToken: { policyId, name }`, `stateAddress` and `bootstrap: { txHash, outputIndex }`. Set `HISTORY_DB_URL`, `KUPO_URL` and `OGMIOS_URL`. Only the production client datum is supported. Omit `layout`; existing configurations with `layout: "production"` remain valid. Experimental layout configurations are rejected, and their disposable indexes must not be reused. A retry-limit error retains progress, rerun the same command to continue. SQL queries default to a 30-second timeout through `HISTORY_DB_QUERY_TIMEOUT_MS`.
 
-The pinned Hermes signer recognizes `proof-backed-v1` and checks the update withdrawal and new recovery redeemer against the pinned scripts and requested clients. Its tests use update and recovery transactions accepted by the emulator with Lucid's automatic input selection. Spending and collateral may share a wallet UTxO, as allowed by [CIP-40](https://cips.cardano.org/cip/CIP-0040). Hermes checks the successful transaction and collateral return separately against the same independently resolved output. Long-history measurements, packet use after live recovery and independent deployment testing remain required before production use. The existing 64-bit tree path bound and validity-bound processing time are unchanged.
+The pinned Hermes signer recognizes `proof-backed-v1` and checks the update withdrawal and new recovery redeemer against the pinned scripts and requested clients. Its tests use update and recovery transactions accepted by the emulator with Lucid's automatic input selection. Spending and collateral may share a wallet UTxO, as allowed by [CIP-40](https://cips.cardano.org/cip/CIP-0040). Hermes checks the successful transaction and collateral return separately against the same independently resolved output. Production rollout still requires long-history live measurements, a successful packet transfer after live recovery, and independent validation of a fresh deployment using the current staged update flow. Seeded emulator scale tests and the historical devnet results below do not complete those checks. The existing 64-bit tree path bound and validity-bound processing time are unchanged.
 
 ### Local devnet check, September 2026
 

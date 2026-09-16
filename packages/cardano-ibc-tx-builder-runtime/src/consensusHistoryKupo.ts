@@ -107,7 +107,7 @@ export function createKupoConsensusHistoryReader(
             root: { hash: record.consensusState.root },
           },
         },
-        consensusValue: publicClientCommitmentValues(datum.datum, 'production').consensusValue,
+        consensusValue: publicClientCommitmentValues(datum.datum).consensusValue,
         archived: key !== latestKey,
       });
       if (match.transaction_id === client.txHash && match.output_index === client.outputIndex) {

@@ -47,12 +47,7 @@ function single(data, label) {
 }
 function state(datum, deployment) {
     const decoded = lucid_1.Data.from(datum);
-    const prototype = deployment.layout === "prototype";
-    const [client, prototypeRoot] = prototype
-        ? fields(decoded, 2, "prototype state")
-        : [decoded, undefined];
-    const [clientDatum, token, historyRoot] = fields(client, prototype ? [2, 3] : 3, "client datum");
-    const root = prototype ? prototypeRoot : historyRoot;
+    const [clientDatum, token, root] = fields(decoded, 3, "client datum");
     const [clientState, consensus, times, heights] = fields(clientDatum, 4, "client state datum");
     const clientFields = fields(clientState, 8, "client state");
     const [height, value] = single(consensus, "consensus states");
@@ -70,7 +65,7 @@ function state(datum, deployment) {
     hash(record.consensusState.root, "consensus root");
     return {
         root: hash(root, "state root"),
-        ...(0, plutusSerialise_ts_1.publicClientCommitmentValues)(datum, prototype ? "prototype" : "production"),
+        ...(0, plutusSerialise_ts_1.publicClientCommitmentValues)(datum),
         record,
     };
 }
@@ -180,7 +175,6 @@ class ConsensusHistoryRecovery {
     #tree;
     #deployment;
     #unit;
-    #clientKey;
     #ready = false;
     #recovering = false;
     #closed = false;
@@ -189,8 +183,7 @@ class ConsensusHistoryRecovery {
     #publishedUtxo;
     constructor(path, deployment) {
         this.#deployment = structuredClone(deployment);
-        if (deployment.layout !== undefined && deployment.layout !== "production" &&
-            deployment.layout !== "prototype") {
+        if (deployment.layout !== undefined && deployment.layout !== "production") {
             throw new Error("invalid history datum layout");
         }
         hash(deployment.bootstrap.txHash, "bootstrap transaction hash");
@@ -207,7 +200,6 @@ class ConsensusHistoryRecovery {
             throw new Error("client token must have a decimal sequence suffix");
         }
         this.#unit = deployment.clientToken.policyId + deployment.clientToken.name;
-        this.#clientKey = `clients/07-tendermint-${suffix}/clientState`;
         this.#db = new node_sqlite_1.DatabaseSync(path);
         try {
             this.#db.exec(`
@@ -612,7 +604,7 @@ class ConsensusHistoryRecovery {
                         throw new Error("authenticated history record is missing from the index; rebuild from chain history");
                     }
                 }
-                else if (this.#deployment.layout !== "prototype") {
+                else {
                     throw new Error("private history tree contains an unexpected public leaf");
                 }
             }
@@ -654,9 +646,6 @@ class ConsensusHistoryRecovery {
         }
         return false;
     }
-    consensusKey(record) {
-        return this.#clientKey.replace(/clientState$/, `consensusStates/${record.height.revisionHeight}`);
-    }
     apply(sequence, evidence, tx, output) {
         const next = state(output.datum, this.#deployment);
         const undo = [];
@@ -672,17 +661,11 @@ class ConsensusHistoryRecovery {
             if (ref(output) !== ref(this.#deployment.bootstrap)) {
                 throw new Error("history is missing the configured bootstrap output");
             }
-            if (this.#deployment.layout !== "prototype") {
-                validateHistoryBootstrap(evidence, this.#deployment.clientToken, output.outputIndex, this.#deployment.stateAddress);
-            }
-            // Only the two leaves completely disclosed by the initial datum may be
-            // present. An opaque pre-seeded root cannot be recovered from history.
+            validateHistoryBootstrap(evidence, this.#deployment.clientToken, output.outputIndex, this.#deployment.stateAddress);
+            // Creation starts with an empty private history tree. An opaque pre-seeded
+            // root cannot be recovered from the initial checkpoint.
             if (this.#tree.getRoot() !== "00".repeat(32)) {
                 throw new Error("bootstrap requires an empty history index");
-            }
-            if (this.#deployment.layout === "prototype") {
-                put(this.#clientKey, next.clientValue, true);
-                put(this.consensusKey(next.record), next.consensusValue, true);
             }
         }
         else {
@@ -701,15 +684,8 @@ class ConsensusHistoryRecovery {
                     (0, consensusHistory_ts_1.encodeConsensusHistoryRecord)(old.record)) {
                     throw new Error("same-height transition changed immutable history metadata");
                 }
-                if (this.#deployment.layout === "prototype") {
-                    put(this.#clientKey, next.clientValue);
-                }
             }
             else {
-                if (this.#deployment.layout === "prototype") {
-                    put(this.#clientKey, next.clientValue);
-                    put(this.consensusKey(next.record), next.consensusValue, true);
-                }
                 // Exact metadata from the consumed datum, never wall-clock/block time.
                 put((0, consensusHistory_ts_1.consensusHistoryKey)(old.record.clientToken, old.record.height), (0, consensusHistory_ts_1.encodeConsensusHistoryRecord)(old.record), true);
             }

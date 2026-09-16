@@ -29,13 +29,15 @@ By leveraging both the spending validator and minting policy, we can effectively
 
 ## Tendermint consensus history
 
-The active client UTXO contains only the latest consensus state and its processing time and height. An advancing update or recovery moves the previous state into a separate immutable UTXO. Its NFT is minted by the client policy and identifies the client and height. Older proofs reference the required historical UTXO instead of loading the whole history. Moving a state out of the active datum does not remove its IBC commitment.
+The active client UTXO contains its latest consensus state, the original processing time and height, and a 32-byte private history root. An advancing update or recovery commits the previous checkpoint into that tree. Older checkpoints are supplied with authenticated Merkle witnesses. No archive UTXOs or archive NFTs are created, and there is no consensus-history archive pruning endpoint.
 
-`POST /api/consensus-state-history/prune` builds an unsigned transaction for one expired historical state. It takes `signer`, `client_id` and `height` with `revision_number` and `revision_height`. Anyone can sign and submit cleanup, which burns the archive NFT and removes its commitment. It cannot delete the latest or an unexpired state. The archive's ADA pays for cleanup and the pruner receives any remainder. Ordinary client updates never wait for a cleanup backlog. Finish archive cleanup before finalizing shutdown, burning the HostState NFT makes any remaining archives unspendable.
+The existing `recover_client` withdrawal script checks historical witnesses and history-root transitions. Staged updates also authenticate the completed signature-verification sessions. Freezing preserves the history root. Public IBC commitment paths and the proof format used by Cosmos remain unchanged.
 
-This requires a new deployment and new clients. Existing deployment files remain readable, but they cannot use these transactions without the new scripts. There is no automatic migration of existing clients, connections or channels. The commitment paths and proof format used by Cosmos remain unchanged.
+This requires a fresh contract deployment with the `proof-backed-v1` history-format marker and new clients. Existing clients, connections and channels are not migrated in place. History indexes can be rebuilt from independently retained transaction history; the root or a current UTXO snapshot alone is insufficient.
 
-Build the production scripts with `aiken build --trace-level silent` in `cardano/onchain`, then run `deno task test:consensus-history` in `cardano/offchain`. The tests sign, locally evaluate and submit transactions to an emulator using the repository's public-network execution limits. Pruning is 3,209 bytes with either 1 or 300 archived states. Recovery is 6,323 and 6,333 bytes respectively. A separate four-validator update is 7,500 bytes. Tests also cover resumed cleanup, conflicting-header freezing and invalid mutations. These are transaction tests, not a live-network benchmark. Historical storage still costs ADA and HostState updates still share one UTXO. This change does not remove validator-set size limits.
+Build with `aiken build --trace-level silent` in `cardano/onchain`, then run `deno task test:consensus-history` and `deno task test:consensus-history-index` in `cardano/offchain`. Tests cover signed production transactions, bounded recovery at up to 10,000 seeded historical records, authenticated history use, and index recovery under rollback and interruption. They enforce transaction budgets in the emulator. HostState updates still share one UTXO, and validator-set size limits remain.
+
+See [proof-backed consensus history](proof-backed-consensus-history.md) for supported configuration, test limitations, historical measurements and the outstanding live validation required before production rollout.
 
 ## Reference scripts
 

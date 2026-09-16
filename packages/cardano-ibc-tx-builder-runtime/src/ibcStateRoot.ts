@@ -662,7 +662,7 @@ export class IbcTreeStateStore {
 
       const clientStateValue = Buffer.from(
         this.deployment.clientPolicyId
-          ? publicClientCommitmentValues(clientUtxo.datum, 'production').clientValue
+          ? publicClientCommitmentValues(clientUtxo.datum).clientValue
           : await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter),
         'hex',
       );

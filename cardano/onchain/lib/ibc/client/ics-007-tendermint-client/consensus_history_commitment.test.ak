@@ -12,7 +12,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/signed_header
 use ibc/client/ics_007_tendermint_client/consensus_history.{
   ConsensusStateDatum, Witness,
 }
-use ibc/client/ics_007_tendermint_client/consensus_history_commitment as history
+use ibc/client/ics_007_tendermint_client/consensus_history as history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -63,7 +63,7 @@ fn witness() -> Witness {
 fn client() -> ClientDatum {
   let tip = height(10)
   ClientDatum {
-    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
+    history_root: root(),
     token: token(),
     state: ClientDatumState {
       client_state: ClientState {
@@ -328,7 +328,6 @@ test packet_hydration_preserves_tip_and_authenticates_processing_metadata() {
   let hydrated =
     history.with_witness_at_height(
       client(),
-      root(),
       Some(witness()),
       106,
       Some(height(1)),
@@ -340,6 +339,7 @@ test packet_hydration_preserves_tip_and_authenticates_processing_metadata() {
     pairs.get_first(hydrated.state.processed_times, height(1)) == Some(8),
     pairs.get_first(hydrated.state.processed_heights, height(1)) == Some(9),
     hydrated.state.client_state == client().state.client_state,
+    hydrated.history_root == client().history_root,
     pairs.get_first(hydrated.state.consensus_states, height(10)) == pairs.get_first(
       client().state.consensus_states,
       height(10),
@@ -349,14 +349,8 @@ test packet_hydration_preserves_tip_and_authenticates_processing_metadata() {
 
 test latest_and_no_proof_height_need_no_history_witness() {
   and {
-    history.with_witness_at_height(
-      client(),
-      root(),
-      None,
-      100,
-      Some(height(10)),
-    ) == client(),
-    history.with_witness_at_height(client(), root(), None, 100, None) == client(),
+    history.with_witness_at_height(client(), None, 100, Some(height(10))) == client(),
+    history.with_witness_at_height(client(), None, 100, None) == client(),
   }
 }
 
@@ -364,7 +358,6 @@ test packet_expiry_boundary_is_rejected() fail {
   let hydrated =
     history.with_witness_at_height(
       client(),
-      root(),
       Some(witness()),
       107,
       Some(height(1)),
@@ -374,7 +367,7 @@ test packet_expiry_boundary_is_rejected() fail {
 
 test packet_history_requires_a_witness() fail {
   let hydrated =
-    history.with_witness_at_height(client(), root(), None, 100, Some(height(1)))
+    history.with_witness_at_height(client(), None, 100, Some(height(1)))
   hydrated.state.client_state.latest_height == height(10)
 }
 
@@ -382,7 +375,6 @@ test packet_wrong_requested_revision_is_rejected() fail {
   let hydrated =
     history.with_witness_at_height(
       client(),
-      root(),
       Some(witness()),
       100,
       Some(Height { revision_number: 1, revision_height: 1 }),
@@ -400,7 +392,6 @@ test packet_history_rejects_a_different_client() fail {
   let hydrated =
     history.with_witness_at_height(
       changed,
-      root(),
       Some(witness()),
       100,
       Some(height(1)),
@@ -412,7 +403,6 @@ test packet_history_cannot_shadow_the_tip_with_a_witness() fail {
   let hydrated =
     history.with_witness_at_height(
       client(),
-      root(),
       Some(witness()),
       100,
       Some(height(10)),
@@ -426,8 +416,7 @@ test packet_history_rejects_a_committed_future_height() fail {
   let committed = history.insert(tree.empty_hash, future, zero_siblings())
   let hydrated =
     history.with_witness_at_height(
-      client(),
-      committed,
+      ClientDatum { ..client(), history_root: committed },
       Some(Witness { record: future, siblings: zero_siblings() }),
       100,
       Some(height(11)),
@@ -439,7 +428,6 @@ test message_hydration_loads_old_trusted_state() {
   let states =
     history.consensus_states_for_message(
       client(),
-      root(),
       [witness()],
       100,
       HeaderCase(header_at(1, 11)),
@@ -454,7 +442,6 @@ test conflicting_header_can_load_existing_historical_height() {
   let states =
     history.consensus_states_for_message(
       client(),
-      root(),
       [witness()],
       100,
       HeaderCase(header_at(0, 1)),
@@ -491,8 +478,7 @@ test misbehaviour_hydration_loads_both_trusted_heights() {
     )
   let states =
     history.consensus_states_for_message(
-      client(),
-      sparse_tree.root(entries),
+      ClientDatum { ..client(), history_root: sparse_tree.root(entries) },
       witnesses,
       100,
       msg,
@@ -507,7 +493,6 @@ test message_rejects_duplicate_witnesses() fail {
   let states =
     history.consensus_states_for_message(
       client(),
-      root(),
       [witness(), witness()],
       100,
       HeaderCase(header_at(1, 11)),
@@ -519,7 +504,6 @@ test message_rejects_irrelevant_witnesses() fail {
   let states =
     history.consensus_states_for_message(
       client(),
-      root(),
       [witness()],
       100,
       HeaderCase(header_at(10, 11)),
@@ -531,7 +515,6 @@ test message_rejects_more_than_two_witnesses() fail {
   let states =
     history.consensus_states_for_message(
       client(),
-      root(),
       [witness(), witness(), witness()],
       100,
       HeaderCase(header_at(1, 11)),
@@ -543,7 +526,6 @@ test message_rejects_expired_trusted_state() fail {
   let states =
     history.consensus_states_for_message(
       client(),
-      root(),
       [witness()],
       107,
       HeaderCase(header_at(1, 11)),

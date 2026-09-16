@@ -125,9 +125,9 @@ test("public serialization rejects non-Data and malformed constructor aliases", 
 test("public leaf extraction normalizes tagged integers and every outer-container variant", () => {
   const client = "d8799fc24900000000000000000102030405060708ff";
   const consensus = "d87983015f41014102ffd879814100";
-  const wrap = (map: string, outer = "d87982") =>
+  const wrap = (map: string, outer = "d87983") =>
     outer +
-    "d87982d87984" + client + map + "a0a0d879824040" + "5820" + "00".repeat(32);
+    "d87984" + client + map + "a0a0d879824040" + "5820" + "00".repeat(32);
   const raw = wrap("a100" + consensus);
   const expected = {
     clientValue: "d8799f0102030405060708ff",
@@ -135,19 +135,16 @@ test("public leaf extraction normalizes tagged integers and every outer-containe
   };
   assert.deepEqual(publicClientCommitmentValues(raw), expected);
   assert.deepEqual(
-    publicClientCommitmentValues(wrap("a100" + consensus, "d866820082")),
+    publicClientCommitmentValues(wrap("a100" + consensus, "d866820083")),
     expected,
   );
-  const production = "d87983d87984" + client + "a100" + consensus +
-    "a0a0d8798240405820" + "00".repeat(32);
-  assert.deepEqual(
-    publicClientCommitmentValues(production, "production"),
-    expected,
-  );
+  // The retired combined client/root wrapper must not be accepted as a client.
+  const combined = "d87982" + raw + "5820" + "00".repeat(32);
+  assert.throws(() => publicClientCommitmentValues(combined), /client datum/);
   for (const map of ["a0", "a200" + consensus + "00" + consensus]) {
     assert.throws(() => publicClientCommitmentValues(wrap(map)), /exactly/);
   }
-  assert.throws(() => publicClientCommitmentValues("d87a80"), /prototype/);
+  assert.throws(() => publicClientCommitmentValues("d87a80"), /client datum/);
 });
 
 test("ledger public normalization leaves the private history key, value and root ABI unchanged", async () => {

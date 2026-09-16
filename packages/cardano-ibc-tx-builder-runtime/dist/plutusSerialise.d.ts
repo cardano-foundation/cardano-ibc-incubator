@@ -14,7 +14,7 @@ import type { CML } from "@lucid-evolution/lucid";
  */
 export declare function serialisePlutusData(data: CML.PlutusData | Uint8Array | string): string;
 /** Extract ledger-normalized public leaves independently of private history. */
-export declare function publicClientCommitmentValues(datumCbor: string, layout?: "production" | "prototype"): {
+export declare function publicClientCommitmentValues(datumCbor: string): {
     clientValue: string;
     consensusValue: string;
 };

@@ -47,8 +47,6 @@ const address = CML.EnterpriseAddress.new(
 const encode = (data: Data) =>
   Data.to<Data>(data, undefined, { canonical: true });
 const height = (n: bigint) => new Constr(0, [1n, n]);
-const clientKey = "clients/07-tendermint-0/clientState";
-const publicKey = (n: bigint) => `clients/07-tendermint-0/consensusStates/${n}`;
 
 interface Publication {
   transaction: HistoryTransaction;
@@ -93,16 +91,6 @@ function publications(heights: bigint[], variant = 0): Publication[] {
         ]),
         new Constr(0, [token.policyId, token.name]),
       ]);
-      // The inline datum may use definite containers, but ledger serialiseData
-      // commits the nonempty constructors using indefinite containers.
-      tree.set(
-        clientKey,
-        Data.to<Data>(clientState, undefined, { canonical: false }),
-      );
-      tree.set(
-        publicKey(n),
-        Data.to<Data>(consensus, undefined, { canonical: false }),
-      );
       const previous = result.at(-1);
       if (previous) {
         tree.set(
@@ -115,7 +103,7 @@ function publications(heights: bigint[], variant = 0): Publication[] {
         outputIndex: 0,
         address,
         assets: { lovelace: 10_000_000n, [unit]: 1n },
-        datum: encode(new Constr(0, [client, tree.getRoot()])),
+        datum: encode(new Constr(0, [...client.fields, tree.getRoot()])),
       };
       const inputs = CML.TransactionInputList.new();
       inputs.add(CML.TransactionInput.new(
@@ -127,6 +115,15 @@ function publications(heights: bigint[], variant = 0): Publication[] {
       const outputs = CML.TransactionOutputList.new();
       outputs.add(utxoToCore(output).output());
       const body = CML.TransactionBody.new(inputs, outputs, 200_000n);
+      if (!previous) {
+        const mint = CML.Mint.new();
+        mint.set(
+          CML.ScriptHash.from_hex(token.policyId),
+          CML.AssetName.from_hex(token.name),
+          1n,
+        );
+        body.set_mint(mint);
+      }
       const tx = CML.Transaction.new(
         body,
         CML.TransactionWitnessSet.new(),
@@ -175,7 +172,6 @@ function source(items: Publication[]): HistorySource {
 
 function deployment(first: Publication): HistoryDeployment {
   return {
-    layout: "prototype",
     clientToken: token,
     stateAddress: address,
     bootstrap: { txHash: first.output.txHash, outputIndex: 0 },
@@ -661,21 +657,11 @@ Deno.test("recovery hashes original transaction bytes and normalizes tagged inte
     return data.data.array;
   };
   const rawDatum = Cbor.parse(first.output.datum!);
-  const clientFields = fields(fields(fields(rawDatum)[0])[0]);
+  const clientFields = fields(fields(rawDatum)[0]);
   const trustLevel = fields(fields(clientFields[0])[1]);
   trustLevel[0] = new CborTag(2, new CborBytes(new Uint8Array([0, 1])));
   const values = publicClientCommitmentValues(Cbor.encode(rawDatum).toString());
-  const db = new DatabaseSync(":memory:");
-  let expected: string;
-  try {
-    const tree = new IncrementalIbcTree(db);
-    tree.set(clientKey, values.clientValue);
-    tree.set(publicKey(1n), values.consensusValue);
-    expected = tree.getRoot();
-  } finally {
-    db.close();
-  }
-  fields(rawDatum)[1] = new CborBytes(Buffer.from(expected, "hex"));
+  const expected = "00".repeat(32);
   first.output.datum = Cbor.encode(rawDatum).toString();
 
   const rawTransaction = Cbor.parse(first.transaction.cbor);
@@ -708,6 +694,8 @@ Deno.test("recovery hashes original transaction bytes and normalizes tagged inte
   const history = new ConsensusHistoryRecovery(":memory:", deployment(first));
   try {
     assertEquals((await history.recover(source([first]))).root, expected);
+    assertEquals(history.current().clientValue, values.clientValue);
+    assertEquals(history.current().consensusValue, values.consensusValue);
   } finally {
     history.close();
   }

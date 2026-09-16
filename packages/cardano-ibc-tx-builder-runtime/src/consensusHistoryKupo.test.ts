@@ -55,8 +55,8 @@ test('Kupo reads spent checkpoints in ledger order and normalizes public CBOR', 
   const records = await ctx.read(ctx.current);
   assert.deepEqual(records.map((entry) => entry.datum.height.revisionHeight), [1n, 2n]);
   assert.deepEqual(records.map((entry) => entry.archived), [true, false]);
-  assert.equal(records[0].consensusValue, publicClientCommitmentValues(ctx.datums.first!.datum, 'production').consensusValue);
-  assert.equal(records[0].consensusValue, publicClientCommitmentValues(ctx.datums.freeze!.datum, 'production').consensusValue);
+  assert.equal(records[0].consensusValue, publicClientCommitmentValues(ctx.datums.first!.datum).consensusValue);
+  assert.equal(records[0].consensusValue, publicClientCommitmentValues(ctx.datums.freeze!.datum).consensusValue);
   assert.equal(records[0].datum.processedTime, 2n);
   assert(ctx.urls[0].endsWith('?order=oldest_first'));
   assert(!ctx.urls.some((url) => url.includes('unspent')));

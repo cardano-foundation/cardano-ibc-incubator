@@ -432,7 +432,7 @@ class IbcTreeStateStore {
             }
             clientIdsByTokenUnit.set(normalizedClientUnit, clientId);
             const clientStateValue = Buffer.from(this.deployment.clientPolicyId
-                ? (0, plutusSerialise_1.publicClientCommitmentValues)(clientUtxo.datum, 'production').clientValue
+                ? (0, plutusSerialise_1.publicClientCommitmentValues)(clientUtxo.datum).clientValue
                 : await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter), 'hex');
             tree.set(`clients/${clientId}/clientState`, clientStateValue);
             if (this.deployment.clientPolicyId) {

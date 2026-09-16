@@ -35,10 +35,9 @@ import {
 } from "./incrementalIbcTree.ts";
 import { publicClientCommitmentValues } from "./plutusSerialise.ts";
 
-// The production client has a private append-only history root. The explicitly
-// selected prototype layout retains its older combined public/private tree.
+// Each client has a private append-only history root.
 export interface HistoryDeployment {
-  readonly layout?: "production" | "prototype";
+  readonly layout?: "production";
   readonly clientToken: ConsensusHistoryClientToken;
   readonly stateAddress: string;
   readonly bootstrap: { readonly txHash: string; readonly outputIndex: number };
@@ -154,16 +153,7 @@ function single(data: Data, label: string): [Data, Data] {
 
 function state(datum: string, deployment: HistoryDeployment): State {
   const decoded = Data.from<Data>(datum);
-  const prototype = deployment.layout === "prototype";
-  const [client, prototypeRoot] = prototype
-    ? fields(decoded, 2, "prototype state")
-    : [decoded, undefined];
-  const [clientDatum, token, historyRoot] = fields(
-    client,
-    prototype ? [2, 3] : 3,
-    "client datum",
-  );
-  const root = prototype ? prototypeRoot : historyRoot;
+  const [clientDatum, token, root] = fields(decoded, 3, "client datum");
   const [clientState, consensus, times, heights] = fields(
     clientDatum,
     4,
@@ -192,10 +182,7 @@ function state(datum: string, deployment: HistoryDeployment): State {
   hash(record.consensusState.root, "consensus root");
   return {
     root: hash(root, "state root"),
-    ...publicClientCommitmentValues(
-      datum,
-      prototype ? "prototype" : "production",
-    ),
+    ...publicClientCommitmentValues(datum),
     record,
   };
 }
@@ -344,7 +331,6 @@ export class ConsensusHistoryRecovery {
   readonly #tree: IncrementalIbcTree;
   readonly #deployment: HistoryDeployment;
   readonly #unit: string;
-  readonly #clientKey: string;
   #ready = false;
   #recovering = false;
   #closed = false;
@@ -355,8 +341,7 @@ export class ConsensusHistoryRecovery {
   constructor(path: string, deployment: HistoryDeployment) {
     this.#deployment = structuredClone(deployment);
     if (
-      deployment.layout !== undefined && deployment.layout !== "production" &&
-      deployment.layout !== "prototype"
+      deployment.layout !== undefined && deployment.layout !== "production"
     ) {
       throw new Error("invalid history datum layout");
     }
@@ -379,7 +364,6 @@ export class ConsensusHistoryRecovery {
       throw new Error("client token must have a decimal sequence suffix");
     }
     this.#unit = deployment.clientToken.policyId + deployment.clientToken.name;
-    this.#clientKey = `clients/07-tendermint-${suffix}/clientState`;
     this.#db = new DatabaseSync(path);
     try {
       this.#db.exec(`
@@ -873,7 +857,7 @@ export class ConsensusHistoryRecovery {
               "authenticated history record is missing from the index; rebuild from chain history",
             );
           }
-        } else if (this.#deployment.layout !== "prototype") {
+        } else {
           throw new Error(
             "private history tree contains an unexpected public leaf",
           );
@@ -930,13 +914,6 @@ export class ConsensusHistoryRecovery {
     return false;
   }
 
-  private consensusKey(record: ConsensusHistoryRecord): string {
-    return this.#clientKey.replace(
-      /clientState$/,
-      `consensusStates/${record.height.revisionHeight}`,
-    );
-  }
-
   private apply(
     sequence: number,
     evidence: HistoryTransaction,
@@ -959,22 +936,16 @@ export class ConsensusHistoryRecovery {
       if (ref(output) !== ref(this.#deployment.bootstrap)) {
         throw new Error("history is missing the configured bootstrap output");
       }
-      if (this.#deployment.layout !== "prototype") {
-        validateHistoryBootstrap(
-          evidence,
-          this.#deployment.clientToken,
-          output.outputIndex,
-          this.#deployment.stateAddress,
-        );
-      }
-      // Only the two leaves completely disclosed by the initial datum may be
-      // present. An opaque pre-seeded root cannot be recovered from history.
+      validateHistoryBootstrap(
+        evidence,
+        this.#deployment.clientToken,
+        output.outputIndex,
+        this.#deployment.stateAddress,
+      );
+      // Creation starts with an empty private history tree. An opaque pre-seeded
+      // root cannot be recovered from the initial checkpoint.
       if (this.#tree.getRoot() !== "00".repeat(32)) {
         throw new Error("bootstrap requires an empty history index");
-      }
-      if (this.#deployment.layout === "prototype") {
-        put(this.#clientKey, next.clientValue, true);
-        put(this.consensusKey(next.record), next.consensusValue, true);
       }
     } else {
       const previous = this.row(sequence - 1)!;
@@ -999,14 +970,7 @@ export class ConsensusHistoryRecovery {
             "same-height transition changed immutable history metadata",
           );
         }
-        if (this.#deployment.layout === "prototype") {
-          put(this.#clientKey, next.clientValue);
-        }
       } else {
-        if (this.#deployment.layout === "prototype") {
-          put(this.#clientKey, next.clientValue);
-          put(this.consensusKey(next.record), next.consensusValue, true);
-        }
         // Exact metadata from the consumed datum, never wall-clock/block time.
         put(
           consensusHistoryKey(old.record.clientToken, old.record.height),

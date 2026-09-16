@@ -103,7 +103,7 @@ function createKupoConsensusHistoryReader(endpoint, options = {}) {
                             root: { hash: record.consensusState.root },
                         },
                     },
-                    consensusValue: (0, plutusSerialise_1.publicClientCommitmentValues)(datum.datum, 'production').consensusValue,
+                    consensusValue: (0, plutusSerialise_1.publicClientCommitmentValues)(datum.datum).consensusValue,
                     archived: key !== latestKey,
                 });
             if (match.transaction_id === client.txHash && match.output_index === client.outputIndex) {

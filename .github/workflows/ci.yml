@@ -549,9 +549,9 @@ jobs:
         working-directory: cardano/offchain
         run: deno task test:consensus-history
 
-      - name: Test proof-backed consensus history prototype
+      - name: Test consensus history indexing and recovery
         working-directory: cardano/offchain
-        run: deno task test:consensus-history-prototype
+        run: deno task test:consensus-history-index
 
   aiken-static:
     name: Cardano Onchain Aiken Static

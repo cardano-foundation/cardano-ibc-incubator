@@ -198,20 +198,12 @@ function fields(
 /** Extract ledger-normalized public leaves independently of private history. */
 export function publicClientCommitmentValues(
   datumCbor: string,
-  layout: "production" | "prototype" = "prototype",
 ): {
   clientValue: string;
   consensusValue: string;
 } {
   const data = parseData(datumCbor);
-  const client = layout === "prototype"
-    ? fields(data, 2, "prototype state")[0]
-    : data;
-  const [clientDatum] = fields(
-    client,
-    layout === "prototype" ? [2, 3] : 3,
-    "client datum",
-  );
+  const [clientDatum] = fields(data, 3, "client datum");
   const [clientState, consensus] = fields(clientDatum, 4, "client state datum");
   fields(clientState, 8, "client state");
   if (!(consensus instanceof CborMap) || consensus.map.length !== 1) {

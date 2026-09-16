@@ -385,3 +385,34 @@ test("bootstrap discovery checks raw positive NFT mint and closes its read snaps
   );
   assert.equal(calls.at(-1), "ROLLBACK");
 });
+
+test("recovery rejects the retired combined-tree layout before opening its cache", () => {
+  const item = publications([1n])[0];
+  const deployment = {
+    layout: "prototype",
+    clientToken: token,
+    stateAddress: address,
+    bootstrap: { txHash: item.output.txHash, outputIndex: 0 },
+  };
+  assert.throws(
+    () => new ConsensusHistoryRecovery(":memory:", deployment as never),
+    /invalid history datum layout/,
+  );
+});
+
+test("recovery rejects a combined client and public-root datum", async () => {
+  const items = publications([1n]);
+  replaceDatum(items[0], (datum) => {
+    const client = new Constr(0, [...datum.fields]);
+    datum.fields = [client, "00".repeat(32)];
+  });
+  const history = recovery(items);
+  try {
+    await assert.rejects(
+      history.recover(source(items)),
+      /invalid client datum/,
+    );
+  } finally {
+    history.close();
+  }
+});

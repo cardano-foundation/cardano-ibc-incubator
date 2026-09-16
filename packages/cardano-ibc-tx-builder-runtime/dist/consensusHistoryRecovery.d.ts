@@ -1,7 +1,7 @@
 import { type UTxO } from "@lucid-evolution/lucid";
 import { type ConsensusHistoryClientToken, type ConsensusHistoryHeight, type ConsensusHistoryRecord, type ConsensusHistoryWitness } from "./consensusHistory.ts";
 export interface HistoryDeployment {
-    readonly layout?: "production" | "prototype";
+    readonly layout?: "production";
     readonly clientToken: ConsensusHistoryClientToken;
     readonly stateAddress: string;
     readonly bootstrap: {
@@ -84,7 +84,6 @@ export declare class ConsensusHistoryRecovery {
     private checkOutput;
     private matchAnchor;
     private spends;
-    private consensusKey;
     private apply;
     private rewind;
 }

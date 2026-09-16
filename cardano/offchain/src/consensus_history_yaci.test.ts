@@ -14,7 +14,7 @@ const BOOTSTRAP = "aa".repeat(32);
 const TIP = "ff".repeat(32);
 const deployment = {
   clientToken: { policyId: "11".repeat(28), name: "2233" },
-  stateAddress: "addr_test1_prototype",
+  stateAddress: "addr_test1_history_fixture",
   bootstrap: { txHash: BOOTSTRAP, outputIndex: 2 },
 };
 const RESUME: HistoryPoint = {

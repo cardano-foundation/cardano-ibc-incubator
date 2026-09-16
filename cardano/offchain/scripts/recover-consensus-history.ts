@@ -7,7 +7,7 @@ const HELP = `Usage:
 One-shot recovery of a client's local proof-backed history index from
 canonical Yaci transaction history. The deployment JSON must contain clientToken,
 stateAddress, and bootstrap { txHash, outputIndex } (HistoryDeployment format).
-The default layout is production. Set layout: "prototype" only for the old experiment.
+Recovery supports the production client datum with its private history root.
 The optional height prints a regenerated historical witness after root validation.
 
 Required environment (no default credentials):

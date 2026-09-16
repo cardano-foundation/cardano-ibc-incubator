@@ -35,6 +35,13 @@ import adjacentFixture from "./fixtures/tendermint-adjacent.json" with {
   type: "json",
 };
 
+import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
+  type: "json",
+};
+
+const MAX_BYTES = parameters.maxTxSize;
+const MAX_MEMORY = BigInt(parameters.maxTxExMem);
+const MAX_STEPS = BigInt(parameters.maxTxExSteps);
 const HOST_POLICY = "11".repeat(28);
 const HOST_NAME = fromText("ibc_host_state");
 const TRUSTING_PERIOD = 120_000_000_000n;
@@ -84,9 +91,20 @@ async function fixture(
     emulator.time = adjacentFixture.recommended_emulator_time_ms;
   }
   const height = (n: bigint) => new Constr(0, [normalUpdate ? 1n : 0n, n]);
-  emulator.protocolParameters.maxTxSize = 16_384;
-  emulator.protocolParameters.maxTxExMem = 16_500_000n;
-  emulator.protocolParameters.maxTxExSteps = 10_000_000_000n;
+  Object.assign(emulator.protocolParameters, {
+    maxTxSize: MAX_BYTES,
+    maxTxExMem: MAX_MEMORY,
+    maxTxExSteps: MAX_STEPS,
+    coinsPerUtxoByte: BigInt(parameters.coinsPerUtxoByte),
+    minFeeA: parameters.minFeeA,
+    minFeeB: parameters.minFeeB,
+    priceMem: parameters.priceMem,
+    priceStep: parameters.priceStep,
+    minFeeRefScriptCostPerByte: parameters.minFeeRefScriptCostPerByte,
+  });
+  emulator.protocolParameters.costModels.PlutusV3 = Object.fromEntries(
+    parameters.plutusV3CostModel.map((cost, index) => [String(index), cost]),
+  );
   const lucid = await Lucid(emulator, "Preprod");
   if (captureSignerFixture) {
     lucid.selectWallet.fromPrivateKey(account.privateKey);
@@ -418,7 +436,7 @@ async function fixture(
       }, host.assets)
       .validFrom(now).validTo(now + 30_000).complete({ localUPLCEval: true });
     const signed = await created.sign.withWallet().complete();
-    assert(signed.toCBOR().length / 2 <= 16_384 - 750);
+    assert(signed.toCBOR().length / 2 <= MAX_BYTES - 750);
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
     client = await lucid.utxoByUnit(clientPolicyId + clientName);
@@ -576,13 +594,13 @@ async function fixture(
       signed.toTransaction().witness_set().redeemers()!,
     );
     const bytes = signed.toCBOR().length / 2;
-    assert(bytes <= 16_384 - 750, `recovery uses ${bytes} signed bytes`);
+    assert(bytes <= MAX_BYTES - 750, `recovery uses ${bytes} signed bytes`);
     assert(
-      units.mem() <= 15_675_000n,
+      units.mem() <= MAX_MEMORY * 95n / 100n,
       `recovery uses ${units.mem()} memory units`,
     );
     assert(
-      units.steps() <= 9_500_000_000n,
+      units.steps() <= MAX_STEPS * 95n / 100n,
       `recovery uses ${units.steps()} CPU steps`,
     );
     assertEquals(await signed.submit(), signed.toHash());
@@ -714,13 +732,13 @@ async function fixture(
       signed.toTransaction().witness_set().redeemers()!,
     );
     const bytes = signed.toCBOR().length / 2;
-    assert(bytes <= 16_384 - 750, `update uses ${bytes} signed bytes`);
+    assert(bytes <= MAX_BYTES - 750, `update uses ${bytes} signed bytes`);
     assert(
-      units.mem() <= 15_675_000n,
+      units.mem() <= MAX_MEMORY * 95n / 100n,
       `update uses ${units.mem()} memory units`,
     );
     assert(
-      units.steps() <= 9_500_000_000n,
+      units.steps() <= MAX_STEPS * 95n / 100n,
       `update uses ${units.steps()} CPU steps`,
     );
     assertEquals(await signed.submit(), signed.toHash());
@@ -889,9 +907,9 @@ async function fixture(
     const units = CML.compute_total_ex_units(
       signed.toTransaction().witness_set().redeemers()!,
     );
-    assert(signed.toCBOR().length / 2 <= 16_384 - 750);
-    assert(units.mem() <= 15_675_000n);
-    assert(units.steps() <= 9_500_000_000n);
+    assert(signed.toCBOR().length / 2 <= MAX_BYTES - 750);
+    assert(units.mem() <= MAX_MEMORY * 95n / 100n);
+    assert(units.steps() <= MAX_STEPS * 95n / 100n);
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
     assertEquals(
@@ -1003,10 +1021,17 @@ async function fixture(
   };
 }
 
-Deno.test("signed recovery commits the expired tip without creating history UTxOs", async () => {
-  for (const count of [1, 300]) {
-    console.log(JSON.stringify(await (await fixture(count, true)).recover()));
+Deno.test("signed production recovery stays bounded at 1, 100 and 10000 historical records", async () => {
+  const sizes: number[] = [];
+  for (const count of [1, 100, 10_000]) {
+    const result = await (await fixture(count, true)).recover();
+    console.log(JSON.stringify(result));
+    sizes.push(result.bytes);
   }
+  assert(
+    Math.max(...sizes) - Math.min(...sizes) < 100,
+    "history growth must not grow recovery transactions beyond bounded proofs",
+  );
 });
 
 Deno.test("signed recovery preserves an unrelated asset already held by the client", async () => {
