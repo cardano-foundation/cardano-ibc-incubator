@@ -221,6 +221,9 @@ services:
 
   yaci-store-postgres:
     image: postgres:15
+    # Host-side manifest export/upgrade verifies retained history read-only.
+    ports:
+      - "127.0.0.1:${YACI_STORE_POSTGRES_PORT:-15432}:5432"
     environment:
       - POSTGRES_DB=yaci_store
       - POSTGRES_USER=yaci

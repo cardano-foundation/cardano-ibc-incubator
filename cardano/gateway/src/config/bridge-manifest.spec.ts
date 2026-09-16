@@ -95,6 +95,16 @@ function buildStagedHandlerJsonDeployment() {
 }
 
 describe('bridge manifest normalization', () => {
+  it('requires public manifests and handlers to declare the deployment history boundary', () => {
+    const cardano = { chain_id: 'cardano-preview', network_magic: 2, network: 'Preview' };
+    expect(() => normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), cardano)).toThrow('history is required');
+    const local = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' }).bridgeManifest;
+    expect(() => normalizeBridgeManifestConfig({ ...local, cardano })).toThrow('history is required');
+    const history = { format: 'cardano-history-v1', start: { slot: 100, block_height: 5, block_hash: 'aa'.repeat(32) }, host_state_nft_mint: { tx_hash: 'bb'.repeat(32), output_index: 0 } };
+    const loaded = normalizeHandlerJsonDeploymentConfig({ ...buildHandlerJsonDeployment(), history }, cardano);
+    expect(normalizeBridgeManifestConfig(loaded.bridgeManifest).deployment.history).toEqual(history);
+  });
+
   it('normalizes handler.json into the public manifest and internal deployment config', () => {
     const loaded = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',

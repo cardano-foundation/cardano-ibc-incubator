@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { InjectEntityManager } from '@nestjs/typeorm';
+import { EntityManager } from 'typeorm';
+import { HistoryConfigurationError, verifyHistoryCoverage } from '../../config/history-coverage';
+import type { BridgeManifest } from '../../config/bridge-manifest';
+import { Injectable, OnModuleInit, Logger, Optional } from '@nestjs/common';
 import { LucidService } from '../modules/lucid/lucid.service';
 import { IbcTreeStateStore } from '../helpers/ibc-state-root';
 import { CURRENT_IBC_TREE_CACHE_ID, IbcTreeCacheService, ibcTreeCacheIdForRoot } from './ibc-tree-cache.service';
@@ -25,12 +30,39 @@ export class TreeInitService implements OnModuleInit {
     private readonly lucidService: LucidService,
     private readonly ibcTreeCacheService: IbcTreeCacheService,
     private readonly ibcTreeStore: IbcTreeStateStore,
+    @Optional() private readonly config?: ConfigService,
+    @Optional() @InjectEntityManager("history") private readonly historyDb?: EntityManager,
   ) {}
 
   async onModuleInit() {
+    const manifest = this.config?.get<BridgeManifest>('bridgeManifest');
+    const seconds = Number(this.config?.get('BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS') ?? 7200);
+    if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 86400) throw new Error('BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS must be between 1 and 86400');
+    const deadline = Date.now() + seconds * 1000;
+    for (;;) {
+      try { await this.initializeTree(); return; }
+      catch (error) {
+        if (error instanceof HistoryConfigurationError || !manifest?.history || Date.now() >= deadline) throw error;
+        this.logger.warn(`Waiting for bridge history/providers and verified tree state: ${error.message}`);
+        await new Promise((resolve) => setTimeout(resolve, Math.min(10000, deadline - Date.now())));
+      }
+    }
+  }
+
+  private async initializeTree() {
     this.logger.log('Initializing IBC state tree from on-chain UTXOs...');
 
     try {
+      const manifest = this.config?.get<BridgeManifest>('bridgeManifest');
+      if (manifest && (manifest.history || [1, 2, 764824073].includes(manifest.cardano.network_magic))) {
+        if (!this.historyDb) throw new HistoryConfigurationError('Yaci database is required for manifest history verification');
+        const liveHost = await this.lucidService.findUtxoAtHostStateNFT();
+        await this.historyDb.transaction('REPEATABLE READ', async (manager) => {
+          await manager.query('SET TRANSACTION READ ONLY');
+          await manager.query('SET LOCAL statement_timeout = 30000');
+          await verifyHistoryCoverage(manager, manifest, liveHost);
+        });
+      }
       const cacheEnabled = process.env.IBC_TREE_CACHE_ENABLED !== 'false';
       if (cacheEnabled) {
         await this.ibcTreeCacheService.ensureSchema();
@@ -79,7 +111,7 @@ export class TreeInitService implements OnModuleInit {
       this.logger.error(`   - Kupo has indexed from the HostState deployment block`);
 
       // Throw error to prevent Gateway from starting with invalid state
-      throw new Error(`Tree initialization failed: ${error.message}`);
+      throw error instanceof HistoryConfigurationError ? error : new Error(`Tree initialization failed: ${error.message}`);
     }
   }
 }

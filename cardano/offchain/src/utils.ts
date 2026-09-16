@@ -807,6 +807,8 @@ type Module = "transfer" | "mock" | "icq";
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
+  history:
+    import("../../../packages/cardano-ibc-tx-builder-runtime/src/historyBootstrap.ts").HistoryBootstrap;
   deployedAt: string;
   ics20PacketCodec: "ics20-classic-json-v1";
   validators: {
