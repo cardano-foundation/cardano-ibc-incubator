@@ -1,4 +1,13 @@
-import { Constr, Data, fromHex, fromText, toHex } from "@lucid-evolution/lucid";
+import {
+  Constr,
+  credentialToAddress,
+  Data,
+  fromHex,
+  fromText,
+  type Script,
+  toHex,
+  type UTxO,
+} from "@lucid-evolution/lucid";
 import { blake2b } from "@noble/hashes/blake2b";
 import { HostStateDatum, HostStateRedeemer } from "../../types/index.ts";
 import { DeploymentIbcTree } from "../deployment.ts";
@@ -62,11 +71,29 @@ export async function sendPacketFixture(
     lucid,
     emulator,
     seed,
-    reference,
+    reference: seedReference,
     channelScripts,
     channelToken,
     packetContext: context,
   } = fixture;
+  // Histories reuse immutable reference scripts. Creating wallet-owned copies
+  // for every mutation otherwise grows coin-selection input and WASM memory
+  // throughout a case, and lets fee selection spend future script references.
+  const references = new Map<string, UTxO>();
+  const referenceAddress = credentialToAddress("Custom", {
+    type: "Script",
+    hash: "fe".repeat(28),
+  });
+  const reference = (script: Script): UTxO => {
+    const key = `${script.type}:${script.script}`;
+    let utxo = references.get(key);
+    if (!utxo) {
+      utxo = seedReference(script);
+      utxo.address = referenceAddress;
+      references.set(key, utxo);
+    }
+    return utxo;
+  };
   if (parameters.unrelated) {
     context.host.assets["cd".repeat(28) + "617578"] = parameters.unrelated;
     // Module capability witnesses permit only their two authentication assets.
@@ -316,6 +343,7 @@ export async function sendPacketFixture(
     .validFrom(emulator.now()).validTo(emulator.now() + 60_000);
   return {
     ...fixture,
+    reference,
     tx,
     funds: {
       voucherScript,
