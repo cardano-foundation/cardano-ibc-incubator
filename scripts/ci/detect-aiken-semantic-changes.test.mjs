@@ -78,15 +78,16 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
   const aggregate = workflow.slice(workflow.indexOf('  aiken:\n'), workflow.indexOf('  tx-budgets:\n'));
   const script = aggregate.match(/node - <<'NODE'\n([\s\S]*?)\n          NODE/)[1]
     .replace(/^          /gm, '');
-  const run = (fuzz, overrides = {}, changed = 'true') => {
+  const run = (fuzz, overrides = {}, changed = 'true', runJobs = 'true') => {
     const needs = Object.fromEntries([
-      'aiken-changes', 'aiken-static', 'generated-artifacts', 'tx-budgets',
+      'docs-update', 'aiken-changes', 'aiken-static', 'generated-artifacts', 'tx-budgets',
       'aiken-smoke', 'aiken-fuzz', 'aiken-mutations', 'deno-offchain', 'deno-funds',
     ].map((name) => [name, { result: !fuzz && ['aiken-smoke', 'aiken-fuzz', 'aiken-mutations'].includes(name) ? 'skipped' : 'success' }]));
     for (const [name, result] of Object.entries(overrides)) needs[name] = { result };
     return execFileSync(process.execPath, ['-e', script], {
       env: {
         ...process.env,
+        RUN_JOBS: runJobs,
         AIKEN_CHANGED: changed,
         AIKEN_FILES_CHANGED: 'false',
         AIKEN_PR_CHANGED: changed,
@@ -97,6 +98,10 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
     });
   };
   assert.doesNotThrow(() => run(false));
+  assert.throws(() => run(false, { 'docs-update': 'failure' }));
+  assert.throws(() => run(false, {}, 'true', 'invalid'));
+  assert.doesNotThrow(() => run(false, { 'aiken-changes': 'skipped', 'deno-funds': 'skipped' }, '', 'false'));
+  assert.throws(() => run(false, { 'docs-update': 'failure' }, '', 'false'));
   assert.throws(() => run(false, { 'deno-offchain': 'failure' }));
   assert.throws(() => run(true, { 'deno-offchain': 'skipped' }));
   assert.throws(() => run(false, { 'deno-funds': 'failure' }));
