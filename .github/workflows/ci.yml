@@ -352,6 +352,9 @@ jobs:
       - name: Check unused exports
         run: node scripts/ci/check-knip-ratchet.mjs
 
+      - name: Test npm audit ratchet
+        run: node --test scripts/ci/check-npm-audit-ratchet.test.mjs
+
       - name: Check npm audit ratchet
         run: node scripts/ci/check-npm-audit-ratchet.mjs
 
