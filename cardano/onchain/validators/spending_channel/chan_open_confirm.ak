@@ -6,7 +6,6 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
-use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyMembership, VerifyProofRedeemer,
@@ -192,10 +191,7 @@ fn validate_chan_open_confirm_proof(
   expect Some(processed_height) =
     pairs.get_first(client_datum_state.processed_heights, proof_height)
 
-  let channel_bz =
-    channel_pb.marshal_for_channel(
-      channel.convert_to_channel_proto(expected_channel),
-    ).2nd
+  let channel_bz = channel.marshal(expected_channel).2nd
 
   verify_proof_redeemer == VerifyMembership {
     cs: client_datum_state.client_state,

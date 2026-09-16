@@ -478,3 +478,14 @@ test prop_conn_open_try_rejects_wrong_counterparty_client_state(
     |> run_conn_open_try_transition
     |> fuzz_dsl.assert_protocol_checks_reject
 }
+
+// Unit form of the full-transition property above, for stable execution budgets.
+test conn_open_try_full_transition_protobuf_budget() {
+  build_conn_open_try_fixture(
+    "client-state",
+    "client-state",
+    fuzz_dsl.no_mutation(),
+  )
+    |> run_conn_open_try_transition
+    |> fuzz_dsl.assert_protocol_checks_accept
+}

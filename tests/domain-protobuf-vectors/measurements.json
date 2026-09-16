@@ -1,0 +1,419 @@
+{
+  "baseline": "d3b82f58",
+  "aiken": "v1.1.21+42babe5",
+  "build_trace_level": "silent",
+  "test_trace_level": "verbose",
+  "seed": 195,
+  "sizes": [
+    {
+      "validator": "minting_channel_stt.mint_channel_stt.mint",
+      "before_bytes": 14435,
+      "after_bytes": 14148
+    },
+    {
+      "validator": "minting_connection_stt.mint_connection_stt.mint",
+      "before_bytes": 11874,
+      "after_bytes": 11742
+    },
+    {
+      "validator": "spending_channel/chan_close_confirm.chan_close_confirm.mint",
+      "before_bytes": 10464,
+      "after_bytes": 10221
+    },
+    {
+      "validator": "spending_channel/chan_open_ack.chan_open_ack.mint",
+      "before_bytes": 11086,
+      "after_bytes": 10846
+    },
+    {
+      "validator": "spending_channel/chan_open_confirm.chan_open_confirm.mint",
+      "before_bytes": 10651,
+      "after_bytes": 10411
+    },
+    {
+      "validator": "spending_channel/timeout_packet.timeout_packet.mint",
+      "before_bytes": 13640,
+      "after_bytes": 13361
+    },
+    {
+      "validator": "spending_connection.spend_connection.spend",
+      "before_bytes": 9409,
+      "after_bytes": 9274
+    }
+  ],
+  "encoding_expressions": [
+    {
+      "case": "conn_open_try",
+      "before": {
+        "mem": 157556,
+        "cpu": 45702404
+      },
+      "after": {
+        "mem": 146096,
+        "cpu": 41165916
+      }
+    },
+    {
+      "case": "conn_open_ack",
+      "before": {
+        "mem": 166117,
+        "cpu": 48168662
+      },
+      "after": {
+        "mem": 153555,
+        "cpu": 43327792
+      }
+    },
+    {
+      "case": "conn_open_confirm",
+      "before": {
+        "mem": 166117,
+        "cpu": 48168662
+      },
+      "after": {
+        "mem": 153555,
+        "cpu": 43327792
+      }
+    },
+    {
+      "case": "chan_open_try_unordered",
+      "before": {
+        "mem": 148880,
+        "cpu": 44084535
+      },
+      "after": {
+        "mem": 124210,
+        "cpu": 35336931
+      }
+    },
+    {
+      "case": "chan_open_try_ordered",
+      "before": {
+        "mem": 148880,
+        "cpu": 44084535
+      },
+      "after": {
+        "mem": 124210,
+        "cpu": 35336931
+      }
+    },
+    {
+      "case": "chan_open_ack_unordered",
+      "before": {
+        "mem": 157440,
+        "cpu": 46550615
+      },
+      "after": {
+        "mem": 131666,
+        "cpu": 37498283
+      }
+    },
+    {
+      "case": "chan_open_ack_ordered",
+      "before": {
+        "mem": 157440,
+        "cpu": 46550615
+      },
+      "after": {
+        "mem": 131666,
+        "cpu": 37498283
+      }
+    },
+    {
+      "case": "chan_open_confirm_unordered",
+      "before": {
+        "mem": 159644,
+        "cpu": 47159379
+      },
+      "after": {
+        "mem": 132768,
+        "cpu": 37802665
+      }
+    },
+    {
+      "case": "chan_open_confirm_ordered",
+      "before": {
+        "mem": 159644,
+        "cpu": 47159379
+      },
+      "after": {
+        "mem": 132768,
+        "cpu": 37802665
+      }
+    },
+    {
+      "case": "chan_close_confirm_unordered",
+      "before": {
+        "mem": 160746,
+        "cpu": 47463761
+      },
+      "after": {
+        "mem": 132768,
+        "cpu": 37802665
+      }
+    },
+    {
+      "case": "chan_close_confirm_ordered",
+      "before": {
+        "mem": 160746,
+        "cpu": 47463761
+      },
+      "after": {
+        "mem": 132768,
+        "cpu": 37802665
+      }
+    },
+    {
+      "case": "timeout_on_close_unordered",
+      "before": {
+        "mem": 160746,
+        "cpu": 47463761
+      },
+      "after": {
+        "mem": 132768,
+        "cpu": 37802665
+      }
+    },
+    {
+      "case": "timeout_on_close_ordered",
+      "before": {
+        "mem": 160746,
+        "cpu": 47463761
+      },
+      "after": {
+        "mem": 132768,
+        "cpu": 37802665
+      }
+    }
+  ],
+  "validator_tests": [
+    {
+      "module": "ibc/core/ics_003_connection_semantics/verify.test",
+      "test": "succeed_verify_channel_state",
+      "before": {
+        "mem": 1468322,
+        "cpu": 534484338
+      },
+      "after": {
+        "mem": 1442452,
+        "cpu": 525544734
+      }
+    },
+    {
+      "module": "spending_channel/chan_close_confirm.test",
+      "test": "chan_close_confirm_succeed",
+      "before": {
+        "mem": 6198847,
+        "cpu": 1942354318
+      },
+      "after": {
+        "mem": 6172869,
+        "cpu": 1933013222
+      }
+    },
+    {
+      "module": "spending_channel/chan_close_confirm.test",
+      "test": "chan_close_confirm_rejects_open_confirm_callback",
+      "before": {
+        "mem": 6178911,
+        "cpu": 1930772238
+      },
+      "after": {
+        "mem": 6156933,
+        "cpu": 1922071142
+      }
+    },
+    {
+      "module": "spending_channel/chan_open_ack.test",
+      "test": "succeed_chan_open_ack",
+      "before": {
+        "mem": 6890907,
+        "cpu": 2148837577
+      },
+      "after": {
+        "mem": 6866733,
+        "cpu": 2140041245
+      }
+    },
+    {
+      "module": "spending_channel/chan_open_ack.test",
+      "test": "reject_chan_open_ack_with_different_token_policy",
+      "before": {
+        "mem": 6824605,
+        "cpu": 2125728331
+      },
+      "after": {
+        "mem": 6800431,
+        "cpu": 2116931999
+      }
+    },
+    {
+      "module": "spending_channel/chan_open_ack.test",
+      "test": "reject_chan_open_ack_with_different_token_name",
+      "before": {
+        "mem": 6845469,
+        "cpu": 2133405482
+      },
+      "after": {
+        "mem": 6821295,
+        "cpu": 2124609150
+      }
+    },
+    {
+      "module": "spending_channel/chan_open_confirm.test",
+      "test": "succeed_chan_open_confirm",
+      "before": {
+        "mem": 6741773,
+        "cpu": 2107946147
+      },
+      "after": {
+        "mem": 6716697,
+        "cpu": 2098877433
+      }
+    },
+    {
+      "module": "spending_channel/timeout_packet.test",
+      "test": "succeed_timeout_unordered_packet",
+      "before": {
+        "mem": 9000127,
+        "cpu": 2811956599
+      },
+      "after": {
+        "mem": 9000027,
+        "cpu": 2811940599
+      }
+    },
+    {
+      "module": "spending_channel/timeout_packet.test",
+      "test": "succeed_timeout_on_close_unordered_future_packet",
+      "before": {
+        "mem": 9676561,
+        "cpu": 3016131606
+      },
+      "after": {
+        "mem": 9650583,
+        "cpu": 3006790510
+      }
+    },
+    {
+      "module": "spending_channel/timeout_packet.test",
+      "test": "timeout_packet_accepts_registered_escrow_shard_callback",
+      "before": {
+        "mem": 6763794,
+        "cpu": 2123998268
+      },
+      "after": {
+        "mem": 6763694,
+        "cpu": 2123982268
+      }
+    },
+    {
+      "module": "spending_channel/timeout_packet.test",
+      "test": "succeed_timeout_ordered_packet",
+      "before": {
+        "mem": 8293412,
+        "cpu": 2600465420
+      },
+      "after": {
+        "mem": 8293212,
+        "cpu": 2600433420
+      }
+    },
+    {
+      "module": "spending_channel/timeout_packet.test",
+      "test": "timeout_on_close_recovers_second_future_packet_from_closed_ordered_channel",
+      "before": {
+        "mem": 9039193,
+        "cpu": 2835717328
+      },
+      "after": {
+        "mem": 9013215,
+        "cpu": 2826376232
+      }
+    },
+    {
+      "module": "spending_connection.test",
+      "test": "conn_open_ack_succeed",
+      "before": {
+        "mem": 2797435,
+        "cpu": 872214914
+      },
+      "after": {
+        "mem": 2787573,
+        "cpu": 867806044
+      }
+    },
+    {
+      "module": "spending_connection.test",
+      "test": "conn_open_confirm_succeed",
+      "before": {
+        "mem": 2679139,
+        "cpu": 842793645
+      },
+      "after": {
+        "mem": 2669277,
+        "cpu": 838384775
+      }
+    },
+    {
+      "module": "spending_connection.test",
+      "test": "conn_open_confirm_rejects_inactive_client",
+      "before": {
+        "mem": 2117589,
+        "cpu": 658249918
+      },
+      "after": {
+        "mem": 2119489,
+        "cpu": 658553918
+      }
+    },
+    {
+      "module": "minting_channel_stt_protobuf.test",
+      "test": "chan_open_try_mint_ordered_protobuf_budget",
+      "before": {
+        "mem": 8251866,
+        "cpu": 2552692339
+      },
+      "after": {
+        "mem": 8228696,
+        "cpu": 2544184735
+      }
+    },
+    {
+      "module": "minting_channel_stt_protobuf.test",
+      "test": "chan_open_try_mint_unordered_protobuf_budget",
+      "before": {
+        "mem": 8255523,
+        "cpu": 2554870186
+      },
+      "after": {
+        "mem": 8232353,
+        "cpu": 2546362582
+      }
+    },
+    {
+      "module": "minting_channel_stt_protobuf.test",
+      "test": "chan_open_try_mint_rejects_wrong_protobuf_value",
+      "before": {
+        "mem": 8057807,
+        "cpu": 2490763836
+      },
+      "after": {
+        "mem": 8033537,
+        "cpu": 2482080232
+      }
+    },
+    {
+      "module": "minting_connection_stt_contract.test",
+      "test": "conn_open_try_full_transition_protobuf_budget",
+      "before": {
+        "mem": 9915717,
+        "cpu": 3056888689
+      },
+      "after": {
+        "mem": 9906557,
+        "cpu": 3052720201
+      }
+    }
+  ]
+}

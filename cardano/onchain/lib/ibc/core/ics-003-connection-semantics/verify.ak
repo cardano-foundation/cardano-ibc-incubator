@@ -2,8 +2,6 @@ use aiken/collection/pairs
 use aiken/primitive/bytearray.{from_int_big_endian}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state
-use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
-use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/params
@@ -49,9 +47,7 @@ pub fn verify_connection_state(
     0,
     proof,
     merkle_path,
-    connection_pb.marshal_for_connection_end(
-      connection_end.convert_to_connection_end_proto(counterparty_connection),
-    ),
+    connection_end.marshal(counterparty_connection),
   )
 }
 
@@ -127,7 +123,7 @@ pub fn verify_channel_state(
     0,
     proof,
     merkle_path,
-    channel_pb.marshal_for_channel(channel.convert_to_channel_proto(channel)).2nd,
+    channel.marshal(channel).2nd,
   )
 }
 

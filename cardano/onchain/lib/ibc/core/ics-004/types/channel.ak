@@ -1,3 +1,5 @@
+use aiken/collection/list
+use aiken/primitive/bytearray.{concat, length, push}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb.{
   CLOSED, Channel as ChannelProto, Counterparty as CounterpartyProto, INIT, NONE,
   OPEN, ORDERED, Order as OrderProto, State as StateProto, TRYOPEN,
@@ -8,6 +10,10 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{None, Order, Ordered, Unordered}
 use ibc/core/ics_004/types/state.{
   ChannelState, Closed, Init, Open, TryOpen, Uninitialized,
+}
+use ibc/utils/bytes.{
+  add_and_concat, encode_bytearray, encode_int, encode_length_varint,
+  nest_record, size_and_concat, sov,
 }
 
 /// Channel defines pipeline for exactly-once packet delivery between specific
@@ -25,6 +31,72 @@ pub type Channel {
   connection_hops: List<ByteArray>,
   /// opaque channel version, which is agreed upon during the handshake
   version: ByteArray,
+}
+
+/// Canonical IBC protobuf bytes and length for the supported domain states.
+/// Field 6 (upgrade_sequence) is always zero in the domain and is omitted.
+pub fn marshal(channel: Channel) -> (Int, ByteArray) {
+  let Channel { state, ordering, counterparty, connection_hops, version } =
+    channel
+  (0, #"")
+    |> add_and_concat(
+        encode_int(
+          when state is {
+            Uninitialized -> 0
+            Init -> 1
+            TryOpen -> 2
+            Open -> 3
+            Closed -> 4
+          },
+          bytes.field_1_varint,
+        ),
+      )
+    |> add_and_concat(
+        encode_int(
+          when ordering is {
+            None -> 0
+            Unordered -> 1
+            Ordered -> 2
+          },
+          bytes.field_2_varint,
+        ),
+      )
+    |> add_and_concat(
+        nest_record(
+          (0, #[])
+            |> size_and_concat(
+                encode_bytearray(
+                  counterparty.port_id,
+                  bytes.field_1_length_delimited,
+                ),
+              )
+            |> size_and_concat(
+                encode_bytearray(
+                  counterparty.channel_id,
+                  bytes.field_2_length_delimited,
+                ),
+              ),
+          bytes.field_3_length_delimited,
+        ),
+      )
+    |> add_and_concat(
+        list.reduce(
+          connection_hops,
+          (0, #[]),
+          fn((size, bz1), connection_hop: ByteArray) -> (Int, ByteArray) {
+            let l = length(connection_hop)
+            let bz2 =
+              l
+                |> encode_length_varint()
+                |> concat(connection_hop)
+                |> push(bytes.field_4_length_delimited)
+            (size + sov(l) + l + 1, concat(bz1, bz2))
+          },
+        ),
+      )
+    |> size_and_concat(
+        encode_bytearray(version, bytes.field_5_length_delimited),
+      )
 }
 
 pub fn convert_to_channel_proto(channel: Channel) -> ChannelProto {

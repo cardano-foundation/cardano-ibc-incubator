@@ -8,7 +8,6 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_state
-use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyMembership, VerifyProofRedeemer,
@@ -183,10 +182,7 @@ fn validate_conn_open_ack_proof(
       ),
     )
 
-  let expected_connection_bz =
-    connection_pb.marshal_for_connection_end(
-      connection_end.convert_to_connection_end_proto(expected_connection),
-    )
+  let expected_connection_bz = connection_end.marshal(expected_connection)
 
   expect Some(verify_proof_redeemer) =
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
@@ -266,10 +262,7 @@ fn validate_conn_open_confirm_proof(
       connection.delay_period,
     )
 
-  let expected_connection_bz =
-    connection_pb.marshal_for_connection_end(
-      connection_end.convert_to_connection_end_proto(expected_connection),
-    )
+  let expected_connection_bz = connection_end.marshal(expected_connection)
 
   let time_delay = connection.delay_period
   let block_delay = verify_mod.get_block_delay(connection)

@@ -7,7 +7,6 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
-use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
@@ -394,10 +393,7 @@ fn validate_timeout_on_close_proofs(
       connection_hops: [connection.counterparty.connection_id],
       version: cur_channel.version,
     }
-  let closed_channel_value =
-    channel_pb.marshal_for_channel(
-      channel.convert_to_channel_proto(expected_channel),
-    ).2nd
+  let closed_channel_value = channel.marshal(expected_channel).2nd
   let closed_channel_membership =
     VerifyMembershipParams {
       cs: client_datum_state.client_state,

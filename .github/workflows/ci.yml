@@ -683,6 +683,7 @@ jobs:
               -m prop_client_recovery_
           - suite: connection
             match_tests: >-
+              -m ibc/core/domain_protobuf
               -m ibc/core/ics_003_connection_semantics/connection_datum
               -m ibc/core/ics_003_connection_semantics/connection_handshake_contract
               -m prop_conn_open_try_
