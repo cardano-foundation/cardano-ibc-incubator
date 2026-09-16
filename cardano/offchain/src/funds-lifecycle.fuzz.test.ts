@@ -31,10 +31,17 @@ async function checkHistory(sample: unknown) {
   // Emit the original case before evaluation, so even an interrupted shrink or
   // CI timeout leaves a reproducible input in the uploaded log.
   console.log("Funds history:", fc.stringify(sample));
-  await runTransactionCase(
-    new URL("./testing/funds-case.worker.ts", import.meta.url),
-    sample,
-  );
+  try {
+    await runTransactionCase(
+      new URL("./testing/funds-case.worker.ts", import.meta.url),
+      sample,
+    );
+  } catch (error) {
+    // Shrinking long histories can take hours. Preserve the original failure
+    // immediately, even when the campaign is interrupted before it finishes.
+    console.error("Funds history failed:", error);
+    throw error;
+  }
 }
 
 const amount = fc.oneof(

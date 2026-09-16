@@ -49,7 +49,12 @@ that either check is required.
 and voucher cases. Transactions execute all their compiled Mint/Spend witnesses
 with local UPLC evaluation before submission to the emulator. A valid generated
 baseline is evaluated before malformed variants; ordinary builder errors do
-not count as script rejection.
+not count as script rejection. Each funds evaluation uses a fresh worker running
+the same UPLC engine, cost models and limits as Lucid's local evaluator. Repeated
+rejected evaluations in one runtime triggered a WASM trap during deeper histories.
+The isolated provider returns measured execution costs, never the emulator's
+placeholder budgets. A compiled comparison test checks every returned redeemer
+against local evaluation. Runtime traps still fail the test.
 
 Native histories vary amounts, reserves, packet data, sender/recipient keys,
 unrelated assets, command order and which outstanding packet is settled. They
@@ -88,7 +93,8 @@ areas remain useful, but are not equivalent to compiled history coverage.
 
 CI runs five histories per asset family in separate shards; the local default is
 twenty. Seeds and original cases are logged before evaluation so interrupted
-shrinking also leaves a reproducible input.
+shrinking also leaves a reproducible input. The original error is printed before
+shrinking starts.
 
 The separate `Funds Fuzz Campaign` workflow runs nightly on the default branch
 and supports manual dispatch. It runs 60 histories across six independent shards
