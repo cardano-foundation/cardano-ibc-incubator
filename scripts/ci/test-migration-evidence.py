@@ -2,6 +2,7 @@
 """Negative controls for the independent rehearsal evidence verifiers."""
 import copy
 import hashlib
+import http.server
 import importlib.util
 import json
 from pathlib import Path
@@ -9,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 
 DIRECTORY = Path(__file__).resolve().parent
@@ -158,6 +160,34 @@ class PacketEvidence(unittest.TestCase):
 
 
 class RehearsalEvidence(unittest.TestCase):
+    def test_readiness_retains_real_http_503_explanation(self):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_args): pass
+            def do_GET(self):
+                status = 200 if self.path == '/ready' else 503
+                body = (b'{"status":"ready"}' if self.path == '/ready' else
+                        b'{"status":"not_ready","cause":"No qualified genesis pools"}')
+                if self.path == '/invalid': body = b'not JSON'
+                if self.path == '/oversize': body = b'x' * 65537
+                self.send_response(status)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        with http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler) as server:
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                url = 'http://127.0.0.1:' + str(server.server_address[1])
+                self.assertEqual(rehearsal.read_gateway_readiness(url + '/blocked'), {
+                    'httpStatus': 503, 'body': {'status': 'not_ready', 'cause': 'No qualified genesis pools'}})
+                self.assertEqual(rehearsal.read_gateway_readiness(url + '/ready'), {
+                    'httpStatus': 200, 'body': {'status': 'ready'}})
+                self.assertIn('error', rehearsal.read_gateway_readiness(url + '/invalid'))
+                self.assertIn('64 KiB', rehearsal.read_gateway_readiness(url + '/oversize')['error'])
+            finally:
+                server.shutdown()
+                worker.join(timeout=5)
+
     def test_counterparty_catch_up_checks_actual_height_without_swallowing_errors(self):
         state = {'client_state': {'@type': '/ibc.lightclients.probabilistic.v1.ClientState',
                                  'latest_height': {'revision_number': '0', 'revision_height': '2278'}}}

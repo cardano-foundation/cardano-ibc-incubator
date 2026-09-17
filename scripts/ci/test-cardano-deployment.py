@@ -25,6 +25,9 @@ import importlib.util
 _reference_spec = importlib.util.spec_from_file_location("deployment_references", Path(__file__).with_name("deployment-references.py"))
 _references = importlib.util.module_from_spec(_reference_spec)
 _reference_spec.loader.exec_module(_references)
+_clock_spec = importlib.util.spec_from_file_location("migration_clock_profile", Path(__file__).with_name("migration-clock-profile.py"))
+_clock = importlib.util.module_from_spec(_clock_spec)
+_clock_spec.loader.exec_module(_clock)
 
 ROOT = Path(__file__).resolve().parents[2]
 OFFCHAIN = ROOT / "cardano/offchain"
@@ -229,6 +232,10 @@ def main():
                         'type': 'none', 'o': 'bind', 'device': str(directory)}}
         compose_file.write_text(json.dumps(config, indent=2) + "\n")
 
+    if args.migration_baseline:
+        # Fail before starting/funding a chain that the actual counterparty
+        # cannot authenticate, even after arbitrarily many descendants.
+        _clock.require_qualified_genesis(json.loads((runtime / 'genesis-shelley.json').read_text()))
     print(f"Isolated project: {project}; artifacts: {artifacts}", flush=True)
     try:
         if not args.existing_network:

@@ -19,9 +19,23 @@ def load(name):
 refs = load('deployment-references')
 deployment = load('test-cardano-deployment')
 runtime = load('migration-runtime')
+clock = load('migration-clock-profile')
 
 
 class References(unittest.TestCase):
+    def test_fresh_genesis_must_precede_the_actual_registration_cutoff(self):
+        # Exact failed CI genesis: more descendants cannot qualify these pools.
+        for start in ['2026-09-14T18:20:59Z', '2026-01-01T00:00:00Z', '2025-12-31T23:59:59Z']:
+            with self.subTest(start=start), self.assertRaisesRegex(ValueError, 'registration cutoff'):
+                clock.require_qualified_genesis({'slotLength': 1, 'systemStart': start})
+        for start in ['2025-12-29T00:00:00Z', '2025-12-31T23:59:58Z']:
+            clock.require_qualified_genesis({'slotLength': 1, 'systemStart': start})
+        with self.assertRaisesRegex(ValueError, 'UTC offset'):
+            clock.require_qualified_genesis({'slotLength': 1, 'systemStart': '2025-12-29T00:00:00'})
+        now = 1_789_667_200
+        self.assertEqual(now + clock.initial_offset(now), 1_766_966_400)
+        self.assertEqual(clock.initial_offset(now + 100), clock.initial_offset(now) - 100)
+
     def test_funding_requires_the_same_live_outref_amount_and_address(self):
         indexed = [{'transaction_id': 'aa', 'output_index': 0, 'address': 'wallet', 'value': {'coins': 100_000_000_000}}]
         ledger = {'aa#0': {'address': 'wallet', 'value': {'lovelace': 100_000_000_000}}}
