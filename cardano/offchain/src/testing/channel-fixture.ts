@@ -50,6 +50,10 @@ export interface ChannelParameters {
   remotePort: string;
   version: string;
   ordered: boolean;
+  clientType: string;
+  useLongClientType: boolean;
+  reverseClientRegistry: boolean;
+  reverseClientReferences: boolean;
 }
 
 export const defaultChannelParameters: ChannelParameters = {
@@ -62,6 +66,10 @@ export const defaultChannelParameters: ChannelParameters = {
   remotePort: "remote",
   version: "mock-version",
   ordered: true,
+  clientType: "07-tendermint",
+  useLongClientType: false,
+  reverseClientRegistry: false,
+  reverseClientReferences: false,
 };
 
 export type ChannelMutation =
@@ -72,7 +80,13 @@ export type ChannelMutation =
   | "host_ada_sweep"
   | "channel_ada_sweep"
   | "host_asset_sweep"
-  | "channel_asset_sweep";
+  | "channel_asset_sweep"
+  | "wrong_client_script"
+  | "wrong_client_policy"
+  | "wrong_client_datum_token"
+  | "wrong_client_sequence"
+  | "proof_from_other_client"
+  | "missing_client_verifier";
 
 export const channelActions = [
   {
@@ -224,6 +238,16 @@ export async function channelFixture(
   lucid.selectWallet.fromSeed(account.seedPhrase);
   const now = emulator.now();
   const clientPolicy = hash("11");
+  const otherClientPolicy = hash("aa");
+  const clientScript = hash("55");
+  const otherClientScript = hash("bb");
+  const longClientType = parameters.clientType + "-0";
+  const clientType = parameters.useLongClientType
+    ? longClientType
+    : parameters.clientType;
+  const otherClientType = parameters.useLongClientType
+    ? parameters.clientType
+    : longClientType;
   const connectionPolicy = hash("22");
   const portPolicy = hash("33");
   const hostPolicy = hash("44");
@@ -232,13 +256,25 @@ export async function channelFixture(
     "verifying_proof.verify_proof.mint",
     lucid,
   );
-  const clients = clientRegistryData([{
-    clientType: "07-tendermint",
-    implementation: "tendermint",
+  // These are two independent instances of the shipped Tendermint adapter.
+  // They share a sequence and proof implementation but have different state
+  // policies and spending scripts. A different client algorithm is not mocked.
+  const registrations = [{
+    clientType,
+    implementation: "tendermint" as const,
     mintPolicy: clientPolicy,
-    spendValidator: hash("55"),
+    spendValidator: clientScript,
     proofPolicy: verifyPolicy,
-  }]);
+  }, {
+    clientType: otherClientType,
+    implementation: "tendermint" as const,
+    mintPolicy: otherClientPolicy,
+    spendValidator: otherClientScript,
+    proofPolicy: verifyPolicy,
+  }];
+  const clients = clientRegistryData(
+    parameters.reverseClientRegistry ? registrations.reverse() : registrations,
+  );
   // Explicit registrations must select their own verifier. A different legacy
   // fallback catches accidental reads before resolving the connection's client.
   const legacyProofPolicy = hash("66");
@@ -302,6 +338,8 @@ export async function channelFixture(
       BigInt(parameters.clientSequence),
     ),
   );
+  const otherClientToken = record(otherClientPolicy, clientToken.fields[1]);
+  const unregisteredClientToken = record(hash("cc"), clientToken.fields[1]);
   const connectionToken = record(
     connectionPolicy,
     await generateTokenName(
@@ -358,6 +396,10 @@ export async function channelFixture(
     HEIGHT,
     proofSpecs,
   );
+  const otherClientState = record(
+    fromText("otherchain-1"),
+    ...clientState.fields.slice(1),
+  );
   const consensus = record(
     BigInt(now) * 1_000_000n,
     "00".repeat(32),
@@ -370,12 +412,21 @@ export async function channelFixture(
       new Map([[HEIGHT, 0n]]),
       new Map([[HEIGHT, 0n]]),
     ),
-    clientToken,
+    mutation === "wrong_client_datum_token"
+      ? otherClientToken
+      : mutation === "wrong_client_policy"
+      ? unregisteredClientToken
+      : clientToken,
     "00".repeat(32),
   );
   const connectionDatum = record(
     record(
-      fromText(`07-tendermint-${parameters.clientSequence}`),
+      fromText(
+        `${clientType}-${
+          parameters.clientSequence +
+          (mutation === "wrong_client_sequence" ? 1 : 0)
+        }`,
+      ),
       [record(fromText("1"), [
         fromText("ORDER_ORDERED"),
         fromText("ORDER_UNORDERED"),
@@ -390,14 +441,52 @@ export async function channelFixture(
     ),
     connectionToken,
   );
-  const client = seed(
-    credentialToAddress("Custom", { type: "Script", hash: hash("55") }),
-    {
-      lovelace: 5_000_000n,
-      [tokenUnit(clientToken)]: 1n,
-    },
-    encode(clientDatum),
+  const otherClientDatum = record(
+    record(
+      otherClientState,
+      new Map([[HEIGHT, consensus]]),
+      new Map([[HEIGHT, 0n]]),
+      new Map([[HEIGHT, 0n]]),
+    ),
+    otherClientToken,
+    "00".repeat(32),
   );
+  const seedClient = () =>
+    seed(
+      credentialToAddress("Custom", {
+        type: "Script",
+        hash: mutation === "wrong_client_script"
+          ? otherClientScript
+          : clientScript,
+      }),
+      {
+        lovelace: 5_000_000n,
+        [
+          tokenUnit(
+            mutation === "wrong_client_policy"
+              ? unregisteredClientToken
+              : clientToken,
+          )
+        ]: 1n,
+      },
+      encode(clientDatum),
+    );
+  const seedOtherClient = () =>
+    seed(
+      credentialToAddress("Custom", {
+        type: "Script",
+        hash: otherClientScript,
+      }),
+      { lovelace: 5_000_000n, [tokenUnit(otherClientToken)]: 1n },
+      encode(otherClientDatum),
+    );
+  // Change the output indices too. Lucid sorts reference inputs before execution.
+  const [client, otherClient] = parameters.reverseClientReferences
+    ? (() => {
+      const other = seedOtherClient();
+      return [seedClient(), other];
+    })()
+    : [seedClient(), seedOtherClient()];
   const connection = seed(account.address, {
     lovelace: 5_000_000n,
     [tokenUnit(connectionToken)]: 1n,
@@ -511,6 +600,7 @@ export async function channelFixture(
     .readFrom([
       connection,
       client,
+      otherClient,
       reference(hostScript),
       reference(moduleScript),
     ])
@@ -573,10 +663,10 @@ export async function channelFixture(
       );
     }
   }
-  if (action.proofState !== 0) {
+  if (action.proofState !== 0 && mutation !== "missing_client_verifier") {
     const verifyRedeemer = variant(
       0,
-      clientState,
+      mutation === "proof_from_other_client" ? otherClientState : clientState,
       consensus,
       HEIGHT,
       0n,

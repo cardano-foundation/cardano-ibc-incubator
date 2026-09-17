@@ -1,7 +1,14 @@
 {
   "minCount": 25,
   "requiredLabels": [
+    "fuzz.contract.client.registry.invalid_datum_token",
+    "fuzz.contract.client.registry.invalid_mint_policy",
+    "fuzz.contract.client.registry.invalid_proof_policy",
+    "fuzz.contract.client.registry.invalid_script",
+    "fuzz.contract.client.registry.valid_reference",
     "fuzz.contract.host.bind_port.invalid_unauthorized",
+    "fuzz.contract.host.client_registry.invalid_namespace",
+    "fuzz.contract.host.client_registry.valid_namespace",
     "fuzz.contract.host.handle_packet.invalid_ack_capacity",
     "fuzz.contract.host.handle_packet.invalid_channel_only_change",
     "fuzz.contract.host.handle_packet.invalid_commitment_capacity",
@@ -42,6 +49,12 @@
     "fuzz.unit.client.misbehaviour.invalid_same_header",
     "fuzz.unit.client.misbehaviour.valid_same_height_conflict",
     "fuzz.unit.client.misbehaviour.valid_time_violation",
+    "fuzz.unit.client.registry.invalid_duplicate_type",
+    "fuzz.unit.client.registry.invalid_implementation",
+    "fuzz.unit.client.registry.invalid_sequence",
+    "fuzz.unit.client.registry.invalid_unknown_type",
+    "fuzz.unit.client.registry.valid_identity",
+    "fuzz.unit.client.registry.valid_output",
     "fuzz.unit.client.update.invalid_historical_height",
     "fuzz.unit.client.update.invalid_wrong_consensus_state",
     "fuzz.unit.client.update.valid_adjacent",
@@ -94,6 +107,12 @@
     "prop_host_handle_packet_rejects_commitment_capacity_overflow": {
       "fuzz.contract.host.capacity.ack_dominant": 2000,
       "fuzz.contract.host.capacity.receipt_dominant": 2000
+    },
+    "prop_registered_client_isolates_same_sequence_instances": {
+      "fuzz.contract.client.registry.registration_first": 2000,
+      "fuzz.contract.client.registry.registration_last": 2000,
+      "fuzz.contract.client.registry.reference_first": 2000,
+      "fuzz.contract.client.registry.reference_last": 2000
     }
   }
 }

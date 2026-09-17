@@ -22,7 +22,13 @@ export function validateClientRegistrations(
     }
   }
   for (const registration of registrations) {
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(registration.clientType)) {
+    // ICS-24 client IDs have 9..64 bytes. Include the separator and reserve the
+    // eight decimal bytes supported by Cardano's authenticated token names.
+    if (
+      registration.clientType.length < 7 ||
+      registration.clientType.length > 55 ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(registration.clientType)
+    ) {
       throw new Error(`Invalid light-client type: ${registration.clientType}`);
     }
     if (registration.implementation !== "tendermint") {
