@@ -602,6 +602,7 @@ jobs:
           node ../../scripts/ci/check-aiken-fuzz-coverage.mjs ../../migration-packet-model.json scripts/ci/aiken-migration-required-labels.json
 
       - name: Upload migration guard evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: migration-guard-controls
