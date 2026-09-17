@@ -605,6 +605,15 @@ test migration_adversarial_valid_approval() {
   run(propose(proposal()))
 }
 
+// No emergency transition exists in this ABI. Even the complete governance
+// quorum cannot turn a Ready registry into Moving through a control-only
+// proposal, or waive the remaining delay by signing Begin.
+test containment_current_approval_cannot_directly_enter_moving() {
+  let case = propose(proposal())
+  expect run(case)
+  !run(with_registry_output(case, moving(zeros(), tree.empty_hash, False)))
+}
+
 test migration_adversarial_approval_rejects_missing_quorum() fail {
   let case = propose(proposal())
   expect
@@ -992,6 +1001,21 @@ test migration_adversarial_begin_rejects_early_execution() fail {
       },
     )
   True
+}
+
+test containment_current_begin_with_full_authority_still_rejects_delay_bypass() fail {
+  let case = begin()
+  expect run(case)
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        extra_signatories: governance().signers,
+        validity_range: interval.between(ready_at - 1, execution_upper),
+      },
+    },
+  )
 }
 
 test migration_adversarial_begin_rejects_expired_approval() fail {

@@ -6,6 +6,8 @@ The implementation was subsequently rebased onto main at `30aa394aa4616f4327a6a3
 
 This document specifies the implementation boundary. Validation results are recorded separately; a requirement here is not evidence that it has passed.
 
+**Open containment gap:** this implementation has no immediate emergency pause. A proposal leaves ordinary transfer/settlement paths available, and `Moving` is reachable only after the approved replacement's delay. The old shutdown path is disabled. The [containment audit](emergency-containment-audit.md) records the actual validator behavior and a proposed separate restriction capability; that capability is not yet implemented.
+
 ## Compatibility and authority
 
 Existing immutable deployments retain their original scripts and permitted transitions. They have no demonstrated state-preserving migration path. The feature applies only to a fresh migration-capable baseline and its successors. Legacy evidence must use the unmodified source commit/blueprint.

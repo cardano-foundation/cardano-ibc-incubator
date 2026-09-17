@@ -29,6 +29,10 @@ CASES = [
      '    output.datum == input.output.datum,\n',
      'migration_packet_event_log_regression_462', 'migration_packet_handover_rejects_commitment_omission',
      'validators/migration_packet_model.test.ak'),
+    ('moving-normal-operation-gate', 'lib/ibc/migration/auth.ak',
+     '  expect phase == 0 || phase == 1\n',
+     'containment_current_ready_permits_send', 'containment_current_moving_rejects_source_send',
+     'validators/host_state_stt.test.ak'),
 ]
 
 def digest():

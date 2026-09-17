@@ -4,6 +4,8 @@ The populated local V1→V2→V3 rehearsal **passed**, including all old claims,
 
 ## Source and compatibility boundary
 
+The subsequent [emergency-containment audit](emergency-containment-audit.md) identified a separate production blocker: immediate exploit containment is not implemented. Proposal approval leaves ordinary paths available until delayed `Begin`; shutdown is disabled, and activation has no independent emergency veto. Forty-four new compiled characterization tests and a phase-guard removal control verify this limitation. This does not invalidate the recorded compatible-migration rehearsal, but that rehearsal did not demonstrate an emergency stop.
+
 Starting main commit: `fde2635138f60f6d14954b2f91e4a001b74c12a2`. Work is isolated on `feat/462-state-preserving-redeployment`; the original dirty `feat/host-state-full-key-trie` worktree is untouched. The relayer submodule is pinned to `b35730db` on its corresponding feature branch.
 
 The branch is now rebased onto main at `30aa394aa4616f4327a6a34bbbaea1e0eb58ecf5`, retaining all thirteen implementation/checkpoint commits. The pushed `archive/462-pre-rebase-018532b51` branch preserves their original hashes, including the source versions named in the historical evidence below. That earlier populated acceptance is not relabeled as a fresh rehearsal of the rebased branch.

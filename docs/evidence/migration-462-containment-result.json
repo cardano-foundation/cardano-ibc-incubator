@@ -1,0 +1,431 @@
+{
+  "format": "migration-containment-audit-v1",
+  "productionSourceCommit": "73984e8c2cdb2db0097ad7c1f7030f182bfae3b2",
+  "scope": "Current implementation characterization; production validators unchanged. New audit tests are bound by source hashes. Proposed emergency restrictions are NOT implemented.",
+  "toolchain": {
+    "aiken": "1.1.21",
+    "deno": "2.9.6",
+    "seed": 462
+  },
+  "aiken": {
+    "summary": {
+      "total": 243,
+      "passed": 243,
+      "failed": 0,
+      "kind": {
+        "unit": 222,
+        "property": 21
+      }
+    },
+    "propertyIterations": 100,
+    "containmentCases": [
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_ready_permits_send",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_approval_delay_permits_send",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_rotation_delay_permits_send",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_expired_proposal_permits_send",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_source_send",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_successor_send",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_ready_permits_receive",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_approval_delay_permits_receive",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_rotation_delay_permits_receive",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_expired_proposal_permits_receive",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_source_receive",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_successor_receive",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_ready_permits_acknowledge",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_approval_delay_permits_acknowledge",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_rotation_delay_permits_acknowledge",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_expired_proposal_permits_acknowledge",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_source_acknowledge",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_successor_acknowledge",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_ready_permits_timeout",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_approval_delay_permits_timeout",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_rotation_delay_permits_timeout",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_expired_proposal_permits_timeout",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_source_timeout",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_successor_timeout",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_ready_permits_prune",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_approval_delay_permits_prune",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_rotation_delay_permits_prune",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_expired_proposal_permits_prune",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_source_prune",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_successor_prune",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_ready_permits_client_update",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_approval_delay_permits_client_update",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_rotation_delay_permits_client_update",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_expired_proposal_permits_client_update",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_source_client_update",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_successor_client_update",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_ready_permits_heartbeat",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_approval_delay_permits_heartbeat",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_rotation_delay_permits_heartbeat",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_expired_proposal_permits_heartbeat",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_source_heartbeat",
+        "status": "pass"
+      },
+      {
+        "module": "host_state_stt.test",
+        "title": "containment_current_moving_rejects_successor_heartbeat",
+        "status": "pass"
+      },
+      {
+        "module": "migration_adversarial.test",
+        "title": "containment_current_approval_cannot_directly_enter_moving",
+        "status": "pass"
+      },
+      {
+        "module": "migration_adversarial.test",
+        "title": "containment_current_begin_with_full_authority_still_rejects_delay_bypass",
+        "status": "pass"
+      }
+    ]
+  },
+  "guardControls": [
+    {
+      "case": "approval-quorum",
+      "mutant": false,
+      "positiveControlAccepted": true,
+      "attackAccepted": false,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "approval-quorum",
+      "mutant": true,
+      "positiveControlAccepted": true,
+      "attackAccepted": true,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "escrow-conservation",
+      "mutant": false,
+      "positiveControlAccepted": true,
+      "attackAccepted": false,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "escrow-conservation",
+      "mutant": true,
+      "positiveControlAccepted": true,
+      "attackAccepted": true,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "core-completeness",
+      "mutant": false,
+      "positiveControlAccepted": true,
+      "attackAccepted": false,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "core-completeness",
+      "mutant": true,
+      "positiveControlAccepted": true,
+      "attackAccepted": true,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "packet-claim-preservation",
+      "mutant": false,
+      "positiveControlAccepted": true,
+      "attackAccepted": false,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "packet-claim-preservation",
+      "mutant": true,
+      "positiveControlAccepted": true,
+      "attackAccepted": true,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "moving-normal-operation-gate",
+      "mutant": false,
+      "positiveControlAccepted": true,
+      "attackAccepted": false,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    },
+    {
+      "case": "moving-normal-operation-gate",
+      "mutant": true,
+      "positiveControlAccepted": true,
+      "attackAccepted": true,
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      }
+    }
+  ],
+  "deno": {
+    "passed": 4,
+    "failed": 0,
+    "filtered": 3,
+    "command": "deno test --allow-env --allow-read --allow-write --filter registry src/migration.test.ts"
+  },
+  "sourceSha256": {
+    "cardano/onchain/lib/ibc/migration/types.ak": "ccaa8b67985809acc2319a0cff234396dff40ca8959b87cd41f8809cb29cd878",
+    "cardano/onchain/lib/ibc/migration/auth.ak": "8c06274f3b2c769e661306ff53b7fd9de542cad56e9b690d72ca6f271978c768",
+    "cardano/onchain/validators/implementation_registry.ak": "8a51d4200b67390055935ed4caa78ec7831677b40a266dd14ee644bf9c9a1f8b",
+    "cardano/onchain/validators/minting_implementation_registry.ak": "b59b73e3c6198f99bd7b2943ddd7f4e24daebd9d92b010d339cfda4ae0055be9",
+    "cardano/onchain/validators/host_state_stt.test.ak": "75a16b86f21997d5658df1cd5fc76f514ff1b7ef31b492123dcf7f6a52417b6f",
+    "cardano/onchain/validators/migration_adversarial.test.ak": "53aba32a3fc136a0915d2c63a0ce58d3e7c97df95756a401e75e765371c05697",
+    "scripts/ci/test-migration-guards.py": "3c0c83055f69ee71d73f55e4851f69d5df1038987ec6a1e3c7849df51531d8bf",
+    "cardano/onchain/validators/upgradeable/channel.ak": "bd7aed335d6835fe423722e280b0d4da6cadab8884d1d3cfa68c8e6ab4463bda",
+    "cardano/onchain/validators/upgradeable/client.ak": "618d0b41fad18ba3dd7ac194d60ecfb7c7493b11eff47325d3d6059b186c9a1f",
+    "cardano/onchain/validators/upgradeable/connection.ak": "f29e1944b710bcb8587d3cec737053d0d58bde88524d69d992b80cf7069434fc",
+    "cardano/onchain/validators/upgradeable/host_state.ak": "b3615debd0f5a024155863d922772a796b32e0b1834faf752cbdf90a972fa488",
+    "cardano/onchain/validators/upgradeable/mint_channel.ak": "e88ecbe13ff46dcb4cfdca16767d32a76b3bea758a34e459900a5fd990cce61b",
+    "cardano/onchain/validators/upgradeable/mint_client.ak": "27135d0d85bdd4140b11b352e3a7d5a6e8ac9e5ce6094f3491116ad12b230e3a",
+    "cardano/onchain/validators/upgradeable/mint_connection.ak": "d0d9b428d193f64885787c2b87426d41a064291bddaa1eddb13326c2c1b733ce",
+    "cardano/onchain/validators/upgradeable/transfer.ak": "844bec72a4a16c2d0c6325911625b8eb9ee000abae26ef7989fc942fcb661202"
+  },
+  "artifactSha256": {
+    ".deployment-smoke/containment-regressions.json": "14de067ac12f4e7554c88b8da5688582006e3584c9318920bb10d06f758a8ee0",
+    ".deployment-smoke/containment-guard-controls.json": "8680336bc72de2b8e2126a4418c97dc776c4db5cde271e61fa05683773b404b2",
+    ".deployment-smoke/containment-registry-transactions.log": "b7e792419cd66e2f347bb3b174a2867bd9172f5d0cd6a814c4e8b8d6e44c250b"
+  },
+  "limitations": [
+    "Host operation matrix executes compiled validator contexts, not balanced ledger or full counterparty/application transactions.",
+    "Source Moving context is a gate-removal control, not a claim that the source HostState remains on the ledger after Begin.",
+    "Deno registry transactions use production builders with local UPLC execution and Emulator submission, not a devnet run.",
+    "The proposed emergency authority/packet halt/restore design is not implemented or tested.",
+    "Remote CI execution of these audit additions is not claimed."
+  ]
+}
