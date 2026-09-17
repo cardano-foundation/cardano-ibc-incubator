@@ -26,6 +26,7 @@ import { migrationTiming } from "../src/migration-timing.ts";
 const commands = [
   "restrict",
   "propose-restoration",
+  "rotate-emergency",
   "restore",
   "cancel-restoration",
   "prepare",
@@ -113,6 +114,7 @@ export function parseMigrationArgs(args: string[]) {
       "resume",
       "restrict",
       "propose-restoration",
+      "rotate-emergency",
       "restore",
       "cancel-restoration",
     ]
@@ -122,6 +124,15 @@ export function parseMigrationArgs(args: string[]) {
       "Use --out to export an unsigned transaction, or --submit with an explicitly configured executor wallet",
     );
   }
+  if (
+    command === "rotate-emergency" &&
+    (!flags["emergency-authority"] || flags.mask)
+  ) {
+    throw new Error(
+      "rotate-emergency requires --emergency-authority and does not accept --mask; it preserves restrictions",
+    );
+  }
+
   const maxSteps = Number(flags["max-steps"] ?? "1");
   if (
     !Number.isSafeInteger(maxSteps) || maxSteps < 1 || maxSteps > 1000 ||
@@ -233,7 +244,13 @@ export async function main(args = Deno.args) {
     return;
   }
   if (
-    ["restrict", "propose-restoration", "restore", "cancel-restoration"]
+    [
+      "restrict",
+      "propose-restoration",
+      "rotate-emergency",
+      "restore",
+      "cancel-restoration",
+    ]
       .includes(command)
   ) {
     const maskText = flags.mask;
@@ -261,6 +278,8 @@ export async function main(args = Deno.args) {
           expires_at: expiration(),
         },
       }
+      : command === "rotate-emergency"
+      ? { ProposeEmergencyRotation: { authority, expires_at: expiration() } }
       : command === "restore"
       ? "Restore" as const
       : "CancelRestoration" as const;

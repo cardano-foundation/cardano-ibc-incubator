@@ -204,13 +204,22 @@ export async function buildMigrationTransaction(
       ...old.emergency,
       mask,
       epoch: old.emergency.epoch + 1n,
-      restoration: null,
+      restoration: old.emergency.restoration?.mask === null
+        ? old.emergency.restoration
+        : null,
     };
-  } else if (typeof action === "object" && "ProposeRestoration" in action) {
+  } else if (
+    typeof action === "object" &&
+    ("ProposeRestoration" in action || "ProposeEmergencyRotation" in action)
+  ) {
     authority();
-    const { mask, authority: emergencyAuthority, expires_at } =
-      action.ProposeRestoration;
-    if (!validMask(mask)) throw new Error("Unsupported restriction mask");
+    const proposal = "ProposeRestoration" in action
+      ? action.ProposeRestoration
+      : { ...action.ProposeEmergencyRotation, mask: null };
+    const { mask, authority: emergencyAuthority, expires_at } = proposal;
+    if (mask !== null && !validMask(mask)) {
+      throw new Error("Unsupported restriction mask");
+    }
     assertEmergencyAuthority(emergencyAuthority, old.governance);
     const ready_at = to + old.governance.delay_ms;
     if (expires_at <= ready_at) {
@@ -233,14 +242,15 @@ export async function buildMigrationTransaction(
     if (
       !approval || approval.registry_nonce !== old.nonce ||
       approval.generation !== old.current.generation ||
-      approval.epoch !== old.emergency.epoch || from < approval.ready_at ||
+      (approval.mask !== null && approval.epoch !== old.emergency.epoch) ||
+      from < approval.ready_at ||
       to > approval.expires_at
     ) throw new Error("Restoration is absent, stale, delayed or expired");
     assertEmergencyAuthority(approval.authority, old.governance);
     next.emergency = {
       authority: approval.authority,
       epoch: old.emergency.epoch + 1n,
-      mask: approval.mask,
+      mask: approval.mask ?? old.emergency.mask,
       restoration: null,
     };
   } else if (typeof action === "object" && "Propose" in action) {

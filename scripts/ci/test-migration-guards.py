@@ -16,6 +16,16 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'cardano/onchain'
 CASES = [
+    ('emergency-key-replacement-generation', 'validators/implementation_registry.ak',
+     'approval.registry_nonce == old.nonce && approval.generation == old.current.generation',
+     'emergency_authority_removal_survives_restrictions_ready', 'emergency_authority_only_rotation_rejects_stale_generation',
+     'validators/migration_adversarial.test.ak',
+     'approval.registry_nonce == old.nonce'),
+    ('emergency-key-replacement-quorum', 'validators/implementation_registry.ak',
+     '      ProposeEmergencyRotation { authority, expires_at } -> {\n        expect control_only(transaction)\n        expect migration.authorized(old.governance, transaction)\n',
+     'emergency_authority_removal_survives_restrictions_ready', 'emergency_authority_only_rotation_requires_governance',
+     'validators/migration_adversarial.test.ak',
+     '      ProposeEmergencyRotation { authority, expires_at } -> {\n        expect control_only(transaction)\n'),
     ('approval-quorum', 'validators/implementation_registry.ak',
      '      Propose { proposal, expires_at } -> {\n        expect control_only(transaction)\n        expect old.phase == Ready\n        expect migration.authorized(old.governance, transaction)\n',
      'migration_adversarial_valid_approval', 'migration_adversarial_approval_rejects_missing_quorum',

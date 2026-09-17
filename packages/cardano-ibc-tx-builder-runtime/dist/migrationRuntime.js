@@ -15,7 +15,7 @@ class BridgeMigrationInProgressError extends Error {
 exports.BridgeMigrationInProgressError = BridgeMigrationInProgressError;
 function requireMigrationConfig(value) {
     const input = value;
-    if (!input || input.profile !== 'cardano-ibc-compatible-v2' ||
+    if (!input || input.profile !== 'cardano-ibc-compatible-v3' ||
         !/^[0-9a-f]{58,120}$/.test(input.registryUnit) || !input.registryAddress ||
         !/^[1-9][0-9]*$/.test(input.generation) || !/^[0-9a-f]{64}$/.test(input.compatibility) ||
         !Array.isArray(input.originalAddresses) || input.originalAddresses.length !== 5 || input.originalAddresses.some((a) => typeof a !== 'string' || !a)) {

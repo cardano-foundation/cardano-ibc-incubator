@@ -81,7 +81,7 @@ export const RestorationSchema = Data.Object({
   registry_nonce: Data.Integer(),
   generation: Data.Integer(),
   epoch: Data.Integer(),
-  mask: Data.Integer(),
+  mask: Data.Nullable(Data.Integer()),
   authority: AuthoritySchema,
   ready_at: Data.Integer(),
   expires_at: Data.Integer(),
@@ -200,6 +200,12 @@ export const RegistryRedeemerSchema = Data.Enum([
   }),
   Data.Literal("CancelRestoration"),
   Data.Literal("Restore"),
+  Data.Object({
+    ProposeEmergencyRotation: Data.Object({
+      authority: AuthoritySchema,
+      expires_at: Data.Integer(),
+    }),
+  }),
 ]);
 export type RegistryRedeemer = Data.Static<typeof RegistryRedeemerSchema>;
 export const RegistryRedeemer =

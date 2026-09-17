@@ -38,7 +38,8 @@ pub type Restoration {
   registry_nonce: Int,
   generation: Int,
   epoch: Int,
-  mask: Int,
+  // None replaces authority only; restrictions and phase remain unchanged.
+  mask: Option<Int>,
   authority: Authority,
   ready_at: Int,
   expires_at: Int,
@@ -143,4 +144,5 @@ pub type RegistryRedeemer {
   ProposeRestoration { mask: Int, authority: Authority, expires_at: Int }
   CancelRestoration
   Restore
+  ProposeEmergencyRotation { authority: Authority, expires_at: Int }
 }

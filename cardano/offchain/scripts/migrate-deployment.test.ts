@@ -398,3 +398,21 @@ Deno.test("concurrent expired-publication rebuilds adopt one immutable replaceme
     await Deno.remove(directory, { recursive: true });
   }
 });
+
+Deno.test("emergency authority rotation requires an exact authority and cannot request permission changes", () => {
+  const args = [
+    "rotate-emergency",
+    "--handler",
+    "baseline.json",
+    "--out",
+    "unsigned.json",
+  ];
+  assertThrows(() => parseMigrationArgs(args), Error, "--emergency-authority");
+  const exact = [...args, "--emergency-authority", "reviewed-keys.json"];
+  assertEquals(parseMigrationArgs(exact).command, "rotate-emergency");
+  assertThrows(
+    () => parseMigrationArgs([...exact, "--mask", "0"]),
+    Error,
+    "does not accept --mask",
+  );
+});

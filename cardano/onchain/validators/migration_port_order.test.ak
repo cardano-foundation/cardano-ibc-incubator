@@ -9,8 +9,27 @@ use cardano/transaction.{
 use ibc/core/ics_025_handler_interface/host_state.{
   HostStateControl, HostStateDatum,
 }
-use ibc/migration/types.{Begin, Registry}
+use ibc/migration/types.{Authority, Begin, Emergency, Registry}
 use implementation_registry
+
+// The captured historical transaction used the seven-field test registry.
+// Adapt only this isolated fixture to the fresh baseline ABI; this is NOT a
+// transaction claiming recovery of that historical deployment.
+fn baseline_registry(raw: Data) -> Data {
+  let Pair(tag, fields) = builtin.un_constr_data(raw)
+  expect list.length(fields) == 7
+  let emergency: Data =
+    Emergency {
+      authority: Authority {
+        signers: [#"99999999999999999999999999999999999999999999999999999999"],
+        quorum: 1,
+      },
+      epoch: 0,
+      mask: 0,
+      restoration: None,
+    }
+  builtin.constr_data(tag, list.concat(fields, [emergency]))
+}
 
 fn begin_with_port_order(reordered: Bool) {
   let raw: Data =
@@ -266,7 +285,7 @@ fn begin_with_port_order(reordered: Bool) {
         ),
       ],
     )
-  expect old: Registry = raw
+  expect old: Registry = baseline_registry(raw)
   let tx =
     Transaction {
       ..placeholder,
@@ -1364,6 +1383,24 @@ fn begin_with_port_order(reordered: Bool) {
         },
       ],
       validity_range: interval.between(1789692769000, 1789692829000),
+    }
+  let adapt =
+    fn(output: Output) {
+      if assets.quantity_of(output.value, old.token.policy_id, old.token.name) == 1 {
+        expect InlineDatum(datum) = output.datum
+        Output { ..output, datum: InlineDatum(baseline_registry(datum)) }
+      } else {
+        output
+      }
+    }
+  let tx =
+    Transaction {
+      ..tx,
+      inputs: list.map(
+        tx.inputs,
+        fn(input) { Input { ..input, output: adapt(input.output) } },
+      ),
+      outputs: list.map(tx.outputs, adapt),
     }
   // Restore just the original map; every other datum field and transaction
   // component remains the same in the positive and negative controls.

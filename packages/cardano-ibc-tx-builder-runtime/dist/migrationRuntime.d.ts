@@ -3,7 +3,7 @@ export declare class BridgeMigrationInProgressError extends Error {
     constructor();
 }
 export type MigrationRuntimeConfig = {
-    profile: 'cardano-ibc-compatible-v2';
+    profile: 'cardano-ibc-compatible-v3';
     registryUnit: string;
     registryAddress: string;
     generation: string;

@@ -6,7 +6,7 @@ The implementation was subsequently rebased onto main at `30aa394aa4616f4327a6a3
 
 This document specifies the implementation boundary. Validation results are recorded separately; a requirement here is not evidence that it has passed.
 
-**Containment:** the fresh `cardano-ibc-compatible-v2` baseline includes a separately authorized immediate restriction mask and delayed governance restoration. Restrictions survive approval and activation; a handover hold blocks permissionless execution of an unsafe approved successor. See the [implemented containment specification and tests](emergency-containment-audit.md). Earlier rehearsal evidence uses the prior ABI and does not establish acceptance of this candidate.
+**Containment:** the fresh `cardano-ibc-compatible-v3` baseline includes a separately authorized immediate restriction mask and delayed governance restoration. Restrictions survive approval and activation; a handover hold blocks permissionless execution of an unsafe approved successor. See the [implemented containment specification and tests](emergency-containment-audit.md). Earlier rehearsal evidence uses the prior ABI and does not establish acceptance of this candidate.
 
 ## Compatibility and authority
 

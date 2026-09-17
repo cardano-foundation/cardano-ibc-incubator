@@ -920,4 +920,44 @@ Deno.test("compiled registry executes immediate separate-authority restriction a
     readRegistry(await lucid.utxoByUnit(unit), unit).emergency.mask,
     0n,
   );
+  // Emergency key replacement is delayed but cannot be vetoed by that key.
+  await submit(
+    await build({ Restrict: { mask: 9n } }, [EMERGENCY_AUTHORITY]),
+    EMERGENCY_WALLET.paymentKey,
+  );
+  await submit(
+    await build({
+      ProposeEmergencyRotation: {
+        authority: { signers: [authority], quorum: 1n },
+        expires_at: BigInt(emulator.now() + 3 * 86_400_000),
+      },
+    }, [incomingHash]),
+    incoming.paymentKey,
+  );
+  const ticket =
+    readRegistry(await lucid.utxoByUnit(unit), unit).emergency.restoration;
+  assertEquals(ticket?.mask, null);
+  await assertRejects(() => build("Restore", []), Error, "delayed");
+  for (const mask of [9n, 15n]) {
+    await submit(
+      await build({ Restrict: { mask } }, [EMERGENCY_AUTHORITY]),
+      EMERGENCY_WALLET.paymentKey,
+    );
+    assertEquals(
+      readRegistry(await lucid.utxoByUnit(unit), unit).emergency.restoration,
+      ticket,
+    );
+  }
+  emulator.awaitSlot(86_500);
+  await submit(await build("Restore", []));
+  state = readRegistry(await lucid.utxoByUnit(unit), unit);
+  assertEquals(state.emergency.mask, 15n);
+  assertEquals(state.phase, "Ready");
+  assertEquals(state.emergency.authority, { signers: [authority], quorum: 1n });
+  await assertRejects(
+    () => build({ Restrict: { mask: 15n } }, [EMERGENCY_AUTHORITY]),
+    Error,
+    "emergency quorum",
+  );
+  await submit(await build({ Restrict: { mask: 15n } }, [authority]));
 });
