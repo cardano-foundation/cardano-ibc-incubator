@@ -735,6 +735,7 @@ export const createDeployment = async (
   const deployedAt = new Date().toISOString();
 
   const deploymentInfo: DeploymentTemplate = {
+    clientRegistrations: plan.clientRegistrations,
     deployedAt,
     consensusHistoryFormat: "proof-backed-v1",
     history: requireHistoryBootstrap({

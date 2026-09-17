@@ -1,11 +1,8 @@
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Transaction}
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{
-  ClientDatum, ClientDatumState,
-}
-use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/height as height_mod
+use ibc/core/ics_002_client_semantics/client_view
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
@@ -19,7 +16,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnSendPacket}
 use ibc/utils/validator_utils
 
 validator send_packet(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
@@ -83,7 +80,7 @@ validator send_packet(
       validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
-        client_minting_policy_id,
+        client_registry,
         connection_minting_policy_id,
         connection_id,
         tx_valid_to * 1_000_000,
@@ -93,16 +90,10 @@ validator send_packet(
     trace @"send_packet: reference_inputs contain Connection utxo"
     trace @"send_packet: reference_inputs contain Client utxo"
 
-    expect
-      client_state_mod.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == client_status_mod.Active
+    expect client_datum.status == client_status_mod.Active
     trace @"send_packet: client status is active"
 
-    let latest_height =
-      client_state_mod.get_latest_height(client_datum.state.client_state)
+    let latest_height = client_datum.latest_height
     expect
       height_mod.is_zero(packet.timeout_height) || height_mod.compare(
         latest_height,
@@ -111,11 +102,7 @@ validator send_packet(
     trace @"send_packet: packet timeout_height is not over"
 
     expect Some(latest_timestamp) =
-      client_state_mod.get_timestamp_at_height(
-        client_datum.state.client_state,
-        client_datum.state.consensus_states,
-        latest_height,
-      )
+      client_view.timestamp_at_height(client_datum, latest_height)
     trace @"send_packet: packet timeout_timestamp is not over"
 
     let commitment = packet_mod.commit_packet(packet)

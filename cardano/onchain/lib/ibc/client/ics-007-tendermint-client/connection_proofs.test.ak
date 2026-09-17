@@ -1,5 +1,6 @@
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
+use ibc/client/ics_007_tendermint_client/connection_proofs as verify_mod
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
@@ -7,7 +8,6 @@ use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/state.{Open} as conn_state_mod
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/core/ics_003_connection_semantics/verify as verify_mod
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty} as chan_counterparty_mod
 use ibc/core/ics_004/types/order.{Ordered} as order_mod

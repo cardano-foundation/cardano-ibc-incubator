@@ -6,10 +6,11 @@ use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, add, from_asset, zero,
 }
 use cardano/transaction.{
-  Datum, DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference,
+  Datum, DatumHash, InlineDatum, Input, Mint, NoDatum, Output, OutputReference,
   Redeemer, ScriptPurpose, Spend, ValidityRange,
 }
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/adapter
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
@@ -17,6 +18,8 @@ use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/core/ics_002_client_semantics/client_view
+use ibc/core/ics_002_client_semantics/registry
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -939,7 +942,7 @@ test validate_referred_client_succeed() {
     0,
     None,
     None,
-  ) == client_datum
+  ) == adapter.view(client_datum, 0, None, None)
 }
 
 test validate_referred_client_rejects_wrong_datum_token_identity() fail {
@@ -1252,7 +1255,7 @@ fn validate_referred_connection_and_client(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   connection_id: ByteArray,
-) -> (ConnectionDatum, ClientDatum) {
+) -> (ConnectionDatum, client_view.ClientView) {
   validator_utils.validate_referred_connection_and_client(
     reference_inputs,
     referrer_token_name,
@@ -1288,7 +1291,7 @@ test validate_referred_connection_and_client_targets_first() {
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
-  ) == (connection_datum, client_datum)
+  ) == (connection_datum, adapter.view(client_datum, 0, None, None))
 }
 
 test validate_referred_connection_and_client_targets_middle() {
@@ -1317,7 +1320,7 @@ test validate_referred_connection_and_client_targets_middle() {
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
-  ) == (connection_datum, client_datum)
+  ) == (connection_datum, adapter.view(client_datum, 0, None, None))
 }
 
 test validate_referred_connection_and_client_targets_last() {
@@ -1343,7 +1346,7 @@ test validate_referred_connection_and_client_targets_last() {
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
-  ) == (connection_datum, client_datum)
+  ) == (connection_datum, adapter.view(client_datum, 0, None, None))
 }
 
 test validate_referred_connection_and_client_accepts_reordered_inputs() {
@@ -1364,7 +1367,7 @@ test validate_referred_connection_and_client_accepts_reordered_inputs() {
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
-  ) == (connection_datum, client_datum)
+  ) == (connection_datum, adapter.view(client_datum, 0, None, None))
 }
 
 test validate_referred_connection_and_client_rejects_forged_client_without_token() fail {
@@ -1657,4 +1660,86 @@ test state_value_preserves_reserves_and_allows_datum_growth_top_up() {
       value: assets.merge(input.value, assets.from_lovelace(2_000_000)),
     }
   validator_utils.find_unique_continuation_output(input, [output], token) == output
+}
+
+// Registered client authority includes both the NFT policy and spending script.
+test registered_client_reference_uses_the_common_view() {
+  let (inputs, referrer, policy, client_id, datum) =
+    setup_validate_referred_client()
+  let registration = registry.legacy(policy, "mock script hash", "proof-a")
+  let clients: Data = [registration]
+  let view =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      client_id,
+      0,
+      None,
+      None,
+    )
+  let expected_state: Data = datum.state.client_state
+  and {
+    view.token == datum.token,
+    view.latest_height == datum.state.client_state.latest_height,
+    view.state.client_state == expected_state,
+  }
+}
+
+test registered_client_rejects_the_wrong_spending_script() fail {
+  let (inputs, referrer, policy, client_id, _) =
+    setup_validate_referred_client()
+  let clients: Data = [registry.legacy(policy, "other script", "proof-a")]
+  expect _ =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      client_id,
+      0,
+      None,
+      None,
+    )
+}
+
+test registered_client_rejects_the_wrong_mint_policy() fail {
+  let (inputs, referrer, _, client_id, _) = setup_validate_referred_client()
+  let clients: Data =
+    [registry.legacy("other policy", "mock script hash", "proof-a")]
+  expect _ =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      client_id,
+      0,
+      None,
+      None,
+    )
+}
+
+test registered_client_cannot_use_another_registered_types_verifier() {
+  let a = registry.legacy("policy-a", "script-a", "proof-a")
+  let b =
+    registry.ClientRegistration {
+      ..registry.legacy("policy-b", "script-b", "proof-b"),
+      client_type: "99-other",
+    }
+  let clients: Data = [a, b]
+  and {
+    validator_utils.client_proof_policy(clients, "07-tendermint-0", "proof-b") == "proof-a",
+    validator_utils.client_proof_policy(clients, "99-other-0", "proof-a") == "proof-b",
+  }
+}
+
+test registered_client_requires_its_own_proof_marker() fail {
+  let clients: Data = [registry.legacy("policy", "script", "proof-a")]
+  let policy =
+    validator_utils.client_proof_policy(clients, "07-tendermint-0", "proof-b")
+  let unrelated_redeemer: Data = 0
+  expect _ =
+    validator_utils.verify_proof_envelope(
+      [Pair(Mint("proof-b"), unrelated_redeemer)],
+      policy,
+    )
 }
