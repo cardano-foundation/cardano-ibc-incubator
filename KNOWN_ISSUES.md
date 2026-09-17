@@ -60,7 +60,7 @@ The following IBC features are not currently supported by the Cardano bridge pat
 
 ### Channel Upgrades
 
-Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake.
+Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake. Note that this affects token redemption and lifecycle. This is something that is planned to be addressed prior to main net launch.
 
 `ibc-go` v8.1.0 introduced channel upgradability. Compatible applications could change the channel version, ordering, or connection without replacing the channel. Upstream v10 later removed channel upgradability and ICS-29 fee middleware. Support on a Cosmos counterparty therefore depends on its version and application stack. See the [v8.1 migration guide](https://github.com/cosmos/ibc-go/blob/main/docs/docs/05-migrations/12-v8-to-v8_1.md) and [v10 changelog](https://github.com/cosmos/ibc-go/blob/v10.2.0/CHANGELOG.md).
 
@@ -115,6 +115,34 @@ Standard IBC client upgrade is not currently supported for the Cardano light cli
 Operational-certificate validation adds information that must be present when a client is created: the certificate number currently in use by each Cardano stake pool and the network limit on a block-signing key's lifetime. Cardano IBC is not live today, so there are no deployed clients or routes to migrate for this change. The first deployment must create every client with this information from its initial Cardano checkpoint. Before allowing the Gateway to create those clients, deploy the upgraded Cosmos light-client code and use Ogmios v6.12.0 or newer.
 
 This may be a target for further development.
+
+## IBC Revision Number & Chain Upgrades
+
+An **IBC revision number** is the first component of an IBC height, `Height(revision_number, revision_height)`, and exists so that a chain can reset its native block height without making heights ambiguous.
+
+For example, a chain may move from `foo-3` at block 12,000,000 to `foo-4` at block 1, and IBC can determine that `foo-4` is "later" than `foo-3`; IBC treats these as `(3, 12,000,000)` and `(4, 1)`. Note that it's just an option, bumping the revision number does not inherently require resetting the block height, so a chain could go from:
+
+foo-3 @ (3, 12,000,000)
+
+to:
+
+foo-4 @ (4, 12,000,001)
+
+with no height reset. That is still a new revision/chain ID, so it is a client-breaking change and existing IBC Tendermint clients need the authenticated upgrade procedure to cross into the new revision. The IBC-Go docs separately list **changing the chain ID** as a supported upgrade and **resetting height to 0** as another supported upgrade, with the latter requiring the revision number to be incremented.
+
+This is a pretty special and obviously security-critical process, getting it wrong could easily lead to devastating vulnerabilities for assets on both sides of the bridge. The counterparty light client can not accept this as an ordinary header update, changing the revision, normally together with the chain ID, is a discontinuity in the identity/height namespace of the chain. The standard ICS-07 upgrade mechanism preserves continuity by having the **old chain, while it is still trusted, commit an `UpgradedClientState` and `UpgradedConsensusState` describing its successor** chain. This is analogous to how in most Cosmos blocks, the validator set for that block are committing to the validator set for the next block.
+
+A relayer updates the counterparty light client to the last block of the old revision, proves those upgrade commitments against that trusted state, and submits `UpgradeClient`; only after that authenticated transition should the light client accept headers from the new revision. In other words, trust in `foo-4` comes from a cryptographic statement made by the already-trusted `foo-3`, rather than merely from observing that a chain calling itself `foo-4` exists. Ordinary ICS-07 updates are explicitly required to remain within one revision.
+
+A **software upgrade does not inherently require a revision-number change**. A Cosmos chain can replace its node binary + run state migrations, or otherwise upgrade its application while keeping the same chain ID and continuing monotonically from block `N` to block `N+1`. In that case the IBC revision remains unchanged and existing light clients can continue normally. The chain can also choose to change its chain ID/revision as part of an upgrade, but doing so makes it an IBC-client-breaking upgrade and requires the authenticated client-upgrade procedure described above. A revision bump is therefore not equivalent to a software-version bump. It identifies a new revision of the consensus height namespace. A height reset specifically requires the revision number encoded in the Cosmos chain ID to increase, whereas an ordinary binary upgrade generally does not.
+
+
+**IBC Eureka appears to have changed how it handles this!**
+
+
+Earlier versions of the Solidity Eureka contracts exposed an `upgradeClient` mechanism corresponding to the normal IBC idea of upgrading an existing light client, but the current v3 release explicitly removed `upgradeClient` in PR #776. Current Eureka instead exposes a privileged **client migration** mechanism: a new `SP1ICS07Tendermint` contract is deployed with the desired client/consensus state, and `ICS26Router.migrateClient(...)` repoints the existing IBC client ID to that new implementation. Their current operations documentation uses this mechanism both for light-client recovery and for the v2→v3 SP1 migration, with `migrateClient` controlled by the deployment's timelocked administration/governance. Consequently, current Eureka does **not appear to expose the classic ICS-07 trustless `UpgradeClient` path in which the old Cosmos revision cryptographically commits to and authorizes the new revision**. Normal SP1 light-client updates remain constrained to the chain being tracked; if a revision/chain-ID discontinuity must be crossed, the current operational mechanism is instead replacement/migration of the light client under privileged governance. That is an important security-model distinction: standard ICS-07 derives continuity from the old chain's authenticated state, whereas Eureka's current migration mechanism derives authorization for the replacement client from the Ethereum-side migration authority.
+
+
 
 ## Denom Display in Wallets
 
