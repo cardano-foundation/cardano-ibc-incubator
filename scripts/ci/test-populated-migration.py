@@ -33,6 +33,18 @@ STAGES = ['bootstrap', 'populate', 'approve-v2', 'handover-v2', 'settle-v2',
           'approve-v3', 'handover-v3', 'settle-v3', 'verify-all']
 
 
+def rehearsal_governance(value):
+    # Exact public fixture, including the independently configured emergency
+    # quorum. Never accept operator/live keys through this disposable harness.
+    expected = {'signers': ['8f310f79f977bdf0befedfae3374a625e64c9a69a40c3c8fca607dac'],
+                'quorum': '1', 'delay_ms': '86400000',
+                'emergency': {'signers': ['832616310bff22a9f1519fc81916b3c6b8ba93324817f24544b8f6cd'],
+                              'quorum': '1'}}
+    if value != expected:
+        raise RuntimeError('Only the explicitly configured public rehearsal governance and emergency authorities are supported')
+    return value
+
+
 def preflight_gateway_ports(ports=(8800, 5501)):
     for port in ports:
         try:
@@ -356,10 +368,7 @@ def main():
                     'conway', 'query', 'tip', '--testnet-magic', '42']))
                 genesis_start_ms = int(datetime.datetime.fromisoformat(genesis['systemStart'].replace('Z', '+00:00')).timestamp() * 1000)
                 expiry = genesis_start_ms + tip['slot'] * 1000 + 259200000
-                authority = json.loads((artifacts / 'migration-governance.json').read_text())
-                if authority != {'signers': ['8f310f79f977bdf0befedfae3374a625e64c9a69a40c3c8fca607dac'],
-                                  'quorum': '1', 'delay_ms': '86400000'}:
-                    raise RuntimeError('Only the explicitly configured public rehearsal authority is supported')
+                authority = rehearsal_governance(json.loads((artifacts / 'migration-governance.json').read_text()))
                 run('authorize', control(handler, ['authorize', '--plan', str(plan), '--signers', authority['signers'][0],
                     '--expires-at', str(expiry), '--outbox', str(outbox), '--submit']))
                 capture(handler, f'population-approved-v{generation}')
