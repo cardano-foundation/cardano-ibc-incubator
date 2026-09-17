@@ -1,3 +1,4 @@
+import { toOgmiosScript } from "./src/ogmios-script.ts";
 import {
   installManagedCardanoAuthFetch,
   resolveManagedKupmiosHeaders,
@@ -86,7 +87,6 @@ const {
 } = await import(
   "@lucid-evolution/lucid"
 );
-const { applySingleCborEncoding } = await import("@lucid-evolution/utils");
 const { createDeployment } = await import("./src/deployment.ts");
 const { KUPMIOS_ENV } = await import("./src/constants.ts");
 
@@ -106,32 +106,6 @@ type RawKupoUtxo = {
 };
 
 function toOgmiosAdditionalUtxos(utxos: any[] = []): any[] {
-  const toOgmiosScript = (scriptRef: any) => {
-    if (!scriptRef) {
-      return null;
-    }
-
-    switch (scriptRef.type) {
-      case "PlutusV1":
-        return {
-          language: "plutus:v1",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      case "PlutusV2":
-        return {
-          language: "plutus:v2",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      case "PlutusV3":
-        return {
-          language: "plutus:v3",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      default:
-        return null;
-    }
-  };
-
   const toOgmiosAssets = (assets: Record<string, bigint>) => {
     const mapped: Record<string, Record<string, number>> = {};
     Object.entries(assets ?? {}).forEach(([unit, amount]) => {
@@ -565,7 +539,21 @@ try {
   lucid.selectWallet.fromPrivateKey(deployerSk);
 
   console.log("=".repeat(70));
-  await createDeployment(lucid, KUPMIOS_ENV);
+  const governancePath = Deno.env.get("MIGRATION_GOVERNANCE_FILE");
+  const migration = governancePath
+    ? await (async () => {
+      const input = JSON.parse(await Deno.readTextFile(governancePath));
+      const governance = {
+        signers: input.signers,
+        quorum: BigInt(input.quorum),
+        delay_ms: BigInt(input.delay_ms),
+      };
+      const { assertGovernance } = await import("./types/plutus/Migration.ts");
+      assertGovernance(governance);
+      return { governance, bootstrapSigners: governance.signers };
+    })()
+    : undefined;
+  await createDeployment(lucid, KUPMIOS_ENV, { migration });
 } catch (error) {
   console.error("ERR: ", error);
   throw error;

@@ -5,7 +5,7 @@ function utxo(txHash: string, outputIndex: number) {
 }
 
 describe('LucidService prune packet history transaction', () => {
-  it('spends only HostState/channel and reads the proof context and prune scripts', () => {
+  it('spends only HostState/channel and reads the proof context and prune scripts', async () => {
     const tx: any = {};
     tx.readFrom = jest.fn().mockReturnValue(tx);
     tx.collectFrom = jest.fn().mockReturnValue(tx);
@@ -15,6 +15,9 @@ describe('LucidService prune packet history transaction', () => {
     const service: any = Object.create(LucidService.prototype);
     service.lucid = { newTx: jest.fn().mockReturnValue(tx) };
     service.configService = {
+      getOrThrow(name: string) {
+        return this.get(name);
+      },
       get: jest.fn().mockReturnValue({
         hostStateNFT: { policyId: 'host-policy', name: 'host-name' },
         validators: {
@@ -39,7 +42,9 @@ describe('LucidService prune packet history transaction', () => {
 
     const dto: any = {
       hostStateUtxo: {
-        ...utxo('host', 0), datum: 'host-datum', datumHash: 'hash',
+        ...utxo('host', 0),
+        datum: 'host-datum',
+        datumHash: 'hash',
         assets: { lovelace: 8_000_000n, 'host-policyhost-name': 1n, reserve: 7n },
       },
       channelUtxo: { ...utxo('channel', 0), assets: { lovelace: 9_000_000n, 'channel-token': 1n } },
@@ -56,7 +61,7 @@ describe('LucidService prune packet history transaction', () => {
       encodedVerifyProofRedeemer: 'proof-redeemer',
     };
 
-    expect(service.createUnsignedPrunePacketHistoryTx(dto)).toBe(tx);
+    expect(await service.createUnsignedPrunePacketHistoryTx(dto)).toBe(tx);
     expect(tx.readFrom).toHaveBeenNthCalledWith(1, [
       service.referenceScripts.spendChannel,
       service.referenceScripts.prunePacketHistory,
@@ -67,18 +72,16 @@ describe('LucidService prune packet history transaction', () => {
     expect(tx.collectFrom).toHaveBeenCalledTimes(2);
     // Pruning shrinks the datum but does not authorize a refund of its reserve.
     expect(tx.pay.ToContract).toHaveBeenCalledWith(
-      'host-address', { kind: 'inline', value: 'updated-host' }, dto.hostStateUtxo.assets,
+      'host-address',
+      { kind: 'inline', value: 'updated-host' },
+      dto.hostStateUtxo.assets,
     );
     expect(tx.pay.ToContract).toHaveBeenCalledWith(
-      'channel-address', { kind: 'inline', value: 'updated-channel' }, dto.channelUtxo.assets,
+      'channel-address',
+      { kind: 'inline', value: 'updated-channel' },
+      dto.channelUtxo.assets,
     );
-    expect(tx.mintAssets).toHaveBeenCalledWith(
-      { 'prune-policy': 1n },
-      'encoded-auth-token',
-    );
-    expect(tx.mintAssets).toHaveBeenCalledWith(
-      { 'verify-policy': 1n },
-      'proof-redeemer',
-    );
+    expect(tx.mintAssets).toHaveBeenCalledWith({ 'prune-policy': 1n }, 'encoded-auth-token');
+    expect(tx.mintAssets).toHaveBeenCalledWith({ 'verify-policy': 1n }, 'proof-redeemer');
   });
 });

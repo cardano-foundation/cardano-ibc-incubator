@@ -1,0 +1,25 @@
+{
+  "minCount": 100,
+  "minPercentBps": 50,
+  "allowedKindPrefixes": [
+    "fuzz"
+  ],
+  "allowedDepthPrefixes": [
+    "model"
+  ],
+  "requiredLabels": [
+    "fuzz.model.migration.send",
+    "fuzz.model.migration.receive",
+    "fuzz.model.migration.acknowledge",
+    "fuzz.model.migration.timeout",
+    "fuzz.model.migration.prune",
+    "fuzz.model.migration.old-ack-after-handover",
+    "fuzz.model.migration.old-timeout-after-handover",
+    "fuzz.model.migration.old-receipt-pruned-after-handover",
+    "fuzz.model.migration.authenticated-channel-handover",
+    "fuzz.model.migration.reject-commitment-omission",
+    "fuzz.model.migration.reject-receipt-omission",
+    "fuzz.model.migration.reject-acknowledgement-omission",
+    "fuzz.model.migration.reject-proof-floor-mutation"
+  ]
+}

@@ -28,6 +28,7 @@ import {
 } from "./history.service";
 
 import { reconstructHistoricalIbcTree } from './historical-ibc-tree';
+import { readLocalEpochStake } from './local-epoch-stake';
 import { StaleIbcTreeStateError, type IbcTreeHostStateRef, type IbcTreeSnapshot } from '../../shared/helpers/ibc-state-root';
 
 type BridgeUtxoHistoryRow = {
@@ -364,33 +365,48 @@ export class YaciHistoryService implements HistoryService {
     unit: string,
     height: bigint,
   ): Promise<UtxoDto> {
-    const policyId = unit.slice(0, 56).toLowerCase();
-    const assetName = unit.slice(56).toLowerCase();
-    if (!policyId || !assetName) {
-      throw new GrpcNotFoundException(
-        `Not found: invalid asset unit for historical UTxO lookup`,
-      );
+    if (!/^[0-9a-f]{56}(?:[0-9a-f]{2}){1,32}$/i.test(unit)) {
+      throw new GrpcNotFoundException('Not found: invalid asset unit for historical UTxO lookup');
     }
+    return this.findCanonicalStateNftAtHeight(unit.slice(0, 56).toLowerCase(), unit.slice(56).toLowerCase(), height, `UTxO ${unit}`);
+  }
 
+  async findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto> {
+    const { hostStateNFT } = this.configService.get('deployment');
+    return this.findCanonicalStateNftAtHeight(hostStateNFT.policyId, hostStateNFT.name, height, 'HostState UTxO');
+  }
+
+  /** Projections discover candidates; raw canonical outputs and spends authenticate them. */
+  private async findCanonicalStateNftAtHeight(policyId: string, assetName: string, height: bigint, label: string): Promise<UtxoDto> {
     const query = `
       SELECT
-        address,
-        tx_hash,
-        tx_id,
-        output_index,
-        datum,
-        datum_hash,
-        assets_policy,
-        assets_name,
-        block_no,
-        block_id
-      FROM bridge_utxo_history
-      WHERE block_no <= $1
-        AND lower(assets_policy) = $2
-        AND lower(assets_name) = $3
-      ORDER BY block_no DESC, COALESCE(tx_index, 0) DESC, output_index DESC
-      LIMIT 1
+        COALESCE(NULLIF(a.owner_addr_full, ''), a.owner_addr) AS address,
+        a.tx_hash, h.tx_id, a.output_index,
+        a.inline_datum AS datum, a.data_hash AS datum_hash,
+        h.assets_policy, h.assets_name, t.block AS block_no, t.block AS block_id
+      FROM bridge_utxo_history h
+      JOIN address_utxo a ON a.tx_hash = h.tx_hash AND a.output_index = h.output_index
+      JOIN transaction t ON t.tx_hash = a.tx_hash AND t.block = a.block
+      JOIN block canonical ON canonical.number = t.block AND canonical.hash = t.block_hash
+      WHERE t.invalid = false AND t.block <= $1
+        AND h.assets_policy = $2 AND h.assets_name = $3
+        AND EXISTS (
+          SELECT 1 FROM jsonb_array_elements(COALESCE(a.amounts::jsonb, '[]'::jsonb)) amount
+          WHERE lower(amount->>'unit') = $2 || $3
+            AND (amount->>'quantity')::numeric = 1
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM tx_input spent
+          JOIN transaction consuming ON consuming.tx_hash = spent.spent_tx_hash
+            AND consuming.block = spent.spent_at_block AND consuming.block_hash = spent.spent_at_block_hash
+          JOIN block spent_block ON spent_block.number = consuming.block AND spent_block.hash = consuming.block_hash
+          WHERE spent.tx_hash = a.tx_hash AND spent.output_index = a.output_index
+            AND consuming.invalid = false AND consuming.block <= $1
+        )
+      ORDER BY t.block DESC, COALESCE(t.tx_index, 0) DESC, a.output_index DESC
+      LIMIT 2
     `;
+
     const rows = await this.entityManager.query(query, [
       height.toString(),
       policyId,
@@ -398,45 +414,11 @@ export class YaciHistoryService implements HistoryService {
     ]);
     if (rows.length <= 0) {
       throw new GrpcNotFoundException(
-        `Not found: UTxO ${unit} not found at or before height ${height.toString()}`,
+        `Not found: ${label} not found at or before height ${height.toString()}`,
       );
     }
-
-    return this.mapUtxoRow(rows[0]);
-  }
-
-  async findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto> {
-    const query = `
-      SELECT
-        address,
-        tx_hash,
-        tx_id,
-        output_index,
-        datum,
-        datum_hash,
-        assets_policy,
-        assets_name,
-        block_no,
-        block_id
-      FROM bridge_utxo_history
-      WHERE block_no <= $1
-        AND assets_policy = $2
-        AND assets_name = $3
-      ORDER BY block_no DESC, COALESCE(tx_index, 0) DESC, output_index DESC
-      LIMIT 1
-    `;
-
-    const deploymentConfig = this.configService.get("deployment");
-    const hostStateNFT = deploymentConfig.hostStateNFT;
-    const rows = await this.entityManager.query(query, [
-      height.toString(),
-      hostStateNFT.policyId,
-      hostStateNFT.name,
-    ]);
-    if (rows.length <= 0) {
-      throw new GrpcNotFoundException(
-        `Not found: HostState UTxO not found at or before height ${height.toString()}`,
-      );
+    if (rows.length !== 1) {
+      throw new StaleIbcTreeStateError(`Multiple canonical ${label} outputs at height ${height}; synchronize canonical spend history`);
     }
 
     return this.mapUtxoRow(rows[0]);
@@ -545,6 +527,23 @@ export class YaciHistoryService implements HistoryService {
       return null;
     }
     const epochNonce = await this.fetchEpochNonce(block.epochNo);
+
+    const localSnapshotDirectory = process.env.CARDANO_LOCAL_EPOCH_SNAPSHOT_DIR;
+    if (localSnapshotDirectory) {
+      if (!this.isExplicitLocalDevnet()) {
+        throw new Error('Local ledger stake snapshots require the explicit magic-42 cardano-devnet configuration');
+      }
+      const stakeDistribution = (await readLocalEpochStake(
+        localSnapshotDirectory, block.epochNo,
+        normalizeHex(process.env.CARDANO_EPOCH_NONCE_GENESIS), this.entityManager,
+      )).map((entry) => ({ ...entry, poolId: normalizePoolId(entry.poolId) }));
+      const verification = await queryCurrentEpochVerificationData(ogmiosEndpoint, epochNonce);
+      return {
+        epoch: block.epochNo,
+        stakeDistribution,
+        verificationContext: { ...verification, ...slotBounds },
+      };
+    }
 
     const queryEpochContext = async (
       pointBlock: Pick<HistoryBlock, "slotNo" | "hash">,

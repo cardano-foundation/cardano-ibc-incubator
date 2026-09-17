@@ -1,3 +1,4 @@
+import { requireMigrationConfig, type MigrationRuntimeConfig } from './migrationRuntime';
 import type { HistoryBootstrap } from './historyBootstrap';
 import crypto from 'crypto';
 import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
@@ -100,6 +101,7 @@ type DeploymentTraceRegistry = {
 };
 
 type DeploymentConfig = {
+  migration?: MigrationRuntimeConfig;
   deployedAt: string;
   consensusHistoryFormat: 'proof-backed-v1';
   history?: HistoryBootstrap;
@@ -129,6 +131,7 @@ type DeploymentConfig = {
 };
 
 type BridgeManifest = {
+  migration?: MigrationRuntimeConfig;
   schema_version: number;
   consensus_history_format?: 'proof-backed-v1';
   deployed_at: string;
@@ -484,6 +487,7 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
     },
     deployment: {
       deployedAt: manifest.deployed_at,
+      ...(manifest.migration !== undefined ? { migration: requireMigrationConfig(manifest.migration) } : {}),
       consensusHistoryFormat: manifest.consensus_history_format,
       ...(manifest.history ? { history: manifest.history } : {}),
       ics20PacketCodec,
@@ -1640,7 +1644,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       throw new Error('Archive-UTxO deployments are not supported, deploy the proof-backed client contracts');
     }
     const lucidService = new LucidIbcAdapter(lucidImporter, lucid, deployment,
-      createKupoConsensusHistoryReader(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader }));
+      createKupoConsensusHistoryReader(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader, allowScriptMigration: !!deployment.migration }));
     await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
     const kupoService = new RuntimeKupoService(lucidService, deployment);

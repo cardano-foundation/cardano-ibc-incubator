@@ -38,6 +38,8 @@
     "recover:consensus-history": "deno run --allow-read --allow-write --allow-env --allow-net scripts/recover-consensus-history.ts",
     "shutdown:deployment": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts",
     "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi --allow-write index.ts",
-    "export:deployment-plan": "deno run --allow-env --allow-read --allow-write scripts/export-deployment-plan.ts"
+    "export:deployment-plan": "deno run --allow-env --allow-read --allow-write scripts/export-deployment-plan.ts",
+    "test:migration": "deno test --allow-env --allow-read --allow-write src/migration.test.ts src/migration-accounting.test.ts scripts/migrate-deployment.test.ts src/protocol_parameters.test.ts src/ogmios-script.test.ts",
+    "migrate:deployment": "deno run --allow-net --allow-env --allow-read --allow-write --allow-run --allow-ffi scripts/migrate-deployment.ts"
   }
 }

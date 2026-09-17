@@ -71,7 +71,7 @@ function createKupoConsensusHistoryReader(endpoint, options = {}) {
             if (foundCurrent)
                 continue;
             const quantity = match.value?.assets?.[`${policy}.${name}`] ?? match.value?.assets?.[unit];
-            if (match.address !== client.address || (quantity !== '1' && quantity !== 1) ||
+            if ((!options.allowScriptMigration && match.address !== client.address) || (quantity !== '1' && quantity !== 1) ||
                 !match.datum_hash || match.datum_type !== 'inline') {
                 throw new Error('Kupo history contains an unauthenticated client output');
             }

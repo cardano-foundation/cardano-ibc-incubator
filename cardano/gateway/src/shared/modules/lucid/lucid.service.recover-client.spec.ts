@@ -11,6 +11,9 @@ describe('LucidService recover client wiring', () => {
 
     const service: any = Object.create(LucidService.prototype);
     service.configService = {
+      getOrThrow(name: string) {
+        return this.get(name);
+      },
       get: jest.fn().mockReturnValue({
         hostStateNFT: { policyId: 'host-policy', name: 'host-token' },
         validators: {
@@ -30,16 +33,19 @@ describe('LucidService recover client wiring', () => {
     return { service, txBuilder };
   }
 
-  it('spends the subject, reads the substitute and invokes the recovery withdrawal', () => {
+  it('spends the subject, reads the substitute and invokes the recovery withdrawal', async () => {
     const { service, txBuilder } = setup();
     const host = {
-      txHash: 'host', outputIndex: 0, datum: 'host-datum', datumHash: 'hash',
+      txHash: 'host',
+      outputIndex: 0,
+      datum: 'host-datum',
+      datumHash: 'hash',
       assets: { lovelace: 8_000_000n, 'host-policyhost-token': 1n, reserve: 7n },
     };
     const subject = { txHash: 'subject', outputIndex: 0, assets: { lovelace: 9_000_000n, 'subject-unit': 1n } };
     const substitute = { txHash: 'substitute', outputIndex: 0 };
 
-    const result = service.createUnsignedRecoverClientTransaction(
+    const result = await service.createUnsignedRecoverClientTransaction(
       host,
       'host-redeemer',
       subject,
@@ -68,33 +74,49 @@ describe('LucidService recover client wiring', () => {
     expect(txBuilder.withdraw).toHaveBeenCalledWith('stake_test1recovery', 0n, 'withdrawal-redeemer');
     expect(txBuilder.addSignerKey).toHaveBeenCalledWith('signer-key-hash');
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
-      'addr_test1host', { kind: 'inline', value: 'new-host-datum' }, host.assets,
+      'addr_test1host',
+      { kind: 'inline', value: 'new-host-datum' },
+      host.assets,
     );
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
-      'addr_test1client', { kind: 'inline', value: 'new-subject-datum' }, subject.assets,
+      'addr_test1client',
+      { kind: 'inline', value: 'new-subject-datum' },
+      subject.assets,
     );
   });
 
-  it('preserves the client and HostState reserves during a normal client update', () => {
+  it('preserves the client and HostState reserves during a normal client update', async () => {
     const { service, txBuilder } = setup();
     const host = {
-      txHash: 'host', outputIndex: 0, datum: 'host-datum',
+      txHash: 'host',
+      outputIndex: 0,
+      datum: 'host-datum',
       assets: { lovelace: 8_000_000n, 'host-policyhost-token': 1n, reserve: 7n },
     };
     const client = { txHash: 'client', outputIndex: 0, assets: { lovelace: 9_000_000n, 'client-unit': 1n } };
-    service.createUnsignedUpdateClientTransaction(
-      host, 'host-redeemer', client, 'client-redeemer',
-      'new-host-datum', 'new-client-datum', 'client-unit', 'signer',
+    await service.createUnsignedUpdateClientTransaction(
+      host,
+      'host-redeemer',
+      client,
+      'client-redeemer',
+      'new-host-datum',
+      'new-client-datum',
+      'client-unit',
+      'signer',
     );
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
-      'addr_test1host', { kind: 'inline', value: 'new-host-datum' }, host.assets,
+      'addr_test1host',
+      { kind: 'inline', value: 'new-host-datum' },
+      host.assets,
     );
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
-      'addr_test1client', { kind: 'inline', value: 'new-client-datum' }, client.assets,
+      'addr_test1client',
+      { kind: 'inline', value: 'new-client-datum' },
+      client.assets,
     );
   });
 
-  it('fails clearly when the recovery validator is absent from the deployment', () => {
+  it('fails clearly when the recovery validator is absent from the deployment', async () => {
     const { service } = setup();
     service.configService.get.mockReturnValue({
       hostStateNFT: { policyId: 'host-policy', name: 'host-token' },
@@ -105,8 +127,8 @@ describe('LucidService recover client wiring', () => {
     });
     service.referenceScripts.recoverClient = undefined;
 
-    expect(() => service.createUnsignedRecoverClientTransaction({}, '', {}, '', {}, '', '', '', '', '')).toThrow(
-      'Tendermint client recovery is not configured',
-    );
+    await expect(
+      async () => await service.createUnsignedRecoverClientTransaction({}, '', {}, '', {}, '', '', '', '', ''),
+    ).rejects.toThrow('Tendermint client recovery is not configured');
   });
 });

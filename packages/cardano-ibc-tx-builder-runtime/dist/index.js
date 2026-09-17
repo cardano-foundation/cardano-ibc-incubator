@@ -10,6 +10,7 @@ exports.mapOgmiosProtocolParameters = mapOgmiosProtocolParameters;
 exports.queryProtocolParametersCompat = queryProtocolParametersCompat;
 exports.retryWithBackoff = retryWithBackoff;
 exports.createTxBuilderRuntime = createTxBuilderRuntime;
+const migrationRuntime_1 = require("./migrationRuntime");
 const crypto_1 = __importDefault(require("crypto"));
 const tx_builder_1 = require("@cardano-ibc/tx-builder");
 const trace_registry_1 = require("@cardano-ibc/trace-registry");
@@ -158,6 +159,7 @@ function normalizeBridgeManifest(manifest) {
         },
         deployment: {
             deployedAt: manifest.deployed_at,
+            ...(manifest.migration !== undefined ? { migration: (0, migrationRuntime_1.requireMigrationConfig)(manifest.migration) } : {}),
             consensusHistoryFormat: manifest.consensus_history_format,
             ...(manifest.history ? { history: manifest.history } : {}),
             ics20PacketCodec,
@@ -1091,7 +1093,7 @@ function createTxBuilderRuntime(config) {
         if (bridgeManifest.validators.spend_consensus_state) {
             throw new Error('Archive-UTxO deployments are not supported, deploy the proof-backed client contracts');
         }
-        const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment, (0, consensusHistoryKupo_1.createKupoConsensusHistoryReader)(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader }));
+        const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment, (0, consensusHistoryKupo_1.createKupoConsensusHistoryReader)(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader, allowScriptMigration: !!deployment.migration }));
         await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
         const treeStore = new ibcStateRoot_1.IbcTreeStateStore({

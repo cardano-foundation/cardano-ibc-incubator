@@ -28,7 +28,8 @@
     "test:cov": "jest --coverage",
     "test:cov:ci": "jest --coverage --detectOpenHandles --runInBand",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "export:migration-witness": "ts-node -r tsconfig-paths/register src/scripts/export-migration-witness.ts"
   },
   "dependencies": {
     "@cardano-ibc/planner": "file:../../packages/cardano-ibc-planner",

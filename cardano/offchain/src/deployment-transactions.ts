@@ -5,6 +5,25 @@ import {
   type Script,
   type UTxO,
 } from "@lucid-evolution/lucid";
+import { Registry } from "../types/plutus/Migration.ts";
+
+export function buildRegistryBootstrapTx(lucid: LucidEvolution, input: {
+  nonce: UTxO;
+  policy: Script;
+  address: string;
+  registry: Registry;
+  signers: string[];
+}) {
+  const unit = input.registry.token.policy_id + input.registry.token.name;
+  let tx = lucid.newTx().collectFrom([input.nonce])
+    .attach.MintingPolicy(input.policy).mintAssets({ [unit]: 1n }, Data.void())
+    .pay.ToContract(input.address, {
+      kind: "inline",
+      value: Data.to(input.registry, Registry),
+    }, { [unit]: 1n });
+  for (const signer of new Set(input.signers)) tx = tx.addSignerKey(signer);
+  return tx;
+}
 
 /** Construct the reference outputs used by deployment, including their inline datum. */
 export function buildReferenceBatchTx(
@@ -30,8 +49,10 @@ export async function completeReferenceBatchTx(
   referenceAddress: string,
   validators: Script[],
   dedicatedFunding?: UTxO,
+  validTo?: number,
 ) {
   const txBuilder = buildReferenceBatchTx(lucid, referenceAddress, validators);
+  if (validTo !== undefined) txBuilder.validTo(validTo);
   const [walletUTxOs, outputs, txSignBuilder] = await txBuilder.chain(
     dedicatedFunding
       ? {

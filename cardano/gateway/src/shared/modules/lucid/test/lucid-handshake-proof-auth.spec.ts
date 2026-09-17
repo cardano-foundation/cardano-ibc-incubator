@@ -62,10 +62,10 @@ function harness() {
 }
 
 describe('Lucid handshake proof authorization', () => {
-  it('adds the pinned verify-proof reference and mint to ConnectionOpenTry', () => {
+  it('adds the pinned verify-proof reference and mint to ConnectionOpenTry', async () => {
     const { service, builder, references } = harness();
 
-    service.createUnsignedConnectionOpenTryTransaction(
+    await service.createUnsignedConnectionOpenTryTransaction(
       utxo('host-input'),
       'host-redeemer',
       'connection-token',
@@ -83,25 +83,17 @@ describe('Lucid handshake proof authorization', () => {
       references.verifyProof,
       references.hostStateStt,
     ]);
-    expect(builder.mintAssets).toHaveBeenNthCalledWith(
-      1,
-      { 'connection-token': 1n },
-      'connection-redeemer',
-    );
-    expect(builder.mintAssets).toHaveBeenNthCalledWith(
-      2,
-      { 'verify-policy': 1n },
-      'verify-redeemer',
-    );
+    expect(builder.mintAssets).toHaveBeenNthCalledWith(1, { 'connection-token': 1n }, 'connection-redeemer');
+    expect(builder.mintAssets).toHaveBeenNthCalledWith(2, { 'verify-policy': 1n }, 'verify-redeemer');
     expect(builder.readFrom).toHaveBeenCalledWith([utxo('client-input')]);
   });
 
-  it('adds the pinned verify-proof reference and mint to ConnectionOpenConfirm', () => {
+  it('adds the pinned verify-proof reference and mint to ConnectionOpenConfirm', async () => {
     const { service, builder, references } = harness();
     const host = utxo('host-input', { lovelace: 8_000_000n, 'host-policyhost-name': 1n, reserve: 7n });
     const connection = utxo('connection-input', { lovelace: 9_000_000n, 'connection-token': 1n });
 
-    service.createUnsignedConnectionOpenConfirmTransaction(
+    await service.createUnsignedConnectionOpenConfirmTransaction(
       host,
       'host-redeemer',
       'host-datum',
@@ -116,10 +108,14 @@ describe('Lucid handshake proof authorization', () => {
     );
 
     expect(builder.pay.ToContract).toHaveBeenCalledWith(
-      'host-address', { kind: 'inline', value: 'host-datum' }, host.assets,
+      'host-address',
+      { kind: 'inline', value: 'host-datum' },
+      host.assets,
     );
     expect(builder.pay.ToContract).toHaveBeenCalledWith(
-      'connection-address', { kind: 'inline', value: 'connection-datum' }, connection.assets,
+      'connection-address',
+      { kind: 'inline', value: 'connection-datum' },
+      connection.assets,
     );
     expect(builder.readFrom).toHaveBeenNthCalledWith(1, [
       references.spendConnection,
@@ -127,17 +123,14 @@ describe('Lucid handshake proof authorization', () => {
       references.hostStateStt,
     ]);
     expect(builder.mintAssets).toHaveBeenCalledTimes(1);
-    expect(builder.mintAssets).toHaveBeenCalledWith(
-      { 'verify-policy': 1n },
-      'verify-redeemer',
-    );
+    expect(builder.mintAssets).toHaveBeenCalledWith({ 'verify-policy': 1n }, 'verify-redeemer');
     expect(builder.readFrom).toHaveBeenCalledWith([utxo('client-input')]);
   });
 
-  it('adds the pinned verify-proof reference and mint to ChannelOpenTry', () => {
+  it('adds the pinned verify-proof reference and mint to ChannelOpenTry', async () => {
     const { service, builder, references } = harness();
 
-    service.createUnsignedChannelOpenTryTransaction({
+    await service.createUnsignedChannelOpenTryTransaction({
       moduleKey: 'transfer',
       connectionUtxo: utxo('connection-input'),
       clientUtxo: utxo('client-input'),
@@ -159,23 +152,15 @@ describe('Lucid handshake proof authorization', () => {
       references.verifyProof,
       references.hostStateStt,
     ]);
-    expect(builder.mintAssets).toHaveBeenNthCalledWith(
-      1,
-      { 'channel-token': 1n },
-      'channel-redeemer',
-    );
-    expect(builder.mintAssets).toHaveBeenNthCalledWith(
-      2,
-      { 'verify-policy': 1n },
-      'verify-redeemer',
-    );
+    expect(builder.mintAssets).toHaveBeenNthCalledWith(1, { 'channel-token': 1n }, 'channel-redeemer');
+    expect(builder.mintAssets).toHaveBeenNthCalledWith(2, { 'verify-policy': 1n }, 'verify-redeemer');
   });
 
-  it('requires a module callback in the generic RecvPacket builder', () => {
+  it('requires a module callback in the generic RecvPacket builder', async () => {
     const { service, builder, references } = harness();
     const moduleUtxo = utxo('module-input', { 'module-token': 1n });
 
-    service.createUnsignedRecvPacketTx({
+    await service.createUnsignedRecvPacketTx({
       moduleKey: 'transfer',
       moduleUtxo,
       encodedSpendModuleRedeemer: 'module-redeemer',

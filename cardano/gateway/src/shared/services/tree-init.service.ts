@@ -8,6 +8,7 @@ import { LucidService } from '../modules/lucid/lucid.service';
 import { IbcTreeStateStore } from '../helpers/ibc-state-root';
 import { CURRENT_IBC_TREE_CACHE_ID, IbcTreeCacheService, ibcTreeCacheIdForRoot } from './ibc-tree-cache.service';
 import { HostStateDatum } from '../types/host-state-datum';
+import { historicalReadOnly } from '../../security/historical-read-only.guard';
 
 /**
  * TreeInitService - Initializes the IBC state tree on Gateway startup
@@ -36,6 +37,19 @@ export class TreeInitService implements OnModuleInit {
 
   async onModuleInit() {
     const manifest = this.config?.get<BridgeManifest>('bridgeManifest');
+    if (historicalReadOnly()) {
+      if (!manifest?.history || !this.historyDb) {
+        throw new HistoryConfigurationError('Historical read-only startup requires an explicit manifest with retained history and the Yaci database');
+      }
+      await this.historyDb.transaction('REPEATABLE READ', async (manager) => {
+        await manager.query('SET TRANSACTION READ ONLY');
+        await manager.query('SET LOCAL statement_timeout = 30000');
+        await verifyHistoryCoverage(manager, manifest);
+      });
+      await this.ibcTreeCacheService.ensureSchema();
+      this.logger.log('Historical read-only startup: bootstrap authenticated; each query must verify its canonical historical root. Transaction RPCs are disabled.');
+      return;
+    }
     const seconds = Number(this.config?.get('BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS') ?? 7200);
     if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 86400) throw new Error('BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS must be between 1 and 86400');
     const deadline = Date.now() + seconds * 1000;
