@@ -1,6 +1,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+require('../../vendor/uplc/verify.cjs');
+const { createRequire } = require('node:module');
+const expectedEvaluator = fs.realpathSync(require.resolve('../../vendor/uplc'));
+const actualEvaluator = fs.realpathSync(createRequire(require.resolve('@lucid-evolution/lucid')).resolve('@lucid-evolution/uplc'));
+if (actualEvaluator !== expectedEvaluator || fs.realpathSync(require.resolve('@lucid-evolution/uplc')) !== expectedEvaluator) {
+  throw new Error('Lucid must resolve the checksum-verified, pinned evaluator');
+}
+
 // Lucid permits regular/collateral overlap, which Hermes deliberately refuses
 // to sign. Keep both published module formats compatible with that policy.
 const replacements = [
