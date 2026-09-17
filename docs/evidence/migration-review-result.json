@@ -1,0 +1,308 @@
+{
+  "format": "migration-review-evidence-v1",
+  "sourceCommit": "1f535ebbb1ec1798f53bfd401e9d94cd51ffeca2",
+  "sourceTree": "b3db7d9100de4877539dc73f024c9ecf7d492e53",
+  "recordedAt": "2026-09-17T20:23:42.801381+00:00",
+  "tools": {
+    "aiken": "1.1.21+42babe5",
+    "deno": "2.9.6",
+    "node": "25.8.1",
+    "platform": "aarch64-apple-darwin"
+  },
+  "artifacts": {
+    "cardano/onchain/plutus.json": "100d902fc6f3c401bb0004133c2c78a8de54e9a84b4c82b07b56bfc30bec9807",
+    ".deployment-smoke/optimized-successor-v2-20260917/plutus.json": "336aa5b0b5d5f4a8b4f1fa9d54553ab5c994b82c6e33260e2faeb62dcbc2016b",
+    ".deployment-smoke/optimized-successor-v3-compatible-20260917/plutus.json": "59e9fe42a82a18141a8a902ee605a39624494b7f77ea6ec072e50e3f7a1851ac",
+    "cardano/offchain/src/testing/protocol-10-local-cost-profile.json": "16546f4e204a40e8985b00ce77bfba989c833525d5024cd4f0dec2eec37cedac"
+  },
+  "changedSourceSha256": {
+    ".github/workflows/ci.yml": "6ca6f5c30cf94726949bb703c034136bca82b015a2d5ca2231a829f11d39033b",
+    "cardano/gateway/src/config/bridge-manifest.spec.ts": "49971b837e172f356432dfa47f23be39f5a73a5fdd6b3308e307f16eb85743fd",
+    "cardano/gateway/src/config/bridge-manifest.ts": "55538bb43ef0dd4adcf1adaef773d301dfe3d44731f3e2c8a1b8354e030dbf46",
+    "cardano/offchain/.env.default": "19e74f4ad0c43e14d638f33c4d700dc091b173bf75ec35e6978fbabbb24258a8",
+    "cardano/offchain/deno.json": "5c32efaf6ec95cd9df96b37dbd992129c2af233f6d2080f7894cac3159d6930b",
+    "cardano/offchain/index.ts": "166893d30a90bb47ee22caaa3370f39611512df43c22bf1693eca875ed142963",
+    "cardano/offchain/scripts/migrate-deployment.ts": "f6eb3911c80f621a1f9d31ed01d24e73225ca165fb1f04a3a4b283d485e48099",
+    "cardano/offchain/src/deployment-mode.test.ts": "52deb7a99a1bdb224b22593f2d0ce97e172887ac5f960cf4d0bd00bb9041e036",
+    "cardano/offchain/src/deployment-mode.ts": "22802316b6d8ffe4fb812c8ef936804ac4e8488cd44491b700abf740c6341439",
+    "cardano/offchain/src/deployment-plan.test.ts": "e95e271468c6e80098703c8c7748299a8be8bc395567cebd44680cb29188fa67",
+    "cardano/offchain/src/deployment.ts": "a672a1715b4956d1e6fcda7d10ea5aaaa8ed6ac961cad0b719872d0777bd7936",
+    "cardano/offchain/src/migration-history.test.ts": "d32be34adce5f73905382005baae575b0dbb683668fe091483cc1a3ee83b69aa",
+    "cardano/offchain/src/migration-inventory.test.ts": "ea56c62be22ccb3f767ff6bd1de065cc0af40251feabd771d197472225865243",
+    "cardano/offchain/src/migration-inventory.ts": "051b71e55aed97e8024268a4d8e9119b1c527fa87ef08a940bda0ae54ca8b59a",
+    "cardano/offchain/src/migration-operator.test.ts": "3f67fa17da3608648eeecdb7b6469f1c4126d12502e144e7462a3f6d3ac94040",
+    "cardano/offchain/src/migration-transactions.ts": "b8771d9e12e6edb50535cd6c68ec6db64acaf2128be7477818a9fb5155ebf176",
+    "cardano/offchain/src/migration.test.ts": "a35b6973cb7327329b3f78ba70bad9885a2ebca77b01601469be208a3d5c5844",
+    "cardano/offchain/src/migration.ts": "bbe8f760ddca622cc7e774639880c1f559403fb50e2fd9794ae914995984d9f6",
+    "cardano/offchain/src/testing/migration-accounting.ts": "ad5b8cdb5ce475c8287b8706934f255c379eadc8517da89134d5a8b890b5c2d1",
+    "cardano/offchain/src/testing/migration-operator.ts": "333c0f58bab654af6d65e47f1a6cdc2704d2a62c4036fb9b7ce420af934ecc96",
+    "cardano/offchain/src/utils.ts": "5efb8f6f47ca16bd5c37a4c517ce8202bcd556eb32280c0e8b63af2f6100c23f",
+    "docs/migration-implementation-evidence.md": "dbed29d8ac9580cdda2eb65ee95bdca0bd70303d5c021a85f5f9b54217d35323",
+    "docs/migration-operator-runbook.md": "51f9bfa691b5c301fad186698a98ace345f99163817689d5533c1bc6f612b832",
+    "docs/migration-requirements.md": "e7496d190deea0df57799e9e0cc1064a77e6a741eee9aa7282732e81378e7894",
+    "docs/migration-review-followup.md": "365c7715a4d4a359a0008445b555114120756cf27492361dd0095a01e404c415",
+    "packages/cardano-ibc-tx-builder-runtime/dist/index.js": "108c897ba75224ec970ee6fda1072699b628ce2406188fad6a93c8266f688352",
+    "packages/cardano-ibc-tx-builder-runtime/dist/migrationRuntime.d.ts": "85df5db158ec452d2eb3f2ac7396d1255bf9dfe8a22b50a6767571f50fc0fe43",
+    "packages/cardano-ibc-tx-builder-runtime/dist/migrationRuntime.js": "98c795b108f1e2cc6c5c2d0b50cf40a9173ecfe8df91fd720477e1e67a97a423",
+    "packages/cardano-ibc-tx-builder-runtime/src/index.ts": "144923312972e6616e3ce004c2776d15858e9170e54b9c21a80a4d728f0ac7e0",
+    "packages/cardano-ibc-tx-builder-runtime/src/migrationRuntime.test.ts": "8ced5d2e0acf688ef85c6e1f47771af415397c180e78bed907bd12ccce8aafc7",
+    "packages/cardano-ibc-tx-builder-runtime/src/migrationRuntime.ts": "acd426f4985d735584cdac2215b020f386c5f29bff6355c0988b3055fa8a9493",
+    "scripts/ci/check-aiken-mutations.mjs": "e19578d5a33b7efc5a0c24c7e930bd7ebf853e03ef8fe1f4be18d499c63cbd6e",
+    "scripts/ci/measure-migration-operator.ts": "6a01696b7fdc1ff5001c3c51217dee00c730372b3fe77b7a4351c8277e2b338d",
+    "scripts/ci/test-cardano-deployment.py": "839511425b67b94b9615476ccbf4423ae2a47f94e24b0e702456bc610dcad6a3"
+  },
+  "reports": {
+    "docs/evidence/migration-review/aiken.json": {
+      "sha256": "24357d92bfaf5b534ada1e481ddf440fb0919f4e1bdbe0013cf0d49b4afa677e",
+      "bytes": 115462
+    },
+    "docs/evidence/migration-review/guard-controls.json": {
+      "sha256": "8680336bc72de2b8e2126a4418c97dc776c4db5cde271e61fa05683773b404b2",
+      "bytes": 58089
+    },
+    "docs/evidence/migration-review/critical-mutations.json": {
+      "sha256": "6cad45c048c57c503e9efa872c212264e39e69b2dd539d83b162af2a9c55284e",
+      "bytes": 1308
+    },
+    "docs/evidence/migration-review/operator-scaling.json": {
+      "sha256": "890030a0d0dcfc545229d8909bd7e6730344a9ad1475e40035b6b8b171b36a99",
+      "bytes": 4940
+    },
+    "docs/evidence/migration-review/budgets.json": {
+      "sha256": "4ea4f6cc96c6a9e771c5809c9cc072839aa48c0b19e5cdaf686bf05dbdfaa102",
+      "bytes": 4161
+    }
+  },
+  "localLogs": {
+    ".deployment-smoke/review-migration-final.log": {
+      "sha256": "4ea7e2e4eba5f9717da3fecb0c01a5ff60ae780e697fd4ed0efcc2710d11a6dc",
+      "bytes": 33222,
+      "tail": [
+        "Custom operational clock rejects zero lengths and unsupported historical era models ... ok (183\u00b5s)",
+        "running 2 tests from ./src/ogmios-script.test.ts",
+        "Ogmios tagged script encoding preserves language and exact ledger hash ... ok (7ms)",
+        "Ogmios script encoding retains native scripts and rejects unknown types ... ok (770\u00b5s)",
+        "",
+        "ok | 27 passed (18 steps) | 0 failed (1m4s)",
+        ""
+      ]
+    },
+    ".deployment-smoke/review-deployment-tests.log": {
+      "sha256": "3888ecccf01575a0f902e51c1b72dc1b969d16f805029c47c29f544ca47be782",
+      "bytes": 22612,
+      "tail": [
+        "------- post-test output -------",
+        "Mint mock token: 685 signed bytes, fee 186397 lovelace",
+        "----- post-test output end -----",
+        "mock token mint fits with inline policy, wallet witness and token change ... ok (543ms)",
+        "",
+        "ok | 32 passed (57 steps) | 0 failed (42s)",
+        ""
+      ]
+    },
+    ".deployment-smoke/review-gateway-tests.log": {
+      "sha256": "7b19b66ea70d21e212c01f0c7828594c1b3e6911175de53ca7997f07b3fc60a7",
+      "bytes": 132555,
+      "tail": [
+        "    \u2713 labels every row and its rendered table as structural rather than measured",
+        "",
+        "Test Suites: 140 passed, 140 total",
+        "Tests:       1186 passed, 1186 total",
+        "Snapshots:   0 total",
+        "Time:        72.028 s",
+        "Ran all test suites."
+      ]
+    },
+    ".deployment-smoke/review-runtime-tests.log": {
+      "sha256": "1e58c9f815f121abf76cff53fa3f39f7c043df9bbed105ae89d5d191f3ce2833",
+      "bytes": 9967,
+      "tail": [
+        "\u2139 suites 14",
+        "\u2139 pass 96",
+        "\u2139 fail 0",
+        "\u2139 cancelled 0",
+        "\u2139 skipped 0",
+        "\u2139 todo 0",
+        "\u2139 duration_ms 2370.388333"
+      ]
+    },
+    ".deployment-smoke/review-deno-check.log": {
+      "sha256": "c9fd0d0bb18f559ce725baec3614cbc2e6d5bf8dc2e1f8e254d8d0ab223fecb2",
+      "bytes": 3352,
+      "tail": [
+        "Check types/plutus/Migration.ts",
+        "Check types/plutus/MintPortRedeemer.ts",
+        "Check types/plutus/OutputReference.ts",
+        "Check types/plutus/TraceRegistry.ts",
+        "Check types/plutus/TransferEscrowShardRedeemer.ts",
+        "Check types/plutus/TransferModuleDatum.ts",
+        "Check types/plutus/index.ts"
+      ]
+    },
+    ".deployment-smoke/review-deno-fmt.log": {
+      "sha256": "87e41072fa181ccd4acfac4350487ebbc95d8e36b6c5dabaa49398ae09a7ecf1",
+      "bytes": 49,
+      "tail": [
+        "Task fmt:check deno fmt --check",
+        "Checked 96 files"
+      ]
+    },
+    ".deployment-smoke/review-deno-lint.log": {
+      "sha256": "5820825bdc0b3982dfe221473bd917d88ee46ffd218ce85ff6c477186b46c0b4",
+      "bytes": 37,
+      "tail": [
+        "Task lint deno lint",
+        "Checked 91 files"
+      ]
+    },
+    ".deployment-smoke/review-gateway-build.log": {
+      "sha256": "9f7c986d869493d56d87065d00e2f824d45d07173771e5cc9887f562ee7e03d0",
+      "bytes": 37,
+      "tail": [
+        "",
+        "> gateway@0.0.1 build",
+        "> nest build",
+        ""
+      ]
+    },
+    ".deployment-smoke/review-gateway-lint.log": {
+      "sha256": "d520105d45c56c562dc402c72311df2b41218f7793722cac2cb6076d55c5b9da",
+      "bytes": 730,
+      "tail": [
+        "",
+        "> gateway@0.0.1 lint:check",
+        "> ESLINT_USE_FLAT_CONFIG=false eslint \"src/**/*.ts\" --rule \"prettier/prettier: off\"",
+        "",
+        "(node:36513) ESLintRCWarning: You are using an eslintrc configuration file, which is deprecated and support will be removed in v10.0.0. Please migrate to an eslint.config.js file. See https://eslint.org/docs/latest/use/configure/migration-guide for details. An eslintrc configuration file is used because you have the ESLINT_USE_FLAT_CONFIG environment variable set to false. If you want to use an eslint.config.js file, remove the environment variable. If you want to find the location of the eslintrc configuration file, use the --debug flag.",
+        "(Use `node --trace-warnings ...` to show where the warning was created)"
+      ]
+    },
+    ".deployment-smoke/review-python-tests.log": {
+      "sha256": "1bf6edaaace7a6ce04bec4b860e83196fd7e0ed149ed05caaca2eb18371dc9d4",
+      "bytes": 217,
+      "tail": [
+        "",
+        "OK",
+        ".............",
+        "----------------------------------------------------------------------",
+        "Ran 13 tests in 0.622s",
+        "",
+        "OK"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "cwd": "cardano/onchain",
+      "command": "aiken build --deny --trace-level silent",
+      "result": "PASS; baseline blueprint unchanged"
+    },
+    {
+      "cwd": "cardano/onchain",
+      "command": "aiken check --deny -m 'host_state_stt.' -m 'spending_tendermint_update_session.' -m 'minting_tendermint_update_session.' -m migration_adversarial -m migration_packet --seed 462 --max-success 1000",
+      "result": {
+        "total": 243,
+        "passed": 243,
+        "failed": 0,
+        "kind": {
+          "unit": 220,
+          "property": 23
+        }
+      },
+      "propertyIterations": 1000
+    },
+    {
+      "command": "python3 scripts/ci/test-migration-guards.py --report NEW_REPORT",
+      "result": "PASS: five controls, 20 validator outcomes; each guard removal admits intended attack"
+    },
+    {
+      "command": "node scripts/ci/check-aiken-mutations.mjs NEW_REPORT",
+      "result": "PASS: four critical mutants killed after passing controls"
+    },
+    {
+      "cwd": "cardano/offchain",
+      "command": "MIGRATION_SUCCESSOR_V2_BLUEPRINT=<retained V2 blueprint> MIGRATION_SUCCESSOR_V3_BLUEPRINT=<retained V3 blueprint> deno task test:migration",
+      "result": "27 tests, 18 steps PASS; includes 16 generated compiled populations and 100 economic histories, seed 462"
+    },
+    {
+      "cwd": "cardano/offchain",
+      "command": "deno task test:deployment",
+      "result": "32 tests, 57 steps PASS"
+    },
+    {
+      "cwd": "cardano/offchain",
+      "command": "deno task check && deno task fmt:check && deno task lint",
+      "result": "PASS"
+    },
+    {
+      "cwd": "cardano/gateway",
+      "command": "npm run build && npm run lint:check",
+      "result": "PASS"
+    },
+    {
+      "cwd": "cardano/gateway",
+      "command": "BRIDGE_HISTORY_TEST_DATABASE_URL=<isolated local test database> npm test -- --runInBand",
+      "result": "140 suites, 1186 tests PASS, zero skipped"
+    },
+    {
+      "cwd": "packages/cardano-ibc-tx-builder-runtime",
+      "command": "npm run build && npm test",
+      "result": "96 tests PASS"
+    },
+    {
+      "command": "python3 scripts/ci/test-deployment-references.py && python3 scripts/ci/test-migration-evidence.py",
+      "result": "7 + 13 tests PASS"
+    },
+    {
+      "command": "actionlint .github/workflows/ci.yml",
+      "result": "PASS"
+    },
+    {
+      "command": "deno run --config cardano/offchain/deno.json --allow-read --allow-write --allow-env scripts/ci/measure-migration-operator.ts NEW_REPORT",
+      "result": "PASS; 8 full seeded operator migrations, N=2,8,32,128, cached and uncached; emulator timings, actual compiled validator evaluation"
+    },
+    {
+      "command": "deno run --allow-read --allow-env --allow-write --config cardano/offchain/deno.json scripts/ci/measure-migration-scaling.ts cardano/offchain/src/testing/protocol-10-local-cost-profile.json NEW_REPORT",
+      "result": "PASS: 15 actual compiled single-step measurements, original limits and active protocol-10 costs",
+      "maxima": {
+        "signedBytes": 4249,
+        "memory": 2622275,
+        "cpu": 847752944,
+        "fee": 1325694
+      }
+    }
+  ],
+  "ci": {
+    "candidate": {
+      "run": 35270195334,
+      "commit": "1f535ebbb1ec1798f53bfd401e9d94cd51ffeca2",
+      "ref": "feat/462-reviewed-recovery-rehearsal",
+      "status": "in progress; not acceptance"
+    },
+    "earlier": {
+      "run": 35262551511,
+      "commit": "73984e8c2cdb2db0097ad7c1f7030f182bfae3b2",
+      "status": "two-chain job in progress; critical mutation anchor and aggregate failures; not this candidate"
+    }
+  },
+  "independentReview": {
+    "scope": "approval/Begin authorization, authenticated inventory cache and incremental deletion",
+    "result": "No concrete findings in bounded static review; reviewer did not execute tests",
+    "excluded": "previously blocked submission-journal review was not retried"
+  },
+  "unverified": [
+    "Exact-current populated two-chain V1\u2192V2\u2192V3 completion: fresh run started, pending. Older local success is historical evidence only.",
+    "Real multi-node chain rollback and public-network recovery/finality latency.",
+    "Generated full production packet lifecycle/settlement combined with arbitrary partial migrations: generated economic histories are separate model evidence.",
+    "Ordinary transfer-root spending cause in turnover regression: continuation is seeded, unlike real HostState heartbeat.",
+    "Immediate emergency restriction is still absent. Immutable dependency/kernel bugs, arbitrary schema/policy changes and Mithril migration remain outside compatibility boundary.",
+    "Independent submission-journal review remains blocked."
+  ],
+  "executionNotes": [
+    "An initial Gateway run skipped the two PostgreSQL-gated suites; rerun with the isolated PostgreSQL URL passed all 1186 with zero skipped.",
+    "A root-continuation test fixture initially marked an Emulator output spent without removing its indexed entry; corrected to model the canonical UTxO set and rerun successfully.",
+    "Concurrent Deno processes briefly invalidated a vendored module link; final migration test run was sequential and passed.",
+    "Budget report rerun initially refused to overwrite its existing report; rerun to a fresh path passed.",
+    "The first Python unittest-discovery command matched no tests; both explicit Python test scripts were then run (7 and 13 passed)."
+  ]
+}
