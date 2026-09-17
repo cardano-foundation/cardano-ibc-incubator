@@ -16,9 +16,10 @@ use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/migration/auth as migration
 use ibc/migration/types.{
   Activate, Begin, Cancel, CancelRestoration, Counts, Emergency, MoveCore,
-  MoveEscrow, MoveTransferRoot, Moving, Propose, ProposeRestoration, Proposed,
-  Ready, Registry, RegistryRedeemer, Replace, Restoration, Restore, Restrict,
-  Rotate, RotateAuthority, host_role, transfer_role,
+  MoveEscrow, MoveTransferRoot, Moving, Propose, ProposeEmergencyRotation,
+  ProposeRestoration, Proposed, Ready, Registry, RegistryRedeemer, Replace,
+  Restoration, Restore, Restrict, Rotate, RotateAuthority, host_role,
+  transfer_role,
 }
 use ibc/utils/string
 use ibc/utils/validator_utils
@@ -157,7 +158,15 @@ validator implementation_registry {
             ..old.emergency,
             epoch: old.emergency.epoch + 1,
             mask,
-            restoration: None,
+            restoration: when old.emergency.restoration is {
+              Some(ticket) ->
+                if ticket.mask == None {
+                  Some(ticket)
+                } else {
+                  None
+                }
+              None -> None
+            },
           },
         }
       }
@@ -178,7 +187,34 @@ validator implementation_registry {
                 registry_nonce: old.nonce,
                 generation: old.current.generation,
                 epoch: old.emergency.epoch,
-                mask,
+                mask: Some(mask),
+                authority,
+                ready_at,
+                expires_at,
+              },
+            ),
+          },
+        }
+      }
+      // A compromised emergency quorum cannot veto its own delayed removal.
+      // This approval never changes permissions, even after new restrictions.
+      ProposeEmergencyRotation { authority, expires_at } -> {
+        expect control_only(transaction)
+        expect migration.authorized(old.governance, transaction)
+        expect migration.valid_authority(authority)
+        expect migration.separate_authorities(old.governance, authority)
+        let ready_at = valid_to + old.governance.delay_ms
+        expect expires_at > ready_at
+        new == Registry {
+          ..old,
+          emergency: Emergency {
+            ..old.emergency,
+            restoration: Some(
+              Restoration {
+                registry_nonce: old.nonce,
+                generation: old.current.generation,
+                epoch: old.emergency.epoch,
+                mask: None,
                 authority,
                 ready_at,
                 expires_at,
@@ -199,7 +235,15 @@ validator implementation_registry {
         expect control_only(transaction)
         expect Some(approval) = old.emergency.restoration
         expect
-          approval.registry_nonce == old.nonce && approval.generation == old.current.generation && approval.epoch == old.emergency.epoch
+          approval.registry_nonce == old.nonce && approval.generation == old.current.generation
+        let restored_mask =
+          when approval.mask is {
+            Some(mask) -> {
+              expect approval.epoch == old.emergency.epoch
+              mask
+            }
+            None -> old.emergency.mask
+          }
         expect
           validator_utils.get_tx_valid_from(transaction.validity_range) >= approval.ready_at && valid_to <= approval.expires_at
         expect
@@ -209,7 +253,7 @@ validator implementation_registry {
           emergency: Emergency {
             authority: approval.authority,
             epoch: old.emergency.epoch + 1,
-            mask: approval.mask,
+            mask: restored_mask,
             restoration: None,
           },
         }

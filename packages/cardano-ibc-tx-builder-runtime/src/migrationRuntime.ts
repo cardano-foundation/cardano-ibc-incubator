@@ -8,7 +8,7 @@ export class BridgeMigrationInProgressError extends Error {
 }
 
 export type MigrationRuntimeConfig = {
-  profile: 'cardano-ibc-compatible-v2';
+  profile: 'cardano-ibc-compatible-v3';
   registryUnit: string;
   registryAddress: string;
   generation: string;
@@ -27,7 +27,7 @@ export type MigrationRuntimeDeployment = {
 
 export function requireMigrationConfig(value: unknown): MigrationRuntimeConfig {
   const input = value as MigrationRuntimeConfig;
-  if (!input || input.profile !== 'cardano-ibc-compatible-v2' ||
+  if (!input || input.profile !== 'cardano-ibc-compatible-v3' ||
     !/^[0-9a-f]{58,120}$/.test(input.registryUnit) || !input.registryAddress ||
     !/^[1-9][0-9]*$/.test(input.generation) || !/^[0-9a-f]{64}$/.test(input.compatibility) ||
     !Array.isArray(input.originalAddresses) || input.originalAddresses.length !== 5 || input.originalAddresses.some((a) => typeof a !== 'string' || !a)) {

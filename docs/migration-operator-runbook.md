@@ -1,6 +1,6 @@
 # Compatible implementation migration operator runbook
 
-This feature supports fresh `cardano-ibc-compatible-v2` baselines and repeated successors of that baseline. An existing immutable bridge without this mechanism must be rejected. Copying its datum or redeploying the same channel names is not migration.
+This feature supports fresh `cardano-ibc-compatible-v3` baselines and repeated successors of that baseline. An existing immutable bridge without this mechanism must be rejected. Copying its datum or redeploying the same channel names is not migration.
 
 Release acceptance remains conditional on the evidence recorded in the migration implementation report. Do not use the local rehearsal clock images, public devnet keys, or test successor constraints on a public network.
 
@@ -171,3 +171,18 @@ deno task migrate:deployment restore --handler /artifacts/handler-v1.json \
 Mask 1 keeps all traffic/settlement/pruning paused while releasing handover. Mask 0 restores all otherwise phase-permitted operations. `--emergency-authority FILE` optionally binds a new explicit emergency signer/quorum configuration. Completing governance rotation revokes outgoing restoration approvals while retaining the mask. `cancel-restoration` requires governance signatures; another `restrict`, including the same mask, requires emergency signatures and revokes a pending restoration. Unsigned output is not containment: collect the declared signatures, submit it and inspect canonical state. A stale registry input needs a fresh transaction and signatures, not witness transplantation.
 
 The full rehearsal now requests `--exercise-rollback`: partition the owned five-pool devnet, include one move on the minority branch, wait past its validity interval, reconnect and require ledger-observed rollback before production resume. It records per-command wall time and canonical Begin-to-Activate slots/blocks. Merely adding this harness is not a successful run. It does not establish public-network finality or a production-size downtime envelope.
+
+### Replacing compromised emergency keys while preserving a hold
+
+Use `rotate-emergency` with the normal governance quorum, including during `Moving`. The approved ticket changes keys only; it never clears restrictions and cannot be revoked by another emergency restriction. Normal governance rotation/cancellation and source nonce/generation changes still invalidate it as specified. The existing approval delay remains mandatory.
+
+```sh
+deno task migrate:deployment rotate-emergency --handler /artifacts/handler-v1.json \
+  --emergency-authority /review/new-emergency-public-keys.json \
+  --expires-at "$EXPIRY_MS" --signers "$GOVERNANCE_SIGNERS" --out /review/key-rotation.cbor.json
+# Collect governance signatures and submit through the normal transaction workflow.
+# After inclusion and the unchanged governance delay:
+deno task migrate:deployment restore --handler /artifacts/handler-v1.json --submit
+```
+
+The key file contains exactly the reviewed `signers` and `quorum`. `rotate-emergency` rejects `--mask`. Inspect the authenticated registry after execution: all restriction bits and partial migration progress must remain intact. Restoring permissions afterward is a separate delayed `propose-restoration` approval. The profile is now `cardano-ibc-compatible-v3`: the ticket mask is explicitly optional; tooling rejects older disposable profiles instead of guessing their ABI.

@@ -12,7 +12,7 @@ function fixture(phase = 0, generation = 1n, mask = 0n) {
   const registryUnit = hash(9) + '6962635f696d706c656d656e746174696f6e5f7265676973747279';
   const compatibility = 'ab'.repeat(32);
   const deployment: MigrationRuntimeDeployment = {
-    migration: {profile: 'cardano-ibc-compatible-v2', registryUnit, registryAddress: scriptAddress(10), generation: '1', compatibility, originalAddresses: addresses},
+    migration: {profile: 'cardano-ibc-compatible-v3', registryUnit, registryAddress: scriptAddress(10), generation: '1', compatibility, originalAddresses: addresses},
     hostStateNFT: {policyId: hash(8), name: '6962635f686f73745f7374617465'},
     validators: {
       hostStateStt: {address: addresses[0]}, spendClient: {address: addresses[1]}, spendConnection: {address: addresses[2]},

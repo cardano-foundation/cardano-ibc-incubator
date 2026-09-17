@@ -23,7 +23,7 @@ import {
   readValidator,
 } from "./utils.ts";
 
-export const MIGRATION_PROFILE = "cardano-ibc-compatible-v2";
+export const MIGRATION_PROFILE = "cardano-ibc-compatible-v3";
 export type SuccessorBlueprint = {
   validators: Array<{ title: string; compiledCode: string }>;
 };

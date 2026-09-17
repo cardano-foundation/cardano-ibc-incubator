@@ -31,9 +31,10 @@ use ibc/migration/auth as migration
 use ibc/migration/types.{
   Activate, Authority, Begin, Cancel, CancelRestoration, Counts, Emergency,
   FixedIdentity, Governance, Implementation, MoveCore, MoveEscrow,
-  MoveTransferRoot, Moving, Proposal, Propose, ProposeRestoration, Proposed,
-  Ready, Registry, RegistryRedeemer, Replace, Restoration, Restore, Restrict,
-  Rotate, RotateAuthority, minimum_delay_ms, registry_token_name,
+  MoveTransferRoot, Moving, Proposal, Propose, ProposeEmergencyRotation,
+  ProposeRestoration, Proposed, Ready, Registry, RegistryRedeemer, Replace,
+  Restoration, Restore, Restrict, Rotate, RotateAuthority, minimum_delay_ms,
+  registry_token_name,
 }
 use ibc/utils/string
 use implementation_registry
@@ -1581,7 +1582,15 @@ fn restrict_case(old: Registry, mask: Int, signers: List<ByteArray>) -> Case {
         ..old.emergency,
         mask,
         epoch: old.emergency.epoch + 1,
-        restoration: None,
+        restoration: when old.emergency.restoration is {
+          Some(ticket) ->
+            if ticket.mask == None {
+              Some(ticket)
+            } else {
+              None
+            }
+          None -> None
+        },
       },
     },
     Restrict { mask },
@@ -1685,7 +1694,7 @@ fn restoration_proposal() -> Case {
             registry_nonce: old.nonce,
             generation: 1,
             epoch: 1,
-            mask: 0,
+            mask: Some(0),
             authority,
             ready_at,
             expires_at,
@@ -1900,4 +1909,146 @@ test emergency_transfer_retirement_stays_disabled_after_size_optimization() {
     ref(2),
     tx,
   )
+}
+
+// The independently constructed expected continuation preserves every phase,
+// inventory counter and restriction while replacing only emergency authority.
+fn emergency_rotation_proposal(source: Registry) -> Case {
+  let authority = Authority { signers: [hash(998)], quorum: 1 }
+  let old =
+    Registry { ..source, emergency: Emergency { ..source.emergency, mask: 9 } }
+  let ticket =
+    Restoration {
+      registry_nonce: old.nonce,
+      generation: old.current.generation,
+      epoch: old.emergency.epoch,
+      mask: None,
+      authority,
+      ready_at,
+      expires_at,
+    }
+  transition(
+    old,
+    Registry {
+      ..old,
+      emergency: Emergency { ..old.emergency, restoration: Some(ticket) },
+    },
+    ProposeEmergencyRotation { authority, expires_at },
+    [],
+    [],
+    1000,
+    approval_upper,
+    [hash(11), hash(12)],
+  )
+}
+
+fn emergency_rotation_after_repeated_restrictions(source: Registry) -> Case {
+  let proposal = emergency_rotation_proposal(source)
+  expect run(proposal)
+  let first = restrict_case(new_registry(proposal), 9, [hash(999)])
+  expect run(first)
+  let second = restrict_case(new_registry(first), 15, [hash(999)])
+  expect run(second)
+  let old = new_registry(second)
+  let new =
+    Registry {
+      ..old,
+      emergency: Emergency {
+        authority: Authority { signers: [hash(998)], quorum: 1 },
+        epoch: old.emergency.epoch + 1,
+        mask: 15,
+        restoration: None,
+      },
+    }
+  transition(old, new, Restore, [], [], ready_at, execution_upper, [])
+}
+
+test emergency_authority_removal_survives_restrictions_ready() {
+  run(emergency_rotation_after_repeated_restrictions(initial()))
+}
+
+test emergency_authority_removal_survives_restrictions_during_delay() {
+  run(emergency_rotation_after_repeated_restrictions(approved(proposal())))
+}
+
+test emergency_authority_removal_survives_restrictions_moving() {
+  run(
+    emergency_rotation_after_repeated_restrictions(
+      moving(zeros(), tree.empty_hash, False),
+    ),
+  )
+}
+
+test emergency_removed_authority_cannot_restrict() fail {
+  let case = emergency_rotation_after_repeated_restrictions(initial())
+  expect run(case)
+  run(restrict_case(new_registry(case), 15, [hash(999)]))
+}
+
+test emergency_incoming_authority_can_restrict() {
+  let case = emergency_rotation_after_repeated_restrictions(initial())
+  expect run(case)
+  run(restrict_case(new_registry(case), 15, [hash(998)]))
+}
+
+test emergency_authority_only_rotation_cannot_loosen() fail {
+  let case = emergency_rotation_after_repeated_restrictions(initial())
+  expect run(case)
+  let destination = new_registry(case)
+  run(
+    with_registry_output(
+      case,
+      Registry {
+        ..destination,
+        emergency: Emergency { ..destination.emergency, mask: 0 },
+      },
+    ),
+  )
+}
+
+test emergency_authority_only_rotation_cannot_change_phase() fail {
+  let case =
+    emergency_rotation_after_repeated_restrictions(
+      moving(zeros(), tree.empty_hash, False),
+    )
+  expect run(case)
+  run(
+    with_registry_output(case, Registry { ..new_registry(case), phase: Ready }),
+  )
+}
+
+test emergency_authority_only_rotation_cannot_execute_early() fail {
+  let case = emergency_rotation_after_repeated_restrictions(initial())
+  expect run(case)
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        validity_range: interval.between(1000, 2000),
+      },
+    },
+  )
+}
+
+test emergency_authority_only_rotation_requires_governance() fail {
+  let case = emergency_rotation_proposal(initial())
+  expect run(case)
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        extra_signatories: [hash(999)],
+      },
+    },
+  )
+}
+
+test emergency_authority_only_rotation_rejects_stale_generation() fail {
+  let case = emergency_rotation_after_repeated_restrictions(initial())
+  expect run(case)
+  let old = Registry { ..case.old, current: implementation(2) }
+  let new = Registry { ..new_registry(case), current: old.current }
+  run(case |> with_registry_input(old) |> with_registry_output(new))
 }
