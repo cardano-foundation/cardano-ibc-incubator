@@ -127,6 +127,10 @@ jobs:
             .deployment-smoke/**/deployment.log
             .deployment-smoke/**/deployment-plan.json
             .deployment-smoke/**/deployment-cost-report.json
+            .deployment-smoke/**/funding-transaction.json
+            .deployment-smoke/**/funding-confirmed.json
+            .deployment-smoke/**/baseline-failure-observations.json
+            .deployment-smoke/**/baseline-failure-services.log
             .deployment-smoke/**/reference-preflight-*.json
             .deployment-smoke/**/startup-diagnostics-*.log
             .deployment-smoke/**/result.json

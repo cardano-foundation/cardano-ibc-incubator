@@ -534,7 +534,9 @@ jobs:
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Includes three compiled implementations and full-validator guard mutants.
+    # The prior 20-minute limit canceled the last controls after passing tests.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout

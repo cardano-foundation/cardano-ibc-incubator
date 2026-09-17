@@ -22,6 +22,16 @@ runtime = load('migration-runtime')
 
 
 class References(unittest.TestCase):
+    def test_funding_requires_the_same_live_outref_amount_and_address(self):
+        indexed = [{'transaction_id': 'aa', 'output_index': 0, 'address': 'wallet', 'value': {'coins': 100_000_000_000}}]
+        ledger = {'aa#0': {'address': 'wallet', 'value': {'lovelace': 100_000_000_000}}}
+        self.assertTrue(deployment.confirmed_wallet_funding('wallet', indexed, ledger))
+        for incorrect in [{}, {'bb#0': ledger['aa#0']}, {'aa#0': {'address': 'other', 'value': {'lovelace': 100_000_000_000}}},
+                          {'aa#0': {'address': 'wallet', 'value': {'lovelace': 99_999_999_999}}}]:
+            self.assertFalse(deployment.confirmed_wallet_funding('wallet', indexed, incorrect))
+        with self.assertRaisesRegex(ValueError, 'Duplicate'):
+            deployment.confirmed_wallet_funding('wallet', indexed * 2, ledger)
+
     def fixture(self):
         unit = {'txHash': 'ab' * 32, 'outputIndex': 0, 'address': 'holder', 'scriptRef': {'type': 'PlutusV3', 'script': '43420100'}}
         plan = {'referenceValidators': [{'script': {'type': 'PlutusV3', 'script': '420100'}, 'hash': 'cd' * 28}]}
