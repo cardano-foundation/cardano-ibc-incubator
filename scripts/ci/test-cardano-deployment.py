@@ -40,6 +40,20 @@ def configure_migration_witness(node):
     node["ports"] = ["127.0.0.1:23001:3001"]
 
 
+def confirmed_wallet_funding(wallet, indexed, ledger, minimum=100_000_000_000):
+    indexed_refs = {f"{u['transaction_id']}#{u['output_index']}": u for u in indexed}
+    if len(indexed_refs) != len(indexed):
+        raise ValueError('Duplicate indexed funding outref')
+    confirmed = 0
+    for key, found in indexed_refs.items():
+        actual = ledger.get(key)
+        if found.get('spent_at') is not None or found['address'] != wallet:
+            raise ValueError('Invalid indexed funding custody')
+        if actual and actual['address'] == wallet and actual['value']['lovelace'] == found['value']['coins']:
+            confirmed += actual['value']['lovelace']
+    return confirmed >= minimum
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--docker-context")
@@ -57,6 +71,7 @@ def main():
     parser.add_argument("--clock-offset-seconds", type=int, default=0, help="Disposable devnet process-clock offset; never changes the host clock")
     parser.add_argument("--epoch-length", type=int, help="Fresh disposable genesis only; use 432000 for the two-day migration rehearsal")
     parser.add_argument("--host-data", action="store_true", help="Fresh runtime only: keep database volumes in its host data directory; sockets remain Linux volumes")
+    parser.add_argument("--through-funding", action="store_true", help="Diagnostic rehearsal only: stop after confirming disposable deployer funding; do not deploy a bridge")
     args = parser.parse_args()
     if bool(args.compose) != bool(args.project):
         parser.error("--compose and --project must be supplied together")
@@ -246,8 +261,24 @@ def main():
             txin = max(faucet_utxos, key=lambda ref: faucet_utxos[ref]["value"]["lovelace"])
             cli("conway", "transaction", "build", "--change-address", faucet, "--tx-in", txin, "--tx-out", wallet + "+100000000000", "--out-file", "/runtime/deployment-funding.body", "--testnet-magic", "42")
             cli("conway", "transaction", "sign", "--tx-body-file", "/runtime/deployment-funding.body", "--signing-key-file", "/runtime/credentials/faucet.sk", "--out-file", "/runtime/deployment-funding.signed", "--testnet-magic", "42")
+            # Signed public transaction bytes are evidence, never signing keys.
+            shutil.copy2(runtime / 'deployment-funding.signed', artifacts / 'funding-transaction.json')
+            funding_hash = cli("conway", "transaction", "txid", "--tx-file", "/runtime/deployment-funding.signed")
+            print(f"Submitting disposable faucet funding {funding_hash}", flush=True)
             cli("conway", "transaction", "submit", "--tx-file", "/runtime/deployment-funding.signed", "--testnet-magic", "42")
-            wait_for("deployer funding", lambda: sum(output["value"]["coins"] for output in wallet_outputs()) >= 100_000_000_000)
+        def canonical_funding():
+            indexed = wallet_outputs()
+            if sum(output['value']['coins'] for output in indexed) < 100_000_000_000:
+                return None
+            ledger = json.loads(cli('conway', 'query', 'utxo', '--address', wallet, '--output-json', '--testnet-magic', '42'))
+            return {'indexed': indexed, 'ledger': ledger} if confirmed_wallet_funding(wallet, indexed, ledger) else None
+        funding = wait_for('deployer funding in both the ledger and Kupo', canonical_funding)
+        (artifacts / 'funding-confirmed.json').write_text(json.dumps({'project': project, 'wallet': wallet, **funding}) + '\n')
+        if args.through_funding:
+            (artifacts / 'funding-ready.json').write_text(json.dumps({'project': project, 'wallet': wallet,
+                **funding,
+                'scope': 'Disposable funding diagnostic; no bridge deployed'}) + '\n')
+            return
         # The checked-in default is a public local-devnet key. Never print it or
         # put it in command arguments; the child reads it from its environment.
         env = dict(os.environ)
@@ -309,6 +340,33 @@ def main():
         result = {"project": project, "networkRuntime": str(runtime_root), "artifacts": str(artifacts), "blueprintSha256": blueprint_sha256, "protocolVersion": parameters["protocolVersion"], "limits": actual_limits, "references": len(expected), "transactions": len(transactions), "largestSignedTransactionBytes": max(tx["signedSizeBytes"] for tx in transactions), "poolCount": args.pool_count, "clockOffsetSeconds": args.clock_offset_seconds}
         (artifacts / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result, indent=2), flush=True)
+    except BaseException:
+        # Record both ledger and indexer observations before the runner/project
+        # disappears. No environment, private credentials or chain homes.
+        observations = {}
+        commands = {'containers': compose + ['ps', '--format', 'json']}
+        for service in ['node', *[f'spo{i}' for i in range(2, args.pool_count + 1)]]:
+            commands['tip-' + service] = compose + ['exec', '-T', service, 'cardano-cli', 'conway', 'query', 'tip', '--testnet-magic', '42']
+        if 'wallet' in locals():
+            commands['wallet-ledger'] = compose + ['exec', '-T', 'node', 'cardano-cli', 'conway', 'query', 'utxo', '--address', wallet, '--output-json', '--testnet-magic', '42']
+        for name, command in commands.items():
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+                observations[name] = {'exitCode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
+            except Exception as error: observations[name] = {'error': str(error)}
+        if 'kupo' in locals():
+            for name, url in [('kupo-health', kupo + '/health'), ('ogmios-health', ogmios + '/health'),
+                              *([('wallet-indexed', kupo + '/matches/' + wallet + '?unspent')] if 'wallet' in locals() else [])]:
+                try: observations[name] = get_json(url)
+                except Exception as error: observations[name] = {'error': str(error)}
+        (artifacts / 'baseline-failure-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
+        try:
+            logs = subprocess.run(compose + ['logs', '--no-color', '--tail', '3000', 'node', 'ogmios', 'kupo',
+                *[f'spo{i}' for i in range(2, args.pool_count + 1)]], capture_output=True, text=True, timeout=30)
+            (artifacts / 'baseline-failure-services.log').write_text(logs.stdout + logs.stderr)
+        except Exception:
+            pass
+        raise
     finally:
         if args.cleanup:
             run(compose + ["down", "--volumes"])

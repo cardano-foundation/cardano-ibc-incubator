@@ -14,7 +14,10 @@ else
   export FAKETIME="$((target_seconds - current_seconds))s"
 fi
 
-for faketime_lib in /usr/lib/*/faketime/libfaketime.so.1; do
+# Cardano is a multithreaded process. The MT library synchronizes the cached
+# clock state, including reloads of the shared offset file.
+# https://github.com/wolfcw/libfaketime#readme (pthreads compatibility)
+for faketime_lib in /usr/lib/*/faketime/libfaketimeMT.so.1; do
   if [ -r "$faketime_lib" ]; then
     export LD_PRELOAD="$faketime_lib"
     break
