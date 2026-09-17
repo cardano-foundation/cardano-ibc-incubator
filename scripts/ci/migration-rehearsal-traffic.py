@@ -107,9 +107,12 @@ def require_failed_before_build(log):
         try: rows.append(json.loads(line))
         except ValueError: continue
     outcomes = [row for row in rows if row.get('status') in ['success', 'error']]
-    require(outcomes and outcomes[-1].get('status') == 'error' and
-            'failed querying latest status of the destination chain' in str(outcomes[-1].get('result', '')),
-            'Only the explicitly identified application-status read failure can be retried')
+    result = str(outcomes[-1].get('result', '')) if outcomes else ''
+    read_failure = ('failed querying latest status of the destination chain' in result or
+                    ('link initialization failed during channel counterparty verification' in result and
+                     'failed during a query to chain' in result))
+    require(outcomes and outcomes[-1].get('status') == 'error' and read_failure,
+            'Only an explicitly identified application-status or channel-initialization read failure can be retried')
     messages = '\n'.join(str(row.get('fields', {}).get('message', '')) for row in rows).lower()
     require(not any(marker in messages for marker in ['unsigned', 'signed transaction', 'trusted node accepted',
             'transaction submitted', 'broadcast', 'checkpoint committed', 'assembled batch', 'submitted']),

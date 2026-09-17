@@ -119,6 +119,8 @@ class PacketEvidence(unittest.TestCase):
     def test_read_failure_retry_refuses_any_build_or_submission_evidence(self):
         failed = json.dumps({'status': 'error', 'result': 'failed querying latest status of the destination chain: query_header failed'})
         traffic.require_failed_before_build(failed)
+        traffic.require_failed_before_build(json.dumps({'status': 'error', 'result':
+            "link initialization failed during channel counterparty verification: failed during a query to chain 'cardano-devnet': Not found: UTxO"}))
         for message in ['Building unsigned transaction', 'Trusted node accepted transaction', 'Transaction submitted',
                         'probabilistic checkpoint committed', 'assembled batch of 3 messages', 'broadcast failed']:
             with self.subTest(message=message), self.assertRaisesRegex(RuntimeError, 'constructed or submitted'):
