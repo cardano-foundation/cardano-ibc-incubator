@@ -20,10 +20,24 @@ import tempfile
 import time
 import urllib.request
 import uuid
+import importlib.util
+
+_reference_spec = importlib.util.spec_from_file_location("deployment_references", Path(__file__).with_name("deployment-references.py"))
+_references = importlib.util.module_from_spec(_reference_spec)
+_reference_spec.loader.exec_module(_references)
 
 ROOT = Path(__file__).resolve().parents[2]
 OFFCHAIN = ROOT / "cardano/offchain"
 LIMITS = {"maxTxSize": 16384, "memory": 16500000, "steps": 10000000000}
+
+
+def configure_relative_clock(node, runtime, offset):
+    (runtime / "migration-clock.rc").write_text(f"{offset:+d}s\n")
+    node["environment"]["CARDANO_LOCAL_CLOCK_FILE"] = "/runtime/migration-clock.rc"
+
+
+def configure_migration_witness(node):
+    node["ports"] = ["127.0.0.1:23001:3001"]
 
 
 def main():
@@ -167,7 +181,9 @@ def main():
         if args.clock_offset_seconds:
             run(docker + ["build", "-t", "cardano-ibc-462-node-clock", "-f", str(ROOT / "chains/cardano/Dockerfile.local-clock"), str(ROOT / "chains/cardano")])
             node["image"] = "cardano-ibc-462-node-clock"
-            node["environment"]["CARDANO_LOCAL_CLOCK_TARGET"] = datetime.datetime.fromtimestamp(start + 30, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            # A fixed target rewinds time every time a container restarts. A
+            # persistent relative offset keeps all producers on the same clock.
+            configure_relative_clock(node, runtime, args.clock_offset_seconds)
         if args.pool_count > 1:
             config["networks"] = {"default": {"ipam": {"config": [{"subnet": str(subnet)}]}}}
             node["networks"] = {"default": {"ipv4_address": str(subnet.network_address + 101)}}
@@ -182,6 +198,10 @@ def main():
                     "CARDANO_SHELLEY_OPERATIONAL_CERTIFICATE": f"/runtime/{name}/opcert.cert"})
                 config["services"][name] = extra
                 config["volumes"].update({f"{name}-socket": {}, f"{name}-db": {}})
+        if args.migration_baseline:
+            # Configure before deployment; service augmentation must not recreate
+            # the node that has just confirmed the publication transactions.
+            configure_migration_witness(node)
         if args.host_data:
             data_root = runtime_root / 'data'
             data_root.mkdir(mode=0o700)
@@ -280,6 +300,8 @@ def main():
             observed = {output["script_hash"] for output in published if output.get("script_hash")}
             return published if observed == expected else None
         wait_for("all planned reference publications in Kupo", complete_reference_inventory)
+        _references.inspect_references(json.loads(manifest.read_text()), plan, compose, kupo,
+                                       artifacts / 'reference-preflight-deployed.json')
         report = json.loads(cost_path.read_text())
         transactions = report["transactions"]
         if any(tx["signedSizeBytes"] > LIMITS["maxTxSize"] for tx in transactions):

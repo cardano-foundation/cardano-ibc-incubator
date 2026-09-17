@@ -20,6 +20,7 @@ import {
   buildReferenceBatchTx,
   buildRegistryBootstrapTx,
   completeReferenceBatchTx,
+  verifyReferencePublications,
 } from "./deployment-transactions.ts";
 import { ensureDir } from "@std/fs";
 import {
@@ -1673,6 +1674,7 @@ async function createReferenceUtxos(
       }
 
       const txHash = signedTx.toHash();
+      let observedReferences: UTxO[] | undefined;
       for (
         let attempt = 1;
         attempt <= REFERENCE_UTXO_ADOPTION_ATTEMPTS;
@@ -1710,7 +1712,16 @@ async function createReferenceUtxos(
                   validatorToScriptHash(utxo.scriptRef) === hash
                 )
               )
-            ) break;
+            ) {
+              observedReferences = verifyReferencePublications(
+                txHash,
+                referenceAddress,
+                batch.validators,
+                derivedOutputs,
+                published,
+              );
+              break;
+            }
             if (Date.now() >= adoptionDeadline) {
               throw new Error(
                 `Timed out waiting for canonical reference outputs ${txHash}`,
@@ -1795,7 +1806,10 @@ async function createReferenceUtxos(
         txHash,
       );
 
-      for (const output of derivedOutputs) {
+      if (!observedReferences) {
+        throw new Error(`Missing observed reference publications ${txHash}`);
+      }
+      for (const output of observedReferences) {
         if (!output.scriptRef) {
           continue;
         }

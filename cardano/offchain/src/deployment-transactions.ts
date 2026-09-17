@@ -4,8 +4,46 @@ import {
   type MintingPolicy,
   type Script,
   type UTxO,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import { Registry } from "../types/plutus/Migration.ts";
+
+/** Persist observed publications only after matching the exact signed outputs. */
+export function verifyReferencePublications(
+  txHash: string,
+  address: string,
+  validators: Script[],
+  derived: UTxO[],
+  observed: UTxO[],
+): UTxO[] {
+  return validators.map((validator) => {
+    const hash = validatorToScriptHash(validator);
+    const matches = (outputs: UTxO[]) =>
+      outputs.filter((utxo) =>
+        utxo.scriptRef && validatorToScriptHash(utxo.scriptRef) === hash
+      );
+    const expected = matches(derived);
+    const published = matches(observed);
+    if (expected.length !== 1 || published.length !== 1) {
+      throw new Error(
+        `Reference ${hash} has no unique signed and observed output`,
+      );
+    }
+    const [a] = expected, [b] = published;
+    if (
+      a.txHash !== txHash || b.txHash !== txHash ||
+      a.outputIndex !== b.outputIndex || a.address !== address ||
+      b.address !== address || (a.datum ?? null) !== (b.datum ?? null) ||
+      Object.keys(a.assets).length !== Object.keys(b.assets).length ||
+      Object.entries(a.assets).some(([unit, amount]) =>
+        b.assets[unit] !== amount
+      )
+    ) {
+      throw new Error(`Reference ${hash} differs from its signed publication`);
+    }
+    return b;
+  });
+}
 
 export function buildRegistryBootstrapTx(lucid: LucidEvolution, input: {
   nonce: UTxO;

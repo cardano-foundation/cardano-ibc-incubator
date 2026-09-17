@@ -16,6 +16,7 @@ const tx_builder_1 = require("@cardano-ibc/tx-builder");
 const trace_registry_1 = require("@cardano-ibc/trace-registry");
 const ws_1 = __importDefault(require("ws"));
 const asyncMutex_1 = require("./asyncMutex");
+const executionBudget_1 = require("./executionBudget");
 const ibcStateRoot_1 = require("./ibcStateRoot");
 const consensusHistoryKupo_1 = require("./consensusHistoryKupo");
 const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
@@ -735,8 +736,8 @@ function mapOgmiosProtocolParameters(result) {
         govActionDeposit: lovelaceValue(result.governanceActionDeposit),
         priceMem: parseOgmiosRatio(result.scriptExecutionPrices?.memory, 'scriptExecutionPrices.memory'),
         priceStep: parseOgmiosRatio(result.scriptExecutionPrices?.cpu, 'scriptExecutionPrices.cpu'),
-        maxTxExMem: BigInt(result.maxExecutionUnitsPerTransaction?.memory ?? 0),
-        maxTxExSteps: BigInt(result.maxExecutionUnitsPerTransaction?.cpu ?? 0),
+        maxTxExMem: (0, executionBudget_1.parseExecutionLimit)(result.maxExecutionUnitsPerTransaction?.memory, 'memory'),
+        maxTxExSteps: (0, executionBudget_1.parseExecutionLimit)(result.maxExecutionUnitsPerTransaction?.cpu, 'cpu'),
         coinsPerUtxoByte: BigInt(coinsPerUtxoByte),
         collateralPercentage: result.collateralPercentage,
         maxCollateralInputs: result.maxCollateralInputs,
@@ -903,6 +904,13 @@ async function retryWithBackoff(operation, wait = (durationMs) => new Promise((r
 async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, headers, fetchImpl = fetch) {
     const Lucid = await timed(logger, '[context]', 'import lucid', () => eval(`import('@lucid-evolution/lucid')`));
     const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, withKupoStringQuantityHeader(headers));
+    const evaluateOnLedger = provider.evaluateTx.bind(provider);
+    // This runtime builds one transaction from live UTxOs, not an unconfirmed
+    // chain. Resolve every input/reference from the node's ledger. Besides
+    // rejecting stale or invented inputs, this avoids Ogmios's older explicit
+    // JSON script decoder: it checks at the language's introduction version.
+    // Do not retry with operator-supplied UTxOs or a local evaluator on failure.
+    provider.evaluateTx = (transaction) => evaluateOnLedger(transaction);
     const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => queryProtocolParametersCompat(ogmiosEndpoint, headers?.ogmiosHeader, fetchImpl))));
     const lucid = await timed(logger, '[context]', 'create lucid runtime', () => Lucid.Lucid(provider, cardanoNetwork, {
         presetProtocolParameters: protocolParameters,
@@ -1253,11 +1261,20 @@ function createTxBuilderRuntime(config) {
             context.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
             context.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, 'sendPacket');
             const completedUnsignedTx = await timed(logger, scope, 'complete unsigned tx', () => unsignedTx.validFrom(validFromTime).validTo(validToTime).complete({
-                localUPLCEval: true,
+                // Standalone SDK consumers use their configured ledger evaluator.
+                // Their npm graph need not contain the repository's patched local
+                // evaluator; never fall back to an older cost-model implementation.
+                localUPLCEval: false,
                 setCollateral: TRANSACTION_SET_COLLATERAL,
             }));
+            // Ogmios evaluation does not perform every phase-one ledger check. Check
+            // final (including Lucid's budget margin) aggregate units against fresh
+            // ledger limits, not just each evaluator result or cached startup limits.
+            const executionLimits = await timed(logger, scope, 'fetch ledger execution limits', () => queryProtocolParametersCompat(context.ogmiosEndpoint, context.kupmiosHeaders?.ogmiosHeader, config.fetchImpl ?? fetch));
+            const transaction = completedUnsignedTx.toTransaction();
+            (0, executionBudget_1.assertExecutionBudget)(transaction.witness_set().redeemers(), executionLimits);
             const unsignedTxCbor = completedUnsignedTx.toCBOR();
-            const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
+            const feeLovelace = transaction.body().fee().toString();
             logger.log(`${scope} prepared unsigned Cardano transfer in ${elapsedMs(buildStartedAt)}`);
             return {
                 result: 0,
