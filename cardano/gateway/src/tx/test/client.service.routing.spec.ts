@@ -114,4 +114,12 @@ describe('light-client request routing', () => {
       'Duplicate light-client handler',
     );
   });
+
+  it.each([7, 55])('accepts a client type with %i characters', (length) => {
+    expect(() => new ClientService([handler('a'.repeat(length))])).not.toThrow();
+  });
+
+  it.each([6, 56])('rejects a client type with %i characters that cannot cover the IBC ID range', (length) => {
+    expect(() => new ClientService([handler('a'.repeat(length))])).toThrow('Invalid light-client handler registration');
+  });
 });

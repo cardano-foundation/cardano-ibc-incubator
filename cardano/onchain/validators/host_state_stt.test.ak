@@ -64,6 +64,7 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/testing/client_registry_fixtures.{RegistryCase}
 use ibc/testing/fuzz_dsl
 use ibc/utils/bits
 
@@ -5108,7 +5109,6 @@ fn capacity_receipt_count() -> Fuzzer<Int> {
 // Two registered types coexist under the same host. Only the selected type's
 // policy, spending script and IBC identifier may authorize its new commitment.
 fn create_alternate_registered_client(commitment_id: ByteArray) -> Bool {
-  let seed = 613
   let first =
     registry.legacy("mock client policy", test_client_script_hash(), "proof-a")
   let second =
@@ -5120,7 +5120,34 @@ fn create_alternate_registered_client(commitment_id: ByteArray) -> Bool {
       ),
       client_type: "99-test",
     }
-  let token = AuthToken { ..test_client_token(), policy_id: second.mint_policy }
+  create_registered_client(
+    RegistryCase {
+      first,
+      second,
+      sequence: "0",
+      sequence_number: 0,
+      reverse: False,
+      reverse_references: False,
+    },
+    commitment_id,
+  )
+}
+
+fn create_registered_client(
+  sample: RegistryCase,
+  commitment_id: ByteArray,
+) -> Bool {
+  let seed = sample.sequence_number + 613
+  let second = sample.second
+  let token =
+    AuthToken {
+      policy_id: second.mint_policy,
+      name: auth.generate_token_name(
+        AuthToken { policy_id: test_nft_policy(), name: host_state_token_name },
+        client_id_keys.client_prefix,
+        sample.sequence,
+      ),
+    }
   let client = ClientDatum { ..test_client_datum(1, seed), token }
   let state_key = client_keys.full_client_state_path(commitment_id)
   let consensus_key =
@@ -5145,12 +5172,16 @@ fn create_alternate_registered_client(commitment_id: ByteArray) -> Bool {
       cbor.serialise(test_consensus_state(seed)),
       consensus_state_siblings,
     )
-  let old_state = test_host_state(empty_ibc_state_root, seed)
+  let old_state =
+    HostState {
+      ..test_host_state(empty_ibc_state_root, seed),
+      next_client_sequence: sample.sequence_number,
+    }
   let new_state =
     HostState {
       ..old_state,
       version: old_state.version + 1,
-      next_client_sequence: 1,
+      next_client_sequence: sample.sequence_number + 1,
       ibc_state_root: new_root,
     }
   let client_output =
@@ -5160,7 +5191,7 @@ fn create_alternate_registered_client(commitment_id: ByteArray) -> Bool {
     }
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
-    [first, second],
+    client_registry_fixtures.registrations(sample),
     test_connection_script_hash(),
     test_channel_script_hash(),
     "mock client policy",
@@ -5184,4 +5215,39 @@ test registered_client_creation_commits_the_selected_types_identifier() {
 
 test registered_client_creation_rejects_a_different_types_commitment() fail {
   create_alternate_registered_client("07-tendermint-0")
+}
+
+test prop_host_registered_client_commits_exact_namespace(
+  sample via registered_client_cases(),
+) {
+  fuzz.label(@"fuzz.contract.host.client_registry.valid_namespace")
+  create_registered_client(
+    sample,
+    registry.identifier(sample.second, sample.sequence),
+  )
+}
+
+test prop_host_registered_client_rejects_other_namespace(
+  sample via registered_client_cases(),
+) fail {
+  fuzz.label(@"fuzz.contract.host.client_registry.invalid_namespace")
+  create_registered_client(
+    sample,
+    registry.identifier(sample.first, sample.sequence),
+  )
+}
+
+fn registered_client_cases() -> Fuzzer<client_registry_fixtures.RegistryCase> {
+  let suffix <- fuzz.and_then(fuzz.int_between(0, 65535))
+  let sequence <- fuzz.and_then(fuzz.int_between(0, 99999999))
+  let seed <- fuzz.and_then(fuzz.bytearray())
+  let reverse <- fuzz.and_then(fuzz.bool())
+  let reverse_references <- fuzz.map(fuzz.bool())
+  client_registry_fixtures.registry_case(
+    suffix,
+    sequence,
+    seed,
+    reverse,
+    reverse_references,
+  )
 }

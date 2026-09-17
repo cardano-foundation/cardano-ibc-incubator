@@ -19,6 +19,9 @@ export class ClientService {
   constructor(@Inject(LIGHT_CLIENT_HANDLERS) handlers: readonly LightClientHandler[]) {
     for (const handler of handlers) {
       if (
+        // Match deployment registration limits for the IBC ID and token suffix.
+        handler.clientType.length < 7 ||
+        handler.clientType.length > 55 ||
         !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(handler.clientType) ||
         !handler.clientStateTypeUrl ||
         !handler.consensusStateTypeUrl ||
