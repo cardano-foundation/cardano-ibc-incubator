@@ -1,12 +1,6 @@
 {
+  "minIterations": 1000,
   "minCount": 100,
-  "minPercentBps": 50,
-  "allowedKindPrefixes": [
-    "fuzz"
-  ],
-  "allowedDepthPrefixes": [
-    "model"
-  ],
   "requiredLabels": [
     "fuzz.model.migration.send",
     "fuzz.model.migration.receive",
@@ -21,5 +15,13 @@
     "fuzz.model.migration.reject-receipt-omission",
     "fuzz.model.migration.reject-acknowledgement-omission",
     "fuzz.model.migration.reject-proof-floor-mutation"
-  ]
+  ],
+  "distributions": {
+    "prop_migration_packet_handover_rejects_claim_mutation": {
+      "fuzz.model.migration.reject-commitment-omission": 1000,
+      "fuzz.model.migration.reject-receipt-omission": 1000,
+      "fuzz.model.migration.reject-acknowledgement-omission": 1000,
+      "fuzz.model.migration.reject-proof-floor-mutation": 1000
+    }
+  }
 }

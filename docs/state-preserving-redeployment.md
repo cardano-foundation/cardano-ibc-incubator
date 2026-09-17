@@ -2,6 +2,8 @@
 
 Implementation work for #462 starts from `fde2635138f60f6d14954b2f91e4a001b74c12a2` on `feat/462-state-preserving-redeployment`. The unrelated `feat/host-state-full-key-trie` worktree is not part of this change.
 
+The implementation was subsequently rebased onto main at `30aa394aa4616f4327a6a34bbbaea1e0eb58ecf5`. The pushed archive branch `archive/462-pre-rebase-018532b51` retains the original history and the source commits referenced by earlier rehearsal evidence.
+
 This document specifies the implementation boundary. Validation results are recorded separately; a requirement here is not evidence that it has passed.
 
 ## Compatibility and authority

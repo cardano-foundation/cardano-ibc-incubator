@@ -34,7 +34,8 @@ jobs:
       workflow: .github/workflows/ci.yml
 
   populated-migration:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.populated_migration }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && github.event_name == 'workflow_dispatch' && inputs.populated_migration }}
+    needs: docs-update
     uses: ./.github/workflows/migration-rehearsal.yml
     permissions:
       contents: read
@@ -617,8 +618,9 @@ jobs:
       - name: Check independent migration packet model and transition coverage
         working-directory: cardano/onchain
         run: |
+          aiken check --deny -m migration_packet_ --seed 462 --max-success 1 --property-coverage relative-to-tests > ../../migration-packet-smoke.json
           aiken check --deny -m migration_packet_ --seed 462 --max-success 1000 --property-coverage relative-to-tests > ../../migration-packet-model.json
-          node ../../scripts/ci/check-aiken-fuzz-coverage.mjs ../../migration-packet-model.json scripts/ci/aiken-migration-required-labels.json
+          node ../../scripts/ci/check-aiken-fuzz-coverage.mjs ../../migration-packet-model.json ../../migration-packet-smoke.json ../../scripts/ci/aiken-migration-required-labels.json
 
       - name: Upload migration guard evidence
         if: always()
@@ -628,6 +630,7 @@ jobs:
           path: |
             migration-guard-controls.json
             migration-packet-model.json
+            migration-packet-smoke.json
             migration-scaling.json
 
   deno-funds:

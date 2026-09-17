@@ -51,6 +51,9 @@ type Model {
     timeout_count: Int,
     receive_count: Int,
     prune_count: Int,
+    old_ack_count: Int,
+    old_timeout_count: Int,
+    old_prune_count: Int,
   }
 }
 
@@ -69,6 +72,9 @@ fn initial() -> Model {
     timeout_count: 0,
     receive_count: 0,
     prune_count: 0,
+    old_ack_count: 0,
+    old_timeout_count: 0,
+    old_prune_count: 0,
   }
 }
 
@@ -192,27 +198,26 @@ fn settle(model: Model, selected: Sent, timed_out: Bool) -> Model {
       } else {
         0
       },
+      old_ack_count: model.old_ack_count + if !timed_out && selected.generation < model.generation {
+        1
+      } else {
+        0
+      },
+      old_timeout_count: model.old_timeout_count + if timed_out && selected.generation < model.generation {
+        1
+      } else {
+        0
+      },
     }
-  if selected.generation < model.generation {
-    if timed_out {
-      fuzz.label(@"fuzz.model.migration.old-timeout-after-handover")
-    } else {
-      fuzz.label(@"fuzz.model.migration.old-ack-after-handover")
-    }
-  } else {
-    Void
-  }
   let message = packet(selected.sequence, selected.data)
   expect
     if timed_out {
-      fuzz.label(@"fuzz.model.migration.timeout")
       channel_datum.validate_timeout_packet(
         projection(model),
         projection(next),
         message,
       )
     } else {
-      fuzz.label(@"fuzz.model.migration.acknowledge")
       channel_datum.validate_acknowledge_packet(
         projection(model),
         projection(next),
@@ -224,12 +229,6 @@ fn settle(model: Model, selected: Sent, timed_out: Bool) -> Model {
 
 fn prune(model: Model, selected: Received) -> Model {
   expect !selected.pruned
-  fuzz.label(@"fuzz.model.migration.prune")
-  if selected.generation < model.generation {
-    fuzz.label(@"fuzz.model.migration.old-receipt-pruned-after-handover")
-  } else {
-    Void
-  }
   let next =
     Model {
       ..model,
@@ -245,6 +244,11 @@ fn prune(model: Model, selected: Received) -> Model {
         },
       ),
       prune_count: model.prune_count + 1,
+      old_prune_count: model.old_prune_count + if selected.generation < model.generation {
+        1
+      } else {
+        0
+      },
     }
   expect
     channel_datum.validate_prune_packet_history(
@@ -262,7 +266,6 @@ fn prune(model: Model, selected: Received) -> Model {
 fn packet_step(model: Model, choice: Int) -> Model {
   let input = projection(model)
   if choice % 5 == 0 {
-    fuzz.label(@"fuzz.model.migration.send")
     let data = bytearray.from_int_big_endian(choice, 4)
     let sequence = list.length(model.sent) + 1
     expect packet.commit_packet(packet(sequence, data)) == digest(data)
@@ -294,7 +297,6 @@ fn packet_step(model: Model, choice: Int) -> Model {
       }
     }
   } else if choice % 5 == 3 {
-    fuzz.label(@"fuzz.model.migration.receive")
     let sequence = list.length(model.received) + 1
     // Receives vary in proof height and may arrive below the high-water mark,
     // but never below an already authenticated prune floor.
@@ -459,7 +461,6 @@ fn channel_handover(model: Model, next_datum: ChannelDatum) -> Bool {
 }
 
 fn migrate(model: Model) -> Model {
-  fuzz.label(@"fuzz.model.migration.authenticated-channel-handover")
   let datum = projection(model)
   expect channel_handover(model, datum)
   // The channel model resumes only after the separately tested kernel's
@@ -482,6 +483,9 @@ fn handover_with_old_claims(model: Model) -> Model {
   expect after_prune.ack_count == model.ack_count + 1
   expect after_prune.timeout_count == model.timeout_count + 1
   expect after_prune.prune_count == model.prune_count + 1
+  expect after_prune.old_ack_count == model.old_ack_count + 1
+  expect after_prune.old_timeout_count == model.old_timeout_count + 1
+  expect after_prune.old_prune_count == model.old_prune_count + 1
   after_prune
 }
 
@@ -505,6 +509,25 @@ test prop_migration_packet_event_log_model(
   choices via fuzz.list_between(fuzz.int_between(0, 999), 8, 12),
 ) {
   let result = run(choices)
+  // Labels count completed histories, never repeated operations within one
+  // history. The fixed handovers guarantee these scenarios; they do not attest
+  // to random generator diversity. Each count follows accepted datum/kernel
+  // checks above, including explicit identification of pre-handover claims.
+  expect result.send_count >= 4 && result.receive_count >= 2
+  expect
+    result.ack_count >= 2 && result.timeout_count >= 2 && result.prune_count >= 2
+  expect
+    result.old_ack_count >= 2 && result.old_timeout_count >= 2 && result.old_prune_count >= 2
+  expect result.generation == 3
+  fuzz.label(@"fuzz.model.migration.send")
+  fuzz.label(@"fuzz.model.migration.receive")
+  fuzz.label(@"fuzz.model.migration.acknowledge")
+  fuzz.label(@"fuzz.model.migration.timeout")
+  fuzz.label(@"fuzz.model.migration.prune")
+  fuzz.label(@"fuzz.model.migration.old-ack-after-handover")
+  fuzz.label(@"fuzz.model.migration.old-timeout-after-handover")
+  fuzz.label(@"fuzz.model.migration.old-receipt-pruned-after-handover")
+  fuzz.label(@"fuzz.model.migration.authenticated-channel-handover")
   result.generation == 3 && projection(result).state.next_sequence_send == result.send_count + 1
 }
 
