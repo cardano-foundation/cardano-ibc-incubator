@@ -172,6 +172,11 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
         'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': '27432', 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'postgres', 'GATEWAY_DB_PASSWORD': '', 'GATEWAY_DB_SYNCHRONIZE': 'true',
         'HANDLER_JSON_PATH': str(handler), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
         'FAKETIME_DONT_FAKE_MONOTONIC': '1'})
+    if args.command == 'gateway':
+        # This explicitly owned public-fixture rehearsal retains bounded unsigned
+        # transaction diagnostics, including a rejected budget probe.
+        env['GATEWAY_DEBUG_DIAGNOSTICS'] = 'true'
+        env['GATEWAY_DEBUG_DIAGNOSTICS_DIR'] = str(runtime / 'gateway-diagnostics')
     if args.history_schema:
         env['PGOPTIONS'] = f'-c search_path={args.history_schema},public'
     else:

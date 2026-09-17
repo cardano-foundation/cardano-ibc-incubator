@@ -2052,3 +2052,145 @@ test emergency_authority_only_rotation_rejects_stale_generation() fail {
   let new = Registry { ..new_registry(case), current: old.current }
   run(case |> with_registry_input(old) |> with_registry_output(new))
 }
+
+// Cost regressions use the retained pre-optimization gate as an equivalence
+// reference. This is a decoder optimization check, not an economic oracle.
+fn old_operation_gate(tx: Transaction, generation: Int, bit: Int) -> Bool {
+  let token = AuthToken { policy_id: hash(1), name: registry_token_name }
+  expect [found] =
+    list.filter(
+      tx.reference_inputs,
+      fn(i) { migration.contains(i.output, token) },
+    )
+  expect InlineDatum(raw) = found.output.datum
+  expect [_,
+    _, _, _, _, current, phase, emergency] = builtin.un_constr_data(raw).2nd
+  expect [current_generation, _, _] = builtin.un_constr_data(current).2nd
+  expect [_, _, mask, _] = builtin.un_constr_data(emergency).2nd
+  and {
+    builtin.un_constr_data(phase).1st <= 1,
+    builtin.un_i_data(current_generation) == generation,
+    builtin.un_i_data(mask) / bit % 2 == 0,
+  }
+}
+
+fn operation_gate_context(registry: Registry) -> Transaction {
+  Transaction {
+    ..placeholder,
+    reference_inputs: list.map(
+      list.range(1, 12),
+      fn(i) {
+        if i == 7 {
+          input(i, registry_output(registry))
+        } else {
+          input(
+            i,
+            object_output(
+              from_script(hash(i + 100)),
+              AuthToken { policy_id: hash(i + 100), name: "reference" },
+              i,
+            ),
+          )
+        }
+      },
+    ),
+  }
+}
+
+test migration_budget_old_gate_cost() {
+  old_operation_gate(operation_gate_context(initial()), 1, 1)
+}
+
+test migration_budget_new_gate_cost() {
+  migration.operation_allowed(operation_gate_context(initial()), hash(1), 1, 1)
+}
+
+test migration_budget_gate_all_phases_masks_and_generations() {
+  list.all(
+    [initial(), approved(proposal()), moving(zeros(), tree.empty_hash, False)],
+    fn(source) {
+      list.all(
+        list.range(0, 15),
+        fn(mask) {
+          let tx =
+            operation_gate_context(
+              Registry {
+                ..source,
+                emergency: Emergency { ..source.emergency, mask },
+              },
+            )
+          list.all(
+            [1, 2, 4, 8],
+            fn(bit) {
+              list.all(
+                [1, 2],
+                fn(generation) {
+                  migration.operation_allowed(tx, hash(1), generation, bit) == old_operation_gate(
+                    tx,
+                    generation,
+                    bit,
+                  )
+                },
+              )
+            },
+          )
+        },
+      )
+    },
+  )
+}
+
+test migration_budget_gate_duplicate_registry_rejected() fail {
+  let tx = operation_gate_context(initial())
+  migration.operation_allowed(
+    Transaction {
+      ..tx,
+      reference_inputs: [
+        input(99, registry_output(initial())),
+        ..tx.reference_inputs
+      ],
+    },
+    hash(1),
+    1,
+    1,
+  )
+}
+
+test migration_budget_gate_missing_registry_rejected() fail {
+  let tx = operation_gate_context(initial())
+  migration.operation_allowed(tx, hash(999), 1, 1)
+}
+
+fn malformed_gate(extra: Bool) -> Bool {
+  let source = registry_output(initial())
+  expect InlineDatum(raw) = source.datum
+  let fields = builtin.un_constr_data(raw).2nd
+  let changed =
+    if extra {
+      list.concat(fields, [builtin.i_data(0)])
+    } else {
+      builtin.tail_list(fields)
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      reference_inputs: [
+        input(
+          1,
+          Output {
+            ..source,
+            datum: InlineDatum(builtin.constr_data(0, changed)),
+          },
+        ),
+      ],
+    }
+  migration.operation_allowed(tx, hash(1), 1, 1)
+}
+
+test migration_budget_gate_short_registry_rejected() fail {
+  malformed_gate(False)
+}
+
+test migration_budget_gate_extra_registry_field_rejected() fail {
+  malformed_gate(True)
+}

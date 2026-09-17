@@ -7,9 +7,7 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
 }
 use ibc/implementation/host_state_stt
 use ibc/migration/auth as migration
-use ibc/migration/types.{
-  channel_role, client_role, connection_role, host_role, transfer_role,
-}
+use ibc/migration/types.{host_role, transfer_role}
 
 validator host_state(registry_policy: ByteArray, generation: Int) {
   spend(
@@ -68,11 +66,16 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
             }
           _ -> True
         }
+      // Decode this common prefix once instead of three indexed traversals.
+      // The same four addresses must exist; each credential is still decoded.
+      expect [_,
+        client_address,
+        connection_address, channel_address, ..] = registry.current.addresses
       host_state_stt.validate_live(
         registry.host_policy,
-        migration.active_role_hash(registry.current, client_role),
-        migration.active_role_hash(registry.current, connection_role),
-        migration.active_role_hash(registry.current, channel_role),
+        migration.encoded_address_hash(client_address),
+        migration.encoded_address_hash(connection_address),
+        migration.encoded_address_hash(channel_address),
         registry.identity.client_policy,
         registry.identity.connection_policy,
         registry.identity.channel_policy,

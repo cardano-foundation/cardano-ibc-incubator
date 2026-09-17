@@ -66,9 +66,14 @@ pub fn contains(output: Output, token: AuthToken) -> Bool {
 }
 
 pub fn unique_input(inputs: List<Input>, token: AuthToken) -> Input {
-  expect [input] =
-    list.filter(inputs, fn(input) { contains(input.output, token) })
-  input
+  expect [input, ..rest] = inputs
+  if contains(input.output, token) {
+    // Preserve the exact-one rule without allocating a filtered input list.
+    expect !list.any(rest, fn(other) { contains(other.output, token) })
+    input
+  } else {
+    unique_input(rest, token)
+  }
 }
 
 pub fn unique_output(outputs: List<Output>, token: AuthToken) -> Output {
@@ -90,10 +95,11 @@ pub fn active_registry(
   // validators publishable. No operator-supplied datum is accepted here.
   let fields =
     builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
-  expect [
-    token_data, host_data, identity_data, _, _, current_data, phase_data,
-    emergency_data,
-  ] = fields
+  expect [token_data, host_data, identity_data, ..tail] = fields
+  // tail_list fails on a short prefix; the exact suffix still enforces eight
+  // fields, without decoding the unused governance/nonce cells.
+  expect [current_data,
+    phase_data, emergency_data] = builtin.tail_list(builtin.tail_list(tail))
   expect recorded_token: AuthToken = token_data
   expect recorded_token == token
   let host_policy = builtin.un_b_data(host_data)
@@ -113,7 +119,11 @@ pub fn active_registry(
   let connection_policy = builtin.un_b_data(connection_data)
   let channel_policy = builtin.un_b_data(channel_data)
   let escrow_policy = builtin.un_b_data(escrow_data)
-  expect [_, _, mask_data, _] = builtin.un_constr_data(emergency_data).2nd
+  expect [mask_data,
+    _] =
+    builtin.tail_list(
+      builtin.tail_list(builtin.un_constr_data(emergency_data).2nd),
+    )
   ActiveRegistry {
     restrictions: builtin.un_i_data(mask_data),
     preparing: phase == 1,
@@ -319,17 +329,20 @@ pub fn operation_allowed(
       transaction.reference_inputs,
       AuthToken { policy_id: policy, name: registry_token_name },
     )
-  expect [_,
-    _,
-    _,
-    _,
-    _,
-    current,
+  let fields =
+    builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
+  expect [current,
     phase,
     emergency] =
-    builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
+    builtin.tail_list(
+      builtin.tail_list(
+        builtin.tail_list(builtin.tail_list(builtin.tail_list(fields))),
+      ),
+    )
   expect [current_generation, _, _] = builtin.un_constr_data(current).2nd
-  expect [_, _, mask, _] = builtin.un_constr_data(emergency).2nd
+  expect [mask,
+    _] =
+    builtin.tail_list(builtin.tail_list(builtin.un_constr_data(emergency).2nd))
   and {
     builtin.un_constr_data(phase).1st <= 1,
     builtin.un_i_data(current_generation) == generation,

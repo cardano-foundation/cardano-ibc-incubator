@@ -156,6 +156,7 @@ jobs:
             .deployment-smoke/**/counterparty-v*-continuity.json
             .deployment-smoke/**/node-witness-*.json
             .deployment-smoke/**/sdk-ledger-evaluation-*.json
+            .deployment-smoke/**/gateway-diagnostics/diagnostic-*.json
             .deployment-smoke/**/*-authenticated-budget.json
             .deployment-smoke/**/publication-costs-v*.json
             .deployment-smoke/**/v*-publication-measurements/*.json
