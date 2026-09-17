@@ -1,3 +1,5 @@
+> Current candidate: see [the production-readiness review](migration-production-readiness-review.md). Emergency containment is now implemented in profile v3; populated results below remain historical evidence for the prior ABI.
+
 > Current review follow-up: see [approval, scaling, coverage and deployment capability](migration-review-followup.md) and `evidence/migration-review-result.json`. The earlier populated results below belong to their recorded revisions and are not acceptance of later changes.
 
 # Migration implementation evidence
@@ -6,7 +8,7 @@ The populated local V1→V2→V3 rehearsal **passed**, including all old claims,
 
 ## Source and compatibility boundary
 
-The subsequent [emergency-containment audit](emergency-containment-audit.md) identified a separate production blocker: immediate exploit containment is not implemented. Proposal approval leaves ordinary paths available until delayed `Begin`; shutdown is disabled, and activation has no independent emergency veto. Forty-four new compiled characterization tests and a phase-guard removal control verify this limitation. This does not invalidate the recorded compatible-migration rehearsal, but that rehearsal did not demonstrate an emergency stop.
+The earlier [emergency-containment audit](emergency-containment-audit.md) identified a separate production blocker in that version: immediate exploit containment was not implemented. Proposal approval leaves ordinary paths available until delayed `Begin`; shutdown is disabled, and activation has no independent emergency veto. Forty-four new compiled characterization tests and a phase-guard removal control verify this limitation. This does not invalidate the recorded compatible-migration rehearsal, but that rehearsal did not demonstrate an emergency stop.
 
 Starting main commit: `fde2635138f60f6d14954b2f91e4a001b74c12a2`. Work is isolated on `feat/462-state-preserving-redeployment`; the original dirty `feat/host-state-full-key-trie` worktree is untouched. The relayer submodule is pinned to `b35730db` on its corresponding feature branch.
 

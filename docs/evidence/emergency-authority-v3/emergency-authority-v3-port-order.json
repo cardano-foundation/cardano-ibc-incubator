@@ -1,0 +1,50 @@
+{
+  "seed": 462,
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "kind": {
+      "unit": 2,
+      "property": 0
+    }
+  },
+  "modules": [
+    {
+      "name": "migration_port_order.test",
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "kind": {
+          "unit": 2,
+          "property": 0
+        }
+      },
+      "tests": [
+        {
+          "title": "migration_begin_preserves_port_registry",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3629186,
+            "cpu": 1262304143
+          }
+        },
+        {
+          "title": "migration_begin_rejects_reordered_port_registry",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3069605,
+            "cpu": 1078235765
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          host_output_matches(\n            transaction,\n            old,\n            input,\n            HostStateDatum {\n              ..host,\n              state: host_state.HostState {\n                ..host.state,\n                version: host.state.version + 1,\n                last_update_time: valid_to,\n              },\n            },\n            migration.role_address(target, host_role),\n          )"
+          ]
+        }
+      ]
+    }
+  ]
+}

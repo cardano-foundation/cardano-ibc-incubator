@@ -1,0 +1,784 @@
+{
+  "seed": 462,
+  "summary": {
+    "total": 66,
+    "passed": 66,
+    "failed": 0,
+    "kind": {
+      "unit": 66,
+      "property": 0
+    }
+  },
+  "modules": [
+    {
+      "name": "host_state_stt.test",
+      "summary": {
+        "total": 32,
+        "passed": 32,
+        "failed": 0,
+        "kind": {
+          "unit": 32,
+          "property": 0
+        }
+      },
+      "tests": [
+        {
+          "title": "emergency_traffic_mask_phase_0_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8911631,
+            "cpu": 2739160706
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_recv",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8002156,
+            "cpu": 2403173851
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_ack",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4521758,
+            "cpu": 1378109317
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4522049,
+            "cpu": 1379125264
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11765094,
+            "cpu": 3517765368
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_client",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18843139,
+            "cpu": 5877875946
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1077266,
+            "cpu": 358706403
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8912498,
+            "cpu": 2742347414
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_recv",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8023023,
+            "cpu": 2409560559
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_ack",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542625,
+            "cpu": 1384496025
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542916,
+            "cpu": 1385511972
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11785961,
+            "cpu": 3524152076
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_client",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18854506,
+            "cpu": 5882742654
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1088633,
+            "cpu": 363573111
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8912596,
+            "cpu": 2742666387
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_recv",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8023121,
+            "cpu": 2409879532
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_ack",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542723,
+            "cpu": 1384814998
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4543014,
+            "cpu": 1385830945
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11786059,
+            "cpu": 3524471049
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_client",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18857004,
+            "cpu": 5883445627
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1091131,
+            "cpu": 364276084
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8912500,
+            "cpu": 2742499512
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_recv",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8023025,
+            "cpu": 2409712657
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_ack",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542627,
+            "cpu": 1384648123
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542918,
+            "cpu": 1385664070
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11785963,
+            "cpu": 3524304174
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_client",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18855908,
+            "cpu": 5883118752
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1090035,
+            "cpu": 363949209
+          }
+        },
+        {
+          "title": "emergency_clients_reject_update",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 16108318,
+            "cpu": 4986865939
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_clients_permit_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1077266,
+            "cpu": 358706403
+          }
+        },
+        {
+          "title": "emergency_heartbeat_rejects_heartbeat",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 698644,
+            "cpu": 233886728
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_heartbeat_permits_send",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 11659317,
+            "cpu": 3614129614
+          }
+        }
+      ]
+    },
+    {
+      "name": "migration_adversarial.test",
+      "summary": {
+        "total": 34,
+        "passed": 34,
+        "failed": 0,
+        "kind": {
+          "unit": 34,
+          "property": 0
+        }
+      },
+      "tests": [
+        {
+          "title": "emergency_immediate_before_proposal",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 779743,
+            "cpu": 294813226
+          }
+        },
+        {
+          "title": "emergency_immediate_during_delay",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1010703,
+            "cpu": 380731717
+          }
+        },
+        {
+          "title": "emergency_immediate_during_migration",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1055839,
+            "cpu": 400435062
+          }
+        },
+        {
+          "title": "emergency_rejects_code_authority_without_emergency_key",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 718183,
+            "cpu": 269241226
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          migration.emergency_authorized(old.emergency.authority, transaction)"
+          ]
+        },
+        {
+          "title": "emergency_rejects_loosen",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 760190,
+            "cpu": 280767490
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.tightens(old.emergency.mask, mask)"
+          ]
+        },
+        {
+          "title": "emergency_rejects_code_substitution",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1747291,
+            "cpu": 629954384
+          }
+        },
+        {
+          "title": "emergency_hold_rejects_previously_approved_begin",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4840807,
+            "cpu": 1738672043
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n      when redeemer is {\n        Begin |\n        MoveCore { .. } |\n        MoveTransferRoot |\n        MoveEscrow { .. } |\n        Activate { .. } -> migration.permitted(old.emergency.mask, 8)\n        _ -> True\n      }"
+          ]
+        },
+        {
+          "title": "emergency_hold_rejects_previously_approved_activation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 5444532,
+            "cpu": 1888862141
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n      when redeemer is {\n        Begin |\n        MoveCore { .. } |\n        MoveTransferRoot |\n        MoveEscrow { .. } |\n        Activate { .. } -> migration.permitted(old.emergency.mask, 8)\n        _ -> True\n      }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_restriction_survives_activation",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6805225,
+            "cpu": 2378663720
+          }
+        },
+        {
+          "title": "emergency_traffic_restriction_permits_authorized_begin",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 5857230,
+            "cpu": 2154458781
+          }
+        },
+        {
+          "title": "emergency_restore_delayed_and_permissionless",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1955505,
+            "cpu": 694330721
+          }
+        },
+        {
+          "title": "emergency_restore_premature_even_with_both_authorities",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1919962,
+            "cpu": 677017705
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          validator_utils.get_tx_valid_from(transaction.validity_range) >= approval.ready_at && valid_to <= approval.expires_at"
+          ]
+        },
+        {
+          "title": "emergency_cannot_self_authorize_restoration",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 824207,
+            "cpu": 301856575
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.authorized(old.governance, transaction)"
+          ]
+        },
+        {
+          "title": "emergency_restriction_revokes_pending_restoration",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1262199,
+            "cpu": 451386248
+          }
+        },
+        {
+          "title": "emergency_stale_restoration_nonce_rejected",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2256620,
+            "cpu": 777382019
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          approval.registry_nonce == old.nonce && approval.generation == old.current.generation"
+          ]
+        },
+        {
+          "title": "emergency_stale_restoration_epoch_rejected",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2005928,
+            "cpu": 703752584
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect approval.epoch == old.emergency.epoch"
+          ]
+        },
+        {
+          "title": "emergency_cancel_restoration_preserves_restrictions",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1232276,
+            "cpu": 437879889
+          }
+        },
+        {
+          "title": "emergency_hold_rejects_escrow_move",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 5975706,
+            "cpu": 1948037595
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n      when redeemer is {\n        Begin |\n        MoveCore { .. } |\n        MoveTransferRoot |\n        MoveEscrow { .. } |\n        Activate { .. } -> migration.permitted(old.emergency.mask, 8)\n        _ -> True\n      }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_restriction_permits_escrow_move",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 7729795,
+            "cpu": 2501075909
+          }
+        },
+        {
+          "title": "emergency_stale_restoration_generation_rejected",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2299105,
+            "cpu": 797824154
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          approval.registry_nonce == old.nonce && approval.generation == old.current.generation"
+          ]
+        },
+        {
+          "title": "emergency_rejects_out_of_range_mask",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 718242,
+            "cpu": 267039169
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.tightens(old.emergency.mask, mask)"
+          ]
+        },
+        {
+          "title": "emergency_rotation_revokes_outgoing_restoration",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 2289441,
+            "cpu": 824333001
+          }
+        },
+        {
+          "title": "emergency_rotation_rejects_retaining_outgoing_restoration",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2681703,
+            "cpu": 942654458
+          }
+        },
+        {
+          "title": "emergency_transfer_retirement_stays_disabled_after_size_optimization",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 390521,
+            "cpu": 162034594
+          }
+        },
+        {
+          "title": "emergency_authority_removal_survives_restrictions_ready",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 4157319,
+            "cpu": 1449741345
+          }
+        },
+        {
+          "title": "emergency_authority_removal_survives_restrictions_during_delay",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 5475683,
+            "cpu": 1885748754
+          }
+        },
+        {
+          "title": "emergency_authority_removal_survives_restrictions_moving",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 5759637,
+            "cpu": 1984605653
+          }
+        },
+        {
+          "title": "emergency_removed_authority_cannot_restrict",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 5081283,
+            "cpu": 1759613331
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          migration.emergency_authorized(old.emergency.authority, transaction)"
+          ]
+        },
+        {
+          "title": "emergency_incoming_authority_can_restrict",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 5155955,
+            "cpu": 1792445899
+          }
+        },
+        {
+          "title": "emergency_authority_only_rotation_cannot_loosen",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 5104588,
+            "cpu": 1775636017
+          }
+        },
+        {
+          "title": "emergency_authority_only_rotation_cannot_change_phase",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 6920839,
+            "cpu": 2379304411
+          }
+        },
+        {
+          "title": "emergency_authority_only_rotation_cannot_execute_early",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4723297,
+            "cpu": 1649187900
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          validator_utils.get_tx_valid_from(transaction.validity_range) >= approval.ready_at && valid_to <= approval.expires_at"
+          ]
+        },
+        {
+          "title": "emergency_authority_only_rotation_requires_governance",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1520028,
+            "cpu": 549866387
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.authorized(old.governance, transaction)"
+          ]
+        },
+        {
+          "title": "emergency_authority_only_rotation_rejects_stale_generation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 5102740,
+            "cpu": 1774400682
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          approval.registry_nonce == old.nonce && approval.generation == old.current.generation"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,247 @@
+{
+  "format": "migration-emergency-review-v1",
+  "sourceCommit": "f317d9411615d9598c64a8ef7da0a9246361186b",
+  "sourceTree": "e05c901b9b5e88d6a72b6c517efb2b0e2a7f1f56",
+  "recordedAt": "2026-09-17T22:41:35.939398+00:00",
+  "tools": {
+    "aiken": "1.1.21+42babe5",
+    "deno": "2.9.6",
+    "node": "25.8.1",
+    "platform": "aarch64-apple-darwin"
+  },
+  "relayerCommit": "7541b002cf4e109e1858ae25c98f8ae0789944cf",
+  "artifacts": {
+    "cardano/onchain/plutus.json": "0239648dfa9d6120d6a4313d3ae643de85276d62b7b6f27be40d157872fd7670",
+    ".deployment-smoke/emergency-release-v2/plutus.json": "deadfbf2bcfb81e63a7d65ea3ed4bd5581d08b12e7022114d0b56cb8e439f6db",
+    ".deployment-smoke/emergency-release-v3/plutus.json": "a918dda65cfa910539266b398229089f23fa4d20d88729b50cb004dc783003e8",
+    "cardano/offchain/src/testing/protocol-10-local-cost-profile.json": "16546f4e204a40e8985b00ce77bfba989c833525d5024cd4f0dec2eec37cedac"
+  },
+  "implementationSourceSha256": {
+    ".github/workflows/migration-rehearsal.yml": "98f7ced1d23e84111533c233cb81dfa60b5d5e27890d2c5224d0341d251af13d",
+    "cardano/gateway/src/config/bridge-manifest.spec.ts": "1daada59defa5f2a1ecd155fad871274f1d018c7da61c943d70c9b1f1f70774a",
+    "cardano/gateway/src/config/bridge-manifest.ts": "cf270101c2c3c6271d9f0473ef9ad72ee0047a4ed23e17bbd35f0be1d93cb104",
+    "cardano/gateway/src/query/test/historical-ibc-tree.spec.ts": "1d2f027a1a60e2111f4431ea5e6fa2f2045863e347dabe0101437c303cc64c01",
+    "cardano/gateway/src/shared/modules/lucid/lucid.service.ts": "ddbb12c6a00bbc916b7f7cf5f4a326c23d8a2d1a32cc559085874d6b6814cbe0",
+    "cardano/gateway/src/tx/client.service.ts": "a334c02908a14711e4ad16cb5e7e795b19f994df9fe800bb8bd8b6e90c923d5a",
+    "cardano/gateway/src/tx/host-state-heartbeat.service.ts": "bd1eec1143013008a759f735d3cb4f909c07d5e192a1254e6050c7c1e2b77bd8",
+    "cardano/offchain/scripts/migrate-deployment.ts": "8a57d838e8d8cf634c022b5cc491621e17df304a8cce3b7ca2c5fd53f78d0392",
+    "cardano/offchain/src/deployment-mode.test.ts": "77c49d6fddc138a196f76e43c138312c10528a1c1bce9b4f847b8fbe92444428",
+    "cardano/offchain/src/deployment-mode.ts": "dc6e5c38986f3c0bb45cd9375c0f2136f77986021a9ab1b37760b0b807fcbd29",
+    "cardano/offchain/src/deployment-plan.ts": "b10e142b57c4f613854de9abd22fb82140fe1a83487ad42a0fcf2e3b32149b15",
+    "cardano/offchain/src/deployment.ts": "347b2dbf1842b47aca1387dadce55874ecd180b74c89bfae88f8aeb63b1f2c62",
+    "cardano/offchain/src/migration-plan.ts": "b6336dc9bcca7b442a23677bd899e08486b58243f9e96bb017b5f79674f5956b",
+    "cardano/offchain/src/migration-transactions.ts": "93da05bfbc6bc66877ae060066124fed67be4a50f94b1c42da0746e13acc0d2e",
+    "cardano/offchain/src/migration.test.ts": "80724924e9e6605481cd9bf058116e991ebb3f2505bff0520113b68ae97f899d",
+    "cardano/offchain/src/migration.ts": "ed9e7e17f492bcef8d5bef83c1c66d4eb82abb9c525bc37c2771f60c0d634ede",
+    "cardano/offchain/src/testing/migration-accounting.ts": "0175d056795fefee036d4bcb56b820cca6f11c45a268aeb07464294e92ee9f8c",
+    "cardano/offchain/src/utils.ts": "40730dc22e7d7a43823d019c64d917c8043b8b5ce5d459817fee375b839e41a2",
+    "cardano/offchain/types/plutus/Migration.ts": "fa25d76e8065fc36df6296de5b92b3c02e1b7aba38df26283201577016c11c7e",
+    "cardano/onchain/lib/ibc/migration/auth.ak": "c2376a79d383d9efae2529aa93f8c73843abc62adc484b3c2692accb0b2e66da",
+    "cardano/onchain/lib/ibc/migration/budget_equivalence.test.ak": "c063c6d9ff47af89e46569dafbfd9bd5c04a642576df237f9536571a963c00fd",
+    "cardano/onchain/lib/ibc/migration/types.ak": "1d873fbfc12d7db5485d03232e09370a2f948dd724ed48eb9f6333aaa4fa3276",
+    "cardano/onchain/validators/host_state_stt.test.ak": "58775620d14a0e5e6afeb9479b21f9dc8af3505c21ffdc6426134a85e4726267",
+    "cardano/onchain/validators/implementation_registry.ak": "ef5825e0dc48d95553bcfcfe4122317a8edde3bbdbdd8bf4575498a69d9639d7",
+    "cardano/onchain/validators/migration_adversarial.test.ak": "b828d2afbf64a5fc75fd18886b5e87242b4c00b103aa409fe34ea29a6d9d35e6",
+    "cardano/onchain/validators/migration_packet_model.test.ak": "e9a2c18fbfc72f2feef8e59865a3263e7534ae0ab1a8576c1779a632b19e9667",
+    "cardano/onchain/validators/minting_implementation_registry.ak": "769a871fcd4d55d795fdb4366a270c5d38e406d49986908eaccbef681ec748f6",
+    "cardano/onchain/validators/upgradeable/channel.ak": "d09ac2c267f5a24bb9d621dd4ae1542eabc3386e50f9d283fee6efe2558e2633",
+    "cardano/onchain/validators/upgradeable/client.ak": "27fada48d3070fae041b0807c6643802919c0d0a045a8d2a2f0c7a9fc2df16e0",
+    "cardano/onchain/validators/upgradeable/connection.ak": "d0e900cecc0f909ef515fb63273cbbf98b229190a170c6dc44d4067ed3ad31c6",
+    "cardano/onchain/validators/upgradeable/host_state.ak": "24ef6b49d0db34a4d01ed51da4b847f3285e4d8c3c24d43ce0a7afafa158439b",
+    "cardano/onchain/validators/upgradeable/transfer.ak": "df6f58e2e3aa420392a13b4fcf794367832467bf7fd600392965f91808290771",
+    "packages/cardano-ibc-tx-builder-runtime/dist/index.d.ts": "97a8785d76e3b45f60bb6f291593177dc71e90f5f3052a4c52b1f00ae8a69b50",
+    "packages/cardano-ibc-tx-builder-runtime/dist/index.js": "10ee532039903fa1b379f234e9cb6db85dae300c0d8fe1053751b07cfb1b35dc",
+    "packages/cardano-ibc-tx-builder-runtime/dist/migrationRuntime.d.ts": "a11b96d5461865eb0c0e90eefcb4be6650024f2c577ffb60980fdc97516c58a8",
+    "packages/cardano-ibc-tx-builder-runtime/dist/migrationRuntime.js": "45c8ee090a2c270505cb565f9f7c1e03f87cc8b1d9070514443b8a310a0e4be0",
+    "packages/cardano-ibc-tx-builder-runtime/src/index.ts": "61c55bd76fbde8863e9925e5324361b574dd75b60f9ac4fcb5534d80bb27b561",
+    "packages/cardano-ibc-tx-builder-runtime/src/migrationRuntime.test.ts": "065a01502fea6be19c6cf5d5f491066f2404a01239dc1bd772bdd0717a266c7b",
+    "packages/cardano-ibc-tx-builder-runtime/src/migrationRuntime.ts": "1aec7378b738436e62b8f3bd7cd0ddfd386644d36b974f98e66fc270d2926979",
+    "scripts/ci/capture-migration-historical-proof.cjs": "7b988a0b465d44c81d8b249129551cbbc4dea60f8b7930deaa8d30677b815b90",
+    "scripts/ci/migration-control.py": "f7506f650f203b4370203a7eb7b82cc454478dfbba3d4b9ec504077efb977a3b",
+    "scripts/ci/rehearse-migration-handover.py": "6112a6db4082c894f9dd5e95dc31651fdab3d165b68e0e0970a6db91e27c3476",
+    "scripts/ci/rehearse-migration-rollback.py": "0f99d630628ea0cef1acf83afa8bf9fed6b8fd83e9e530d67ae136371b45d316",
+    "scripts/ci/test-cardano-deployment.py": "824b83468c4d93d87801038587d74650999544bac5be511be7c1ebd341cc8be2",
+    "scripts/ci/test-migration-guards.py": "7d0520617f06bb84e596ec1f4f339e131689e8d3af8c18b1f0a56a96c5599744",
+    "scripts/ci/test-populated-migration.py": "f64a39791e3e4bc451a2b5d35ae556ae5e03bdcda3e426caeb8510588179cf15"
+  },
+  "reports": {
+    "docs/evidence/emergency-review/aiken.json": {
+      "sha256": "c77d6ab4fcf7e09fd3a67baac41d4425be1483eca1291462658daee7613a5b4a",
+      "sourceLog": ".deployment-smoke/emergency-release-aiken.json"
+    },
+    "docs/evidence/emergency-review/enforcement.json": {
+      "sha256": "1820b66adb6046cbf372ca1a4b882c66dad5eab5b4960caab29be77896de960a",
+      "sourceLog": ".deployment-smoke/emergency-release-enforcement.json"
+    },
+    "docs/evidence/emergency-review/guard-controls.json": {
+      "sha256": "707ecf383d10d77ca2b06d4dd39965fca65b7162f2ab32a54f931a39891e8d87",
+      "sourceLog": ".deployment-smoke/emergency-release-guard-controls.json"
+    },
+    "docs/evidence/emergency-review/step-budgets.json": {
+      "sha256": "c7f393ef956227e352b90b1e756b5cf9ac5388e999cdd7b77856f8d97dd24d60",
+      "sourceLog": ".deployment-smoke/emergency-release-scaling.json"
+    },
+    "docs/evidence/emergency-review/operator-scaling.json": {
+      "sha256": "9dab086a0cc097e0dfc75b8d151fa1a8f2b46de450f3c3e864e3e29217b844b7",
+      "sourceLog": ".deployment-smoke/emergency-release-operator.json"
+    }
+  },
+  "localLogs": {
+    ".deployment-smoke/emergency-release-typecheck.log": "c9fd0d0bb18f559ce725baec3614cbc2e6d5bf8dc2e1f8e254d8d0ab223fecb2",
+    ".deployment-smoke/emergency-release-deployment.log": "55c05461f6a5f83b85434405b4c281859a98fcc33f1b1cd77f99c124943af9ef",
+    ".deployment-smoke/emergency-release-migration-suite.log": "44cff5b134fa119edc1667e12320971b6c397eebc18c55b8c8e7e46f62466a98",
+    ".deployment-smoke/emergency-release-migration-transactions.log": "7773942947bdf8029425ad31d9797a9b67c25aa789ad217e091de2840284e2c0",
+    ".deployment-smoke/emergency-release-sdk.log": "2eeab038891f6ab028433bc13df62f27e9bf6452bcb216cdadde0580fe508121",
+    ".deployment-smoke/emergency-release-gateway.log": "eaf8af952b05facefc70c87b391c73b31975abe2c40c1bed960eeaef3fd8b87f",
+    ".deployment-smoke/emergency-release-relayer.log": "9bf5ff9253b4ddc204e2cc058311a24a3a802cf14f042e5010750298cca12169",
+    ".deployment-smoke/emergency-release-build.log": "9a3e7f02501dfcf811e33139356a32acf7382882db59f5d94d8c668b092e0272",
+    ".deployment-smoke/emergency-release-v2.log": "4dd9d0487987b4d10fb36b02bbab6565d641bf0f4051ef4c265ee2081427c72b",
+    ".deployment-smoke/emergency-release-v3.log": "93ad4c9e73b6c45a2e26a328a7f2d2e7ff25a189400ac4f67aa29726d633d6b2",
+    ".deployment-smoke/production-mode-before.log": "a61f46194178cae74fbbea2e92a07dbc5d947d1c1a3ec1dd9a1e48fb63bb2bb8",
+    ".deployment-smoke/production-mode-after.log": "ef573dfdf7b641ff016c357c6875abb638fd15be4a40cc2a1d3cc706590dc9d5"
+  },
+  "checks": [
+    {
+      "command": "aiken build --deny --trace-level silent",
+      "cwd": "cardano/onchain",
+      "result": "passed"
+    },
+    {
+      "command": "aiken check --deny -m host_state_stt. -m migration_adversarial -m migration_packet -m budget_equivalence --seed 462 --max-success 1000",
+      "cwd": "cardano/onchain",
+      "result": {
+        "passed": 247,
+        "properties": 26,
+        "iterationsPerProperty": 1000
+      }
+    },
+    {
+      "command": "aiken check --deny -m emergency_ --seed 462 --max-success 1",
+      "cwd": "cardano/onchain",
+      "result": {
+        "passed": 56,
+        "overlapsBroaderAikenSet": true
+      }
+    },
+    {
+      "command": "python3 scripts/ci/test-migration-guards.py --report .deployment-smoke/emergency-release-guard-controls.json",
+      "result": {
+        "guardPairs": 9,
+        "validatorOutcomes": 36,
+        "productionAttacksRejected": 9,
+        "sameAttacksAcceptedInGuardRemovedVariants": 9
+      }
+    },
+    {
+      "command": "deno task check",
+      "cwd": "cardano/offchain",
+      "result": "passed"
+    },
+    {
+      "command": "deno task test:deployment",
+      "cwd": "cardano/offchain",
+      "result": {
+        "passed": 32,
+        "steps": 57
+      }
+    },
+    {
+      "command": "deno task test:migration",
+      "cwd": "cardano/offchain",
+      "environment": {
+        "MIGRATION_SUCCESSOR_V2_BLUEPRINT": ".deployment-smoke/emergency-release-v2/plutus.json",
+        "MIGRATION_SUCCESSOR_V3_BLUEPRINT": ".deployment-smoke/emergency-release-v3/plutus.json"
+      },
+      "result": {
+        "passed": 28,
+        "steps": 18
+      }
+    },
+    {
+      "command": "npm run build && npm test",
+      "cwd": "packages/cardano-ibc-tx-builder-runtime",
+      "result": {
+        "passed": 97,
+        "skipped": 0
+      }
+    },
+    {
+      "command": "BRIDGE_HISTORY_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:27432/postgres npm test -- --runInBand",
+      "cwd": "cardano/gateway",
+      "result": {
+        "suites": 140,
+        "passed": 1187,
+        "skipped": 0
+      }
+    },
+    {
+      "command": "cargo test --manifest-path relayer/Cargo.toml -p ibc-relayer --lib signing_policy::tests --locked",
+      "result": {
+        "passed": 43
+      }
+    },
+    {
+      "command": "deno run --allow-read --allow-env --allow-write --config cardano/offchain/deno.json scripts/ci/measure-migration-scaling.ts cardano/offchain/src/testing/protocol-10-local-cost-profile.json REPORT",
+      "result": {
+        "cases": 15,
+        "maxSignedBytes": 4295,
+        "maxMemory": 2665827,
+        "maxCpu": 863141340
+      }
+    },
+    {
+      "command": "deno run --allow-read --allow-env --allow-write --config cardano/offchain/deno.json scripts/ci/measure-migration-operator.ts REPORT",
+      "result": {
+        "shards": [
+          2,
+          8,
+          32,
+          128
+        ],
+        "modes": [
+          "uncached",
+          "cached"
+        ],
+        "scope": "Seeded population, production builders and compiled validators; concurrent local test load, no network latency claim"
+      }
+    }
+  ],
+  "independentReview": {
+    "scope": "Static emergency authority/restoration/hold/wrapper review; no submission-journal review and not an independent audit",
+    "finding": "Outgoing-governance restoration could survive a rotation",
+    "resolution": "RotateAuthority revokes restoration; independently re-reviewed at f317d9411; new regressions and guard-removal control pass",
+    "additionalReview": "Transfer publication reduction retains retirement rejection; both appliers match eight parameters"
+  },
+  "historicalNodeTiming": {
+    "sourceEvidence": "docs/evidence/migration-462-local-result.json",
+    "profile": "cardano-ibc-compatible-v1",
+    "v2": {
+      "transactions": 9,
+      "slotSpan": 186
+    },
+    "v3": {
+      "transactions": 9,
+      "slotSpan": 194
+    },
+    "slotSeconds": 1,
+    "notCurrentCandidateAcceptance": true
+  },
+  "ci": {
+    "run": 35281948082,
+    "url": "https://github.com/cardano-foundation/cardano-ibc-incubator/actions/runs/35281948082",
+    "head": "f317d9411615d9598c64a8ef7da0a9246361186b",
+    "status": "in_progress",
+    "populatedAcceptance": "unverified",
+    "realMultiNodeRollback": "unverified",
+    "onchainSmoke": {
+      "passed": 1551,
+      "failed": 1,
+      "failure": "Historical seven-field migration_begin_preserves_port_registry fixture; fixed for current baseline in e76f5fdad, positive/negative controls both pass"
+    }
+  },
+  "releaseBlockers": [
+    "Current-candidate populated two-chain V1-V2-V3 completion with canonical old/new packet settlement",
+    "Actual multi-node rollback and same-plan/outbox resumption",
+    "Production-scale real-network recovery envelope including confirmation, retries, incident restriction and restoration delay"
+  ]
+}

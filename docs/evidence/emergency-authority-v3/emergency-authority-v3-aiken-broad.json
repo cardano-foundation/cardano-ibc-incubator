@@ -1,0 +1,2812 @@
+{
+  "seed": 462,
+  "summary": {
+    "total": 247,
+    "passed": 247,
+    "failed": 0,
+    "kind": {
+      "unit": 221,
+      "property": 26
+    }
+  },
+  "modules": [
+    {
+      "name": "host_state_stt.test",
+      "summary": {
+        "total": 170,
+        "passed": 170,
+        "failed": 0,
+        "kind": {
+          "unit": 149,
+          "property": 21
+        }
+      },
+      "tests": [
+        {
+          "title": "module_registration_cbor_matches_offchain_codec",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 200,
+            "cpu": 16100
+          }
+        },
+        {
+          "title": "host_state_datum_decodes_injective_compatibility_fixture",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 712868,
+            "cpu": 187658302
+          }
+        },
+        {
+          "title": "host_create_client_rejects_counterfeit_client_policy",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4790786,
+            "cpu": 1463653235
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    authenticate_created_state_thread(\n      client_output,\n      client_datum.token,\n      mint,\n      old_datum.nft_policy,\n      client_policy_id,\n      client_id_keys.client_prefix,\n      old_datum.state.next_client_sequence,\n    )"
+          ]
+        },
+        {
+          "title": "host_create_client_rejects_datum_token_missing_from_output",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4790990,
+            "cpu": 1460836222
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    authenticate_created_state_thread(\n      client_output,\n      client_datum.token,\n      mint,\n      old_datum.nft_policy,\n      client_policy_id,\n      client_id_keys.client_prefix,\n      old_datum.state.next_client_sequence,\n    )"
+          ]
+        },
+        {
+          "title": "prop_host_update_client_accepts_exact_root",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.update_client.valid": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_update_client_rejects_counterfeit_client_policy",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2703455,
+            "cpu": 878319403
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect output_client.token.policy_id == client_policy_id"
+          ]
+        },
+        {
+          "title": "host_update_client_rejects_datum_token_missing_from_output",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2724481,
+            "cpu": 884534203
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect auth.contain_auth_token(output, token)"
+          ]
+        },
+        {
+          "title": "host_update_client_capacity_fixture_setup_baseline",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 278157,
+            "cpu": 87232968
+          }
+        },
+        {
+          "title": "host_update_client_capacity_minimum_history_succeeds",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 2932594,
+            "cpu": 950654698
+          }
+        },
+        {
+          "title": "prop_host_update_client_rejects_wrong_root",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.update_client.invalid_wrong_root": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_update_client_rejects_wrong_redeemer",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.update_client.invalid_wrong_redeemer": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_update_connection_accepts_exact_root",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.update_connection.valid": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_accepts_canonical_connection_creation",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 2584036,
+            "cpu": 806743821
+          }
+        },
+        {
+          "title": "host_state_rejects_counterfeit_connection_creation_policy",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1623658,
+            "cpu": 510550395
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    authenticate_created_state_thread(\n      connection_output,\n      connection_datum.token,\n      mint,\n      old_datum.nft_policy,\n      connection_policy_id,\n      conn_id_keys.connection_prefix,\n      old_datum.state.next_connection_sequence,\n    )"
+          ]
+        },
+        {
+          "title": "host_state_rejects_connection_creation_without_mint",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1644149,
+            "cpu": 516773743
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    authenticate_created_state_thread(\n      connection_output,\n      connection_datum.token,\n      mint,\n      old_datum.nft_policy,\n      connection_policy_id,\n      conn_id_keys.connection_prefix,\n      old_datum.state.next_connection_sequence,\n    )"
+          ]
+        },
+        {
+          "title": "host_state_accepts_canonical_connection_thread",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3779973,
+            "cpu": 1259822335
+          }
+        },
+        {
+          "title": "host_state_rejects_counterfeit_connection_policy",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2619277,
+            "cpu": 861098418
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect token.policy_id == policy_id"
+          ]
+        },
+        {
+          "title": "host_state_rejects_counterfeit_key_locked_connection",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2703007,
+            "cpu": 889852921
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    input.output.address.payment_credential == output.address.payment_credential"
+          ]
+        },
+        {
+          "title": "host_state_rejects_connection_from_another_deployment",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2660506,
+            "cpu": 877801134
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    token.name == state_thread_name(\n      nft_policy,\n      prefix,\n      auth.extract_token_sequence(token.name),\n    )"
+          ]
+        },
+        {
+          "title": "host_state_rejects_connection_with_channel_prefix",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2660859,
+            "cpu": 878542199
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    token.name == state_thread_name(\n      nft_policy,\n      prefix,\n      auth.extract_token_sequence(token.name),\n    )"
+          ]
+        },
+        {
+          "title": "host_state_rejects_connection_at_another_script",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2703103,
+            "cpu": 889958617
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    input.output.address.payment_credential == output.address.payment_credential"
+          ]
+        },
+        {
+          "title": "host_state_rejects_connection_input_datum_token_mismatch",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2807731,
+            "cpu": 921296359
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect connection_input_datum.token == connection_output_datum.token"
+          ]
+        },
+        {
+          "title": "host_state_rejects_connection_output_without_token",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2640035,
+            "cpu": 870299131
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect auth.contain_auth_token(output, token)"
+          ]
+        },
+        {
+          "title": "prop_host_update_connection_rejects_uncommitted_change",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.update_connection.invalid_uncommitted_connection_change": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_update_channel_accepts_exact_root",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.update_channel.valid": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_accepts_canonical_channel_update",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3837890,
+            "cpu": 1245847626
+          }
+        },
+        {
+          "title": "host_state_rejects_counterfeit_channel_update_policy",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2638985,
+            "cpu": 840273061
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect token.policy_id == policy_id"
+          ]
+        },
+        {
+          "title": "prop_host_update_channel_rejects_packet_field_change",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.update_channel.invalid_packet_field_change": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_update_channel_rejects_receive_height_mutation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.update_channel.invalid_receive_height_mutation": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_handle_packet_accepts_send",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.handle_packet.valid_send": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_accepts_canonical_packet_thread",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 7955344,
+            "cpu": 2463699912
+          }
+        },
+        {
+          "title": "host_state_rejects_counterfeit_packet_thread_policy",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 5726112,
+            "cpu": 1755671204
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect token.policy_id == policy_id"
+          ]
+        },
+        {
+          "title": "prop_host_handle_packet_accepts_recv",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.handle_packet.valid_recv": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_handle_packet_recv_succeeds_at_history_capacity",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 8188643,
+            "cpu": 2459328634
+          }
+        },
+        {
+          "title": "prop_host_handle_packet_rejects_history_capacity_overflow",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.capacity.ack_dominant": 466,
+            "fuzz.contract.host.capacity.receipt_dominant": 534,
+            "fuzz.contract.host.handle_packet.invalid_history_capacity": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_handle_packet_acknowledgement_succeeds_at_history_capacity",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 9377799,
+            "cpu": 2922534858
+          }
+        },
+        {
+          "title": "prop_host_handle_packet_rejects_acknowledgement_capacity_overflow",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.capacity.ack_dominant": 466,
+            "fuzz.contract.host.capacity.receipt_dominant": 534,
+            "fuzz.contract.host.handle_packet.invalid_ack_capacity": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_handle_packet_send_succeeds_at_commitment_capacity",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 10390275,
+            "cpu": 3285417744
+          }
+        },
+        {
+          "title": "prop_host_handle_packet_rejects_commitment_capacity_overflow",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.capacity.ack_dominant": 466,
+            "fuzz.contract.host.capacity.receipt_dominant": 534,
+            "fuzz.contract.host.handle_packet.invalid_commitment_capacity": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_handle_packet_rejects_recv_with_unrelated_channel_mutation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.handle_packet.invalid_recv_channel_mutation": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_handle_packet_accepts_ack",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.handle_packet.valid_ack": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_handle_packet_accepts_timeout",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.handle_packet.valid_timeout": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_handle_packet_accepts_timeout_on_already_closed_channel",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3979723,
+            "cpu": 1206936703
+          }
+        },
+        {
+          "title": "prop_host_handle_packet_rejects_channel_only_change",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.handle_packet.invalid_channel_only_change": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_handle_packet_rejects_wrong_packet_key",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.handle_packet.invalid_wrong_packet_key": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_prune_packet_history_deletes_receipt_then_ack_root",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 10876301,
+            "cpu": 3258143702
+          }
+        },
+        {
+          "title": "host_state_prune_packet_history_succeeds_at_full_packet_history_capacity",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 12523443,
+            "cpu": 3723546633
+          }
+        },
+        {
+          "title": "host_state_prune_packet_history_rejects_wrong_post_receipt_ack_witness",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 10863916,
+            "cpu": 3256408062
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect computed_old == old_root"
+          ]
+        },
+        {
+          "title": "host_state_ordered_prune_deletes_only_ack_root",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3822775,
+            "cpu": 1140915582
+          }
+        },
+        {
+          "title": "host_state_ordered_prune_succeeds_at_full_packet_history_capacity",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3694431,
+            "cpu": 1084954669
+          }
+        },
+        {
+          "title": "host_state_ordered_prune_capacity_root_fixture_matches_derivation",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1900233,
+            "cpu": 563542183
+          }
+        },
+        {
+          "title": "host_state_ordered_prune_ignores_unused_receipt_witness",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3822775,
+            "cpu": 1140915582
+          }
+        },
+        {
+          "title": "prop_host_bind_port_rejects_missing_authority",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.contract.host.bind_port.invalid_unauthorized": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "prop_host_bind_port_rejects_global_overflow",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.unit.host.bind_port.invalid_capacity": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_bind_port_rejects_duplicate_textual_id",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 42768,
+            "cpu": 12560193
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "!pairs.has_key(old.control.port_registry, port_id) ? False",
+            "expect (!pairs.has_key(old.control.port_registry, port_id))?"
+          ]
+        },
+        {
+          "title": "host_state_bind_port_rejects_legacy_abi_list_mutation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 76242,
+            "cpu": 29912950
+          }
+        },
+        {
+          "title": "host_state_bind_port_uses_canonical_cbor_bytearray_order",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 124490,
+            "cpu": 48568052
+          }
+        },
+        {
+          "title": "prop_host_bind_port_rejects_too_short_textual_identifier",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.unit.host.bind_port.invalid_identifier": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "host_state_bind_tenth_port_succeeds_at_global_cap",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 4844547,
+            "cpu": 1493900671
+          },
+          "traces": [
+            "output: 121([_ 121([_ 122([_ h'915F344AE918EBB7DAF88FE7AFA3737A9D4884D3AEC39B64D177B379']), 122([])]), {_ h'6D6F636B206D6F64756C6520706F6C696379': {_ h'6D6F636B206D6F64756C65': 1 }, h'6D6F636B20706F727420706F6C696379': {_ h'6D6F636B20706F7274': 1 } }, 121([]), 122([])])",
+            "tokens: [_ 121([_ h'6D6F636B20706F727420706F6C696379', h'6D6F636B20706F7274']), 121([_ h'6D6F636B206D6F64756C6520706F6C696379', h'6D6F636B206D6F64756C65'])]"
+          ]
+        },
+        {
+          "title": "host_state_bind_port_succeeds_with_correct_root_witness",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3959868,
+            "cpu": 1213054000
+          },
+          "traces": [
+            "output: 121([_ 121([_ 122([_ h'915F344AE918EBB7DAF88FE7AFA3737A9D4884D3AEC39B64D177B379']), 122([])]), {_ h'6D6F636B206D6F64756C6520706F6C696379': {_ h'6D6F636B206D6F64756C65': 1 }, h'6D6F636B20706F727420706F6C696379': {_ h'6D6F636B20706F7274': 1 } }, 123([_ h'00']), 122([])])",
+            "tokens: [_ 121([_ h'6D6F636B20706F727420706F6C696379', h'6D6F636B20706F7274']), 121([_ h'6D6F636B206D6F64756C6520706F6C696379', h'6D6F636B206D6F64756C65'])]"
+          ]
+        },
+        {
+          "title": "host_state_bind_port_fails_with_arbitrary_root",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1520476,
+            "cpu": 462999746
+          }
+        },
+        {
+          "title": "host_state_cannot_move_nft_to_different_address",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1391665,
+            "cpu": 417544511
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect host_output.address == host_input.output.address"
+          ]
+        },
+        {
+          "title": "host_state_bind_port_fails_without_required_sibling_hashes",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1518632,
+            "cpu": 475813077
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect [sibling, ..rest] = siblings"
+          ]
+        },
+        {
+          "title": "host_state_bind_port_fails_if_output_missing",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 309571,
+            "cpu": 86005175
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect [host_output] =\n    list.filter(\n      outputs,\n      fn(output) {\n        assets.has_nft(output.value, nft_policy, host_state_token_name)\n      },\n    )"
+          ]
+        },
+        {
+          "title": "host_state_enter_shutdown_succeeds_with_deployer_signature",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 386253,
+            "cpu": 120355458
+          }
+        },
+        {
+          "title": "host_state_enter_shutdown_allows_longer_grace_period",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 386253,
+            "cpu": 120355458
+          }
+        },
+        {
+          "title": "host_state_enter_shutdown_accepts_exclusive_upper_bound",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 391766,
+            "cpu": 122396110
+          }
+        },
+        {
+          "title": "host_state_enter_shutdown_fails_without_deployer_signature",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 333871,
+            "cpu": 97378752
+          }
+        },
+        {
+          "title": "host_state_enter_shutdown_rejects_backdated_grace_period",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 370331,
+            "cpu": 114230594
+          }
+        },
+        {
+          "title": "host_state_enter_shutdown_rejects_backdated_initiation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 370331,
+            "cpu": 114230594
+          }
+        },
+        {
+          "title": "host_state_enter_shutdown_rejects_short_grace_period",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 381540,
+            "cpu": 118451278
+          }
+        },
+        {
+          "title": "host_state_enter_shutdown_measures_grace_from_upper_bound",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 381540,
+            "cpu": 118451278
+          }
+        },
+        {
+          "title": "host_state_enter_shutdown_requires_finite_upper_bound",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 335798,
+            "cpu": 98457792
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect Finite(valid_to) = upper_bound.bound_type"
+          ]
+        },
+        {
+          "title": "host_state_finalize_shutdown_succeeds_with_exact_nft_burn",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 213369,
+            "cpu": 60525039
+          }
+        },
+        {
+          "title": "host_state_finalize_shutdown_rejects_releasing_nft_without_burn",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 213189,
+            "cpu": 60095515
+          }
+        },
+        {
+          "title": "host_state_finalize_shutdown_rejects_wrong_burn_quantity",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 211737,
+            "cpu": 60136045
+          }
+        },
+        {
+          "title": "host_state_finalize_shutdown_rejects_another_name_under_nft_policy",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 232749,
+            "cpu": 66540268
+          }
+        },
+        {
+          "title": "host_state_finalize_shutdown_rejects_nft_output_with_burn",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 240261,
+            "cpu": 67856901
+          }
+        },
+        {
+          "title": "host_state_finalize_shutdown_fails_before_grace_period",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 200747,
+            "cpu": 56053942
+          }
+        },
+        {
+          "title": "host_state_update_channel_rejects_packet_field_changes",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1874779,
+            "cpu": 584888036
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    ChannelDatum {\n      ..channel_input_datum,\n      state: ChannelDatumState {\n        ..channel_input_datum.state,\n        channel: channel_output_datum.state.channel,\n      },\n    } == channel_output_datum"
+          ]
+        },
+        {
+          "title": "host_state_handle_packet_rejects_channel_only_changes",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2848001,
+            "cpu": 907062702
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect Some(channel_redeemer_data) =\n    pairs.get_first(redeemers, Spend(channel_input.output_reference))"
+          ]
+        },
+        {
+          "title": "host_state_heartbeat_preserves_ibc_state",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 389157,
+            "cpu": 120317770
+          }
+        },
+        {
+          "title": "host_state_heartbeat_finds_host_output_first",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 598623,
+            "cpu": 177799847
+          }
+        },
+        {
+          "title": "host_state_heartbeat_finds_host_output_middle",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 645677,
+            "cpu": 191921170
+          }
+        },
+        {
+          "title": "host_state_heartbeat_finds_host_output_last",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 618679,
+            "cpu": 183934193
+          }
+        },
+        {
+          "title": "host_state_heartbeat_rejects_duplicate_host_outputs",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 231168,
+            "cpu": 64438746
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect [host_output] =\n    list.filter(\n      outputs,\n      fn(output) {\n        assets.has_nft(output.value, nft_policy, host_state_token_name)\n      },\n    )"
+          ]
+        },
+        {
+          "title": "host_state_heartbeat_rejects_unauthorized_signer",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 342533,
+            "cpu": 99538300
+          }
+        },
+        {
+          "title": "host_state_heartbeat_rejects_root_change",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 381592,
+            "cpu": 117096966
+          }
+        },
+        {
+          "title": "host_state_heartbeat_rejects_counter_change",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 373017,
+            "cpu": 113878132
+          }
+        },
+        {
+          "title": "host_state_heartbeat_rejects_stale_timestamp",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 380223,
+            "cpu": 116968237
+          }
+        },
+        {
+          "title": "host_state_heartbeat_rejects_shutdown_state",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 394804,
+            "cpu": 121432555
+          }
+        },
+        {
+          "title": "all_host_state_transitions_preserve_successor_invariants",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 2107469,
+            "cpu": 934197814
+          }
+        },
+        {
+          "title": "root_updates_remain_allowed_during_shutdown",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 284327,
+            "cpu": 135865038
+          }
+        },
+        {
+          "title": "state_value_host_state_rejects_surplus_ada_sweep",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 378465,
+            "cpu": 108425475
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        validator_utils.preserves_state_value(\n          host_input.output.value,\n          host_output.value,\n        )"
+          ]
+        },
+        {
+          "title": "state_value_host_state_rejects_unrelated_asset_sweep",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 399758,
+            "cpu": 118322037
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        validator_utils.preserves_state_value(\n          host_input.output.value,\n          host_output.value,\n        )"
+          ]
+        },
+        {
+          "title": "state_value_host_state_accepts_full_reserves_and_ada_top_up",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 537415,
+            "cpu": 163914366
+          }
+        },
+        {
+          "title": "containment_current_ready_permits_send",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 11659317,
+            "cpu": 3614129614
+          }
+        },
+        {
+          "title": "containment_current_approval_delay_permits_send",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 11670684,
+            "cpu": 3618996322
+          }
+        },
+        {
+          "title": "containment_current_rotation_delay_permits_send",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 11673182,
+            "cpu": 3619699295
+          }
+        },
+        {
+          "title": "containment_current_expired_proposal_permits_send",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 11672086,
+            "cpu": 3619372420
+          }
+        },
+        {
+          "title": "containment_current_moving_rejects_source_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8245861,
+            "cpu": 2564950831
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_moving_rejects_successor_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8288753,
+            "cpu": 2585101991
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_ready_permits_receive",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 10797512,
+            "cpu": 3263442185
+          }
+        },
+        {
+          "title": "containment_current_approval_delay_permits_receive",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 10808879,
+            "cpu": 3268308893
+          }
+        },
+        {
+          "title": "containment_current_rotation_delay_permits_receive",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 10811377,
+            "cpu": 3269011866
+          }
+        },
+        {
+          "title": "containment_current_expired_proposal_permits_receive",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 10810281,
+            "cpu": 3268684991
+          }
+        },
+        {
+          "title": "containment_current_moving_rejects_source_receive",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 7336386,
+            "cpu": 2228963976
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_moving_rejects_successor_receive",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 7379278,
+            "cpu": 2249115136
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_ready_permits_acknowledge",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6342027,
+            "cpu": 1944123786
+          }
+        },
+        {
+          "title": "containment_current_approval_delay_permits_acknowledge",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6353394,
+            "cpu": 1948990494
+          }
+        },
+        {
+          "title": "containment_current_rotation_delay_permits_acknowledge",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6355892,
+            "cpu": 1949693467
+          }
+        },
+        {
+          "title": "containment_current_expired_proposal_permits_acknowledge",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6354796,
+            "cpu": 1949366592
+          }
+        },
+        {
+          "title": "containment_current_moving_rejects_source_acknowledge",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4146228,
+            "cpu": 1275088178
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_moving_rejects_successor_acknowledge",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4189120,
+            "cpu": 1295239338
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_ready_permits_timeout",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6349708,
+            "cpu": 1947215631
+          }
+        },
+        {
+          "title": "containment_current_approval_delay_permits_timeout",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6361075,
+            "cpu": 1952082339
+          }
+        },
+        {
+          "title": "containment_current_rotation_delay_permits_timeout",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6363573,
+            "cpu": 1952785312
+          }
+        },
+        {
+          "title": "containment_current_expired_proposal_permits_timeout",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 6362477,
+            "cpu": 1952458437
+          }
+        },
+        {
+          "title": "containment_current_moving_rejects_source_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4146519,
+            "cpu": 1276104125
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_moving_rejects_successor_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4189411,
+            "cpu": 1296255285
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_ready_permits_prune",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 14436994,
+            "cpu": 4329854573
+          }
+        },
+        {
+          "title": "containment_current_approval_delay_permits_prune",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 14448361,
+            "cpu": 4334721281
+          }
+        },
+        {
+          "title": "containment_current_rotation_delay_permits_prune",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 14450859,
+            "cpu": 4335424254
+          }
+        },
+        {
+          "title": "containment_current_expired_proposal_permits_prune",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 14449763,
+            "cpu": 4335097379
+          }
+        },
+        {
+          "title": "containment_current_moving_rejects_source_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11119324,
+            "cpu": 3346755493
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_moving_rejects_successor_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11162216,
+            "cpu": 3366906653
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_ready_permits_client_update",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18843139,
+            "cpu": 5877875946
+          }
+        },
+        {
+          "title": "containment_current_approval_delay_permits_client_update",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18854506,
+            "cpu": 5882742654
+          }
+        },
+        {
+          "title": "containment_current_rotation_delay_permits_client_update",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18857004,
+            "cpu": 5883445627
+          }
+        },
+        {
+          "title": "containment_current_expired_proposal_permits_client_update",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18855908,
+            "cpu": 5883118752
+          }
+        },
+        {
+          "title": "containment_current_moving_rejects_source_client_update",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 15483516,
+            "cpu": 4822325137
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_moving_rejects_successor_client_update",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 15526408,
+            "cpu": 4842476297
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_ready_permits_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1077266,
+            "cpu": 358706403
+          }
+        },
+        {
+          "title": "containment_current_approval_delay_permits_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1088633,
+            "cpu": 363573111
+          }
+        },
+        {
+          "title": "containment_current_rotation_delay_permits_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1091131,
+            "cpu": 364276084
+          }
+        },
+        {
+          "title": "containment_current_expired_proposal_permits_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1090035,
+            "cpu": 363949209
+          }
+        },
+        {
+          "title": "containment_current_moving_rejects_source_heartbeat",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 614696,
+            "cpu": 205783706
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "containment_current_moving_rejects_successor_heartbeat",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 656944,
+            "cpu": 221464780
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8911631,
+            "cpu": 2739160706
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_recv",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8002156,
+            "cpu": 2403173851
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_ack",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4521758,
+            "cpu": 1378109317
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4522049,
+            "cpu": 1379125264
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11765094,
+            "cpu": 3517765368
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_client",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18843139,
+            "cpu": 5877875946
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_0_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1077266,
+            "cpu": 358706403
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8912498,
+            "cpu": 2742347414
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_recv",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8023023,
+            "cpu": 2409560559
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_ack",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542625,
+            "cpu": 1384496025
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542916,
+            "cpu": 1385511972
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11785961,
+            "cpu": 3524152076
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_client",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18854506,
+            "cpu": 5882742654
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_1_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1088633,
+            "cpu": 363573111
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8912596,
+            "cpu": 2742666387
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_recv",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8023121,
+            "cpu": 2409879532
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_ack",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542723,
+            "cpu": 1384814998
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4543014,
+            "cpu": 1385830945
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11786059,
+            "cpu": 3524471049
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_client",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18857004,
+            "cpu": 5883445627
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_3_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1091131,
+            "cpu": 364276084
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_send",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8912500,
+            "cpu": 2742499512
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_recv",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 8023025,
+            "cpu": 2409712657
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_ack",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542627,
+            "cpu": 1384648123
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_timeout",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4542918,
+            "cpu": 1385664070
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_prune",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 11785963,
+            "cpu": 3524304174
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_client",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 18855908,
+            "cpu": 5883118752
+          }
+        },
+        {
+          "title": "emergency_traffic_mask_phase_4_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1090035,
+            "cpu": 363949209
+          }
+        },
+        {
+          "title": "emergency_clients_reject_update",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 16108318,
+            "cpu": 4986865939
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_clients_permit_heartbeat",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1077266,
+            "cpu": 358706403
+          }
+        },
+        {
+          "title": "emergency_heartbeat_rejects_heartbeat",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 698644,
+            "cpu": 233886728
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }"
+          ]
+        },
+        {
+          "title": "emergency_heartbeat_permits_send",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 11659317,
+            "cpu": 3614129614
+          }
+        }
+      ]
+    },
+    {
+      "name": "ibc/migration/budget_equivalence.test",
+      "summary": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "kind": {
+          "unit": 0,
+          "property": 3
+        }
+      },
+      "tests": [
+        {
+          "title": "migration_budget_equivalence_metadata_runtime",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.unit.migration.metadata.dynamic-policy-and-asset-bytes": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "migration_budget_equivalence_directory",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.unit.migration.directory.active-in-archive": 109,
+            "fuzz.unit.migration.directory.archive-cap": 93,
+            "fuzz.unit.migration.directory.bucket-cap": 97,
+            "fuzz.unit.migration.directory.duplicate-archive": 111,
+            "fuzz.unit.migration.directory.duplicate-index": 102,
+            "fuzz.unit.migration.directory.empty-name": 105,
+            "fuzz.unit.migration.directory.name-length": 99,
+            "fuzz.unit.migration.directory.negative-index": 102,
+            "fuzz.unit.migration.directory.out-of-range-index": 87,
+            "fuzz.unit.migration.directory.valid-permutation": 95
+          },
+          "counterexample": null
+        },
+        {
+          "title": "migration_budget_equivalence_dual_root",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.unit.migration.tree.delete": 17,
+            "fuzz.unit.migration.tree.insert": 32,
+            "fuzz.unit.migration.tree.replace": 951
+          },
+          "counterexample": null
+        }
+      ]
+    },
+    {
+      "name": "migration_adversarial.test",
+      "summary": {
+        "total": 68,
+        "passed": 68,
+        "failed": 0,
+        "kind": {
+          "unit": 68,
+          "property": 0
+        }
+      },
+      "tests": [
+        {
+          "title": "migration_adversarial_valid_bootstrap",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1068521,
+            "cpu": 408014203
+          }
+        },
+        {
+          "title": "migration_adversarial_bootstrap_rejects_missing_authority",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 361048,
+            "cpu": 165174723
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.authorized(governance, transaction)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_bootstrap_rejects_missing_nonce",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 339602,
+            "cpu": 157145711
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n      list.any(\n        transaction.inputs,\n        fn(input) { input.output_reference == nonce },\n      )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_bootstrap_rejects_duplicate_identity_policy",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 822488,
+            "cpu": 306924443
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect list.length(list.unique(policies)) == 6"
+          ]
+        },
+        {
+          "title": "migration_adversarial_bootstrap_rejects_premigrated_state",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1179172,
+            "cpu": 435865143
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    bootstrap(\n      moving(zeros(), tree.empty_hash, False),\n      [hash(11), hash(12)],\n      True,\n    )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_valid_approval",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1349786,
+            "cpu": 557906736
+          }
+        },
+        {
+          "title": "migration_adversarial_approval_rejects_missing_quorum",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1033083,
+            "cpu": 390523709
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.authorized(old.governance, transaction)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_duplicate_signature_does_not_create_quorum",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1033411,
+            "cpu": 392777157
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.authorized(old.governance, transaction)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_approval_rejects_stale_nonce",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1033448,
+            "cpu": 391055406
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          when proposal is {\n            Replace {\n              source_generation,\n              nonce,\n              target,\n              maximum,\n              escrow_inventory,\n            } -> and {\n                source_generation == old.current.generation,\n                nonce == old.nonce + 1,\n                target.generation == source_generation + 1,\n                target.compatibility == old.current.compatibility,\n                migration.valid_implementation(target),\n                maximum.clients >= 0 && maximum.connections >= 0 && maximum.channels >= 0,\n                bytearray.length(escrow_inventory) == 32,\n                !list.any(\n                  target.addresses,\n                  fn(address) {\n                    address == own_input.output.address || list.has(\n                      old.current.addresses,\n                      address,\n                    )\n                  },\n                ),\n              }\n            Rotate { nonce, governance } -> and {\n                nonce == old.nonce + 1,\n                migration.valid_governance(governance),\n                migration.separate_authorities(\n                  governance,\n                  old.emergency.authority,\n                ),\n              }\n          }"
+          ]
+        },
+        {
+          "title": "migration_adversarial_approval_rejects_wrong_source",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1033188,
+            "cpu": 390228690
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          when proposal is {\n            Replace {\n              source_generation,\n              nonce,\n              target,\n              maximum,\n              escrow_inventory,\n            } -> and {\n                source_generation == old.current.generation,\n                nonce == old.nonce + 1,\n                target.generation == source_generation + 1,\n                target.compatibility == old.current.compatibility,\n                migration.valid_implementation(target),\n                maximum.clients >= 0 && maximum.connections >= 0 && maximum.channels >= 0,\n                bytearray.length(escrow_inventory) == 32,\n                !list.any(\n                  target.addresses,\n                  fn(address) {\n                    address == own_input.output.address || list.has(\n                      old.current.addresses,\n                      address,\n                    )\n                  },\n                ),\n              }\n            Rotate { nonce, governance } -> and {\n                nonce == old.nonce + 1,\n                migration.valid_governance(governance),\n                migration.separate_authorities(\n                  governance,\n                  old.emergency.authority,\n                ),\n              }\n          }"
+          ]
+        },
+        {
+          "title": "migration_adversarial_approval_rejects_generation_skip",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1075640,
+            "cpu": 410601902
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          when proposal is {\n            Replace {\n              source_generation,\n              nonce,\n              target,\n              maximum,\n              escrow_inventory,\n            } -> and {\n                source_generation == old.current.generation,\n                nonce == old.nonce + 1,\n                target.generation == source_generation + 1,\n                target.compatibility == old.current.compatibility,\n                migration.valid_implementation(target),\n                maximum.clients >= 0 && maximum.connections >= 0 && maximum.channels >= 0,\n                bytearray.length(escrow_inventory) == 32,\n                !list.any(\n                  target.addresses,\n                  fn(address) {\n                    address == own_input.output.address || list.has(\n                      old.current.addresses,\n                      address,\n                    )\n                  },\n                ),\n              }\n            Rotate { nonce, governance } -> and {\n                nonce == old.nonce + 1,\n                migration.valid_governance(governance),\n                migration.separate_authorities(\n                  governance,\n                  old.emergency.authority,\n                ),\n              }\n          }"
+          ]
+        },
+        {
+          "title": "migration_adversarial_approval_rejects_dependency_digest_substitution",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1054542,
+            "cpu": 397122540
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          when proposal is {\n            Replace {\n              source_generation,\n              nonce,\n              target,\n              maximum,\n              escrow_inventory,\n            } -> and {\n                source_generation == old.current.generation,\n                nonce == old.nonce + 1,\n                target.generation == source_generation + 1,\n                target.compatibility == old.current.compatibility,\n                migration.valid_implementation(target),\n                maximum.clients >= 0 && maximum.connections >= 0 && maximum.channels >= 0,\n                bytearray.length(escrow_inventory) == 32,\n                !list.any(\n                  target.addresses,\n                  fn(address) {\n                    address == own_input.output.address || list.has(\n                      old.current.addresses,\n                      address,\n                    )\n                  },\n                ),\n              }\n            Rotate { nonce, governance } -> and {\n                nonce == old.nonce + 1,\n                migration.valid_governance(governance),\n                migration.separate_authorities(\n                  governance,\n                  old.emergency.authority,\n                ),\n              }\n          }"
+          ]
+        },
+        {
+          "title": "migration_adversarial_approval_rejects_source_role_reuse",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1222229,
+            "cpu": 466811787
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          when proposal is {\n            Replace {\n              source_generation,\n              nonce,\n              target,\n              maximum,\n              escrow_inventory,\n            } -> and {\n                source_generation == old.current.generation,\n                nonce == old.nonce + 1,\n                target.generation == source_generation + 1,\n                target.compatibility == old.current.compatibility,\n                migration.valid_implementation(target),\n                maximum.clients >= 0 && maximum.connections >= 0 && maximum.channels >= 0,\n                bytearray.length(escrow_inventory) == 32,\n                !list.any(\n                  target.addresses,\n                  fn(address) {\n                    address == own_input.output.address || list.has(\n                      old.current.addresses,\n                      address,\n                    )\n                  },\n                ),\n              }\n            Rotate { nonce, governance } -> and {\n                nonce == old.nonce + 1,\n                migration.valid_governance(governance),\n                migration.separate_authorities(\n                  governance,\n                  old.emergency.authority,\n                ),\n              }\n          }"
+          ]
+        },
+        {
+          "title": "migration_adversarial_approval_rejects_reduced_delay_in_output",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1894867,
+            "cpu": 731359513
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    run(\n      with_registry_output(\n        case,\n        Registry {\n          ..new,\n          phase: Proposed {\n            proposal: proposal(),\n            ready_at: approval_upper,\n            expires_at,\n          },\n        },\n      ),\n    )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_approval_rejects_ordinary_script_piggyback",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1074831,
+            "cpu": 403911007
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect control_only(transaction)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_authorized_cancel_before_expiry",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 804323,
+            "cpu": 312088631
+          }
+        },
+        {
+          "title": "migration_adversarial_permissionless_cancel_after_expiry",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 800422,
+            "cpu": 309654651
+          }
+        },
+        {
+          "title": "migration_adversarial_cancellation_at_exact_expiry_requires_authority",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 781117,
+            "cpu": 295917774
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          migration.authorized(old.governance, transaction) || validator_utils.get_tx_valid_from(\n            transaction.validity_range,\n          ) > expires_at"
+          ]
+        },
+        {
+          "title": "migration_adversarial_cancellation_cannot_rewind_partial_migration",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 738375,
+            "cpu": 289264173
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect Proposed { expires_at, .. } = old.phase"
+          ]
+        },
+        {
+          "title": "migration_adversarial_valid_rotation_approval",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 924286,
+            "cpu": 360485357
+          }
+        },
+        {
+          "title": "migration_adversarial_valid_permissionless_rotation_execution",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 770396,
+            "cpu": 294112401
+          }
+        },
+        {
+          "title": "migration_adversarial_rotation_cannot_bypass_timelock",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 738671,
+            "cpu": 273878711
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect proposal_ready(transaction, old)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_rotation_cannot_substitute_authority",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1097083,
+            "cpu": 395060219
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    run(\n      with_registry_output(\n        case,\n        Registry {\n          ..new,\n          governance: Governance {\n            signers: [hash(99)],\n            quorum: 1,\n            delay_ms: minimum_delay_ms,\n          },\n        },\n      ),\n    )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_rotation_rejects_zero_threshold",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 885393,
+            "cpu": 337029820
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          when proposal is {\n            Replace {\n              source_generation,\n              nonce,\n              target,\n              maximum,\n              escrow_inventory,\n            } -> and {\n                source_generation == old.current.generation,\n                nonce == old.nonce + 1,\n                target.generation == source_generation + 1,\n                target.compatibility == old.current.compatibility,\n                migration.valid_implementation(target),\n                maximum.clients >= 0 && maximum.connections >= 0 && maximum.channels >= 0,\n                bytearray.length(escrow_inventory) == 32,\n                !list.any(\n                  target.addresses,\n                  fn(address) {\n                    address == own_input.output.address || list.has(\n                      old.current.addresses,\n                      address,\n                    )\n                  },\n                ),\n              }\n            Rotate { nonce, governance } -> and {\n                nonce == old.nonce + 1,\n                migration.valid_governance(governance),\n                migration.separate_authorities(\n                  governance,\n                  old.emergency.authority,\n                ),\n              }\n          }"
+          ]
+        },
+        {
+          "title": "migration_adversarial_rotation_rejects_short_future_delay",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 885747,
+            "cpu": 337903431
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          when proposal is {\n            Replace {\n              source_generation,\n              nonce,\n              target,\n              maximum,\n              escrow_inventory,\n            } -> and {\n                source_generation == old.current.generation,\n                nonce == old.nonce + 1,\n                target.generation == source_generation + 1,\n                target.compatibility == old.current.compatibility,\n                migration.valid_implementation(target),\n                maximum.clients >= 0 && maximum.connections >= 0 && maximum.channels >= 0,\n                bytearray.length(escrow_inventory) == 32,\n                !list.any(\n                  target.addresses,\n                  fn(address) {\n                    address == own_input.output.address || list.has(\n                      old.current.addresses,\n                      address,\n                    )\n                  },\n                ),\n              }\n            Rotate { nonce, governance } -> and {\n                nonce == old.nonce + 1,\n                migration.valid_governance(governance),\n                migration.separate_authorities(\n                  governance,\n                  old.emergency.authority,\n                ),\n              }\n          }"
+          ]
+        },
+        {
+          "title": "migration_adversarial_valid_begin",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3466344,
+            "cpu": 1292136030
+          }
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_counter_above_approved_maximum",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3433049,
+            "cpu": 1286395092
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect host.state.next_client_sequence <= maximum.clients"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_changed_escrow_inventory",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3432443,
+            "cpu": 1286147423
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect module_datum.escrow_shard_registry_root == escrow_inventory"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_ordinary_script_piggyback",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3010413,
+            "cpu": 1121430394
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect [input] =\n    list.filter(\n      script_inputs(transaction),\n      fn(input) { input.output_reference != own_ref },\n    )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_unpublished_successors",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2538058,
+            "cpu": 907723561
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          list.all(\n            target.addresses,\n            fn(address) {\n              expect Script(hash) = address.payment_credential\n              list.any(\n                transaction.reference_inputs,\n                fn(reference) {\n                  reference.output.address == old.identity.reference_holder && reference.output.reference_script == Some(\n                    hash,\n                  )\n                },\n              )\n            },\n          )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_early_execution",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2495646,
+            "cpu": 892523048
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect proposal_ready(transaction, old)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_expired_approval",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2516481,
+            "cpu": 897920275
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect proposal_ready(transaction, old)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_unrelated_mint",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2451775,
+            "cpu": 873088532
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect assets.flatten(transaction.mint) == []"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_withdrawal_side_effect",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2431221,
+            "cpu": 869662608
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect transaction.withdrawals == []"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_commitment_mutation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3517027,
+            "cpu": 1290049702
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          host_output_matches(\n            transaction,\n            old,\n            input,\n            HostStateDatum {\n              ..host,\n              state: host_state.HostState {\n                ..host.state,\n                version: host.state.version + 1,\n                last_update_time: valid_to,\n              },\n            },\n            migration.role_address(target, host_role),\n          )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_begin_rejects_stake_credential_substitution",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3411701,
+            "cpu": 1255189883
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          host_output_matches(\n            transaction,\n            old,\n            input,\n            HostStateDatum {\n              ..host,\n              state: host_state.HostState {\n                ..host.state,\n                version: host.state.version + 1,\n                last_update_time: valid_to,\n              },\n            },\n            migration.role_address(target, host_role),\n          )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_valid_client_move",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1440396,
+            "cpu": 566262037
+          }
+        },
+        {
+          "title": "migration_adversarial_core_rejects_replay_after_cursor_advance",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1586423,
+            "cpu": 658719292
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.contains(input.output, token)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_valid_connection_move",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1452956,
+            "cpu": 570168013
+          }
+        },
+        {
+          "title": "migration_adversarial_valid_channel_move",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1462788,
+            "cpu": 573202205
+          }
+        },
+        {
+          "title": "migration_adversarial_core_move_rejects_omitted_cursor",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1583930,
+            "cpu": 644777818
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n    run(\n      with_registry_output(\n        case,\n        moving(Counts { ..zeros(), clients: 2 }, tree.empty_hash, False),\n      ),\n    )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_core_move_rejects_double_script_satisfaction",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1350087,
+            "cpu": 521704183
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect [input] =\n    list.filter(\n      script_inputs(transaction),\n      fn(input) { input.output_reference != own_ref },\n    )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_core_move_rejects_datum_mutation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1392418,
+            "cpu": 535197478
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect moved_object(transaction, old, own_ref, role, token)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_core_move_rejects_ada_sweep",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1455083,
+            "cpu": 555485022
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect moved_object(transaction, old, own_ref, role, token)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_core_move_rejects_wrong_destination_role",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1391908,
+            "cpu": 533873859
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect moved_object(transaction, old, own_ref, role, token)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_core_move_rejects_reference_script_loss",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1392552,
+            "cpu": 537896183
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect moved_object(transaction, old, own_ref, role, token)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_valid_transfer_root_move",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 1559644,
+            "cpu": 604543377
+          }
+        },
+        {
+          "title": "migration_adversarial_root_move_rejects_missing_port_capability",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1351390,
+            "cpu": 521081298
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect migration.contains(input.output, registration.port_token)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_valid_real_escrow_move_and_inventory_deletion",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 4605537,
+            "cpu": 1500576881
+          }
+        },
+        {
+          "title": "migration_adversarial_escrow_move_rejects_value_diversion",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3257638,
+            "cpu": 1090395617
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect moved_object(transaction, old, own_ref, transfer_role, token)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_escrow_move_rejects_obligation_mutation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3195157,
+            "cpu": 1065962747
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect moved_object(transaction, old, own_ref, transfer_role, token)"
+          ]
+        },
+        {
+          "title": "migration_adversarial_escrow_move_rejects_fake_inventory_proof",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4837847,
+            "cpu": 1570489379
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect computed_old == old_root"
+          ]
+        },
+        {
+          "title": "migration_adversarial_escrow_move_rejects_phantom_object",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 2900089,
+            "cpu": 963127924
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect [input] =\n    list.filter(\n      script_inputs(transaction),\n      fn(input) { input.output_reference != own_ref },\n    )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_valid_activation",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 4498037,
+            "cpu": 1569675449
+          }
+        },
+        {
+          "title": "migration_adversarial_activation_rejects_ordinary_script_piggyback",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3373790,
+            "cpu": 1163612989
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect [input] =\n    list.filter(\n      script_inputs(transaction),\n      fn(input) { input.output_reference != own_ref },\n    )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_activation_rejects_omitted_core_state",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3312169,
+            "cpu": 1169898797
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect next == limits"
+          ]
+        },
+        {
+          "title": "migration_adversarial_activation_rejects_unmoved_transfer_root",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 3312139,
+            "cpu": 1170015719
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect module_moved"
+          ]
+        },
+        {
+          "title": "migration_adversarial_activation_rejects_remaining_escrow_obligations",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 5395265,
+            "cpu": 1860769998
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect escrow_remaining == ibc_state_commitment.empty_hash"
+          ]
+        },
+        {
+          "title": "migration_adversarial_activation_rejects_unproved_root_replacement",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4561365,
+            "cpu": 1578654500
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n          host_output_matches(\n            transaction,\n            old,\n            input,\n            HostStateDatum {\n              ..host,\n              state: host_state.HostState {\n                ..host.state,\n                version: host.state.version + 1,\n                last_update_time: valid_to,\n                ibc_state_root: root,\n              },\n              control: host_state.HostStateControl {\n                ..host.control,\n                port_registry: updated_ports,\n              },\n            },\n            migration.role_address(target, host_role),\n          )"
+          ]
+        },
+        {
+          "title": "migration_adversarial_activation_rejects_wrong_port_witness",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 4539146,
+            "cpu": 1555286603
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect computed_old == old_root"
+          ]
+        },
+        {
+          "title": "migration_adversarial_negative_control_target_only_completion_accepts_omission",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 3163188,
+            "cpu": 1082750493
+          }
+        },
+        {
+          "title": "migration_adversarial_negative_control_token_only_custody_accepts_escrow_diversion",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 2206582,
+            "cpu": 731744630
+          }
+        },
+        {
+          "title": "migration_adversarial_approved_registry_keeps_updates_active",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 260971,
+            "cpu": 111887817
+          }
+        },
+        {
+          "title": "migration_adversarial_channel_creation_rejects_approved_phase",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 192580,
+            "cpu": 90507961
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect builtin.un_constr_data(phase).1st == 0"
+          ]
+        },
+        {
+          "title": "migration_adversarial_partial_decoder_rejects_moving_phase",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 234167,
+            "cpu": 106386792
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect phase == 0 || phase == 1"
+          ]
+        },
+        {
+          "title": "migration_adversarial_cleanup_control_has_valid_legacy_authority_and_state",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 5843581,
+            "cpu": 1919881693
+          }
+        },
+        {
+          "title": "migration_adversarial_cleanup_rejects_deployer_shutdown_while_active",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1437276,
+            "cpu": 480663898
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          EnterShutdown { .. } -> False\n          FinalizeShutdown -> False\n          BindPort { port_id, registration, .. } ->\n            if port_id == \"transfer\" {\n              and {\n                registration.module_script_hash == migration.active_role_hash(\n                  registry.current,\n                  transfer_role,\n                ),\n                migration.creation_address(\n                  transaction,\n                  registry.current,\n                  transfer_role,\n                ),\n              }\n            } else {\n              True\n            }\n          _ -> True\n        }"
+          ]
+        },
+        {
+          "title": "migration_adversarial_cleanup_rejects_deployer_shutdown_after_approval",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 1501140,
+            "cpu": 508557670
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect\n        when redeemer is {\n          EnterShutdown { .. } -> False\n          FinalizeShutdown -> False\n          BindPort { port_id, registration, .. } ->\n            if port_id == \"transfer\" {\n              and {\n                registration.module_script_hash == migration.active_role_hash(\n                  registry.current,\n                  transfer_role,\n                ),\n                migration.creation_address(\n                  transaction,\n                  registry.current,\n                  transfer_role,\n                ),\n              }\n            } else {\n              True\n            }\n          _ -> True\n        }"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "migration_packet_model.test",
+      "summary": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "kind": {
+          "unit": 4,
+          "property": 2
+        }
+      },
+      "tests": [
+        {
+          "title": "prop_migration_packet_event_log_model",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.model.migration.acknowledge": 1000,
+            "fuzz.model.migration.authenticated-channel-handover": 1000,
+            "fuzz.model.migration.old-ack-after-handover": 1000,
+            "fuzz.model.migration.old-receipt-pruned-after-handover": 1000,
+            "fuzz.model.migration.old-timeout-after-handover": 1000,
+            "fuzz.model.migration.prune": 1000,
+            "fuzz.model.migration.receive": 1000,
+            "fuzz.model.migration.send": 1000,
+            "fuzz.model.migration.timeout": 1000
+          },
+          "counterexample": null
+        },
+        {
+          "title": "migration_packet_event_log_regression_462",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 24866275,
+            "cpu": 9594493071
+          }
+        },
+        {
+          "title": "prop_migration_packet_handover_rejects_claim_mutation",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "iterations": 1000,
+          "labels": {
+            "fuzz.model.migration.reject-acknowledgement-omission": 247,
+            "fuzz.model.migration.reject-commitment-omission": 260,
+            "fuzz.model.migration.reject-proof-floor-mutation": 233,
+            "fuzz.model.migration.reject-receipt-omission": 260
+          },
+          "counterexample": null
+        },
+        {
+          "title": "migration_packet_handover_rejects_commitment_omission",
+          "status": "pass",
+          "on_failure": "succeed_eventually",
+          "execution_units": {
+            "mem": 5290725,
+            "cpu": 2136075193
+          },
+          "traces": [
+            "the validator crashed / exited prematurely",
+            "expect moved_object(transaction, old, own_ref, role, token)"
+          ]
+        },
+        {
+          "title": "migration_packet_receive_preserves_prune_floor",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 4871301,
+            "cpu": 1974522624
+          }
+        },
+        {
+          "title": "migration_packet_send_rejects_sequence_change_after_handover",
+          "status": "pass",
+          "on_failure": "fail_immediately",
+          "execution_units": {
+            "mem": 4767432,
+            "cpu": 1951262123
+          }
+        }
+      ]
+    }
+  ]
+}
