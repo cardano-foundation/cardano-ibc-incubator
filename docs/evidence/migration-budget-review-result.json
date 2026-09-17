@@ -411,6 +411,10 @@
     "docs/evidence/emergency-budget-v3/operator.json": {
       "sha256": "8470ca3a8770e8218347a5d2b0c114e799851c283c6da7d4a9eb1f8d0023e359",
       "sourceLog": ".deployment-smoke/emergency-budget-size-operator.json"
+    },
+    "docs/evidence/emergency-budget-v3/operator-extended.json": {
+      "sha256": "7165341ee0000ae8b989c6ffde7ddba17f88e71678df7e17a63b8423dff9bccf",
+      "sourceLog": ".deployment-smoke/emergency-budget-extended-operator.json"
     }
   },
   "logs": {
@@ -601,11 +605,24 @@
     "staticCheckAtUnformattedSource": "failed formatting, corrected in formattedCandidateCommit",
     "formattedChecksRun": 35288005940,
     "populatedAcceptance": "unverified",
-    "realMultiNodeRollback": "unverified"
+    "realMultiNodeRollback": "unverified",
+    "formattedStaticCheck": "passed"
   },
   "releaseBlockers": [
     "Current compiled artifacts must complete actual populated V1-V2-V3 and canonical counterparty settlement",
     "Actual multi-node rollback and same-plan/outbox resumption must pass",
     "Production-scale real-network recovery envelope including confirmation/retries/interruption and restoration delays remains unqualified"
-  ]
+  ],
+  "extendedOperatorMeasurement": {
+    "sourceCommit": "78385f78a8603b5f4c275e90dc1387941e45c41e",
+    "sourceTree": "9a0a70e144026441f78559753b8e0a2902dd31f3",
+    "measuredAt": "2026-09-17T23:54:49.971817+00:00",
+    "script": "scripts/ci/measure-migration-operator.ts",
+    "scriptSha256": "f67af272dcb0a6be2a02ffb07d8a721c156aca49dbb989d56a1ccd3e6975a8b2",
+    "command": "deno run --allow-read --allow-env --allow-write --config cardano/offchain/deno.json scripts/ci/measure-migration-operator.ts REPORT",
+    "scope": "Same compiled production artifacts; only CI measurement matrix expanded. Seeded inventories and actual UPLC evaluation of every transaction, not network recovery time.",
+    "report": "docs/evidence/emergency-budget-v3/operator-extended.json",
+    "passedCases": 10,
+    "ciIntegration": "Existing workflow invokes this command; new cases ran locally, their fresh CI execution is not claimed."
+  }
 }
