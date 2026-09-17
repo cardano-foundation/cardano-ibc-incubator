@@ -11,6 +11,7 @@ import {
   withKupoStringQuantityHeader,
 } from './index';
 import { Lucid } from '@lucid-evolution/lucid';
+import { assertExecutionBudget } from './executionBudget';
 
 function protocolParameters(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -38,6 +39,19 @@ function protocolParameters(overrides: Record<string, unknown> = {}): Record<str
 }
 
 describe('Ogmios protocol parameter compatibility', () => {
+  it('validates raw execution limits before coercion and final budget checks', () => {
+    const map = (memory: unknown, cpu: unknown) => mapOgmiosProtocolParameters(protocolParameters({
+      utxoCostPerByte: 4310, maxExecutionUnitsPerTransaction: { memory, cpu },
+      plutusCostModels: { 'plutus:v1': [1, 2], 'plutus:v2': [3, 4] },
+    }));
+    for (const value of [10, 10n, '10']) {
+      assert.deepEqual(assertExecutionBudget(undefined, map(value, value)), { memory: 0n, steps: 0n });
+    }
+    for (const value of [undefined, null, true, false, [], [10], {}, '', ' 10', '+10', '010', '1e1', '0x10', 0, -1, 1.1, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(() => assertExecutionBudget(undefined, map(value, 10)), /invalid ledger execution limit memory/);
+      assert.throws(() => assertExecutionBudget(undefined, map(10, value)), /invalid ledger execution limit cpu/);
+    }
+  });
   it('maps the legacy UTxO-cost alias without inventing Plutus V3 parameters', () => {
     const mapped = mapOgmiosProtocolParameters(
       protocolParameters({

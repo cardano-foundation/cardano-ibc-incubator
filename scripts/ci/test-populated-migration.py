@@ -262,6 +262,9 @@ def main():
                 if (artifacts / 'hermes.toml').exists():
                     raise RuntimeError('Bootstrap requires a fresh bridge; do not recreate existing clients/routes')
                 run('services', runtime_command('services', source))
+                run('reference-preflight', ['python3', str(ROOT / 'scripts/ci/deployment-references.py'),
+                    '--runtime', str(runtime), '--artifacts', str(artifacts),
+                    '--output', str(run_dir / 'reference-preflight-services.json')])
                 # Wait for real Yaci schema and at least block one; genesis replay
                 # is performed before any later epoch nonce can be indexed.
                 deadline = time.monotonic() + 600
@@ -414,6 +417,8 @@ def main():
                     step = 'foreign-primary-ack' if generation == 2 else 'foreign-pending-ack'
                     continuity.append(bind_counterparty_continuity(generation, packet_rows[step], activation))
                 balances(installed(3), 'population-settled-v3', 'settled-v3', 3)
+                run('standalone-sdk-build', ['env', 'FAKETIME_DONT_FAKE_MONOTONIC=1', 'faketime', '-f', f'{offset():+d}s', 'node',
+                    str(ROOT / 'scripts/ci/verify-migration-sdk-build.cjs'), str(runtime), str(artifacts)])
                 with (run_dir / 'result.json').open('x') as output:
                     json.dump({'format': 'populated-migration-rehearsal-v1', 'genesisSha256': genesis_sha,
                         'deployment': json.loads(source.read_text())['migration']['registryUnit'],
@@ -422,6 +427,14 @@ def main():
                         'scope': 'Owned two-chain rehearsal and independent accounting, not a public-network finality certificate or independent audit'},
                         output, indent=2)
         print(json.dumps({'completedStages': selected, 'evidence': str(run_dir)}))
+    except Exception:
+        # Public logs from this explicitly owned network only; retain the node
+        # and indexer view when startup or later canonical evidence fails.
+        try:
+            run('startup-diagnostics', compose + ['logs', '--no-color', '--tail', '400', 'node', 'ogmios', 'kupo', 'yaci'])
+        except Exception:
+            pass
+        raise
     finally:
         for name in list(children): stop(name)
         for log in opened_logs: log.close()

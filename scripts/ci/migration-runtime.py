@@ -14,6 +14,11 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 
+
+def require_migration_witness(node):
+    if node.get('ports', []) != ['127.0.0.1:23001:3001']:
+        raise ValueError('Node witness port 23001 must be configured before deployment with --migration-baseline; refusing to recreate a populated node')
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('command', choices=['services', 'init-history', 'gateway', 'history-sync', 'export', 'witness'])
@@ -45,10 +50,7 @@ def main():
         p.error('Counterparty rehearsal requires the actual five-pool network')
     compose = ['docker', 'compose', '-p', args.project, '-f', str(compose_file)]
     if args.command == 'services':
-        ports = config['services']['node'].get('ports', [])
-        if ports and ports != ['127.0.0.1:23001:3001']:
-            p.error('Owned node witness fallback requires the explicit loopback port 23001')
-        config['services']['node']['ports'] = ['127.0.0.1:23001:3001']
+        require_migration_witness(config['services']['node'])
         base = json.loads(subprocess.check_output(['docker', 'compose', '-f', str(ROOT / 'chains/cosmos/docker-compose.yml'), '--profile', 'v8-classic', 'config', '--format', 'json']))['services']['v8-classic']
         env = base['environment']
         env.update({'COSMOS_GENESIS_TIME': (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=args.clock_offset_seconds - 30)).strftime('%Y-%m-%dT%H:%M:%SZ'),

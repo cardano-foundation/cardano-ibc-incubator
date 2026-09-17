@@ -62,6 +62,19 @@ jobs:
           npm run --prefix cardano/gateway build
           python3 scripts/ci/test-migration-evidence.py
           node --test scripts/ci/test-migration-packet-evidence.cjs
+          node --test scripts/ci/test-owned-sdk-rehearsal.cjs
+          python3 scripts/ci/test-deployment-references.py
+
+      - name: Restore relayer build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            relayer/target
+          key: ${{ runner.os }}-cargo-hermes-relayer-${{ hashFiles('relayer/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-hermes-relayer-
 
       - name: Build the actual relayer and counterparty
         run: |
@@ -111,6 +124,11 @@ jobs:
           include-hidden-files: true
           path: |
             .deployment-smoke/baseline-deployment.log
+            .deployment-smoke/**/deployment.log
+            .deployment-smoke/**/deployment-plan.json
+            .deployment-smoke/**/deployment-cost-report.json
+            .deployment-smoke/**/reference-preflight-*.json
+            .deployment-smoke/**/startup-diagnostics-*.log
             .deployment-smoke/**/result.json
             .deployment-smoke/**/release.json
             .deployment-smoke/**/plutus.json
@@ -130,6 +148,7 @@ jobs:
             .deployment-smoke/**/counterparty-pre-*-proof.json
             .deployment-smoke/**/counterparty-v*-continuity.json
             .deployment-smoke/**/node-witness-*.json
+            .deployment-smoke/**/sdk-ledger-evaluation-*.json
             .deployment-smoke/**/*-authenticated-budget.json
             .deployment-smoke/**/publication-costs-v*.json
             .deployment-smoke/**/v*-publication-measurements/*.json

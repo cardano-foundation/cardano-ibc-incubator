@@ -430,6 +430,8 @@ jobs:
         run: |
           python3 scripts/ci/test-migration-evidence.py
           node --test scripts/ci/test-migration-packet-evidence.cjs
+          node --test scripts/ci/test-owned-sdk-rehearsal.cjs
+          python3 scripts/ci/test-deployment-references.py
 
       - name: Test with coverage
         env:
