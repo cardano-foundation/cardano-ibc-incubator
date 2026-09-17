@@ -66,14 +66,8 @@ pub fn contains(output: Output, token: AuthToken) -> Bool {
 }
 
 pub fn unique_input(inputs: List<Input>, token: AuthToken) -> Input {
-  expect [input, ..rest] = inputs
-  if contains(input.output, token) {
-    // Preserve the exact-one rule without allocating a filtered input list.
-    expect !list.any(rest, fn(other) { contains(other.output, token) })
-    input
-  } else {
-    unique_input(rest, token)
-  }
+  expect [input] = list.filter(inputs, fn(input) { contains(input.output, token) })
+  input
 }
 
 pub fn unique_output(outputs: List<Output>, token: AuthToken) -> Output {
