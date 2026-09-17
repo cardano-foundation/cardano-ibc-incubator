@@ -262,7 +262,11 @@ def main():
             cli("conway", "transaction", "build", "--change-address", faucet, "--tx-in", txin, "--tx-out", wallet + "+100000000000", "--out-file", "/runtime/deployment-funding.body", "--testnet-magic", "42")
             cli("conway", "transaction", "sign", "--tx-body-file", "/runtime/deployment-funding.body", "--signing-key-file", "/runtime/credentials/faucet.sk", "--out-file", "/runtime/deployment-funding.signed", "--testnet-magic", "42")
             # Signed public transaction bytes are evidence, never signing keys.
-            shutil.copy2(runtime / 'deployment-funding.signed', artifacts / 'funding-transaction.json')
+            # cardano-cli writes this as container-root mode 0600 on Linux.
+            # Read this public envelope through the owned container; never
+            # relax permissions on signing keys or the credentials directory.
+            (artifacts / 'funding-transaction.json').write_text(
+                run(compose + ['exec', '-T', 'node', 'cat', '/runtime/deployment-funding.signed']) + '\n')
             funding_hash = cli("conway", "transaction", "txid", "--tx-file", "/runtime/deployment-funding.signed")
             print(f"Submitting disposable faucet funding {funding_hash}", flush=True)
             cli("conway", "transaction", "submit", "--tx-file", "/runtime/deployment-funding.signed", "--testnet-magic", "42")
