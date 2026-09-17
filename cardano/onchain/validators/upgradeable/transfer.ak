@@ -1,8 +1,6 @@
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/core/ics_005/types/ibc_module_redeemer.{
-  IBCModuleRedeemer, ReclaimModule,
-}
+use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
 use ibc/implementation/spending_transfer_module
 use ibc/migration/auth as migration
 
@@ -15,7 +13,6 @@ validator transfer(
   port_token: AuthToken,
   module_token: AuthToken,
   voucher_policy: ByteArray,
-  shutdown_hash: ByteArray,
 ) {
   spend(
     datum: Option<Data>,
@@ -31,7 +28,7 @@ validator transfer(
       expect
         migration.operation_allowed(transaction, registry_policy, generation, 1)
       expect redeemer: IBCModuleRedeemer = raw
-      expect redeemer != ReclaimModule
+      // validate(False, ...) rejects retirement directly in its dispatch.
       spending_transfer_module.validate(
         False,
         port_token,
@@ -41,7 +38,7 @@ validator transfer(
         channel_policy,
         voucher_policy,
         host_policy,
-        shutdown_hash,
+        #"",
         datum,
         redeemer,
         own_ref,

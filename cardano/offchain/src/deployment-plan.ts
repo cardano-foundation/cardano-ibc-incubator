@@ -477,7 +477,6 @@ export const loadDeploymentPlan = async (
         portToken,
         identifierToken,
         mintVoucher.hash,
-        recoverClient.hash,
       ],
       Data.Tuple([
         Data.Bytes(),
@@ -487,7 +486,6 @@ export const loadDeploymentPlan = async (
         Data.Bytes(),
         AuthTokenSchema,
         AuthTokenSchema,
-        Data.Bytes(),
         Data.Bytes(),
       ]),
     )

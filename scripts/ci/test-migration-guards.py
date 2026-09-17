@@ -46,6 +46,13 @@ CASES = [
      'emergency_traffic_mask_phase_0_client', 'emergency_traffic_mask_phase_0_send',
      'validators/host_state_stt.test.ak'),
 
+    ('emergency-outgoing-authority', 'validators/implementation_registry.ak',
+     '          governance,\n          phase: Ready,\n          emergency: Emergency { ..old.emergency, restoration: None },\n',
+     'migration_adversarial_valid_permissionless_rotation_execution',
+     'emergency_rotation_rejects_retaining_outgoing_restoration',
+     'validators/migration_adversarial.test.ak',
+     '          governance,\n          phase: Ready,\n'),
+
 ]
 
 def digest():

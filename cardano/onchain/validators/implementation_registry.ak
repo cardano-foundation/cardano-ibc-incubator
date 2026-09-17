@@ -276,7 +276,12 @@ validator implementation_registry {
         expect Proposed { proposal: Rotate { governance, .. }, .. } = old.phase
         expect
           migration.separate_authorities(governance, old.emergency.authority)
-        new == Registry { ..old, governance, phase: Ready }
+        new == Registry {
+          ..old,
+          governance,
+          phase: Ready,
+          emergency: Emergency { ..old.emergency, restoration: None },
+        }
       }
       Begin -> {
         expect proposal_ready(transaction, old)

@@ -8,12 +8,17 @@ use aiken/primitive/bytearray
 use cardano/address.{Address, Inline, Script, VerificationKey, from_script}
 use cardano/assets
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Spend, Transaction, placeholder,
+  InlineDatum, Input, Output, OutputReference, Spend, Transaction, Withdraw,
+  placeholder,
 }
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/client_redeemer.{
+  ReclaimTransferWithdrawal,
+}
+use ibc/core/ics_005/types/ibc_module_redeemer.{ReclaimModule}
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   ShuttingDown, host_state_token_name, min_shutdown_grace_period_ms,
@@ -21,6 +26,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{EnterShutdown}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use ibc/implementation/host_state_stt as legacy_host
+use ibc/implementation/spending_transfer_module as transfer_dispatch
 use ibc/migration/auth as migration
 use ibc/migration/types.{
   Activate, Authority, Begin, Cancel, CancelRestoration, Counts, Emergency,
@@ -33,6 +39,7 @@ use ibc/utils/string
 use implementation_registry
 use minting_implementation_registry
 use upgradeable/host_state as host_wrapper
+use upgradeable/transfer as transfer_wrapper
 
 const approval_upper = 2_000
 
@@ -1787,7 +1794,6 @@ test emergency_cancel_restoration_preserves_restrictions() {
   )
 }
 
-
 test emergency_hold_rejects_escrow_move() fail {
   run(held(escrow(), 8))
 }
@@ -1805,4 +1811,93 @@ test emergency_stale_restoration_generation_rejected() fail {
 
 test emergency_rejects_out_of_range_mask() fail {
   run(restrict_case(initial(), 16, [hash(999)]))
+}
+
+fn rotating_with_restoration() -> Case {
+  let case = rotation()
+  expect run(case)
+  let ticket = new_registry(restoration_proposal()).emergency.restoration
+  let old =
+    Registry {
+      ..case.old,
+      emergency: Emergency {
+        ..case.old.emergency,
+        mask: 9,
+        restoration: ticket,
+      },
+    }
+  let new =
+    Registry {
+      ..new_registry(case),
+      emergency: Emergency { ..old.emergency, restoration: None },
+    }
+  case |> with_registry_input(old) |> with_registry_output(new)
+}
+
+test emergency_rotation_revokes_outgoing_restoration() {
+  run(rotating_with_restoration())
+}
+
+test emergency_rotation_rejects_retaining_outgoing_restoration() fail {
+  let case = rotating_with_restoration()
+  let new = new_registry(case)
+  run(
+    with_registry_output(
+      case,
+      Registry { ..new, emergency: case.old.emergency },
+    ),
+  )
+}
+
+test emergency_transfer_retirement_stays_disabled_after_size_optimization() {
+  let r = registration()
+  let withdrawal: Data =
+    ReclaimTransferWithdrawal {
+      port_unit: bytearray.concat(r.port_token.policy_id, r.port_token.name),
+      module_unit: bytearray.concat(
+        r.module_token.policy_id,
+        r.module_token.name,
+      ),
+      escrow_policy: hash(6),
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      reference_inputs: [input(9, registry_output(initial()))],
+      redeemers: [Pair(Withdraw(Script(hash(900))), withdrawal)],
+    }
+  // Exact retained dispatch with retirement enabled accepts this witness.
+  // Therefore rejection below is its explicit False flag, not a missing witness.
+  expect
+    transfer_dispatch.validate(
+      True,
+      r.port_token,
+      r.module_token,
+      "transfer",
+      hash(6),
+      hash(5),
+      hash(10),
+      hash(2),
+      hash(900),
+      None,
+      ReclaimModule,
+      ref(2),
+      tx,
+    )
+  expect migration.operation_allowed(tx, hash(1), 1, 1)
+  let raw: Data = ReclaimModule
+  !transfer_wrapper.transfer.spend(
+    hash(1),
+    1,
+    hash(2),
+    hash(5),
+    hash(6),
+    r.port_token,
+    r.module_token,
+    hash(10),
+    None,
+    raw,
+    ref(2),
+    tx,
+  )
 }

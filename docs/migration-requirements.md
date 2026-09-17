@@ -1,5 +1,7 @@
 # Migration requirement-to-evidence map
 
+**Evidence version:** populated results below describe the earlier seven-field registry profile. The emergency-capable profile v2 changes the kernel and wrapper ABI; its populated lifecycle, real rollback and network-scale downtime must be qualified separately. Do not read historical passes as acceptance of the current candidate.
+
 This map concerns compatible replacement of a fresh upgrade-capable baseline. It is not a claim that an existing immutable deployment can migrate. The [design](state-preserving-redeployment.md), [operator runbook](migration-operator-runbook.md), and [evidence ledger](migration-implementation-evidence.md) define the supported boundary and distinguish completed checks from pending work.
 
 | Requirement | Enforcement / operational code | Executable evidence and limits |
