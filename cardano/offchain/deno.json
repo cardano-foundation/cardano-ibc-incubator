@@ -28,7 +28,7 @@
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
     "check": "deno check index.ts src/*.ts src/testing/*.ts scripts/*.ts types/**/*.ts",
-    "test:deployment": "deno test --allow-env --allow-read src/deployment.test.ts src/deployment-plan.test.ts src/deployment-transactions.test.ts",
+    "test:deployment": "deno test --allow-env --allow-read src/evaluator.test.ts src/deployment.test.ts src/deployment-plan.test.ts src/deployment-transactions.test.ts",
     "test:tx-budgets": "deno test --allow-env --allow-read src/packet-budgets.test.ts",
     "test:channels": "deno test --allow-env --allow-read src/channel-actions.test.ts",
     "test:channels:fuzz": "deno test --allow-env --allow-read src/channel-actions.fuzz.test.ts",
@@ -41,5 +41,8 @@
     "export:deployment-plan": "deno run --allow-env --allow-read --allow-write scripts/export-deployment-plan.ts",
     "test:migration": "deno test --allow-env --allow-read --allow-write src/migration.test.ts src/migration-accounting.test.ts scripts/migrate-deployment.test.ts src/protocol_parameters.test.ts src/ogmios-script.test.ts",
     "migrate:deployment": "deno run --allow-net --allow-env --allow-read --allow-write --allow-run --allow-ffi scripts/migrate-deployment.ts"
-  }
+  },
+  "links": [
+    "../vendor/uplc"
+  ]
 }
