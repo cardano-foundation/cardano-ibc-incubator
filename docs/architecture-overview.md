@@ -17,5 +17,6 @@ This page is the index for architecture diagrams in this repository.
 - [Gateway Escrow Send Sequence](../cardano/gateway/README.md#sendpacket-escrow-flow)
 - [Denom Trace Lifecycle Diagram](./denom-trace-mapping.md)
 - [Voucher Trace Registry Design](./cardano-trace-registry.md)
+- [Cardano Light-Client Registration and Adapters](./light-client-modularity.md)
 - [Probabilistic Light-Client Design](./probabilistic-light-client.md)
 - [Deprecated Mithril Proof Flow](./mithril-light-client.md#mithril-proof-flow-for-relaying)

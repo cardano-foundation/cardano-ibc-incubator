@@ -15,11 +15,11 @@ import * as HeaderCodec from '../../shared/types/header';
 import * as ClientMessageCodec from '../../shared/types/msgs/client-message';
 import * as MisbehaviourCodec from '../../shared/types/misbehaviour/misbehaviour';
 import {
-  ClientService,
+  TendermintClientService as ClientService,
   TENDERMINT_FINALIZATION_TIME_TO_LIVE,
   TENDERMINT_HEADER_TYPE_URL,
   TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE,
-} from '../client.service';
+} from '../tendermint-client.service';
 import {
   MAX_TENDERMINT_UPDATE_TX_CHAIN_LENGTH,
   TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL,

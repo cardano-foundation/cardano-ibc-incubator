@@ -36,7 +36,8 @@ for (const action of [channelActions[2], channelActions[5]]) {
 
 for (const action of channelActions) {
   Deno.test(
-    action.name + " evaluates and submits with the deployed script purposes",
+    action.name +
+      " submits with its registered client verifier and script purposes",
     async () => {
       const { tx, emulator, lucid, channelToken, channelScripts } =
         await channelFixture(action);

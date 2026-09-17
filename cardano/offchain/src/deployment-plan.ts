@@ -1,4 +1,8 @@
 import {
+  type ClientRegistration,
+  clientRegistryData,
+} from "./client-registry.ts";
+import {
   Data,
   fromText,
   type LucidEvolution,
@@ -93,7 +97,7 @@ export const loadStagedTendermintValidators = (
 
 export const buildChannelValidators = (
   lucid: LucidEvolution,
-  mintClientPolicyId: string,
+  clientRegistry: Data,
   mintConnectionPolicyId: string,
   mintPortPolicyId: string,
   verifyProofScriptHash: string,
@@ -110,15 +114,15 @@ export const buildChannelValidators = (
     "acknowledge_packet",
     "prune_packet_history",
   ];
-  const load = (title: string, args: string[]): PlannedValidator => {
+  const load = (title: string, args: Data[]): PlannedValidator => {
     const [script, hash, address] = readValidator(title, lucid, args);
     return { title, publication: "runtime", script, hash, address };
   };
   const referredScripts: Record<string, PlannedValidator> = {};
   for (const name of names) {
     const args = name === "prune_packet_history"
-      ? [mintClientPolicyId, mintConnectionPolicyId, verifyProofScriptHash]
-      : [mintClientPolicyId, mintConnectionPolicyId, mintPortPolicyId];
+      ? [clientRegistry, mintConnectionPolicyId, verifyProofScriptHash]
+      : [clientRegistry, mintConnectionPolicyId, mintPortPolicyId];
     if (
       !["prune_packet_history", "send_packet", "chan_close_init"].includes(name)
     ) {
@@ -138,7 +142,7 @@ export const buildChannelValidators = (
 export const loadHostStateValidator = (
   lucid: LucidEvolution,
   hostPolicy: string,
-  clientHash: string,
+  clientRegistry: Data,
   connectionHash: string,
   channelHash: string,
   clientMintPolicyId: string,
@@ -150,22 +154,13 @@ export const loadHostStateValidator = (
     lucid,
     [
       hostPolicy,
-      clientHash,
+      clientRegistry,
       connectionHash,
       channelHash,
       clientMintPolicyId,
       connectionMintPolicyId,
       channelMintPolicyId,
     ],
-    Data.Tuple([
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [string, string, string, string, string, string, string],
   );
 
 /**
@@ -257,19 +252,27 @@ export const loadDeploymentPlan = async (
     "runtime",
     bytes(spendClient.hash, hostPolicy),
   );
+  const clientRegistrations: ClientRegistration[] = [{
+    clientType: "07-tendermint",
+    implementation: "tendermint",
+    mintPolicy: mintClient.hash,
+    spendValidator: spendClient.hash,
+    proofPolicy: verifyProof.hash,
+  }];
+  const clients = clientRegistryData(clientRegistrations);
   const spendConnection = load(
     "spending_connection.spend_connection.spend",
     "runtime",
-    bytes(mintClient.hash, verifyProof.hash, hostPolicy),
+    [clients, verifyProof.hash, hostPolicy],
   );
   const mintConnection = load(
     "minting_connection_stt.mint_connection_stt.mint",
     "runtime",
-    bytes(mintClient.hash, verifyProof.hash, spendConnection.hash, hostPolicy),
+    [clients, verifyProof.hash, spendConnection.hash, hostPolicy],
   );
   const { base: spendChannel, referredScripts } = buildChannelValidators(
     lucid,
-    mintClient.hash,
+    clients,
     mintConnection.hash,
     mintPort.hash,
     verifyProof.hash,
@@ -279,15 +282,15 @@ export const loadDeploymentPlan = async (
   const mintChannel = load(
     "minting_channel_stt.mint_channel_stt.mint",
     "runtime",
-    bytes(
-      mintClient.hash,
+    [
+      clients,
       mintConnection.hash,
       mintPort.hash,
       verifyProof.hash,
       spendChannel.hash,
       hostPolicy,
       recoverClient.hash,
-    ),
+    ],
   );
   const hostState = register(
     "host_state_stt.host_state_stt.spend",
@@ -295,7 +298,7 @@ export const loadDeploymentPlan = async (
     loadHostStateValidator(
       lucid,
       hostPolicy,
-      spendClient.hash,
+      clients,
       spendConnection.hash,
       spendChannel.hash,
       mintClient.hash,
@@ -411,6 +414,7 @@ export const loadDeploymentPlan = async (
 
   return {
     inputs,
+    clientRegistrations,
     validators,
     referenceValidators: validators.filter(({ publication }) =>
       publication !== "inline"

@@ -2,13 +2,15 @@ use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
-use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+use ibc/core/ics_002_client_semantics/client_view.{
+  ClientStateView as ClientDatumState,
+}
+use ibc/core/ics_002_client_semantics/registry
+use ibc/core/ics_002_client_semantics/types/client as client_status_mod
+use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
   VerifyNonMembership,
 }
-use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/state as connection_state_mod
@@ -30,7 +32,7 @@ use ibc/utils/validator_utils
 /// The channel transition advances its proof-height floor atomically with the
 /// deletion, so no older commitment proof can replay the receive afterward.
 validator prune_packet_history(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   connection_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
@@ -85,13 +87,26 @@ validator prune_packet_history(
 
     expect [connection_id] = channel.connection_hops
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-    let (connection_datum, client_datum) =
-      validator_utils.validate_referred_connection_and_client(
+    let connection_datum =
+      validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,
-        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+      )
+    let client_registration =
+      registry.for_client(client_registry, connection_datum.state.client_id)
+    let verify_proof_policy_id =
+      validator_utils.registered_proof_policy(
+        client_registration,
+        verify_proof_policy_id,
+      )
+    let client_datum =
+      validator_utils.validate_registered_client(
+        reference_inputs,
+        datum.token.name,
+        client_registration,
+        connection_datum.state.client_id,
         tx_valid_to * 1_000_000,
         Some(proof_height),
         validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).history_witness,
@@ -115,11 +130,7 @@ validator prune_packet_history(
       channel.state == channel_state_mod.Open,
       channel.ordering == channel_order_mod.Unordered || channel.ordering == channel_order_mod.Ordered,
       connection_datum.state.state == connection_state_mod.Open,
-      client_state_mod.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == client_status_mod.Active,
+      client_datum.status == client_status_mod.Active,
       height_mod.compare(proof_height, minimum_receive_proof_height) != Less,
       height_mod.compare(proof_height, maximum_receive_proof_height) != Less,
       valid_commitment_absence,
@@ -173,15 +184,18 @@ fn validate_source_commitment_absence(
   let verify_proof_redeemer =
     validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
-  verify_proof_redeemer == VerifyNonMembership {
-    cs: client_datum_state.client_state,
-    cons_state: consensus_state,
-    height: proof_height,
-    processed_time,
-    processed_height,
-    delay_time_period: time_delay,
-    delay_block_period: block_delay,
-    proof,
-    path,
-  }
+  validator_utils.proof_matches(
+    verify_proof_redeemer,
+    VerifyNonMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      processed_time,
+      processed_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof,
+      path,
+    },
+  )
 }

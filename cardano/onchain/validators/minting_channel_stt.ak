@@ -9,19 +9,19 @@ use cardano/transaction.{
   InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction, Withdraw,
 }
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{
-  ClientDatum, ClientDatumState,
-}
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
   ReclaimStateWithdrawal,
 }
-use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+use ibc/core/ics_002_client_semantics/client_view.{
+  ClientStateView as ClientDatumState,
+}
+use ibc/core/ics_002_client_semantics/registry
+use ibc/core/ics_002_client_semantics/types/client.{Active}
+use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
   VerifyMembership, VerifyProofEnvelope,
 }
-use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd} as connection_end_mod
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version
@@ -76,7 +76,7 @@ fn spent_host_state_for_create_channel(
 }
 
 validator mint_channel_stt(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
@@ -119,41 +119,42 @@ validator mint_channel_stt(
         validator_utils.get_inline_datum(channel_output)
       expect [connection_id] =
         channel_output_datum.state.channel.connection_hops
-      let proof_envelope =
-        when redeemer is {
-          ChanOpenTry { .. } ->
-            Some(
-              validator_utils.verify_proof_envelope(
-                redeemers,
-                verify_proof_policy_id,
-              ),
-            )
-          ChanOpenInit -> None
-        }
-      let (connection_datum, client_datum) =
-        validator_utils.validate_referred_connection_and_client(
+      let connection_datum =
+        validator_utils.validate_referred_connection(
           reference_inputs,
           channel_output_datum.token.name,
-          client_minting_policy_id,
           connection_minting_policy_id,
           connection_id,
+        )
+      let client_registration =
+        registry.for_client(client_registry, connection_datum.state.client_id)
+      let verify_proof_policy_id =
+        validator_utils.registered_proof_policy(
+          client_registration,
+          verify_proof_policy_id,
+        )
+      let client_datum =
+        validator_utils.validate_registered_client(
+          reference_inputs,
+          channel_output_datum.token.name,
+          client_registration,
+          connection_datum.state.client_id,
           validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
           when redeemer is {
             ChanOpenTry { proof_height, .. } -> Some(proof_height)
             ChanOpenInit -> None
           },
-          when proof_envelope is {
-            Some(envelope) -> envelope.history_witness
-            None -> None
+          when redeemer is {
+            ChanOpenTry { .. } ->
+              validator_utils.verify_proof_envelope(
+                redeemers,
+                verify_proof_policy_id,
+              ).history_witness
+            ChanOpenInit -> None
           },
         )
-      let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-      let client_state_active =
-        client_state.status(
-          client_datum.state.client_state,
-          tx_valid_to * 1_000_000,
-          client_datum.state.consensus_states,
-        ) == Active
+
+      let client_state_active = client_datum.status == Active
       let id_str = string_utils.int_to_string(channel_id_sequence)
       let host_state_nft =
         AuthToken {
@@ -204,7 +205,10 @@ validator mint_channel_stt(
                 counterparty_version,
                 proof_init,
                 proof_height,
-                proof_envelope,
+                validator_utils.verify_proof_envelope(
+                  redeemers,
+                  verify_proof_policy_id,
+                ),
               )?,
               (ibc_module_callback == OnChanOpenTry { channel_id })?,
             }
@@ -232,7 +236,7 @@ fn validate_chan_open_try_proof(
   counterparty_version: ByteArray,
   proof: MerkleProof,
   proof_height: Height,
-  proof_envelope: Option<VerifyProofEnvelope>,
+  proof_envelope: VerifyProofEnvelope,
 ) -> Bool {
   let counterparty_hops = [connection.counterparty.connection_id]
 
@@ -276,18 +280,19 @@ fn validate_chan_open_try_proof(
       channel.convert_to_channel_proto(expected_channel),
     ).2nd
 
-  expect Some(envelope) = proof_envelope
-
-  envelope.proof == VerifyMembership {
-    cs: client_datum_state.client_state,
-    cons_state: consensus_state,
-    height: proof_height,
-    processed_time,
-    processed_height,
-    delay_time_period: time_delay,
-    delay_block_period: block_delay,
-    proof,
-    path: merkle_path,
-    value: channel_bz,
-  }
+  validator_utils.proof_matches(
+    proof_envelope.proof,
+    VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      processed_time,
+      processed_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof,
+      path: merkle_path,
+      value: channel_bz,
+    },
+  )
 }

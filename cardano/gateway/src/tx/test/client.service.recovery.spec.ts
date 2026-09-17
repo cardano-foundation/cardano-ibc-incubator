@@ -7,7 +7,7 @@ import { StaleIbcTreeStateError } from '../../shared/helpers/ibc-state-root';
 import { createTestTreeContext } from '../../shared/testing/ibc-tree-test-store';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from '../../shared/types/client-datum';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { ClientService } from '../client.service';
+import { TendermintClientService as ClientService } from '../tendermint-client.service';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
 import { RecoverClientOperatorDto } from '../dto';
 
