@@ -1,7 +1,6 @@
 import {
   DEPLOYMENT_PLAN_FIXTURE,
   loadDeploymentPlan,
-  loadHostStateValidator,
 } from "./deployment-plan.ts";
 import { assertEquals, assertNotEquals } from "@std/assert";
 import {
@@ -136,7 +135,7 @@ Deno.test("HostState deployment pins the state-token minting policies", () => {
     hostStateValidator?.parameters?.map(({ title }) => title) ?? [],
     [
       "nft_policy",
-      "spend_client_script_hash",
+      "client_registry",
       "spend_connection_script_hash",
       "spend_channel_script_hash",
       "client_policy_id",
@@ -180,23 +179,22 @@ Deno.test("applied legacy client validator fits a mainnet reference-script trans
   assertEquals(spendClientReport?.exceedsEstimatedSingleTxBudget, false);
 });
 
-Deno.test("fully applied production HostState fits the reference publication guard", () => {
+Deno.test("fully applied production HostState reserves 200 bytes for its signed publication", async () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
-  const [validator] = loadHostStateValidator(
-    lucid,
-    "11".repeat(28),
-    "22".repeat(28),
-    "33".repeat(28),
-    "44".repeat(28),
-    "55".repeat(28),
-    "66".repeat(28),
-    "77".repeat(28),
+  const plan = await loadDeploymentPlan(lucid, {
+    ...DEPLOYMENT_PLAN_FIXTURE,
+    benchmarkVoucherEnabled: false,
+  });
+  const [report] = buildReferenceValidatorSizeReport(
+    [plan.hostState.script],
+    16_384 - 200,
   );
-  const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
+  // As with the staged client, the signed publication test is the ledger gate;
+  // the conservative batching estimate can overstate a dedicated publication.
   assertEquals(
-    report.exceedsEstimatedSingleTxBudget,
+    report.intrinsicallyOversized,
     false,
     JSON.stringify(report),
   );

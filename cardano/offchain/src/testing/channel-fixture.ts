@@ -1,3 +1,4 @@
+import { clientRegistryData } from "../client-registry.ts";
 import alonzo from "../../../../chains/cardano/config/devnet/genesis-alonzo.json" with {
   type: "json",
 };
@@ -7,6 +8,7 @@ import shelley from "../../../../chains/cardano/config/devnet/genesis-shelley.js
 import {
   applyDoubleCborEncoding,
   Constr,
+  credentialToAddress,
   Data,
   fromHex,
   fromText,
@@ -230,12 +232,22 @@ export async function channelFixture(
     "verifying_proof.verify_proof.mint",
     lucid,
   );
+  const clients = clientRegistryData([{
+    clientType: "07-tendermint",
+    implementation: "tendermint",
+    mintPolicy: clientPolicy,
+    spendValidator: hash("55"),
+    proofPolicy: verifyPolicy,
+  }]);
+  // Explicit registrations must select their own verifier. A different legacy
+  // fallback catches accidental reads before resolving the connection's client.
+  const legacyProofPolicy = hash("66");
   const channelScripts = buildChannelValidators(
     lucid,
-    clientPolicy,
+    clients,
     connectionPolicy,
     portPolicy,
-    verifyPolicy,
+    legacyProofPolicy,
     hostPolicy,
   );
   const [, shutdownScriptHash] = readValidator(
@@ -247,10 +259,10 @@ export async function channelFixture(
     "minting_channel_stt.mint_channel_stt.mint",
     lucid,
     [
-      clientPolicy,
+      clients,
       connectionPolicy,
       portPolicy,
-      verifyPolicy,
+      legacyProofPolicy,
       channelScripts.base.hash,
       hostPolicy,
       shutdownScriptHash,
@@ -266,7 +278,7 @@ export async function channelFixture(
     lucid,
     [
       hostPolicy,
-      hash("55"),
+      clients,
       hash("66"),
       channelScripts.base.hash,
       clientPolicy,
@@ -378,10 +390,14 @@ export async function channelFixture(
     ),
     connectionToken,
   );
-  const client = seed(account.address, {
-    lovelace: 5_000_000n,
-    [tokenUnit(clientToken)]: 1n,
-  }, encode(clientDatum));
+  const client = seed(
+    credentialToAddress("Custom", { type: "Script", hash: hash("55") }),
+    {
+      lovelace: 5_000_000n,
+      [tokenUnit(clientToken)]: 1n,
+    },
+    encode(clientDatum),
+  );
   const connection = seed(account.address, {
     lovelace: 5_000_000n,
     [tokenUnit(connectionToken)]: 1n,

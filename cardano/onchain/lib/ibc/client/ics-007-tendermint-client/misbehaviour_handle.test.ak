@@ -16,7 +16,7 @@ use ibc/client/ics_007_tendermint_client/misbehaviour.{Misbehaviour}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase, MisbehaviourCase}
 use ibc/client/ics_007_tendermint_client/store
-use ibc/core/ics_002_client_semantics/types/keys as client_keys
+use ibc/core/ics_002_client_semantics/registry
 use ibc/testing/fuzz_dsl
 
 fn test_header(height: Int, time: Int, block_hash: ByteArray) -> Header {
@@ -170,8 +170,11 @@ test regression_client_misbehaviour_rejects_wrong_client_id() {
     "client",
     "misbehaviour",
     "wrong_client_id",
-    "client_keys.is_valid_client_id",
-    client_keys.is_valid_client_id("client-0"),
+    "registry.matches_id",
+    registry.matches_id(
+      registry.legacy("policy", "script", "proof"),
+      "client-0",
+    ),
   )
     |> fuzz_dsl.assert_rejected
 }
