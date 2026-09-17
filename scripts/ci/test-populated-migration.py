@@ -321,8 +321,8 @@ def main():
                 run('witness', runtime_command('witness', handler, extra=['--out', str(artifacts / f'activation-v{generation}-witness.json')]))
                 tip = json.loads(subprocess.check_output(compose + ['exec', '-T', 'node', 'cardano-cli',
                     'conway', 'query', 'tip', '--testnet-magic', '42']))
-                start = int(datetime.datetime.fromisoformat(genesis['systemStart'].replace('Z', '+00:00')).timestamp() * 1000)
-                expiry = start + tip['slot'] * 1000 + 259200000
+                genesis_start_ms = int(datetime.datetime.fromisoformat(genesis['systemStart'].replace('Z', '+00:00')).timestamp() * 1000)
+                expiry = genesis_start_ms + tip['slot'] * 1000 + 259200000
                 authority = json.loads((artifacts / 'migration-governance.json').read_text())
                 if authority != {'signers': ['8f310f79f977bdf0befedfae3374a625e64c9a69a40c3c8fca607dac'],
                                   'quorum': '1', 'delay_ms': '86400000'}:
