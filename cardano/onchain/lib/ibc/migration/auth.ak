@@ -66,7 +66,8 @@ pub fn contains(output: Output, token: AuthToken) -> Bool {
 }
 
 pub fn unique_input(inputs: List<Input>, token: AuthToken) -> Input {
-  expect [input] = list.filter(inputs, fn(input) { contains(input.output, token) })
+  expect [input] =
+    list.filter(inputs, fn(input) { contains(input.output, token) })
   input
 }
 
