@@ -12,6 +12,8 @@ Retain the original handler, applied baseline scripts, complete history bootstra
 
 Build the successor with Aiken 1.1.21 using `aiken build --deny --trace-level silent`. Review the exact five applied spending scripts and their complete addresses, the original retained policy inventory and compatibility commitment, source generation, nonce, captured counts/inventory, and activation window. Approving replacement code authorizes its future behavior, including potential theft; conservation at handover does not remove this governance trust.
 
+Use the pinned Deno 2.9.6 toolchain and install the locked npm/Deno dependencies, including the local checksum-pinned evaluator. Older Deno versions can rewrite lockfile metadata and are not the tested toolchain. Gateway installation and the off-chain deployment test verify its artifacts and transitive resolution. See [evaluator provenance and reproducible build](../cardano/vendor/uplc/README.md); do not substitute a registry package or alter cost models/budgets to make evaluation pass.
+
 Set explicit `KUPO_URL`, `OGMIOS_URL`, and `CARDANO_NETWORK_MAGIC`. The migration command does not automatically load `.env.default`. Read-only commands require no signing key. From `cardano/offchain`:
 
 ```sh
@@ -74,6 +76,8 @@ On crash, rejected submission, stale index, or competing executor, inspect canon
 
 A chain rollback can invalidate observations and manifests. Wait for the network's operational finality policy and independently recheck registry custody, all expected objects, the exact current generation/addresses, retained references, and history readiness. No command claims deterministic finality from a single indexer response.
 
+The history worker's `complete-block-v2` cursor waits for all transaction bodies, inputs and outputs of each canonical transaction-bearing block. Missing asynchronous Yaci rows stop progress without advancing the cursor. On first initialization of this cursor, older derived bridge projections and chain-derived pool-age caches are rebuilt from retained canonical tables; raw chain data and independently sourced genesis/external cache entries are preserved. Allow replay to catch up before continuing migration or proof service. Do not manually advance the cursor or fill missing state from an operator inventory. Rollback rewinds to a retained matching checkpoint and rebuilds chain-derived registration ages; the indexer is their sole cache writer. Monitor the last complete block and retained errors, rather than treating the latest Yaci header as proof that projection replay has completed.
+
 ## Install and verify
 
 ```sh
@@ -113,7 +117,7 @@ The owned rehearsal uses two holder wallets and a third ADA-only migration execu
 
 For a completed settlement whose receipt capture failed, `--step STEP --reconcile-log` reads the retained successful Hermes log and verifies canonical inclusion without sending any transaction. It refuses unresolved sends because their original destination timestamp bounds are separate evidence. Cosmos acknowledgement events omit packet data; the verifier obtains the expected payload from the original canonical send and independently checks the full `MsgAcknowledgement` at the emitted event's exact message index, including the CometBFT transaction data commitment. A success log or matching sequence alone is insufficient.
 
-For the specifically recognized failure while querying destination application status, `--retry-read-failure STEP` permits an explicit retry after checking all retained attempts for that error and absence of construction/submission messages. It retains each attempt in a separate log and refuses ambiguous failures. This log check does not prove absence of a transaction on-chain: inspect canonical state first, and let Hermes and the validators recheck the pending obligation. Do not use this option for a lost submission response or a partially submitted client update. The top-level driver forwards it to the first selected settlement phase only.
+For a specifically recognized application-status or channel-initialization read failure, `--retry-read-failure STEP` permits an explicit retry after checking all retained attempts for that error and absence of construction/submission messages. It retains each attempt in a separate log and refuses ambiguous failures. This log check does not prove absence of a transaction on-chain: inspect canonical state first, and let Hermes and the validators recheck the pending obligation. Do not use this option for a lost submission response or a partially submitted client update. The top-level driver forwards it to the first selected settlement phase only.
 
 The owned fixture exposes its node witness endpoint on loopback `127.0.0.1:23001` and explicitly configures Gateway's node host, port and network magic. Yaci remains the primary block-CBOR source. The node fallback must establish a non-query handshake, accept the configured network, and complete within bounded deadlines. Production operators must configure their own authenticated chain data sources; do not copy the disposable fixture endpoints.
 
