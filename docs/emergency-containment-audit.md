@@ -29,7 +29,7 @@ A held partial migration may require delayed restoration to mask 1, completing t
 
 Emergency and replacement-governance signer sets must be disjoint; deployment fails without explicit valid configuration. The emergency quorum cannot loosen restrictions, approve code, rewrite state or reduce the delay. Governance can propose exact restoration scope and a replacement emergency authority with `ProposeRestoration`. The ticket binds registry nonce, implementation generation, emergency epoch, exact mask, authority and activation/expiry times. `Restore` is permissionless only after the existing governance delay (minimum 24 hours), within expiry, and while every binding still matches. A new restriction, even with the same mask, revokes it. `CancelRestoration` preserves restrictions. Governance rotations must retain separation from the emergency authority.
 
-Governance/code proposal cancellation, expiry, authority rotation and activation do not clear restrictions. A lost or compromised emergency quorum can be replaced through delayed governance; it can cause denial of service but gains no immediate installation permission. During `Moving`, phase restrictions take precedence even if emergency bits are clear.
+Governance/code proposal cancellation, expiry, authority rotation and activation do not clear restrictions. Completing a governance rotation revokes any restoration authorized by the outgoing governance, including one proposed during the rotation delay. A lost or compromised emergency quorum can be replaced through delayed governance; it can cause denial of service but gains no immediate installation permission. During `Moving`, phase restrictions take precedence even if emergency bits are clear.
 
 ## Enforcement and claims
 

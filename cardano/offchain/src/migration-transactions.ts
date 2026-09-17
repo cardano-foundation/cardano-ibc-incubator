@@ -327,6 +327,7 @@ export async function buildMigrationTransaction(
       proposed.proposal.Rotate.governance,
     );
     next.governance = proposed.proposal.Rotate.governance;
+    next.emergency = { ...old.emergency, restoration: null };
     next.phase = "Ready";
   } else if (action === "Begin") {
     const proposed = ready();

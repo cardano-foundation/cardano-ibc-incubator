@@ -529,6 +529,11 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
         scripts,
         dedicated,
       );
+      console.log(
+        `successor generation ${generation} ${validator.title}: ${
+          signedTx.toCBOR().length / 2
+        } signed publication bytes`,
+      );
       await signedTx.submit();
       lucid.overrideUTxOs([]);
     }
@@ -778,11 +783,11 @@ Deno.test("compiled registry executes immediate separate-authority restriction a
     }, action);
   const submit = async (
     built: Awaited<ReturnType<typeof build>>,
-    emergency = false,
+    extraKey?: string,
   ) => {
     const tx = await built.tx.complete({ localUPLCEval: true });
     const signed = tx.sign.withWallet();
-    if (emergency) signed.sign.withPrivateKey(EMERGENCY_WALLET.paymentKey);
+    if (extraKey) signed.sign.withPrivateKey(extraKey);
     await (await signed.complete()).submit();
     emulator.awaitBlock();
     lucid.overrideUTxOs([]);
@@ -794,7 +799,7 @@ Deno.test("compiled registry executes immediate separate-authority restriction a
   );
   await submit(
     await build({ Restrict: { mask: 9n } }, [EMERGENCY_AUTHORITY]),
-    true,
+    EMERGENCY_WALLET.paymentKey,
   );
   let state = readRegistry(await lucid.utxoByUnit(unit), unit);
   assertEquals(state.emergency.mask, 9n);
@@ -850,7 +855,7 @@ Deno.test("compiled registry executes immediate separate-authority restriction a
   );
   await submit(
     await build({ Restrict: { mask: 9n } }, [EMERGENCY_AUTHORITY]),
-    true,
+    EMERGENCY_WALLET.paymentKey,
   );
   assertEquals(
     readRegistry(await lucid.utxoByUnit(unit), unit).emergency.restoration,
@@ -863,4 +868,56 @@ Deno.test("compiled registry executes immediate separate-authority restriction a
   assertEquals(state.emergency.mask, 1n);
   assertEquals(state.emergency.restoration, null);
   assertEquals(state.nonce, 1n); // Restrictions never replace code-approval identity.
+  // A restoration authorized by outgoing governance during its rotation must
+  // not remain executable under the new authority, even with the same nonce.
+  await submit(await build("Cancel", [authority]));
+  const incoming = walletFromSeed(
+    "legal winner thank year wave sausage worth useful legal winner thank yellow",
+    { network: "Custom" },
+  );
+  const incomingHash =
+    getAddressDetails(incoming.address).paymentCredential!.hash;
+  await submit(
+    await build({
+      Propose: {
+        proposal: {
+          Rotate: {
+            nonce: 2n,
+            governance: {
+              signers: [incomingHash],
+              quorum: 1n,
+              delay_ms: 86_400_000n,
+            },
+          },
+        },
+        expires_at: BigInt(emulator.now() + 5 * 86_400_000),
+      },
+    }, [authority]),
+  );
+  const clear: RegistryRedeemer = {
+    ProposeRestoration: {
+      mask: 0n,
+      authority: state.emergency.authority,
+      expires_at: BigInt(emulator.now() + 5 * 86_400_000),
+    },
+  };
+  await submit(await build(clear, [authority]));
+  emulator.awaitSlot(86_500);
+  await submit(await build("RotateAuthority", []));
+  state = readRegistry(await lucid.utxoByUnit(unit), unit);
+  assertEquals(state.emergency.mask, 1n);
+  assertEquals(state.emergency.restoration, null);
+  await assertRejects(() => build("Restore", []), Error, "Restoration");
+  await assertRejects(
+    () => build(clear, [authority]),
+    Error,
+    "governance quorum",
+  );
+  await submit(await build(clear, [incomingHash]), incoming.paymentKey);
+  emulator.awaitSlot(86_500);
+  await submit(await build("Restore", []));
+  assertEquals(
+    readRegistry(await lucid.utxoByUnit(unit), unit).emergency.mask,
+    0n,
+  );
 });

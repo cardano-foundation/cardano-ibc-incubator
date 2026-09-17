@@ -294,7 +294,6 @@ export async function loadSuccessorImplementation(
       },
       moduleToken,
       baseline.mintVoucher.hash,
-      baseline.recoverClient.hash,
     ],
     Data.Tuple([
       Data.Bytes(),
@@ -304,7 +303,6 @@ export async function loadSuccessorImplementation(
       Data.Bytes(),
       AuthTokenSchema,
       AuthTokenSchema,
-      Data.Bytes(),
       Data.Bytes(),
     ]),
   );
