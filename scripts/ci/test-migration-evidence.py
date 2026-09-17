@@ -319,5 +319,21 @@ class FundingEvidence(unittest.TestCase):
                     funding.verify(b, a, r)
 
 
+class RehearsalAuthorityTests(unittest.TestCase):
+    def test_current_explicit_fixture_and_no_permissive_fallback(self):
+        value = {'signers': ['8f310f79f977bdf0befedfae3374a625e64c9a69a40c3c8fca607dac'],
+                 'quorum': '1', 'delay_ms': '86400000',
+                 'emergency': {'signers': ['832616310bff22a9f1519fc81916b3c6b8ba93324817f24544b8f6cd'], 'quorum': '1'}}
+        self.assertEqual(rehearsal.rehearsal_governance(value), value)
+        for change in [lambda x: x.pop('emergency'),
+                       lambda x: x.update(delay_ms='0'),
+                       lambda x: x['emergency'].update(signers=x['signers']),
+                       lambda x: x['emergency'].update(quorum='0')]:
+            bad = copy.deepcopy(value)
+            change(bad)
+            with self.assertRaisesRegex(RuntimeError, 'public rehearsal governance'):
+                rehearsal.rehearsal_governance(bad)
+
+
 if __name__ == '__main__':
     unittest.main()
