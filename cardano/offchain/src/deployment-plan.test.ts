@@ -212,7 +212,7 @@ for (const splitRequired of [false, true]) {
       return Promise.reject(new Error("Preflight must stop before submission"));
     };
     await assertRejects(
-      () => createDeployment(lucid),
+      () => createDeployment(lucid, undefined, { deploymentMode: "legacy" }),
       Error,
       "complete deployment validator preflight",
     );

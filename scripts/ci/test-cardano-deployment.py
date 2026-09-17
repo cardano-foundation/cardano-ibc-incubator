@@ -216,6 +216,7 @@ def main():
                     "CARDANO_SHELLEY_OPERATIONAL_CERTIFICATE": f"/runtime/{name}/opcert.cert"})
                 config["services"][name] = extra
                 config["volumes"].update({f"{name}-socket": {}, f"{name}-db": {}})
+        env["IBC_DEPLOYMENT_MODE"] = "upgradeable" if args.migration_baseline else "legacy"
         if args.migration_baseline:
             # Configure before deployment; service augmentation must not recreate
             # the node that has just confirmed the publication transactions.

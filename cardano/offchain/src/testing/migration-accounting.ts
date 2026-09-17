@@ -228,6 +228,7 @@ export async function accountingFixture(seedNumber = 462, options: {
   packetEntries?: number;
   channelCount?: bigint;
   channelIndex?: bigint;
+  populateAllChannels?: boolean;
   escrowShards?: number;
 } = {}) {
   const packetEntries = options.packetEntries ?? 2;
@@ -349,8 +350,17 @@ export async function accountingFixture(seedNumber = 462, options: {
   const inventoryTree = new DeploymentIbcTree();
   const inventory = new Map<string, string>();
   const shards = Array.from({ length: shardCount }, (_, n) => {
-    const channel = fromText(n < 2 ? channelId : `channel-${n}`);
-    const denom = n === 0 ? fromText("lovelace") : fromText(nativeUnit);
+    const channel = fromText(
+      options.populateAllChannels
+        ? `channel-${BigInt(n) % channelCount}`
+        : n < 2
+        ? channelId
+        : `channel-${n}`,
+    );
+    const shardNativeUnit = options.populateAllChannels && n >= 2
+      ? plan.mockToken.hash + fromText(`native-${n}`)
+      : nativeUnit;
+    const denom = n === 0 ? fromText("lovelace") : fromText(shardNativeUnit);
     const amount = n === 0
       ? 3_000_000n + BigInt(seedNumber)
       : BigInt(seedNumber + 25);
@@ -363,13 +373,13 @@ export async function accountingFixture(seedNumber = 462, options: {
       lovelace: 12_000_000n + (n === 0 ? amount : 0n),
       [nft]: 1n,
     };
-    if (n !== 0) assets[nativeUnit] = amount;
+    if (n !== 0) assets[shardNativeUnit] = amount;
     const datum = Data.to(record(channel, denom, amount));
     return {
       key,
       nft,
       amount,
-      unit: n === 0 ? "lovelace" : nativeUnit,
+      unit: n === 0 ? "lovelace" : shardNativeUnit,
       utxo: seed(plan.spendTransferModule.address, assets, datum),
     };
   });
@@ -430,6 +440,36 @@ export async function accountingFixture(seedNumber = 462, options: {
       `commitments/ports/transfer/channels/${channelId}/sequences/${sequence}`,
       Data.to(digest),
     );
+  }
+  const channels = [channel];
+  if (options.populateAllChannels) {
+    for (let index = 0n; index < channelCount; index++) {
+      if (index === channelIndex) continue;
+      const name = await generateTokenName(
+        { policy_id: plan.hostNft.hash, name: fromText("ibc_host_state") },
+        fromText("channel"),
+        index,
+      );
+      const datum = Data.from(Data.to(channelDatum)) as Constr<Data>;
+      datum.fields[2] = record(plan.mintChannel.hash, name);
+      channels.push(
+        seed(plan.spendingChannel.base.address, {
+          lovelace: 12_000_000n,
+          [plan.mintChannel.hash + name]: 1n,
+        }, Data.to(datum)),
+      );
+      const id = `channel-${index}`;
+      committed.set(
+        `channelEnds/ports/transfer/channels/${id}`,
+        Data.to(channelEnd),
+      );
+      for (const [sequence, digest] of commitments) {
+        committed.set(
+          `commitments/ports/transfer/channels/${id}/sequences/${sequence}`,
+          Data.to(digest),
+        );
+      }
+    }
   }
   for (const [key, value] of committed) ibcTree.set(key, value);
   const hostDatum: HostStateDatum = {
@@ -506,6 +546,7 @@ export async function accountingFixture(seedNumber = 462, options: {
     committed,
     root,
     channel,
+    channels,
     channelUnit,
     host,
     hostUnit,

@@ -209,6 +209,27 @@ export class DeploymentIbcTree {
     this.dirty = true;
   }
 
+  /** Delete a leaf from a built tree in O(depth), without rescanning inventory. */
+  async remove(key: string): Promise<void> {
+    await this.rebuildIfNeeded();
+    if (!this.leaves.delete(key)) {
+      throw new Error("Cannot remove absent tree leaf");
+    }
+    let index = await keyIndex64(key);
+    this.nodesByHeight[0].delete(index);
+    for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
+      const parent = index >> 1n;
+      const value = await innerHash(
+        this.nodesByHeight[height].get(parent << 1n) ?? EMPTY_HASH,
+        this.nodesByHeight[height].get((parent << 1n) | 1n) ?? EMPTY_HASH,
+      );
+      if (value === EMPTY_HASH) this.nodesByHeight[height + 1].delete(parent);
+      else this.nodesByHeight[height + 1].set(parent, value);
+      index = parent;
+    }
+    this.root = this.nodesByHeight[MERKLE_DEPTH_BITS].get(0n) ?? EMPTY_HASH;
+  }
+
   async getRoot(): Promise<string> {
     await this.rebuildIfNeeded();
     return this.root;
@@ -238,8 +259,12 @@ export class DeploymentIbcTree {
 
     for (const [key, value] of this.leaves.entries()) {
       const keyHash = await sha256Hex(new TextEncoder().encode(key));
+      const path = BigInt(`0x${keyHash.slice(0, 16)}`);
+      if (nodesByHeight[0].has(path)) {
+        throw new Error("Ambiguous tree key path");
+      }
       nodesByHeight[0].set(
-        BigInt(`0x${keyHash.slice(0, 16)}`),
+        path,
         await leafHash(keyHash, value),
       );
     }
@@ -311,6 +336,7 @@ const buildBindPortHostStateUpdate = async (
 };
 
 export type DeploymentOptions = {
+  deploymentMode?: "upgradeable" | "legacy";
   migration?: {
     governance: Governance;
     bootstrapSigners: string[];
@@ -323,7 +349,22 @@ export const createDeployment = async (
   mode?: string,
   options: DeploymentOptions = {},
 ) => {
-  console.log("Create deployment info");
+  if (
+    options.deploymentMode !== "upgradeable" &&
+    options.deploymentMode !== "legacy"
+  ) {
+    throw new Error(
+      "Explicit deploymentMode required: upgradeable or legacy (no recovery)",
+    );
+  }
+  if (
+    (options.deploymentMode === "upgradeable") !== Boolean(options.migration)
+  ) {
+    throw new Error(
+      "Deployment mode and migration governance configuration disagree",
+    );
+  }
+  console.log(`Create ${options.deploymentMode} deployment info`);
   // Resolve the replay boundary before submitting any deployment transaction.
   // Public deployments reuse the stable checkpoint selected for their Yaci follower.
   const networkMagic = Number(Deno.env.get("CARDANO_NETWORK_MAGIC") || 42);
@@ -806,6 +847,7 @@ export const createDeployment = async (
   const deployedAt = new Date().toISOString();
 
   const deploymentInfo: DeploymentTemplate = {
+    deploymentMode: options.deploymentMode,
     ...(plan.registry && plan.implementationRegistry
       ? {
         migration: {

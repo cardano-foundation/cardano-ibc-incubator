@@ -4,6 +4,7 @@ exports.BridgeMigrationInProgressError = void 0;
 exports.requireMigrationConfig = requireMigrationConfig;
 exports.migrationReference = migrationReference;
 exports.withMigrationReference = withMigrationReference;
+exports.checkedDeploymentMode = checkedDeploymentMode;
 const lucid_1 = require("@lucid-evolution/lucid");
 class BridgeMigrationInProgressError extends Error {
     constructor() {
@@ -48,6 +49,10 @@ function addressFromData(network, data) {
  * invalidates it at the ledger even if an indexer has temporarily served stale data.
  */
 async function migrationReference(lucid, deployment, createObject = false) {
+    if (deployment.deploymentMode === 'upgradeable' && !deployment.migration)
+        throw new Error('Upgradeable deployment is missing its recovery configuration');
+    if (deployment.deploymentMode === 'legacy' && deployment.migration)
+        throw new Error('Legacy deployment conflicts with migration configuration');
     if (!deployment.migration)
         return undefined;
     const manifest = requireMigrationConfig(deployment.migration);
@@ -94,4 +99,15 @@ async function withMigrationReference(lucid, tx, deployment, createObject = fals
     if (reference)
         tx.readFrom([reference]);
     return tx;
+}
+/** New manifests explicitly declare capability; a declaration never replaces
+ * migrationReference's canonical NFT, identity and role-credential checks. */
+function checkedDeploymentMode(mode, migration) {
+    if (mode === undefined)
+        return undefined; // Pre-marker manifests checked by startup policy.
+    if (mode !== 'upgradeable' && mode !== 'legacy')
+        throw new Error('Invalid deploymentMode; expected upgradeable or legacy');
+    if ((mode === 'upgradeable') !== (migration !== undefined))
+        throw new Error('Deployment mode and recovery configuration disagree');
+    return mode;
 }

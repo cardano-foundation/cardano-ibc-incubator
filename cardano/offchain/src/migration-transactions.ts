@@ -209,7 +209,12 @@ export async function buildMigrationTransaction(
             proposal.Replace.maximum[key as keyof Counts]
         )
       ) throw new Error("Prepared state limits are stale");
-      references.push(inputs.preparationHost, inputs.transferRoot);
+      // These are preflight observations, not durable approval inputs. Ordinary
+      // continuations may consume them while signatures are collected. Begin
+      // authenticates the then-current NFTs, addresses, inventory and limits on
+      // chain before any object moves. A changed inventory can prevent Begin;
+      // it cannot broaden the approved plan. The registry input still pins the
+      // exact authority/nonce and invalidates a concurrent governance transition.
     }
     const details = "Replace" in proposal ? proposal.Replace : proposal.Rotate;
     if (details.nonce !== old.nonce + 1n) {

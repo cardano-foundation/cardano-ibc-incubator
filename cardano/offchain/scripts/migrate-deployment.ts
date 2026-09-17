@@ -1,3 +1,4 @@
+import { MigrationInventory } from "../src/migration-inventory.ts";
 import { type TxBuilder } from "@lucid-evolution/lucid";
 import { buildOperationalLucid } from "./shutdown-deployment.ts";
 import {
@@ -301,6 +302,7 @@ export async function main(args = Deno.args) {
   const witness = flags["port-witness"]
     ? await readJson<{ siblings: string[] }>(flags["port-witness"])
     : undefined;
+  const inventory = new MigrationInventory();
   for (let index = 0; index < maxSteps; index++) {
     const step = await nextMigrationStep(
       lucid,
@@ -308,6 +310,7 @@ export async function main(args = Deno.args) {
       artifact,
       await timing(),
       witness?.siblings,
+      inventory,
     );
     if (step.complete) {
       console.log(

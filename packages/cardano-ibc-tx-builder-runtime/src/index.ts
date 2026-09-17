@@ -1,4 +1,4 @@
-import { requireMigrationConfig, type MigrationRuntimeConfig } from './migrationRuntime';
+import { checkedDeploymentMode, requireMigrationConfig, type MigrationRuntimeConfig } from './migrationRuntime';
 import type { HistoryBootstrap } from './historyBootstrap';
 import crypto from 'crypto';
 import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
@@ -102,6 +102,7 @@ type DeploymentTraceRegistry = {
 };
 
 type DeploymentConfig = {
+  deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   deployedAt: string;
   consensusHistoryFormat: 'proof-backed-v1';
@@ -132,6 +133,7 @@ type DeploymentConfig = {
 };
 
 type BridgeManifest = {
+  deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   schema_version: number;
   consensus_history_format?: 'proof-backed-v1';
@@ -487,6 +489,7 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
       ics20_packet_codec: ics20PacketCodec,
     },
     deployment: {
+      deploymentMode: checkedDeploymentMode(manifest.deploymentMode ?? 'upgradeable', manifest.migration),
       deployedAt: manifest.deployed_at,
       ...(manifest.migration !== undefined ? { migration: requireMigrationConfig(manifest.migration) } : {}),
       consensusHistoryFormat: manifest.consensus_history_format,

@@ -1,3 +1,5 @@
+import { deploymentOptionsFromEnvironment } from "./src/deployment-mode.ts";
+const deploymentOptions = await deploymentOptionsFromEnvironment();
 import { toOgmiosScript } from "./src/ogmios-script.ts";
 import {
   installManagedCardanoAuthFetch,
@@ -539,21 +541,8 @@ try {
   lucid.selectWallet.fromPrivateKey(deployerSk);
 
   console.log("=".repeat(70));
-  const governancePath = Deno.env.get("MIGRATION_GOVERNANCE_FILE");
-  const migration = governancePath
-    ? await (async () => {
-      const input = JSON.parse(await Deno.readTextFile(governancePath));
-      const governance = {
-        signers: input.signers,
-        quorum: BigInt(input.quorum),
-        delay_ms: BigInt(input.delay_ms),
-      };
-      const { assertGovernance } = await import("./types/plutus/Migration.ts");
-      assertGovernance(governance);
-      return { governance, bootstrapSigners: governance.signers };
-    })()
-    : undefined;
-  await createDeployment(lucid, KUPMIOS_ENV, { migration });
+  console.log(`Deployment mode: ${deploymentOptions.deploymentMode}`);
+  await createDeployment(lucid, KUPMIOS_ENV, deploymentOptions);
 } catch (error) {
   console.error("ERR: ", error);
   throw error;

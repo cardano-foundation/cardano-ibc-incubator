@@ -72,3 +72,8 @@ test('migration manifests fail closed instead of silently losing the feature mar
     assert.throws(() => requireMigrationConfig(value), /Unsupported or incomplete/);
   }
 });
+
+
+test('recovery capability cannot be stripped from an explicitly upgradeable deployment', async () => {
+  await assert.rejects(() => migrationReference({} as never, {deploymentMode:'upgradeable'} as never), /missing its recovery/);
+});

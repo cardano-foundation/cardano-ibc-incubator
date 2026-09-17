@@ -11,6 +11,7 @@ export type MigrationRuntimeConfig = {
     originalAddresses: string[];
 };
 export type MigrationRuntimeDeployment = {
+    deploymentMode?: 'upgradeable' | 'legacy';
     migration?: MigrationRuntimeConfig;
     hostStateNFT: {
         policyId: string;
@@ -38,3 +39,6 @@ export declare function migrationReference(lucid: LucidEvolution, deployment: Mi
  * A rejected transaction must be rebuilt from fresh canonical state.
  */
 export declare function withMigrationReference(lucid: LucidEvolution, tx: TxBuilder, deployment: MigrationRuntimeDeployment, createObject?: boolean): Promise<TxBuilder>;
+/** New manifests explicitly declare capability; a declaration never replaces
+ * migrationReference's canonical NFT, identity and role-credential checks. */
+export declare function checkedDeploymentMode(mode: unknown, migration: unknown): 'upgradeable' | 'legacy' | undefined;

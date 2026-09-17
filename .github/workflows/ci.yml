@@ -615,6 +615,12 @@ jobs:
           cardano/offchain/src/testing/protocol-10-local-cost-profile.json
           migration-scaling.json
 
+      - name: Measure complete serialized operator recovery and authenticated cache scaling
+        run: >-
+          deno run --allow-read --allow-env --allow-write
+          --config cardano/offchain/deno.json scripts/ci/measure-migration-operator.ts
+          migration-operator-scaling.json
+
       - name: Check independent migration packet model and transition coverage
         working-directory: cardano/onchain
         run: |
@@ -632,6 +638,7 @@ jobs:
             migration-packet-model.json
             migration-packet-smoke.json
             migration-scaling.json
+            migration-operator-scaling.json
 
   deno-funds:
     name: Cardano Compiled Funds (${{ matrix.suite }})

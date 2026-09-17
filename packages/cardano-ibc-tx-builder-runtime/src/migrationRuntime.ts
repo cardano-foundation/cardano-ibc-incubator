@@ -17,6 +17,7 @@ export type MigrationRuntimeConfig = {
 };
 
 export type MigrationRuntimeDeployment = {
+  deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   hostStateNFT: { policyId: string; name: string };
   validators: Record<'hostStateStt' | 'spendClient' | 'spendConnection' | 'spendChannel' | 'spendTransferModule', { address?: string }> &
@@ -58,6 +59,8 @@ function addressFromData(network: Network, data: Data): string {
  * invalidates it at the ledger even if an indexer has temporarily served stale data.
  */
 export async function migrationReference(lucid: LucidEvolution, deployment: MigrationRuntimeDeployment, createObject = false): Promise<UTxO | undefined> {
+  if (deployment.deploymentMode === 'upgradeable' && !deployment.migration) throw new Error('Upgradeable deployment is missing its recovery configuration');
+  if (deployment.deploymentMode === 'legacy' && deployment.migration) throw new Error('Legacy deployment conflicts with migration configuration');
   if (!deployment.migration) return undefined;
   const manifest = requireMigrationConfig(deployment.migration);
   const utxo = await lucid.utxoByUnit(manifest.registryUnit);
@@ -92,4 +95,13 @@ export async function withMigrationReference(lucid: LucidEvolution, tx: TxBuilde
   const reference = await migrationReference(lucid, deployment, createObject);
   if (reference) tx.readFrom([reference]);
   return tx;
+}
+
+/** New manifests explicitly declare capability; a declaration never replaces
+ * migrationReference's canonical NFT, identity and role-credential checks. */
+export function checkedDeploymentMode(mode: unknown, migration: unknown): 'upgradeable' | 'legacy' | undefined {
+  if (mode === undefined) return undefined; // Pre-marker manifests checked by startup policy.
+  if (mode !== 'upgradeable' && mode !== 'legacy') throw new Error('Invalid deploymentMode; expected upgradeable or legacy');
+  if ((mode === 'upgradeable') !== (migration !== undefined)) throw new Error('Deployment mode and recovery configuration disagree');
+  return mode;
 }

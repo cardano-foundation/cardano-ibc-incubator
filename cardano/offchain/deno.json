@@ -42,7 +42,7 @@
     "export:deployment-plan": "deno run --allow-env --allow-read --allow-write scripts/export-deployment-plan.ts",
     "test:funds:oracles": "deno test --allow-read --allow-env src/funds-oracle.test.ts src/isolated-evaluation.test.ts",
     "test:funds:fuzz": "deno test --allow-env --allow-read src/funds-lifecycle.fuzz.test.ts",
-    "test:migration": "deno test --allow-env --allow-read --allow-write src/migration.test.ts src/migration-accounting.test.ts scripts/migrate-deployment.test.ts src/protocol_parameters.test.ts src/ogmios-script.test.ts",
+    "test:migration": "deno test --allow-env --allow-read --allow-write src/migration.test.ts src/migration-accounting.test.ts src/migration-operator.test.ts src/migration-inventory.test.ts src/migration-history.test.ts src/deployment-mode.test.ts scripts/migrate-deployment.test.ts src/protocol_parameters.test.ts src/ogmios-script.test.ts",
     "migrate:deployment": "deno run --allow-net --allow-env --allow-read --allow-write --allow-run --allow-ffi scripts/migrate-deployment.ts"
   },
   "links": [

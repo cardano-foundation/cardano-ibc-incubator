@@ -31,3 +31,16 @@ This map concerns compatible replacement of a fresh upgrade-capable baseline. It
 | Obtain independent adversarial review | Review findings recorded in the evidence ledger and addressed in corresponding code/tests | Reviews found and resolved authorization/accounting, lineage, proof-height, partial-migration evidence and transport failure-path defects. The latest journal review was tool-blocked and remains a review gap. These reviews and local rehearsals are not an independent audit. |
 
 The central populated local V1→V2→V3 criterion passed, including original assets/claims, new traffic and canonical revalidation. See the [recorded result](evidence/migration-462-local-result.json). Fresh CI acceptance and the explicitly listed review/rollback evidence gaps remain separate. Arbitrary approved successor logic can still steal later; conservation at handover does not remove governance trust. Immutable-policy/kernel faults, lost authority, unavailable history and irrecoverably expired clients remain explicit recovery limits.
+
+
+## Review follow-up (#462)
+
+| Requirement | Implementation | Executable evidence / limit |
+|---|---|---|
+| Durable reviewed intent across UTxO turnover | `migration.ts:authorizeMigration`, registry nonce/generation, `migration-transactions.ts` preflight, unchanged on-chain Begin checks | `migration.test.ts` real heartbeat at three boundaries; `migration-operator.test.ts` seeded root continuation; incompatible provider-response cases |
+| Authenticated resumable inventory acceleration | `migration-inventory.ts`, `DeploymentIbcTree.remove`, operator loop | Independent-root cache retry/stale/competition/rollback tests; full seeded production operator at N=2/8/32/128; real chain rollback unverified |
+| Meaningful property populations/histories | `migration-history.test.ts`, `migration-operator.test.ts`, multi-channel accounting fixture | 100 independent economic histories; 16 actual compiled migration populations; no claim of generated two-chain packet settlement |
+| Explicit deployment capability | `deployment-mode.ts`, deployment API, manifest/runtime normalization and canonical registry checks | Invalid/missing configuration rejection; Gateway manifest tests, SDK missing-capability test; intentional legacy must be explicit |
+| Candidate provenance and limits | [Review report](migration-review-followup.md), `evidence/migration-review-result.json` | Exact source/artifact hashes and executed commands; previous populated acceptance separately identified |
+
+Immediate emergency restriction is still missing. Compatible replacement cannot repair immutable policy/kernel/proof dependencies or implement arbitrary state transformation.

@@ -13,7 +13,7 @@ import {
 } from "../types/plutus/Migration.ts";
 import { HostStateDatum } from "../types/plutus/HostState.ts";
 import { TransferModuleDatum } from "../types/plutus/TransferModuleDatum.ts";
-import { DeploymentIbcTree } from "./deployment.ts";
+import { MigrationInventory } from "./migration-inventory.ts";
 import type { DeploymentPlan, PlannedValidator } from "./deployment-plan.ts";
 import {
   canonicalMigrationJson,
@@ -27,8 +27,6 @@ import {
   type MigrationInputs,
   readRegistry,
 } from "./migration-transactions.ts";
-import { escrowDatum } from "./shutdown.ts";
-import { escrowShardName } from "./migration-transactions.ts";
 import { type DeploymentTemplate, generateTokenName } from "./utils.ts";
 import { assertBaselineAliases } from "./migration-manifest.ts";
 
@@ -37,6 +35,7 @@ export type MigrationArtifact = {
   registryUnit: string;
   proposal: string;
   validators: PlannedValidator[];
+  // Preparation provenance only: authenticated continuations need not retain these outrefs.
   preparedHost: { txHash: string; outputIndex: number };
   preparedTransferRoot: { txHash: string; outputIndex: number };
 };
@@ -235,14 +234,44 @@ export async function authorizeMigration(
   signers: string[],
 ) {
   const observed = await inspectMigration(lucid, deployment);
-  validateMigrationArtifact(lucid, observed.registry, artifact);
-  const [host] = await lucid.utxosByOutRef([artifact.preparedHost]);
-  const [root] = await lucid.utxosByOutRef([artifact.preparedTransferRoot]);
-  if (!host || !root) {
+  const approved = validateMigrationArtifact(
+    lucid,
+    observed.registry,
+    artifact,
+  );
+  // The registry nonce changes on every proposal, including authority rotation
+  // and cancellation. Together with the source generation it binds the reviewed
+  // authority/implementation epoch without pinning frequently consumed objects.
+  if (
+    observed.registry.phase !== "Ready" ||
+    approved.nonce !== observed.registry.nonce + 1n ||
+    approved.source_generation !== observed.registry.current.generation
+  ) {
     throw new Error(
-      "Prepared state changed; prepare and review a fresh plan before approval",
+      "Reviewed authority or source generation is stale; prepare and review a fresh plan",
     );
   }
+  const host = await lucid.utxoByUnit(
+    observed.registry.host_policy + HOST_NAME,
+  );
+  if (
+    host.assets[observed.registry.host_policy + HOST_NAME] !== 1n || !host.datum
+  ) {
+    throw new Error("Missing authenticated HostState");
+  }
+  const state = Data.from(host.datum, HostStateDatum);
+  const registration = state.control.port_registry.get(fromText("transfer"));
+  const transferCredential =
+    observed.registry.current.addresses[4].payment_credential;
+  if (
+    !registration || state.control.shutdown !== "Active" ||
+    state.nft_policy !== observed.registry.host_policy ||
+    !("Script" in transferCredential) ||
+    registration.module_script_hash !== transferCredential.Script[0]
+  ) {
+    throw new Error("Incompatible authenticated transfer registration");
+  }
+  const root = await lucid.utxoByUnit(unitOf(registration.module_token));
   const references = await lucid.utxosAt(
     bech32Address(
       lucid.config().network || "Custom",
@@ -276,6 +305,7 @@ export async function nextMigrationStep(
   artifact: MigrationArtifact,
   timing: { validFrom: number; validTo: number },
   hostWitness?: string[],
+  inventory = new MigrationInventory(),
 ) {
   const observed = await inspectMigration(lucid, deployment);
   const { registry, baseline } = observed;
@@ -375,38 +405,14 @@ export async function nextMigrationStep(
         network,
         registry.current.addresses[4],
       );
-      const candidates = await lucid.utxosAt(sourceAddress);
-      const shards = new Map<string, UTxO>();
-      const tree = new DeploymentIbcTree();
-      for (const candidate of candidates) {
-        const units = Object.keys(candidate.assets).filter((unit) =>
-          unit.startsWith(registry.identity.escrow_policy)
-        );
-        if (!units.length) continue;
-        const escrow = escrowDatum(candidate);
-        const name = escrowShardName(escrow.channelId, escrow.denom);
-        if (
-          units.length !== 1 ||
-          units[0] !== registry.identity.escrow_policy + name ||
-          candidate.assets[units[0]] !== 1n || shards.has(name)
-        ) throw new Error("Malformed or duplicated escrow inventory");
-        shards.set(name, candidate);
-        tree.set(`escrowShards/${name}`, "01");
-      }
-      if (
-        await tree.getRoot() !== phase.escrow_remaining || shards.size === 0
-      ) {
-        throw new Error(
-          "Indexer inventory does not match authenticated remaining escrow root; refresh canonical state",
-        );
-      }
-      const name = [...shards.keys()].sort()[0];
+      const { name, siblings } = await inventory.witness(
+        `${artifact.registryUnit}/${registry.nonce}/${sourceAddress}`,
+        registry.identity.escrow_policy,
+        phase.escrow_remaining,
+        () => lucid.utxosAt(sourceAddress),
+      );
       await withObject(registry.identity.escrow_policy + name, 4);
-      action = {
-        MoveEscrow: {
-          siblings: await tree.getSiblings(`escrowShards/${name}`),
-        },
-      };
+      action = { MoveEscrow: { siblings } };
     } else {
       if (!hostWitness) {
         throw new Error(

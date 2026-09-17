@@ -1,3 +1,4 @@
+import { TransferModuleDatum } from "../types/plutus/TransferModuleDatum.ts";
 import {
   assert,
   assertEquals,
@@ -407,6 +408,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     return tx;
   };
   let deployment = await createDeployment(lucid, "emulator", {
+    deploymentMode: "upgradeable",
     migration: {
       governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
       bootstrapSigners: [authority],
@@ -518,11 +520,89 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       await signedTx.submit();
       lucid.overrideUTxOs([]);
     }
+    const approvalTiming = () => ({
+      validFrom: emulator.now(),
+      validTo: emulator.now() + 60_000,
+      expiresAt: BigInt(emulator.now() + 3 * 86_400_000),
+    });
+    // Production prepare/authorize path, unchanged-state positive control.
+    await (await authorizeMigration(
+      lucid,
+      deployment,
+      artifact,
+      approvalTiming(),
+      [authority],
+    )).tx.complete({ localUPLCEval: true });
+    // A real accepted ordinary continuation changes the HostState outref and
+    // version but not the reviewed identity, inventory or implementation epoch.
+    await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
+      .sign.withWallet().complete().then((tx) => tx.submit());
+    lucid.overrideUTxOs([]);
+    assertNotEquals(
+      (await lucid.utxoByUnit(hostUnit)).txHash,
+      artifact.preparedHost.txHash,
+    );
+    // Provider fault injection is only a preflight regression, not evidence of
+    // creating incompatible state through the ordinary validators.
+    const lookup = lucid.utxoByUnit.bind(lucid);
+    for (
+      const change of [
+        "counts",
+        "inventory",
+        "authority",
+        "generation",
+      ] as const
+    ) {
+      lucid.utxoByUnit = async (unit: string) => {
+        const utxo = structuredClone(await lookup(unit));
+        if (change === "counts" && unit === hostUnit) {
+          const state = Data.from(utxo.datum!, HostStateDatum);
+          state.state.next_channel_sequence++;
+          utxo.datum = Data.to(state, HostStateDatum);
+        } else if (
+          change === "inventory" &&
+          unit === deployment.modules.transfer.identifier
+        ) {
+          const state = Data.from(utxo.datum!, TransferModuleDatum);
+          state.escrow_shard_registry_root = "ff".repeat(32);
+          utxo.datum = Data.to(state, TransferModuleDatum);
+        } else if (unit === deployment.migration!.registryUnit) {
+          const state = Data.from(utxo.datum!, Registry);
+          if (change === "authority") {
+            state.nonce += 1n;
+            state.governance.signers = ["aa".repeat(28)];
+          }
+          if (change === "generation") state.current.generation++;
+          utxo.datum = Data.to(state, Registry);
+        }
+        return utxo;
+      };
+      try {
+        await assertRejects(
+          () =>
+            authorizeMigration(lucid, deployment, artifact, approvalTiming(), [
+              authority,
+            ]),
+          Error,
+          change === "counts"
+            ? "limits are stale"
+            : change === "inventory"
+            ? "inventory is stale"
+            : "source generation is stale",
+        );
+      } finally {
+        lucid.utxoByUnit = lookup;
+      }
+    }
     const approved = await authorizeMigration(lucid, deployment, artifact, {
       validFrom: emulator.now(),
       validTo: emulator.now() + 60_000,
       expiresAt: BigInt(emulator.now() + 3 * 86_400_000),
     }, [authority]);
+    // Authorization construction/signing must not pin ordinary state either.
+    await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
+      .sign.withWallet().complete().then((tx) => tx.submit());
+    lucid.overrideUTxOs([]);
     await (await (await approved.tx.complete({ localUPLCEval: true })).sign
       .withWallet().complete()).submit();
     assert(await migrationReference(lucid, runtimeDeployment()));
@@ -531,6 +611,10 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       Error,
       "New state objects are paused",
     );
+    // The same intent survives turnover between authorization and Begin.
+    await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
+      .sign.withWallet().complete().then((tx) => tx.submit());
+    lucid.overrideUTxOs([]);
     emulator.awaitSlot(86_500);
     let steps = 0;
     while (true) {
@@ -574,7 +658,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       HostStateDatum,
     );
     assertEquals(after.nft_policy, before.nft_policy);
-    assertEquals(after.state.version, before.state.version + 2n);
+    assertEquals(after.state.version, before.state.version + 5n);
     assertEquals(
       (await inspectMigration(lucid, deployment)).registry.current.generation,
       generation,

@@ -159,6 +159,7 @@ function normalizeBridgeManifest(manifest) {
             ics20_packet_codec: ics20PacketCodec,
         },
         deployment: {
+            deploymentMode: (0, migrationRuntime_1.checkedDeploymentMode)(manifest.deploymentMode ?? 'upgradeable', manifest.migration),
             deployedAt: manifest.deployed_at,
             ...(manifest.migration !== undefined ? { migration: (0, migrationRuntime_1.requireMigrationConfig)(manifest.migration) } : {}),
             consensusHistoryFormat: manifest.consensus_history_format,

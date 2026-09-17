@@ -819,6 +819,7 @@ type Module = "transfer" | "mock" | "icq";
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
+  deploymentMode?: "upgradeable" | "legacy";
   migration?: {
     profile: "cardano-ibc-compatible-v1";
     registryUnit: string;

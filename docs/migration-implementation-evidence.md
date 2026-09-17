@@ -1,3 +1,5 @@
+> Current review follow-up: see [approval, scaling, coverage and deployment capability](migration-review-followup.md) and `evidence/migration-review-result.json`. The earlier populated results below belong to their recorded revisions and are not acceptance of later changes.
+
 # Migration implementation evidence
 
 The populated local V1→V2→V3 rehearsal **passed**, including all old claims, new traffic and final canonical revalidation. Fresh CI attempts have failed before population while resolving a reference, waiting for disposable faucet funding, and collecting a container-owned public transaction envelope; startup corrections and diagnostics are being verified. This is not a production-release or audit claim. No mainnet deployment, live authority change, or real user funds are involved. See the [requirement mapping](migration-requirements.md), [design](state-preserving-redeployment.md), and [operator runbook](migration-operator-runbook.md).
