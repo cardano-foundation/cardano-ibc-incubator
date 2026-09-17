@@ -16,7 +16,10 @@ import {
 } from "./utils.ts";
 import {
   AddressSchema,
+  assertEmergencyAuthority,
   assertGovernance,
+  type Authority,
+  AuthoritySchema,
   CredentialSchema,
   type Governance,
   GovernanceSchema,
@@ -41,7 +44,11 @@ export type DeploymentPlanInputs = {
   traceDirectoryNonce: OutputReference;
   deployerPaymentKeyHash: string;
   benchmarkVoucherEnabled: boolean;
-  migration?: { registryNonce: OutputReference; governance: Governance };
+  migration?: {
+    registryNonce: OutputReference;
+    governance: Governance;
+    emergency: Authority;
+  };
 };
 
 export const loadStagedTendermintValidators = (
@@ -223,7 +230,13 @@ export const loadDeploymentPlan = async (
   const implementationRegistry = inputs.migration
     ? load("implementation_registry.implementation_registry.spend", "runtime")
     : null;
-  if (inputs.migration) assertGovernance(inputs.migration.governance);
+  if (inputs.migration) {
+    assertGovernance(inputs.migration.governance);
+    assertEmergencyAuthority(
+      inputs.migration.emergency,
+      inputs.migration.governance,
+    );
+  }
   const mintImplementationRegistry = inputs.migration && implementationRegistry
     ? load(
       "minting_implementation_registry.mint_implementation_registry.mint",
@@ -233,12 +246,14 @@ export const loadDeploymentPlan = async (
         plutusAddress(implementationRegistry.address),
         hostPolicy,
         inputs.migration.governance,
+        inputs.migration.emergency,
       ],
       Data.Tuple([
         OutputReferenceSchema,
         AddressSchema,
         Data.Bytes(),
         GovernanceSchema,
+        AuthoritySchema,
       ]),
     )
     : null;

@@ -25,8 +25,8 @@ use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state.{Open}
 use ibc/core/ics_025_handler_interface/host_state.{ModuleRegistration}
 use ibc/migration/types.{
-  Counts, FixedIdentity, Governance, Implementation, MoveCore, Moving, Registry,
-  minimum_delay_ms, registry_token_name,
+  Authority, Counts, Emergency, FixedIdentity, Governance, Implementation,
+  MoveCore, Moving, Registry, minimum_delay_ms, registry_token_name,
 }
 use implementation_registry
 use upgradeable/channel as wrapper
@@ -372,6 +372,15 @@ fn reference(n: Int) -> OutputReference {
 
 fn registry(model: Model, moved: Int) -> Registry {
   Registry {
+    emergency: Emergency {
+      authority: Authority {
+        signers: [bytearray.from_int_big_endian(999, 28)],
+        quorum: 1,
+      },
+      epoch: 0,
+      mask: 0,
+      restoration: None,
+    },
     token: AuthToken { policy_id: hash(1), name: registry_token_name },
     host_policy: hash(2),
     identity: FixedIdentity {

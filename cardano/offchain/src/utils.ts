@@ -821,7 +821,7 @@ type Tokens = "mock";
 export type DeploymentTemplate = {
   deploymentMode?: "upgradeable" | "legacy";
   migration?: {
-    profile: "cardano-ibc-compatible-v1";
+    profile: "cardano-ibc-compatible-v2";
     registryUnit: string;
     generation: string;
     compatibility: string;

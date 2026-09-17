@@ -8,7 +8,7 @@ use cardano/assets
 use cardano/transaction.{Input, Output, OutputReference, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/migration/types.{
-  ActiveRegistry, Governance, Implementation, OperationalIdentity,
+  ActiveRegistry, Authority, Governance, Implementation, OperationalIdentity,
   OperationalImplementation, migration_spend_tag, minimum_delay_ms,
   registry_token_name, role_count,
 }
@@ -90,8 +90,10 @@ pub fn active_registry(
   // validators publishable. No operator-supplied datum is accepted here.
   let fields =
     builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
-  expect [token_data,
-    host_data, identity_data, _, _, current_data, phase_data] = fields
+  expect [
+    token_data, host_data, identity_data, _, _, current_data, phase_data,
+    emergency_data,
+  ] = fields
   expect recorded_token: AuthToken = token_data
   expect recorded_token == token
   let host_policy = builtin.un_b_data(host_data)
@@ -111,7 +113,9 @@ pub fn active_registry(
   let connection_policy = builtin.un_b_data(connection_data)
   let channel_policy = builtin.un_b_data(channel_data)
   let escrow_policy = builtin.un_b_data(escrow_data)
+  expect [_, _, mask_data, _] = builtin.un_constr_data(emergency_data).2nd
   ActiveRegistry {
+    restrictions: builtin.un_i_data(mask_data),
     preparing: phase == 1,
     host_policy,
     current,
@@ -215,7 +219,8 @@ pub fn channel_creation_context(
     _,
     _,
     current,
-    phase] =
+    phase,
+    _] =
     builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
   expect builtin.un_constr_data(phase).1st == 0
   expect [client, connection, _, _, _] = builtin.un_constr_data(identity).2nd
@@ -256,5 +261,78 @@ pub fn preserved_output(input: Input, output: Output, address: Address) -> Bool 
     output.datum == input.output.datum,
     output.reference_script == input.output.reference_script,
     validator_utils.preserves_state_value(input.output.value, output.value),
+  }
+}
+
+pub fn valid_authority(authority: Authority) -> Bool {
+  let count = list.length(authority.signers)
+  and {
+    count > 0 && count <= 7,
+    list.length(list.unique(authority.signers)) == count,
+    list.all(authority.signers, fn(key) { bytearray.length(key) == 28 }),
+    authority.quorum > 0 && authority.quorum <= count,
+  }
+}
+
+pub fn emergency_authorized(
+  authority: Authority,
+  transaction: Transaction,
+) -> Bool {
+  list.count(
+    authority.signers,
+    fn(key) { list.has(transaction.extra_signatories, key) },
+  ) >= authority.quorum
+}
+
+pub fn separate_authorities(
+  governance: Governance,
+  authority: Authority,
+) -> Bool {
+  !list.any(authority.signers, fn(key) { list.has(governance.signers, key) })
+}
+
+pub fn permitted(mask: Int, bit: Int) -> Bool {
+  mask / bit % 2 == 0
+}
+
+pub fn valid_mask(mask: Int) -> Bool {
+  mask >= 0 && mask <= 15
+}
+
+pub fn tightens(old: Int, new: Int) -> Bool {
+  valid_mask(new) && list.all(
+    [1, 2, 4, 8],
+    fn(bit) { permitted(old, bit) || !permitted(new, bit) },
+  )
+}
+
+// Compact direct gate in each replaceable spending wrapper. This remains
+// effective when an ordinary dispatch path erroneously omits HostState coupling.
+pub fn operation_allowed(
+  transaction: Transaction,
+  policy: ByteArray,
+  generation: Int,
+  bit: Int,
+) -> Bool {
+  let input =
+    unique_input(
+      transaction.reference_inputs,
+      AuthToken { policy_id: policy, name: registry_token_name },
+    )
+  expect [_,
+    _,
+    _,
+    _,
+    _,
+    current,
+    phase,
+    emergency] =
+    builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
+  expect [current_generation, _, _] = builtin.un_constr_data(current).2nd
+  expect [_, _, mask, _] = builtin.un_constr_data(emergency).2nd
+  and {
+    builtin.un_constr_data(phase).1st <= 1,
+    builtin.un_i_data(current_generation) == generation,
+    permitted(builtin.un_i_data(mask), bit),
   }
 }

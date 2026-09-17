@@ -21,7 +21,8 @@ validator channel(
     } else {
       // Ordinary operations consume HostState, whose current registry gate
       // authenticates phase and role compatibility. Migration has a separate path.
-      expect generation > 0
+      expect
+        migration.operation_allowed(transaction, registry_policy, generation, 1)
       expect redeemer: SpendChannelRedeemer = raw
       expect redeemer != ReclaimChannel
       expect [

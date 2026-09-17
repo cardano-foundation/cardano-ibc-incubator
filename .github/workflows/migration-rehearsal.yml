@@ -116,7 +116,7 @@ jobs:
           python3 scripts/ci/test-populated-migration.py \
             --runtime "$MIGRATION_RUNTIME" --artifacts-dir "$MIGRATION_ARTIFACTS" \
             --v2-blueprint .deployment-smoke/release-v2/plutus.json \
-            --v3-blueprint .deployment-smoke/release-v3/plutus.json
+            --v3-blueprint .deployment-smoke/release-v3/plutus.json --exercise-rollback
 
       - name: Retain public evidence, including failed attempts
         if: always()

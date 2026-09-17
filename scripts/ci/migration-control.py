@@ -35,13 +35,13 @@ def main():
         parser.error('Only the owned magic-42 devnet is supported')
     if not command or command[0] not in {
         'prepare', 'inspect', 'publish', 'authorize', 'cancel', 'rotate',
-        'activate-authority', 'execute', 'resume', 'verify',
+        'activate-authority', 'execute', 'resume', 'verify', 'restrict', 'propose-restoration', 'restore', 'cancel-restoration',
     }:
         parser.error('Supply an explicit production migration CLI command after --')
     if '--handler' in command:
         parser.error('Select the handler through the wrapper option before --')
     identity = json.loads(handler.read_text())
-    if identity.get('migration', {}).get('profile') != 'cardano-ibc-compatible-v1':
+    if identity.get('migration', {}).get('profile') != 'cardano-ibc-compatible-v2':
         parser.error('The selected deployment has no supported migration baseline')
     public_key = re.search(r'ed25519_sk[0-9a-z]+', (ROOT / 'cardano/offchain/.env.default').read_text())
     if not public_key:

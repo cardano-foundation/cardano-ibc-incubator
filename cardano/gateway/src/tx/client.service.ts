@@ -1690,7 +1690,7 @@ export class ClientService {
         throw new GrpcFailedPreconditionException('Tendermint client recovery is not configured for this deployment');
       }
 
-      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT(2n);
       if (!hostStateUtxo.datum) {
         throw new GrpcInternalException('HostState UTXO has no datum');
       }
@@ -1816,7 +1816,7 @@ export class ClientService {
     // UpdateClient must update `ibc_state_root` so that proofs about the client state
     // remain verifiable by a counterparty. Without this, an operator could update the
     // on-chain client datum while leaving the root unchanged.
-    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT(2n);
     if (stagedFinalizations) {
       await this.requireLiveTendermintFinalizationInputs(hostStateUtxo, updateOnMisbehaviourOperator.currentClientUtxo);
     }
@@ -1999,7 +1999,7 @@ export class ClientService {
     //
     // The archived tip keeps its existing commitment leaf. Only the new tip and
     // client state alter the public root.
-    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT(2n);
     if (stagedFinalization) {
       await this.requireLiveTendermintFinalizationInputs(hostStateUtxo, updateClientOperator.currentClientUtxo);
     }
@@ -2251,7 +2251,7 @@ export class ClientService {
     txValidToNs: bigint,
   ): Promise<{ unsignedTx: TxBuilder; clientId: bigint; pendingTreeUpdate: PendingTreeUpdate }> {
     // The HostState NFT identifies the single coordinator UTxO for this update.
-    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT(2n);
 
     this.logger.log(`[DEBUG] HostState UTXO: ${hostStateUtxo.txHash}#${hostStateUtxo.outputIndex}`);
     this.logger.log(`[DEBUG] HostState UTXO address: ${hostStateUtxo.address}`);

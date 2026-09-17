@@ -1,5 +1,7 @@
 # Migration review follow-up: approval, scale, coverage and deployment capability
 
+**Historical follow-up:** the measurements below precede the emergency-restriction ABI change. They remain evidence for the unchanged approval/cache mechanisms, not whole-candidate acceptance. See the current containment specification.
+
 This review starts at `204d508a923edacc5a13ab4ece18b3e6cf5e4c1a` on the feature worktree. It does not alter the original worktree. No live immutable deployment is assumed or claimed recoverable. On-chain migration rules and compiled baseline validators are unchanged by this follow-up.
 
 ## Durable approval versus construction inputs

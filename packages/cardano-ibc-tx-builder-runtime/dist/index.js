@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = exports.OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = exports.transferEscrowShardTokenName = exports.AsyncMutex = void 0;
 exports.withKupoStringQuantityHeader = withKupoStringQuantityHeader;
+exports.normalizeBridgeManifest = normalizeBridgeManifest;
 exports.ogmiosRequest = ogmiosRequest;
 exports.mapOgmiosProtocolParameters = mapOgmiosProtocolParameters;
 exports.queryProtocolParametersCompat = queryProtocolParametersCompat;

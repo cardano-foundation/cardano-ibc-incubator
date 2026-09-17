@@ -23,10 +23,11 @@ use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use ibc/implementation/host_state_stt as legacy_host
 use ibc/migration/auth as migration
 use ibc/migration/types.{
-  Activate, Begin, Cancel, Counts, FixedIdentity, Governance, Implementation,
-  MoveCore, MoveEscrow, MoveTransferRoot, Moving, Proposal, Propose, Proposed,
-  Ready, Registry, RegistryRedeemer, Replace, Rotate, RotateAuthority,
-  minimum_delay_ms, registry_token_name,
+  Activate, Authority, Begin, Cancel, CancelRestoration, Counts, Emergency,
+  FixedIdentity, Governance, Implementation, MoveCore, MoveEscrow,
+  MoveTransferRoot, Moving, Proposal, Propose, ProposeRestoration, Proposed,
+  Ready, Registry, RegistryRedeemer, Replace, Restoration, Restore, Restrict,
+  Rotate, RotateAuthority, minimum_delay_ms, registry_token_name,
 }
 use ibc/utils/string
 use implementation_registry
@@ -79,6 +80,15 @@ fn implementation(generation: Int) -> Implementation {
 
 fn initial() -> Registry {
   Registry {
+    emergency: Emergency {
+      authority: Authority {
+        signers: [bytearray.from_int_big_endian(999, 28)],
+        quorum: 1,
+      },
+      epoch: 0,
+      mask: 0,
+      restoration: None,
+    },
     token: AuthToken { policy_id: hash(1), name: registry_token_name },
     host_policy: hash(2),
     identity: FixedIdentity {
@@ -554,6 +564,7 @@ fn bootstrap(
     from_script(hash(900)),
     hash(2),
     governance(),
+    initial().emergency.authority,
     builtin.constr_data(0, []),
     hash(1),
     transaction,
@@ -1552,4 +1563,246 @@ test migration_adversarial_cleanup_rejects_deployer_shutdown_while_active() fail
 
 test migration_adversarial_cleanup_rejects_deployer_shutdown_after_approval() fail {
   attempt_upgradeable_shutdown(approved(proposal()))
+}
+
+fn restrict_case(old: Registry, mask: Int, signers: List<ByteArray>) -> Case {
+  transition(
+    old,
+    Registry {
+      ..old,
+      emergency: Emergency {
+        ..old.emergency,
+        mask,
+        epoch: old.emergency.epoch + 1,
+        restoration: None,
+      },
+    },
+    Restrict { mask },
+    [],
+    [],
+    1000,
+    2000,
+    signers,
+  )
+}
+
+fn held(case: Case, mask: Int) -> Case {
+  expect run(case)
+  let original = case.old
+  let destination = new_registry(case)
+  case
+    |> with_registry_input(
+        Registry {
+          ..original,
+          emergency: Emergency { ..original.emergency, mask },
+        },
+      )
+    |> with_registry_output(
+        Registry {
+          ..destination,
+          emergency: Emergency { ..destination.emergency, mask },
+        },
+      )
+}
+
+test emergency_immediate_before_proposal() {
+  run(restrict_case(initial(), 9, [hash(999)]))
+}
+
+test emergency_immediate_during_delay() {
+  run(restrict_case(approved(proposal()), 9, [hash(999)]))
+}
+
+test emergency_immediate_during_migration() {
+  run(restrict_case(moving(zeros(), tree.empty_hash, False), 9, [hash(999)]))
+}
+
+test emergency_rejects_code_authority_without_emergency_key() fail {
+  run(restrict_case(initial(), 9, [hash(11), hash(12), hash(13)]))
+}
+
+test emergency_rejects_loosen() fail {
+  let old = initial()
+  run(
+    restrict_case(
+      Registry { ..old, emergency: Emergency { ..old.emergency, mask: 9 } },
+      1,
+      [hash(999)],
+    ),
+  )
+}
+
+test emergency_rejects_code_substitution() fail {
+  let case = restrict_case(initial(), 9, [hash(999)])
+  expect run(case)
+  let output = new_registry(case)
+  run(
+    with_registry_output(
+      case,
+      Registry { ..output, current: implementation(7) },
+    ),
+  )
+}
+
+test emergency_hold_rejects_previously_approved_begin() fail {
+  run(held(begin(), 8))
+}
+
+test emergency_hold_rejects_previously_approved_activation() fail {
+  run(held(activation(), 8))
+}
+
+test emergency_traffic_restriction_survives_activation() {
+  run(held(activation(), 1))
+}
+
+test emergency_traffic_restriction_permits_authorized_begin() {
+  run(held(begin(), 1))
+}
+
+fn restoration_proposal() -> Case {
+  let source = initial()
+  let old =
+    Registry {
+      ..source,
+      emergency: Emergency { ..source.emergency, mask: 9, epoch: 1 },
+    }
+  let authority = Authority { signers: [hash(998)], quorum: 1 }
+  let new =
+    Registry {
+      ..old,
+      emergency: Emergency {
+        ..old.emergency,
+        restoration: Some(
+          Restoration {
+            registry_nonce: old.nonce,
+            generation: 1,
+            epoch: 1,
+            mask: 0,
+            authority,
+            ready_at,
+            expires_at,
+          },
+        ),
+      },
+    }
+  transition(
+    old,
+    new,
+    ProposeRestoration { mask: 0, authority, expires_at },
+    [],
+    [],
+    1000,
+    approval_upper,
+    [hash(11), hash(12)],
+  )
+}
+
+fn restoration() -> Case {
+  let proposal = restoration_proposal()
+  expect run(proposal)
+  let old = new_registry(proposal)
+  let new =
+    Registry {
+      ..old,
+      emergency: Emergency {
+        authority: Authority { signers: [hash(998)], quorum: 1 },
+        mask: 0,
+        epoch: 2,
+        restoration: None,
+      },
+    }
+  transition(old, new, Restore, [], [], ready_at, execution_upper, [])
+}
+
+test emergency_restore_delayed_and_permissionless() {
+  run(restoration())
+}
+
+test emergency_restore_premature_even_with_both_authorities() fail {
+  let case = restoration()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        validity_range: interval.between(1000, 2000),
+        extra_signatories: [hash(11), hash(12), hash(999)],
+      },
+    },
+  )
+}
+
+test emergency_cannot_self_authorize_restoration() fail {
+  let case = restoration_proposal()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        extra_signatories: [hash(999)],
+      },
+    },
+  )
+}
+
+test emergency_restriction_revokes_pending_restoration() {
+  let old = new_registry(restoration_proposal())
+  run(restrict_case(old, 9, [hash(999)]))
+}
+
+test emergency_stale_restoration_nonce_rejected() fail {
+  let case = restoration()
+  let old = Registry { ..case.old, nonce: case.old.nonce + 1 }
+  let new = Registry { ..new_registry(case), nonce: old.nonce }
+  run(case |> with_registry_input(old) |> with_registry_output(new))
+}
+
+test emergency_stale_restoration_epoch_rejected() fail {
+  let case = restoration()
+  let old =
+    Registry {
+      ..case.old,
+      emergency: Emergency { ..case.old.emergency, epoch: 2 },
+    }
+  run(with_registry_input(case, old))
+}
+
+test emergency_cancel_restoration_preserves_restrictions() {
+  let old = new_registry(restoration_proposal())
+  run(
+    transition(
+      old,
+      Registry {
+        ..old,
+        emergency: Emergency { ..old.emergency, restoration: None },
+      },
+      CancelRestoration,
+      [],
+      [],
+      1000,
+      2000,
+      [hash(11), hash(12)],
+    ),
+  )
+}
+
+
+test emergency_hold_rejects_escrow_move() fail {
+  run(held(escrow(), 8))
+}
+
+test emergency_traffic_restriction_permits_escrow_move() {
+  run(held(escrow(), 1))
+}
+
+test emergency_stale_restoration_generation_rejected() fail {
+  let case = restoration()
+  let old = Registry { ..case.old, current: implementation(2) }
+  let new = Registry { ..new_registry(case), current: old.current }
+  run(case |> with_registry_input(old) |> with_registry_output(new))
+}
+
+test emergency_rejects_out_of_range_mask() fail {
+  run(restrict_case(initial(), 16, [hash(999)]))
 }

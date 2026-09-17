@@ -23,7 +23,7 @@ async function main() {
   assert.match(channelId, /^channel-\d+$/);
   for (const n of [height, sequence]) assert.match(n, /^[1-9]\d*$/);
   const handler = JSON.parse(fs.readFileSync(handlerPath));
-  assert.equal(handler.migration.profile, 'cardano-ibc-compatible-v1');
+  assert.equal(handler.migration.profile, 'cardano-ibc-compatible-v2');
   const rest = async (route) => {
     const response = await fetch('http://127.0.0.1:1527' + route, { signal: AbortSignal.timeout(30_000) });
     assert(response.ok, `Counterparty query failed: ${response.status} ${route}`);

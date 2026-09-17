@@ -600,8 +600,8 @@ export class LucidService implements OnModuleInit {
    * @returns The HostState UTXO containing the NFT
    * @throws GrpcNotFoundException if NFT or UTXO not found
    */
-  public async findUtxoAtHostStateNFT(): Promise<UTxO> {
-    await migrationReference(this.lucid, this.configService.getOrThrow('deployment'));
+  public async findUtxoAtHostStateNFT(restriction = 1n): Promise<UTxO> {
+    await migrationReference(this.lucid, this.configService.getOrThrow('deployment'), false, restriction);
     const { address: addressOrCredential } = this.configService.get('deployment').validators.hostStateStt;
     const hostStateNFTConfig = this.configService.get('deployment').hostStateNFT;
     const hostStateNFT = hostStateNFTConfig.policyId + hostStateNFTConfig.name;
@@ -918,7 +918,7 @@ export class LucidService implements OnModuleInit {
     if (!support?.address || !this.referenceScripts.recoverClient) {
       throw new GrpcFailedPreconditionException('Client history verification script is unavailable');
     }
-    const tx: TxBuilder = await this.newTxBuilder();
+    const tx: TxBuilder = await this.newTxBuilder(false, 2n);
 
     // Keep the datum bytes exactly as they exist on-chain. This avoids any chance
     // that a client-side re-encoding changes the bytes being validated.
@@ -1054,7 +1054,7 @@ export class LucidService implements OnModuleInit {
       datumHash: undefined,
     };
 
-    return (await this.newTxBuilder())
+    return (await this.newTxBuilder(false, 2n))
       .readFrom([
         this.referenceScripts.hostStateStt,
         this.referenceScripts.spendClient,
@@ -1113,7 +1113,7 @@ export class LucidService implements OnModuleInit {
       datumHash: undefined,
     };
 
-    const tx = (await this.newTxBuilder())
+    const tx = (await this.newTxBuilder(false, 2n))
       .readFrom([
         this.referenceScripts.hostStateStt,
         this.referenceScripts.spendClient,
@@ -1150,7 +1150,7 @@ export class LucidService implements OnModuleInit {
       datumHash: undefined,
     };
 
-    return (await this.newTxBuilder())
+    return (await this.newTxBuilder(false, 4n))
       .readFrom([this.referenceScripts.hostStateStt])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .pay.ToContract(
@@ -1172,7 +1172,7 @@ export class LucidService implements OnModuleInit {
   ): Promise<TxBuilder> {
     const deploymentConfig = this.configService.get('deployment');
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
-    const tx: TxBuilder = await this.newTxBuilder(true);
+    const tx: TxBuilder = await this.newTxBuilder(true, 3n);
 
     console.log('[DEBUG TX] ========== CREATE CLIENT TRANSACTION ==========');
     console.log('[DEBUG TX] HostState NFT:', hostStateNFT);
@@ -2882,12 +2882,13 @@ export class LucidService implements OnModuleInit {
     return fullName;
   };
 
-  private async newTxBuilder(createObject = false): Promise<TxBuilder> {
+  private async newTxBuilder(createObject = false, restriction = 1n): Promise<TxBuilder> {
     return withMigrationReference(
       this.lucid,
       this.lucid.newTx(),
       this.configService.getOrThrow('deployment'),
       createObject,
+      restriction,
     );
   }
 }

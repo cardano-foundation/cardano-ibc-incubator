@@ -131,7 +131,7 @@ export class HostStateHeartbeatService {
 
   private async resolveHeartbeatContext(): Promise<HeartbeatContext> {
     const [hostStateUtxo, latestBlock] = await Promise.all([
-      this.lucidService.findUtxoAtHostStateNFT(),
+      this.lucidService.findUtxoAtHostStateNFT(4n),
       this.historyService.findLatestBlock(),
     ]);
     if (!latestBlock) {

@@ -39,6 +39,7 @@ Deno.test("deployment mode is explicit and governance omission fails before prov
     deploymentMode: "legacy",
   });
   const valid = {
+    emergency: { signers: ["ee".repeat(28)], quorum: "1" },
     signers: ["aa".repeat(28)],
     quorum: "1",
     delay_ms: "86400000",
@@ -50,10 +51,17 @@ Deno.test("deployment mode is explicit and governance omission fails before prov
   assertEquals(configured.deploymentMode, "upgradeable");
   assertEquals(configured.migration!.governance.delay_ms, 86400000n);
   for (
-    const bad of [{ ...valid, delay_ms: "0" }, { ...valid, signers: [] }, {
-      ...valid,
-      quorum: "0",
-    }]
+    const bad of [
+      { ...valid, emergency: undefined },
+      { ...valid, emergency: { signers: valid.signers, quorum: "1" } },
+      { ...valid, emergency: { signers: [], quorum: "1" } },
+      { ...valid, delay_ms: "0" },
+      { ...valid, signers: [] },
+      {
+        ...valid,
+        quorum: "0",
+      },
+    ]
   ) {
     await assertRejects(
       () =>

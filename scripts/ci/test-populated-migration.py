@@ -116,6 +116,7 @@ def counterparty_needs_update(state, accepted_height):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--exercise-rollback', action='store_true', help='Require an actual five-node minority-fork rollback before V2 completion')
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
     parser.add_argument('--v2-blueprint', type=Path, required=True)
@@ -386,6 +387,10 @@ def main():
                 run('paused-rpc', ['node', str(ROOT / 'scripts/ci/verify-migration-paused-rpc.cjs'),
                     str(artifacts / f'cold-moving-v{generation}-rejections.json')])
                 stop('gateway')
+                if args.exercise_rollback and generation == 2:
+                    run('rollback-v2', ['python3', str(ROOT / 'scripts/ci/rehearse-migration-rollback.py'),
+                        '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--handler', str(handler),
+                        '--plan', str(artifacts / 'migration-v2-populated.json')])
                 run('finish-' + str(generation), handover + ['finish'])
                 stop('history')
                 target = installed(generation)
@@ -446,11 +451,19 @@ def main():
                 balances(installed(3), 'population-settled-v3', 'settled-v3', 3)
                 run('standalone-sdk-build', ['env', 'FAKETIME_DONT_FAKE_MONOTONIC=1', 'faketime', '-f', f'{offset():+d}s', 'node',
                     str(ROOT / 'scripts/ci/verify-migration-sdk-build.cjs'), str(runtime), str(artifacts)])
+                rollback = []
+                if args.exercise_rollback:
+                    for path in (artifacts / 'v2-handover').glob('rollback-*.json'):
+                        item = json.loads(path.read_text())
+                        if item.get('status') == 'rollback-observed' and item.get('networkReconnected') is True:
+                            rollback.append({'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+                    if not rollback:
+                        raise RuntimeError('Required real minority-fork rollback was not demonstrated')
                 with (run_dir / 'result.json').open('x') as output:
                     json.dump({'format': 'populated-migration-rehearsal-v1', 'genesisSha256': genesis_sha,
                         'deployment': json.loads(source.read_text())['migration']['registryUnit'],
                         'stagesExecuted': selected, 'allPacketReceiptsCanonicallyRechecked': True,
-                        'counterpartyContinuity': continuity,
+                        'counterpartyContinuity': continuity, 'rollbackEvidence': rollback,
                         'scope': 'Owned two-chain rehearsal and independent accounting, not a public-network finality certificate or independent audit'},
                         output, indent=2)
         print(json.dumps({'completedStages': selected, 'evidence': str(run_dir)}))

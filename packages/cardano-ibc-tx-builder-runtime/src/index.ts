@@ -466,7 +466,7 @@ function mapValidator(validator: { script_hash: string; address: string; ref_utx
   };
 }
 
-function normalizeBridgeManifest(manifest: BridgeManifest): {
+export function normalizeBridgeManifest(manifest: BridgeManifest): {
   deployment: DeploymentConfig;
   bridgeManifest: BridgeManifest;
 } {

@@ -1,4 +1,8 @@
 import {
+  assertEmergencyAuthority,
+  type Authority,
+} from "../types/plutus/Migration.ts";
+import {
   type HistoryBootstrap,
   requireHistoryBootstrap,
   requireHistoryStart,
@@ -339,6 +343,7 @@ export type DeploymentOptions = {
   deploymentMode?: "upgradeable" | "legacy";
   migration?: {
     governance: Governance;
+    emergency: Authority;
     bootstrapSigners: string[];
     signRegistryBootstrap?: (transaction: TxSignBuilder) => Promise<TxSigned>;
   };
@@ -383,6 +388,7 @@ export const createDeployment = async (
   const nonceCount = RESERVED_DEPLOYMENT_NONCE_COUNT + (migration ? 1 : 0);
   if (migration) {
     assertGovernance(migration.governance);
+    assertEmergencyAuthority(migration.emergency, migration.governance);
     const signers = new Set(migration.bootstrapSigners);
     if (
       BigInt(
@@ -450,6 +456,7 @@ export const createDeployment = async (
         ? {
           registryNonce: buildOutputReference(nonces[nonceCount - 1]),
           governance: migration.governance,
+          emergency: migration.emergency,
         }
         : undefined,
     });

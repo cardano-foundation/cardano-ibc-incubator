@@ -72,6 +72,37 @@ export const GovernanceSchema = Data.Object({
   delay_ms: Data.Integer(),
 });
 export type Governance = Data.Static<typeof GovernanceSchema>;
+export const AuthoritySchema = Data.Object({
+  signers: Data.Array(Data.Bytes()),
+  quorum: Data.Integer(),
+});
+export type Authority = Data.Static<typeof AuthoritySchema>;
+export const RestorationSchema = Data.Object({
+  registry_nonce: Data.Integer(),
+  generation: Data.Integer(),
+  epoch: Data.Integer(),
+  mask: Data.Integer(),
+  authority: AuthoritySchema,
+  ready_at: Data.Integer(),
+  expires_at: Data.Integer(),
+});
+export const EmergencySchema = Data.Object({
+  authority: AuthoritySchema,
+  epoch: Data.Integer(),
+  mask: Data.Integer(),
+  restoration: Data.Nullable(RestorationSchema),
+});
+export function assertEmergencyAuthority(
+  authority: Authority,
+  governance: Governance,
+) {
+  assertGovernance({ ...authority, delay_ms: governance.delay_ms });
+  if (authority.signers.some((key) => governance.signers.includes(key))) {
+    throw new Error(
+      "Emergency and replacement-code authorities must use disjoint keys",
+    );
+  }
+}
 export const ImplementationSchema = Data.Object({
   generation: Data.Integer(),
   addresses: Data.Array(AddressSchema),
@@ -137,6 +168,7 @@ export const RegistrySchema = Data.Object({
   nonce: Data.Integer(),
   current: ImplementationSchema,
   phase: PhaseSchema,
+  emergency: EmergencySchema,
 });
 export type Registry = Data.Static<typeof RegistrySchema>;
 export const Registry = RegistrySchema as unknown as Registry;
@@ -158,6 +190,16 @@ export const RegistryRedeemerSchema = Data.Enum([
   Data.Object({
     Activate: Data.Object({ port_siblings: Data.Array(Data.Bytes()) }),
   }),
+  Data.Object({ Restrict: Data.Object({ mask: Data.Integer() }) }),
+  Data.Object({
+    ProposeRestoration: Data.Object({
+      mask: Data.Integer(),
+      authority: AuthoritySchema,
+      expires_at: Data.Integer(),
+    }),
+  }),
+  Data.Literal("CancelRestoration"),
+  Data.Literal("Restore"),
 ]);
 export type RegistryRedeemer = Data.Static<typeof RegistryRedeemerSchema>;
 export const RegistryRedeemer =

@@ -27,7 +27,7 @@ import { generateIdentifierTokenName } from "./utils.ts";
 import {
   Proposal,
   Registry,
-  type RegistryRedeemer,
+  RegistryRedeemer,
 } from "../types/plutus/Migration.ts";
 import {
   buildReferenceBatchTx,
@@ -53,6 +53,11 @@ import {
 
 // Public test vector, never a configured production authority.
 const SEED = "abandon ".repeat(11) + "about";
+const EMERGENCY_WALLET = walletFromSeed("zoo ".repeat(11) + "wrong", {
+  network: "Custom",
+});
+const EMERGENCY_AUTHORITY =
+  getAddressDetails(EMERGENCY_WALLET.address).paymentCredential!.hash;
 const START = 1_700_000_000_000;
 async function fixture() {
   const address = walletFromSeed(SEED, { network: "Custom" }).address;
@@ -86,6 +91,7 @@ async function fixture() {
     migration: {
       registryNonce: outref(3),
       governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
+      emergency: { signers: [EMERGENCY_AUTHORITY], quorum: 1n },
     },
   });
   assert(
@@ -128,16 +134,21 @@ async function deployedRegistry() {
       kind: "inline",
       value: Data.to(plan.registry!, Registry),
     }, { [unit]: 1n, lovelace: 20_000_000n })
-    .pay.ToContract(
-      plan.referenceHolder.address,
-      { kind: "inline", value: Data.void() },
-      { lovelace: 60_000_000n },
-      plan.implementationRegistry!.script,
-    )
     .complete({ localUPLCEval: true });
   const signed = await mint.sign.withWallet().complete();
   await signed.submit();
   emulator.awaitBlock();
+  lucid.overrideUTxOs([]);
+  // Publish separately, as the production deployment does; the enlarged kernel
+  // and its minting policy cannot share one 16 KiB bootstrap transaction.
+  const reference = await buildReferenceBatchTx(
+    lucid,
+    plan.referenceHolder.address,
+    [plan.implementationRegistry!.script],
+  ).complete({ localUPLCEval: true });
+  await (await reference.sign.withWallet().complete()).submit();
+  emulator.awaitBlock();
+  lucid.overrideUTxOs([]);
   const registry = await lucid.utxoByUnit(unit);
   const registryReference = (await lucid.utxosAt(plan.referenceHolder.address))
     .find((utxo) => utxo.scriptRef)!;
@@ -411,6 +422,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     deploymentMode: "upgradeable",
     migration: {
       governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
+      emergency: { signers: [EMERGENCY_AUTHORITY], quorum: 1n },
       bootstrapSigners: [authority],
     },
   });
@@ -751,4 +763,104 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       1,
     );
   }
+});
+
+Deno.test("compiled registry executes immediate separate-authority restriction and delayed restoration", async () => {
+  const f = await deployedRegistry();
+  const { lucid, emulator, unit, registryReference, authority } = f;
+  const build = async (action: RegistryRedeemer, signers: string[]) =>
+    buildMigrationTransaction(lucid, unit, {
+      registry: await lucid.utxoByUnit(unit),
+      registryReference,
+      signers,
+      validFrom: emulator.now(),
+      validTo: emulator.now() + 1000,
+    }, action);
+  const submit = async (
+    built: Awaited<ReturnType<typeof build>>,
+    emergency = false,
+  ) => {
+    const tx = await built.tx.complete({ localUPLCEval: true });
+    const signed = tx.sign.withWallet();
+    if (emergency) signed.sign.withPrivateKey(EMERGENCY_WALLET.paymentKey);
+    await (await signed.complete()).submit();
+    emulator.awaitBlock();
+    lucid.overrideUTxOs([]);
+  };
+  await assertRejects(
+    () => build({ Restrict: { mask: 9n } }, [authority]),
+    Error,
+    "emergency quorum",
+  );
+  await submit(
+    await build({ Restrict: { mask: 9n } }, [EMERGENCY_AUTHORITY]),
+    true,
+  );
+  let state = readRegistry(await lucid.utxoByUnit(unit), unit);
+  assertEquals(state.emergency.mask, 9n);
+  await assertRejects(
+    () => build({ Restrict: { mask: 0n } }, [EMERGENCY_AUTHORITY]),
+    Error,
+    "only tighten",
+  );
+  await assertRejects(
+    () => build(replacement(f), [EMERGENCY_AUTHORITY]),
+    Error,
+    "governance quorum",
+  );
+  await submit(await build(replacement(f), [authority]));
+  assertEquals(
+    readRegistry(await lucid.utxoByUnit(unit), unit).emergency.mask,
+    9n,
+  );
+  const restoration: RegistryRedeemer = {
+    ProposeRestoration: {
+      mask: 1n,
+      authority: state.emergency.authority,
+      expires_at: BigInt(emulator.now() + 3 * 86_400_000),
+    },
+  };
+  await submit(await build(restoration, [authority]));
+  await assertRejects(() => build("Restore", []), Error, "delayed");
+  // Bypass builder preflight: both quorums still cannot shorten the ledger delay.
+  const current = await lucid.utxoByUnit(unit);
+  const forged = readRegistry(current, unit);
+  forged.emergency = {
+    ...forged.emergency,
+    mask: 1n,
+    epoch: forged.emergency.epoch + 1n,
+    restoration: null,
+  };
+  await assertRejects(
+    () =>
+      lucid.newTx().readFrom([registryReference]).collectFrom(
+        [current],
+        Data.to("Restore", RegistryRedeemer),
+      )
+        .pay.ToContract(current.address, {
+          kind: "inline",
+          value: Data.to(forged, Registry),
+        }, current.assets)
+        .addSignerKey(authority).addSignerKey(EMERGENCY_AUTHORITY).validFrom(
+          emulator.now(),
+        ).validTo(emulator.now() + 1000)
+        .complete({ localUPLCEval: true }),
+    Error,
+    "failed script execution",
+  );
+  await submit(
+    await build({ Restrict: { mask: 9n } }, [EMERGENCY_AUTHORITY]),
+    true,
+  );
+  assertEquals(
+    readRegistry(await lucid.utxoByUnit(unit), unit).emergency.restoration,
+    null,
+  );
+  await submit(await build(restoration, [authority]));
+  emulator.awaitSlot(86_500);
+  await submit(await build("Restore", []));
+  state = readRegistry(await lucid.utxoByUnit(unit), unit);
+  assertEquals(state.emergency.mask, 1n);
+  assertEquals(state.emergency.restoration, null);
+  assertEquals(state.nonce, 1n); // Restrictions never replace code-approval identity.
 });

@@ -70,6 +70,9 @@ export async function loadMigrationBaseline(
   const governance = baseline.inputs.migration.governance;
   governance.quorum = BigInt(governance.quorum);
   governance.delay_ms = BigInt(governance.delay_ms);
+  baseline.inputs.migration.emergency.quorum = BigInt(
+    baseline.inputs.migration.emergency.quorum,
+  );
   baseline.registry = Data.from(manifest.registryDatum, Registry);
   if (
     unitOf(baseline.registry.token) !== manifest.registryUnit ||

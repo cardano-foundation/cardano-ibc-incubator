@@ -24,6 +24,10 @@ import { migrationSubmitter } from "../src/migration-submission.ts";
 import { migrationTiming } from "../src/migration-timing.ts";
 
 const commands = [
+  "restrict",
+  "propose-restoration",
+  "restore",
+  "cancel-restoration",
   "prepare",
   "inspect",
   "publish",
@@ -42,6 +46,8 @@ export function parseMigrationArgs(args: string[]) {
   }
   const flags: Record<string, string> = {};
   const allowed = new Set([
+    "mask",
+    "emergency-authority",
     "handler",
     "plan",
     "blueprint",
@@ -98,7 +104,18 @@ export function parseMigrationArgs(args: string[]) {
     );
   }
   if (
-    ["authorize", "cancel", "rotate", "activate-authority", "execute", "resume"]
+    [
+      "authorize",
+      "cancel",
+      "rotate",
+      "activate-authority",
+      "execute",
+      "resume",
+      "restrict",
+      "propose-restoration",
+      "restore",
+      "cancel-restoration",
+    ]
       .includes(command) && !flags.submit && !flags.out
   ) {
     throw new Error(
@@ -213,6 +230,50 @@ export async function main(args = Deno.args) {
       instruction:
         "Review all five applied scripts, complete addresses and the compatibility boundary; back up this artifact before approval.",
     }));
+    return;
+  }
+  if (
+    ["restrict", "propose-restoration", "restore", "cancel-restoration"]
+      .includes(command)
+  ) {
+    const maskText = flags.mask;
+    if (
+      ["restrict", "propose-restoration"].includes(command) &&
+      (!maskText || !/^[0-9]+$/.test(maskText) || BigInt(maskText) > 15n)
+    ) {
+      throw new Error(
+        "--mask must be 0–15: traffic/topology=1, clients=2, heartbeat=4, handover=8",
+      );
+    }
+    const input = flags["emergency-authority"]
+      ? await readJson<{ signers: string[]; quorum: string }>(
+        flags["emergency-authority"],
+      )
+      : observed.registry.emergency.authority;
+    const authority = { signers: input.signers, quorum: BigInt(input.quorum) };
+    const action = command === "restrict"
+      ? { Restrict: { mask: BigInt(maskText) } }
+      : command === "propose-restoration"
+      ? {
+        ProposeRestoration: {
+          mask: BigInt(maskText),
+          authority,
+          expires_at: expiration(),
+        },
+      }
+      : command === "restore"
+      ? "Restore" as const
+      : "CancelRestoration" as const;
+    await emit(
+      (await migrationControl(
+        lucid,
+        deployment,
+        action,
+        await timing(),
+        signers,
+      )).tx,
+      command,
+    );
     return;
   }
   if (command === "cancel" || command === "activate-authority") {
