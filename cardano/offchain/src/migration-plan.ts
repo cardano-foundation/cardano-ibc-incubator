@@ -23,7 +23,7 @@ import {
   readValidator,
 } from "./utils.ts";
 
-export const MIGRATION_PROFILE = "cardano-ibc-compatible-v1";
+export const MIGRATION_PROFILE = "cardano-ibc-compatible-v2";
 export type SuccessorBlueprint = {
   validators: Array<{ title: string; compiledCode: string }>;
 };
@@ -168,6 +168,12 @@ export async function initialRegistry(plan: BasePlan): Promise<Registry> {
       compatibility: await compatibilityDigest(plan),
     },
     phase: "Ready",
+    emergency: {
+      authority: plan.inputs.migration.emergency,
+      epoch: 0n,
+      mask: 0n,
+      restoration: null,
+    },
   };
 }
 

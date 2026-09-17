@@ -1,10 +1,10 @@
 # Compatible implementation migration operator runbook
 
-This feature supports fresh `cardano-ibc-compatible-v1` baselines and repeated successors of that baseline. An existing immutable bridge without this mechanism must be rejected. Copying its datum or redeploying the same channel names is not migration.
+This feature supports fresh `cardano-ibc-compatible-v2` baselines and repeated successors of that baseline. An existing immutable bridge without this mechanism must be rejected. Copying its datum or redeploying the same channel names is not migration.
 
 Release acceptance remains conditional on the evidence recorded in the migration implementation report. Do not use the local rehearsal clock images, public devnet keys, or test successor constraints on a public network.
 
-**Incident limitation:** there is currently no immediate on-chain emergency pause. A replacement proposal does not stop ordinary transfers or settlement; the stop begins only after the approval delay and a valid `Begin`. Shutdown is disabled for this profile, and stopping Gateway/Hermes cannot stop third-party submissions. Once `Moving`, anyone can finish and activate the approved target: there is no independent emergency veto. See the [containment audit and executed controls](emergency-containment-audit.md). Add and validate an independent restriction capability before treating migration as an emergency-response procedure.
+**Incident response:** submit `restrict --mask 9` with the separately configured emergency quorum to stop traffic and hold migration; use mask 15 if client/heartbeat paths are suspect too. This is effective upon canonical inclusion. Replacement installation and restoration retain the governance delay. See [enforcement, authority and limitations](emergency-containment-audit.md).
 
 For the owned magic-42 rehearsal only, `scripts/ci/advance-migration-clock.py --runtime … --project … --file-clock --seconds …` advances isolated producer clocks in steps of at most 300 seconds, requiring all five producers to reach advanced-window points in the same canonical history, complete nonce history and captured ledger stake between steps. A progressing single producer is insufficient; a partition stops the helper before further advancement. Stop Gateway and Hermes first; Cosmos is synchronized at completion. `--resume` reconciles an interrupted bounded step before advancing the additional requested seconds (`--seconds 0` reconciles only). A failed or inconsistent intent remains on disk and stops further advancement. Alternatively, `--until-ms <ready_at_plus_buffer>` advances until an actual canonical block reaches the approval timestamp, counting normal elapsed time as well as injected steps. It is mutually exclusive with `--seconds`. Captured epoch stake can be reused only after checking the snapshot genesis, raw ledger digest and canonical capture point (`capture-migration-stake.py --reuse-canonical-epoch`). Restart operational processes with the recorded `clock-state.json` offset. This helper neither shortens the approval delay nor demonstrates public-network finality.
 
@@ -149,3 +149,25 @@ The operator calls `awaitTx` and checks canonical output adoption; it does **not
 The process-local inventory tree is disposable. Every invocation re-reads the registry NFT. A predicted single deletion is applied only when the observed root equals that prediction. Every produced witness is checked against the observed commitment. Unexpected progress, a different executor, rollback or process restart requires rebuilding inventory and matching its root; stale/incomplete data stops execution. The ledger also consumes the observed registry/object inputs and verifies the witness, so stale provider observations cannot authorize a different transition. No local checkpoint advances authenticated completeness. Current optimization removes repeated escrow inventory reconstruction; reference-script enumeration and baseline hash verification still run per step.
 
 See [review follow-up and measured scope](migration-review-followup.md) for measurements, coverage limits and exact-candidate evidence.
+
+
+## Restriction commands
+
+The governance JSON must contain a separate `emergency` object with explicit `signers` and `quorum`; its signer set must not overlap replacement governance. There are no production defaults. This is profile v2, requiring a fresh baseline with its new authenticated registry schema. The operator and SDK reject the older profile rather than reinterpret its registry.
+
+```sh
+deno task migrate:deployment restrict --handler /artifacts/handler-v1.json \
+  --mask 9 --signers "$EMERGENCY_KEY_HASHES" --wallet-address "$EXECUTOR_ADDRESS" \
+  --out /artifacts/restriction-unsigned.json
+deno task migrate:deployment inspect --handler /artifacts/handler-v1.json
+deno task migrate:deployment propose-restoration --handler /artifacts/handler-v1.json \
+  --mask 1 --signers "$GOVERNANCE_KEY_HASHES" --expires-at "$EXPIRY_POSIX_MS" \
+  --wallet-address "$EXECUTOR_ADDRESS" --out /artifacts/restoration-unsigned.json
+# After collecting signatures, submitting approval and waiting the enforced delay:
+deno task migrate:deployment restore --handler /artifacts/handler-v1.json \
+  --outbox /artifacts/restoration-outbox --submit
+```
+
+Mask 1 keeps all traffic/settlement/pruning paused while releasing handover. Mask 0 restores all otherwise phase-permitted operations. `--emergency-authority FILE` optionally binds a new explicit emergency signer/quorum configuration. `cancel-restoration` requires governance signatures; another `restrict`, including the same mask, requires emergency signatures and revokes a pending restoration. Unsigned output is not containment: collect the declared signatures, submit it and inspect canonical state. A stale registry input needs a fresh transaction and signatures, not witness transplantation.
+
+The full rehearsal now requests `--exercise-rollback`: partition the owned five-pool devnet, include one move on the minority branch, wait past its validity interval, reconnect and require ledger-observed rollback before production resume. It records per-command wall time and canonical Begin-to-Activate slots/blocks. Merely adding this harness is not a successful run. It does not establish public-network finality or a production-size downtime envelope.

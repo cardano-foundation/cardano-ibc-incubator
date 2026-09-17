@@ -7,6 +7,8 @@ code, changes a clock, starts packet workers or infers completion from a journal
 Gateway must be quiescent; install/export the verified handler before settlement.
 """
 import argparse
+import datetime
+import time
 import json
 from pathlib import Path
 import subprocess
@@ -46,8 +48,16 @@ def main():
     def run(name, command):
         log = evidence / f'{name}-{uuid.uuid4().hex}.log'
         print(json.dumps({'step': name, 'log': str(log)}), flush=True)
+        started = time.monotonic()
+        started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with log.open('x') as output:
             completed = subprocess.run(command, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT)
+        log.with_suffix('.timing.json').write_text(json.dumps({
+            'step': name, 'startedAt': started_at,
+            'finishedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'elapsedSeconds': time.monotonic() - started, 'exitCode': completed.returncode,
+            'confirmationPolicy': 'provider inclusion plus canonical output adoption; no stability-depth guarantee',
+        }, indent=2) + '\n')
         if completed.returncode:
             raise RuntimeError(f'{name} failed; retain journals and inspect canonical state and {log}')
         return log.read_text()
@@ -114,9 +124,22 @@ def main():
         reports.append(str(report))
     funding = run('funding', ['python3', str(ROOT / 'scripts/ci/verify-migration-funding.py'),
                               str(artifacts / f'population-approved-{prefix}.json'), str(after), *reports])
+    measurements = [json.loads(Path(path).read_text()) for path in reports]
+    slots = [int(m['inclusion']['slot']) for m in measurements]
+    blocks = [int(m['inclusion']['block']) for m in measurements]
+    genesis = json.loads((runtime / 'runtime/genesis-shelley.json').read_text())
+    timing = {
+        'custodyTransactions': len(transactions),
+        'firstInclusionSlot': min(slots), 'activationInclusionSlot': max(slots),
+        'canonicalUnavailableSlotSeconds': (max(slots) - min(slots)) * genesis['slotLength'],
+        'canonicalBlockSpan': max(blocks) - min(blocks),
+        'confirmationPolicy': 'provider inclusion plus canonical output adoption; no stability-depth guarantee',
+        'commandTimings': [json.loads(path.read_text()) for path in sorted(evidence.glob('*.timing.json'))],
+        'scope': 'Measured canonical Begin-to-Activate interval, including interruption; Gateway restart is additional. Local clock acceleration elsewhere is excluded.',
+    }
     receipt = {'format': 'populated-migration-handover-v1', 'generation': args.generation,
                'handler': str(target), 'transactions': sorted(transactions),
-               'funding': json.loads(funding.splitlines()[-1]),
+               'funding': json.loads(funding.splitlines()[-1]), 'timing': timing,
                'scope': 'Canonical local custody and conservation; post-activation packet settlement is separate'}
     with (evidence / 'result.json').open('x') as output:
         json.dump(receipt, output, indent=2)

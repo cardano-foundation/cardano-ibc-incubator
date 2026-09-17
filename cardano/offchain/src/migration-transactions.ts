@@ -1,3 +1,4 @@
+import { assertEmergencyAuthority } from "../types/plutus/Migration.ts";
 import {
   Constr,
   Data,
@@ -176,7 +177,73 @@ export async function buildMigrationTransaction(
         old.governance.quorum
     ) throw new Error("Explicit governance quorum is required");
   };
-  if (typeof action === "object" && "Propose" in action) {
+  const permitted = (bit: bigint) => old.emergency.mask / bit % 2n === 0n;
+  const validMask = (mask: bigint) => mask >= 0n && mask <= 15n;
+  const handover = typeof action === "string"
+    ? ["Begin", "MoveTransferRoot"].includes(action)
+    : "MoveCore" in action || "MoveEscrow" in action || "Activate" in action;
+  if (handover && !permitted(8n)) {
+    throw new Error(
+      "Emergency handover hold is active; delayed governance restoration is required",
+    );
+  }
+  if (typeof action === "object" && "Restrict" in action) {
+    const { mask } = action.Restrict;
+    if (
+      !validMask(mask) ||
+      [1n, 2n, 4n, 8n].some((bit) => !permitted(bit) && mask / bit % 2n === 0n)
+    ) throw new Error("Emergency authority may only tighten restrictions");
+    if (
+      BigInt(
+        old.emergency.authority.signers.filter((key) =>
+          inputs.signers?.includes(key)
+        ).length,
+      ) < old.emergency.authority.quorum
+    ) throw new Error("Explicit emergency quorum is required");
+    next.emergency = {
+      ...old.emergency,
+      mask,
+      epoch: old.emergency.epoch + 1n,
+      restoration: null,
+    };
+  } else if (typeof action === "object" && "ProposeRestoration" in action) {
+    authority();
+    const { mask, authority: emergencyAuthority, expires_at } =
+      action.ProposeRestoration;
+    if (!validMask(mask)) throw new Error("Unsupported restriction mask");
+    assertEmergencyAuthority(emergencyAuthority, old.governance);
+    const ready_at = to + old.governance.delay_ms;
+    if (expires_at <= ready_at) {
+      throw new Error("Restoration expires before its activation delay");
+    }
+    next.emergency.restoration = {
+      registry_nonce: old.nonce,
+      generation: old.current.generation,
+      epoch: old.emergency.epoch,
+      mask,
+      authority: emergencyAuthority,
+      ready_at,
+      expires_at,
+    };
+  } else if (action === "CancelRestoration") {
+    authority();
+    next.emergency.restoration = null;
+  } else if (action === "Restore") {
+    const approval = old.emergency.restoration;
+    if (
+      !approval || approval.registry_nonce !== old.nonce ||
+      approval.generation !== old.current.generation ||
+      approval.epoch !== old.emergency.epoch || from < approval.ready_at ||
+      to > approval.expires_at
+    ) throw new Error("Restoration is absent, stale, delayed or expired");
+    assertEmergencyAuthority(approval.authority, old.governance);
+    next.emergency = {
+      authority: approval.authority,
+      epoch: old.emergency.epoch + 1n,
+      mask: approval.mask,
+      restoration: null,
+    };
+  } else if (typeof action === "object" && "Propose" in action) {
     if (old.phase !== "Ready") {
       throw new Error("Registry already has a pending transition");
     }
@@ -216,6 +283,12 @@ export async function buildMigrationTransaction(
       // it cannot broaden the approved plan. The registry input still pins the
       // exact authority/nonce and invalidates a concurrent governance transition.
     }
+    if ("Rotate" in proposal) {
+      assertEmergencyAuthority(
+        old.emergency.authority,
+        proposal.Rotate.governance,
+      );
+    }
     const details = "Replace" in proposal ? proposal.Replace : proposal.Rotate;
     if (details.nonce !== old.nonce + 1n) {
       throw new Error("Stale approval nonce");
@@ -249,6 +322,10 @@ export async function buildMigrationTransaction(
     if (!("Rotate" in proposed.proposal)) {
       throw new Error("Approval is not an authority rotation");
     }
+    assertEmergencyAuthority(
+      old.emergency.authority,
+      proposed.proposal.Rotate.governance,
+    );
     next.governance = proposed.proposal.Rotate.governance;
     next.phase = "Ready";
   } else if (action === "Begin") {

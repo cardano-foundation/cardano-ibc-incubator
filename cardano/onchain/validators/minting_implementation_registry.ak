@@ -6,7 +6,9 @@ use cardano/assets
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/migration/auth as migration
-use ibc/migration/types.{Governance, Ready, Registry, registry_token_name}
+use ibc/migration/types.{
+  Authority, Emergency, Governance, Ready, Registry, registry_token_name,
+}
 use ibc/utils/validator_utils
 
 // Governance and address are explicit deployment parameters. No fallback key.
@@ -16,9 +18,12 @@ validator mint_implementation_registry(
   registry_address: Address,
   host_policy: ByteArray,
   governance: Governance,
+  emergency: Authority,
 ) {
   mint(_redeemer: Data, policy: ByteArray, transaction: Transaction) {
     expect migration.valid_governance(governance)
+    expect migration.valid_authority(emergency)
+    expect migration.separate_authorities(governance, emergency)
     expect migration.authorized(governance, transaction)
     expect
       list.any(
@@ -57,6 +62,12 @@ validator mint_implementation_registry(
       registry.current.generation == 1,
       migration.valid_implementation(registry.current),
       registry.phase == Ready,
+      registry.emergency == Emergency {
+        authority: emergency,
+        epoch: 0,
+        mask: 0,
+        restoration: None,
+      },
     }
   }
 

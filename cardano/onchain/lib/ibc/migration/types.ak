@@ -27,6 +27,30 @@ pub type Governance {
   delay_ms: Int,
 }
 
+pub type Authority {
+  signers: List<ByteArray>,
+  quorum: Int,
+}
+
+// Restriction bits: 1 traffic/topology/pruning, 2 client updates, 4 heartbeat,
+// 8 all handover execution (including activation). No bit installs code.
+pub type Restoration {
+  registry_nonce: Int,
+  generation: Int,
+  epoch: Int,
+  mask: Int,
+  authority: Authority,
+  ready_at: Int,
+  expires_at: Int,
+}
+
+pub type Emergency {
+  authority: Authority,
+  epoch: Int,
+  mask: Int,
+  restoration: Option<Restoration>,
+}
+
 pub type Implementation {
   generation: Int,
   // Full addresses, including stake credentials. Indexes are the roles above.
@@ -59,6 +83,7 @@ pub type OperationalImplementation {
 
 pub type ActiveRegistry {
   preparing: Bool,
+  restrictions: Int,
   host_policy: ByteArray,
   identity: OperationalIdentity,
   current: OperationalImplementation,
@@ -102,6 +127,7 @@ pub type Registry {
   nonce: Int,
   current: Implementation,
   phase: Phase,
+  emergency: Emergency,
 }
 
 pub type RegistryRedeemer {
@@ -113,4 +139,8 @@ pub type RegistryRedeemer {
   MoveTransferRoot
   MoveEscrow { siblings: List<ByteArray> }
   Activate { port_siblings: List<ByteArray> }
+  Restrict { mask: Int }
+  ProposeRestoration { mask: Int, authority: Authority, expires_at: Int }
+  CancelRestoration
+  Restore
 }

@@ -17,8 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'cardano/onchain'
 CASES = [
     ('approval-quorum', 'validators/implementation_registry.ak',
-     '        expect migration.authorized(old.governance, transaction)\n',
-     'migration_adversarial_valid_approval', 'migration_adversarial_approval_rejects_missing_quorum'),
+     '      Propose { proposal, expires_at } -> {\n        expect control_only(transaction)\n        expect old.phase == Ready\n        expect migration.authorized(old.governance, transaction)\n',
+     'migration_adversarial_valid_approval', 'migration_adversarial_approval_rejects_missing_quorum',
+     'validators/migration_adversarial.test.ak',
+     '      Propose { proposal, expires_at } -> {\n        expect control_only(transaction)\n        expect old.phase == Ready\n'),
     ('escrow-conservation', 'lib/ibc/migration/auth.ak',
      '    validator_utils.preserves_state_value(input.output.value, output.value),\n',
      'migration_adversarial_valid_real_escrow_move_and_inventory_deletion', 'migration_adversarial_escrow_move_rejects_value_diversion'),
@@ -33,6 +35,17 @@ CASES = [
      '  expect phase == 0 || phase == 1\n',
      'containment_current_ready_permits_send', 'containment_current_moving_rejects_source_send',
      'validators/host_state_stt.test.ak'),
+    ('emergency-authority', 'validators/implementation_registry.ak',
+     '        expect\n          migration.emergency_authorized(old.emergency.authority, transaction)\n',
+     'emergency_immediate_before_proposal', 'emergency_rejects_code_authority_without_emergency_key'),
+    ('emergency-activation-hold', 'validators/implementation_registry.ak',
+     '    expect\n      when redeemer is {\n        Begin |\n        MoveCore { .. } |\n        MoveTransferRoot |\n        MoveEscrow { .. } |\n        Activate { .. } -> migration.permitted(old.emergency.mask, 8)\n        _ -> True\n      }\n',
+     'emergency_traffic_restriction_survives_activation', 'emergency_hold_rejects_previously_approved_activation'),
+    ('emergency-packet-gate', 'validators/upgradeable/host_state.ak',
+     '      expect\n        when redeemer is {\n          Heartbeat -> migration.permitted(registry.restrictions, 4)\n          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)\n          CreateClient { .. } ->\n            migration.permitted(registry.restrictions, 1) && migration.permitted(\n              registry.restrictions,\n              2,\n            )\n          _ -> migration.permitted(registry.restrictions, 1)\n        }\n',
+     'emergency_traffic_mask_phase_0_client', 'emergency_traffic_mask_phase_0_send',
+     'validators/host_state_stt.test.ak'),
+
 ]
 
 def digest():
@@ -62,7 +75,7 @@ def main():
                 test.write_text(fixtures)
                 if mutant:
                     target = directory / file
-                    target.write_text(replace_once(target.read_text(), guard, ''))
+                    target.write_text(replace_once(target.read_text(), guard, fixture_file[1] if len(fixture_file) > 1 else ''))
                 command = ['aiken', 'check', '--seed', '462', '-m', 'mutation_control_', '--max-success', '1']
                 run = subprocess.run(command, cwd=directory, text=True, capture_output=True)
                 try: report = json.loads(run.stdout)

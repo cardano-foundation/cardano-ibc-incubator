@@ -7,12 +7,12 @@ const hash = (n: number) => n.toString(16).padStart(2, '0').repeat(28);
 const rec = (...fields: Data[]) => new Constr(0, fields);
 const scriptAddress = (n: number) => credentialToAddress('Custom', {type: 'Script', hash: hash(n)});
 const rawAddress = (n: number) => rec(new Constr(1, [hash(n)]), new Constr(1, []));
-function fixture(phase = 0, generation = 1n) {
+function fixture(phase = 0, generation = 1n, mask = 0n) {
   const addresses = [1, 2, 3, 4, 5].map(scriptAddress);
   const registryUnit = hash(9) + '6962635f696d706c656d656e746174696f6e5f7265676973747279';
   const compatibility = 'ab'.repeat(32);
   const deployment: MigrationRuntimeDeployment = {
-    migration: {profile: 'cardano-ibc-compatible-v1', registryUnit, registryAddress: scriptAddress(10), generation: '1', compatibility, originalAddresses: addresses},
+    migration: {profile: 'cardano-ibc-compatible-v2', registryUnit, registryAddress: scriptAddress(10), generation: '1', compatibility, originalAddresses: addresses},
     hostStateNFT: {policyId: hash(8), name: '6962635f686f73745f7374617465'},
     validators: {
       hostStateStt: {address: addresses[0]}, spendClient: {address: addresses[1]}, spendConnection: {address: addresses[2]},
@@ -21,7 +21,7 @@ function fixture(phase = 0, generation = 1n) {
     }, modules: {transfer: {address: addresses[4]}},
   };
   const datum = rec(rec(hash(9), registryUnit.slice(56)), hash(8), rec(hash(11), hash(12), hash(13), hash(14), rawAddress(15)),
-    rec([hash(16)], 1n, 86_400_000n), 0n, rec(generation, [1, 2, 3, 4, 5].map(rawAddress), compatibility), new Constr(phase, []));
+    rec([hash(16)], 1n, 86_400_000n), 0n, rec(generation, [1, 2, 3, 4, 5].map(rawAddress), compatibility), new Constr(phase, []), rec(rec([hash(17)], 1n), 0n, mask, new Constr(1, [])));
   const utxo: UTxO = {txHash: 'aa'.repeat(32), outputIndex: 0, address: scriptAddress(10), assets: {[registryUnit]: 1n, lovelace: 5_000_000n}, datum: Data.to(datum)};
   const lucid = {config: () => ({network: 'Custom'}), utxoByUnit: async (unit: string) => { assert.equal(unit, registryUnit); return utxo; }} as unknown as LucidEvolution;
   return {deployment, utxo, lucid};
@@ -76,4 +76,20 @@ test('migration manifests fail closed instead of silently losing the feature mar
 
 test('recovery capability cannot be stripped from an explicitly upgradeable deployment', async () => {
   await assert.rejects(() => migrationReference({} as never, {deploymentMode:'upgradeable'} as never), /missing its recovery/);
+});
+
+
+test('emergency traffic restriction preserves client and heartbeat builder availability', async () => {
+  for (const phase of [0, 1]) {
+    const f = fixture(phase, 1n, 9n);
+    await assert.rejects(migrationReference(f.lucid, f.deployment), /restrict/);
+    assert.equal(await migrationReference(f.lucid, f.deployment, false, 2n), f.utxo);
+    assert.equal(await migrationReference(f.lucid, f.deployment, false, 4n), f.utxo);
+  }
+  for (const bit of [1n, 2n, 4n]) {
+    const f = fixture(0, 1n, 15n);
+    await assert.rejects(migrationReference(f.lucid, f.deployment, false, bit), /restrict/);
+    const moving = fixture(2, 1n, 0n);
+    await assert.rejects(migrationReference(moving.lucid, moving.deployment, false, bit), BridgeMigrationInProgressError);
+  }
 });

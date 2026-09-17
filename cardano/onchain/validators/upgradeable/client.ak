@@ -25,7 +25,8 @@ validator client(
     } else {
       // Ordinary operations consume HostState, whose current registry gate
       // authenticates phase and role compatibility. Migration has a separate path.
-      expect generation > 0
+      expect
+        migration.operation_allowed(transaction, registry_policy, generation, 2)
       expect redeemer: SpendMultitxClientRedeemer = raw
       expect redeemer != ReclaimClient
       spending_multitx_client.validate(

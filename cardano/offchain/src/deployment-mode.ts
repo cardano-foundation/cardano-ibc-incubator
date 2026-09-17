@@ -1,4 +1,7 @@
-import { assertGovernance } from "../types/plutus/Migration.ts";
+import {
+  assertEmergencyAuthority,
+  assertGovernance,
+} from "../types/plutus/Migration.ts";
 import type { DeploymentOptions } from "./deployment.ts";
 
 /** Resolve before network access or funding: omission never selects legacy. */
@@ -34,9 +37,21 @@ export async function deploymentOptionsFromEnvironment(
       delay_ms: BigInt(input.delay_ms),
     };
     assertGovernance(governance);
+    if (!input.emergency) {
+      throw new Error("Explicit separate emergency authority is required");
+    }
+    const emergency = {
+      signers: input.emergency.signers,
+      quorum: BigInt(input.emergency.quorum),
+    };
+    assertEmergencyAuthority(emergency, governance);
     return {
       deploymentMode,
-      migration: { governance, bootstrapSigners: governance.signers },
+      migration: {
+        governance,
+        emergency,
+        bootstrapSigners: governance.signers,
+      },
     };
   } catch (error) {
     throw new Error(

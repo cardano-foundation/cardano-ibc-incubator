@@ -2,7 +2,8 @@ use aiken/collection/dict
 use cardano/assets
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, EnterShutdown, FinalizeShutdown, HostStateRedeemer,
+  BindPort, CreateClient, EnterShutdown, FinalizeShutdown, Heartbeat,
+  HostStateRedeemer, UpdateClient,
 }
 use ibc/implementation/host_state_stt
 use ibc/migration/auth as migration
@@ -34,6 +35,17 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
           registry.identity.escrow_policy,
         ) == dict.empty
       expect redeemer: HostStateRedeemer = raw
+      expect
+        when redeemer is {
+          Heartbeat -> migration.permitted(registry.restrictions, 4)
+          UpdateClient { .. } -> migration.permitted(registry.restrictions, 2)
+          CreateClient { .. } ->
+            migration.permitted(registry.restrictions, 1) && migration.permitted(
+              registry.restrictions,
+              2,
+            )
+          _ -> migration.permitted(registry.restrictions, 1)
+        }
       expect
         when redeemer is {
           EnterShutdown { .. } -> False

@@ -64,8 +64,9 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/migration/types.{
-  Counts, FixedIdentity, Governance, Implementation, Moving, Proposed, Ready,
-  Registry, Replace, Rotate, minimum_delay_ms, registry_token_name,
+  Authority, Counts, Emergency, FixedIdentity, Governance, Implementation,
+  Moving, Proposed, Ready, Registry, Replace, Rotate, minimum_delay_ms,
+  registry_token_name,
 }
 use ibc/testing/fuzz_dsl
 use ibc/utils/bits
@@ -5169,6 +5170,15 @@ fn containment_registry(phase: Int) -> Registry {
       escrow_inventory: ibc_state_commitment.empty_hash,
     }
   Registry {
+    emergency: Emergency {
+      authority: Authority {
+        signers: [bytearray.from_int_big_endian(999, 28)],
+        quorum: 1,
+      },
+      epoch: 0,
+      mask: 0,
+      restoration: None,
+    },
     token: AuthToken {
       policy_id: bytearray.from_int_big_endian(462, 28),
       name: registry_token_name,
@@ -5245,10 +5255,21 @@ fn containment_host_case(operation: Int) -> HostCase {
 }
 
 fn containment_execute(operation: Int, phase: Int, successor: Bool) -> Bool {
+  containment_restricted(operation, phase, successor, 0)
+}
+
+fn containment_restricted(
+  operation: Int,
+  phase: Int,
+  successor: Bool,
+  mask: Int,
+) -> Bool {
   let case = containment_host_case(operation)
   expect run_host_case(case)
   let Pair(redeemer, tx) = case
-  let registry = containment_registry(phase)
+  let original = containment_registry(phase)
+  let registry =
+    Registry { ..original, emergency: Emergency { ..original.emergency, mask } }
   let reference =
     Input {
       output_reference: test_object_ref(462),
@@ -5478,4 +5499,132 @@ test containment_current_moving_rejects_source_heartbeat() fail {
 
 test containment_current_moving_rejects_successor_heartbeat() fail {
   containment_execute(6, 2, True)
+}
+
+test emergency_traffic_mask_phase_0_send() fail {
+  containment_restricted(0, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_recv() fail {
+  containment_restricted(1, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_ack() fail {
+  containment_restricted(2, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_timeout() fail {
+  containment_restricted(3, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_prune() fail {
+  containment_restricted(4, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_client() {
+  containment_restricted(5, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_heartbeat() {
+  containment_restricted(6, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_send() fail {
+  containment_restricted(0, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_recv() fail {
+  containment_restricted(1, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_ack() fail {
+  containment_restricted(2, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_timeout() fail {
+  containment_restricted(3, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_prune() fail {
+  containment_restricted(4, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_client() {
+  containment_restricted(5, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_heartbeat() {
+  containment_restricted(6, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_send() fail {
+  containment_restricted(0, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_recv() fail {
+  containment_restricted(1, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_ack() fail {
+  containment_restricted(2, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_timeout() fail {
+  containment_restricted(3, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_prune() fail {
+  containment_restricted(4, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_client() {
+  containment_restricted(5, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_heartbeat() {
+  containment_restricted(6, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_send() fail {
+  containment_restricted(0, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_recv() fail {
+  containment_restricted(1, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_ack() fail {
+  containment_restricted(2, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_timeout() fail {
+  containment_restricted(3, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_prune() fail {
+  containment_restricted(4, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_client() {
+  containment_restricted(5, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_heartbeat() {
+  containment_restricted(6, 4, False, 1)
+}
+
+test emergency_clients_reject_update() fail {
+  containment_restricted(5, 0, False, 2)
+}
+
+test emergency_clients_permit_heartbeat() {
+  containment_restricted(6, 0, False, 2)
+}
+
+test emergency_heartbeat_rejects_heartbeat() fail {
+  containment_restricted(6, 0, False, 4)
+}
+
+test emergency_heartbeat_permits_send() {
+  containment_restricted(0, 0, False, 4)
 }

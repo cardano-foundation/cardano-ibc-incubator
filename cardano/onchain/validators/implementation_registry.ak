@@ -15,9 +15,10 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/migration/auth as migration
 use ibc/migration/types.{
-  Activate, Begin, Cancel, Counts, MoveCore, MoveEscrow, MoveTransferRoot,
-  Moving, Propose, Proposed, Ready, Registry, RegistryRedeemer, Replace, Rotate,
-  RotateAuthority, host_role, transfer_role,
+  Activate, Begin, Cancel, CancelRestoration, Counts, Emergency, MoveCore,
+  MoveEscrow, MoveTransferRoot, Moving, Propose, ProposeRestoration, Proposed,
+  Ready, Registry, RegistryRedeemer, Replace, Restoration, Restore, Restrict,
+  Rotate, RotateAuthority, host_role, transfer_role,
 }
 use ibc/utils/string
 use ibc/utils/validator_utils
@@ -135,7 +136,84 @@ validator implementation_registry {
     expect
       validator_utils.get_tx_valid_from(transaction.validity_range) <= valid_to
 
+    expect
+      when redeemer is {
+        Begin |
+        MoveCore { .. } |
+        MoveTransferRoot |
+        MoveEscrow { .. } |
+        Activate { .. } -> migration.permitted(old.emergency.mask, 8)
+        _ -> True
+      }
     when redeemer is {
+      Restrict { mask } -> {
+        expect control_only(transaction)
+        expect
+          migration.emergency_authorized(old.emergency.authority, transaction)
+        expect migration.tightens(old.emergency.mask, mask)
+        new == Registry {
+          ..old,
+          emergency: Emergency {
+            ..old.emergency,
+            epoch: old.emergency.epoch + 1,
+            mask,
+            restoration: None,
+          },
+        }
+      }
+      ProposeRestoration { mask, authority, expires_at } -> {
+        expect control_only(transaction)
+        expect migration.authorized(old.governance, transaction)
+        expect migration.valid_mask(mask)
+        expect migration.valid_authority(authority)
+        expect migration.separate_authorities(old.governance, authority)
+        let ready_at = valid_to + old.governance.delay_ms
+        expect expires_at > ready_at
+        new == Registry {
+          ..old,
+          emergency: Emergency {
+            ..old.emergency,
+            restoration: Some(
+              Restoration {
+                registry_nonce: old.nonce,
+                generation: old.current.generation,
+                epoch: old.emergency.epoch,
+                mask,
+                authority,
+                ready_at,
+                expires_at,
+              },
+            ),
+          },
+        }
+      }
+      CancelRestoration -> {
+        expect control_only(transaction)
+        expect migration.authorized(old.governance, transaction)
+        new == Registry {
+          ..old,
+          emergency: Emergency { ..old.emergency, restoration: None },
+        }
+      }
+      Restore -> {
+        expect control_only(transaction)
+        expect Some(approval) = old.emergency.restoration
+        expect
+          approval.registry_nonce == old.nonce && approval.generation == old.current.generation && approval.epoch == old.emergency.epoch
+        expect
+          validator_utils.get_tx_valid_from(transaction.validity_range) >= approval.ready_at && valid_to <= approval.expires_at
+        expect
+          migration.separate_authorities(old.governance, approval.authority)
+        new == Registry {
+          ..old,
+          emergency: Emergency {
+            authority: approval.authority,
+            epoch: old.emergency.epoch + 1,
+            mask: approval.mask,
+            restoration: None,
+          },
+        }
+      }
       Propose { proposal, expires_at } -> {
         expect control_only(transaction)
         expect old.phase == Ready
@@ -169,6 +247,10 @@ validator implementation_registry {
             Rotate { nonce, governance } -> and {
                 nonce == old.nonce + 1,
                 migration.valid_governance(governance),
+                migration.separate_authorities(
+                  governance,
+                  old.emergency.authority,
+                ),
               }
           }
         let ready_at = valid_to + old.governance.delay_ms
@@ -192,6 +274,8 @@ validator implementation_registry {
         expect control_only(transaction)
         expect proposal_ready(transaction, old)
         expect Proposed { proposal: Rotate { governance, .. }, .. } = old.phase
+        expect
+          migration.separate_authorities(governance, old.emergency.authority)
         new == Registry { ..old, governance, phase: Ready }
       }
       Begin -> {

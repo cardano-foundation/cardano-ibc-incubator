@@ -42,7 +42,7 @@ test migration_budget_equivalence_metadata_runtime(
   ),
 ) {
   let (policy, token) = input
-  fuzz.label(@"metadata.dynamic-policy-and-asset-bytes")
+  fuzz.label(@"fuzz.unit.migration.metadata.dynamic-policy-and-asset-bytes")
   let denom = "transfer/channel-0/stake"
   let expected =
     builtin.constr_data(
@@ -140,15 +140,15 @@ test migration_budget_equivalence_directory(
   let changed =
     when scenario is {
       0 -> {
-        fuzz.label(@"directory.valid-permutation")
+        fuzz.label(@"fuzz.unit.migration.directory.valid-permutation")
         buckets
       }
       1 -> {
-        fuzz.label(@"directory.duplicate-index")
+        fuzz.label(@"fuzz.unit.migration.directory.duplicate-index")
         [first, first, ..rest]
       }
       2 -> {
-        fuzz.label(@"directory.negative-index")
+        fuzz.label(@"fuzz.unit.migration.directory.negative-index")
         [
           registry.TraceRegistryDirectoryBucket { ..first, bucket_index: -1 },
           second,
@@ -156,7 +156,7 @@ test migration_budget_equivalence_directory(
         ]
       }
       3 -> {
-        fuzz.label(@"directory.out-of-range-index")
+        fuzz.label(@"fuzz.unit.migration.directory.out-of-range-index")
         [
           registry.TraceRegistryDirectoryBucket { ..first, bucket_index: 16 },
           second,
@@ -164,7 +164,7 @@ test migration_budget_equivalence_directory(
         ]
       }
       4 -> {
-        fuzz.label(@"directory.empty-name")
+        fuzz.label(@"fuzz.unit.migration.directory.empty-name")
         [
           registry.TraceRegistryDirectoryBucket {
             ..first,
@@ -175,7 +175,7 @@ test migration_budget_equivalence_directory(
         ]
       }
       5 -> {
-        fuzz.label(@"directory.archive-cap")
+        fuzz.label(@"fuzz.unit.migration.directory.archive-cap")
         [
           registry.TraceRegistryDirectoryBucket {
             ..first,
@@ -186,7 +186,7 @@ test migration_budget_equivalence_directory(
         ]
       }
       6 -> {
-        fuzz.label(@"directory.duplicate-archive")
+        fuzz.label(@"fuzz.unit.migration.directory.duplicate-archive")
         [
           registry.TraceRegistryDirectoryBucket {
             ..first,
@@ -197,7 +197,7 @@ test migration_budget_equivalence_directory(
         ]
       }
       7 -> {
-        fuzz.label(@"directory.active-in-archive")
+        fuzz.label(@"fuzz.unit.migration.directory.active-in-archive")
         [
           registry.TraceRegistryDirectoryBucket {
             ..first,
@@ -208,11 +208,11 @@ test migration_budget_equivalence_directory(
         ]
       }
       8 -> {
-        fuzz.label(@"directory.bucket-cap")
+        fuzz.label(@"fuzz.unit.migration.directory.bucket-cap")
         [first, ..buckets]
       }
       _ -> {
-        fuzz.label(@"directory.name-length")
+        fuzz.label(@"fuzz.unit.migration.directory.name-length")
         [
           registry.TraceRegistryDirectoryBucket {
             ..first,
@@ -289,11 +289,11 @@ test migration_budget_equivalence_dual_root(
   let (key, old, new) = input
   fuzz.label(
     if old == #"" {
-      @"tree.insert"
+      @"fuzz.unit.migration.tree.insert"
     } else if new == #"" {
-      @"tree.delete"
+      @"fuzz.unit.migration.tree.delete"
     } else {
-      @"tree.replace"
+      @"fuzz.unit.migration.tree.replace"
     },
   )
   let key_hash = builtin.sha2_256(key)

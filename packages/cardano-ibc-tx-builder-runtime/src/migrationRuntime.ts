@@ -8,7 +8,7 @@ export class BridgeMigrationInProgressError extends Error {
 }
 
 export type MigrationRuntimeConfig = {
-  profile: 'cardano-ibc-compatible-v1';
+  profile: 'cardano-ibc-compatible-v2';
   registryUnit: string;
   registryAddress: string;
   generation: string;
@@ -27,7 +27,7 @@ export type MigrationRuntimeDeployment = {
 
 export function requireMigrationConfig(value: unknown): MigrationRuntimeConfig {
   const input = value as MigrationRuntimeConfig;
-  if (!input || input.profile !== 'cardano-ibc-compatible-v1' ||
+  if (!input || input.profile !== 'cardano-ibc-compatible-v2' ||
     !/^[0-9a-f]{58,120}$/.test(input.registryUnit) || !input.registryAddress ||
     !/^[1-9][0-9]*$/.test(input.generation) || !/^[0-9a-f]{64}$/.test(input.compatibility) ||
     !Array.isArray(input.originalAddresses) || input.originalAddresses.length !== 5 || input.originalAddresses.some((a) => typeof a !== 'string' || !a)) {
@@ -58,19 +58,24 @@ function addressFromData(network: Network, data: Data): string {
  * The returned out-ref is included in the transaction: a concurrent handover
  * invalidates it at the ledger even if an indexer has temporarily served stale data.
  */
-export async function migrationReference(lucid: LucidEvolution, deployment: MigrationRuntimeDeployment, createObject = false): Promise<UTxO | undefined> {
+export async function migrationReference(lucid: LucidEvolution, deployment: MigrationRuntimeDeployment, createObject = false, restriction = 1n): Promise<UTxO | undefined> {
   if (deployment.deploymentMode === 'upgradeable' && !deployment.migration) throw new Error('Upgradeable deployment is missing its recovery configuration');
   if (deployment.deploymentMode === 'legacy' && deployment.migration) throw new Error('Legacy deployment conflicts with migration configuration');
   if (!deployment.migration) return undefined;
   const manifest = requireMigrationConfig(deployment.migration);
   const utxo = await lucid.utxoByUnit(manifest.registryUnit);
   if (utxo.address !== manifest.registryAddress || utxo.assets[manifest.registryUnit] !== 1n || !utxo.datum) throw new Error('Missing authenticated implementation registry');
-  const [token, hostPolicy, identity, , , implementation, phase] = record(Data.from(utxo.datum), 7);
+  const [token, hostPolicy, identity, , , implementation, phase, emergency] = record(Data.from(utxo.datum), 8);
   const [policy, name] = record(token, 2);
   const [generation, addresses, compatibility] = record(implementation, 3);
   if (typeof policy !== 'string' || typeof name !== 'string' || policy + name !== manifest.registryUnit || hostPolicy !== deployment.hostStateNFT.policyId || deployment.hostStateNFT.name !== '6962635f686f73745f7374617465' || compatibility !== manifest.compatibility) throw new Error('Registry identifies a different bridge or compatibility profile');
   if (!(phase instanceof Constr) || ![0, 1, 2].includes(phase.index)) throw new Error('Unsupported registry phase');
   if (phase.index === 2) throw new BridgeMigrationInProgressError();
+  const [, , restrictionMask] = record(emergency, 4);
+  if (typeof restrictionMask !== 'bigint' || restrictionMask < 0n || restrictionMask > 15n) throw new Error('Unsupported emergency restriction state');
+  // Generic SDK packet builders fail before construction. Maintenance builders
+  // remain governed independently by their precise on-chain operation scopes.
+  if ((restrictionMask & restriction) !== 0n) throw new Error('Bridge operation is emergency-restricted; claims remain outstanding');
   if (createObject && phase.index === 1) throw new Error('New state objects are paused while a migration or authority rotation is prepared');
   if (generation !== BigInt(manifest.generation)) throw new Error('Stale implementation manifest; verify and install the current generation, then restart the builder');
   const policies = record(identity, 5).slice(0, 4);
@@ -91,8 +96,8 @@ export async function migrationReference(lucid: LucidEvolution, deployment: Migr
  * All completion APIs and composition therefore preserve the reference input.
  * A rejected transaction must be rebuilt from fresh canonical state.
  */
-export async function withMigrationReference(lucid: LucidEvolution, tx: TxBuilder, deployment: MigrationRuntimeDeployment, createObject = false): Promise<TxBuilder> {
-  const reference = await migrationReference(lucid, deployment, createObject);
+export async function withMigrationReference(lucid: LucidEvolution, tx: TxBuilder, deployment: MigrationRuntimeDeployment, createObject = false, restriction = 1n): Promise<TxBuilder> {
+  const reference = await migrationReference(lucid, deployment, createObject, restriction);
   if (reference) tx.readFrom([reference]);
   return tx;
 }

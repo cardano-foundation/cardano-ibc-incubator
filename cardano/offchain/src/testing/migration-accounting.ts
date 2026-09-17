@@ -280,6 +280,7 @@ export async function accountingFixture(seedNumber = 462, options: {
     migration: {
       registryNonce: outref(3),
       governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
+      emergency: { signers: ["ee".repeat(28)], quorum: 1n },
     },
   });
   if (!plan.registry || !plan.implementationRegistry) {
