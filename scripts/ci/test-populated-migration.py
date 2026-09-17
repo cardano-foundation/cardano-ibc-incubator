@@ -271,7 +271,9 @@ def main():
                         capture_output=True, text=True)
                     if query.returncode == 0 and query.stdout.strip() == '1': break
                     time.sleep(2)
-                else: raise RuntimeError('Yaci did not index the fresh canonical chain')
+                else:
+                    run('startup-diagnostics', compose + ['logs', '--no-color', '--tail', '400', 'yaci', 'history-db', 'node'])
+                    raise RuntimeError('Yaci did not index the fresh canonical chain; inspect retained startup diagnostics')
                 run('genesis-history', ['node', str(ROOT / 'scripts/ci/migration-genesis-history.cjs'), str(runtime)])
                 run('stake', ['python3', str(ROOT / 'scripts/ci/capture-migration-stake.py'),
                               '--runtime', str(runtime), '--project', project])

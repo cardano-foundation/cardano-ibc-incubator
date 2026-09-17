@@ -1820,9 +1820,8 @@ export class YaciHistoryService implements HistoryService {
     const localSlots = await this.findLocalPoolRegistrationSlots(
       missingAfterCache,
     );
-    if (localSlots.size > 0) {
-      await this.cachePoolRegistrationSlots(localSlots, "yaci");
-    }
+    // The history indexer owns chain-derived cache writes. A delayed Gateway
+    // reader must not write an orphan age back after rollback cleanup commits.
 
     const mergedSlots = new Map([...cachedSlots, ...localSlots]);
     const assumedRegistrationSlot = getAssumedPoolRegistrationSlot();
@@ -1920,7 +1919,7 @@ export class YaciHistoryService implements HistoryService {
 
   private async cachePoolRegistrationSlots(
     slotsByPoolId: Map<string, bigint>,
-    source: string,
+    source: "external",
   ): Promise<void> {
     if (slotsByPoolId.size === 0) {
       return;
@@ -1938,13 +1937,7 @@ export class YaciHistoryService implements HistoryService {
         INSERT INTO bridge_pool_registration_cache(pool_id, first_registration_slot, source)
         SELECT row.pool_id, row.first_registration_slot::bigint, $2
         FROM jsonb_to_recordset($1::jsonb) AS row(pool_id text, first_registration_slot text)
-        ON CONFLICT (pool_id) DO UPDATE SET
-          first_registration_slot = LEAST(
-            bridge_pool_registration_cache.first_registration_slot,
-            EXCLUDED.first_registration_slot
-          ),
-          source = EXCLUDED.source,
-          updated_at = now()
+        ON CONFLICT (pool_id) DO NOTHING
       `,
       [JSON.stringify(rows), source],
     );
