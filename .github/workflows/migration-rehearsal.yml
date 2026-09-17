@@ -92,9 +92,12 @@ jobs:
 
       - name: Deploy a fresh five-pool V1
         run: |
+          # Match the supported client's fixed producer-registration cutoff.
+          # Compute once; producers retain this relative offset across restarts.
+          clock_offset_seconds="$(python3 scripts/ci/migration-clock-profile.py)"
           python3 scripts/ci/test-cardano-deployment.py \
             --migration-baseline --pool-count 5 --epoch-length 432000 \
-            --clock-offset-seconds -259200 --ogmios-port 2637 --kupo-port 2742 \
+            --clock-offset-seconds "$clock_offset_seconds" --ogmios-port 2637 --kupo-port 2742 \
             > .deployment-smoke/baseline-deployment.log 2>&1
           python3 - <<'PY'
           import json, os

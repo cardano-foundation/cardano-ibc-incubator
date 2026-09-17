@@ -12,6 +12,7 @@ evidence; final verification rechecks every required packet receipt canonically.
 import argparse
 import datetime
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,9 @@ import urllib.request
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
+_clock_spec = importlib.util.spec_from_file_location('migration_clock_profile', Path(__file__).with_name('migration-clock-profile.py'))
+_clock = importlib.util.module_from_spec(_clock_spec)
+_clock_spec.loader.exec_module(_clock)
 STAGES = ['bootstrap', 'populate', 'approve-v2', 'handover-v2', 'settle-v2',
           'approve-v3', 'handover-v3', 'settle-v3', 'verify-all']
 
@@ -36,6 +40,23 @@ def preflight_gateway_ports(ports=(8800, 5501)):
                 raise RuntimeError(f'Gateway port {port} is occupied; stop that rehearsal process explicitly before handover')
         except ConnectionRefusedError:
             pass
+
+
+def read_gateway_readiness(url='http://127.0.0.1:8800/health/ready'):
+    try:
+        try:
+            # The Gateway's proof check has a 25-second deadline. Allow its
+            # explanatory response to arrive instead of timing out first.
+            response = urllib.request.urlopen(url, timeout=35)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            raw = response.read(65537)
+            if len(raw) > 65536:
+                raise ValueError('Gateway readiness response exceeds 64 KiB')
+            return {'httpStatus': response.status, 'body': json.loads(raw)}
+    except (OSError, ValueError) as error:
+        return {'error': str(error)}
 
 
 def handover_transactions(receipt, generation, handler):
@@ -117,6 +138,7 @@ def main():
     genesis = json.loads(genesis_bytes)
     if genesis['networkMagic'] != 42 or genesis['epochLength'] != 432000 or genesis['slotLength'] != 1:
         parser.error('This rehearsal requires a fresh magic-42 five-day-epoch genesis')
+    _clock.require_qualified_genesis(genesis)
     if not -63072000 <= baseline['clockOffsetSeconds'] <= -259200:
         parser.error('The fresh fixture needs at least three days of isolated clock headroom')
     if STAGES.index(args.from_stage) > STAGES.index(args.through_stage):
@@ -181,20 +203,25 @@ def main():
 
     def wait_http(ready):
         deadline = time.monotonic() + 600
-        while time.monotonic() < deadline:
-            if children['gateway'].poll() is not None:
-                raise RuntimeError('Owned Gateway exited; inspect its retained log')
-            try:
-                with urllib.request.urlopen('http://127.0.0.1:8800/health/ready', timeout=15) as response:
-                    if not ready or json.load(response).get('status') == 'ready':
-                        return
-            except urllib.error.HTTPError as error:
-                if not ready and error.code == 503:
+        evidence = run_dir / ('gateway-readiness-' + uuid.uuid4().hex + '.log')
+        last = None
+        with evidence.open('x') as log:
+            while time.monotonic() < deadline:
+                if children['gateway'].poll() is not None:
+                    raise RuntimeError('Owned Gateway exited; inspect its retained log')
+                observation = read_gateway_readiness()
+                log.write(json.dumps({'observedAt': time.time(), **observation}) + '\n')
+                log.flush()
+                if observation != last:
+                    print(json.dumps({'step': 'gateway-readiness', 'observation': observation, 'log': str(evidence)}), flush=True)
+                    last = observation
+                status, body = observation.get('httpStatus'), observation.get('body')
+                if status == 200 and isinstance(body, dict) and (not ready or body.get('status') == 'ready'):
                     return
-            except (OSError, ValueError):
-                pass
-            time.sleep(2)
-        raise RuntimeError('Gateway did not reach the required current/historical readiness')
+                if not ready and status == 503 and isinstance(body, dict):
+                    return
+                time.sleep(2)
+        raise RuntimeError(f'Gateway did not reach the required readiness; last observation: {last}; evidence: {evidence}')
 
     def history(handler):
         run('init-history', runtime_command('init-history', handler))
