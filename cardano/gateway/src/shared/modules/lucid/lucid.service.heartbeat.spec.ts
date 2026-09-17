@@ -7,12 +7,10 @@ describe('LucidService HostState heartbeat wiring', () => {
     const service: any = Object.create(LucidService.prototype);
     service.LucidImporter = LucidImporter;
 
-    await expect(service.encode('Heartbeat', 'host_state_redeemer')).resolves.toBe(
-      'd9050380',
-    );
+    await expect(service.encode('Heartbeat', 'host_state_redeemer')).resolves.toBe('d9050380');
   });
 
-  it('preserves surplus ADA and unrelated assets in the HostState heartbeat output', () => {
+  it('preserves surplus ADA and unrelated assets in the HostState heartbeat output', async () => {
     const txBuilder: any = {};
     txBuilder.readFrom = jest.fn().mockReturnValue(txBuilder);
     txBuilder.collectFrom = jest.fn().mockReturnValue(txBuilder);
@@ -23,6 +21,9 @@ describe('LucidService HostState heartbeat wiring', () => {
 
     const service: any = Object.create(LucidService.prototype);
     service.configService = {
+      getOrThrow(name: string) {
+        return this.get(name);
+      },
       get: jest.fn().mockReturnValue({
         hostStateNFT: { policyId: 'host-policy', name: 'host-token' },
         validators: { hostStateStt: { address: 'addr_test1hoststate' } },
@@ -40,7 +41,7 @@ describe('LucidService HostState heartbeat wiring', () => {
       datumHash: 'ignored-datum-hash',
       assets: { lovelace: 8_000_000n, 'host-policyhost-token': 1n, reserve: 7n },
     };
-    const result = service.createUnsignedHostStateHeartbeatTransaction(
+    const result = await service.createUnsignedHostStateHeartbeatTransaction(
       hostStateUtxo,
       'encoded-heartbeat',
       'encoded-updated-host-datum',

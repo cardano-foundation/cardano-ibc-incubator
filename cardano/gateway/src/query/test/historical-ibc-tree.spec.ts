@@ -1,18 +1,29 @@
 import * as Lucid from '@lucid-evolution/lucid';
-import { Pool, PoolClient } from 'pg';
+import { Client, Pool, PoolClient } from 'pg';
 import { publicClientCommitmentValues } from '@cardano-ibc/tx-builder-runtime/plutusSerialise';
 import { reconstructHistoricalIbcTree, HistoricalTreeDeployment } from '../services/historical-ibc-tree';
 import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
-import { StaleIbcTreeStateError, encodeConnectionEndValue, encodeChannelEndValue, encodeModuleRegistration } from '../../shared/helpers/ibc-state-root';
+import {
+  StaleIbcTreeStateError,
+  encodeConnectionEndValue,
+  encodeChannelEndValue,
+  encodeModuleRegistration,
+} from '../../shared/helpers/ibc-state-root';
 import { ClientDatum, encodeClientDatum, decodeClientDatum } from '../../shared/types/client-datum';
-import { ConnectionDatum, encodeConnectionDatum, decodeConnectionDatum } from '../../shared/types/connection/connection-datum';
+import {
+  ConnectionDatum,
+  encodeConnectionDatum,
+  decodeConnectionDatum,
+} from '../../shared/types/connection/connection-datum';
 import { ChannelDatum, encodeChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { HostStateDatum, encodeHostStateDatum, decodeHostStateDatum } from '../../shared/types/host-state-datum';
 import { ChannelState } from '../../shared/types/channel/state';
 import { Order } from '../../shared/types/channel/order';
 import { State } from '../../shared/types/connection/state';
+import { exportMigrationWitness } from '../../scripts/export-migration-witness';
 
 const databaseUrl = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
+const testSchema = `historical_ibc_tree_test_${process.pid}`;
 const hash = (n: number) => n.toString(16).padStart(64, '0');
 const hex = (s: string) => Buffer.from(s).toString('hex');
 const clientPolicy = '11'.repeat(28);
@@ -23,9 +34,12 @@ const hostToken = { policyId: '44'.repeat(28), name: '01' };
 const deployment: HistoricalTreeDeployment = {
   hostStateNFT: hostToken,
   validators: {
-    mintClientStt: { scriptHash: clientPolicy }, mintConnectionStt: { scriptHash: connectionPolicy },
-    mintChannelStt: { scriptHash: channelPolicy }, spendClient: { address: 'client-address' },
-    spendConnection: { address: 'connection-address' }, spendChannel: { address: 'channel-address' },
+    mintClientStt: { scriptHash: clientPolicy },
+    mintConnectionStt: { scriptHash: connectionPolicy },
+    mintChannelStt: { scriptHash: channelPolicy },
+    spendClient: { address: 'client-address' },
+    spendConnection: { address: 'connection-address' },
+    spendChannel: { address: 'channel-address' },
   },
 };
 const registration = {
@@ -36,19 +50,35 @@ const registration = {
 const connection: ConnectionDatum = {
   token: { policyId: connectionPolicy, name },
   state: {
-    client_id: hex('07-tendermint-0'), state: State.Open, delay_period: 0n,
+    client_id: hex('07-tendermint-0'),
+    state: State.Open,
+    delay_period: 0n,
     versions: [{ identifier: hex('1'), features: [hex('ORDER_UNORDERED')] }],
-    counterparty: { client_id: hex('07-tendermint-1'), connection_id: hex('connection-1'), prefix: { key_prefix: hex('ibc') } },
+    counterparty: {
+      client_id: hex('07-tendermint-1'),
+      connection_id: hex('connection-1'),
+      prefix: { key_prefix: hex('ibc') },
+    },
   },
 };
 function channel(n: number): ChannelDatum {
   return {
-    token: { policyId: channelPolicy, name }, port: hex('transfer'),
+    token: { policyId: channelPolicy, name },
+    port: hex('transfer'),
     state: {
-      channel: { state: ChannelState.Open, ordering: Order.Unordered, counterparty: { port_id: hex('transfer'), channel_id: hex('channel-1') }, connection_hops: [hex('connection-0')], version: hex('ics20-1') },
-      next_sequence_send: BigInt(n + 1), next_sequence_recv: 1n, next_sequence_ack: 1n,
+      channel: {
+        state: ChannelState.Open,
+        ordering: Order.Unordered,
+        counterparty: { port_id: hex('transfer'), channel_id: hex('channel-1') },
+        connection_hops: [hex('connection-0')],
+        version: hex('ics20-1'),
+      },
+      next_sequence_send: BigInt(n + 1),
+      next_sequence_recv: 1n,
+      next_sequence_ack: 1n,
       packet_commitment: new Map([[BigInt(n), 'aabb']]),
-      packet_receipt: new Map([[BigInt(n), '']]), packet_acknowledgement: new Map([[BigInt(n), 'ccdd']]),
+      packet_receipt: new Map([[BigInt(n), '']]),
+      packet_acknowledgement: new Map([[BigInt(n), 'ccdd']]),
       minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: BigInt(n) },
       maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: BigInt(n) },
     },
@@ -57,25 +87,105 @@ function channel(n: number): ChannelDatum {
 function client(n: number): ClientDatum {
   const height = { revisionNumber: 0n, revisionHeight: BigInt(n) };
   return {
-    token: { policyId: clientPolicy, name }, history_root: hash(n - 1),
+    token: { policyId: clientPolicy, name },
+    history_root: hash(n - 1),
     state: {
       clientState: {
-        chainId: hex('chain-0'), trustLevel: { numerator: 1n, denominator: 3n }, trustingPeriod: 100n,
-        unbondingPeriod: 200n, maxClockDrift: 1n, frozenHeight: { revisionNumber: 0n, revisionHeight: 0n }, latestHeight: height, proofSpecs: [],
+        chainId: hex('chain-0'),
+        trustLevel: { numerator: 1n, denominator: 3n },
+        trustingPeriod: 100n,
+        unbondingPeriod: 200n,
+        maxClockDrift: 1n,
+        frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
+        latestHeight: height,
+        proofSpecs: [],
       },
-      consensusStates: new Map([[height, { timestamp: BigInt(100 + n), next_validators_hash: hash(11), root: { hash: hash(12) } }]]),
-      processedTimes: new Map([[height, BigInt(200 + n)]]), processedHeights: new Map([[height, BigInt(n)]]),
+      consensusStates: new Map([
+        [height, { timestamp: BigInt(100 + n), next_validators_hash: hash(11), root: { hash: hash(12) } }],
+      ]),
+      processedTimes: new Map([[height, BigInt(200 + n)]]),
+      processedHeights: new Map([[height, BigInt(n)]]),
     },
   };
 }
 const decoder = {
   LucidImporter: Lucid,
   async decodeDatum<T>(datum: string, type: string): Promise<T> {
-    const decode = { host_state: decodeHostStateDatum, client: decodeClientDatum, connection: decodeConnectionDatum, channel: decodeChannelDatum }[type];
+    const decode = {
+      host_state: decodeHostStateDatum,
+      client: decodeClientDatum,
+      connection: decodeConnectionDatum,
+      channel: decodeChannelDatum,
+    }[type];
     if (!decode) throw new Error(`Unexpected datum type ${type}`);
-    return await decode(datum, Lucid) as T;
+    return (await decode(datum, Lucid)) as T;
   },
 };
+
+// A complete handler shape drives the real exporter/config decoder. Script
+// references are inert fixture values: this suite never builds or submits a tx.
+function migrationHandler() {
+  const validator = (scriptHash = '88'.repeat(28), address = 'unused-address') => ({
+    scriptHash,
+    address,
+    refUtxo: { txHash: hash(900), outputIndex: 0 },
+  });
+  const operations = [
+    'acknowledge_packet',
+    'chan_close_confirm',
+    'chan_close_init',
+    'chan_open_ack',
+    'chan_open_confirm',
+    'recv_packet',
+    'prune_packet_history',
+    'send_packet',
+    'timeout_packet',
+  ];
+  return {
+    deployedAt: '2026-04-01T12:34:56.000Z',
+    consensusHistoryFormat: 'proof-backed-v1',
+    hostStateNFT: hostToken,
+    migration: {
+      profile: 'cardano-ibc-compatible-v1',
+      registryUnit: '99'.repeat(28) + hex('ibc_implementation_registry'),
+      registryAddress: 'registry-address',
+      generation: '1',
+      compatibility: hash(100),
+      originalAddresses: [
+        'host-address',
+        'client-address',
+        'connection-address',
+        'channel-address',
+        'transfer-address',
+      ],
+    },
+    validators: {
+      hostStateStt: validator(undefined, 'host-address'),
+      spendClient: validator(undefined, 'client-address'),
+      spendConnection: validator(undefined, 'connection-address'),
+      spendChannel: {
+        ...validator(undefined, 'channel-address'),
+        refValidator: Object.fromEntries(operations.map((key) => [key, validator()])),
+      },
+      recoverClient: validator(),
+      spendTransferModule: validator(undefined, 'transfer-address'),
+      mintIdentifier: validator(),
+      verifyProof: validator(),
+      mintClientStt: validator(clientPolicy),
+      mintConnectionStt: validator(connectionPolicy),
+      mintChannelStt: validator(channelPolicy),
+      mintVoucher: validator(),
+      mintTransferEscrowShard: validator(),
+      mintPort: validator(),
+    },
+    modules: {
+      transfer: {
+        identifier: registration.module_token.policy_id + registration.module_token.name,
+        address: 'transfer-address',
+      },
+    },
+  };
+}
 
 async function expectedTree(n: number) {
   const tree = new ICS23MerkleTree();
@@ -83,16 +193,34 @@ async function expectedTree(n: number) {
   const current = publicClientCommitmentValues(await encodeClientDatum(client(n), Lucid));
   tree.set('clients/07-tendermint-0/clientState', Buffer.from(current.clientValue, 'hex'));
   for (let h = 1; h <= n; h++) {
-    tree.set(`clients/07-tendermint-0/consensusStates/${h}`, Buffer.from(publicClientCommitmentValues(await encodeClientDatum(client(h), Lucid)).consensusValue, 'hex'));
+    tree.set(
+      `clients/07-tendermint-0/consensusStates/${h}`,
+      Buffer.from(publicClientCommitmentValues(await encodeClientDatum(client(h), Lucid)).consensusValue, 'hex'),
+    );
   }
   tree.set('connections/connection-0', Buffer.from(await encodeConnectionEndValue(connection.state, Lucid), 'hex'));
   const state = channel(n).state;
-  tree.set('channelEnds/ports/transfer/channels/channel-0', Buffer.from(await encodeChannelEndValue(state.channel, Lucid), 'hex'));
-  for (const [key, value] of [['nextSequenceSend', state.next_sequence_send], ['nextSequenceRecv', state.next_sequence_recv], ['nextSequenceAck', state.next_sequence_ack]] as const) {
+  tree.set(
+    'channelEnds/ports/transfer/channels/channel-0',
+    Buffer.from(await encodeChannelEndValue(state.channel, Lucid), 'hex'),
+  );
+  for (const [key, value] of [
+    ['nextSequenceSend', state.next_sequence_send],
+    ['nextSequenceRecv', state.next_sequence_recv],
+    ['nextSequenceAck', state.next_sequence_ack],
+  ] as const) {
     tree.set(`${key}/ports/transfer/channels/channel-0`, Buffer.from(Lucid.Data.to(value), 'hex'));
   }
-  for (const [key, values] of [['commitments', state.packet_commitment], ['receipts', state.packet_receipt], ['acks', state.packet_acknowledgement]] as const) {
-    for (const [sequence, value] of values) tree.set(`${key}/ports/transfer/channels/channel-0/sequences/${sequence}`, Buffer.from(Lucid.Data.to(value), 'hex'));
+  for (const [key, values] of [
+    ['commitments', state.packet_commitment],
+    ['receipts', state.packet_receipt],
+    ['acks', state.packet_acknowledgement],
+  ] as const) {
+    for (const [sequence, value] of values)
+      tree.set(
+        `${key}/ports/transfer/channels/channel-0/sequences/${sequence}`,
+        Buffer.from(Lucid.Data.to(value), 'hex'),
+      );
   }
   return tree;
 }
@@ -108,27 +236,57 @@ async function expectedTree(n: number) {
     await db.query('INSERT INTO transaction VALUES ($1, $2, $3, $4, $5)', [hash(id), block, blockHash, index, invalid]);
   };
   const put = async (id: number, index: number, block: number, address: string, unit: string, datum: string) => {
-    await db.query('INSERT INTO address_utxo VALUES ($1,$2,$3,$4,NULL,$5,$6)', [hash(id), index, block, address, datum, JSON.stringify([{ unit, quantity: '1' }])]);
+    await db.query('INSERT INTO address_utxo VALUES ($1,$2,$3,$4,NULL,$5,$6)', [
+      hash(id),
+      index,
+      block,
+      address,
+      datum,
+      JSON.stringify([{ unit, quantity: '1' }]),
+    ]);
   };
   const spend = async (id: number, index: number, consuming: number, block: number) => {
-    await db.query('INSERT INTO tx_input VALUES ($1,$2,$3,$4,$5)', [hash(id), index, hash(consuming), block, hash(block)]);
+    await db.query('INSERT INTO tx_input VALUES ($1,$2,$3,$4,$5)', [
+      hash(id),
+      index,
+      hash(consuming),
+      block,
+      hash(block),
+    ]);
   };
-  const hostDatum = async (n: number) => encodeHostStateDatum({
-    state: { ibc_state_root: roots[n - 1], version: BigInt(n), next_client_sequence: 1n, next_connection_sequence: 1n, next_channel_sequence: 1n, bound_port: [], last_update_time: 0n },
-    nft_policy: hostToken.policyId, deployer: '99'.repeat(28), control: { port_registry: new Map([[hex('transfer'), registration]]), shutdown: 'Active' },
-  } as HostStateDatum, Lucid);
-  const rebuild = (height = 2n, id = 30) => reconstructHistoricalIbcTree(sql, deployment, 'Custom', decoder, height, { txHash: hash(id), outputIndex: 3 });
+  const hostDatum = async (n: number) =>
+    encodeHostStateDatum(
+      {
+        state: {
+          ibc_state_root: roots[n - 1],
+          version: BigInt(n),
+          next_client_sequence: 1n,
+          next_connection_sequence: 1n,
+          next_channel_sequence: 1n,
+          bound_port: [],
+          last_update_time: 0n,
+        },
+        nft_policy: hostToken.policyId,
+        deployer: '99'.repeat(28),
+        control: { port_registry: new Map([[hex('transfer'), registration]]), shutdown: 'Active' },
+      } as HostStateDatum,
+      Lucid,
+    );
+  const rebuild = (height = 2n, id = 30) =>
+    reconstructHistoricalIbcTree(sql, deployment, 'Custom', decoder, height, { txHash: hash(id), outputIndex: 3 });
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl, max: 1 });
     roots = await Promise.all([1, 2, 3].map(async (n) => (await expectedTree(n)).getRoot()));
   });
-  afterAll(async () => { await pool.end(); });
+  afterAll(async () => {
+    await pool.end();
+  });
   beforeEach(async () => {
     db = await pool.connect();
     await db.query('BEGIN');
-    await db.query('CREATE SCHEMA historical_ibc_tree_test');
-    await db.query('SET LOCAL search_path TO historical_ibc_tree_test');
+    await db.query(`CREATE SCHEMA ${testSchema}`);
+    await db.query(`SET search_path TO ${testSchema}`);
     await db.query(`
       CREATE TABLE block(number bigint PRIMARY KEY, hash text);
       CREATE TABLE transaction(tx_hash text PRIMARY KEY, block bigint, block_hash text, tx_index integer, invalid boolean);
@@ -157,13 +315,29 @@ async function expectedTree(n: number) {
     await put(40, 2, 3, 'channel-address', channelPolicy + name, await encodeChannelDatum(channel(3), Lucid));
     await put(40, 3, 3, 'host-address', hostToken.policyId + hostToken.name, await hostDatum(3));
   });
-  afterEach(async () => { await db.query('ROLLBACK'); db.release(); });
+  afterEach(async () => {
+    try {
+      await db.query('ROLLBACK');
+      await db.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`);
+      await db.query('RESET search_path');
+    } finally {
+      db.release();
+    }
+  });
 
   it('rebuilds older public roots from spent outputs, including consensus history and packet pruning', async () => {
-    for (const [height, id] of [[1, 10], [2, 30], [3, 40]]) {
+    for (const [height, id] of [
+      [1, 10],
+      [2, 30],
+      [3, 40],
+    ]) {
       const result = await rebuild(BigInt(height), id);
       expect(result.root).toBe(roots[height - 1]);
-      expect(result.tree.verifyProof(result.tree.generateProof(`acks/ports/transfer/channels/channel-0/sequences/${height}`))).toBe(true);
+      expect(
+        result.tree.verifyProof(
+          result.tree.generateProof(`acks/ports/transfer/channels/channel-0/sequences/${height}`),
+        ),
+      ).toBe(true);
       expect(result.tree.get(`clients/07-tendermint-0/consensusStates/${height + 1}`)).toBeUndefined();
       expect(result.tree.get('clients/07-tendermint-0/consensusStates/1')).toBeDefined();
     }
@@ -181,13 +355,69 @@ async function expectedTree(n: number) {
     expect((await rebuild()).root).toBe(roots[1]);
   });
 
-  it.each(['old checkpoint', 'live channel', 'datum', 'spend record'])('fails closed on missing %s', async (missing) => {
-    if (missing === 'old checkpoint') await db.query('DELETE FROM address_utxo WHERE tx_hash=$1 AND output_index=0', [hash(10)]);
-    if (missing === 'live channel') await db.query('DELETE FROM address_utxo WHERE tx_hash=$1 AND output_index=2', [hash(30)]);
-    if (missing === 'datum') await db.query('UPDATE address_utxo SET inline_datum=NULL WHERE tx_hash=$1 AND output_index=0', [hash(20)]);
-    if (missing === 'spend record') await db.query('DELETE FROM tx_input WHERE tx_hash=$1 AND output_index=0', [hash(10)]);
-    await expect(rebuild()).rejects.toThrow(/Tree rebuild failed|Historical IBC tree unavailable/);
+  it('rebuilds NFT-authenticated roots across mixed implementation addresses and a rolled-back successor', async () => {
+    // Canonical row-selection regression, not a substitute for ledger migration.
+    await db.query('UPDATE address_utxo SET owner_addr=$1 WHERE tx_hash=$2 AND output_index=0', [
+      'client-v2',
+      hash(20),
+    ]);
+    await db.query('UPDATE address_utxo SET owner_addr=$1 WHERE tx_hash=$2 AND output_index=2', [
+      'channel-v2',
+      hash(30),
+    ]);
+    await db.query('UPDATE address_utxo SET owner_addr=$1 WHERE tx_hash=$2 AND output_index=0', [
+      'client-v3',
+      hash(40),
+    ]);
+    await db.query('UPDATE address_utxo SET owner_addr=$1 WHERE tx_hash=$2 AND output_index=2', [
+      'channel-v3',
+      hash(40),
+    ]);
+    const migrated: HistoricalTreeDeployment = {
+      ...deployment,
+      migration: { profile: 'cardano-ibc-compatible-v1' },
+      validators: {
+        ...deployment.validators,
+        spendClient: { address: 'client-v3' },
+        spendChannel: { address: 'channel-v3' },
+        spendConnection: { address: 'connection-v3' },
+      },
+    };
+    for (const [height, id] of [
+      [1, 10],
+      [2, 30],
+      [3, 40],
+    ]) {
+      const snapshot = await reconstructHistoricalIbcTree(sql, migrated, 'Custom', decoder, BigInt(height), {
+        txHash: hash(id),
+        outputIndex: 3,
+      });
+      expect(snapshot.root).toBe(roots[height - 1]);
+      expect(snapshot.tree.get('clients/07-tendermint-0/consensusStates/1')).toBeDefined();
+    }
+    await expect(rebuild()).rejects.toThrow();
+    await db.query('DELETE FROM block WHERE number=3');
+    const rolledBack = await reconstructHistoricalIbcTree(sql, migrated, 'Custom', decoder, 2n, {
+      txHash: hash(30),
+      outputIndex: 3,
+    });
+    expect(rolledBack.root).toBe(roots[1]);
   });
+
+  it.each(['old checkpoint', 'live channel', 'datum', 'spend record'])(
+    'fails closed on missing %s',
+    async (missing) => {
+      if (missing === 'old checkpoint')
+        await db.query('DELETE FROM address_utxo WHERE tx_hash=$1 AND output_index=0', [hash(10)]);
+      if (missing === 'live channel')
+        await db.query('DELETE FROM address_utxo WHERE tx_hash=$1 AND output_index=2', [hash(30)]);
+      if (missing === 'datum')
+        await db.query('UPDATE address_utxo SET inline_datum=NULL WHERE tx_hash=$1 AND output_index=0', [hash(20)]);
+      if (missing === 'spend record')
+        await db.query('DELETE FROM tx_input WHERE tx_hash=$1 AND output_index=0', [hash(10)]);
+      await expect(rebuild()).rejects.toThrow(/Tree rebuild failed|Historical IBC tree unavailable/);
+    },
+  );
 
   it('rejects a mismatched HostState reference and an unindexed block', async () => {
     await expect(rebuild(2n, 10)).rejects.toThrow(StaleIbcTreeStateError);
@@ -195,7 +425,10 @@ async function expectedTree(n: number) {
   });
 
   it('rejects an output carrying a non-unit state token', async () => {
-    await db.query('UPDATE address_utxo SET amounts=$1 WHERE tx_hash=$2 AND output_index=2', [JSON.stringify([{ unit: channelPolicy + name, quantity: '2' }]), hash(30)]);
+    await db.query('UPDATE address_utxo SET amounts=$1 WHERE tx_hash=$2 AND output_index=2', [
+      JSON.stringify([{ unit: channelPolicy + name, quantity: '2' }]),
+      hash(30),
+    ]);
     await expect(rebuild()).rejects.toThrow('non-unit state authentication token');
   });
 
@@ -212,4 +445,106 @@ async function expectedTree(n: number) {
     await spend(previous, 0, 40, 3);
     expect((await rebuild()).root).toBe(roots[1]);
   }, 30_000);
+
+  describe('migration witness export', () => {
+    // Commit fixture preparation so the exporter really owns its repeatable-read,
+    // read-only transaction. afterEach drops only this process's isolated schema.
+    const commitFixture = () => db.query('COMMIT');
+
+    it('exports the populated canonical root and exact transfer-port witness', async () => {
+      await commitFixture();
+      const result = await exportMigrationWitness(db, migrationHandler());
+      expect(result).toEqual({
+        format: 'cardano-ibc-migration-port-witness-v1',
+        host: { txHash: hash(40), outputIndex: 3 },
+        block: { height: '3', hash: hash(3) },
+        root: roots[2],
+        siblings: (await expectedTree(3)).getSiblings('ports/transfer').map((sibling) => sibling.toString('hex')),
+      });
+      expect(result.siblings).toHaveLength(64);
+    });
+
+    it('cold-rebuilds through Host/client handovers while other objects retain their old addresses', async () => {
+      await db.query('INSERT INTO block VALUES ($1,$2)', [4, hash(4)]);
+      await tx(50, 4);
+      await spend(40, 3, 50, 4);
+      await put(50, 3, 4, 'host-v2', hostToken.policyId + hostToken.name, await hostDatum(3));
+      await tx(60, 4, 1);
+      await spend(40, 0, 60, 4);
+      await put(60, 0, 4, 'client-v2', clientPolicy + name, await encodeClientDatum(client(3), Lucid));
+      await commitFixture();
+      // No replacement address is supplied in the handler or originalAddresses.
+      const result = await exportMigrationWitness(db, migrationHandler());
+      expect(result.host).toEqual({ txHash: hash(50), outputIndex: 3 });
+      expect(result.block).toEqual({ height: '4', hash: hash(4) });
+      expect(result.root).toBe(roots[2]);
+      expect(result.siblings).toEqual(
+        (await expectedTree(3)).getSiblings('ports/transfer').map((sibling) => sibling.toString('hex')),
+      );
+    });
+
+    it.each(['archived client', 'live channel', 'client datum', 'client spend', 'host spend', 'non-unit token'])(
+      'rejects incomplete or malformed %s evidence instead of exporting a partial witness',
+      async (missing) => {
+        if (missing === 'archived client')
+          await db.query('DELETE FROM address_utxo WHERE tx_hash=$1 AND output_index=0', [hash(10)]);
+        if (missing === 'live channel')
+          await db.query('DELETE FROM address_utxo WHERE tx_hash=$1 AND output_index=2', [hash(40)]);
+        if (missing === 'client datum')
+          await db.query('UPDATE address_utxo SET inline_datum=NULL WHERE tx_hash=$1 AND output_index=0', [hash(40)]);
+        if (missing === 'client spend')
+          await db.query('DELETE FROM tx_input WHERE tx_hash=$1 AND output_index=0', [hash(10)]);
+        if (missing === 'host spend')
+          await db.query('DELETE FROM tx_input WHERE tx_hash=$1 AND output_index=3', [hash(30)]);
+        if (missing === 'non-unit token')
+          await db.query('UPDATE address_utxo SET amounts=$1 WHERE tx_hash=$2 AND output_index=0', [
+            JSON.stringify([{ unit: clientPolicy + name, quantity: '2' }]),
+            hash(40),
+          ]);
+        await commitFixture();
+        await expect(exportMigrationWitness(db, migrationHandler())).rejects.toThrow(
+          /Tree rebuild failed|Historical IBC tree unavailable|Canonical HostState/,
+        );
+        // Failure must close the read-only transaction; the lease remains usable.
+        await expect(
+          db.query('CREATE TEMP TABLE export_rollback_probe(id integer) ON COMMIT DROP'),
+        ).resolves.toBeDefined();
+      },
+    );
+
+    it('selects the surviving canonical snapshot after a successor rollback', async () => {
+      await db.query('DELETE FROM block WHERE number=3');
+      await commitFixture();
+      const result = await exportMigrationWitness(db, migrationHandler());
+      expect(result.host).toEqual({ txHash: hash(30), outputIndex: 3 });
+      expect(result.block).toEqual({ height: '2', hash: hash(2) });
+      expect(result.root).toBe(roots[1]);
+    });
+
+    it('rejects a snapshot orphaned while the export transaction was open', async () => {
+      await commitFixture();
+      const rollback = new Client({ connectionString: databaseUrl });
+      await rollback.connect();
+      await rollback.query(`SET search_path TO ${testSchema}`);
+      let removedTip = false;
+      const reorgDuringCommit = {
+        query: async (text: string, values?: unknown[]) => {
+          const result = await db.query(text, values);
+          if (text.trim() === 'COMMIT' && !removedTip) {
+            await rollback.query('DELETE FROM block WHERE number=3');
+            removedTip = true;
+          }
+          return result;
+        },
+      } as Pick<Client, 'query'>;
+      try {
+        await expect(exportMigrationWitness(reorgDuringCommit, migrationHandler())).rejects.toThrow(
+          /canonical|rollback|changed|orphan/i,
+        );
+        expect(removedTip).toBe(true);
+      } finally {
+        await rollback.end();
+      }
+    });
+  });
 });

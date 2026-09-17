@@ -1,3 +1,4 @@
+import { migrationReference, withMigrationReference, type MigrationRuntimeConfig } from './migrationRuntime';
 import { credentialToAddress, type LucidEvolution, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
 import { sha3_256 } from 'js-sha3';
 import { acknowledgementSchema } from './acknowledgementCodec';
@@ -20,9 +21,12 @@ type AuthToken = {
 };
 
 type DeploymentConfig = {
+  migration?: MigrationRuntimeConfig;
   hostStateNFT: AuthToken;
   validators: {
     hostStateStt: { address?: string; refUtxo: RefUtxo };
+    spendClient: { address?: string };
+    spendConnection: { address?: string };
     spendChannel: {
       address?: string;
       refUtxo: RefUtxo;
@@ -30,7 +34,7 @@ type DeploymentConfig = {
         send_packet: { refUtxo: RefUtxo };
       };
     };
-    spendTransferModule: { refUtxo: RefUtxo };
+    spendTransferModule: { refUtxo: RefUtxo; address?: string };
     mintVoucher: { refUtxo: RefUtxo; scriptHash: string };
     mintPort: { refUtxo: RefUtxo; scriptHash: string };
     mintTransferEscrowShard: { refUtxo: RefUtxo; scriptHash: string };
@@ -1226,6 +1230,7 @@ export class LucidIbcAdapter {
   }
 
   public async findUtxoAtHostStateNFT(): Promise<UTxO> {
+    await migrationReference(this.lucid, this.deployment);
     const address = this.deployment.validators.hostStateStt.address ?? '';
     const hostStateNFT = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
     const utxos = await this.lucid.utxosAt(address);
@@ -1347,9 +1352,10 @@ export class LucidIbcAdapter {
     return [mintChannelPolicyId, channelTokenName];
   }
 
-  public createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowTxInput): TxBuilder {
+  public async createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowTxInput): Promise<TxBuilder> {
+    const tx = await withMigrationReference(this.lucid, this.lucid.newTx(), this.deployment);
     return createUnsignedSendPacketEscrowTx({
-      newTx: () => this.lucid.newTx(),
+      newTx: () => tx,
       hostStateAddress: this.deployment.validators.hostStateStt.address,
       hostStateTokenUnit: this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name,
       transferModuleRootAddress: this.deployment.modules.transfer.address,
@@ -1358,7 +1364,7 @@ export class LucidIbcAdapter {
     }, dto);
   }
 
-  public createUnsignedSendPacketBurnTx(dto: any): TxBuilder {
+  public async createUnsignedSendPacketBurnTx(dto: any): Promise<TxBuilder> {
     const hostStateAddress = this.deployment.validators.hostStateStt.address;
     const spendChannelAddress = this.deployment.validators.spendChannel.address;
     if (!hostStateAddress) {
@@ -1373,7 +1379,7 @@ export class LucidIbcAdapter {
       datumHash: undefined,
     };
 
-    const tx = this.lucid.newTx();
+    const tx = await withMigrationReference(this.lucid, this.lucid.newTx(), this.deployment);
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.mintVoucher,

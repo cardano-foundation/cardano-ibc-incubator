@@ -1,3 +1,4 @@
+import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import {
   BadRequestException,
   Body,
@@ -10,6 +11,7 @@ import {
   Post,
   Query,
   UseFilters,
+  UseGuards,
 } from '@nestjs/common';
 import {
   EstimateLocalOsmosisSwapDto,
@@ -154,6 +156,7 @@ export class ApiController {
   }
 
   @Post('transfer')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildTransferMsg(@Body() msgtransferDto: MsgtransferDto) {
     const request = MsgTransfer.fromJSON(msgtransferDto);
@@ -163,6 +166,7 @@ export class ApiController {
   }
 
   @Post('packet-history/prune')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildPrunePacketHistory(@Body() dto: PrunePacketHistoryDto) {
     const response = await this.packetService.prunePacketHistory(
@@ -182,6 +186,7 @@ export class ApiController {
   }
 
   @Post('icq/cheqd/did-doc')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildCheqdDidDocIcq(@Body() requestDto: CheqdDidDocIcqRequestDto) {
     const response = await this.cheqdIcqService.buildDidDocQuery(requestDto);
@@ -202,6 +207,7 @@ export class ApiController {
   }
 
   @Post('icq/cheqd/did-doc-version')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildCheqdDidDocVersionIcq(@Body() requestDto: CheqdDidDocVersionIcqRequestDto) {
     const response = await this.cheqdIcqService.buildDidDocVersionQuery(requestDto);
@@ -222,6 +228,7 @@ export class ApiController {
   }
 
   @Post('icq/cheqd/did-doc-versions-metadata')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildCheqdDidDocVersionsMetadataIcq(@Body() requestDto: CheqdDidDocIcqRequestDto) {
     const response = await this.cheqdIcqService.buildAllDidDocVersionsMetadataQuery(requestDto);
@@ -242,6 +249,7 @@ export class ApiController {
   }
 
   @Post('icq/cheqd/resource')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildCheqdResourceIcq(@Body() requestDto: CheqdResourceIcqRequestDto) {
     const response = await this.cheqdIcqService.buildResourceQuery(requestDto);
@@ -262,6 +270,7 @@ export class ApiController {
   }
 
   @Post('icq/cheqd/resource-metadata')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildCheqdResourceMetadataIcq(@Body() requestDto: CheqdResourceIcqRequestDto) {
     const response = await this.cheqdIcqService.buildResourceMetadataQuery(requestDto);
@@ -282,6 +291,7 @@ export class ApiController {
   }
 
   @Post('icq/cheqd/latest-resource-version')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildCheqdLatestResourceVersionIcq(@Body() requestDto: CheqdLatestResourceVersionIcqRequestDto) {
     const response = await this.cheqdIcqService.buildLatestResourceVersionQuery(requestDto);
@@ -302,6 +312,7 @@ export class ApiController {
   }
 
   @Post('icq/cheqd/latest-resource-version-metadata')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildCheqdLatestResourceVersionMetadataIcq(@Body() requestDto: CheqdLatestResourceVersionIcqRequestDto) {
     const response = await this.cheqdIcqService.buildLatestResourceVersionMetadataQuery(requestDto);

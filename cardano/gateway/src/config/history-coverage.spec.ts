@@ -8,10 +8,11 @@ import { encodeHostStateDatum, decodeHostStateDatum } from '../shared/types/host
 
 const hash = (n: number) => n.toString(16).padStart(64, '0');
 const policy = 'aa'.repeat(28);
+let anchorHash = hash(2);
 const history = {
   format: 'cardano-history-v1',
   start: { slot: 1000, block_hash: hash(100), block_height: 100 },
-  host_state_nft_mint: { tx_hash: hash(2), output_index: 0 },
+  host_state_nft_mint: { tx_hash: anchorHash, output_index: 0 },
 };
 const manifest = () =>
   ({
@@ -74,6 +75,25 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
       },
       Lucid,
     );
+    const inputs = Lucid.CML.TransactionInputList.new();
+    inputs.add(Lucid.CML.TransactionInput.new(Lucid.CML.TransactionHash.from_hex(hash(900)), 0n));
+    const outputs = Lucid.CML.TransactionOutputList.new();
+    outputs.add(
+      Lucid.utxoToCore({
+        txHash: hash(0),
+        outputIndex: 0,
+        address: Lucid.validatorToAddress('Preview', { type: 'PlutusV3', script: '49480100002221200101' }),
+        assets: { lovelace: 2_000_000n, [policy + '01']: 1n },
+        datum,
+      }).output(),
+    );
+    const body = Lucid.CML.TransactionBody.new(inputs, outputs, 200_000n);
+    const mint = Lucid.CML.Mint.new();
+    mint.set(Lucid.CML.ScriptHash.from_hex(policy), Lucid.CML.AssetName.from_hex('01'), 1n);
+    body.set_mint(mint);
+    anchorHash = Lucid.CML.hash_transaction(body).to_hex();
+    history.host_state_nft_mint.tx_hash = anchorHash;
+    const creationCbor = Lucid.CML.Transaction.new(body, Lucid.CML.TransactionWitnessSet.new(), true).to_cbor_hex();
     const liveDatum = await decodeHostStateDatum(datum, Lucid);
     liveDatum.state.version = 1n;
     const liveEncoded = await encodeHostStateDatum(liveDatum, Lucid);
@@ -87,13 +107,16 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
       ]);
     for (let n = 1; n <= 3; n++) {
       await db.query('INSERT INTO transaction(tx_hash,block,block_hash,invalid) VALUES ($1,$2,$3,false)', [
-        hash(n),
+        n === 2 ? anchorHash : hash(n),
         n + 100,
         hash(n + 100),
       ]);
-      await db.query("INSERT INTO transaction_cbor VALUES ($1,decode('aa','hex'))", [hash(n)]);
+      await db.query("INSERT INTO transaction_cbor VALUES ($1,decode($2,'hex'))", [
+        n === 2 ? anchorHash : hash(n),
+        n === 2 ? creationCbor : 'aa',
+      ]);
       await db.query('INSERT INTO address_utxo VALUES ($1,0,$2,$3,$4)', [
-        hash(n),
+        n === 2 ? anchorHash : hash(n),
         n + 100,
         n === 3 ? liveEncoded : datum,
         JSON.stringify(n === 1 ? [] : [{ unit: policy + '01', quantity: '1' }]),
@@ -110,7 +133,7 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
     const upgraded = await upgradeHistoryArtifact(db, old);
     expect(upgraded).toEqual({ ...old, history });
     expect(old.history).toBeUndefined();
-    await db.query('DELETE FROM address_utxo WHERE tx_hash=$1', [hash(2)]);
+    await db.query('DELETE FROM address_utxo WHERE tx_hash=$1', [anchorHash]);
     await expect(upgradeHistoryArtifact(db, old)).rejects.toThrow();
   });
   it('detects missing blocks even when every required output and transaction is present', async () => {
@@ -127,16 +150,38 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
   it.each(['anchor', 'cbor', 'block', 'datum', 'nft', 'validity', 'live'])(
     'refuses readiness with missing or invalid %s',
     async (field) => {
-      if (field === 'anchor') await db.query('DELETE FROM address_utxo WHERE tx_hash=$1', [hash(2)]);
-      if (field === 'cbor') await db.query('DELETE FROM transaction_cbor WHERE tx_hash=$1', [hash(2)]);
+      if (field === 'anchor') await db.query('DELETE FROM address_utxo WHERE tx_hash=$1', [anchorHash]);
+      if (field === 'cbor') await db.query('DELETE FROM transaction_cbor WHERE tx_hash=$1', [anchorHash]);
       if (field === 'block') await db.query('DELETE FROM block WHERE number=102');
-      if (field === 'datum') await db.query('UPDATE address_utxo SET inline_datum=NULL WHERE tx_hash=$1', [hash(2)]);
-      if (field === 'nft') await db.query("UPDATE address_utxo SET amounts='[]' WHERE tx_hash=$1", [hash(2)]);
-      if (field === 'validity') await db.query('UPDATE transaction SET invalid=true WHERE tx_hash=$1', [hash(2)]);
+      if (field === 'datum') await db.query('UPDATE address_utxo SET inline_datum=NULL WHERE tx_hash=$1', [anchorHash]);
+      if (field === 'nft') await db.query("UPDATE address_utxo SET amounts='[]' WHERE tx_hash=$1", [anchorHash]);
+      if (field === 'validity') await db.query('UPDATE transaction SET invalid=true WHERE tx_hash=$1', [anchorHash]);
       if (field === 'live') await db.query('DELETE FROM transaction WHERE tx_hash=$1', [hash(3)]);
       await expect(verify()).rejects.toThrow('Bridge history is not ready');
     },
   );
+  it('rejects a continuation advertised as creation even when the datum version is zero', async () => {
+    const { rows } = await db.query('SELECT cbor_data FROM transaction_cbor WHERE tx_hash=$1', [anchorHash]);
+    const tx = Lucid.CML.Transaction.from_cbor_hex(Buffer.from(rows[0].cbor_data).toString('hex'));
+    const original = tx.body();
+    const body = Lucid.CML.TransactionBody.new(original.inputs(), original.outputs(), original.fee());
+    const continuationHash = Lucid.CML.hash_transaction(body).to_hex();
+    const cbor = Lucid.CML.Transaction.new(body, Lucid.CML.TransactionWitnessSet.new(), true).to_cbor_hex();
+    await db.query('UPDATE transaction SET tx_hash=$1 WHERE tx_hash=$2', [continuationHash, anchorHash]);
+    await db.query('UPDATE address_utxo SET tx_hash=$1 WHERE tx_hash=$2', [continuationHash, anchorHash]);
+    await db.query("UPDATE transaction_cbor SET tx_hash=$1,cbor_data=decode($2,'hex') WHERE tx_hash=$3", [
+      continuationHash,
+      cbor,
+      anchorHash,
+    ]);
+    const m = manifest();
+    m.history!.host_state_nft_mint.tx_hash = continuationHash;
+    await expect(verify(m)).rejects.toThrow('must mint exactly');
+  });
+  it('rejects replaced raw transaction evidence with the original anchor hash', async () => {
+    await db.query("UPDATE transaction_cbor SET cbor_data=decode('aa','hex') WHERE tx_hash=$1", [anchorHash]);
+    await expect(verify()).rejects.toThrow('hash-checked NFT mint evidence');
+  });
   it('rejects a recent checkpoint that skipped deployment and an unrelated chain point', async () => {
     const late = manifest();
     late.history!.start = { slot: 1020, block_hash: hash(102), block_height: 102 };

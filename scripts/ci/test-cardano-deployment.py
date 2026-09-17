@@ -10,6 +10,7 @@ runtime directory. Add --cleanup to remove this harness's own containers/volumes
 import argparse
 import datetime
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -30,14 +31,28 @@ def main():
     parser.add_argument("--docker-context")
     parser.add_argument("--compose", type=Path)
     parser.add_argument("--project")
+    parser.add_argument("--artifacts-dir", type=Path, help="New empty directory for a distinct baseline on an existing test network; never overwrites the earlier deployment")
+    parser.add_argument("--blueprint", type=Path, default=ROOT / "cardano/onchain/plutus.json")
+    parser.add_argument("--existing-network", action="store_true", help="Inspect/use an already running --compose project without recreating services")
     parser.add_argument("--runtime-root", type=Path, default=ROOT / ".deployment-smoke")
     parser.add_argument("--ogmios-port", type=int, default=2337)
     parser.add_argument("--kupo-port", type=int, default=2442)
     parser.add_argument("--cleanup", action="store_true")
+    parser.add_argument("--migration-baseline", action="store_true", help="Explicitly authorize this isolated test wallet as the upgrade-baseline authority")
+    parser.add_argument("--pool-count", type=int, choices=range(1, 6), default=1, help="Real forging pools; use five for counterparty stability verification")
+    parser.add_argument("--clock-offset-seconds", type=int, default=0, help="Disposable devnet process-clock offset; never changes the host clock")
+    parser.add_argument("--epoch-length", type=int, help="Fresh disposable genesis only; use 432000 for the two-day migration rehearsal")
+    parser.add_argument("--host-data", action="store_true", help="Fresh runtime only: keep database volumes in its host data directory; sockets remain Linux volumes")
     args = parser.parse_args()
     if bool(args.compose) != bool(args.project):
         parser.error("--compose and --project must be supplied together")
-    if not (ROOT / "cardano/onchain/plutus.json").is_file():
+    if args.existing_network and not args.compose:
+        parser.error("--existing-network requires an explicit --compose and --project")
+    if args.compose and (args.epoch_length is not None or args.host_data):
+        parser.error("Genesis timing/storage options cannot modify an existing fixture")
+    if args.epoch_length is not None and not 5000 <= args.epoch_length <= 432000:
+        parser.error("Fresh rehearsal epoch length must be between 5000 and 432000 one-second slots")
+    if not args.blueprint.is_file():
         parser.error("Build production validators with aiken build --trace-level silent first")
     project = args.project or f"cardano-deployment-test-{uuid.uuid4().hex[:12]}"
     if not args.compose:
@@ -45,6 +60,13 @@ def main():
     runtime_root = args.compose.resolve().parent if args.compose else Path(tempfile.mkdtemp(prefix=project + "-", dir=args.runtime_root.resolve()))
     runtime = runtime_root / "runtime"
     compose_file = args.compose.resolve() if args.compose else runtime_root / "compose.json"
+    artifacts = args.artifacts_dir.resolve() if args.artifacts_dir else runtime_root
+    if args.artifacts_dir:
+        if artifacts.exists() and any(artifacts.iterdir()):
+            parser.error("--artifacts-dir must be empty; keep every previous baseline intact")
+        artifacts.mkdir(parents=True, exist_ok=True)
+    elif (artifacts / "handler.json").exists() or (artifacts / "deployment.log").exists():
+        parser.error("This network already has deployment artifacts; select a fresh --artifacts-dir for a new baseline")
     docker = ["docker"] + (["--context", args.docker_context] if args.docker_context else [])
     compose = docker + ["compose", "-p", project, "-f", str(compose_file)]
 
@@ -79,18 +101,57 @@ def main():
                 key_file.chmod(0o600)
         # Keep test credentials in their initial KES period while starting the
         # chain near the real clock. Transaction/ExUnit limits are unchanged.
-        start = int(time.time()) - 30
+        start = int(time.time()) + args.clock_offset_seconds - 30
         for name, updates in [
             ("genesis-byron.json", {"startTime": start}),
             ("genesis-shelley.json", {
                 "systemStart": datetime.datetime.fromtimestamp(start, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "slotsPerKESPeriod": 31536000,
+                **({"epochLength": args.epoch_length} if args.epoch_length is not None else {}),
             }),
         ]:
             path = runtime / name
             data = json.loads(path.read_text())
             data.update(updates)
             path.write_text(json.dumps(data, indent=2) + "\n")
+        if args.pool_count > 1:
+            generator = project + "-pool-generator"
+            generated = runtime_root / "generated-pools"
+            generated.mkdir()
+            supply = str(900_000_000_000 * (args.pool_count - 1))
+            run(docker + ["create", "--name", generator, "--entrypoint", "cardano-cli", "ghcr.io/blinklabs-io/cardano-node:10.1.4-3",
+                "latest", "genesis", "create-testnet-data", "--out-dir", "/out", "--pools", str(args.pool_count - 1),
+                "--stake-delegators", str(args.pool_count - 1), "--testnet-magic", "42", "--total-supply", supply, "--delegated-supply", supply])
+            try:
+                run(docker + ["start", "--attach", generator])
+                run(docker + ["cp", generator + ":/out/.", str(generated)])
+            finally:
+                run(docker + ["rm", "--force", generator])
+            genesis_path = runtime / "genesis-shelley.json"
+            genesis = json.loads(genesis_path.read_text())
+            added = json.loads((generated / "shelley-genesis.json").read_text())
+            for key in ["pools", "stake"]:
+                genesis["staking"][key].update(added["staking"][key])
+            genesis["initialFunds"].update(added["initialFunds"])
+            genesis_path.write_text(json.dumps(genesis, indent=2) + "\n")
+            for index in range(2, args.pool_count + 1):
+                shutil.copytree(generated / "pools-keys" / f"pool{index - 1}", runtime / f"spo{index}")
+            node_config_path = runtime / "cardano-node.json"
+            node_config = json.loads(node_config_path.read_text())
+            node_config["EnableP2P"] = False
+            node_config_path.write_text(json.dumps(node_config, indent=2) + "\n")
+            # Use literal addresses: the node's asynchronous DNS resolver and
+            # a historical process clock do not share Docker DNS's time base.
+            network_ids = run(docker + ["network", "ls", "-q"]).splitlines()
+            allocated = json.loads(run(docker + ["network", "inspect", *network_ids])) if network_ids else []
+            used = [ipaddress.ip_network(entry["Subnet"]) for network in allocated for entry in (network.get("IPAM") or {}).get("Config") or [] if entry.get("Subnet")]
+            subnet = next(ipaddress.ip_network(f"10.231.{index}.0/24") for index in range(1, 255)
+                          if not any(ipaddress.ip_network(f"10.231.{index}.0/24").overlaps(existing) for existing in used if existing.version == 4))
+            for index in range(1, args.pool_count + 1):
+                name = "node" if index == 1 else f"spo{index}"
+                (runtime / f"topology-{name}.json").write_text(json.dumps({"Producers": [
+                    {"addr": str(subnet.network_address + 100 + other), "port": 3001, "valency": 1}
+                    for other in range(1, args.pool_count + 1) if other != index]}) + "\n")
         shared = {"user": "0:0", "logging": {"driver": "json-file", "options": {"max-size": "2m", "max-file": "3"}}}
         compose_file.write_text(json.dumps({
             "services": {
@@ -101,18 +162,56 @@ def main():
                 "kupo": {**shared, "image": "cardanosolutions/kupo:v2.9.0", "volumes": [f"{runtime}:/runtime", "socket:/socket", "kupo-db:/db"], "ports": [f"127.0.0.1:{args.kupo_port}:1442"], "depends_on": ["node"], "restart": "on-failure", "command": ["--node-socket", "/socket/node.socket", "--node-config", "/runtime/cardano-node.json", "--since", "origin", "--match", "*", "--workdir", "/db", "--host", "0.0.0.0", "--port", "1442"]},
             }, "volumes": {"socket": {}, "node-db": {}, "kupo-db": {}},
         }, indent=2) + "\n")
+        config = json.loads(compose_file.read_text())
+        node = config["services"]["node"]
+        if args.clock_offset_seconds:
+            run(docker + ["build", "-t", "cardano-ibc-462-node-clock", "-f", str(ROOT / "chains/cardano/Dockerfile.local-clock"), str(ROOT / "chains/cardano")])
+            node["image"] = "cardano-ibc-462-node-clock"
+            node["environment"]["CARDANO_LOCAL_CLOCK_TARGET"] = datetime.datetime.fromtimestamp(start + 30, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        if args.pool_count > 1:
+            config["networks"] = {"default": {"ipam": {"config": [{"subnet": str(subnet)}]}}}
+            node["networks"] = {"default": {"ipv4_address": str(subnet.network_address + 101)}}
+            node["environment"]["CARDANO_TOPOLOGY"] = "/runtime/topology-node.json"
+            for index in range(2, args.pool_count + 1):
+                name = f"spo{index}"
+                extra = json.loads(json.dumps(node))
+                extra["volumes"] = [f"{runtime}:/runtime", f"{name}-socket:/socket", f"{name}-db:/data"]
+                extra["networks"] = {"default": {"ipv4_address": str(subnet.network_address + 100 + index)}}
+                extra["environment"].update({"CARDANO_TOPOLOGY": f"/runtime/topology-{name}.json",
+                    "CARDANO_SHELLEY_KES_KEY": f"/runtime/{name}/kes.skey", "CARDANO_SHELLEY_VRF_KEY": f"/runtime/{name}/vrf.skey",
+                    "CARDANO_SHELLEY_OPERATIONAL_CERTIFICATE": f"/runtime/{name}/opcert.cert"})
+                config["services"][name] = extra
+                config["volumes"].update({f"{name}-socket": {}, f"{name}-db": {}})
+        if args.host_data:
+            data_root = runtime_root / 'data'
+            data_root.mkdir(mode=0o700)
+            config['x-migration-host-data'] = str(data_root)
+            for name in config['volumes']:
+                if name.endswith('-db'):
+                    directory = data_root / name
+                    directory.mkdir(mode=0o700)
+                    config['volumes'][name] = {'driver': 'local', 'driver_opts': {
+                        'type': 'none', 'o': 'bind', 'device': str(directory)}}
+        compose_file.write_text(json.dumps(config, indent=2) + "\n")
 
-    print(f"Isolated project: {project}; artifacts: {runtime_root}", flush=True)
+    print(f"Isolated project: {project}; artifacts: {artifacts}", flush=True)
     try:
-        run(compose + ["up", "-d"])
+        if not args.existing_network:
+            run(compose + ["up", "-d"])
         # Bind observations to the selected project, including --compose reuse.
         ogmios_port = int(run(compose + ["port", "ogmios", "1337"]).splitlines()[0].rsplit(":", 1)[1])
         kupo_port = int(run(compose + ["port", "kupo", "1442"]).splitlines()[0].rsplit(":", 1)[1])
         ogmios = f"http://127.0.0.1:{ogmios_port}"
         kupo = f"http://127.0.0.1:{kupo_port}"
         wait_for("Conway node", lambda: get_json(ogmios + "/health").get("currentEra") == "conway")
+        if args.pool_count > 1:
+            def pools_share_chain():
+                tips = [json.loads(run(compose + ["exec", "-T", name, "cardano-cli", "conway", "query", "tip", "--testnet-magic", "42"]))
+                        for name in ["node", *[f"spo{i}" for i in range(2, args.pool_count + 1)]]]
+                return all(tip.get("block", 0) >= 2 for tip in tips) and len({tip.get("hash") for tip in tips}) == 1
+            wait_for("all forging pools on the same canonical chain", pools_share_chain, timeout=300)
         parameters = json.loads(cli("conway", "query", "protocol-parameters", "--testnet-magic", "42"))
-        (runtime_root / "protocol-parameters.json").write_text(json.dumps(parameters, indent=2) + "\n")
+        (artifacts / "protocol-parameters.json").write_text(json.dumps(parameters, indent=2) + "\n")
         if parameters["protocolVersion"]["major"] < 10:
             raise RuntimeError("Deployment validators use Plutus V3 byte-string builtins requiring protocol version 10 or later")
         actual_limits = {"maxTxSize": parameters["maxTxSize"], **parameters["maxTxExecutionUnits"]}
@@ -138,26 +237,41 @@ def main():
                 env[key] = value.strip().strip('"')
         for key in ["KUPO_API_KEY", "OGMIOS_API_KEY"]:
             env.pop(key, None)
-        inventory_path = runtime_root / "deployment-plan.json"
-        cost_path = runtime_root / "deployment-cost-report.json"
+        inventory_path = artifacts / "deployment-plan.json"
+        cost_path = artifacts / "deployment-cost-report.json"
         env.update({"KUPO_URL": kupo, "OGMIOS_URL": ogmios, "CARDANO_NETWORK_MAGIC": "42", "DEPLOYMENT_PLAN_OUTPUT": str(inventory_path), "DEPLOYMENT_COST_REPORT_PATH": str(cost_path)})
+        if args.migration_baseline:
+            address_info = json.loads(cli("address", "info", "--address", wallet))
+            address_bytes = bytes.fromhex(address_info["base16"])
+            if address_bytes[0] >> 4 not in {0, 2, 6}:
+                raise RuntimeError("Isolated migration authority must be an explicit payment key address")
+            authority = address_bytes[1:29].hex()
+            governance_path = artifacts / "migration-governance.json"
+            governance_path.write_text(json.dumps({"signers": [authority], "quorum": "1", "delay_ms": "86400000"}) + "\n")
+            env["MIGRATION_GOVERNANCE_FILE"] = str(governance_path)
+        else:
+            env.pop("MIGRATION_GOVERNANCE_FILE", None)
         # Pin the exact blueprint for the whole run, even if a developer builds
         # another candidate while this network confirms its transactions.
         blueprint_path = ROOT / "cardano/onchain/plutus.json"
-        blueprint_bytes = blueprint_path.read_bytes()
+        blueprint_bytes = args.blueprint.resolve().read_bytes()
         blueprint_sha256 = hashlib.sha256(blueprint_bytes).hexdigest()
-        blueprint_snapshot = runtime_root / "plutus.json"
+        blueprint_snapshot = artifacts / "plutus.json"
         blueprint_snapshot.write_bytes(blueprint_bytes)
         import_map = {"imports": json.loads((OFFCHAIN / "deno.json").read_text())["imports"]}
         import_map["imports"][blueprint_path.as_uri()] = blueprint_snapshot.as_uri()
-        import_map_path = runtime_root / "import-map.json"
+        import_map_path = artifacts / "import-map.json"
         import_map_path.write_text(json.dumps(import_map, indent=2) + "\n")
-        log_path = runtime_root / "deployment.log"
+        log_path = artifacts / "deployment.log"
         print(f"Running production deployment; log: {log_path}", flush=True)
         with log_path.open("w") as log:
-            subprocess.run(["deno", "run", "--config", str(OFFCHAIN / "deno.json"), "--import-map", str(import_map_path), "--allow-net", "--allow-env", "--allow-read", "--allow-run", "--allow-ffi", "--allow-write", str(OFFCHAIN / "index.ts")], cwd=runtime_root, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        manifest = runtime_root / "deployments/handler.json"
-        shutil.copy2(manifest, runtime_root / "handler.json")
+            entry = OFFCHAIN / "index.ts"
+            if args.clock_offset_seconds:
+                entry = artifacts / "deployment-clock.ts"
+                entry.write_text(f"// Disposable chain clock only; the production delay and scripts are unchanged.\nconst realNow = Date.now.bind(Date);\nDate.now = () => realNow() + {args.clock_offset_seconds * 1000};\nawait import({json.dumps((OFFCHAIN / 'index.ts').as_uri())});\n")
+            subprocess.run(["deno", "run", "--config", str(OFFCHAIN / "deno.json"), "--import-map", str(import_map_path), "--allow-net", "--allow-env", "--allow-read", "--allow-run", "--allow-ffi", "--allow-write", str(entry)], cwd=artifacts, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+        manifest = artifacts / "deployments/handler.json"
+        shutil.copy2(manifest, artifacts / "handler.json")
         plan = json.loads(inventory_path.read_text())
         expected = {validator["hash"] for validator in plan["referenceValidators"]}
         holder = next(validator["address"] for validator in plan["inlineValidators"] if validator["title"] == "reference_validator.refer_only.else")
@@ -170,14 +284,14 @@ def main():
         transactions = report["transactions"]
         if any(tx["signedSizeBytes"] > LIMITS["maxTxSize"] for tx in transactions):
             raise RuntimeError("Deployment report contains an oversized signed transaction")
-        result = {"project": project, "blueprintSha256": blueprint_sha256, "protocolVersion": parameters["protocolVersion"], "limits": actual_limits, "references": len(expected), "transactions": len(transactions), "largestSignedTransactionBytes": max(tx["signedSizeBytes"] for tx in transactions)}
-        (runtime_root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        result = {"project": project, "networkRuntime": str(runtime_root), "artifacts": str(artifacts), "blueprintSha256": blueprint_sha256, "protocolVersion": parameters["protocolVersion"], "limits": actual_limits, "references": len(expected), "transactions": len(transactions), "largestSignedTransactionBytes": max(tx["signedSizeBytes"] for tx in transactions), "poolCount": args.pool_count, "clockOffsetSeconds": args.clock_offset_seconds}
+        (artifacts / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result, indent=2), flush=True)
     finally:
         if args.cleanup:
             run(compose + ["down", "--volumes"])
         else:
-            print(f"Preserved isolated project {project} and artifacts {runtime_root}", flush=True)
+            print(f"Preserved isolated project {project} and artifacts {artifacts}", flush=True)
 
 
 if __name__ == "__main__":

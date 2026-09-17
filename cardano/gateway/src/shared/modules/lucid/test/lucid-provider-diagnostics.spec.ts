@@ -149,8 +149,12 @@ describe('Lucid provider evaluation diagnostics', () => {
     await drainDiagnostics();
 
     const filenames = await fs.promises.readdir(directory);
-    expect(filenames).toHaveLength(1);
-    expect(JSON.parse(await fs.promises.readFile(join(directory, filenames[0]), 'utf8'))).toEqual(
+    expect(filenames).toHaveLength(2);
+    const records = await Promise.all(filenames.map(async (filename) =>
+      JSON.parse(await fs.promises.readFile(join(directory, filename), 'utf8')),
+    ));
+    expect(records.find((record) => record.scope === 'evaluateTx-body')?.details).toEqual({ txCbor: 'a100' });
+    expect(records.find((record) => record.scope === 'evaluateTx-failure')).toEqual(
       expect.objectContaining({
         scope: 'evaluateTx-failure',
         details: {
@@ -174,8 +178,10 @@ describe('Lucid provider evaluation diagnostics', () => {
     expect(evaluateTx).toHaveBeenCalledTimes(1);
     await drainDiagnostics();
 
-    const [filename] = await fs.promises.readdir(directory);
-    expect(JSON.parse(await fs.promises.readFile(join(directory, filename), 'utf8')).details.error).toEqual({
+    const records = await Promise.all((await fs.promises.readdir(directory)).map(async (filename) =>
+      JSON.parse(await fs.promises.readFile(join(directory, filename), 'utf8')),
+    ));
+    expect(records.find((record) => record.scope === 'evaluateTx-failure')?.details.error).toEqual({
       name: (rejection as Error).name,
       message: (rejection as Error).message,
       stack: (rejection as Error).stack,
@@ -192,8 +198,10 @@ describe('Lucid provider evaluation diagnostics', () => {
     await drainDiagnostics();
 
     expect(evaluateTx).toHaveBeenCalledWith('a100', undefined);
-    const [filename] = await fs.promises.readdir(directory);
-    expect(JSON.parse(await fs.promises.readFile(join(directory, filename), 'utf8')).details).toEqual({
+    const records = await Promise.all((await fs.promises.readdir(directory)).map(async (filename) =>
+      JSON.parse(await fs.promises.readFile(join(directory, filename), 'utf8')),
+    ));
+    expect(records.find((record) => record.scope === 'evaluateTx-failure')?.details).toEqual({
       txCbor: 'a100',
       additionalUTxOs: [],
       error,

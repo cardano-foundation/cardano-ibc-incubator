@@ -5,6 +5,7 @@ import {
   SLOT_CONFIG_NETWORK,
 } from "@lucid-evolution/lucid";
 import { querySystemStart } from "./utils.ts";
+import { queryOgmiosJsonRpc } from "./external_cardano.ts";
 
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 
@@ -223,16 +224,81 @@ export async function buildLucidWithCompatibleProtocolParameters(
   networkMagic: string,
 ): Promise<LucidEvolution> {
   const chainZeroTime = await querySystemStart(ogmiosUrl);
-  SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+  const network = parseNetwork(networkMagic);
+  if (network === "Custom") {
+    const { result } = await queryOgmiosJsonRpc(
+      ogmiosUrl,
+      "queryLedgerState/eraSummaries",
+      {},
+    );
+    SLOT_CONFIG_NETWORK.Custom = customOperationalSlotConfig(
+      chainZeroTime,
+      result,
+    );
+  }
   const protocolParameters = sanitizeProtocolParameters(
     await queryProtocolParametersCompat(ogmiosUrl),
   );
 
   return await Lucid(
     provider as any,
-    parseNetwork(networkMagic),
+    network,
     {
       presetProtocolParameters: protocolParameters,
     } as any,
   );
+}
+
+/** Custom networks have no built-in Lucid slot clock (its default length is
+ * zero). Support the repository's constant-slot devnet and reject time models
+ * that cannot be represented by Lucid's single affine slot configuration.
+ * Public networks retain their established era-aware constants.
+ */
+export function customOperationalSlotConfig(
+  systemStart: number,
+  summaries: unknown,
+) {
+  if (
+    !Number.isSafeInteger(systemStart) || systemStart < 0 ||
+    !Array.isArray(summaries)
+  ) {
+    throw new Error("Invalid Custom network era/time configuration");
+  }
+  if (
+    summaries.some((era) =>
+      !era ||
+      !Number.isSafeInteger(era.start?.slot) || era.start.slot < 0 ||
+      !Number.isSafeInteger(era.start?.time?.seconds * 1000) ||
+      !Number.isSafeInteger(era.parameters?.slotLength?.milliseconds) ||
+      era.parameters.slotLength.milliseconds <= 0 ||
+      (era.end !== undefined && era.end !== null &&
+        (!Number.isSafeInteger(era.end.slot) || era.end.slot < era.start.slot))
+    )
+  ) throw new Error("Invalid Custom network era summary");
+  const populated = summaries.filter((era) =>
+    era.end?.slot !== era.start?.slot
+  );
+  if (
+    !populated.length || populated[0].start?.slot !== 0 ||
+    populated[0].start?.time?.seconds !== 0
+  ) {
+    throw new Error(
+      "Custom operational tooling requires retained era history from slot zero",
+    );
+  }
+  const slotLength = populated[0].parameters?.slotLength?.milliseconds;
+  if (
+    !Number.isSafeInteger(slotLength) || slotLength <= 0 ||
+    populated.some((era) =>
+      era.parameters?.slotLength?.milliseconds !== slotLength ||
+      !Number.isSafeInteger(era.start?.slot) || era.start.slot < 0 ||
+      !Number.isSafeInteger(era.start?.time?.seconds * 1000) ||
+      era.start.time.seconds * 1000 !== era.start.slot * slotLength
+    )
+  ) {
+    throw new Error(
+      "Unsupported Custom network slot-length transition; configure an era-aware transaction builder",
+    );
+  }
+  return { zeroTime: systemStart, zeroSlot: 0, slotLength };
 }

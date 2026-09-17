@@ -24,6 +24,7 @@ import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { hashSHA256 } from '../../shared/helpers/hex';
 import { decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
+import * as stabilityEvidence from '../services/stability-evidence';
 
 jest.mock('../../shared/types/channel/channel-datum', () => ({
   decodeChannelDatum: jest.fn(),
@@ -65,6 +66,14 @@ const CLIENT_TOKEN_UNIT = CLIENT_POLICY_ID + CLIENT_TOKEN_NAME;
 const CONSENSUS_VALUE = Data.to(new Constr(0, [1_000n, '11'.repeat(32), new Constr(0, ['22'.repeat(32)])]));
 const SUCCESS_ACKNOWLEDGEMENT_HEX = toHex(JSON.stringify({ result: 'AQ==' }));
 const SUCCESS_ACKNOWLEDGEMENT_COMMITMENT = hashSHA256(SUCCESS_ACKNOWLEDGEMENT_HEX);
+const PACKET_COMMITMENT_HEX = '12'.repeat(32);
+
+function channelQueryWireResponse(methodName: string, response: object): any {
+  const options = createGrpcOptions({}).options;
+  const definition = loadSync(options.protoPath!, options.loader);
+  const method = (definition['ibc.core.channel.v1.Query'] as ServiceDefinition)[methodName];
+  return method.responseDeserialize(method.responseSerialize(response));
+}
 
 function toHex(value: string): string {
   return Buffer.from(value, 'utf8').toString('hex');
@@ -98,9 +107,9 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
       next_sequence_ack: 8n,
       minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
       maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
-      packet_commitment: new Map([[7n, 'commitment-bytes']]),
-      packet_receipt: new Map([[7n, 'AQ==']]),
-      packet_acknowledgement: new Map([[7n, 'AQ==']]),
+      packet_commitment: new Map([[7n, PACKET_COMMITMENT_HEX]]),
+      packet_receipt: new Map([[7n, '01']]),
+      packet_acknowledgement: new Map([[7n, SUCCESS_ACKNOWLEDGEMENT_COMMITMENT]]),
       ...overrides,
     },
     token: {
@@ -121,7 +130,7 @@ function makeHistoricalTree() {
   return tree;
 }
 
-function makeDeps() {
+function makeDeps(lightClientMode = 'mithril') {
   const capturedTree = makeHistoricalTree();
   const treeStore = {
     getCurrentTree: jest.fn(() => ({ generateProof: jest.fn(), generateNonExistenceProof: jest.fn() })),
@@ -138,7 +147,7 @@ function makeDeps() {
   const logger = makeLogger();
   const configService = {
     get: jest.fn((key: string) => {
-      if (key === 'cardanoLightClientMode') return 'mithril';
+      if (key === 'cardanoLightClientMode') return lightClientMode;
       if (key === 'cardanoChainId') return 'cardano-devnet';
       if (key === 'deployment') return {
         hostStateNFT: { policyId: 'host-policy', name: 'host-token' },
@@ -187,6 +196,7 @@ function makeDeps() {
     findUtxoAtWithUnit: jest.fn(),
   };
   const historyService = {
+    findBlockByHeight: jest.fn().mockResolvedValue({ height: Number(LATEST_ACCEPTED_HEIGHT), hash: 'accepted-anchor' }),
     findHostStateUtxoAtOrBeforeBlockNo: jest.fn(async (height: bigint) => ({
       txHash: height === LATEST_ACCEPTED_HEIGHT ? 'live-host-state-tx' : 'historical-host-state-tx',
       outputIndex: 0,
@@ -347,7 +357,8 @@ describe('proof-bearing services with captured query heights', () => {
       'commitments/ports/transfer/channels/channel-0/sequences/7',
     );
     expect(deps.treeStore.getCurrentTree).not.toHaveBeenCalled();
-    expect(response.commitment).toBe('commitment-bytes');
+    expect(channelQueryWireResponse('PacketCommitment', response).commitment)
+      .toEqual(Buffer.from(PACKET_COMMITMENT_HEX, 'hex'));
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
@@ -376,7 +387,8 @@ describe('proof-bearing services with captured query heights', () => {
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
       'acks/ports/transfer/channels/channel-0/sequences/7',
     );
-    expect(response.acknowledgement).toBe(SUCCESS_ACKNOWLEDGEMENT_HEX);
+    expect(channelQueryWireResponse('PacketAcknowledgement', response).acknowledgement)
+      .toEqual(Buffer.from('{"result":"AQ=="}'));
     expect(deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName).not.toHaveBeenCalled();
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
@@ -467,8 +479,25 @@ describe('proof-bearing services with captured query heights', () => {
       'channel-token',
     );
     expect(deps.mocks.historyService.findTransactionEvidenceByHash).toHaveBeenCalledWith('recv-packet-tx');
-    expect(response.acknowledgement).toBe(errorAckHex);
+    expect(channelQueryWireResponse('PacketAcknowledgement', response).acknowledgement)
+      .toEqual(Buffer.from('{"error":"async failed"}'));
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
+
+  it.each([
+    ['queryPacketCommitments', 'PacketCommitments', 'commitments', PACKET_COMMITMENT_HEX],
+    ['queryPacketAcknowledgements', 'PacketAcknowledgements', 'acknowledgements', SUCCESS_ACKNOWLEDGEMENT_COMMITMENT],
+  ] as const)('preserves raw stored hashes on the paginated %s protobuf wire', async (method, rpc, field, expectedHex) => {
+    const deps = makeDeps();
+    const service = new PacketService(
+      deps.logger, deps.configService, deps.lucidService, deps.mithrilService,
+      deps.historyService, deps.ibcTreeCacheService as any, deps.treeStore,
+    );
+    const response = await service[method]({ channel_id: 'channel-0', port_id: 'transfer' } as any);
+    const wire = channelQueryWireResponse(rpc, response);
+    expect(wire[field]).toHaveLength(1);
+    expect(wire[field][0].channel_id).toBe('channel-0');
+    expect(wire[field][0].data).toEqual(Buffer.from(expectedHex, 'hex'));
   });
 
   it('serves packet receipt non-existence proofs from the cached tree at the requested height', async () => {
@@ -657,6 +686,79 @@ describe('proof-bearing services with captured query heights', () => {
       ).queryConsensusState({ client_id: '07-tendermint-0', revision_number: 0n, revision_height: 77n, latest_height: false } as any),
     },
   ];
+  const packetLists = [
+    ['queryPacketCommitments', {}],
+    ['queryPacketAcknowledgements', {}],
+    ['queryUnreceivedPackets', { packet_commitment_sequences: [7n, 8n] }],
+    ['queryUnreceivedAcks', { packet_ack_sequences: [7n, 8n] }],
+  ] as const;
+  for (const [method, fields] of packetLists) {
+    const run = (deps: ReturnType<typeof makeDeps>) => new PacketService(
+      deps.logger, deps.configService, deps.lucidService, deps.mithrilService,
+      deps.historyService, deps.ibcTreeCacheService as any, deps.treeStore,
+    )[method]({ channel_id: 'channel-0', port_id: 'transfer', ...fields } as any);
+    it(`captures one canonical channel and accepted height for ${method}`, async () => {
+      const deps = makeDeps();
+      const response = await run(deps);
+      expect(response.height?.revision_height).toBe(LATEST_ACCEPTED_HEIGHT);
+      expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo)
+        .toHaveBeenCalledWith(CHANNEL_TOKEN_UNIT, LATEST_ACCEPTED_HEIGHT);
+      expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo)
+        .toHaveBeenLastCalledWith(LATEST_ACCEPTED_HEIGHT);
+      expect(deps.mocks.treeStore.getAlignedSnapshot).toHaveBeenCalledTimes(1);
+      expect(deps.mocks.lucidService.findUtxoAtWithUnit).not.toHaveBeenCalled();
+      if (method === 'queryUnreceivedPackets') expect((response as any).sequences).toEqual([8n]);
+      if (method === 'queryUnreceivedAcks') expect((response as any).sequences).toEqual([7n]);
+    });
+    it(`fails closed without an accepted root for ${method}`, async () => {
+      const deps = makeDeps();
+      deps.mocks.treeStore.getAlignedSnapshot.mockRejectedValue(new Error('Registry is moving; current root unavailable'));
+      await expect(run(deps)).rejects.toThrow('Registry is moving; current root unavailable');
+      expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo).not.toHaveBeenCalled();
+      expect(deps.mocks.lucidService.findUtxoAtWithUnit).not.toHaveBeenCalled();
+    });
+    it(`rejects a changed canonical anchor while reading ${method}`, async () => {
+      const deps = makeDeps();
+      deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo.mockImplementationOnce(async () => {
+        deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+          txHash: 'replacement-host-state', outputIndex: 1, datum: 'replacement-datum',
+        });
+        return { txHash: 'captured-channel', outputIndex: 0, datum: 'captured-channel-datum' };
+      });
+      await expect(run(deps)).rejects.toThrow(/no longer identifies the captured output/);
+    });
+    it.each([false, true])(`checks the accepted stability block hash for ${method} even with unchanged HostState (rollback=%s)`, async (rollback) => {
+      const deps = makeDeps('stake-weighted-stability');
+      const evidence = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceForTxHash')
+        .mockResolvedValue({ anchorHeight: LATEST_ACCEPTED_HEIGHT, anchorBlock: { hash: 'accepted-anchor' } } as never);
+      (decodeChannelDatum as jest.Mock).mockImplementationOnce(async () => {
+        if (rollback) deps.mocks.historyService.findBlockByHeight.mockResolvedValue({
+          height: Number(LATEST_ACCEPTED_HEIGHT), hash: 'replacement-anchor',
+        });
+        return makeChannelDatum();
+      });
+      try {
+        if (rollback) await expect(run(deps)).rejects.toThrow('Canonical anchor changed');
+        else expect((await run(deps)).height?.revision_height).toBe(LATEST_ACCEPTED_HEIGHT);
+        expect(evidence).toHaveBeenCalledWith(expect.objectContaining({ txHash: 'live-host-state-tx' }));
+        expect(deps.mocks.historyService.findBlockByHeight).toHaveBeenLastCalledWith(LATEST_ACCEPTED_HEIGHT);
+      } finally { evidence.mockRestore(); }
+    });
+    it(`does not fabricate a height when stability fails after snapshot capture for ${method}`, async () => {
+      jest.useFakeTimers();
+      const deps = makeDeps('stake-weighted-stability');
+      const evidence = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceForTxHash')
+        .mockRejectedValue(new Error('Captured anchor lacks required stability'));
+      try {
+        const rejected = expect(run(deps)).rejects.toThrow('Captured anchor lacks required stability');
+        await jest.runAllTimersAsync();
+        await rejected;
+        expect(deps.mocks.treeStore.getAlignedSnapshot).toHaveBeenCalledTimes(1);
+        expect(evidence).toHaveBeenCalled();
+        expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo).not.toHaveBeenCalled();
+      } finally { evidence.mockRestore(); jest.useRealTimers(); }
+    });
+  }
   for (const query of latestQueries) {
     it(`serves latest ${query.name} values and proofs from the captured accepted height`, async () => {
       const deps = makeDeps();

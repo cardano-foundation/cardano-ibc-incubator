@@ -61,6 +61,46 @@ describe('TxOperationRunnerService', () => {
     };
   };
 
+  it('rejects direct runner entrypoints before constructing or completing in historical mode', async () => {
+    const original = process.env.GATEWAY_HISTORICAL_READ_ONLY;
+    try {
+      process.env.GATEWAY_HISTORICAL_READ_ONLY = 'true';
+      const { service, lucidService } = makeService();
+      delete process.env.GATEWAY_HISTORICAL_READ_ONLY;
+      const build = jest.fn();
+      await expect(service.run({ unsignedTx: build } as never)).rejects.toThrow('historical read-only mode');
+      await expect(service.runChain({ build } as never)).rejects.toThrow('historical read-only mode');
+      expect(build).not.toHaveBeenCalled();
+      expect(lucidService.beginWalletSelectionScope).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) delete process.env.GATEWAY_HISTORICAL_READ_ONLY;
+      else process.env.GATEWAY_HISTORICAL_READ_ONLY = original;
+    }
+  });
+
+  it('constructs a lazy builder after fresh wallet selection so it cannot capture the previous transaction inputs', async () => {
+    const { service, lucidService, walletContextService } = makeService();
+    let selectedInput = 'spent-previous-operation-input';
+    walletContextService.selectWalletFromAddressWithRetry.mockImplementation(async () => {
+      selectedInput = 'canonical-unspent-input';
+      lucidService.selectWalletFromAddress();
+    });
+    const factory = jest.fn(() => {
+      const capturedInput = selectedInput;
+      return { complete: async () => {
+        if (capturedInput !== 'canonical-unspent-input') throw new Error('Builder captured stale wallet');
+        return { toCBOR: () => '00', toHash: () => 'heartbeat-hash' };
+      } } as never;
+    });
+    const result = await service.run({
+      operationName: 'hostStateHeartbeat', unsignedTx: factory,
+      wallet: { mode: 'refresh_from_address', address: 'authority', context: 'heartbeat' },
+      validity: { apply: (tx) => tx },
+    });
+    expect(result.unsignedTxHash).toBe('heartbeat-hash');
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
   it('completes tx and registers pending update/events for refresh wallet mode', async () => {
     const {
       service,

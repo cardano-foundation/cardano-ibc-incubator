@@ -1,3 +1,4 @@
+import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import { Injectable } from '@nestjs/common';
 import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
@@ -43,7 +44,8 @@ export type TxCompleteRetryPolicy = {
 
 export type TxOperationPlan<TExtraResponseFields = Record<string, never>> = {
   operationName: string;
-  unsignedTx: TxBuilder;
+  /** A factory captures the freshly selected wallet inside the completion lock. */
+  unsignedTx: TxBuilder | (() => Promise<TxBuilder> | TxBuilder);
   rebuildUnsignedTx?: () => Promise<TxBuilder> | TxBuilder;
   validity: TxValidityPolicy;
   wallet: TxWalletInstruction;
@@ -97,6 +99,7 @@ type TxChainOperationResult<T> = {
 
 @Injectable()
 export class TxOperationRunnerService {
+  private readonly transactionMode = new HistoricalReadOnlyGuard();
   private completionChain: Promise<void> = Promise.resolve();
 
   constructor(
@@ -109,6 +112,7 @@ export class TxOperationRunnerService {
   async run<TExtraResponseFields = Record<string, never>>(
     plan: TxOperationPlan<TExtraResponseFields>,
   ): Promise<TxOperationRunnerResult<TExtraResponseFields>> {
+    this.transactionMode.canActivate();
     const completedUnsignedTx = await this.withCompletionLock(() => this.completeWithExplicitWalletSelection(plan));
 
     const unsignedTxCbor = completedUnsignedTx.toCBOR();
@@ -139,6 +143,7 @@ export class TxOperationRunnerService {
   }
 
   async runChain<T>(plan: TxChainOperationPlan<T>): Promise<TxChainOperationResult<T>> {
+    this.transactionMode.canActivate();
     return this.withCompletionLock(async () => {
       const walletScopeId = this.lucidService.beginWalletSelectionScope();
       const links: Array<{ result: TxChainLinkResult; plan: TxChainLinkPlan }> = [];
@@ -242,12 +247,13 @@ export class TxOperationRunnerService {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const txBuilder = attempt === 1 || !plan.rebuildUnsignedTx ? plan.unsignedTx : await plan.rebuildUnsignedTx();
-      const txWithValidity = plan.validity.apply(txBuilder);
       const walletScopeId = this.lucidService.beginWalletSelectionScope();
       try {
         await this.applyWalletInstruction(plan.wallet);
         this.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, plan.operationName);
+        const selected = attempt > 1 && plan.rebuildUnsignedTx ? plan.rebuildUnsignedTx : plan.unsignedTx;
+        const txBuilder = typeof selected === 'function' ? await selected() : selected;
+        const txWithValidity = plan.validity.apply(txBuilder);
 
         return (await txWithValidity.complete({
           localUPLCEval: false,
@@ -262,7 +268,7 @@ export class TxOperationRunnerService {
         if (!shouldRetry) {
           throw error;
         }
-        if (!plan.rebuildUnsignedTx) {
+        if (!plan.rebuildUnsignedTx && typeof plan.unsignedTx !== 'function') {
           console.warn(
             `[txRunner] ${plan.operationName} retryable failure but no rebuildUnsignedTx callback was provided; not retrying mutable tx builder`,
           );

@@ -26,7 +26,7 @@ describe('YaciHistoryService historical client anchors', () => {
     );
 
     expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('block_no <= $1'),
+      expect.stringContaining('t.invalid = false AND t.block <= $1'),
       ['123', '11'.repeat(28), '22'.repeat(32)],
     );
     expect(result).toEqual(expect.objectContaining({

@@ -1,0 +1,141 @@
+name: Populated migration rehearsal
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: populated-migration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  populated-migration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      CI: true
+      npm_config_audit: false
+      npm_config_fund: false
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+
+      - uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: "1.85.0"
+
+      - name: Install local rehearsal dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler faketime pkg-config libssl-dev
+
+      - name: Build operational packages and Gateway
+        run: |
+          npm ci --prefix proto-types
+          npm run --prefix proto-types build
+          for package in cardano-ibc-planner cardano-ibc-tx-builder cardano-ibc-trace-registry cardano-ibc-tx-builder-runtime; do
+            npm ci --prefix "packages/$package"
+            npm run --prefix "packages/$package" build
+          done
+          rm -rf packages/cardano-ibc-planner/node_modules
+          for package in cardano-ibc-tx-builder cardano-ibc-trace-registry cardano-ibc-tx-builder-runtime; do
+            npm ci --prefix "packages/$package" --omit=dev
+          done
+          npm ci --prefix cardano/gateway
+          npm run --prefix cardano/gateway build
+          python3 scripts/ci/test-migration-evidence.py
+          node --test scripts/ci/test-migration-packet-evidence.cjs
+
+      - name: Build the actual relayer and counterparty
+        run: |
+          cargo build --manifest-path relayer/Cargo.toml -p ibc-relayer-cli --bin hermes --locked
+          python3 scripts/ci/build-migration-cosmos.py
+
+      - name: Compile the upgrade-capable baseline and distinct successors
+        run: |
+          cd cardano/onchain
+          aiken build --deny --trace-level silent
+          cd ../..
+          mkdir -p .deployment-smoke
+          python3 scripts/ci/build-migration-successor.py --out .deployment-smoke/release-v2 --window-ms 600000
+          python3 scripts/ci/build-migration-successor.py --out .deployment-smoke/release-v3 --window-ms 900000
+
+      - name: Deploy a fresh five-pool V1
+        run: |
+          python3 scripts/ci/test-cardano-deployment.py \
+            --migration-baseline --pool-count 5 --epoch-length 432000 \
+            --clock-offset-seconds -259200 --ogmios-port 2637 --kupo-port 2742 \
+            > .deployment-smoke/baseline-deployment.log 2>&1
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          results = list(Path('.deployment-smoke').glob('cardano-deployment-test-*/result.json'))
+          if len(results) != 1:
+              raise RuntimeError('Expected exactly one completed fresh baseline')
+          result = json.loads(results[0].read_text())
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('MIGRATION_RUNTIME=' + result['networkRuntime'] + '\n')
+              output.write('MIGRATION_ARTIFACTS=' + result['artifacts'] + '\n')
+          PY
+
+      - name: Populate, interrupt and repeat migration, then settle old and new traffic
+        run: |
+          python3 scripts/ci/test-populated-migration.py \
+            --runtime "$MIGRATION_RUNTIME" --artifacts-dir "$MIGRATION_ARTIFACTS" \
+            --v2-blueprint .deployment-smoke/release-v2/plutus.json \
+            --v3-blueprint .deployment-smoke/release-v3/plutus.json
+
+      - name: Retain public evidence, including failed attempts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: populated-migration-evidence
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            .deployment-smoke/baseline-deployment.log
+            .deployment-smoke/**/result.json
+            .deployment-smoke/**/release.json
+            .deployment-smoke/**/plutus.json
+            .deployment-smoke/**/handler*.json
+            .deployment-smoke/**/bridge-manifest*.json
+            .deployment-smoke/**/migration-v*-populated.json
+            .deployment-smoke/**/population-*.json
+            .deployment-smoke/**/wallet-population.json
+            .deployment-smoke/**/wallet-migration-executor.json
+            .deployment-smoke/**/runtime/genesis-shelley.json
+            .deployment-smoke/**/protocol-parameters.json
+            .deployment-smoke/**/migration-governance.json
+            .deployment-smoke/**/clock-state.json
+            .deployment-smoke/**/activation-*-witness.json
+            .deployment-smoke/**/cold-moving-*.json
+            .deployment-smoke/**/counterparty-pre-*-client-state.json
+            .deployment-smoke/**/counterparty-pre-*-proof.json
+            .deployment-smoke/**/counterparty-v*-continuity.json
+            .deployment-smoke/**/node-witness-*.json
+            .deployment-smoke/**/*-authenticated-budget.json
+            .deployment-smoke/**/publication-costs-v*.json
+            .deployment-smoke/**/v*-publication-measurements/*.json
+            .deployment-smoke/**/traffic/*.json
+            .deployment-smoke/**/traffic/*.log
+            .deployment-smoke/**/rehearsal-*/*.json
+            .deployment-smoke/**/rehearsal-*/*.log
+            .deployment-smoke/**/v*-handover/*.json
+            .deployment-smoke/**/v*-handover/*.log
