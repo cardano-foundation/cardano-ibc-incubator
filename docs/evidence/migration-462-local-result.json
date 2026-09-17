@@ -1,0 +1,375 @@
+{
+  "format": "migration-462-local-evidence-index-v1",
+  "baseCommit": "fde2635138f60f6d14954b2f91e4a001b74c12a2",
+  "implementationCommit": "f7d904d0526c1c7c5c32a55be8ce2adc08bb3c90",
+  "relayerCommit": "b35730dbedd9caa73c424ed090e2d9261708dae0",
+  "artifactDirectory": ".deployment-smoke/long-epoch-baseline-v1-recovered",
+  "driverResult": {
+    "format": "populated-migration-rehearsal-v1",
+    "genesisSha256": "4b385e593a5ce964136481e0df51338ff66ad65fd5be309cbe40ee659becb83d",
+    "deployment": "0a8ed16a5bed047dcfeef0302e7313cfec1b22ae11059f24f008dc0c6962635f696d706c656d656e746174696f6e5f7265676973747279",
+    "stagesExecuted": [
+      "settle-v3",
+      "verify-all"
+    ],
+    "allPacketReceiptsCanonicallyRechecked": true,
+    "counterpartyContinuity": [
+      {
+        "generation": 2,
+        "activationBlock": "1633",
+        "transactionHash": "F2C15EC092BD6EA931ECD8866E0468DC2CDBA85A2E5076F0BD661097BC62C697",
+        "messageIndex": 1,
+        "proofHeight": "1744",
+        "packetMessageVerified": true
+      },
+      {
+        "generation": 3,
+        "activationBlock": "3040",
+        "transactionHash": "1CE35A7CD69E1C1CB117925E8B221F7ACB7D3CB7478B2211D25418687F549E32",
+        "messageIndex": 1,
+        "proofHeight": "3385",
+        "packetMessageVerified": true
+      }
+    ],
+    "scope": "Owned two-chain rehearsal and independent accounting, not a public-network finality certificate or independent audit"
+  },
+  "canonicallyRecheckedPacketCounts": {
+    "populate": 13,
+    "settle-v2": 13,
+    "settle-v3": 11
+  },
+  "canonicallyRecheckedCustodyTransactions": 18,
+  "funding": [
+    {
+      "verified": true,
+      "transactions": 9,
+      "executor": "addr_test1vpmudxv36hnwejmdepu8a4mprs42d3gzzhzsl73uvv73aksj5nvtm",
+      "feesLovelace": "11320132",
+      "infrastructureIncreaseLovelace": "676670",
+      "externalPayerSpentLovelace": "11996802",
+      "scope": "Handover only; governance approval and reference publication are separate costs"
+    },
+    {
+      "verified": true,
+      "transactions": 9,
+      "executor": "addr_test1vpmudxv36hnwejmdepu8a4mprs42d3gzzhzsl73uvv73aksj5nvtm",
+      "feesLovelace": "11361780",
+      "infrastructureIncreaseLovelace": "0",
+      "externalPayerSpentLovelace": "11361780",
+      "scope": "Handover only; governance approval and reference publication are separate costs"
+    }
+  ],
+  "finalIndependentBalanceCheck": {
+    "verified": true,
+    "phase": "settled-v3",
+    "generation": 3,
+    "voucherUnits": [
+      "cf0321bfec37397dda2615e20eded450510409e0d7092b69a52bdba30014df10147df96de042ea2e25dd031396f26040eef3a0d1e0dd9cb59ec88724",
+      "cf0321bfec37397dda2615e20eded450510409e0d7092b69a52bdba30014df10d2fd9771b43df546c5b4c28f7f4ce5a32b5b9734779dfe3ff93f44cd"
+    ],
+    "nativeBacking": {
+      "77dd2584d3555e633bb61a9f0977ece51bbf17945ff459000720139f4d4947524154494f4e34363241": 8333,
+      "77dd2584d3555e633bb61a9f0977ece51bbf17945ff459000720139f4d4947524154494f4e34363242": 8344
+    },
+    "scope": "Independent holder/principal arithmetic; packet acceptance and authenticated capture evidenced separately"
+  },
+  "scope": "Recorded local devnet observations and checksums of retained evidence, paths relative to the repository. Not standalone chain proof, public-network finality, fresh CI acceptance, or an independent audit.",
+  "evidenceFiles": [
+    {
+      "path": ".deployment-smoke/cardano-deployment-test-6793e47ccb69-av3fh5se/runtime/genesis-shelley.json",
+      "sha256": "4b385e593a5ce964136481e0df51338ff66ad65fd5be309cbe40ee659becb83d"
+    },
+    {
+      "path": ".deployment-smoke/cardano-deployment-test-6793e47ccb69-av3fh5se/wallet-population.json",
+      "sha256": "90cc08fc44c71bd58c6aaaec6f9901f6994ab1eb971914c46400e60746c21b4a"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/handler-v2.json",
+      "sha256": "af036e4e42544cc99b07aafc71282ca5b0cfe63e0f96afca41bb20ba6c67219d"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/handler-v3.json",
+      "sha256": "486717f8393489bd8728bdb0bf543f984131daeab837d3c7bfd51b1af9aa34c6"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/migration-v2-populated.json",
+      "sha256": "026202c9a3ebbfc19a5447fadae34835ea705c324cb87a774e4eb52dc8651a4f"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/migration-v3-populated.json",
+      "sha256": "4803547014284343d084632ec8d4d3c61dd68a8102a778d0ca0a4b745df40184"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/population-after-v2.json",
+      "sha256": "a6e2b38f5144153fadbf5aef5c4affda81eb08b796c46dedaea5410cbbdb33ca"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/population-after-v3.json",
+      "sha256": "0ccc00e172054eaa89322c3c0fbe4521512037a13cf5a105031bb263094e7f3b"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/population-approved-v2.json",
+      "sha256": "e234caa8ebb5fcc8c6d9e3612b66fb400f639db134aa0dc18b49dc1a205714dd"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/population-approved-v3.json",
+      "sha256": "de5eafcb2146fb871768ef08050fbc6fd159f3d79ca30d6bfb071ed09868e362"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/population-before-v2.json",
+      "sha256": "61ff260104f2ee8f554293577124dc04e870f73f9a5c3579fc9e4ebbe1f0cd38"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/population-before-v3.json",
+      "sha256": "93836c8015261af5394afee4d969c0df4dbbda5c1a0b4119ef080e8e2e1d549c"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/population-settled-v3.json",
+      "sha256": "e6b70b95200840ecd31ab15bd954576ce658f7a0dd12dd2dab3f5adefca9e09f"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/populate-verify-27082402957b44e79eee87e60ac64a46.log",
+      "sha256": "9febfdf57293bce87deba7b6264eff0f38ab568a99140d17f7107ca7d3e533f1"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/result.json",
+      "sha256": "be32eda3b0b9af544e7f6cdd67a342e7992d71ecca5e7babf274ab436dcd47b0"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/settle-v2-verify-d56a2b589d554979b7657fb360358a4c.log",
+      "sha256": "5cd95e87f971bf0f711ad7a8bad609a055d7ac704c0ea13ae1cd06ec0ee1db6b"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/settle-v3-verify-0a13882487dc4d6484d59280249fb079.log",
+      "sha256": "255d1e66b2da2b706ca5cccf83e3a6b8687da1e54461aa55b6ed136589af2d7b"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-4e070149fd3f12e119ef4f1914cad23c80e82d37f3c88f4021fc068b8940f2b6.measurement.json",
+      "sha256": "8001a072341d94905d588936a1490e0b5463525ec31212cc6ef30e02c4a9fe4d"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-4e86ca00ebfcc8e4e68fd1f1c71e781474c373c3176e032c79390773f5fed3e5.measurement.json",
+      "sha256": "1d8b4fde5f932d70811462b845dcdf84de036ec8834867c1f33ccb21383e841e"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-b1eb03e8a2ec8a81f3e123c923e28def2be11b8ba96c6066c6dc2ce601ccf75c.measurement.json",
+      "sha256": "9d6759bec8049bd77606dc8e94a087dacfc5d82f9d97196d1d761e5b08fa590f"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-c18d4506d42e7b0558569a9be7cc96c4b99bd76d07b2e9153c72151176628fe0.measurement.json",
+      "sha256": "5d0b6447e4f766c12b3512b61a8c377c44971813bfd33576783a7cdfa880d456"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-c2a18c6f8c7f9db0dd8180e42bef30be4b0d46f4d4f737a2374a4e7dc6aaabd7.measurement.json",
+      "sha256": "e7060da6a86abff0827ff4fbb97dbe5c114c8b20890858dfb32059d15ea3eb01"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-ddcdc893f0bdb9bb5618491fbfab304c856b5782456623c57f7ede1eb7931604.measurement.json",
+      "sha256": "981885cf1e325305421897655c390a98113f9e4667728b6edbdf1704bcc025b3"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-df313e501ac155ae1e5fd12a1f2ef3595759ba67f2f4be205d4d389ff8b86b02.measurement.json",
+      "sha256": "3abcf54df1febe6ade4e1a3c56f23d74813669c6b426dd0e0c264d748269501e"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-ee384aee30053dd0c660ad14b3e318a5e3141f8101824e1bb0d974c1e53da782.measurement.json",
+      "sha256": "5e04729a420ed8f1bc5ed6047f40c3a32c9988adc6c4a4a2f74833413f0aff49"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v2-fbdce236f25f857165e15de48d0ddea9ba5a7c073033ef07c39c671f8c978b9e.measurement.json",
+      "sha256": "bfc1eef56917c3ca14204204103c092079da70926dcdcfcec8ee0ff469043e2a"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-016dda41ebe67b5f0a8a549e9eace2436c67169ca52dec0e0f915dfb3858f8a2.measurement.json",
+      "sha256": "4e9206162f5d2704ef92e46c11b1019f08933b462753060cc71632668b9c157e"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-0f9b78939aaf3cf3c9f3f4df05cb9f302992a4f7ba058a28dfc8ad7940f8c57b.measurement.json",
+      "sha256": "87c662e45845366f2a40f81927b4d3bc4b55863584f0260f242a9e5ca93b3280"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-2a488c1363a3f127898b2fab66eda5fc5c92805d6c86de474b12485c7aa7e9db.measurement.json",
+      "sha256": "9a438f467e141223a6af4988098c44ad8f21b867cbdcda556a58078c5ea1e667"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-56c2ced08507383803b2c41b9f0db8ba5c921d99a1dd6b2b466b36c8a5948549.measurement.json",
+      "sha256": "edd5cb41c49b57de4b0bff18de6e5a9d465db82a4761051c89b3bce775e05dc2"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-93eff62a0979dbc8bc005d1d08158c687d2c3b69a902521e81d3245fc70f6c45.measurement.json",
+      "sha256": "a607164900efab9888ad1125460c66377f7ad283ed5866e400da1c313b3c3a2a"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-9bfd671810b088f4bbc2f2f2dd1e178df1a38c8eaf6e3a77b574a4376866f464.measurement.json",
+      "sha256": "37315dd7137a726392b97dda786ca9e2ec7974014efe5a7b8a72842af0518068"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-a80edda5b9962bcab3d94b9d22d0317dd0c58cfd44178fc59587bb95c5030a69.measurement.json",
+      "sha256": "0ce1bc537eee29736d5b991d0f7f00749f974e3352ad4d3ea9afbd21408934e6"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-ae77ab6d6936b5718ba4a532c66112b079cf6a7cfb200adf36ecfa51a5ab4d65.measurement.json",
+      "sha256": "9ec6dd0c3c733d4b79f7ad193a4f45c6ba02cd37d7e5701162001a3b3cdaa5d8"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/rehearsal-8ba8739580204cad9e6ca708e97910cc/v3-d919ea4f5ff5848129185974ada77de152258b742c4e3c2298a9201a484c643d.measurement.json",
+      "sha256": "334361b42a4100f11d1e940eb91bd55b66817f72c583acc59a9f4397e3bb3569"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/burn-timeout-remint.json",
+      "sha256": "046b24d27c02250c517c32bea1768679db0d6d7e80993664145cf7f3297e0fa6"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/burn-timeout-send.json",
+      "sha256": "7c82bda0aff1e571a0cff2b77e283ee4ba369a6c9975a481822f7b8da1cbb0c0"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-pending-ack.json",
+      "sha256": "df1b44f8d8fa8a4673ab5c61f3ae9158b2d42f435f7e33233c4da33589409a91"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-pending-receive.json",
+      "sha256": "9b580085e677a5e28d8c41d0063e728a97a545d56dabb6c2036da91c46f996b7"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-pending-send.json",
+      "sha256": "d6ffe6078136aba50b9b9bdd4b4190a4e1f4d5b4a164b390553d5917ea366457"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-primary-ack.json",
+      "sha256": "655e6f3018bb66776d704e577df42fe1cc69cf21df709c63192501054a94104a"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-primary-receive.json",
+      "sha256": "07d2f61de8192181a6561bd487082a0bf44503e76bd31ea74d120369705ec948"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-primary-send.json",
+      "sha256": "ae6da4418d4141d088b7c4e6e1c5011deb38ea619c564b563968d7b4410ff1c3"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-secondary-ack.json",
+      "sha256": "66acedd54e57f5ee6674b727c626a389046182842c5399613f62774f04fda11c"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-secondary-receive.json",
+      "sha256": "ab15a603394159e3451c97ce668837db784211c53856c255d4e8187bf3adf68f"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/foreign-secondary-send.json",
+      "sha256": "9211f185701880eee22e8f7086676ee666f83f494edddc04a3c606bdf35b6f9d"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-a-ack.json",
+      "sha256": "0662684dad4ec8894672abba19562df31e1051448a5df59adb16422e6ef9c7ab"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-a-receive.json",
+      "sha256": "6e5c8a2b32df071b2a6924935db7b5c0836a7ed95ff2c16238e0034534442ee3"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-a-send.json",
+      "sha256": "3f5a5f9295a65c23349cfe4f9765f4f9851b7fb2c1556687334cdbabdf3ccfd5"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-b-ack.json",
+      "sha256": "27833457caf6cb21e880e6eac62ceb8cbeaf2134a9d5a82631d9199cc704f695"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-b-receive.json",
+      "sha256": "d5eb516d05d0d211b6a73d6f30842c5c284074d92fd5f49e1e25662ab20f5b1f"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-b-send.json",
+      "sha256": "2ec64c81e14030cf8d72a1c6b5f30c6ff67d2822d72723c489fc6efa3f16f1f6"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-pending-ack.json",
+      "sha256": "b9799384972f0d80740e653cd42bd14679ec9ce5276908cc9930a661687b2dfa"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-pending-receive.json",
+      "sha256": "edf0b7530cff674a0e5fa19caac48ea917a5efe391c2469adb04de8e420f9fa4"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-pending-send.json",
+      "sha256": "0c4b635d076465b5e9180d8cff190cd9877ddb5b2b74bf77803a66c27d020a91"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-return-ack.json",
+      "sha256": "6353adc306eab7502f8e4fe8c8b1c88f9efb25b3988b35969762cfaf4956e1d2"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-return-redeem.json",
+      "sha256": "ed8a3f276ea246c37acc0dcb918be7926f3d6dc72a5e0b5093ba367540f00922"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-return-send.json",
+      "sha256": "3163f8065c9ea60265b896bead718b8167f967ee2ac5adfc69f55d80ffc4778e"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-timeout-refund.json",
+      "sha256": "fcd23c5bf63c2a0073721feb60e65d0ab90c090c1af4b396b6bd3a2be042453e"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/native-timeout-send.json",
+      "sha256": "7c65123a49238d029e8d15feb9066dcfc28fec53b25ac56780b382de489cb0b0"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/new-foreign-return-ack.json",
+      "sha256": "fa43a5b4a8bc65dca4386d6a72d31891675ba3e403d32adf45dc74787b0f39de"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/new-foreign-return-redeem.json",
+      "sha256": "1c398c764b6bb6fdd540760fba291c2c54fd62ab13fc757a2de4280a2fcf74ef"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/new-foreign-return-send.json",
+      "sha256": "dc5f23653640379e02c390f20dc8511946026ffd745285eb28f0216ec3c5079b"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/new-native-ack.json",
+      "sha256": "8ab6db15699e2fdd0e3e609bbcdd20e59895c6c877794ff6cb3e4dd22c0c31e6"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/new-native-receive.json",
+      "sha256": "ba0268a2377c3fa1d7af5c477f43dd565b7557521b06255a208b1932fa359296"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/new-native-send.json",
+      "sha256": "ab8dbb682861db7735f40dec5075f09290da0e4c3ea1746b1cf8e8c5e8081e73"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/v3-foreign-ack.json",
+      "sha256": "0e50a9fc3b41631ad6363949982b74b2b17e9f0531eadf0439963e360fedebd3"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/v3-foreign-receive.json",
+      "sha256": "66fb5d3121c575d4c7fb97237bfeadcd5a55f9bad4b7a37caeae573d0e578b8b"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/v3-foreign-send.json",
+      "sha256": "f7ffceaeaee4510037b3df5abd3692e3e95e80225b6094a39bf4d5a678374e5d"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/v3-native-ack.json",
+      "sha256": "3257b3b5cd76c8586df67b637d5293ffc7986be5ddfc59bf7cdfe6f0db9aec69"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/v3-native-receive.json",
+      "sha256": "7993dbf5400259207fd455f5215e2a8bec6db20e79f5b54ce2c141d4a50c990d"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/traffic/v3-native-send.json",
+      "sha256": "50191e6d675197f01a95a213800681b38167038a9c71065bd47e6bfb51aef7b1"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/v2-handover/result.json",
+      "sha256": "08a47efe099c2423f7240cd0281748e5ee28e52c77f44a3cfc75730596f0aa1d"
+    },
+    {
+      "path": ".deployment-smoke/long-epoch-baseline-v1-recovered/v3-handover/result.json",
+      "sha256": "f67b91ec3999f4f24478330e82960d13dc6036fb20b669d840c95bda8afcc9f2"
+    }
+  ]
+}
