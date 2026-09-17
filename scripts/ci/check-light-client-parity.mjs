@@ -15,6 +15,7 @@ const sharedSourceFiles = [
   "block_authentication.go",
   "checkpoint.go",
   "client_state.go",
+  "client_state_path_test.go",
   "codec.go",
   "consensus_state.go",
   "epoch_context.go",
