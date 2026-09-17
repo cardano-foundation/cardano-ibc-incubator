@@ -67,3 +67,16 @@ Deno.test("client registrations reject malformed or unsupported entries", () => 
     "Unsupported",
   );
 });
+
+Deno.test("client type lengths leave room for valid IBC IDs across the token sequence range", () => {
+  for (const length of [7, 55]) {
+    clientRegistryData([{ ...first, clientType: "a".repeat(length) }]);
+  }
+  for (const length of [6, 56]) {
+    assertThrows(
+      () => clientRegistryData([{ ...first, clientType: "a".repeat(length) }]),
+      Error,
+      "Invalid light-client type",
+    );
+  }
+});
