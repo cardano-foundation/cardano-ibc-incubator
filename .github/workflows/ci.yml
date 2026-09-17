@@ -18,7 +18,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.populated_migration && 'migration' || 'checks' }}
   cancel-in-progress: true
 
 env:

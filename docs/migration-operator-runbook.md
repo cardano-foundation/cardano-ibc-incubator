@@ -93,7 +93,7 @@ Repeat preparation from the verified V2 handler for V3. The original applied imm
 
 ## Populated rehearsal evidence
 
-The manual `Populated migration rehearsal` workflow builds the actual validators, Gateway, Hermes and counterparty, deploys a fresh five-pool baseline, and invokes `scripts/ci/test-populated-migration.py`. Its full remote execution is still unverified; consult the evidence ledger for actual local results. On an already deployed fresh owned baseline, the equivalent command is:
+The manual `Populated migration rehearsal` workflow builds the actual validators, Gateway, Hermes and counterparty, deploys a fresh five-pool baseline, and invokes `scripts/ci/test-populated-migration.py`. It is also callable through the existing CI workflow's `populated_migration=true` dispatch input, allowing a feature branch to run before the new workflow reaches main. Routine checks and the long rehearsal use separate concurrency groups. Consult the evidence ledger for completed results; an in-progress run is not acceptance. On an already deployed fresh owned baseline, the equivalent command is:
 
 ```sh
 python3 scripts/ci/test-populated-migration.py \
