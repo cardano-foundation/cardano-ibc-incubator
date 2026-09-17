@@ -27,6 +27,18 @@ However, distributed states also bring some challenges, one of which is identify
 
 By leveraging both the spending validator and minting policy, we can effectively create, update and query states of IBC on Cardano. You can refer to the previous section and notice that all semantic of IBC specs are also implemented with both these types of mentioned validator script.
 
+## Tendermint consensus history
+
+The active client UTXO contains its latest consensus state, the original processing time and height, and a 32-byte private history root. An advancing update or recovery commits the previous checkpoint into that tree. Older checkpoints are supplied with authenticated Merkle witnesses. No archive UTXOs or archive NFTs are created, and there is no consensus-history archive pruning endpoint.
+
+The existing `recover_client` withdrawal script checks historical witnesses and history-root transitions. Staged updates also authenticate the completed signature-verification sessions. Freezing preserves the history root. Public IBC commitment paths and the proof format used by Cosmos remain unchanged.
+
+This requires a fresh contract deployment with the `proof-backed-v1` history-format marker and new clients. Existing clients, connections and channels are not migrated in place. History indexes can be rebuilt from independently retained transaction history; the root or a current UTXO snapshot alone is insufficient.
+
+Build with `aiken build --trace-level silent` in `cardano/onchain`, then run `deno task test:consensus-history` and `deno task test:consensus-history-index` in `cardano/offchain`. Tests cover signed production transactions, bounded recovery at up to 10,000 seeded historical records, authenticated history use, and index recovery under rollback and interruption. They enforce transaction budgets in the emulator. HostState updates still share one UTXO, and validator-set size limits remain.
+
+See [proof-backed consensus history](proof-backed-consensus-history.md) for supported configuration, test limitations, historical measurements and the outstanding live validation required before production rollout.
+
 ## Reference scripts
 
 Every time a script is used, the transaction which caused the usage must supply the whole script as part of the transaction. This not only increases the transaction fee but also makes the transaction reach its size limit more frequently. That is why Cardano introduced CIP-33 Reference scripts. This CIP allows scripts to be attached to UTXOs and used to satisfy the requirement of providing the scripts during validation.

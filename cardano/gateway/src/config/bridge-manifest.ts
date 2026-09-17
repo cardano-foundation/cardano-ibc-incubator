@@ -1,3 +1,4 @@
+import { requireHistoryBootstrap, type HistoryBootstrap } from '@cardano-ibc/tx-builder-runtime/historyBootstrap';
 type RefUtxo = {
   txHash: string;
   outputIndex: number;
@@ -59,9 +60,19 @@ export const ICS20_PACKET_CODEC = {
 } as const;
 
 export type Ics20PacketCodec = (typeof ICS20_PACKET_CODEC)[keyof typeof ICS20_PACKET_CODEC];
+export const CONSENSUS_HISTORY_FORMAT = 'proof-backed-v1' as const;
+
+function requireConsensusHistoryFormat(value: unknown): typeof CONSENSUS_HISTORY_FORMAT {
+  if (value !== CONSENSUS_HISTORY_FORMAT) {
+    throw new Error('A fresh proof-backed deployment is required: missing or unsupported consensus-history format. Regenerate deployment artifacts; adding a marker does not migrate old contracts.');
+  }
+  return value;
+}
 
 export type DeploymentConfig = {
   deployedAt: string;
+  consensusHistoryFormat: typeof CONSENSUS_HISTORY_FORMAT;
+  history?: HistoryBootstrap;
   ics20PacketCodec: Ics20PacketCodec;
   hostStateNFT: AuthToken;
   validators: {
@@ -155,8 +166,10 @@ type BridgeManifestTraceRegistry = {
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
 export type BridgeManifest = {
   schema_version: number;
+  consensus_history_format: typeof CONSENSUS_HISTORY_FORMAT;
   deployment_id: string;
   deployed_at: string;
+  history?: HistoryBootstrap;
   ics20_packet_codec: Ics20PacketCodec;
   cardano: {
     chain_id: string;
@@ -596,6 +609,10 @@ function manifestSpendChannelToDeployment(validator: BridgeManifestSpendChannelV
 export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfig {
   const deploymentAny = requireObject(deployment, 'deployment');
   const validators = requireObject(deploymentAny.validators, 'validators');
+  if ('spendConsensusState' in validators) {
+    throw new Error('Archive-NFT consensus history is no longer supported; a fresh proof-backed deployment is required');
+  }
+  const consensusHistoryFormat = requireConsensusHistoryFormat(deploymentAny.consensusHistoryFormat);
   const modules = requireObject(deploymentAny.modules, 'modules');
   const hasSpendSession = validators.spendTendermintUpdateSession !== undefined;
   const hasMintSession = validators.mintTendermintUpdateSession !== undefined;
@@ -606,9 +623,10 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
 
   return {
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
-    // Handler files created before the codec capability existed describe the
-    // legacy validators. Defaulting them to legacy keeps their open packets
-    // settleable after a Gateway upgrade.
+    consensusHistoryFormat,
+    ...(deploymentAny.history ? { history: requireHistoryBootstrap(deploymentAny.history, 42) } : {}),
+    // Packet wire encoding is independent of the required client-history ABI.
+    // Keep its legacy default only after validating the proof-backed marker.
     ics20PacketCodec:
       deploymentAny.ics20PacketCodec === undefined
         ? ICS20_PACKET_CODEC.LEGACY
@@ -673,6 +691,9 @@ export function normalizeHandlerJsonDeploymentConfig(
 ): LoadedBridgeConfig {
   const normalizedDeployment = requireSttDeploymentConfig(deployment);
   const normalizedCardano = requireCardanoIdentity(cardano);
+  if ([1, 2, 764824073].includes(normalizedCardano.network_magic) || normalizedDeployment.history) {
+    normalizedDeployment.history = requireHistoryBootstrap(normalizedDeployment.history, normalizedCardano.network_magic);
+  }
 
   // Normalize deployment JSON once so both startup sources feed the same public
   // manifest and internal deployment object into the rest of the Gateway.
@@ -680,8 +701,10 @@ export function normalizeHandlerJsonDeploymentConfig(
     deployment: normalizedDeployment,
     bridgeManifest: {
       schema_version: 4,
+      consensus_history_format: normalizedDeployment.consensusHistoryFormat,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
+      ...(normalizedDeployment.history ? { history: normalizedDeployment.history } : {}),
       ics20_packet_codec: normalizedDeployment.ics20PacketCodec,
       cardano: normalizedCardano,
       host_state_nft: deploymentAuthTokenToManifest(normalizedDeployment.hostStateNFT),
@@ -743,7 +766,12 @@ export function normalizeHandlerJsonDeploymentConfig(
 
 export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeConfig {
   const manifestAny = requireObject(manifest, 'bridgeManifest');
+  const cardano = requireCardanoIdentity(requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity);
   const validators = requireObject(manifestAny.validators, 'validators');
+  if ('spend_consensus_state' in validators) {
+    throw new Error('Archive-NFT consensus history is no longer supported; a fresh proof-backed deployment is required');
+  }
+  const consensusHistoryFormat = requireConsensusHistoryFormat(manifestAny.consensus_history_format);
   const modules = requireObject(manifestAny.modules, 'modules');
   const hasSpendSession = validators.spend_tendermint_update_session !== undefined;
   const hasMintSession = validators.mint_tendermint_update_session !== undefined;
@@ -757,15 +785,17 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   // unaware of which bootstrap source was used.
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
+    consensus_history_format: consensusHistoryFormat,
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
     deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
-    // Existing schema-v4 manifests predate this field and therefore refer to
-    // legacy validators. New manifests always emit the capability explicitly.
+    ...([1, 2, 764824073].includes(cardano.network_magic) || manifestAny.history
+      ? { history: requireHistoryBootstrap(manifestAny.history, cardano.network_magic) } : {}),
+    // The packet codec remains independent of the required history capability.
     ics20_packet_codec:
       manifestAny.ics20_packet_codec === undefined
         ? ICS20_PACKET_CODEC.LEGACY
         : requireIcs20PacketCodec(manifestAny.ics20_packet_codec, 'ics20_packet_codec'),
-    cardano: requireCardanoIdentity(requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity),
+    cardano,
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
     validators: {
       host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
@@ -833,6 +863,8 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     bridgeManifest,
     deployment: {
       deployedAt: bridgeManifest.deployed_at,
+      consensusHistoryFormat,
+      ...(bridgeManifest.history ? { history: bridgeManifest.history } : {}),
       ics20PacketCodec: bridgeManifest.ics20_packet_codec,
       hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
       validators: {

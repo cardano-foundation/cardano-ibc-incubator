@@ -751,6 +751,7 @@ fn test_client_state(latest_height: Height) -> ClientState {
 fn test_client_datum(latest_height: Int, seed: Int) -> ClientDatum {
   let height = test_height(latest_height)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: test_client_state(height),
       consensus_states: [Pair(height, test_consensus_state(seed))],
@@ -763,10 +764,13 @@ fn test_client_datum(latest_height: Int, seed: Int) -> ClientDatum {
 
 fn test_updated_client_datum(seed: Int) -> ClientDatum {
   let old_height = test_height(1)
-  let new_height = test_height(2)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
-      client_state: test_client_state(new_height),
+      client_state: ClientState {
+        ..test_client_state(old_height),
+        frozen_height: old_height,
+      },
       consensus_states: [Pair(old_height, test_consensus_state(seed))],
       processed_times: [Pair(old_height, 0)],
       processed_heights: [Pair(old_height, 0)],
@@ -776,17 +780,14 @@ fn test_updated_client_datum(seed: Int) -> ClientDatum {
 }
 
 fn test_updated_client_datum_with_consensus_insert(seed: Int) -> ClientDatum {
-  let old_height = test_height(1)
   let new_height = test_height(2)
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: test_client_state(new_height),
-      consensus_states: [
-        Pair(new_height, test_consensus_state(seed + 1)),
-        Pair(old_height, test_consensus_state(seed)),
-      ],
-      processed_times: [Pair(new_height, 1), Pair(old_height, 0)],
-      processed_heights: [Pair(new_height, 1), Pair(old_height, 0)],
+      consensus_states: [Pair(new_height, test_consensus_state(seed + 1))],
+      processed_times: [Pair(new_height, 1)],
+      processed_heights: [Pair(new_height, 1)],
     },
     token: test_client_token(),
   }
@@ -1287,8 +1288,7 @@ test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
   let redeemer: HostStateRedeemer =
     UpdateClient {
       client_state_siblings: siblings,
-      consensus_state_siblings: siblings,
-      removed_consensus_state_siblings: [],
+      consensus_state_siblings: [],
     }
 
   fuzz_dsl.valid_check(
@@ -1333,7 +1333,6 @@ test host_update_client_rejects_counterfeit_client_policy() fail {
     UpdateClient {
       client_state_siblings: siblings,
       consensus_state_siblings: siblings,
-      removed_consensus_state_siblings: [],
     }
 
   spend_host_state(
@@ -1367,7 +1366,6 @@ test host_update_client_rejects_datum_token_missing_from_output() fail {
     UpdateClient {
       client_state_siblings: siblings,
       consensus_state_siblings: siblings,
-      removed_consensus_state_siblings: [],
     }
 
   spend_host_state(
@@ -1463,11 +1461,7 @@ fn prepare_host_update_client_capacity() -> Pair<HostStateRedeemer, Transaction>
       ibc_state_root: new_root,
     }
   let redeemer: HostStateRedeemer =
-    UpdateClient {
-      client_state_siblings,
-      consensus_state_siblings,
-      removed_consensus_state_siblings: [],
-    }
+    UpdateClient { client_state_siblings, consensus_state_siblings }
 
   Pair(
     redeemer,
@@ -1494,7 +1488,7 @@ fn host_update_client_capacity_fixture_is_constructed(
   inputs: List<Input>,
   outputs: List<Output>,
 ) -> Bool {
-  expect UpdateClient { client_state_siblings, consensus_state_siblings, .. } =
+  expect UpdateClient { client_state_siblings, consensus_state_siblings } =
     redeemer
   and {
     list.length(inputs) == 2,
@@ -1562,7 +1556,6 @@ test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {
     UpdateClient {
       client_state_siblings: siblings,
       consensus_state_siblings: siblings,
-      removed_consensus_state_siblings: [],
     }
 
   spend_host_state(
@@ -2274,19 +2267,25 @@ test host_state_handle_packet_recv_succeeds_at_history_capacity() {
 }
 
 test prop_host_handle_packet_rejects_history_capacity_overflow(
-  seed via fuzz.int(),
+  seed via capacity_receipt_count(),
 ) fail {
   fuzz.label(@"fuzz.contract.host.handle_packet.invalid_history_capacity")
 
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+  let receipt_count = seed
+  let acknowledgement_count = max_packet_entries_per_channel - receipt_count
+  if receipt_count < max_packet_entries_per_channel / 2 {
+    fuzz.label(@"fuzz.contract.host.capacity.ack_dominant")
+  } else {
+    fuzz.label(@"fuzz.contract.host.capacity.receipt_dominant")
+  }
+  let sequence = max_packet_entries_per_channel + 1
   let packet = test_packet(sequence)
   let acknowledgement = "new acknowledgement"
   let siblings = full_empty_siblings()
   let old_root = empty_ibc_state_root
-  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_receipts = packet_entries(1, receipt_count, "")
   let existing_acknowledgements =
-    packet_entries(1, half_capacity, "existing acknowledgement")
+    packet_entries(1, acknowledgement_count, "existing acknowledgement")
   let input_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
@@ -2451,19 +2450,25 @@ test host_state_handle_packet_acknowledgement_succeeds_at_history_capacity() {
 }
 
 test prop_host_handle_packet_rejects_acknowledgement_capacity_overflow(
-  seed via fuzz.int(),
+  seed via capacity_receipt_count(),
 ) fail {
   fuzz.label(@"fuzz.contract.host.handle_packet.invalid_ack_capacity")
 
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+  let receipt_count = seed
+  let acknowledgement_count = max_packet_entries_per_channel - receipt_count
+  if receipt_count < max_packet_entries_per_channel / 2 {
+    fuzz.label(@"fuzz.contract.host.capacity.ack_dominant")
+  } else {
+    fuzz.label(@"fuzz.contract.host.capacity.receipt_dominant")
+  }
+  let sequence = max_packet_entries_per_channel + 1
   let packet = test_packet(sequence)
   let acknowledgement = "new acknowledgement"
   let siblings = full_empty_siblings()
   let old_root = empty_ibc_state_root
-  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_receipts = packet_entries(1, receipt_count, "")
   let existing_acknowledgements =
-    packet_entries(1, half_capacity - 1, "existing acknowledgement")
+    packet_entries(1, acknowledgement_count - 1, "existing acknowledgement")
   let input_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
@@ -2619,12 +2624,18 @@ test host_state_handle_packet_send_succeeds_at_commitment_capacity() {
 }
 
 test prop_host_handle_packet_rejects_commitment_capacity_overflow(
-  seed via fuzz.int(),
+  seed via capacity_receipt_count(),
 ) fail {
   fuzz.label(@"fuzz.contract.host.handle_packet.invalid_commitment_capacity")
 
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+  let receipt_count = seed
+  let acknowledgement_count = max_packet_entries_per_channel - receipt_count
+  if receipt_count < max_packet_entries_per_channel / 2 {
+    fuzz.label(@"fuzz.contract.host.capacity.ack_dominant")
+  } else {
+    fuzz.label(@"fuzz.contract.host.capacity.receipt_dominant")
+  }
+  let sequence = max_packet_entries_per_channel + 1
   let packet = test_packet(sequence)
   let commitment = packet_mod.commit_packet(packet)
   let siblings = full_empty_siblings()
@@ -2638,9 +2649,9 @@ test prop_host_handle_packet_rejects_commitment_capacity_overflow(
       cbor.serialise(sequence),
       siblings,
     )
-  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_receipts = packet_entries(1, receipt_count, "")
   let existing_acknowledgements =
-    packet_entries(1, half_capacity, "existing acknowledgement")
+    packet_entries(1, acknowledgement_count, "existing acknowledgement")
   let input_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
@@ -5057,4 +5068,8 @@ test state_value_host_state_accepts_full_reserves_and_ada_top_up() {
     reserve,
     assets.merge(reserve, assets.from_lovelace(2_000_000)),
   )
+}
+
+fn capacity_receipt_count() -> Fuzzer<Int> {
+  fuzz.int_between(1, max_packet_entries_per_channel - 1)
 }

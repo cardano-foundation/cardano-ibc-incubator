@@ -1,5 +1,6 @@
 import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
+import type { IbcTreeHostStateRef, IbcTreeSnapshot } from '../../shared/helpers/ibc-state-root';
 
 export const HISTORY_SERVICE = Symbol('HISTORY_SERVICE');
 
@@ -62,6 +63,7 @@ export type HistoryEpochContextAtBlock = {
 };
 
 export type HistoryService = {
+  rebuildIbcStateTreeAtBlock(height: bigint, hostState: IbcTreeHostStateRef): Promise<IbcTreeSnapshot>;
   findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]>;
   findUtxosByBlockNo(height: number): Promise<UtxoDto[]>;
   findUtxoByUnitAtOrBeforeBlockNo(unit: string, height: bigint): Promise<UtxoDto>;

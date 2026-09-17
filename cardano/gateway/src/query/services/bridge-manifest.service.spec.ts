@@ -24,6 +24,7 @@ function manifest(): BridgeManifest {
 
   return {
     schema_version: 4,
+    consensus_history_format: 'proof-backed-v1',
     deployment_id: 'cardano-devnet:host-policy.host-token',
     deployed_at: '2026-04-01T12:34:56.000Z',
     ics20_packet_codec: ICS20_PACKET_CODEC.STRICT,
@@ -67,10 +68,12 @@ function manifest(): BridgeManifest {
 describe('BridgeManifestService', () => {
   it('includes the recovery validator in the encoded gRPC manifest', () => {
     const bridgeManifest = manifest();
+    bridgeManifest.history = { format: 'cardano-history-v1', start: { slot: 123, block_height: 10, block_hash: 'aa'.repeat(32) }, host_state_nft_mint: { tx_hash: 'bb'.repeat(32), output_index: 0 } };
     const configService = {
       get: jest.fn().mockReturnValue(bridgeManifest),
     } as unknown as ConfigService;
     const response = new BridgeManifestService(configService).getGrpcBridgeManifestResponse();
+    expect(JSON.parse(QueryBridgeManifestResponse.decode(QueryBridgeManifestResponse.encode(response).finish()).manifest_json)).toEqual(bridgeManifest);
 
     expect(response.manifest?.validators?.recover_client?.ref_utxo?.output_index).toBe(12n);
 

@@ -64,6 +64,11 @@ export interface QueryBridgeManifestRequest {}
  */
 export interface QueryBridgeManifestResponse {
   manifest?: BridgeManifest;
+  /**
+   * Complete public JSON document, including history bootstrap and capabilities.
+   * New bootstrap consumers must use this instead of the legacy typed subset.
+   */
+  manifest_json: string;
 }
 /**
  * @name BridgeManifest
@@ -441,6 +446,7 @@ export const QueryBridgeManifestRequest = {
 function createBaseQueryBridgeManifestResponse(): QueryBridgeManifestResponse {
   return {
     manifest: undefined,
+    manifest_json: "",
   };
 }
 /**
@@ -454,6 +460,9 @@ export const QueryBridgeManifestResponse = {
     if (message.manifest !== undefined) {
       BridgeManifest.encode(message.manifest, writer.uint32(10).fork()).ldelim();
     }
+    if (message.manifest_json !== "") {
+      writer.uint32(18).string(message.manifest_json);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): QueryBridgeManifestResponse {
@@ -466,6 +475,9 @@ export const QueryBridgeManifestResponse = {
         case 1:
           message.manifest = BridgeManifest.decode(reader, reader.uint32());
           break;
+        case 2:
+          message.manifest_json = reader.string();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -476,12 +488,14 @@ export const QueryBridgeManifestResponse = {
   fromJSON(object: any): QueryBridgeManifestResponse {
     const obj = createBaseQueryBridgeManifestResponse();
     if (isSet(object.manifest)) obj.manifest = BridgeManifest.fromJSON(object.manifest);
+    if (isSet(object.manifest_json)) obj.manifest_json = String(object.manifest_json);
     return obj;
   },
   toJSON(message: QueryBridgeManifestResponse): unknown {
     const obj: any = {};
     message.manifest !== undefined &&
       (obj.manifest = message.manifest ? BridgeManifest.toJSON(message.manifest) : undefined);
+    message.manifest_json !== undefined && (obj.manifest_json = message.manifest_json);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryBridgeManifestResponse>, I>>(
@@ -491,6 +505,7 @@ export const QueryBridgeManifestResponse = {
     if (object.manifest !== undefined && object.manifest !== null) {
       message.manifest = BridgeManifest.fromPartial(object.manifest);
     }
+    message.manifest_json = object.manifest_json ?? "";
     return message;
   },
 };

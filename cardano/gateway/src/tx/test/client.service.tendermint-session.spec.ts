@@ -155,6 +155,7 @@ const UPDATE_MESSAGE = {
 
 function createTxBuilder(hash: string, cbor = `cbor-${hash}`, derivedOutputs: any[] = []): any {
   const builder: any = {};
+  builder.collectFrom = jest.fn().mockReturnValue(builder);
   builder.validFrom = jest.fn().mockReturnValue(builder);
   builder.validTo = jest.fn().mockReturnValue(builder);
   const completed = {
@@ -242,6 +243,7 @@ function makeHarness() {
   let stagedOutputIndex = 0;
   const lucidService: any = {
     LucidImporter: Lucid,
+    lucid: { wallet: () => ({ getUtxos: async () => [utxo('signer-funding')] }) },
     beginWalletSelectionScope: jest.fn().mockReturnValue(1),
     assertWalletSelectionScopeSatisfied: jest.fn(),
     endWalletSelectionScope: jest.fn(),
@@ -253,6 +255,7 @@ function makeHarness() {
     getClientTokenUnit: jest.fn().mockReturnValue('client-unit'),
     findUtxoByUnit: jest.fn().mockResolvedValue(clientUtxo()),
     decodeDatum: jest.fn().mockResolvedValue(CLIENT_DATUM),
+    resolveClientAtHeights: jest.fn(async () => ({ clientDatum: await lucidService.decodeDatum(), historyWitnesses: [] })),
     tryFindUtxosAt: jest.fn(),
     queryLedgerStateUtxosAtAddresses: jest.fn(),
     createUnsignedTendermintSessionTransaction: jest.fn((_seed, _redeemer, encodedDatum: string, tokenUnit: string) => {
@@ -710,6 +713,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
       Buffer.from('cbor-finalize-hash', 'utf8').toString('hex'),
     ]);
     expect(decodeChainEnvelope(response.unsigned_tx.value).rebuildAfterSubmission).toBe(false);
+    expect(finalBuilder.collectFrom).toHaveBeenCalledWith([utxo('signer-funding')]);
     expect(finalBuilder.validFrom).toHaveBeenCalledWith(TEST_VALID_FROM_TIME_MS);
     expect(finalBuilder.validTo).toHaveBeenCalledWith(TEST_FINAL_VALID_TO_TIME_MS);
     expect(computeValidityWindow).toHaveBeenCalledWith(29_000, TENDERMINT_FINALIZATION_TIME_TO_LIVE);
@@ -1160,6 +1164,7 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
     const directBuilder = createTxBuilder('direct-hash');
     const pending = { expectedNewRoot: '71'.repeat(32), commit: jest.fn() };
     lucidService.hasStagedTendermintClient.mockReturnValue(false);
+    jest.spyOn(ClientMessageCodec, 'getClientMessageFromTendermint').mockReturnValue({ HeaderCase: [HEADER] });
     verifyClientMessage.mockReturnValue(true);
     checkForMisbehaviour.mockReturnValue(false);
     jest.spyOn(HeaderCodec, 'decodeHeader').mockReturnValue({} as any);
@@ -1194,6 +1199,7 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
   it('keeps legacy deployments gated by the existing JS verifier', async () => {
     const { service, lucidService } = makeHarness();
     lucidService.hasStagedTendermintClient.mockReturnValue(false);
+    jest.spyOn(ClientMessageCodec, 'getClientMessageFromTendermint').mockReturnValue({ HeaderCase: [HEADER] });
     verifyClientMessage.mockReturnValue(false);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
 

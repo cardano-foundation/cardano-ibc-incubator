@@ -177,7 +177,7 @@ Deno.test("applied legacy client validator fits a mainnet reference-script trans
     ({ scriptHash }) => scriptHash === spendClientScriptHash,
   );
 
-  assertEquals(spendClientReport?.oversized, false);
+  assertEquals(spendClientReport?.exceedsEstimatedSingleTxBudget, false);
 });
 
 Deno.test("fully applied production HostState fits the reference publication guard", () => {
@@ -195,7 +195,11 @@ Deno.test("fully applied production HostState fits the reference publication gua
     "77".repeat(28),
   );
   const [report] = buildReferenceValidatorSizeReport([validator], 16_384);
-  assertEquals(report.oversized, false, JSON.stringify(report));
+  assertEquals(
+    report.exceedsEstimatedSingleTxBudget,
+    false,
+    JSON.stringify(report),
+  );
 });
 
 Deno.test("fully applied production transfer module fits the reference publication guard", async () => {
@@ -213,10 +217,14 @@ Deno.test("fully applied production transfer module fits the reference publicati
     [plan.spendTransferModule.script],
     16_384,
   );
-  assertEquals(report.oversized, false, JSON.stringify(report));
+  assertEquals(
+    report.exceedsEstimatedSingleTxBudget,
+    false,
+    JSON.stringify(report),
+  );
 });
 
-Deno.test("fully applied multitx client reserves 200 extra bytes below the publication guard", async () => {
+Deno.test("fully applied multitx client reserves 200 bytes for its signed publication", async () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
@@ -224,15 +232,15 @@ Deno.test("fully applied multitx client reserves 200 extra bytes below the publi
     ...DEPLOYMENT_PLAN_FIXTURE,
     benchmarkVoucherEnabled: false,
   });
-  // Keep the existing publication overhead allowance, plus an extra 200 bytes.
-  // Before the exact-burn optimization this script had only 133 bytes spare.
+  // Check script bytes with room for transaction overhead. Conservative size
+  // estimates are advisory; signed production publications are the ledger gate.
   // The transaction suite separately signs and submits the production builder's
   // reference publication to an emulator with the real 16,384-byte limit.
   const [report] = buildReferenceValidatorSizeReport(
     [plan.spendClient.script],
     16_384 - 200,
   );
-  assertEquals(report.oversized, false, JSON.stringify(report));
+  assertEquals(report.intrinsicallyOversized, false, JSON.stringify(report));
 });
 
 Deno.test("mock and icq share the host-policy-bound generic module hash", () => {
@@ -335,7 +343,7 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
         staged.clientSpend.validator,
       ],
       16_384,
-    ).map(({ oversized }) => oversized),
+    ).map(({ intrinsicallyOversized }) => intrinsicallyOversized),
     [false, false, false],
   );
 });
@@ -464,8 +472,8 @@ Deno.test("buildReferenceValidatorSizeReport allows single validators that excee
   assertEquals(report[0].index, 0);
   assertEquals(report[0].scriptBytes, 1_200);
   assertEquals(report[0].estimatedReferenceOutputBytes, 1_400);
-  assertEquals(report[0].oversized, false);
-  assertEquals(report[1].oversized, false);
+  assertEquals(report[0].exceedsEstimatedSingleTxBudget, false);
+  assertEquals(report[1].exceedsEstimatedSingleTxBudget, false);
 });
 
 Deno.test("buildReferenceValidatorSizeReport flags validators that cannot fit alone", () => {
@@ -479,8 +487,8 @@ Deno.test("buildReferenceValidatorSizeReport flags validators that cannot fit al
   assertEquals(report[0].index, 0);
   assertEquals(report[0].scriptBytes, 5_000);
   assertEquals(report[0].estimatedReferenceOutputBytes, 5_200);
-  assertEquals(report[0].oversized, true);
-  assertEquals(report[1].oversized, false);
+  assertEquals(report[0].exceedsEstimatedSingleTxBudget, true);
+  assertEquals(report[1].exceedsEstimatedSingleTxBudget, false);
 });
 
 Deno.test("DeploymentIbcTree commits leaves with key hash included", async () => {

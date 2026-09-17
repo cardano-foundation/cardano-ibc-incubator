@@ -50,6 +50,10 @@ pub fn is_valid(height: Height) -> Bool {
   height.revision_number >= 0 && height.revision_height >= 0
 }
 
+pub fn equal(left: Height, right: Height) -> Bool {
+  left.revision_number == right.revision_number && left.revision_height == right.revision_height
+}
+
 pub fn compare(h1: Height, h2: Height) -> Ordering {
   if h1.revision_number < h2.revision_number {
     Less

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "build": {
+    "sourceCommit": "03d65c65a088b5543e5b4045c70fc52e30535a9a",
+    "mainCommit": "a1fc564d04aa8edc6326037a707fb86c72f7ecde",
+    "aikenVersion": "aiken v1.1.21+42babe5",
+    "blueprintSha256": "f48d817ec403ec1fb4cd2721da15cb45bf1e2d9d9a5a5d25d3857d734af59c95",
+    "traceLevel": "silent",
+    "network": "preview",
+    "networkMagic": 2
+  },
+  "deploymentId": "cardano-preview:24a08cbc729b4c7b8135ec311f67aecedbc740ed498da9e25db638ef.6962635f686f73745f7374617465",
+  "deployedAt": "2026-09-16T19:01:33.574Z",
+  "history": {
+    "format": "cardano-history-v1",
+    "start": {
+      "slot": 122688023,
+      "block_hash": "23ac79723aff7715a4619a651b0e7dd5986ff79251ec820bb09e6e06c2390fbf",
+      "block_height": 4660299
+    },
+    "host_state_nft_mint": {
+      "tx_hash": "2bf6634c3ed1c9a5bdeea21092eddfdfaca5bfdc853b5f3fd93229e643bc3245",
+      "output_index": 0
+    }
+  },
+  "referenceScripts": {
+    "verifiedAgainstRebuiltBlueprint": true,
+    "count": 28,
+    "verifiedAt": "2026-09-16T19:03:47.419Z"
+  },
+  "bootstrap": {
+    "canonicalDeploymentTransactions": 55,
+    "traceRegistryOutputs": 17,
+    "deploymentId": "cardano-preview:24a08cbc729b4c7b8135ec311f67aecedbc740ed498da9e25db638ef.6962635f686f73745f7374617465",
+    "historyVerified": true,
+    "treeRebuiltWithoutCache": true,
+    "root": "1f35e52c4d1ce1a472974e7acdffee318f14dc327e129c8fe335f470fe56c10d",
+    "hostState": {
+      "txHash": "05b3e62984fd479df01ba078dc2eac6d8e3f3e93d4d91258c4904deeb2b19259",
+      "outputIndex": 0
+    },
+    "portCount": 3,
+    "stateCounts": {
+      "clients": 0,
+      "connections": 0,
+      "channels": 0
+    },
+    "verifiedAt": "2026-09-16T19:04:15.680Z"
+  },
+  "costSummary": {
+    "transactionCount": 55,
+    "totalFeesLovelace": "26632642",
+    "totalReferenceScriptOutputLovelace": "1185103460",
+    "largestSignedTransactionBytes": 15555
+  },
+  "scope": "Fresh Preview deployment and read-only reconstruction from the public manifest. No original handler or tree cache was used for bootstrap verification. No counterparty route or month-old bridge replay was exercised."
+}

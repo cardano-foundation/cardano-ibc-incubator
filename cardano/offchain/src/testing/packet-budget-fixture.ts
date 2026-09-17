@@ -135,17 +135,20 @@ export async function prunePacketFixture(ordered: boolean) {
     .mintAssets(
       { [context.verifyPolicy]: 1n },
       encode(
-        variant(
-          1,
-          context.clientState,
-          context.consensus,
-          HEIGHT,
-          0n,
-          0n,
-          0n,
-          0n,
-          proof.proof,
-          record([fromText("ibc"), remoteKey]),
+        record(
+          variant(
+            1,
+            context.clientState,
+            context.consensus,
+            HEIGHT,
+            0n,
+            0n,
+            0n,
+            0n,
+            proof.proof,
+            record([fromText("ibc"), remoteKey]),
+          ),
+          variant(1),
         ),
       ),
     )
@@ -316,18 +319,21 @@ export async function receivePacketFixture(ordered: boolean) {
     .mintAssets(
       { [context.verifyPolicy]: 1n },
       encode(
-        variant(
-          0,
-          context.clientState,
-          context.consensus,
-          HEIGHT,
-          0n,
-          0n,
-          0n,
-          0n,
-          proof.proof,
-          record([fromText("ibc"), remoteKey]),
-          commitment,
+        record(
+          variant(
+            0,
+            context.clientState,
+            context.consensus,
+            HEIGHT,
+            0n,
+            0n,
+            0n,
+            0n,
+            proof.proof,
+            record([fromText("ibc"), remoteKey]),
+            commitment,
+          ),
+          variant(1),
         ),
       ),
     )

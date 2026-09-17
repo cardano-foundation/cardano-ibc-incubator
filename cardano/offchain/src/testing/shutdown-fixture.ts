@@ -24,6 +24,10 @@ import {
 } from "../utils.ts";
 import { AuthTokenSchema, HostStateDatum } from "../../types/index.ts";
 import { clientStateWithHistory } from "./shutdown-model.ts";
+import {
+  ConsensusHistoryCommitment,
+  recordFromConstr,
+} from "../consensus_history_commitment.ts";
 const record = (...fields: Data[]) => new Constr(0, fields);
 const encode = (data: Data) => Data.to(data);
 const hash = (byte: string) => byte.repeat(28);
@@ -361,16 +365,35 @@ export async function shutdownFixture(
       ),
     ),
   );
+  const clientState = clientStateWithHistory(
+    Array.from({ length: shape.history }, (_, i) => i + 1),
+    now,
+    "11".repeat(32),
+  ).state;
+  const consensusStates = clientState.fields[1] as Map<Data, Data>;
+  const processedTimes = clientState.fields[2] as Map<Data, Data>;
+  const processedHeights = clientState.fields[3] as Map<Data, Data>;
+  const history = new ConsensusHistoryCommitment();
+  // Keep only the live tip in the datum; older checkpoints are committed by root.
+  for (const [height, consensus] of [...consensusStates].slice(0, -1)) {
+    history.append(recordFromConstr(record(
+      token(mintClientStt.scriptHash, "11"),
+      height,
+      consensus,
+      processedTimes.get(height)!,
+      processedHeights.get(height)!,
+    )));
+    consensusStates.delete(height);
+    processedTimes.delete(height);
+    processedHeights.delete(height);
+  }
   seed(
     spendClient.address,
     stateValue(mintClientStt.scriptHash, "11"),
     encode(record(
-      clientStateWithHistory(
-        Array.from({ length: shape.history }, (_, i) => i + 1),
-        now,
-        "11".repeat(32),
-      ).state,
+      clientState,
       token(mintClientStt.scriptHash, "11"),
+      await history.getRoot(),
     )),
   );
   seed(

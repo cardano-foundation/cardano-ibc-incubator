@@ -27,6 +27,7 @@ export class BridgeManifestService {
     // Protobuf uint64 fields are generated as bigint in TypeScript, so the JSON
     // manifest needs a small shape conversion before it can be returned over gRPC.
     return {
+      manifest_json: JSON.stringify(manifest),
       manifest: {
         ...manifest,
         cardano: {

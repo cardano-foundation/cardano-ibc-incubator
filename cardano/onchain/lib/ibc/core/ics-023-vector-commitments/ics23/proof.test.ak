@@ -3,7 +3,7 @@ use aiken/fuzz
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
-  ProofSpec,
+  NonExistenceProof, ProofSpec,
 }
 
 fn valid_iavl_leaf() -> LeafOp {
@@ -211,21 +211,24 @@ const right_step =
     suffix: #[],
   }
 
-// Test-only model of the old last/length/slice loop, including its initial
-// negative slice indices and iteration bound. None represents an expect failure.
-fn legacy_neighbors(left: List<InnerOp>, right: List<InnerOp>) -> Option<Bool> {
+// Test-only model of the ICS-23 root-to-leaf comparison using last/take pops.
+// None represents exhaustion before finding a divergent step.
+fn reference_neighbors(
+  left: List<InnerOp>,
+  right: List<InnerOp>,
+) -> Option<Bool> {
   let left_length = list.length(left)
   let right_length = list.length(right)
-  legacy_neighbor_loop(
-    list.slice(left, 0, left_length - 2),
-    list.slice(right, 0, right_length - 2),
+  reference_neighbor_loop(
+    list.take(left, left_length - 1),
+    list.take(right, right_length - 1),
     list.at(left, left_length - 1),
     list.at(right, right_length - 1),
     left_length,
   )
 }
 
-fn legacy_neighbor_loop(
+fn reference_neighbor_loop(
   left: List<InnerOp>,
   right: List<InnerOp>,
   top_left: Option<InnerOp>,
@@ -237,17 +240,9 @@ fn legacy_neighbor_loop(
       if remaining > 0 && l.prefix == r.prefix && l.suffix == r.suffix {
         let left_length = list.length(left)
         let right_length = list.length(right)
-        legacy_neighbor_loop(
-          if left_length < 2 {
-            []
-          } else {
-            list.slice(left, 0, left_length - 2)
-          },
-          if right_length < 2 {
-            []
-          } else {
-            list.slice(right, 0, right_length - 2)
-          },
+        reference_neighbor_loop(
+          list.take(left, left_length - 1),
+          list.take(right, right_length - 1),
           list.at(left, left_length - 1),
           list.at(right, right_length - 1),
           remaining - 1,
@@ -289,22 +284,22 @@ fn neighbor_paths() -> Fuzzer<(List<InnerOp>, List<InnerOp>)> {
 fn exhausted_neighbor_paths() -> Fuzzer<(List<InnerOp>, List<InnerOp>)> {
   fuzz.such_that(
     neighbor_paths(),
-    fn(paths) { legacy_neighbors(paths.1st, paths.2nd) == None },
+    fn(paths) { reference_neighbors(paths.1st, paths.2nd) == None },
   )
 }
 
 fn evaluated_neighbor_paths() -> Fuzzer<(List<InnerOp>, List<InnerOp>)> {
   fuzz.such_that(
     neighbor_paths(),
-    fn(paths) { legacy_neighbors(paths.1st, paths.2nd) != None },
+    fn(paths) { reference_neighbors(paths.1st, paths.2nd) != None },
   )
 }
 
-test prop_proof_neighbors_match_legacy_result(
+test prop_proof_neighbors_match_reference_result(
   paths via evaluated_neighbor_paths(),
 ) {
   fuzz.label(@"fuzz.unit.proof.neighbor_result")
-  expect Some(expected) = legacy_neighbors(paths.1st, paths.2nd)
+  expect Some(expected) = reference_neighbors(paths.1st, paths.2nd)
   proof.is_left_neighbor(
     proofs.tendermint_spec().inner_spec,
     paths.1st,
@@ -336,14 +331,53 @@ test prop_proof_neighbors_preserve_exhaustion_failure_negated(
   )
 }
 
-test neighbors_preserve_singleton_results() {
+test neighbors_accept_singleton_siblings() {
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    [left_step],
+    [right_step],
+  )
+}
+
+test neighbors_accept_one_singleton_path() {
   let spec = proofs.tendermint_spec().inner_spec
   and {
-    !proof.is_left_neighbor(spec, [left_step], [right_step]),
-    !proof.is_left_neighbor(spec, [left_step], [left_step]),
-    proof.is_left_neighbor(spec, [left_step], [right_step, left_step]),
-    proof.is_left_neighbor(spec, [left_step, right_step], [right_step]),
+    proof.is_left_neighbor(spec, [left_step], [left_step, right_step]),
+    proof.is_left_neighbor(spec, [right_step, left_step], [right_step]),
   }
+}
+
+test neighbors_reject_non_adjacent_singleton_paths() {
+  let spec = proofs.tendermint_spec().inner_spec
+  and {
+    !proof.is_left_neighbor(spec, [right_step], [left_step]),
+    !proof.is_left_neighbor(spec, [left_step], [right_step, right_step]),
+    !proof.is_left_neighbor(spec, [left_step, left_step], [right_step]),
+  }
+}
+
+test neighbors_reject_identical_singleton_paths() fail {
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    [left_step],
+    [left_step],
+  )
+}
+
+test neighbors_reject_exhausted_singleton_left() fail {
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    [left_step],
+    [right_step, left_step],
+  )
+}
+
+test neighbors_reject_exhausted_singleton_right() fail {
+  proof.is_left_neighbor(
+    proofs.tendermint_spec().inner_spec,
+    [left_step, right_step],
+    [right_step],
+  )
 }
 
 test neighbors_reject_empty_left() fail {
@@ -384,4 +418,68 @@ test neighbors_compare_common_padding_without_rechecking_hashes() {
     [right_step, left_step, left_step],
     [left_step, right_step, InnerOp { ..left_step, hash: 2 }],
   )
+}
+
+// Generated with cosmos/iavl v1.2.2: insert 01 -> 02 and 03 -> 04, save
+// version 1, then GetNonMembershipProof(02). The proof and root were verified
+// with cosmos/ics23/go v0.11.0 VerifyNonMembership and IavlSpec.
+const two_leaf_iavl_root =
+  #"22c267d178aed04a4510703a7290b8e46ae2505eaf86612cecd73c2e62f9095c"
+
+fn two_leaf_iavl_non_existence_proof() -> NonExistenceProof {
+  NonExistenceProof {
+    key: #"02",
+    left: ExistenceProof {
+      key: #"01",
+      value: #"02",
+      leaf: valid_iavl_leaf(),
+      path: [
+        InnerOp {
+          hash: 1,
+          prefix: #"02040220",
+          suffix: #"2057dd7f756aa95cd624e31d387bb2a157b760071064e20c1f2e158b407d94c819",
+        },
+      ],
+    },
+    right: ExistenceProof {
+      key: #"03",
+      value: #"04",
+      leaf: valid_iavl_leaf(),
+      path: [
+        InnerOp {
+          hash: 1,
+          prefix: #"02040220f3b4c1517dc8ee8ee9a30b3c3c64fb1290c35d86b5699b76c66a0213d3e90c0420",
+          suffix: #[],
+        },
+      ],
+    },
+  }
+}
+
+test non_existence_accepts_two_leaf_iavl_neighbors() {
+  let p = two_leaf_iavl_non_existence_proof()
+  proof.verify_non_existence_proof(
+    p,
+    proofs.iavl_spec(),
+    two_leaf_iavl_root,
+    p.key,
+  )
+}
+
+test non_existence_rejects_two_leaf_iavl_boundary_keys() {
+  let p = two_leaf_iavl_non_existence_proof()
+  and {
+    !proof.verify_non_existence_proof(
+      p,
+      proofs.iavl_spec(),
+      two_leaf_iavl_root,
+      p.left.key,
+    ),
+    !proof.verify_non_existence_proof(
+      p,
+      proofs.iavl_spec(),
+      two_leaf_iavl_root,
+      p.right.key,
+    ),
+  }
 }

@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "pullRequest": 741,
+  "testedCommit": "3b01fd07",
+  "scope": "Isolated local two-chain validation with a controlled clock; not a public testnet or production deployment.",
+  "network": {
+    "cardanoNode": "11.0.1",
+    "ogmios": "7.0.0",
+    "yaciStore": "2.0.2.1",
+    "cardanoNetworkMagic": 42,
+    "cardanoGenesis": "2025-12-30T00:00:00Z",
+    "epochLengthSlots": 600,
+    "poolRegistrationCutoffSlot": 172800,
+    "poolRegistrationTransaction": "e9df258c8124250362608c53bd9dce6e9097a71823d74bd9c6937728e327de0a",
+    "poolRegistrationSlot": 73,
+    "activeBlockProducers": 5,
+    "poolRegistrationOverride": false,
+    "staticStakeOverride": false,
+    "cosmosChainId": "v8-classic-1",
+    "cosmosValidators": 1,
+    "hermesCommit": "ab974b1c8e18df480ab8426f416b4ccf44143694",
+    "headerBatchBridgeBlockLimit": 256,
+    "headerByteLimit": 786432,
+    "historicalLedgerQueries": {
+      "source": "Additional Cardano node independently replayed retained canonical blocks, then stopped syncing near the required epoch boundary",
+      "router": "WebSocket acquireLedgerState sessions for archived slots go to archive Ogmios; current queries and all HTTP transaction operations go to live Ogmios; response bytes are relayed unchanged",
+      "staticStakeAssumption": false
+    }
+  },
+  "deployment": {
+    "project": "pr741-validation",
+    "blueprintSha256": "a7bfef73b78b2a18c4aee5c51c5b0965411704e9e2aa5d805670232897aad2cc",
+    "protocolVersion": {
+      "major": 11,
+      "minor": 0
+    },
+    "limits": {
+      "maxTxSize": 16384,
+      "memory": 16500000,
+      "steps": 10000000000
+    },
+    "references": 29,
+    "transactions": 56,
+    "largestSignedTransactionBytes": 15973
+  },
+  "growth": {
+    "clientId": "07-tendermint-1",
+    "samples": [
+      {
+        "updateDriverLabel": "Gateway staged transactions signed with the isolated devnet deployment key",
+        "updateDriverMode": "local-component",
+        "latencyScope": "component update inclusion/indexing only; not Hermes signing-policy/finality or end-to-end relay latency",
+        "headerHeightStep": 2,
+        "event": "sample",
+        "acceptedCheckpoints": 10,
+        "archivedCheckpoints": 9,
+        "validatorCount": 1,
+        "height": {
+          "revisionNumber": "1",
+          "revisionHeight": "417"
+        },
+        "clientOutRef": "f5fe8e743c838b49e275991594bae70da7914105f08b62c9e899c0c91fa8c770#1",
+        "historyRoot": "3a03d027349c75b093da77efd4f3e0923542fc62207f1dc15a7a765bc268f17a",
+        "signedTransactionBytes": 8741,
+        "declaredMemory": "12888504",
+        "declaredCpu": "4167772041",
+        "feeLovelace": "3428556",
+        "clientLovelace": "2620480",
+        "clientMinLovelace": "2620480",
+        "clientDatumBytes": 340,
+        "warmIndexBytes": {
+          "database": 147456,
+          "wal": 0,
+          "sharedMemory": 0,
+          "total": 147456
+        },
+        "coldIndexBytesAfterClose": {
+          "database": 147456,
+          "wal": 0,
+          "sharedMemory": 0,
+          "total": 147456
+        },
+        "coldRecoveryMilliseconds": 133.79754200000025,
+        "coldReplay": {
+          "root": "3a03d027349c75b093da77efd4f3e0923542fc62207f1dc15a7a765bc268f17a",
+          "transactions": 10,
+          "milliseconds": 114
+        },
+        "oldestWitnessHeight": {
+          "revisionNumber": "1",
+          "revisionHeight": "399"
+        },
+        "oldestWitnessSiblings": 64
+      },
+      {
+        "updateDriverLabel": "Gateway staged transactions signed with the isolated devnet deployment key",
+        "updateDriverMode": "local-component",
+        "latencyScope": "component update inclusion/indexing only; not Hermes signing-policy/finality or end-to-end relay latency",
+        "headerHeightStep": 2,
+        "event": "sample",
+        "acceptedCheckpoints": 100,
+        "archivedCheckpoints": 99,
+        "validatorCount": 1,
+        "height": {
+          "revisionNumber": "1",
+          "revisionHeight": "597"
+        },
+        "clientOutRef": "d50033768ee8469993a568665fa3bb10ad64a423404ab5e77bd6147d788af655#1",
+        "historyRoot": "00db86ac5dd0d55ac1ca97fe96eafc4886c58b7485ba597e487e48918d78e349",
+        "signedTransactionBytes": 8742,
+        "declaredMemory": "12893297",
+        "declaredCpu": "4173580168",
+        "feeLovelace": "3429295",
+        "clientLovelace": "2620480",
+        "clientMinLovelace": "2620480",
+        "clientDatumBytes": 340,
+        "warmIndexBytes": {
+          "database": 1052672,
+          "wal": 0,
+          "sharedMemory": 0,
+          "total": 1052672
+        },
+        "coldIndexBytesAfterClose": {
+          "database": 1052672,
+          "wal": 0,
+          "sharedMemory": 0,
+          "total": 1052672
+        },
+        "coldRecoveryMilliseconds": 879.1059580000583,
+        "coldReplay": {
+          "root": "00db86ac5dd0d55ac1ca97fe96eafc4886c58b7485ba597e487e48918d78e349",
+          "transactions": 100,
+          "milliseconds": 767
+        },
+        "oldestWitnessHeight": {
+          "revisionNumber": "1",
+          "revisionHeight": "399"
+        },
+        "oldestWitnessSiblings": 64
+      }
+    ],
+    "sample10SignedTransactionSha256": "817f268d0d3b488b29bb0a36d78b32b79b32ef3cf21ddb789090d2d205f1c31e",
+    "sample100SignedTransactionSha256": "67e2f831e45d8400876e660f0ba8a6857da3255d7de6e02b3183cf00e788fa8a",
+    "testedCommit": "1532b871"
+  },
+  "observations": [
+    "Node evaluation required the staged additional UTxOs; restored by commit 0e00e797.",
+    "A finalized transaction exceeded Lucid automatic collateral by 11418 lovelace; the configured floor is now 8000000 lovelace (5bdaca0a).",
+    "A short rollback removed staged transactions after initial inclusion; growth was restarted from the canonical client state.",
+    "Yaci lost epoch nonce continuity after rollback; an independent replay from retained blocks recovered continuous canonical evidence without inserting nonce rows.",
+    "Native Hermes rejected self-funded finalization without an ordinary wallet input. Commit eb1b432d explicitly collects a signer input for verification, finalization and cancellation stages; the subsequent Hermes finalization was accepted.",
+    "With the default 32-block header batch, a combined catch-up and connection confirmation lacked proof-height processed metadata. The explicit Hermes update-client command completed bounded catch-up; subsequent local handshakes use a 256-block batch with the unchanged 786432-byte header cap.",
+    "Ogmios 7 returned JSON-RPC -32600 Invalid request: empty. for one explicitly supplied channel reference script. Removing only script-reference overrides made the unchanged transaction evaluate successfully from canonical ledger data. Commit 3b01fd07 extends the existing compatibility fallback; native channel initialization was then signed and node-accepted."
+  ],
+  "relay": {
+    "cardanoClientId": "07-tendermint-1",
+    "cosmosClientId": "08-cardano-probabilistic-0",
+    "cardanoConnectionInitTransaction": "24acf0626daeee60460c1423b5c27defb67faa2318394680944f65e1990be8b6",
+    "connectionState": "OPEN on both chains",
+    "connectionId": "connection-0",
+    "channelInitTransaction": "6d80f89f858c91a26b15d15efdc1837325b61133071d48a10598f826b561e1ed",
+    "channelHandshakeClientUpdateTransaction": "80ecc9c87db9a315ce93e05462c03314e84d9417ece3c3d9c1fb943c953b3545",
+    "channelState": "OPEN on both chains",
+    "channelId": "channel-0",
+    "channelAckTransaction": "edaa1e3175fe800519861d77c3311fc9fdfab7b10557143289118180db43c70a"
+  },
+  "nativeFinalization": {
+    "event": "sample",
+    "acceptedCheckpoints": 101,
+    "archivedCheckpoints": 100,
+    "validatorCount": 1,
+    "height": {
+      "revisionNumber": "1",
+      "revisionHeight": "1080"
+    },
+    "clientOutRef": "f9505e8fb9a975c5a18a8170cc526bded75f599f8e66db2d331b295b2920b916#1",
+    "historyRoot": "1ca360bbf87d75a38cff26219dc3df2ac2ed179aa3322142680ad3da77cfb8cc",
+    "signedTransactionBytes": 8775,
+    "declaredMemory": "12996141",
+    "declaredCpu": "4201838926",
+    "feeLovelace": "3438850",
+    "clientLovelace": "2620480",
+    "clientMinLovelace": "2620480",
+    "clientDatumBytes": 340,
+    "warmIndexBytes": {
+      "database": 1064960,
+      "wal": 0,
+      "sharedMemory": 0,
+      "total": 1064960
+    },
+    "coldIndexBytesAfterClose": {
+      "database": 1064960,
+      "wal": 0,
+      "sharedMemory": 0,
+      "total": 1064960
+    },
+    "coldRecoveryMilliseconds": 2231.1613339999985,
+    "coldReplay": {
+      "root": "1ca360bbf87d75a38cff26219dc3df2ac2ed179aa3322142680ad3da77cfb8cc",
+      "transactions": 101,
+      "milliseconds": 2063
+    },
+    "oldestWitnessHeight": {
+      "revisionNumber": "1",
+      "revisionHeight": "399"
+    },
+    "oldestWitnessSiblings": 64,
+    "testedCommit": "eb1b432d",
+    "transactionProducer": "Pinned native Hermes, including signing policy and node submission",
+    "measurementMode": "Read-only sample at existing checkpoint 101; sampler submitted no updates",
+    "signedTransactionSha256": "1b6c28c94c88775b7ed6f7457de6da87669c23a44072d28b6f619840838ea056"
+  },
+  "coldRecovery": {
+    "mode": "cold",
+    "clientId": "07-tendermint-1",
+    "proofHeight": {
+      "revisionNumber": "1",
+      "revisionHeight": "399"
+    },
+    "latestHeight": {
+      "revisionNumber": "1",
+      "revisionHeight": "1357"
+    },
+    "client": {
+      "txHash": "80ecc9c87db9a315ce93e05462c03314e84d9417ece3c3d9c1fb943c953b3545",
+      "outputIndex": 1,
+      "datumBytes": 340,
+      "lovelace": "2620480"
+    },
+    "hostState": {
+      "txHash": "edaa1e3175fe800519861d77c3311fc9fdfab7b10557143289118180db43c70a",
+      "outputIndex": 0
+    },
+    "privateRoot": "9e14a0a82584e765617324b9204bd60622cacddb66d2bb5867f7736a590e2f13",
+    "publicRoot": "61ec0950851f30d61b843cbeaf19d78229a8b4208eec013fff1b4e8b1c5d0bcc",
+    "recoveredRecords": 102,
+    "applicationRecoveryMilliseconds": 8997,
+    "publicTreeCacheRowsBefore": 0,
+    "olderCheckpointAuthenticated": true,
+    "historicalWitnessSha256": "da22e63b3447b4034f52951832e81ccfc4d87b7d9795ac6a6a5fca98a440773e",
+    "privateCacheCleared": true,
+    "publicCacheCleared": true
+  },
+  "transfer": {
+    "amount": "12345",
+    "cardanoDenom": "def68337867cb4f1f95b6b811fedbfcdd7780d10a95cc072077088ea6d6f636b",
+    "cardanoSender": "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+    "cosmosReceiver": "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+    "forwardTransaction": "9077fb63d91692deea1c1d0c35a87771d770ca2e2dd0be77eda25fcdee4bea62",
+    "forwardConstruction": "Canonical Gateway Transfer API, sender payment-key hash, signed with the isolated deployment wallet",
+    "cardanoBalanceBefore": "19999999998",
+    "cardanoBalanceAfterSend": "19999987653",
+    "firstSubmission": "Rejected unknown inputs after concurrent heartbeat; rebuilt before successful submission",
+    "cosmosVoucherDenom": "ibc/5386DCE276DF2CCC4EEAF4DCE082AA814073551386649279AB36701EB3D98ED6",
+    "cosmosVoucherBalanceAfterReceive": "12345",
+    "forwardReceiveAcknowledgment": "{\"result\":\"AQ==\"}",
+    "relay": "Pinned native Hermes",
+    "cosmosReceiveHeight": "1488",
+    "cosmosReceiveTransaction": "E9285EFD2DE4AA8303883F8F9044A38B27952C34443CEBB3164169A59EF3027E",
+    "returnSendHeight": "1500",
+    "returnSendTransaction": "AD1E791F8B3CD294D023EA30C5ACCA7352587C5703EEB06AF2C0578606A953C6",
+    "postRecoveryClientUpdateTransaction": "792d72341596a0fd2bfe9371a0edf4f82f81c57163ccc72cf9563203a21f268c",
+    "cosmosVoucherBalanceAfterReturnSend": "0",
+    "returnReceiveTransaction": "732e1ceddd58ed46c72828bb428cefeb6837f9d9b8cf431bee23b1794808fbc8",
+    "cardanoBalanceAfterReturn": "19999999998",
+    "cosmosVoucherBalanceAfterReturn": "0",
+    "roundtripBalanceCheck": true,
+    "cosmosPendingPacketCommitmentsAfterReturnAck": 0,
+    "returnAcknowledgmentTransaction": "BA80629411B4671328FB6A9170A41875C812C6664FE4CA91E2BDC96B567BC1AF",
+    "returnAcknowledgmentHeight": "1604",
+    "forwardAcknowledgmentTransaction": "018e7e56f4906416a32f26a4b84d6d181751ee5f68c5b714a91172e18c428c90",
+    "forwardAcknowledgmentInclusionHeight": "1721",
+    "forwardAcknowledgmentAcceptedHeartbeatHeight": "1759",
+    "cardanoPendingPacketCommitmentsAfterForwardAck": 0,
+    "bothAcknowledgmentsAccepted": true
+  },
+  "environmentRestart": {
+    "mainNodeDatabase": "Persistent Docker volume, initialized by independently validating the canonical chain",
+    "mainNodeRecreated": true,
+    "caughtUpAtBlock": 1803,
+    "syncProgress": "100.00",
+    "tokenBalancesUnchanged": true
+  }
+}

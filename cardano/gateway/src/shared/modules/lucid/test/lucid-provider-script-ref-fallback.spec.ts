@@ -6,7 +6,12 @@ const plutusScriptDecodeError = () =>
       '{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid request: couldn\'t decode plutus script."}}',
   );
 
-describe('Ogmios script-reference evaluation fallback', () => {
+describe.each([
+  ['explicit Plutus decode error', plutusScriptDecodeError],
+  ['Ogmios 7 empty decoder error', () => new Error(
+    'HTTP 400: {"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid request: empty."},"id":null}',
+  )],
+])('Ogmios script-reference evaluation fallback: %s', (_label, decodeErrorFactory) => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
@@ -18,7 +23,7 @@ describe('Ogmios script-reference evaluation fallback', () => {
       outputIndex: 0,
       scriptRef: { type: 'PlutusV3', script: '00' },
     };
-    const evaluateTx = jest.fn().mockRejectedValueOnce(plutusScriptDecodeError()).mockResolvedValueOnce('evaluated');
+    const evaluateTx = jest.fn().mockRejectedValueOnce(decodeErrorFactory()).mockResolvedValueOnce('evaluated');
 
     await expect(evaluateTxWithOgmiosScriptRefFallback(evaluateTx, [scriptRefUtxo])).resolves.toBe('evaluated');
     expect(evaluateTx).toHaveBeenNthCalledWith(1, [scriptRefUtxo]);
@@ -34,15 +39,15 @@ describe('Ogmios script-reference evaluation fallback', () => {
       outputIndex: 0,
       scriptRef: { type: 'PlutusV3', script: '00' },
     };
-    const evaluateTx = jest.fn().mockRejectedValueOnce(plutusScriptDecodeError()).mockResolvedValueOnce('evaluated');
+    const evaluateTx = jest.fn().mockRejectedValueOnce(decodeErrorFactory()).mockResolvedValueOnce('evaluated');
 
     await evaluateTxWithOgmiosScriptRefFallback(evaluateTx, [walletUtxo, scriptRefUtxo, datumUtxo]);
 
     expect(evaluateTx).toHaveBeenNthCalledWith(2, [walletUtxo, datumUtxo]);
   });
 
-  it('does not retry unrelated provider failures', async () => {
-    const unrelatedError = new Error('Invalid request: could not decode transaction.');
+  it.each(['Invalid request: could not decode transaction.', 'Invalid request: empty.'])('does not retry unrelated provider failure: %s', async (message) => {
+    const unrelatedError = new Error(message);
     const evaluateTx = jest.fn().mockRejectedValue(unrelatedError);
     const scriptRefUtxo = {
       txHash: 'script-ref-tx',
@@ -55,7 +60,7 @@ describe('Ogmios script-reference evaluation fallback', () => {
   });
 
   it('does not retry the script decode failure when no script-reference UTxO was supplied', async () => {
-    const decodeError = plutusScriptDecodeError();
+    const decodeError = decodeErrorFactory();
     const evaluateTx = jest.fn().mockRejectedValue(decodeError);
 
     await expect(
@@ -67,7 +72,7 @@ describe('Ogmios script-reference evaluation fallback', () => {
   it('propagates the fallback evaluation failure', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fallbackError = new Error('The referenced output is not available in the ledger.');
-    const evaluateTx = jest.fn().mockRejectedValueOnce(plutusScriptDecodeError()).mockRejectedValueOnce(fallbackError);
+    const evaluateTx = jest.fn().mockRejectedValueOnce(decodeErrorFactory()).mockRejectedValueOnce(fallbackError);
     const scriptRefUtxo = {
       txHash: 'script-ref-tx',
       outputIndex: 0,

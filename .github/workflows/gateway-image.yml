@@ -29,6 +29,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -39,9 +40,16 @@ env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}/cardano-gateway
 
 jobs:
+  docs-update:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/check-docs-update.yml
+    with:
+      workflow: .github/workflows/gateway-image.yml
+
   pull-request-build:
     name: Build Gateway image
-    if: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -145,10 +153,10 @@ jobs:
 
           - \`/usr/src/app/manifests\`
 
-          For example, a preprod Gateway can be started with:
+          For example, a Preview Gateway can be started with:
 
           \`\`\`bash
-          BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json
+          BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preview/cardano-preview-bridge-manifest.json
           \`\`\`
 
           The tracked manifests are also attached to this release as:

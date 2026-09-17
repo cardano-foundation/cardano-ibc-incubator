@@ -35,6 +35,9 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
   };
 
   const historyService = {
+    rebuildIbcStateTreeAtBlock: jest.fn(async () => ({
+      tree: tree.clone(), root, hostState: { txHash: 'historical-host-state', outputIndex: 0 },
+    })),
     findHostStateUtxoAtOrBeforeBlockNo: jest.fn().mockImplementation(async (height: bigint) => ({
       txHash: height === 200n ? 'live-host-state' : 'historical-host-state',
       outputIndex: 0,
@@ -47,6 +50,7 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
   };
 
   const ibcTreeCacheService = {
+    saveAliases: jest.fn(async () => ({ root })),
     load: jest.fn().mockResolvedValue(cached ?? null),
   };
   const ibcTreeStore = {
@@ -131,6 +135,65 @@ describe('proof-context stability acceptance', () => {
 });
 
 describe('resolveProofContextForQuery', () => {
+  const historical = (deps: ReturnType<typeof makeDeps>) => resolveProofContextForQuery({
+    ...deps, context: 'test', requestedHeight: 123n, lightClientMode: 'mithril', maxAttempts: 1, delayMs: 0,
+  });
+
+  it('reconstructs a missing snapshot, serves a valid proof and caches only historical aliases', async () => {
+    const tree = makeTree('old');
+    const deps = makeDeps(tree);
+    const context = await historical(deps);
+    expect(context.tree.verifyProof(context.tree.generateProof('clients/old/clientState'))).toBe(true);
+    expect(context.root).toBe(tree.getRoot());
+    expect(deps.mocks.ibcTreeStore.getAlignedSnapshot).not.toHaveBeenCalled();
+    expect(deps.mocks.ibcTreeCacheService.saveAliases).toHaveBeenCalledWith(
+      expect.anything(), [ibcTreeCacheIdForRoot(tree.getRoot()), 'host-state:historical-host-state#0'],
+      { txHash: 'historical-host-state', outputIndex: 0 },
+    );
+    deps.mocks.ibcTreeCacheService.load.mockResolvedValue({ tree: context.tree, root: context.root });
+    await historical(deps);
+    expect(deps.mocks.historyService.rebuildIbcStateTreeAtBlock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails on incomplete history without caching or using the current tree', async () => {
+    const deps = makeDeps(makeTree('old'));
+    deps.mocks.historyService.rebuildIbcStateTreeAtBlock.mockRejectedValue(new Error('required history is missing'));
+    await expect(historical(deps)).rejects.toThrow('required history is missing');
+    expect(deps.mocks.ibcTreeCacheService.saveAliases).not.toHaveBeenCalled();
+    expect(deps.mocks.ibcTreeStore.getAlignedSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reconstructed tree whose contents disagree with the claimed root', async () => {
+    const deps = makeDeps(makeTree('old'));
+    deps.mocks.historyService.rebuildIbcStateTreeAtBlock.mockResolvedValue({
+      root: makeTree('old').getRoot(), tree: makeTree('wrong'),
+      hostState: { txHash: 'historical-host-state', outputIndex: 0 },
+    });
+    await expect(historical(deps)).rejects.toThrow('Reconstructed IBC tree does not match');
+    expect(deps.mocks.ibcTreeCacheService.saveAliases).not.toHaveBeenCalled();
+  });
+
+  it('rejects rollback of the historical HostState before caching the rebuilt tree', async () => {
+    const tree = makeTree('old');
+    const deps = makeDeps(tree);
+    deps.mocks.historyService.rebuildIbcStateTreeAtBlock.mockImplementation(async () => {
+      deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+        txHash: 'replacement', outputIndex: 0, datum: 'same-root',
+      });
+      return { root: tree.getRoot(), tree, hostState: { txHash: 'historical-host-state', outputIndex: 0 } };
+    });
+    await expect(historical(deps)).rejects.toThrow(StaleIbcTreeStateError);
+    expect(deps.mocks.ibcTreeCacheService.saveAliases).not.toHaveBeenCalled();
+  });
+
+  it('can serve the authenticated proof if saving its disposable snapshot fails', async () => {
+    const tree = makeTree('old');
+    const deps = makeDeps(tree);
+    deps.mocks.ibcTreeCacheService.saveAliases.mockRejectedValue(new Error('cache unavailable'));
+    expect((await historical(deps)).root).toBe(tree.getRoot());
+    expect(deps.logger.warn).toHaveBeenCalled();
+  });
+
   it('loads an exact-height proof tree by the historical HostState root', async () => {
     const tree = makeTree('client-0');
     const root = tree.getRoot();
@@ -156,7 +219,7 @@ describe('resolveProofContextForQuery', () => {
     expect(context.tree).not.toBe(tree);
   });
 
-  it('rejects historical proof context when the cached tree root does not match the HostState root', async () => {
+  it('rebuilds when a height alias belongs to another historical root', async () => {
     const expectedTree = makeTree('client-0');
     const cachedTree = makeTree('client-1');
     const deps = makeDeps(expectedTree, {
@@ -164,16 +227,12 @@ describe('resolveProofContextForQuery', () => {
       root: cachedTree.getRoot(),
     });
 
-    await expect(
-      resolveProofContextForQuery({
-        ...deps,
-        context: 'test',
-        requestedHeight: 123n,
-        lightClientMode: 'mithril',
-        maxAttempts: 1,
-        delayMs: 0,
-      }),
-    ).rejects.toThrow('Cached IBC state tree root mismatch');
+    const context = await resolveProofContextForQuery({
+      ...deps, context: 'test', requestedHeight: 123n, lightClientMode: 'mithril', maxAttempts: 1, delayMs: 0,
+    });
+    expect(context.root).toBe(expectedTree.getRoot());
+    expect(deps.mocks.historyService.rebuildIbcStateTreeAtBlock).toHaveBeenCalledTimes(1);
+
   });
 
   it('rejects requested proof heights newer than the latest accepted proof height', async () => {

@@ -1,15 +1,18 @@
 use aiken/collection/list
 use aiken/interval
-use cardano/address.{Script, from_script}
+use cardano/address.{Credential, Script, from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
-  Transaction,
+  Transaction, Withdraw,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
+use ibc/client/ics_007_tendermint_client/client_redeemer.{
+  CheckStagedClientHistory,
+} as legacy_client_redeemer
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
   BlockID, PartSetHeader,
@@ -22,11 +25,13 @@ use ibc/client/ics_007_tendermint_client/cometbft/validator_set
 use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
   block_protocol,
 }
+use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
   DirectUpdateDisabled, FinalizeMisbehaviour, FinalizeUpdate,
+  SpendMultitxClientRedeemer,
 }
 use ibc/client/ics_007_tendermint_client/multitx/session
 use ibc/client/ics_007_tendermint_client/multitx/types.{
@@ -38,8 +43,43 @@ use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/utils/validator_utils
 use minting_tendermint_update_session
+use recover_client
 use spending_multitx_client
 use spending_tendermint_update_session
+
+fn verify_client(
+  host_policy: PolicyId,
+  session_policy: PolicyId,
+  credential: Credential,
+  client: Option<ClientDatum>,
+  redeemer: SpendMultitxClientRedeemer,
+  ref: OutputReference,
+  tx: Transaction,
+) -> Bool {
+  let raw: Data = redeemer
+  let tx =
+    Transaction { ..tx, redeemers: [Pair(Spend(ref), raw), ..tx.redeemers] }
+  and {
+    spending_multitx_client.spend_multitx_client.spend(
+      host_policy,
+      session_policy,
+      credential,
+      client,
+      redeemer,
+      ref,
+      tx,
+    ),
+    {
+      expect Some(datum) = client
+      recover_client.recover_client.withdraw(
+        host_policy,
+        CheckStagedClientHistory { subject_token: datum.token },
+        credential,
+        tx,
+      )
+    },
+  }
+}
 
 const validator_root =
   #"1111111111111111111111111111111111111111111111111111111111111111"
@@ -110,6 +150,7 @@ fn client_input_datum(client_token: AuthToken) -> ClientDatum {
       root: merkle.new_merkle_root(app_hash),
     }
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     token: client_token,
     state: ClientDatumState {
       client_state: ClientState {
@@ -150,25 +191,26 @@ fn expected_client_output_datum(input: ClientDatum) -> ClientDatum {
   let target_height = Height { revision_number: 0, revision_height: 11 }
   ClientDatum {
     ..input,
+    history_root: consensus_history.insert(
+      input.history_root,
+      consensus_history.from_client(input),
+      list.repeat(
+        #"0000000000000000000000000000000000000000000000000000000000000000",
+        64,
+      ),
+    ),
     state: ClientDatumState {
       client_state: ClientState {
         ..input.state.client_state,
         latest_height: target_height,
       },
-      consensus_states: [
-        Pair(target_height, header.consensus_state(target)),
-        ..input.state.consensus_states
-      ],
-      processed_times: [
-        Pair(target_height, 3_000_000_000),
-        ..input.state.processed_times
-      ],
+      consensus_states: [Pair(target_height, header.consensus_state(target))],
+      processed_times: [Pair(target_height, 3_000_000_000)],
       processed_heights: [
         Pair(
           target_height,
           client_datum_mod.processed_height_from_time(3_000_000_000),
         ),
-        ..input.state.processed_heights
       ],
     },
   }
@@ -262,11 +304,19 @@ fn valid_context() -> (
     host_state_redeemer.UpdateClient {
       client_state_siblings: [],
       consensus_state_siblings: [],
-      removed_consensus_state_siblings: [],
     }
+
+  let history_redeemer: Redeemer =
+    CheckStagedClientHistory { subject_token: client_token }
   let session_redeemer: Redeemer = Finalize
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
+      Pair(
+        Withdraw(
+          Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        ),
+        history_redeemer,
+      ),
       Pair(Spend(host_ref), host_redeemer),
       Pair(Spend(session_ref), session_redeemer),
     ]
@@ -345,12 +395,19 @@ test completed_session_updates_the_client_atomically() {
       client_ref,
       transaction,
     )
-  spending_multitx_client.spend_multitx_client.spend(
+  verify_client(
     host_policy,
     session_policy,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
-    FinalizeUpdate { session_token },
+    FinalizeUpdate {
+      session_token,
+      history_witnesses: [],
+      history_siblings: list.repeat(
+        #"0000000000000000000000000000000000000000000000000000000000000000",
+        64,
+      ),
+    },
     client_ref,
     transaction,
   )
@@ -379,12 +436,19 @@ test finalization_rejects_processing_time_from_chain_lower_bound() fail {
     }
   let unsafe_client_output =
     Output { ..client_output, datum: InlineDatum(unsafe_output_datum) }
-  spending_multitx_client.spend_multitx_client.spend(
+  verify_client(
     host_policy,
     session_policy,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
-    FinalizeUpdate { session_token },
+    FinalizeUpdate {
+      session_token,
+      history_witnesses: [],
+      history_siblings: list.repeat(
+        #"0000000000000000000000000000000000000000000000000000000000000000",
+        64,
+      ),
+    },
     client_ref,
     Transaction {
       ..transaction,
@@ -396,7 +460,7 @@ test finalization_rejects_processing_time_from_chain_lower_bound() fail {
 test direct_update_constructor_is_disabled() {
   let (host_policy, session_policy, input_datum, _, client_ref, transaction) =
     valid_context()
-  !spending_multitx_client.spend_multitx_client.spend(
+  !verify_client(
     host_policy,
     session_policy,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -410,12 +474,19 @@ test direct_update_constructor_is_disabled() {
 test finalization_rejects_a_session_for_another_policy() fail {
   let (host_policy, _, input_datum, session_token, client_ref, transaction) =
     valid_context()
-  spending_multitx_client.spend_multitx_client.spend(
+  verify_client(
     host_policy,
     #"dddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
-    FinalizeUpdate { session_token },
+    FinalizeUpdate {
+      session_token,
+      history_witnesses: [],
+      history_siblings: list.repeat(
+        #"0000000000000000000000000000000000000000000000000000000000000000",
+        64,
+      ),
+    },
     client_ref,
     transaction,
   )
@@ -430,12 +501,19 @@ test finalization_rejects_cancel_session_redeemer() fail {
   let session_cancel: Redeemer = Cancel
   let cancel_redeemers: Pairs<ScriptPurpose, Redeemer> =
     [host_redeemer, Pair(Spend(session_ref), session_cancel)]
-  spending_multitx_client.spend_multitx_client.spend(
+  verify_client(
     host_policy,
     session_token.policy_id,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(input_datum),
-    FinalizeUpdate { session_token },
+    FinalizeUpdate {
+      session_token,
+      history_witnesses: [],
+      history_siblings: list.repeat(
+        #"0000000000000000000000000000000000000000000000000000000000000000",
+        64,
+      ),
+    },
     client_ref,
     Transaction { ..transaction, redeemers: cancel_redeemers },
   )
@@ -552,12 +630,13 @@ fn verify_evidence(tx: Transaction) -> Bool {
   expect Script(host_policy) = host.output.address.payment_credential
   // The fixture HostState address is distinct from its NFT policy.
   expect host_policy != first_datum.session_token.policy_id
-  spending_multitx_client.spend_multitx_client.spend(
+  verify_client(
     #"33333333333333333333333333333333333333333333333333333333",
     first_datum.session_token.policy_id,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(client),
     FinalizeMisbehaviour {
+      history_witnesses: [],
       session_token_1: first_datum.session_token,
       session_token_2: second_datum.session_token,
     },
@@ -603,12 +682,13 @@ test evidence_rejects_duplicate_session_tokens() fail {
   expect client: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
   expect receipt: SessionDatum = validator_utils.get_inline_datum(first.output)
-  spending_multitx_client.spend_multitx_client.spend(
+  verify_client(
     #"33333333333333333333333333333333333333333333333333333333",
     receipt.session_token.policy_id,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(client),
     FinalizeMisbehaviour {
+      history_witnesses: [],
       session_token_1: receipt.session_token,
       session_token_2: receipt.session_token,
     },
@@ -993,12 +1073,26 @@ fn header_conflict_context() -> (
 
 test header_conflicting_with_retained_height_freezes_client() {
   let (client, token, client_ref, tx) = header_conflict_context()
-  spending_multitx_client.spend_multitx_client.spend(
+  verify_client(
     #"33333333333333333333333333333333333333333333333333333333",
     token.policy_id,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(client),
-    FinalizeUpdate { session_token: token },
+    FinalizeUpdate {
+      session_token: token,
+      history_witnesses: [
+        consensus_history.Witness {
+          record: consensus_history.from_client(
+            client_input_datum(client.token),
+          ),
+          siblings: list.repeat(
+            #"0000000000000000000000000000000000000000000000000000000000000000",
+            64,
+          ),
+        },
+      ],
+      history_siblings: [],
+    },
     client_ref,
     tx,
   )
@@ -1012,13 +1106,73 @@ test header_time_violation_against_retained_height_freezes_client() {
       receipt,
       TmHeader { ..target_header(), height: 12, time: 1_400_000_000 },
     )
-  spending_multitx_client.spend_multitx_client.spend(
+  verify_client(
     #"33333333333333333333333333333333333333333333333333333333",
     token.policy_id,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     Some(client),
-    FinalizeUpdate { session_token: token },
+    FinalizeUpdate {
+      session_token: token,
+      history_witnesses: [
+        consensus_history.Witness {
+          record: consensus_history.from_client(
+            client_input_datum(client.token),
+          ),
+          siblings: list.repeat(
+            #"0000000000000000000000000000000000000000000000000000000000000000",
+            64,
+          ),
+        },
+      ],
+      history_siblings: [],
+    },
     client_ref,
     Transaction { ..tx, inputs: [client_input, later, host] },
+  )
+}
+
+test staged_finalization_rejects_a_tampered_history_root() {
+  let (_, _, input, token, client_ref, tx) = valid_context()
+  expect [output, host] = tx.outputs
+  let changed: Data =
+    ClientDatum {
+      ..expected_client_output_datum(input),
+      history_root: input.history_root,
+    }
+  !verify_client(
+    #"33333333333333333333333333333333333333333333333333333333",
+    token.policy_id,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    Some(input),
+    FinalizeUpdate {
+      session_token: token,
+      history_witnesses: [],
+      history_siblings: list.repeat(
+        #"0000000000000000000000000000000000000000000000000000000000000000",
+        64,
+      ),
+    },
+    client_ref,
+    Transaction {
+      ..tx,
+      outputs: [Output { ..output, datum: InlineDatum(changed) }, host],
+    },
+  )
+}
+
+test staged_conflicting_header_requires_its_archived_trusted_state() fail {
+  let (client, token, client_ref, tx) = header_conflict_context()
+  verify_client(
+    #"33333333333333333333333333333333333333333333333333333333",
+    token.policy_id,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    Some(client),
+    FinalizeUpdate {
+      session_token: token,
+      history_witnesses: [],
+      history_siblings: [],
+    },
+    client_ref,
+    tx,
   )
 }

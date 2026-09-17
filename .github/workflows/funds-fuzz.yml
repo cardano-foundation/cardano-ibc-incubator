@@ -1,0 +1,60 @@
+name: Funds Fuzz Campaign
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funds-fuzz-campaign-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  funds:
+    name: Deep funds (${{ matrix.suite }}, ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ada, native, voucher]
+        shard: [1, 2]
+        include:
+          - suite: ada
+            filter: compiled ADA
+          - suite: native
+            filter: compiled native token
+          - suite: voucher
+            filter: compiled voucher
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+      - name: Build Aiken blueprint
+        working-directory: cardano/onchain
+        run: aiken build --deny --trace-level silent
+      - name: Test accounting oracles
+        working-directory: cardano/offchain
+        run: deno task test:funds:oracles
+      - name: Run deeper randomized histories
+        working-directory: cardano/offchain
+        env:
+          TX_FUZZ_RUNS: 10
+          FUNDS_FUZZ_PROFILE: deep
+        run: |
+          git rev-parse HEAD > ../../funds-fuzz.log
+          deno test --allow-env --allow-read --filter "${{ matrix.filter }}" src/funds-lifecycle.fuzz.test.ts >> ../../funds-fuzz.log 2>&1
+      - name: Retain seeds and counterexamples
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: funds-deep-${{ matrix.suite }}-${{ matrix.shard }}
+          path: funds-fuzz.log
+          retention-days: 90

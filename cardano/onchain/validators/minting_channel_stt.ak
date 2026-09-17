@@ -6,8 +6,7 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/address
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
-  Withdraw,
+  InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction, Withdraw,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -20,7 +19,7 @@ use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership, VerifyProofRedeemer,
+  VerifyMembership, VerifyProofEnvelope,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd} as connection_end_mod
@@ -71,14 +70,9 @@ fn spent_host_state_for_create_channel(
 ) -> Bool {
   expect Some(spend_redeemer) =
     pairs.get_first(redeemers, Spend(host_state_input.output_reference))
-  expect host_redeemer: HostStateRedeemer = spend_redeemer
-
-  // Channel token minting is paired with the HostState transition that consumes
-  // next_channel_sequence and commits the channel/sequence paths.
-  when host_redeemer is {
-    CreateChannel { .. } -> True
-    _ -> False
-  }
+  // The HostState validator checks the contents; require its exact operation.
+  expect CreateChannel { .. }: HostStateRedeemer = spend_redeemer
+  True
 }
 
 validator mint_channel_stt(
@@ -125,6 +119,17 @@ validator mint_channel_stt(
         validator_utils.get_inline_datum(channel_output)
       expect [connection_id] =
         channel_output_datum.state.channel.connection_hops
+      let proof_envelope =
+        when redeemer is {
+          ChanOpenTry { .. } ->
+            Some(
+              validator_utils.verify_proof_envelope(
+                redeemers,
+                verify_proof_policy_id,
+              ),
+            )
+          ChanOpenInit -> None
+        }
       let (connection_datum, client_datum) =
         validator_utils.validate_referred_connection_and_client(
           reference_inputs,
@@ -132,6 +137,15 @@ validator mint_channel_stt(
           client_minting_policy_id,
           connection_minting_policy_id,
           connection_id,
+          validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+          when redeemer is {
+            ChanOpenTry { proof_height, .. } -> Some(proof_height)
+            ChanOpenInit -> None
+          },
+          when proof_envelope is {
+            Some(envelope) -> envelope.history_witness
+            None -> None
+          },
         )
       let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
       let client_state_active =
@@ -190,8 +204,7 @@ validator mint_channel_stt(
                 counterparty_version,
                 proof_init,
                 proof_height,
-                redeemers,
-                verify_proof_policy_id,
+                proof_envelope,
               )?,
               (ibc_module_callback == OnChanOpenTry { channel_id })?,
             }
@@ -219,8 +232,7 @@ fn validate_chan_open_try_proof(
   counterparty_version: ByteArray,
   proof: MerkleProof,
   proof_height: Height,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  verify_proof_policy_id: PolicyId,
+  proof_envelope: Option<VerifyProofEnvelope>,
 ) -> Bool {
   let counterparty_hops = [connection.counterparty.connection_id]
 
@@ -264,11 +276,9 @@ fn validate_chan_open_try_proof(
       channel.convert_to_channel_proto(expected_channel),
     ).2nd
 
-  expect Some(verify_proof_redeemer) =
-    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
-  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+  expect Some(envelope) = proof_envelope
 
-  verify_proof_redeemer == VerifyMembership {
+  envelope.proof == VerifyMembership {
     cs: client_datum_state.client_state,
     cons_state: consensus_state,
     height: proof_height,

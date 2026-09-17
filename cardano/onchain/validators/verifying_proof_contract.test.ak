@@ -1,4 +1,3 @@
-use aiken/fuzz
 use aiken/interval
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{Transaction, placeholder}
@@ -11,7 +10,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
   VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
-  VerifyProofRedeemer,
+  VerifyProofEnvelope, VerifyProofRedeemer,
 }
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
@@ -261,7 +260,7 @@ fn membership_redeemer(item: VerifyMembershipParams) -> VerifyProofRedeemer {
 
 fn verify(redeemer: VerifyProofRedeemer) -> Bool {
   verifying_proof.verify_proof.mint(
-    redeemer,
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
     proof_policy_id,
     proof_marker_tx(proof_policy_id),
   )
@@ -455,9 +454,7 @@ fn valid_nonmembership_params(path: MerklePath) -> VerifyNonMembershipParams {
   }
 }
 
-test prop_proof_membership_valid(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.proof.membership.valid")
-
+test regression_proof_membership_valid() {
   // Baseline membership proof for a packet commitment path. The negative cases
   // below mutate exactly one proof dimension from this fixture.
   fuzz_dsl.valid_check(
@@ -471,9 +468,7 @@ test prop_proof_membership_valid(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_proof_membership_rejects_wrong_path(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.proof.membership.invalid_wrong_path")
-
+test regression_proof_membership_rejects_wrong_path() fail {
   // Same proof/root/value, wrong Merkle path.
   valid_membership_params()
     |> wrong_membership_path
@@ -481,9 +476,7 @@ test prop_proof_membership_rejects_wrong_path(_seed via fuzz.int()) fail {
     |> verify
 }
 
-test prop_proof_membership_rejects_wrong_value(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.proof.membership.invalid_wrong_value")
-
+test regression_proof_membership_rejects_wrong_value() fail {
   // Same path/root, wrong committed value.
   valid_membership_params()
     |> wrong_membership_value
@@ -491,9 +484,7 @@ test prop_proof_membership_rejects_wrong_value(_seed via fuzz.int()) fail {
     |> verify
 }
 
-test prop_proof_membership_rejects_wrong_root(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.proof.membership.invalid_wrong_root")
-
+test regression_proof_membership_rejects_wrong_root() fail {
   // Same path/value, wrong consensus root.
   valid_membership_params()
     |> wrong_membership_root
@@ -501,9 +492,7 @@ test prop_proof_membership_rejects_wrong_root(_seed via fuzz.int()) fail {
     |> verify
 }
 
-test prop_proof_batch_accepts_two_items(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.proof.batch.valid_two_items")
-
+test regression_proof_batch_accepts_two_items() {
   // Batch verification must accept multiple valid membership items, not only a
   // single-item proof.
   let item = valid_membership_params()
@@ -531,9 +520,7 @@ test proof_mixed_batch_accepts_membership_and_nonmembership() {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_proof_batch_rejects_swapped_item(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.proof.batch.invalid_item_swapped")
-
+test regression_proof_batch_rejects_swapped_item() fail {
   // One item is valid and one item is a different path. Batch verification
   // should fail the whole marker if any member proof is wrong.
   let item = valid_membership_params()
@@ -541,25 +528,19 @@ test prop_proof_batch_rejects_swapped_item(_seed via fuzz.int()) fail {
   verify(BatchVerifyMembership([item, swapped]))
 }
 
-test prop_proof_batch_rejects_extra_item(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.proof.batch.invalid_extra_item")
-
+test regression_proof_batch_rejects_extra_item() fail {
   // Extra invalid proof material must not be ignored by list traversal.
   let item = valid_membership_params()
   verify(BatchVerifyMembership([item, wrong_membership_value(item)]))
 }
 
-test prop_proof_batch_rejects_missing_item(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.proof.batch.invalid_missing_item")
-
+test regression_proof_batch_rejects_missing_item() fail {
   // Empty batch is not a successful proof; otherwise callers could mint a proof
   // marker without checking any key.
   verify(BatchVerifyMembership([]))
 }
 
-test prop_proof_nonmembership_valid(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.proof.nonmembership.valid")
-
+test regression_proof_nonmembership_valid() {
   // Valid nonmembership proves no receipt exists for the packet path.
   fuzz_dsl.valid_check(
     "proof",
@@ -572,9 +553,7 @@ test prop_proof_nonmembership_valid(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_proof_nonmembership_rejects_existing_key(_seed via fuzz.int()) fail {
-  fuzz.label(@"regression.contract.proof.nonmembership.invalid_existing_key")
-
+test regression_proof_nonmembership_rejects_existing_key() fail {
   // If the queried key already exists as a neighbor, nonmembership must fail.
   existing_left_neighbor_path()
     |> nonmembership_redeemer

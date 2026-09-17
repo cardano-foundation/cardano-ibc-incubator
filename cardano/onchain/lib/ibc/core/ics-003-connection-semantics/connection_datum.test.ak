@@ -1,4 +1,3 @@
-use aiken/fuzz
 use ibc/auth.{AuthToken}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -168,9 +167,7 @@ test test_is_conn_open_try_valid_succeed() {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_conn_open_try_accepts_valid_try_open(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.conn.open_try.valid")
-
+test regression_conn_open_try_accepts_valid_try_open() {
   let mock_connection_end =
     create_mock_connection_end(state.TryOpen, mock_connection_id)
   let mock_auth_token =
@@ -314,9 +311,7 @@ test test_is_connection_open_ack_valid_succeed() {
     |> fuzz_dsl.assert_valid
 }
 
-test prop_conn_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
-  fuzz.label(@"regression.unit.conn.open_ack.valid")
-
+test regression_conn_open_ack_accepts_valid_transition() {
   let mock_connection_end_input = create_mock_connection_end(state.Init, "")
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }

@@ -156,7 +156,7 @@ async function stagedHistoryFixture(
             type: 'spend',
             index: 0n,
             data: encodeSpendMultitxClientRedeemer(
-              { FinalizeUpdate: { sessionToken: { policyId: SESSION_POLICY, name: 'ff'.repeat(32) } } },
+              { FinalizeUpdate: { historyWitnesses: [], historySiblings: [], sessionToken: { policyId: SESSION_POLICY, name: 'ff'.repeat(32) } } },
               Lucid,
             ),
           },
@@ -167,10 +167,10 @@ async function stagedHistoryFixture(
       index: 1n,
       data: encodeSpendMultitxClientRedeemer(
         options.action === 'recovery'
-          ? { RecoverClient: { substituteToken: SUBSTITUTE_TOKEN } }
+          ? { RecoverClient: { historySiblings: [], substituteToken: SUBSTITUTE_TOKEN } }
           : options.action === 'evidence'
-            ? { FinalizeMisbehaviour: { sessionToken1: sessionToken, sessionToken2: secondSessionToken } }
-            : { FinalizeUpdate: { sessionToken } },
+            ? { FinalizeMisbehaviour: { historyWitnesses: [], sessionToken1: sessionToken, sessionToken2: secondSessionToken } }
+            : { FinalizeUpdate: { historyWitnesses: [], historySiblings: [], sessionToken } },
         Lucid,
       ),
     },

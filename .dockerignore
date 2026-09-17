@@ -48,6 +48,8 @@
 **/.git/**
 **/node_modules
 **/node_modules/**
+**/.consensus-history
+**/.consensus-history/**
 **/target
 **/target/**
 **/dist

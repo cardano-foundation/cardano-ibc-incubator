@@ -6,6 +6,7 @@ import type { TmHeader } from './cometbft/header';
 import type { Validator } from './cometbft/validator';
 import type { ConsensusState } from './consensus-state';
 import type { Height } from './height';
+import { consensusHistoryWitnessSchema, type ConsensusHistoryWitness } from './consensus-state-datum';
 import type { Rational } from './rational';
 
 type LucidModule = typeof import('@lucid-evolution/lucid');
@@ -147,14 +148,17 @@ export type SpendMultitxClientRedeemer =
   | {
       FinalizeUpdate: {
         sessionToken: AuthToken;
+        historyWitnesses: ConsensusHistoryWitness[];
+        historySiblings: string[];
       };
     }
   | 'DirectUpdateDisabled'
-  | { RecoverClient: { substituteToken: AuthToken } }
+  | { RecoverClient: { substituteToken: AuthToken; historySiblings: string[] } }
   | {
       FinalizeMisbehaviour: {
         sessionToken1: AuthToken;
         sessionToken2: AuthToken;
+        historyWitnesses: ConsensusHistoryWitness[];
       };
     }
   | 'ReclaimClient';
@@ -349,14 +353,17 @@ function createTendermintUpdateSessionSchemas(Data: LucidData) {
     Data.Object({
       FinalizeUpdate: Data.Object({
         sessionToken: AuthTokenSchema,
+        historyWitnesses: Data.Array(consensusHistoryWitnessSchema({ Data } as LucidModule)),
+        historySiblings: Data.Array(Data.Bytes()),
       }),
     }),
     Data.Literal('DirectUpdateDisabled'),
-    Data.Object({ RecoverClient: Data.Object({ substituteToken: AuthTokenSchema }) }),
+    Data.Object({ RecoverClient: Data.Object({ substituteToken: AuthTokenSchema, historySiblings: Data.Array(Data.Bytes()) }) }),
     Data.Object({
       FinalizeMisbehaviour: Data.Object({
         sessionToken1: AuthTokenSchema,
         sessionToken2: AuthTokenSchema,
+        historyWitnesses: Data.Array(consensusHistoryWitnessSchema({ Data } as LucidModule)),
       }),
     }),
     Data.Literal('ReclaimClient'),

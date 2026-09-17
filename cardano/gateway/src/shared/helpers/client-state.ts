@@ -181,8 +181,3 @@ export function validateClientState(clientState: ClientState): GrpcInvalidArgume
   //
   return null;
 }
-
-export function isExpired(cs: ClientState, latestTimestamp: bigint, now: bigint): boolean {
-  const expirationTime = latestTimestamp + cs.trustingPeriod;
-  return expirationTime < now;
-}

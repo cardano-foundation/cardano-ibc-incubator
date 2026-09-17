@@ -1,5 +1,4 @@
 use aiken/cbor
-use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
@@ -18,7 +17,8 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
+  BatchVerifyMembership, VerifyMembershipParams, VerifyProofEnvelope,
+  VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/keys as client_id_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum} as connection_datum
@@ -116,6 +116,7 @@ fn active_client_state(proof_height: Height) -> ClientState {
 
 fn client_datum(client_token: AuthToken, proof_height: Height) -> ClientDatum {
   ClientDatum {
+    history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
     state: ClientDatumState {
       client_state: active_client_state(proof_height),
       consensus_states: [Pair(proof_height, consensus_state())],
@@ -343,12 +344,15 @@ fn build_conn_open_try_fixture(
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
   let proof_redeemer =
-    verify_proof_redeemer(
-      client_datum,
-      connection,
-      proof_height,
-      proof_client_value,
-    )
+    VerifyProofEnvelope {
+      history_witness: None,
+      proof: verify_proof_redeemer(
+        client_datum,
+        connection,
+        proof_height,
+        proof_client_value,
+      ),
+    }
   let redeemer: MintConnectionRedeemer =
     ConnOpenTry {
       client_state: counterparty_client_state,
@@ -447,9 +451,7 @@ fn run_conn_open_try_transition(
       )
 }
 
-test prop_tx_conn_open_try_accepts_valid_full_transition(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.conn.open_try.valid_full_transition")
-
+test regression_tx_conn_open_try_accepts_valid_full_transition() {
   // tx.* depth: the same ConnOpenTry transaction is checked by connection
   // minting, HostState CreateConnection, and the connection datum transition.
   build_conn_open_try_fixture(
@@ -461,13 +463,7 @@ test prop_tx_conn_open_try_accepts_valid_full_transition(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_protocol_checks_accept
 }
 
-test prop_conn_open_try_rejects_wrong_counterparty_client_state(
-  _seed via fuzz.int(),
-) {
-  fuzz.label(
-    @"regression.contract.conn.open_try.invalid_wrong_client_state_proof",
-  )
-
+test regression_conn_open_try_rejects_wrong_counterparty_client_state() {
   // Near-valid ConnOpenTry: the local connection datum and proof plumbing are
   // valid, but the counterparty client state bytes differ from the proof value.
   build_conn_open_try_fixture(

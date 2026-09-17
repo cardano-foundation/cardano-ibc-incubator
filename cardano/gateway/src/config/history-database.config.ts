@@ -13,4 +13,5 @@ export const HistoryDatabaseConfig: TypeOrmModuleOptions = {
   database: process.env.HISTORY_DB_NAME,
   entities: [],
   synchronize: false,
+  extra: { connectionTimeoutMillis: 30_000 },
 };
