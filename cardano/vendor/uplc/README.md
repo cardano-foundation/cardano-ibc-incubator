@@ -46,4 +46,4 @@ produce different bytes and must not silently replace the recorded artifacts.
 bitwise costs and a valid Unicode script whose cost distinguishes protocol 10
 from 11. It also checks that Lucid and utils load the recorded artifacts. The
 consensus-history, packet-budget and migration suites exercise actual compiled
-bridge validators. See `docs/migration-implementation-evidence.md` for results.
+bridge validators. See the [migration guide](../../../docs/state-preserving-redeployment.md#executed-evidence) for results.
