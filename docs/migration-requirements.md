@@ -1,6 +1,6 @@
 # Migration requirement-to-evidence map
 
-Current implementation: `e46111cfe`, fresh `cardano-ibc-compatible-v3` baseline. The [production-readiness review](migration-production-readiness-review.md) separates its local checks from the [completed populated five-node rehearsal](evidence/migration-populated-review-result.json) at `79dc91f53`/byte-identical `41dfd0c5e`. The latest changed compiled artifacts require their own network acceptance; earlier success is not silently relabelled.
+Current implementation: `e46111cfe`, fresh `cardano-ibc-compatible-v3` baseline. The [production-readiness review](migration-production-readiness-review.md) separates its local checks from the [completed populated five-node rehearsal](migration-implementation-evidence.md#scenarios-demonstrated-on-the-local-devnet) at `79dc91f53`/byte-identical `41dfd0c5e`. The latest changed compiled artifacts require their own network acceptance; earlier success is not silently relabelled.
 
 | Requirement | Implementation | Executed evidence and boundary |
 | --- | --- | --- |
