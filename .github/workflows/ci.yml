@@ -446,10 +446,10 @@ jobs:
 
       - name: Check independent migration rehearsal evidence controls
         run: |
-          python3 scripts/ci/test-migration-evidence.py
-          node --test scripts/ci/test-migration-packet-evidence.cjs
-          node --test scripts/ci/test-owned-sdk-rehearsal.cjs
-          python3 scripts/ci/test-deployment-references.py
+          python3 scripts/ci/aiken-contract-migration/test-migration-evidence.py
+          node --test scripts/ci/aiken-contract-migration/test-migration-packet-evidence.cjs
+          node --test scripts/ci/aiken-contract-migration/test-owned-sdk-rehearsal.cjs
+          python3 scripts/ci/aiken-contract-migration/test-deployment-references.py
 
       - name: Test with coverage
         env:
@@ -595,8 +595,8 @@ jobs:
 
       - name: Build distinct migration successors
         run: |
-          python3 scripts/ci/build-migration-successor.py --out "$RUNNER_TEMP/migration-v2" --window-ms 600000
-          python3 scripts/ci/build-migration-successor.py --out "$RUNNER_TEMP/migration-v3" --window-ms 900000
+          python3 scripts/ci/aiken-contract-migration/build-migration-successor.py --out "$RUNNER_TEMP/migration-v2" --window-ms 600000
+          python3 scripts/ci/aiken-contract-migration/build-migration-successor.py --out "$RUNNER_TEMP/migration-v3" --window-ms 900000
 
       - name: Evaluate repeated authorized migration and adversarial accounting
         working-directory: cardano/offchain
@@ -606,19 +606,19 @@ jobs:
         run: deno task test:migration
 
       - name: Verify full-validator migration guard controls
-        run: python3 scripts/ci/test-migration-guards.py --report migration-guard-controls.json
+        run: python3 scripts/ci/aiken-contract-migration/test-migration-guards.py --report migration-guard-controls.json
 
       - name: Measure compiled migration steps at retained protocol-10 parameters
         run: >-
           deno run --allow-read --allow-env --allow-write
-          --config cardano/offchain/deno.json scripts/ci/measure-migration-scaling.ts
+          --config cardano/offchain/deno.json scripts/ci/aiken-contract-migration/measure-migration-scaling.ts
           cardano/offchain/src/testing/protocol-10-local-cost-profile.json
           migration-scaling.json
 
       - name: Measure complete serialized operator recovery and authenticated cache scaling
         run: >-
           deno run --allow-read --allow-env --allow-write
-          --config cardano/offchain/deno.json scripts/ci/measure-migration-operator.ts
+          --config cardano/offchain/deno.json scripts/ci/aiken-contract-migration/measure-migration-operator.ts
           migration-operator-scaling.json
 
       - name: Check independent migration packet model and transition coverage
@@ -626,7 +626,7 @@ jobs:
         run: |
           aiken check --deny -m migration_packet_ --seed 462 --max-success 1 --property-coverage relative-to-tests > ../../migration-packet-smoke.json
           aiken check --deny -m migration_packet_ --seed 462 --max-success 1000 --property-coverage relative-to-tests > ../../migration-packet-model.json
-          node ../../scripts/ci/check-aiken-fuzz-coverage.mjs ../../migration-packet-model.json ../../migration-packet-smoke.json ../../scripts/ci/aiken-migration-required-labels.json
+          node ../../scripts/ci/check-aiken-fuzz-coverage.mjs ../../migration-packet-model.json ../../migration-packet-smoke.json ../../scripts/ci/aiken-contract-migration/aiken-migration-required-labels.json
 
       - name: Upload migration guard evidence
         if: always()

@@ -22,10 +22,10 @@ import urllib.request
 import uuid
 import importlib.util
 
-_reference_spec = importlib.util.spec_from_file_location("deployment_references", Path(__file__).with_name("deployment-references.py"))
+_reference_spec = importlib.util.spec_from_file_location("deployment_references", Path(__file__).parent / "aiken-contract-migration/deployment-references.py")
 _references = importlib.util.module_from_spec(_reference_spec)
 _reference_spec.loader.exec_module(_references)
-_clock_spec = importlib.util.spec_from_file_location("migration_clock_profile", Path(__file__).with_name("migration-clock-profile.py"))
+_clock_spec = importlib.util.spec_from_file_location("migration_clock_profile", Path(__file__).parent / "aiken-contract-migration/migration-clock-profile.py")
 _clock = importlib.util.module_from_spec(_clock_spec)
 _clock_spec.loader.exec_module(_clock)
 
