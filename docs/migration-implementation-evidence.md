@@ -1,4 +1,4 @@
-> Current candidate: see [the production-readiness review](migration-production-readiness-review.md). Emergency containment is now implemented in profile v3; populated results below remain historical evidence for the prior ABI.
+> Current candidate: see [the production-readiness review](migration-production-readiness-review.md). Emergency containment is implemented in profile v3. Its separate [successful five-node populated rehearsal and rollback evidence](evidence/migration-populated-review-result.json) is tied to `79dc91f53`/byte-identical `41dfd0c5e`. Populated results below remain historical evidence for the prior ABI; subsequent changed scripts need separate acceptance.
 
 > Current review follow-up: see [approval, scaling, coverage and deployment capability](migration-review-followup.md) and `evidence/migration-review-result.json`. The earlier populated results below belong to their recorded revisions and are not acceptance of later changes.
 

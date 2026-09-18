@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Exercise identical full-validator fixtures with one guard removed per test copy.
+"""Exercise identical production fixtures with one guard removed per test copy.
 
 Only temporary copies are mutated. The production tree/blueprint stay untouched.
 The expected-failure annotation becomes expected-success in a mutant; transaction
-inputs, outputs, redeemers and complete validator dispatch are identical.
+inputs, outputs, redeemers and complete validator dispatch are identical for
+validator cases. The Merkle-size case executes the production tree function;
+each result explicitly distinguishes its execution scope.
 """
 import argparse
 import hashlib
@@ -103,12 +105,13 @@ def main():
                 try: report = json.loads(run.stdout)
                 except Exception as error: raise RuntimeError(f'{label}: invalid Aiken report\n{run.stderr}\n{run.stdout}') from error
                 if run.returncode or report['summary']['total'] != 2 or report['summary']['passed'] != 2:
-                    raise RuntimeError(f'{label} mutant={mutant}: expected both full-validator fixtures to satisfy their declared outcomes\n{run.stderr}\n{run.stdout}')
+                    raise RuntimeError(f'{label} mutant={mutant}: expected both fixtures to satisfy their declared outcomes\n{run.stderr}\n{run.stdout}')
                 reports.append({'case':label, 'mutant':mutant, 'guardFile':file, 'removedGuard':guard if mutant else None,
+                                'executionScope':'production Merkle function' if label == 'merkle-update-sibling-size' else 'full Aiken validator',
                                 'attackAccepted':mutant, 'positiveControlAccepted':True, 'command':command, 'aiken':report})
                 print(f'{label}: valid control accepted; attack {"accepted with guard removed" if mutant else "rejected by production"}',flush=True)
     if digest() != original: raise RuntimeError('Production source changed during the guard-control run')
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps({'sourceSha256':original, 'scope':'Full Aiken validators, not a ledger-balanced populated migration rehearsal', 'results':reports},indent=2)+'\n')
+    args.report.write_text(json.dumps({'sourceSha256':original, 'scope':'Production Aiken execution; per-case scope distinguishes full validators from the Merkle function. Not a ledger-balanced populated migration rehearsal.', 'results':reports},indent=2)+'\n')
 
 if __name__ == '__main__': main()

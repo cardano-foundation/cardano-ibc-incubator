@@ -1,0 +1,189 @@
+{
+  "format": "populated-migration-handover-v1",
+  "generation": 2,
+  "handler": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/handler-v2.json",
+  "transactions": [
+    "1b74daba77a9d0f355e5595c6745f623763c9f9fadffed56868fd8ec484de422",
+    "2459a55282a1d07462eb226a19e25ce0c4b35cd711d1f26ff6a92b53efe0ecd5",
+    "60c44560e87dd351a9f0e7446b97352b3ee69f2f63ed0036efc2dc29d4f2d059",
+    "c76c6fbfcfc1adda5822ec153694bc344d401abf7dbb71746708b1d4b73e77dd",
+    "e221489a571c9bfb30bee2a78cedf41772387b961bbb2eb6fefa4524c05b4d08",
+    "e805a25e869a948bc0ea101b476cf29bde945b2657dccec9993fa6117692a66a",
+    "ead4b9318f9a25f5fff416cbff6534eac4f5b7c4fa8f6d0e17657bb69af7ee83",
+    "ee8bf66469ecd2694ae82f025a57334e8ad0fa3713520d6c9d6d67155e0ac29d",
+    "f90767a8fc7d84c31304cabe2c9c2b36f9f42c5e144b85a42d642e797759d8b1"
+  ],
+  "funding": {
+    "verified": true,
+    "transactions": 9,
+    "executor": "addr_test1vpmudxv36hnwejmdepu8a4mprs42d3gzzhzsl73uvv73aksj5nvtm",
+    "feesLovelace": "12360347",
+    "infrastructureIncreaseLovelace": "676670",
+    "externalPayerSpentLovelace": "13037017",
+    "scope": "Handover only; governance approval and reference publication are separate costs"
+  },
+  "timing": {
+    "custodyTransactions": 9,
+    "firstInclusionSlot": 89837,
+    "activationInclusionSlot": 90555,
+    "canonicalUnavailableSlotSeconds": 718,
+    "canonicalBlockSpan": 156,
+    "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee",
+    "commandTimings": [
+      {
+        "step": "begin",
+        "startedAt": "2026-09-18T01:07:55.855159+00:00",
+        "finishedAt": "2026-09-18T01:08:18.625669+00:00",
+        "elapsedSeconds": 22.77052860099957,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "capture",
+        "startedAt": "2026-09-18T01:08:20.690341+00:00",
+        "finishedAt": "2026-09-18T01:08:22.190901+00:00",
+        "elapsedSeconds": 1.5005760379999629,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "capture",
+        "startedAt": "2026-09-18T01:20:21.880976+00:00",
+        "finishedAt": "2026-09-18T01:20:23.366080+00:00",
+        "elapsedSeconds": 1.4851208860000042,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "conservation",
+        "startedAt": "2026-09-18T01:20:23.366392+00:00",
+        "finishedAt": "2026-09-18T01:20:24.294029+00:00",
+        "elapsedSeconds": 0.9276550360000329,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "funding",
+        "startedAt": "2026-09-18T01:20:29.893461+00:00",
+        "finishedAt": "2026-09-18T01:20:29.930522+00:00",
+        "elapsedSeconds": 0.03707029199995304,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "inspect",
+        "startedAt": "2026-09-18T01:08:18.626030+00:00",
+        "finishedAt": "2026-09-18T01:08:20.689972+00:00",
+        "elapsedSeconds": 2.063957264000237,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "inspect",
+        "startedAt": "2026-09-18T01:14:50.705467+00:00",
+        "finishedAt": "2026-09-18T01:14:52.764252+00:00",
+        "elapsedSeconds": 2.0588102330002584,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "inspect",
+        "startedAt": "2026-09-18T01:07:53.556765+00:00",
+        "finishedAt": "2026-09-18T01:07:55.854805+00:00",
+        "elapsedSeconds": 2.2980621079996126,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:26.793601+00:00",
+        "finishedAt": "2026-09-18T01:20:27.422234+00:00",
+        "elapsedSeconds": 0.6286500249998426,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:28.045089+00:00",
+        "finishedAt": "2026-09-18T01:20:28.655870+00:00",
+        "elapsedSeconds": 0.6107973469997887,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:24.930326+00:00",
+        "finishedAt": "2026-09-18T01:20:25.544034+00:00",
+        "elapsedSeconds": 0.6137233350000315,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:26.177428+00:00",
+        "finishedAt": "2026-09-18T01:20:26.793101+00:00",
+        "elapsedSeconds": 0.6156928240006891,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:27.422560+00:00",
+        "finishedAt": "2026-09-18T01:20:28.044775+00:00",
+        "elapsedSeconds": 0.6222320420001779,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:29.269260+00:00",
+        "finishedAt": "2026-09-18T01:20:29.893162+00:00",
+        "elapsedSeconds": 0.6239177739998922,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:25.544349+00:00",
+        "finishedAt": "2026-09-18T01:20:26.177112+00:00",
+        "elapsedSeconds": 0.6327794790004191,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:28.656206+00:00",
+        "finishedAt": "2026-09-18T01:20:29.268927+00:00",
+        "elapsedSeconds": 0.6127371749998929,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "measure",
+        "startedAt": "2026-09-18T01:20:24.294963+00:00",
+        "finishedAt": "2026-09-18T01:20:24.929967+00:00",
+        "elapsedSeconds": 0.6350208960002419,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "resume",
+        "startedAt": "2026-09-18T01:14:52.764628+00:00",
+        "finishedAt": "2026-09-18T01:20:19.176746+00:00",
+        "elapsedSeconds": 326.41213504200005,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      },
+      {
+        "step": "verify",
+        "startedAt": "2026-09-18T01:20:19.177066+00:00",
+        "finishedAt": "2026-09-18T01:20:21.880655+00:00",
+        "elapsedSeconds": 2.7036130230007984,
+        "exitCode": 0,
+        "confirmationPolicy": "provider inclusion plus canonical output adoption; no stability-depth guarantee"
+      }
+    ],
+    "scope": "Measured canonical Begin-to-Activate interval, including interruption; Gateway restart is additional. Local clock acceleration elsewhere is excluded."
+  },
+  "scope": "Canonical local custody and conservation; post-activation packet settlement is separate"
+}

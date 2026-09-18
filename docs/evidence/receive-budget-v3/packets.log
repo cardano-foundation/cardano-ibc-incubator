@@ -1,0 +1,61 @@
+Task test:tx-budgets deno test --allow-env --allow-read src/packet-budgets.test.ts
+Check src/packet-budgets.test.ts
+running 11 tests from ./src/packet-budgets.test.ts
+First native SendPacket creates escrow at 64 commitments fits ledger limits ...
+------- output -------
+{ bytes: 11512, memory: 13661247n, cpu: 4420348867n }
+----- output end -----
+First native SendPacket creates escrow at 64 commitments fits ledger limits ... ok (1s)
+PrunePacketHistory unordered at capacity fits ledger limits ...
+------- output -------
+{ bytes: 7878, memory: 8602190n, cpu: 2758576546n }
+----- output end -----
+PrunePacketHistory unordered at capacity fits ledger limits ... ok (1s)
+RecvPacket generic application unordered fills history capacity fits ledger limits ...
+------- output -------
+{ bytes: 8207, memory: 9319314n, cpu: 3010766148n }
+----- output end -----
+RecvPacket generic application unordered fills history capacity fits ledger limits ... ok (1s)
+PrunePacketHistory ordered at capacity fits ledger limits ...
+------- output -------
+{ bytes: 6782, memory: 7408635n, cpu: 2423264330n }
+----- output end -----
+PrunePacketHistory ordered at capacity fits ledger limits ... ok (1s)
+RecvPacket generic application ordered fills history capacity fits ledger limits ...
+------- output -------
+{ bytes: 9290, memory: 10547457n, cpu: 3518741242n }
+----- output end -----
+RecvPacket generic application ordered fills history capacity fits ledger limits ... ok (1s)
+ChanOpenInit fits ledger limits ...
+------- output -------
+{ bytes: 10250, memory: 7027362n, cpu: 2114567077n }
+----- output end -----
+ChanOpenInit fits ledger limits ... ok (723ms)
+ChanOpenTry fits ledger limits ...
+------- output -------
+{ bytes: 11087, memory: 8474233n, cpu: 2618590040n }
+----- output end -----
+ChanOpenTry fits ledger limits ... ok (770ms)
+ChanOpenAck fits ledger limits ...
+------- output -------
+{ bytes: 4740, memory: 5933342n, cpu: 1984040885n }
+----- output end -----
+ChanOpenAck fits ledger limits ... ok (730ms)
+ChanOpenConfirm fits ledger limits ...
+------- output -------
+{ bytes: 4727, memory: 5845576n, cpu: 1961513144n }
+----- output end -----
+ChanOpenConfirm fits ledger limits ... ok (742ms)
+ChanCloseInit fits ledger limits ...
+------- output -------
+{ bytes: 3881, memory: 4145027n, cpu: 1369499918n }
+----- output end -----
+ChanCloseInit fits ledger limits ... ok (725ms)
+ChanCloseConfirm fits ledger limits ...
+------- output -------
+{ bytes: 4728, memory: 5674249n, cpu: 1900722943n }
+----- output end -----
+ChanCloseConfirm fits ledger limits ... ok (735ms)
+
+ok | 11 passed | 0 failed (10s)
+

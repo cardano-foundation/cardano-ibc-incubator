@@ -555,9 +555,22 @@
     "run": 35285080981,
     "url": "https://github.com/cardano-foundation/cardano-ibc-incubator/actions/runs/35285080981",
     "head": "c8961ff403006f77f54e02c4401895dd642227f9",
-    "status": "in_progress",
-    "populatedAcceptance": "unverified",
-    "realMultiNodeRollback": "unverified"
+    "status": "completed",
+    "populatedAcceptance": "failed before migration",
+    "realMultiNodeRollback": "not reached",
+    "conclusion": "failure",
+    "populatedFailure": {
+      "job": 105415642704,
+      "operation": "foreign-secondary-receive",
+      "memory": 16791014,
+      "limitMemory": 16500000,
+      "cpu": 5456816252,
+      "limitCpu": 10000000000,
+      "canonicalTrafficReceipts": 7,
+      "migrationStarted": false,
+      "artifactId": 10525406741,
+      "artifactZipSha256": "876bcc5de360fb4e628c6683c6585dfed05f1068ba0b7b7a9c19e780773f534c"
+    }
   },
   "historicalEvidence": "docs/evidence/migration-emergency-review-result.json",
   "releaseBlockers": [

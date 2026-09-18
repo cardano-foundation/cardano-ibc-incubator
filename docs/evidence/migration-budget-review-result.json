@@ -569,7 +569,22 @@
       "scope": "Actual HostState receive validator context; not a replay of the entire failed network transaction"
     },
     "gateEquivalenceCases": 384,
-    "completeNetworkTransactionAfterOptimization": "unverified"
+    "completeNetworkTransactionAfterOptimization": "Passed owned two-chain population in run 35287600121 at the exact recorded 79dc91f53 source and compiled artifacts.",
+    "secondReproduction": {
+      "run": 35285080981,
+      "commit": "c8961ff403006f77f54e02c4401895dd642227f9",
+      "job": 105415642704,
+      "operation": "foreign-secondary-receive",
+      "memory": 16791014,
+      "limitMemory": 16500000,
+      "cpu": 5456816252,
+      "limitCpu": 10000000000,
+      "canonicalTrafficReceipts": 7,
+      "migrationStarted": false,
+      "artifactId": 10525406741,
+      "artifactZipSha256": "876bcc5de360fb4e628c6683c6585dfed05f1068ba0b7b7a9c19e780773f534c"
+    },
+    "resolutionStatus": "Populated run passed including both first-seen foreign receives. Earlier failures and state-dependent budget headroom justify further optimization; no universal capacity claim."
   },
   "publication": {
     "failedIntermediateCommit": "89ea6b3cd4c064a227357d11a43590fdd0e30155",
@@ -601,12 +616,14 @@
     "populatedRun": 35287600121,
     "populatedSource": "79dc91f53acedb05495f3d30eae18a04b9bc2144",
     "url": "https://github.com/cardano-foundation/cardano-ibc-incubator/actions/runs/35287600121",
-    "status": "in_progress",
+    "status": "completed",
     "staticCheckAtUnformattedSource": "failed formatting, corrected in formattedCandidateCommit",
     "formattedChecksRun": 35288005940,
-    "populatedAcceptance": "unverified",
-    "realMultiNodeRollback": "unverified",
-    "formattedStaticCheck": "passed"
+    "populatedAcceptance": "passed",
+    "realMultiNodeRollback": "passed",
+    "formattedStaticCheck": "passed",
+    "formattedChecksConclusion": "success",
+    "workflowConclusion": "failure: formatting only"
   },
   "releaseBlockers": [
     "Current compiled artifacts must complete actual populated V1-V2-V3 and canonical counterparty settlement",
@@ -624,5 +641,18 @@
     "report": "docs/evidence/emergency-budget-v3/operator-extended.json",
     "passedCases": 10,
     "ciIntegration": "Existing workflow invokes this command; new cases ran locally, their fresh CI execution is not claimed."
+  },
+  "populatedAcceptance": {
+    "record": "migration-populated-review-result.json",
+    "sourceCommit": "79dc91f53acedb05495f3d30eae18a04b9bc2144",
+    "job": 105423347310,
+    "result": "passed",
+    "scope": "Eight objects, two channels, two shards, V1-V2-V3, 37 receipts and real five-node minority-fork rollback. Newer changed artifacts require separate acceptance."
+  },
+  "checksOnlyAcceptance": {
+    "sourceCommit": "41dfd0c5e6c55d3148ee65c8fcdbb5df8590125e",
+    "run": 35288005940,
+    "result": "success",
+    "scope": "Full checks-only CI, identical baseline/V2/V3 blueprints"
   }
 }

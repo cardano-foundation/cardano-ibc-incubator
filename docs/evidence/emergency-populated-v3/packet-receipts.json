@@ -1,0 +1,2913 @@
+[
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "3"
+    ],
+    "step": "burn-timeout-remint",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22313030303030222C2264656E6F6D223A227472616E736665722F6368616E6E656C2D302F7374616B65222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 3,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2025-12-29T00:53:48.558363093Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "8b130c74d89bc0a97140b09abbc7f5cfb3226bf1143116811757c703bd31af6b",
+        "createdAt": {
+          "slot_no": 91451,
+          "header_hash": "c357b81231c438ef445438a7918d21bbb20b7df96e93974706da2c3a2ae66419"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "e3ff5da13b5818ed5462c73c7025b76643bbec030902cbbd01898d1349826906",
+        "createdAt": {
+          "slot_no": 91574,
+          "header_hash": "4d990adda65dc7efddc23e090818278b6219454c519fc26ae2971df34e72d4dc"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/burn-timeout-remint.log",
+    "attemptLogSha256": "cab245f3955522ba2b0f4f6ff530909ee0548edc52261e03b34801350d521a07",
+    "startedAt": 1767057807.9250364,
+    "finishedAt": 1767058031.2060928,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--amount",
+      "100000",
+      "--denom",
+      "transfer/channel-0/stake",
+      "--receiver",
+      "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+      "--timeout-seconds",
+      "600"
+    ],
+    "step": "burn-timeout-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22313030303030222C2264656E6F6D223A227472616E736665722F6368616E6E656C2D302F7374616B65222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 3,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2025-12-29T00:53:48.558363093Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "a5159eb2221b236a5211150f06c7f1b554a6b276ce9fe3092c5d5119a1a71c8f",
+        "createdAt": {
+          "slot_no": 2670,
+          "header_hash": "a2f7cf2c7af4c8735f6df05cc9c4f3f6165a9c45be10bccf03c57f020f41896c"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/burn-timeout-send.log",
+    "attemptLogSha256": "c459fa80db2bcc29686a35b5da85d1409cf71267ba35663ef7bcb424bbb6d64e",
+    "startedAt": 1766969038.1639335,
+    "finishedAt": 1766969127.1760895,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "migration-462-1",
+      "height": "459",
+      "hash": "35D7BCDB816DCDF2B0B28327388E8F8FF963ADA1DC147F1834426D60F218E9D4",
+      "timestampNs": "1766969028558363093"
+    },
+    "destinationAfter": {
+      "chain": "migration-462-1",
+      "height": "477",
+      "hash": "E46DD77DC4BDFD2CC1829AD650C825262E25BDBEF617DD098957429D66A3928A",
+      "timestampNs": "1766969118671107485"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "2"
+    ],
+    "step": "foreign-pending-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22313233343536222C2264656E6F6D223A227374616B65222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:44:00Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 1968,
+        "blockHash": "4F40481D0BD79D9BAD26503A6245B3F89D0E368B7776BE8BC2246329F5A4078F",
+        "txIndex": 0,
+        "packetMessage": {
+          "transactionHash": "D3D3729E0433EC0E3E4C1F799A76D6D9F8165CD80C1FEDB209B9D2186283F1A6",
+          "messageIndex": 1,
+          "proofHeight": "2433",
+          "packetMessageVerified": true
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": true,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-pending-ack.log",
+    "attemptLogSha256": "0cceea95e12fcdc6c34d45401a84cb4f62b57c22f0264f5acacb6c60e86244d5",
+    "startedAt": 1767146340.6665938,
+    "finishedAt": 1767146439.0052714,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "2"
+    ],
+    "step": "foreign-pending-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A22313233343536222C2264656E6F6D223A227374616B65222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:44:00Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "cc99c5f1b106a15d9d60087bd6d5ee9dbe35ec31a8f369731e8504c5577308a8",
+        "createdAt": {
+          "slot_no": 91779,
+          "header_hash": "cf0e991b74fb577b5b18b8131f234f7f1b22941798db75656a3aa368809d1097"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "ff3383f575a9cb625a91269aaedffe48c954a83ed734e2d5d320d26ac27f3287",
+        "createdAt": {
+          "slot_no": 91713,
+          "header_hash": "39e17cd731726c7f15965b8a0b615e713c128c533d7700280aadd8d1e71f959b"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-pending-receive.log",
+    "attemptLogSha256": "b15cd96f4c472c2850ca68971b546b2dc3c0eb97d511dc4b66e6f944191cf2a8",
+    "startedAt": 1767058074.538608,
+    "finishedAt": 1767058238.941671,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--amount",
+      "123456",
+      "--denom",
+      "stake",
+      "--receiver",
+      "8f310f79f977bdf0befedfae3374a625e64c9a69a40c3c8fca607dac",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "foreign-pending-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22313233343536222C2264656E6F6D223A227374616B65222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:44:00Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 479,
+        "blockHash": "6AB9C2294FCEEC31ABC5F2C98FBDA47AC949528155A5554181F0FCC17548D2C7",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-pending-send.log",
+    "attemptLogSha256": "039a48f0d860a748830135995f4b624d2bf6d52335bbe9870dc16b2e1a6672cc",
+    "startedAt": 1766969132.7615235,
+    "finishedAt": 1766969134.0051491,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "cardano-devnet",
+      "height": "640",
+      "hash": "a2f7cf2c7af4c8735f6df05cc9c4f3f6165a9c45be10bccf03c57f020f41896c",
+      "timestampNs": "1766969040000000000"
+    },
+    "destinationAfter": {
+      "chain": "cardano-devnet",
+      "height": "640",
+      "hash": "a2f7cf2c7af4c8735f6df05cc9c4f3f6165a9c45be10bccf03c57f020f41896c",
+      "timestampNs": "1766969040000000000"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "1"
+    ],
+    "step": "foreign-primary-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2231303030303030222C2264656E6F6D223A227374616B65222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:26:09Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 1182,
+        "blockHash": "9682D80890493D5051029403DBC41DF72BBB1BDE9563AF1040B65027E5BE8DC8",
+        "txIndex": 0,
+        "packetMessage": {
+          "transactionHash": "3BE753517B410C9C09F121E4300F1C36E5329BC9042808AA7A952C6FA7A6C3B3",
+          "messageIndex": 1,
+          "proofHeight": "1461",
+          "packetMessageVerified": true
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": true,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-primary-ack.log",
+    "attemptLogSha256": "10979c505b6bb93deee197fa8144d32f4de03319f3fa6349d88db6e1ff91e4cc",
+    "startedAt": 1767057443.5023923,
+    "finishedAt": 1767057567.6689398,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "1"
+    ],
+    "step": "foreign-primary-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A2231303030303030222C2264656E6F6D223A227374616B65222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:26:09Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "883a8761babd5f68a873711e01621a2fbea33226f2687dad917835d6f7d249ee",
+        "createdAt": {
+          "slot_no": 1756,
+          "header_hash": "20f34dc6c86bca4e8865541c844165e26fa61e1ff4655824cc64a0cb8de9debb"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "ff8ab5c78ca078234b6dfbb1e904242bcbd3a6cec5b5fae6f510360155c115d9",
+        "createdAt": {
+          "slot_no": 1864,
+          "header_hash": "b756e9ffefd644f2aeddb17be49719b9072ce62f0d3fbeb37cf5e22fef46518f"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-primary-receive.log",
+    "attemptLogSha256": "21e461e2b0234e9d21c9f33bd7001bbc4bed3969462540513a882d7ba17807b0",
+    "startedAt": 1766968111.5295784,
+    "finishedAt": 1766968323.036253,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--amount",
+      "1000000",
+      "--denom",
+      "stake",
+      "--receiver",
+      "8f310f79f977bdf0befedfae3374a625e64c9a69a40c3c8fca607dac",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "foreign-primary-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2231303030303030222C2264656E6F6D223A227374616B65222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:26:09Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 274,
+        "blockHash": "50C705C5ABD39F9C1352283AC931FACD47C1097C8B47C19D22C3710020AF9146",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-primary-send.log",
+    "attemptLogSha256": "73eb7148d5249b75a0cef29581179ed007824f7381352a0248d8ab91c61bb584",
+    "startedAt": 1766968104.8327508,
+    "finishedAt": 1766968107.5790954,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "cardano-devnet",
+      "height": "385",
+      "hash": "178d1ced276c81dc92815b76882f352a74f0d466e3bf6ba69b969590c2df7754",
+      "timestampNs": "1766967969000000000"
+    },
+    "destinationAfter": {
+      "chain": "cardano-devnet",
+      "height": "385",
+      "hash": "178d1ced276c81dc92815b76882f352a74f0d466e3bf6ba69b969590c2df7754",
+      "timestampNs": "1766967969000000000"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "1"
+    ],
+    "step": "foreign-secondary-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22353030303030222C2264656E6F6D223A227374616B65222C227265636569766572223A223936623666333464326561646637316363636465376438356262386337633931653334653066363665333462343139356666393461656630222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:34:06Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 1183,
+        "blockHash": "7E9CC44CA2E06D6BE63D0F98EF9E4DFA893C420C9425F4BCDC007511F08E6F76",
+        "txIndex": 0,
+        "packetMessage": {
+          "transactionHash": "5FF0F4E01364E88F2A95294503956B1C4149FD9C41ED2A7CEC3E934FBCB015DD",
+          "messageIndex": 0,
+          "proofHeight": "1461",
+          "packetMessageVerified": true
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": true,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-secondary-ack.log",
+    "attemptLogSha256": "687ec0b27d5aa71ca548be580448db72949b081cea5b4ccc377e3f835574a317",
+    "startedAt": 1767057571.1288373,
+    "finishedAt": 1767057572.5800993,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "1"
+    ],
+    "step": "foreign-secondary-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A22353030303030222C2264656E6F6D223A227374616B65222C227265636569766572223A223936623666333464326561646637316363636465376438356262386337633931653334653066363665333462343139356666393461656630222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:34:06Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "11278926a9f15709263671443e5316090fc4372d1fe58b3179e03642a93592a2",
+        "createdAt": {
+          "slot_no": 2325,
+          "header_hash": "ac1c24639877547cf16ceef7bc0b4376274c1429646e4c638cc2965db3c9f913"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "77ab1b21943c02a9e54d53da989a68604ecd19b4f7d24b70e4927aaf3fcfea6a",
+        "createdAt": {
+          "slot_no": 2229,
+          "header_hash": "a0bb0af76ed779520d8813b07d956b58819563e1b1aa93af3e3c09599f974bcb"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-secondary-receive.log",
+    "attemptLogSha256": "9bc9e50b31841da5720f71bd807b3c126538fd8496daeefab7bbc9c56c5faa78",
+    "startedAt": 1766968582.169155,
+    "finishedAt": 1766968797.6115124,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--amount",
+      "500000",
+      "--denom",
+      "stake",
+      "--receiver",
+      "96b6f34d2eadf71cccde7d85bb8c7c91e34e0f66e34b4195ff94aef0",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "foreign-secondary-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22353030303030222C2264656E6F6D223A227374616B65222C227265636569766572223A223936623666333464326561646637316363636465376438356262386337633931653334653066363665333462343139356666393461656630222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:34:06Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 368,
+        "blockHash": "3CA266E87376DEFCB880BC85D736E50C3EDC4C6FB4C83C0C7FBEFD3BB43A61DC",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/foreign-secondary-send.log",
+    "attemptLogSha256": "a6972ef6386821080f2a6a1038039bffc4096837ca94288f230853a00ce9f052",
+    "startedAt": 1766968575.1889856,
+    "finishedAt": 1766968578.22612,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "cardano-devnet",
+      "height": "501",
+      "hash": "011de7b138d067dd7bacb3f3611315d9214a548aaab26649e1ff97d54a71bbf2",
+      "timestampNs": "1766968446000000000"
+    },
+    "destinationAfter": {
+      "chain": "cardano-devnet",
+      "height": "501",
+      "hash": "011de7b138d067dd7bacb3f3611315d9214a548aaab26649e1ff97d54a71bbf2",
+      "timestampNs": "1766968446000000000"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "1"
+    ],
+    "step": "native-a-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A223130303030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:32:02.712204851Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "621fb0e455a10b1a5fd5b5f0a50bf6ac011e50cfc732fc5f9ae00f68829f9483",
+        "createdAt": {
+          "slot_no": 90791,
+          "header_hash": "380b1931fff601b92eec8c8a44598d53c71e2b49b1af5710b012d04c55a4347f"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "b67dce9aca569f8bbdcd15ba323d5d116fd96aac692defc26ed127dd1e5fe811",
+        "createdAt": {
+          "slot_no": 90688,
+          "header_hash": "570d8171c032b878b9519d57f26e8f4dd34219299a948b2e034d0faa859d0039"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-a-ack.log",
+    "attemptLogSha256": "a56a7383d9f2daf2e38e66e76325f4fa73ecb5d909bfe56507c387367e8c5641",
+    "startedAt": 1767057047.3231473,
+    "finishedAt": 1767057243.1343722,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "1"
+    ],
+    "step": "native-a-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A223130303030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:32:02.712204851Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 340,
+        "blockHash": "7841B69FAA51DA29C3DDAD5624343C78F9BCB300998ED5F2A9E2BD792D100A43",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-a-receive.log",
+    "attemptLogSha256": "43edcaee1d89e4377fa5bc9e641eccc1c5d9188b04daaa6d8b3036228803b292",
+    "startedAt": 1766968424.817419,
+    "finishedAt": 1766968437.9612172,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--amount",
+      "10000",
+      "--denom",
+      "77dd2584d3555e633bb61a9f0977ece51bbf17945ff459000720139f4d4947524154494f4e34363241",
+      "--receiver",
+      "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "native-a-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A223130303030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:32:02.712204851Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "562e1803165f44f1c54af0978282365ff8abfbd3e59155338a5e21569b6680c8",
+        "createdAt": {
+          "slot_no": 1961,
+          "header_hash": "9f174943a0efd948c94edc945972e58f58e4d59dba6e6c02b0daa4801e47d733"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-a-send.log",
+    "attemptLogSha256": "1e6728966ba1846ec26c7dcb51f210236250e05f1b3e7b20e1286a508684648b",
+    "startedAt": 1766968329.4131413,
+    "finishedAt": 1766968418.4133475,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "migration-462-1",
+      "height": "318",
+      "hash": "D36318BC62A4D85ACAF65345053ADDA045D506E82A64B31154A25F69E01A47A4",
+      "timestampNs": "1766968322712204851"
+    },
+    "destinationAfter": {
+      "chain": "migration-462-1",
+      "height": "336",
+      "hash": "375CFEE7CB98BD43F71DE3E9FCA2CE637FAADACFCDD79A94F87E39D9BB9E24CE",
+      "timestampNs": "1766968412827894465"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "1"
+    ],
+    "step": "native-b-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2237303030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:33:57.86000323Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "0919492d6916f1d79fc961ac0eac924e13f1023dada58c08a1ffdaa386e7bb95",
+        "createdAt": {
+          "slot_no": 90960,
+          "header_hash": "db30d1af7aa9b9e53645d98f97386ee28284836f29a947c77d684d44990771f8"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "91ef30eebac85e5ef2164281a7af98e6ef99454af0f3c1d33c8cdf1cdaa0ab95",
+        "createdAt": {
+          "slot_no": 90894,
+          "header_hash": "bcb1587a0188634ba312f5114cf64a1f2dbadcaac5b4076f5792eebd858a94f1"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-b-ack.log",
+    "attemptLogSha256": "ac4d1feaf3f11767ae0a1ddc29e13744bf37206a6f1710d3be86f6ffc9afec95",
+    "startedAt": 1767057254.0551589,
+    "finishedAt": 1767057434.108153,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "1"
+    ],
+    "step": "native-b-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A2237303030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:33:57.86000323Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 366,
+        "blockHash": "C280A158ABBB41598AA10079C9D98C6BEE6273BBE5D215B805675A2AA8F53C2E",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-b-receive.log",
+    "attemptLogSha256": "7d44ab70583f1731b3d5218c79083fe5328b2abd38c9b2e631bf2d562a8804eb",
+    "startedAt": 1766968562.0624967,
+    "finishedAt": 1766968568.203563,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--amount",
+      "7000",
+      "--denom",
+      "77dd2584d3555e633bb61a9f0977ece51bbf17945ff459000720139f4d4947524154494f4e34363242",
+      "--receiver",
+      "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "native-b-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2237303030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 1,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:33:57.86000323Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "1048ae8482c4315e3d56aa4472bc4448f637db3229ad6ff52b1c95d68ebcca28",
+        "createdAt": {
+          "slot_no": 2076,
+          "header_hash": "011de7b138d067dd7bacb3f3611315d9214a548aaab26649e1ff97d54a71bbf2"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-b-send.log",
+    "attemptLogSha256": "d0a0003fcb6cf7d9431b425011737c3d973e9abeb2f610b9c7aae52d088f6e03",
+    "startedAt": 1766968444.372995,
+    "finishedAt": 1766968555.703427,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "migration-462-1",
+      "height": "341",
+      "hash": "0DC71F46545B2E77CFB50258F3B9E95A20BAF90295E4904045043AF18AF30CEA",
+      "timestampNs": "1766968437860003230"
+    },
+    "destinationAfter": {
+      "chain": "migration-462-1",
+      "height": "363",
+      "hash": "63F4D4E7DDAEB727DA02D02F929E3501F46ED384E18AE231A1971AA456739ED1",
+      "timestampNs": "1766968547985703181"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "2"
+    ],
+    "step": "native-pending-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22393030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:42:03.433460462Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "624e79e73aa9e50fff763926e78acdaeae29748fa093225dc2cd9584467e54a8",
+        "createdAt": {
+          "slot_no": 179777,
+          "header_hash": "0e31255610a06c9f062435b03cf97d9e7e04f2635110a8cfd87c34b9eff6675b"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "bbd5892676ac9100f80d55910491e66780053296adc1effa87f5d1d46a45c01b",
+        "createdAt": {
+          "slot_no": 179852,
+          "header_hash": "cab12ab6ced95324cba6637f9111ddcd23641db2c16e9fd53ede0b135826292a"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-pending-ack.log",
+    "attemptLogSha256": "2ac34724da66ea6451771c6c76d29bbc893e91c4a36f5d9d7d46c8efa0aaf20b",
+    "startedAt": 1767146128.3440142,
+    "finishedAt": 1767146331.334191,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "2"
+    ],
+    "step": "native-pending-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A22393030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:42:03.433460462Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 1282,
+        "blockHash": "FBAA9048193367AE09D07990236CA790763F2DA271262D59151D0C8C83EAE929",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-pending-receive.log",
+    "attemptLogSha256": "aa1e73e71743a1d27e62c566f7557cb8f3468c2ca9d28b73dd5cf501e4c9049c",
+    "startedAt": 1767058042.165108,
+    "finishedAt": 1767058068.1043713,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--amount",
+      "900",
+      "--denom",
+      "77dd2584d3555e633bb61a9f0977ece51bbf17945ff459000720139f4d4947524154494f4e34363242",
+      "--receiver",
+      "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "native-pending-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22393030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:42:03.433460462Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "21d3ed917b957ac28218331b308562fef842ec23c260757fb56f58403eee68b5",
+        "createdAt": {
+          "slot_no": 2574,
+          "header_hash": "b3def647ac000657d41ac0218f581b076ff858e8ef86aa8b51c79c63ce5d3e05"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-pending-send.log",
+    "attemptLogSha256": "73ecbba48228cd8b05808554926cff7d99da8b86500f1f3f28dc2873b4c040c6",
+    "startedAt": 1766968928.1893072,
+    "finishedAt": 1766969033.2358165,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "migration-462-1",
+      "height": "437",
+      "hash": "7717A30A3335C463840272E163F9DD91B8EC91404FE77F472D5221B266D357B5",
+      "timestampNs": "1766968918427622743"
+    },
+    "destinationAfter": {
+      "chain": "migration-462-1",
+      "height": "458",
+      "hash": "9E50DFF2559AEA939C81BF3E3775E83CA3AE8EFE8DB5EE051BCA21D34D6F3993",
+      "timestampNs": "1766969023552756097"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "3"
+    ],
+    "step": "native-return-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2232303030222C2264656E6F6D223A227472616E736665722F6368616E6E656C2D302F37376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 3,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:44:00Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 1969,
+        "blockHash": "000BB752EDBF67AA2DD577FE1BE635D9FBBAF05C31546B779EF5F382B33D11E2",
+        "txIndex": 0,
+        "packetMessage": {
+          "transactionHash": "A201362C4270CF6E31D8B336F6F3BD9C5C54A71F53C692520126467C126314E4",
+          "messageIndex": 0,
+          "proofHeight": "2433",
+          "packetMessageVerified": true
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": true,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-return-ack.log",
+    "attemptLogSha256": "f1349cf47ed2f305fe995c3f11b7f53cd2b604a3649e9d2ea4412a43250f1cfb",
+    "startedAt": 1767146442.397166,
+    "finishedAt": 1767146443.9404929,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "3"
+    ],
+    "step": "native-return-redeem",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A2232303030222C2264656E6F6D223A227472616E736665722F6368616E6E656C2D302F37376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 3,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:44:00Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "50af1b5acd7ce4cb9f73e8329a557de1daa21769bcf50f4cd07242add5abd496",
+        "createdAt": {
+          "slot_no": 92022,
+          "header_hash": "1af0eae00654272d701c1465b5b1c74d5e6fd274915f8134a7e0a87461647175"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "eb60b68fcf05ab71f396fe7f957c1dc5601405023e7a64701b53c31c738702b4",
+        "createdAt": {
+          "slot_no": 91883,
+          "header_hash": "0718ae923b30ef46109fabca6f974f6ae83d42c6701fe214ab3830139fd68928"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-return-redeem.log",
+    "attemptLogSha256": "2ce61a802d276c3bd469c19a05fa07a54d3cb13fe132e41309d41f12e1cdd548",
+    "startedAt": 1767058245.3132806,
+    "finishedAt": 1767058507.2429223,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--amount",
+      "2000",
+      "--denom",
+      "ibc/D05D350D0A61E54A53D2C5FC7BFC3855EAB88CA0DB98F0E58B4079C2C8FCD646",
+      "--receiver",
+      "8f310f79f977bdf0befedfae3374a625e64c9a69a40c3c8fca607dac",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "native-return-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2232303030222C2264656E6F6D223A227472616E736665722F6368616E6E656C2D302F37376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 3,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-04T00:44:00Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 481,
+        "blockHash": "8E5D05912525207940C9D476B8FCF6B01C07B6CBC7D878225901307A49A12665",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-return-send.log",
+    "attemptLogSha256": "1917d162a72d9195beeb1976a17eeb3a864ac10ce59ce3153c7824ea83b95958",
+    "startedAt": 1766969138.652814,
+    "finishedAt": 1766969143.80202,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "cardano-devnet",
+      "height": "640",
+      "hash": "a2f7cf2c7af4c8735f6df05cc9c4f3f6165a9c45be10bccf03c57f020f41896c",
+      "timestampNs": "1766969040000000000"
+    },
+    "destinationAfter": {
+      "chain": "cardano-devnet",
+      "height": "640",
+      "hash": "a2f7cf2c7af4c8735f6df05cc9c4f3f6165a9c45be10bccf03c57f020f41896c",
+      "timestampNs": "1766969040000000000"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "2"
+    ],
+    "step": "native-timeout-refund",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2231303030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2025-12-29T00:49:58.284745439Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "9c7e581ec38804903b86503e47eb1c55cd8313f01624b3b9839ee2bea3a84a95",
+        "createdAt": {
+          "slot_no": 91333,
+          "header_hash": "cbc12dbacaffb95aa228848ff74167adb0e1f2958213082f1fac4da19251e646"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "d54a4d1a12d3ccfa2f84cc037dc2b8606ba1f54d64d493ab28f7f03e647fd660",
+        "createdAt": {
+          "slot_no": 91218,
+          "header_hash": "56125f091cb0b74019a10ca795b07b0fc97df9920f0da728f4aff926ee4ba8c2"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-timeout-refund.log",
+    "attemptLogSha256": "d11e925f784fb85a2dcb55a0384074c431cca75e584d0af539aa2392e2b2c914",
+    "startedAt": 1767057577.570266,
+    "finishedAt": 1767057796.97854,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--amount",
+      "1000",
+      "--denom",
+      "77dd2584d3555e633bb61a9f0977ece51bbf17945ff459000720139f4d4947524154494f4e34363241",
+      "--receiver",
+      "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+      "--timeout-seconds",
+      "600"
+    ],
+    "step": "native-timeout-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2231303030222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2025-12-29T00:49:58.284745439Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "4c53fb583952228aac35ebef97a7a37d5ab27e115b76efd5f2ec8de199964b04",
+        "createdAt": {
+          "slot_no": 2445,
+          "header_hash": "02938b5c04598cbe42c87e7cf23782dd3c373ace1a69019516b1751f0684c06b"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/native-timeout-send.log",
+    "attemptLogSha256": "5fd51a19586c9519d6c3401f1a23479d0ddf11a44e66f1eb5cbe9649d254c2cf",
+    "startedAt": 1766968803.9834306,
+    "finishedAt": 1766968923.2548234,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "migration-462-1",
+      "height": "413",
+      "hash": "49BE827C7B8AAAA82CA4CA99914B4FFC367016560590881363943BF0AD65EAF7",
+      "timestampNs": "1766968798284745439"
+    },
+    "destinationAfter": {
+      "chain": "migration-462-1",
+      "height": "436",
+      "hash": "8FAB4B3FAE393BA7A88475584A5F137947500171217F0364F592037EABDA6940",
+      "timestampNs": "1766968913422221617"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-1.json",
+    "sourceManifestSha256": "4efcc5b85f3d9e7978e0496f3b8fe85794abd40de99d34cc16279d7a08c63442"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "5"
+    ],
+    "step": "new-foreign-return-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2235303030222C2264656E6F6D223A227472616E736665722F6368616E6E656C2D302F7374616B65222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 5,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-05T01:37:13.549063385Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "9defa45e14eb0e7e9d2eb2367265d6ab37413ab7c08ce70ac0904273fc9db211",
+        "createdAt": {
+          "slot_no": 180304,
+          "header_hash": "538a325648b7a5425d2745d867b583d2e77d141028f47e2ae886676514698cd4"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "ec2a4d9dc3bbcc07a789e20681a6ad2c82043be6ac96d42f3219225b3369f5dd",
+        "createdAt": {
+          "slot_no": 180394,
+          "header_hash": "082eaa5bee30b8d15bcf42503f84f6fce1c4c9397415340a74cf48e3a15703b1"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/new-foreign-return-ack.log",
+    "attemptLogSha256": "74d0c97e65df7832b9216924717551c8f0721162ae7b192e785f75a0c07bdc5a",
+    "startedAt": 1767146659.3158,
+    "finishedAt": 1767146856.4434466,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "5"
+    ],
+    "step": "new-foreign-return-redeem",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A2235303030222C2264656E6F6D223A227472616E736665722F6368616E6E656C2D302F7374616B65222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 5,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-05T01:37:13.549063385Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 1421,
+        "blockHash": "DA2DB85178FB26240F8BA7291E10B30E2320E5FD00C747C6472F44860A0CC447",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/new-foreign-return-redeem.log",
+    "attemptLogSha256": "9394a79dc3323b65b54e13e4d4cbc39c97bf86dead68c3f587481c4c9df2f9e6",
+    "startedAt": 1767058759.9845457,
+    "finishedAt": 1767058764.0925672,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--amount",
+      "5000",
+      "--denom",
+      "transfer/channel-0/stake",
+      "--receiver",
+      "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "new-foreign-return-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A2235303030222C2264656E6F6D223A227472616E736665722F6368616E6E656C2D302F7374616B65222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 5,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-05T01:37:13.549063385Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "31502f4746c323c473e021d3227bcb2ebab66038e58f6224943a363ac5044580",
+        "createdAt": {
+          "slot_no": 92275,
+          "header_hash": "01e77e1a3b23fba19cd5779c2713715ff9a57002e2364229981254cb22c44585"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/new-foreign-return-send.log",
+    "attemptLogSha256": "793b3e0bf2fb7b9a738e7a09f4fd90f65a20cb8a9d5378d5aee17ec415de72a2",
+    "startedAt": 1767058640.26309,
+    "finishedAt": 1767058753.5505352,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "migration-462-1",
+      "height": "1396",
+      "hash": "322D7660FB00A3D3B84A3D504E5A46C0799CF2AE7DB5FF022AA7FFDFAAFA8FDE",
+      "timestampNs": "1767058633549063385"
+    },
+    "destinationAfter": {
+      "chain": "migration-462-1",
+      "height": "1418",
+      "hash": "B775C76FD1E9351FC90FE52E58D354962CB0D26A880694F50DBCB947130446DA",
+      "timestampNs": "1767058743679148568"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "4"
+    ],
+    "step": "new-native-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22333333222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 4,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-05T01:35:08.395095449Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "e2746a13de09561ca4841c01bf2a15e1c2509bc5e4a1e5672d5d6b46f900467a",
+        "createdAt": {
+          "slot_no": 180192,
+          "header_hash": "2c0808d32fe34163967977b27060b33fbda074c471140d85016fb44fc4e4e4a9"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "ed6978d4645e75c78f07a46419d110f423b6c438170475476efb9a716f840e41",
+        "createdAt": {
+          "slot_no": 180096,
+          "header_hash": "7a98436d2a925ccdafae6f34ad6702edf665146fc01fb48cdfcbd6f71dc87509"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/new-native-ack.log",
+    "attemptLogSha256": "e2703b6b4eea80875481fd2949c47f0f353c2a90fcc0a313fda0a3a0f80c1ce2",
+    "startedAt": 1767146448.964434,
+    "finishedAt": 1767146648.449908,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--packet-sequences",
+      "4"
+    ],
+    "step": "new-native-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A22333333222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 4,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-05T01:35:08.395095449Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 1395,
+        "blockHash": "147EB210BAAECDB8B27D01B2DC31308D592A1A5EF4EB135A662D75686E4EE8D3",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/new-native-receive.log",
+    "attemptLogSha256": "94cb8852f5eb246bf72d7d3f3a31174f7fe262676add84be2783fd0eb84eb106",
+    "startedAt": 1767058609.1173055,
+    "finishedAt": 1767058633.7818522,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-0",
+      "--amount",
+      "333",
+      "--denom",
+      "77dd2584d3555e633bb61a9f0977ece51bbf17945ff459000720139f4d4947524154494f4e34363241",
+      "--receiver",
+      "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "new-native-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22333333222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323431222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-0",
+          "destination_port": "transfer",
+          "sequence": 4,
+          "source_channel": "channel-0",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-05T01:35:08.395095449Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "b1eba836ab746c162bf20e016450964ebfe29b141c939d78e9d0e1a1dbf0c185",
+        "createdAt": {
+          "slot_no": 92147,
+          "header_hash": "e4973b496044f8ebd8bb2dfdad2c3641d656a4ecf6c7e9b123110395410e9502"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/new-native-send.log",
+    "attemptLogSha256": "1ca0787ca6a70e8d97a2be44e3716f1c5d4244d4417332ab1547a7016cca7c05",
+    "startedAt": 1767058513.5987067,
+    "finishedAt": 1767058602.6239443,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "migration-462-1",
+      "height": "1371",
+      "hash": "7DCBE2AA9F0B54B98CC685A2B9C40412FDE22054F06CD9AAB90FE5BEEE8591BB",
+      "timestampNs": "1767058508395095449"
+    },
+    "destinationAfter": {
+      "chain": "migration-462-1",
+      "height": "1388",
+      "hash": "4B2256CEC2D5056119BC10F24CA1C19F6646EFE4D951E9E1A82B5DE2ABAD41F0",
+      "timestampNs": "1767058593493630124"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-2.json",
+    "sourceManifestSha256": "1566afc031f48cf78e5f4fbc0f8f6ae7b7af23d9501f85e51484c9b51a1adefe"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "2"
+    ],
+    "step": "v3-foreign-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22373737222C2264656E6F6D223A227374616B65222C227265636569766572223A223936623666333464326561646637316363636465376438356262386337633931653334653066363665333462343139356666393461656630222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-06T02:11:56Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 2179,
+        "blockHash": "16CD64604C23626F3AA44DB124747549D489C0D1552335A31B80186958DDD82A",
+        "txIndex": 0,
+        "packetMessage": {
+          "transactionHash": "8E752DFD53288E02A66BB72FB870723C6DC14B579C28B139E52EA9EEB8868DFA",
+          "messageIndex": 1,
+          "proofHeight": "2718",
+          "packetMessageVerified": true
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": true,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/v3-foreign-ack.log",
+    "attemptLogSha256": "c72a1bfbaa8deea6ef7201b7c2070009b72eb18b838fa153947119df925a9c47",
+    "startedAt": 1767147476.4198492,
+    "finishedAt": 1767147495.457753,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "2"
+    ],
+    "step": "v3-foreign-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A22373737222C2264656E6F6D223A227374616B65222C227265636569766572223A223936623666333464326561646637316363636465376438356262386337633931653334653066363665333462343139356666393461656630222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-06T02:11:56Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "29233e4e4db507aa68f5a6fb5c6d718ae9406cda95c30e83410fc0ee9e4fa46e",
+        "createdAt": {
+          "slot_no": 180981,
+          "header_hash": "a62ab1e49dbf1c3f8ef066ec14261f4f9186bd2dca7f069c6594ee0655fc8945"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "73f04b404a58621c6f87d7b9a8d911e6e4c5433b4f0cb11b89f72dd4cf94d7f1",
+        "createdAt": {
+          "slot_no": 180853,
+          "header_hash": "37cdef6a7caf4a67fd8634059bffb1398fe9004bb1f441769f05f44a91a4a57b"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/v3-foreign-receive.log",
+    "attemptLogSha256": "08b7ff7985acb29cd3690d910040ad23f3bd87240abec89670da2c14bc857bc6",
+    "startedAt": 1767147213.7828808,
+    "finishedAt": 1767147470.004897,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--amount",
+      "777",
+      "--denom",
+      "stake",
+      "--receiver",
+      "96b6f34d2eadf71cccde7d85bb8c7c91e34e0f66e34b4195ff94aef0",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "v3-foreign-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22373737222C2264656E6F6D223A227374616B65222C227265636569766572223A223936623666333464326561646637316363636465376438356262386337633931653334653066363665333462343139356666393461656630222C2273656E646572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 2,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-06T02:11:56Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 2122,
+        "blockHash": "AB946B3BFE0E4B946FD8D21C1A0BB54279700AD0FD41569E8B229328299092D8",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/v3-foreign-send.log",
+    "attemptLogSha256": "c4c8a8ab63810dce281381e255268e88de991904838627736f665442912e6972",
+    "startedAt": 1767147204.9132366,
+    "finishedAt": 1767147209.7748075,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "cardano-devnet",
+      "height": "2660",
+      "hash": "37b97a96d98086d576b66ee8bcf2d9df889b1794f1cc4432e54d01cf3212ab6c",
+      "timestampNs": "1767147116000000000"
+    },
+    "destinationAfter": {
+      "chain": "cardano-devnet",
+      "height": "2660",
+      "hash": "37b97a96d98086d576b66ee8bcf2d9df889b1794f1cc4432e54d01cf3212ab6c",
+      "timestampNs": "1767147116000000000"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-ack",
+      "--src-chain",
+      "migration-462-1",
+      "--dst-chain",
+      "cardano-devnet",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "3"
+    ],
+    "step": "v3-native-ack",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22343434222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 3,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-06T02:07:39.320517964Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "2bac4d86b3b47e546e2eb929d149b70918c4b32b5c80f8b1a64829b93a7f6ea8",
+        "createdAt": {
+          "slot_no": 180746,
+          "header_hash": "37b97a96d98086d576b66ee8bcf2d9df889b1794f1cc4432e54d01cf3212ab6c"
+        }
+      },
+      {
+        "chain": "cardano-devnet",
+        "hash": "a35dfc717f7f1950e7c299c72892cd5cc4b0d63f3184b06ff5922242011ff0a9",
+        "createdAt": {
+          "slot_no": 180652,
+          "header_hash": "236cb53bdad82bfb9e7fefd900063c9d7c6aeb2c2569127d878a9155dc0f3299"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/v3-native-ack.log",
+    "attemptLogSha256": "1b070a6279b2e510a93f167a295d6f87aa527556c7a8fed23d352dcecebbd8ff",
+    "startedAt": 1767147007.5963857,
+    "finishedAt": 1767147194.8793006,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "packet-recv",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--packet-sequences",
+      "3"
+    ],
+    "step": "v3-native-receive",
+    "events": [
+      {
+        "ack": "7B22726573756C74223A2241513D3D227D",
+        "packet": {
+          "data": "7B22616D6F756E74223A22343434222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 3,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-06T02:07:39.320517964Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "migration-462-1",
+        "height": 2080,
+        "blockHash": "CC4EFE1DA25953D60121E88E8ED37022566F5F71C21A68113E663CB3F60E2703",
+        "txIndex": 0
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/v3-native-receive.log",
+    "attemptLogSha256": "cbffcedc9735329e8f0bc75a62012cced6b763000cd698ec2a15996ad82c2a7f",
+    "startedAt": 1767146973.5153563,
+    "finishedAt": 1767146999.6094573,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": null,
+    "destinationAfter": null,
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  },
+  {
+    "genesisSha256": "96625d16e80e9610e2ce8b72c9cb5420aed29def38058651e5d4d516693a86ab",
+    "deploymentId": "cardano-devnet:2f618d4575525f05002951650de67cb620b341b1475f8a19d4ac81ef.6962635f686f73745f7374617465",
+    "operation": [
+      "tx",
+      "ft-transfer",
+      "--src-chain",
+      "cardano-devnet",
+      "--dst-chain",
+      "migration-462-1",
+      "--src-port",
+      "transfer",
+      "--src-channel",
+      "channel-1",
+      "--amount",
+      "444",
+      "--denom",
+      "77dd2584d3555e633bb61a9f0977ece51bbf17945ff459000720139f4d4947524154494f4e34363242",
+      "--receiver",
+      "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
+      "--timeout-seconds",
+      "518400"
+    ],
+    "step": "v3-native-send",
+    "events": [
+      {
+        "packet": {
+          "data": "7B22616D6F756E74223A22343434222C2264656E6F6D223A2237376464323538346433353535653633336262363161396630393737656365353162626631373934356666343539303030373230313339663464343934373532343135343439346634653334333633323432222C227265636569766572223A22636F736D6F7331726E72356A72743465786C3073616D776A307965677639396A65736B6C3068736765357A7774222C2273656E646572223A223866333130663739663937376264663062656665646661653333373461363235653634633961363961343063336338666361363037646163227D",
+          "destination_channel": "channel-1",
+          "destination_port": "transfer",
+          "sequence": 3,
+          "source_channel": "channel-1",
+          "source_port": "transfer",
+          "timeout_height": {
+            "revision_height": 0,
+            "revision_number": 0
+          },
+          "timeout_timestamp": {
+            "time": "2026-01-06T02:07:39.320517964Z"
+          }
+        }
+      }
+    ],
+    "canonicalTransactions": [
+      {
+        "chain": "cardano-devnet",
+        "hash": "11de000441c0f6fbe74787ff66845e7e5e721763fe4bf890f31482143eb4721a",
+        "createdAt": {
+          "slot_no": 180498,
+          "header_hash": "ed90de29d768c5562fbf07f40b21ab3994a845aa9591835bfac72beaff673ee1"
+        }
+      }
+    ],
+    "reconciledFromRetainedLog": false,
+    "eventPacketPayloadOmitted": false,
+    "attemptLog": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/traffic/v3-native-send.log",
+    "attemptLogSha256": "5b99dcec38fc1ad5454df8ce162946fb90c133acafadb5955e5c127af129b056",
+    "startedAt": 1767146865.8014057,
+    "finishedAt": 1767146967.0926826,
+    "routes": [
+      {
+        "cardano": "channel-0",
+        "cosmos": "channel-0",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      },
+      {
+        "cardano": "channel-1",
+        "cosmos": "channel-1",
+        "cosmosClient": "08-cardano-probabilistic-0"
+      }
+    ],
+    "destinationBefore": {
+      "chain": "migration-462-1",
+      "height": "2053",
+      "hash": "6F33054F0ACEC2626E2E1ACEF624ACCCB56FCC7172743084A39FE1978174CB6B",
+      "timestampNs": "1767146859320517964"
+    },
+    "destinationAfter": {
+      "chain": "migration-462-1",
+      "height": "2073",
+      "hash": "0EB4C21F5712CC4DD783555249D464FF8EFF600BD3898BAE50BC3E4410420363",
+      "timestampNs": "1767146959428717587"
+    },
+    "sourceManifest": "/home/runner/work/cardano-ibc-incubator/cardano-ibc-incubator/.deployment-smoke/cardano-deployment-test-59dfa8426006-jf3ubaw0/bridge-manifest-3.json",
+    "sourceManifestSha256": "153770e51c3a58298bfcb066d5f0caec36b0b82bb8bc95924963b79a4da9013e"
+  }
+]

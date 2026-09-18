@@ -1,0 +1,255 @@
+{
+  "scope": "Seeded initial population; production operator and actual UPLC evaluation of every approval and migration transaction. Local emulator wall time, not chain confirmation latency or two-chain acceptance.",
+  "results": [
+    {
+      "shards": 2,
+      "channels": 1,
+      "packetEntries": 2,
+      "cached": false,
+      "interrupt": false,
+      "transactions": 6,
+      "maxBytes": 4169,
+      "elapsedMs": 599.0584170000002,
+      "constructionMs": 282.4567499999994,
+      "evaluationSubmissionMs": 315.961166999999,
+      "queries": {
+        "byUnit": 20,
+        "byAddress": 9,
+        "byOutRef": 18,
+        "addressEntries": 101
+      },
+      "inventory": {
+        "scans": 2,
+        "entries": 3,
+        "trees": 2,
+        "proofs": 2,
+        "incrementalDeletes": 0
+      }
+    },
+    {
+      "shards": 2,
+      "channels": 1,
+      "packetEntries": 2,
+      "cached": true,
+      "interrupt": false,
+      "transactions": 6,
+      "maxBytes": 4169,
+      "elapsedMs": 574.1888339999996,
+      "constructionMs": 264.45416699999896,
+      "evaluationSubmissionMs": 309.28966800000035,
+      "queries": {
+        "byUnit": 20,
+        "byAddress": 8,
+        "byOutRef": 18,
+        "addressEntries": 100
+      },
+      "inventory": {
+        "scans": 1,
+        "entries": 2,
+        "trees": 1,
+        "proofs": 2,
+        "incrementalDeletes": 1
+      }
+    },
+    {
+      "shards": 8,
+      "channels": 1,
+      "packetEntries": 2,
+      "cached": false,
+      "interrupt": false,
+      "transactions": 12,
+      "maxBytes": 4175,
+      "elapsedMs": 1092.1440409999996,
+      "constructionMs": 519.2498719999994,
+      "evaluationSubmissionMs": 570.5055420000044,
+      "queries": {
+        "byUnit": 32,
+        "byAddress": 21,
+        "byOutRef": 30,
+        "addressEntries": 218
+      },
+      "inventory": {
+        "scans": 8,
+        "entries": 36,
+        "trees": 8,
+        "proofs": 8,
+        "incrementalDeletes": 0
+      }
+    },
+    {
+      "shards": 8,
+      "channels": 1,
+      "packetEntries": 2,
+      "cached": true,
+      "interrupt": false,
+      "transactions": 12,
+      "maxBytes": 4175,
+      "elapsedMs": 1179.5373339999987,
+      "constructionMs": 475.0735840000016,
+      "evaluationSubmissionMs": 703.9592099999973,
+      "queries": {
+        "byUnit": 32,
+        "byAddress": 14,
+        "byOutRef": 30,
+        "addressEntries": 190
+      },
+      "inventory": {
+        "scans": 1,
+        "entries": 8,
+        "trees": 1,
+        "proofs": 8,
+        "incrementalDeletes": 7
+      }
+    },
+    {
+      "shards": 32,
+      "channels": 1,
+      "packetEntries": 2,
+      "cached": false,
+      "interrupt": false,
+      "transactions": 36,
+      "maxBytes": 4179,
+      "elapsedMs": 3934.959416999998,
+      "constructionMs": 2223.034998000003,
+      "evaluationSubmissionMs": 1711.104793000004,
+      "queries": {
+        "byUnit": 80,
+        "byAddress": 69,
+        "byOutRef": 78,
+        "addressEntries": 1046
+      },
+      "inventory": {
+        "scans": 32,
+        "entries": 528,
+        "trees": 32,
+        "proofs": 32,
+        "incrementalDeletes": 0
+      }
+    },
+    {
+      "shards": 32,
+      "channels": 1,
+      "packetEntries": 2,
+      "cached": true,
+      "interrupt": false,
+      "transactions": 36,
+      "maxBytes": 4179,
+      "elapsedMs": 3399.1632080000018,
+      "constructionMs": 1355.1015850000076,
+      "evaluationSubmissionMs": 2042.9638340000056,
+      "queries": {
+        "byUnit": 80,
+        "byAddress": 38,
+        "byOutRef": 78,
+        "addressEntries": 550
+      },
+      "inventory": {
+        "scans": 1,
+        "entries": 32,
+        "trees": 1,
+        "proofs": 32,
+        "incrementalDeletes": 31
+      }
+    },
+    {
+      "shards": 128,
+      "channels": 1,
+      "packetEntries": 2,
+      "cached": false,
+      "interrupt": false,
+      "transactions": 132,
+      "maxBytes": 4182,
+      "elapsedMs": 22807.382458,
+      "constructionMs": 17551.120841000004,
+      "evaluationSubmissionMs": 5251.9216699999815,
+      "queries": {
+        "byUnit": 272,
+        "byAddress": 261,
+        "byOutRef": 270,
+        "addressEntries": 10118
+      },
+      "inventory": {
+        "scans": 128,
+        "entries": 8256,
+        "trees": 128,
+        "proofs": 128,
+        "incrementalDeletes": 0
+      }
+    },
+    {
+      "shards": 128,
+      "channels": 1,
+      "packetEntries": 2,
+      "cached": true,
+      "interrupt": false,
+      "transactions": 132,
+      "maxBytes": 4182,
+      "elapsedMs": 6479.730792000002,
+      "constructionMs": 2718.421871000006,
+      "evaluationSubmissionMs": 3757.9245420000007,
+      "queries": {
+        "byUnit": 272,
+        "byAddress": 134,
+        "byOutRef": 270,
+        "addressEntries": 1990
+      },
+      "inventory": {
+        "scans": 1,
+        "entries": 128,
+        "trees": 1,
+        "proofs": 128,
+        "incrementalDeletes": 127
+      }
+    },
+    {
+      "shards": 128,
+      "channels": 1,
+      "packetEntries": 32,
+      "cached": true,
+      "interrupt": true,
+      "transactions": 132,
+      "maxBytes": 4182,
+      "elapsedMs": 6007.109750000003,
+      "constructionMs": 2446.3108769999817,
+      "evaluationSubmissionMs": 3557.486041999997,
+      "queries": {
+        "byUnit": 272,
+        "byAddress": 135,
+        "byOutRef": 270,
+        "addressEntries": 2117
+      },
+      "inventory": {
+        "scans": 2,
+        "entries": 255,
+        "trees": 2,
+        "proofs": 128,
+        "incrementalDeletes": 126
+      }
+    },
+    {
+      "shards": 512,
+      "channels": 8,
+      "packetEntries": 32,
+      "cached": true,
+      "interrupt": false,
+      "transactions": 523,
+      "maxBytes": 4183,
+      "elapsedMs": 23900.431458,
+      "constructionMs": 9568.643459999883,
+      "evaluationSubmissionMs": 14288.886843,
+      "queries": {
+        "byUnit": 1054,
+        "byAddress": 525,
+        "byOutRef": 1052,
+        "addressEntries": 7848
+      },
+      "inventory": {
+        "scans": 1,
+        "entries": 512,
+        "trees": 1,
+        "proofs": 512,
+        "incrementalDeletes": 511
+      }
+    }
+  ]
+}
