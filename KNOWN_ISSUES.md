@@ -110,11 +110,36 @@ Adding another counterparty requires compatible host wiring, allowed query paths
 
 ### Client Upgrade
 
-Standard IBC client upgrade is not currently supported for the Cardano light client. The probabilistic Cardano light clients reject `VerifyUpgradeAndUpdateState`.
+Standard IBC client-state upgrades through `MsgUpgradeClient` are not currently supported for the Cardano light client: both the [v8](cosmos/cardano-probabilistic-light-client-v8/upgrade.go) and [v10](cosmos/cardano-probabilistic-light-client-v10/upgrade.go) adapters reject `VerifyUpgradeAndUpdateState`.
+
+[`MsgUpgradeClient`](https://docs.cosmos.network/ibc/v8.5.x/light-clients/developer-guide/upgrades) lets a relayer submit replacement client and consensus states, with proofs that the tracked chain committed to the transition; the installed verifier must validate those proofs before updating the existing client ID. It does not install new verifier code or give the relayer authority to choose arbitrary trusted state. The Cardano client has no implemented proof-verification path for authorizing such a transition; adding one would require defining the Cardano-side commitment, permitted state changes, and activation rules. A Cosmos-style chain revision change is a common use case, but the absence of that convention on Cardano does not itself rule out future client-state upgrades. Separately, Cosmos validators/operators can coordinate a node binary upgrade containing new light-client Go code. That code then handles existing client IDs against their retained database state, provided it can safely interpret that state or the host applies an explicit migration. Normal `MsgUpdateClient` messages resume afterward; no `MsgUpgradeClient` is required to activate the new code. Compatibility of each old-to-new implementation must still be tested, as tracked in [#629](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/629).
+
+#### When to send `MsgUpgradeClient`
+
+Send it to the chain **hosting the client** when a supported, proof-authorized upgrade of the **tracked chain** requires a client-state transition that ordinary `MsgUpdateClient` cannot perform. This preserves the existing client ID and its connections and channels. There is no universal exhaustive list across all light-client types: each implementation defines its allowed transitions. The table below covers every chain-controlled client-state field adopted by the [ibc-go v8.7.0 Tendermint upgrade implementation](https://github.com/cosmos/ibc-go/blob/v8.7.0/modules/light-clients/07-tendermint/upgrade.go), plus its accompanying consensus-state transition. These are supported categories, not separate messages to send for each field; one authorized upgrade can change several together. **None is currently implemented by our Cardano probabilistic client.**
+
+| Reason for an upgrade transition | State affected | When `MsgUpgradeClient` applies |
+| --- | --- | --- |
+| Follow the tracked chain under its upgraded chain identity, such as `chain-b-1` becoming `chain-b-2`. | `ChainId` | The old chain commits to the new identity; a relayer cannot simply rename the chain through an ordinary header update. |
+| Cross an upgrade's revision/height boundary, including a height-counter restart under a higher revision. | `LatestHeight` | The authorized upgraded IBC height must be greater than the current one when comparing revision and height. Advancing to another block within the normal update rules uses `MsgUpdateClient` instead. |
+| Adopt a changed unbonding period on the tracked chain. | `UnbondingPeriod` | The committed replacement must remain compatible with the client's retained trusting period; the upgrade is rejected if the resulting client parameters are invalid. |
+| Adopt changed specifications for verifying the tracked chain's state-commitment proofs. | `ProofSpecs` | The new specifications must be supported by the installed verifier. The upgrade proofs themselves are checked using the old specifications, so this message cannot install a new proof algorithm. |
+| Change where subsequent upgrades will be committed in the tracked chain's state. | `UpgradePath` | The current upgrade must be proved at the existing configured path; the accepted new path governs future upgrades. An empty existing path disables this upgrade mechanism. |
+| Establish the trusted consensus checkpoint from which verification continues after the upgrade. | Consensus-state timestamp and next-validator-set hash | This accompanies the authorized client-state upgrade, rather than providing a way to choose an arbitrary checkpoint or replace validators. In v8 Tendermint, the initial upgraded consensus state has a sentinel root; a subsequent normal header update is needed before it can verify packets. |
+
+These cases require an existing **active** client, authenticated upgrade commitments, and successful verification under the installed implementation's rules. The [v8 client keeper](https://github.com/cosmos/ibc-go/blob/v8.7.0/modules/core/02-client/keeper/client.go) rejects upgrades of inactive clients. The Tendermint implementation preserves the existing `TrustLevel`, `TrustingPeriod`, and `MaxClockDrift`; a relayer cannot use this message to retune them. A future client type could define additional upgrade transitions, but those need their own verification rules and cannot be inferred from this table.
+
+| Situation that does not call for `MsgUpgradeClient` by itself | Applicable mechanism |
+| --- | --- |
+| New blocks, normal validator-set evolution, or a tracked-chain software upgrade that remains compatible with ordinary client updates. | Continue using `MsgUpdateClient`. |
+| Install a new version of our Go verifier on the Cosmos host, or convert its persisted data to a new schema. | Coordinate the host binary upgrade and any required host state migration; test compatibility. |
+| Recover an expired or frozen client. | Use the separately authorized recovery path where supported; this is not an upgrade-proof shortcut. |
+| Switch to an unrelated chain, a different client implementation/type, or an incompatible consensus algorithm. | Design an explicit supported transition or create new clients and routes. The v8 Tendermint upgrade handler requires Tendermint client and consensus state types; the message does not supply replacement code. |
+| Change channel/application parameters or migrate the Cardano IBC script deployment. | Use the relevant channel, application, or deployment migration procedure; this message does not perform those migrations. |
 
 Operational-certificate validation adds information that must be present when a client is created: the certificate number currently in use by each Cardano stake pool and the network limit on a block-signing key's lifetime. Cardano IBC is not live today, so there are no deployed clients or routes to migrate for this change. The first deployment must create every client with this information from its initial Cardano checkpoint. Before allowing the Gateway to create those clients, deploy the upgraded Cosmos light-client code and use Ogmios v6.12.0 or newer.
 
-This may be a target for further development.
+Proof-based client-state upgrades may be a target for further development.
 
 ## Denom Display in Wallets
 
