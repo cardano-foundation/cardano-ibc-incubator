@@ -307,13 +307,19 @@ func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("path is not a MerklePath")
 	}
-	if len(mpath.KeyPath) == 0 {
-		return nil, fmt.Errorf("empty MerklePath")
+	// Cardano exposes a single "ibc" namespace, fixed by the on-chain
+	// ics-024-host-requirements/connection_keys.ak default_merkle_prefix.
+	// Its tree commits directly to object keys, so validate the full path
+	// before removing the namespace: exactly ["ibc", <non-empty IBC key>].
+	if len(mpath.KeyPath) != 2 {
+		return nil, fmt.Errorf("expected MerklePath with exactly 2 components, got %d", len(mpath.KeyPath))
 	}
-	// IBC typically passes paths like ["ibc", "clients/<id>/clientState"].
-	// The Cardano `ibc_state_root` commits to the IBC key itself (second segment),
-	// not the store prefix.
-	//
+	if string(mpath.KeyPath[0]) != "ibc" {
+		return nil, fmt.Errorf("invalid Cardano commitment prefix: expected %q, got %q", "ibc", mpath.KeyPath[0])
+	}
+	if len(mpath.KeyPath[1]) == 0 {
+		return nil, fmt.Errorf("empty IBC state key")
+	}
 	// Height note (IBC vs Cardano)
 	// - Canonical IBC consensus state keys are formatted as:
 	//     `clients/<client-id>/consensusStates/<revisionNumber>-<revisionHeight>`
@@ -324,7 +330,7 @@ func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
 	// Until Cardano switches to the canonical key format, we bridge the mismatch
 	// here so the light client verifies against the key actually committed under
 	// `ibc_state_root`.
-	key := mpath.KeyPath[len(mpath.KeyPath)-1]
+	key := mpath.KeyPath[1]
 	keyStr := string(key)
 	if strings.Contains(keyStr, "/consensusStates/") {
 		parts := strings.SplitN(keyStr, "/consensusStates/", 2)
