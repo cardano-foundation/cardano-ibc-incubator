@@ -274,20 +274,25 @@ export const submitTx = async (
   const sleep = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
   const awaitTxWithTimeout = async (hash: string) => {
-    await Promise.race([
-      awaitWalletTx(lucid, hash, 1000, ADOPTION_TIMEOUT_MS),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                `Timed out waiting ${ADOPTION_TIMEOUT_MS}ms for tx adoption`,
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        awaitWalletTx(lucid, hash, 1000, ADOPTION_TIMEOUT_MS),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Timed out waiting ${ADOPTION_TIMEOUT_MS}ms for tx adoption`,
+                ),
               ),
-            ),
-          ADOPTION_TIMEOUT_MS,
-        )
-      ),
-    ]);
+            ADOPTION_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   };
 
   console.log("Submitting tx [", txName, "]");
@@ -500,6 +505,12 @@ export const awaitWalletTx = async (
     } else {
       const walletUtxos = await lucid.wallet().getUtxos();
       if (walletUtxos.some((utxo) => utxo.txHash === txHash)) {
+        return;
+      }
+      // Reference-only transactions may have no wallet change.
+      if (
+        (await lucid.utxosByOutRef([{ txHash, outputIndex: 0 }])).length > 0
+      ) {
         return;
       }
     }
