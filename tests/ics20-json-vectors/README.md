@@ -37,5 +37,5 @@ node tests/ics20-json-vectors/generate.mjs --write
 node tests/ics20-json-vectors/generate.mjs --check
 ```
 
-The generator deliberately uses Go 1.25.13, matching CI and the pinned Go
+The generator deliberately uses Go 1.26.5, matching CI and the pinned Go
 modules.
