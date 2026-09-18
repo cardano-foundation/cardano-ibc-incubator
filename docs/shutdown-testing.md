@@ -21,6 +21,9 @@ grace period, missing authority, missing token burns, incorrect refunds and
 legacy reclaim redeemers. Staged reclaim uses constructor 4; existing staged
 update, recovery and misbehaviour constructors keep their indices.
 
+The offchain CI job runs these checks alongside the channel and consensus-history
+suites. It has a 30-minute timeout because the combined run can exceed 20 minutes.
+
 ## Shutdown properties
 
 `deno task test:shutdown:fuzz` runs three shrinking properties against the compiled
