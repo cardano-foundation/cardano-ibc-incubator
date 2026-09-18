@@ -7,6 +7,7 @@ use aiken/primitive/bytearray
 use ibc/apps/transfer/trace_registry as registry
 use ibc/apps/transfer/voucher_metadata
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
+use ibc/utils/string as strings
 
 // Independent scalar hex oracle: deliberately does not use the lookup table.
 fn hex_reference(bytes: ByteArray) -> ByteArray {
@@ -280,13 +281,14 @@ fn reference_root(
 }
 
 test migration_budget_equivalence_dual_root(
-  input via fuzz.tuple3(
+  input via fuzz.tuple4(
     fuzz.bytearray_between(1, 40),
     fuzz.bytearray_between(0, 40),
     fuzz.bytearray_between(0, 40),
+    fuzz.bytearray_fixed(8),
   ),
 ) {
-  let (key, old, new) = input
+  let (key, old, new, occupied_levels) = input
   fuzz.label(
     if old == #"" {
       @"fuzz.unit.migration.tree.insert"
@@ -301,7 +303,7 @@ test migration_budget_equivalence_dual_root(
     list.range(0, 63)
       |> list.map(
           fn(i) {
-            if i % 13 == 0 {
+            if builtin.read_bit(occupied_levels, i) {
               builtin.sha2_256(builtin.cons_bytearray(i, key))
             } else {
               zero
@@ -313,4 +315,135 @@ test migration_budget_equivalence_dual_root(
   let expected_new =
     reference_root(key_hash, reference_leaf(key_hash, new), siblings)
   tree.apply_update(old_root, key, old, new, siblings) == expected_new
+}
+
+// Independent scalar decoder: character ranges, ordinary list recursion and
+// direct nibble arithmetic. It shares no table or traversal with production.
+fn reference_nibble(char: Int) -> Option<Int> {
+  if char >= 48 && char <= 57 {
+    Some(char - 48)
+  } else if char >= 65 && char <= 70 {
+    Some(char - 55)
+  } else if char >= 97 && char <= 102 {
+    Some(char - 87)
+  } else {
+    None
+  }
+}
+
+fn reference_decode_hex(chars: List<Int>) -> Option<ByteArray> {
+  when chars is {
+    [] -> Some(#"")
+    [high, low, ..rest] ->
+      when
+        (
+          reference_nibble(high),
+          reference_nibble(low),
+          reference_decode_hex(rest),
+        )
+      is {
+        (Some(high), Some(low), Some(rest)) ->
+          Some(builtin.cons_bytearray(16 * high + low, rest))
+        _ -> None
+      }
+    _ -> None
+  }
+}
+
+test migration_budget_hex_all_character_values_in_both_positions() {
+  list.all(
+    list.range(0, 255),
+    fn(char) {
+      let high = builtin.cons_bytearray(char, #"30")
+      let low = builtin.cons_bytearray(48, builtin.cons_bytearray(char, #""))
+      and {
+        strings.hex_string_to_bytes(high) == reference_decode_hex([char, 48]),
+        strings.hex_string_to_bytes(low) == reference_decode_hex([48, char]),
+      }
+    },
+  )
+}
+
+test migration_budget_hex_preserves_order_case_zeros_and_empty() {
+  and {
+    strings.hex_string_to_bytes("aB00fF9C") == Some(#"ab00ff9c"),
+    strings.hex_string_to_bytes("0001") == Some(#"0001"),
+    strings.hex_string_to_bytes("") == Some(#""),
+    strings.hex_string_to_bytes("0") == None,
+    strings.hex_string_to_bytes("0g") == None,
+    strings.hex_string_to_bytes(#"ff30") == None,
+  }
+}
+
+test migration_budget_hex_matches_independent_decoder(
+  input via fuzz.tuple3(
+    fuzz.bytearray_between(0, 128),
+    fuzz.bytearray_between(0, 64),
+    fuzz.bool(),
+  ),
+) {
+  let (raw, bytes, valid) = input
+  let text =
+    if valid {
+      hex_reference(bytes)
+    } else {
+      raw
+    }
+  let expected =
+    reference_decode_hex(
+      bytearray.foldr(text, [], fn(byte, rest) { [byte, ..rest] }),
+    )
+  fuzz.label(
+    if valid {
+      @"fuzz.unit.migration.hex.valid-values-and-lengths"
+    } else {
+      @"fuzz.unit.migration.hex.arbitrary-byte-inputs"
+    },
+  )
+  strings.hex_string_to_bytes(text) == expected
+}
+
+test migration_budget_update_accepts_exact_witness() {
+  let key = "witness-boundary"
+  let siblings = list.repeat(zero, 64)
+  let expected =
+    reference_root(
+      builtin.sha2_256(key),
+      reference_leaf(builtin.sha2_256(key), "new"),
+      siblings,
+    )
+  tree.apply_update(zero, key, "", "new", siblings) == expected
+}
+
+test migration_budget_update_rejects_short_witness() fail {
+  expect _ =
+    tree.apply_update(
+      zero,
+      "witness-boundary",
+      "",
+      "new",
+      list.repeat(zero, 63),
+    )
+}
+
+test migration_budget_update_rejects_long_witness() fail {
+  // The old root is still the valid empty root. Rejection must come from the
+  // 65th path bit, not an unrelated old-root mismatch.
+  expect _ =
+    tree.apply_update(
+      zero,
+      "witness-boundary",
+      "",
+      "new",
+      list.repeat(zero, 65),
+    )
+}
+
+test migration_budget_update_rejects_wrong_sibling_size() fail {
+  let key = "witness-boundary"
+  let siblings = [#"00", ..list.repeat(zero, 63)]
+  // Supply the root of this malformed witness, so removing the size guard
+  // actually accepts it. A zero root would also fail root authentication.
+  let malformed_root = reference_root(builtin.sha2_256(key), zero, siblings)
+  expect _ = tree.apply_update(malformed_root, key, "", "new", siblings)
 }

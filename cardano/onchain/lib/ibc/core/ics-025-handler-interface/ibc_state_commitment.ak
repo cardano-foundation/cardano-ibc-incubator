@@ -190,28 +190,33 @@ fn compute_update_roots(
   siblings: List<ByteArray>,
   depth: Int,
 ) -> (ByteArray, ByteArray) {
-  if depth == merkle_depth_bits {
-    expect siblings == []
-    (old, new)
-  } else {
-    expect [sibling, ..rest] = siblings
-    expect bytearray.length(sibling) == hash_size_bytes
-    if !builtin.read_bit(path, depth) {
-      compute_update_roots(
-        path,
-        inner_hash_validated(old, sibling),
-        inner_hash_validated(new, sibling),
-        rest,
-        depth + 1,
-      )
-    } else {
-      compute_update_roots(
-        path,
-        inner_hash_validated(sibling, old),
-        inner_hash_validated(sibling, new),
-        rest,
-        depth + 1,
-      )
+  when siblings is {
+    [] -> {
+      expect depth == merkle_depth_bits
+      (old, new)
+    }
+    [sibling, ..rest] -> {
+      expect bytearray.length(sibling) == hash_size_bytes
+      // path has exactly 64 bits. read_bit rejects a 65th sibling; reaching
+      // the empty list checks the lower bound. Both enforce the original exact
+      // witness length without testing the depth twice at every valid level.
+      if !builtin.read_bit(path, depth) {
+        compute_update_roots(
+          path,
+          inner_hash_validated(old, sibling),
+          inner_hash_validated(new, sibling),
+          rest,
+          depth + 1,
+        )
+      } else {
+        compute_update_roots(
+          path,
+          inner_hash_validated(sibling, old),
+          inner_hash_validated(sibling, new),
+          rest,
+          depth + 1,
+        )
+      }
     }
   }
 }
