@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
   Data,
   fromText,
@@ -22,6 +22,7 @@ import {
   buildMockTokenMintTx,
   buildReferenceBatchTx,
   completeReferenceBatchTx,
+  verifyReferencePublications,
 } from "./deployment-transactions.ts";
 
 const MAX_TX_SIZE = 16_384;
@@ -164,6 +165,46 @@ Deno.test("every applied reference validator fits its signed production transact
         const published = await lucid.utxosAt(plan.referenceHolder.address);
         assertEquals(published.length, 1);
         assertEquals(published[0].txHash, result.signedTx.toHash());
+        assertEquals(
+          verifyReferencePublications(
+            result.signedTx.toHash(),
+            plan.referenceHolder.address,
+            validators,
+            result.outputs,
+            published,
+          ),
+          published,
+        );
+        for (
+          const mutation of [
+            "hash",
+            "index",
+            "address",
+            "assets",
+            "datum",
+            "duplicate",
+          ] as const
+        ) {
+          const incorrect = structuredClone(published);
+          if (mutation === "hash") incorrect[0].txHash = "00".repeat(32);
+          if (mutation === "index") incorrect[0].outputIndex++;
+          if (mutation === "address") incorrect[0].address = address;
+          if (mutation === "assets") incorrect[0].assets.lovelace++;
+          if (mutation === "datum") incorrect[0].datum = Data.to(1n);
+          if (mutation === "duplicate") incorrect.push(incorrect[0]);
+          assertThrows(
+            () =>
+              verifyReferencePublications(
+                result.signedTx.toHash(),
+                plan.referenceHolder.address,
+                validators,
+                result.outputs,
+                incorrect,
+              ),
+            Error,
+            mutation === "duplicate" ? "unique" : "signed publication",
+          );
+        }
       });
     }
   }

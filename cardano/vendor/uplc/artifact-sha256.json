@@ -1,0 +1,17 @@
+{
+  "build.py": "abd369811a2d96a9f7cd0960f2ae451ae79f6d69e8497339099fce3574eda53b",
+  "dist/browser/uplc_tx.d.ts": "46dfda22a366a2fcf403d53d2826f1a9eeed6f6cb424a6f8875fd62c77370eca",
+  "dist/browser/uplc_tx.js": "44231b517691b7f7f9863d2e930aa2cf4bd2616e61550951208cba60f93bcbab",
+  "dist/browser/uplc_tx_bg.js": "106267b68c02ce31de1c1a105cc528992e970f12abcb59f397d741d1908f9a7c",
+  "dist/browser/uplc_tx_bg.wasm": "177ba49b48250a0a560b8b986d26fb7fcad65634414245bd94ab7ad99746bbe4",
+  "dist/browser/uplc_tx_bg.wasm.d.ts": "e36592612470577897c8fe354421a845002a7937d89867c36578f9b6951a024d",
+  "dist/node/uplc_tx.d.ts": "46dfda22a366a2fcf403d53d2826f1a9eeed6f6cb424a6f8875fd62c77370eca",
+  "dist/node/uplc_tx.js": "1509a9bb4c7004ac2755d1be09c85da1055c099fd01681b8b426fdd4ee4ae06b",
+  "dist/node/uplc_tx_bg.wasm": "7ebbd94bcd00d6e0410395fa60d43368807d5b673702dd4d268f7c015ce8975b",
+  "dist/node/uplc_tx_bg.wasm.d.ts": "e36592612470577897c8fe354421a845002a7937d89867c36578f9b6951a024d",
+  "package.json": "ff477d7f151ab03d5b9c21826e53631e70c6ad10d63114fa08040a638cb0f000",
+  "rust/Cargo.lock": "81f2ebc676d28d7cc75745a6b3b388a1e1fed766a64ac9754c5ec13bf1343bdc",
+  "rust/Cargo.toml": "103ec5bc07de087c66703cc3128f3635508e2bcd2e0a53aab709d64d3257f67f",
+  "rust/rust-toolchain.toml": "9cbeb062ec3a97a5b5b76aacde94f5dcb034ed98f32af151480764de2e03d6f9",
+  "rust/src/lib.rs": "c2934ad3d21d1069951e05da61a82d0043920826f8b6529d4526313a4b6acff8"
+}

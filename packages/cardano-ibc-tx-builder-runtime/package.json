@@ -25,7 +25,8 @@
     "./plutusSerialise": { "types": "./dist/plutusSerialise.d.ts", "default": "./dist/plutusSerialise.js" },
     "./transferEscrowShard": { "types": "./dist/transferEscrowShard.d.ts", "default": "./dist/transferEscrowShard.js" },
     "./historyBootstrap": { "types": "./dist/historyBootstrap.d.ts", "default": "./dist/historyBootstrap.js" },
-    "./sendPacketEscrow": { "types": "./dist/sendPacketEscrow.d.ts", "default": "./dist/sendPacketEscrow.js" }
+    "./sendPacketEscrow": { "types": "./dist/sendPacketEscrow.d.ts", "default": "./dist/sendPacketEscrow.js" },
+    "./migrationRuntime": { "types": "./dist/migrationRuntime.d.ts", "default": "./dist/migrationRuntime.js" }
   },
   "typesVersions": {
     "*": {
@@ -38,7 +39,8 @@
       "plutusSerialise": ["dist/plutusSerialise.d.ts"],
       "transferEscrowShard": ["dist/transferEscrowShard.d.ts"],
       "historyBootstrap": ["dist/historyBootstrap.d.ts"],
-      "sendPacketEscrow": ["dist/sendPacketEscrow.d.ts"]
+      "sendPacketEscrow": ["dist/sendPacketEscrow.d.ts"],
+      "migrationRuntime": ["dist/migrationRuntime.d.ts"]
     }
   },
   "files": [

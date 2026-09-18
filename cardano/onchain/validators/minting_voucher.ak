@@ -504,12 +504,6 @@ fn existing_metadata_mapping_present(
     )
   let expected_value =
     assets.from_asset(voucher_minting_policy_id, reference_token_name, 1)
-  let expected_datum =
-    voucher_metadata_datum.build_datum(
-      full_denom,
-      voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-      voucher_minting_policy_id,
-    )
   let metadata_address = from_script(voucher_metadata_script_hash)
 
   list.length(
@@ -524,7 +518,14 @@ fn existing_metadata_mapping_present(
           False
         } else {
           when output.datum is {
-            InlineDatum(datum) -> datum == expected_datum
+            InlineDatum(datum) ->
+              datum == voucher_metadata_datum.build_datum(
+                full_denom,
+                voucher_asset_name.voucher_user_token_name_from_denom_hash(
+                  voucher_hash,
+                ),
+                voucher_minting_policy_id,
+              )
             _ -> False
           }
         }
@@ -584,18 +585,12 @@ fn matching_registry_update_present(
       expect Shard(_): TraceRegistryDatum =
         validator_utils.get_inline_datum(active_shard_input.output)
 
-      if !bucket_shard_reference_inputs_are_complete(
-        reference_inputs,
-        directory_bucket.archived_shard_names,
-        directory_auth_token,
-      ) {
-        False
-      } else if bucket_hash_match_count(
+      if !archived_shards_are_complete_and_clean(
         reference_inputs,
         directory_bucket.archived_shard_names,
         directory_auth_token,
         voucher_hash,
-      ) != 0 {
+      ) {
         False
       } else {
         when
@@ -632,10 +627,13 @@ fn matching_registry_update_present(
   }
 }
 
-fn bucket_shard_reference_inputs_are_complete(
+// Resolve every required NFT exactly once, then validate its full datum and
+// absence proof. Combining these passes retains omission/duplicate rejection.
+fn archived_shards_are_complete_and_clean(
   reference_inputs: List<Input>,
   shard_names: List<ByteArray>,
   directory_auth_token: AuthToken,
+  voucher_hash: ByteArray,
 ) -> Bool {
   list.all(
     shard_names,
@@ -645,48 +643,26 @@ fn bucket_shard_reference_inputs_are_complete(
           policy_id: directory_auth_token.policy_id,
           name: shard_name,
         }
-
-      list.length(
+      when
         list.filter(
-          reference_inputs,
-          fn(input) { input.output |> auth.contain_auth_token(shard_token) },
-        ),
-      ) == 1
-    },
-  )
-}
-
-fn bucket_hash_match_count(
-  reference_inputs: List<Input>,
-  shard_names: List<ByteArray>,
-  directory_auth_token: AuthToken,
-  voucher_hash: ByteArray,
-) -> Int {
-  list.reduce(
-    shard_names,
-    0,
-    fn(acc, shard_name) {
-      let shard_token =
-        AuthToken {
-          policy_id: directory_auth_token.policy_id,
-          name: shard_name,
-        }
-      expect Some(shard_input) =
-        list.find(
           reference_inputs,
           fn(input) { input.output |> auth.contain_auth_token(shard_token) },
         )
-      expect Shard(shard): TraceRegistryDatum =
-        validator_utils.get_inline_datum(shard_input.output)
-      expect shard.bucket_index == bucket_index_for_hash(voucher_hash)
-      expect shard_is_within_capacity(shard)
-
-      acc + list.length(
-        list.filter(
-          shard.entries,
-          fn(entry) { entry.voucher_hash == voucher_hash },
-        ),
-      )
+      is {
+        [shard_input] -> {
+          expect Shard(shard): TraceRegistryDatum =
+            validator_utils.get_inline_datum(shard_input.output)
+          and {
+            shard.bucket_index == bucket_index_for_hash(voucher_hash),
+            shard_is_within_capacity(shard),
+            !list.any(
+              shard.entries,
+              fn(entry) { entry.voucher_hash == voucher_hash },
+            ),
+          }
+        }
+        _ -> False
+      }
     },
   )
 }

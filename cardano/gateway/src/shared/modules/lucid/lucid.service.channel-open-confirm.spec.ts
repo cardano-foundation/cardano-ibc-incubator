@@ -86,6 +86,9 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
   const service: any = Object.create(LucidService.prototype);
 
   service.configService = {
+    getOrThrow(name: string) {
+      return this.get(name);
+    },
     get: jest.fn().mockReturnValue(deploymentConfig),
   };
   service.lucid = {
@@ -111,8 +114,11 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
 };
 
 describe('LucidService channel open confirm wiring', () => {
-  it('loads confirm and packet-history-prune reference script out-refs from deployment config', () => {
+  it('loads confirm and packet-history-prune reference script out-refs from deployment config', async () => {
     const configService = {
+      getOrThrow(name: string) {
+        return this.get(name);
+      },
       get: jest.fn().mockReturnValue(deploymentConfig),
     };
 
@@ -130,11 +136,11 @@ describe('LucidService channel open confirm wiring', () => {
     );
   });
 
-  it('uses the confirm and verify-proof refs when building ChannelOpenConfirm transactions', () => {
+  it('uses the confirm and verify-proof refs when building ChannelOpenConfirm transactions', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
 
-    service.createUnsignedChannelOpenConfirmTransaction({
+    await service.createUnsignedChannelOpenConfirmTransaction({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       encodedHostStateRedeemer: 'encoded-host-redeemer',
       encodedUpdatedHostStateDatum: 'encoded-host-datum',
@@ -180,7 +186,7 @@ describe('LucidService channel open confirm wiring', () => {
 
   it.each(['mock', 'transfer'] as const)(
     'preserves the %s module when building ChannelCloseConfirm transactions',
-    (moduleKey) => {
+    async (moduleKey) => {
       const txBuilder = createChainedTxBuilder();
       const service = createService(txBuilder);
       const moduleUtxo = {
@@ -192,7 +198,7 @@ describe('LucidService channel open confirm wiring', () => {
 
       service.referenceScripts.channelCloseConfirm = buildRefUtxo('ref-channel-close-confirm', 5);
 
-      service.createUnsignedChannelCloseConfirmTransaction({
+      await service.createUnsignedChannelCloseConfirmTransaction({
         hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
         encodedHostStateRedeemer: 'encoded-host-redeemer',
         encodedUpdatedHostStateDatum: 'encoded-host-datum',

@@ -28,7 +28,8 @@
     "test:cov": "jest --coverage",
     "test:cov:ci": "jest --coverage --detectOpenHandles --runInBand",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "export:migration-witness": "ts-node -r tsconfig-paths/register src/scripts/export-migration-witness.ts"
   },
   "dependencies": {
     "@cardano-ibc/planner": "file:../../packages/cardano-ibc-planner",
@@ -80,7 +81,8 @@
     "rxjs": "^7.8.2",
     "sqlite3": "^6.0.1",
     "typeorm": "^0.3.31",
-    "ws": "^8.18.2"
+    "ws": "^8.18.2",
+    "@lucid-evolution/uplc": "file:../vendor/uplc"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
@@ -168,7 +170,7 @@
     }
   },
   "overrides": {
-    "@lucid-evolution/uplc": "0.2.23",
+    "@lucid-evolution/uplc": "$@lucid-evolution/uplc",
     "@nestjs/swagger": {
       "js-yaml": "5.2.2"
     },

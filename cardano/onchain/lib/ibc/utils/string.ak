@@ -77,58 +77,48 @@ fn do_split(
 }
 
 pub fn hex_string_to_bytes(str: ByteArray) -> Option<ByteArray> {
-  let len = bytearray.length(str)
-  if len % 2 == 0 {
-    do_hex_string_to_bytes(Some, None, str, len, 0)
+  let length = bytearray.length(str)
+  if length % 2 == 0 {
+    decode_hex_pairs(str, length - 2, #"")
   } else {
     None
   }
 }
 
-fn do_hex_string_to_bytes(
-  ok: fn(ByteArray) -> a,
-  ko: a,
+// ASCII values through lowercase f are represented. Zero means invalid;
+// valid hex characters (both cases) contain nibble + 1. Range-check before
+// indexing so every non-ASCII or out-of-range character returns None.
+const hex_decode_table =
+  #"0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000102030405060708090a000000000000000b0c0d0e0f1000000000000000000000000000000000000000000000000000000b0c0d0e0f10"
+
+fn decode_hex_pairs(
   str: ByteArray,
-  len: Int,
-  i: Int,
-) -> a {
-  if i >= len {
-    ok("")
+  index: Int,
+  acc: ByteArray,
+) -> Option<ByteArray> {
+  if index < 0 {
+    Some(acc)
   } else {
-    let msb <-
-      decode_hex_digit(_, ko, bytearray.at(str, i))
-    let lsb <-
-      decode_hex_digit(_, ko, bytearray.at(str, i + 1))
-    let byte = msb * 16 + lsb
-    do_hex_string_to_bytes(
-      fn(accum) { ok(bytearray.push(accum, byte)) },
-      ko,
-      str,
-      len,
-      i + 2,
-    )
+    let high = hex_digit(builtin.index_bytearray(str, index))
+    let low = hex_digit(builtin.index_bytearray(str, index + 1))
+    if high * low == 0 {
+      None
+    } else {
+      // Reading pairs backwards and prepending preserves byte order and zeros.
+      decode_hex_pairs(
+        str,
+        index - 2,
+        builtin.cons_bytearray(16 * high + low - 17, acc),
+      )
+    }
   }
 }
 
-// NOTE: The constant is evaluated at compile-time, so constructing the lookup table is cheap.
-const hex_lookup_table =
-  "------------------------------------------------"
-    |> bytearray.concat(#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    |> bytearray.concat("-------")
-    |> bytearray.concat(#[10, 11, 12, 13, 14, 15])
-    |> bytearray.concat("--------------------------")
-    |> bytearray.concat(#[10, 11, 12, 13, 14, 15])
-
-fn decode_hex_digit(ok: fn(Int) -> a, ko: a, char: Int) -> a {
+fn hex_digit(char: Int) -> Int {
   if char > 102 {
-    ko
+    0
   } else {
-    let digit = bytearray.at(hex_lookup_table, char)
-    if digit == 0x2d {
-      ko
-    } else {
-      ok(digit)
-    }
+    builtin.index_bytearray(hex_decode_table, char)
   }
 }
 

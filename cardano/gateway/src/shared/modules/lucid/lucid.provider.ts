@@ -961,6 +961,7 @@ export const LucidClient = {
             'Kupmios.evaluateTx',
           );
         } catch (error) {
+          gatewayDiagnostics.record('evaluateTx-body', () => ({ txCbor: tx }));
           gatewayDiagnostics.record('evaluateTx-failure', () => ({
             txCbor: tx,
             additionalUTxOs: additionalUTxOs ?? [],

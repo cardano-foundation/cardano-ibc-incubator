@@ -6,6 +6,9 @@
 !cardano/
 !cardano/gateway/
 !cardano/gateway/**
+!cardano/vendor/
+!cardano/vendor/uplc/
+!cardano/vendor/uplc/**
 
 !relayer/
 !relayer/**
@@ -52,6 +55,8 @@
 **/.consensus-history/**
 **/target
 **/target/**
+**/.upstream
+**/.upstream/**
 **/dist
 **/dist/**
 # The Gateway consumes these tracked local packages through file: dependencies,
@@ -61,6 +66,8 @@
 !packages/cardano-ibc-planner/dist/**
 !packages/cardano-ibc-tx-builder/dist/
 !packages/cardano-ibc-tx-builder/dist/**
+!cardano/vendor/uplc/dist/
+!cardano/vendor/uplc/dist/**
 **/.next
 **/.next/**
 **/.env

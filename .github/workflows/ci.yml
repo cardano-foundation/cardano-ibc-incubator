@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      populated_migration:
+        description: Run the full disposable V1 to V2 to V3 migration rehearsal
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -13,7 +18,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.populated_migration && 'migration' || 'checks' }}
   cancel-in-progress: true
 
 env:
@@ -27,6 +32,13 @@ jobs:
     uses: ./.github/workflows/check-docs-update.yml
     with:
       workflow: .github/workflows/ci.yml
+
+  populated-migration:
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && github.event_name == 'workflow_dispatch' && inputs.populated_migration }}
+    needs: docs-update
+    uses: ./.github/workflows/migration-rehearsal.yml
+    permissions:
+      contents: read
 
   aiken-changes:
     name: Detect Aiken Changes
@@ -432,6 +444,13 @@ jobs:
       - name: Build
         run: npm run --prefix cardano/gateway build
 
+      - name: Check independent migration rehearsal evidence controls
+        run: |
+          python3 scripts/ci/aiken-contract-migration/test-migration-evidence.py
+          node --test scripts/ci/aiken-contract-migration/test-migration-packet-evidence.cjs
+          node --test scripts/ci/aiken-contract-migration/test-owned-sdk-rehearsal.cjs
+          python3 scripts/ci/aiken-contract-migration/test-deployment-references.py
+
       - name: Test with coverage
         env:
           BRIDGE_HISTORY_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/gateway_history_test
@@ -516,7 +535,9 @@ jobs:
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Includes three compiled implementations and full-validator guard mutants.
+    # The prior 20-minute limit canceled the last controls after passing tests.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -571,6 +592,53 @@ jobs:
       - name: Test consensus history indexing and recovery
         working-directory: cardano/offchain
         run: deno task test:consensus-history-index
+
+      - name: Build distinct migration successors
+        run: |
+          python3 scripts/ci/aiken-contract-migration/build-migration-successor.py --out "$RUNNER_TEMP/migration-v2" --window-ms 600000
+          python3 scripts/ci/aiken-contract-migration/build-migration-successor.py --out "$RUNNER_TEMP/migration-v3" --window-ms 900000
+
+      - name: Evaluate repeated authorized migration and adversarial accounting
+        working-directory: cardano/offchain
+        env:
+          MIGRATION_SUCCESSOR_V2_BLUEPRINT: ${{ runner.temp }}/migration-v2/plutus.json
+          MIGRATION_SUCCESSOR_V3_BLUEPRINT: ${{ runner.temp }}/migration-v3/plutus.json
+        run: deno task test:migration
+
+      - name: Verify full-validator migration guard controls
+        run: python3 scripts/ci/aiken-contract-migration/test-migration-guards.py --report migration-guard-controls.json
+
+      - name: Measure compiled migration steps at retained protocol-10 parameters
+        run: >-
+          deno run --allow-read --allow-env --allow-write
+          --config cardano/offchain/deno.json scripts/ci/aiken-contract-migration/measure-migration-scaling.ts
+          cardano/offchain/src/testing/protocol-10-local-cost-profile.json
+          migration-scaling.json
+
+      - name: Measure complete serialized operator recovery and authenticated cache scaling
+        run: >-
+          deno run --allow-read --allow-env --allow-write
+          --config cardano/offchain/deno.json scripts/ci/aiken-contract-migration/measure-migration-operator.ts
+          migration-operator-scaling.json
+
+      - name: Check independent migration packet model and transition coverage
+        working-directory: cardano/onchain
+        run: |
+          aiken check --deny -m migration_packet_ --seed 462 --max-success 1 --property-coverage relative-to-tests > ../../migration-packet-smoke.json
+          aiken check --deny -m migration_packet_ --seed 462 --max-success 1000 --property-coverage relative-to-tests > ../../migration-packet-model.json
+          node ../../scripts/ci/check-aiken-fuzz-coverage.mjs ../../migration-packet-model.json ../../migration-packet-smoke.json ../../scripts/ci/aiken-contract-migration/aiken-migration-required-labels.json
+
+      - name: Upload migration guard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: migration-guard-controls
+          path: |
+            migration-guard-controls.json
+            migration-packet-model.json
+            migration-packet-smoke.json
+            migration-scaling.json
+            migration-operator-scaling.json
 
   deno-funds:
     name: Cardano Compiled Funds (${{ matrix.suite }})

@@ -7,7 +7,7 @@ export interface YaciHistorySqlClient {
     }>;
 }
 /** Discover creation from canonical raw history, never an application cache. */
-export declare function discoverYaciHistoryBootstrap(client: YaciHistorySqlClient, deployment: Pick<HistoryDeployment, "clientToken" | "stateAddress">): Promise<HistoryDeployment["bootstrap"]>;
+export declare function discoverYaciHistoryBootstrap(client: YaciHistorySqlClient, deployment: Pick<HistoryDeployment, "clientToken" | "stateAddress" | "allowScriptMigration">): Promise<HistoryDeployment["bootstrap"]>;
 /**
  * Read canonical historical state transactions directly from Yaci's raw tables.
  * Spent address_utxo rows and transaction_cbor must be retained. No bridge

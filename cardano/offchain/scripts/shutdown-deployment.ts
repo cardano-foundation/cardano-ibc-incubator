@@ -1,3 +1,4 @@
+import { toOgmiosScript } from "../src/ogmios-script.ts";
 import {
   assertNoDeploymentState,
   assertStateDrained,
@@ -16,7 +17,6 @@ import {
   type UTxO,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
-import { applySingleCborEncoding } from "@lucid-evolution/utils";
 import {
   installManagedCardanoAuthFetch,
   resolveManagedKupmiosHeaders,
@@ -121,32 +121,6 @@ type RawKupoUtxo = {
 };
 
 function toOgmiosAdditionalUtxos(utxos: any[] = []): any[] {
-  const toOgmiosScript = (scriptRef: any) => {
-    if (!scriptRef) {
-      return null;
-    }
-
-    switch (scriptRef.type) {
-      case "PlutusV1":
-        return {
-          language: "plutus:v1",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      case "PlutusV2":
-        return {
-          language: "plutus:v2",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      case "PlutusV3":
-        return {
-          language: "plutus:v3",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      default:
-        return null;
-    }
-  };
-
   const toOgmiosAssets = (assets: Record<string, bigint>) => {
     const mapped: Record<string, Record<string, number>> = {};
     Object.entries(assets ?? {}).forEach(([unit, amount]) => {
@@ -546,6 +520,16 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
     }
     throw new Error(`Timed out waiting for tx ${txHash} to settle`);
   }
+
+  /** Includes spent outputs, for resolving an interrupted migration submission. */
+  async getTransactionOutputs(txHash: string): Promise<UTxO[]> {
+    if (!/^[0-9a-f]{64}$/.test(txHash)) {
+      throw new Error("Invalid transaction hash");
+    }
+    return await this.#fetchMatchUtxos(
+      `${this.#kupoMatchesUrl}/matches/*@${txHash}`,
+    );
+  }
 }
 
 function usage(): never {
@@ -646,15 +630,24 @@ function parseArgs(argv: string[]): ScriptArgs {
   };
 }
 
-async function buildLucid(): Promise<LucidEvolution> {
-  const deployerSk = Deno.env.get("DEPLOYER_SK");
+export async function buildOperationalLucid(
+  options: {
+    keyEnvironment?: string;
+    walletAddress?: string;
+    readOnly?: boolean;
+  } = {},
+): Promise<LucidEvolution> {
+  const deployerSk = Deno.env.get(options.keyEnvironment ?? "DEPLOYER_SK");
   const kupoUrl = Deno.env.get("KUPO_URL");
   const ogmiosUrl = Deno.env.get("OGMIOS_URL");
   const cardanoNetworkMagic = Deno.env.get("CARDANO_NETWORK_MAGIC");
   const kupoApiKey = Deno.env.get("KUPO_API_KEY")?.trim();
   const ogmiosApiKey = Deno.env.get("OGMIOS_API_KEY")?.trim();
 
-  if (!deployerSk || !kupoUrl || !ogmiosUrl || !cardanoNetworkMagic) {
+  if (
+    (!deployerSk && !options.readOnly && !options.walletAddress) || !kupoUrl ||
+    !ogmiosUrl || !cardanoNetworkMagic
+  ) {
     throw new Error("Missing required Cardano offchain environment variables");
   }
 
@@ -685,7 +678,13 @@ async function buildLucid(): Promise<LucidEvolution> {
     ogmiosUrl,
     cardanoNetworkMagic,
   );
-  lucid.selectWallet.fromPrivateKey(deployerSk);
+  if (deployerSk) lucid.selectWallet.fromPrivateKey(deployerSk);
+  else if (options.walletAddress) {
+    lucid.selectWallet.fromAddress(
+      options.walletAddress,
+      await lucid.utxosAt(options.walletAddress),
+    );
+  }
   return lucid;
 }
 
@@ -1345,7 +1344,12 @@ export function buildFinalizeShutdownTx(
 async function main() {
   const args = parseArgs(Deno.args);
   const deployment = await loadDeployment(args.handlerJsonPath);
-  const lucid = await buildLucid();
+  if (deployment.migration && args.command !== "status") {
+    throw new Error(
+      "Shutdown and cleanup are disabled for this upgrade-capable profile; dependencies must remain available for outstanding claims. Use the migration commands.",
+    );
+  }
+  const lucid = await buildOperationalLucid();
 
   switch (args.command) {
     case "status":

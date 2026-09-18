@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 /** Pure membership/exclusion check; malformed inputs throw, mismatch is false. */
+export declare function computeIbcTreeWitnessRoot(key: string, valueHex: string, siblings: readonly string[]): string;
 export declare function verifyIbcTreeWitness(key: string, valueHex: string, siblings: readonly string[], expectedRoot: string): boolean;
 /**
  * Persistent, incremental version of DeploymentIbcTree's SHA-256 depth-64 tree.

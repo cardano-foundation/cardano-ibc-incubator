@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, HttpCode, Post, UseFilters } from '@nestjs/common';
+import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
+import { BadRequestException, Body, Controller, HttpCode, Post, UseFilters, UseGuards } from '@nestjs/common';
 import { GrpcExceptionFilter } from '~@/exception/exception.filter';
 import { AsyncIcqAcknowledgementDto, AsyncIcqResultRequestDto } from './async-icq.dto';
 import {
@@ -17,6 +18,7 @@ export class VesseloracleIcqController {
   constructor(private readonly vesseloracleIcqService: VesseloracleIcqService) {}
 
   @Post('consolidated-data-report')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildConsolidatedDataReport(@Body() dto: VesseloracleConsolidatedDataReportIcqRequestDto) {
     const response = await this.vesseloracleIcqService.buildConsolidatedDataReportQuery(dto);
@@ -37,6 +39,7 @@ export class VesseloracleIcqController {
   }
 
   @Post('latest-consolidated-data-report')
+  @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildLatestConsolidatedDataReport(@Body() dto: VesseloracleLatestConsolidatedDataReportIcqRequestDto) {
     const response = await this.vesseloracleIcqService.buildLatestConsolidatedDataReportQuery(dto);

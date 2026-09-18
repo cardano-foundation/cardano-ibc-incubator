@@ -89,6 +89,12 @@ pub fn leaf_hash(key_hash: ByteArray, value_hash: ByteArray) -> ByteArray {
 pub fn inner_hash(left: ByteArray, right: ByteArray) -> ByteArray {
   expect bytearray.length(left) == hash_size_bytes
   expect bytearray.length(right) == hash_size_bytes
+  inner_hash_validated(left, right)
+}
+
+// Internal callers have already checked each sibling and carry only SHA-256
+// outputs or the fixed empty hash. Avoid decoding the same lengths per level.
+fn inner_hash_validated(left: ByteArray, right: ByteArray) -> ByteArray {
   // Special-case an entirely empty subtree.
   //
   // If both children are empty, the parent is empty too.
@@ -102,12 +108,11 @@ pub fn inner_hash(left: ByteArray, right: ByteArray) -> ByteArray {
 }
 
 // Consume the first eight hash bytes from the least significant bit upward.
-// Decoding the path once avoids extracting a byte and computing a power of two
-// at every level of both the old and new root calculations.
-fn key_path(key: ByteArray) -> Int {
+// Keep the path bytes once; the Plutus bit builtin reads from the least
+// significant bit, matching the unchanged root-to-leaf direction convention.
+fn key_path(key: ByteArray) -> ByteArray {
   builtin.sha2_256(key)
     |> builtin.slice_bytearray(0, 8, _)
-    |> builtin.bytearray_to_integer(True, _)
 }
 
 /// Compute a root from:
@@ -124,7 +129,7 @@ pub fn compute_root(
 }
 
 fn compute_root_go(
-  path: Int,
+  path: ByteArray,
   current: ByteArray,
   siblings: List<ByteArray>,
   depth: Int,
@@ -137,17 +142,16 @@ fn compute_root_go(
     expect [sibling, ..rest] = siblings
     expect bytearray.length(sibling) == hash_size_bytes
 
-    let direction_bit = path % 2
     let next =
-      if direction_bit == 0 {
+      if !builtin.read_bit(path, depth) {
         // 0 means "current node is on the left".
-        inner_hash(current, sibling)
+        inner_hash_validated(current, sibling)
       } else {
         // 1 means "current node is on the right".
-        inner_hash(sibling, current)
+        inner_hash_validated(sibling, current)
       }
 
-    compute_root_go(path / 2, next, rest, depth + 1)
+    compute_root_go(path, next, rest, depth + 1)
   }
 }
 
@@ -169,9 +173,50 @@ pub fn apply_update(
   let key_hash = builtin.sha2_256(key)
 
   let old_leaf = leaf_hash(key_hash, value_hash(old_value))
-  let computed_old_root = compute_root(key, old_leaf, siblings)
-  expect computed_old_root == old_root
-
   let new_leaf = leaf_hash(key_hash, value_hash(new_value))
-  compute_root(key, new_leaf, siblings)
+  let path = builtin.slice_bytearray(0, 8, key_hash)
+  let (computed_old, computed_new) =
+    compute_update_roots(path, old_leaf, new_leaf, siblings, 0)
+  expect computed_old == old_root
+  computed_new
+}
+
+// Both roots use the same path and sibling witness. Traverse and validate the
+// witness once, retaining exact old-root authentication and the unchanged codec.
+fn compute_update_roots(
+  path: ByteArray,
+  old: ByteArray,
+  new: ByteArray,
+  siblings: List<ByteArray>,
+  depth: Int,
+) -> (ByteArray, ByteArray) {
+  when siblings is {
+    [] -> {
+      expect depth == merkle_depth_bits
+      (old, new)
+    }
+    [sibling, ..rest] -> {
+      expect bytearray.length(sibling) == hash_size_bytes
+      // path has exactly 64 bits. read_bit rejects a 65th sibling; reaching
+      // the empty list checks the lower bound. Both enforce the original exact
+      // witness length without testing the depth twice at every valid level.
+      if !builtin.read_bit(path, depth) {
+        compute_update_roots(
+          path,
+          inner_hash_validated(old, sibling),
+          inner_hash_validated(new, sibling),
+          rest,
+          depth + 1,
+        )
+      } else {
+        compute_update_roots(
+          path,
+          inner_hash_validated(sibling, old),
+          inner_hash_validated(sibling, new),
+          rest,
+          depth + 1,
+        )
+      }
+    }
+  }
 }
