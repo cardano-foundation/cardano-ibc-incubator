@@ -14,8 +14,8 @@ use cardano/transaction.{
   Transaction,
 }
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/height
+use ibc/core/ics_002_client_semantics/registry
 use ibc/core/ics_002_client_semantics/types/keys as client_id_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
@@ -139,17 +139,6 @@ fn authenticate_created_state_thread(
   }
 }
 
-/// Derive a `07-tendermint-{N}` identifier from a client token name.
-///
-/// Client auth tokens are generated with `auth.generate_token_name(...)`, which
-/// appends the decimal sequence number as a postfix.
-///
-/// The on-chain code needs the IBC client identifier form for the ICS-24 store key.
-fn client_id_from_token_name(token_name: AssetName) -> ByteArray {
-  let sequence = auth.extract_token_sequence(token_name)
-  "07-tendermint-" |> bytearray.concat(sequence)
-}
-
 /// Derive a `connection-{N}` identifier from a connection token name.
 ///
 /// Connection auth tokens are generated with `auth.generate_token_name(...)`.
@@ -177,11 +166,6 @@ fn decode_host_state_datum(output: Output) -> HostStateDatum {
   expect InlineDatum(datum) = output.datum
   expect decoded_datum: HostStateDatum = datum
   decoded_datum
-}
-
-fn decode_client_datum(output: Output) -> ClientDatum {
-  expect datum: ClientDatum = validator_utils.get_inline_datum(output)
-  datum
 }
 
 fn decode_connection_datum(output: Output) -> ConnectionDatum {
@@ -218,7 +202,7 @@ fn validate_create_client_root(
   new_datum: HostStateDatum,
   outputs: List<Output>,
   mint: Value,
-  spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_registry: Data,
   client_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
@@ -227,11 +211,22 @@ fn validate_create_client_root(
   //
   // `mint_client_stt` enforces there is exactly one client output for CreateClient,
   // so we require exactly one here too.
-  let client_output = find_state_output(outputs, spend_client_script_hash)
+  expect [client_output] =
+    list.filter(
+      outputs,
+      fn(output) { registry.is_client_output(client_registry, output) },
+    )
+  let registration =
+    registry.for_output(client_registry, client_policy_id, client_output)
+  let client_policy_id = registration.mint_policy
 
   // Decode the client datum so we can derive the exact state bytes that must be
   // committed into the Merkle root.
-  let client_datum = decode_client_datum(client_output)
+  let client_datum =
+    registry.commitment_view(
+      registration,
+      validator_utils.get_inline_datum(client_output),
+    )
 
   expect
     authenticate_created_state_thread(
@@ -244,20 +239,17 @@ fn validate_create_client_root(
       old_datum.state.next_client_sequence,
     )
 
-  // Derive the client identifier from the HostState sequence.
-  //
-  // This matches the off-chain convention: `07-tendermint-{sequence}`.
   let client_id =
-    "07-tendermint-"
-      |> bytearray.concat(
-          string_utils.int_to_string(old_datum.state.next_client_sequence),
-        )
+    registry.identifier(
+      registration,
+      string_utils.int_to_string(old_datum.state.next_client_sequence),
+    )
 
   // Commitment keys (IBC paths).
   let client_state_key = client_keys.full_client_state_path(client_id)
 
   // The initial consensus state is stored at the client's latest height.
-  let latest_height = client_datum.state.client_state.latest_height
+  let latest_height = client_datum.latest_height
   let consensus_height =
     string_utils.int_to_string(latest_height.revision_height)
   let consensus_state_key =
@@ -310,15 +302,25 @@ fn validate_update_client_root(
   inputs: List<Input>,
   outputs: List<Output>,
   mint: assets.Value,
-  spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_registry: Data,
   client_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
 ) -> Bool {
+  expect [client_output] =
+    list.filter(
+      outputs,
+      fn(output) { registry.is_client_output(client_registry, output) },
+    )
+  let registration =
+    registry.for_output(client_registry, client_policy_id, client_output)
+  let client_policy_id = registration.mint_policy
   expect assets.tokens(mint, client_policy_id) |> dict.is_empty
-  let client_output = find_state_output(outputs, spend_client_script_hash)
-  expect output_client: ClientDatum =
-    validator_utils.get_inline_datum(client_output)
+  let output_client =
+    registry.commitment_view(
+      registration,
+      validator_utils.get_inline_datum(client_output),
+    )
   expect output_client.token.policy_id == client_policy_id
   let client_input =
     authenticate_state_thread(
@@ -330,12 +332,19 @@ fn validate_update_client_root(
       client_id_keys.client_prefix,
     )
   expect client_input.output.address == client_output.address
-  expect input_client: ClientDatum =
-    validator_utils.get_inline_datum(client_input.output)
+  let input_client =
+    registry.commitment_view(
+      registration,
+      validator_utils.get_inline_datum(client_input.output),
+    )
   expect input_client.token == output_client.token
   // The mandatory client spend/support pair enforces singleton state and exact
   // processing metadata. Do not repeat that full structural validator here.
-  let client_id = client_id_from_token_name(output_client.token.name)
+  let client_id =
+    registry.identifier(
+      registration,
+      auth.extract_token_sequence(output_client.token.name),
+    )
   let after_client =
     ibc_state_commitment.apply_update(
       old_datum.state.ibc_state_root,
@@ -344,7 +353,7 @@ fn validate_update_client_root(
       cbor.serialise(output_client.state.client_state),
       client_state_siblings,
     )
-  let old_height = input_client.state.client_state.latest_height
+  let old_height = input_client.latest_height
   expect [Pair(new_height, new_consensus)] =
     output_client.state.consensus_states
   when height.compare(new_height, old_height) is {
@@ -1033,7 +1042,7 @@ fn validate_handle_packet_root(
 /// 5. State transition is valid for the operation
 validator host_state_stt(
   nft_policy: PolicyId,
-  spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_registry: Data,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
   client_policy_id: PolicyId,
@@ -1109,7 +1118,7 @@ validator host_state_stt(
                 new_datum,
                 outputs,
                 mint,
-                spend_client_script_hash,
+                client_registry,
                 client_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,
@@ -1172,7 +1181,7 @@ validator host_state_stt(
                 inputs,
                 outputs,
                 transaction.mint,
-                spend_client_script_hash,
+                client_registry,
                 client_policy_id,
                 client_state_siblings,
                 consensus_state_siblings,

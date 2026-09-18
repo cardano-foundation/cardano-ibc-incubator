@@ -25,6 +25,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
+use ibc/core/ics_002_client_semantics/registry
 use ibc/core/ics_002_client_semantics/types/keys as client_id_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -63,6 +64,7 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/testing/client_registry_fixtures.{RegistryCase}
 use ibc/testing/fuzz_dsl
 use ibc/utils/bits
 
@@ -611,7 +613,13 @@ fn spend_host_state_with_signatories(
 ) -> Bool {
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
-    test_client_script_hash(),
+    [
+      registry.legacy(
+        "mock client policy",
+        test_client_script_hash(),
+        "mock proof policy",
+      ),
+    ],
     test_connection_script_hash(),
     test_channel_script_hash(),
     "mock client policy",
@@ -634,7 +642,13 @@ fn spend_host_state_with_channel_redeemer(
   let channel_redeemer_data: Redeemer = channel_redeemer
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
-    test_client_script_hash(),
+    [
+      registry.legacy(
+        "mock client policy",
+        test_client_script_hash(),
+        "mock proof policy",
+      ),
+    ],
     test_connection_script_hash(),
     test_channel_script_hash(),
     "mock client policy",
@@ -1523,7 +1537,13 @@ test host_update_client_capacity_minimum_history_succeeds() {
 
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
-    test_client_script_hash(),
+    [
+      registry.legacy(
+        "mock client policy",
+        test_client_script_hash(),
+        "mock proof policy",
+      ),
+    ],
     test_connection_script_hash(),
     test_channel_script_hash(),
     "mock client policy",
@@ -1666,7 +1686,13 @@ fn create_connection_thread(token: AuthToken, mint: Value) -> Bool {
     }
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
-    test_client_script_hash(),
+    [
+      registry.legacy(
+        "mock client policy",
+        test_client_script_hash(),
+        "mock proof policy",
+      ),
+    ],
     test_connection_script_hash(),
     test_channel_script_hash(),
     "mock client policy",
@@ -4306,7 +4332,13 @@ fn validate_test_finalize_shutdown(
 ) -> Bool {
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
-    test_client_script_hash(),
+    [
+      registry.legacy(
+        "mock client policy",
+        test_client_script_hash(),
+        "mock proof policy",
+      ),
+    ],
     test_connection_script_hash(),
     test_channel_script_hash(),
     "mock client policy",
@@ -5072,4 +5104,150 @@ test state_value_host_state_accepts_full_reserves_and_ada_top_up() {
 
 fn capacity_receipt_count() -> Fuzzer<Int> {
   fuzz.int_between(1, max_packet_entries_per_channel - 1)
+}
+
+// Two registered types coexist under the same host. Only the selected type's
+// policy, spending script and IBC identifier may authorize its new commitment.
+fn create_alternate_registered_client(commitment_id: ByteArray) -> Bool {
+  let first =
+    registry.legacy("mock client policy", test_client_script_hash(), "proof-a")
+  let second =
+    registry.ClientRegistration {
+      ..registry.legacy(
+        "alternate client policy",
+        "alternate client script",
+        "proof-b",
+      ),
+      client_type: "99-test",
+    }
+  create_registered_client(
+    RegistryCase {
+      first,
+      second,
+      sequence: "0",
+      sequence_number: 0,
+      reverse: False,
+      reverse_references: False,
+    },
+    commitment_id,
+  )
+}
+
+fn create_registered_client(
+  sample: RegistryCase,
+  commitment_id: ByteArray,
+) -> Bool {
+  let seed = sample.sequence_number + 613
+  let second = sample.second
+  let token =
+    AuthToken {
+      policy_id: second.mint_policy,
+      name: auth.generate_token_name(
+        AuthToken { policy_id: test_nft_policy(), name: host_state_token_name },
+        client_id_keys.client_prefix,
+        sample.sequence,
+      ),
+    }
+  let client = ClientDatum { ..test_client_datum(1, seed), token }
+  let state_key = client_keys.full_client_state_path(commitment_id)
+  let consensus_key =
+    client_keys.full_client_consensus_state_path(commitment_id, "1")
+  let state_value = cbor.serialise(client.state.client_state)
+  let client_state_siblings = full_empty_siblings()
+  let after_client =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      state_key,
+      "",
+      state_value,
+      client_state_siblings,
+    )
+  let consensus_state_siblings =
+    siblings_after_single_insert(state_key, state_value, consensus_key)
+  let new_root =
+    ibc_state_commitment.apply_update(
+      after_client,
+      consensus_key,
+      "",
+      cbor.serialise(test_consensus_state(seed)),
+      consensus_state_siblings,
+    )
+  let old_state =
+    HostState {
+      ..test_host_state(empty_ibc_state_root, seed),
+      next_client_sequence: sample.sequence_number,
+    }
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      next_client_sequence: sample.sequence_number + 1,
+      ibc_state_root: new_root,
+    }
+  let client_output =
+    Output {
+      ..test_client_output(client),
+      address: Address(Script(second.spend_validator), None),
+    }
+  host_state_stt.host_state_stt.spend(
+    test_nft_policy(),
+    client_registry_fixtures.registrations(sample),
+    test_connection_script_hash(),
+    test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
+    None,
+    CreateClient { client_state_siblings, consensus_state_siblings },
+    test_host_ref(),
+    Transaction {
+      ..placeholder,
+      inputs: [test_host_input(old_state)],
+      outputs: [test_host_output(new_state), client_output],
+      mint: from_asset(token.policy_id, token.name, 1),
+    },
+  )
+}
+
+test registered_client_creation_commits_the_selected_types_identifier() {
+  create_alternate_registered_client("99-test-0")
+}
+
+test registered_client_creation_rejects_a_different_types_commitment() fail {
+  create_alternate_registered_client("07-tendermint-0")
+}
+
+test prop_host_registered_client_commits_exact_namespace(
+  sample via registered_client_cases(),
+) {
+  fuzz.label(@"fuzz.contract.host.client_registry.valid_namespace")
+  create_registered_client(
+    sample,
+    registry.identifier(sample.second, sample.sequence),
+  )
+}
+
+test prop_host_registered_client_rejects_other_namespace(
+  sample via registered_client_cases(),
+) fail {
+  fuzz.label(@"fuzz.contract.host.client_registry.invalid_namespace")
+  create_registered_client(
+    sample,
+    registry.identifier(sample.first, sample.sequence),
+  )
+}
+
+fn registered_client_cases() -> Fuzzer<client_registry_fixtures.RegistryCase> {
+  let suffix <- fuzz.and_then(fuzz.int_between(0, 65535))
+  let sequence <- fuzz.and_then(fuzz.int_between(0, 99999999))
+  let seed <- fuzz.and_then(fuzz.bytearray())
+  let reverse <- fuzz.and_then(fuzz.bool())
+  let reverse_references <- fuzz.map(fuzz.bool())
+  client_registry_fixtures.registry_case(
+    suffix,
+    sequence,
+    seed,
+    reverse,
+    reverse_references,
+  )
 }

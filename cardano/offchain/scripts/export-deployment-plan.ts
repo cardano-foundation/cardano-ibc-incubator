@@ -40,6 +40,7 @@ for (const benchmarkVoucherEnabled of [false, true]) {
   modes.push({
     name,
     inputs: plan.inputs,
+    clientRegistrations: plan.clientRegistrations,
     referenceValidators: plan.referenceValidators.map(entry),
     inlineValidators: plan.inlineValidators.map(entry),
   });
