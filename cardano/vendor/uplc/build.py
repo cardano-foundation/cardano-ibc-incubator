@@ -5,7 +5,6 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
-import sys
 
 root = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
@@ -13,7 +12,6 @@ parser.add_argument('--write', action='store_true')
 args = parser.parse_args()
 if subprocess.check_output(['wasm-pack', '--version'], text=True).strip() != 'wasm-pack 0.13.1':
     raise RuntimeError('Reproduction requires wasm-pack 0.13.1')
-subprocess.run([sys.executable, str(root / 'prepare-upstream.py')], check=True)
 for target, output in [('nodejs', 'node'), ('bundler', 'browser')]:
     subprocess.run(['wasm-pack', 'build', '--target', target, '--out-dir', '../dist/' + output,
                     '--release', '--', '--locked'], cwd=root / 'rust', check=True)
@@ -23,7 +21,7 @@ for target, output in [('nodejs', 'node'), ('bundler', 'browser')]:
         (root / 'dist' / output / name).unlink(missing_ok=True)
 paths = sorted([p for p in (root / 'dist').rglob('*') if p.is_file()] + [
     root / 'rust/Cargo.toml', root / 'rust/Cargo.lock', root / 'rust/rust-toolchain.toml',
-    root / 'rust/src/lib.rs', root / 'prepare-upstream.py', root / 'build.py', root / 'package.json',
+    root / 'rust/src/lib.rs', root / 'build.py', root / 'package.json',
 ])
 digests = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 manifest = root / 'artifact-sha256.json'

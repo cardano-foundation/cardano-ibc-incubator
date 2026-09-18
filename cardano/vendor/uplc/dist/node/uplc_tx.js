@@ -102,6 +102,39 @@ module.exports.eval_phase_two_raw = function(transaction, inputs, outputs, cost_
     return v5;
 };
 
+/**
+ * Explicit protocol selection for callers that possess ledger parameters.
+ * Never infer the active protocol from the cost-table length.
+ * @param {Uint8Array} transaction
+ * @param {Uint8Array[]} inputs
+ * @param {Uint8Array[]} outputs
+ * @param {Uint8Array} cost_models
+ * @param {bigint} cpu
+ * @param {bigint} memory
+ * @param {bigint} zero_time
+ * @param {bigint} zero_slot
+ * @param {number} slot_length
+ * @param {number} protocol_major_version
+ * @returns {Uint8Array[]}
+ */
+module.exports.eval_phase_two_raw_with_protocol = function(transaction, inputs, outputs, cost_models, cpu, memory, zero_time, zero_slot, slot_length, protocol_major_version) {
+    const ptr0 = passArray8ToWasm0(transaction, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayJsValueToWasm0(inputs, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArrayJsValueToWasm0(outputs, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray8ToWasm0(cost_models, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.eval_phase_two_raw_with_protocol(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, cpu, memory, zero_time, zero_slot, slot_length, protocol_major_version);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v5 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v5;
+};
+
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);

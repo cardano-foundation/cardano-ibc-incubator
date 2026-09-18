@@ -1,6 +1,6 @@
 {
   "name": "@lucid-evolution/uplc",
-  "version": "0.2.23+ibc.1",
+  "version": "0.2.23+ibc.2",
   "private": true,
   "main": "./dist/node/uplc_tx.js",
   "browser": "./dist/browser/uplc_tx.js",
