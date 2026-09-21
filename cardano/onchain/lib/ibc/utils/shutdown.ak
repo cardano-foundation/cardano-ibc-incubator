@@ -26,9 +26,9 @@ pub fn burns_token(transaction: Transaction, token: AuthToken) -> Bool {
   assets.quantity_of(transaction.mint, token.policy_id, token.name) == -1
 }
 
-/// Client and connection state remains necessary while a transfer escrow shard
-/// is registered. The authenticated transfer root is retained as the global
-/// drainage witness until those proof dependencies have been reclaimed.
+/// Client, connection and voucher lookup state remains necessary while a
+/// transfer claim is outstanding. The authenticated transfer root is retained
+/// as the global drainage witness until those dependencies have been reclaimed.
 pub fn transfer_is_drained(
   transaction: Transaction,
   host_policy: PolicyId,

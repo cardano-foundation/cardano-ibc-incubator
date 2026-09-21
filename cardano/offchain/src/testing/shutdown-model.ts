@@ -566,14 +566,16 @@ export async function deploymentScenario() {
         if (!groups.length) return false;
         const dependenciesRemain = groups.some((group) =>
           group.kind === "channel" || group.kind === "client" ||
-          group.kind === "connection"
+          group.kind === "connection" || group.kind === "trace" ||
+          group.kind === "metadata"
         );
         if (dependenciesRemain) {
           groups = groups.filter((group) => group.kind !== "transfer");
         }
         const group = groups[index % groups.length];
         const transferRoot = group.kind === "channel" ||
-            group.kind === "client" || group.kind === "connection"
+            group.kind === "client" || group.kind === "connection" ||
+            group.kind === "trace" || group.kind === "metadata"
           ? await lucid.utxoByUnit(deployment.modules.transfer.identifier)
           : undefined;
         await api.submit(
