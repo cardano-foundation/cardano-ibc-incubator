@@ -207,7 +207,7 @@ test removed_archive_mint_redeemer_is_rejected() fail {
 }
 
 test removed_consensus_prune_redeemer_is_rejected() fail {
-  let raw = builtin.constr_data(11, [])
+  let raw = builtin.constr_data(12, [])
   expect _: HostStateRedeemer = raw
   True
 }
