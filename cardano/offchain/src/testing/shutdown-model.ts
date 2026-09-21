@@ -221,7 +221,11 @@ export async function deploymentScenario() {
           emulator.now(),
           root,
         );
-        const datum = record(state, record(nft.policy_id, nft.name));
+        const datum = record(
+          state,
+          record(nft.policy_id, nft.name),
+          "00".repeat(32),
+        );
         const clientKey = `clients/07-tendermint-${sequence}/clientState`;
         const consensusKey =
           `clients/07-tendermint-${sequence}/consensusStates/${height}`;
@@ -282,11 +286,10 @@ export async function deploymentScenario() {
         next.state.next_connection_sequence++;
         await api.submit(
           hostTx(input, next, { CreateConnection: { connection_siblings } })
-            .readFrom([client])
-            .attach.MintingPolicy({
-              type: "PlutusV3",
-              script: deployment.validators.mintConnectionStt.script,
-            })
+            .readFrom([
+              client,
+              deployment.validators.mintConnectionStt.refUtxo,
+            ])
             .mintAssets({ [nft.policy_id + nft.name]: 1n }, Data.void())
             .pay.ToContract(deployment.validators.spendConnection.address, {
               kind: "inline",
@@ -376,19 +379,22 @@ export async function deploymentScenario() {
               { [verify.scriptHash]: 1n },
               encode(
                 record(
-                  clientFields.fields[0],
-                  consensus,
-                  h,
-                  processed,
-                  processedHeight,
-                  0n,
-                  0n,
-                  membership.proof,
-                  record([
-                    fromText("ibc"),
-                    fromText("connections/connection-0"),
-                  ]),
-                  remote,
+                  record(
+                    clientFields.fields[0],
+                    consensus,
+                    h,
+                    processed,
+                    processedHeight,
+                    0n,
+                    0n,
+                    membership.proof,
+                    record([
+                      fromText("ibc"),
+                      fromText("connections/connection-0"),
+                    ]),
+                    remote,
+                  ),
+                  new Constr(1, []),
                 ),
               ),
             )
