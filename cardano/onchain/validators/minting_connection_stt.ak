@@ -29,7 +29,7 @@ use ibc/core/ics_003_connection_semantics/types/counterparty as counterparty
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
@@ -196,8 +196,8 @@ fn validate_conn_open_try_proof(
   client_datum_state: ClientDatumState,
   connection: ConnectionEnd,
   counterparty_client_state: ByteArray,
-  proof_init: MerkleProof,
-  proof_client: MerkleProof,
+  proof_init: Data,
+  proof_client: Data,
   proof_height: Height,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,

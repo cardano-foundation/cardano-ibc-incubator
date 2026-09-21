@@ -20,7 +20,7 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum,
 use ibc/core/ics_004/channel_redeemer.{PrunePacketHistory}
 use ibc/core/ics_004/types/order as channel_order_mod
 use ibc/core/ics_004/types/state as channel_state_mod
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof} as merkle
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
 
@@ -155,7 +155,7 @@ fn validate_source_commitment_absence(
   source_channel: ByteArray,
   sequence: Int,
   proof_height: Height,
-  proof: MerkleProof,
+  proof: Data,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
