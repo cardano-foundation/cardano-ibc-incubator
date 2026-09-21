@@ -17,11 +17,7 @@ pub type SpendChannelRedeemer {
     proof_height: Height,
   }
   ChanOpenConfirm { proof_ack: Data, proof_height: Height }
-  RecvPacket {
-    packet: Packet,
-    proof_commitment: Data,
-    proof_height: Height,
-  }
+  RecvPacket { packet: Packet, proof_commitment: Data, proof_height: Height }
   TimeoutPacket {
     packet: Packet,
     proof_unreceived: Data,

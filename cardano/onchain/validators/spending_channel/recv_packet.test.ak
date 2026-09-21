@@ -629,7 +629,9 @@ fn check_recv_packet_with_proof(
         processed_height: 0,
         delay_time_period: time_delay,
         delay_block_period: block_delay,
-        proof: if match_proof { proof_commitment } else {
+        proof: if match_proof {
+          proof_commitment
+        } else {
           let wrong_proof: Data = #"ff"
           wrong_proof
         },
