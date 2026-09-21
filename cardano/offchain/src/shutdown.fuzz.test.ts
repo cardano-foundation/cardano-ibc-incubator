@@ -37,7 +37,7 @@ Deno.test("stateful main lifecycle returns all deployment ADA after shutdown", a
   );
 });
 
-Deno.test("populated snapshots reclaim state deposits without burning user vouchers", async () => {
+Deno.test("snapshot cleanup conserves seeded token quantities", async () => {
   await fc.assert(
     fc.asyncProperty(
       fc.record({
