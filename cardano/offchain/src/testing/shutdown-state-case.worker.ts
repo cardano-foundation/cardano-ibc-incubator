@@ -90,7 +90,8 @@ async function checkCase(sample: ShutdownSnapshotCase) {
     );
     if (!groups.length) break;
     const dependenciesRemain = groups.some((g) =>
-      g.kind === "channel" || g.kind === "client" || g.kind === "connection"
+      g.kind === "channel" || g.kind === "client" || g.kind === "connection" ||
+      g.kind === "trace" || g.kind === "metadata"
     );
     if (dependenciesRemain) {
       groups = groups.filter((g) => g.kind !== "transfer");
