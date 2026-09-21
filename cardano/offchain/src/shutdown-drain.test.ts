@@ -12,3 +12,12 @@ for (const mode of ["timeout", "error-ack", "return"] as DrainMode[]) {
     });
   });
 }
+
+Deno.test("funded shutdown rejects dependency cleanup after grace until settlement", async () => {
+  await checkShutdownDrain({
+    mode: "error-ack",
+    amount: 7_000_000n,
+    graceDays: 1,
+    settleAfterGrace: true,
+  });
+});

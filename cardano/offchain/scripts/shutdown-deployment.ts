@@ -1165,6 +1165,10 @@ async function reclaimState(
         ...group,
         utxos: group.utxos.slice(0, kind === "client" ? 1 : batchSize),
       };
+      const transferRoot = groups.find((entry) => entry.kind === "transfer")
+        ?.utxos.find((utxo) =>
+          utxo.assets[deployment.modules.transfer.identifier] === 1n
+        );
       await submitTx(
         () =>
           buildReclaimStateTx(
@@ -1174,6 +1178,7 @@ async function reclaimState(
             batch,
             walletAddress,
             requireGracePeriodElapsed(graceEnd),
+            transferRoot,
           ),
         lucid,
         `Reclaim ${kind}`,

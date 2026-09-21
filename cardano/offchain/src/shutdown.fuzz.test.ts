@@ -74,6 +74,7 @@ Deno.test("shutdown drains funded escrow before returning all deployment ADA", a
         amount: fc.bigInt({ min: 2_000_000n, max: 100_000_000n }),
         graceDays: fc.integer({ min: 1, max: 3 }),
         settleNearDeadline: fc.boolean(),
+        settleAfterGrace: fc.boolean(),
       }),
       async (sample) => {
         await runTransactionCase(

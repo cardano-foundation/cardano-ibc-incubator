@@ -554,11 +554,22 @@ export async function deploymentScenario() {
         );
       },
       async cleanup(index: number) {
-        const groups = (await scanDeploymentState(lucid, deployment)).filter((
+        let groups = (await scanDeploymentState(lucid, deployment)).filter((
           g,
         ) => g.utxos.length);
         if (!groups.length) return false;
+        const dependenciesRemain = groups.some((group) =>
+          group.kind === "channel" || group.kind === "client" ||
+          group.kind === "connection"
+        );
+        if (dependenciesRemain) {
+          groups = groups.filter((group) => group.kind !== "transfer");
+        }
         const group = groups[index % groups.length];
+        const transferRoot = group.kind === "channel" ||
+            group.kind === "client" || group.kind === "connection"
+          ? await lucid.utxoByUnit(deployment.modules.transfer.identifier)
+          : undefined;
         await api.submit(
           buildReclaimStateTx(
             lucid,
@@ -567,6 +578,7 @@ export async function deploymentScenario() {
             { ...group, utxos: [group.utxos[0]] },
             address,
             emulator.now(),
+            transferRoot,
           ),
           `reclaim ${group.kind}`,
         );

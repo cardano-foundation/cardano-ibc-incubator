@@ -61,11 +61,14 @@ validator mint_client_stt(
     transaction: Transaction,
   ) {
     if shutdown.burns_only(transaction.mint, client_mint_policy_id) {
-      shutdown.reclaim_policy(
-        transaction,
-        client_mint_policy_id,
-        host_state_nft_policy_id,
-      )
+      and {
+        shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
+        shutdown.reclaim_policy(
+          transaction,
+          client_mint_policy_id,
+          host_state_nft_policy_id,
+        ),
+      }
     } else {
       expect _checked_redeemer: MintClientRedeemer = redeemer
       let Transaction { inputs, outputs, mint, validity_range, redeemers, .. } =

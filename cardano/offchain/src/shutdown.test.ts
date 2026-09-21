@@ -53,6 +53,10 @@ for (const clientMode of ["legacy", "staged"] as const) {
     ) {
       groups = await scanDeploymentState(f.lucid, f.deployment);
       const group = groups.find((entry) => entry.kind === kind)!;
+      const transferRoot = groups.find((entry) => entry.kind === "transfer")
+        ?.utxos.find((utxo) =>
+          utxo.assets[f.deployment.modules.transfer.identifier] === 1n
+        );
       assert(group.utxos.length > 0);
       const refund = group.utxos.reduce(
         (total, utxo) => total + utxo.assets.lovelace,
@@ -70,6 +74,7 @@ for (const clientMode of ["legacy", "staged"] as const) {
           group,
           f.account.address,
           f.emulator.now(),
+          transferRoot,
         ),
       ).catch((cause) => {
         throw new Error(`${kind} cleanup failed`, { cause });

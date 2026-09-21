@@ -21,6 +21,7 @@ import { generateTokenName } from "../utils.ts";
 import {
   assertStateDrained,
   buildReclaimEscrowTx,
+  buildReclaimStateTx,
   escrowDatum,
   scanDeploymentState,
 } from "../shutdown.ts";
@@ -60,6 +61,7 @@ export interface DrainCase {
   amount: bigint;
   graceDays: number;
   settleNearDeadline?: boolean;
+  settleAfterGrace?: boolean;
 }
 
 /**
@@ -68,7 +70,13 @@ export interface DrainCase {
  * From shutdown entry onward, every state change is a submitted transaction.
  */
 export async function checkShutdownDrain(
-  { mode, amount, graceDays, settleNearDeadline = false }: DrainCase,
+  {
+    mode,
+    amount,
+    graceDays,
+    settleNearDeadline = false,
+    settleAfterGrace = false,
+  }: DrainCase,
 ) {
   const f = await deploymentScenario();
   const { lucid, emulator, deployment } = f;
@@ -413,6 +421,26 @@ export async function checkShutdownDrain(
       Error,
       mode === "return" ? "user deposits" : "unsettled packets",
     );
+    if (settleAfterGrace) {
+      await f.waitForGrace();
+      for (const kind of ["client", "connection"] as const) {
+        const dependency = groups.find((group) => group.kind === kind)!;
+        const reclaim = buildReclaimStateTx(
+          lucid,
+          deployment,
+          await f.host(),
+          dependency,
+          f.address,
+          emulator.now(),
+          await lucid.utxoByUnit(deployment.modules.transfer.identifier),
+        );
+        await assertRejects(
+          () => reclaim.complete({ localUPLCEval: true }),
+          Error,
+          "failed script execution",
+        );
+      }
+    }
     const host = await f.host();
     const currentHost = await f.hostDatum();
     const channel = await lucid.utxoByUnit(unit(channelToken));
