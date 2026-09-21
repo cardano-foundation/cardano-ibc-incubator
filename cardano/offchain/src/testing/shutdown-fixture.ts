@@ -435,7 +435,7 @@ export async function shutdownFixture(
   const root = seed(spendTransferModule.address, {
     ...stateValue(moduleToken.policy_id, moduleToken.name),
     [portToken.policy_id + portToken.name]: 1n,
-  }, encode(record(await tree.getRoot())));
+  }, encode(record(await tree.getRoot(), 0n)));
   const shard = seed(spendTransferModule.address, {
     lovelace: 5_000_000n + shape.extraLovelace + escrowAmount,
     [shardUnit]: 1n,

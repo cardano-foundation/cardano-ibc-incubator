@@ -19,6 +19,7 @@ pub fn module_datum(output: Output) -> TransferModuleDatum {
     NoDatum ->
       TransferModuleDatum {
         escrow_shard_registry_root: empty_escrow_shard_registry_root,
+        outstanding_voucher_obligation: 0,
       }
     InlineDatum(raw) -> {
       expect datum: TransferModuleDatum = raw

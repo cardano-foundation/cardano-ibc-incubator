@@ -165,6 +165,7 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: ibc_state_commitment.empty_hash,
+          outstanding_voucher_obligation: 0,
         },
       ),
     }
@@ -658,7 +659,10 @@ test transfer_close_confirm_rejects_module_datum_change() fail {
       Output {
         ..module_output(f),
         datum: InlineDatum(
-          TransferModuleDatum { escrow_shard_registry_root: "different root" },
+          TransferModuleDatum {
+            escrow_shard_registry_root: "different root",
+            outstanding_voucher_obligation: 0,
+          },
         ),
       },
     ),

@@ -448,12 +448,18 @@ function decodeTransferEscrowDatum(encoded, Lucid) {
 }
 function encodeTransferModuleDatum(datum, Lucid) {
     const { Data } = Lucid;
-    const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+    const schema = Data.Object({
+        escrow_shard_registry_root: Data.Bytes(),
+        outstanding_voucher_obligation: Data.Integer(),
+    });
     return Data.to(datum, schema, { canonical: true });
 }
 function decodeTransferModuleDatum(encoded, Lucid) {
     const { Data } = Lucid;
-    const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+    const schema = Data.Object({
+        escrow_shard_registry_root: Data.Bytes(),
+        outstanding_voucher_obligation: Data.Integer(),
+    });
     return Data.from(encoded, schema);
 }
 async function encodeHostStateRedeemer(data, Lucid) {

@@ -185,6 +185,7 @@ fn transfer_module_registry_transition(
       NoDatum ->
         TransferModuleDatum {
           escrow_shard_registry_root: empty_escrow_shard_registry_root,
+          outstanding_voucher_obligation: 0,
         }
       InlineDatum(raw) -> {
         expect decoded: TransferModuleDatum = raw
@@ -198,6 +199,8 @@ fn transfer_module_registry_transition(
     bytearray.length(old_datum.escrow_shard_registry_root) == ibc_state_commitment.hash_size_bytes
   expect
     bytearray.length(new_datum.escrow_shard_registry_root) == ibc_state_commitment.hash_size_bytes
+  expect
+    old_datum.outstanding_voucher_obligation == new_datum.outstanding_voucher_obligation
 
   (
     module_state_input,

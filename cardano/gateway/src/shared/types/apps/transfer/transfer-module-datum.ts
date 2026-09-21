@@ -2,11 +2,13 @@ import { type Data } from '@lucid-evolution/lucid';
 
 export type TransferModuleDatum = {
   escrow_shard_registry_root: string;
+  outstanding_voucher_obligation: bigint;
 };
 
 function transferModuleDatumSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
   return Lucid.Data.Object({
     escrow_shard_registry_root: Lucid.Data.Bytes(),
+    outstanding_voucher_obligation: Lucid.Data.Integer(),
   });
 }
 

@@ -118,17 +118,19 @@ async function findTransferEscrowShard(dependencies, channelId, packetDenom, den
         seenOutRefs.add(outRef);
     }
     const transferModuleUtxo = getTransferModuleRootFromAddressScan(moduleUtxos, transferModuleIdentifier, failedPrecondition);
-    let onChainRoot = EMPTY_REGISTRY_ROOT;
+    let moduleDatum = {
+        escrow_shard_registry_root: EMPTY_REGISTRY_ROOT,
+        outstanding_voucher_obligation: 0n,
+    };
     if (transferModuleUtxo.datum) {
-        let moduleDatum;
         try {
             moduleDatum = await dependencies.decodeTransferModuleDatum(transferModuleUtxo.datum);
         }
         catch (error) {
             throw failedPrecondition(`Malformed transfer-module registry datum: ${String(error)}`);
         }
-        onChainRoot = moduleDatum.escrow_shard_registry_root;
     }
+    const onChainRoot = moduleDatum.escrow_shard_registry_root;
     if (!/^[0-9a-f]{64}$/.test(onChainRoot)) {
         throw failedPrecondition('Transfer-module escrow shard registry root must be 32 lowercase hexadecimal bytes');
     }
@@ -211,6 +213,7 @@ async function findTransferEscrowShard(dependencies, channelId, packetDenom, den
     }
     tree.set(registryKey, exports.TRANSFER_ESCROW_SHARD_REGISTERED_VALUE);
     const encodedUpdatedTransferModuleDatum = await dependencies.encodeTransferModuleDatum({
+        ...moduleDatum,
         escrow_shard_registry_root: registryRoot(tree, failedPrecondition),
     });
     return {

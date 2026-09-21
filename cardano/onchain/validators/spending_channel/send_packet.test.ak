@@ -150,6 +150,7 @@ fn check_send_packet_with_data(
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: updated_registry_root,
+          outstanding_voucher_obligation: 0,
         },
       ),
     }

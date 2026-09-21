@@ -241,7 +241,7 @@ export async function sendPacketFixture(
   const module = seed(
     moduleAddress,
     context.module.assets,
-    encode(record(emptyRegistryRoot)),
+    encode(record(emptyRegistryRoot, 0n)),
   );
   const hostDatum: HostStateDatum = {
     ...context.hostDatum,
@@ -336,7 +336,7 @@ export async function sendPacketFixture(
     }, channelUtxo.assets)
     .pay.ToContract(moduleAddress, {
       kind: "inline",
-      value: encode(record(await registry.getRoot())),
+      value: encode(record(await registry.getRoot(), 0n)),
     }, module.assets)
     .pay.ToContract(moduleAddress, {
       kind: "inline",
