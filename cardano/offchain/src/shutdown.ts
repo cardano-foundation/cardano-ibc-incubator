@@ -8,7 +8,7 @@ import {
 import { DeploymentIbcTree } from "./deployment.ts";
 import type { DeploymentTemplate } from "./utils.ts";
 import { fromText } from "@lucid-evolution/lucid";
-import { HostStateDatum } from "../types/index.ts";
+import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
 
 type StateKind =
   | "channel"
@@ -322,7 +322,31 @@ export function buildReclaimStateTx(
     trace: 3,
     metadata: 0,
   };
-  const tx = lucid.newTx().readFrom([hostUtxo]);
+  const tx = lucid.newTx();
+  if (group.kind === "transfer") {
+    const portRegistry = new Map(host.control.port_registry);
+    if (!portRegistry.delete(fromText("transfer"))) {
+      throw new Error("Missing transfer module registration");
+    }
+    const authorizedHost: HostStateDatum = {
+      ...host,
+      state: { ...host.state, version: host.state.version + 1n },
+      control: { ...host.control, port_registry: portRegistry },
+    };
+    tx.readFrom([deployment.validators.hostStateStt.refUtxo])
+      .collectFrom(
+        [hostUtxo],
+        Data.to("AuthorizeFinalization", HostStateRedeemer, {
+          canonical: true,
+        }),
+      )
+      .pay.ToContract(hostUtxo.address, {
+        kind: "inline",
+        value: Data.to(authorizedHost, HostStateDatum, { canonical: true }),
+      }, hostUtxo.assets);
+  } else {
+    tx.readFrom([hostUtxo]);
+  }
   if (
     group.kind === "channel" || group.kind === "client" ||
     group.kind === "connection"

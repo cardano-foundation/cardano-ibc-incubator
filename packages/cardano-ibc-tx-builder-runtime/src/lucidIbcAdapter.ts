@@ -654,6 +654,7 @@ async function encodeHostStateRedeemer(
     }),
     Data.Literal('FinalizeShutdown'),
     Data.Literal('Heartbeat'),
+    Data.Literal('AuthorizeFinalization'),
   ]);
   return Data.to(data, HostStateRedeemerSchema as any, { canonical: true });
 }

@@ -29,6 +29,10 @@ import {
   clientStateWithHistory,
   deploymentScenario,
 } from "./shutdown-model.ts";
+import {
+  buildFinalizeShutdownTx,
+  partitionShutdownReferences,
+} from "../../scripts/shutdown-deployment.ts";
 import { membershipProof } from "./channel-fixture.ts";
 import { absenceProof } from "./packet-budget-fixture.ts";
 
@@ -423,6 +427,28 @@ export async function checkShutdownDrain(
     );
     if (settleAfterGrace) {
       await f.waitForGrace();
+      const liveReferences = Object.values(emulator.ledger)
+        .filter(({ spent, utxo }) => !spent && utxo.scriptRef)
+        .map(({ utxo }) => utxo);
+      const { terminalReference } = partitionShutdownReferences(
+        deployment,
+        liveReferences,
+      );
+      const shutdownDatum = await f.hostDatum();
+      await assertRejects(
+        async () =>
+          buildFinalizeShutdownTx(
+            lucid,
+            deployment,
+            await f.host(),
+            terminalReference,
+            f.address,
+            shutdownDatum.deployer,
+            emulator.now(),
+          ).complete({ localUPLCEval: true }),
+        Error,
+        "failed script execution",
+      );
       for (const kind of ["client", "connection"] as const) {
         const dependency = groups.find((group) => group.kind === kind)!;
         const reclaim = buildReclaimStateTx(

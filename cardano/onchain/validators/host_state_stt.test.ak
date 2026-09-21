@@ -15,6 +15,9 @@ use cardano/transaction.{
   Transaction, placeholder,
 }
 use host_state_stt
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -59,9 +62,9 @@ use ibc/core/ics_025_handler_interface/host_state.{
   max_bound_ports, min_shutdown_grace_period_ms, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, CreateClient, CreateConnection, EnterShutdown, FinalizeShutdown,
-  HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel, UpdateClient,
-  UpdateConnection,
+  AuthorizeFinalization, BindPort, CreateClient, CreateConnection, EnterShutdown,
+  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel,
+  UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/client_registry_fixtures.{RegistryCase}
@@ -4301,7 +4304,10 @@ test host_state_enter_shutdown_requires_finite_upper_bound() fail {
   )
 }
 
-fn test_shutdown_host_input(grace_period_end: Int) -> Input {
+fn test_shutdown_host_input_with_registry(
+  grace_period_end: Int,
+  port_registry: Pairs<ByteArray, ModuleRegistration>,
+) -> Input {
   let nft_policy = test_nft_policy()
   let old_state = test_host_state(empty_ibc_state_root, 2000)
   Input(
@@ -4310,9 +4316,10 @@ fn test_shutdown_host_input(grace_period_end: Int) -> Input {
       address: Address(Script(test_host_script_hash()), None),
       value: from_asset(nft_policy, host_state_token_name, 1),
       datum: InlineDatum(
-        test_host_state_datum_with_shutdown(
+        test_host_state_datum_with_control(
           old_state,
           nft_policy,
+          port_registry,
           ShuttingDown {
             initiated_at: old_state.last_update_time,
             grace_period_end,
@@ -4322,6 +4329,10 @@ fn test_shutdown_host_input(grace_period_end: Int) -> Input {
       reference_script: None,
     },
   )
+}
+
+fn test_shutdown_host_input(grace_period_end: Int) -> Input {
+  test_shutdown_host_input_with_registry(grace_period_end, [])
 }
 
 fn validate_test_finalize_shutdown(
@@ -4358,6 +4369,111 @@ fn validate_test_finalize_shutdown(
   )
 }
 
+fn validate_test_authorize_finalization(
+  escrow_root: ByteArray,
+  voucher_obligation: Int,
+) -> Bool {
+  let nft_policy = test_nft_policy()
+  let grace_period_end = 2000 + min_shutdown_grace_period_ms
+  let registration = test_module_registration(test_module_script_hash())
+  let old_state = test_host_state(empty_ibc_state_root, 2000)
+  let shutdown =
+    ShuttingDown { initiated_at: old_state.last_update_time, grace_period_end }
+  let old_datum =
+    test_host_state_datum_with_control(
+      old_state,
+      nft_policy,
+      [Pair("transfer", registration)],
+      shutdown,
+    )
+  let new_datum =
+    test_host_state_datum_with_control(
+      HostState { ..old_state, version: old_state.version + 1 },
+      nft_policy,
+      [],
+      shutdown,
+    )
+  let host_input =
+    Input(
+      test_host_ref(),
+      Output {
+        address: Address(Script(test_host_script_hash()), None),
+        value: from_asset(nft_policy, host_state_token_name, 1),
+        datum: InlineDatum(old_datum),
+        reference_script: None,
+      },
+    )
+  let root_input =
+    Input(
+      test_object_ref(99),
+      Output {
+        ..test_module_output(registration),
+        datum: InlineDatum(
+          TransferModuleDatum {
+            escrow_shard_registry_root: escrow_root,
+            outstanding_voucher_obligation: voucher_obligation,
+          },
+        ),
+      },
+    )
+  let host_output =
+    Output {
+      address: host_input.output.address,
+      value: host_input.output.value,
+      datum: InlineDatum(new_datum),
+      reference_script: None,
+    }
+  let mint =
+    from_asset(
+      registration.port_token.policy_id,
+      registration.port_token.name,
+      -1,
+    )
+      |> add(
+          registration.module_token.policy_id,
+          registration.module_token.name,
+          -1,
+        )
+  host_state_stt.host_state_stt.spend(
+    nft_policy,
+    [
+      registry.legacy(
+        "mock client policy",
+        test_client_script_hash(),
+        "mock proof policy",
+      ),
+    ],
+    test_connection_script_hash(),
+    test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
+    None,
+    AuthorizeFinalization,
+    test_host_ref(),
+    Transaction {
+      ..placeholder,
+      inputs: [host_input, root_input],
+      outputs: [host_output],
+      mint,
+      extra_signatories: [trusted_deployer],
+      validity_range: interval.after(grace_period_end),
+    },
+  )
+}
+
+test host_state_authorizes_finalization_with_drained_transfer_root() {
+  validate_test_authorize_finalization(empty_escrow_shard_registry_root, 0)
+}
+
+test host_state_rejects_finalization_authorization_with_escrow() fail {
+  validate_test_authorize_finalization(#"11", 0)
+}
+
+test host_state_rejects_finalization_authorization_with_voucher_obligation() fail {
+  validate_test_authorize_finalization(empty_escrow_shard_registry_root, 1)
+}
+
 test host_state_finalize_shutdown_succeeds_with_exact_nft_burn() {
   let nft_policy = test_nft_policy()
   let grace_period_end = 2000 + min_shutdown_grace_period_ms
@@ -4366,6 +4482,46 @@ test host_state_finalize_shutdown_succeeds_with_exact_nft_burn() {
     [],
     grace_period_end,
     grace_period_end,
+  )
+}
+
+test host_state_finalize_shutdown_rejects_registered_transfer_root() fail {
+  let nft_policy = test_nft_policy()
+  let grace_period_end = 2000 + min_shutdown_grace_period_ms
+  host_state_stt.host_state_stt.spend(
+    nft_policy,
+    [
+      registry.legacy(
+        "mock client policy",
+        test_client_script_hash(),
+        "mock proof policy",
+      ),
+    ],
+    test_connection_script_hash(),
+    test_channel_script_hash(),
+    "mock client policy",
+    "mock connection policy",
+    "mock channel policy",
+    None,
+    FinalizeShutdown,
+    test_host_ref(),
+    Transaction {
+      ..placeholder,
+      inputs: [
+        test_shutdown_host_input_with_registry(
+          grace_period_end,
+          [
+            Pair(
+              "transfer",
+              test_module_registration(test_module_script_hash()),
+            ),
+          ],
+        ),
+      ],
+      mint: from_asset(nft_policy, host_state_token_name, -1),
+      extra_signatories: [trusted_deployer],
+      validity_range: interval.after(grace_period_end),
+    },
   )
 }
 

@@ -13,6 +13,9 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
 }
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height
 use ibc/core/ics_002_client_semantics/registry
@@ -35,14 +38,15 @@ use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, ModuleRegistration, host_state_token_name,
-  validate_bind_port, validate_create_channel, validate_create_client,
-  validate_create_connection, validate_enter_shutdown,
-  validate_finalize_shutdown, validate_heartbeat, validate_update_only_root,
+  validate_authorize_finalization, validate_bind_port, validate_create_channel,
+  validate_create_client, validate_create_connection, validate_enter_shutdown,
+  validate_finalize_shutdown, validate_heartbeat, validate_shutdown_authority,
+  validate_update_only_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
-  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel,
-  UpdateClient, UpdateConnection,
+  AuthorizeFinalization, BindPort, CreateChannel, CreateClient, CreateConnection,
+  EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer,
+  UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/string as string_utils
@@ -74,6 +78,50 @@ fn find_host_state_output(outputs: List<Output>, nft_policy: PolicyId) -> Output
       },
     )
   host_output
+}
+
+fn validate_transfer_finalization_authorization(
+  old_datum: HostStateDatum,
+  new_datum: HostStateDatum,
+  inputs: List<Input>,
+  mint: Value,
+  valid_from: Int,
+) -> Bool {
+  expect Some(registration) =
+    pairs.get_first(old_datum.control.port_registry, "transfer")
+  expect [root] =
+    list.filter(
+      inputs,
+      fn(input) {
+        and {
+          input.output.address.payment_credential == address.Script(
+            registration.module_script_hash,
+          ),
+          auth.contain_auth_token(input.output, registration.port_token),
+          auth.contain_auth_token(input.output, registration.module_token),
+        }
+      },
+    )
+  expect root_datum: TransferModuleDatum =
+    validator_utils.get_inline_datum(root.output)
+  and {
+    validate_shutdown_authority(old_datum, valid_from),
+    validate_authorize_finalization(old_datum, new_datum),
+    root_datum.escrow_shard_registry_root == empty_escrow_shard_registry_root,
+    root_datum.outstanding_voucher_obligation == 0,
+    validator_utils.require_exact_marker_mint(
+      mint,
+      registration.port_token.policy_id,
+      registration.port_token.name,
+      -1,
+    ),
+    validator_utils.require_exact_marker_mint(
+      mint,
+      registration.module_token.policy_id,
+      registration.module_token.name,
+      -1,
+    ),
+  }
 }
 
 fn state_thread_name(
@@ -1252,6 +1300,16 @@ validator host_state_stt(
           Heartbeat -> and {
               list.has(extra_signatories, old_datum.deployer),
               validate_heartbeat(old_datum, new_datum),
+            }
+          AuthorizeFinalization -> and {
+              list.has(extra_signatories, old_datum.deployer),
+              validate_transfer_finalization_authorization(
+                old_datum,
+                new_datum,
+                inputs,
+                mint,
+                validator_utils.get_tx_valid_from(validity_range),
+              ),
             }
           FinalizeShutdown -> fail
         }
