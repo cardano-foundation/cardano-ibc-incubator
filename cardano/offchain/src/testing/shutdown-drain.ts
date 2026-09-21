@@ -261,7 +261,7 @@ export async function checkShutdownDrain(
     const clientUtxo = snapshot(v.spendClient.address, {
       lovelace: 5_000_000n,
       [unit(clientToken)]: 1n,
-    }, encode(record(client.state, clientToken)));
+    }, encode(record(client.state, clientToken, "00".repeat(32))));
     const connectionUtxo = snapshot(v.spendConnection.address, {
       lovelace: 5_000_000n,
       [unit(connectionToken)]: 1n,
@@ -537,9 +537,12 @@ export async function checkShutdownDrain(
       .mintAssets(
         { [v.verifyProof.scriptHash]: 1n },
         encode(
-          mode === "timeout"
-            ? variant(1, ...verifyFields)
-            : record(...verifyFields, proofValue),
+          record(
+            mode === "timeout"
+              ? variant(1, ...verifyFields)
+              : record(...verifyFields, proofValue),
+            variant(1),
+          ),
         ),
       )
       .pay.ToContract(host.address, {

@@ -622,6 +622,7 @@ jobs:
         with:
           name: funds-fuzz-${{ matrix.suite }}
           path: funds-fuzz.log
+
   aiken-static:
     name: Cardano Onchain Aiken Static
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && ((github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && (needs.aiken-changes.outputs.aiken_files_changed == 'true' || needs.aiken-changes.outputs.aiken_changed == 'true')) }}
