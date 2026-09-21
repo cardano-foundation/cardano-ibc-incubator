@@ -96,7 +96,10 @@ validator mint_channel_stt(
           Withdraw(address.Script(shutdown_script_hash)),
         )
       let expected: Data = ReclaimStateWithdrawal
-      withdrawal_redeemer == expected
+      and {
+        withdrawal_redeemer == expected,
+        shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
+      }
     } else {
       expect redeemer: MintChannelRedeemer = redeemer
       let Transaction {

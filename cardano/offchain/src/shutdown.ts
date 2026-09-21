@@ -263,6 +263,7 @@ export function buildReclaimStateTx(
   group: ShutdownStateGroup,
   walletAddress: string,
   validFrom: number,
+  transferRoot?: UTxO,
 ) {
   if (
     group.utxos.length === 0 ||
@@ -299,6 +300,15 @@ export function buildReclaimStateTx(
   ) {
     throw new Error(`Unknown client validator for shutdown: ${clientTitle}`);
   }
+  if (
+    (group.kind === "channel" || group.kind === "client" ||
+      group.kind === "connection") &&
+    transferRoot?.assets[deployment.modules.transfer.identifier] !== 1n
+  ) {
+    throw new Error(
+      "Channel, client and connection cleanup requires the retained transfer module root",
+    );
+  }
   const index: Record<StateKind, number> = {
     channel: 10,
     connection: 2,
@@ -311,6 +321,12 @@ export function buildReclaimStateTx(
     metadata: 0,
   };
   const tx = lucid.newTx().readFrom([hostUtxo]);
+  if (
+    group.kind === "channel" || group.kind === "client" ||
+    group.kind === "connection"
+  ) {
+    tx.readFrom([transferRoot!]);
+  }
   if (group.validator.refUtxo) tx.readFrom([group.validator.refUtxo]);
   else {tx.attach.SpendingValidator({
       type: "PlutusV3",

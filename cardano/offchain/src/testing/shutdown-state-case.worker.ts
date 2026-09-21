@@ -100,12 +100,23 @@ async function checkCase(sample: ShutdownSnapshotCase) {
   );
   let step = 0;
   while (true) {
-    const groups = (await scanDeploymentState(f.lucid, f.deployment)).filter(
+    const allGroups = await scanDeploymentState(f.lucid, f.deployment);
+    let groups = allGroups.filter(
       (g) => g.utxos.length,
     );
     if (!groups.length) break;
+    const dependenciesRemain = groups.some((g) =>
+      g.kind === "channel" || g.kind === "client" || g.kind === "connection"
+    );
+    if (dependenciesRemain) {
+      groups = groups.filter((g) => g.kind !== "transfer");
+    }
     const group =
       groups[sample.order[step++ % sample.order.length] % groups.length];
+    const transferRoot = allGroups.find((entry) => entry.kind === "transfer")
+      ?.utxos.find((utxo) =>
+        utxo.assets[f.deployment.modules.transfer.identifier] === 1n
+      );
     await f.submit(
       buildReclaimStateTx(
         f.lucid,
@@ -114,6 +125,7 @@ async function checkCase(sample: ShutdownSnapshotCase) {
         { ...group, utxos: [group.utxos[0]] },
         f.account.address,
         f.emulator.now(),
+        transferRoot,
       ),
     );
     f.lucid.overrideUTxOs([]);
