@@ -279,7 +279,9 @@ export function buildReclaimStateTx(
   if (group.kind === "transfer") {
     for (const utxo of group.utxos) {
       if (
-        !utxo.datum || datumFields(Data.from(utxo.datum), 1)[0] !== EMPTY_ROOT
+        !utxo.datum ||
+        datumFields(Data.from(utxo.datum), 2)[0] !== EMPTY_ROOT ||
+        datumFields(Data.from(utxo.datum), 2)[1] !== 0n
       ) {
         throw new Error(
           "Reclaim empty escrow shards before the transfer module root",
@@ -381,10 +383,10 @@ export async function buildReclaimEscrowTx(
       tree.set(`escrowShards/${units[0].slice(56)}`, "01");
     }
   }
-  if (
-    !root.datum ||
-    datumFields(Data.from(root.datum), 1)[0] !== await tree.getRoot()
-  ) {
+  const rootFields = root.datum
+    ? datumFields(Data.from(root.datum), 2)
+    : undefined;
+  if (!rootFields || rootFields[0] !== await tree.getRoot()) {
     throw new Error(
       "Escrow shard inventory does not match the transfer module registry",
     );
@@ -405,7 +407,7 @@ export async function buildReclaimEscrowTx(
     .collectFrom([root, shard], redeemer)
     .pay.ToContract(root.address, {
       kind: "inline",
-      value: encode(record(await tree.getRoot())),
+      value: encode(record(await tree.getRoot(), rootFields[1])),
     }, root.assets);
   applyBurns(tx, burns, deployment, { [shardPolicy]: mintRedeemer });
   const recovery = deployment.validators.recoverClient;

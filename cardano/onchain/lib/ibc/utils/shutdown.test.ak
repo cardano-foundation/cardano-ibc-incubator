@@ -54,7 +54,7 @@ fn datum() -> HostStateDatum {
   }
 }
 
-fn transfer_fixture(registry_root: ByteArray) -> Transaction {
+fn transfer_fixture(registry_root: ByteArray, obligation: Int) -> Transaction {
   let tx = fixture()
   let root =
     Input {
@@ -65,9 +65,13 @@ fn transfer_fixture(registry_root: ByteArray) -> Transaction {
       output: Output {
         address: from_script("transfer module"),
         value: assets.from_lovelace(5_000_000)
-          |> assets.add(module_policy, "module", 1),
+          |> assets.add(module_policy, "module", 1)
+          |> assets.add("port", "transfer", 1),
         datum: InlineDatum(
-          TransferModuleDatum { escrow_shard_registry_root: registry_root },
+          TransferModuleDatum {
+            escrow_shard_registry_root: registry_root,
+            outstanding_voucher_obligation: obligation,
+          },
         ),
         reference_script: None,
       },
@@ -133,7 +137,14 @@ test reclaim_returns_ada_and_unrelated_assets_after_grace() {
 
 test shutdown_dependency_reclaim_accepts_empty_transfer_registry() {
   shutdown.transfer_is_drained(
-    transfer_fixture(empty_escrow_shard_registry_root),
+    transfer_fixture(empty_escrow_shard_registry_root, 0),
+    host_policy,
+  )
+}
+
+test shutdown_dependency_reclaim_rejects_outstanding_vouchers() {
+  !shutdown.transfer_is_drained(
+    transfer_fixture(empty_escrow_shard_registry_root, 1),
     host_policy,
   )
 }
@@ -142,6 +153,7 @@ test shutdown_dependency_reclaim_rejects_registered_transfer_shard() {
   !shutdown.transfer_is_drained(
     transfer_fixture(
       #"1111111111111111111111111111111111111111111111111111111111111111",
+      0,
     ),
     host_policy,
   )

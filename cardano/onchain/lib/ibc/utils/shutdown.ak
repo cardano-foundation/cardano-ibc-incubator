@@ -53,7 +53,22 @@ pub fn transfer_is_drained(
     )
   expect root_datum: TransferModuleDatum =
     validator_utils.get_inline_datum(root.output)
-  root_datum.escrow_shard_registry_root == empty_escrow_shard_registry_root
+  and {
+    root_datum.escrow_shard_registry_root == empty_escrow_shard_registry_root,
+    root_datum.outstanding_voucher_obligation == 0,
+    assets.without_lovelace(root.output.value) == assets.merge(
+      assets.from_asset(
+        registration.port_token.policy_id,
+        registration.port_token.name,
+        1,
+      ),
+      assets.from_asset(
+        registration.module_token.policy_id,
+        registration.module_token.name,
+        1,
+      ),
+    ),
+  }
 }
 
 // Cleanup transactions consume one script address at a time. Sum its inputs

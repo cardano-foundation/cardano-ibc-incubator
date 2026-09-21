@@ -274,7 +274,7 @@ export async function checkShutdownDrain(
       lovelace: 5_000_000n + amount,
       [shardUnit]: 1n,
     }, encode(record(localChannel, denom, amount)));
-    root.datum = encode(record(await registry.getRoot()));
+    root.datum = encode(record(await registry.getRoot(), 0n));
     hostInput.datum = Data.to(
       {
         ...hostDatum,

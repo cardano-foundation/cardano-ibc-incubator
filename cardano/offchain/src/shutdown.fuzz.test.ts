@@ -37,14 +37,13 @@ Deno.test("stateful main lifecycle returns all deployment ADA after shutdown", a
   );
 });
 
-Deno.test("snapshot cleanup conserves seeded token quantities", async () => {
+Deno.test("settled snapshots permit full deployment reclamation", async () => {
   await fc.assert(
     fc.asyncProperty(
       fc.record({
         history: fc.integer({ min: 1, max: 20 }),
         settledPackets: fc.integer({ min: 0, max: 16 }),
         extraLovelace: fc.bigInt({ min: 0n, max: 100_000_000n }),
-        vouchers: fc.bigInt({ min: 0n, max: 1_000_000n }),
         order: fc.array(fc.nat(100), { minLength: 1, maxLength: 12 }),
         legacy: fc.boolean(),
         mutation: fc.constantFrom(
@@ -58,6 +57,23 @@ Deno.test("snapshot cleanup conserves seeded token quantities", async () => {
       async (sample) => {
         await runTransactionCase(
           new URL("./testing/shutdown-state-case.worker.ts", import.meta.url),
+          sample,
+        );
+      },
+    ),
+    transactionFuzzParameters(),
+  );
+});
+
+Deno.test("outstanding vouchers retain return dependencies through shutdown", async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.record({
+        amount: fc.bigInt({ min: 1n, max: 10_000_000n }),
+      }),
+      async (sample) => {
+        await runTransactionCase(
+          new URL("./testing/shutdown-voucher.worker.ts", import.meta.url),
           sample,
         );
       },

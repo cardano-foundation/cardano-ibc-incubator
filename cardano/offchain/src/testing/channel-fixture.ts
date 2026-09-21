@@ -17,6 +17,7 @@ import {
   type Script,
   toHex,
   type UTxO,
+  validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
 import {
@@ -286,7 +287,7 @@ export async function channelFixture(
     legacyProofPolicy,
     hostPolicy,
   );
-  const [, shutdownScriptHash] = readValidator(
+  const [shutdownScript, shutdownScriptHash] = readValidator(
     "recover_client.recover_client.withdraw",
     lucid,
     [hostPolicy],
@@ -688,6 +689,17 @@ export async function channelFixture(
     channelToken,
     expectedChannelDatum: channelDatum(action.after),
     channelScripts,
+    channelMint: {
+      script: channelMint.script,
+      scriptHash: channelPolicy,
+      refUtxo: reference(channelMint),
+    },
+    shutdownScript: {
+      script: shutdownScript.script,
+      scriptHash: shutdownScriptHash,
+      address: validatorToRewardAddress("Custom", shutdownScript),
+      refUtxo: reference(shutdownScript),
+    },
     seed,
     reference,
     account,

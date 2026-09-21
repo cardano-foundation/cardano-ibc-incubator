@@ -1823,7 +1823,10 @@ const deployTransferModule = async (
         {
           kind: "inline",
           value: Data.to(
-            { escrow_shard_registry_root: "00".repeat(32) },
+            {
+              escrow_shard_registry_root: "00".repeat(32),
+              outstanding_voucher_obligation: 0n,
+            },
             TransferModuleDatum,
             { canonical: true },
           ),
