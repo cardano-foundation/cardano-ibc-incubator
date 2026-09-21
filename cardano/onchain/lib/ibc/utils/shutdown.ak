@@ -10,7 +10,7 @@ use ibc/apps/transfer/types/transfer_module_datum.{
 }
 use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostStateDatum, host_state_token_name, validate_finalize_shutdown,
+  HostStateDatum, host_state_token_name, validate_shutdown_authority,
 }
 use ibc/utils/validator_utils
 
@@ -145,7 +145,7 @@ pub fn authority(
   expect host_datum.nft_policy == host_policy
   expect list.has(transaction.extra_signatories, host_datum.deployer)
   expect
-    validate_finalize_shutdown(
+    validate_shutdown_authority(
       host_datum,
       validator_utils.get_tx_valid_from(transaction.validity_range),
     )

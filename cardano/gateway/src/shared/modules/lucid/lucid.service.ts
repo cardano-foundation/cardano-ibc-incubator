@@ -947,6 +947,7 @@ export class LucidService implements OnModuleInit {
             LucidData.Object({ EnterShutdown: EnterShutdownSchema }),
             LucidData.Literal("FinalizeShutdown"),
             LucidData.Literal("Heartbeat"),
+            LucidData.Literal("AuthorizeFinalization"),
           ]);
           return LucidData.to(data as any, HostStateRedeemerSchema as any, {
             canonical: true,

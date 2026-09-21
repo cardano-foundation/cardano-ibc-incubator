@@ -2,7 +2,9 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, Output, Spend, Transaction}
+use cardano/transaction.{
+  Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
+}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
@@ -10,7 +12,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
   host_state_token_name, max_bound_ports,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, HostStateRedeemer,
+  AuthorizeFinalization, BindPort, HostStateRedeemer,
 }
 use ibc/utils/shutdown
 
@@ -37,6 +39,35 @@ fn find_host_state_input(
   )
 }
 
+fn authorizes_finalization(
+  inputs: List<Input>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  host_state_nft_policy_id: PolicyId,
+) -> Bool {
+  when
+    list.filter(
+      inputs,
+      fn(input) {
+        assets.has_nft(
+          input.output.value,
+          host_state_nft_policy_id,
+          host_state_token_name,
+        )
+      },
+    )
+  is {
+    [host_input] ->
+      when pairs.get_first(redeemers, Spend(host_input.output_reference)) is {
+        Some(raw) -> {
+          expect host_redeemer: HostStateRedeemer = raw
+          host_redeemer == AuthorizeFinalization
+        }
+        None -> False
+      }
+    _ -> False
+  }
+}
+
 validator mint_port(host_state_nft_policy_id: PolicyId) {
   mint(
     redeemer: Data,
@@ -44,11 +75,19 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     transaction: Transaction,
   ) {
     if shutdown.burns_only(transaction.mint, port_minting_policy_id) {
-      shutdown.reclaim_policy(
-        transaction,
-        port_minting_policy_id,
+      if authorizes_finalization(
+        transaction.inputs,
+        transaction.redeemers,
         host_state_nft_policy_id,
-      )
+      ) {
+        shutdown.burns_script_tokens(transaction, port_minting_policy_id)
+      } else {
+        shutdown.reclaim_policy(
+          transaction,
+          port_minting_policy_id,
+          host_state_nft_policy_id,
+        )
+      }
     } else {
       expect redeemer: MintPortRedeemer = redeemer
       let Transaction { inputs, outputs, mint, redeemers, .. } = transaction

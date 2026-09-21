@@ -72,19 +72,15 @@ validator recover_client(host_state_nft_policy_id: PolicyId) {
             list.filter(
               transaction.inputs,
               fn(input) {
-                when input.output.address.payment_credential is {
-                  Script(_) -> True
-                  _ -> False
-                }
+                transfer_escrow.has_module_state_tokens(
+                  input.output,
+                  port_token,
+                  module_token,
+                )
               },
             )
           let module_datum = transfer_shutdown.module_datum(input.output)
           and {
-            transfer_escrow.has_module_state_tokens(
-              input.output,
-              port_token,
-              module_token,
-            ),
             module_datum.escrow_shard_registry_root == empty_escrow_shard_registry_root,
             module_datum.outstanding_voucher_obligation == 0,
             shutdown.burns_token(transaction, module_token),

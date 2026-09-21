@@ -1148,10 +1148,10 @@ async function reclaimState(
       "channel",
       "connection",
       "client",
-      "transfer",
       "module",
       "trace",
       "metadata",
+      "transfer",
     ] as const
   ) {
     while (true) {
@@ -1169,12 +1169,13 @@ async function reclaimState(
         ?.utxos.find((utxo) =>
           utxo.assets[deployment.modules.transfer.identifier] === 1n
         );
+      const liveHostUtxo = await getHostStateUtxo(lucid, deployment);
       await submitTx(
         () =>
           buildReclaimStateTx(
             lucid,
             deployment,
-            hostUtxo,
+            liveHostUtxo,
             batch,
             walletAddress,
             requireGracePeriodElapsed(graceEnd),
@@ -1186,12 +1187,13 @@ async function reclaimState(
     }
   }
   if (await recoveryStakeRegistered(deployment)) {
+    const liveHostUtxo = await getHostStateUtxo(lucid, deployment);
     await submitTx(
       () =>
         buildReclaimRecoveryStakeTx(
           lucid,
           deployment,
-          hostUtxo,
+          liveHostUtxo,
           signer,
           requireGracePeriodElapsed(graceEnd),
         ),

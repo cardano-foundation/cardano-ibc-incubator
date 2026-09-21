@@ -366,12 +366,45 @@ pub fn validate_enter_shutdown(
   }
 }
 
-pub fn validate_finalize_shutdown(
+pub fn validate_shutdown_authority(
   datum: HostStateDatum,
   valid_from: Int,
 ) -> Bool {
   when datum.control.shutdown is {
     ShuttingDown { grace_period_end, .. } -> valid_from >= grace_period_end
     Active -> False
+  }
+}
+
+pub fn validate_authorize_finalization(
+  old: HostStateDatum,
+  new: HostStateDatum,
+) -> Bool {
+  expect Some(_) = pairs.get_first(old.control.port_registry, "transfer")
+  and {
+    validate_transition(
+      old,
+      new,
+      old.state.next_client_sequence,
+      old.state.next_connection_sequence,
+      old.state.next_channel_sequence,
+      HostStateControl {
+        port_registry: pairs.delete_first(old.control.port_registry, "transfer"),
+        shutdown: old.control.shutdown,
+      },
+    ),
+    old.control.shutdown |> is_shutting_down,
+    new.state.ibc_state_root == old.state.ibc_state_root,
+    new.state.last_update_time == old.state.last_update_time,
+  }
+}
+
+pub fn validate_finalize_shutdown(
+  datum: HostStateDatum,
+  valid_from: Int,
+) -> Bool {
+  and {
+    validate_shutdown_authority(datum, valid_from),
+    !pairs.has_key(datum.control.port_registry, "transfer"),
   }
 }

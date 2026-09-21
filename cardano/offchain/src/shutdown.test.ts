@@ -45,10 +45,10 @@ for (const clientMode of ["legacy", "staged"] as const) {
         "channel",
         "connection",
         "client",
-        "transfer",
         "module",
         "trace",
         "metadata",
+        "transfer",
       ] as const
     ) {
       groups = await scanDeploymentState(f.lucid, f.deployment);
@@ -70,7 +70,10 @@ for (const clientMode of ["legacy", "staged"] as const) {
         buildReclaimStateTx(
           f.lucid,
           f.deployment,
-          f.hostUtxo,
+          await f.lucid.utxoByUnit(
+            f.deployment.hostStateNFT!.policyId +
+              f.deployment.hostStateNFT!.name,
+          ),
           group,
           f.account.address,
           f.emulator.now(),
@@ -99,7 +102,10 @@ for (const clientMode of ["legacy", "staged"] as const) {
       buildReclaimRecoveryStakeTx(
         f.lucid,
         f.deployment,
-        f.hostUtxo,
+        await f.lucid.utxoByUnit(
+          f.deployment.hostStateNFT!.policyId +
+            f.deployment.hostStateNFT!.name,
+        ),
         f.hostDatum.deployer,
         f.emulator.now(),
       ),

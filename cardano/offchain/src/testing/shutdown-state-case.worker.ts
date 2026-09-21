@@ -105,7 +105,10 @@ async function checkCase(sample: ShutdownSnapshotCase) {
       buildReclaimStateTx(
         f.lucid,
         f.deployment,
-        f.hostUtxo,
+        await f.lucid.utxoByUnit(
+          f.deployment.hostStateNFT!.policyId +
+            f.deployment.hostStateNFT!.name,
+        ),
         { ...group, utxos: [group.utxos[0]] },
         f.account.address,
         f.emulator.now(),
