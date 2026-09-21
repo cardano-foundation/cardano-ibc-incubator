@@ -380,7 +380,6 @@ pub fn validate_authorize_finalization(
   old: HostStateDatum,
   new: HostStateDatum,
 ) -> Bool {
-  expect Some(_) = pairs.get_first(old.control.port_registry, "transfer")
   and {
     validate_transition(
       old,
@@ -393,7 +392,6 @@ pub fn validate_authorize_finalization(
         shutdown: old.control.shutdown,
       },
     ),
-    old.control.shutdown |> is_shutting_down,
     new.state.ibc_state_root == old.state.ibc_state_root,
     new.state.last_update_time == old.state.last_update_time,
   }
