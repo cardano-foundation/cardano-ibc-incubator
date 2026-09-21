@@ -87,7 +87,12 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
   service.LucidImporter = {
     Data: {
       Bytes: jest.fn().mockReturnValue('bytes-schema'),
+      Integer: jest.fn().mockReturnValue('integer-schema'),
       Object: jest.fn((shape: unknown) => shape),
+      from: jest.fn().mockReturnValue({
+        escrow_shard_registry_root: '00'.repeat(32),
+        outstanding_voucher_obligation: 0n,
+      }),
       to: jest.fn().mockReturnValue('encoded-auth-token'),
     },
   };
@@ -107,6 +112,7 @@ describe('LucidService voucher refund invariants', () => {
         'module-policy.module-token': 1n,
         'port-policy.port-token': 1n,
       },
+      datum: 'encoded-transfer-module-datum',
     } as any;
 
     service.createUnsignedRecvPacketMintTx({
@@ -135,8 +141,13 @@ describe('LucidService voucher refund invariants', () => {
     expect(txBuilder.collectFrom).toHaveBeenCalledWith([transferModuleUtxo], 'encoded-transfer-redeemer');
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
       deploymentConfig.modules.transfer.address,
-      undefined,
+      { kind: 'inline', value: 'encoded-auth-token' },
       transferModuleUtxo.assets,
+    );
+    expect(service.LucidImporter.Data.to).toHaveBeenCalledWith(
+      expect.objectContaining({ outstanding_voucher_obligation: 12n }),
+      expect.anything(),
+      { canonical: true },
     );
     expect(txBuilder.readFrom.mock.calls[0][0]).toEqual(
       expect.arrayContaining([expect.objectContaining({ txHash: 'ref-spend-transfer' })]),
