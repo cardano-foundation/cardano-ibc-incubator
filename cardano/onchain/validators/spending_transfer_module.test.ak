@@ -1059,7 +1059,15 @@ fn ack_success_fixture(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let receiver = mock.cardano_public_key_hash
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let module_input =
+    Input {
+      ..mock.module_input,
+      output: module_output_with_voucher_obligation(
+        mock.module_input.output,
+        1234,
+      ),
+    }
+  let inputs = [module_input, mock.channel_input, mock.host_state_input]
   let outputs =
     [mock.module_output, mock.channel_output, mock.host_state_output]
   let source_port = mock.port_id
@@ -3244,7 +3252,15 @@ test on_acknowledgement_packet_result_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let module_input =
+    Input {
+      ..mock.module_input,
+      output: module_output_with_voucher_obligation(
+        mock.module_input.output,
+        1234,
+      ),
+    }
+  let inputs = [module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let outputs =
