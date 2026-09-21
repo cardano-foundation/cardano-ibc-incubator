@@ -10,7 +10,7 @@ import {
 import { HostStateDatum } from "../../types/index.ts";
 import { DeploymentIbcTree } from "../deployment.ts";
 import { buildReclaimStateTx } from "../shutdown.ts";
-import type { DeploymentTemplate } from "../utils.ts";
+import { type DeploymentTemplate, readValidator } from "../utils.ts";
 import {
   firstPacket,
   knownVoucher,
@@ -72,6 +72,26 @@ async function checkVoucherShutdown(amount: bigint) {
 
     const voucher = await knownVoucher(f, "uatom", userSeed);
     assertEquals(voucher.owner === deployer, false);
+    const [traceScript, traceHash, traceAddress] = readValidator(
+      "trace_registry.spend_trace_registry.spend",
+      f.lucid,
+      [
+        f.funds.identifierPolicy,
+        new Constr(0, [
+          f.funds.directoryToken.policy_id,
+          f.funds.directoryToken.name,
+        ]),
+        f.funds.voucherPolicy,
+        "",
+        f.packetContext.hostPolicy,
+      ],
+    );
+    const directoryUnit = f.funds.directoryToken.policy_id +
+      f.funds.directoryToken.name;
+    const directory = f.seed(traceAddress, {
+      lovelace: 3_000_000n,
+      [directoryUnit]: 1n,
+    }, Data.to(new Constr(1, [new Constr(0, [[]])])));
     await submit(
       (await receiveNative(f, amount, 1n, "none", voucher)).tx,
       "voucher receive",
@@ -125,7 +145,6 @@ async function checkVoucherShutdown(amount: bigint) {
         mintChannelStt: f.channelMint,
         mintClientStt: { scriptHash: "" },
         mintConnectionStt: { scriptHash: "" },
-        mintIdentifier: { scriptHash: "" },
         spendClient: {
           title: "spending_multitx_client.spend_multitx_client.spend",
         },
@@ -139,7 +158,30 @@ async function checkVoucherShutdown(amount: bigint) {
         mintTransferEscrowShard: {
           scriptHash: f.funds.escrowPolicy,
         },
-        mintVoucher: { scriptHash: f.funds.voucherPolicy },
+        mintIdentifier: {
+          script: f.funds.identifierScript.script,
+          scriptHash: f.funds.identifierPolicy,
+          address: "",
+          refUtxo: f.reference(f.funds.identifierScript),
+        },
+        spendTraceRegistry: {
+          script: traceScript.script,
+          scriptHash: traceHash,
+          address: traceAddress,
+          refUtxo: f.reference(traceScript),
+        },
+        voucherMetadata: {
+          script: f.funds.metadataScript.script,
+          scriptHash: f.funds.metadataHash,
+          address: f.funds.metadataAddress,
+          refUtxo: f.reference(f.funds.metadataScript),
+        },
+        mintVoucher: {
+          script: f.funds.voucherScript.script,
+          scriptHash: f.funds.voucherPolicy,
+          address: "",
+          refUtxo: f.reference(f.funds.voucherScript),
+        },
       },
       modules: {
         transfer: {
@@ -147,6 +189,11 @@ async function checkVoucherShutdown(amount: bigint) {
             f.packetContext.moduleToken.name,
           address: f.funds.moduleAddress,
         },
+      },
+      traceRegistry: {
+        address: traceAddress,
+        shardPolicyId: f.funds.identifierPolicy,
+        directory: f.funds.directoryToken,
       },
     } as unknown as DeploymentTemplate;
     const channelGroup = async () => ({
@@ -158,6 +205,33 @@ async function checkVoucherShutdown(amount: bigint) {
         ),
       ],
     });
+    const metadataGroup = () => ({
+      kind: "metadata" as const,
+      validator: deployment.validators.voucherMetadata!,
+      utxos: [voucher.metadata],
+    });
+    const traceGroup = () => ({
+      kind: "trace" as const,
+      validator: deployment.validators.spendTraceRegistry!,
+      utxos: [directory],
+    });
+    const reclaimDependency = async (
+      group: ReturnType<typeof metadataGroup> | ReturnType<typeof traceGroup>,
+    ) =>
+      buildReclaimStateTx(
+        f.lucid,
+        deployment,
+        await f.lucid.utxoByUnit(
+          f.packetContext.hostPolicy + fromText("ibc_host_state"),
+        ),
+        group,
+        deployerAddress,
+        f.emulator.now(),
+        await f.lucid.utxoByUnit(
+          f.packetContext.moduleToken.policy_id +
+            f.packetContext.moduleToken.name,
+        ),
+      );
 
     f.lucid.selectWallet.fromSeed(deployerSeed);
     await assertRejects(
@@ -190,11 +264,54 @@ async function checkVoucherShutdown(amount: bigint) {
       amount,
     );
 
-    // A successful acknowledgement resolves the counterparty claim and burns
-    // the retained obligation. Until this packet settles the channel datum
-    // also records the pending return.
+    f.lucid.selectWallet.fromSeed(deployerSeed);
+    for (const group of [metadataGroup(), traceGroup()]) {
+      await assertRejects(
+        async () =>
+          await (await reclaimDependency(group)).complete({
+            localUPLCEval: true,
+          }),
+        Error,
+        "failed script execution",
+      );
+    }
+
+    // An error acknowledgement must still be able to use the retained
+    // metadata witness to restore the independent user's voucher.
+    f.lucid.selectWallet.fromSeed(userSeed, { addressType: "Enterprise" });
     await submit(
-      (await settle(f, returned.sent, "ack", "none", voucher)).tx,
+      (await settle(f, returned.sent, "error", "none", voucher)).tx,
+      "voucher error refund",
+    );
+    assertEquals(ledgerBalance(voucher.address, voucher.unit), amount);
+    assertEquals(ledgerSupply(voucher.unit), amount);
+    const refundedRoot = await f.lucid.utxoByUnit(
+      f.packetContext.moduleToken.policy_id + f.packetContext.moduleToken.name,
+    );
+    assertEquals(
+      (Data.from(refundedRoot.datum!) as Constr<Data>).fields[1],
+      amount,
+    );
+
+    f.lucid.selectWallet.fromSeed(deployerSeed);
+    for (const group of [metadataGroup(), traceGroup()]) {
+      await assertRejects(
+        async () =>
+          await (await reclaimDependency(group)).complete({
+            localUPLCEval: true,
+          }),
+        Error,
+        "failed script execution",
+      );
+    }
+
+    f.lucid.selectWallet.fromSeed(userSeed, { addressType: "Enterprise" });
+    const retried = await nextSend(f, amount, "none", voucher);
+    await submit(retried.tx, "voucher return retry");
+    assertEquals(ledgerBalance(voucher.address, voucher.unit), 0n);
+    assertEquals(ledgerSupply(voucher.unit), 0n);
+    await submit(
+      (await settle(f, retried.sent, "ack", "none", voucher)).tx,
       "voucher acknowledgement",
     );
     const settledRoot = await f.lucid.utxoByUnit(
@@ -203,6 +320,11 @@ async function checkVoucherShutdown(amount: bigint) {
     assertEquals((Data.from(settledRoot.datum!) as Constr<Data>).fields[1], 0n);
 
     f.lucid.selectWallet.fromSeed(deployerSeed);
+    await submit(await reclaimDependency(metadataGroup()), "reclaim metadata");
+    await submit(
+      await reclaimDependency(traceGroup()),
+      "reclaim trace directory",
+    );
     await buildReclaimStateTx(
       f.lucid,
       deployment,

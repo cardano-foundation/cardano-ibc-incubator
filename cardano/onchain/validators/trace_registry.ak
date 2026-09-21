@@ -57,6 +57,7 @@ validator spend_trace_registry(
     if redeemer == ReclaimTraceRegistry {
       and {
         shutdown.burns_script_tokens(transaction, shard_nft_policy_id),
+        shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
         shutdown.reclaim(
           transaction,
           spent_output_ref,

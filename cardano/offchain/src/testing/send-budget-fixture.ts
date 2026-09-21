@@ -121,7 +121,15 @@ export async function sendPacketFixture(
       context.hostPolicy,
     ],
   );
-  const [, metadataHash, metadataAddress] = readValidator(
+  const [identifierScript, identifierPolicy] = readValidator(
+    "minting_identifier.minting_identifier.mint",
+    lucid,
+  );
+  const directoryToken = {
+    policy_id: identifierPolicy,
+    name: fromText("directory"),
+  };
+  const [metadataScript, metadataHash, metadataAddress] = readValidator(
     "voucher_metadata.voucher_metadata.spend",
     lucid,
     [context.hostPolicy],
@@ -131,7 +139,7 @@ export async function sendPacketFixture(
     lucid,
     [
       record(context.moduleToken.policy_id, context.moduleToken.name),
-      record("77".repeat(28), fromText("directory")),
+      record(directoryToken.policy_id, directoryToken.name),
       metadataHash,
       channelPolicy,
       context.hostPolicy,
@@ -348,6 +356,11 @@ export async function sendPacketFixture(
     reference,
     tx,
     funds: {
+      identifierScript,
+      identifierPolicy,
+      directoryToken,
+      metadataScript,
+      metadataHash,
       voucherScript,
       voucherPolicy,
       metadataAddress,

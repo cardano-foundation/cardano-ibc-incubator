@@ -52,6 +52,8 @@ validator mint_voucher(
     when redeemer is {
       ReclaimMetadata -> {
         expect _ = shutdown.authority(transaction, host_state_nft_policy_id)
+        expect
+          shutdown.transfer_is_drained(transaction, host_state_nft_policy_id)
         expect shutdown.burns_only(mint, voucher_minting_policy_id)
         list.all(
           tokens(mint, voucher_minting_policy_id) |> dict.to_pairs,

@@ -302,13 +302,15 @@ export function buildReclaimStateTx(
   ) {
     throw new Error(`Unknown client validator for shutdown: ${clientTitle}`);
   }
+  const requiresDrainedTransfer = group.kind === "channel" ||
+    group.kind === "client" || group.kind === "connection" ||
+    group.kind === "trace" || group.kind === "metadata";
   if (
-    (group.kind === "channel" || group.kind === "client" ||
-      group.kind === "connection") &&
+    requiresDrainedTransfer &&
     transferRoot?.assets[deployment.modules.transfer.identifier] !== 1n
   ) {
     throw new Error(
-      "Channel, client and connection cleanup requires the retained transfer module root",
+      "Dependency cleanup requires the retained transfer module root",
     );
   }
   const index: Record<StateKind, number> = {
@@ -347,10 +349,7 @@ export function buildReclaimStateTx(
   } else {
     tx.readFrom([hostUtxo]);
   }
-  if (
-    group.kind === "channel" || group.kind === "client" ||
-    group.kind === "connection"
-  ) {
+  if (requiresDrainedTransfer) {
     tx.readFrom([transferRoot!]);
   }
   if (group.validator.refUtxo) tx.readFrom([group.validator.refUtxo]);
