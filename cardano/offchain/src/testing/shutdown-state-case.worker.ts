@@ -1,7 +1,7 @@
 /// <reference no-default-lib="true" />
 /// <reference lib="deno.worker" />
 import { assert, assertEquals } from "@std/assert";
-import { CML, Data } from "@lucid-evolution/lucid";
+import { CML, Data, walletFromSeed } from "@lucid-evolution/lucid";
 import {
   type ClientReclaimMutation,
   rejectClientReclaimMutation,
@@ -30,11 +30,17 @@ async function checkCase(sample: ShutdownSnapshotCase) {
     sample,
   );
   await rejectClientReclaimMutation(f, sample.mutation);
-  // User-held vouchers remain user assets while their metadata deposit is reclaimed.
+  // These arbitrary units test token conservation only. They do not establish
+  // a valid transfer history or a redeemable claim on counterparty assets.
+  const user = walletFromSeed(
+    "letter advice cage absurd amount doctor acoustic avoid letter advice cage above",
+    { network: "Custom" },
+  ).address;
+  assert(user !== f.account.address);
   const voucher = f.deployment.validators.mintVoucher.scriptHash + "0014df10" +
     "11".repeat(28);
   if (sample.vouchers) {
-    f.seed(f.account.address, {
+    f.seed(user, {
       lovelace: 5_000_000n,
       [voucher]: sample.vouchers,
     }, Data.void());
@@ -119,8 +125,19 @@ async function checkCase(sample: ShutdownSnapshotCase) {
     "All seeded state ADA returned, less actual fees",
   );
   assertEquals(
-    live().reduce((sum, u) => sum + (u.assets[voucher] ?? 0n), 0n),
+    live().filter((u) => u.address === user).reduce(
+      (sum, u) => sum + (u.assets[voucher] ?? 0n),
+      0n,
+    ),
     sample.vouchers,
+    "Seeded tokens remain owned by the separate user wallet",
+  );
+  assertEquals(
+    live().filter((u) => u.address !== user).reduce(
+      (sum, u) => sum + (u.assets[voucher] ?? 0n),
+      0n,
+    ),
+    0n,
   );
 }
 
