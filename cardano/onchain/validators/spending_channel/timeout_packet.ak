@@ -28,7 +28,7 @@ use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnTimeoutPacket}
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
@@ -265,7 +265,7 @@ fn validate_timeout_unordered_packet_proof(
   connection: ConnectionEnd,
   client_datum_state: ClientDatumState,
   proof_height: Height,
-  proof: MerkleProof,
+  proof: Data,
   packet: Packet,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
@@ -316,7 +316,7 @@ fn validate_timeout_ordered_packet_proof(
   connection: ConnectionEnd,
   client_datum_state: ClientDatumState,
   proof_height: Height,
-  proof: MerkleProof,
+  proof: Data,
   packet: Packet,
   next_sequence_recv: Int,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
@@ -370,8 +370,8 @@ fn validate_timeout_on_close_proofs(
   channel_datum: ChannelDatum,
   channel_id: ByteArray,
   proof_height: Height,
-  proof_unreceived: MerkleProof,
-  proof_close: MerkleProof,
+  proof_unreceived: Data,
+  proof_close: Data,
   packet: Packet,
   next_sequence_recv: Int,
   redeemers: Pairs<ScriptPurpose, Redeemer>,

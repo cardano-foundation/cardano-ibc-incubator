@@ -40,7 +40,7 @@ use ibc/core/ics_004/types/state as channel_state
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, OnChanOpenInit, OnChanOpenTry,
 }
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/channel_keys as host_chan_keys
 use ibc/core/ics_025_handler_interface/host_state.{
   HostStateDatum, host_state_token_name,
@@ -234,7 +234,7 @@ fn validate_chan_open_try_proof(
   client_datum_state: ClientDatumState,
   channel_datum: ChannelDatum,
   counterparty_version: ByteArray,
-  proof: MerkleProof,
+  proof: Data,
   proof_height: Height,
   proof_envelope: VerifyProofEnvelope,
 ) -> Bool {

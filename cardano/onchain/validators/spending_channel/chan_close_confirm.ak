@@ -23,7 +23,7 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnChanCloseConfirm}
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/utils/validator_utils
 
@@ -149,7 +149,7 @@ fn validate_chan_close_confirm_proof(
   client_datum_state: ClientDatumState,
   channel_id: ByteArray,
   channel_datum: ChannelDatum,
-  proof: MerkleProof,
+  proof: Data,
   proof_height: Height,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,

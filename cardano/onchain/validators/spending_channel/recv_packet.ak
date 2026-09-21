@@ -24,7 +24,7 @@ use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnRecvPacket}
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
 
@@ -204,7 +204,7 @@ fn validate_recv_packet_proof(
   connection: ConnectionEnd,
   client_datum_state: ClientDatumState,
   proof_height: Height,
-  proof: MerkleProof,
+  proof: Data,
   packet: Packet,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
