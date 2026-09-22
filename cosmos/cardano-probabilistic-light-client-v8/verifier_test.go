@@ -182,7 +182,7 @@ func TestAuthenticateRealBabbageBlockEnforcesOperationalCertificateCounter(t *te
 	}
 	block := &ProbabilisticBlock{
 		Height:    NewHeight(0, decodedBlock.BlockNumber()),
-		Hash:      decodedBlock.Hash(),
+		Hash:      decodedBlock.Hash().String(),
 		Slot:      decodedBlock.SlotNumber(),
 		Epoch:     epochContext.Epoch,
 		Timestamp: 1 + decodedBlock.SlotNumber(),
@@ -375,7 +375,7 @@ func TestAuthenticateBabbageHeaderWitnessRejectsMutations(t *testing.T) {
 	decodedMutatedHeader, err := probabilisticcore.DecodeLedgerHeader(mutatedHeader)
 	require.NoError(t, err)
 	compactBlock.HeaderCbor = mutatedHeader
-	compactBlock.Hash = decodedMutatedHeader.Hash()
+	compactBlock.Hash = decodedMutatedHeader.Hash().String()
 	_, err = fixture.clientState.authenticateProbabilisticBlock(
 		compactBlock,
 		"bridge",
@@ -394,7 +394,7 @@ func TestAuthenticateBabbageHeaderWitnessRejectsMutations(t *testing.T) {
 	compactBlock = cloneTestProbabilisticBlock(fixture.block)
 	compactBlock.BlockCbor = nil
 	compactBlock.HeaderCbor = mutatedCertificate
-	compactBlock.Hash = decodedMutatedCertificate.Hash()
+	compactBlock.Hash = decodedMutatedCertificate.Hash().String()
 	_, err = fixture.clientState.authenticateProbabilisticBlock(
 		compactBlock,
 		"bridge",
@@ -495,7 +495,7 @@ func loadBabbageWitnessFixture(t testing.TB) babbageWitnessFixture {
 	}
 	block := &ProbabilisticBlock{
 		Height:    NewHeight(0, decodedBlock.BlockNumber()),
-		Hash:      decodedBlock.Hash(),
+		Hash:      decodedBlock.Hash().String(),
 		Slot:      decodedBlock.SlotNumber(),
 		Epoch:     epochContext.Epoch,
 		Timestamp: 1 + decodedBlock.SlotNumber(),
@@ -560,7 +560,7 @@ func TestHostStateExtractionRejectsPhase2InvalidTransaction(t *testing.T) {
 	}
 	anchorBlock := &ProbabilisticBlock{
 		Height:    NewHeight(0, decodedBlock.BlockNumber()),
-		Hash:      decodedBlock.Hash(),
+		Hash:      decodedBlock.Hash().String(),
 		Slot:      decodedBlock.SlotNumber(),
 		Epoch:     epochContext.Epoch,
 		Timestamp: 1 + decodedBlock.SlotNumber(),
@@ -597,7 +597,7 @@ func TestHostStateExtractionRejectsPhase2InvalidTransaction(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			header := &ProbabilisticHeader{
 				AnchorBlock:     anchorBlock,
-				HostStateTxHash: tc.transaction.Hash(),
+				HostStateTxHash: tc.transaction.Hash().String(),
 			}
 			_, authenticationErr := clientState.authenticateHeaderBlocksWithContexts(
 				header,
@@ -1777,14 +1777,14 @@ func makeTestProbabilisticBlock(t *testing.T, blockNumber, slot uint64, prevHash
 	t.Helper()
 
 	block := ledger.BabbageBlock{
-		Header: &ledger.BabbageBlockHeader{},
+		BlockHeader: &ledger.BabbageBlockHeader{},
 	}
-	block.Header.Body.BlockNumber = blockNumber
-	block.Header.Body.Slot = slot
+	block.BlockHeader.Body.BlockNumber = blockNumber
+	block.BlockHeader.Body.Slot = slot
 	if prevHashHex != "" {
 		prevHashBytes, err := hex.DecodeString(prevHashHex)
 		require.NoError(t, err)
-		block.Header.Body.PrevHash = ledger.NewBlake2b256(prevHashBytes)
+		block.BlockHeader.Body.PrevHash = ledger.NewBlake2b256(prevHashBytes)
 	}
 
 	blockCbor, err := cbor.Encode(block)
@@ -1794,7 +1794,7 @@ func makeTestProbabilisticBlock(t *testing.T, blockNumber, slot uint64, prevHash
 
 	return &ProbabilisticBlock{
 		Height:    &Height{RevisionHeight: block.BlockNumber()},
-		Hash:      block.Hash(),
+		Hash:      block.Hash().String(),
 		Slot:      block.SlotNumber(),
 		Epoch:     7,
 		Timestamp: 1_700_000_000_000_000_000 + block.SlotNumber()*1_000_000_000,

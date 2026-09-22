@@ -31,8 +31,8 @@ type ExtractBlockOutput struct {
 	_            struct{} `cbor:",toarray"`
 	Flag         int
 	Outputs      []ledger.UTXOOutput
-	RegisCerts   []ledger.RegisCert
-	DeRegisCerts []ledger.DeRegisCert
+	RegisCerts   []ledger.PoolRegistrationCertificate
+	DeRegisCerts []ledger.PoolRetirementCertificate
 }
 
 //////////////////////////////////////////////////////
