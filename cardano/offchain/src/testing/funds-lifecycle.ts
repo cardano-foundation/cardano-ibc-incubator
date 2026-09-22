@@ -9,6 +9,7 @@ import {
   getAddressDetails,
   toHex,
   type UTxO,
+  walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { HostStateDatum, HostStateRedeemer } from "../../types/index.ts";
 import { DeploymentIbcTree } from "../deployment.ts";
@@ -40,6 +41,14 @@ function encodeChannel(datum: Constr<Data>): string {
 }
 const nonzero = (assets: Record<string, bigint>) =>
   Object.fromEntries(Object.entries(assets).filter(([, n]) => n !== 0n));
+const withVoucherObligation = (
+  datum: string,
+  delta: bigint,
+) => {
+  const [registryRoot, obligation] = (Data.from(datum) as Constr<Data>).fields;
+  assertEquals(typeof obligation, "bigint");
+  return encode(record(registryRoot, (obligation as bigint) + delta));
+};
 const HEIGHT = record(1n, 10n);
 const local = "ports/transfer/channels/channel-0";
 const remote = "ports/transfer/channels/channel-7";
@@ -56,6 +65,8 @@ export interface VoucherInfo {
   unit: string;
   metadata: UTxO;
   owner: string;
+  address: string;
+  seedPhrase: string;
 }
 
 export interface FundsPacket {
@@ -278,6 +289,8 @@ export async function settle(
   (c.state.fields[4] as Map<Data, Data>).delete(sequence);
   const timeout = kind === "timeout";
   const refund = kind !== "ack";
+  const voucherRefundAmount = sent.amount +
+    (mutation === "short" ? -1n : mutation === "excess" ? 1n : 0n);
   const ack = timeout
     ? ""
     : fromText(kind === "ack" ? '{"result":"AQ=="}' : '{"error":"failed"}');
@@ -361,10 +374,16 @@ export async function settle(
       kind: "inline",
       value: encodeChannel(c.datum),
     }, c.channel.assets)
-    .pay.ToContract(f.funds.moduleAddress, {
-      kind: "inline",
-      value: c.module.datum!,
-    }, c.module.assets);
+    .pay.ToContract(
+      f.funds.moduleAddress,
+      {
+        kind: "inline",
+        value: !refund && voucher
+          ? withVoucherObligation(c.module.datum!, -sent.amount)
+          : c.module.datum!,
+      },
+      c.module.assets,
+    );
   if (refund && !voucher) {
     const escrowDatum = Data.from(c.escrow.datum!) as Constr<Data>;
     escrowDatum.fields[2] = (escrowDatum.fields[2] as bigint) - sent.amount;
@@ -393,8 +412,7 @@ export async function settle(
       );
   }
   if (refund && voucher) {
-    const minted = sent.amount +
-      (mutation === "short" ? -1n : mutation === "excess" ? 1n : 0n);
+    const minted = voucherRefundAmount;
     tx = tx.readFrom([voucher.metadata, f.reference(f.funds.voucherScript)])
       .mintAssets(
         { [voucher.unit]: minted },
@@ -429,6 +447,7 @@ export async function assertFundsState(
   expectedEscrow: bigint,
   pending: FundsPacket[],
   history: { nextSend: bigint; transitions: bigint; received: bigint[] },
+  expectedVoucherObligation = 0n,
 ) {
   const c = await current(f);
   const escrowDatum = Data.from(c.escrow.datum!) as Constr<Data>;
@@ -447,7 +466,7 @@ export async function assertFundsState(
   assertEquals(c.module.assets, f.packetContext.module.assets);
   assertEquals(
     c.module.datum,
-    encode(record(await f.funds.registry.getRoot())),
+    encode(record(await f.funds.registry.getRoot(), expectedVoucherObligation)),
   );
   const initial = f.funds.channelDatum.fields[0] as Constr<Data>;
   assertEquals(c.datum.fields.slice(1), f.funds.channelDatum.fields.slice(1));
@@ -618,10 +637,16 @@ export async function receiveNative(
       kind: "inline",
       value: encodeChannel(c.datum),
     }, c.channel.assets)
-    .pay.ToContract(f.funds.moduleAddress, {
-      kind: "inline",
-      value: c.module.datum!,
-    }, c.module.assets)
+    .pay.ToContract(
+      f.funds.moduleAddress,
+      {
+        kind: "inline",
+        value: voucher
+          ? withVoucherObligation(c.module.datum!, payout)
+          : c.module.datum!,
+      },
+      c.module.assets,
+    )
     .pay.ToAddress(
       receiver,
       voucher
@@ -660,6 +685,7 @@ export async function receiveNative(
 export async function knownVoucher(
   f: FundsFixture,
   base: string,
+  seedPhrase = f.account.seedPhrase,
 ): Promise<VoucherInfo> {
   const full = `transfer/channel-0/${base}`;
   const hash = toHex(blake2b(fromHex(fromText(full)), { dkLen: 28 }));
@@ -682,11 +708,16 @@ export async function knownVoucher(
     lovelace: 3_000_000n,
     [f.funds.voucherPolicy + "000643b0" + hash]: 1n,
   }, Data.to<Data>(record(display, 1n, extra), undefined, { canonical: true }));
-  const owner = getAddressDetails(f.account.address).paymentCredential!.hash;
-  f.lucid.selectWallet.fromSeed(f.account.seedPhrase, {
+  const wallet = walletFromSeed(seedPhrase, {
+    network: "Custom",
     addressType: "Enterprise",
   });
-  f.account.address = await f.lucid.wallet().address();
-  f.seed(f.account.address, { lovelace: 1_000_000_000n }, Data.void());
-  return { base, full, unit, metadata, owner };
+  const owner = getAddressDetails(wallet.address).paymentCredential!.hash;
+  f.lucid.selectWallet.fromSeed(seedPhrase, {
+    addressType: "Enterprise",
+  });
+  const address = await f.lucid.wallet().address();
+  f.account.address = address;
+  f.seed(address, { lovelace: 1_000_000_000n }, Data.void());
+  return { base, full, unit, metadata, owner, address, seedPhrase };
 }

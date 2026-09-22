@@ -364,6 +364,9 @@ jobs:
       - name: Check unused exports
         run: node scripts/ci/check-knip-ratchet.mjs
 
+      - name: Test npm audit ratchet
+        run: node --test scripts/ci/check-npm-audit-ratchet.test.mjs
+
       - name: Check npm audit ratchet
         run: node scripts/ci/check-npm-audit-ratchet.mjs
 
@@ -584,6 +587,10 @@ jobs:
       - name: Test shutdown finalization
         working-directory: cardano/offchain
         run: deno task test:shutdown
+
+      - name: Fuzz shutdown sequences and populated state cleanup
+        working-directory: cardano/offchain
+        run: deno task test:shutdown:fuzz
 
       - name: Test production proof-backed consensus history
         working-directory: cardano/offchain

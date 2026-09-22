@@ -70,4 +70,8 @@ pub type HostStateRedeemer {
   // provides one proof anchor per Cardano epoch when no ordinary IBC state
   // transition occurs.
   Heartbeat
+  // Remove the authenticated transfer registration only while atomically
+  // reclaiming a drained transfer root. Its absence is the terminal on-chain
+  // authorization required by FinalizeShutdown.
+  AuthorizeFinalization
 }

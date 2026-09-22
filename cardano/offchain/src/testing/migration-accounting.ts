@@ -392,11 +392,18 @@ export async function accountingFixture(seedNumber = 462, options: {
     };
   });
   const escrowRoot = await inventoryTree.getRoot();
-  const root = seed(plan.spendTransferModule.address, {
-    lovelace: 12_000_000n,
-    [moduleToken.policy_id + moduleToken.name]: 1n,
-    [portToken.policy_id + portToken.name]: 1n,
-  }, Data.to({ escrow_shard_registry_root: escrowRoot }, TransferModuleDatum));
+  const root = seed(
+    plan.spendTransferModule.address,
+    {
+      lovelace: 12_000_000n,
+      [moduleToken.policy_id + moduleToken.name]: 1n,
+      [portToken.policy_id + portToken.name]: 1n,
+    },
+    Data.to({
+      escrow_shard_registry_root: escrowRoot,
+      outstanding_voucher_obligation: 0n,
+    }, TransferModuleDatum),
+  );
   const channelName = await generateTokenName(
     { policy_id: plan.hostNft.hash, name: fromText("ibc_host_state") },
     fromText("channel"),

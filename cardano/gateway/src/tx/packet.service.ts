@@ -3092,7 +3092,14 @@ export class PacketService {
       createTransferModuleRedeemer(channelId, fTokenPacketData, normalizedAcknowledgementResponse),
       'transferIBCModuleRedeemer',
     );
-    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(this.getTransferModuleIdentifier());
+    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
+      this.getTransferModuleIdentifier(),
+    );
+    const voucherReturn = this._hasVoucherPrefix(
+      fungibleTokenPacketData.denom,
+      convertHex2String(packet.source_port),
+      convertHex2String(packet.source_channel),
+    );
     const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
     if (acknowledgementResult) {
       // build update channel datum
@@ -3127,6 +3134,9 @@ export class PacketService {
 
         verifyProofPolicyId,
         encodedVerifyProofRedeemer,
+        voucherObligationDelta: voucherReturn
+          ? -BigInt(fungibleTokenPacketData.amount)
+          : undefined,
       };
       const unsignedTx = await this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
       return {

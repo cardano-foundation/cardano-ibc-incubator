@@ -11,6 +11,7 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Spend, Transaction, Withdraw,
   placeholder,
 }
+use host_state_stt as legacy_host
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
@@ -25,7 +26,6 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{EnterShutdown}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
-use ibc/implementation/host_state_stt as legacy_host
 use ibc/implementation/spending_transfer_module as transfer_dispatch
 use ibc/migration/auth as migration
 use ibc/migration/types.{
@@ -205,7 +205,10 @@ fn module_output(root: ByteArray, generation: Int) -> Output {
     object_output(
       from_script(hash(generation * 100 + 4)),
       registration.module_token,
-      TransferModuleDatum { escrow_shard_registry_root: root },
+      TransferModuleDatum {
+        escrow_shard_registry_root: root,
+        outstanding_voucher_obligation: 0,
+      },
     )
   Output {
     ..output,
@@ -1529,8 +1532,7 @@ test migration_adversarial_cleanup_control_has_valid_legacy_authority_and_state(
       let active = migration.active_spend(transaction, hash(1), 1, 0, ref(2))
       and {
         active.host_policy == hash(2),
-        legacy_host.validate(
-          True,
+        legacy_host.host_state_stt.spend(
           hash(2),
           hash(101),
           hash(102),

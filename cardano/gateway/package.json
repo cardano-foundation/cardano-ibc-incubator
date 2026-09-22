@@ -147,6 +147,7 @@
     "collectCoverageFrom": [
       "**/*.controller.ts",
       "**/client.service.ts",
+      "**/tendermint-client.service.ts",
       "**/connection.service.ts",
       "**/channel.service.ts",
       "**/packet.service.ts",

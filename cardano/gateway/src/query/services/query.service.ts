@@ -1367,16 +1367,14 @@ export class QueryService {
     }
   }
 
-  async queryEvents(request: { since_height: bigint }): Promise<{
+  async queryEvents(request: { since_height?: bigint }): Promise<{
     current_height: bigint;
     scanned_to_height: bigint;
     events: Array<{ height: bigint; events: ResponseDeliverTx[] }>;
   }> {
-    const { since_height } = request;
-
-    if (since_height === undefined || since_height === null) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "since_height" must be provided');
-    }
+    // Proto3 scalar fields have implicit defaults: a zero cursor may decode as absent.
+    // Normalize it here so an initial event scan includes block 1.
+    const since_height = request.since_height ?? 0n;
 
     try {
       // Event polling is an observer/query path, not a light-client verification path.

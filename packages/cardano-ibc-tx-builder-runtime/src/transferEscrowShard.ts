@@ -13,6 +13,7 @@ const UINT32_MAX = 0xffff_ffff;
 
 type TransferModuleDatum = {
   escrow_shard_registry_root: string;
+  outstanding_voucher_obligation: bigint;
 };
 
 type TransferEscrowDatum = {
@@ -195,16 +196,18 @@ export async function findTransferEscrowShard(
     failedPrecondition,
   );
 
-  let onChainRoot = EMPTY_REGISTRY_ROOT;
+  let moduleDatum: TransferModuleDatum = {
+    escrow_shard_registry_root: EMPTY_REGISTRY_ROOT,
+    outstanding_voucher_obligation: 0n,
+  };
   if (transferModuleUtxo.datum) {
-    let moduleDatum: TransferModuleDatum;
     try {
       moduleDatum = await dependencies.decodeTransferModuleDatum(transferModuleUtxo.datum);
     } catch (error) {
       throw failedPrecondition(`Malformed transfer-module registry datum: ${String(error)}`);
     }
-    onChainRoot = moduleDatum.escrow_shard_registry_root;
   }
+  const onChainRoot = moduleDatum.escrow_shard_registry_root;
   if (!/^[0-9a-f]{64}$/.test(onChainRoot)) {
     throw failedPrecondition('Transfer-module escrow shard registry root must be 32 lowercase hexadecimal bytes');
   }
@@ -307,6 +310,7 @@ export async function findTransferEscrowShard(
   }
   tree.set(registryKey, TRANSFER_ESCROW_SHARD_REGISTERED_VALUE);
   const encodedUpdatedTransferModuleDatum = await dependencies.encodeTransferModuleDatum({
+    ...moduleDatum,
     escrow_shard_registry_root: registryRoot(tree, failedPrecondition),
   });
 

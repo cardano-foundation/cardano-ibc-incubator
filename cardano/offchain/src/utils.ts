@@ -512,6 +512,12 @@ export const awaitWalletTx = async (
       if (walletUtxos.some((utxo) => utxo.txHash === txHash)) {
         return;
       }
+      // Reference-only transactions may have no wallet change.
+      if (
+        (await lucid.utxosByOutRef([{ txHash, outputIndex: 0 }])).length > 0
+      ) {
+        return;
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, checkInterval));
@@ -838,6 +844,7 @@ export type DeploymentTemplate = {
       }
     >;
   };
+  clientRegistrations?: import("./client-registry.ts").ClientRegistration[];
   history:
     import("../../../packages/cardano-ibc-tx-builder-runtime/src/historyBootstrap.ts").HistoryBootstrap;
   deployedAt: string;

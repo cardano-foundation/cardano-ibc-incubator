@@ -6,7 +6,6 @@ import {
   Lucid,
   type LucidEvolution,
   type Script,
-  slotToUnixTime,
   type UTxO,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
@@ -167,11 +166,11 @@ Deno.test("shutdown grace starts at the slot-aligned transaction expiry", async 
   const body = completed.toTransaction().body();
   assertEquals(
     timing.validTo,
-    slotToUnixTime("Preprod", Number(body.ttl())),
+    lucid.slotToUnixTime(Number(body.ttl())),
   );
   assertEquals(
     timing.validFrom,
-    slotToUnixTime("Preprod", Number(body.validity_interval_start())),
+    lucid.slotToUnixTime(Number(body.validity_interval_start())),
   );
   assert(timing.validTo <= now + 10 * 60 * 1000);
   assert(timing.validTo > now);

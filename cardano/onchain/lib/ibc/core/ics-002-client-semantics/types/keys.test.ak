@@ -11,8 +11,10 @@ test test_is_valid_client_id() {
   let test_cases =
     [
       ("07-tendermint-123", True),
-      // invalid prefix
-      ("ibc_client-123", False),
+      // Type registration is checked separately from identifier structure.
+      ("ibc_client-123", True), ("08-wasm-3", True),
+      ("07-tendermint-v2-9", True), ("-123", False), ("123", False),
+      ("07-tendermint-", False),
       // invalid sequence
       ("07-tendermint-1x3", False),
     ]

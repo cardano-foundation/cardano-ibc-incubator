@@ -1,5 +1,5 @@
 import * as Lucid from '@lucid-evolution/lucid';
-import { ClientService } from '../client.service';
+import { TendermintClientService as ClientService } from '../tendermint-client.service';
 import { ClientDatum, encodeConsensusStateValue } from '../../shared/types/client-datum';
 import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { createTestTreeContext } from '../../shared/testing/ibc-tree-test-store';

@@ -21,7 +21,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
-use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
   VerifyMembership, VerifyProofEnvelope,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -208,6 +208,36 @@ fn check_recv_packet_with_history(
   timeout_height: Height,
   timeout_timestamp: Int,
   already_received: Bool,
+) -> Bool {
+  check_recv_packet_with_proof(
+    include_module_callback,
+    mutate_successor,
+    match_callback_packet,
+    match_callback_acknowledgement,
+    preserve_module_binding,
+    compose_host_state,
+    packet_data,
+    timeout_height,
+    timeout_timestamp,
+    already_received,
+    None,
+    True,
+  )
+}
+
+fn check_recv_packet_with_proof(
+  include_module_callback: Bool,
+  mutate_successor: Bool,
+  match_callback_packet: Bool,
+  match_callback_acknowledgement: Bool,
+  preserve_module_binding: Bool,
+  compose_host_state: Bool,
+  packet_data: ByteArray,
+  timeout_height: Height,
+  timeout_timestamp: Int,
+  already_received: Bool,
+  opaque_proof: Option<Data>,
+  match_proof: Bool,
 ) -> Bool {
   let mock_data = setup()
 
@@ -437,7 +467,7 @@ fn check_recv_packet_with_history(
   let validity_range = mock_data.validity_range
 
   //========================arrange redeemers=======================
-  let proof_commitment =
+  let proof_commitment: Data =
     MerkleProof {
       proofs: [
         CommitmentProof {
@@ -532,6 +562,12 @@ fn check_recv_packet_with_history(
       ],
     }
 
+  let proof_commitment: Data =
+    when opaque_proof is {
+      Some(payload) -> payload
+      None -> proof_commitment
+    }
+
   let spend_channel_redeemer: Redeemer =
     RecvPacket { packet, proof_commitment, proof_height }
 
@@ -593,7 +629,12 @@ fn check_recv_packet_with_history(
         processed_height: 0,
         delay_time_period: time_delay,
         delay_block_period: block_delay,
-        proof: proof_commitment,
+        proof: if match_proof {
+          proof_commitment
+        } else {
+          let wrong_proof: Data = #"ff"
+          wrong_proof
+        },
         path: merkle_path,
         value: commitment,
       },
@@ -1538,4 +1579,33 @@ test recv_packet_rejects_existing_receipt() fail {
     1735689600000000000,
     True,
   )
+}
+
+fn check_opaque_recv_proof(proof: Data, match_proof: Bool) -> Bool {
+  check_recv_packet_with_proof(
+    True,
+    False,
+    True,
+    True,
+    True,
+    False,
+    "mock packet data",
+    Height { revision_number: 0, revision_height: 0 },
+    1735689600000000000,
+    False,
+    Some(proof),
+    match_proof,
+  )
+}
+
+test recv_packet_accepts_opaque_byte_string_proof() {
+  check_opaque_recv_proof(#"010203", True)
+}
+
+test recv_packet_accepts_opaque_list_proof() {
+  check_opaque_recv_proof([1, 2, 3], True)
+}
+
+test recv_packet_rejects_mismatched_opaque_proof() fail {
+  check_opaque_recv_proof(#"010203", False)
 }

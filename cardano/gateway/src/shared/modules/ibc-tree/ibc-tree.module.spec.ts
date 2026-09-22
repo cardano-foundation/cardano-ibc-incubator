@@ -11,7 +11,7 @@ import { ConnectionService as QueryConnectionService } from '../../../query/serv
 import { PacketService as QueryPacketService } from '../../../query/services/packet.service';
 import { YaciHistoryService } from '../../../query/services/yaci-history.service';
 import { TxModule } from '../../../tx/tx.module';
-import { ClientService } from '../../../tx/client.service';
+import { TendermintClientService as ClientService } from '../../../tx/tendermint-client.service';
 import { ChannelService } from '../../../tx/channel.service';
 import { ConnectionService } from '../../../tx/connection.service';
 import { PacketService } from '../../../tx/packet.service';

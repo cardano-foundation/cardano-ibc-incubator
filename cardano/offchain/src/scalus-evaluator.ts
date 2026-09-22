@@ -19,7 +19,10 @@ export function createCardanoScalusEvaluator(
           : typeof error === "string"
           ? error
           : JSON.stringify(error);
-        if (message.includes("Error evaluated")) {
+        if (
+          message.includes("Error evaluated") ||
+          message.includes("Builtin error:")
+        ) {
           throw new Error(`failed script execution: ${message}`, {
             cause: error,
           });

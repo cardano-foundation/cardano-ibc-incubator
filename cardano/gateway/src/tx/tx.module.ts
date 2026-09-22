@@ -2,6 +2,9 @@ import { Logger, Module } from '@nestjs/common';
 import { TxController } from './tx.controller';
 import { LucidModule } from 'src/shared/modules/lucid/lucid.module';
 import { ClientService } from './client.service';
+import { TendermintClientService, TENDERMINT_HEADER_TYPE_URL } from './tendermint-client.service';
+import { LIGHT_CLIENT_HANDLERS, type LightClientHandler } from './light-client-handler';
+import { TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '../shared/types/misbehaviour/misbehaviour';
 import { ChannelService } from './channel.service';
 import { ConnectionService } from './connection.service';
 import { PacketService } from './packet.service';
@@ -25,6 +28,20 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
   controllers: [TxController],
   providers: [
     ClientService,
+    TendermintClientService,
+    {
+      provide: LIGHT_CLIENT_HANDLERS,
+      inject: [TendermintClientService],
+      useFactory: (service: TendermintClientService): readonly LightClientHandler[] => [
+        {
+          clientType: '07-tendermint',
+          clientStateTypeUrl: '/ibc.lightclients.tendermint.v1.ClientState',
+          consensusStateTypeUrl: '/ibc.lightclients.tendermint.v1.ConsensusState',
+          clientMessageTypeUrls: [TENDERMINT_HEADER_TYPE_URL, TENDERMINT_MISBEHAVIOUR_TYPE_URL],
+          service,
+        },
+      ],
+    },
     ConnectionService,
     ChannelService,
     PacketService,

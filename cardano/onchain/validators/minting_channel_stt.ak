@@ -4,7 +4,7 @@ use cardano/transaction.{Transaction}
 use ibc/implementation/minting_channel_stt as implementation
 
 validator mint_channel_stt(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
@@ -19,7 +19,7 @@ validator mint_channel_stt(
   ) {
     implementation.validate(
       True,
-      client_minting_policy_id,
+      client_registry,
       connection_minting_policy_id,
       port_minting_policy_id,
       verify_proof_policy_id,

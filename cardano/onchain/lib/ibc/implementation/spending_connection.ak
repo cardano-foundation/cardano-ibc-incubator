@@ -4,16 +4,14 @@ use cardano/transaction.{
   Input, OutputReference, Redeemer, ScriptPurpose, Transaction,
 }
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{
-  ClientDatum, ClientDatumState,
-}
-use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership,
+use ibc/core/ics_002_client_semantics/client_view.{
+  ClientStateView as ClientDatumState,
 }
+use ibc/core/ics_002_client_semantics/registry
 use ibc/core/ics_002_client_semantics/types/client.{Active}
+use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{VerifyMembership}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
   ConnOpenAck, ConnOpenConfirm, ReclaimConnection, SpendConnectionRedeemer,
@@ -23,7 +21,7 @@ use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/utils/shutdown
@@ -31,7 +29,7 @@ use ibc/utils/validator_utils
 
 pub fn validate(
   allow_retirement: Bool,
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   verify_proof_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
   datum: Option<ConnectionDatum>,
@@ -73,7 +71,6 @@ pub fn validate(
     expect updated_datum: ConnectionDatum =
       validator_utils.get_inline_datum(updated_output)
     trace @"spend_connection: found connection output"
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     trace @"spend_connection: extract tx valid_to"
     let connection_sequence = auth.extract_token_sequence(datum.token.name)
     let connection_id =
@@ -82,11 +79,18 @@ pub fn validate(
     // Both connection-spend variants authenticate the same referred client and
     // require it to be active. Resolve that shared state once before dispatching
     // to the branch-specific proof and transition checks.
+    let client_registration =
+      registry.for_client(client_registry, datum.state.client_id)
+    let verify_proof_policy_id =
+      validator_utils.registered_proof_policy(
+        client_registration,
+        verify_proof_policy_id,
+      )
     let client_datum =
-      validator_utils.validate_referred_client(
+      validator_utils.validate_registered_client(
         reference_inputs,
         datum.token.name,
-        client_minting_policy_id,
+        client_registration,
         datum.state.client_id,
         validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
         when redeemer is {
@@ -98,12 +102,7 @@ pub fn validate(
         validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).history_witness,
       )
     trace @"spend_connection: validator_utils.validate_referred_client"
-    let connection_state_active =
-      client_state.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == Active
+    let connection_state_active = client_datum.status == Active
     trace @"spend_connection: client status is active"
     when redeemer is {
       ReclaimConnection -> fail
@@ -193,6 +192,8 @@ fn validate_conn_open_ack_proof(
   let verify_proof_redeemer =
     validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
+  expect verify_proof_redeemer: verify_proof_redeemer.VerifyProofRedeemer =
+    verify_proof_redeemer
   let valid_proof_redeemer =
     when verify_proof_redeemer is {
       VerifyMembership {
@@ -246,7 +247,7 @@ fn validate_conn_open_confirm_proof(
   client_datum_state: ClientDatumState,
   connection_id: ByteArray,
   connection: ConnectionEnd,
-  proof_ack: MerkleProof,
+  proof_ack: Data,
   proof_height: Height,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
@@ -293,25 +294,28 @@ fn validate_conn_open_confirm_proof(
   let verify_proof_redeemer =
     validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
-  (verify_proof_redeemer == VerifyMembership {
-    cs: client_datum_state.client_state,
-    cons_state: consensus_state,
-    height: proof_height,
-    processed_time,
-    processed_height,
-    delay_time_period: time_delay,
-    delay_block_period: block_delay,
-    proof: proof_ack,
-    path: merkle_path,
-    value: expected_connection_bz,
-  })?
+  validator_utils.proof_matches(
+    verify_proof_redeemer,
+    VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      processed_time,
+      processed_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof: proof_ack,
+      path: merkle_path,
+      value: expected_connection_bz,
+    },
+  )?
 }
 
 fn conn_open_ack_proof_height(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Height {
-  expect VerifyMembership { height, .. } =
+  expect VerifyMembership { height, .. }: verify_proof_redeemer.VerifyProofRedeemer =
     validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
   height
 }

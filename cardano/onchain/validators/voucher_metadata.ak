@@ -9,12 +9,15 @@ validator voucher_metadata(host_state_nft_policy_id: PolicyId) {
     own_ref: OutputReference,
     transaction: Transaction,
   ) {
-    shutdown.reclaim(
-      transaction,
-      own_ref,
-      host_state_nft_policy_id,
-      assets.zero,
-    )
+    and {
+      shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
+      shutdown.reclaim(
+        transaction,
+        own_ref,
+        host_state_nft_policy_id,
+        assets.zero,
+      ),
+    }
   }
 
   else(_) {

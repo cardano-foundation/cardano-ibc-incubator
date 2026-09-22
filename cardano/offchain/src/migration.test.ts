@@ -736,6 +736,13 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       artifact,
     );
     deployment = verified.deployment;
+    assertEquals(deployment.clientRegistrations, [{
+      clientType: "07-tendermint",
+      implementation: "tendermint",
+      mintPolicy: deployment.validators.mintClientStt.scriptHash,
+      spendValidator: deployment.validators.spendClient.scriptHash,
+      proofPolicy: deployment.validators.verifyProof.scriptHash,
+    }]);
     assertEquals(verified.evidence.generation, generation.toString());
     assert(await migrationReference(lucid, runtimeDeployment()));
     if (release) {

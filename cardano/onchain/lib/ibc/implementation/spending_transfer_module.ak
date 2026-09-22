@@ -411,9 +411,14 @@ fn module_callback(
       } else {
         // Non-source receive mints vouchers.
         trace @"mint_voucher: tx mint voucher token"
+        expect Some(transfer_amount) = int.from_utf8(data.amount)
 
         and {
-          transfer_escrow.validate_preserved_module_state(spent_input, spend)?,
+          transfer_escrow.validate_voucher_obligation_transition(
+            spent_input,
+            spend,
+            transfer_amount,
+          )?,
           transfer_voucher_flow.validate_mint_voucher_packet(
             redeemers,
             voucher_minting_policy_id,
@@ -499,8 +504,20 @@ fn module_callback(
             packet.source_channel,
           )
         _ ->
-          // Ack success leaves transfer supply unchanged.
-          transfer_escrow.validate_preserved_module_state(spent_input, spend)
+          if transfer_coin.sender_chain_is_source(
+            packet.source_port,
+            packet.source_channel,
+            tf_data.denom,
+          ) {
+            transfer_escrow.validate_preserved_module_state(spent_input, spend)
+          } else {
+            expect Some(transfer_amount) = int.from_utf8(tf_data.amount)
+            transfer_escrow.validate_voucher_obligation_transition(
+              spent_input,
+              spend,
+              -transfer_amount,
+            )
+          }
       }
     }
   }

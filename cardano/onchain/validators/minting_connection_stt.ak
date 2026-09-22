@@ -4,7 +4,7 @@ use cardano/transaction.{Transaction}
 use ibc/implementation/minting_connection_stt as implementation
 
 validator mint_connection_stt(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   verify_proof_policy_id: PolicyId,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   host_state_nft_policy_id: PolicyId,
@@ -16,7 +16,7 @@ validator mint_connection_stt(
   ) {
     implementation.validate(
       True,
-      client_minting_policy_id,
+      client_registry,
       verify_proof_policy_id,
       spend_connection_script_hash,
       host_state_nft_policy_id,

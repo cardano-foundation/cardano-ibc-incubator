@@ -11,10 +11,71 @@ const scopes = [
 
 const allowedHighCriticalAdvisories = new Set([]);
 
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseAuditReport(directory, result) {
+  function fail(message) {
+    const stderr = result.stderr?.trim();
+    throw new Error(`npm audit failed for ${directory}: ${message}${stderr ? `\n${stderr}` : ''}`);
+  }
+
+  if (result.error) {
+    fail(result.error.message);
+  }
+  if (result.signal) {
+    fail(`terminated by ${result.signal}`);
+  }
+  // npm exits with 1 for vulnerability findings as well as operational errors.
+  // Accept that status only when stdout contains a valid report with findings.
+  if (result.status !== 0 && result.status !== 1) {
+    fail(`unexpected exit status ${result.status}`);
+  }
+  if (!result.stdout?.trim()) {
+    fail('no JSON report');
+  }
+
+  let report;
+  try {
+    report = JSON.parse(result.stdout);
+  } catch (error) {
+    fail(`invalid JSON report: ${error.message}`);
+  }
+
+  if (isRecord(report) && Object.hasOwn(report, 'error')) {
+    fail(`npm returned an error: ${JSON.stringify(report.error)}`);
+  }
+  if (!isRecord(report) || report.auditReportVersion !== 2 || !isRecord(report.vulnerabilities)) {
+    fail('invalid audit report: expected auditReportVersion 2 and a vulnerabilities object');
+  }
+  for (const [packageName, vulnerability] of Object.entries(report.vulnerabilities)) {
+    if (!isRecord(vulnerability) || !Array.isArray(vulnerability.via)) {
+      fail(`invalid audit report: ${packageName} must have a via array`);
+    }
+    for (const via of vulnerability.via) {
+      if (typeof via === 'string') {
+        continue;
+      }
+      if (
+        !isRecord(via) ||
+        !Number.isInteger(via.source) ||
+        !['info', 'low', 'moderate', 'high', 'critical'].includes(via.severity)
+      ) {
+        fail(`invalid audit report: ${packageName} has an invalid advisory`);
+      }
+    }
+  }
+  if (result.status === 1 && Object.keys(report.vulnerabilities).length === 0) {
+    fail('exit status 1 without reported vulnerabilities');
+  }
+  return report;
+}
+
 function highCriticalAdvisories(auditJson) {
   const advisories = new Map();
-  for (const [packageName, vulnerability] of Object.entries(auditJson.vulnerabilities ?? {})) {
-    for (const via of vulnerability.via ?? []) {
+  for (const [packageName, vulnerability] of Object.entries(auditJson.vulnerabilities)) {
+    for (const via of vulnerability.via) {
       if (typeof via === 'string' || !['high', 'critical'].includes(via.severity)) {
         continue;
       }
@@ -42,15 +103,7 @@ for (const scope of scopes) {
     { encoding: 'utf8' },
   );
 
-  if (result.error) {
-    throw result.error;
-  }
-  if (!result.stdout.trim()) {
-    console.error(result.stderr);
-    throw new Error(`npm audit produced no JSON for ${scope.directory}`);
-  }
-
-  const auditJson = JSON.parse(result.stdout);
+  const auditJson = parseAuditReport(scope.directory, result);
   for (const advisory of highCriticalAdvisories(auditJson).values()) {
     seen.add(advisory.id);
     if (!allowedHighCriticalAdvisories.has(advisory.id)) {

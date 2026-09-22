@@ -323,6 +323,14 @@ export async function verifyAndInstallMigration(
     };
   }
   next.modules.transfer.address = addresses[4];
+  // The mint and proof policies are retained, but the client spends at the successor.
+  next.clientRegistrations = [{
+    clientType: "07-tendermint",
+    implementation: "tendermint",
+    mintPolicy: registry.identity.client_policy,
+    spendValidator: next.validators.spendClient.scriptHash,
+    proofPolicy: baseline.verifyProof.hash,
+  }];
   next.migration!.generation = registry.current.generation.toString();
   next.migration!.compatibility = registry.current.compatibility;
   next.migration!.originalAddresses = roleValidators(baseline).map((

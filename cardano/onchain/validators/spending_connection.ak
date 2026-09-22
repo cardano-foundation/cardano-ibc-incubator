@@ -7,7 +7,7 @@ use ibc/core/ics_003_connection_semantics/connection_redeemer.{
 use ibc/implementation/spending_connection as implementation
 
 validator spend_connection(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   verify_proof_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
 ) {
@@ -19,7 +19,7 @@ validator spend_connection(
   ) {
     implementation.validate(
       True,
-      client_minting_policy_id,
+      client_registry,
       verify_proof_policy_id,
       host_state_nft_policy_id,
       datum,

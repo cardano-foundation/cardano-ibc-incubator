@@ -4,9 +4,13 @@ use cardano/assets
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
 }
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
+use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateControl, HostStateDatum, ShuttingDown,
-  host_state_token_name,
+  Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
+  ShuttingDown, host_state_token_name,
 }
 use ibc/utils/shutdown
 
@@ -15,6 +19,9 @@ const host_policy = #"11111111111111111111111111111111111111111111111111111111"
 const state_policy = #"22222222222222222222222222222222222222222222222222222222"
 
 const deployer = #"33333333333333333333333333333333333333333333333333333333"
+
+const module_policy =
+  #"44444444444444444444444444444444444444444444444444444444"
 
 const grace_end = 86_401_000
 
@@ -32,10 +39,44 @@ fn datum() -> HostStateDatum {
     nft_policy: host_policy,
     deployer,
     control: HostStateControl {
-      port_registry: [],
+      port_registry: [
+        Pair(
+          "transfer",
+          ModuleRegistration {
+            module_script_hash: "transfer module",
+            port_token: AuthToken { policy_id: "port", name: "transfer" },
+            module_token: AuthToken { policy_id: module_policy, name: "module" },
+          },
+        ),
+      ],
       shutdown: ShuttingDown { initiated_at: 1000, grace_period_end: grace_end },
     },
   }
+}
+
+fn transfer_fixture(registry_root: ByteArray, obligation: Int) -> Transaction {
+  let tx = fixture()
+  let root =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        output_index: 0,
+      },
+      output: Output {
+        address: from_script("transfer module"),
+        value: assets.from_lovelace(5_000_000)
+          |> assets.add(module_policy, "module", 1)
+          |> assets.add("port", "transfer", 1),
+        datum: InlineDatum(
+          TransferModuleDatum {
+            escrow_shard_registry_root: registry_root,
+            outstanding_voucher_obligation: obligation,
+          },
+        ),
+        reference_script: None,
+      },
+    }
+  Transaction { ..tx, reference_inputs: [root, ..tx.reference_inputs] }
 }
 
 fn fixture() -> Transaction {
@@ -92,6 +133,30 @@ fn check(tx: Transaction) -> Bool {
 
 test reclaim_returns_ada_and_unrelated_assets_after_grace() {
   check(fixture())
+}
+
+test shutdown_dependency_reclaim_accepts_empty_transfer_registry() {
+  shutdown.transfer_is_drained(
+    transfer_fixture(empty_escrow_shard_registry_root, 0),
+    host_policy,
+  )
+}
+
+test shutdown_dependency_reclaim_rejects_outstanding_vouchers() {
+  !shutdown.transfer_is_drained(
+    transfer_fixture(empty_escrow_shard_registry_root, 1),
+    host_policy,
+  )
+}
+
+test shutdown_dependency_reclaim_rejects_registered_transfer_shard() {
+  !shutdown.transfer_is_drained(
+    transfer_fixture(
+      #"1111111111111111111111111111111111111111111111111111111111111111",
+      0,
+    ),
+    host_policy,
+  )
 }
 
 test reclaim_requires_deployer_signature() fail {

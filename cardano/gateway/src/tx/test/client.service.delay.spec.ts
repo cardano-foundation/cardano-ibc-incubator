@@ -18,7 +18,7 @@ import {
   decodeSpendMultitxClientRedeemer,
 } from '../../shared/types/tendermint-update-session';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { ClientService } from '../client.service';
+import { TendermintClientService as ClientService } from '../tendermint-client.service';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
 import * as validation from '../helper/client.validate';
 import { validateTendermintStagedFinalization } from '../update-client-session-state';

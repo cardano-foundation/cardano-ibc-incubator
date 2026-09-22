@@ -159,6 +159,7 @@ fn setup() -> MockData {
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: empty_escrow_shard_registry_root,
+          outstanding_voucher_obligation: 0,
         },
       ),
       reference_script: None,
@@ -448,6 +449,24 @@ fn module_output_with_registered_shard(module_output: Output) -> Output {
     datum: InlineDatum(
       TransferModuleDatum {
         escrow_shard_registry_root: #"1111111111111111111111111111111111111111111111111111111111111111",
+        outstanding_voucher_obligation: 0,
+      },
+    ),
+  }
+}
+
+fn module_output_with_voucher_obligation(
+  module_output: Output,
+  obligation: Int,
+) -> Output {
+  expect InlineDatum(raw_datum) = module_output.datum
+  expect datum: TransferModuleDatum = raw_datum
+  Output {
+    ..module_output,
+    datum: InlineDatum(
+      TransferModuleDatum {
+        ..datum,
+        outstanding_voucher_obligation: obligation,
       },
     ),
   }
@@ -1040,7 +1059,15 @@ fn ack_success_fixture(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let receiver = mock.cardano_public_key_hash
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let module_input =
+    Input {
+      ..mock.module_input,
+      output: module_output_with_voucher_obligation(
+        mock.module_input.output,
+        1234,
+      ),
+    }
+  let inputs = [module_input, mock.channel_input, mock.host_state_input]
   let outputs =
     [mock.module_output, mock.channel_output, mock.host_state_output]
   let source_port = mock.port_id
@@ -1162,7 +1189,11 @@ fn voucher_recv_sink_fixture_amount(
   let mock = setup()
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_obligation(mock.module_output, transfer_amount),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
   let (ftpd, packet) =
     build_packet(
@@ -1435,6 +1466,7 @@ test transfer_module_root_rejects_registry_mutation_without_mint() fail {
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: #"1111111111111111111111111111111111111111111111111111111111111111",
+          outstanding_voucher_obligation: 0,
         },
       ),
     }
@@ -1718,7 +1750,11 @@ test on_recv_packet_mint_voucher_succeed() {
 
   //==========================arrange outputs=========================
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_obligation(mock.module_output, 1234),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -1802,7 +1838,11 @@ fn on_recv_packet_mint_voucher_prebuilt_succeeds(
 
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_obligation(mock.module_output, 100),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
   let (ftpd, packet) =
     build_prebuilt_packet_with_memo(
@@ -3212,7 +3252,15 @@ test on_acknowledgement_packet_result_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let module_input =
+    Input {
+      ..mock.module_input,
+      output: module_output_with_voucher_obligation(
+        mock.module_input.output,
+        1234,
+      ),
+    }
+  let inputs = [module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let outputs =

@@ -8,16 +8,16 @@ use cardano/transaction.{
   InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{
-  ClientDatum, ClientDatumState,
-}
-use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+use ibc/core/ics_002_client_semantics/client_view.{
+  ClientStateView as ClientDatumState,
+}
+use ibc/core/ics_002_client_semantics/registry
+use ibc/core/ics_002_client_semantics/types/client.{Active}
+use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
   BatchVerifyMembership, VerifyMembershipParams,
 }
-use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{
   ConnectionDatum, is_conn_open_init_valid, is_conn_open_try_valid,
 }
@@ -29,7 +29,7 @@ use ibc/core/ics_003_connection_semantics/types/counterparty as counterparty
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
@@ -73,7 +73,7 @@ fn spent_host_state_for_create_connection(
 
 pub fn validate(
   allow_retirement: Bool,
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   verify_proof_policy_id: PolicyId,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   host_state_nft_policy_id: PolicyId,
@@ -85,6 +85,7 @@ pub fn validate(
     transaction.mint,
     connection_minting_policy_id,
   ) {
+    expect shutdown.transfer_is_drained(transaction, host_state_nft_policy_id)
     shutdown.reclaim_policy(
       transaction,
       connection_minting_policy_id,
@@ -92,7 +93,7 @@ pub fn validate(
     )
   } else {
     validate_create(
-      client_minting_policy_id,
+      client_registry,
       verify_proof_policy_id,
       spend_connection_script_hash,
       host_state_nft_policy_id,
@@ -104,7 +105,7 @@ pub fn validate(
 }
 
 pub fn validate_create(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   verify_proof_policy_id: PolicyId,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   host_state_nft_policy_id: PolicyId,
@@ -131,11 +132,21 @@ pub fn validate_create(
     transaction.find_script_outputs(outputs, spend_connection_script_hash)
   expect connection_output_datum: ConnectionDatum =
     validator_utils.get_inline_datum(connection_output)
+  let client_registration =
+    registry.for_client(
+      client_registry,
+      connection_output_datum.state.client_id,
+    )
+  let verify_proof_policy_id =
+    validator_utils.registered_proof_policy(
+      client_registration,
+      verify_proof_policy_id,
+    )
   let client_datum =
-    validator_utils.validate_referred_client(
+    validator_utils.validate_registered_client(
       reference_inputs,
       connection_output_datum.token.name,
-      client_minting_policy_id,
+      client_registration,
       connection_output_datum.state.client_id,
       validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
       when redeemer is {
@@ -151,13 +162,8 @@ pub fn validate_create(
         ConnOpenInit -> None
       },
     )
-  let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-  let client_state_active =
-    client_state.status(
-      client_datum.state.client_state,
-      tx_valid_to * 1_000_000,
-      client_datum.state.consensus_states,
-    ) == Active
+
+  let client_state_active = client_datum.status == Active
   let id_str = string_utils.int_to_string(connection_id_sequence)
   let host_state_nft =
     AuthToken {
@@ -207,8 +213,8 @@ fn validate_conn_open_try_proof(
   client_datum_state: ClientDatumState,
   connection: ConnectionEnd,
   counterparty_client_state: ByteArray,
-  proof_init: MerkleProof,
-  proof_client: MerkleProof,
+  proof_init: Data,
+  proof_client: Data,
   proof_height: Height,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
@@ -263,32 +269,35 @@ fn validate_conn_open_try_proof(
   let verify_proof_redeemer =
     validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).proof
 
-  verify_proof_redeemer == BatchVerifyMembership(
-    [
-      VerifyMembershipParams {
-        cs: client_datum_state.client_state,
-        cons_state: consensus_state,
-        height: proof_height,
-        processed_time,
-        processed_height,
-        delay_time_period: time_delay,
-        delay_block_period: block_delay,
-        proof: proof_init,
-        path: conn_merkle_path,
-        value: expected_connection_bz,
-      },
-      VerifyMembershipParams {
-        cs: client_datum_state.client_state,
-        cons_state: consensus_state,
-        height: proof_height,
-        processed_time,
-        processed_height,
-        delay_time_period: time_delay,
-        delay_block_period: block_delay,
-        proof: proof_client,
-        path: client_merkle_path,
-        value: counterparty_client_state,
-      },
-    ],
+  validator_utils.proof_matches(
+    verify_proof_redeemer,
+    BatchVerifyMembership(
+      [
+        VerifyMembershipParams {
+          cs: client_datum_state.client_state,
+          cons_state: consensus_state,
+          height: proof_height,
+          processed_time,
+          processed_height,
+          delay_time_period: time_delay,
+          delay_block_period: block_delay,
+          proof: proof_init,
+          path: conn_merkle_path,
+          value: expected_connection_bz,
+        },
+        VerifyMembershipParams {
+          cs: client_datum_state.client_state,
+          cons_state: consensus_state,
+          height: proof_height,
+          processed_time,
+          processed_height,
+          delay_time_period: time_delay,
+          delay_block_period: block_delay,
+          proof: proof_client,
+          path: client_merkle_path,
+          value: counterparty_client_state,
+        },
+      ],
+    ),
   )
 }

@@ -40,16 +40,16 @@ function encodedEscrowDatum(channelId: string, denom: string, amount = 0n): stri
   return `escrow:${channelId}:${denom}:${amount}`;
 }
 
-function encodedModuleDatum(root: string): string {
-  return `module:${root}`;
+function encodedModuleDatum(root: string, obligation = 0n): string {
+  return `module:${root}:${obligation}`;
 }
 
-function moduleRoot(root?: string): UTxO {
+function moduleRoot(root?: string, obligation = 0n): UTxO {
   return utxo(
     'module-root',
     0,
     { lovelace: 5_000_000n, [TRANSFER_MODULE_IDENTIFIER]: 1n },
-    root === undefined ? undefined : encodedModuleDatum(root),
+    root === undefined ? undefined : encodedModuleDatum(root, obligation),
   );
 }
 
@@ -90,12 +90,16 @@ function dependencies(
       return { channel_id, denom, escrowed_amount: BigInt(amount) };
     },
     encodeTransferModuleDatum: async (datum) =>
-      encodedModuleDatum(datum.escrow_shard_registry_root),
+      encodedModuleDatum(datum.escrow_shard_registry_root, datum.outstanding_voucher_obligation),
     decodeTransferModuleDatum: async (datum) => {
-      if (!datum.startsWith('module:')) {
+      const [prefix, escrow_shard_registry_root, obligation] = datum.split(':');
+      if (prefix !== 'module' || !escrow_shard_registry_root || obligation === undefined) {
         throw new Error('bad module datum');
       }
-      return { escrow_shard_registry_root: datum.slice('module:'.length) };
+      return {
+        escrow_shard_registry_root,
+        outstanding_voucher_obligation: BigInt(obligation),
+      };
     },
     ...overrides,
   };
@@ -174,6 +178,20 @@ describe('transfer escrow shard registry lookup', () => {
       assert.notEqual(
         result.encodedUpdatedTransferModuleDatum,
         encodedModuleDatum('00'.repeat(32)),
+      );
+    }
+  });
+
+  it('preserves voucher obligations while registering an escrow shard', async () => {
+    const result = await lookup(
+      dependencies(async () => [moduleRoot('00'.repeat(32), 17n)]),
+    );
+
+    assert.equal(result.kind, 'missing');
+    if (result.kind === 'missing') {
+      assert.equal(
+        result.encodedUpdatedTransferModuleDatum,
+        encodedModuleDatum(existingRegistryRoot(), 17n),
       );
     }
   });

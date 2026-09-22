@@ -63,6 +63,7 @@ pub fn validate(
     transaction.mint,
     client_mint_policy_id,
   ) {
+    expect shutdown.transfer_is_drained(transaction, host_state_nft_policy_id)
     shutdown.reclaim_policy(
       transaction,
       client_mint_policy_id,

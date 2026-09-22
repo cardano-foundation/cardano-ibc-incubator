@@ -4,6 +4,7 @@ use cardano/assets.{PolicyId, Value, quantity_of}
 use cardano/transaction.{Input, Output}
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
+use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
 use ibc/apps/transfer/value_delta
 use ibc/auth.{AuthToken}
 use ibc/utils/validator_utils
@@ -118,6 +119,24 @@ pub fn validate_preserved_module_state(
     expect_module_state(spend),
     spent_input.output.value,
   )
+}
+
+pub fn validate_voucher_obligation_transition(
+  spent_input: Input,
+  spend: TransferModuleSpend,
+  obligation_delta: Int,
+) -> Bool {
+  expect ModuleState { updated_output, .. } = spend
+  expect input_datum: TransferModuleDatum =
+    validator_utils.get_inline_datum(spent_input.output)
+  expect output_datum: TransferModuleDatum =
+    validator_utils.get_inline_datum(updated_output)
+  and {
+    input_datum.escrow_shard_registry_root == output_datum.escrow_shard_registry_root,
+    output_datum.outstanding_voucher_obligation == input_datum.outstanding_voucher_obligation + obligation_delta,
+    output_datum.outstanding_voucher_obligation >= 0,
+    value_delta.validate_output_value(updated_output, spent_input.output.value),
+  }
 }
 
 pub fn transfer_escrow_datum(

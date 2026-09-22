@@ -570,11 +570,14 @@ function decodeTransferEscrowDatum(
 }
 
 function encodeTransferModuleDatum(
-  datum: { escrow_shard_registry_root: string },
+  datum: { escrow_shard_registry_root: string; outstanding_voucher_obligation: bigint },
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
-  const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+  const schema = Data.Object({
+    escrow_shard_registry_root: Data.Bytes(),
+    outstanding_voucher_obligation: Data.Integer(),
+  });
   return Data.to(datum, schema as any, { canonical: true });
 }
 
@@ -583,7 +586,10 @@ function decodeTransferModuleDatum(
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
-  const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+  const schema = Data.Object({
+    escrow_shard_registry_root: Data.Bytes(),
+    outstanding_voucher_obligation: Data.Integer(),
+  });
   return Data.from(encoded, schema as any);
 }
 
@@ -652,6 +658,7 @@ async function encodeHostStateRedeemer(
     }),
     Data.Literal('FinalizeShutdown'),
     Data.Literal('Heartbeat'),
+    Data.Literal('AuthorizeFinalization'),
   ]);
   return Data.to(data, HostStateRedeemerSchema as any, { canonical: true });
 }
@@ -1298,7 +1305,10 @@ export class LucidIbcAdapter {
         return encodeTransferEscrowDatum(data as { channel_id: string; denom: string; escrowed_amount: bigint }, this.LucidImporter);
       case 'transferModule':
         return encodeTransferModuleDatum(
-          data as { escrow_shard_registry_root: string },
+          data as {
+            escrow_shard_registry_root: string;
+            outstanding_voucher_obligation: bigint;
+          },
           this.LucidImporter,
         );
       case 'host_state':

@@ -1,52 +1,64 @@
 # Identify UTXOs of IBC Cardano
 
-In Cardano's eUTXO model, the states of a DApp are stored in the datum of UTXOs. If our DApp is small and its entire state can be stored in a single UTXO, it is straightforward to look up the UTXO using its output reference (transaction hash and output index). However, for Cardano IBC, the states are large and distributed across multiple UTXOs, necessitating an effective way to identify which UTXOs belong to our system.
+Cardano IBC stores protocol state in the datums of multiple UTXOs. Anyone can
+send an output with arbitrary data to a script address, so an address alone does
+not authenticate protocol state. Validators instead require authentication tokens
+minted under the deployment's policies and retained by valid state transitions.
 
-One option is to use the address of the UTXOs, but in Cardano, anyone can create a UTXO with arbitrary data and attach it to a specific address. Because of this, using addresses alone is not sufficient. Instead, we can use a type of validator script in Cardano called a minting policy to manage the authenticity of UTXOs.
+## HostState identity token
 
-Minting policies ensure authenticity in our application by validating transactions that create new UTXOs and only minting tokens if these transactions are valid. We can later look up UTXOs that contain tokens minted by our minting policy to identify the UTXOs of our system.
+The canonical coordinator is the `HostState` single token thread (STT). Its UTXO
+contains the IBC commitment root, object sequences, and bound-port registrations.
+The [HostState NFT policy](../onchain/validators/host_state_nft.ak) is parameterized
+by an output reference. `MintInitial` requires that output to be consumed and
+mints exactly one token named `ibc_host_state`; the same output cannot be consumed
+again, so that policy cannot mint a second initial NFT.
 
-## Handler Identity Token
+Using `||` for byte concatenation:
 
-Unlike other objects in IBC (client, connection), a handler usually has only one instance per chain. So we need a way to ensure the handler token is only minted once. There are many ways to achieve this, here we use a UTXO reference as a nonce, pass it to the parameter of the mint handler validator script, and then require it in the inputs of the transaction. With this approach, each time we create a handler and mint a new identity token for it, the token is guaranteed to be unique. You can see the code snippet demonstrating this idea below:
-
-```aiken
-validator(
-  utxo_ref: OutputReference,
-  update_handler_script_hash: Hash<Blake2b_224, Script>,
-) {
-  fn mint_handler(_redeemer: Void, context: ScriptContext) -> Bool {
-    
-    // ... other logic
-
-    expect inputs |> list.any(fn(input) { input.output_reference == utxo_ref })
-
-    // ... other logic
-
-
-  }
-}
+```text
+host_state_token_unit = host_state_nft_policy_id || utf8("ibc_host_state")
 ```
 
-Since the minting policy id (extract from hash of minting policy) is already unique, the name of token can be any, here we use a fixed constant `handler` for it. So the whole token unit of handler is calculated with this formula:
+The [HostState spending validator](../onchain/validators/host_state_stt.ak)
+authenticates state transitions and preserves the NFT in the successor HostState
+UTXO during normal operation. Final shutdown uses `FinalizeShutdown` together
+with the NFT policy's `BurnFinal` redeemer to destroy the singleton.
 
+## Client, connection, and channel identity tokens
+
+These entities use the HostState NFT as the base (referrer) token passed to
+[`auth.generate_token_name`](../onchain/lib/ibc/auth.ak). Each entity has its own
+minting policy; the shared base in its token name binds it to the same HostState
+instance.
+
+The formulas below operate on raw bytes. Slices `[0:n]` take the first `n` bytes,
+and `decimal(sequence)` is the decimal string representation of the sequence.
+
+```text
+base = sha3_256(host_state_token_unit)[0:20]
+client_token_name = base || sha3_256(utf8("ibc_client"))[0:4] || utf8(decimal(client_sequence))
+connection_token_name = base || sha3_256(utf8("connection"))[0:4] || utf8(decimal(connection_sequence))
+channel_token_name = base || sha3_256(utf8("channel"))[0:4] || utf8(decimal(channel_sequence))
+entity_token_unit = entity_minting_policy_id || entity_token_name
 ```
-handler_token_unit = handler_minting_policy_id + to_bytes("handler")
+
+The sequence suffix is limited to eight bytes, keeping the token name within
+Cardano's 32-byte asset-name limit. The client, connection, and channel minting
+policies validate creation against the corresponding HostState transition.
+
+## Port identity tokens
+
+Port token names use the complete, case-sensitive IBC port identifier:
+
+```text
+port_token_name = blake2b_256(utf8("cardano-ibc/port-token/v1") || 0x00 || utf8(port_id))
+port_token_unit = port_minting_policy_id || port_token_name
 ```
 
-## Other Entities Identity Token
-
-Based on the unique identity of the handler, we can easily generate other tokens for identifying the rest of the entities. Because the minting policy of the handler depends on the validator script of the others, we are unable to directly pass the handler token to the validator scripts' parameters. Instead, we can pass the handler token to the name of their identity tokens. So, the token names can be calculated as follows:
-
-```
-client_identity_token = sha3_256(handlerTokenUnit)[0:20] + sha3_256(toHex("ibc_client"))[0:4] + toHex(client_sequence.toString())
-
-connection_identity_token = sha3_256(handlerTokenUnit)[0:20] + sha3_256(toHex("connection"))[0:4] + toHex(connection_sequence.toString())
-
-channel_identity_token = sha3_256(handlerTokenUnit)[0:20] + sha3_256(toHex("channel"))[0:4] + toHex(channel_sequence.toString())
-
-port_identity_token = blake2b_256(to_bytes("cardano-ibc/port-token/v1") + 0x00 + to_bytes(port_id))
-
-```
-
-The port token uses the complete, case-sensitive IBC port identifier rather than a protocol-specific number or alias. Its minting policy is parameterized by the HostState identity, so the policy ID still places every port token in a specific handler instance while the domain-separated, full-width digest keeps arbitrary valid textual port IDs within Cardano's 32-byte asset-name limit. With these identities, off-chain services can query protocol UTXOs and on-chain validators can authenticate cross-references without treating an address alone as authoritative.
+The [port minting policy](../onchain/validators/minting_port.ak) is parameterized
+by the HostState identity, so its policy ID associates every port token with a
+specific HostState instance. The domain-separated digest keeps arbitrary valid
+textual port IDs within the asset-name limit. Off-chain services can query these
+tokens to locate protocol UTXOs, while validators authenticate their tokens,
+datums, and relationships to other protocol state.

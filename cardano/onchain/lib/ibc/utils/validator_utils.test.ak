@@ -1,15 +1,17 @@
 use aiken/collection/list
+use aiken/fuzz
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
 use aiken/primitive/bytearray
-use cardano/address.{from_script}
+use cardano/address.{Script, from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, add, from_asset, zero,
 }
 use cardano/transaction.{
-  Datum, DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference,
+  Datum, DatumHash, InlineDatum, Input, Mint, NoDatum, Output, OutputReference,
   Redeemer, ScriptPurpose, Spend, ValidityRange,
 }
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/adapter
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
@@ -17,7 +19,12 @@ use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/core/ics_002_client_semantics/client_view
+use ibc/core/ics_002_client_semantics/registry
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
+use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
+  VerifyProofEnvelope,
+}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
@@ -36,6 +43,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
   empty_ibc_state_root, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
+use ibc/testing/client_registry_fixtures.{RegistryCase}
 use ibc/utils/validator_utils
 
 const hash_sample =
@@ -939,7 +947,7 @@ test validate_referred_client_succeed() {
     0,
     None,
     None,
-  ) == client_datum
+  ) == adapter.view(client_datum, 0, None, None)
 }
 
 test validate_referred_client_rejects_wrong_datum_token_identity() fail {
@@ -1252,7 +1260,7 @@ fn validate_referred_connection_and_client(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   connection_id: ByteArray,
-) -> (ConnectionDatum, ClientDatum) {
+) -> (ConnectionDatum, client_view.ClientView) {
   validator_utils.validate_referred_connection_and_client(
     reference_inputs,
     referrer_token_name,
@@ -1288,7 +1296,7 @@ test validate_referred_connection_and_client_targets_first() {
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
-  ) == (connection_datum, client_datum)
+  ) == (connection_datum, adapter.view(client_datum, 0, None, None))
 }
 
 test validate_referred_connection_and_client_targets_middle() {
@@ -1317,7 +1325,7 @@ test validate_referred_connection_and_client_targets_middle() {
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
-  ) == (connection_datum, client_datum)
+  ) == (connection_datum, adapter.view(client_datum, 0, None, None))
 }
 
 test validate_referred_connection_and_client_targets_last() {
@@ -1343,7 +1351,7 @@ test validate_referred_connection_and_client_targets_last() {
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
-  ) == (connection_datum, client_datum)
+  ) == (connection_datum, adapter.view(client_datum, 0, None, None))
 }
 
 test validate_referred_connection_and_client_accepts_reordered_inputs() {
@@ -1364,7 +1372,7 @@ test validate_referred_connection_and_client_accepts_reordered_inputs() {
     client_minting_policy_id,
     connection_minting_policy_id,
     connection_id,
-  ) == (connection_datum, client_datum)
+  ) == (connection_datum, adapter.view(client_datum, 0, None, None))
 }
 
 test validate_referred_connection_and_client_rejects_forged_client_without_token() fail {
@@ -1657,4 +1665,308 @@ test state_value_preserves_reserves_and_allows_datum_growth_top_up() {
       value: assets.merge(input.value, assets.from_lovelace(2_000_000)),
     }
   validator_utils.find_unique_continuation_output(input, [output], token) == output
+}
+
+// Registered client authority includes both the NFT policy and spending script.
+test registered_client_reference_uses_the_common_view() {
+  let (inputs, referrer, policy, client_id, datum) =
+    setup_validate_referred_client()
+  let registration = registry.legacy(policy, "mock script hash", "proof-a")
+  let clients: Data = [registration]
+  let view =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      client_id,
+      0,
+      None,
+      None,
+    )
+  let expected_state: Data = datum.state.client_state
+  and {
+    view.token == datum.token,
+    view.latest_height == datum.state.client_state.latest_height,
+    view.state.client_state == expected_state,
+  }
+}
+
+test registered_client_rejects_the_wrong_spending_script() fail {
+  let (inputs, referrer, policy, client_id, _) =
+    setup_validate_referred_client()
+  let clients: Data = [registry.legacy(policy, "other script", "proof-a")]
+  expect _ =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      client_id,
+      0,
+      None,
+      None,
+    )
+}
+
+test registered_client_rejects_the_wrong_mint_policy() fail {
+  let (inputs, referrer, _, client_id, _) = setup_validate_referred_client()
+  let clients: Data =
+    [registry.legacy("other policy", "mock script hash", "proof-a")]
+  expect _ =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      client_id,
+      0,
+      None,
+      None,
+    )
+}
+
+test registered_client_cannot_use_another_registered_types_verifier() {
+  let a = registry.legacy("policy-a", "script-a", "proof-a")
+  let b =
+    registry.ClientRegistration {
+      ..registry.legacy("policy-b", "script-b", "proof-b"),
+      client_type: "99-other",
+    }
+  let clients: Data = [a, b]
+  and {
+    validator_utils.client_proof_policy(clients, "07-tendermint-0", "proof-b") == "proof-a",
+    validator_utils.client_proof_policy(clients, "99-other-0", "proof-a") == "proof-b",
+  }
+}
+
+test registered_client_requires_its_own_proof_marker() fail {
+  let clients: Data = [registry.legacy("policy", "script", "proof-a")]
+  let policy =
+    validator_utils.client_proof_policy(clients, "07-tendermint-0", "proof-b")
+  let unrelated_redeemer: Data =
+    VerifyProofEnvelope { proof: 0, history_witness: None }
+  expect _ =
+    validator_utils.verify_proof_envelope(
+      [Pair(Mint("proof-b"), unrelated_redeemer)],
+      policy,
+    )
+}
+
+fn registered_references(
+  sample: RegistryCase,
+) -> (List<Input>, ByteArray, ClientDatum) {
+  let (inputs, referrer, _, _, datum) = setup_validate_referred_client()
+  expect [input] = inputs
+  let token_name =
+    auth.generate_token_name_from_another(
+      referrer,
+      client_keys.client_prefix,
+      sample.sequence,
+    )
+  let first_token =
+    AuthToken { policy_id: sample.first.mint_policy, name: token_name }
+  let second_token =
+    AuthToken { policy_id: sample.second.mint_policy, name: token_name }
+  let first = ClientDatum { ..datum, token: first_token }
+  let second =
+    ClientDatum {
+      ..datum,
+      token: second_token,
+      state: ClientDatumState {
+        ..datum.state,
+        client_state: client_state.ClientState {
+          ..datum.state.client_state,
+          chain_id: sample.second.client_type,
+        },
+      },
+    }
+  let first_input =
+    Input {
+      ..input,
+      output: Output {
+        ..input.output,
+        address: from_script(sample.first.spend_validator),
+        value: from_asset(first_token.policy_id, first_token.name, 1),
+        datum: InlineDatum(first),
+      },
+    }
+  let second_input =
+    Input {
+      output_reference: OutputReference {
+        ..input.output_reference,
+        output_index: 1,
+      },
+      output: Output {
+        ..input.output,
+        address: from_script(sample.second.spend_validator),
+        value: from_asset(second_token.policy_id, second_token.name, 1),
+        datum: InlineDatum(second),
+      },
+    }
+  (
+    if sample.reverse_references {
+      [second_input, first_input]
+    } else {
+      [first_input, second_input]
+    },
+    referrer,
+    first,
+  )
+}
+
+test prop_registered_client_isolates_same_sequence_instances(
+  sample via registered_client_cases(),
+) {
+  fuzz.label(@"fuzz.contract.client.registry.valid_reference")
+  fuzz.label_when(
+    sample.reverse,
+    @"fuzz.contract.client.registry.registration_last",
+    @"fuzz.contract.client.registry.registration_first",
+  )
+  fuzz.label_when(
+    sample.reverse_references,
+    @"fuzz.contract.client.registry.reference_last",
+    @"fuzz.contract.client.registry.reference_first",
+  )
+  let (inputs, referrer, expected) = registered_references(sample)
+  let clients: Data = client_registry_fixtures.registrations(sample)
+  validator_utils.validate_referred_client(
+    inputs,
+    referrer,
+    clients,
+    registry.identifier(sample.first, sample.sequence),
+    0,
+    None,
+    None,
+  ) == adapter.view(expected, 0, None, None)
+}
+
+test prop_registered_client_rejects_cross_type_script(
+  sample via registered_client_cases(),
+) fail {
+  fuzz.label(@"fuzz.contract.client.registry.invalid_script")
+  let (inputs, referrer, _) = registered_references(sample)
+  let inputs =
+    list.map(
+      inputs,
+      fn(input) {
+        if input.output.address.payment_credential == Script(
+          sample.first.spend_validator,
+        ) {
+          Input {
+            ..input,
+            output: Output {
+              ..input.output,
+              address: from_script(sample.second.spend_validator),
+            },
+          }
+        } else {
+          input
+        }
+      },
+    )
+  let clients: Data = client_registry_fixtures.registrations(sample)
+  expect _ =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      registry.identifier(sample.first, sample.sequence),
+      0,
+      None,
+      None,
+    )
+}
+
+test prop_registered_client_rejects_cross_type_datum(
+  sample via registered_client_cases(),
+) fail {
+  fuzz.label(@"fuzz.contract.client.registry.invalid_datum_token")
+  let (inputs, referrer, datum) = registered_references(sample)
+  let wrong =
+    ClientDatum {
+      ..datum,
+      token: AuthToken { ..datum.token, policy_id: sample.second.mint_policy },
+    }
+  let inputs =
+    list.map(
+      inputs,
+      fn(input) {
+        Input {
+          ..input,
+          output: Output { ..input.output, datum: InlineDatum(wrong) },
+        }
+      },
+    )
+  let clients: Data = client_registry_fixtures.registrations(sample)
+  expect _ =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      registry.identifier(sample.first, sample.sequence),
+      0,
+      None,
+      None,
+    )
+}
+
+test prop_registered_client_rejects_other_instances_token(
+  sample via registered_client_cases(),
+) fail {
+  fuzz.label(@"fuzz.contract.client.registry.invalid_mint_policy")
+  let (inputs, referrer, _) = registered_references(sample)
+  let inputs =
+    list.filter(
+      inputs,
+      fn(input) {
+        input.output.address.payment_credential == Script(
+          sample.second.spend_validator,
+        )
+      },
+    )
+  let clients: Data = client_registry_fixtures.registrations(sample)
+  expect _ =
+    validator_utils.validate_referred_client(
+      inputs,
+      referrer,
+      clients,
+      registry.identifier(sample.first, sample.sequence),
+      0,
+      None,
+      None,
+    )
+}
+
+test prop_registered_client_rejects_another_types_proof_marker(
+  sample via registered_client_cases(),
+) fail {
+  fuzz.label(@"fuzz.contract.client.registry.invalid_proof_policy")
+  let clients: Data = client_registry_fixtures.registrations(sample)
+  let policy =
+    validator_utils.client_proof_policy(
+      clients,
+      registry.identifier(sample.first, sample.sequence),
+      sample.second.proof_policy,
+    )
+  let wrong_envelope: Data =
+    VerifyProofEnvelope { proof: 0, history_witness: None }
+  expect _ =
+    validator_utils.verify_proof_envelope(
+      [Pair(Mint(sample.second.proof_policy), wrong_envelope)],
+      policy,
+    )
+}
+
+fn registered_client_cases() -> Fuzzer<client_registry_fixtures.RegistryCase> {
+  let suffix <- fuzz.and_then(fuzz.int_between(0, 65535))
+  let sequence <- fuzz.and_then(fuzz.int_between(0, 99999999))
+  let seed <- fuzz.and_then(fuzz.bytearray())
+  let reverse <- fuzz.and_then(fuzz.bool())
+  let reverse_references <- fuzz.map(fuzz.bool())
+  client_registry_fixtures.registry_case(
+    suffix,
+    sequence,
+    seed,
+    reverse,
+    reverse_references,
+  )
 }

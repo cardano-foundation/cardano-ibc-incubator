@@ -1,12 +1,16 @@
 use aiken/collection/dict
 use aiken/collection/list
+use aiken/collection/pairs
 use aiken/crypto.{VerificationKeyHash}
 use cardano/address.{Script, VerificationKey}
 use cardano/assets.{PolicyId, Value}
 use cardano/transaction.{OutputReference, Transaction}
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostStateDatum, host_state_token_name, validate_finalize_shutdown,
+  HostStateDatum, host_state_token_name, validate_shutdown_authority,
 }
 use ibc/utils/validator_utils
 
@@ -20,6 +24,51 @@ pub fn burns_only(mint: Value, policy: PolicyId) -> Bool {
 
 pub fn burns_token(transaction: Transaction, token: AuthToken) -> Bool {
   assets.quantity_of(transaction.mint, token.policy_id, token.name) == -1
+}
+
+/// Client, connection and voucher lookup state remains necessary while a
+/// transfer claim is outstanding. The authenticated transfer root is retained
+/// as the global drainage witness until those dependencies have been reclaimed.
+pub fn transfer_is_drained(
+  transaction: Transaction,
+  host_policy: PolicyId,
+) -> Bool {
+  expect [host] =
+    list.filter(
+      transaction.reference_inputs,
+      fn(input) {
+        assets.has_nft(input.output.value, host_policy, host_state_token_name)
+      },
+    )
+  expect host_datum: HostStateDatum =
+    validator_utils.get_inline_datum(host.output)
+  expect Some(registration) =
+    pairs.get_first(host_datum.control.port_registry, "transfer")
+  expect [root] =
+    list.filter(
+      transaction.reference_inputs,
+      fn(input) {
+        auth.contain_auth_token(input.output, registration.module_token)
+      },
+    )
+  expect root_datum: TransferModuleDatum =
+    validator_utils.get_inline_datum(root.output)
+  and {
+    root_datum.escrow_shard_registry_root == empty_escrow_shard_registry_root,
+    root_datum.outstanding_voucher_obligation == 0,
+    assets.without_lovelace(root.output.value) == assets.merge(
+      assets.from_asset(
+        registration.port_token.policy_id,
+        registration.port_token.name,
+        1,
+      ),
+      assets.from_asset(
+        registration.module_token.policy_id,
+        registration.module_token.name,
+        1,
+      ),
+    ),
+  }
 }
 
 // Cleanup transactions consume one script address at a time. Sum its inputs
@@ -96,7 +145,7 @@ pub fn authority(
   expect host_datum.nft_policy == host_policy
   expect list.has(transaction.extra_signatories, host_datum.deployer)
   expect
-    validate_finalize_shutdown(
+    validate_shutdown_authority(
       host_datum,
       validator_utils.get_tx_valid_from(transaction.validity_range),
     )

@@ -819,6 +819,7 @@ fn begin_with_port_order(reordered: Bool) {
                   builtin.b_data(
                     #"0000000000000000000000000000000000000000000000000000000000000000",
                   ),
+                  builtin.i_data(0),
                 ],
               ),
             ),

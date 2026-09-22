@@ -1505,6 +1505,7 @@ async function findTransferEscrowShard(
       decodeTransferModuleDatum: (encodedDatum) =>
         context.lucidService.decodeDatum<{
           escrow_shard_registry_root: string;
+          outstanding_voucher_obligation: bigint;
         }>(encodedDatum, 'transferModule'),
     },
     channelId,

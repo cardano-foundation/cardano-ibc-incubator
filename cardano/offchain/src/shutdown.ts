@@ -8,7 +8,7 @@ import {
 import { DeploymentIbcTree } from "./deployment.ts";
 import type { DeploymentTemplate } from "./utils.ts";
 import { fromText } from "@lucid-evolution/lucid";
-import { HostStateDatum } from "../types/index.ts";
+import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
 
 type StateKind =
   | "channel"
@@ -263,6 +263,7 @@ export function buildReclaimStateTx(
   group: ShutdownStateGroup,
   walletAddress: string,
   validFrom: number,
+  transferRoot?: UTxO,
 ) {
   if (deployment.migration) {
     throw new Error(
@@ -283,7 +284,9 @@ export function buildReclaimStateTx(
   if (group.kind === "transfer") {
     for (const utxo of group.utxos) {
       if (
-        !utxo.datum || datumFields(Data.from(utxo.datum), 1)[0] !== EMPTY_ROOT
+        !utxo.datum ||
+        datumFields(Data.from(utxo.datum), 2)[0] !== EMPTY_ROOT ||
+        datumFields(Data.from(utxo.datum), 2)[1] !== 0n
       ) {
         throw new Error(
           "Reclaim empty escrow shards before the transfer module root",
@@ -304,6 +307,17 @@ export function buildReclaimStateTx(
   ) {
     throw new Error(`Unknown client validator for shutdown: ${clientTitle}`);
   }
+  const requiresDrainedTransfer = group.kind === "channel" ||
+    group.kind === "client" || group.kind === "connection" ||
+    group.kind === "trace" || group.kind === "metadata";
+  if (
+    requiresDrainedTransfer &&
+    transferRoot?.assets[deployment.modules.transfer.identifier] !== 1n
+  ) {
+    throw new Error(
+      "Dependency cleanup requires the retained transfer module root",
+    );
+  }
   const index: Record<StateKind, number> = {
     channel: 10,
     connection: 2,
@@ -315,7 +329,34 @@ export function buildReclaimStateTx(
     trace: 3,
     metadata: 0,
   };
-  const tx = lucid.newTx().readFrom([hostUtxo]);
+  const tx = lucid.newTx();
+  if (group.kind === "transfer") {
+    const portRegistry = new Map(host.control.port_registry);
+    if (!portRegistry.delete(fromText("transfer"))) {
+      throw new Error("Missing transfer module registration");
+    }
+    const authorizedHost: HostStateDatum = {
+      ...host,
+      state: { ...host.state, version: host.state.version + 1n },
+      control: { ...host.control, port_registry: portRegistry },
+    };
+    tx.readFrom([deployment.validators.hostStateStt.refUtxo])
+      .collectFrom(
+        [hostUtxo],
+        Data.to("AuthorizeFinalization", HostStateRedeemer, {
+          canonical: true,
+        }),
+      )
+      .pay.ToContract(hostUtxo.address, {
+        kind: "inline",
+        value: Data.to(authorizedHost, HostStateDatum, { canonical: true }),
+      }, hostUtxo.assets);
+  } else {
+    tx.readFrom([hostUtxo]);
+  }
+  if (requiresDrainedTransfer) {
+    tx.readFrom([transferRoot!]);
+  }
   if (group.validator.refUtxo) tx.readFrom([group.validator.refUtxo]);
   else {tx.attach.SpendingValidator({
       type: "PlutusV3",
@@ -375,10 +416,10 @@ export async function buildReclaimEscrowTx(
       tree.set(`escrowShards/${units[0].slice(56)}`, "01");
     }
   }
-  if (
-    !root.datum ||
-    datumFields(Data.from(root.datum), 1)[0] !== await tree.getRoot()
-  ) {
+  const rootFields = root.datum
+    ? datumFields(Data.from(root.datum), 2)
+    : undefined;
+  if (!rootFields || rootFields[0] !== await tree.getRoot()) {
     throw new Error(
       "Escrow shard inventory does not match the transfer module registry",
     );
@@ -399,7 +440,7 @@ export async function buildReclaimEscrowTx(
     .collectFrom([root, shard], redeemer)
     .pay.ToContract(root.address, {
       kind: "inline",
-      value: encode(record(await tree.getRoot())),
+      value: encode(record(await tree.getRoot(), rootFields[1])),
     }, root.assets);
   applyBurns(tx, burns, deployment, { [shardPolicy]: mintRedeemer });
   const recovery = deployment.validators.recoverClient;

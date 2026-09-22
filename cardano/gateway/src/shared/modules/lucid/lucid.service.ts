@@ -811,8 +811,9 @@ export class LucidService implements OnModuleInit {
             LucidData.Object({ UpdateChannel: UpdateChannelSchema }),
             LucidData.Object({ HandlePacket: HandlePacketSchema }),
             LucidData.Object({ EnterShutdown: EnterShutdownSchema }),
-            LucidData.Literal('FinalizeShutdown'),
-            LucidData.Literal('Heartbeat'),
+            LucidData.Literal("FinalizeShutdown"),
+            LucidData.Literal("Heartbeat"),
+            LucidData.Literal("AuthorizeFinalization"),
           ]);
           return LucidData.to(data as any, HostStateRedeemerSchema as any, {
             canonical: true,
@@ -1473,6 +1474,30 @@ export class LucidService implements OnModuleInit {
     return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
   }
 
+  private payVoucherObligationDelta(
+    tx: TxBuilder,
+    moduleUtxo: UTxO,
+    delta: bigint,
+  ): TxBuilder {
+    if (!moduleUtxo.datum) {
+      throw new GrpcInternalException("Transfer module datum is required");
+    }
+    const datum = decodeTransferModuleDatum(moduleUtxo.datum, this.LucidImporter);
+    const obligation = datum.outstanding_voucher_obligation + delta;
+    if (obligation < 0n) {
+      throw new GrpcInternalException("Voucher obligation cannot be negative");
+    }
+    return this.payModuleUtxo(
+      tx,
+      "transfer",
+      moduleUtxo,
+      encodeTransferModuleDatum(
+        { ...datum, outstanding_voucher_obligation: obligation },
+        this.LucidImporter,
+      ),
+    );
+  }
+
   private requireTransferEscrowDatum(encodedTransferEscrowDatum?: string): string {
     if (!encodedTransferEscrowDatum) {
       throw new GrpcInternalException('Transfer escrow datum is required for sharded escrow updates');
@@ -2084,7 +2109,11 @@ export class LucidService implements OnModuleInit {
         dto.encodedVerifyProofRedeemer,
       );
 
-    this.payModuleUtxo(tx, 'transfer', dto.transferModuleUtxo);
+    this.payVoucherObligationDelta(
+      tx,
+      dto.transferModuleUtxo,
+      dto.transferAmount,
+    );
 
     if (isFirstSeenVoucher) {
       if (!dto.voucherMetadataAddress || !dto.encodedVoucherMetadataDatum || !dto.voucherReferenceTokenUnit) {
@@ -2173,7 +2202,15 @@ export class LucidService implements OnModuleInit {
         dto.encodedVerifyProofRedeemer,
       );
 
-    this.payModuleUtxo(tx, 'transfer', dto.transferModuleReferenceUtxo);
+    if (dto.voucherObligationDelta !== undefined) {
+      this.payVoucherObligationDelta(
+        tx,
+        dto.transferModuleReferenceUtxo,
+        dto.voucherObligationDelta,
+      );
+    } else {
+      this.payModuleUtxo(tx, "transfer", dto.transferModuleReferenceUtxo);
+    }
 
     return tx;
   }
