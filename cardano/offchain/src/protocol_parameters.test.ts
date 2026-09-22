@@ -1,10 +1,100 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
+  Lucid,
   SLOT_CONFIG_NETWORK,
   slotToUnixTime,
   unixTimeToSlot,
 } from "@lucid-evolution/lucid";
-import { customOperationalSlotConfig } from "./protocol_parameters.ts";
+import { Emulator } from "@lucid-evolution/provider";
+import protocolProfile from "./testing/protocol-10-local-cost-profile.json" with {
+  type: "json",
+};
+import {
+  customOperationalSlotConfig,
+  queryProtocolParametersCompat,
+  sanitizeProtocolParameters,
+} from "./protocol_parameters.ts";
+
+Deno.test("Ogmios cost models remain arrays through real Lucid initialization", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          result: {
+            minFeeCoefficient: protocolProfile.txFeePerByte,
+            minFeeConstant: {
+              ada: { lovelace: protocolProfile.txFeeFixed },
+            },
+            maxTransactionSize: { bytes: protocolProfile.maxTxSize },
+            maxValueSize: { bytes: protocolProfile.maxValueSize },
+            stakeCredentialDeposit: {
+              ada: { lovelace: protocolProfile.stakeAddressDeposit },
+            },
+            stakePoolDeposit: {
+              ada: { lovelace: protocolProfile.stakePoolDeposit },
+            },
+            delegateRepresentativeDeposit: {
+              ada: { lovelace: protocolProfile.dRepDeposit },
+            },
+            governanceActionDeposit: {
+              ada: { lovelace: protocolProfile.govActionDeposit },
+            },
+            scriptExecutionPrices: {
+              memory: "577/10000",
+              cpu: "721/10000000",
+            },
+            maxExecutionUnitsPerTransaction: {
+              memory: protocolProfile.maxTxExecutionUnits.memory,
+              cpu: protocolProfile.maxTxExecutionUnits.steps,
+            },
+            utxoCostPerByte: protocolProfile.utxoCostPerByte,
+            collateralPercentage: protocolProfile.collateralPercentage,
+            maxCollateralInputs: protocolProfile.maxCollateralInputs,
+            minFeeReferenceScripts: {
+              base: protocolProfile.minFeeRefScriptCostPerByte,
+            },
+            plutusCostModels: {
+              "plutus:v1": protocolProfile.costModels.PlutusV1,
+              "plutus:v2": protocolProfile.costModels.PlutusV2,
+              "plutus:v3": protocolProfile.costModels.PlutusV3,
+            },
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+  try {
+    const normalized = sanitizeProtocolParameters(
+      await queryProtocolParametersCompat("http://ogmios.invalid"),
+    );
+    assert(Array.isArray(normalized.costModels.PlutusV1));
+    assert(Array.isArray(normalized.costModels.PlutusV2));
+    assert(Array.isArray(normalized.costModels.PlutusV3));
+    assertEquals(
+      normalized.costModels.PlutusV3,
+      protocolProfile.costModels.PlutusV3,
+    );
+
+    const emulator = new Emulator([], normalized);
+    const lucid = await Lucid(emulator, "Custom", {
+      presetProtocolParameters: normalized,
+      slotConfig: { zeroTime: 0, zeroSlot: 0, slotLength: 1000 },
+    });
+    assertEquals(
+      lucid.config().protocolParameters?.costModels.PlutusV3,
+      protocolProfile.costModels.PlutusV3,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 Deno.test("Custom operational clock uses actual nonzero slot length and leaves public networks unchanged", () => {
   const start = Date.parse("2025-12-30T02:00:00Z");

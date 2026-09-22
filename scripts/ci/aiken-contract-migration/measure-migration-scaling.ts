@@ -27,8 +27,8 @@ function costModel(version: "PlutusV1" | "PlutusV2" | "PlutusV3") {
   ) {
     throw new Error(`Missing or invalid ${version} cost model`);
   }
-  return Object.fromEntries(costs.map((cost, index) => {
-    if (Number.isSafeInteger(cost)) return [String(index), cost];
+  return costs.map((cost, index) => {
+    if (Number.isSafeInteger(cost)) return cost;
     if (version === "PlutusV3") {
       throw new Error(
         "Cannot measure with an inexact active PlutusV3 cost model",
@@ -37,8 +37,8 @@ function costModel(version: "PlutusV1" | "PlutusV2" | "PlutusV3") {
     // Lucid requires safe JS integers even for unused language models. These
     // fixtures execute only V3; retain a visible record of inactive sentinels.
     inactiveModelAdjustments.push({ version, index });
-    return [String(index), Math.sign(cost) * Number.MAX_SAFE_INTEGER];
-  }));
+    return Math.sign(cost) * Number.MAX_SAFE_INTEGER;
+  });
 }
 if (
   p.protocolVersion?.major !== 10 || !Array.isArray(p.costModels?.PlutusV3) ||
