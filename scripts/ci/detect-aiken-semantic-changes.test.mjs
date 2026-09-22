@@ -17,7 +17,13 @@ test('scopes edits to existing workflow jobs and falls back for shared changes',
     '      - name: Check gateway collateral',
   );
   assert.notEqual(gatewayEdit, source);
-  assert.deepEqual(classifyCiWorkflowChange(source, gatewayEdit), { relevant: false, fuzz: false });
+  // The Gateway job now runs migration evidence checks, so edits must fail closed.
+  assert.deepEqual(classifyCiWorkflowChange(source, gatewayEdit), { relevant: true, fuzz: true });
+  const isolatedGateway = 'name: CI\njobs:\n  gateway:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+  assert.deepEqual(
+    classifyCiWorkflowChange(isolatedGateway, isolatedGateway.replace('npm test', 'npm run build')),
+    { relevant: false, fuzz: false },
+  );
 
   const budgetEdit = source.replace('      - name: Collect Aiken execution units', '      - name: Collect budget units');
   assert.notEqual(budgetEdit, source);
