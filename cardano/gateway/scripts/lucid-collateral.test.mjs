@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import * as esm from '@lucid-evolution/lucid';
+import * as scalusEsm from '@lucid-evolution/scalus-uplc';
 
 const require = createRequire(import.meta.url);
 const constant = readFileSync(new URL('../src/config/constant.config.ts', import.meta.url), 'utf8');
@@ -13,8 +14,12 @@ function references(inputs) {
   return Array.from({ length: inputs.len() }, (_, index) => inputs.get(index).to_cbor_hex());
 }
 
-for (const [format, lucidModule] of [['ESM', esm], ['CommonJS', require('@lucid-evolution/lucid')]]) {
+for (const [format, lucidModule, evaluatorModule] of [
+  ['ESM', esm, scalusEsm],
+  ['CommonJS', require('@lucid-evolution/lucid'), require('@lucid-evolution/scalus-uplc')],
+]) {
   const { Lucid, Emulator, generateEmulatorAccount, Data, mintingPolicyToId } = lucidModule;
+  const { createScalusEvaluator } = evaluatorModule;
   async function setup(count, expensive = false, highFee = false) {
     const account = generateEmulatorAccount({ lovelace: 750_000_000n });
     const emulator = new Emulator(Array.from({ length: count }, () => account));
@@ -30,7 +35,9 @@ for (const [format, lucidModule] of [['ESM', esm], ['CommonJS', require('@lucid-
         ex_units: { mem: 10_000_000, steps: 5_000_000_000 },
       }];
     }
-    const lucid = await Lucid(emulator, 'Custom');
+    const lucid = await Lucid(emulator, 'Custom', {
+      evaluator: createScalusEvaluator({ protocolMajorVersion: 10 }),
+    });
     lucid.selectWallet.fromSeed(account.seedPhrase);
     const unit = mintingPolicyToId(policy) + '01';
     const tx = lucid.newTx().mintAssets({ [unit]: 1n }, Data.void())

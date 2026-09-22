@@ -3,10 +3,7 @@
   "engines": {
     "deno": ">=2.7.0"
   },
-  "overrides": {
-    "@lucid-evolution/uplc": "0.2.23"
-  },
   "dependencies": {
-    "@lucid-evolution/uplc": "0.2.23"
+    "@lucid-evolution/scalus-uplc": "0.1.4"
   }
 }

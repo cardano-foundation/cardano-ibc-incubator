@@ -914,10 +914,13 @@ async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, 
     // Do not retry with operator-supplied UTxOs or a local evaluator on failure.
     provider.evaluateTx = (transaction) => evaluateOnLedger(transaction);
     const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => queryProtocolParametersCompat(ogmiosEndpoint, headers?.ogmiosHeader, fetchImpl))));
+    const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader));
     const lucid = await timed(logger, '[context]', 'create lucid runtime', () => Lucid.Lucid(provider, cardanoNetwork, {
         presetProtocolParameters: protocolParameters,
+        slotConfig: cardanoNetwork === 'Custom'
+            ? { zeroTime: chainZeroTime, zeroSlot: 0, slotLength: 1000 }
+            : undefined,
     }));
-    const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader));
     const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork];
     if (!slotConfig) {
         throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);

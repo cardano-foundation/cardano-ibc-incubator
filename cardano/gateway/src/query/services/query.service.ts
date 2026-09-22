@@ -687,7 +687,7 @@ export class QueryService {
     // For subsequent updates, the counterparty does not "trust the Gateway's root":
     // it authenticates the root per-height via `queryIBCHeader()` evidence
     // (Mithril-certified transaction inclusion + HostState output datum extraction).
-    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT(0n);
     if (!hostStateUtxo?.datum) {
       throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
     }
@@ -895,7 +895,7 @@ export class QueryService {
   }
 
   private async getHostStateDatum(): Promise<HostStateDatum> {
-    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT(0n);
     if (!hostStateUtxo?.datum) {
       throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
     }

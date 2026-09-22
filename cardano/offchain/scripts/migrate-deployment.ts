@@ -215,7 +215,7 @@ export async function main(args = Deno.args) {
         fee: signed.toTransaction().body().fee(),
       }),
     );
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
   };
   if (command === "inspect") {
     console.log(canonicalMigrationJson({

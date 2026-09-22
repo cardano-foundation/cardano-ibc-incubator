@@ -70,7 +70,7 @@ export class TreeInitService implements OnModuleInit {
       const manifest = this.config?.get<BridgeManifest>('bridgeManifest');
       if (manifest && (manifest.history || [1, 2, 764824073].includes(manifest.cardano.network_magic))) {
         if (!this.historyDb) throw new HistoryConfigurationError('Yaci database is required for manifest history verification');
-        const liveHost = await this.lucidService.findUtxoAtHostStateNFT();
+        const liveHost = await this.lucidService.findUtxoAtHostStateNFT(0n);
         await this.historyDb.transaction('REPEATABLE READ', async (manager) => {
           await manager.query('SET TRANSACTION READ ONLY');
           await manager.query('SET LOCAL statement_timeout = 30000');
@@ -84,7 +84,7 @@ export class TreeInitService implements OnModuleInit {
         const cached = await this.ibcTreeCacheService.load(CURRENT_IBC_TREE_CACHE_ID);
         if (cached) {
           // Verify cached root against the authoritative on-chain HostState commitment.
-          const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+          const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT(0n);
           if (!hostStateUtxo?.datum) {
             throw new Error('HostState UTXO has no datum - cannot verify cached tree');
           }

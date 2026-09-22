@@ -72,7 +72,7 @@ export async function runOperatorPopulation(
     const signed = await completed.sign.withWallet().complete();
     await signed.submit();
     emulator.awaitBlock();
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
     return signed.toCBOR().length / 2;
   };
   const timing = () => ({
@@ -88,7 +88,7 @@ export async function runOperatorPopulation(
     // seeded, not claimed as execution of its ordinary channel/packet cause.
     delete emulator.ledger[current.txHash + current.outputIndex];
     f.seed(current.address, current.assets, current.datum!);
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
   };
   if (rootTurnover) await continueRoot();
   const authorized = await authorizeMigration(lucid, deployment, artifact, {

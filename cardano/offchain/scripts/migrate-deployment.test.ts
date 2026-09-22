@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { Emulator } from "@lucid-evolution/provider";
 import { Lucid, walletFromSeed } from "@lucid-evolution/lucid";
+import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 import { migrationSubmitter } from "../src/migration-submission.ts";
 import { parseMigrationArgs } from "./migrate-deployment.ts";
 
@@ -52,7 +53,9 @@ Deno.test("durable submission recovers accepted transactions after RPC loss and 
     privateKey: "",
     assets: { lovelace: 100_000_000n },
   }]);
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(seed);
   const directory = await Deno.makeTempDir();
   let broadcasts = 0;
@@ -110,7 +113,9 @@ Deno.test("concurrent publication executors share the first complete signed jour
     privateKey: "",
     assets: { lovelace: 100_000_000n },
   }]);
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(seed);
   const directory = await Deno.makeTempDir();
   const first =
@@ -148,7 +153,9 @@ Deno.test("expired publication rebuilds lazily with the original input and rejec
     privateKey: "",
     assets: { lovelace: 100_000_000n },
   })));
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(seed);
   const [original, unrelated] = await lucid.wallet().getUtxos();
   const directory = await Deno.makeTempDir();
@@ -252,7 +259,9 @@ Deno.test("rollback reconciliation adopts an older canonical revision instead of
     privateKey: "",
     assets: { lovelace: 100_000_000n },
   }]);
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(seed);
   const [anchor] = await lucid.wallet().getUtxos();
   const directory = await Deno.makeTempDir();
@@ -326,7 +335,9 @@ Deno.test("concurrent expired-publication rebuilds adopt one immutable replaceme
     privateKey: "",
     assets: { lovelace: 100_000_000n },
   }]);
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(seed);
   const [anchor] = await lucid.wallet().getUtxos();
   const directory = await Deno.makeTempDir();

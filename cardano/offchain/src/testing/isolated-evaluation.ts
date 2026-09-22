@@ -2,6 +2,8 @@ import {
   CML,
   type EvalRedeemer,
   type LucidEvolution,
+  type Network,
+  type ProtocolParameters,
   type Provider,
   SLOT_CONFIG_NETWORK,
   type SlotConfig,
@@ -13,9 +15,9 @@ import type { Emulator } from "@lucid-evolution/provider";
 export interface EvaluationRequest {
   tx: string;
   utxos: UTxO[];
+  protocolParameters: ProtocolParameters;
   costModels: Uint8Array;
-  maxSteps: bigint;
-  maxMemory: bigint;
+  network: Network;
   slotConfig: SlotConfig;
 }
 
@@ -32,9 +34,6 @@ export function isolateEvaluation(lucid: LucidEvolution, emulator: Emulator) {
   ) {
     throw new Error("Isolated evaluation requires an initialized emulator");
   }
-  const costModels = config.costModels.to_cbor_bytes();
-  const { maxTxExSteps: maxSteps, maxTxExMem: maxMemory } =
-    config.protocolParameters;
   const slotConfig = SLOT_CONFIG_NETWORK[config.network];
   emulator.evaluateTx = async (tx, additional = []) => {
     const body = CML.Transaction.from_cbor_hex(tx).body();
@@ -83,9 +82,9 @@ export function isolateEvaluation(lucid: LucidEvolution, emulator: Emulator) {
           {
             tx,
             utxos,
-            costModels,
-            maxSteps,
-            maxMemory,
+            protocolParameters: config.protocolParameters!,
+            costModels: config.costModels!.to_cbor_bytes(),
+            network: config.network!,
             slotConfig,
           } satisfies EvaluationRequest,
         );

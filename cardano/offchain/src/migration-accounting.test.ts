@@ -287,7 +287,7 @@ Deno.test("seeded compiled partial migration preserves all obligations, rejects 
         ? ["shard1", "channel", "root", "shard0"]
         : ["root", "shard0", "shard1", "channel"];
       for (const objectName of order) {
-        f.lucid.overrideUTxOs([]);
+        f.lucid.clearUTxOOverride();
         const shard = objectName.startsWith("shard")
           ? f.shards[Number(objectName.slice(-1))]
           : undefined;
@@ -395,7 +395,7 @@ Deno.test("seeded compiled partial migration preserves all obligations, rejects 
           );
         }
       }
-      f.lucid.overrideUTxOs([]);
+      f.lucid.clearUTxOOverride();
       const activation = await f.build(f.host, f.successorHostReference, {
         Activate: {
           port_siblings: await f.ibcTree.getSiblings("ports/transfer"),

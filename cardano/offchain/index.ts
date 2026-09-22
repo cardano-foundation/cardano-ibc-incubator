@@ -1,6 +1,7 @@
 import { deploymentOptionsFromEnvironment } from "./src/deployment-mode.ts";
 const deploymentOptions = await deploymentOptionsFromEnvironment();
 import { toOgmiosScript } from "./src/ogmios-script.ts";
+import { createCardanoScalusEvaluator } from "./src/scalus-evaluator.ts";
 import {
   installManagedCardanoAuthFetch,
   resolveManagedKupmiosHeaders,
@@ -529,12 +530,16 @@ try {
     );
   }
   const cardanoNetwork = parseNetwork(cardanoNetworkMagic);
-  SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
+  const slotConfig = cardanoNetwork === "Custom"
+    ? { zeroTime: chainZeroTime, zeroSlot: 0, slotLength: 1000 }
+    : SLOT_CONFIG_NETWORK[cardanoNetwork];
   const lucid = await Lucid(
     provider,
     cardanoNetwork,
     {
       presetProtocolParameters: protocolParameters,
+      evaluator: createCardanoScalusEvaluator(),
+      slotConfig,
     } as any,
   );
 

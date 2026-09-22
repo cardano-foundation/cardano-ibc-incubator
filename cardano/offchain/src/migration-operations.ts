@@ -111,7 +111,7 @@ export async function publishMigration(
       });
       continue;
     }
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
     const scripts = [validator.script];
     const { totalOutputAssets } = await buildReferenceBatchTx(
       lucid,
@@ -121,7 +121,7 @@ export async function publishMigration(
     const fundingAmount = totalOutputAssets.lovelace + 1_500_000n;
     const fundingHash = await submit({
       build: async (anchor) => {
-        lucid.overrideUTxOs([]);
+        lucid.clearUTxOOverride();
         let tx = lucid.newTx().validTo((await timing()).validTo);
         if (anchor) tx = tx.collectFrom([anchor]);
         return await (await tx.pay.ToAddress(wallet, {
@@ -129,7 +129,7 @@ export async function publishMigration(
         }).complete()).sign.withWallet().complete();
       },
     }, `funding-${deployment.migration!.registryUnit}-${validator.hash}`);
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
     const dedicated = (await lucid.utxosAt(wallet)).find((entry) =>
       entry.txHash === fundingHash && entry.assets.lovelace === fundingAmount
     );
@@ -146,7 +146,7 @@ export async function publishMigration(
           if (!anchor) {
             throw new Error("Publication requires its original funding input");
           }
-          lucid.overrideUTxOs([]);
+          lucid.clearUTxOOverride();
           const { signedTx } = await completeReferenceBatchTx(
             lucid,
             holder,
@@ -179,7 +179,7 @@ export async function publishMigration(
       deposit: totalOutputAssets.lovelace.toString(),
     });
   }
-  lucid.overrideUTxOs([]);
+  lucid.clearUTxOOverride();
 }
 
 /** Construct a replacement operational manifest only after checking canonical

@@ -1508,7 +1508,7 @@ async function createReferenceUtxos(
       // Clear Lucid's override before querying the provider, then merge provider
       // state with locally chained change outputs. This preserves unselected wallet
       // UTxOs without allowing stale Kupo responses to reuse known-spent inputs.
-      lucid.overrideUTxOs([]);
+      lucid.clearUTxOOverride();
       let liveWalletUtxos: UTxO[] = [];
       try {
         liveWalletUtxos = await getLiveWalletUtxos(lucid);

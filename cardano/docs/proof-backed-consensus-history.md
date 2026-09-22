@@ -34,7 +34,7 @@ The signed emulator tests exercise production creation, updates, freezing, recov
 
 Gateway PostgreSQL integration tests reconstruct earlier public roots from raw Yaci-shaped fixtures, including retained consensus leaves, packet pruning, same-block spends, future updates, failed/orphaned transactions, pagination and incomplete history. Proof-query tests cover cache reuse, root verification, rollback rejection and isolation from the live tree. These tests run with `BRIDGE_HISTORY_TEST_DATABASE_URL` set to an isolated PostgreSQL test database, as in CI; they do not replace live recovery validation.
 
-Use Node 22.13 or later and Deno 2.9.6, matching CI. The pinned `@lucid-evolution/uplc` evaluator fixes equality and serialization bugs in older emulator versions. From the repository root:
+Use Node 22.13 or later and Deno 2.9.6, matching CI. The off-chain test harness uses the pinned `@lucid-evolution/scalus-uplc` adapter with protocol 10 selected explicitly. From the repository root:
 
 ```sh
 cd cardano/onchain

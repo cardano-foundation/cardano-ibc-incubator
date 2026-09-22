@@ -114,7 +114,7 @@ export declare class LucidIbcAdapter {
         maxAttempts?: number;
         retryDelayMs?: number;
     }): Promise<UTxO[]>;
-    findUtxoAtHostStateNFT(): Promise<UTxO>;
+    findUtxoAtHostStateNFT(restriction?: bigint): Promise<UTxO>;
     credentialToAddress(address: string): string;
     decodeDatum<T>(encodedDatum: string, type: CodecType): Promise<T>;
     encode<T>(data: T, type: CodecType): Promise<string>;

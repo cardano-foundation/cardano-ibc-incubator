@@ -6,6 +6,7 @@ import {
 } from "@lucid-evolution/lucid";
 import { querySystemStart } from "./utils.ts";
 import { queryOgmiosJsonRpc } from "./external_cardano.ts";
+import { createCardanoScalusEvaluator } from "./scalus-evaluator.ts";
 
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 
@@ -245,6 +246,8 @@ export async function buildLucidWithCompatibleProtocolParameters(
     network,
     {
       presetProtocolParameters: protocolParameters,
+      evaluator: createCardanoScalusEvaluator(),
+      slotConfig: SLOT_CONFIG_NETWORK[network],
     } as any,
   );
 }

@@ -1229,8 +1229,8 @@ export class LucidIbcAdapter {
     return [];
   }
 
-  public async findUtxoAtHostStateNFT(): Promise<UTxO> {
-    await migrationReference(this.lucid, this.deployment);
+  public async findUtxoAtHostStateNFT(restriction = 1n): Promise<UTxO> {
+    await migrationReference(this.lucid, this.deployment, false, restriction);
     const address = this.deployment.validators.hostStateStt.address ?? '';
     const hostStateNFT = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
     const utxos = await this.lucid.utxosAt(address);

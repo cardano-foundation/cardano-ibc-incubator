@@ -19,7 +19,6 @@ ENV NODE_PATH=/usr/src/app/node_modules
 
 # Bundle app source
 COPY ${MAIN_CONTEXT} .
-COPY ./cardano/vendor/uplc /usr/src/vendor/uplc
 COPY ./packages /usr/packages
 COPY --from=protos /usr/src/proto-types /usr/proto-types
 COPY ./manifests /usr/src/app/manifests

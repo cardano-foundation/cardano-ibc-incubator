@@ -4,6 +4,7 @@ import {
   resolveManagedKupoUrl,
   resolveManagedOgmiosUrl,
 } from "../src/http_auth.ts";
+import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 const {
   parseNetwork,
   queryProtocolParametersCompat,
@@ -43,12 +44,17 @@ const provider = new Kupmios(
     ogmiosApiKey,
   ),
 );
-SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+const network = parseNetwork(cardanoNetworkMagic);
+const slotConfig = network === "Custom"
+  ? { zeroTime: chainZeroTime, zeroSlot: 0, slotLength: 1000 }
+  : SLOT_CONFIG_NETWORK[network];
 const lucid = await Lucid(
   provider,
-  parseNetwork(cardanoNetworkMagic),
+  network,
   {
     presetProtocolParameters: protocolParameters,
+    evaluator: createCardanoScalusEvaluator(),
+    slotConfig,
   } as any,
 );
 lucid.selectWallet.fromPrivateKey(deployerSk);

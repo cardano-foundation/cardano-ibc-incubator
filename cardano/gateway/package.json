@@ -50,7 +50,8 @@
     "@harmoniclabs/pair": "^1.0.0",
     "@harmoniclabs/plutus-data": "^1.2.4",
     "@harmoniclabs/uint8array-utils": "1.0.4",
-    "@lucid-evolution/lucid": "0.4.34",
+    "@lucid-evolution/lucid": "0.6.5",
+    "@lucid-evolution/scalus-uplc": "0.1.4",
     "@nestjs/axios": "^4.0.0",
     "@nestjs/common": "^11.1.29",
     "@nestjs/config": "^4.0.2",
@@ -81,8 +82,7 @@
     "rxjs": "^7.8.2",
     "sqlite3": "^6.0.1",
     "typeorm": "^0.3.31",
-    "ws": "^8.18.2",
-    "@lucid-evolution/uplc": "file:../vendor/uplc"
+    "ws": "^8.18.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
@@ -170,7 +170,6 @@
     }
   },
   "overrides": {
-    "@lucid-evolution/uplc": "$@lucid-evolution/uplc",
     "@nestjs/swagger": {
       "js-yaml": "5.2.2"
     },

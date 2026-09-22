@@ -89,15 +89,16 @@ describe('proof-context stability acceptance', () => {
       debug: jest.fn(),
       warn: jest.fn(),
     } as unknown as Logger;
+    const findUtxoAtHostStateNFT = jest.fn().mockResolvedValue({
+      txHash: 'live-host-state-tx',
+      outputIndex: 0,
+    });
 
     await expect(
       resolveProofHeightForCurrentRoot({
         logger,
         lucidService: {
-          findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({
-            txHash: 'live-host-state-tx',
-            outputIndex: 0,
-          }),
+          findUtxoAtHostStateNFT,
         } as any,
         mithrilService: {} as any,
         historyService: {
@@ -135,6 +136,7 @@ describe('proof-context stability acceptance', () => {
         delayMs: 0,
       }),
     ).rejects.toThrow(/stability|accepted/i);
+    expect(findUtxoAtHostStateNFT).toHaveBeenCalledWith(0n);
   });
 });
 

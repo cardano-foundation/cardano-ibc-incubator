@@ -14,6 +14,10 @@ import {
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
+import {
+  createCardanoScalusEvaluator,
+  customEmulatorSlotConfig,
+} from "./scalus-evaluator.ts";
 import { type DeploymentPlan, loadDeploymentPlan } from "./deployment-plan.ts";
 import {
   loadSuccessorImplementation,
@@ -74,7 +78,10 @@ async function fixture() {
     { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: 16_384 },
   );
   emulator.time = START;
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+    slotConfig: customEmulatorSlotConfig(emulator),
+  });
   lucid.selectWallet.fromSeed(SEED);
   const utxos = await lucid.wallet().getUtxos();
   const authority = getAddressDetails(address).paymentCredential!.hash;
@@ -138,7 +145,7 @@ async function deployedRegistry() {
   const signed = await mint.sign.withWallet().complete();
   await signed.submit();
   emulator.awaitBlock();
-  lucid.overrideUTxOs([]);
+  lucid.clearUTxOOverride();
   // Publish separately, as the production deployment does; the enlarged kernel
   // and its minting policy cannot share one 16 KiB bootstrap transaction.
   const reference = await buildReferenceBatchTx(
@@ -148,7 +155,7 @@ async function deployedRegistry() {
   ).complete({ localUPLCEval: true });
   await (await reference.sign.withWallet().complete()).submit();
   emulator.awaitBlock();
-  lucid.overrideUTxOs([]);
+  lucid.clearUTxOOverride();
   const registry = await lucid.utxoByUnit(unit);
   const registryReference = (await lucid.utxosAt(plan.referenceHolder.address))
     .find((utxo) => utxo.scriptRef)!;
@@ -404,7 +411,10 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     emulator.awaitBlock();
     return hash;
   };
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+    slotConfig: customEmulatorSlotConfig(emulator),
+  });
   lucid.selectWallet.fromSeed(SEED);
   // The provider emulator estimates budgets without executing scripts. Require
   // actual UPLC evaluation for every bootstrap and migration transaction.
@@ -476,7 +486,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     throw new Error("Both rehearsal successor blueprints are required");
   }
   for (const generation of [2n, 3n]) {
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
     const releasePath = releasePaths[Number(generation - 2n)];
     const release = releasePath
       ? JSON.parse(await Deno.readTextFile(releasePath))
@@ -518,7 +528,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
         lovelace: totalOutputAssets.lovelace + 1_500_000n,
       }).complete()).sign.withWallet().complete();
       const hash = await funding.submit();
-      lucid.overrideUTxOs([]);
+      lucid.clearUTxOOverride();
       const dedicated = (await lucid.wallet().getUtxos()).find((utxo) =>
         utxo.txHash === hash &&
         utxo.assets.lovelace === totalOutputAssets.lovelace + 1_500_000n
@@ -535,7 +545,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
         } signed publication bytes`,
       );
       await signedTx.submit();
-      lucid.overrideUTxOs([]);
+      lucid.clearUTxOOverride();
     }
     const approvalTiming = () => ({
       validFrom: emulator.now(),
@@ -554,7 +564,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     // version but not the reviewed identity, inventory or implementation epoch.
     await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
       .sign.withWallet().complete().then((tx) => tx.submit());
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
     assertNotEquals(
       (await lucid.utxoByUnit(hostUnit)).txHash,
       artifact.preparedHost.txHash,
@@ -619,7 +629,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     // Authorization construction/signing must not pin ordinary state either.
     await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
       .sign.withWallet().complete().then((tx) => tx.submit());
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
     await (await (await approved.tx.complete({ localUPLCEval: true })).sign
       .withWallet().complete()).submit();
     assert(await migrationReference(lucid, runtimeDeployment()));
@@ -631,11 +641,11 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     // The same intent survives turnover between authorization and Begin.
     await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
       .sign.withWallet().complete().then((tx) => tx.submit());
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
     emulator.awaitSlot(86_500);
     let steps = 0;
     while (true) {
-      lucid.overrideUTxOs([]);
+      lucid.clearUTxOOverride();
       const step = await nextMigrationStep(lucid, deployment, artifact, {
         validFrom: emulator.now(),
         validTo: emulator.now() + 60_000,
@@ -790,7 +800,7 @@ Deno.test("compiled registry executes immediate separate-authority restriction a
     if (extraKey) signed.sign.withPrivateKey(extraKey);
     await (await signed.complete()).submit();
     emulator.awaitBlock();
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
   };
   await assertRejects(
     () => build({ Restrict: { mask: 9n } }, [authority]),

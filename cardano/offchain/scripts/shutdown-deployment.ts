@@ -13,7 +13,6 @@ import {
   getAddressDetails,
   Kupmios,
   type LucidEvolution,
-  slotToUnixTime,
   type UTxO,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
@@ -66,7 +65,10 @@ const TX_VALIDITY_WINDOW_MS = 10 * 60 * 1000;
 export const MIN_SHUTDOWN_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
 
 export function shutdownTiming(
-  lucid: Pick<LucidEvolution, "config" | "unixTimeToSlot">,
+  lucid: Pick<
+    LucidEvolution,
+    "config" | "unixTimeToSlot" | "slotToUnixTime"
+  >,
   grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
   now = Date.now(),
 ) {
@@ -79,9 +81,8 @@ export function shutdownTiming(
   if (!network) {
     throw new Error("Shutdown requires a configured Cardano network");
   }
-  const validFrom = slotToUnixTime(network, lucid.unixTimeToSlot(now));
-  const validTo = slotToUnixTime(
-    network,
+  const validFrom = lucid.slotToUnixTime(lucid.unixTimeToSlot(now));
+  const validTo = lucid.slotToUnixTime(
     lucid.unixTimeToSlot(now + TX_VALIDITY_WINDOW_MS),
   );
   const gracePeriodEnd = grace.gracePeriodEnd ?? validTo + grace.gracePeriodMs!;

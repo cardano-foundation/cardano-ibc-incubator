@@ -15,6 +15,10 @@ import {
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
+import {
+  createCardanoScalusEvaluator,
+  customEmulatorSlotConfig,
+} from "../scalus-evaluator.ts";
 import { loadDeploymentPlan } from "../deployment-plan.ts";
 import { DeploymentIbcTree } from "../deployment.ts";
 import { loadSuccessorImplementation } from "../migration-plan.ts";
@@ -264,7 +268,10 @@ export async function accountingFixture(seedNumber = 462, options: {
   emulator.evaluateTx = () => {
     throw new Error("local UPLC evaluation required");
   };
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+    slotConfig: customEmulatorSlotConfig(emulator),
+  });
   lucid.selectWallet.fromSeed(SEED);
   const funds = await lucid.wallet().getUtxos();
   const outref = (n: number) => ({

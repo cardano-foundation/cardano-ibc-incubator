@@ -90,7 +90,7 @@ export async function resolveCurrentLiveHostStateTxHeight({
   lucidService,
   historyService,
 }: Pick<ProofContextDeps, "lucidService" | "historyService">): Promise<bigint> {
-  const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+  const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT(0n);
   const txEvidence = await historyService.findTransactionEvidenceByHash(
     liveHostStateUtxo.txHash,
   );
@@ -266,7 +266,7 @@ async function resolveCertifiedProofHeightForCurrentRoot({
 }: ProofContextDeps): Promise<bigint> {
   let captured = targetSnapshot;
   if (!captured) {
-    const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+    const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT(0n);
     if (!liveHostStateUtxo?.datum) {
       throw new GrpcInternalException("IBC infrastructure error: HostState UTxO missing datum");
     }
@@ -331,7 +331,7 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
 }: Omit<ProofContextDeps, "mithrilService" | "lightClientMode">): Promise<
   { proofHeight: bigint; anchorBlockHash: string }
 > {
-  const liveHostStateUtxo = targetSnapshot?.hostState ?? await lucidService.findUtxoAtHostStateNFT();
+  const liveHostStateUtxo = targetSnapshot?.hostState ?? await lucidService.findUtxoAtHostStateNFT(0n);
 
   let lastStabilityError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {

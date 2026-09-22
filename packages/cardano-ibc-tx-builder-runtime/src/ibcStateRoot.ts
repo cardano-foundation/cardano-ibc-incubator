@@ -42,7 +42,7 @@ export interface IbcTreeKupoService {
 export interface IbcTreeLucidService {
   readonly LucidImporter: typeof import('@lucid-evolution/lucid');
   consensusHistoryRecords?(client: IbcTreeUtxo): Promise<Array<{ datum: ConsensusStateDatumLike; consensusValue: string; archived: boolean }>>;
-  findUtxoAtHostStateNFT(): Promise<IbcTreeUtxo | undefined>;
+  findUtxoAtHostStateNFT(restriction?: bigint): Promise<IbcTreeUtxo | undefined>;
   decodeDatum<T>(
     encodedDatum: string,
     type: 'host_state' | 'client' | 'consensus_state' | 'connection' | 'channel',
@@ -375,7 +375,9 @@ export class IbcTreeStateStore {
     hostState: IbcTreeHostStateRef;
     datum: HostStateDatumLike;
   }> {
-    const utxo = await this.lucidService.findUtxoAtHostStateNFT();
+    // Tree alignment authenticates the live deployment but does not authorize an
+    // operation. The caller applies its traffic, client, or heartbeat restriction.
+    const utxo = await this.lucidService.findUtxoAtHostStateNFT(0n);
     if (!utxo?.datum) throw new Error('HostState UTXO has no datum');
     const hostState = this.copyHostState(utxo);
     const datum = await this.lucidService.decodeDatum<HostStateDatumLike>(utxo.datum, 'host_state');

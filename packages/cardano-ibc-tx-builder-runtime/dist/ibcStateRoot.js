@@ -200,7 +200,9 @@ class IbcTreeStateStore {
         return Object.freeze({ root: tree.getRoot(), hostState: this.copyHostState(hostState), tree: tree.clone() });
     }
     async readLiveHostState() {
-        const utxo = await this.lucidService.findUtxoAtHostStateNFT();
+        // Tree alignment authenticates the live deployment but does not authorize an
+        // operation. The caller applies its traffic, client, or heartbeat restriction.
+        const utxo = await this.lucidService.findUtxoAtHostStateNFT(0n);
         if (!utxo?.datum)
             throw new Error('HostState UTXO has no datum');
         const hostState = this.copyHostState(utxo);

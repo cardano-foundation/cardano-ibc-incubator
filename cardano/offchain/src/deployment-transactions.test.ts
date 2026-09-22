@@ -11,6 +11,7 @@ import {
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
+import { createCardanoScalusEvaluator } from "./scalus-evaluator.ts";
 import { HostStateDatum, HostStateNftRedeemer } from "../types/index.ts";
 import { loadDeploymentPlan } from "./deployment-plan.ts";
 import {
@@ -47,7 +48,9 @@ async function deploymentFixture(benchmarkVoucherEnabled = true) {
     { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: MAX_TX_SIZE },
   );
   emulator.time = TEST_TIME;
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(TEST_SEED);
   const walletUtxos = await lucid.wallet().getUtxos();
   const nonceUtxo = walletUtxos.find(({ outputIndex }) => outputIndex === 2)!;

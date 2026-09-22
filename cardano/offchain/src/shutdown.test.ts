@@ -30,6 +30,7 @@ import {
   scanDeploymentState,
 } from "./shutdown.ts";
 import { buildReclaimRecoveryStakeTx } from "../scripts/shutdown-deployment.ts";
+import { createCardanoScalusEvaluator } from "./scalus-evaluator.ts";
 
 const record = (...fields: Data[]) => new Constr(0, fields);
 const encode = (data: Data) => Data.to(data);
@@ -43,7 +44,9 @@ async function fixture(
   const account = generateEmulatorAccount({ lovelace: 10_000_000_000n });
   const referenceAccount = generateEmulatorAccount({});
   const emulator = new Emulator([account]);
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(account.seedPhrase);
   const deployer = getAddressDetails(account.address).paymentCredential!.hash;
   const hostPolicy = hash("44");

@@ -91,6 +91,9 @@ export async function completeReferenceBatchTx(
 ) {
   const txBuilder = buildReferenceBatchTx(lucid, referenceAddress, validators);
   if (validTo !== undefined) txBuilder.validTo(validTo);
+  const availableWalletInputs = dedicatedFunding
+    ? [dedicatedFunding]
+    : await lucid.wallet().getUtxos();
   const [walletUTxOs, outputs, txSignBuilder] = await txBuilder.chain(
     dedicatedFunding
       ? {
@@ -99,10 +102,18 @@ export async function completeReferenceBatchTx(
       }
       : undefined,
   );
-  const consumedWalletInputs = (txBuilder as unknown as {
-    rawConfig: () => { consumedInputs?: UTxO[] };
-  }).rawConfig().consumedInputs ?? [];
   const signedTx = await txSignBuilder.sign.withWallet().complete();
+  const inputs = signedTx.toTransaction().body().inputs();
+  const consumedReferences = new Set<string>();
+  for (let index = 0; index < inputs.len(); index += 1) {
+    const input = inputs.get(index);
+    consumedReferences.add(
+      `${input.transaction_id().to_hex()}#${Number(input.index())}`,
+    );
+  }
+  const consumedWalletInputs = availableWalletInputs.filter((utxo) =>
+    consumedReferences.has(`${utxo.txHash}#${utxo.outputIndex}`)
+  );
   return { walletUTxOs, outputs, signedTx, consumedWalletInputs };
 }
 

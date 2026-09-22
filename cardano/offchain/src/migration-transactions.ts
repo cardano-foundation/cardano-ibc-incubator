@@ -5,7 +5,6 @@ import {
   fromHex,
   fromText,
   type LucidEvolution,
-  slotToUnixTime,
   toHex,
   type UTxO,
   validatorToScriptHash,
@@ -127,8 +126,8 @@ export async function buildMigrationTransaction(
   // bounds validators receive, including networks whose slot origin is nonzero.
   inputs = {
     ...inputs,
-    validFrom: slotToUnixTime(network, lucid.unixTimeToSlot(inputs.validFrom)),
-    validTo: slotToUnixTime(network, lucid.unixTimeToSlot(inputs.validTo)),
+    validFrom: lucid.slotToUnixTime(lucid.unixTimeToSlot(inputs.validFrom)),
+    validTo: lucid.slotToUnixTime(lucid.unixTimeToSlot(inputs.validTo)),
   };
   const roleAddress = (implementation: Registry["current"], role: number) =>
     bech32Address(network, implementation.addresses[role]);

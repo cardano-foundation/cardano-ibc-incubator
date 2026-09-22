@@ -11,6 +11,7 @@ import {
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
+import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 import { type DeploymentTemplate, readValidator } from "../src/utils.ts";
 import { loadHostStateValidator } from "../src/deployment-plan.ts";
 import {
@@ -150,7 +151,9 @@ function testReclaimableReference(): UTxO {
 Deno.test("shutdown grace starts at the slot-aligned transaction expiry", async () => {
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account]);
-  const lucid = await Lucid(emulator, "Preprod");
+  const lucid = await Lucid(emulator, "Preprod", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(account.seedPhrase);
   const now = emulator.now() + 123;
   const timing = shutdownTiming(lucid, {
@@ -322,7 +325,9 @@ Deno.test("finalize shutdown rejects the wrong terminal reference script", () =>
 Deno.test("atomic finalization stays below the mainnet transaction size", async () => {
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account]);
-  const lucid = await Lucid(emulator, "Preprod");
+  const lucid = await Lucid(emulator, "Preprod", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(account.seedPhrase);
 
   const nonce = {
