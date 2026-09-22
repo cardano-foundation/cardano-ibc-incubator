@@ -11,7 +11,11 @@ import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
 import extended from "../scripts/fixtures/mainnet-protocol-parameters.json" with {
   type: "json",
 };
-import { createCardanoScalusEvaluator } from "./scalus-evaluator.ts";
+import {
+  createCardanoScalusEvaluator,
+  isScriptEvaluationFailure,
+  ScriptEvaluationFailure,
+} from "./scalus-evaluator.ts";
 import pv10 from "./testing/protocol-10-local-cost-profile.json" with {
   type: "json",
 };
@@ -64,6 +68,28 @@ function budget(
   const units = redeemers[0].ex_units;
   return { memory: BigInt(units.mem), cpu: BigInt(units.steps) };
 }
+
+Deno.test("script rejection detection does not accept unrelated errors", () => {
+  const failure = new ScriptEvaluationFailure(
+    "Error evaluated",
+    new Error("Scalus rejection"),
+  );
+  assertEquals(isScriptEvaluationFailure(failure), true);
+  assertEquals(
+    isScriptEvaluationFailure({ cause: { evaluatorCause: failure } }),
+    true,
+  );
+  assertEquals(
+    isScriptEvaluationFailure(
+      new Error("failed script execution: Error evaluated"),
+    ),
+    false,
+  );
+  assertEquals(
+    isScriptEvaluationFailure({ cause: new Error("provider unavailable") }),
+    false,
+  );
+});
 
 Deno.test("the configured Scalus evaluator explicitly retains protocol 10", async () => {
   const { input } = await evaluationFixture(
