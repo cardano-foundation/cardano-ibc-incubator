@@ -123,7 +123,7 @@ Deno.test("every applied reference validator fits its signed production transact
           lucid,
           plan.referenceHolder.address,
           validators,
-          dedicatedFunding,
+          dedicatedFunding && { utxo: dedicatedFunding, leftoverAsFee: true },
         );
         assertSignedTransactionFits(result.signedTx, title);
         const referenceOutputs = result.outputs.filter(({ scriptRef }) =>

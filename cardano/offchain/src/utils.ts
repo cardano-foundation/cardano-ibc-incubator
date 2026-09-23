@@ -10,6 +10,8 @@ import { queryOgmiosJsonRpc } from "./external_cardano.ts";
 import {
   Address,
   applyParamsToScript,
+  CML,
+  coreToUtxo,
   Data,
   Exact,
   fromHex,
@@ -259,63 +261,58 @@ export const readValidator = <T extends unknown[] = Data[]>(
   ];
 };
 
-export const submitTx = async (
+type CompleteOptions = NonNullable<Parameters<TxBuilder["complete"]>[0]>;
+
+/** A balanced, signed deployment transaction that has not been submitted yet. */
+export type SignedDeploymentTx = {
+  txName: string;
+  txHash: string;
+  signedTx: TxSigned;
+  signedTxBytes: number;
+  completedTxBytes?: number;
+};
+
+const TX_ADOPTION_ATTEMPTS = 6;
+const TX_ADOPTION_TIMEOUT_MS = 30000;
+const TX_ADOPTION_RETRY_DELAY_MS = 5000;
+const TX_COMPLETE_ATTEMPTS = 5;
+// Keep an independent batch within one block body (90,112 bytes on public
+// networks). The node mempool holds about two blocks, and a full mempool blocks
+// submission instead of rejecting it.
+export const DEFAULT_MAX_IN_FLIGHT_TX_BYTES = 80_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Balance, size-check and sign a transaction without submitting it. */
+export const completeAndSignTx = async (
   tx: TxBuilder | (() => TxBuilder | Promise<TxBuilder>),
   lucid: LucidEvolution,
   txName: string,
   logSize = true,
-  localUPLCEval = false, // Default to false to use Ogmios for script evaluation
-  beforeSubmit?: (signedTx: TxSigned) => void | Promise<void>,
-) => {
-  const ADOPTION_ATTEMPTS = 6;
-  const ADOPTION_TIMEOUT_MS = 30000;
-  const ADOPTION_RETRY_DELAY_MS = 5000;
-  const COMPLETE_ATTEMPTS = 5;
-  const sleep = (ms: number) =>
-    new Promise((resolve) => setTimeout(resolve, ms));
-  const awaitTxWithTimeout = async (hash: string) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        awaitWalletTx(lucid, hash, 1000, ADOPTION_TIMEOUT_MS),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () =>
-              reject(
-                new Error(
-                  `Timed out waiting ${ADOPTION_TIMEOUT_MS}ms for tx adoption`,
-                ),
-              ),
-            ADOPTION_TIMEOUT_MS,
-          );
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
+  completeOptions: CompleteOptions = { localUPLCEval: false },
+): Promise<SignedDeploymentTx> => {
   console.log("Submitting tx [", txName, "]");
   const buildTx = async () => typeof tx === "function" ? await tx() : tx;
   let completedTx;
   let lastCompletionError: unknown = null;
-  for (let attempt = 1; attempt <= COMPLETE_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= TX_COMPLETE_ATTEMPTS; attempt += 1) {
     try {
       // Rebuild the transaction from scratch on each completion retry. Lucid's
       // TxBuilder is stateful, so reusing the same builder after a transient
       // Ogmios failure can duplicate mint entries or other accumulated effects.
-      completedTx = await (await buildTx()).complete({ localUPLCEval });
+      completedTx = await (await buildTx()).complete(completeOptions);
       lastCompletionError = null;
       break;
     } catch (error) {
       lastCompletionError = error;
       if (
-        !isRetryableOgmiosTransportError(error) || attempt === COMPLETE_ATTEMPTS
+        !isRetryableOgmiosTransportError(error) ||
+        attempt === TX_COMPLETE_ATTEMPTS
       ) {
         throw error;
       }
       console.warn(
-        `Submitting tx [ ${txName} ]: complete retry ${attempt}/${COMPLETE_ATTEMPTS} after transient Ogmios transport error:`,
+        `Submitting tx [ ${txName} ]: complete retry ${attempt}/${TX_COMPLETE_ATTEMPTS} after transient Ogmios transport error:`,
         error,
       );
       await sleep(2000);
@@ -368,66 +365,214 @@ export const submitTx = async (
   // attempt can succeed on-chain even when Ogmios drops the response before
   // returning the transaction id, so retries must not depend on recovering the
   // hash from the transport response.
-  // Preflight may depend on this exact body hash (for nonce output parameters).
-  // It must complete before the first submission attempt.
-  await beforeSubmit?.(signedTx);
   const txHash = signedTx.toHash();
-  const walletAddress = await lucid.wallet().address();
   console.log("Submitting tx [", txName, "]: tx hash is", txHash);
-  let lastError: unknown = null;
+  return { txName, txHash, signedTx, signedTxBytes, completedTxBytes };
+};
 
-  for (let attempt = 1; attempt <= ADOPTION_ATTEMPTS; attempt++) {
-    try {
-      console.log(
-        "Submitting tx [",
-        txName,
-        `]: submitting (attempt ${attempt}/${ADOPTION_ATTEMPTS}) ...`,
-      );
-      const submittedHash = await signedTx.submit();
-      if (submittedHash !== txHash) {
-        throw new Error(
-          `Provider returned tx hash ${submittedHash}, but signed body hash is ${txHash}`,
-        );
-      }
-    } catch (error) {
-      lastError = error;
-      console.warn(
-        `Submitting tx [ ${txName} ]: submit attempt ${attempt}/${ADOPTION_ATTEMPTS} returned:`,
-        error,
+const trySubmitSignedTx = async (
+  tx: SignedDeploymentTx,
+  attempt: number,
+): Promise<unknown> => {
+  try {
+    console.log(
+      "Submitting tx [",
+      tx.txName,
+      `]: submitting (attempt ${attempt}/${TX_ADOPTION_ATTEMPTS}) ...`,
+    );
+    const submittedHash = await tx.signedTx.submit();
+    if (submittedHash !== tx.txHash) {
+      throw new Error(
+        `Provider returned tx hash ${submittedHash}, but signed body hash is ${tx.txHash}`,
       );
     }
+    return null;
+  } catch (error) {
+    console.warn(
+      `Submitting tx [ ${tx.txName} ]: submit attempt ${attempt}/${TX_ADOPTION_ATTEMPTS} returned:`,
+      error,
+    );
+    return error;
+  }
+};
 
+/**
+ * Wait until a signed transaction is on the canonical chain, resubmitting the
+ * same body after each adoption timeout. The first submission is skipped when
+ * the caller has already sent it.
+ */
+const confirmSignedTx = async (
+  lucid: LucidEvolution,
+  tx: SignedDeploymentTx,
+  alreadySubmitted: boolean,
+  adoptionTimeoutMs = TX_ADOPTION_TIMEOUT_MS,
+): Promise<string> => {
+  const walletAddress = await lucid.wallet().address();
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= TX_ADOPTION_ATTEMPTS; attempt++) {
+    if (attempt > 1 || !alreadySubmitted) {
+      lastError = await trySubmitSignedTx(tx, attempt) ?? lastError;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       console.log(
         "Submitting tx [",
-        txName,
-        `]: waiting for adoption (attempt ${attempt}/${ADOPTION_ATTEMPTS}) ...`,
+        tx.txName,
+        `]: waiting for adoption (attempt ${attempt}/${TX_ADOPTION_ATTEMPTS}) ...`,
       );
-      await awaitTxWithTimeout(txHash);
+      await Promise.race([
+        awaitWalletTx(lucid, tx.txHash, 1000, adoptionTimeoutMs),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Timed out waiting ${adoptionTimeoutMs}ms for tx adoption`,
+                ),
+              ),
+            adoptionTimeoutMs,
+          );
+        }),
+      ]);
       await recordDeploymentTx(
-        txName,
-        txHash,
-        signedTx,
+        tx.txName,
+        tx.txHash,
+        tx.signedTx,
         walletAddress,
-        signedTxBytes,
-        completedTxBytes,
+        tx.signedTxBytes,
+        tx.completedTxBytes,
       );
-      console.log("Submitting tx [", txName, "]: done");
-      return txHash;
+      console.log("Submitting tx [", tx.txName, "]: done");
+      return tx.txHash;
     } catch (error) {
       lastError = error;
       console.warn(
-        `Submitting tx [ ${txName} ]: tx ${txHash} was not visible on the canonical chain after attempt ${attempt}/${ADOPTION_ATTEMPTS}:`,
+        `Submitting tx [ ${tx.txName} ]: tx ${tx.txHash} was not visible on the canonical chain after attempt ${attempt}/${TX_ADOPTION_ATTEMPTS}:`,
         error,
       );
-      if (attempt === ADOPTION_ATTEMPTS) {
+      if (attempt === TX_ADOPTION_ATTEMPTS) {
         throw error;
       }
-      await sleep(ADOPTION_RETRY_DELAY_MS);
+      await sleep(TX_ADOPTION_RETRY_DELAY_MS);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  throw lastError ?? new Error(`Failed to confirm tx '${txName}'`);
+  throw lastError ?? new Error(`Failed to confirm tx '${tx.txName}'`);
+};
+
+export const submitTx = async (
+  tx: TxBuilder | (() => TxBuilder | Promise<TxBuilder>),
+  lucid: LucidEvolution,
+  txName: string,
+  logSize = true,
+  localUPLCEval = false, // Default to false to use Ogmios for script evaluation
+  beforeSubmit?: (signedTx: TxSigned) => void | Promise<void>,
+) => {
+  const signed = await completeAndSignTx(tx, lucid, txName, logSize, {
+    localUPLCEval,
+  });
+  // Preflight may depend on this exact body hash (for nonce output parameters).
+  // It must complete before the first submission attempt.
+  await beforeSubmit?.(signed.signedTx);
+  return await confirmSignedTx(lucid, signed, false);
+};
+
+/** Reject a batch in which two transactions would spend the same output. */
+export const assertDisjointTxInputs = (txs: SignedDeploymentTx[]): void => {
+  const spentBy = new Map<string, string>();
+  for (const tx of txs) {
+    const inputs = tx.signedTx.toTransaction().body().inputs();
+    for (let index = 0; index < inputs.len(); index++) {
+      const input = inputs.get(index);
+      const ref = `${input.transaction_id().to_hex()}#${input.index()}`;
+      const other = spentBy.get(ref);
+      if (other) {
+        throw new Error(
+          `Batched transactions '${other}' and '${tx.txName}' both spend ${ref}.`,
+        );
+      }
+      spentBy.set(ref, tx.txName);
+    }
+  }
+};
+
+/**
+ * Submit signed transactions back to back, then wait for all of them, so they
+ * can be adopted in the same block instead of one block each.
+ *
+ * The list must be in dependency order: a transaction may spend outputs of an
+ * earlier one in the list (the node mempool accepts it once the parent is
+ * there), but no two transactions may spend the same input. Each transaction is
+ * confirmed in order with the resubmission behaviour of submitTx, so a child
+ * whose first submission raced its parent is resubmitted after the parent lands.
+ * Transactions are sent in waves that fit one block body, so a parent is always
+ * in the same or an earlier wave than its children.
+ */
+export const submitTxBatch = async (
+  lucid: LucidEvolution,
+  txs: SignedDeploymentTx[],
+  options: { maxInFlightBytes?: number; adoptionTimeoutMs?: number } = {},
+): Promise<string[]> => {
+  assertDisjointTxInputs(txs);
+  const maxInFlightBytes = options.maxInFlightBytes ??
+    DEFAULT_MAX_IN_FLIGHT_TX_BYTES;
+  const waves: SignedDeploymentTx[][] = [];
+  let waveBytes = 0;
+  for (const tx of txs) {
+    const wave = waves.at(-1);
+    if (!wave || waveBytes + tx.signedTxBytes > maxInFlightBytes) {
+      waves.push([tx]);
+      waveBytes = tx.signedTxBytes;
+    } else {
+      wave.push(tx);
+      waveBytes += tx.signedTxBytes;
+    }
+  }
+
+  const hashes: string[] = [];
+  for (const wave of waves) {
+    console.log(
+      `Submitting ${wave.length} batched transaction(s):`,
+      wave.map(({ txName }) => txName).join(", "),
+    );
+    for (const tx of wave) {
+      await trySubmitSignedTx(tx, 1);
+    }
+    // Confirm every transaction before reporting a failure so adopted ones are
+    // still recorded in the deployment cost report.
+    let firstError: unknown = undefined;
+    for (const tx of wave) {
+      try {
+        hashes.push(
+          await confirmSignedTx(lucid, tx, true, options.adoptionTimeoutMs),
+        );
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstError !== undefined) throw firstError;
+  }
+  return hashes;
+};
+
+/** The outputs a signed transaction will create, before it is submitted. */
+export const signedTxOutputs = (signedTx: TxSigned): UTxO[] => {
+  const outputs = signedTx.toTransaction().body().outputs();
+  const hash = CML.TransactionHash.from_hex(signedTx.toHash());
+  const utxos: UTxO[] = [];
+  for (let index = 0; index < outputs.len(); index++) {
+    utxos.push(coreToUtxo(
+      CML.TransactionUnspentOutput.new(
+        CML.TransactionInput.new(hash, BigInt(index)),
+        outputs.get(index),
+      ),
+    ));
+  }
+  return utxos;
 };
 
 export const awaitWalletTx = async (
