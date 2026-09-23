@@ -5,10 +5,10 @@
     "@std/crypto": "jsr:@std/crypto@^1.0.5",
     "@std/path": "jsr:@std/path@^1.0.13",
     "@std/fs": "jsr:@std/fs@^1.0.13",
-    "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.4.29",
-    "@lucid-evolution/uplc": "npm:@lucid-evolution/uplc@0.2.23",
-    "@lucid-evolution/provider": "npm:@lucid-evolution/provider@0.1.90",
-    "@lucid-evolution/utils": "npm:@lucid-evolution/utils@0.1.66",
+    "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.6.5",
+    "@lucid-evolution/provider": "npm:@lucid-evolution/provider@0.2.4",
+    "@lucid-evolution/scalus-uplc": "npm:@lucid-evolution/scalus-uplc@0.1.4",
+    "@lucid-evolution/utils": "npm:@lucid-evolution/utils@0.1.74",
     "@noble/hashes/blake2b": "npm:@noble/hashes@1.8.0/blake2b",
     "@harmoniclabs/cbor": "npm:@harmoniclabs/cbor@1.6.6",
     "js-sha256": "npm:js-sha256@0.11.1",
@@ -29,7 +29,7 @@
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
     "check": "deno check index.ts src/*.ts src/testing/*.ts scripts/*.ts types/**/*.ts",
-    "test:deployment": "deno test --allow-env --allow-read src/deployment.test.ts src/deployment-plan.test.ts src/deployment-transactions.test.ts src/client-registry.test.ts",
+    "test:deployment": "deno test --allow-env --allow-read src/evaluator.test.ts src/deployment.test.ts src/deployment-plan.test.ts src/deployment-transactions.test.ts src/client-registry.test.ts",
     "test:tx-budgets": "deno test --allow-env --allow-read src/packet-budgets.test.ts",
     "test:channels": "deno test --allow-env --allow-read src/channel-actions.test.ts",
     "test:channels:fuzz": "deno test --allow-env --allow-read src/channel-actions.fuzz.test.ts",
@@ -42,6 +42,8 @@
     "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi --allow-write index.ts",
     "export:deployment-plan": "deno run --allow-env --allow-read --allow-write scripts/export-deployment-plan.ts",
     "test:funds:oracles": "deno test --allow-read --allow-env src/funds-oracle.test.ts src/isolated-evaluation.test.ts",
-    "test:funds:fuzz": "deno test --allow-env --allow-read src/funds-lifecycle.fuzz.test.ts"
+    "test:funds:fuzz": "deno test --allow-env --allow-read src/funds-lifecycle.fuzz.test.ts",
+    "test:migration": "deno test --allow-env --allow-read --allow-write src/migration.test.ts src/migration-accounting.test.ts src/migration-operator.test.ts src/migration-inventory.test.ts src/migration-history.test.ts src/deployment-mode.test.ts scripts/migrate-deployment.test.ts src/protocol_parameters.test.ts src/ogmios-script.test.ts",
+    "migrate:deployment": "deno run --allow-net --allow-env --allow-read --allow-write --allow-run --allow-ffi scripts/migrate-deployment.ts"
   }
 }

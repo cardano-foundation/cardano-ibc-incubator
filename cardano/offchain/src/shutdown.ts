@@ -265,6 +265,11 @@ export function buildReclaimStateTx(
   validFrom: number,
   transferRoot?: UTxO,
 ) {
+  if (deployment.migration) {
+    throw new Error(
+      "This upgrade-capable deployment retains authenticated inventory; use migration, not state reclamation",
+    );
+  }
   if (
     group.utxos.length === 0 ||
     group.utxos.some((utxo) => utxo.address !== group.validator.address)
@@ -383,6 +388,11 @@ export async function buildReclaimEscrowTx(
   walletAddress: string,
   validFrom: number,
 ) {
+  if (deployment.migration) {
+    throw new Error(
+      "Escrow retirement is disabled for this migration compatibility profile",
+    );
+  }
   const host = decodeHost(hostUtxo, walletAddress, validFrom);
   assertStateDrained([group], deployment);
   const rootUnit = deployment.modules.transfer.identifier;

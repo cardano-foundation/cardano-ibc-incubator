@@ -3,6 +3,7 @@ import {
   Constr,
   coreToUtxo,
   Data,
+  getAddressDetails,
   type UTxO,
 } from "@lucid-evolution/lucid";
 import { DatabaseSync } from "node:sqlite";
@@ -40,6 +41,8 @@ export interface HistoryDeployment {
   readonly layout?: "production";
   readonly clientToken: ConsensusHistoryClientToken;
   readonly stateAddress: string;
+  /** Replay the immutable NFT across script addresses; the live anchor must still match stateAddress. */
+  readonly allowScriptMigration?: boolean;
   readonly bootstrap: { readonly txHash: string; readonly outputIndex: number };
 }
 
@@ -391,6 +394,7 @@ export class ConsensusHistoryRecovery {
         layout: deployment.layout ?? "production",
         clientToken: deployment.clientToken,
         stateAddress: deployment.stateAddress,
+        ...(deployment.allowScriptMigration ? {allowScriptMigration: true} : {}),
         bootstrap: deployment.bootstrap,
       });
       const existing = this.#db.prepare(
@@ -887,7 +891,9 @@ export class ConsensusHistoryRecovery {
     hash(output.txHash, "state transaction hash");
     natural(output.outputIndex, "state output index");
     if (
-      output.address !== this.#deployment.stateAddress ||
+      (this.#deployment.allowScriptMigration
+        ? getAddressDetails(output.address).paymentCredential?.type !== "Script"
+        : output.address !== this.#deployment.stateAddress) ||
       output.assets[this.#unit] !== 1n || !output.datum ||
       Object.keys(output.assets).some((key) =>
         key !== "lovelace" && key !== this.#unit
@@ -898,6 +904,7 @@ export class ConsensusHistoryRecovery {
 
   private matchAnchor(anchor: UTxO, tip: JournalRow): void {
     if (
+      anchor.address !== this.#deployment.stateAddress ||
       ref(anchor) !== `${tip.tx_hash}#${tip.output_index}` ||
       anchor.datum !== tip.datum ||
       state(anchor.datum!, this.#deployment).root !== this.#tree.getRoot()
@@ -942,7 +949,7 @@ export class ConsensusHistoryRecovery {
         evidence,
         this.#deployment.clientToken,
         output.outputIndex,
-        this.#deployment.stateAddress,
+        this.#deployment.allowScriptMigration ? undefined : this.#deployment.stateAddress,
       );
       // Creation starts with an empty private history tree. An opaque pre-seeded
       // root cannot be recovered from the initial checkpoint.
@@ -951,6 +958,8 @@ export class ConsensusHistoryRecovery {
       }
     } else {
       const previous = this.row(sequence - 1)!;
+      const mint = tx.mint()?.get(CML.ScriptHash.from_hex(this.#deployment.clientToken.policyId), CML.AssetName.from_hex(this.#deployment.clientToken.name)) ?? 0n;
+      if (mint !== 0n) throw new Error("client NFT continuation cannot mint or burn its identity");
       if (!this.spends(tx, previous)) {
         throw new Error("history is missing a predecessor or crosses a fork");
       }

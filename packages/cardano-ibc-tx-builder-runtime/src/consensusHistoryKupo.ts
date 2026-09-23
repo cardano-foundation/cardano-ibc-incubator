@@ -29,7 +29,7 @@ function entry(value: Data): [Data, Data] {
 /** Public leaves only. The caller must authenticate the complete rebuilt HostState root. */
 export function createKupoConsensusHistoryReader(
   endpoint: string,
-  options: { fetchImpl?: typeof fetch; headers?: Record<string, string> } = {},
+  options: { fetchImpl?: typeof fetch; headers?: Record<string, string>; allowScriptMigration?: boolean } = {},
 ): NonNullable<IbcTreeLucidService['consensusHistoryRecords']> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const headers = { ...options.headers, accept: 'application/json;asset-quantity=string' };
@@ -78,7 +78,7 @@ export function createKupoConsensusHistoryReader(
       refs.add(ref);
       if (foundCurrent) continue;
       const quantity = match.value?.assets?.[`${policy}.${name}`] ?? match.value?.assets?.[unit];
-      if (match.address !== client.address || (quantity !== '1' && quantity !== 1) ||
+      if ((!options.allowScriptMigration && match.address !== client.address) || (quantity !== '1' && quantity !== 1) ||
         !match.datum_hash || match.datum_type !== 'inline') {
         throw new Error('Kupo history contains an unauthenticated client output');
       }

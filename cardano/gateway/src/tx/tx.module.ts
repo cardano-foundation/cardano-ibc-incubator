@@ -19,6 +19,7 @@ import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { WalletContextService } from './wallet-context.service';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 import { GRPC_AUTH_TOKEN, GrpcAuthGuard, loadGrpcAuthToken } from '../security/grpc-auth.guard';
+import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import { HealthModule } from '../health/health.module';
 import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
 
@@ -53,6 +54,7 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     IbcTreePendingUpdatesService,
     HostStateHeartbeatService,
     GrpcAuthGuard,
+    HistoricalReadOnlyGuard,
     {
       provide: GRPC_AUTH_TOKEN,
       useFactory: loadGrpcAuthToken,

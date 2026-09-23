@@ -1,55 +1,7 @@
-// IBC Client Minting Validator - STT Architecture
-
-use aiken/collection/list
-use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/assets.{PolicyId}
-use cardano/transaction.{
-  InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction,
-}
-use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
-use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
-use ibc/client/ics_007_tendermint_client/client_state
-use ibc/core/ics_002_client_semantics/types/client.{Active}
-use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
-use ibc/core/ics_025_handler_interface/host_state.{
-  HostStateDatum, host_state_token_name,
-}
-use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  CreateClient, HostStateRedeemer,
-}
-use ibc/utils/shutdown
-use ibc/utils/string as string_utils
-use ibc/utils/validator_utils
-
-fn find_host_state_input(
-  inputs: List<Input>,
-  nft_policy: PolicyId,
-) -> Option<Input> {
-  list.find(
-    inputs,
-    fn(input) {
-      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
-    },
-  )
-}
-
-fn spent_host_state_for_create_client(
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  host_state_input: Input,
-) -> Bool {
-  expect Some(spend_redeemer) =
-    pairs.get_first(redeemers, Spend(host_state_input.output_reference))
-  expect host_redeemer: HostStateRedeemer = spend_redeemer
-
-  // The mint is authorized by the same HostState spend that increments
-  // next_client_sequence and commits the new client paths.
-  when host_redeemer is {
-    CreateClient { .. } -> True
-    _ -> False
-  }
-}
+use cardano/transaction.{Transaction}
+use ibc/implementation/minting_client_stt as implementation
 
 validator mint_client_stt(
   spend_client_script_hash: Hash<Blake2b_224, Script>,
@@ -60,76 +12,14 @@ validator mint_client_stt(
     client_mint_policy_id: PolicyId,
     transaction: Transaction,
   ) {
-    if shutdown.burns_only(transaction.mint, client_mint_policy_id) {
-      and {
-        shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
-        shutdown.reclaim_policy(
-          transaction,
-          client_mint_policy_id,
-          host_state_nft_policy_id,
-        ),
-      }
-    } else {
-      expect _checked_redeemer: MintClientRedeemer = redeemer
-      let Transaction { inputs, outputs, mint, validity_range, redeemers, .. } =
-        transaction
-      expect Some(host_state_input) =
-        find_host_state_input(inputs, host_state_nft_policy_id)
-      expect InlineDatum(datum) = host_state_input.output.datum
-      expect host_state_datum: HostStateDatum = datum
-      let client_id_sequence = host_state_datum.state.next_client_sequence
-      // Generate client token name using the HostState NFT as base token
-      let host_state_nft =
-        AuthToken {
-          policy_id: host_state_nft_policy_id,
-          name: host_state_token_name,
-        }
-      let id_str = string_utils.int_to_string(client_id_sequence)
-      let client_token_name =
-        auth.generate_token_name(host_state_nft, client_prefix, id_str)
-      let client_token =
-        AuthToken { policy_id: client_mint_policy_id, name: client_token_name }
-      expect [client_output] =
-        transaction.find_script_outputs(outputs, spend_client_script_hash)
-      expect client_output_datum: ClientDatum =
-        validator_utils.get_inline_datum(client_output)
-      let valid_output_datum =
-        client_output_datum
-          |> client_datum.is_initialized_valid(client_token)
-      let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-      // The lower bound may be arbitrarily old. Anchor connection delays to the
-      // latest possible inclusion time, just as for UpdateClient.
-      let processed_time = tx_valid_to * 1_000_000
-      let processed_height =
-        client_datum.processed_height_from_time(processed_time)
-      let latest_height =
-        client_state.get_latest_height(client_output_datum.state.client_state)
-      expect Some(datum_processed_time) =
-        pairs.get_first(
-          client_output_datum.state.processed_times,
-          latest_height,
-        )
-      expect Some(datum_processed_height) =
-        pairs.get_first(
-          client_output_datum.state.processed_heights,
-          latest_height,
-        )
-      let is_state_active =
-        client_state.status(
-          client_output_datum.state.client_state,
-          tx_valid_to * 1_000_000,
-          client_output_datum.state.consensus_states,
-        ) == Active
-      and {
-        auth.mint_auth_token(mint, client_token)?,
-        auth.contains_only_auth_tokens(client_output, [client_token])?,
-        valid_output_datum?,
-        datum_processed_time == processed_time,
-        datum_processed_height == processed_height,
-        is_state_active?,
-        spent_host_state_for_create_client(redeemers, host_state_input)?,
-      }
-    }
+    implementation.validate(
+      True,
+      spend_client_script_hash,
+      host_state_nft_policy_id,
+      redeemer,
+      client_mint_policy_id,
+      transaction,
+    )
   }
 
   else(_) {

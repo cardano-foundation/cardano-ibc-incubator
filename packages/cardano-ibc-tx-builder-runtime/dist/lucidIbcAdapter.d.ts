@@ -1,3 +1,4 @@
+import { type MigrationRuntimeConfig } from './migrationRuntime';
 import { type LucidEvolution, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
 import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
 import type { IbcTreeLucidService, IbcTreeUtxo } from './ibcStateRoot';
@@ -10,11 +11,18 @@ type AuthToken = {
     name: string;
 };
 type DeploymentConfig = {
+    migration?: MigrationRuntimeConfig;
     hostStateNFT: AuthToken;
     validators: {
         hostStateStt: {
             address?: string;
             refUtxo: RefUtxo;
+        };
+        spendClient: {
+            address?: string;
+        };
+        spendConnection: {
+            address?: string;
         };
         spendChannel: {
             address?: string;
@@ -27,6 +35,7 @@ type DeploymentConfig = {
         };
         spendTransferModule: {
             refUtxo: RefUtxo;
+            address?: string;
         };
         mintVoucher: {
             refUtxo: RefUtxo;
@@ -105,15 +114,15 @@ export declare class LucidIbcAdapter {
         maxAttempts?: number;
         retryDelayMs?: number;
     }): Promise<UTxO[]>;
-    findUtxoAtHostStateNFT(): Promise<UTxO>;
+    findUtxoAtHostStateNFT(restriction?: bigint): Promise<UTxO>;
     credentialToAddress(address: string): string;
     decodeDatum<T>(encodedDatum: string, type: CodecType): Promise<T>;
     encode<T>(data: T, type: CodecType): Promise<string>;
     getClientTokenUnit(clientId: string): string;
     getConnectionTokenUnit(connectionId: bigint): [string, string];
     getChannelTokenUnit(channelId: bigint): [string, string];
-    createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowTxInput): TxBuilder;
-    createUnsignedSendPacketBurnTx(dto: any): TxBuilder;
+    createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowTxInput): Promise<TxBuilder>;
+    createUnsignedSendPacketBurnTx(dto: any): Promise<TxBuilder>;
     private generateTokenName;
 }
 export declare function findUtxosAtAllowEmpty(lucidService: Pick<LucidIbcAdapter, 'findUtxoAt'>, addressOrCredential: string): Promise<UTxO[]>;

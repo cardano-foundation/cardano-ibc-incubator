@@ -227,6 +227,7 @@ class ConsensusHistoryRecovery {
                 layout: deployment.layout ?? "production",
                 clientToken: deployment.clientToken,
                 stateAddress: deployment.stateAddress,
+                ...(deployment.allowScriptMigration ? { allowScriptMigration: true } : {}),
                 bootstrap: deployment.bootstrap,
             });
             const existing = this.#db.prepare("SELECT config FROM history_deployment WHERE id = 1").get();
@@ -626,14 +627,17 @@ class ConsensusHistoryRecovery {
     checkOutput(output) {
         hash(output.txHash, "state transaction hash");
         natural(output.outputIndex, "state output index");
-        if (output.address !== this.#deployment.stateAddress ||
+        if ((this.#deployment.allowScriptMigration
+            ? (0, lucid_1.getAddressDetails)(output.address).paymentCredential?.type !== "Script"
+            : output.address !== this.#deployment.stateAddress) ||
             output.assets[this.#unit] !== 1n || !output.datum ||
             Object.keys(output.assets).some((key) => key !== "lovelace" && key !== this.#unit))
             throw new Error("invalid authenticated state output");
         state(output.datum, this.#deployment);
     }
     matchAnchor(anchor, tip) {
-        if (ref(anchor) !== `${tip.tx_hash}#${tip.output_index}` ||
+        if (anchor.address !== this.#deployment.stateAddress ||
+            ref(anchor) !== `${tip.tx_hash}#${tip.output_index}` ||
             anchor.datum !== tip.datum ||
             state(anchor.datum, this.#deployment).root !== this.#tree.getRoot())
             throw new Error("replayed history does not match the live NFT output");
@@ -663,7 +667,7 @@ class ConsensusHistoryRecovery {
             if (ref(output) !== ref(this.#deployment.bootstrap)) {
                 throw new Error("history is missing the configured bootstrap output");
             }
-            validateHistoryBootstrap(evidence, this.#deployment.clientToken, output.outputIndex, this.#deployment.stateAddress);
+            validateHistoryBootstrap(evidence, this.#deployment.clientToken, output.outputIndex, this.#deployment.allowScriptMigration ? undefined : this.#deployment.stateAddress);
             // Creation starts with an empty private history tree. An opaque pre-seeded
             // root cannot be recovered from the initial checkpoint.
             if (this.#tree.getRoot() !== "00".repeat(32)) {
@@ -672,6 +676,9 @@ class ConsensusHistoryRecovery {
         }
         else {
             const previous = this.row(sequence - 1);
+            const mint = tx.mint()?.get(lucid_1.CML.ScriptHash.from_hex(this.#deployment.clientToken.policyId), lucid_1.CML.AssetName.from_hex(this.#deployment.clientToken.name)) ?? 0n;
+            if (mint !== 0n)
+                throw new Error("client NFT continuation cannot mint or burn its identity");
             if (!this.spends(tx, previous)) {
                 throw new Error("history is missing a predecessor or crosses a fork");
             }

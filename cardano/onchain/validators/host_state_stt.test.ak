@@ -67,9 +67,15 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/migration/types.{
+  Authority, Counts, Emergency, FixedIdentity, Governance, Implementation,
+  Moving, Proposed, Ready, Registry, Replace, Rotate, minimum_delay_ms,
+  registry_token_name,
+}
 use ibc/testing/client_registry_fixtures.{RegistryCase}
 use ibc/testing/fuzz_dsl
 use ibc/utils/bits
+use upgradeable/host_state as migration_host
 
 // Build a list with `count` copies of `value`.
 fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
@@ -635,14 +641,32 @@ fn spend_host_state_with_signatories(
   )
 }
 
-fn spend_host_state_with_channel_redeemer(
+type HostCase =
+  Pair<HostStateRedeemer, Transaction>
+
+fn packet_host_case(
   redeemer: HostStateRedeemer,
   channel_redeemer: SpendChannelRedeemer,
   channel_input: Input,
   inputs: List<Input>,
   outputs: List<Output>,
-) -> Bool {
+) -> HostCase {
   let channel_redeemer_data: Redeemer = channel_redeemer
+  Pair(
+    redeemer,
+    Transaction {
+      ..placeholder,
+      inputs,
+      outputs,
+      redeemers: [
+        Pair(Spend(channel_input.output_reference), channel_redeemer_data),
+      ],
+    },
+  )
+}
+
+fn run_host_case(case: HostCase) -> Bool {
+  let Pair(redeemer, transaction) = case
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
     [
@@ -660,14 +684,19 @@ fn spend_host_state_with_channel_redeemer(
     None,
     redeemer,
     test_host_ref(),
-    Transaction {
-      ..placeholder,
-      inputs,
-      outputs,
-      redeemers: [
-        Pair(Spend(channel_input.output_reference), channel_redeemer_data),
-      ],
-    },
+    transaction,
+  )
+}
+
+fn spend_host_state_with_channel_redeemer(
+  redeemer: HostStateRedeemer,
+  channel_redeemer: SpendChannelRedeemer,
+  channel_input: Input,
+  inputs: List<Input>,
+  outputs: List<Output>,
+) -> Bool {
+  run_host_case(
+    packet_host_case(redeemer, channel_redeemer, channel_input, inputs, outputs),
   )
 }
 
@@ -2027,6 +2056,10 @@ test prop_host_update_channel_rejects_receive_height_mutation(
 }
 
 fn check_host_handle_packet_send(seed: Int, token: AuthToken) -> Bool {
+  run_host_case(prepare_containment_send(seed, token))
+}
+
+fn prepare_containment_send(seed: Int, token: AuthToken) -> HostCase {
   // SendPacket creates a packet commitment, so the new root must commit exactly
   // that packet key/value and the channel datum must record the same sequence.
   let sequence = test_sequence(seed)
@@ -2089,7 +2122,7 @@ fn check_host_handle_packet_send(seed: Int, token: AuthToken) -> Bool {
       ibc_state_root: new_root,
     }
 
-  spend_host_state_with_channel_redeemer(
+  packet_host_case(
     handle_packet_redeemer([], siblings, [], [], commitment_siblings, [], []),
     SendPacket { packet },
     test_channel_input_full(input_channel_datum),
@@ -2125,9 +2158,7 @@ test host_state_rejects_counterfeit_packet_thread_policy() fail {
   )
 }
 
-test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
-  fuzz.label(@"fuzz.contract.host.handle_packet.valid_recv")
-
+fn prepare_containment_recv(seed: Int) -> HostCase {
   let sequence = test_sequence(seed)
   let packet = test_packet(sequence)
   let acknowledgement_commitment = #"010203"
@@ -2184,32 +2215,37 @@ test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
       ibc_state_root: new_root,
     }
 
+  packet_host_case(
+    handle_packet_redeemer(
+      [],
+      [],
+      [],
+      [],
+      [],
+      siblings,
+      acknowledgement_siblings,
+    ),
+    RecvPacket {
+      packet,
+      proof_commitment: empty_proof(),
+      proof_height: test_height(1),
+    },
+    test_channel_input_full(input_channel_datum),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_recv")
   fuzz_dsl.valid_check(
     "host",
     "handle_packet_recv",
     "spend_host_state",
-    spend_host_state_with_channel_redeemer(
-      handle_packet_redeemer(
-        [],
-        [],
-        [],
-        [],
-        [],
-        siblings,
-        acknowledgement_siblings,
-      ),
-      RecvPacket {
-        packet,
-        proof_commitment: empty_proof(),
-        proof_height: test_height(1),
-      },
-      test_channel_input_full(input_channel_datum),
-      [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
-      [
-        test_host_output(new_state),
-        test_channel_output_full(output_channel_datum),
-      ],
-    ),
+    run_host_case(prepare_containment_recv(seed)),
   )
     |> fuzz_dsl.assert_valid
 }
@@ -2857,9 +2893,7 @@ test prop_host_handle_packet_rejects_recv_with_unrelated_channel_mutation(
   )
 }
 
-test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
-  fuzz.label(@"fuzz.contract.host.handle_packet.valid_ack")
-
+fn prepare_containment_ack(seed: Int) -> HostCase {
   let sequence = test_sequence(seed)
   let packet = test_packet(sequence)
   let siblings = full_empty_siblings()
@@ -2900,32 +2934,35 @@ test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
       ibc_state_root: new_root,
     }
 
+  packet_host_case(
+    handle_packet_redeemer([], [], [], [], siblings, [], []),
+    AcknowledgePacket {
+      packet,
+      acknowledgement: "acknowledgement",
+      proof_acked: empty_proof(),
+      proof_height: test_height(1),
+    },
+    test_channel_input_full(input_channel_datum),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_ack")
   fuzz_dsl.valid_check(
     "host",
     "handle_packet_ack",
     "spend_host_state",
-    spend_host_state_with_channel_redeemer(
-      handle_packet_redeemer([], [], [], [], siblings, [], []),
-      AcknowledgePacket {
-        packet,
-        acknowledgement: "acknowledgement",
-        proof_acked: empty_proof(),
-        proof_height: test_height(1),
-      },
-      test_channel_input_full(input_channel_datum),
-      [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
-      [
-        test_host_output(new_state),
-        test_channel_output_full(output_channel_datum),
-      ],
-    ),
+    run_host_case(prepare_containment_ack(seed)),
   )
     |> fuzz_dsl.assert_valid
 }
 
-test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
-  fuzz.label(@"fuzz.contract.host.handle_packet.valid_timeout")
-
+fn prepare_containment_timeout(seed: Int) -> HostCase {
   let sequence = test_sequence(seed)
   let packet = test_packet(sequence)
   let siblings = full_empty_siblings()
@@ -2966,25 +3003,30 @@ test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
       ibc_state_root: new_root,
     }
 
+  packet_host_case(
+    handle_packet_redeemer([], [], [], [], siblings, [], []),
+    TimeoutPacket {
+      packet,
+      proof_unreceived: empty_proof(),
+      proof_height: test_height(1),
+      next_sequence_recv: 1,
+    },
+    test_channel_input_full(input_channel_datum),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_timeout")
   fuzz_dsl.valid_check(
     "host",
     "handle_packet_timeout",
     "spend_host_state",
-    spend_host_state_with_channel_redeemer(
-      handle_packet_redeemer([], [], [], [], siblings, [], []),
-      TimeoutPacket {
-        packet,
-        proof_unreceived: empty_proof(),
-        proof_height: test_height(1),
-        next_sequence_recv: 1,
-      },
-      test_channel_input_full(input_channel_datum),
-      [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
-      [
-        test_host_output(new_state),
-        test_channel_output_full(output_channel_datum),
-      ],
-    ),
+    run_host_case(prepare_containment_timeout(seed)),
   )
     |> fuzz_dsl.assert_valid
 }
@@ -3152,6 +3194,13 @@ fn check_host_prune_packet_history(
   use_wrong_ack_witness: Bool,
   at_capacity: Bool,
 ) -> Bool {
+  run_host_case(prepare_containment_prune(use_wrong_ack_witness, at_capacity))
+}
+
+fn prepare_containment_prune(
+  use_wrong_ack_witness: Bool,
+  at_capacity: Bool,
+) -> HostCase {
   let sequence =
     if at_capacity {
       max_packet_entries_per_channel / 2
@@ -3290,7 +3339,7 @@ fn check_host_prune_packet_history(
     }
   let channel_input = test_channel_input_full(input_channel_datum)
 
-  spend_host_state_with_channel_redeemer(
+  packet_host_case(
     host_redeemer,
     channel_redeemer,
     channel_input,
@@ -5260,6 +5309,512 @@ test state_value_host_state_accepts_full_reserves_and_ada_top_up() {
 
 fn capacity_receipt_count() -> Fuzzer<Int> {
   fuzz.int_between(1, max_packet_entries_per_channel - 1)
+}
+
+// Containment audit of the CURRENT protocol, not a new emergency-pause API.
+// Reuse the ordinary commitment fixtures and execute the complete HostState
+// wrapper. Positive controls execute the same operation in Ready and Proposed.
+// These are compiled validator-context tests, not balanced ledger transactions
+// or end-to-end counterparty proof tests. The channel/application validators
+// have their own suites; here the shared HostState phase gate is under test.
+fn containment_registry(phase: Int) -> Registry {
+  let current =
+    Implementation {
+      generation: 1,
+      addresses: list.map(
+        [
+          test_host_script_hash(),
+          test_client_script_hash(),
+          test_connection_script_hash(),
+          test_channel_script_hash(),
+          test_module_script_hash(),
+        ],
+        fn(hash) { Address(Script(hash), None) },
+      ),
+      compatibility: bytearray.from_int_big_endian(462, 32),
+    }
+  let target =
+    Implementation {
+      ..current,
+      generation: 2,
+      addresses: list.map(
+        [101, 102, 103, 104, 105],
+        fn(n) { Address(Script(bytearray.from_int_big_endian(n, 28)), None) },
+      ),
+    }
+  let governance =
+    Governance {
+      signers: [trusted_deployer],
+      quorum: 1,
+      delay_ms: minimum_delay_ms,
+    }
+  let counts = Counts { clients: 10, connections: 10, channels: 10 }
+  let proposal =
+    Replace {
+      source_generation: 1,
+      nonce: 1,
+      target,
+      maximum: counts,
+      escrow_inventory: ibc_state_commitment.empty_hash,
+    }
+  Registry {
+    emergency: Emergency {
+      authority: Authority {
+        signers: [bytearray.from_int_big_endian(999, 28)],
+        quorum: 1,
+      },
+      epoch: 0,
+      mask: 0,
+      restoration: None,
+    },
+    token: AuthToken {
+      policy_id: bytearray.from_int_big_endian(462, 28),
+      name: registry_token_name,
+    },
+    host_policy: test_nft_policy(),
+    identity: FixedIdentity {
+      client_policy: "mock client policy",
+      connection_policy: "mock connection policy",
+      channel_policy: "mock channel policy",
+      escrow_policy: bytearray.from_int_big_endian(463, 28),
+      reference_holder: Address(
+        Script(bytearray.from_int_big_endian(464, 28)),
+        None,
+      ),
+    },
+    governance,
+    nonce: if phase == 0 {
+      0
+    } else {
+      1
+    },
+    current,
+    phase: when phase is {
+      0 -> Ready
+      1 ->
+        Proposed {
+          proposal,
+          ready_at: minimum_delay_ms + 2_000,
+          expires_at: minimum_delay_ms * 2,
+        }
+      2 ->
+        Moving {
+          target,
+          limits: counts,
+          next: Counts { clients: 0, connections: 0, channels: 0 },
+          registration: test_module_registration(test_module_script_hash()),
+          escrow_remaining: ibc_state_commitment.empty_hash,
+          module_moved: False,
+        }
+      3 ->
+        Proposed {
+          proposal: Rotate { nonce: 1, governance },
+          ready_at: minimum_delay_ms + 2_000,
+          expires_at: minimum_delay_ms * 2,
+        }
+      _ -> Proposed { proposal, ready_at: 0, expires_at: 500 }
+    },
+  }
+}
+
+fn containment_host_case(operation: Int) -> HostCase {
+  when operation is {
+    0 -> prepare_containment_send(462, test_channel_token())
+    1 -> prepare_containment_recv(462)
+    2 -> prepare_containment_ack(462)
+    3 -> prepare_containment_timeout(462)
+    4 -> prepare_containment_prune(False, False)
+    5 -> prepare_host_update_client_capacity()
+    _ -> {
+      let old = test_host_state(ibc_state_commitment.empty_hash, 1_000)
+      let next =
+        HostState { ..old, version: old.version + 1, last_update_time: 2_000 }
+      Pair(
+        Heartbeat,
+        Transaction {
+          ..placeholder,
+          inputs: [test_host_input(old)],
+          outputs: [test_host_output(next)],
+          extra_signatories: [trusted_deployer],
+        },
+      )
+    }
+  }
+}
+
+fn containment_execute(operation: Int, phase: Int, successor: Bool) -> Bool {
+  containment_restricted(operation, phase, successor, 0)
+}
+
+fn containment_restricted(
+  operation: Int,
+  phase: Int,
+  successor: Bool,
+  mask: Int,
+) -> Bool {
+  let case = containment_host_case(operation)
+  expect run_host_case(case)
+  let Pair(redeemer, tx) = case
+  let original = containment_registry(phase)
+  let registry =
+    Registry { ..original, emergency: Emergency { ..original.emergency, mask } }
+  let reference =
+    Input {
+      output_reference: test_object_ref(462),
+      output: Output {
+        address: Address(Script(bytearray.from_int_big_endian(465, 28)), None),
+        value: from_asset(registry.token.policy_id, registry.token.name, 1),
+        datum: InlineDatum(registry),
+        reference_script: None,
+      },
+    }
+  let transaction =
+    Transaction {
+      ..tx,
+      reference_inputs: [reference, ..tx.reference_inputs],
+      validity_range: interval.between(1_000, 2_000),
+    }
+  let transaction =
+    if successor {
+      // Begin already moved HostState to generation 2. Check that its normal
+      // entry point is blocked as well as the source generation's entry point.
+      let address =
+        Address(Script(bytearray.from_int_big_endian(101, 28)), None)
+      Transaction {
+        ..transaction,
+        inputs: list.map(
+          transaction.inputs,
+          fn(input) {
+            if input.output_reference == test_host_ref() {
+              Input { ..input, output: Output { ..input.output, address } }
+            } else {
+              input
+            }
+          },
+        ),
+        outputs: list.map(
+          transaction.outputs,
+          fn(output) {
+            if output.address == Address(Script(test_host_script_hash()), None) {
+              Output { ..output, address }
+            } else {
+              output
+            }
+          },
+        ),
+      }
+    } else {
+      transaction
+    }
+  let raw: Data = redeemer
+  migration_host.host_state.spend(
+    registry.token.policy_id,
+    if successor {
+      2
+    } else {
+      1
+    },
+    None,
+    raw,
+    test_host_ref(),
+    transaction,
+  )
+}
+
+test containment_current_ready_permits_send() {
+  containment_execute(0, 0, False)
+}
+
+test containment_current_approval_delay_permits_send() {
+  containment_execute(0, 1, False)
+}
+
+test containment_current_rotation_delay_permits_send() {
+  containment_execute(0, 3, False)
+}
+
+test containment_current_expired_proposal_permits_send() {
+  containment_execute(0, 4, False)
+}
+
+test containment_current_moving_rejects_source_send() fail {
+  containment_execute(0, 2, False)
+}
+
+test containment_current_moving_rejects_successor_send() fail {
+  containment_execute(0, 2, True)
+}
+
+test containment_current_ready_permits_receive() {
+  containment_execute(1, 0, False)
+}
+
+test containment_current_approval_delay_permits_receive() {
+  containment_execute(1, 1, False)
+}
+
+test containment_current_rotation_delay_permits_receive() {
+  containment_execute(1, 3, False)
+}
+
+test containment_current_expired_proposal_permits_receive() {
+  containment_execute(1, 4, False)
+}
+
+test containment_current_moving_rejects_source_receive() fail {
+  containment_execute(1, 2, False)
+}
+
+test containment_current_moving_rejects_successor_receive() fail {
+  containment_execute(1, 2, True)
+}
+
+test containment_current_ready_permits_acknowledge() {
+  containment_execute(2, 0, False)
+}
+
+test containment_current_approval_delay_permits_acknowledge() {
+  containment_execute(2, 1, False)
+}
+
+test containment_current_rotation_delay_permits_acknowledge() {
+  containment_execute(2, 3, False)
+}
+
+test containment_current_expired_proposal_permits_acknowledge() {
+  containment_execute(2, 4, False)
+}
+
+test containment_current_moving_rejects_source_acknowledge() fail {
+  containment_execute(2, 2, False)
+}
+
+test containment_current_moving_rejects_successor_acknowledge() fail {
+  containment_execute(2, 2, True)
+}
+
+test containment_current_ready_permits_timeout() {
+  containment_execute(3, 0, False)
+}
+
+test containment_current_approval_delay_permits_timeout() {
+  containment_execute(3, 1, False)
+}
+
+test containment_current_rotation_delay_permits_timeout() {
+  containment_execute(3, 3, False)
+}
+
+test containment_current_expired_proposal_permits_timeout() {
+  containment_execute(3, 4, False)
+}
+
+test containment_current_moving_rejects_source_timeout() fail {
+  containment_execute(3, 2, False)
+}
+
+test containment_current_moving_rejects_successor_timeout() fail {
+  containment_execute(3, 2, True)
+}
+
+test containment_current_ready_permits_prune() {
+  containment_execute(4, 0, False)
+}
+
+test containment_current_approval_delay_permits_prune() {
+  containment_execute(4, 1, False)
+}
+
+test containment_current_rotation_delay_permits_prune() {
+  containment_execute(4, 3, False)
+}
+
+test containment_current_expired_proposal_permits_prune() {
+  containment_execute(4, 4, False)
+}
+
+test containment_current_moving_rejects_source_prune() fail {
+  containment_execute(4, 2, False)
+}
+
+test containment_current_moving_rejects_successor_prune() fail {
+  containment_execute(4, 2, True)
+}
+
+test containment_current_ready_permits_client_update() {
+  containment_execute(5, 0, False)
+}
+
+test containment_current_approval_delay_permits_client_update() {
+  containment_execute(5, 1, False)
+}
+
+test containment_current_rotation_delay_permits_client_update() {
+  containment_execute(5, 3, False)
+}
+
+test containment_current_expired_proposal_permits_client_update() {
+  containment_execute(5, 4, False)
+}
+
+test containment_current_moving_rejects_source_client_update() fail {
+  containment_execute(5, 2, False)
+}
+
+test containment_current_moving_rejects_successor_client_update() fail {
+  containment_execute(5, 2, True)
+}
+
+test containment_current_ready_permits_heartbeat() {
+  containment_execute(6, 0, False)
+}
+
+test containment_current_approval_delay_permits_heartbeat() {
+  containment_execute(6, 1, False)
+}
+
+test containment_current_rotation_delay_permits_heartbeat() {
+  containment_execute(6, 3, False)
+}
+
+test containment_current_expired_proposal_permits_heartbeat() {
+  containment_execute(6, 4, False)
+}
+
+test containment_current_moving_rejects_source_heartbeat() fail {
+  containment_execute(6, 2, False)
+}
+
+test containment_current_moving_rejects_successor_heartbeat() fail {
+  containment_execute(6, 2, True)
+}
+
+test emergency_traffic_mask_phase_0_send() fail {
+  containment_restricted(0, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_recv() fail {
+  containment_restricted(1, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_ack() fail {
+  containment_restricted(2, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_timeout() fail {
+  containment_restricted(3, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_prune() fail {
+  containment_restricted(4, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_client() {
+  containment_restricted(5, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_0_heartbeat() {
+  containment_restricted(6, 0, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_send() fail {
+  containment_restricted(0, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_recv() fail {
+  containment_restricted(1, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_ack() fail {
+  containment_restricted(2, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_timeout() fail {
+  containment_restricted(3, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_prune() fail {
+  containment_restricted(4, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_client() {
+  containment_restricted(5, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_1_heartbeat() {
+  containment_restricted(6, 1, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_send() fail {
+  containment_restricted(0, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_recv() fail {
+  containment_restricted(1, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_ack() fail {
+  containment_restricted(2, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_timeout() fail {
+  containment_restricted(3, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_prune() fail {
+  containment_restricted(4, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_client() {
+  containment_restricted(5, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_3_heartbeat() {
+  containment_restricted(6, 3, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_send() fail {
+  containment_restricted(0, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_recv() fail {
+  containment_restricted(1, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_ack() fail {
+  containment_restricted(2, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_timeout() fail {
+  containment_restricted(3, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_prune() fail {
+  containment_restricted(4, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_client() {
+  containment_restricted(5, 4, False, 1)
+}
+
+test emergency_traffic_mask_phase_4_heartbeat() {
+  containment_restricted(6, 4, False, 1)
+}
+
+test emergency_clients_reject_update() fail {
+  containment_restricted(5, 0, False, 2)
+}
+
+test emergency_clients_permit_heartbeat() {
+  containment_restricted(6, 0, False, 2)
+}
+
+test emergency_heartbeat_rejects_heartbeat() fail {
+  containment_restricted(6, 0, False, 4)
+}
+
+test emergency_heartbeat_permits_send() {
+  containment_restricted(0, 0, False, 4)
 }
 
 // Two registered types coexist under the same host. Only the selected type's

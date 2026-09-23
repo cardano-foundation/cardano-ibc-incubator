@@ -1,7 +1,9 @@
 {
   "private": true,
-  "engines": { "deno": ">=2.7.0" },
-  "overrides": {
-    "@lucid-evolution/uplc": "0.2.23"
+  "engines": {
+    "deno": ">=2.7.0"
+  },
+  "dependencies": {
+    "@lucid-evolution/scalus-uplc": "0.1.4"
   }
 }

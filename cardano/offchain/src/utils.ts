@@ -231,8 +231,11 @@ export const readValidator = <T extends unknown[] = Data[]>(
   lucid: LucidEvolution,
   params?: Exact<[...T]>,
   type?: T,
+  sourceBlueprint: {
+    validators: Array<{ title: string; compiledCode: string }>;
+  } = blueprint,
 ): [Script, ScriptHash, Address] => {
-  const rawValidator = blueprint.validators.find(
+  const rawValidator = sourceBlueprint.validators.find(
     (v: { title: string; compiledCode: string }) => v.title === title,
   );
   if (!rawValidator) {
@@ -278,7 +281,7 @@ export const submitTx = async (
     try {
       await Promise.race([
         awaitWalletTx(lucid, hash, 1000, ADOPTION_TIMEOUT_MS),
-        new Promise<never>((_, reject) => {
+        new Promise<never>((_, reject) =>
           timer = setTimeout(
             () =>
               reject(
@@ -287,11 +290,11 @@ export const submitTx = async (
                 ),
               ),
             ADOPTION_TIMEOUT_MS,
-          );
-        }),
+          )
+        ),
       ]);
     } finally {
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
     }
   };
 
@@ -503,7 +506,9 @@ export const awaitWalletTx = async (
         }
       }
     } else {
-      const walletUtxos = await lucid.wallet().getUtxos();
+      // Deployment reserves nonces with overrideUTxOs; that wallet cache is not
+      // canonical evidence that a submitted transaction has been adopted.
+      const walletUtxos = await getLiveWalletUtxos(lucid);
       if (walletUtxos.some((utxo) => utxo.txHash === txHash)) {
         return;
       }
@@ -692,10 +697,12 @@ export const filterLiveUtxos = async (
     return [];
   }
 
-  // Requery the wallet view and intersect locally instead of relying on
+  // Requery the provider's wallet-address view and intersect locally instead of relying on
   // utxosByOutRef(), because some managed Kupo providers are inconsistent on
   // wildcard out-ref lookups even when plain wallet-address matches are healthy.
-  const currentWalletUtxos = await lucid.wallet().getUtxos();
+  const currentWalletUtxos = await lucid.utxosAt(
+    await lucid.wallet().address(),
+  );
   if (currentWalletUtxos.length === 0) {
     return [];
   }
@@ -760,7 +767,7 @@ export const getLiveWalletUtxos = async (
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const walletUtxos = await lucid.wallet().getUtxos();
+      const walletUtxos = await lucid.utxosAt(await lucid.wallet().address());
       const liveUtxos = await filterLiveUtxos(lucid, walletUtxos);
       if (liveUtxos.length >= minCount) {
         return liveUtxos;
@@ -818,6 +825,25 @@ type Module = "transfer" | "mock" | "icq";
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
+  deploymentMode?: "upgradeable" | "legacy";
+  migration?: {
+    profile: "cardano-ibc-compatible-v3";
+    registryUnit: string;
+    generation: string;
+    compatibility: string;
+    originalAddresses: string[];
+    registryAddress: string;
+    registryReference: UTxO;
+    registryDatum: string;
+    baseline: unknown;
+    lineage: Array<
+      {
+        generation: string;
+        observedRegistry: { txHash: string; outputIndex: number };
+        addresses: string[];
+      }
+    >;
+  };
   clientRegistrations?: import("./client-registry.ts").ClientRegistration[];
   history:
     import("../../../packages/cardano-ibc-tx-builder-runtime/src/historyBootstrap.ts").HistoryBootstrap;

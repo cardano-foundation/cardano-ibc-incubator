@@ -116,7 +116,7 @@ async function checkCase(sample: ShutdownSnapshotCase) {
         transferRoot,
       ),
     );
-    f.lucid.overrideUTxOs([]);
+    f.lucid.clearUTxOOverride();
   }
   assertEquals(live().filter((u) => stateAddresses.has(u.address)), []);
   assertEquals(

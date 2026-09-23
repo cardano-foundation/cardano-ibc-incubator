@@ -4,7 +4,64 @@ import {
   type MintingPolicy,
   type Script,
   type UTxO,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
+import { Registry } from "../types/plutus/Migration.ts";
+
+/** Persist observed publications only after matching the exact signed outputs. */
+export function verifyReferencePublications(
+  txHash: string,
+  address: string,
+  validators: Script[],
+  derived: UTxO[],
+  observed: UTxO[],
+): UTxO[] {
+  return validators.map((validator) => {
+    const hash = validatorToScriptHash(validator);
+    const matches = (outputs: UTxO[]) =>
+      outputs.filter((utxo) =>
+        utxo.scriptRef && validatorToScriptHash(utxo.scriptRef) === hash
+      );
+    const expected = matches(derived);
+    const published = matches(observed);
+    if (expected.length !== 1 || published.length !== 1) {
+      throw new Error(
+        `Reference ${hash} has no unique signed and observed output`,
+      );
+    }
+    const [a] = expected, [b] = published;
+    if (
+      a.txHash !== txHash || b.txHash !== txHash ||
+      a.outputIndex !== b.outputIndex || a.address !== address ||
+      b.address !== address || (a.datum ?? null) !== (b.datum ?? null) ||
+      Object.keys(a.assets).length !== Object.keys(b.assets).length ||
+      Object.entries(a.assets).some(([unit, amount]) =>
+        b.assets[unit] !== amount
+      )
+    ) {
+      throw new Error(`Reference ${hash} differs from its signed publication`);
+    }
+    return b;
+  });
+}
+
+export function buildRegistryBootstrapTx(lucid: LucidEvolution, input: {
+  nonce: UTxO;
+  policy: Script;
+  address: string;
+  registry: Registry;
+  signers: string[];
+}) {
+  const unit = input.registry.token.policy_id + input.registry.token.name;
+  let tx = lucid.newTx().collectFrom([input.nonce])
+    .attach.MintingPolicy(input.policy).mintAssets({ [unit]: 1n }, Data.void())
+    .pay.ToContract(input.address, {
+      kind: "inline",
+      value: Data.to(input.registry, Registry),
+    }, { [unit]: 1n });
+  for (const signer of new Set(input.signers)) tx = tx.addSignerKey(signer);
+  return tx;
+}
 
 /** Construct the reference outputs used by deployment, including their inline datum. */
 export function buildReferenceBatchTx(
@@ -30,8 +87,13 @@ export async function completeReferenceBatchTx(
   referenceAddress: string,
   validators: Script[],
   dedicatedFunding?: UTxO,
+  validTo?: number,
 ) {
   const txBuilder = buildReferenceBatchTx(lucid, referenceAddress, validators);
+  if (validTo !== undefined) txBuilder.validTo(validTo);
+  const availableWalletInputs = dedicatedFunding
+    ? [dedicatedFunding]
+    : await lucid.wallet().getUtxos();
   const [walletUTxOs, outputs, txSignBuilder] = await txBuilder.chain(
     dedicatedFunding
       ? {
@@ -40,10 +102,18 @@ export async function completeReferenceBatchTx(
       }
       : undefined,
   );
-  const consumedWalletInputs = (txBuilder as unknown as {
-    rawConfig: () => { consumedInputs?: UTxO[] };
-  }).rawConfig().consumedInputs ?? [];
   const signedTx = await txSignBuilder.sign.withWallet().complete();
+  const inputs = signedTx.toTransaction().body().inputs();
+  const consumedReferences = new Set<string>();
+  for (let index = 0; index < inputs.len(); index += 1) {
+    const input = inputs.get(index);
+    consumedReferences.add(
+      `${input.transaction_id().to_hex()}#${Number(input.index())}`,
+    );
+  }
+  const consumedWalletInputs = availableWalletInputs.filter((utxo) =>
+    consumedReferences.has(`${utxo.txHash}#${utxo.outputIndex}`)
+  );
   return { walletUTxOs, outputs, signedTx, consumedWalletInputs };
 }
 

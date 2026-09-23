@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { querySystemStart, queryTransactionInclusionBlockHeight } from '../../helpers/time';
 import { Network } from '@lucid-evolution/lucid';
+import { createScalusEvaluator } from '@lucid-evolution/scalus-uplc';
 import { applyDoubleCborEncoding } from '@lucid-evolution/utils';
 import { gatewayDiagnostics } from '../../helpers/gateway-diagnostics';
 import {
@@ -961,6 +962,7 @@ export const LucidClient = {
             'Kupmios.evaluateTx',
           );
         } catch (error) {
+          gatewayDiagnostics.record('evaluateTx-body', () => ({ txCbor: tx }));
           gatewayDiagnostics.record('evaluateTx-failure', () => ({
             txCbor: tx,
             additionalUTxOs: additionalUTxOs ?? [],
@@ -1007,20 +1009,22 @@ export const LucidClient = {
     );
     console.log('[startup] Ogmios protocol parameters loaded');
     console.log(`[startup] Constructing Lucid for network=${network}`);
+    const isDevnetWithRuntimeSlotConfig = network === 'Custom';
+    const devnetZeroTime = isDevnetWithRuntimeSlotConfig
+      ? await retryWithBackoff(() => querySystemStart(rawOgmiosEndpoint), 'Ogmios system start query')
+      : undefined;
     const lucid = await Lucid.Lucid(provider, network, {
       presetProtocolParameters: protocolParameters,
+      // Lucid Evolution's maintainer advised us to move to Scalus while reviewing our evaluator update.
+      // https://github.com/Anastasia-Labs/lucid-evolution/pull/734
+      evaluator: createScalusEvaluator({ protocolMajorVersion: 10 }),
+      slotConfig:
+        devnetZeroTime === undefined ? undefined : { zeroTime: devnetZeroTime, zeroSlot: 0, slotLength: 1000 },
     } as any);
     console.log('[startup] Lucid constructed successfully');
 
-    const isDevnetWithRuntimeSlotConfig = network === 'Custom';
     if (isDevnetWithRuntimeSlotConfig) {
-      console.log('[startup] Querying Ogmios system start');
-      const devnetZeroTime = await retryWithBackoff(
-        () => querySystemStart(rawOgmiosEndpoint),
-        'Ogmios system start query',
-      );
-      console.log('[startup] Ogmios system start loaded');
-      Lucid.SLOT_CONFIG_NETWORK[network].zeroTime = devnetZeroTime;
+      Lucid.SLOT_CONFIG_NETWORK[network].zeroTime = devnetZeroTime!;
       Lucid.SLOT_CONFIG_NETWORK[network].slotLength = 1000;
     }
     // const lucid = await Lucid.Lucid.new(

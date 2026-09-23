@@ -1,0 +1,27 @@
+{
+  "minIterations": 1000,
+  "minCount": 100,
+  "requiredLabels": [
+    "fuzz.model.migration.send",
+    "fuzz.model.migration.receive",
+    "fuzz.model.migration.acknowledge",
+    "fuzz.model.migration.timeout",
+    "fuzz.model.migration.prune",
+    "fuzz.model.migration.old-ack-after-handover",
+    "fuzz.model.migration.old-timeout-after-handover",
+    "fuzz.model.migration.old-receipt-pruned-after-handover",
+    "fuzz.model.migration.authenticated-channel-handover",
+    "fuzz.model.migration.reject-commitment-omission",
+    "fuzz.model.migration.reject-receipt-omission",
+    "fuzz.model.migration.reject-acknowledgement-omission",
+    "fuzz.model.migration.reject-proof-floor-mutation"
+  ],
+  "distributions": {
+    "prop_migration_packet_handover_rejects_claim_mutation": {
+      "fuzz.model.migration.reject-commitment-omission": 1000,
+      "fuzz.model.migration.reject-receipt-omission": 1000,
+      "fuzz.model.migration.reject-acknowledgement-omission": 1000,
+      "fuzz.model.migration.reject-proof-floor-mutation": 1000
+    }
+  }
+}

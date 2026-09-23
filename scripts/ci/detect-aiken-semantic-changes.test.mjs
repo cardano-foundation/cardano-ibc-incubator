@@ -13,11 +13,17 @@ import {
 test('scopes edits to existing workflow jobs and falls back for shared changes', () => {
   const source = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const gatewayEdit = source.replace(
-    '      - name: Check collateral selection against Hermes policy',
-    '      - name: Check gateway collateral',
+    '        run: npm run --prefix cardano/gateway lint:check',
+    '        run: npm run --prefix cardano/gateway lint',
   );
   assert.notEqual(gatewayEdit, source);
-  assert.deepEqual(classifyCiWorkflowChange(source, gatewayEdit), { relevant: false, fuzz: false });
+  // The Gateway job now runs migration evidence checks, so edits must fail closed.
+  assert.deepEqual(classifyCiWorkflowChange(source, gatewayEdit), { relevant: true, fuzz: true });
+  const isolatedGateway = 'name: CI\njobs:\n  gateway:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+  assert.deepEqual(
+    classifyCiWorkflowChange(isolatedGateway, isolatedGateway.replace('npm test', 'npm run build')),
+    { relevant: false, fuzz: false },
+  );
 
   const budgetEdit = source.replace('      - name: Collect Aiken execution units', '      - name: Collect budget units');
   assert.notEqual(budgetEdit, source);
@@ -81,7 +87,8 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
   const run = (fuzz, overrides = {}, changed = 'true', runJobs = 'true') => {
     const needs = Object.fromEntries([
       'docs-update', 'aiken-changes', 'aiken-static', 'generated-artifacts', 'tx-budgets',
-      'aiken-smoke', 'aiken-fuzz', 'aiken-mutations', 'deno-offchain', 'deno-funds',
+      'aiken-smoke', 'aiken-fuzz', 'aiken-mutations', 'deno-offchain',
+      'migration-assurance', 'migration-packet-model', 'deno-funds',
     ].map((name) => [name, { result: !fuzz && ['aiken-smoke', 'aiken-fuzz', 'aiken-mutations'].includes(name) ? 'skipped' : 'success' }]));
     for (const [name, result] of Object.entries(overrides)) needs[name] = { result };
     return execFileSync(process.execPath, ['-e', script], {
@@ -104,6 +111,8 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
   assert.throws(() => run(false, { 'docs-update': 'failure' }, '', 'false'));
   assert.throws(() => run(false, { 'deno-offchain': 'failure' }));
   assert.throws(() => run(true, { 'deno-offchain': 'skipped' }));
+  assert.throws(() => run(false, { 'migration-assurance': 'failure' }));
+  assert.throws(() => run(true, { 'migration-packet-model': 'skipped' }));
   assert.throws(() => run(false, { 'deno-funds': 'failure' }));
   assert.throws(() => run(true, { 'deno-funds': 'skipped' }));
   assert.throws(() => run(false, { 'tx-budgets': 'failure' }));

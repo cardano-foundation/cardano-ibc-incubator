@@ -256,14 +256,13 @@ describe('YaciHistoryService', () => {
     );
   });
 
-  it('caches first registration slots discovered from local Yaci tables', async () => {
+  it('leaves chain-derived registration cache writes to the indexer', async () => {
     entityManagerMock.query
       .mockResolvedValueOnce([{ start_slot: '1000' }])
       .mockResolvedValueOnce([{ start_slot: '1200' }])
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ pool_id: 'pool1localpool', first_registration_slot: '77' }])
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce([{ pool_id: 'pool1localpool', first_registration_slot: '77' }]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       ...defaultVerificationData,
       stakeDistribution: [
@@ -284,10 +283,7 @@ describe('YaciHistoryService', () => {
       ],
     });
 
-    expect(entityManagerMock.query).toHaveBeenLastCalledWith(
-      expect.stringContaining('INSERT INTO bridge_pool_registration_cache'),
-      [JSON.stringify([{ pool_id: 'pool1localpool', first_registration_slot: '77' }]), 'yaci'],
-    );
+    expect(entityManagerMock.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO bridge_pool_registration_cache'))).toBe(false);
     expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v1/pool_updates');
   });
 

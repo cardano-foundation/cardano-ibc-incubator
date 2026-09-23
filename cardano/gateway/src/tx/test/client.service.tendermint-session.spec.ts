@@ -443,7 +443,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
     );
     expect(verifyClientMessage).not.toHaveBeenCalled();
     expect(checkForMisbehaviour).not.toHaveBeenCalled();
-    expect((service as any).computeTxValidityWindow).toHaveBeenCalledWith(29_000, TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE);
+    expect((service as any).computeTxValidityWindow).toHaveBeenCalledWith(5_000, TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE);
     expect((service as any).refreshWalletContext).not.toHaveBeenCalled();
     expect(lucidService.createUnsignedTendermintSessionTransaction).toHaveBeenCalled();
     expect(buildFinal).not.toHaveBeenCalled();
@@ -716,7 +716,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
     expect(finalBuilder.collectFrom).toHaveBeenCalledWith([utxo('signer-funding')]);
     expect(finalBuilder.validFrom).toHaveBeenCalledWith(TEST_VALID_FROM_TIME_MS);
     expect(finalBuilder.validTo).toHaveBeenCalledWith(TEST_FINAL_VALID_TO_TIME_MS);
-    expect(computeValidityWindow).toHaveBeenCalledWith(29_000, TENDERMINT_FINALIZATION_TIME_TO_LIVE);
+    expect(computeValidityWindow).toHaveBeenCalledWith(5_000, TENDERMINT_FINALIZATION_TIME_TO_LIVE);
     expect(pendingUpdates.take('finalize-hash')).toBe(pending);
     expect(runnerChainSpy).toHaveBeenCalledWith(
       expect.objectContaining({ operationName: 'buildTendermintUpdateFinalization' }),

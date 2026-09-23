@@ -1,0 +1,18 @@
+// Test image only. The regular Cosmos image never includes this file.
+package time
+
+import (
+    "os"
+    "strconv"
+    "time"
+)
+
+// Only the block producer's wall clock is offset. Consensus validation, IBC
+// verification, signatures, trusting periods and monotonic timers are unchanged.
+func migrationClockNow() time.Time {
+    seconds, err := strconv.ParseInt(os.Getenv("MIGRATION_REHEARSAL_CLOCK_OFFSET_SECONDS"), 10, 64)
+    if err != nil || seconds < -63072000 || seconds > 63072000 {
+        panic("disposable migration rehearsal requires an explicit bounded clock offset")
+    }
+    return time.Now().Add(time.Duration(seconds) * time.Second)
+}

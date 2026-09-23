@@ -110,7 +110,12 @@ describe('Ogmios protocol parameter compatibility', () => {
       PlutusV2: [],
       PlutusV3: [3, 4],
     });
-    await expect(Lucid(undefined, 'Custom', { presetProtocolParameters: mapped })).resolves.toBeDefined();
+    await expect(
+      Lucid(undefined, 'Custom', {
+        presetProtocolParameters: mapped,
+        slotConfig: { zeroTime: 0, zeroSlot: 0, slotLength: 1000 },
+      }),
+    ).resolves.toBeDefined();
   });
 
   it('rejects malformed responses instead of silently manufacturing parameters', () => {

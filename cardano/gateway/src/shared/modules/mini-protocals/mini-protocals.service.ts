@@ -7,11 +7,12 @@ import {
   BlockFetchClient,
   BlockFetchNoBlocks,
   ChainPoint,
+  HandshakeAcceptVersion,
   HandshakeClient,
   Multiplexer,
 } from '@harmoniclabs/ouroboros-miniprotocols-ts';
 import type { SocketLike } from '@harmoniclabs/ouroboros-miniprotocols-ts/dist/multiplexer/SocketLike';
-import { createConnection } from 'net';
+import { createConnection, Socket } from 'net';
 import {
   HISTORY_SERVICE,
   HistoryBlock,
@@ -25,6 +26,7 @@ import { REDEEMER_TYPE } from '../../../constant';
 export class MiniProtocalsService {
   private static readonly BLOCK_FETCH_MAX_ATTEMPTS = 3;
   private static readonly BLOCK_FETCH_RETRY_DELAY_MS = 250;
+  private static readonly BLOCK_FETCH_TIMEOUT_MS = 30_000;
 
   constructor(
     @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
@@ -123,10 +125,12 @@ export class MiniProtocalsService {
       throw new Error('Cardano chain host, port, and network magic must be configured for block witness fetch');
     }
 
+    const sockets = new Set<Socket>();
     const multiplexer = new Multiplexer({
       protocolType: 'node-to-node',
       connect: () => {
         const socket = createConnection({ host, port });
+        sockets.add(socket);
         // Prevent raw socket errors from surfacing as unhandled process-level events.
         socket.on('error', () => undefined);
         // The library's NodeSocketLike declaration predates Node's `address(): string`
@@ -136,16 +140,31 @@ export class MiniProtocalsService {
     });
     const handshake = new HandshakeClient(multiplexer);
     const blockFetchClient = new BlockFetchClient(multiplexer);
+    let rejectProtocol: (error: Error) => void;
+    const protocolFailure = new Promise<never>((_resolve, reject) => { rejectProtocol = reject; });
+    // Keep errors handled between the handshake and block-fetch awaits too.
+    void protocolFailure.catch(() => undefined);
+    const onProtocolError = (error: unknown) => rejectProtocol(this.normalizeFetchError(error));
+    handshake.on('error', onProtocolError);
+    blockFetchClient.on('error', onProtocolError);
 
     try {
-      await this.runWithMultiplexerError(multiplexer, () => handshake.propose(networkMagic));
+      // The library defaults query=true, which only requests a version table
+      // and does not establish a connection on which block fetch can run.
+      const accepted = await this.runWithMultiplexerError(multiplexer, () =>
+        Promise.race([handshake.propose({ networkMagic, query: false }), protocolFailure]),
+      );
+      if (!(accepted instanceof HandshakeAcceptVersion) ||
+          accepted.versionData.networkMagic !== networkMagic || accepted.versionData.query) {
+        throw new Error('Cardano node did not accept the block witness handshake');
+      }
 
       const from = this.toChainPoint(blocks[0]);
       const to = this.toChainPoint(blocks[blocks.length - 1]);
       const response =
         blocks.length === 1
-          ? await this.runWithMultiplexerError(multiplexer, () => blockFetchClient.request(from))
-          : await this.runWithMultiplexerError(multiplexer, () => blockFetchClient.requestRange(from, to));
+          ? await this.runWithMultiplexerError(multiplexer, () => Promise.race([blockFetchClient.request(from), protocolFailure]))
+          : await this.runWithMultiplexerError(multiplexer, () => Promise.race([blockFetchClient.requestRange(from, to), protocolFailure]));
 
       if (response instanceof BlockFetchNoBlocks) {
         throw new Error(
@@ -160,14 +179,22 @@ export class MiniProtocalsService {
         );
       }
 
-      return fetchedBlocks.map((fetchedBlock) => Buffer.from(fetchedBlock.getBlockBytes()));
+      return fetchedBlocks.map((fetchedBlock) => this.normalizeBlockCbor(Buffer.from(fetchedBlock.getBlockBytes())));
     } catch (error) {
       const normalizedError = this.normalizeFetchError(error);
       this.logger.error(`Failed to fetch Cardano block witness data: ${normalizedError.message}`);
       throw normalizedError;
     } finally {
-      handshake.terminate();
-      multiplexer.close();
+      try {
+        handshake.terminate();
+        multiplexer.close({ closeSocket: false });
+      } finally {
+        // Library close() only calls socket.end(); destroy also closes a
+        // connecting or half-open peer after the deadline.
+        for (const socket of sockets) socket.destroy();
+        handshake.removeAllListeners();
+        blockFetchClient.off('error', onProtocolError);
+      }
     }
   }
 
@@ -189,6 +216,7 @@ export class MiniProtocalsService {
 
       const cleanup = () => {
         multiplexer.off('error', onError);
+        clearTimeout(timer);
       };
 
       const settleResolve = (value: T) => {
@@ -213,8 +241,12 @@ export class MiniProtocalsService {
         settleReject(error);
       };
 
+      const timer = setTimeout(
+        () => settleReject(new Error('Cardano block witness transport timed out')),
+        MiniProtocalsService.BLOCK_FETCH_TIMEOUT_MS,
+      );
       multiplexer.on('error', onError);
-      operation().then(settleResolve, settleReject);
+      Promise.resolve().then(operation).then(settleResolve, settleReject);
     });
   }
 
@@ -262,6 +294,7 @@ export class MiniProtocalsService {
             headers: {
               accept: 'application/octet-stream',
             },
+            signal: AbortSignal.timeout(MiniProtocalsService.BLOCK_FETCH_TIMEOUT_MS),
           },
         );
 
@@ -275,7 +308,7 @@ export class MiniProtocalsService {
           );
         }
 
-        const bytes = this.normalizeYaciBlockCbor(Buffer.from(await response.arrayBuffer()));
+        const bytes = this.normalizeBlockCbor(Buffer.from(await response.arrayBuffer()));
         if (bytes.length === 0) {
           return null;
         }
@@ -293,12 +326,12 @@ export class MiniProtocalsService {
     }
   }
 
-  private normalizeYaciBlockCbor(bytes: Buffer): Buffer {
+  private normalizeBlockCbor(bytes: Buffer): Buffer {
     if (bytes.length < 3) {
       return bytes;
     }
 
-    // Yaci's /blocks/{hash}/cbor endpoint can return a two-element CBOR envelope:
+    // Both Yaci and node-to-node block fetch can return a two-element CBOR envelope:
     // [blockType, rawBlockCbor]. Downstream verifiers expect the raw block bytes only.
     if (bytes[0] === 0x82 && bytes[1] <= 0x17) {
       return bytes.subarray(2);

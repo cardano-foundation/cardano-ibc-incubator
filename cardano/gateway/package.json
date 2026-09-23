@@ -6,8 +6,6 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "postinstall": "node scripts/patch-lucid-collateral.cjs",
-    "test:lucid-collateral": "node --test scripts/lucid-collateral.test.mjs",
     "build": "nest build",
     "benchmark:denom-registry": "ts-node -r tsconfig-paths/register src/scripts/test/denom-registry-benchmark.ts",
     "check:tendermint-update-capacity-fixture": "ts-node -r tsconfig-paths/register src/scripts/test/generate-injective-tendermint-capacity-fixture.ts --check",
@@ -28,7 +26,8 @@
     "test:cov": "jest --coverage",
     "test:cov:ci": "jest --coverage --detectOpenHandles --runInBand",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "export:migration-witness": "ts-node -r tsconfig-paths/register src/scripts/export-migration-witness.ts"
   },
   "dependencies": {
     "@cardano-ibc/planner": "file:../../packages/cardano-ibc-planner",
@@ -49,7 +48,8 @@
     "@harmoniclabs/pair": "^1.0.0",
     "@harmoniclabs/plutus-data": "^1.2.4",
     "@harmoniclabs/uint8array-utils": "1.0.4",
-    "@lucid-evolution/lucid": "0.4.34",
+    "@lucid-evolution/lucid": "0.6.5",
+    "@lucid-evolution/scalus-uplc": "0.1.4",
     "@nestjs/axios": "^4.0.0",
     "@nestjs/common": "^11.1.29",
     "@nestjs/config": "^4.0.2",
@@ -169,7 +169,6 @@
     }
   },
   "overrides": {
-    "@lucid-evolution/uplc": "0.2.23",
     "@nestjs/swagger": {
       "js-yaml": "5.2.2"
     },

@@ -1,4 +1,5 @@
 import { assertRejects } from "@std/assert";
+import { createCardanoScalusEvaluator } from "../scalus-evaluator.ts";
 import { scanDeploymentState } from "../shutdown.ts";
 import {
   applyDoubleCborEncoding,
@@ -54,7 +55,9 @@ export async function shutdownFixture(
   };
   const emulator = new Emulator([account]);
   emulator.time = 1_700_000_000_000;
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(account.seedPhrase);
   const deployer = getAddressDetails(account.address).paymentCredential!.hash;
   const hostPolicy = hash("44");

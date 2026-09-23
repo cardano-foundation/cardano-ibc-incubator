@@ -52,16 +52,13 @@ function leafHash(digest: Buffer, value: string): string {
 }
 
 /** Pure membership/exclusion check; malformed inputs throw, mismatch is false. */
-export function verifyIbcTreeWitness(
+export function computeIbcTreeWitnessRoot(
   key: string,
   valueHex: string,
   siblings: readonly string[],
-  expectedRoot: string,
-): boolean {
+): string {
   const digest = keyDigest(key);
   const value = normalizeValue(valueHex);
-  const root = normalizeValue(expectedRoot);
-  if (root.length !== 64) throw new Error("IBC tree root must be 32-byte hex");
   if (!Array.isArray(siblings) || siblings.length !== DEPTH) {
     throw new Error("IBC tree witness must have exactly 64 siblings");
   }
@@ -77,7 +74,18 @@ export function verifyIbcTreeWitness(
       : innerHash(sibling, current);
     index >>= 1n;
   }
-  return current === root;
+  return current;
+}
+
+export function verifyIbcTreeWitness(
+  key: string,
+  valueHex: string,
+  siblings: readonly string[],
+  expectedRoot: string,
+): boolean {
+  const root = normalizeValue(expectedRoot);
+  if (root.length !== 64) throw new Error("IBC tree root must be 32-byte hex");
+  return computeIbcTreeWitnessRoot(key, valueHex, siblings) === root;
 }
 
 /**

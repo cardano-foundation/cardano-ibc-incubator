@@ -11,6 +11,7 @@ import {
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
+import { createCardanoScalusEvaluator } from "./scalus-evaluator.ts";
 import {
   DEPLOYMENT_PLAN_FIXTURE,
   loadDeploymentPlan,
@@ -204,7 +205,9 @@ for (const splitRequired of [false, true]) {
         maxTxSize: 5_000,
       },
     );
-    const lucid = await Lucid(emulator, "Custom");
+    const lucid = await Lucid(emulator, "Custom", {
+      evaluator: createCardanoScalusEvaluator(),
+    });
     lucid.selectWallet.fromSeed(seed);
     let submissions = 0;
     emulator.submitTx = () => {
@@ -212,7 +215,7 @@ for (const splitRequired of [false, true]) {
       return Promise.reject(new Error("Preflight must stop before submission"));
     };
     await assertRejects(
-      () => createDeployment(lucid),
+      () => createDeployment(lucid, undefined, { deploymentMode: "legacy" }),
       Error,
       "complete deployment validator preflight",
     );

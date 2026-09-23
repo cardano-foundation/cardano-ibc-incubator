@@ -128,6 +128,9 @@ describe('HostStateHeartbeatService', () => {
     });
 
     const runnerPlan = txOperationRunner.run.mock.calls[0][0];
+    expect(lucidService.createUnsignedHostStateHeartbeatTransaction).not.toHaveBeenCalled();
+    await runnerPlan.unsignedTx();
+    expect(lucidService.createUnsignedHostStateHeartbeatTransaction).toHaveBeenCalledTimes(1);
     expect(runnerPlan.wallet).toEqual({
       mode: 'refresh_from_address',
       address: 'addr_test1signer',
