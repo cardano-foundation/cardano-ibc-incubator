@@ -29,7 +29,7 @@
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
     "check": "deno check index.ts src/*.ts src/testing/*.ts scripts/*.ts types/**/*.ts",
-    "test:deployment": "deno test --allow-env --allow-read src/deployment.test.ts src/deployment-plan.test.ts src/deployment-transactions.test.ts src/client-registry.test.ts",
+    "test:deployment": "deno test --allow-env --allow-read src/deployment.test.ts src/deployment-plan.test.ts src/deployment-transactions.test.ts src/deployment-batching.test.ts src/client-registry.test.ts",
     "test:tx-budgets": "deno test --allow-env --allow-read src/packet-budgets.test.ts",
     "test:channels": "deno test --allow-env --allow-read src/channel-actions.test.ts",
     "test:channels:fuzz": "deno test --allow-env --allow-read src/channel-actions.fuzz.test.ts",

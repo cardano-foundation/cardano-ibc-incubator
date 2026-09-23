@@ -24,19 +24,25 @@ export function buildReferenceBatchTx(
   return tx;
 }
 
+/**
+ * A wallet output reserved for one reference batch. Leftover lovelace is burned
+ * as fee only for near-limit batches that have no room for a change output.
+ */
+export type ReferenceBatchFunding = { utxo: UTxO; leftoverAsFee: boolean };
+
 /** Balance and sign separately from submission so preflight measures the real bytes. */
 export async function completeReferenceBatchTx(
   lucid: LucidEvolution,
   referenceAddress: string,
   validators: Script[],
-  dedicatedFunding?: UTxO,
+  funding?: ReferenceBatchFunding,
 ) {
   const txBuilder = buildReferenceBatchTx(lucid, referenceAddress, validators);
   const [walletUTxOs, outputs, txSignBuilder] = await txBuilder.chain(
-    dedicatedFunding
+    funding
       ? {
-        presetWalletInputs: [dedicatedFunding],
-        includeLeftoverLovelaceAsFee: true,
+        presetWalletInputs: [funding.utxo],
+        includeLeftoverLovelaceAsFee: funding.leftoverAsFee,
       }
       : undefined,
   );
@@ -45,6 +51,19 @@ export async function completeReferenceBatchTx(
   }).rawConfig().consumedInputs ?? [];
   const signedTx = await txSignBuilder.sign.withWallet().complete();
   return { walletUTxOs, outputs, signedTx, consumedWalletInputs };
+}
+
+/** One wallet output per reference batch, in batch order, before any change. */
+export function buildReferenceFundingTx(
+  lucid: LucidEvolution,
+  walletAddress: string,
+  fundingLovelace: bigint[],
+) {
+  let tx = lucid.newTx();
+  for (const lovelace of fundingLovelace) {
+    tx = tx.pay.ToAddress(walletAddress, { lovelace });
+  }
+  return tx;
 }
 
 export type HostStateBootstrap = {
@@ -87,3 +106,37 @@ export function buildMockTokenMintTx(
     .mintAssets({ [tokenUnit]: 9_999_999_999n }, Data.void())
     .pay.ToAddress(walletAddress, { [tokenUnit]: 999_999_999n });
 }
+
+export type IdentifierThreadMint = {
+  nonceUtxo: UTxO;
+  mintingPolicy: MintingPolicy;
+  tokenUnit: string;
+  encodedRedeemer: string;
+  address: string;
+  encodedDatum: string;
+};
+
+/** Trace-registry shards and the directory each mint one identifier NFT from their own nonce. */
+export function buildIdentifierThreadMintTx(
+  lucid: LucidEvolution,
+  thread: IdentifierThreadMint,
+) {
+  return lucid.newTx()
+    .collectFrom([thread.nonceUtxo], Data.void())
+    .attach.MintingPolicy(thread.mintingPolicy)
+    .mintAssets({ [thread.tokenUnit]: 1n }, thread.encodedRedeemer)
+    .pay.ToContract(
+      thread.address,
+      { kind: "inline", value: thread.encodedDatum },
+      { [thread.tokenUnit]: 1n },
+    );
+}
+
+/**
+ * Pay the fee and minimum ADA from the nonce alone. Without coin selection the
+ * transaction spends no shared wallet input, so every thread mint can be in the
+ * mempool at once.
+ */
+export const IDENTIFIER_THREAD_COMPLETE_OPTIONS = {
+  coinSelection: false,
+} as const;

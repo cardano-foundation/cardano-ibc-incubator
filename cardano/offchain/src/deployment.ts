@@ -16,9 +16,13 @@ export {
 } from "./deployment-plan.ts";
 import {
   buildHostStateBootstrapTx,
+  buildIdentifierThreadMintTx,
   buildMockTokenMintTx,
   buildReferenceBatchTx,
+  buildReferenceFundingTx,
   completeReferenceBatchTx,
+  IDENTIFIER_THREAD_COMPLETE_OPTIONS,
+  type IdentifierThreadMint,
 } from "./deployment-transactions.ts";
 import { ensureDir } from "@std/fs";
 import {
@@ -38,16 +42,17 @@ import {
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import {
-  awaitWalletTx,
+  completeAndSignTx,
   DeploymentTemplate,
   formatTimestamp,
   generateIdentifierTokenName,
   generatePortTokenName,
   getLiveWalletUtxos,
-  isRetryableOgmiosTransportError,
-  recordDeploymentTx,
   resetDeploymentCostReport,
+  type SignedDeploymentTx,
+  signedTxOutputs,
   submitTx,
+  submitTxBatch,
 } from "./utils.ts";
 import {
   DEPLOYMENT_NONCE_SPLIT_AMOUNT,
@@ -593,7 +598,6 @@ export const createDeployment = async (
       publication === "bootstrap"
     ).map(({ script }) => script),
     reservedDeploymentRefs,
-    deploymentWalletAddress,
   );
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   const bootstrapReferenceScripts: BootstrapReferenceScripts = {
@@ -706,7 +710,6 @@ export const createDeployment = async (
       plan.referenceHolder.address,
       remainingReferredValidators,
       reservedDeploymentRefs,
-      deploymentWalletAddress,
     ),
   };
   await setSpendableWalletUtxos(0);
@@ -949,9 +952,9 @@ const REFERENCE_UTXO_SAFE_TX_HEADROOM_BYTES = 1_000;
 const REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES = 750;
 const REFERENCE_UTXO_DEDICATED_FUNDING_MARGIN_BYTES = 1_500;
 export const REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE = 1_500_000n;
-const REFERENCE_UTXO_ADOPTION_ATTEMPTS = 6;
+// Covers the fee of a maximum-size reference transaction plus a change output.
+export const REFERENCE_UTXO_FUNDING_CHANGE_BUFFER_LOVELACE = 3_000_000n;
 const REFERENCE_UTXO_ADOPTION_TIMEOUT_MS = 60_000;
-const REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS = 5_000;
 const DEPLOYMENT_COLLATERAL_LOVELACE = 5_000_000n;
 const DEPLOYMENT_MAX_COLLATERAL_INPUTS = 3;
 
@@ -975,14 +978,6 @@ const filterReservedWalletUtxos = (
   reservedRefs.size === 0
     ? utxos
     : utxos.filter((utxo) => !reservedRefs.has(utxoRefKey(utxo)));
-
-const mergeWalletUtxos = (utxos: UTxO[]): UTxO[] => {
-  const byRef = new Map<string, UTxO>();
-  for (const utxo of utxos) {
-    byRef.set(utxoRefKey(utxo), utxo);
-  }
-  return [...byRef.values()];
-};
 
 export const selectDeploymentCollateralHoldback = (utxos: UTxO[]): UTxO[] => {
   const candidateGroups = [
@@ -1064,18 +1059,6 @@ const referenceTxPayloadBudget = (maxTxSize: number): number =>
 
 const referenceSingleValidatorBudget = (maxTxSize: number): number =>
   Math.max(1, maxTxSize - REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES);
-
-const isReferenceUtxoAdoptionTimeout = (error: unknown): boolean => {
-  const errorText = error instanceof Error
-    ? `${error.message}\n${error.stack ?? ""}`
-    : String(error);
-
-  return errorText.includes("Timed out waiting for wallet visibility of tx");
-};
-
-const isRetryableReferenceUtxoAdoptionError = (error: unknown): boolean =>
-  isRetryableOgmiosTransportError(error) ||
-  isReferenceUtxoAdoptionTimeout(error);
 
 export const shouldUseDedicatedReferenceFunding = (
   validators: Script[],
@@ -1325,13 +1308,19 @@ async function mintMockToken(lucid: LucidEvolution, planned: PlannedValidator) {
   return [mintMockTokenPolicyId, tokenName];
 }
 
-async function createReferenceUtxos(
+/**
+ * Publish reference scripts with one funding transaction and one transaction per
+ * batch, all submitted together. The funding transaction pays one wallet output
+ * per batch; each batch spends only its own funding output, so the batches share
+ * no input and chain only on the funding transaction. They are adopted in one or
+ * a few blocks instead of one block per batch.
+ */
+export async function createReferenceUtxos(
   lucid: LucidEvolution,
   referenceAddress: string,
   referredValidators: Script[],
   reservedWalletRefs = new Set<string>(),
-  deploymentWalletAddress?: string,
-) {
+): Promise<ReferenceUtxoMap> {
   try {
     console.log("Create reference utxos starting ...");
 
@@ -1341,7 +1330,7 @@ async function createReferenceUtxos(
     logReferenceValidatorSizeReport(referredValidators, maxTxSize);
     assertReferenceValidatorsFit(referredValidators, maxTxSize);
 
-    const initialBatches = buildReferenceValidatorBatches(
+    let pendingBatches = buildReferenceValidatorBatches(
       referredValidators,
       maxTxSize,
     );
@@ -1349,346 +1338,186 @@ async function createReferenceUtxos(
 
     console.log(
       "Submitting",
-      initialBatches.length,
+      pendingBatches.length,
       "reference transactions for",
       referredValidators.length,
       "validators ...",
     );
 
-    const result: { [x: string]: UTxO } = {};
-
-    const pendingBatches = [...initialBatches];
-    const spentReferenceBatchRefs = new Set<string>();
-    const refreshReferenceWalletState = async (
-      localWalletUtxos: UTxO[] = [],
-    ) => {
-      // Clear Lucid's override before querying the provider, then merge provider
-      // state with locally chained change outputs. This preserves unselected wallet
-      // UTxOs without allowing stale Kupo responses to reuse known-spent inputs.
-      lucid.overrideUTxOs([]);
-      let liveWalletUtxos: UTxO[] = [];
-      try {
-        liveWalletUtxos = await getLiveWalletUtxos(lucid);
-      } catch (error) {
-        console.warn(
-          "createReferenceUtxos could not refresh provider wallet UTxOs; using local chained wallet state:",
-          error,
-        );
-      }
-      const safeLiveWalletUtxos = liveWalletUtxos.filter((utxo) =>
-        !spentReferenceBatchRefs.has(utxoRefKey(utxo))
-      );
-      lucid.overrideUTxOs(
-        filterReservedWalletUtxos(
-          mergeWalletUtxos([...safeLiveWalletUtxos, ...localWalletUtxos]),
-          reservedWalletRefs,
-        ),
-      );
-    };
-    await refreshReferenceWalletState();
-
-    const selectDedicatedFundingUtxo = (
-      walletUtxos: UTxO[],
-      fundingLovelace: bigint,
-    ): UTxO | undefined =>
-      sortUtxosByLovelaceAsc(
-        walletUtxos.filter((utxo) =>
-          isAdaOnlyUtxo(utxo) &&
-          !utxo.scriptRef &&
-          utxoLovelace(utxo) === fundingLovelace
-        ),
-      )[0];
-
-    const createDedicatedFundingUtxo = async (
-      fundingLovelace: bigint,
-      batchLabel: string,
-    ): Promise<UTxO> => {
-      await refreshReferenceWalletState();
-      const txHash = await submitTx(
-        () =>
-          lucid
-            .newTx()
-            .pay.ToAddress(walletAddress, { lovelace: fundingLovelace }),
-        lucid,
-        `Prepare reference funding ${batchLabel}`,
-        false,
-      );
-      await refreshReferenceWalletState();
-      const [fundingUtxo] = (await getLiveWalletUtxos(lucid)).filter((utxo) =>
-        utxo.txHash === txHash &&
-        isAdaOnlyUtxo(utxo) &&
-        utxoLovelace(utxo) === fundingLovelace
-      );
-      if (!fundingUtxo) {
-        throw new Error(
-          `Unable to find prepared reference funding UTxO ${txHash} with ${fundingLovelace} lovelace`,
-        );
-      }
-      return fundingUtxo;
-    };
-
-    const prepareDedicatedFundingUtxo = async (
-      outputLovelace: bigint,
-      batchLabel: string,
-    ): Promise<UTxO> => {
-      const fundingLovelace = outputLovelace +
-        REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE;
-      const spendableWalletUtxos = filterReservedWalletUtxos(
-        mergeWalletUtxos(await getLiveWalletUtxos(lucid)),
-        reservedWalletRefs,
-      ).filter((utxo) => !spentReferenceBatchRefs.has(utxoRefKey(utxo)));
-      const existingFundingUtxo = selectDedicatedFundingUtxo(
-        spendableWalletUtxos,
-        fundingLovelace,
-      );
-      if (existingFundingUtxo) {
-        return existingFundingUtxo;
-      }
-
-      console.log(
-        "Preparing dedicated reference funding UTxO",
-        batchLabel,
-        `with ${fundingLovelace} lovelace ...`,
-      );
-      return await createDedicatedFundingUtxo(fundingLovelace, batchLabel);
+    const result: ReferenceUtxoMap = {};
+    const batchLabel = (batch: ReferenceValidatorBatch) =>
+      `${batch.startIndex + 1}-${batch.startIndex + batch.validators.length}`;
+    const splitBatch = (
+      batch: ReferenceValidatorBatch,
+    ): ReferenceValidatorBatch[] => {
+      const midpoint = Math.ceil(batch.validators.length / 2);
+      return [
+        {
+          validators: batch.validators.slice(0, midpoint),
+          startIndex: batch.startIndex,
+        },
+        {
+          validators: batch.validators.slice(midpoint),
+          startIndex: batch.startIndex + midpoint,
+        },
+      ];
     };
 
     while (pendingBatches.length > 0) {
-      // We still submit sequentially because each successful batch updates the
-      // wallet UTxO set used to build the next one.
-      const batch = pendingBatches.shift()!;
-      const batchLabel = `${batch.startIndex + 1}-${
-        batch.startIndex + batch.validators.length
-      }`;
-      console.log(
-        "Preparing reference batch for validators",
-        batchLabel,
-        `(${batch.validators.length} validators) ...`,
+      const batches = pendingBatches;
+      pendingBatches = [];
+
+      // Clear Lucid's override before querying the provider so the funding
+      // transaction selects from live wallet state, excluding reserved nonces
+      // and collateral.
+      lucid.overrideUTxOs([]);
+      const spendableWalletUtxos = filterReservedWalletUtxos(
+        await getLiveWalletUtxos(lucid),
+        reservedWalletRefs,
       );
+      lucid.overrideUTxOs(spendableWalletUtxos);
 
-      const buildBatchTx = () =>
-        buildReferenceBatchTx(lucid, referenceAddress, batch.validators);
-
-      const dedicatedFunding = shouldUseDedicatedReferenceFunding(
+      const fundingPlan: Array<{
+        batch: ReferenceValidatorBatch;
+        leftoverAsFee: boolean;
+        lovelace: bigint;
+      }> = [];
+      for (const batch of batches) {
+        const leftoverAsFee = shouldUseDedicatedReferenceFunding(
           batch.validators,
           maxTxSize,
-        )
-        ? await prepareDedicatedFundingUtxo(
-          (await buildBatchTx().config()).totalOutputAssets.lovelace ??
-            0n,
-          batchLabel,
-        )
-        : undefined;
+        );
+        const outputLovelace = (await buildReferenceBatchTx(
+          lucid,
+          referenceAddress,
+          batch.validators,
+        ).config()).totalOutputAssets.lovelace ?? 0n;
+        fundingPlan.push({
+          batch,
+          leftoverAsFee,
+          lovelace: outputLovelace +
+            (leftoverAsFee
+              ? REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE
+              : REFERENCE_UTXO_FUNDING_CHANGE_BUFFER_LOVELACE),
+        });
+      }
 
-      let newWalletUTxOs: UTxO[] | undefined;
-      let derivedOutputs: UTxO[] | undefined;
-      let signedTx;
-      let consumedWalletInputs: UTxO[] = [];
-      let splitBatch = false;
-      let lastBuildError: unknown = null;
-      for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const fundingLabel = `${batches[0].startIndex + 1}-${
+        batches.at(-1)!.startIndex + batches.at(-1)!.validators.length
+      }`;
+      const fundingTx = await completeAndSignTx(
+        () =>
+          buildReferenceFundingTx(
+            lucid,
+            walletAddress,
+            fundingPlan.map(({ lovelace }) => lovelace),
+          ),
+        lucid,
+        `Prepare reference funding ${fundingLabel}`,
+        false,
+      );
+      const fundingOutputs = signedTxOutputs(fundingTx.signedTx);
+      fundingPlan.forEach(({ lovelace }, index) => {
+        const output = fundingOutputs[index];
+        if (
+          output?.address !== walletAddress ||
+          !isAdaOnlyUtxo(output) ||
+          utxoLovelace(output) !== lovelace
+        ) {
+          throw new Error(
+            `Reference funding output ${index} does not pay ${lovelace} lovelace to the wallet.`,
+          );
+        }
+      });
+      // The wallet signs only inputs it can see, and the funding outputs are
+      // not on chain yet. Coin selection is still pinned per batch below.
+      lucid.overrideUTxOs([
+        ...spendableWalletUtxos,
+        ...fundingOutputs.slice(0, fundingPlan.length),
+      ]);
+
+      const signedBatches: Array<{
+        batch: ReferenceValidatorBatch;
+        signed: SignedDeploymentTx;
+        outputs: UTxO[];
+      }> = [];
+      for (const [index, { batch, leftoverAsFee }] of fundingPlan.entries()) {
+        const label = batchLabel(batch);
+        console.log(
+          "Preparing reference batch for validators",
+          label,
+          `(${batch.validators.length} validators) ...`,
+        );
+        let completed:
+          | Awaited<ReturnType<typeof completeReferenceBatchTx>>
+          | undefined;
         try {
-          const completed = await completeReferenceBatchTx(
+          completed = await completeReferenceBatchTx(
             lucid,
             referenceAddress,
             batch.validators,
-            dedicatedFunding,
+            { utxo: fundingOutputs[index], leftoverAsFee },
           );
-          newWalletUTxOs = completed.walletUTxOs;
-          derivedOutputs = completed.outputs;
-          signedTx = completed.signedTx;
-          consumedWalletInputs = completed.consumedWalletInputs;
-          const signedBytes = signedTx.toCBOR().length / 2;
-          if (
-            batch.validators.length > 1 &&
-            signedBytes > safeMaxTxSize
-          ) {
-            const midpoint = Math.ceil(batch.validators.length / 2);
-            console.warn(
-              `Reference batch ${batch.startIndex + 1}-${
-                batch.startIndex + batch.validators.length
-              } completed at ${signedBytes} bytes, above safe budget ${safeMaxTxSize}; splitting into batches of ${midpoint} and ${
-                batch.validators.length - midpoint
-              }.`,
-            );
-            pendingBatches.unshift(
-              {
-                validators: batch.validators.slice(midpoint),
-                startIndex: batch.startIndex + midpoint,
-              },
-              {
-                validators: batch.validators.slice(0, midpoint),
-                startIndex: batch.startIndex,
-              },
-            );
-            splitBatch = true;
-            break;
-          }
-          assertSignedReferenceTransactionFits(
-            signedBytes,
-            maxTxSize,
-            batchLabel,
-            batch.validators,
-          );
-          lastBuildError = null;
-          break;
         } catch (error) {
-          lastBuildError = error;
           if (
             batch.validators.length > 1 &&
             isLikelyReferenceBatchTooLarge(error)
           ) {
             // The coarse size estimate can still under-shoot once fees/change are
             // fully materialized, so split and retry instead of failing the whole deploy.
-            const midpoint = Math.ceil(batch.validators.length / 2);
             console.warn(
-              `Reference batch ${batch.startIndex + 1}-${
-                batch.startIndex + batch.validators.length
-              } exceeded the transaction size budget; splitting into batches of ${midpoint} and ${
-                batch.validators.length - midpoint
-              }.`,
+              `Reference batch ${label} exceeded the transaction size budget; splitting it for the next funding round.`,
             );
-            pendingBatches.unshift(
-              {
-                validators: batch.validators.slice(midpoint),
-                startIndex: batch.startIndex + midpoint,
-              },
-              {
-                validators: batch.validators.slice(0, midpoint),
-                startIndex: batch.startIndex,
-              },
-            );
-            splitBatch = true;
-            break;
+            pendingBatches.push(...splitBatch(batch));
+            continue;
           }
-          if (!isRetryableOgmiosTransportError(error) || attempt === 5) {
-            throw error;
-          }
-          console.warn(
-            `createReferenceUtxos build retry ${attempt}/5 after transient Ogmios transport error:`,
-            error,
-          );
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          throw error;
         }
-      }
-      if (splitBatch) {
-        continue;
-      }
-      if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
-        throw lastBuildError ??
-          new Error("Failed to build reference batch transaction");
-      }
-
-      const txHash = signedTx.toHash();
-      for (
-        let attempt = 1;
-        attempt <= REFERENCE_UTXO_ADOPTION_ATTEMPTS;
-        attempt++
-      ) {
-        try {
-          const submittedHash = await signedTx.submit();
-          if (submittedHash !== txHash) {
-            throw new Error(
-              `Provider returned tx hash ${submittedHash}, but signed body hash is ${txHash}`,
-            );
-          }
-        } catch (error) {
+        const signedBytes = completed.signedTx.toCBOR().length / 2;
+        if (batch.validators.length > 1 && signedBytes > safeMaxTxSize) {
           console.warn(
-            `createReferenceUtxos submit retry ${attempt}/${REFERENCE_UTXO_ADOPTION_ATTEMPTS} after error:`,
-            error,
+            `Reference batch ${label} completed at ${signedBytes} bytes, above safe budget ${safeMaxTxSize}; splitting it for the next funding round.`,
           );
-        }
-
-        try {
-          await awaitWalletTx(
-            lucid,
-            txHash,
-            1000,
-            REFERENCE_UTXO_ADOPTION_TIMEOUT_MS,
-          );
-          for (const consumedInput of consumedWalletInputs) {
-            spentReferenceBatchRefs.add(utxoRefKey(consumedInput));
-          }
-          await refreshReferenceWalletState(newWalletUTxOs);
-          break;
-        } catch (error) {
-          lastBuildError = error;
-          if (
-            batch.validators.length > 1 &&
-            isLikelyReferenceBatchTooLarge(error)
-          ) {
-            // The coarse size estimate can still under-shoot once fees/change are
-            // fully materialized, so split and retry instead of failing the whole deploy.
-            const midpoint = Math.ceil(batch.validators.length / 2);
-            console.warn(
-              `Reference batch ${batch.startIndex + 1}-${
-                batch.startIndex + batch.validators.length
-              } exceeded the transaction size budget; splitting into batches of ${midpoint} and ${
-                batch.validators.length - midpoint
-              }.`,
-            );
-            pendingBatches.unshift(
-              {
-                validators: batch.validators.slice(midpoint),
-                startIndex: batch.startIndex + midpoint,
-              },
-              {
-                validators: batch.validators.slice(0, midpoint),
-                startIndex: batch.startIndex,
-              },
-            );
-            splitBatch = true;
-            break;
-          }
-          if (
-            !isRetryableReferenceUtxoAdoptionError(error) ||
-            attempt === REFERENCE_UTXO_ADOPTION_ATTEMPTS
-          ) {
-            throw error;
-          }
-          console.warn(
-            `createReferenceUtxos adoption retry ${attempt}/${REFERENCE_UTXO_ADOPTION_ATTEMPTS} after error:`,
-            error,
-          );
-          await new Promise((resolve) =>
-            setTimeout(resolve, REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS)
-          );
-        }
-      }
-      if (splitBatch) {
-        continue;
-      }
-      if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
-        throw lastBuildError ??
-          new Error("Failed to build reference batch transaction");
-      }
-
-      if (deploymentWalletAddress) {
-        await recordDeploymentTx(
-          `Reference validators ${batch.startIndex + 1}-${
-            batch.startIndex + batch.validators.length
-          }`,
-          txHash,
-          signedTx,
-          deploymentWalletAddress,
-          signedTx.toCBOR().length / 2,
-        );
-      }
-
-      console.log(
-        "Submitted reference batch",
-        `${batch.startIndex + 1}-${
-          batch.startIndex + batch.validators.length
-        }:`,
-        txHash,
-      );
-
-      for (const output of derivedOutputs) {
-        if (!output.scriptRef) {
+          pendingBatches.push(...splitBatch(batch));
           continue;
         }
-        const scriptHash = validatorToScriptHash(output.scriptRef);
-        result[scriptHash] = output;
+        assertSignedReferenceTransactionFits(
+          signedBytes,
+          maxTxSize,
+          label,
+          batch.validators,
+        );
+        signedBatches.push({
+          batch,
+          outputs: completed.outputs,
+          signed: {
+            txName: `Reference validators ${label}`,
+            txHash: completed.signedTx.toHash(),
+            signedTx: completed.signedTx,
+            signedTxBytes: signedBytes,
+          },
+        });
+      }
+
+      // A split batch leaves its funding output in the wallet for a later round.
+      await submitTxBatch(
+        lucid,
+        [fundingTx, ...signedBatches.map(({ signed }) => signed)],
+        { adoptionTimeoutMs: REFERENCE_UTXO_ADOPTION_TIMEOUT_MS },
+      );
+
+      for (const { batch, signed, outputs } of signedBatches) {
+        console.log(
+          "Submitted reference batch",
+          `${batchLabel(batch)}:`,
+          signed.txHash,
+        );
+        for (const output of outputs) {
+          if (!output.scriptRef) {
+            continue;
+          }
+          result[validatorToScriptHash(output.scriptRef)] = output;
+        }
       }
     }
 
@@ -1991,7 +1820,7 @@ const deployGenericModule = async (
   };
 };
 
-const deployTraceRegistry = async (
+export const deployTraceRegistry = async (
   lucid: LucidEvolution,
   mintIdentifierValidator: MintingPolicy,
   directoryAuthToken: AuthToken,
@@ -2026,6 +1855,8 @@ const deployTraceRegistry = async (
   );
 
   const shards: Array<{ index: bigint; token: AuthToken }> = [];
+  const threadMints: Array<{ txName: string; thread: IdentifierThreadMint }> =
+    [];
   for (
     let shardIndex = 0;
     shardIndex < TRACE_REGISTRY_SHARD_COUNT;
@@ -2037,8 +1868,7 @@ const deployTraceRegistry = async (
         `Missing reserved nonce UTxO for trace registry shard ${shardIndex.toString()}.`,
       );
     }
-    const token = await deployTraceRegistryShard(
-      lucid,
+    const { token, thread } = await prepareTraceRegistryShard(
       mintIdentifierValidator,
       address,
       BigInt(shardIndex),
@@ -2048,15 +1878,40 @@ const deployTraceRegistry = async (
       index: BigInt(shardIndex),
       token,
     });
+    threadMints.push({
+      txName: `Mint Trace Registry Shard ${shardIndex.toString()}`,
+      thread,
+    });
   }
-  const directory = await deployTraceRegistryDirectory(
-    lucid,
-    mintIdentifierValidator,
-    address,
-    shards,
-    directoryNonce,
-    directoryAuthToken,
-  );
+  const { token: directory, thread: directoryThread } =
+    await prepareTraceRegistryDirectory(
+      mintIdentifierValidator,
+      address,
+      shards,
+      directoryNonce,
+      directoryAuthToken,
+    );
+  threadMints.push({
+    txName: "Mint Trace Registry Directory",
+    thread: directoryThread,
+  });
+
+  // Every shard and the directory spend only their own reserved nonce, and the
+  // directory needs only the shard token names, which are known offchain. None
+  // of these transactions depends on another, so they are adopted together.
+  const signedThreadMints: SignedDeploymentTx[] = [];
+  for (const { txName, thread } of threadMints) {
+    signedThreadMints.push(
+      await completeAndSignTx(
+        () => buildIdentifierThreadMintTx(lucid, thread),
+        lucid,
+        txName,
+        true,
+        { localUPLCEval: false, ...IDENTIFIER_THREAD_COMPLETE_OPTIONS },
+      ),
+    );
+  }
+  await submitTxBatch(lucid, signedThreadMints);
 
   return {
     shardPolicyId,
@@ -2070,13 +1925,12 @@ const deployTraceRegistry = async (
   };
 };
 
-const deployTraceRegistryShard = async (
-  lucid: LucidEvolution,
+const prepareTraceRegistryShard = async (
   mintIdentifierValidator: MintingPolicy,
   traceRegistryAddress: string,
   shardIndex: bigint,
   nonceUtxo: UTxO,
-): Promise<AuthToken> => {
+): Promise<{ token: AuthToken; thread: IdentifierThreadMint }> => {
   const outputReference = buildOutputReference(nonceUtxo);
   const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
   const shardTokenName = await generateIdentifierTokenName(outputReference);
@@ -2098,46 +1952,29 @@ const deployTraceRegistryShard = async (
   // Each shard starts as its own append-only thread UTxO with a unique shard NFT
   // and an empty entry list. Later mint transactions spend exactly one shard when
   // they need to record a first-seen voucher trace.
-  await submitTx(
-    () =>
-      lucid
-        .newTx()
-        .collectFrom([nonceUtxo], Data.void())
-        .attach.MintingPolicy(mintIdentifierValidator)
-        .mintAssets(
-          {
-            [shardTokenUnit]: 1n,
-          },
-          Data.to(outputReference, OutputReference),
-        )
-        .pay.ToContract(
-          traceRegistryAddress,
-          {
-            kind: "inline",
-            value: encodedShardDatum,
-          },
-          {
-            [shardTokenUnit]: 1n,
-          },
-        ),
-    lucid,
-    `Mint Trace Registry Shard ${shardIndex.toString()}`,
-  );
-
   return {
-    policy_id: shardPolicyId,
-    name: shardTokenName,
+    token: {
+      policy_id: shardPolicyId,
+      name: shardTokenName,
+    },
+    thread: {
+      nonceUtxo,
+      mintingPolicy: mintIdentifierValidator,
+      tokenUnit: shardTokenUnit,
+      encodedRedeemer: Data.to(outputReference, OutputReference),
+      address: traceRegistryAddress,
+      encodedDatum: encodedShardDatum,
+    },
   };
 };
 
-const deployTraceRegistryDirectory = async (
-  lucid: LucidEvolution,
+const prepareTraceRegistryDirectory = async (
   mintIdentifierValidator: MintingPolicy,
   traceRegistryAddress: string,
   shards: Array<{ index: bigint; token: AuthToken }>,
   nonceUtxo: UTxO,
   directoryAuthToken: AuthToken,
-): Promise<AuthToken> => {
+): Promise<{ token: AuthToken; thread: IdentifierThreadMint }> => {
   const outputReference = buildOutputReference(nonceUtxo);
   const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
   const expectedDirectoryTokenName = await generateIdentifierTokenName(
@@ -2172,35 +2009,19 @@ const deployTraceRegistryDirectory = async (
     ]),
   );
 
-  await submitTx(
-    () =>
-      lucid
-        .newTx()
-        .collectFrom([nonceUtxo], Data.void())
-        .attach.MintingPolicy(mintIdentifierValidator)
-        .mintAssets(
-          {
-            [directoryTokenUnit]: 1n,
-          },
-          Data.to(outputReference, OutputReference),
-        )
-        .pay.ToContract(
-          traceRegistryAddress,
-          {
-            kind: "inline",
-            value: encodedDirectoryDatum,
-          },
-          {
-            [directoryTokenUnit]: 1n,
-          },
-        ),
-    lucid,
-    "Mint Trace Registry Directory",
-  );
-
   return {
-    policy_id: shardPolicyId,
-    name: directoryAuthToken.name,
+    token: {
+      policy_id: shardPolicyId,
+      name: directoryAuthToken.name,
+    },
+    thread: {
+      nonceUtxo,
+      mintingPolicy: mintIdentifierValidator,
+      tokenUnit: directoryTokenUnit,
+      encodedRedeemer: Data.to(outputReference, OutputReference),
+      address: traceRegistryAddress,
+      encodedDatum: encodedDirectoryDatum,
+    },
   };
 };
 
