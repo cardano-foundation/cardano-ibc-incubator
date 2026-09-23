@@ -13,8 +13,8 @@ import {
 test('scopes edits to existing workflow jobs and falls back for shared changes', () => {
   const source = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const gatewayEdit = source.replace(
-    '      - name: Check collateral selection against Hermes policy',
-    '      - name: Check gateway collateral',
+    '        run: npm run --prefix cardano/gateway lint:check',
+    '        run: npm run --prefix cardano/gateway lint',
   );
   assert.notEqual(gatewayEdit, source);
   // The Gateway job now runs migration evidence checks, so edits must fail closed.
