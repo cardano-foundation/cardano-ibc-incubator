@@ -540,25 +540,6 @@ def scene_yaci_blockfrost(t: float) -> Image.Image:
             c.text(R + 506, 318 + k * 16, line, 12, fade(TEXT, r_q, PANEL),
                    anchor="ra")
 
-    # End card
-    e = prog(t, 16.4, 17.2)
-    if e > 0:
-        under = (12, 18, 33)
-        ex, ey, ew, eh = 150, 205, 900, 250
-        c.rrect(ex, ey, ew, eh, fill=fade(under, e), outline=fade(BORDER, e),
-                width=2, r=16)
-        c.rrect(ex + 30, ey + 34, 12, 70, fill=fade(TEAL, e, under), r=4)
-        c.text(ex + 58, ey + 32, "Yaci Store", 22, fade(TEAL, e, under), "bold")
-        c.text(ex + 58, ey + 66, "Our own indexed copy of chain history, in Postgres.",
-               17, fade(TEXT, e, under))
-        c.text(ex + 58, ey + 90, "Runs on every network.", 15, fade(MUTED, e, under))
-        c.rrect(ex + 30, ey + 144, 12, 70, fill=fade(AMBER, e, under), r=4)
-        c.text(ex + 58, ey + 142, "Blockfrost", 22, fade(AMBER, e, under), "bold")
-        c.text(ex + 58, ey + 176, "A hosted API for epoch and pool history, plus "
-               "Caribic's sync checkpoint.", 17, fade(TEXT, e, under))
-        c.text(ex + 58, ey + 200, "Public networks only. It replaced Koios.", 15,
-               fade(MUTED, e, under))
-
     caption(c, t, [
         (1.2, "Local devnet: Caribic runs a node, Ogmios, Kupo and Yaci. Yaci "
               "indexes the whole chain from genesis."),
@@ -924,7 +905,7 @@ def scene_finality_slow(t: float) -> Image.Image:
 
 SCENES = {
     "light-client-data-flow": (scene_light_client, 21.0),
-    "yaci-vs-blockfrost": (scene_yaci_blockfrost, 20.5),
+    "yaci-vs-blockfrost": (scene_yaci_blockfrost, 19.5),
     "membership-proof": (scene_membership_proof, 18.5),
     "finality-thresholds": (scene_finality, 16.5),
     "finality-thresholds-slow": (scene_finality_slow, 19.5),
