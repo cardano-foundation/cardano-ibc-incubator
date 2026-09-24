@@ -244,171 +244,256 @@ def travel(p1, p2, u):
     return lerp(p1[0], p2[0], u), lerp(p1[1], p2[1], u)
 
 
-# ---------------------------------------------- 1. light client data flow ---
+# ------------------------------------------ 1. what the gateway asks for ---
 
-def scene_light_client(t: float) -> Image.Image:
+def along(path, u):
+    """Point at fraction u of a polyline."""
+    lengths = [math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:])]
+    target = clamp(u) * sum(lengths)
+    for (a, b), seg in zip(zip(path, path[1:]), lengths):
+        if target <= seg or seg == 0:
+            k = target / seg if seg else 0
+            return lerp(a[0], b[0], k), lerp(a[1], b[1], k)
+        target -= seg
+    return path[-1]
+
+
+SERVICES = {
+    # key: (title, what it holds, colour, row)
+    "yaci_sql": ("Yaci Store · Postgres", "indexed chain history", TEAL, 0),
+    "yaci_rest": ("Yaci Store · REST", "raw block bytes", TEAL, 1),
+    "relay": ("Relay (node-to-node)", "fallback for block bytes", GREEN, 2),
+    "blockfrost": ("Blockfrost", "epoch and pool history", AMBER, 3),
+    "ogmios": ("Ogmios", "live ledger, evaluate, submit", BLUE, 4),
+    "kupo": ("Kupo", "live UTxOs", BLUE, 5),
+}
+SVC_X, SVC_W, SVC_Y0, SVC_H, SVC_PITCH = 350, 340, 100, 62, 72
+HERMES_X, HERMES_W = 40, 262
+GATEWAY_X, GATEWAY_W = 770, 390
+PANEL_Y, PANEL_H = 100, 430
+LANE_Y = 556
+
+# Act 1: the Gateway builds a light-client header. Each step names the service,
+# the call, and the header field it fills.
+HEADER_STEPS = [
+    ("yaci_sql", "SELECT … FROM block WHERE number > …", "Block list", "heights, hashes, slots",
+     "Yaci's block table lists every block from the trusted height to the anchor, plus 24+ on top."),
+    ("yaci_rest", "GET /blocks/{hash}/cbor", "Raw block and header bytes", "signed witnesses",
+     "The light client re-checks every signature, so it needs the raw bytes. The relay is the fallback."),
+    ("yaci_sql", "bridge_utxo_history · HostState NFT", "HostState tx in the anchor", "carries the new root",
+     "The anchor block must contain the HostState transaction that carries the new IBC state root."),
+    ("blockfrost", "GET /epochs/{n}/parameters", "Epoch nonce", "for VRF checks",
+     "VRF proofs are checked against the epoch nonce. On public networks it comes from Blockfrost."),
+    ("ogmios", "stakePools · liveStakeDistribution", "Stake and VRF key per pool", "for leader checks",
+     "Leader checks need every pool's stake and VRF key: the live ledger from Ogmios, epoch totals from Blockfrost."),
+    ("yaci_sql", "bridge_spo_event_history", "Pool registration slots", "fresh pools don't count",
+     "Pools must be registered early enough to count, so the Gateway looks up when each one registered."),
+    ("ogmios", "queryNetwork/genesisConfiguration", "KES and slot parameters", "from genesis",
+     "KES and slot-leader maths need the network's genesis parameters, which Ogmios reads from the node."),
+]
+# Secondary calls shown alongside a step: (step index, service, call)
+HEADER_EXTRA = [(1, "relay", "BlockFetch if Yaci misses"),
+                (4, "blockfrost", "GET /pools/extended · /epochs/{n}"),
+                (5, "blockfrost", "GET /pools/{id}/updates if missing")]
+
+# Act 2: building, checking and submitting a transaction.
+TX_GATEWAY_STEPS = [
+    ("kupo", "/matches/{policy.asset}?unspent", "HostState, channel, wallet UTxOs", "inputs to spend",
+     "Kupo returns the live UTxOs the transaction spends: HostState, the channel, and wallet funds."),
+    (None, None, "New IBC state root", "from its in-memory tree",
+     "The Gateway computes the new IBC state root itself, from its own copy of the IBC tree."),
+    ("ogmios", "queryNetwork/tip", "Validity window", "from the chain tip",
+     "Ogmios gives the chain tip, which sets the transaction's validity window."),
+    ("ogmios", "evaluateTransaction", "Script execution units", "to size the budget",
+     "Ogmios evaluates the validators so the Gateway can size their execution budget."),
+]
+TX_HERMES_STEPS = [
+    ("kupo", "/matches/*@{txid}?unspent", "Every input exists, unspent",
+     "Before signing, Hermes checks every input against Kupo itself."),
+    ("ogmios", "evaluateTransaction", "Validators pass",
+     "It re-evaluates the transaction with Ogmios, so it never signs one that would fail."),
+    (None, None, "Matches the bridge manifest",
+     "It checks the transaction against the pinned bridge manifest, then signs with its own key."),
+    ("ogmios", "submitTransaction", "Submitted",
+     "Hermes submits the signed transaction straight to Ogmios."),
+]
+
+STEP = 1.75
+A1_REQ = 1.0
+A1_FIRST = 2.4
+A1_REPLY = A1_FIRST + len(HEADER_STEPS) * STEP + 0.2
+A1_END = A1_REPLY + 3.4
+A2_START = A1_END + 0.6
+A2_REQ = A2_START + 0.8
+A2_FIRST = A2_REQ + 1.4
+A2_REPLY = A2_FIRST + len(TX_GATEWAY_STEPS) * STEP + 0.2
+A2_H_FIRST = A2_REPLY + 1.4
+A2_OBSERVE = A2_H_FIRST + len(TX_HERMES_STEPS) * STEP + 0.2
+A2_CONFIRM = A2_OBSERVE + 1.4
+GATEWAY_CALLS_DURATION = A2_CONFIRM + 4.2
+
+
+def service_y(key):
+    return SVC_Y0 + SERVICES[key][3] * SVC_PITCH
+
+
+def lane_path(to_gateway: bool):
+    h = (HERMES_X + HERMES_W / 2, PANEL_Y + PANEL_H)
+    g = (GATEWAY_X + GATEWAY_W / 2, PANEL_Y + PANEL_H)
+    path = [h, (h[0], LANE_Y), (g[0], LANE_Y), g]
+    return path if to_gateway else path[::-1]
+
+
+def draw_lane_message(c, t, start, label, color, to_gateway):
+    u = prog(t, start, start + 1.1)
+    if t < start or t > start + 1.5:
+        return
+    alpha = 1 - prog(t, start + 1.1, start + 1.5)
+    x, y = along(lane_path(to_gateway), u)
+    w = c.text_width(label, 12) + 18
+    c.chip(x - w / 2, y - 13, label, color, alpha=alpha, size=12)
+
+
+def draw_call(c, t, start, key, call, from_x, active_calls):
+    """Pulse a request and response between a panel edge and a service."""
+    if t < start:
+        return
+    y = service_y(key) + SVC_H / 2
+    svc_edge = SVC_X if from_x < SVC_X else SVC_X + SVC_W
+    live = t < start + STEP
+    a = prog(t, start, start + 0.3) * (1.0 if live else 0.35)
+    col = SERVICES[key][2]
+    c.line([(from_x, y), (svc_edge, y)], fade(col, a), 2.5 if live else 1.5)
+    if live:
+        u = clamp((t - start) / (STEP * 0.8))
+        k = u * 2 if u < 0.5 else 2 - u * 2
+        c.circle(lerp(from_x, svc_edge, k), y, 5, fill=col)
+        active_calls[key] = call
+
+
+def draw_rows(c, x, y0, rows, t, under, alpha=1.0):
+    """rows: (start, title, detail, colour)."""
+    for i, (start, title, detail, col) in enumerate(rows):
+        u = prog(t, start + STEP * 0.55, start + STEP * 0.8) * alpha
+        if u <= 0:
+            continue
+        y = y0 + i * 44
+        c.circle(x + 11, y + 11, 10, fill=fade(PANEL, u, under), outline=fade(col, u, under),
+                 width=1.5)
+        c.check(x + 11, y + 12, 10, col, u)
+        c.text(x + 30, y + 1, title, 13, fade(TEXT, u, under), "bold")
+        if detail:
+            c.text(x + 30, y + 19, detail, 11, fade(col, u, under), "mono")
+
+
+def scene_gateway_calls(t: float) -> Image.Image:
     c = Canvas()
-    header(c, t, "How the Cosmos light client verifies Cardano",
-           "08-cardano-probabilistic never makes a network call. "
-           "Everything it checks arrives inside the relayer's message.")
-    a = prog(t, 0.3, 1.2)
+    header(c, t, "What the Gateway asks each service for",
+           "Hermes never reads Cardano itself for headers; the Gateway gathers "
+           "every field from a named source.")
+    a = prog(t, 0.2, 1.0)
+    act2 = t >= A2_START
+    swap = prog(t, A1_END, A2_START)
 
-    # Lanes
-    for x, label in [(40, "CARDANO DATA SOURCES"), (330, "GATEWAY"),
-                     (560, "HERMES RELAYER"), (780, "COSMOS CHAIN")]:
-        c.text(x, 100, label, 12, fade(FAINT, a), "bold")
-
-    sources = [
-        ("Yaci Store", "block bytes, HostState tx", TEAL, "block CBOR"),
-        ("Ogmios / Blockfrost", "stake distribution", AMBER, "stake dist."),
-        ("Yaci / Blockfrost", "epoch nonce", AMBER, "epoch nonce"),
-    ]
-    for i, (title, sub, color, _) in enumerate(sources):
-        box(c, 40, 125 + i * 85, 260, 70, title, sub, color, a)
-    box(c, 330, 125, 200, 265, "Gateway", "NestJS · gRPC", BLUE, a)
-    box(c, 560, 125, 200, 265, "Hermes", "Rust relayer", PURPLE, a)
-    c.rrect(780, 115, 390, 470, fill=fade(PANEL, a), outline=fade(BORDER, a),
+    # Panels
+    c.rrect(HERMES_X, PANEL_Y, HERMES_W, PANEL_H, fill=fade(PANEL, a), outline=fade(PURPLE, a),
             width=2, r=14)
-    c.text(796, 127, "Cosmos chain", 17, fade(TEXT, a), "bold")
-    lc_x, lc_y, lc_w, lc_h = 796, 160, 358, 410
-    c.rrect(lc_x, lc_y, lc_w, lc_h, fill=fade(PANEL_2, a),
-            outline=fade(GREEN, a * 0.8), width=2, r=12)
-    c.text(lc_x + 14, lc_y + 12, "08-cardano-probabilistic", 17,
-           fade(TEXT, a, PANEL_2), "bold")
-    c.text(lc_x + 14, lc_y + 34, "light client module (Go)", 13,
-           fade(MUTED, a, PANEL_2))
+    c.text(HERMES_X + 16, PANEL_Y + 14, "Hermes", 18, fade(TEXT, a, PANEL), "bold")
+    c.rrect(GATEWAY_X, PANEL_Y, GATEWAY_W, PANEL_H, fill=fade(PANEL, a), outline=fade(BLUE, a),
+            width=2, r=14)
+    c.text(GATEWAY_X + 16, PANEL_Y + 14, "Gateway", 18, fade(TEXT, a, PANEL), "bold")
+    sub_a = a * (1 - swap) if not act2 else prog(t, A2_START, A2_START + 0.5)
+    g_sub = "building an unsigned transaction" if act2 else "building a light-client header"
+    h_sub = "relaying a packet to Cardano" if act2 else "updating the Cardano client on Cosmos"
+    c.text(GATEWAY_X + 16, PANEL_Y + 40, g_sub, 13, fade(MUTED, sub_a, PANEL))
+    c.text(HERMES_X + 16, PANEL_Y + 40, h_sub, 13, fade(MUTED, sub_a, PANEL))
 
-    # "No network" badge, pulses when the header arrives
-    pulse = 0.5 + 0.5 * math.sin((t - 9.6) * 9) if 9.6 < t < 11.2 else 0
-    badge_col = mix(RED, (255, 200, 200), pulse)
-    bx, by = 1170 - 166, 121
-    c.rrect(bx, by, 152, 34, fill=fade(PANEL, a, PANEL_2),
-            outline=fade(badge_col, a, PANEL_2), width=1.5, r=8)
-    c.circle(bx + 18, by + 17, 9, outline=fade(badge_col, a, PANEL), width=1.5)
-    c.line([(bx + 9, by + 17), (bx + 27, by + 17)], fade(badge_col, a, PANEL), 1)
-    c.line([(bx + 11, by + 9), (bx + 25, by + 25)], fade(badge_col, a, PANEL), 2.2)
-    c.text(bx + 34, by + 5, "no network access", 12, fade(TEXT, a, PANEL), "bold")
-    c.text(bx + 34, by + 20, "no HTTP · gRPC · RPC", 10, fade(MUTED, a, PANEL))
+    # gRPC lane
+    lane = lane_path(True)
+    for p1, p2 in zip(lane, lane[1:]):
+        c.dashed(p1, p2, fade(BORDER, a), 1.5, dash=6, gap=5)
+    c.text((SVC_X + SVC_X + SVC_W) / 2, LANE_Y + 8, "gRPC", 11, fade(FAINT, a), anchor="ma")
 
-    # Faint lane arrows
-    for p1, p2 in [((300, 245), (330, 245)), ((530, 245), (560, 245)),
-                   ((760, 245), (796, 245))]:
-        c.arrow(p1, p2, fade(BORDER, a), 2, head=8)
+    active: dict = {}
+    rows_under = PANEL
+    fade_a1 = 1 - swap
 
-    # Step 1: data chips fly into the gateway
-    envelope_home = (344, 215)
-    for i, (_, _, color, chip_label) in enumerate(sources):
-        start = 1.4 + i * 0.5
-        u = prog(t, start, start + 1.6)
-        if t < start or t > 6.4:
-            continue
-        src = (160, 147 + i * 85)
-        dst = (350, 200 + i * 34)
-        x, y = travel(src, dst, u)
-        gather = prog(t, 5.0, 6.2)
-        gx, gy = travel((x, y), (envelope_home[0] + 20, envelope_home[1] + 60), gather)
-        c.chip(gx, gy, chip_label, color, alpha=1 - prog(t, 5.8, 6.4))
+    if not act2:
+        draw_lane_message(c, t, A1_REQ, "IBCHeader(trusted, target)", PURPLE, True)
+        for i, (key, call, *_rest) in enumerate(HEADER_STEPS):
+            draw_call(c, t, A1_FIRST + i * STEP, key, call, GATEWAY_X, active)
+        for i, key, call in HEADER_EXTRA:
+            draw_call(c, t, A1_FIRST + i * STEP + 0.25, key, call, GATEWAY_X, active)
+        rows = [(A1_FIRST + i * STEP, title, detail, SERVICES[key][2])
+                for i, (key, _, title, detail, _) in enumerate(HEADER_STEPS)]
+        if fade_a1 > 0:
+            draw_rows(c, GATEWAY_X + 18, PANEL_Y + 74, rows, t, rows_under, fade_a1)
+        draw_lane_message(c, t, A1_REPLY, "ProbabilisticHeader", GREEN, False)
+        done = prog(t, A1_REPLY + 1.3, A1_REPLY + 1.8) * fade_a1
+        if done > 0:
+            bx, by = HERMES_X + 16, PANEL_Y + 90
+            c.rrect(bx, by, HERMES_W - 32, 118, fill=fade((24, 35, 56), done, PANEL),
+                    outline=fade(GREEN, done, PANEL), width=2, r=10)
+            c.text(bx + 12, by + 12, "ProbabilisticHeader", 13, fade(TEXT, done, (24, 35, 56)),
+                   "bold")
+            c.text(bx + 12, by + 34, "wrapped in MsgUpdateClient", 12,
+                   fade(MUTED, done, (24, 35, 56)))
+            c.text(bx + 12, by + 52, "and sent to Cosmos", 12, fade(MUTED, done, (24, 35, 56)))
+            c.arrow((bx + 60, by + 132), (HERMES_X - 2, by + 132), fade(GREEN, done), 2.5, head=8)
+            c.paragraph(bx + 12, by + 80, "The light client checks it with no network access.",
+                        11, fade(GREEN, done, (24, 35, 56)), max_w=HERMES_W - 60)
+    else:
+        draw_lane_message(c, t, A2_REQ, "RecvPacket(packet, proof)", PURPLE, True)
+        g_rows = []
+        for i, (key, call, title, detail, _) in enumerate(TX_GATEWAY_STEPS):
+            start = A2_FIRST + i * STEP
+            if key:
+                draw_call(c, t, start, key, call, GATEWAY_X, active)
+            g_rows.append((start, title, detail, SERVICES[key][2] if key else PURPLE))
+        draw_lane_message(c, t, A2_REPLY, "unsigned tx CBOR", AMBER, False)
+        h_rows = []
+        for i, (key, call, title, _) in enumerate(TX_HERMES_STEPS):
+            start = A2_H_FIRST + i * STEP
+            if key:
+                draw_call(c, t, start, key, call, HERMES_X + HERMES_W, active)
+            h_rows.append((start, title, call if key else "then signs", SERVICES[key][2] if key
+                           else PURPLE))
+        draw_lane_message(c, t, A2_OBSERVE, "ObserveTx(tx_hash)", PURPLE, True)
+        draw_call(c, t, A2_CONFIRM, "yaci_sql", "bridge_tx_evidence WHERE tx_hash", GATEWAY_X,
+                  active)
+        g_rows.append((A2_CONFIRM, "Included, root matches", "commits its IBC tree", TEAL))
+        draw_rows(c, GATEWAY_X + 18, PANEL_Y + 74, g_rows, t, rows_under)
+        draw_rows(c, HERMES_X + 16, PANEL_Y + 74, h_rows, t, rows_under)
+        key_a = prog(t, A2_REPLY + 0.9, A2_REPLY + 1.4)
+        if key_a > 0:
+            c.chip(GATEWAY_X + 18, PANEL_Y + PANEL_H - 44, "holds no signing key", FAINT,
+                   alpha=key_a, under=PANEL, size=12)
 
-    # The header envelope
-    env_w, env_h = 172, 160
-    if t >= 5.4:
-        appear = prog(t, 5.4, 6.4)
-        move_h = prog(t, 7.4, 8.6)
-        move_c = prog(t, 9.6, 10.8)
-        ex, ey = travel(envelope_home, (574, 215), move_h)
-        ex, ey = travel((ex, ey), (lc_x + 14, lc_y + 70), move_c)
-        shrink = prog(t, 10.4, 11.0)
-        env_alpha = appear * (1 - shrink)
-        if env_alpha > 0:
-            under = PANEL
-            c.rrect(ex, ey, env_w, env_h, fill=fade((24, 35, 56), env_alpha, under),
-                    outline=fade(BLUE, env_alpha, under), width=2, r=10)
-            c.text(ex + 10, ey + 9, "ProbabilisticHeader", 13,
-                   fade(TEXT, env_alpha, under), "bold")
-            rows = [("anchor block (full CBOR)", TEXT),
-                    ("bridge blocks", TEXT),
-                    ("24+ descendant headers", TEXT),
-                    ("HostState tx ref", TEXT),
-                    ("epoch context:", AMBER),
-                    ("  stake + epoch nonce", AMBER)]
-            for j, (label, col) in enumerate(rows):
-                c.text(ex + 12, ey + 33 + j * 20, label, 12,
-                       fade(col, env_alpha, under))
-            tag = prog(t, 8.6, 9.2)
-            if tag > 0:
-                c.chip(ex + 18, ey - 31, "MsgUpdateClient", PURPLE,
-                       alpha=tag * (1 - shrink), under=PANEL)
-        if shrink > 0:
-            c.chip(lc_x + 14, lc_y + 64, "MsgUpdateClient · ProbabilisticHeader",
-                   PURPLE, alpha=shrink, under=PANEL_2, size=12)
-
-    # Step 4: the checklist
-    checks = [
-        "Blocks chain back to the trusted checkpoint",
-        "Each block is signed by its pool (opcert, KES)",
-        "VRF proof is valid for the epoch nonce",
-        "The pool was eligible to lead that slot",
-        "24+ blocks from 5+ pools sit on top",
-        "Read ibc_state_root from the HostState tx",
-    ]
-    for i, label in enumerate(checks):
-        start = 11.0 + i * 0.7
-        u = prog(t, start, start + 0.5)
-        if t < start - 0.3:
-            continue
-        row_a = prog(t, start - 0.3, start)
-        y = lc_y + 106 + i * 44
-        is_last = i == len(checks) - 1
-        col = GREEN if not is_last else BLUE
-        c.circle(lc_x + 28, y + 9, 12, fill=fade(PANEL, row_a, PANEL_2),
-                 outline=fade(col, row_a, PANEL_2), width=1.5)
-        if is_last:
-            if u > 0:
-                c.arrow((lc_x + 21, y + 9), (lc_x + 36, y + 9), fade(col, u, PANEL), 2.5,
-                        head=7)
-        else:
-            c.check(lc_x + 28, y + 10, 12, col, u)
-        c.text(lc_x + 50, y + 1, label, 14, fade(TEXT, row_a, PANEL_2))
-
-    # Step 5: result
-    res = prog(t, 15.2, 15.8)
-    if res > 0:
-        rx, ry = lc_x + 14, lc_y + lc_h - 62
-        c.rrect(rx, ry, lc_w - 28, 48, fill=fade((20, 60, 40), res, PANEL_2),
-                outline=fade(GREEN, res, PANEL_2), width=2, r=10)
-        c.text(rx + 12, ry + 8, "New ConsensusState stored", 14,
-               fade(TEXT, res, (20, 60, 40)), "bold")
-        c.text(rx + 12, ry + 27, "ibc_state_root = 9f3a…c21e", 13,
-               fade(GREEN, res, (20, 60, 40)), "mono")
-
-    # Trusted-input callout
-    ta = prog(t, 16.8, 17.5)
-    if ta > 0:
-        tx, ty, tw, th = 40, 405, 720, 130
-        c.rrect(tx, ty, tw, th, fill=fade((50, 40, 15), ta), outline=fade(AMBER, ta),
-                width=2, r=12)
-        c.text(tx + 16, ty + 14, "The one input the client takes on trust", 16,
-               fade(AMBER, ta, (50, 40, 15)), "bold")
-        c.paragraph(tx + 16, ty + 42,
-                    "The stake distribution and epoch nonce come from the relayer. "
-                    "The client checks their shape (a 32-byte nonce, stakes that sum "
-                    "to 1) but cannot check where they came from. Everything else is "
-                    "verified from the block bytes themselves.",
-                    14, fade(TEXT, ta, (50, 40, 15)), max_w=tw - 32)
+    # Services, drawn last so call pulses sit underneath the boxes' edges
+    for key, (title, desc, col, _) in SERVICES.items():
+        y = service_y(key)
+        on = key in active
+        border = col if on else mix(BORDER, col, 0.45)
+        c.rrect(SVC_X, y, SVC_W, SVC_H, fill=fade(PANEL_2 if on else PANEL, a),
+                outline=fade(border, a), width=2.5 if on else 1.5, r=10)
+        c.text(SVC_X + 14, y + 9, title, 14, fade(TEXT, a, PANEL), "bold")
+        c.text(SVC_X + SVC_W - 14, y + 11, desc, 11, fade(MUTED, a, PANEL), anchor="ra")
+        if on:
+            c.text(SVC_X + 14, y + 36, active[key], 12, col, "mono")
 
     caption(c, t, [
-        (1.2, "1. The Gateway reads Cardano data: blocks from Yaci, stake and "
-              "epoch nonce from Ogmios or Blockfrost."),
-        (4.8, "2. It packs everything the light client needs into one "
-              "ProbabilisticHeader."),
-        (7.4, "3. Hermes wraps the header in a MsgUpdateClient and submits it "
-              "to the Cosmos chain."),
-        (9.6, "4. The light client checks the header using only the bytes "
-              "inside the message."),
-        (15.2, "5. If every check passes, it stores a new consensus state with "
-               "Cardano's IBC state root."),
-        (16.8, "The epoch context (amber) is the only outside input, and it is "
-               "only shape-checked."),
+        (A1_REQ, "Hermes asks the Gateway for a light-client header over gRPC."),
+        *[(A1_FIRST + i * STEP, s[4]) for i, s in enumerate(HEADER_STEPS)],
+        (A1_REPLY, "The Gateway returns the header. Hermes wraps it in MsgUpdateClient and "
+                   "sends it to the Cosmos light client."),
+        (A2_REQ, "To change Cardano state, Hermes asks the Gateway to build a transaction, "
+                 "for example RecvPacket."),
+        *[(A2_FIRST + i * STEP, s[4]) for i, s in enumerate(TX_GATEWAY_STEPS)],
+        (A2_REPLY, "The Gateway returns an unsigned transaction. It never holds a signing key."),
+        *[(A2_H_FIRST + i * STEP, s[3]) for i, s in enumerate(TX_HERMES_STEPS)],
+        (A2_OBSERVE, "Hermes tells the Gateway only the transaction hash."),
+        (A2_CONFIRM, "The Gateway waits for the transaction in Yaci, checks the new root, and "
+                     "commits its IBC tree."),
     ])
     return c.finish()
 
@@ -904,7 +989,7 @@ def scene_finality_slow(t: float) -> Image.Image:
 # ------------------------------------------------------------- driver ---
 
 SCENES = {
-    "light-client-data-flow": (scene_light_client, 21.0),
+    "gateway-data-sources": (scene_gateway_calls, GATEWAY_CALLS_DURATION),
     "yaci-vs-blockfrost": (scene_yaci_blockfrost, 19.5),
     "membership-proof": (scene_membership_proof, 18.5),
     "finality-thresholds": (scene_finality, 16.5),
