@@ -989,7 +989,9 @@ def scene_finality_slow(t: float) -> Image.Image:
 # ------------------------------------------------------------- driver ---
 
 SCENES = {
-    "gateway-data-sources": (scene_gateway_calls, GATEWAY_CALLS_DURATION),
+    # Played 10% slower than its timeline; there is a lot of text per step.
+    "gateway-data-sources": (lambda t: scene_gateway_calls(t / 1.1),
+                             GATEWAY_CALLS_DURATION * 1.1),
     "yaci-vs-blockfrost": (scene_yaci_blockfrost, 19.5),
     "membership-proof": (scene_membership_proof, 18.5),
     "finality-thresholds": (scene_finality, 16.5),
