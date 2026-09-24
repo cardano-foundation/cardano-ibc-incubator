@@ -58,10 +58,10 @@ caribic chain start --chain cosmos --network v10-v2
 Public-testnet Yaci checkpoint note:
 - `caribic start --network preprod` and `caribic start --network preview` require Yaci to start from an explicit recent checkpoint, not genesis.
 - Before generating it, copy `cardano/gateway/.env.example` to `cardano/gateway/.env` and configure an external raw relay plus Kupo and Ogmios for the selected network. The official raw relay is `preprod-node.play.dev.cardano.org:3001` for Preprod or `preview-node.play.dev.cardano.org:3001` for Preview; use matching-network Kupo/Ogmios endpoints.
-- Generate and persist a checkpoint before deploying bridge contracts:
+- Generate and persist a checkpoint before deploying bridge contracts. The command picks the block 2161 below the tip, one past the 2160-block rollback limit, so the checkpoint is final but only about half a day old. Pass `--depth` to go further back.
 
 ```bash
-caribic yaci-checkpoint --network preprod --epochs-back 1 --write-env
+caribic yaci-checkpoint --network preprod --write-env
 caribic start network --network preprod
 # Replace preprod with preview for Cardano Preview.
 ```
@@ -355,10 +355,10 @@ For Preview, use `preview-node.play.dev.cardano.org:3001`, Preview Kupo/Ogmios e
 
 ### 3. Resolve and persist a Yaci checkpoint
 
-Preprod history must sync from a recent checkpoint, never from genesis:
+Preprod history must sync from a recent checkpoint, never from genesis. By default this is the block 2161 below the tip:
 
 ```bash
-caribic yaci-checkpoint --network preprod --epochs-back 1 --write-env
+caribic yaci-checkpoint --network preprod --write-env
 ```
 
 ### 4. Start the preprod runtime and deploy the bridge

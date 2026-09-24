@@ -194,9 +194,10 @@ enum Commands {
         /// Cardano network profile to query
         #[arg(long, default_value = "preprod")]
         network: String,
-        /// Select the first block of tip_epoch - epochs_back
-        #[arg(long, default_value_t = 1)]
-        epochs_back: u64,
+        /// Select the block this many blocks below the tip (at least 2161, one
+        /// past the 2160-block rollback limit, so the checkpoint is final)
+        #[arg(long, default_value_t = commands::DEFAULT_YACI_CHECKPOINT_DEPTH)]
+        depth: u64,
         /// Write the network marker and YACI_SYNC_START_* values into cardano/gateway/.env
         #[arg(long, default_value_t = false)]
         write_env: bool,
@@ -424,11 +425,9 @@ async fn main() {
         }
         Commands::YaciCheckpoint {
             network,
-            epochs_back,
+            depth,
             write_env,
-        } => {
-            commands::run_yaci_checkpoint(project_root_path, &network, epochs_back, write_env).await
-        }
+        } => commands::run_yaci_checkpoint(project_root_path, &network, depth, write_env).await,
         Commands::Audit => commands::run_audit(project_root_path),
         Commands::ListClients { chain } => commands::run_list_clients(&chain),
         Commands::CreateClient { a_chain, b_chain } => {

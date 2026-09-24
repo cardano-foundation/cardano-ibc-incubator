@@ -30,4 +30,4 @@ pub use setup::run_setup;
 pub use start::run_start;
 pub use stop::run_stop;
 pub use test::{run_light_client_test, run_tests};
-pub use yaci_checkpoint::run_yaci_checkpoint;
+pub use yaci_checkpoint::{run_yaci_checkpoint, DEFAULT_YACI_CHECKPOINT_DEPTH};

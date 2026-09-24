@@ -530,7 +530,7 @@ pub fn resolve_public_testnet_yaci_checkpoint(
     )
     .ok_or_else(|| {
         format!(
-            "Missing public Cardano testnet Yaci checkpoint slot. Set {YACI_SYNC_START_SLOT_KEY} in {} or export CARIBIC_YACI_SYNC_START_SLOT.\nGenerate a recent checkpoint with: caribic yaci-checkpoint --network <preprod|preview> --epochs-back 1 --write-env",
+            "Missing public Cardano testnet Yaci checkpoint slot. Set {YACI_SYNC_START_SLOT_KEY} in {} or export CARIBIC_YACI_SYNC_START_SLOT.\nGenerate a recent checkpoint with: caribic yaci-checkpoint --network <preprod|preview> --write-env",
             gateway_env.display()
         )
     })?;
