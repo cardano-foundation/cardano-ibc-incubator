@@ -195,7 +195,7 @@ enum Commands {
         #[arg(long, default_value = "preprod")]
         network: String,
         /// Select the first block of tip_epoch - epochs_back
-        #[arg(long, default_value_t = 2)]
+        #[arg(long, default_value_t = 1)]
         epochs_back: u64,
         /// Write the network marker and YACI_SYNC_START_* values into cardano/gateway/.env
         #[arg(long, default_value_t = false)]
