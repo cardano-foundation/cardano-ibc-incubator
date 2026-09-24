@@ -16,7 +16,6 @@ import * as ClientMessageCodec from '../../shared/types/msgs/client-message';
 import * as MisbehaviourCodec from '../../shared/types/misbehaviour/misbehaviour';
 import {
   TendermintClientService as ClientService,
-  TENDERMINT_FINALIZATION_TIME_TO_LIVE,
   TENDERMINT_HEADER_TYPE_URL,
   TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE,
 } from '../tendermint-client.service';
@@ -38,7 +37,7 @@ const DIGEST = '11'.repeat(32);
 const TEST_CURRENT_LEDGER_TIME_MS = 1_000;
 const TEST_VALID_FROM_TIME_MS = 1_000;
 const TEST_VALID_TO_TIME_MS = 1_801_000;
-const TEST_FINAL_VALID_TO_TIME_MS = TEST_CURRENT_LEDGER_TIME_MS + TENDERMINT_FINALIZATION_TIME_TO_LIVE;
+const TEST_FINAL_VALID_TO_TIME_MS = TEST_CURRENT_LEDGER_TIME_MS + 3 * 60 * 1000;
 const TEST_SLOT_CONFIG = { zeroTime: 0, zeroSlot: 0, slotLength: 1_000 };
 
 const PLAN: UpdatePlan = {
@@ -716,7 +715,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
     expect(finalBuilder.collectFrom).toHaveBeenCalledWith([utxo('signer-funding')]);
     expect(finalBuilder.validFrom).toHaveBeenCalledWith(TEST_VALID_FROM_TIME_MS);
     expect(finalBuilder.validTo).toHaveBeenCalledWith(TEST_FINAL_VALID_TO_TIME_MS);
-    expect(computeValidityWindow).toHaveBeenCalledWith(29_000, TENDERMINT_FINALIZATION_TIME_TO_LIVE);
+    expect(computeValidityWindow).toHaveBeenCalledWith(29_000, 3 * 60 * 1000);
     expect(pendingUpdates.take('finalize-hash')).toBe(pending);
     expect(runnerChainSpy).toHaveBeenCalledWith(
       expect.objectContaining({ operationName: 'buildTendermintUpdateFinalization' }),

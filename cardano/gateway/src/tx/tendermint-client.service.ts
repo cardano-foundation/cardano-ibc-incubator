@@ -92,9 +92,9 @@ const TENDERMINT_SESSION_MATCH_RETRY_DELAY_MS = 500;
 // forecast safe zone when it uses one-second slots.
 export const TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE = 9 * 60 * 1000;
 // Finalization records the transaction's validity upper bound as the
-// conservative IBC processed time. Keep that bound narrow so subsequent
-// proofs do not have to wait for the ordinary two-minute transaction TTL.
-export const TENDERMINT_FINALIZATION_TIME_TO_LIVE = 60 * 1000;
+// conservative IBC processed time. Preview can go over a minute between
+// blocks, so leave several block opportunities after building and signing.
+export const TENDERMINT_FINALIZATION_TIME_TO_LIVE = 3 * 60 * 1000;
 
 type StagedTendermintSession = {
   utxo: UTxO;
