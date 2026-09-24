@@ -59,9 +59,9 @@ A Cardano state root is only accepted once enough independent stake has built bl
 
 The verifier checks the structure and internal consistency of submitted block witnesses, but canonical block history and epoch context currently come from configured observer data. Safety therefore depends on those data sources, tuned acceptance parameters, and an honest observer or relayer surfacing conflicting context; this is an explicit trust assumption of the current pre-production design.
 
-The light client itself never makes a network call. The Gateway reads Cardano data, Hermes carries it inside `MsgUpdateClient`, and the Go module verifies block hashes, pool signatures, VRF proofs, and leader eligibility from the submitted bytes alone. The epoch context (stake distribution and epoch nonce) is the part it takes on trust.
+The light client itself never makes a network call. The Gateway gathers everything it needs from named sources, Hermes carries it inside `MsgUpdateClient`, and the Go module verifies block hashes, pool signatures, VRF proofs, and leader eligibility from the submitted bytes alone. The epoch context (stake distribution and epoch nonce) is the part it takes on trust. The animation shows exactly what the Gateway and Hermes ask each service for, first to build a light-client header and then to build, check, and submit a Cardano transaction.
 
-![Cardano data flowing from the Gateway through Hermes into the light client, which verifies it without network access](docs/assets/mechanics/light-client-data-flow.gif)
+![Hermes, the Gateway, and the Cardano data services, showing the exact call made to each service and the header or transaction field it fills](docs/assets/mechanics/gateway-data-sources.gif)
 
 The older Mithril light client and local Mithril setup are deprecated, disabled, and not maintained. They remain in the repository only for historical design reference and protobuf/type compatibility.
 
