@@ -823,11 +823,6 @@ def scene_finality(t: float) -> Image.Image:
         if frac > 0:
             c.rrect(40, y + 26, 1120 * frac, 16, fill=GREEN if met else BLUE, r=8)
 
-    note = prog(t, first + 5 * step, first + 5 * step + 0.5)
-    if note > 0:
-        c.chip(40, 512, "P4 registered too recently: its blocks add depth, but not "
-               "pools or stake", PINK, alpha=note, size=13)
-
     done = prog(t, first + 24 * step + 0.2, first + 24 * step + 0.8)
     if done > 0:
         c.rrect(40, 548, 1120, 40, fill=fade((20, 60, 40), done),
