@@ -27,6 +27,9 @@ OUT_DIR = Path(__file__).resolve().parent
 W, H = 1200, 675
 S = 2  # supersampling factor
 FPS = 15
+# Scenes are laid out on a 1200x675 grid. The band above the first row of
+# content is cropped from the output.
+TOP_CROP = 80
 
 BG = (15, 23, 42)
 PANEL = (30, 41, 59)
@@ -203,7 +206,8 @@ class Canvas:
         return w
 
     def finish(self) -> Image.Image:
-        return self.img.resize((W, H), Image.LANCZOS)
+        cropped = self.img.crop((0, TOP_CROP * S, W * S, H * S))
+        return cropped.resize((W, H - TOP_CROP), Image.LANCZOS)
 
 
 def box(c: Canvas, x, y, w, h, title, sub=None, color=BORDER, alpha=1.0,
@@ -217,9 +221,8 @@ def box(c: Canvas, x, y, w, h, title, sub=None, color=BORDER, alpha=1.0,
 
 
 def header(c: Canvas, t, title, subtitle):
-    a = prog(t, 0.0, 0.8)
-    c.text(40, 26, title, 27, fade(TEXT, a), "bold")
-    c.text(40, 62, subtitle, 15, fade(MUTED, a))
+    """Scenes name themselves here for readers of this file. The rendered GIF
+    has no title so the animation carries the explanation."""
 
 
 def caption(c: Canvas, t, steps):
@@ -822,6 +825,11 @@ def scene_finality(t: float) -> Image.Image:
         frac = clamp(val / goal)
         if frac > 0:
             c.rrect(40, y + 26, 1120 * frac, 16, fill=GREEN if met else BLUE, r=8)
+
+    note = prog(t, first + 5 * step, first + 5 * step + 0.5)
+    if note > 0:
+        c.chip(40, 512, "P4 registered too recently: its blocks add depth, but not "
+               "pools or stake", PINK, alpha=note, size=13)
 
     done = prog(t, first + 24 * step + 0.2, first + 24 * step + 0.8)
     if done > 0:
