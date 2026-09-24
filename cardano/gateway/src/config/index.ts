@@ -46,12 +46,14 @@ type DeploymentConfig = {
   };
 };
 
-const defaultKoiosEndpoint = (networkMagic?: string): string | undefined => {
+const defaultBlockfrostEndpoint = (networkMagic?: string): string | undefined => {
   switch (networkMagic) {
+    case '764824073':
+      return 'https://cardano-mainnet.blockfrost.io/api/v0';
     case '1':
-      return 'https://preprod.koios.rest/api/v1';
+      return 'https://cardano-preprod.blockfrost.io/api/v0';
     case '2':
-      return 'https://preview.koios.rest/api/v1';
+      return 'https://cardano-preview.blockfrost.io/api/v0';
     default:
       return undefined;
   }
@@ -73,7 +75,7 @@ export const validatePublicNetworkStabilityConfig = (network?: string, endpoint?
     return;
   }
   if (!endpoint?.trim().replace(/\/+$/, '')) {
-    throw new Error(`CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on ${network}`);
+    throw new Error(`CARDANO_BLOCKFROST_ENDPOINT is required for stake-weighted-stability on ${network}`);
   }
   for (const name of [
     'CARDANO_STABILITY_ASSUME_STATIC_STAKE',
@@ -137,7 +139,7 @@ interface Config {
   cardanoStabilityCheckpointMaxHeaderBytes: number;
   cardanoEpochParamsEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
-  cardanoKoiosApiKey?: string;
+  cardanoBlockfrostProjectId?: string;
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
@@ -156,7 +158,7 @@ export default (): Partial<Config> => {
   const cardanoLightClientMode =
     process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril' ? 'mithril' : 'stake-weighted-stability';
   const cardanoEpochParamsEndpoint =
-    process.env.CARDANO_EPOCH_PARAMS_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC);
+    process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC);
   if (cardanoLightClientMode === 'stake-weighted-stability') {
     validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);
   }
@@ -193,9 +195,9 @@ export default (): Partial<Config> => {
     ),
     cardanoEpochParamsEndpoint,
     cardanoPoolRegistrationHistoryEndpoint:
-      process.env.CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC),
-    cardanoKoiosApiKey:
-      process.env.CARDANO_KOIOS_API_KEY || process.env.CARIBIC_KOIOS_API_KEY || process.env.KOIOS_API_KEY,
+      process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC),
+    cardanoBlockfrostProjectId:
+      process.env.CARDANO_BLOCKFROST_PROJECT_ID || process.env.BLOCKFROST_PROJECT_ID,
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,

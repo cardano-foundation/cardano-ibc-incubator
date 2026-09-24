@@ -105,7 +105,6 @@ scenarios remain report-only and are not covered by this ratchet.
 
 Sources:
 
-- Cardano epoch 651 parameters: <https://api.koios.rest/api/v1/epoch_params?epoch_no=eq.651>
 - Injective consensus parameters at height 180448981: <https://sentry.tm.injective.network/consensus_params?height=180448981>
 - Injective staking parameters: <https://sentry.lcd.injective.network/cosmos/staking/v1beta1/params>
 - Injective transaction-fee parameters: <https://sentry.lcd.injective.network/injective/txfees/v1beta1/params>

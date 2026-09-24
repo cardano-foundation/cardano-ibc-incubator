@@ -71,14 +71,14 @@ describe('Cardano network defaults', () => {
 
 describe('Public network stability configuration', () => {
   const originalEnv = process.env;
-  const endpoint = 'https://koios.example/api/v1';
+  const endpoint = 'https://blockfrost.example/api/v0';
 
   beforeEach(() => {
     process.env = { ...originalEnv };
     for (const name of [
       'CARDANO_NETWORK_MAGIC',
       'CARDANO_LIGHT_CLIENT_MODE',
-      'CARDANO_EPOCH_PARAMS_ENDPOINT',
+      'CARDANO_BLOCKFROST_ENDPOINT',
       'CARDANO_STABILITY_ASSUME_STATIC_STAKE',
       'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT',
       'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE',
@@ -92,12 +92,17 @@ describe('Public network stability configuration', () => {
     process.env = originalEnv;
   });
 
-  it.each([undefined, '', '   ', '///'])('requires a usable Mainnet snapshot endpoint: %p', (value) => {
+  it('uses hosted Blockfrost on Mainnet by default', () => {
     process.env.CARDANO_NETWORK_MAGIC = '764824073';
-    if (value !== undefined) process.env.CARDANO_EPOCH_PARAMS_ENDPOINT = value;
+    expect(loadConfig().cardanoEpochParamsEndpoint).toBe('https://cardano-mainnet.blockfrost.io/api/v0');
+  });
+
+  it('rejects an unusable explicit Blockfrost endpoint', () => {
+    process.env.CARDANO_NETWORK_MAGIC = '764824073';
+    process.env.CARDANO_BLOCKFROST_ENDPOINT = '///';
 
     expect(() => loadConfig()).toThrow(
-      'CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on Mainnet',
+      'CARDANO_BLOCKFROST_ENDPOINT is required for stake-weighted-stability on Mainnet',
     );
   });
 
@@ -108,7 +113,7 @@ describe('Public network stability configuration', () => {
   ])('%s', (network, magic) => {
     beforeEach(() => {
       process.env.CARDANO_NETWORK_MAGIC = magic;
-      process.env.CARDANO_EPOCH_PARAMS_ENDPOINT = endpoint;
+      process.env.CARDANO_BLOCKFROST_ENDPOINT = endpoint;
     });
 
     it.each([
