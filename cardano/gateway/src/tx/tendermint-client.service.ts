@@ -94,7 +94,7 @@ export const TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE = 9 * 60 * 1000;
 // Finalization records the transaction's validity upper bound as the
 // conservative IBC processed time. Preview can go over a minute between
 // blocks, so leave several block opportunities after building and signing.
-export const TENDERMINT_FINALIZATION_TIME_TO_LIVE = 3 * 60 * 1000;
+const TENDERMINT_FINALIZATION_TIME_TO_LIVE = 3 * 60 * 1000;
 
 type StagedTendermintSession = {
   utxo: UTxO;
