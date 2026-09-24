@@ -52,11 +52,11 @@ impl CoreCardanoNetwork {
         matches!(self, Self::Preprod | Self::Preview)
     }
 
-    pub fn koios_base_url(self) -> Option<&'static str> {
+    pub fn blockfrost_base_url(self) -> Option<&'static str> {
         match self {
             Self::Local => None,
-            Self::Preprod => Some("https://preprod.koios.rest/api/v1"),
-            Self::Preview => Some("https://preview.koios.rest/api/v1"),
+            Self::Preprod => Some("https://cardano-preprod.blockfrost.io/api/v0"),
+            Self::Preview => Some("https://cardano-preview.blockfrost.io/api/v0"),
         }
     }
 

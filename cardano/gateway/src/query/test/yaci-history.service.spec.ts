@@ -34,6 +34,34 @@ const defaultVerificationData = {
   maxKesEvolutions: 62,
 };
 
+const registrationResponse = (
+  url: URL,
+  registrations: {
+    poolId: string;
+    txHash: string;
+    vrf: string;
+    slot: number;
+    blockTime?: number;
+    activeEpoch?: number;
+  }[],
+) => {
+  for (const registration of registrations) {
+    const { poolId, txHash, vrf, slot } = registration;
+    let body: unknown;
+    if (url.pathname.endsWith(`/pools/${poolId}/updates`)) {
+      body = [{ tx_hash: txHash, cert_index: 0, action: 'registered' }];
+    } else if (url.pathname.endsWith(`/txs/${txHash}/pool_updates`)) {
+      body = [{ cert_index: 0, pool_id: poolId, vrf_key: vrf, active_epoch: registration.activeEpoch ?? 2 }];
+    } else if (url.pathname.endsWith(`/txs/${txHash}`)) {
+      body = { block_time: registration.blockTime ?? 1, slot };
+    } else {
+      continue;
+    }
+    return { ok: true, json: async () => body };
+  }
+  return undefined;
+};
+
 describe('YaciHistoryService', () => {
   let service: YaciHistoryService;
   let configServiceMock: { get: jest.Mock };
@@ -52,12 +80,7 @@ describe('YaciHistoryService', () => {
   beforeEach(() => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => [
-        {
-          epoch_no: 7,
-          nonce: '11'.repeat(32),
-        },
-      ],
+      json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }),
     });
     configServiceMock = {
       get: jest.fn().mockImplementation((key: string) => {
@@ -65,7 +88,7 @@ describe('YaciHistoryService', () => {
           return 'ws://ogmios.local';
         }
         if (key === 'cardanoEpochParamsEndpoint') {
-          return 'https://preprod.koios.rest/api/v1';
+          return 'https://cardano-preprod.blockfrost.io/api/v0';
         }
         if (key === 'cardanoEpochLength') {
           return 432000;
@@ -146,7 +169,7 @@ describe('YaciHistoryService', () => {
     );
     expect(global.fetch).toHaveBeenCalledWith(
       expect.objectContaining({
-        pathname: '/api/v1/epoch_params',
+        pathname: '/api/v0/epochs/7/parameters',
       }),
       expect.objectContaining({
         headers: { accept: 'application/json' },
@@ -205,7 +228,7 @@ describe('YaciHistoryService', () => {
         },
       ],
     });
-    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v1/pool_updates');
+    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v0/pools/pool1cachedpool/updates');
   });
 
   it('uses explicit local registration-slot and static-stake assumptions together', async () => {
@@ -288,15 +311,15 @@ describe('YaciHistoryService', () => {
       expect.stringContaining('INSERT INTO bridge_pool_registration_cache'),
       [JSON.stringify([{ pool_id: 'pool1localpool', first_registration_slot: '77' }]), 'yaci'],
     );
-    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v1/pool_updates');
+    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v0/pools/pool1localpool/updates');
   });
 
   it('looks up missing first registration slots externally and caches them', async () => {
     configServiceMock.get.mockImplementation((key: string) => {
       if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
-      if (key === 'cardanoEpochParamsEndpoint') return 'https://preprod.koios.rest/api/v1';
+      if (key === 'cardanoEpochParamsEndpoint') return 'https://cardano-preprod.blockfrost.io/api/v0';
       if (key === 'cardanoEpochLength') return 432000;
-      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
+      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://cardano-preprod.blockfrost.io/api/v0';
       return undefined;
     });
     entityManagerMock.query
@@ -304,16 +327,12 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce(undefined);
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: async () => [
-        {
-          pool_id_bech32: 'pool1externalpool',
-          block_time: '1000',
-          update_type: 'registration',
-        },
-      ],
-    });
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) =>
+      registrationResponse(url, [{
+        poolId: 'pool1externalpool', txHash: 'ab'.repeat(32), vrf: 'aa'.repeat(32),
+        slot: 200, blockTime: 1000,
+      }])
+    );
 
     await expect(
       service.findFirstPoolRegistrationSlots(['pool1externalpool'], {
@@ -324,7 +343,7 @@ describe('YaciHistoryService', () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       expect.objectContaining({
-        pathname: '/api/v1/pool_updates',
+        pathname: '/api/v0/pools/pool1externalpool/updates',
       }),
       expect.objectContaining({
         headers: { accept: 'application/json' },
@@ -336,13 +355,56 @@ describe('YaciHistoryService', () => {
     );
   });
 
-  it('sends configured Koios credentials to epoch and pool-history endpoints', async () => {
+  it('uses the direct epoch snapshot when the latest completed pool-history row is absent', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) => ({
+      ok: true,
+      json: async () => url.pathname.endsWith('/history')
+        ? []
+        : url.pathname.endsWith('/epochs/1429/stakes/pool1historicala')
+        ? [{ amount: '128498584722' }]
+        : [],
+    }));
+
+    await expect(service['fetchBlockfrostPoolStake'](
+      'https://cardano-preview.blockfrost.io/api/v0',
+      'pool1historicala',
+      1429,
+    )).resolves.toBe(128498584722n);
+    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).toEqual([
+      '/api/v0/pools/pool1historicala/history',
+      '/api/v0/epochs/1429/stakes/pool1historicala',
+    ]);
+  });
+
+  it('uses the certificate activation epoch for a later pool update', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) =>
+      registrationResponse(url, [{
+        poolId: 'pool1updated', txHash: 'ab'.repeat(32), vrf: 'aa'.repeat(32),
+        slot: 200, activeEpoch: 9,
+      }])
+    );
+
+    const rows = await service['fetchBlockfrostPoolRegistrationUpdates'](
+      'https://cardano-preview.blockfrost.io/api/v0',
+      'pool1updated',
+    );
+    expect(rows).toMatchObject([{ active_epoch_no: 9, registration_slot: 200 }]);
+    expect(service['resolveHistoricalProducerRegistrations'](
+      [{ ...rows[0], active_epoch_no: 7, vrf_key_hash: 'cc'.repeat(32), registration_slot: 100 }, ...rows],
+      ['pool1updated'], 8, block,
+    ).get('pool1updated')).toEqual({ vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 100n });
+    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain(
+      '/api/v0/blocks/latest',
+    );
+  });
+
+  it('sends the Blockfrost project id to epoch and pool-history endpoints', async () => {
     configServiceMock.get.mockImplementation((key: string) => {
       if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
-      if (key === 'cardanoEpochParamsEndpoint') return 'https://preprod.koios.rest/api/v1';
+      if (key === 'cardanoEpochParamsEndpoint') return 'https://cardano-preprod.blockfrost.io/api/v0';
       if (key === 'cardanoEpochLength') return 432000;
-      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
-      if (key === 'cardanoKoiosApiKey') return 'koios-token';
+      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://cardano-preprod.blockfrost.io/api/v0';
+      if (key === 'cardanoBlockfrostProjectId') return 'blockfrost-project';
       return undefined;
     });
 
@@ -364,7 +426,7 @@ describe('YaciHistoryService', () => {
     });
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+      json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }),
     });
 
     await expect(service.findEpochContextAtBlock(block)).resolves.toMatchObject({
@@ -377,25 +439,21 @@ describe('YaciHistoryService', () => {
     });
 
     expect(global.fetch).toHaveBeenLastCalledWith(
-      expect.objectContaining({ pathname: '/api/v1/epoch_params' }),
+      expect.objectContaining({ pathname: '/api/v0/epochs/7/parameters' }),
       expect.objectContaining({
         headers: {
           accept: 'application/json',
-          Authorization: 'Bearer koios-token',
+          project_id: 'blockfrost-project',
         },
       }),
     );
 
-    (global.fetch as jest.Mock).mockClear().mockResolvedValueOnce({
-      ok: true,
-      json: async () => [
-        {
-          pool_id_bech32: 'pool1externalpool',
-          block_time: '1000',
-          update_type: 'registration',
-        },
-      ],
-    });
+    (global.fetch as jest.Mock).mockClear().mockImplementation(async (url: URL) =>
+      registrationResponse(url, [{
+        poolId: 'pool1externalpool', txHash: 'ab'.repeat(32), vrf: 'aa'.repeat(32),
+        slot: 200, blockTime: 1000,
+      }])
+    );
     entityManagerMock.query
       .mockReset()
       .mockResolvedValueOnce([])
@@ -410,11 +468,11 @@ describe('YaciHistoryService', () => {
     ).resolves.toEqual(new Map([['pool1externalpool', 200n]]));
 
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.objectContaining({ pathname: '/api/v1/pool_updates' }),
+      expect.objectContaining({ pathname: '/api/v0/pools/pool1externalpool/updates' }),
       expect.objectContaining({
         headers: {
           accept: 'application/json',
-          Authorization: 'Bearer koios-token',
+          project_id: 'blockfrost-project',
         },
       }),
     );
@@ -442,7 +500,7 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce([{ start_slot: '1200' }]);
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: async () => [{ epoch_no: 7, nonce: null }],
+      json: async () => ({ epoch: 7, nonce: null }),
     });
 
     await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
@@ -475,7 +533,7 @@ describe('YaciHistoryService', () => {
 
     resolveResponse!({
       ok: true,
-      json: async () => [{ epoch_no: 7, nonce: '22'.repeat(32) }],
+      json: async () => ({ epoch: 7, nonce: '22'.repeat(32) }),
     });
 
     await expect(Promise.all([firstLookup, secondLookup])).resolves.toEqual(['22'.repeat(32), '22'.repeat(32)]);
@@ -492,7 +550,7 @@ describe('YaciHistoryService', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => [{ epoch_no: 7, nonce: '33'.repeat(32) }],
+        json: async () => ({ epoch: 7, nonce: '33'.repeat(32) }),
       });
     const fetchEpochNonce = (service as any).fetchEpochNonce.bind(service);
 
@@ -512,11 +570,11 @@ describe('YaciHistoryService', () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => [{ epoch_no: 8, nonce: '44'.repeat(32) }],
+        json: async () => ({ epoch: 8, nonce: '44'.repeat(32) }),
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => [{ epoch_no: 7, nonce: '55'.repeat(32) }],
+        json: async () => ({ epoch: 7, nonce: '55'.repeat(32) }),
       });
     const fetchEpochNonce = (service as any).fetchEpochNonce.bind(service);
 
@@ -661,8 +719,8 @@ describe('YaciHistoryService', () => {
       if (key === 'cardanoNetwork') return 'Preprod';
       if (key === 'cardanoChainId') return 'cardano-preprod';
       if (key === 'cardanoChainNetworkMagic') return 1;
-      if (key === 'cardanoEpochParamsEndpoint') return 'https://preprod.koios.rest/api/v1';
-      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
+      if (key === 'cardanoEpochParamsEndpoint') return 'https://cardano-preprod.blockfrost.io/api/v0';
+      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://cardano-preprod.blockfrost.io/api/v0';
       if (key === 'cardanoEpochLength') return 432000;
       return undefined;
     });
@@ -694,51 +752,35 @@ describe('YaciHistoryService', () => {
       currentEpoch: 9,
     });
     (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
-      if (url.pathname.endsWith('/epoch_params')) {
+      if (url.pathname.endsWith('/epochs/7/parameters')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+          json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }),
         };
       }
-      if (url.pathname.endsWith('/epoch_info')) {
+      if (url.pathname.endsWith('/epochs/7')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, active_stake: '1000', blk_count: 20 }],
+          json: async () => ({ epoch: 7, active_stake: '1000', block_count: 20 }),
         };
       }
-      if (url.pathname.endsWith('/pool_history')) {
-        const poolId = url.searchParams.get('_pool_bech32');
+      if (url.pathname.endsWith('/history')) {
+        const poolId = url.pathname.split('/')[4];
         return {
           ok: true,
           json: async () => [
             {
-              epoch_no: 7,
+              epoch: 7,
               active_stake: poolId === 'pool1historicala' ? '600' : '300',
             },
           ],
         };
       }
-      if (url.pathname.endsWith('/pool_updates')) {
-        return {
-          ok: true,
-          json: async () => [
-            {
-              pool_id_bech32: 'pool1historicala',
-              active_epoch_no: 1,
-              vrf_key_hash: 'aa'.repeat(32),
-              update_type: 'registration',
-              block_time: 1,
-            },
-            {
-              pool_id_bech32: 'pool1historicalb',
-              active_epoch_no: 2,
-              vrf_key_hash: 'bb'.repeat(32),
-              update_type: 'registration',
-              block_time: 1,
-            },
-          ],
-        };
-      }
+      const registration = registrationResponse(url, [
+        { poolId: 'pool1historicala', txHash: 'ab'.repeat(32), vrf: 'aa'.repeat(32), slot: 1100 },
+        { poolId: 'pool1historicalb', txHash: 'cd'.repeat(32), vrf: 'bb'.repeat(32), slot: 1100 },
+      ]);
+      if (registration) return registration;
       throw new Error(`Unexpected fetch URL ${url.toString()}`);
     });
 
@@ -795,7 +837,7 @@ describe('YaciHistoryService stake snapshot source selection', () => {
 
   const configureNetwork = (
     network?: 'Preprod' | 'Preview' | 'Mainnet',
-    endpoint: string | null = 'https://preprod.koios.rest/api/v1',
+    endpoint: string | null = 'https://cardano-preprod.blockfrost.io/api/v0',
   ) => {
     configServiceMock.get.mockImplementation((key: string) => {
       if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
@@ -810,7 +852,7 @@ describe('YaciHistoryService stake snapshot source selection', () => {
         return endpoint ?? undefined;
       }
       if (key === 'cardanoPoolRegistrationHistoryEndpoint') {
-        return network ? 'https://preprod.koios.rest/api/v1' : undefined;
+        return network ? 'https://cardano-preprod.blockfrost.io/api/v0' : undefined;
       }
       if (key === 'cardanoEpochLength') return 432000;
       return undefined;
@@ -820,7 +862,7 @@ describe('YaciHistoryService stake snapshot source selection', () => {
   beforeEach(() => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+      json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }),
     });
     configServiceMock = { get: jest.fn() };
     configureNetwork();
@@ -869,7 +911,7 @@ describe('YaciHistoryService stake snapshot source selection', () => {
       });
 
       await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
-        'CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on Mainnet',
+        'CARDANO_BLOCKFROST_ENDPOINT is required for stake-weighted-stability on Mainnet',
       );
       expect(queryEpochContextAtPoint).not.toHaveBeenCalled();
       expect(global.fetch).not.toHaveBeenCalled();
@@ -896,7 +938,7 @@ describe('YaciHistoryService stake snapshot source selection', () => {
       configureNetwork(network, null);
 
       await expect((service as any).findCurrentEpochStakeSnapshot(block, liveStakeDistribution)).rejects.toThrow(
-        `CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on ${network}`,
+        `CARDANO_BLOCKFROST_ENDPOINT is required for stake-weighted-stability on ${network}`,
       );
     },
   );
@@ -1007,41 +1049,31 @@ describe('YaciHistoryService stake snapshot source selection', () => {
       currentEpoch: 9,
     });
     (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
-      if (url.pathname.endsWith('/epoch_params')) {
+      if (url.pathname.endsWith('/epochs/7/parameters')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+          json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }),
         };
       }
-      if (url.pathname.endsWith('/tip')) {
-        return { ok: true, json: async () => [{ epoch_no: 9 }] };
+      if (url.pathname.endsWith('/blocks/latest')) {
+        return { ok: true, json: async () => ({ epoch: 9 }) };
       }
-      if (url.pathname.endsWith('/epoch_info')) {
+      if (url.pathname.endsWith('/epochs/7')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, active_stake: '1000', blk_count: 20 }],
+          json: async () => ({ epoch: 7, active_stake: '1000', block_count: 20 }),
         };
       }
-      if (url.pathname.endsWith('/pool_history')) {
+      if (url.pathname.endsWith('/history')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, active_stake: '600' }],
+          json: async () => [{ epoch: 7, active_stake: '600' }],
         };
       }
-      if (url.pathname.endsWith('/pool_updates')) {
-        return {
-          ok: true,
-          json: async () => [
-            {
-              pool_id_bech32: 'pool1historicala',
-              active_epoch_no: 1,
-              vrf_key_hash: 'aa'.repeat(32),
-              update_type: 'registration',
-              block_time: 1,
-            },
-          ],
-        };
-      }
+      const registration = registrationResponse(url, [
+        { poolId: 'pool1historicala', txHash: 'ab'.repeat(32), vrf: 'aa'.repeat(32), slot: 1100 },
+      ]);
+      if (registration) return registration;
       throw new Error(`Unexpected fetch URL ${url.toString()}`);
     });
 
@@ -1083,20 +1115,20 @@ describe('YaciHistoryService stake snapshot source selection', () => {
       ],
     });
     (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
-      if (url.pathname.endsWith('/epoch_params')) {
+      if (url.pathname.endsWith('/epochs/7/parameters')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+          json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }),
         };
       }
-      if (url.pathname.endsWith('/tip')) {
-        return { ok: true, json: async () => [{ epoch_no: 6 }] };
+      if (url.pathname.endsWith('/blocks/latest')) {
+        return { ok: true, json: async () => ({ epoch: 6 }) };
       }
       throw new Error(`Unexpected fetch URL ${url.toString()}`);
     });
 
     await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
-      'Koios tip epoch 6 is behind requested block epoch 7; refusing live Ogmios stake fallback',
+      'Blockfrost tip epoch 6 is behind requested block epoch 7; refusing live Ogmios stake fallback',
     );
     expect(entityManagerMock.query).toHaveBeenCalledTimes(2);
   });
@@ -1122,10 +1154,10 @@ describe.each(['Preprod', 'Preview', 'Mainnet'])('Current epoch stake snapshots 
         if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
         if (key === 'cardanoNetwork') return network;
         if (key === 'cardanoEpochParamsEndpoint') {
-          return 'https://preprod.koios.rest/api/v1';
+          return 'https://cardano-preprod.blockfrost.io/api/v0';
         }
         if (key === 'cardanoPoolRegistrationHistoryEndpoint') {
-          return 'https://preprod.koios.rest/api/v1';
+          return 'https://cardano-preprod.blockfrost.io/api/v0';
         }
         if (key === 'cardanoEpochLength') return 432000;
         return undefined;
@@ -1167,45 +1199,35 @@ describe.each(['Preprod', 'Preview', 'Mainnet'])('Current epoch stake snapshots 
         { pool_id: 'pool1retired', first_registration_slot: '42' },
       ]);
     (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
-      if (url.pathname.endsWith('/epoch_params')) {
+      if (url.pathname.endsWith('/epochs/7/parameters')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+          json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }),
         };
       }
-      if (url.pathname.endsWith('/tip')) {
-        return { ok: true, json: async () => [{ epoch_no: 7 }] };
+      if (url.pathname.endsWith('/blocks/latest')) {
+        return { ok: true, json: async () => ({ epoch: 7 }) };
       }
-      if (url.pathname.endsWith('/pool_list')) {
-        return {
-          ok: true,
-          json: async () => [
-            { pool_id_bech32: 'pool1active', active_stake: '600' },
-            { pool_id_bech32: 'pool1retired', active_stake: '400' },
-            { pool_id_bech32: 'pool1nostake', active_stake: null },
-          ],
-        };
-      }
-      if (url.pathname.endsWith('/epoch_info')) {
-        return {
-          ok: true,
-          json: async () => [{ epoch_no: 7, active_stake: '1000' }],
-        };
-      }
-      if (url.pathname.endsWith('/pool_updates')) {
+      if (url.pathname.endsWith('/pools/extended')) {
         return {
           ok: true,
           json: async () => [
-            {
-              pool_id_bech32: 'pool1retired',
-              active_epoch_no: 1,
-              vrf_key_hash: 'bb'.repeat(32),
-              update_type: 'registration',
-              block_time: 1,
-            },
+            { pool_id: 'pool1active', active_stake: '600' },
+            { pool_id: 'pool1retired', active_stake: '400' },
+            { pool_id: 'pool1nostake', active_stake: null },
           ],
         };
       }
+      if (url.pathname.endsWith('/epochs/7')) {
+        return {
+          ok: true,
+          json: async () => ({ epoch: 7, active_stake: '1000' }),
+        };
+      }
+      const registration = registrationResponse(url, [
+        { poolId: 'pool1retired', txHash: 'ab'.repeat(32), vrf: 'bb'.repeat(32), slot: 42 },
+      ]);
+      if (registration) return registration;
       throw new Error(`Unexpected fetch URL ${url.toString()}`);
     });
 
@@ -1237,46 +1259,69 @@ describe.each(['Preprod', 'Preview', 'Mainnet'])('Current epoch stake snapshots 
 
     const requestedPaths = (global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname);
     expect(requestedPaths).toEqual(
-      expect.arrayContaining(['/api/v1/tip', '/api/v1/pool_list', '/api/v1/epoch_info', '/api/v1/pool_updates']),
+      expect.arrayContaining(['/api/v0/blocks/latest', '/api/v0/pools/extended', '/api/v0/epochs/7', '/api/v0/pools/pool1retired/updates']),
     );
   });
 
-  it('fails closed when the pool snapshot does not match total active stake', async () => {
+  it('keeps omitted retired stake in a non-producing remainder', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) => ({
+      ok: true,
+      json: async () => url.pathname.endsWith('/pools/extended')
+        ? [{ pool_id: 'pool1active', active_stake: '600' }]
+        : { epoch: 7, active_stake: '1000' },
+    }));
+
+    await expect(service['buildCurrentEpochStakeSnapshot'](
+      'https://cardano-preprod.blockfrost.io/api/v0',
+      block,
+      [{ poolId: 'pool1active', ...exactStake(600n, 1000n), vrfKeyHash: 'aa'.repeat(32) }],
+    )).resolves.toEqual([
+      { poolId: 'pool1active', ...exactStake(600n, 1000n), vrfKeyHash: 'aa'.repeat(32) },
+      {
+        poolId: '__historical_unproduced_stake__:7',
+        ...exactStake(400n, 1000n),
+        vrfKeyHash: '00'.repeat(32),
+        firstRegistrationSlot: 1n,
+      },
+    ]);
+  });
+
+  it('fails closed when pool stake exceeds total active stake', async () => {
     entityManagerMock.query
       .mockResolvedValueOnce([{ start_slot: '1000' }])
       .mockResolvedValueOnce([{ start_slot: '1200' }]);
     (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
-      if (url.pathname.endsWith('/epoch_params')) {
+      if (url.pathname.endsWith('/epochs/7/parameters')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+          json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }),
         };
       }
-      if (url.pathname.endsWith('/tip')) {
-        return { ok: true, json: async () => [{ epoch_no: 7 }] };
+      if (url.pathname.endsWith('/blocks/latest')) {
+        return { ok: true, json: async () => ({ epoch: 7 }) };
       }
-      if (url.pathname.endsWith('/pool_list')) {
+      if (url.pathname.endsWith('/pools/extended')) {
         return {
           ok: true,
           json: async () => [
             {
-              pool_id_bech32: 'pool1active',
-              active_stake: '600',
+              pool_id: 'pool1active',
+              active_stake: '1200',
             },
           ],
         };
       }
-      if (url.pathname.endsWith('/epoch_info')) {
+      if (url.pathname.endsWith('/epochs/7')) {
         return {
           ok: true,
-          json: async () => [{ epoch_no: 7, active_stake: '1000' }],
+          json: async () => ({ epoch: 7, active_stake: '1000' }),
         };
       }
       throw new Error(`Unexpected fetch URL ${url.toString()}`);
     });
 
     await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
-      'Koios current epoch stake snapshot total 600 does not match epoch 7 active stake 1000',
+      'Blockfrost current epoch stake snapshot total 1200 exceeds epoch 7 active stake 1000',
     );
   });
 });

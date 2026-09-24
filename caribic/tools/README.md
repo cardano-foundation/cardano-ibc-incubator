@@ -20,9 +20,9 @@ deno run --allow-net --allow-read --allow-write --allow-env caribic/tools/provis
 - With `CARDANO_PREPROD_FAUCET_API_KEY`, `CARDANO_PREVIEW_FAUCET_API_KEY`, or the
   fallback `CARDANO_FAUCET_API_KEY` set, the script calls the selected faucet API
   directly. Without it, it prints the address and web-faucet instructions and polls
-  Koios until the funds arrive.
-- Optional Koios API tokens for balance polling can be provided via
-  `CARIBIC_KOIOS_API_KEY`, `CARDANO_KOIOS_API_KEY`, or `KOIOS_API_KEY`.
+  Blockfrost until the funds arrive.
+- Set `CARDANO_BLOCKFROST_PROJECT_ID` or `BLOCKFROST_PROJECT_ID_PREPROD` /
+  `BLOCKFROST_PROJECT_ID_PREVIEW` for balance polling.
 - `--no-wait` skips the balance polling.
 - Re-running is safe: an existing key is reused, and an already-funded address skips
   the faucet step.

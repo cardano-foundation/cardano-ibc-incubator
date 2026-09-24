@@ -1,22 +1,22 @@
 use crate::{config, logger, setup};
-use reqwest::header::{ACCEPT, AUTHORIZATION};
+use reqwest::header::ACCEPT;
 use serde::Deserialize;
 use std::time::Duration;
 use std::{fs, path::Path};
 
 #[derive(Debug, Deserialize)]
-struct KoiosTip {
-    epoch_no: u64,
-    block_no: u64,
+struct BlockfrostTip {
+    epoch: u64,
+    height: u64,
 }
 
 #[derive(Debug, Deserialize)]
-struct KoiosBlock {
+struct BlockfrostBlock {
     hash: String,
-    epoch_no: u64,
-    abs_slot: u64,
+    epoch: u64,
+    slot: u64,
     epoch_slot: u64,
-    block_height: u64,
+    height: u64,
 }
 
 pub async fn run_yaci_checkpoint(
@@ -32,44 +32,57 @@ pub async fn run_yaci_checkpoint(
             network
         ));
     }
-    let koios_base_url = cardano_network
-        .koios_base_url()
-        .ok_or_else(|| format!("ERROR: Missing Koios endpoint for {}.", network))?;
+    let blockfrost_base_url = cardano_network
+        .blockfrost_base_url()
+        .ok_or_else(|| format!("ERROR: Missing Blockfrost endpoint for {}.", network))?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
         .map_err(|error| format!("ERROR: Failed to initialize HTTP client: {}", error))?;
-    let authorization = koios_authorization_header(project_root_path)?;
+    let project_id = blockfrost_project_id(project_root_path)?;
 
-    let tip_url = format!("{koios_base_url}/tip");
-    let tip = first_row::<KoiosTip>(
+    let tip_url = format!("{blockfrost_base_url}/blocks/latest");
+    let tip = get_json::<BlockfrostTip>(
         &client,
         tip_url.as_str(),
-        &format!("{} Koios tip", cardano_network.as_str()),
-        authorization.as_deref(),
+        &format!("{} Blockfrost tip", cardano_network.as_str()),
+        project_id.as_str(),
     )
     .await?;
-    let target_epoch = tip.epoch_no.checked_sub(epochs_back).ok_or_else(|| {
+    let target_epoch = tip.epoch.checked_sub(epochs_back).ok_or_else(|| {
         format!(
             "ERROR: Cannot select checkpoint {} epochs behind tip epoch {}.",
-            epochs_back, tip.epoch_no
+            epochs_back, tip.epoch
         )
     })?;
 
     let blocks_url =
-        format!("{koios_base_url}/blocks?epoch_no=eq.{target_epoch}&order=abs_slot.asc&limit=1");
-    let block = first_row::<KoiosBlock>(
+        format!("{blockfrost_base_url}/epochs/{target_epoch}/blocks?count=1&page=1&order=asc");
+    let block_hashes = get_json::<Vec<String>>(
         &client,
         blocks_url.as_str(),
-        &format!("{} checkpoint block", cardano_network.as_str()),
-        authorization.as_deref(),
+        &format!("{} first checkpoint block hash", cardano_network.as_str()),
+        project_id.as_str(),
     )
     .await?;
-    if block.epoch_no != target_epoch {
+    let first_hash = block_hashes.first().ok_or_else(|| {
+        format!(
+            "ERROR: Blockfrost returned no blocks for epoch {}.",
+            target_epoch
+        )
+    })?;
+    let block = get_json::<BlockfrostBlock>(
+        &client,
+        format!("{blockfrost_base_url}/blocks/{first_hash}").as_str(),
+        &format!("{} checkpoint block", cardano_network.as_str()),
+        project_id.as_str(),
+    )
+    .await?;
+    if block.epoch != target_epoch || !block.hash.eq_ignore_ascii_case(first_hash) {
         return Err(format!(
-            "ERROR: Koios returned checkpoint block for epoch {}, expected {}.",
-            block.epoch_no, target_epoch
+            "ERROR: Blockfrost returned checkpoint block for epoch {}, expected {}.",
+            block.epoch, target_epoch
         ));
     }
     let block_hash = block.hash.to_lowercase();
@@ -77,12 +90,12 @@ pub async fn run_yaci_checkpoint(
     logger::log(&format!(
         "Yaci {} checkpoint (tip epoch {}, tip block {}, target epoch {}):",
         cardano_network.as_str(),
-        tip.epoch_no,
-        tip.block_no,
+        tip.epoch,
+        tip.height,
         target_epoch
     ));
-    logger::log(&format!("  block_no: {}", block.block_height));
-    logger::log(&format!("  slot: {}", block.abs_slot));
+    logger::log(&format!("  block_no: {}", block.height));
+    logger::log(&format!("  slot: {}", block.slot));
     logger::log(&format!("  epoch_slot: {}", block.epoch_slot));
     logger::log(&format!("  hash: {}", block_hash));
     logger::log("");
@@ -90,12 +103,9 @@ pub async fn run_yaci_checkpoint(
         "Set these before starting {} Yaci:",
         cardano_network.as_str()
     ));
-    logger::log(&format!("{}={}", "YACI_SYNC_START_SLOT", block.abs_slot));
+    logger::log(&format!("{}={}", "YACI_SYNC_START_SLOT", block.slot));
     logger::log(&format!("{}={}", "YACI_SYNC_START_BLOCKHASH", block_hash));
-    logger::log(&format!(
-        "{}={}",
-        "YACI_SYNC_START_BLOCK_NO", block.block_height
-    ));
+    logger::log(&format!("{}={}", "YACI_SYNC_START_BLOCK_NO", block.height));
 
     if write_env {
         let profile = config::cardano_network_profile(cardano_network);
@@ -116,11 +126,11 @@ pub async fn run_yaci_checkpoint(
     Ok(())
 }
 
-fn koios_authorization_header(project_root_path: &Path) -> Result<Option<String>, String> {
+fn blockfrost_project_id(project_root_path: &Path) -> Result<String, String> {
     let process_value = [
-        "CARIBIC_KOIOS_API_KEY",
-        "CARDANO_KOIOS_API_KEY",
-        "KOIOS_API_KEY",
+        "CARIBIC_BLOCKFROST_PROJECT_ID",
+        "CARDANO_BLOCKFROST_PROJECT_ID",
+        "BLOCKFROST_PROJECT_ID",
     ]
     .iter()
     .find_map(|key| std::env::var(key).ok())
@@ -128,7 +138,7 @@ fn koios_authorization_header(project_root_path: &Path) -> Result<Option<String>
     .filter(|value| !value.is_empty());
     let gateway_env = project_root_path.join("cardano/gateway/.env");
     let file_value = if gateway_env.exists() {
-        setup::read_gateway_env_value(&gateway_env, "CARDANO_KOIOS_API_KEY")
+        setup::read_gateway_env_value(&gateway_env, "CARDANO_BLOCKFROST_PROJECT_ID")
             .map_err(|error| format!("ERROR: Failed to read {}: {error}", gateway_env.display()))?
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
@@ -136,39 +146,32 @@ fn koios_authorization_header(project_root_path: &Path) -> Result<Option<String>
         None
     };
 
-    Ok(process_value.or(file_value).map(|api_key| {
-        if api_key.to_ascii_lowercase().starts_with("bearer ") {
-            api_key
-        } else {
-            format!("Bearer {api_key}")
-        }
-    }))
+    process_value.or(file_value).ok_or_else(|| {
+        "ERROR: CARDANO_BLOCKFROST_PROJECT_ID is required for a public Cardano checkpoint."
+            .to_string()
+    })
 }
 
-async fn first_row<T: for<'de> Deserialize<'de>>(
+async fn get_json<T: for<'de> Deserialize<'de>>(
     client: &reqwest::Client,
     url: &str,
     label: &str,
-    authorization: Option<&str>,
+    project_id: &str,
 ) -> Result<T, String> {
-    let mut request = client.get(url).header(ACCEPT, "application/json");
-    if let Some(authorization) = authorization {
-        request = request.header(AUTHORIZATION, authorization);
-    }
-
-    let response = request
+    let response = client
+        .get(url)
+        .header(ACCEPT, "application/json")
+        .header("project_id", project_id)
         .send()
         .await
         .map_err(|error| format!("ERROR: Failed to query {} at {}: {}", label, url, error))?
         .error_for_status()
         .map_err(|error| format!("ERROR: {} returned an error: {}", label, error))?;
 
-    let mut rows = response
-        .json::<Vec<T>>()
+    response
+        .json::<T>()
         .await
-        .map_err(|error| format!("ERROR: Failed to parse {} response: {}", label, error))?;
-    rows.pop()
-        .ok_or_else(|| format!("ERROR: {} returned no rows from {}", label, url))
+        .map_err(|error| format!("ERROR: Failed to parse {} response: {}", label, error))
 }
 
 fn write_checkpoint_env(
@@ -176,7 +179,7 @@ fn write_checkpoint_env(
     network: config::CoreCardanoNetwork,
     chain_id: &str,
     network_magic: u64,
-    block: &KoiosBlock,
+    block: &BlockfrostBlock,
 ) -> Result<(), String> {
     let gateway_env = project_root_path.join("cardano/gateway/.env");
     if !gateway_env.exists() {
@@ -220,7 +223,7 @@ fn write_checkpoint_env(
     setup::set_or_append_env_var(
         &gateway_env,
         "YACI_SYNC_START_SLOT",
-        &block.abs_slot.to_string(),
+        &block.slot.to_string(),
     )
     .map_err(|error| {
         format!(
@@ -240,7 +243,7 @@ fn write_checkpoint_env(
     setup::set_or_append_env_var(
         &gateway_env,
         "YACI_SYNC_START_BLOCK_NO",
-        &block.block_height.to_string(),
+        &block.height.to_string(),
     )
     .map_err(|error| {
         format!(
@@ -257,7 +260,7 @@ fn write_checkpoint_env(
 
 #[cfg(test)]
 mod tests {
-    use super::{write_checkpoint_env, KoiosBlock};
+    use super::{write_checkpoint_env, BlockfrostBlock};
     use crate::config::CoreCardanoNetwork;
     use std::{fs, time::SystemTime};
 
@@ -278,12 +281,12 @@ mod tests {
             "CARDANO_RUNTIME_NETWORK=local\nCARDANO_CHAIN_ID=cardano-devnet\nCARDANO_CHAIN_NETWORK_MAGIC=42\nCARDANO_NETWORK_MAGIC=42\n",
         )
         .unwrap();
-        let block = KoiosBlock {
+        let block = BlockfrostBlock {
             hash: "ABCD".repeat(16),
-            epoch_no: 10,
-            abs_slot: 123,
+            epoch: 10,
+            slot: 123,
             epoch_slot: 1,
-            block_height: 456,
+            height: 456,
         };
 
         write_checkpoint_env(

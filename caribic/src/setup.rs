@@ -2392,9 +2392,9 @@ fn write_gateway_env_for_network(
                 "KUPO_API_KEY",
                 "CARIBIC_OGMIOS_API_KEY",
                 "OGMIOS_API_KEY",
-                "CARIBIC_KOIOS_API_KEY",
-                "CARDANO_KOIOS_API_KEY",
-                "KOIOS_API_KEY",
+                "CARIBIC_BLOCKFROST_PROJECT_ID",
+                "CARDANO_BLOCKFROST_PROJECT_ID",
+                "BLOCKFROST_PROJECT_ID",
             ],
             network,
         )?;
@@ -2559,19 +2559,19 @@ fn write_gateway_env_for_network(
                 set_or_append_env_var(&gateway_env, "OGMIOS_API_KEY", ogmios_api_key.as_str())?;
             }
 
-            if let Some(koios_api_key) = resolve_preprod_live_endpoint(
+            if let Some(blockfrost_project_id) = resolve_preprod_live_endpoint(
                 &gateway_env,
-                "CARDANO_KOIOS_API_KEY",
+                "CARDANO_BLOCKFROST_PROJECT_ID",
                 &[
-                    "CARIBIC_KOIOS_API_KEY",
-                    "CARDANO_KOIOS_API_KEY",
-                    "KOIOS_API_KEY",
+                    "CARIBIC_BLOCKFROST_PROJECT_ID",
+                    "CARDANO_BLOCKFROST_PROJECT_ID",
+                    "BLOCKFROST_PROJECT_ID",
                 ],
             )? {
                 set_or_append_env_var(
                     &gateway_env,
-                    "CARDANO_KOIOS_API_KEY",
-                    koios_api_key.as_str(),
+                    "CARDANO_BLOCKFROST_PROJECT_ID",
+                    blockfrost_project_id.as_str(),
                 )?;
             }
 
@@ -2585,16 +2585,11 @@ fn write_gateway_env_for_network(
                 "GATEWAY_RUNTIME_KUPO_API_KEY",
                 runtime_kupo_api_key.as_deref().unwrap_or(""),
             )?;
-            if let Some(koios_base_url) = network.koios_base_url() {
+            if let Some(blockfrost_base_url) = network.blockfrost_base_url() {
                 set_env_var_if_absent(
                     &gateway_env,
-                    "CARDANO_EPOCH_PARAMS_ENDPOINT",
-                    koios_base_url,
-                )?;
-                set_env_var_if_absent(
-                    &gateway_env,
-                    "CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT",
-                    koios_base_url,
+                    "CARDANO_BLOCKFROST_ENDPOINT",
+                    blockfrost_base_url,
                 )?;
             }
         }
@@ -3100,20 +3095,20 @@ mod tests {
         ));
         fs::write(
             &env_path,
-            "CARDANO_EPOCH_PARAMS_ENDPOINT=https://koios-proxy.example/api/v1\n",
+            "CARDANO_BLOCKFROST_ENDPOINT=https://blockfrost-proxy.example/api/v0\n",
         )
         .expect("temporary env should be writable");
 
         set_env_var_if_absent(
             &env_path,
-            "CARDANO_EPOCH_PARAMS_ENDPOINT",
-            "https://preview.koios.rest/api/v1",
+            "CARDANO_BLOCKFROST_ENDPOINT",
+            "https://cardano-preview.blockfrost.io/api/v0",
         )
         .expect("set-if-absent should succeed");
 
         assert_eq!(
             fs::read_to_string(&env_path).expect("temporary env should be readable"),
-            "CARDANO_EPOCH_PARAMS_ENDPOINT=https://koios-proxy.example/api/v1\n"
+            "CARDANO_BLOCKFROST_ENDPOINT=https://blockfrost-proxy.example/api/v0\n"
         );
         fs::remove_file(env_path).expect("temporary env should be removable");
     }

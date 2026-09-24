@@ -101,9 +101,10 @@ function getAssumedPoolRegistrationSlot(): bigint | undefined {
   return configuredSlot ? BigInt(configuredSlot) : undefined;
 }
 
-type KoiosPoolUpdateRow = {
+type BlockfrostPoolUpdateRow = {
   tx_hash?: string | null;
   block_time?: string | number | null;
+  registration_slot?: string | number | null;
   pool_id_bech32?: string | null;
   pool_id_hex?: string | null;
   active_epoch_no?: string | number | null;
@@ -111,29 +112,29 @@ type KoiosPoolUpdateRow = {
   update_type?: string | null;
 };
 
-type KoiosEpochParamsRow = {
-  epoch_no?: string | number | null;
+type BlockfrostEpochParamsRow = {
+  epoch?: string | number | null;
   nonce?: string | null;
 };
 
-type KoiosEpochInfoRow = {
-  epoch_no?: string | number | null;
+type BlockfrostEpochInfoRow = {
+  epoch?: string | number | null;
   active_stake?: string | number | null;
-  blk_count?: string | number | null;
+  block_count?: string | number | null;
 };
 
-type KoiosPoolHistoryRow = {
-  epoch_no?: string | number | null;
+type BlockfrostPoolHistoryRow = {
+  epoch?: string | number | null;
   active_stake?: string | number | null;
 };
 
-type KoiosTipRow = {
-  epoch_no?: string | number | null;
+type BlockfrostTipRow = {
+  epoch?: string | number | null;
 };
 
-type KoiosPoolListRow = {
-  pool_id_bech32?: string | null;
-  pool_id_hex?: string | null;
+type BlockfrostPoolListRow = {
+  pool_id?: string | null;
+  hex?: string | null;
   active_stake?: string | number | null;
 };
 
@@ -142,14 +143,13 @@ type HistoricalEpochProducerSummaryRow = {
   pool_ids?: string[] | null;
 };
 
-type KoiosRequestHeaders = {
+type BlockfrostRequestHeaders = {
   accept: string;
-  Authorization?: string;
+  project_id?: string;
 };
 
 const CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
-const POOL_REGISTRATION_LOOKUP_BATCH_SIZE = 25;
-const POOL_REGISTRATION_LOOKUP_TIMEOUT_MS = 10_000;
+const POOL_REGISTRATION_LOOKUP_BATCH_SIZE = 5;
 const EPOCH_PARAMS_LOOKUP_TIMEOUT_MS = 10_000;
 const EPOCH_PARAMS_LOOKUP_MAX_ATTEMPTS = 3;
 const EPOCH_PARAMS_RETRY_BASE_DELAY_MS = 250;
@@ -165,8 +165,8 @@ const HISTORICAL_STAKE_RETRY_MAX_DELAY_MS = 30_000;
 const HISTORICAL_STAKE_POOL_CONCURRENCY = 20;
 const HISTORICAL_STAKE_REMAINDER_POOL_PREFIX =
   "__historical_unproduced_stake__";
-const CURRENT_EPOCH_STAKE_PAGE_SIZE = 1_000;
-const CURRENT_EPOCH_STAKE_MAX_PAGES = 10;
+const CURRENT_EPOCH_STAKE_PAGE_SIZE = 100;
+const CURRENT_EPOCH_STAKE_MAX_PAGES = 100;
 
 const EPOCH_NONCE_CACHE_METRIC = "epoch_nonce";
 const EPOCH_NONCE_LOOKUPS_METRIC = "epoch_nonce_lookups";
@@ -299,15 +299,15 @@ export class YaciHistoryService implements HistoryService {
     );
   }
 
-  private koiosRequestHeaders(): KoiosRequestHeaders {
-    const apiKey = this.configService.get<string>("cardanoKoiosApiKey")?.trim();
-    if (!apiKey) {
+  private blockfrostRequestHeaders(): BlockfrostRequestHeaders {
+    const projectId = this.configService.get<string>("cardanoBlockfrostProjectId")?.trim();
+    if (!projectId) {
       return { accept: "application/json" };
     }
 
     return {
       accept: "application/json",
-      Authorization: /^Bearer\s+/i.test(apiKey) ? apiKey : `Bearer ${apiKey}`,
+      project_id: projectId,
     };
   }
 
@@ -642,7 +642,7 @@ export class YaciHistoryService implements HistoryService {
       epoch: epochContext.currentEpoch,
       stakeDistribution: stakeDistribution.map((entry) => ({
         ...entry,
-        firstRegistrationSlot: firstRegistrationSlots.get(entry.poolId) ?? null,
+        firstRegistrationSlot: firstRegistrationSlots.get(entry.poolId) ?? entry.firstRegistrationSlot ?? null,
       })),
       verificationContext: {
         epochNonce: epochContext.epochNonce,
@@ -691,7 +691,7 @@ export class YaciHistoryService implements HistoryService {
     }
     if (!endpoint) {
       throw new Error(
-        `CARDANO_EPOCH_PARAMS_ENDPOINT is required for stake-weighted-stability on ${cardanoNetwork}`,
+        `CARDANO_BLOCKFROST_ENDPOINT is required for stake-weighted-stability on ${cardanoNetwork}`,
       );
     }
 
@@ -707,10 +707,10 @@ export class YaciHistoryService implements HistoryService {
       return snapshot.map((entry) => ({ ...entry }));
     }
 
-    const tipEpoch = await this.fetchKoiosTipEpoch(endpoint);
+    const tipEpoch = await this.fetchBlockfrostTipEpoch(endpoint);
     if (tipEpoch < block.epochNo) {
       throw new Error(
-        `Koios tip epoch ${tipEpoch} is behind requested block epoch ${block.epochNo}; refusing live Ogmios stake fallback`,
+        `Blockfrost tip epoch ${tipEpoch} is behind requested block epoch ${block.epochNo}; refusing live Ogmios stake fallback`,
       );
     }
     if (tipEpoch > block.epochNo) {
@@ -741,15 +741,15 @@ export class YaciHistoryService implements HistoryService {
     ogmiosStakeDistribution: HistoryStakeDistributionEntry[],
   ): Promise<HistoryStakeDistributionEntry[]> {
     const [poolRows, totalActiveStake] = await Promise.all([
-      this.fetchKoiosCurrentEpochPoolList(endpoint, block.epochNo),
-      this.fetchKoiosEpochActiveStake(endpoint, block.epochNo),
+      this.fetchBlockfrostCurrentEpochPoolList(endpoint, block.epochNo),
+      this.fetchBlockfrostEpochActiveStake(endpoint, block.epochNo),
     ]);
     const stakeByPool = new Map<string, bigint>();
     for (const row of poolRows) {
-      const poolId = normalizePoolId(row.pool_id_bech32 ?? row.pool_id_hex);
+      const poolId = normalizePoolId(row.pool_id ?? row.hex);
       if (!poolId) {
         throw new Error(
-          `Koios returned an invalid current epoch pool id for epoch ${block.epochNo}`,
+          `Blockfrost returned an invalid current epoch pool id for epoch ${block.epochNo}`,
         );
       }
       if (
@@ -761,7 +761,7 @@ export class YaciHistoryService implements HistoryService {
       const stake = parseNonNegativeBigInt(row.active_stake);
       if (stake === null) {
         throw new Error(
-          `Koios returned an invalid current epoch stake entry for epoch ${block.epochNo}`,
+          `Blockfrost returned an invalid current epoch stake entry for epoch ${block.epochNo}`,
         );
       }
       if (stake === 0n) {
@@ -769,7 +769,7 @@ export class YaciHistoryService implements HistoryService {
       }
       if (stakeByPool.has(poolId)) {
         throw new Error(
-          `Koios returned duplicate current epoch stake for pool ${poolId} in epoch ${block.epochNo}`,
+          `Blockfrost returned duplicate current epoch stake for pool ${poolId} in epoch ${block.epochNo}`,
         );
       }
       stakeByPool.set(poolId, stake);
@@ -777,7 +777,7 @@ export class YaciHistoryService implements HistoryService {
 
     if (stakeByPool.size === 0) {
       throw new Error(
-        `Koios returned an empty current epoch stake snapshot for epoch ${block.epochNo}`,
+        `Blockfrost returned an empty current epoch stake snapshot for epoch ${block.epochNo}`,
       );
     }
 
@@ -785,9 +785,9 @@ export class YaciHistoryService implements HistoryService {
       (sum, stake) => sum + stake,
       0n,
     );
-    if (snapshotTotal !== totalActiveStake) {
+    if (snapshotTotal > totalActiveStake) {
       throw new Error(
-        `Koios current epoch stake snapshot total ${snapshotTotal.toString()} does not match epoch ${block.epochNo} active stake ${totalActiveStake.toString()}`,
+        `Blockfrost current epoch stake snapshot total ${snapshotTotal.toString()} exceeds epoch ${block.epochNo} active stake ${totalActiveStake.toString()}`,
       );
     }
 
@@ -818,7 +818,7 @@ export class YaciHistoryService implements HistoryService {
       }
     }
 
-    return Array.from(stakeByPool.entries())
+    const stakeDistribution: HistoryStakeDistributionEntry[] = Array.from(stakeByPool.entries())
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([poolId, stake]) => {
         const vrfKeyHash = normalizeHex(vrfByPool.get(poolId));
@@ -835,41 +835,45 @@ export class YaciHistoryService implements HistoryService {
           relativeStakeDenominator: totalActiveStake,
         };
       });
+    const unproducedStake = totalActiveStake - snapshotTotal;
+    if (unproducedStake > 0n) {
+      stakeDistribution.push({
+        poolId: `${HISTORICAL_STAKE_REMAINDER_POOL_PREFIX}:${block.epochNo}`,
+        stake: unproducedStake,
+        vrfKeyHash: "00".repeat(32),
+        firstRegistrationSlot: 1n,
+        relativeStakeNumerator: unproducedStake,
+        relativeStakeDenominator: totalActiveStake,
+      });
+    }
+    return stakeDistribution;
   }
 
-  private async fetchKoiosTipEpoch(endpoint: string): Promise<number> {
-    const url = new URL(`${endpoint}/tip`);
-    url.searchParams.set("select", "epoch_no");
-    const rows = (await this.fetchKoiosArray(
-      url,
+  private async fetchBlockfrostTipEpoch(endpoint: string): Promise<number> {
+    const row = (await this.fetchBlockfrostJson(
+      new URL(`${endpoint}/blocks/latest`),
       "current Cardano epoch",
-    )) as KoiosTipRow[];
-    const epoch = Number(rows[0]?.epoch_no);
-    if (rows.length !== 1 || !Number.isSafeInteger(epoch) || epoch < 0) {
-      throw new Error("Koios did not return a valid current Cardano epoch");
+    )) as BlockfrostTipRow;
+    const epoch = Number(row?.epoch);
+    if (!Number.isSafeInteger(epoch) || epoch < 0) {
+      throw new Error("Blockfrost did not return a valid current Cardano epoch");
     }
     return epoch;
   }
 
-  private async fetchKoiosCurrentEpochPoolList(
+  private async fetchBlockfrostCurrentEpochPoolList(
     endpoint: string,
     epoch: number,
-  ): Promise<KoiosPoolListRow[]> {
-    const rows: KoiosPoolListRow[] = [];
-    for (let page = 0; page < CURRENT_EPOCH_STAKE_MAX_PAGES; page += 1) {
-      const url = new URL(`${endpoint}/pool_list`);
-      url.searchParams.set("select", "pool_id_bech32,pool_id_hex,active_stake");
-      url.searchParams.set("active_stake", "gt.0");
-      url.searchParams.set("order", "pool_id_bech32.asc");
-      url.searchParams.set("limit", CURRENT_EPOCH_STAKE_PAGE_SIZE.toString());
-      url.searchParams.set(
-        "offset",
-        (page * CURRENT_EPOCH_STAKE_PAGE_SIZE).toString(),
-      );
-      const pageRows = (await this.fetchKoiosArray(
+  ): Promise<BlockfrostPoolListRow[]> {
+    const rows: BlockfrostPoolListRow[] = [];
+    for (let page = 1; page <= CURRENT_EPOCH_STAKE_MAX_PAGES; page += 1) {
+      const url = new URL(`${endpoint}/pools/extended`);
+      url.searchParams.set("count", CURRENT_EPOCH_STAKE_PAGE_SIZE.toString());
+      url.searchParams.set("page", page.toString());
+      const pageRows = (await this.fetchBlockfrostArray(
         url,
-        `current epoch stake pool page ${page + 1} for epoch ${epoch}`,
-      )) as KoiosPoolListRow[];
+        `current epoch stake pool page ${page} for epoch ${epoch}`,
+      )) as BlockfrostPoolListRow[];
       rows.push(...pageRows);
       if (pageRows.length < CURRENT_EPOCH_STAKE_PAGE_SIZE) {
         return rows;
@@ -877,28 +881,25 @@ export class YaciHistoryService implements HistoryService {
     }
 
     throw new Error(
-      `Koios current epoch stake pool list exceeded ${
+      `Blockfrost current epoch stake pool list exceeded ${
         CURRENT_EPOCH_STAKE_MAX_PAGES * CURRENT_EPOCH_STAKE_PAGE_SIZE
       } rows for epoch ${epoch}`,
     );
   }
 
-  private async fetchKoiosEpochActiveStake(
+  private async fetchBlockfrostEpochActiveStake(
     endpoint: string,
     epoch: number,
   ): Promise<bigint> {
-    const url = new URL(`${endpoint}/epoch_info`);
-    url.searchParams.set("_epoch_no", epoch.toString());
-    url.searchParams.set("select", "epoch_no,active_stake");
-    const rows = (await this.fetchKoiosArray(
-      url,
+    const row = (await this.fetchBlockfrostJson(
+      new URL(`${endpoint}/epochs/${epoch}`),
       `active stake for epoch ${epoch}`,
-    )) as KoiosEpochInfoRow[];
-    if (rows.length !== 1 || Number(rows[0].epoch_no) !== epoch) {
-      throw new Error(`Koios did not return active stake for epoch ${epoch}`);
+    )) as BlockfrostEpochInfoRow;
+    if (Number(row?.epoch) !== epoch) {
+      throw new Error(`Blockfrost did not return active stake for epoch ${epoch}`);
     }
     return parsePositiveBigInt(
-      rows[0].active_stake,
+      row.active_stake,
       `active stake for epoch ${epoch}`,
     );
   }
@@ -1137,27 +1138,24 @@ export class YaciHistoryService implements HistoryService {
     endpoint: string,
     epoch: number,
   ): Promise<{ totalActiveStake: bigint; blockCount: number }> {
-    const url = new URL(`${endpoint}/epoch_info`);
-    url.searchParams.set("_epoch_no", epoch.toString());
-    url.searchParams.set("select", "epoch_no,active_stake,blk_count");
-    const rows = (await this.fetchKoiosArray(
-      url,
+    const row = (await this.fetchBlockfrostJson(
+      new URL(`${endpoint}/epochs/${epoch}`),
       `historical epoch information for epoch ${epoch}`,
-    )) as KoiosEpochInfoRow[];
-    if (rows.length !== 1 || Number(rows[0].epoch_no) !== epoch) {
+    )) as BlockfrostEpochInfoRow;
+    if (Number(row?.epoch) !== epoch) {
       throw new Error(
-        `Koios did not return historical epoch information for epoch ${epoch}`,
+        `Blockfrost did not return historical epoch information for epoch ${epoch}`,
       );
     }
 
     const totalActiveStake = parsePositiveBigInt(
-      rows[0].active_stake,
+      row.active_stake,
       `active stake for epoch ${epoch}`,
     );
-    const blockCount = Number(rows[0].blk_count);
+    const blockCount = Number(row.block_count);
     if (!Number.isSafeInteger(blockCount) || blockCount <= 0) {
       throw new Error(
-        `Koios returned an invalid block count for epoch ${epoch}`,
+        `Blockfrost returned an invalid block count for epoch ${epoch}`,
       );
     }
     return { totalActiveStake, blockCount };
@@ -1180,25 +1178,9 @@ export class YaciHistoryService implements HistoryService {
       );
       const rows = await Promise.all(
         batch.map(async (poolId) => {
-          const url = new URL(`${endpoint}/pool_history`);
-          url.searchParams.set("_pool_bech32", poolId);
-          url.searchParams.set("_epoch_no", epoch.toString());
-          url.searchParams.set("select", "epoch_no,active_stake");
-          const history = (await this.fetchKoiosArray(
-            url,
-            `historical stake for pool ${poolId} in epoch ${epoch}`,
-          )) as KoiosPoolHistoryRow[];
-          if (history.length !== 1 || Number(history[0].epoch_no) !== epoch) {
-            throw new Error(
-              `Koios did not return historical stake for pool ${poolId} in epoch ${epoch}`,
-            );
-          }
           return [
             poolId,
-            parsePositiveBigInt(
-              history[0].active_stake,
-              `active stake for pool ${poolId} in epoch ${epoch}`,
-            ),
+            await this.fetchBlockfrostPoolStake(endpoint, poolId, epoch),
           ] as const;
         }),
       );
@@ -1209,39 +1191,79 @@ export class YaciHistoryService implements HistoryService {
     return stakeByPool;
   }
 
+  private async fetchBlockfrostPoolStake(
+    endpoint: string,
+    poolId: string,
+    epoch: number,
+  ): Promise<bigint> {
+    for (let page = 1; page <= 50; page += 1) {
+      const url = new URL(`${endpoint}/pools/${poolId}/history`);
+      url.searchParams.set("order", "desc");
+      url.searchParams.set("count", "100");
+      url.searchParams.set("page", page.toString());
+      const history = (await this.fetchBlockfrostArray(
+        url,
+        `historical stake for pool ${poolId} in epoch ${epoch}`,
+      )) as BlockfrostPoolHistoryRow[];
+      const matches = history.filter((row) => Number(row.epoch) === epoch);
+      if (matches.length === 1) {
+        return parsePositiveBigInt(matches[0].active_stake,
+          `active stake for pool ${poolId} in epoch ${epoch}`);
+      }
+      if (matches.length > 1) {
+        throw new Error(`Blockfrost returned duplicate historical stake for pool ${poolId} in epoch ${epoch}`);
+      }
+      if (history.length === 0 || history.some((row) => Number(row.epoch) < epoch)) {
+        break;
+      }
+    }
+    // The epoch-stakes route reads the same delegated-stake snapshot directly.
+    // It also covers an epoch before the derived pool-history row is available.
+    let total = 0n;
+    let found = false;
+    for (let page = 1; page <= 1_000; page += 1) {
+      const url = new URL(`${endpoint}/epochs/${epoch}/stakes/${poolId}`);
+      url.searchParams.set("count", "100");
+      url.searchParams.set("page", page.toString());
+      const rows = (await this.fetchBlockfrostArray(
+        url,
+        `epoch ${epoch} stake for pool ${poolId}`,
+      )) as { amount?: string | number | null }[];
+      for (const row of rows) {
+        const amount = parseNonNegativeBigInt(row.amount);
+        if (amount === null) {
+          throw new Error(`Blockfrost returned invalid stake for pool ${poolId} in epoch ${epoch}`);
+        }
+        total += amount;
+        found = true;
+      }
+      if (rows.length < 100) {
+        if (!found || total === 0n) {
+          throw new Error(`Blockfrost did not return historical stake for pool ${poolId} in epoch ${epoch}`);
+        }
+        return total;
+      }
+    }
+    throw new Error(`Blockfrost epoch ${epoch} stake for pool ${poolId} exceeded 100,000 delegators`);
+  }
+
   private async fetchHistoricalProducerRegistrationUpdates(
     endpoint: string,
     poolIds: string[],
-  ): Promise<KoiosPoolUpdateRow[]> {
-    const updates: KoiosPoolUpdateRow[] = [];
-    for (
-      let index = 0;
-      index < poolIds.length;
-      index += POOL_REGISTRATION_LOOKUP_BATCH_SIZE
-    ) {
-      const batch = poolIds.slice(
-        index,
-        index + POOL_REGISTRATION_LOOKUP_BATCH_SIZE,
-      );
-      const url = new URL(`${endpoint}/pool_updates`);
-      url.searchParams.set(
-        "select",
-        "tx_hash,block_time,pool_id_bech32,pool_id_hex,active_epoch_no,vrf_key_hash,update_type",
-      );
-      url.searchParams.set("pool_id_bech32", `in.(${batch.join(",")})`);
-      url.searchParams.set("update_type", "eq.registration");
-      url.searchParams.set("order", "block_time.asc");
-      const rows = (await this.fetchKoiosArray(
-        url,
-        `historical registration data for ${batch.length} pools`,
-      )) as KoiosPoolUpdateRow[];
-      updates.push(...rows);
+  ): Promise<BlockfrostPoolUpdateRow[]> {
+    const updates: BlockfrostPoolUpdateRow[] = [];
+    for (let index = 0; index < poolIds.length; index += POOL_REGISTRATION_LOOKUP_BATCH_SIZE) {
+      const batch = poolIds.slice(index, index + POOL_REGISTRATION_LOOKUP_BATCH_SIZE);
+      const results = await Promise.all(batch.map((poolId) =>
+        this.fetchBlockfrostPoolRegistrationUpdates(endpoint, poolId)
+      ));
+      for (const rows of results) updates.push(...rows);
     }
     return updates;
   }
 
   private resolveHistoricalProducerRegistrations(
-    updates: KoiosPoolUpdateRow[],
+    updates: BlockfrostPoolUpdateRow[],
     poolIds: string[],
     epoch: number,
     referenceBlock: Pick<HistoryBlock, "slotNo" | "timestampUnixNs">,
@@ -1250,7 +1272,7 @@ export class YaciHistoryService implements HistoryService {
     const firstRegistrationByPool = new Map<string, bigint>();
     const effectiveRegistrationByPool = new Map<
       string,
-      { activeEpoch: number; blockTime: bigint; vrfKeyHash: string }
+      { activeEpoch: number; registrationSlot: bigint; vrfKeyHash: string }
     >();
 
     for (const update of updates) {
@@ -1264,10 +1286,11 @@ export class YaciHistoryService implements HistoryService {
         continue;
       }
 
-      const registrationSlot =
-        update.block_time === null || update.block_time === undefined
-          ? null
-          : this.trySlotFromUnixSeconds(update.block_time, referenceBlock);
+      const registrationSlot = update.registration_slot !== undefined
+        ? parseNonNegativeBigInt(update.registration_slot)
+        : update.block_time === null || update.block_time === undefined
+        ? null
+        : this.trySlotFromUnixSeconds(update.block_time, referenceBlock);
       if (registrationSlot !== null) {
         const encodedRegistrationSlot = registrationSlot > 0n
           ? registrationSlot
@@ -1286,16 +1309,16 @@ export class YaciHistoryService implements HistoryService {
       ) {
         continue;
       }
-      const blockTime = parseNonNegativeBigInt(update.block_time) ?? 0n;
+      const updateSlot = registrationSlot ?? 0n;
       const current = effectiveRegistrationByPool.get(poolId);
       if (
         !current ||
         activeEpoch > current.activeEpoch ||
-        (activeEpoch === current.activeEpoch && blockTime > current.blockTime)
+        (activeEpoch === current.activeEpoch && updateSlot >= current.registrationSlot)
       ) {
         effectiveRegistrationByPool.set(poolId, {
           activeEpoch,
-          blockTime,
+          registrationSlot: updateSlot,
           vrfKeyHash,
         });
       }
@@ -1310,7 +1333,7 @@ export class YaciHistoryService implements HistoryService {
       const effectiveRegistration = effectiveRegistrationByPool.get(poolId);
       if (!firstRegistrationSlot || !effectiveRegistration) {
         throw new Error(
-          `Koios did not return complete historical registration data for pool ${poolId} in epoch ${epoch}`,
+          `Blockfrost did not return complete historical registration data for pool ${poolId} in epoch ${epoch}`,
         );
       }
       resolved.set(poolId, {
@@ -1321,7 +1344,7 @@ export class YaciHistoryService implements HistoryService {
     return resolved;
   }
 
-  private async fetchKoiosArray(url: URL, context: string): Promise<unknown[]> {
+  private async fetchBlockfrostJson(url: URL, context: string): Promise<unknown> {
     let lastError: Error | undefined;
     for (
       let attempt = 0;
@@ -1337,23 +1360,17 @@ export class YaciHistoryService implements HistoryService {
       try {
         const response = await fetch(url, {
           signal: controller.signal,
-          headers: this.koiosRequestHeaders(),
+          headers: this.blockfrostRequestHeaders(),
         });
         if (response.ok) {
           const body = await response.json();
-          if (!Array.isArray(body)) {
-            throw new HistoricalStakeLookupError(
-              `Koios returned an invalid response for ${context}`,
-              false,
-            );
-          }
           return body;
         }
 
         const retryable = response.status === 408 || response.status === 429 ||
           response.status >= 500;
         throw new HistoricalStakeLookupError(
-          `Koios lookup failed for ${context}: HTTP ${response.status}`,
+          `Blockfrost lookup failed for ${context}: HTTP ${response.status}`,
           retryable,
           retryable ? parseRetryAfterMs(response.headers) : undefined,
         );
@@ -1362,12 +1379,12 @@ export class YaciHistoryService implements HistoryService {
           ? error
           : error instanceof Error && error.name === "AbortError"
           ? new HistoricalStakeLookupError(
-            `Koios lookup timed out for ${context} after ${HISTORICAL_STAKE_LOOKUP_TIMEOUT_MS}ms`,
+            `Blockfrost lookup timed out for ${context} after ${HISTORICAL_STAKE_LOOKUP_TIMEOUT_MS}ms`,
             true,
           )
           : error instanceof TypeError
           ? new HistoricalStakeLookupError(
-            `Koios lookup failed for ${context}: ${error.message}`,
+            `Blockfrost lookup failed for ${context}: ${error.message}`,
             true,
           )
           : new HistoricalStakeLookupError(
@@ -1391,7 +1408,15 @@ export class YaciHistoryService implements HistoryService {
       }
       await sleep(retryDelayMs);
     }
-    throw lastError ?? new Error(`Koios lookup failed for ${context}`);
+    throw lastError ?? new Error(`Blockfrost lookup failed for ${context}`);
+  }
+
+  private async fetchBlockfrostArray(url: URL, context: string): Promise<unknown[]> {
+    const body = await this.fetchBlockfrostJson(url, context);
+    if (!Array.isArray(body)) {
+      throw new Error(`Blockfrost returned an invalid response for ${context}`);
+    }
+    return body;
   }
 
   private async findLocalStalePointEpochContextFallback(
@@ -1705,8 +1730,7 @@ export class YaciHistoryService implements HistoryService {
     endpoint: string,
     epoch: number,
   ): Promise<string> {
-    const url = new URL(`${endpoint}/epoch_params`);
-    url.searchParams.set("_epoch_no", epoch.toString());
+    const url = new URL(`${endpoint}/epochs/${epoch}/parameters`);
 
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -1716,7 +1740,7 @@ export class YaciHistoryService implements HistoryService {
     try {
       const response = await fetch(url, {
         signal: controller.signal,
-        headers: this.koiosRequestHeaders(),
+        headers: this.blockfrostRequestHeaders(),
       });
       if (!response.ok) {
         const retryable = response.status === 408 || response.status === 429 ||
@@ -1729,10 +1753,8 @@ export class YaciHistoryService implements HistoryService {
       }
 
       const body = await response.json();
-      const row = Array.isArray(body) && body.length === 1
-        ? (body[0] as KoiosEpochParamsRow | undefined)
-        : undefined;
-      const epochNo = row?.epoch_no;
+      const row = body as BlockfrostEpochParamsRow;
+      const epochNo = row?.epoch;
       const returnedEpoch =
         typeof epochNo === "string" || typeof epochNo === "number"
           ? Number(epochNo)
@@ -1972,10 +1994,7 @@ export class YaciHistoryService implements HistoryService {
         index,
         index + POOL_REGISTRATION_LOOKUP_BATCH_SIZE,
       );
-      const updates = await this.fetchKoiosPoolRegistrationUpdates(
-        endpoint,
-        batch,
-      );
+      const updates = await this.fetchHistoricalProducerRegistrationUpdates(endpoint, batch);
 
       for (const update of updates) {
         if (update.update_type && update.update_type !== "registration") {
@@ -1985,17 +2004,15 @@ export class YaciHistoryService implements HistoryService {
         const poolId = normalizePoolId(
           update.pool_id_bech32 ?? update.pool_id_hex,
         );
-        if (
-          !poolId || !batch.includes(poolId) || update.block_time === null ||
-          update.block_time === undefined
-        ) {
+        if (!poolId || !batch.includes(poolId)) {
           continue;
         }
 
-        const firstRegistrationSlot = this.trySlotFromUnixSeconds(
-          update.block_time,
-          referenceBlock,
-        );
+        const firstRegistrationSlot = update.registration_slot !== undefined
+          ? parseNonNegativeBigInt(update.registration_slot)
+          : update.block_time === null || update.block_time === undefined
+          ? null
+          : this.trySlotFromUnixSeconds(update.block_time, referenceBlock);
         if (firstRegistrationSlot === null) {
           continue;
         }
@@ -2014,40 +2031,51 @@ export class YaciHistoryService implements HistoryService {
     return resolvedSlots;
   }
 
-  private async fetchKoiosPoolRegistrationUpdates(
+  private async fetchBlockfrostPoolRegistrationUpdates(
     endpoint: string,
-    poolIds: string[],
-  ): Promise<KoiosPoolUpdateRow[]> {
-    const url = new URL(`${endpoint}/pool_updates`);
-    url.searchParams.set(
-      "select",
-      "tx_hash,block_time,pool_id_bech32,pool_id_hex,update_type",
-    );
-    url.searchParams.set("pool_id_bech32", `in.(${poolIds.join(",")})`);
-    url.searchParams.set("update_type", "eq.registration");
-    url.searchParams.set("order", "block_time.asc");
-
-    const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
-      POOL_REGISTRATION_LOOKUP_TIMEOUT_MS,
-    );
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: this.koiosRequestHeaders(),
-      });
-      if (!response.ok) {
-        return [];
+    poolId: string,
+  ): Promise<BlockfrostPoolUpdateRow[]> {
+    const updates: BlockfrostPoolUpdateRow[] = [];
+    for (let page = 1; page <= 100; page += 1) {
+      const url = new URL(`${endpoint}/pools/${poolId}/updates`);
+      url.searchParams.set("order", "asc");
+      url.searchParams.set("count", "100");
+      url.searchParams.set("page", page.toString());
+      const listed = (await this.fetchBlockfrostArray(
+        url,
+        `pool updates for ${poolId}`,
+      )) as { tx_hash?: string; cert_index?: number; action?: string }[];
+      for (const item of listed) {
+        if (item.action !== "registered" || !/^[0-9a-f]{64}$/.test(item.tx_hash ?? "")) {
+          continue;
+        }
+        const tx = (await this.fetchBlockfrostJson(
+          new URL(`${endpoint}/txs/${item.tx_hash}`),
+          `pool registration transaction ${item.tx_hash}`,
+        )) as { block_time?: number; slot?: number };
+        const certificates = await this.fetchBlockfrostArray(
+          new URL(`${endpoint}/txs/${item.tx_hash}/pool_updates`),
+          `pool certificates for ${item.tx_hash}`,
+        );
+        const matching = (certificates as { cert_index?: number; pool_id?: string; vrf_key?: string; active_epoch?: number }[])
+          .filter((cert) => cert.cert_index === item.cert_index && normalizePoolId(cert.pool_id) === poolId);
+        if (matching.length !== 1 || !Number.isSafeInteger(matching[0].active_epoch) ||
+          !Number.isSafeInteger(tx.slot)) {
+          throw new Error(`Blockfrost returned incomplete pool registration ${item.tx_hash}`);
+        }
+        updates.push({
+          tx_hash: item.tx_hash,
+          pool_id_bech32: poolId,
+          block_time: tx.block_time,
+          registration_slot: tx.slot,
+          active_epoch_no: matching[0].active_epoch,
+          vrf_key_hash: matching[0].vrf_key,
+          update_type: "registration",
+        });
       }
-
-      const body = await response.json();
-      return Array.isArray(body) ? (body as KoiosPoolUpdateRow[]) : [];
-    } catch (_error) {
-      return [];
-    } finally {
-      clearTimeout(timeout);
+      if (listed.length < 100) return updates;
     }
+    throw new Error(`Blockfrost pool updates for ${poolId} exceeded 100 pages`);
   }
 
   private trySlotFromUnixSeconds(
@@ -2324,7 +2352,7 @@ function parsePositiveBigInt(
 ): bigint {
   const parsed = parseNonNegativeBigInt(value);
   if (parsed === null || parsed <= 0n) {
-    throw new Error(`Koios returned an invalid ${field}`);
+    throw new Error(`Blockfrost returned an invalid ${field}`);
   }
   return parsed;
 }
