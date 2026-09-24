@@ -4,9 +4,13 @@ use serde::Deserialize;
 use std::time::Duration;
 use std::{fs, path::Path};
 
+/// Blocks deeper than the Ouroboros security parameter (k = 2160 on preprod
+/// and mainnet) can no longer be rolled back. Every operator of a bridge syncs
+/// Yaci from this point, so it must be final when it is recorded.
+pub const DEFAULT_YACI_CHECKPOINT_DEPTH: u64 = 2161;
+
 #[derive(Debug, Deserialize)]
 struct BlockfrostTip {
-    epoch: u64,
     height: u64,
 }
 
@@ -22,7 +26,7 @@ struct BlockfrostBlock {
 pub async fn run_yaci_checkpoint(
     project_root_path: &Path,
     network: &str,
-    epochs_back: u64,
+    depth: u64,
     write_env: bool,
 ) -> Result<(), String> {
     let cardano_network = config::CoreCardanoNetwork::parse(Some(network))?;
@@ -50,50 +54,30 @@ pub async fn run_yaci_checkpoint(
         project_id.as_str(),
     )
     .await?;
-    let target_epoch = tip.epoch.checked_sub(epochs_back).ok_or_else(|| {
-        format!(
-            "ERROR: Cannot select checkpoint {} epochs behind tip epoch {}.",
-            epochs_back, tip.epoch
-        )
-    })?;
+    let target_height = checkpoint_height(tip.height, depth)?;
 
-    let blocks_url =
-        format!("{blockfrost_base_url}/epochs/{target_epoch}/blocks?count=1&page=1&order=asc");
-    let block_hashes = get_json::<Vec<String>>(
-        &client,
-        blocks_url.as_str(),
-        &format!("{} first checkpoint block hash", cardano_network.as_str()),
-        project_id.as_str(),
-    )
-    .await?;
-    let first_hash = block_hashes.first().ok_or_else(|| {
-        format!(
-            "ERROR: Blockfrost returned no blocks for epoch {}.",
-            target_epoch
-        )
-    })?;
     let block = get_json::<BlockfrostBlock>(
         &client,
-        format!("{blockfrost_base_url}/blocks/{first_hash}").as_str(),
+        format!("{blockfrost_base_url}/blocks/{target_height}").as_str(),
         &format!("{} checkpoint block", cardano_network.as_str()),
         project_id.as_str(),
     )
     .await?;
-    if block.epoch != target_epoch || !block.hash.eq_ignore_ascii_case(first_hash) {
+    if block.height != target_height {
         return Err(format!(
-            "ERROR: Blockfrost returned checkpoint block for epoch {}, expected {}.",
-            block.epoch, target_epoch
+            "ERROR: Blockfrost returned checkpoint block {}, expected {}.",
+            block.height, target_height
         ));
     }
     let block_hash = block.hash.to_lowercase();
 
     logger::log(&format!(
-        "Yaci {} checkpoint (tip epoch {}, tip block {}, target epoch {}):",
+        "Yaci {} checkpoint ({} blocks below tip block {}):",
         cardano_network.as_str(),
-        tip.epoch,
-        tip.height,
-        target_epoch
+        depth,
+        tip.height
     ));
+    logger::log(&format!("  epoch: {}", block.epoch));
     logger::log(&format!("  block_no: {}", block.height));
     logger::log(&format!("  slot: {}", block.slot));
     logger::log(&format!("  epoch_slot: {}", block.epoch_slot));
@@ -124,6 +108,23 @@ pub async fn run_yaci_checkpoint(
     }
 
     Ok(())
+}
+
+/// The checkpoint height `depth` blocks below the tip. Shallower checkpoints
+/// could still be rolled back after they are recorded in a bridge manifest.
+fn checkpoint_height(tip_height: u64, depth: u64) -> Result<u64, String> {
+    if depth < DEFAULT_YACI_CHECKPOINT_DEPTH {
+        return Err(format!(
+            "ERROR: --depth must be at least {} so the checkpoint cannot be rolled back, got {}.",
+            DEFAULT_YACI_CHECKPOINT_DEPTH, depth
+        ));
+    }
+    tip_height.checked_sub(depth).ok_or_else(|| {
+        format!(
+            "ERROR: Cannot select a checkpoint {} blocks below tip block {}.",
+            depth, tip_height
+        )
+    })
 }
 
 fn blockfrost_project_id(project_root_path: &Path) -> Result<String, String> {
@@ -260,9 +261,22 @@ fn write_checkpoint_env(
 
 #[cfg(test)]
 mod tests {
-    use super::{write_checkpoint_env, BlockfrostBlock};
+    use super::{
+        checkpoint_height, write_checkpoint_env, BlockfrostBlock, DEFAULT_YACI_CHECKPOINT_DEPTH,
+    };
     use crate::config::CoreCardanoNetwork;
     use std::{fs, time::SystemTime};
+
+    #[test]
+    fn checkpoint_is_one_block_past_the_rollback_window() {
+        assert_eq!(
+            checkpoint_height(10_000, DEFAULT_YACI_CHECKPOINT_DEPTH),
+            Ok(7_839)
+        );
+        assert_eq!(checkpoint_height(10_000, 5_000), Ok(5_000));
+        assert!(checkpoint_height(10_000, 2_160).is_err());
+        assert!(checkpoint_height(2_000, DEFAULT_YACI_CHECKPOINT_DEPTH).is_err());
+    }
 
     #[test]
     fn checkpoint_write_updates_only_operator_gateway_state() {
