@@ -61,7 +61,7 @@ Public-testnet Yaci checkpoint note:
 - Generate and persist a checkpoint before deploying bridge contracts:
 
 ```bash
-caribic yaci-checkpoint --network preprod --epochs-back 2 --write-env
+caribic yaci-checkpoint --network preprod --epochs-back 1 --write-env
 caribic start network --network preprod
 # Replace preprod with preview for Cardano Preview.
 ```
@@ -358,7 +358,7 @@ For Preview, use `preview-node.play.dev.cardano.org:3001`, Preview Kupo/Ogmios e
 Preprod history must sync from a recent checkpoint, never from genesis:
 
 ```bash
-caribic yaci-checkpoint --network preprod --epochs-back 2 --write-env
+caribic yaci-checkpoint --network preprod --epochs-back 1 --write-env
 ```
 
 ### 4. Start the preprod runtime and deploy the bridge
