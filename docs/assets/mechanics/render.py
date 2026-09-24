@@ -761,13 +761,49 @@ LEADERS = ["P1", "P3", "P1", "P2", "P3", "P4", "P1", "P5", "P3", "P2", "P1", "P6
            "P3", "P1", "P5", "P2", "P7", "P1", "P3", "P4", "P6", "P1", "P2", "P3"]
 
 
-def scene_finality(t: float) -> Image.Image:
-    c = Canvas()
-    header(c, t, "Why the client waits for 24 blocks",
-           "A header's state root is accepted only once enough independent stake "
-           "has built blocks on top of it.")
-    a = prog(t, 0.3, 1.2)
+# A slower run: three large pools produce most blocks and two newly registered
+# pools (N1, N2) add depth without counting. Depth reaches 24 with only 4 pools
+# and 3.3% stake; the fifth pool arrives at block 26 and enough stake at block 30.
+SLOW_POOLS = {
+    "P1": (0.9, BLUE, True), "P2": (0.6, PURPLE, True), "P3": (1.1, TEAL, True),
+    "N1": (1.4, PINK, False), "N2": (1.0, (251, 113, 133), False),
+    "P5": (0.7, (163, 230, 53), True), "P6": (0.8, (251, 146, 60), True),
+    "P7": (1.3, (129, 140, 248), True),
+}
+SLOW_LEADERS = ["P1", "P3", "P1", "N1", "P3", "P1", "P2", "P3", "N2", "P1", "P3",
+                "N1", "P1", "P2", "P3", "N2", "P1", "P5", "P3", "N1", "P1", "P3",
+                "N2", "P2", "P1", "P6", "P3", "N1", "P1", "P7"]
 
+FINALITY_STEP = 0.42
+FINALITY_FIRST = 2.0
+DEPTH_GOAL, POOLS_GOAL, STAKE_GOAL = 24, 5, 5.11
+
+
+def finality_metrics(leaders, pools_table):
+    """Cumulative (depth, qualified pools, stake %) after each block."""
+    seen: set = set()
+    pools, stake, out = 0, 0.0, []
+    for i, pid in enumerate(leaders):
+        stake_pct, _, eligible = pools_table[pid]
+        if pid not in seen:
+            seen.add(pid)
+            if eligible:
+                pools += 1
+                stake += stake_pct
+        out.append((i + 1, pools, stake))
+    return out
+
+
+def accepted_at(leaders, pools_table) -> int:
+    for depth, pools, stake in finality_metrics(leaders, pools_table):
+        if depth >= DEPTH_GOAL and pools >= POOLS_GOAL and stake >= STAKE_GOAL - 1e-9:
+            return depth
+    raise ValueError("thresholds are never met")
+
+
+def draw_finality(c: Canvas, t: float, leaders, pools_table, cols, note):
+    """Shared layout for the finality scenes. note is (text, block index)."""
+    a = prog(t, 0.3, 1.2)
     anc = prog(t, 1.0, 1.6)
     c.rrect(40, 118, 130, 120, fill=fade((20, 50, 40), anc), outline=fade(GREEN, anc),
             width=2.5, r=10)
@@ -776,44 +812,38 @@ def scene_finality(t: float) -> Image.Image:
     c.text(105, 190, "HostState tx", 12, fade(GREEN, anc, (20, 50, 40)), anchor="ma")
     c.text(105, 206, "new root", 12, fade(GREEN, anc, (20, 50, 40)), anchor="ma")
 
-    step = 0.42
-    first = 2.0
-    shown = 0
-    seen: set = set()
-    pools = 0
-    stake = 0.0
-    for i, pid in enumerate(LEADERS):
-        start = first + i * step
+    pitch = 960 / cols
+    bw = pitch - 10
+    metrics = finality_metrics(leaders, pools_table)
+    shown, pools, stake = 0, 0, 0.0
+    for i, pid in enumerate(leaders):
+        start = FINALITY_FIRST + i * FINALITY_STEP
         u = prog(t, start, start + 0.25)
         if u <= 0:
             break
-        shown = i + 1
-        stake_pct, col, eligible = POOLS[pid]
-        if pid not in seen:
-            seen.add(pid)
-            if eligible:
-                pools += 1
-                stake += stake_pct
-        row, colm = divmod(i, 12)
-        bx = 196 + colm * 80
+        shown, pools, stake = metrics[i]
+        _, col, eligible = pools_table[pid]
+        row, colm = divmod(i, cols)
+        bx = 196 + colm * pitch
         by = 128 + row * 64
-        c.rrect(bx, by, 70, 50, fill=fade(PANEL_2, u), outline=fade(col, u), width=2,
+        c.rrect(bx, by, bw, 50, fill=fade(PANEL_2, u), outline=fade(col, u), width=2,
                 r=8)
-        c.text(bx + 35, by + 9, pid, 15, fade(col, u, PANEL_2), "bold", anchor="ma")
-        c.text(bx + 35, by + 30, f"#{i + 1}", 11, fade(MUTED, u, PANEL_2),
+        c.text(bx + bw / 2, by + 9, pid, 15, fade(col, u, PANEL_2), "bold",
+               anchor="ma")
+        c.text(bx + bw / 2, by + 30, f"#{i + 1}", 11, fade(MUTED, u, PANEL_2),
                anchor="ma")
         if not eligible:
-            c.dashed((bx + 4, by + 46), (bx + 66, by + 4), fade(PINK, u * 0.8, PANEL_2),
-                     1.5, dash=4, gap=3)
+            c.dashed((bx + 4, by + 46), (bx + bw - 4, by + 4),
+                     fade(PINK, u * 0.8, PANEL_2), 1.5, dash=4, gap=3)
         if colm == 0 and row == 0:
             c.arrow((170, 153), (bx - 2, by + 25), fade(BORDER, u), 2, head=7)
 
-    # Meters
     my = 300
     meters = [
-        ("Descendant blocks", shown, 24, f"{shown} / 24"),
-        ("Qualified unique pools", pools, 5, f"{pools} / 5"),
-        ("Unique stake from those pools", stake, 5.11, f"{stake:.2f}% / 5.11%"),
+        ("Descendant blocks", shown, DEPTH_GOAL, f"{shown} / {DEPTH_GOAL}"),
+        ("Qualified unique pools", pools, POOLS_GOAL, f"{pools} / {POOLS_GOAL}"),
+        ("Unique stake from those pools", stake, STAKE_GOAL,
+         f"{stake:.2f}% / {STAKE_GOAL:.2f}%"),
     ]
     for k, (label, val, goal, txt) in enumerate(meters):
         y = my + k * 70
@@ -826,19 +856,31 @@ def scene_finality(t: float) -> Image.Image:
         if frac > 0:
             c.rrect(40, y + 26, 1120 * frac, 16, fill=GREEN if met else BLUE, r=8)
 
-    note = prog(t, first + 5 * step, first + 5 * step + 0.5)
-    if note > 0:
-        c.chip(40, 512, "P4 registered too recently: its blocks add depth, but not "
-               "pools or stake", PINK, alpha=note, size=13)
+    note_text, note_index = note
+    note_at = FINALITY_FIRST + (note_index - 1) * FINALITY_STEP
+    na = prog(t, note_at, note_at + 0.5)
+    if na > 0:
+        c.chip(40, 512, note_text, PINK, alpha=na, size=13)
 
-    done = prog(t, first + 24 * step + 0.2, first + 24 * step + 0.8)
+    done_at = FINALITY_FIRST + accepted_at(leaders, pools_table) * FINALITY_STEP
+    done = prog(t, done_at + 0.2, done_at + 0.8)
     if done > 0:
         c.rrect(40, 548, 1120, 40, fill=fade((20, 60, 40), done),
                 outline=fade(GREEN, done), width=2, r=10)
         c.text(W / 2, 568, "All three thresholds met: the anchor block's "
                "ibc_state_root becomes a new consensus state", 16,
                fade(TEXT, done, (20, 60, 40)), "bold", anchor="mm")
+    return done_at
 
+
+def scene_finality(t: float) -> Image.Image:
+    c = Canvas()
+    header(c, t, "Why the client waits for 24 blocks",
+           "A header's state root is accepted only once enough independent stake "
+           "has built blocks on top of it.")
+    done_at = draw_finality(c, t, LEADERS, POOLS, 12, (
+        "P4 registered too recently: its blocks add depth, but not pools or stake", 6))
+    step, first = FINALITY_STEP, FINALITY_FIRST
     caption(c, t, [
         (1.0, "The anchor block holds the HostState transaction with the new IBC "
               "state root."),
@@ -846,8 +888,34 @@ def scene_finality(t: float) -> Image.Image:
               "the pool that produced it."),
         (first + 6 * step, "A pool counts once, and only if it was registered "
                            "early enough, so fresh pools cannot pad the numbers."),
-        (first + 24 * step + 0.2, "Once all three thresholds are met, the header's "
-                                  "state root is accepted."),
+        (done_at + 0.2, "Once all three thresholds are met, the header's state root "
+                        "is accepted."),
+    ])
+    return c.finish()
+
+
+def scene_finality_slow(t: float) -> Image.Image:
+    c = Canvas()
+    header(c, t, "Why 24 blocks is a minimum, not a guarantee",
+           "Depth alone does not accept a root. Pool and stake thresholds can take "
+           "longer to fill.")
+    done_at = draw_finality(c, t, SLOW_LEADERS, SLOW_POOLS, 15, (
+        "N1 and N2 registered too recently: their blocks add depth, but not pools "
+        "or stake", 4))
+    step, first = FINALITY_STEP, FINALITY_FIRST
+    caption(c, t, [
+        (1.0, "Same rules, a different run. The anchor block holds the new IBC "
+              "state root."),
+        (2.0, "Most blocks come from a few large pools, so depth grows faster than "
+              "the number of independent pools."),
+        (first + 5 * step, "Blocks from newly registered pools add depth, but not "
+                           "pools or stake."),
+        (first + 23 * step + 0.3, "Block 24: depth is met, but only 4 qualifying pools "
+                            "and 3.30% of stake have taken part, so the client waits."),
+        (first + 25 * step + 0.3, "A fifth qualifying pool appears at block 26, but "
+                            "stake is still short of 5.11%."),
+        (done_at + 0.2, "At block 30 enough qualifying stake has taken part, and "
+                        "the root is accepted."),
     ])
     return c.finish()
 
@@ -859,6 +927,7 @@ SCENES = {
     "yaci-vs-blockfrost": (scene_yaci_blockfrost, 20.5),
     "membership-proof": (scene_membership_proof, 18.5),
     "finality-thresholds": (scene_finality, 16.5),
+    "finality-thresholds-slow": (scene_finality_slow, 19.5),
 }
 
 

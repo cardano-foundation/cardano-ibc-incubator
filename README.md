@@ -53,6 +53,10 @@ A Cardano state root is only accepted once enough independent stake has built bl
 
 ![Blocks stacking on an anchor block while depth, pool, and stake thresholds fill](docs/assets/mechanics/finality-thresholds.gif)
 
+24 blocks is a minimum, not a guarantee. If most blocks come from a few large pools, or from pools registered too recently to count, depth can reach 24 before enough independent pools and stake have taken part. In this run the root is only accepted at block 30.
+
+![The same thresholds taking 30 blocks to fill because most blocks come from a few large pools and newly registered pools](docs/assets/mechanics/finality-thresholds-slow.gif)
+
 The verifier checks the structure and internal consistency of submitted block witnesses, but canonical block history and epoch context currently come from configured observer data. Safety therefore depends on those data sources, tuned acceptance parameters, and an honest observer or relayer surfacing conflicting context; this is an explicit trust assumption of the current pre-production design.
 
 The light client itself never makes a network call. The Gateway reads Cardano data, Hermes carries it inside `MsgUpdateClient`, and the Go module verifies block hashes, pool signatures, VRF proofs, and leader eligibility from the submitted bytes alone. The epoch context (stake distribution and epoch nonce) is the part it takes on trust.
