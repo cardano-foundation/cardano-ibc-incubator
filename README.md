@@ -49,7 +49,15 @@ There are currently protocol-level constraints that prevent IBC-style state proo
 
 The maintained Cardano-native approach uses a proprietary STT architecture plus the experimental `08-cardano-probabilistic` light client to attain an analogous IBC state machine in Cardano semantics. The STT architecture over the IBC host state keyspace functions as an authenticated mutex for IBC host state mutation, while the probabilistic light client authenticates accepted Cardano history through configured settlement heuristics. This model is documented in [Probabilistic Light Client Design](docs/probabilistic-light-client.md).
 
+A Cardano state root is only accepted once enough independent stake has built blocks on top of the block that carries it. The client needs at least 24 descendant blocks, at least 5 qualifying pools, and at least 5.11% of stake from those pools, and pools registered too recently do not count toward the last two.
+
+![Blocks stacking on an anchor block while depth, pool, and stake thresholds fill](docs/assets/mechanics/finality-thresholds.gif)
+
 The verifier checks the structure and internal consistency of submitted block witnesses, but canonical block history and epoch context currently come from configured observer data. Safety therefore depends on those data sources, tuned acceptance parameters, and an honest observer or relayer surfacing conflicting context; this is an explicit trust assumption of the current pre-production design.
+
+The light client itself never makes a network call. The Gateway reads Cardano data, Hermes carries it inside `MsgUpdateClient`, and the Go module verifies block hashes, pool signatures, VRF proofs, and leader eligibility from the submitted bytes alone. The epoch context (stake distribution and epoch nonce) is the part it takes on trust.
+
+![Cardano data flowing from the Gateway through Hermes into the light client, which verifies it without network access](docs/assets/mechanics/light-client-data-flow.gif)
 
 The older Mithril light client and local Mithril setup are deprecated, disabled, and not maintained. They remain in the repository only for historical design reference and protobuf/type compatibility.
 
@@ -141,6 +149,14 @@ flowchart LR
   class NODE,KUPO,HISTORY infra
   class HERMES,COSMOS relay
 ```
+
+Chain history comes from Yaci Store on every network. On public networks Yaci syncs from a recent checkpoint, and Blockfrost supplies epoch and pool history. The two are not alternatives.
+
+![Local devnet and preprod side by side, showing what Yaci Store and Blockfrost each provide](docs/assets/mechanics/yaci-vs-blockfrost.gif)
+
+IBC state on Cardano lives in one 64-level Merkle tree whose root sits in the HostState datum. The Gateway rebuilds the tree from Yaci history to produce ICS-23 proofs, and the light client checks them against the root it accepted from a header.
+
+![A leaf's Merkle path proven against the HostState root on the Cosmos side](docs/assets/mechanics/membership-proof.gif)
 
 Additional architecture diagrams:
 
