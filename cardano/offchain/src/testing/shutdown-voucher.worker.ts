@@ -135,6 +135,12 @@ async function checkVoucherShutdown(amount: bigint) {
 
     const deployment = {
       validators: {
+        hostStateStt: {
+          script: f.packetContext.hostScript.script,
+          scriptHash: getAddressDetails(host.address).paymentCredential!.hash,
+          address: host.address,
+          refUtxo: f.reference(f.packetContext.hostScript),
+        },
         spendChannel: {
           title: "spending_channel.spend_channel.spend",
           script: f.channelScripts.base.script.script,
