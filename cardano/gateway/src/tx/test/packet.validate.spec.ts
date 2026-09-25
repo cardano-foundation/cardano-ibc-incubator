@@ -22,6 +22,7 @@ import { Order } from '@shared/types/channel/order';
 import { ICS20_CLASSIC_JSON_LIMITS, MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
 import { ICS20_PACKET_CODEC } from '../../config/bridge-manifest';
 import { stringifyLegacyIcs20PacketData } from '../../shared/helpers/ics20-packet-codec';
+import { credentialToAddress } from '@lucid-evolution/lucid';
 
 function packetEntries(count: number): Map<bigint, string> {
   return new Map<bigint, string>(
@@ -92,12 +93,13 @@ describe('Receive packet timeout validation', () => {
 });
 
 describe('Send packet denom validation', () => {
+  const paymentKeyHash = '216e8fc9cdc8d2a748d754c319ee95bd5410f69a6a4e23165e4e5d50';
   const buildMsgTransfer = (denom: string): MsgTransfer =>
     ({
       source_port: 'transfer',
       source_channel: 'channel-0',
       token: { denom, amount: '1' },
-      sender: 'addr_test1qsxsender',
+      sender: paymentKeyHash,
       receiver: 'cosmos1receiver',
       signer: 'addr_test1qsigner',
       timeout_height: undefined,
@@ -122,6 +124,31 @@ describe('Send packet denom validation', () => {
     const operator = validateAndFormatSendPacketParams(request);
 
     expect(operator.token.amount).toBe(1n);
+  });
+
+  it.each([
+    ['payment key hash', paymentKeyHash],
+    ['hex enterprise address', `60${paymentKeyHash}`],
+    ['bech32 enterprise address', credentialToAddress('Preview', { type: 'Key', hash: paymentKeyHash })],
+  ])('puts the key hash in packet data for a %s', (_format, sender) => {
+    const request = buildMsgTransfer('lovelace');
+    request.sender = sender;
+    request.signer = `60${paymentKeyHash}`;
+
+    const operator = validateAndFormatSendPacketParams(request);
+
+    expect(operator.sender).toBe(paymentKeyHash);
+    expect(operator.signer).toBe(request.signer);
+  });
+
+  it.each([
+    ['script address', credentialToAddress('Preview', { type: 'Script', hash: paymentKeyHash })],
+    ['malformed address', `60${paymentKeyHash}ff`],
+  ])('rejects a %s as sender before transaction construction', (_format, sender) => {
+    const request = buildMsgTransfer('lovelace');
+    request.sender = sender;
+
+    expect(() => validateAndFormatSendPacketParams(request)).toThrow(GrpcInvalidArgumentException);
   });
 
   it('does not allow empty denom normalization in core helpers', () => {

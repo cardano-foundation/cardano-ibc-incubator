@@ -1376,7 +1376,7 @@ export class PacketService {
     try {
       this.logger.log('Transfer is processing');
       const sendPacketOperator = validateAndFormatSendPacketParams(data);
-      await this.refreshWalletContext(sendPacketOperator.sender, 'sendPacketBuilder');
+      await this.refreshWalletContext(sendPacketOperator.signer, 'sendPacketBuilder');
 
       const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate, walletOverride } =
         await this.buildUnsignedSendPacketTx(sendPacketOperator);
