@@ -2,7 +2,10 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
+import { ogmiosRequest } from '../../shared/helpers/ogmios';
 import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
+
+jest.mock('../../shared/helpers/ogmios', () => ({ ogmiosRequest: jest.fn() }));
 
 describe('HostStateHeartbeatService', () => {
   const hostStateUtxo = {
@@ -66,10 +69,14 @@ describe('HostStateHeartbeatService', () => {
       },
     };
     historyService = {
-      findLatestBlock: jest.fn().mockResolvedValue({ epochNo: 8 }),
+      findLatestBlock: jest.fn().mockResolvedValue({ epochNo: 8, slotNo: 6_000n }),
       findTransactionEvidenceByHash: jest.fn().mockResolvedValue({ blockNo: 100 }),
       findBlockByHeight: jest.fn().mockResolvedValue({ epochNo: 7 }),
     };
+    jest.mocked(ogmiosRequest).mockResolvedValue([{
+      start: { slot: 3_000, epoch: 8 },
+      parameters: { epochLength: 5_000, slotLength: { milliseconds: 1_000 } },
+    }]);
     txOperationRunner = {
       run: jest.fn().mockResolvedValue({ unsignedTxBytes: new Uint8Array([1, 2, 3]) }),
     };
@@ -102,8 +109,21 @@ describe('HostStateHeartbeatService', () => {
       heartbeat_required: false,
       current_epoch: 8,
       host_state_epoch: 8,
+      next_check_delay_ms: 4_500_000,
     });
     expect(lucidService.createUnsignedHostStateHeartbeatTransaction).not.toHaveBeenCalled();
+    expect(txOperationRunner.run).not.toHaveBeenCalled();
+  });
+
+  it('waits until the epoch midpoint before building an idle heartbeat', async () => {
+    historyService.findLatestBlock.mockResolvedValue({ epochNo: 8, slotNo: 5_000n });
+
+    await expect(service.buildHeartbeat({ signer: 'addr_test1signer' })).resolves.toEqual({
+      heartbeat_required: false,
+      current_epoch: 8,
+      host_state_epoch: 7,
+      next_check_delay_ms: 500_000,
+    });
     expect(txOperationRunner.run).not.toHaveBeenCalled();
   });
 
@@ -114,6 +134,7 @@ describe('HostStateHeartbeatService', () => {
       heartbeat_required: true,
       current_epoch: 8,
       host_state_epoch: 7,
+      next_check_delay_ms: 4_500_000,
       unsigned_tx: { type_url: '', value: new Uint8Array([1, 2, 3]) },
     });
     expect(lucidService.encode).toHaveBeenCalledWith('Heartbeat', 'host_state_redeemer');

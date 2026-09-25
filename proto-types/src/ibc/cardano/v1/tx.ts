@@ -22,8 +22,8 @@ export interface BuildHostStateHeartbeatRequest {
  */
 export interface BuildHostStateHeartbeatResponse {
   /**
-   * False when an ordinary IBC transaction or heartbeat has already refreshed
-   * HostState in the current epoch.
+   * False before the epoch midpoint or when HostState was already refreshed
+   * in the current epoch.
    */
   heartbeat_required: boolean;
   current_epoch: bigint;
@@ -33,6 +33,8 @@ export interface BuildHostStateHeartbeatResponse {
    * unsigned Cardano transaction CBOR encoded as UTF-8 hex.
    */
   unsigned_tx?: Any;
+  /** Suggested delay until Hermes checks again. */
+  next_check_delay_ms: bigint;
 }
 /**
  * @name MsgPrunePacketHistory
@@ -250,6 +252,7 @@ function createBaseBuildHostStateHeartbeatResponse(): BuildHostStateHeartbeatRes
     current_epoch: BigInt(0),
     host_state_epoch: BigInt(0),
     unsigned_tx: undefined,
+    next_check_delay_ms: BigInt(0),
   };
 }
 /**
@@ -275,6 +278,9 @@ export const BuildHostStateHeartbeatResponse = {
     if (message.unsigned_tx !== undefined) {
       Any.encode(message.unsigned_tx, writer.uint32(34).fork()).ldelim();
     }
+    if (message.next_check_delay_ms !== BigInt(0)) {
+      writer.uint32(40).uint64(message.next_check_delay_ms);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BuildHostStateHeartbeatResponse {
@@ -296,6 +302,9 @@ export const BuildHostStateHeartbeatResponse = {
         case 4:
           message.unsigned_tx = Any.decode(reader, reader.uint32());
           break;
+        case 5:
+          message.next_check_delay_ms = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -309,6 +318,7 @@ export const BuildHostStateHeartbeatResponse = {
     if (isSet(object.current_epoch)) obj.current_epoch = BigInt(object.current_epoch.toString());
     if (isSet(object.host_state_epoch)) obj.host_state_epoch = BigInt(object.host_state_epoch.toString());
     if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
+    if (isSet(object.next_check_delay_ms)) obj.next_check_delay_ms = BigInt(object.next_check_delay_ms.toString());
     return obj;
   },
   toJSON(message: BuildHostStateHeartbeatResponse): unknown {
@@ -320,6 +330,8 @@ export const BuildHostStateHeartbeatResponse = {
       (obj.host_state_epoch = (message.host_state_epoch || BigInt(0)).toString());
     message.unsigned_tx !== undefined &&
       (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    message.next_check_delay_ms !== undefined &&
+      (obj.next_check_delay_ms = (message.next_check_delay_ms || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BuildHostStateHeartbeatResponse>, I>>(
@@ -335,6 +347,9 @@ export const BuildHostStateHeartbeatResponse = {
     }
     if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
       message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
+    if (object.next_check_delay_ms !== undefined && object.next_check_delay_ms !== null) {
+      message.next_check_delay_ms = BigInt(object.next_check_delay_ms.toString());
     }
     return message;
   },

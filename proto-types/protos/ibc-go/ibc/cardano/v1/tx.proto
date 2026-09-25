@@ -35,8 +35,8 @@ message BuildHostStateHeartbeatRequest {
 }
 
 message BuildHostStateHeartbeatResponse {
-  // False when an ordinary IBC transaction or heartbeat has already refreshed
-  // HostState in the current epoch.
+  // False before the epoch midpoint or when HostState was already refreshed
+  // in the current epoch.
   bool heartbeat_required = 1;
 
   uint64 current_epoch = 2;
@@ -45,6 +45,8 @@ message BuildHostStateHeartbeatResponse {
   // Present only when heartbeat_required is true. The value contains the
   // unsigned Cardano transaction CBOR encoded as UTF-8 hex.
   google.protobuf.Any unsigned_tx = 4;
+  // Suggested delay until the next check. Hermes retries failed attempts sooner.
+  uint64 next_check_delay_ms = 5;
 }
 
 message MsgPrunePacketHistory {
