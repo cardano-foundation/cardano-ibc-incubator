@@ -154,9 +154,9 @@ flowchart LR
   class HERMES,COSMOS relay
 ```
 
-Chain history comes from Yaci Store on every network. On public networks Yaci syncs from a recent checkpoint, and Blockfrost supplies epoch and pool history. The two are not alternatives.
+Chain history comes from Yaci Store on every network. Yaci Store is an indexer rather than a node: it follows a Cardano node and writes each block into its own Postgres database as rows of blocks, transactions, inputs, UTxOs, pool registrations, and epoch nonces. A sidecar copies the bridge's own rows into `bridge_*` tables, and the Gateway reads all of it with plain SQL, plus Yaci's REST API for raw block bytes. On public networks Yaci syncs from a recent checkpoint, and Blockfrost supplies older epoch and pool history.
 
-![Local devnet and preprod side by side, showing what Yaci Store and Blockfrost each provide](docs/assets/mechanics/yaci-vs-blockfrost.gif)
+![Yaci Store following a Cardano node, writing blocks into Postgres tables, and the Gateway querying those tables with SQL](docs/assets/mechanics/yaci-store.gif)
 
 IBC state on Cardano lives in one 64-level Merkle tree whose root sits in the HostState datum. The Gateway rebuilds the tree from Yaci history to produce ICS-23 proofs, and the light client checks them against the root it accepted from a header.
 
