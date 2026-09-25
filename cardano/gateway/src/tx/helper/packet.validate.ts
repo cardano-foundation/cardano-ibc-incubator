@@ -27,6 +27,7 @@ import { Order } from '@shared/types/channel/order';
 import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
 import { ICS20_PACKET_CODEC, type Ics20PacketCodec } from '../../config/bridge-manifest';
 import { decodeIcs20PacketDataForCodec } from '../../shared/helpers/ics20-packet-codec';
+import { getAddressDetails } from '@lucid-evolution/lucid';
 
 function packetCapacityExhausted(channelDatum: ChannelDatum): GrpcFailedPreconditionException {
   return new GrpcFailedPreconditionException(
@@ -189,7 +190,7 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
       denom: tokenDenom,
       amount: tokenAmount,
     },
-    sender: data.sender,
+    sender: senderPaymentKeyHash(data.sender),
     receiver: data.receiver,
     signer: data.signer,
     timeoutHeight: {
@@ -200,6 +201,26 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
     memo: data.memo || '',
   };
   return sendPacketOperator;
+}
+
+function senderPaymentKeyHash(sender: string): string {
+  const normalized = sender.trim();
+  if (/^[0-9a-f]{56}$/i.test(normalized)) {
+    return normalized.toLowerCase();
+  }
+
+  try {
+    const credential = getAddressDetails(normalized).paymentCredential;
+    if (credential?.type === 'Key' && /^[0-9a-f]{56}$/i.test(credential.hash)) {
+      return credential.hash.toLowerCase();
+    }
+  } catch {
+    // Reject malformed addresses at the request boundary, before building a transaction.
+  }
+
+  throw new GrpcInvalidArgumentException(
+    'Invalid argument: "sender" must be a Cardano payment key hash or key address',
+  );
 }
 
 export function validateAndFormatTimeoutPacketParams(
