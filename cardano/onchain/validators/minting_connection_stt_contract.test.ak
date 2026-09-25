@@ -149,7 +149,7 @@ fn host_state_datum(
       port_registry: [],
       shutdown: Active,
       live_clients: 0,
-      live_connections: 0,
+      live_connections: next_connection_sequence,
       live_channels: 0,
     },
   }

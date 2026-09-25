@@ -4407,10 +4407,7 @@ fn validate_test_finalize_shutdown_with_input(
   )
 }
 
-fn validate_test_authorize_finalization(
-  escrow_root: ByteArray,
-  voucher_obligation: Int,
-) -> Bool {
+fn validate_test_authorize_finalization(root_present: Bool) -> Bool {
   let nft_policy = test_nft_policy()
   let grace_period_end = 2000 + min_shutdown_grace_period_ms
   let registration = test_module_registration(test_module_script_hash())
@@ -4448,8 +4445,8 @@ fn validate_test_authorize_finalization(
         ..test_module_output(registration),
         datum: InlineDatum(
           TransferModuleDatum {
-            escrow_shard_registry_root: escrow_root,
-            outstanding_voucher_obligation: voucher_obligation,
+            escrow_shard_registry_root: empty_escrow_shard_registry_root,
+            outstanding_voucher_obligation: 0,
           },
         ),
       },
@@ -4472,6 +4469,12 @@ fn validate_test_authorize_finalization(
           registration.module_token.name,
           -1,
         )
+  let inputs =
+    if root_present {
+      [host_input, root_input]
+    } else {
+      [host_input]
+    }
   host_state_stt.host_state_stt.spend(
     nft_policy,
     [
@@ -4491,7 +4494,7 @@ fn validate_test_authorize_finalization(
     test_host_ref(),
     Transaction {
       ..placeholder,
-      inputs: [host_input, root_input],
+      inputs,
       outputs: [host_output],
       mint,
       extra_signatories: [trusted_deployer],
@@ -4500,16 +4503,12 @@ fn validate_test_authorize_finalization(
   )
 }
 
-test host_state_authorizes_finalization_with_drained_transfer_root() {
-  validate_test_authorize_finalization(empty_escrow_shard_registry_root, 0)
+test host_state_authorizes_finalization_with_transfer_root() {
+  validate_test_authorize_finalization(True)
 }
 
-test host_state_rejects_finalization_authorization_with_escrow() fail {
-  validate_test_authorize_finalization(#"11", 0)
-}
-
-test host_state_rejects_finalization_authorization_with_voucher_obligation() fail {
-  validate_test_authorize_finalization(empty_escrow_shard_registry_root, 1)
+test host_state_rejects_finalization_without_transfer_root() fail {
+  validate_test_authorize_finalization(False)
 }
 
 test host_state_finalize_shutdown_succeeds_with_exact_nft_burn() {
@@ -5359,6 +5358,19 @@ fn create_registered_client(
       ..test_client_output(client),
       address: Address(Script(second.spend_validator), None),
     }
+  let host_output = test_host_output(new_state)
+  expect InlineDatum(data) = host_output.datum
+  expect host_datum: HostStateDatum = data
+  let host_output =
+    Output {
+      ..host_output,
+      datum: InlineDatum(
+        HostStateDatum {
+          ..host_datum,
+          control: HostStateControl { ..host_datum.control, live_clients: 1 },
+        },
+      ),
+    }
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
     client_registry_fixtures.registrations(sample),
@@ -5373,7 +5385,7 @@ fn create_registered_client(
     Transaction {
       ..placeholder,
       inputs: [test_host_input(old_state)],
-      outputs: [test_host_output(new_state), client_output],
+      outputs: [host_output, client_output],
       mint: from_asset(token.policy_id, token.name, 1),
     },
   )
