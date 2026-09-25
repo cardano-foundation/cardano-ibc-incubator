@@ -70,6 +70,9 @@ fn shutdown_host_state_datum(grace_period_end: Int) -> HostStateDatum {
         initiated_at: state.last_update_time,
         grace_period_end,
       },
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
     },
   }
 }

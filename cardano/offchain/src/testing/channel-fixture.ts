@@ -561,6 +561,9 @@ export async function channelFixture(
         module_token: moduleToken,
       }]]),
       shutdown: "Active",
+      live_clients: 1n,
+      live_connections: 1n,
+      live_channels: isCreate ? 0n : 1n,
     },
   };
   const newHostDatum: HostStateDatum = {
@@ -570,6 +573,10 @@ export async function channelFixture(
       version: 2n,
       ibc_state_root: await tree.getRoot(),
       next_channel_sequence: BigInt(parameters.channelSequence) + 1n,
+    },
+    control: {
+      ...hostDatum.control,
+      live_channels: hostDatum.control.live_channels + (isCreate ? 1n : 0n),
     },
   };
   const unrelatedAsset = hash("fe") + fromText("reserve");

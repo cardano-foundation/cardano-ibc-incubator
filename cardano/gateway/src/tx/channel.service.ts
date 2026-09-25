@@ -607,6 +607,10 @@ export class ChannelService {
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
+      control: {
+        ...hostStateDatum.control,
+        live_channels: hostStateDatum.control.live_channels + 1n,
+      },
     };
 
     const hostStateRedeemer = {
@@ -825,6 +829,10 @@ export class ChannelService {
         next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
+      },
+      control: {
+        ...hostStateDatum.control,
+        live_channels: hostStateDatum.control.live_channels + 1n,
       },
     };
 

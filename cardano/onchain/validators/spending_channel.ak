@@ -39,6 +39,7 @@ validator spend_channel(
       ReclaimChannel -> and {
           datum.state.packet_commitment == [],
           shutdown.burns_token(transaction, datum.token),
+          shutdown.retires_state(transaction, host_state_nft_policy_id, 2),
         }
       ChanOpenAck { .. } ->
         validate_operation_witness(

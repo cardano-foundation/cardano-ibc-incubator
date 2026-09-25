@@ -195,7 +195,13 @@ fn mint_client(datum: ClientDatum, validity_range: ValidityRange) -> Bool {
     HostStateDatum {
       nft_policy: host_policy,
       deployer: host_policy,
-      control: HostStateControl { port_registry: [], shutdown: Active },
+      control: HostStateControl {
+        port_registry: [],
+        shutdown: Active,
+        live_clients: 0,
+        live_connections: 0,
+        live_channels: 0,
+      },
       state: HostState {
         version: 0,
         ibc_state_root: #"00",

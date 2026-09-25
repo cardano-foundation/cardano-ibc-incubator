@@ -1,10 +1,13 @@
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, Value, add, from_asset}
 use cardano/transaction.{
-  Input, NoDatum, Output, OutputReference, Redeemer, Spend, Transaction,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
+  Transaction,
 }
 use host_state_nft.{BurnFinal, MintInitial}
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  Active, HostState, HostStateControl, HostStateDatum, host_state_token_name,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   FinalizeShutdown, Heartbeat, HostStateRedeemer,
 }
@@ -35,6 +38,29 @@ fn test_nonce_input() -> Input {
   )
 }
 
+fn test_host_datum() -> HostStateDatum {
+  HostStateDatum {
+    state: HostState {
+      version: 1,
+      ibc_state_root: "root",
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 0,
+    },
+    nft_policy: test_policy_id(),
+    deployer: "deployer",
+    control: HostStateControl {
+      port_registry: [],
+      shutdown: Active,
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
+    },
+  }
+}
+
 fn test_host_ref() -> OutputReference {
   OutputReference {
     transaction_id: #"39cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5b",
@@ -51,25 +77,70 @@ fn test_host_input() -> Input {
         None,
       ),
       value: from_asset(test_policy_id(), host_state_token_name, 1),
-      datum: NoDatum,
+      datum: InlineDatum(test_host_datum()),
       reference_script: None,
     },
   )
 }
 
-fn validate_final_burn(mint: Value, host_redeemer: HostStateRedeemer) -> Bool {
+fn validate_final_burn_with_datum(
+  mint: Value,
+  host_redeemer: HostStateRedeemer,
+  datum: HostStateDatum,
+) -> Bool {
   let spend_redeemer: Redeemer = host_redeemer
+  let host_input = test_host_input()
+  let host_input =
+    Input {
+      ..host_input,
+      output: Output { ..host_input.output, datum: InlineDatum(datum) },
+    }
   host_state_nft.host_state_nft.mint(
     test_nonce_ref(),
     BurnFinal,
     test_policy_id(),
     Transaction {
       ..transaction.placeholder,
-      inputs: [test_host_input()],
+      inputs: [host_input],
       mint,
       redeemers: [Pair(Spend(test_host_ref()), spend_redeemer)],
     },
   )
+}
+
+fn validate_final_burn(mint: Value, host_redeemer: HostStateRedeemer) -> Bool {
+  validate_final_burn_with_datum(mint, host_redeemer, test_host_datum())
+}
+
+test host_state_nft_final_burn_requires_zero_live_counts() {
+  let datum = test_host_datum()
+  let mint = from_asset(test_policy_id(), host_state_token_name, -1)
+  and {
+    !validate_final_burn_with_datum(
+      mint,
+      FinalizeShutdown,
+      HostStateDatum {
+        ..datum,
+        control: HostStateControl { ..datum.control, live_clients: 1 },
+      },
+    ),
+    !validate_final_burn_with_datum(
+      mint,
+      FinalizeShutdown,
+      HostStateDatum {
+        ..datum,
+        control: HostStateControl { ..datum.control, live_connections: 1 },
+      },
+    ),
+    !validate_final_burn_with_datum(
+      mint,
+      FinalizeShutdown,
+      HostStateDatum {
+        ..datum,
+        control: HostStateControl { ..datum.control, live_channels: 1 },
+      },
+    ),
+  }
 }
 
 test host_state_nft_mints_once_from_nonce() {

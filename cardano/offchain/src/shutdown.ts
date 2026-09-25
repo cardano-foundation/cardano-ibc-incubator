@@ -271,8 +271,16 @@ export function buildReclaimStateTx(
   ) {
     throw new Error("Cleanup must consume state from one validator address");
   }
-  if (group.kind === "client" && group.utxos.length !== 1) {
-    throw new Error("Reclaim clients one at a time");
+  const retire = {
+    client: [0n, "live_clients"],
+    connection: [1n, "live_connections"],
+    channel: [2n, "live_channels"],
+  } as const;
+  const retirement = group.kind in retire
+    ? retire[group.kind as keyof typeof retire]
+    : undefined;
+  if (retirement && group.utxos.length !== 1) {
+    throw new Error("Reclaim clients, connections, and channels one at a time");
   }
   const host = decodeHost(hostUtxo, walletAddress, validFrom);
   assertStateDrained([group], deployment);
@@ -325,7 +333,48 @@ export function buildReclaimStateTx(
     metadata: 0,
   };
   const tx = lucid.newTx();
-  if (group.kind === "transfer") {
+  if (retirement) {
+    const [kind, countField] = retirement;
+    const policy = kind === 0n
+      ? deployment.validators.mintClientStt.scriptHash
+      : kind === 1n
+      ? deployment.validators.mintConnectionStt.scriptHash
+      : deployment.validators.mintChannelStt.scriptHash;
+    const retiredUnits = Object.entries(burns).filter(([unit, amount]) =>
+      unit.startsWith(policy) && amount === -1n
+    );
+    if (retiredUnits.length !== 1) {
+      throw new Error(`Reclaim exactly one ${group.kind} state token`);
+    }
+    if (host.control[countField] <= 0n) {
+      throw new Error(`No live ${group.kind} remains in HostState`);
+    }
+    const retiredHost: HostStateDatum = {
+      ...host,
+      state: { ...host.state, version: host.state.version + 1n },
+      control: {
+        ...host.control,
+        [countField]: host.control[countField] - 1n,
+      },
+    };
+    tx.readFrom([deployment.validators.hostStateStt.refUtxo])
+      .collectFrom(
+        [hostUtxo],
+        Data.to(
+          {
+            RetireState: { kind, token_name: retiredUnits[0][0].slice(56) },
+          },
+          HostStateRedeemer,
+          {
+            canonical: true,
+          },
+        ),
+      )
+      .pay.ToContract(hostUtxo.address, {
+        kind: "inline",
+        value: Data.to(retiredHost, HostStateDatum, { canonical: true }),
+      }, hostUtxo.assets);
+  } else if (group.kind === "transfer") {
     const portRegistry = new Map(host.control.port_registry);
     if (!portRegistry.delete(fromText("transfer"))) {
       throw new Error("Missing transfer module registration");

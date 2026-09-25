@@ -105,7 +105,13 @@ fn host_state_datum(
     },
     nft_policy,
     deployer: #"00000000000000000000000000000000000000000000000000000000",
-    control: HostStateControl { port_registry: [], shutdown },
+    control: HostStateControl {
+      port_registry: [],
+      shutdown,
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
+    },
   }
 }
 

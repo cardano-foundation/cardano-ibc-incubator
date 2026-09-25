@@ -10,9 +10,12 @@ use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  ModuleRegistration, host_state_token_name,
+  Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
+  host_state_token_name,
 }
-use ibc/core/ics_025_handler_interface/host_state_redeemer.{BindPort}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  AuthorizeFinalization, BindPort,
+}
 use minting_port
 
 type MockData {
@@ -139,6 +142,66 @@ test mint_port_succeed() {
     mock,
     from_asset(mock.port_token.policy_id, mock.port_token.name, 1),
   )
+}
+
+fn finalization_burn_with_counts(
+  live_clients: Int,
+  live_connections: Int,
+  live_channels: Int,
+) -> Bool {
+  let mock = setup()
+  let datum =
+    HostStateDatum {
+      state: HostState {
+        version: 1,
+        ibc_state_root: "root",
+        next_client_sequence: 0,
+        next_connection_sequence: 0,
+        next_channel_sequence: 0,
+        bound_port: [],
+        last_update_time: 0,
+      },
+      nft_policy: mock.host_state_nft_policy_id,
+      deployer: "deployer",
+      control: HostStateControl {
+        port_registry: [],
+        shutdown: Active,
+        live_clients,
+        live_connections,
+        live_channels,
+      },
+    }
+  let host_input =
+    Input {
+      ..mock.host_state_input,
+      output: Output {
+        ..mock.host_state_input.output,
+        datum: InlineDatum(datum),
+      },
+    }
+  let host_redeemer: Redeemer = AuthorizeFinalization
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [host_input],
+      mint: from_asset(mock.port_minting_policy_id, mock.port_token.name, -1),
+      redeemers: [Pair(Spend(host_input.output_reference), host_redeemer)],
+    }
+  minting_port.mint_port.mint(
+    mock.host_state_nft_policy_id,
+    Void,
+    mock.port_minting_policy_id,
+    transaction,
+  )
+}
+
+test finalization_burn_requires_zero_live_counts() {
+  and {
+    finalization_burn_with_counts(0, 0, 0),
+    !finalization_burn_with_counts(1, 0, 0),
+    !finalization_burn_with_counts(0, 1, 0),
+    !finalization_burn_with_counts(0, 0, 1),
+  }
 }
 
 /// Exercise the largest module capability-token set allowed by the shared cap.

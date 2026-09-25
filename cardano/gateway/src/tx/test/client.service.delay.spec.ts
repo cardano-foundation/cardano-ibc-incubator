@@ -74,7 +74,7 @@ async function context(input?: ClientDatum) {
   const hostDatum: HostStateDatum = {
     nft_policy: '22'.repeat(28),
     deployer: '33'.repeat(28),
-    control: { port_registry: new Map(), shutdown: 'Active' },
+    control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
     state: {
       version: 1n,
       ibc_state_root: tree.getRoot(),

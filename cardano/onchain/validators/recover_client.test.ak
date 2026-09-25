@@ -282,7 +282,13 @@ fn host_datum() -> HostStateDatum {
     },
     nft_policy: host_policy,
     deployer,
-    control: HostStateControl { port_registry: [], shutdown: Active },
+    control: HostStateControl {
+      port_registry: [],
+      shutdown: Active,
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
+    },
   }
 }
 

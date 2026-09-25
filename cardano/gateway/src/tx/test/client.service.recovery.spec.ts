@@ -161,7 +161,7 @@ describe('ClientService recovery transaction', () => {
       hostStateDatum: {
         deployer: 'deployer',
         nft_policy: 'host-policy',
-        control: { port_registry: new Map(), shutdown: 'Active' },
+        control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
         state: {
           version: 1n,
           ibc_state_root: tree.getRoot(),

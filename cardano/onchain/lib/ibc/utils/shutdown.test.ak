@@ -50,6 +50,9 @@ fn datum() -> HostStateDatum {
         ),
       ],
       shutdown: ShuttingDown { initiated_at: 1000, grace_period_end: grace_end },
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
     },
   }
 }

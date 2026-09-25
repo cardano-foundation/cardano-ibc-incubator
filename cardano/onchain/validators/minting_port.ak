@@ -9,12 +9,13 @@ use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  host_state_token_name, max_bound_ports,
+  HostStateDatum, host_state_token_name, max_bound_ports,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   AuthorizeFinalization, BindPort, HostStateRedeemer,
 }
 use ibc/utils/shutdown
+use ibc/utils/validator_utils
 
 // Keep the existing per-module capability-token bound aligned with the
 // protocol-wide HostState bound.
@@ -80,7 +81,18 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
         transaction.redeemers,
         host_state_nft_policy_id,
       ) {
-        shutdown.burns_script_tokens(transaction, port_minting_policy_id)
+        expect Some(host_input) =
+          find_host_state_input(transaction.inputs, host_state_nft_policy_id)
+        expect host_datum: HostStateDatum =
+          validator_utils.get_inline_datum(host_input.output)
+        // The transfer capability burn is required to remove its HostState
+        // registration, so this check gates that authorization on zero counts.
+        and {
+          host_datum.control.live_clients == 0,
+          host_datum.control.live_connections == 0,
+          host_datum.control.live_channels == 0,
+          shutdown.burns_script_tokens(transaction, port_minting_policy_id),
+        }
       } else {
         shutdown.reclaim_policy(
           transaction,

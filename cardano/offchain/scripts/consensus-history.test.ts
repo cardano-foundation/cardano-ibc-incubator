@@ -392,7 +392,13 @@ async function fixture(
     },
     nft_policy: HOST_POLICY,
     deployer: signer,
-    control: { port_registry: new Map(), shutdown: "Active" },
+    control: {
+      port_registry: new Map(),
+      shutdown: "Active",
+      live_clients: 0n,
+      live_connections: 0n,
+      live_channels: 0n,
+    },
   };
   let host = seed(
     hostAddress,

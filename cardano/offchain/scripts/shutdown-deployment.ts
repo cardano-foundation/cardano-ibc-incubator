@@ -1163,7 +1163,12 @@ async function reclaimState(
       if (!group) break;
       const batch = {
         ...group,
-        utxos: group.utxos.slice(0, kind === "client" ? 1 : batchSize),
+        utxos: group.utxos.slice(
+          0,
+          kind === "client" || kind === "connection" || kind === "channel"
+            ? 1
+            : batchSize,
+        ),
       };
       const transferRoot = groups.find((entry) => entry.kind === "transfer")
         ?.utxos.find((utxo) =>

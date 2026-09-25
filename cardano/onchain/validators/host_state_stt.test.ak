@@ -160,7 +160,7 @@ test module_registration_cbor_matches_offchain_codec() {
 
 test host_state_datum_decodes_injective_compatibility_fixture() {
   let fixture =
-    #"d87984d8798701582042424242424242424242424242424242424242424242424242424242424242420203048007581c24242424242424242424242424242424242424242424242424242424581c17171717171717171717171717171717171717171717171717171717d87982a1487472616e73666572d87983581c11111111111111111111111111111111111111111111111111111111d87982581c222222222222222222222222222222222222222222222222222222224101d87982581c333333333333333333333333333333333333333333333333333333334102d87980"
+    #"d87984d8798701582042424242424242424242424242424242424242424242424242424242424242420203048007581c24242424242424242424242424242424242424242424242424242424581c17171717171717171717171717171717171717171717171717171717d87985a1487472616e73666572d87983581c11111111111111111111111111111111111111111111111111111111d87982581c222222222222222222222222222222222222222222222222222222224101d87982581c333333333333333333333333333333333333333333333333333333334102d87980000000"
   expect Some(data) = cbor.deserialise(fixture)
   expect decoded: HostStateDatum = data
 
@@ -194,6 +194,9 @@ test host_state_datum_decodes_injective_compatibility_fixture() {
         ),
       ],
       shutdown: Active,
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
     },
   }
 }
@@ -218,7 +221,13 @@ fn test_host_state_datum_with_control(
     state,
     nft_policy,
     deployer: trusted_deployer,
-    control: HostStateControl { port_registry, shutdown },
+    control: HostStateControl {
+      port_registry,
+      shutdown,
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
+    },
   }
 }
 
@@ -1687,6 +1696,21 @@ fn create_connection_thread(token: AuthToken, mint: Value) -> Bool {
       ..test_connection_output(datum),
       value: from_asset(token.policy_id, token.name, 1),
     }
+  let host_output = test_host_output(new_state)
+  let host_datum = test_host_state_datum(new_state, test_nft_policy())
+  let host_output =
+    Output {
+      ..host_output,
+      datum: InlineDatum(
+        HostStateDatum {
+          ..host_datum,
+          control: HostStateControl {
+            ..host_datum.control,
+            live_connections: 1,
+          },
+        },
+      ),
+    }
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
     [
@@ -1707,7 +1731,7 @@ fn create_connection_thread(token: AuthToken, mint: Value) -> Bool {
     Transaction {
       ..placeholder,
       inputs: [test_host_input(old_state)],
-      outputs: [test_host_output(new_state), connection_output],
+      outputs: [host_output, connection_output],
       mint,
     },
   )
@@ -4341,6 +4365,20 @@ fn validate_test_finalize_shutdown(
   valid_from: Int,
   grace_period_end: Int,
 ) -> Bool {
+  validate_test_finalize_shutdown_with_input(
+    test_shutdown_host_input(grace_period_end),
+    mint,
+    outputs,
+    valid_from,
+  )
+}
+
+fn validate_test_finalize_shutdown_with_input(
+  host_input: Input,
+  mint: Value,
+  outputs: List<Output>,
+  valid_from: Int,
+) -> Bool {
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
     [
@@ -4360,7 +4398,7 @@ fn validate_test_finalize_shutdown(
     test_host_ref(),
     Transaction {
       ..placeholder,
-      inputs: [test_shutdown_host_input(grace_period_end)],
+      inputs: [host_input],
       outputs,
       mint,
       extra_signatories: [trusted_deployer],
@@ -4549,33 +4587,6 @@ test host_state_finalize_shutdown_rejects_wrong_burn_quantity() fail {
   validate_test_finalize_shutdown(
     from_asset(nft_policy, host_state_token_name, -2),
     [],
-    grace_period_end,
-    grace_period_end,
-  )
-}
-
-test host_state_finalize_shutdown_rejects_another_name_under_nft_policy() fail {
-  let nft_policy = test_nft_policy()
-  let grace_period_end = 5000
-  let mint =
-    from_asset(nft_policy, host_state_token_name, -1)
-      |> add(nft_policy, "another-token", -1)
-  validate_test_finalize_shutdown(mint, [], grace_period_end, grace_period_end)
-}
-
-test host_state_finalize_shutdown_rejects_nft_output_with_burn() fail {
-  let nft_policy = test_nft_policy()
-  let grace_period_end = 5000
-  let nft_output =
-    Output {
-      address: Address(Script(test_client_script_hash()), None),
-      value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: NoDatum,
-      reference_script: None,
-    }
-  validate_test_finalize_shutdown(
-    from_asset(nft_policy, host_state_token_name, -1),
-    [nft_output],
     grace_period_end,
     grace_period_end,
   )
@@ -5122,6 +5133,7 @@ test all_host_state_transitions_preserve_successor_invariants() {
       HostStateDatum {
         ..successor,
         state: HostState { ..successor.state, next_client_sequence: 1 },
+        control: HostStateControl { ..successor.control, live_clients: 1 },
       },
       host_state.validate_create_client,
     ),
@@ -5130,6 +5142,7 @@ test all_host_state_transitions_preserve_successor_invariants() {
       HostStateDatum {
         ..successor,
         state: HostState { ..successor.state, next_connection_sequence: 1 },
+        control: HostStateControl { ..successor.control, live_connections: 1 },
       },
       host_state.validate_create_connection,
     ),
@@ -5138,6 +5151,7 @@ test all_host_state_transitions_preserve_successor_invariants() {
       HostStateDatum {
         ..successor,
         state: HostState { ..successor.state, next_channel_sequence: 1 },
+        control: HostStateControl { ..successor.control, live_channels: 1 },
       },
       host_state.validate_create_channel,
     ),

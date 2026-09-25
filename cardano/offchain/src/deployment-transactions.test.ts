@@ -215,7 +215,13 @@ Deno.test("HostState bootstrap evaluates and fits with inline policy, datum and 
     },
     nft_policy: plan.hostNft.hash,
     deployer: plan.inputs.deployerPaymentKeyHash,
-    control: { port_registry: new Map(), shutdown: "Active" },
+    control: {
+      port_registry: new Map(),
+      shutdown: "Active",
+      live_clients: 0n,
+      live_connections: 0n,
+      live_channels: 0n,
+    },
   };
   const encodedDatum = Data.to(datum, HostStateDatum, { canonical: true });
   const completed = await buildHostStateBootstrapTx(lucid, {

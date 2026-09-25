@@ -4,13 +4,17 @@ use aiken/collection/pairs
 use aiken/crypto.{VerificationKeyHash}
 use cardano/address.{Script, VerificationKey}
 use cardano/assets.{PolicyId, Value}
-use cardano/transaction.{OutputReference, Transaction}
+use cardano/transaction.{Input, OutputReference, Spend, Transaction}
 use ibc/apps/transfer/types/transfer_module_datum.{
   TransferModuleDatum, empty_escrow_shard_registry_root,
 }
 use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostStateDatum, host_state_token_name, validate_shutdown_authority,
+  HostStateDatum, host_state_token_name, validate_retire_state,
+  validate_shutdown_authority,
+}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  HostStateRedeemer, RetireState,
 }
 use ibc/utils/validator_utils
 
@@ -26,6 +30,63 @@ pub fn burns_token(transaction: Transaction, token: AuthToken) -> Bool {
   assets.quantity_of(transaction.mint, token.policy_id, token.name) == -1
 }
 
+fn shutdown_host(transaction: Transaction, host_policy: PolicyId) -> Input {
+  let referred =
+    list.filter(
+      transaction.reference_inputs,
+      fn(input) {
+        assets.has_nft(input.output.value, host_policy, host_state_token_name)
+      },
+    )
+  when referred is {
+    [host] -> host
+    [] -> {
+      expect [host] =
+        list.filter(
+          transaction.inputs,
+          fn(input) {
+            assets.has_nft(
+              input.output.value,
+              host_policy,
+              host_state_token_name,
+            )
+          },
+        )
+      host
+    }
+    _ -> fail
+  }
+}
+
+pub fn retires_state(
+  transaction: Transaction,
+  host_policy: PolicyId,
+  expected_kind: Int,
+) -> Bool {
+  expect [host] =
+    list.filter(
+      transaction.inputs,
+      fn(input) {
+        assets.has_nft(input.output.value, host_policy, host_state_token_name)
+      },
+    )
+  expect Some(raw) =
+    pairs.get_first(transaction.redeemers, Spend(host.output_reference))
+  expect actual: HostStateRedeemer = raw
+  expect RetireState { kind, .. } = actual
+  expect [successor] =
+    list.filter(
+      transaction.outputs,
+      fn(output) {
+        assets.has_nft(output.value, host_policy, host_state_token_name)
+      },
+    )
+  expect old_datum: HostStateDatum =
+    validator_utils.get_inline_datum(host.output)
+  expect new_datum: HostStateDatum = validator_utils.get_inline_datum(successor)
+  kind == expected_kind && validate_retire_state(old_datum, new_datum, kind)
+}
+
 /// Client, connection and voucher lookup state remains necessary while a
 /// transfer claim is outstanding. The authenticated transfer root is retained
 /// as the global drainage witness until those dependencies have been reclaimed.
@@ -33,13 +94,7 @@ pub fn transfer_is_drained(
   transaction: Transaction,
   host_policy: PolicyId,
 ) -> Bool {
-  expect [host] =
-    list.filter(
-      transaction.reference_inputs,
-      fn(input) {
-        assets.has_nft(input.output.value, host_policy, host_state_token_name)
-      },
-    )
+  let host = shutdown_host(transaction, host_policy)
   expect host_datum: HostStateDatum =
     validator_utils.get_inline_datum(host.output)
   expect Some(registration) =
@@ -88,10 +143,17 @@ pub fn reclaim(
       assets.zero,
       fn(input, total) {
         when input.output.address.payment_credential is {
-          Script(_) -> {
-            expect input.output.address == own_input.output.address
-            assets.merge(total, input.output.value)
-          }
+          Script(_) ->
+            if assets.has_nft(
+              input.output.value,
+              host_policy,
+              host_state_token_name,
+            ) {
+              total
+            } else {
+              expect input.output.address == own_input.output.address
+              assets.merge(total, input.output.value)
+            }
           VerificationKey(_) -> total
         }
       },
@@ -133,13 +195,7 @@ pub fn authority(
   transaction: Transaction,
   host_policy: PolicyId,
 ) -> VerificationKeyHash {
-  expect [host] =
-    list.filter(
-      transaction.reference_inputs,
-      fn(input) {
-        assets.has_nft(input.output.value, host_policy, host_state_token_name)
-      },
-    )
+  let host = shutdown_host(transaction, host_policy)
   expect host_datum: HostStateDatum =
     validator_utils.get_inline_datum(host.output)
   expect host_datum.nft_policy == host_policy
