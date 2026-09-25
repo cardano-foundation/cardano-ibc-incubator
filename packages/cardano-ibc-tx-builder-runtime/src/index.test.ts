@@ -271,6 +271,9 @@ describe('IBC module and textual-port codecs', () => {
       control: {
         port_registry: new Map([[portId, registration]]),
         shutdown: 'Active',
+        live_clients: 0n,
+        live_connections: 0n,
+        live_channels: 0n,
       },
     };
 

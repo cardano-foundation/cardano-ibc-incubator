@@ -97,7 +97,7 @@ fn substitute_token() -> AuthToken {
   AuthToken { policy_id: client_policy, name: substitute_name }
 }
 
-fn reclaim_transfer(obligation: Int) -> Bool {
+fn reclaim_transfer(escrow_root: ByteArray, obligation: Int) -> Bool {
   let port_policy = #"77777777777777777777777777777777777777777777777777777777"
   let module_policy =
     #"88888888888888888888888888888888888888888888888888888888"
@@ -115,7 +115,7 @@ fn reclaim_transfer(obligation: Int) -> Bool {
           |> assets.add(module_policy, module_name, 1),
         datum: InlineDatum(
           TransferModuleDatum {
-            escrow_shard_registry_root: empty_escrow_shard_registry_root,
+            escrow_shard_registry_root: escrow_root,
             outstanding_voucher_obligation: obligation,
           },
         ),
@@ -142,11 +142,15 @@ fn reclaim_transfer(obligation: Int) -> Bool {
 }
 
 test reclaim_transfer_accepts_zero_voucher_obligation() {
-  reclaim_transfer(0)
+  reclaim_transfer(empty_escrow_shard_registry_root, 0)
 }
 
 test reclaim_transfer_rejects_outstanding_voucher_obligation() fail {
-  reclaim_transfer(1)
+  reclaim_transfer(empty_escrow_shard_registry_root, 1)
+}
+
+test reclaim_transfer_rejects_outstanding_escrow() fail {
+  reclaim_transfer(#"11", 0)
 }
 
 test recovery_token_names_match_client_stt_derivation() {

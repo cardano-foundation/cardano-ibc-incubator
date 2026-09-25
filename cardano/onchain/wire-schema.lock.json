@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "wireSchemaVersion": 2,
+  "wireSchemaVersion": 3,
   "source": "cardano/onchain/plutus.json",
-  "schemaFingerprint": "sha256:8fc35d089d45e4194a369e5e9fc99babf962ca9fa7098f58c7a74c039b093e66",
+  "schemaFingerprint": "sha256:91ca26722f066faa7f035a97f2ca3359def9d64db8896db27f218db10cadbbaa",
   "roots": [
     "ibc/core/ics_025_handler_interface/host_state/HostStateDatum",
     "ibc/client/ics_007_tendermint_client/client_state/ClientState",
@@ -702,6 +702,24 @@
               "name": "shutdown",
               "type": {
                 "ref": "ibc/core/ics_025_handler_interface/host_state/ShutdownState"
+              }
+            },
+            {
+              "name": "live_clients",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "live_connections",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "live_channels",
+              "type": {
+                "ref": "Int"
               }
             }
           ]

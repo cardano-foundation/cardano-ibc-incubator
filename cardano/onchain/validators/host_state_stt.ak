@@ -13,9 +13,6 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
 }
-use ibc/apps/transfer/types/transfer_module_datum.{
-  TransferModuleDatum, empty_escrow_shard_registry_root,
-}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height
 use ibc/core/ics_002_client_semantics/registry
@@ -89,26 +86,17 @@ fn validate_transfer_finalization_authorization(
 ) -> Bool {
   expect Some(registration) =
     pairs.get_first(old_datum.control.port_registry, "transfer")
-  expect [root] =
-    list.filter(
+  // ReclaimTransferWithdrawal checks the root datum and both tokens before burn.
+  expect _root =
+    list.expect_find(
       inputs,
       fn(input) {
-        and {
-          input.output.address.payment_credential == address.Script(
-            registration.module_script_hash,
-          ),
-          auth.contain_auth_token(input.output, registration.port_token),
-          auth.contain_auth_token(input.output, registration.module_token),
-        }
+        auth.contain_auth_token(input.output, registration.port_token)
       },
     )
-  expect root_datum: TransferModuleDatum =
-    validator_utils.get_inline_datum(root.output)
   and {
     validate_shutdown_authority(old_datum, valid_from),
     validate_authorize_finalization(old_datum, new_datum),
-    root_datum.escrow_shard_registry_root == empty_escrow_shard_registry_root,
-    root_datum.outstanding_voucher_obligation == 0,
     validator_utils.require_exact_marker_mint(
       mint,
       registration.port_token.policy_id,

@@ -1,9 +1,13 @@
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
+use cardano/address.{Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
   Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
+}
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
 }
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
@@ -85,9 +89,28 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
           find_host_state_input(transaction.inputs, host_state_nft_policy_id)
         expect host_datum: HostStateDatum =
           validator_utils.get_inline_datum(host_input.output)
+        expect Some(registration) =
+          pairs.get_first(host_datum.control.port_registry, "transfer")
+        expect [root] =
+          list.filter(
+            transaction.inputs,
+            fn(input) {
+              and {
+                input.output.address.payment_credential == Script(
+                  registration.module_script_hash,
+                ),
+                auth.contain_auth_token(input.output, registration.port_token),
+                auth.contain_auth_token(input.output, registration.module_token),
+              }
+            },
+          )
+        expect root_datum: TransferModuleDatum =
+          validator_utils.get_inline_datum(root.output)
         // The transfer capability burn is required to remove its HostState
         // registration, so this check gates that authorization on zero counts.
         and {
+          root_datum.escrow_shard_registry_root == empty_escrow_shard_registry_root,
+          root_datum.outstanding_voucher_obligation == 0,
           host_datum.control.live_clients == 0,
           host_datum.control.live_connections == 0,
           host_datum.control.live_channels == 0,
