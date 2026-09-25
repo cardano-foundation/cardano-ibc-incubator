@@ -289,6 +289,12 @@ export async function checkShutdownDrain(
           next_connection_sequence: 1n,
           next_channel_sequence: 1n,
         },
+        control: {
+          ...hostDatum.control,
+          live_clients: 1n,
+          live_connections: 1n,
+          live_channels: 1n,
+        },
       },
       HostStateDatum,
       { canonical: true },

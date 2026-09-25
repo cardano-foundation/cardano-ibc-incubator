@@ -17,10 +17,12 @@ use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId, tokens}
 use cardano/transaction.{
-  Input, OutputReference, Redeemer, ScriptPurpose, Spend, Transaction,
-  find_input,
+  InlineDatum, Input, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction, find_input,
 }
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  HostStateDatum, host_state_token_name,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   FinalizeShutdown, HostStateRedeemer,
 }
@@ -61,7 +63,13 @@ fn validate_final_host_state_spend(
     pairs.get_first(redeemers, Spend(host_input.output_reference))
   expect host_redeemer: HostStateRedeemer = host_redeemer_data
   expect FinalizeShutdown = host_redeemer
-  True
+  expect InlineDatum(raw) = host_input.output.datum
+  expect datum: HostStateDatum = raw
+  and {
+    datum.control.live_clients == 0,
+    datum.control.live_connections == 0,
+    datum.control.live_channels == 0,
+  }
 }
 
 /// Main minting policy for IBC Host State NFT

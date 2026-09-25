@@ -88,6 +88,9 @@ pub type ModuleRegistration {
 pub type HostStateControl {
   port_registry: Pairs<ByteArray, ModuleRegistration>,
   shutdown: ShutdownState,
+  live_clients: Int,
+  live_connections: Int,
+  live_channels: Int,
 }
 
 /// HostState represents the canonical IBC host state on Cardano
@@ -163,6 +166,9 @@ pub fn is_initialized_valid(
     state.next_channel_sequence == 0,
     state.bound_port == [],
     control.port_registry == [],
+    control.live_clients == 0,
+    control.live_connections == 0,
+    control.live_channels == 0,
     state.ibc_state_root == empty_ibc_state_root,
     control.shutdown == Active,
     nft_policy == expected_nft_policy,
@@ -220,7 +226,10 @@ pub fn validate_create_client(old: HostStateDatum, new: HostStateDatum) -> Bool 
       old.state.next_client_sequence + 1,
       old.state.next_connection_sequence,
       old.state.next_channel_sequence,
-      old.control,
+      HostStateControl {
+        ..old.control,
+        live_clients: old.control.live_clients + 1,
+      },
     ),
     old.control.shutdown |> is_active,
   }
@@ -238,7 +247,10 @@ pub fn validate_create_connection(
       old.state.next_client_sequence,
       old.state.next_connection_sequence + 1,
       old.state.next_channel_sequence,
-      old.control,
+      HostStateControl {
+        ..old.control,
+        live_connections: old.control.live_connections + 1,
+      },
     ),
     old.control.shutdown |> is_active,
   }
@@ -253,7 +265,10 @@ pub fn validate_create_channel(old: HostStateDatum, new: HostStateDatum) -> Bool
       old.state.next_client_sequence,
       old.state.next_connection_sequence,
       old.state.next_channel_sequence + 1,
-      old.control,
+      HostStateControl {
+        ..old.control,
+        live_channels: old.control.live_channels + 1,
+      },
     ),
     old.control.shutdown |> is_active,
   }
@@ -287,13 +302,13 @@ pub fn validate_bind_port(
       old.state.next_channel_sequence,
       // Port registrations are immutable and kept in canonical CBOR map order.
       HostStateControl {
+        ..old.control,
         port_registry: pairs.insert_by_ascending_key(
           old.control.port_registry,
           port_id,
           registration,
           compare_port_keys_for_insertion,
         ),
-        shutdown: old.control.shutdown,
       },
     ),
     old.control.shutdown |> is_active,
@@ -341,6 +356,45 @@ pub fn validate_heartbeat(old: HostStateDatum, new: HostStateDatum) -> Bool {
   }
 }
 
+pub fn validate_retire_state(
+  old: HostStateDatum,
+  new: HostStateDatum,
+  kind: Int,
+) -> Bool {
+  let old_control = old.control
+  let new_control = new.control
+  and {
+    new == HostStateDatum {
+      ..old,
+      state: HostState { ..old.state, version: old.state.version + 1 },
+      control: new_control,
+    },
+    new_control.port_registry == old_control.port_registry,
+    new_control.shutdown == old_control.shutdown,
+    when kind is {
+      0 -> and {
+          old_control.live_clients > 0,
+          new_control.live_clients == old_control.live_clients - 1,
+          new_control.live_connections == old_control.live_connections,
+          new_control.live_channels == old_control.live_channels,
+        }
+      1 -> and {
+          old_control.live_connections > 0,
+          new_control.live_clients == old_control.live_clients,
+          new_control.live_connections == old_control.live_connections - 1,
+          new_control.live_channels == old_control.live_channels,
+        }
+      2 -> and {
+          old_control.live_channels > 0,
+          new_control.live_clients == old_control.live_clients,
+          new_control.live_connections == old_control.live_connections,
+          new_control.live_channels == old_control.live_channels - 1,
+        }
+      _ -> False
+    },
+  }
+}
+
 pub fn validate_enter_shutdown(
   old: HostStateDatum,
   new: HostStateDatum,
@@ -355,7 +409,7 @@ pub fn validate_enter_shutdown(
       old.state.next_connection_sequence,
       old.state.next_channel_sequence,
       HostStateControl {
-        port_registry: old.control.port_registry,
+        ..old.control,
         shutdown: ShuttingDown { initiated_at: valid_to, grace_period_end },
       },
     ),
@@ -380,20 +434,13 @@ pub fn validate_authorize_finalization(
   old: HostStateDatum,
   new: HostStateDatum,
 ) -> Bool {
-  and {
-    validate_transition(
-      old,
-      new,
-      old.state.next_client_sequence,
-      old.state.next_connection_sequence,
-      old.state.next_channel_sequence,
-      HostStateControl {
-        port_registry: pairs.delete_first(old.control.port_registry, "transfer"),
-        shutdown: old.control.shutdown,
-      },
-    ),
-    new.state.ibc_state_root == old.state.ibc_state_root,
-    new.state.last_update_time == old.state.last_update_time,
+  new == HostStateDatum {
+    ..old,
+    state: HostState { ..old.state, version: old.state.version + 1 },
+    control: HostStateControl {
+      ..old.control,
+      port_registry: pairs.delete_first(old.control.port_registry, "transfer"),
+    },
   }
 }
 

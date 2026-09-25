@@ -44,7 +44,12 @@ validator recover_client(host_state_nft_policy_id: PolicyId) {
             transaction.inputs,
             fn(input) {
               when input.output.address.payment_credential is {
-                Script(_) -> True
+                Script(_) ->
+                  !assets.has_nft(
+                    input.output.value,
+                    host_state_nft_policy_id,
+                    host_state_token_name,
+                  )
                 _ -> False
               }
             },

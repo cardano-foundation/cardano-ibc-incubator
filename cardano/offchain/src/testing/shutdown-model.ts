@@ -235,6 +235,7 @@ export async function deploymentScenario() {
         tree.set(consensusKey, encode(consensus));
         const next = await successor(old);
         next.state.next_client_sequence++;
+        next.control.live_clients++;
         await api.submit(
           hostTx(input, next, {
             CreateClient: { client_state_siblings, consensus_state_siblings },
@@ -284,6 +285,7 @@ export async function deploymentScenario() {
         tree.set(key, encode(state));
         const next = await successor(old);
         next.state.next_connection_sequence++;
+        next.control.live_connections++;
         await api.submit(
           hostTx(input, next, { CreateConnection: { connection_siblings } })
             .readFrom([
@@ -435,6 +437,7 @@ export async function deploymentScenario() {
         }
         const next = await successor(old);
         next.state.next_channel_sequence++;
+        next.control.live_channels++;
         const module = await lucid.utxoByUnit(
           deployment.modules.mock.identifier,
         );

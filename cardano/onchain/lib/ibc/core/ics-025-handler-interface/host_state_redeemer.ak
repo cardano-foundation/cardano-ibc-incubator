@@ -74,4 +74,5 @@ pub type HostStateRedeemer {
   // reclaiming a drained transfer root. Its absence is the terminal on-chain
   // authorization required by FinalizeShutdown.
   AuthorizeFinalization
+  RetireState { kind: Int, token_name: ByteArray }
 }

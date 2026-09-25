@@ -948,6 +948,12 @@ export class LucidService implements OnModuleInit {
             LucidData.Literal("FinalizeShutdown"),
             LucidData.Literal("Heartbeat"),
             LucidData.Literal("AuthorizeFinalization"),
+            LucidData.Object({
+              RetireState: LucidData.Object({
+                kind: LucidData.Integer(),
+                token_name: LucidData.Bytes(),
+              }),
+            }),
           ]);
           return LucidData.to(data as any, HostStateRedeemerSchema as any, {
             canonical: true,

@@ -1,3 +1,4 @@
+use aiken/collection/dict
 // IBC Channel Minting Validator - STT Architecture
 
 use aiken/collection/list
@@ -98,6 +99,14 @@ validator mint_channel_stt(
       let expected: Data = ReclaimStateWithdrawal
       and {
         withdrawal_redeemer == expected,
+        list.any(
+          transaction.inputs,
+          fn(input) {
+            input.output.address.payment_credential == address.Script(
+              spend_channel_script_hash,
+            ) && assets.tokens(input.output.value, channel_minting_policy_id) != dict.empty
+          },
+        ),
         shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
       }
     } else {

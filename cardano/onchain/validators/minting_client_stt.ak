@@ -62,6 +62,7 @@ validator mint_client_stt(
   ) {
     if shutdown.burns_only(transaction.mint, client_mint_policy_id) {
       and {
+        shutdown.retires_state(transaction, host_state_nft_policy_id, 0),
         shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
         shutdown.reclaim_policy(
           transaction,

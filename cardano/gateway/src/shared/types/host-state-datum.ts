@@ -23,6 +23,9 @@ export type HostStateDatum = {
   // control state can evolve here without changing its light client.
   control: {
     port_registry: Map<string, ModuleRegistration>;
+    live_clients: bigint;
+    live_connections: bigint;
+    live_channels: bigint;
     shutdown:
       | 'Active'
       | {
@@ -74,6 +77,9 @@ export async function encodeHostStateDatum(
           }),
         }),
       ]),
+      live_clients: Data.Integer(),
+      live_connections: Data.Integer(),
+      live_channels: Data.Integer(),
     }),
   });
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
@@ -117,6 +123,9 @@ export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof
           }),
         }),
       ]),
+      live_clients: Data.Integer(),
+      live_connections: Data.Integer(),
+      live_channels: Data.Integer(),
     }),
   });
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;

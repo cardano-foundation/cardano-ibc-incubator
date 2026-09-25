@@ -69,6 +69,9 @@ async function encodeHostStateDatum(hostStateDatum, Lucid) {
                     }),
                 }),
             ]),
+            live_clients: Data.Integer(),
+            live_connections: Data.Integer(),
+            live_channels: Data.Integer(),
         }),
     });
     return Data.to(hostStateDatum, HostStateDatumSchema, { canonical: true });
@@ -108,6 +111,9 @@ async function decodeHostStateDatum(encoded, Lucid) {
                     }),
                 }),
             ]),
+            live_clients: Data.Integer(),
+            live_connections: Data.Integer(),
+            live_channels: Data.Integer(),
         }),
     });
     return Data.from(encoded, HostStateDatumSchema);

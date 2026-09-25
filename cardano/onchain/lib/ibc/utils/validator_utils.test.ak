@@ -321,6 +321,9 @@ fn setup_extract_module_redeemer() -> (
       control: HostStateControl {
         port_registry: [Pair(port_id, registration)],
         shutdown: Active,
+        live_clients: 0,
+        live_connections: 0,
+        live_channels: 0,
       },
     }
   let host_state_input =

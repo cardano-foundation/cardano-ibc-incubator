@@ -115,7 +115,7 @@ async function expectedTree(n: number) {
   };
   const hostDatum = async (n: number) => encodeHostStateDatum({
     state: { ibc_state_root: roots[n - 1], version: BigInt(n), next_client_sequence: 1n, next_connection_sequence: 1n, next_channel_sequence: 1n, bound_port: [], last_update_time: 0n },
-    nft_policy: hostToken.policyId, deployer: '99'.repeat(28), control: { port_registry: new Map([[hex('transfer'), registration]]), shutdown: 'Active' },
+    nft_policy: hostToken.policyId, deployer: '99'.repeat(28), control: { port_registry: new Map([[hex('transfer'), registration]]), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
   } as HostStateDatum, Lucid);
   const rebuild = (height = 2n, id = 30) => reconstructHistoricalIbcTree(sql, deployment, 'Custom', decoder, height, { txHash: hash(id), outputIndex: 3 });
 

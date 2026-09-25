@@ -46,7 +46,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   AuthorizeFinalization, BindPort, CreateChannel, CreateClient, CreateConnection,
   EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer,
-  UpdateChannel, UpdateClient, UpdateConnection,
+  RetireState, UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/string as string_utils
@@ -1127,18 +1127,8 @@ validator host_state_stt(
             old_datum,
             validator_utils.get_tx_valid_from(validity_range),
           ),
-          validator_utils.require_exact_marker_mint(
-            mint,
-            nft_policy,
-            host_state_token_name,
-            -1,
-          ),
-          list.all(
-            outputs,
-            fn(output) {
-              quantity_of(output.value, nft_policy, host_state_token_name) == 0
-            },
-          ),
+          // The NFT policy checks the live counts and exact burn.
+          quantity_of(mint, nft_policy, host_state_token_name) == -1,
         }
       _ -> {
         // Non-final transitions must re-create exactly one HostState UTxO.
@@ -1301,16 +1291,30 @@ validator host_state_stt(
               list.has(extra_signatories, old_datum.deployer),
               validate_heartbeat(old_datum, new_datum),
             }
-          AuthorizeFinalization -> and {
-              list.has(extra_signatories, old_datum.deployer),
-              validate_transfer_finalization_authorization(
-                old_datum,
-                new_datum,
-                inputs,
-                mint,
-                validator_utils.get_tx_valid_from(validity_range),
-              ),
-            }
+          AuthorizeFinalization ->
+            validate_transfer_finalization_authorization(
+              old_datum,
+              new_datum,
+              inputs,
+              mint,
+              validator_utils.get_tx_valid_from(validity_range),
+            )
+          RetireState { kind, token_name } -> {
+            // The burn policy checks the matching HostState count decrement.
+            let policy =
+              when kind is {
+                0 -> client_policy_id
+                1 -> connection_policy_id
+                2 -> channel_policy_id
+                _ -> fail
+              }
+            validator_utils.require_exact_marker_mint(
+              mint,
+              policy,
+              token_name,
+              -1,
+            )
+          }
           FinalizeShutdown -> fail
         }
       }

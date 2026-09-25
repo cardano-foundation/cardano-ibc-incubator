@@ -735,6 +735,10 @@ export class ConnectionService {
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
+      control: {
+        ...hostStateDatum.control,
+        live_connections: hostStateDatum.control.live_connections + 1n,
+      },
     };
     const connectionDatum: ConnectionDatum = {
       state: connectionEnd,
@@ -868,6 +872,10 @@ export class ConnectionService {
         next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
+      },
+      control: {
+        ...hostStateDatum.control,
+        live_connections: hostStateDatum.control.live_connections + 1n,
       },
     };
     const connectionDatum: ConnectionDatum = {
