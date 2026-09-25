@@ -395,7 +395,7 @@ async function fixture(
     control: {
       port_registry: new Map(),
       shutdown: "Active",
-      live_clients: 0n,
+      live_clients: createClient ? 0n : 1n,
       live_connections: 0n,
       live_channels: 0n,
     },
@@ -436,7 +436,11 @@ async function fixture(
       HostStateDatum,
       { canonical: true },
     );
-    hostDatum = { ...hostDatum, state: { ...hostDatum.state, version: 1n } };
+    hostDatum = {
+      ...hostDatum,
+      state: { ...hostDatum.state, version: 1n },
+      control: { ...hostDatum.control, live_clients: 1n },
+    };
     const created = await lucid.newTx().readFrom([references[0], references[1]])
       .collectFrom(
         [host],
