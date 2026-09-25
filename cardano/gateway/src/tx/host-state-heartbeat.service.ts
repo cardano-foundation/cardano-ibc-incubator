@@ -10,6 +10,8 @@ import {
 } from '~@/exception/grpc_exceptions';
 
 import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
+import { epochTimingAtSlot } from '../shared/helpers/epoch-timing';
+import { ogmiosRequest } from '../shared/helpers/ogmios';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
@@ -25,6 +27,10 @@ type HeartbeatContext = {
   hostStateDatum: HostStateDatum;
   currentEpoch: number;
   hostStateEpoch: number;
+  currentSlot: bigint;
+  firstEpochSlot: bigint;
+  epochLengthSlots: bigint;
+  slotLengthMs: number;
 };
 
 @Injectable()
@@ -67,9 +73,14 @@ export class HostStateHeartbeatService {
 
     if (context.hostStateEpoch === context.currentEpoch) {
       this.logger.debug(
-        `HostState heartbeat not required: epoch ${context.currentEpoch} already has an anchor`,
+        `HostState heartbeat not required: epoch ${context.currentEpoch} already has a HostState transaction`,
       );
-      return this.statusResponse(context, false);
+      return this.statusResponse(context, false, this.nextEpochMidpoint(context));
+    }
+
+    const midpointSlot = this.midpointSlot(context);
+    if (context.currentSlot < midpointSlot) {
+      return this.statusResponse(context, false, midpointSlot);
     }
 
     if (context.hostStateDatum.control.shutdown !== 'Active') {
@@ -141,7 +152,7 @@ export class HostStateHeartbeatService {
       `Built HostState heartbeat from epoch ${context.hostStateEpoch} for current epoch ${context.currentEpoch}`,
     );
     return {
-      ...this.statusResponse(context, true),
+      ...this.statusResponse(context, true, this.nextEpochMidpoint(context)),
       unsigned_tx: {
         type_url: '',
         value: unsignedTxBytes,
@@ -157,6 +168,23 @@ export class HostStateHeartbeatService {
     if (!latestBlock) {
       throw new GrpcFailedPreconditionException(
         'Cannot evaluate HostState heartbeat before Cardano block history is ready',
+      );
+    }
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!ogmiosEndpoint) {
+      throw new GrpcFailedPreconditionException('Cannot schedule HostState heartbeat without Ogmios');
+    }
+    const eraSummaries = await ogmiosRequest<Parameters<typeof epochTimingAtSlot>[0]>(
+      ogmiosEndpoint,
+      'queryLedgerState/eraSummaries',
+      {},
+    );
+    let epochTiming;
+    try {
+      epochTiming = epochTimingAtSlot(eraSummaries, latestBlock.slotNo, latestBlock.epochNo);
+    } catch (error) {
+      throw new GrpcFailedPreconditionException(
+        error instanceof Error ? error.message : 'Cannot determine Cardano epoch timing',
       );
     }
     if (!hostStateUtxo.datum) {
@@ -193,7 +221,17 @@ export class HostStateHeartbeatService {
       ),
       currentEpoch: latestBlock.epochNo,
       hostStateEpoch: hostStateBlock.epochNo,
+      currentSlot: latestBlock.slotNo,
+      ...epochTiming,
     };
+  }
+
+  private midpointSlot(context: HeartbeatContext): bigint {
+    return context.firstEpochSlot + context.epochLengthSlots / 2n;
+  }
+
+  private nextEpochMidpoint(context: HeartbeatContext): bigint {
+    return this.midpointSlot(context) + context.epochLengthSlots;
   }
 
   private async computeTxValidityWindow() {
@@ -218,13 +256,15 @@ export class HostStateHeartbeatService {
   }
 
   private statusResponse(
-    context: Pick<HeartbeatContext, 'currentEpoch' | 'hostStateEpoch'>,
+    context: HeartbeatContext,
     heartbeatRequired: boolean,
+    nextCheckSlot: bigint,
   ): BuildHostStateHeartbeatResponse {
     return {
       heartbeat_required: heartbeatRequired,
       current_epoch: context.currentEpoch,
       host_state_epoch: context.hostStateEpoch,
+      next_check_delay_ms: Math.max(1_000, Number(nextCheckSlot - context.currentSlot) * context.slotLengthMs),
     };
   }
 }
