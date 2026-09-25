@@ -4,7 +4,7 @@
 
 The deployer key is an administrative trust boundary. A compromise can stop the
 bridge permanently and can put user funds at risk. Here this means the payment
-key whose hash is recorded in `HostState.deployer` for the current contracts.
+key whose hash is recorded in `HostStateDatum.deployer` for the current contracts.
 The attacker can also spend any funds held directly by that wallet.
 
 The attacker can enter irreversible shutdown. This immediately blocks new
@@ -12,17 +12,13 @@ clients, connections, channels, port registrations, and new source-chain escrow
 deposits. Existing voucher returns and packet settlement or refunds remain
 possible while the required state and scripts are available. The contracts
 enforce a grace period of at least 24 hours from the shutdown transaction's
-latest valid time. After that period the attacker can reclaim reference-script
-deposits and finalize shutdown by burning the unique `HostState` NFT.
+latest valid time. After that period, reference scripts can be reclaimed only
+when no clients, connections, or channels remain live and the transfer root
+has been drained. Final shutdown has the same live-state restrictions.
 
-Finalization does not check that escrow is empty or that all packets and
-vouchers have been settled. Destroying `HostState` permanently prevents further
-Cardano IBC operations for that deployment. Remaining Cardano escrow can become
-permanently locked. Vouchers still exist in their holders' wallets and can still
-be transferred locally but their normal bridge redemption path can be lost.
-The grace period is an opportunity to exit, not a guarantee that every user can
-complete an exit in time. Shutdown does not automatically refund users or give
-the deployer a direct withdrawal from transfer escrow.
+These checks do not settle packets or refund users by themselves. Shutdown
+can still leave a route unusable until its remaining state is drained.
+It does not give the deployer a direct withdrawal from transfer escrow.
 
 The attacker can also authorize recovery of an expired or frozen Cardano-side
 Tendermint client using an active substitute with matching parameters and a

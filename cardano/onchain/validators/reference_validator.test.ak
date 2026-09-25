@@ -5,8 +5,9 @@ use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction, placeholder,
 }
+use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostState, HostStateControl, HostStateDatum, ShuttingDown,
+  HostState, HostStateControl, HostStateDatum, ModuleRegistration, ShuttingDown,
   empty_ibc_state_root, host_state_token_name, min_shutdown_grace_period_ms,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
@@ -126,6 +127,33 @@ fn normal_reclaim_transaction(valid_from: Int, signed: Bool) -> Transaction {
   }
 }
 
+fn normal_reclaim_with_control(control: HostStateControl) -> Transaction {
+  let transaction = normal_reclaim_transaction(shutdown_grace_period_end, True)
+  let host = host_state_input(shutdown_grace_period_end)
+  let datum = shutdown_host_state_datum(shutdown_grace_period_end)
+  Transaction {
+    ..transaction,
+    reference_inputs: [
+      Input {
+        ..host,
+        output: Output {
+          ..host.output,
+          datum: InlineDatum(HostStateDatum { ..datum, control }),
+        },
+      },
+    ],
+  }
+}
+
+fn test_registration() -> ModuleRegistration {
+  let token = AuthToken { policy_id: test_nft_policy(), name: "module" }
+  ModuleRegistration {
+    module_script_hash: other_script_hash(),
+    port_token: token,
+    module_token: token,
+  }
+}
+
 fn terminal_transaction(
   host_redeemer: HostStateRedeemer,
   mint: Value,
@@ -158,6 +186,57 @@ fn validate(transaction: Transaction) -> Bool {
 
 test reference_validator_reclaim_succeeds_after_grace_period() {
   validate(normal_reclaim_transaction(shutdown_grace_period_end, True))
+}
+
+test reference_validator_reclaim_allows_other_registered_ports_after_drain() {
+  let datum = shutdown_host_state_datum(shutdown_grace_period_end)
+  validate(
+    normal_reclaim_with_control(
+      HostStateControl {
+        ..datum.control,
+        port_registry: [Pair("custom", test_registration())],
+      },
+    ),
+  )
+}
+
+test reference_validator_reclaim_fails_with_live_client() fail {
+  let datum = shutdown_host_state_datum(shutdown_grace_period_end)
+  validate(
+    normal_reclaim_with_control(
+      HostStateControl { ..datum.control, live_clients: 1 },
+    ),
+  )
+}
+
+test reference_validator_reclaim_fails_with_live_connection() fail {
+  let datum = shutdown_host_state_datum(shutdown_grace_period_end)
+  validate(
+    normal_reclaim_with_control(
+      HostStateControl { ..datum.control, live_connections: 1 },
+    ),
+  )
+}
+
+test reference_validator_reclaim_fails_with_live_channel() fail {
+  let datum = shutdown_host_state_datum(shutdown_grace_period_end)
+  validate(
+    normal_reclaim_with_control(
+      HostStateControl { ..datum.control, live_channels: 1 },
+    ),
+  )
+}
+
+test reference_validator_reclaim_fails_before_transfer_root_is_drained() fail {
+  let datum = shutdown_host_state_datum(shutdown_grace_period_end)
+  validate(
+    normal_reclaim_with_control(
+      HostStateControl {
+        ..datum.control,
+        port_registry: [Pair("transfer", test_registration())],
+      },
+    ),
+  )
 }
 
 test reference_validator_reclaim_fails_before_grace_period() fail {
