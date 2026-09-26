@@ -65,8 +65,6 @@ const proofSpecs = [[33n, 4n, 12n], [32n, 1n, 1n]].map(([size, min, max]) =>
 );
 const consensus = (time: bigint) =>
   new Constr(0, [time, "22".repeat(32), new Constr(0, ["33".repeat(32)])]);
-const consensusKey = (n: bigint, revision = 0n) =>
-  `clients/07-tendermint-0/consensusStates/${revision}-${n}`;
 
 async function fixture(
   historyCount: number,
@@ -1048,7 +1046,10 @@ async function fixture(
         );
         for await (const entry of recovered.records()) {
           rebuilt.set(
-            consensusKey(entry.record.height.revisionHeight, entry.record.height.revisionNumber),
+            consensusKey(
+              entry.record.height.revisionHeight,
+              entry.record.height.revisionNumber,
+            ),
             entry.consensusValue,
           );
         }
@@ -1128,7 +1129,10 @@ async function fixture(
         );
         for await (const entry of recovered.records()) {
           tree.set(
-            consensusKey(entry.record.height.revisionHeight, entry.record.height.revisionNumber),
+            consensusKey(
+              entry.record.height.revisionHeight,
+              entry.record.height.revisionNumber,
+            ),
             entry.consensusValue,
           );
         }
