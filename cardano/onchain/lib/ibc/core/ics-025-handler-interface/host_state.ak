@@ -363,14 +363,10 @@ pub fn validate_claim_backup(
   new: HostStateDatum,
   backup_operator: VerificationKeyHash,
 ) -> Bool {
-  and {
-    bytearray.length(backup_operator) == 28,
-    old.deployer != backup_operator,
-    new == HostStateDatum {
-      ..old,
-      state: HostState { ..old.state, version: old.state.version + 1 },
-      deployer: backup_operator,
-    },
+  new == HostStateDatum {
+    ..old,
+    state: HostState { ..old.state, version: old.state.version + 1 },
+    deployer: backup_operator,
   }
 }
 

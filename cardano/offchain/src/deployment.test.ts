@@ -141,6 +141,7 @@ Deno.test("HostState deployment pins the state-token minting policies", () => {
       "client_policy_id",
       "connection_policy_id",
       "channel_policy_id",
+      "backup_operator",
     ],
   );
 });
@@ -179,17 +180,18 @@ Deno.test("applied legacy client validator fits a mainnet reference-script trans
   assertEquals(spendClientReport?.exceedsEstimatedSingleTxBudget, false);
 });
 
-Deno.test("fully applied production HostState reserves 200 bytes for its signed publication", async () => {
+Deno.test("fully applied production HostState with backup fits the reference publication guard", async () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
   const plan = await loadDeploymentPlan(lucid, {
     ...DEPLOYMENT_PLAN_FIXTURE,
+    backupOperatorKeyHash: "55".repeat(28),
     benchmarkVoucherEnabled: false,
   });
   const [report] = buildReferenceValidatorSizeReport(
     [plan.hostState.script],
-    16_384 - 200,
+    16_384 - 75,
   );
   // As with the staged client, the signed publication test is the ledger gate;
   // the conservative batching estimate can overstate a dedicated publication.

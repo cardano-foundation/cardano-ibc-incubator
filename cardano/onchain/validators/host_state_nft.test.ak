@@ -156,6 +156,32 @@ test host_state_nft_mints_once_from_nonce() {
   )
 }
 
+test host_state_nft_rejects_second_mint_without_nonce() fail {
+  host_state_nft.host_state_nft.mint(
+    test_nonce_ref(),
+    MintInitial,
+    test_policy_id(),
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [test_host_input()],
+      mint: from_asset(test_policy_id(), host_state_token_name, 1),
+    },
+  )
+}
+
+test host_state_nft_rejects_duplicate_initial_quantity() fail {
+  host_state_nft.host_state_nft.mint(
+    test_nonce_ref(),
+    MintInitial,
+    test_policy_id(),
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [test_nonce_input()],
+      mint: from_asset(test_policy_id(), host_state_token_name, 2),
+    },
+  )
+}
+
 test host_state_nft_burns_exact_token() {
   validate_final_burn(
     from_asset(test_policy_id(), host_state_token_name, -1),
