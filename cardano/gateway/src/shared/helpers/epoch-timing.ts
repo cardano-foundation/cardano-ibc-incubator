@@ -1,4 +1,4 @@
-export type EpochTiming = {
+type EpochTiming = {
   firstEpochSlot: bigint;
   epochLengthSlots: bigint;
   slotLengthMs: number;

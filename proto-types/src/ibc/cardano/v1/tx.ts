@@ -33,7 +33,9 @@ export interface BuildHostStateHeartbeatResponse {
    * unsigned Cardano transaction CBOR encoded as UTF-8 hex.
    */
   unsigned_tx?: Any;
-  /** Suggested delay until Hermes checks again. */
+  /**
+   * Suggested delay until the next check. Hermes retries failed attempts sooner.
+   */
   next_check_delay_ms: bigint;
 }
 /**
@@ -318,7 +320,8 @@ export const BuildHostStateHeartbeatResponse = {
     if (isSet(object.current_epoch)) obj.current_epoch = BigInt(object.current_epoch.toString());
     if (isSet(object.host_state_epoch)) obj.host_state_epoch = BigInt(object.host_state_epoch.toString());
     if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
-    if (isSet(object.next_check_delay_ms)) obj.next_check_delay_ms = BigInt(object.next_check_delay_ms.toString());
+    if (isSet(object.next_check_delay_ms))
+      obj.next_check_delay_ms = BigInt(object.next_check_delay_ms.toString());
     return obj;
   },
   toJSON(message: BuildHostStateHeartbeatResponse): unknown {
