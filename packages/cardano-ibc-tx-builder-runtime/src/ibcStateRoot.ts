@@ -680,7 +680,7 @@ export class IbcTreeStateStore {
             !/^(?:[0-9a-f]{2})+$/.test(consensusValue)) {
             throw new Error(`Invalid recovered consensus record for '${clientId}'`);
           }
-          const path = `clients/${clientId}/consensusStates/${record.height.revisionHeight}`;
+          const path = `clients/${clientId}/consensusStates/${record.height.revisionNumber}-${record.height.revisionHeight}`;
           if (consensusPaths.has(path)) throw new Error(`Duplicate consensus state path '${path}' during tree rebuild`);
           tree.set(path, Buffer.from(consensusValue, 'hex'));
           consensusPaths.add(path);
@@ -695,7 +695,7 @@ export class IbcTreeStateStore {
 
       for (const [heightKey, consensusState] of entries) {
         const heightStr = typeof heightKey === 'object' && heightKey !== null
-          ? `${(heightKey as { revisionHeight?: bigint | number }).revisionHeight || 0}`
+          ? `${(heightKey as { revisionNumber?: bigint | number }).revisionNumber || 0}-${(heightKey as { revisionHeight?: bigint | number }).revisionHeight || 0}`
           : String(heightKey);
         const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
         if (consensusPaths.has(consensusPath)) {
