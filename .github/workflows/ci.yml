@@ -581,6 +581,10 @@ jobs:
         working-directory: cardano/offchain
         run: deno task test:consensus-history-index
 
+      - name: Test recovery escrow observations
+        working-directory: cardano/offchain
+        run: deno task test:recovery-escrow
+
   deno-funds:
     name: Cardano Compiled Funds (${{ matrix.suite }})
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
