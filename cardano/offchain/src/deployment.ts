@@ -325,6 +325,8 @@ export const createDeployment = async (
   requireHistoryStart(historyStart, networkMagic);
   const walletAddress = await lucid.wallet().address();
   const deployerPaymentKeyHash = getPaymentCredentialHash(walletAddress);
+  const backupOperatorKeyHash = Deno.env.get("DEPLOYER_BACKUP_PAYMENT_KEY_HASH")
+    ?.trim();
   const deploymentReportEnabled = mode !== undefined && mode != EMULATOR_ENV;
   const deploymentWalletAddress = deploymentReportEnabled
     ? walletAddress
@@ -368,6 +370,7 @@ export const createDeployment = async (
         nonces[2 + TRACE_REGISTRY_SHARD_COUNT],
       ),
       deployerPaymentKeyHash,
+      backupOperatorKeyHash,
       benchmarkVoucherEnabled: Deno.env.get("CARDANO_NETWORK_MAGIC") === "42",
     });
     assertDeploymentReferenceValidatorsFit(
@@ -738,6 +741,7 @@ export const createDeployment = async (
   const deployedAt = new Date().toISOString();
 
   const deploymentInfo: DeploymentTemplate = {
+    backupOperatorKeyHash: backupOperatorKeyHash?.toLowerCase() || undefined,
     clientRegistrations: plan.clientRegistrations,
     deployedAt,
     consensusHistoryFormat: "proof-backed-v1",

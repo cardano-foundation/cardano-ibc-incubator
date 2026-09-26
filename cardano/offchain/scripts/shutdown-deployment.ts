@@ -45,6 +45,7 @@ import {
 
 type Command =
   | "status"
+  | "claim-backup"
   | "enter"
   | "reclaim-state"
   | "reclaim-reference-scripts"
@@ -553,6 +554,7 @@ function usage(): never {
     [
       "Usage:",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts status [--handler-json <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts claim-backup [--handler-json <path>]",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts enter (--grace-period-ms <ms> | --grace-period-end <unix-ms>) [--handler-json <path>]",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-state [--batch-size <n>] [--handler-json <path>]",
       "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-reference-scripts [--batch-size <n>] [--handler-json <path>]",
@@ -578,6 +580,7 @@ function parseArgs(argv: string[]): ScriptArgs {
   const command = argv[0] as Command | undefined;
   if (
     command !== "status" &&
+    command !== "claim-backup" &&
     command !== "enter" &&
     command !== "reclaim-state" &&
     command !== "reclaim-reference-scripts" &&
@@ -957,6 +960,8 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
     hostState: {
       unit: hostStateUnit(deployment),
       utxo: `${hostUtxo.txHash}#${hostUtxo.outputIndex}`,
+      deployer: hostDatum.deployer,
+      backupOperator: deployment.backupOperatorKeyHash ?? null,
       shutdown: hostDatum.control.shutdown,
     },
     state: (await scanDeploymentState(lucid, deployment)).map((group) => ({
@@ -973,6 +978,56 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
       liveUtxos: referenceScriptUtxos.length,
     },
   }));
+}
+
+export async function claimBackup(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+) {
+  const backupOperator = deployment.backupOperatorKeyHash;
+  if (!backupOperator) {
+    throw new Error("This deployment did not name a backup operator");
+  }
+  const signerKeyHash = deployerPaymentKeyHash(await lucid.wallet().address());
+  if (signerKeyHash.toLowerCase() !== backupOperator.toLowerCase()) {
+    throw new Error("The selected wallet is not the named backup operator");
+  }
+  const hostUtxo = await getHostStateUtxo(lucid, deployment);
+  const currentDatum = decodeHostStateDatum(hostUtxo);
+  if (currentDatum.deployer.toLowerCase() === signerKeyHash.toLowerCase()) {
+    throw new Error("The backup operator is already the deployer");
+  }
+  const updatedDatum: HostStateDatumType = {
+    ...currentDatum,
+    deployer: signerKeyHash,
+    state: {
+      ...currentDatum.state,
+      version: currentDatum.state.version + 1n,
+    },
+  };
+  const hostStateSttReferenceUtxo = await refreshUtxoByRef(
+    lucid,
+    normalizeUtxo(deployment.validators.hostStateStt.refUtxo),
+  );
+  const txHash = await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .readFrom([hostStateSttReferenceUtxo])
+        .collectFrom([hostUtxo], Data.to("ClaimBackup", HostStateRedeemer))
+        .pay.ToContract(
+          deployment.validators.hostStateStt.address,
+          {
+            kind: "inline",
+            value: Data.to(updatedDatum, HostStateDatum, { canonical: true }),
+          },
+          hostUtxo.assets,
+        )
+        .addSignerKey(signerKeyHash),
+    lucid,
+    "ClaimDeployerBackup",
+  );
+  console.log(toJson({ txHash, deployer: signerKeyHash }));
 }
 
 export async function enterShutdown(
@@ -1362,6 +1417,9 @@ async function main() {
   switch (args.command) {
     case "status":
       await status(lucid, deployment);
+      break;
+    case "claim-backup":
+      await claimBackup(lucid, deployment);
       break;
     case "enter": {
       await enterShutdown(lucid, deployment, args);

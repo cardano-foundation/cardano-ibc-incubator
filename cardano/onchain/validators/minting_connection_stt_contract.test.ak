@@ -442,6 +442,7 @@ fn run_conn_open_try_transition(
           fixture.client_minting_policy_id,
           fixture.connection_minting_policy_id,
           "unused channel minting policy",
+          "",
           None,
           fixture.host_redeemer,
           fixture.host_input.output_reference,

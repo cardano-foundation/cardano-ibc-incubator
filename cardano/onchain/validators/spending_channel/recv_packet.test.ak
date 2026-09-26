@@ -710,6 +710,7 @@ fn check_recv_packet_with_proof(
         mock_data.client_minting_policy_id,
         mock_data.connection_minting_policy_id,
         mock_data.channel_minting_policy_id,
+        "",
         None,
         host_state_redeemer,
         host_input.output_reference,

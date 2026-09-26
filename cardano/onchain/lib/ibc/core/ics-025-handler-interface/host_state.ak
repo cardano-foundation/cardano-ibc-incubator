@@ -356,6 +356,24 @@ pub fn validate_heartbeat(old: HostStateDatum, new: HostStateDatum) -> Bool {
   }
 }
 
+/// Transfer authority only to the backup fixed in the deployed validator.
+/// The IBC root and every other HostState field remain unchanged.
+pub fn validate_claim_backup(
+  old: HostStateDatum,
+  new: HostStateDatum,
+  backup_operator: VerificationKeyHash,
+) -> Bool {
+  and {
+    bytearray.length(backup_operator) == 28,
+    old.deployer != backup_operator,
+    new == HostStateDatum {
+      ..old,
+      state: HostState { ..old.state, version: old.state.version + 1 },
+      deployer: backup_operator,
+    },
+  }
+}
+
 pub fn validate_retire_state(
   old: HostStateDatum,
   new: HostStateDatum,

@@ -75,4 +75,7 @@ pub type HostStateRedeemer {
   // authorization required by FinalizeShutdown.
   AuthorizeFinalization
   RetireState { kind: Int, token_name: ByteArray }
+  // The single backup named in the deployed HostState script may claim the
+  // deployer role. No replacement key is supplied by the transaction.
+  ClaimBackup
 }

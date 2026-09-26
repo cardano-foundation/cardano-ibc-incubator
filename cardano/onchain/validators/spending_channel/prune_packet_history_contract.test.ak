@@ -524,6 +524,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       mock.client_minting_policy_id,
       mock.connection_minting_policy_id,
       mock.channel_minting_policy_id,
+      "",
       None,
       host_redeemer,
       host_input.output_reference,

@@ -963,6 +963,7 @@ type Module = "transfer" | "mock" | "icq";
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
+  backupOperatorKeyHash?: string;
   clientRegistrations?: import("./client-registry.ts").ClientRegistration[];
   history:
     import("../../../packages/cardano-ibc-tx-builder-runtime/src/historyBootstrap.ts").HistoryBootstrap;

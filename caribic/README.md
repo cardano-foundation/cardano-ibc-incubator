@@ -365,6 +365,7 @@ caribic yaci-checkpoint --network preprod --write-env
 
 ```bash
 export DEPLOYER_SK=$(cat ~/.caribic/preprod-deployer.sk)   # or your own funded preprod signing key
+# Optional: set DEPLOYER_BACKUP_PAYMENT_KEY_HASH to a different 56-character payment key hash before first deployment.
 caribic start --network preprod
 ```
 
@@ -375,6 +376,12 @@ caribic health-check
 ```
 
 A successful deploy is cached via the artifacts in `manifests/preprod/`; set `CARIBIC_FORCE_PREPROD_DEPLOY=1` to force a redeploy.
+
+The backup hash is baked into the deployed HostState validator. It cannot be
+added or changed later. The named backup wallet can take over at any time by
+setting `DEPLOYER_SK` to its signing key and running
+`cardano/offchain/scripts/shutdown-deployment.ts claim-backup` using the
+deployment's `handler.json`.
 
 ### 5. Add the Injective testnet relayer key
 

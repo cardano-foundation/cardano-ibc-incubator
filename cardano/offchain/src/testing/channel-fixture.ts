@@ -321,6 +321,7 @@ export async function channelFixture(
       clientPolicy,
       connectionPolicy,
       channelPolicy,
+      "",
     ],
   );
   const channelToken = record(
