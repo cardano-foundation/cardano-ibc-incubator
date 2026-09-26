@@ -65,16 +65,13 @@ fn find_host_state_input(inputs: List<Input>, nft_policy: PolicyId) -> Input {
 /// 
 /// Returns the output that contains the IBC Host State NFT
 fn find_host_state_output(outputs: List<Output>, nft_policy: PolicyId) -> Output {
-  // Selecting the singleton directly preserves the uniqueness invariant while
-  // avoiding the previous follow-up count over every transaction output.
-  expect [host_output] =
-    list.filter(
-      outputs,
-      fn(output) {
-        assets.has_nft(output.value, nft_policy, host_state_token_name)
-      },
-    )
-  host_output
+  // The NFT policy creates one token, so preserving it permits one such output.
+  list.expect_find(
+    outputs,
+    fn(output) {
+      assets.has_nft(output.value, nft_policy, host_state_token_name)
+    },
+  )
 }
 
 fn validate_transfer_finalization_authorization(

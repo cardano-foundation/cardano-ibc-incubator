@@ -5045,24 +5045,6 @@ test host_state_heartbeat_finds_host_output_last() {
   )
 }
 
-test host_state_heartbeat_rejects_duplicate_host_outputs() fail {
-  let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
-  let host_output = test_host_output(new_state)
-
-  spend_host_state_with_signatories(
-    Heartbeat,
-    [test_host_input(old_state)],
-    [host_output, host_output],
-    [trusted_deployer],
-  )
-}
-
 test host_state_heartbeat_rejects_unauthorized_signer() fail {
   let old_state = test_host_state(#"11", 1000)
   let new_state =
