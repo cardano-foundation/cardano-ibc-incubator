@@ -228,7 +228,7 @@ export async function deploymentScenario() {
         );
         const clientKey = `clients/07-tendermint-${sequence}/clientState`;
         const consensusKey =
-          `clients/07-tendermint-${sequence}/consensusStates/${height}`;
+          `clients/07-tendermint-${sequence}/consensusStates/1-${height}`;
         const client_state_siblings = await tree.getSiblings(clientKey);
         tree.set(clientKey, encode(client));
         const consensus_state_siblings = await tree.getSiblings(consensusKey);
