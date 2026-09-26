@@ -158,9 +158,9 @@ Chain history comes from Yaci Store on every network. Yaci Store is an indexer r
 
 ![Yaci Store following a Cardano node, writing blocks into Postgres tables, and the Gateway querying those tables with SQL](docs/assets/mechanics/yaci-store.gif)
 
-IBC state on Cardano lives in one 64-level Merkle tree whose root sits in the HostState datum. The Gateway rebuilds the tree from Yaci history to produce ICS-23 proofs, and the light client checks them against the root it accepted from a header.
+All of the bridge's IBC state lives in one Merkle tree whose root sits in the HostState datum. Cardano validators check every update to that root, the light client carries it to Cosmos in an authenticated header, and each record is then proven against it with an ICS-23 membership proof. No step relies on trusting the Gateway or Hermes.
 
-![A leaf's Merkle path proven against the HostState root on the Cosmos side](docs/assets/mechanics/membership-proof.gif)
+![A root update enforced by the HostState validator, authenticated by the light client, and used to prove a single record](docs/assets/mechanics/ibc-state-root.gif)
 
 Additional architecture diagrams:
 
