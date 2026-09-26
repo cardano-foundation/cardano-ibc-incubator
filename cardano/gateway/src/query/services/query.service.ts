@@ -969,7 +969,7 @@ export class QueryService {
       ) continue;
       const key = consensusHeightKey(record.height);
       if (requestedKey && key !== requestedKey) continue;
-      const pathHeight = record.height.revisionHeight.toString();
+      const pathHeight = `${record.height.revisionNumber}-${record.height.revisionHeight}`;
       const path = `clients/07-tendermint-${clientId}/consensusStates/${pathHeight}`;
       const committedValue = proofContext.tree.get(path);
       if (!committedValue || committedValue.length === 0) {
@@ -1223,7 +1223,7 @@ export class QueryService {
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
     // Generate ICS-23 proof from the IBC state tree.
-    const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${record.height.revisionHeight}`;
+    const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${record.height.revisionNumber}-${record.height.revisionHeight}`;
 
     await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     const tree = proofContext.tree;

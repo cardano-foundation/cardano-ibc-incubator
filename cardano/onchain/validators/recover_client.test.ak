@@ -547,13 +547,13 @@ fn run_atomic_recovery_with_validation(
   let recovered = expected_recovered(subject, substitute)
   let subject_client_key = client_keys.full_client_state_path("07-tendermint-0")
   let subject_old_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "10")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "1-10")
   let subject_new_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "20")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "1-20")
   let substitute_client_key =
     client_keys.full_client_state_path("07-tendermint-1")
   let substitute_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-1", "20")
+    client_keys.full_client_consensus_state_path("07-tendermint-1", "1-20")
   expect Some(subject_old_consensus) =
     pairs.get_first(subject.state.consensus_states, height(10))
   expect Some(subject_new_consensus) =
@@ -832,7 +832,7 @@ fn run_atomic_staged_freeze(correct_root: Bool, verify_validators: Bool) -> Bool
     }
   let client_key = client_keys.full_client_state_path("07-tendermint-0")
   let consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "10")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "1-10")
   expect [Pair(_, trusted)] = subject.state.consensus_states
   let old_entries =
     [

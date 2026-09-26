@@ -1287,7 +1287,7 @@ test host_create_client_rejects_counterfeit_client_policy() fail {
   let client_state_siblings = full_empty_siblings()
   let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
   let consensus_state_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "0-1")
   let client_state_value = cbor.serialise(client_datum.state.client_state)
   let root_after_client_state =
     ibc_state_commitment.apply_update(
@@ -1335,7 +1335,7 @@ test host_create_client_rejects_datum_token_missing_from_output() fail {
   let client_state_siblings = full_empty_siblings()
   let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
   let consensus_state_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "0-1")
   let client_state_value = cbor.serialise(client_datum.state.client_state)
   let root_after_client_state =
     ibc_state_commitment.apply_update(
@@ -1510,9 +1510,9 @@ fn prepare_host_update_client_capacity() -> Pair<HostStateRedeemer, Transaction>
     test_updated_client_datum_with_consensus_insert(seed)
   let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
   let old_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "0-1")
   let new_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "2")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "0-2")
   let old_client_state_value =
     cbor.serialise(input_client_datum.state.client_state)
   let new_client_state_value =
@@ -5407,7 +5407,7 @@ fn create_registered_client(
   let client = ClientDatum { ..test_client_datum(1, seed), token }
   let state_key = client_keys.full_client_state_path(commitment_id)
   let consensus_key =
-    client_keys.full_client_consensus_state_path(commitment_id, "1")
+    client_keys.full_client_consensus_state_path(commitment_id, "0-1")
   let state_value = cbor.serialise(client.state.client_state)
   let client_state_siblings = full_empty_siblings()
   let after_client =

@@ -1924,7 +1924,7 @@ export class TendermintClientService {
     const ibcClientId = `07-tendermint-${updateClientOperator.clientId}`;
 
     const addedConsensusState = {
-      height: newHeight.revisionHeight.toString(),
+      height: `${newHeight.revisionNumber}-${newHeight.revisionHeight}`,
       value: Buffer.from(await encodeConsensusStateValue(newConsState, this.lucidService.LucidImporter), 'hex'),
     };
 
@@ -2066,7 +2066,7 @@ export class TendermintClientService {
       'hex',
     );
     const addedConsensusState = {
-      height: recoveryState.height.revisionHeight.toString(),
+      height: `${recoveryState.height.revisionNumber}-${recoveryState.height.revisionHeight}`,
       value: Buffer.from(
         await encodeConsensusStateValue(recoveryState.consensusState, this.lucidService.LucidImporter),
         'hex',
@@ -2188,7 +2188,7 @@ export class TendermintClientService {
     // This is essential for proof generation - without the consensus state in the tree,
     // queries for proofs will fail with "key not found".
     const clientId = `07-tendermint-${hostStateDatum.state.next_client_sequence}`;
-    const consensusHeight = clientState.latestHeight.revisionHeight;
+    const consensusHeight = `${clientState.latestHeight.revisionNumber}-${clientState.latestHeight.revisionHeight}`;
 
     // Encode the exact bytes that the on-chain validator commits to the root.
     // These bytes must match Aiken's `cbor.serialise(...)` output.

@@ -330,7 +330,7 @@ func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
 		return nil, fmt.Errorf("empty MerklePath")
 	}
 	key := string(mpath.KeyPath[len(mpath.KeyPath)-1])
-	return []byte(normalizeConsensusKeyForCardano(key)), nil
+	return []byte(key), nil
 }
 
 func verifyDelayPeriodPassed(ctx sdk.Context, clientStore storetypes.KVStore, height exported.Height, delayTimePeriod, delayBlockPeriod uint64) error {

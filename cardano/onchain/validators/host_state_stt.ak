@@ -283,8 +283,7 @@ fn validate_create_client_root(
 
   // The initial consensus state is stored at the client's latest height.
   let latest_height = client_datum.latest_height
-  let consensus_height =
-    string_utils.int_to_string(latest_height.revision_height)
+  let consensus_height = height.to_string(latest_height)
   let consensus_state_key =
     client_keys.full_client_consensus_state_path(client_id, consensus_height)
 
@@ -400,7 +399,7 @@ fn validate_update_client_root(
         after_client,
         client_keys.full_client_consensus_state_path(
           client_id,
-          string_utils.int_to_string(new_height.revision_height),
+          height.to_string(new_height),
         ),
         "",
         cbor.serialise(new_consensus),

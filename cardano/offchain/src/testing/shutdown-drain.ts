@@ -207,7 +207,7 @@ export async function checkShutdownDrain(
     }
     tree.set("clients/07-tendermint-0/clientState", encode(client.client));
     tree.set(
-      "clients/07-tendermint-0/consensusStates/10",
+      "clients/07-tendermint-0/consensusStates/1-10",
       encode(client.consensus),
     );
     tree.set("connections/connection-0", encode(connection));

@@ -38,6 +38,7 @@ const sharedSourceFiles = [
   "proposal_handle_test.go",
   "stake_bps_test.go",
   "store.go",
+  "store_revision_test.go",
   "time_validation.go",
   "time_validation_test.go",
   "update.go",
@@ -90,7 +91,11 @@ function normalizeCommon(content) {
 }
 
 function normalizeGo(filePath) {
-  return normalizeCommon(read(filePath)).replace(
+  // v10 represents Merkle path components as bytes instead of strings.
+  return normalizeCommon(read(filePath)).replaceAll(
+    'commitmenttypes.NewMerklePath([]byte("ibc"), []byte(path))',
+    'commitmenttypes.NewMerklePath("ibc", path)',
+  ).replace(
     /var fileDescriptor_[A-Za-z0-9_]+ = \[\]byte\{[\s\S]*?\n}\n/g,
     "var fileDescriptor_<NORMALIZED> = []byte{\n}\n",
   );
