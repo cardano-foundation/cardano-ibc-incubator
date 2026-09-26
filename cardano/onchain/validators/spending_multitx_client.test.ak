@@ -73,6 +73,7 @@ fn verify_client(
       expect Some(datum) = client
       recover_client.recover_client.withdraw(
         host_policy,
+        #"",
         CheckStagedClientHistory { subject_token: datum.token },
         credential,
         tx,
@@ -154,6 +155,7 @@ fn client_input_datum(client_token: AuthToken) -> ClientDatum {
     token: client_token,
     state: ClientDatumState {
       client_state: ClientState {
+        upgrade_path: [],
         chain_id: "chain-0",
         trust_level: unchecked_rational.new(1, 3),
         trusting_period: 10_000_000_000,

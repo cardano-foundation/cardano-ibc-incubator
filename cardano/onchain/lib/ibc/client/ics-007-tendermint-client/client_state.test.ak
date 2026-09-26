@@ -334,6 +334,7 @@ test test_get_latest_height() {
 
   let cs =
     ClientState {
+      upgrade_path: [],
       chain_id: "cosmoshub",
       trust_level,
       trusting_period: 1000,
@@ -364,6 +365,7 @@ test new_client_state() {
   // Creating the client state using the defined parameters
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id,
       trust_level,
       trusting_period,
@@ -406,6 +408,7 @@ test test_is_expired() {
   // Creating the client state using the defined parameters
   let mock_client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "cosmoshub",
       trust_level,
       trusting_period: 0,
@@ -474,6 +477,7 @@ test status() {
       // Frozen - Frozen height of the client state is non-zero
       (
         ClientState {
+          upgrade_path: [],
           chain_id,
           trust_level,
           trusting_period,
@@ -499,6 +503,7 @@ test status() {
       // Expired when consensus state is not found
       (
         ClientState {
+          upgrade_path: [],
           chain_id,
           trust_level,
           trusting_period,
@@ -515,6 +520,7 @@ test status() {
       // Expired when consensus state time + trusting period <= now
       (
         ClientState {
+          upgrade_path: [],
           chain_id,
           trust_level,
           trusting_period,
@@ -540,6 +546,7 @@ test status() {
       //Active consensus state time + trusting period > now
       (
         ClientState {
+          upgrade_path: [],
           chain_id,
           trust_level,
           trusting_period,

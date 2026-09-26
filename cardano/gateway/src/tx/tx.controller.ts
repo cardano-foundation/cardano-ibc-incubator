@@ -3,6 +3,8 @@ import { GrpcMethod } from '@nestjs/microservices';
 import {
   MsgCreateClientResponse,
   MsgCreateClient,
+  MsgUpgradeClient,
+  MsgUpgradeClientResponse,
   MsgRecoverClient,
   MsgRecoverClientResponse,
   MsgUpdateClient,
@@ -77,6 +79,11 @@ export class TxController {
     const response: MsgUpdateClientResponse = await this.clientService.updateClient(data);
     return response;
   }
+  @GrpcMethod('Msg', 'UpgradeClient')
+  async UpgradeClient(data: MsgUpgradeClient): Promise<MsgUpgradeClientResponse> {
+    return this.clientService.upgradeClient(data);
+  }
+
   @GrpcMethod('Msg', 'RecoverClient')
   async RecoverClient(data: MsgRecoverClient): Promise<MsgRecoverClientResponse> {
     return this.clientService.recoverClient(data);

@@ -159,6 +159,7 @@ async function decodeClientDatum(encoded, Lucid) {
         frozenHeight: HeightSchema,
         latestHeight: HeightSchema,
         proofSpecs: Data.Array(ProofSpecSchema),
+        upgradePath: Data.Array(Data.Bytes()),
     });
     const MerkleRootSchema = Data.Object({
         hash: Data.Bytes(),

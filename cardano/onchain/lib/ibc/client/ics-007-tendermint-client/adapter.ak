@@ -60,11 +60,12 @@ type CommitmentClientState {
   frozen_height: Data,
   latest_height: Height,
   proof_specs: Data,
+  upgrade_path: Data,
 }
 
 /// Used only after the factory or client spend authenticates the transition.
 /// HostState commits the exact payload bytes. Decode only its envelope and tip
-/// here, keeping proof specifications opaque. The registered
+/// here, keeping proof specifications and upgrade paths opaque. The registered
 /// client validator validates their contents in the same transaction.
 pub fn commitment_view(datum: Data) -> ClientView {
   expect client: CommitmentDatum = datum

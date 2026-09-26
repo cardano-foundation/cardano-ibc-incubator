@@ -564,6 +564,7 @@ function loadMaximumIcs20Packet(): {
 const MAXIMUM_ICS20_PACKET = loadMaximumIcs20Packet();
 
 const CLIENT_STATE = {
+  upgradePath: [],
   chainId: '6f736d6f7369732d31',
   trustLevel: { numerator: 1n, denominator: 3n },
   trustingPeriod: 120n,

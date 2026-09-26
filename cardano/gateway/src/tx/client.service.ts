@@ -2,6 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   MsgCreateClient,
   MsgCreateClientResponse,
+  MsgUpgradeClient,
+  MsgUpgradeClientResponse,
   MsgRecoverClient,
   MsgRecoverClientResponse,
   MsgUpdateClient,
@@ -57,6 +59,15 @@ export class ClientService {
       throw new GrpcInvalidArgumentException(`Unsupported client message for ${handler.clientType}`);
     }
     return handler.service.updateClient(request);
+  }
+
+  async upgradeClient(request: MsgUpgradeClient): Promise<MsgUpgradeClientResponse> {
+    const handler = this.forClientId(request.client_id);
+    if (!handler.service.upgradeClient || request.client_state?.type_url !== handler.clientStateTypeUrl ||
+        request.consensus_state?.type_url !== handler.consensusStateTypeUrl) {
+      throw new GrpcInvalidArgumentException('Unsupported client upgrade or mismatched state types');
+    }
+    return handler.service.upgradeClient(request);
   }
 
   async recoverClient(request: MsgRecoverClient): Promise<MsgRecoverClientResponse> {

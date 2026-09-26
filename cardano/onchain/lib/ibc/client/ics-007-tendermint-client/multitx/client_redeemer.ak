@@ -25,4 +25,5 @@ pub type SpendMultitxClientRedeemer {
   }
   /// Deployment shutdown only; authorization and refunds are enforced by the state-token policy.
   ReclaimClient
+  UpgradeClient
 }

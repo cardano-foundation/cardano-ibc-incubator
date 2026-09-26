@@ -1,6 +1,6 @@
 import { AuthToken } from './auth-token';
 
-export type RecoverClientWithdrawalRedeemer = {
+export type RecoverClientWithdrawalRedeemer = { UpgradeClientWithdrawal: { subject_token: AuthToken } } | {
   RecoverClientWithdrawal: {
     subject_token: AuthToken;
     substitute_token: AuthToken;
@@ -29,6 +29,7 @@ export function encodeRecoverClientWithdrawalRedeemer(
     Data.Literal('ReclaimStateWithdrawal'),
     Data.Object({ ReclaimTransferWithdrawal: Data.Object({ port_unit: Data.Bytes(), module_unit: Data.Bytes(), escrow_policy: Data.Bytes() }) }),
     Data.Object({ CheckStagedClientHistory: Data.Object({ subject_token: AuthTokenSchema }) }),
+    Data.Object({ UpgradeClientWithdrawal: Data.Object({ subject_token: AuthTokenSchema }) }),
   ]);
   return Data.to(redeemer, RedeemerSchema as unknown as RecoverClientWithdrawalRedeemer, { canonical: true });
 }

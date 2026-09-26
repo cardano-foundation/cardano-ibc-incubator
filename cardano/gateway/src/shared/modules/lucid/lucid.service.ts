@@ -1150,6 +1150,17 @@ export class LucidService implements OnModuleInit {
     return tx;
   }
 
+  public createUnsignedUpgradeClientTransaction(
+    host: UTxO, hostRedeemer: string, client: UTxO, clientRedeemer: string,
+    hostDatum: string, clientDatum: string, tokenUnit: string, address: string,
+    withdrawal: string, proofRedeemer: string,
+  ): TxBuilder {
+    const proof = this.configService.get('deployment').validators.verifyProof;
+    return this.createUnsignedUpdateClientTransaction(
+      host, hostRedeemer, client, clientRedeemer, hostDatum, clientDatum, tokenUnit, address, withdrawal,
+    ).readFrom([this.referenceScripts.verifyProof]).mintAssets({ [proof.scriptHash]: 1n }, proofRedeemer);
+  }
+
   public createUnsignedTendermintSessionTransaction(
     seedUtxo: UTxO,
     encodedMintSessionRedeemer: string,

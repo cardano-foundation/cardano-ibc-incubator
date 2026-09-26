@@ -855,6 +855,7 @@ fn test_consensus_state(seed: Int) -> ConsensusState {
 
 fn test_client_state(latest_height: Height) -> ClientState {
   ClientState {
+    upgrade_path: [],
     chain_id: "chain-0",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
     trusting_period: 1000,

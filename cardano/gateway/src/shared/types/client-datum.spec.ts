@@ -11,6 +11,7 @@ describe('client datum codec', () => {
       history_root: '00'.repeat(32),
       state: {
         clientState: {
+          upgradePath: [],
           chainId: Buffer.from('injective-777').toString('hex'),
           trustLevel: { numerator: 1n, denominator: 3n },
           trustingPeriod: 864000000000000n,

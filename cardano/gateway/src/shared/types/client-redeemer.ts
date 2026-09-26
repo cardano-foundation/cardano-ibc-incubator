@@ -6,6 +6,8 @@ import { ConsensusHistoryWitness, consensusHistoryWitnessSchema } from './consen
 export type MintClientRedeemer = 'MintClient';
 
 export type SpendClientRedeemer =
+  | 'UpgradeClient'
+  | 'ReclaimClient'
   | {
       UpdateClient: {
         msg: ClientMessage;
@@ -132,6 +134,8 @@ export async function encodeSpendClientRedeemer(
     Data.Object({
       RecoverClient: Data.Object({ substitute_token: AuthTokenSchema, history_siblings: Data.Array(Data.Bytes()) }),
     }),
+    Data.Literal('ReclaimClient'),
+    Data.Literal('UpgradeClient'),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;
@@ -231,6 +235,8 @@ export function decodeSpendClientRedeemer(
     Data.Object({
       RecoverClient: Data.Object({ substitute_token: AuthTokenSchema, history_siblings: Data.Array(Data.Bytes()) }),
     }),
+    Data.Literal('ReclaimClient'),
+    Data.Literal('UpgradeClient'),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;

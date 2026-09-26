@@ -86,7 +86,9 @@ message MsgUpgradeClient {
 }
 
 // MsgUpgradeClientResponse defines the Msg/UpgradeClient response type.
-message MsgUpgradeClientResponse {}
+message MsgUpgradeClientResponse {
+  google.protobuf.Any unsigned_tx = 1;
+}
 
 // MsgSubmitMisbehaviour defines an sdk.Msg type that submits Evidence for
 // light client misbehaviour.

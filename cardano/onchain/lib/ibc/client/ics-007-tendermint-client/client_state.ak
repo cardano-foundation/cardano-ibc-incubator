@@ -1,3 +1,4 @@
+use aiken/collection/list
 use aiken/collection/pairs
 use aiken/math/rational
 use aiken/option
@@ -25,6 +26,7 @@ pub type ClientState {
   frozen_height: Height,
   latest_height: Height,
   proof_specs: List<ProofSpec>,
+  upgrade_path: List<ByteArray>,
 }
 
 /// NewClientState creates a new ClientState instance
@@ -46,6 +48,7 @@ pub fn new_client_state(
     frozen_height: height.zero_height(),
     latest_height,
     proof_specs,
+    upgrade_path: [],
   }
 }
 
@@ -82,6 +85,8 @@ pub fn validate(cs: ClientState) -> Bool {
   expect cs.latest_height.revision_number == height.parse_chain_id(cs.chain_id)
   // trusting period should be < unbonding period
   expect cs.trusting_period < cs.unbonding_period
+  expect
+    list.all(cs.upgrade_path, fn(segment) { bytearray.length(segment) > 0 })
   // Proof specs are immutable client parameters, so reject malformed specs once
   // here instead of rechecking static spec validity for every packet proof.
   expect validate_specs(cs.proof_specs)
@@ -167,6 +172,8 @@ pub fn verify_membership(
   path: MerklePath,
   value: ByteArray,
 ) -> Bool {
+  // An upgrade bootstrap has no authenticated application state.
+  expect cons_state.root.hash != "sentinel_root"
   expect height.compare(get_latest_height(cs), height) != Less
   expect
     verify_delay_period_passed(
@@ -193,6 +200,8 @@ pub fn verify_non_membership(
   proof: MerkleProof,
   path: MerklePath,
 ) -> Bool {
+  // An upgrade bootstrap has no authenticated application state.
+  expect cons_state.root.hash != "sentinel_root"
   expect height.compare(get_latest_height(cs), height) != Less
   expect
     verify_delay_period_passed(

@@ -106,6 +106,7 @@ fn setup() -> MockData {
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain1-1",
       trust_level,
       trusting_period: 1209600000000000,
@@ -699,6 +700,7 @@ test try_non_mock_data() {
   let redeemer =
     VerifyMembership {
       cs: ClientState {
+        upgrade_path: [],
         chain_id: #"76657373656c6f7261636c65",
         trust_level: UncheckedRational { numerator: 1, denominator: 3 },
         trusting_period: 129600000000000,

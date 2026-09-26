@@ -131,6 +131,7 @@ fn reclaim_transfer(escrow_root: ByteArray, obligation: Int) -> Bool {
     }
   recover_client.recover_client.withdraw(
     host_policy,
+    #"",
     ReclaimTransferWithdrawal {
       port_unit: bytearray.concat(port_policy, port_name),
       module_unit: bytearray.concat(module_policy, module_name),
@@ -181,6 +182,7 @@ fn consensus(timestamp: Int, marker: ByteArray) -> ConsensusState {
 
 fn client_state(latest_height: Height, frozen_height: Height) -> ClientState {
   ClientState {
+    upgrade_path: [],
     chain_id: "chain-1",
     trust_level: unchecked_rational.new(1, 3),
     trusting_period,
@@ -440,6 +442,7 @@ fn run_recovery(
 ) -> Bool {
   recover_client.recover_client.withdraw(
     host_policy,
+    #"",
     recovery_redeemer(subject, substitute),
     address.Script(recovery_script_hash),
     recovery_transaction(
@@ -676,6 +679,7 @@ fn run_atomic_recovery_with_validation(
     expect
       recover_client.recover_client.withdraw(
         host_policy,
+        #"",
         recovery_redeemer(subject, substitute),
         address.Script(recovery_script_hash),
         transaction,
@@ -951,6 +955,7 @@ fn run_atomic_staged_freeze(correct_root: Bool, verify_validators: Bool) -> Bool
     and {
       recover_client.recover_client.withdraw(
         host_policy,
+        #"",
         history_redeemer,
         address.Script(recovery_script_hash),
         tx,
@@ -1058,6 +1063,7 @@ fn run_staged_recovery(
     ),
     recover_client.recover_client.withdraw(
       host_policy,
+      #"",
       recovery_redeemer(subject, substitute),
       address.Script(recovery_script_hash),
       tx,
@@ -1234,6 +1240,7 @@ test staged_recovery_rejects_another_substitute_in_spend() fail {
       |> staged_recovery_transaction(subject.token)
   recover_client.recover_client.withdraw(
     host_policy,
+    #"",
     recovery_redeemer(subject, substitute),
     address.Script(recovery_script_hash),
     tx,
@@ -1443,6 +1450,7 @@ fn state_value_recovery(output_ada: Int, output_reserve: Int) -> Bool {
     ),
     recover_client.recover_client.withdraw(
       host_policy,
+      #"",
       recovery_redeemer(subject, substitute),
       address.Script(recovery_script_hash),
       transaction,
@@ -1788,6 +1796,7 @@ test recovery_retains_nonempty_subject_history_not_substitute_history() {
     ),
     recover_client.recover_client.withdraw(
       host_policy,
+      #"",
       recovery_redeemer(subject, substitute),
       address.Script(recovery_script_hash),
       supported,
@@ -1878,6 +1887,7 @@ test unrelated_valid_recovery_cannot_authorize_a_real_client_spend() {
   expect
     recover_client.recover_client.withdraw(
       host_policy,
+      #"",
       recovery_redeemer(fake_subject, fake_substitute),
       address.Script(recovery_script_hash),
       tx,
