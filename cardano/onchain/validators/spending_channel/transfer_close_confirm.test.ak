@@ -439,6 +439,7 @@ test transfer_close_confirm_composed_transaction_succeeds() {
       mock.client_minting_policy_id,
       mock.connection_minting_policy_id,
       mock.channel_minting_policy_id,
+      "",
       None,
       f.host_redeemer,
       host_input.output_reference,

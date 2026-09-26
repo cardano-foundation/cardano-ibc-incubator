@@ -157,6 +157,7 @@ async function fixture(
       clientPolicyId,
       packet?.connectionPolicy ?? dummy,
       packet?.channelPolicy ?? dummy,
+      "",
     ],
   );
   const rewardAddress = validatorToRewardAddress("Preprod", recoveryScript);

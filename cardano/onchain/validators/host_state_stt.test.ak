@@ -62,9 +62,9 @@ use ibc/core/ics_025_handler_interface/host_state.{
   max_bound_ports, min_shutdown_grace_period_ms, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  AuthorizeFinalization, BindPort, CreateClient, CreateConnection, EnterShutdown,
-  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel,
-  UpdateClient, UpdateConnection,
+  AuthorizeFinalization, BindPort, ClaimBackup, CreateClient, CreateConnection,
+  EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer,
+  UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/client_registry_fixtures.{RegistryCase}
@@ -623,6 +623,16 @@ fn spend_host_state_with_signatories(
   outputs: List<Output>,
   extra_signatories: List<crypto.VerificationKeyHash>,
 ) -> Bool {
+  spend_host_state_with_backup(redeemer, inputs, outputs, extra_signatories, "")
+}
+
+fn spend_host_state_with_backup(
+  redeemer: HostStateRedeemer,
+  inputs: List<Input>,
+  outputs: List<Output>,
+  extra_signatories: List<crypto.VerificationKeyHash>,
+  backup_operator: ByteArray,
+) -> Bool {
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
     [
@@ -637,10 +647,91 @@ fn spend_host_state_with_signatories(
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    backup_operator,
     None,
     redeemer,
     test_host_ref(),
     Transaction { ..placeholder, inputs, outputs, extra_signatories },
+  )
+}
+
+const named_backup = #"99999999999999999999999999999999999999999999999999999999"
+
+fn claim_backup_as(
+  deployed_backup: ByteArray,
+  new_deployer: ByteArray,
+  signatories: List<crypto.VerificationKeyHash>,
+  change_root: Bool,
+) -> Bool {
+  let old_state = test_host_state(empty_ibc_state_root, 1)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: if change_root {
+        #"01"
+      } else {
+        old_state.ibc_state_root
+      },
+    }
+  let new_datum =
+    HostStateDatum {
+      ..test_host_state_datum(new_state, test_nft_policy()),
+      deployer: new_deployer,
+    }
+  let output =
+    Output { ..test_host_output(new_state), datum: InlineDatum(new_datum) }
+  spend_host_state_with_backup(
+    ClaimBackup,
+    [test_host_input(old_state)],
+    [output],
+    signatories,
+    deployed_backup,
+  )
+}
+
+test named_backup_can_claim_deployer_authority() {
+  claim_backup_as(named_backup, named_backup, [named_backup], False)
+}
+
+test backup_claim_rejects_missing_backup_signature() {
+  !claim_backup_as(named_backup, named_backup, [trusted_deployer], False)
+}
+
+test backup_claim_rejects_arbitrary_new_deployer() {
+  !claim_backup_as(named_backup, trusted_deployer, [named_backup], False)
+}
+
+test backup_claim_rejects_root_mutation() {
+  !claim_backup_as(named_backup, named_backup, [named_backup], True)
+}
+
+test backup_claim_rejects_deployment_without_backup() {
+  !claim_backup_as("", named_backup, [named_backup], False)
+}
+
+test old_deployer_cannot_heartbeat_after_backup_claim() {
+  let old_state = test_host_state(empty_ibc_state_root, 1)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+  let input = test_host_input(old_state)
+  let Input { output_reference: reference, output: old_output } = input
+  let old_datum =
+    HostStateDatum {
+      ..test_host_state_datum(old_state, test_nft_policy()),
+      deployer: named_backup,
+    }
+  let new_datum = HostStateDatum { ..old_datum, state: new_state }
+  !spend_host_state_with_backup(
+    Heartbeat,
+    [Input(reference, Output { ..old_output, datum: InlineDatum(old_datum) })],
+    [Output { ..test_host_output(new_state), datum: InlineDatum(new_datum) }],
+    [trusted_deployer],
+    named_backup,
   )
 }
 
@@ -666,6 +757,7 @@ fn spend_host_state_with_channel_redeemer(
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     test_host_ref(),
@@ -1561,6 +1653,7 @@ test host_update_client_capacity_minimum_history_succeeds() {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     test_host_ref(),
@@ -1725,6 +1818,7 @@ fn create_connection_thread(token: AuthToken, mint: Value) -> Bool {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     CreateConnection { connection_siblings: siblings },
     test_host_ref(),
@@ -3741,6 +3835,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     input_ref,
@@ -3837,6 +3932,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     input_ref,
@@ -3954,6 +4050,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     input_ref,
@@ -4064,6 +4161,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     input_ref,
@@ -4136,6 +4234,7 @@ test host_state_bind_port_fails_if_output_missing() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     input_ref,
@@ -4232,6 +4331,7 @@ fn validate_test_enter_shutdown(
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     input_ref,
@@ -4393,6 +4493,7 @@ fn validate_test_finalize_shutdown_with_input(
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     FinalizeShutdown,
     test_host_ref(),
@@ -4489,6 +4590,7 @@ fn validate_test_authorize_finalization(root_present: Bool) -> Bool {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     AuthorizeFinalization,
     test_host_ref(),
@@ -4539,6 +4641,7 @@ test host_state_finalize_shutdown_rejects_registered_transfer_root() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     FinalizeShutdown,
     test_host_ref(),
@@ -4721,6 +4824,7 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     host_ref,
@@ -4858,6 +4962,7 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     redeemer,
     host_ref,
@@ -5379,6 +5484,7 @@ fn create_registered_client(
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
+    "",
     None,
     CreateClient { client_state_siblings, consensus_state_siblings },
     test_host_ref(),

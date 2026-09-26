@@ -67,6 +67,7 @@ export const HostStateRedeemerSchema = Data.Enum([
       token_name: Data.Bytes(),
     }),
   }),
+  Data.Literal("ClaimBackup"),
 ]);
 
 export type HostStateRedeemer = Data.Static<typeof HostStateRedeemerSchema>;

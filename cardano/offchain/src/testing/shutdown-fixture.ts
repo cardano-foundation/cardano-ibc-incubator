@@ -244,6 +244,7 @@ export async function shutdownFixture(
     mintClientStt.scriptHash,
     mintConnectionStt.scriptHash,
     mintChannelStt.scriptHash,
+    "",
   ]);
   const now = emulator.now();
   const hostDatum = {

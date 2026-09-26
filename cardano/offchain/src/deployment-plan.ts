@@ -35,6 +35,7 @@ export type DeploymentPlanInputs = {
   transferModuleNonce: OutputReference;
   traceDirectoryNonce: OutputReference;
   deployerPaymentKeyHash: string;
+  backupOperatorKeyHash?: string;
   benchmarkVoucherEnabled: boolean;
 };
 
@@ -148,6 +149,7 @@ export const loadHostStateValidator = (
   clientMintPolicyId: string,
   connectionMintPolicyId: string,
   channelMintPolicyId: string,
+  backupOperatorKeyHash = "",
 ) =>
   readValidator(
     "host_state_stt.host_state_stt.spend",
@@ -160,6 +162,7 @@ export const loadHostStateValidator = (
       clientMintPolicyId,
       connectionMintPolicyId,
       channelMintPolicyId,
+      backupOperatorKeyHash,
     ],
   );
 
@@ -172,6 +175,17 @@ export const loadDeploymentPlan = async (
   lucid: LucidEvolution,
   inputs: DeploymentPlanInputs,
 ) => {
+  const backupOperatorKeyHash = inputs.backupOperatorKeyHash?.toLowerCase() ??
+    "";
+  if (
+    backupOperatorKeyHash !== "" &&
+    (!/^[0-9a-f]{56}$/.test(backupOperatorKeyHash) ||
+      backupOperatorKeyHash === inputs.deployerPaymentKeyHash.toLowerCase())
+  ) {
+    throw new Error(
+      "Backup operator must be a different 28-byte payment key hash",
+    );
+  }
   const validators: PlannedValidator[] = [];
   const register = (
     title: string,
@@ -304,6 +318,7 @@ export const loadDeploymentPlan = async (
       mintClient.hash,
       mintConnection.hash,
       mintChannel.hash,
+      backupOperatorKeyHash,
     ),
   );
   const mintIdentifier = load(

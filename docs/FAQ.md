@@ -34,8 +34,10 @@ Other powers are registering previously unbound ports and submitting
 `HostState` heartbeats. An attacker can occupy unused ports or exhaust the
 bounded registry. Existing port registrations cannot be overwritten.
 Heartbeats leave the IBC commitment root unchanged. The key does not provide
-a general contract upgrade or arbitrary state-editing capability. The current
-contracts have no deployer-key rotation or shutdown-cancellation operation.
+a general contract upgrade or arbitrary state-editing capability. A deployment
+can name one backup operator before deployment. That key can claim the deployer
+role at any time, so it must be trusted as an administrator. The backup cannot
+be added or changed later. There is no shutdown-cancellation operation.
 
 ## What happens if the Cardano contract deployer key is lost?
 
@@ -45,11 +47,18 @@ require the deployer signature. Existing routes can continue with other funded
 signers and relayers while their clients remain usable. Any funds held directly
 by the lost-key wallet become inaccessible.
 
-The deployment loses its administrative operations: binding new ports,
+Without a named backup, the deployment loses its administrative operations: binding new ports,
 recovering expired or frozen Cardano-side Tendermint clients, submitting
 heartbeats, and entering or finalizing shutdown. Deployment deposits that
-require this authority to reclaim also become inaccessible. There is no
-on-chain replacement-key procedure in the current contracts.
+require this authority to reclaim also become inaccessible. A deployment made
+without a backup has no on-chain replacement-key procedure.
+
+If the deployer named a backup before deployment, its holder can set
+`DEPLOYER_SK` to that wallet's signing key and run
+`shutdown-deployment.ts claim-backup`. This changes only the
+recorded deployer and HostState version. The old key then loses its
+administrative permissions. The chain cannot tell whether a key has been lost,
+so the backup holder can claim at any time.
 
 The main risk to existing funds is losing the ability to restore a stalled
 route. If its Cardano-side client expires or freezes, normal proof-based

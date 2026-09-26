@@ -35,15 +35,15 @@ use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, ModuleRegistration, host_state_token_name,
-  validate_authorize_finalization, validate_bind_port, validate_create_channel,
-  validate_create_client, validate_create_connection, validate_enter_shutdown,
-  validate_finalize_shutdown, validate_heartbeat, validate_shutdown_authority,
-  validate_update_only_root,
+  validate_authorize_finalization, validate_bind_port, validate_claim_backup,
+  validate_create_channel, validate_create_client, validate_create_connection,
+  validate_enter_shutdown, validate_finalize_shutdown, validate_heartbeat,
+  validate_shutdown_authority, validate_update_only_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  AuthorizeFinalization, BindPort, CreateChannel, CreateClient, CreateConnection,
-  EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer,
-  RetireState, UpdateChannel, UpdateClient, UpdateConnection,
+  AuthorizeFinalization, BindPort, ClaimBackup, CreateChannel, CreateClient,
+  CreateConnection, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
+  HostStateRedeemer, RetireState, UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/string as string_utils
@@ -1084,6 +1084,7 @@ validator host_state_stt(
   client_policy_id: PolicyId,
   connection_policy_id: PolicyId,
   channel_policy_id: PolicyId,
+  backup_operator: ByteArray,
 ) {
   spend(
     _datum_opt: Option<HostStateDatum>,
@@ -1303,6 +1304,10 @@ validator host_state_stt(
               -1,
             )
           }
+          ClaimBackup -> and {
+              list.has(extra_signatories, backup_operator),
+              validate_claim_backup(old_datum, new_datum, backup_operator),
+            }
           FinalizeShutdown -> fail
         }
       }
