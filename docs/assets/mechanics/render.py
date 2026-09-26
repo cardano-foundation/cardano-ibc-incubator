@@ -736,175 +736,215 @@ def scene_yaci_store(t: float) -> Image.Image:
     return c.finish()
 
 
-# ------------------------------------------ 3. state root -> cosmos proof ---
+# ------------------------------------- 3. the chain of trust for a root ---
 
-def tree_positions(x0, x1, y0, level_gap, levels):
-    """Node centres for a small binary tree drawn as a stand-in for depth 64."""
-    pos = []
-    for lvl in range(levels):
-        n = 2 ** lvl
-        row = []
-        for i in range(n):
-            row.append((x0 + (x1 - x0) * (i + 0.5) / n, y0 + lvl * level_gap))
-        pos.append(row)
-    return pos
+ROOT_OLD, ROOT_NEW = "4be1…07aa", "9f3a…c21e"
+ST_X = [30, 322, 614, 906]
+ST_Y, ST_W, ST_H = 104, 264, 372
+ST_T = [1.0, 4.6, 11.0, 15.6]
+CHAIN_T = 20.4
+ROOT_TRUST_DURATION = 26.0
 
 
-def scene_membership_proof(t: float) -> Image.Image:
-    c = Canvas()
-    header(c, t, "How a Cardano state root becomes a Cosmos proof",
-           "Every IBC record lives in one Merkle tree. Its root is on Cardano, and a "
-           "proof is the path from one leaf to that root.")
-    a = prog(t, 0.3, 1.2)
-    for x, label in [(30, "CARDANO"), (450, "GATEWAY AND HERMES"), (770, "COSMOS CHAIN")]:
-        c.text(x, 100, label, 12, fade(FAINT, a), "bold")
-
-    # HostState UTxO card
-    hl = prog(t, 1.2, 2.0)
-    root_col = mix(TEXT, GREEN, hl)
-    c.rrect(30, 122, 390, 92, fill=fade(PANEL, a), outline=fade(BORDER, a), width=2,
-            r=12)
-    c.text(46, 134, "HostState UTxO", 16, fade(TEXT, a, PANEL), "bold")
-    c.text(46, 158, "holds the HostState NFT", 13, fade(MUTED, a, PANEL))
-    c.text(46, 182, "datum.ibc_state_root = 9f3a…c21e", 14, fade(root_col, a, PANEL),
-           "mono")
-
-    # Tree
+def mini_tree(c, x, y, w, alpha, under, reveal):
+    """A 3-level tree with one path lit; reveal 0..1 climbs from leaf to root."""
     levels = 4
-    pos = tree_positions(40, 410, 250, 50, levels)
-    leaf_row_y = 250 + (levels - 1) * 50 + 76
-    leaves = [(40 + 370 * (i + 0.5) / 8, leaf_row_y) for i in range(8)]
-    target = 5
-    # path: leaf index -> nodes at each visible level
-    path_idx = [target >> (levels - 1 - lvl) for lvl in range(levels)]
-    climb = prog(t, 3.4, 5.6)
-    if hl > 0:
-        c.dashed((225, 214), (225, pos[0][0][1] - 14), fade(GREEN, hl), 2)
+    pts = [[(x + w * (i + 0.5) / 2 ** lvl, y + lvl * 24) for i in range(2 ** lvl)]
+           for lvl in range(levels)]
+    leaf = 5
+    for lvl in range(levels - 1):
+        for i, (px, py) in enumerate(pts[lvl]):
+            for ch in (2 * i, 2 * i + 1):
+                cx, cy = pts[lvl + 1][ch]
+                c.line([(px, py), (cx, cy)], fade(BORDER, alpha, under), 1)
     for lvl in range(levels):
-        for i, (x, y) in enumerate(pos[lvl]):
-            if lvl + 1 < levels:
-                for child in (2 * i, 2 * i + 1):
-                    cx, cy = pos[lvl + 1][child]
-                    c.line([(x, y), (cx, cy)], fade(BORDER, a), 1.5)
-    for lvl in range(levels):
-        for i, (x, y) in enumerate(pos[lvl]):
+        idx = leaf >> (levels - 1 - lvl)
+        lit = reveal * levels >= levels - lvl
+        for i, (px, py) in enumerate(pts[lvl]):
             col = BORDER
-            depth_from_leaf = levels - lvl
-            on_path = i == path_idx[lvl]
-            is_sibling = lvl > 0 and i == (path_idx[lvl] ^ 1)
-            reveal = climb * (levels + 1)
-            if on_path and reveal >= depth_from_leaf:
+            if lit and i == idx:
                 col = GREEN
-            if is_sibling and reveal >= depth_from_leaf:
+            elif lit and lvl > 0 and i == idx ^ 1:
                 col = AMBER
-            if lvl == 0:
-                col = mix(col, GREEN, hl)
-            c.circle(x, y, 9, fill=fade(PANEL_2, a), outline=fade(col, a), width=2)
-    for x, _ in pos[-1]:
-        c.vdots(x, leaf_row_y - 38, fade(FAINT, a), gap=5, r=1.6)
+            c.circle(px, py, 5, fill=fade(PANEL_2, alpha, under), outline=fade(col, alpha, under),
+                     width=1.5)
 
-    for i, (x, y) in enumerate(leaves):
-        col = BORDER
-        if i == target:
-            col = mix(BORDER, GREEN, prog(t, 3.0, 3.6))
-        elif i == (target ^ 1) and climb > 0:
-            col = AMBER
-        c.rrect(x - 17, y - 11, 34, 22, fill=fade(PANEL_2, a), outline=fade(col, a),
-                width=2, r=5)
-    la = prog(t, 3.0, 3.6)
-    if la > 0:
-        lx, ly = leaves[target]
-        c.chip(lx - 105, ly + 18, "connections/connection-0", GREEN, alpha=la, size=12)
-    c.text(30, 524, "Drawn 4 levels deep. The real tree is 64 levels deep.", 12,
-           fade(MUTED, a))
-    c.text(30, 546, "leaf = sha256(0x00 || sha256(key) || sha256(value))", 11,
-           fade(MUTED, a), "mono")
-    c.text(30, 564, "node = sha256(0x01 || left || right)", 11, fade(MUTED, a),
-           "mono")
 
-    # Gateway and Hermes
-    box(c, 450, 122, 290, 110, "Gateway", "rebuilds the tree from Yaci history, "
-        "then serializes an ICS-23 proof", BLUE, a)
-    box(c, 450, 330, 290, 124, "Hermes", "sends the proof inside the IBC message, "
-        "e.g. MsgConnectionOpenTry", PURPLE, a)
+def station(c, t, k, title, sub, color):
+    a = prog(t, 0.2, 1.0)
+    on = prog(t, ST_T[k], ST_T[k] + 0.5)
+    x = ST_X[k]
+    border = mix(mix(BORDER, color, 0.35), color, on)
+    c.rrect(x, ST_Y, ST_W, ST_H, fill=fade(PANEL, a), outline=fade(border, a),
+            width=2 + on, r=14)
+    c.circle(x + 26, ST_Y + 26, 13, fill=fade(color, a * (0.35 + 0.65 * on), PANEL))
+    c.text(x + 26, ST_Y + 26, str(k + 1), 14, fade(BG, a, color), "bold", anchor="mm")
+    c.text(x + 48, ST_Y + 14, title, 16, fade(TEXT, a, PANEL), "bold")
+    c.text(x + 48, ST_Y + 36, sub, 11, fade(MUTED, a, PANEL), "mono")
+    return on
 
-    # proof packet
-    pk_label = "proof: leaf + 64 sibling hashes"
-    if t >= 6.0:
-        build = prog(t, 6.0, 7.2)
-        # sibling chips fly from tree to gateway
-        for k in range(4):
-            sx, sy = (pos[k + 1 if k + 1 < levels else levels - 1][0]
-                      if k < 3 else leaves[target ^ 1])
-            u = prog(t, 6.0 + k * 0.15, 7.0 + k * 0.15)
-            if u < 1:
-                x, y = travel((sx, sy), (520, 200), u)
-                c.circle(x, y, 6, fill=AMBER)
-        p1 = prog(t, 8.4, 9.4)
-        p2 = prog(t, 9.6, 10.6)
-        x, y = travel((466, 196), (466, 414), p1)
-        x, y = travel((x, y), (790, 170), p2)
-        fade_out = prog(t, 10.4, 10.9)
-        if build * (1 - fade_out) > 0:
-            c.chip(x, y, pk_label, AMBER, alpha=build * (1 - fade_out), size=12,
-                   under=PANEL)
 
-    # Cosmos side
-    c.rrect(770, 122, 400, 460, fill=fade(PANEL, a), outline=fade(BORDER, a), width=2,
-            r=14)
-    c.text(786, 134, "08-cardano-probabilistic", 16, fade(TEXT, a, PANEL), "bold")
-    c.text(786, 156, "VerifyMembership", 13, fade(MUTED, a, PANEL), "mono")
+def root_row(c, x, y, w, label, root, color, alpha, under=PANEL):
+    c.rrect(x, y, w, 44, fill=fade(PANEL_2, alpha, under), outline=fade(color, alpha, under),
+            width=1.5, r=8)
+    c.text(x + 10, y + 7, label, 11, fade(MUTED, alpha, PANEL_2))
+    c.text(x + 10, y + 23, root, 13, fade(color, alpha, PANEL_2), "mono")
 
-    rows = [("leaf", "sha256(0x00||k||v)"), ("level 63", "sha256(0x01||L||R)"),
-            ("level 62", "sha256(0x01||L||R)"), ("...", ""),
-            ("level 1", "sha256(0x01||L||R)"), ("root", "")]
-    for i, (label, formula) in enumerate(rows):
-        start = 10.8 + i * 0.6
-        u = prog(t, start, start + 0.45)
-        if u <= 0:
+
+def check_row(c, x, y, text, u, ok=True):
+    if u <= 0:
+        return
+    col = GREEN if ok else RED
+    c.circle(x + 10, y + 9, 10, fill=fade(PANEL, u, PANEL), outline=fade(col, u, PANEL), width=1.5)
+    if ok:
+        c.check(x + 10, y + 10, 10, col, u)
+    else:
+        c.cross(x + 10, y + 9, 8, fade(col, u, PANEL), 2)
+    c.text(x + 28, y + 1, text, 12, fade(TEXT, u, PANEL))
+
+
+def scene_root_trust(t: float) -> Image.Image:
+    c = Canvas()
+    header(c, t, "Why a Cardano state root can be trusted",
+           "Enforced on Cardano, authenticated on Cosmos, then used to prove records.")
+    a = prog(t, 0.2, 1.0)
+
+    # Arrows between stations
+    for k in range(3):
+        u = prog(t, ST_T[k + 1] - 0.4, ST_T[k + 1])
+        x1 = ST_X[k] + ST_W
+        col = mix(BORDER, TEXT, u)
+        c.arrow((x1 + 4, ST_Y + ST_H / 2), (ST_X[k + 1] - 4, ST_Y + ST_H / 2), fade(col, a), 2,
+                head=8)
+
+    # 1. The transaction
+    on = station(c, t, 0, "Cardano transaction", "built by the Gateway", BLUE)
+    x = ST_X[0] + 16
+    w = ST_W - 32
+    c.chip(x, ST_Y + 62, "ConnOpenInit", BLUE, alpha=a, under=PANEL, size=12)
+    u1 = prog(t, ST_T[0] + 0.4, ST_T[0] + 1.0)
+    root_row(c, x, ST_Y + 100, w, "spends HostState", f"root {ROOT_OLD}", MUTED, max(u1, a * 0.25))
+    u2 = prog(t, ST_T[0] + 1.2, ST_T[0] + 1.8)
+    root_row(c, x, ST_Y + 162, w, "writes new HostState", f"root {ROOT_NEW}", TEAL, max(u2, a * 0.25))
+    u3 = prog(t, ST_T[0] + 2.0, ST_T[0] + 2.6)
+    if u3 > 0:
+        c.text(x, ST_Y + 226, "update witness:", 11, fade(MUTED, u3, PANEL))
+        c.text(x, ST_Y + 243, "siblings for", 12, fade(AMBER, u3, PANEL))
+        c.text(x, ST_Y + 261, "connections/connection-0", 12, fade(AMBER, u3, PANEL), "mono")
+        mini_tree(c, x + 20, ST_Y + 290, w - 40, u3, PANEL, prog(t, ST_T[0] + 2.2, ST_T[0] + 3.2))
+
+    # 2. The validator
+    station(c, t, 1, "On-chain validator", "host_state_stt.ak", TEAL)
+    x = ST_X[1] + 16
+    check_row(c, x, ST_Y + 70, "old value + siblings", prog(t, ST_T[1] + 0.3, ST_T[1] + 0.8))
+    if t >= ST_T[1] + 0.3:
+        c.text(x + 28, ST_Y + 88, f"= {ROOT_OLD}  (current root)", 11,
+               fade(MUTED, prog(t, ST_T[1] + 0.3, ST_T[1] + 0.8), PANEL), "mono")
+    check_row(c, x, ST_Y + 124, "new value + siblings", prog(t, ST_T[1] + 1.3, ST_T[1] + 1.8))
+    if t >= ST_T[1] + 1.3:
+        c.text(x + 28, ST_Y + 142, f"= {ROOT_NEW}  (written root)", 11,
+               fade(MUTED, prog(t, ST_T[1] + 1.3, ST_T[1] + 1.8), PANEL), "mono")
+    acc = prog(t, ST_T[1] + 2.3, ST_T[1] + 2.8)
+    if acc > 0:
+        c.rrect(x, ST_Y + 184, ST_W - 32, 38, fill=fade((20, 60, 40), acc, PANEL),
+                outline=fade(GREEN, acc, PANEL), width=2, r=8)
+        c.text(x + (ST_W - 32) / 2, ST_Y + 203, "transaction accepted", 13,
+               fade(TEXT, acc, (20, 60, 40)), "bold", anchor="mm")
+    bad = prog(t, ST_T[1] + 4.2, ST_T[1] + 4.7)
+    if bad > 0:
+        c.text(x, ST_Y + 250, "Same check, made-up root:", 11, fade(MUTED, bad, PANEL))
+        check_row(c, x, ST_Y + 272, "new value + siblings", bad, ok=False)
+        c.text(x + 28, ST_Y + 290, f"≠ 1c77…e0b4  (written root)".replace("≠", "!="), 11,
+               fade(RED, bad, PANEL), "mono")
+        c.rrect(x, ST_Y + 316, ST_W - 32, 38, fill=fade((60, 25, 28), bad, PANEL),
+                outline=fade(RED, bad, PANEL), width=2, r=8)
+        c.text(x + (ST_W - 32) / 2, ST_Y + 335, "transaction rejected", 13,
+               fade(TEXT, bad, (60, 25, 28)), "bold", anchor="mm")
+
+    # 3. The light client update
+    station(c, t, 2, "Light client update", "08-cardano-probabilistic", GREEN)
+    x = ST_X[2] + 16
+    w = ST_W - 32
+    ba = prog(t, ST_T[2] + 0.2, ST_T[2] + 0.7)
+    if ba > 0:
+        c.rrect(x, ST_Y + 70, 96, 56, fill=fade((20, 50, 40), ba, PANEL),
+                outline=fade(GREEN, ba, PANEL), width=2, r=8)
+        c.text(x + 48, ST_Y + 80, "block", 12, fade(TEXT, ba, (20, 50, 40)), "bold", anchor="ma")
+        c.text(x + 48, ST_Y + 98, "with this tx", 10, fade(GREEN, ba, (20, 50, 40)), anchor="ma")
+        n = int(prog(t, ST_T[2] + 0.7, ST_T[2] + 2.6) * 24)
+        for i in range(n):
+            r, col = divmod(i, 8)
+            c.rrect(x + 108 + col * 16, ST_Y + 72 + r * 18, 12, 14,
+                    fill=fade(BLUE, ba, PANEL), r=3)
+        if n:
+            c.text(x + 108, ST_Y + 130, f"{n} blocks on top", 11, fade(MUTED, ba, PANEL))
+    cs = prog(t, ST_T[2] + 2.9, ST_T[2] + 3.4)
+    if cs > 0:
+        c.check(x + 10, ST_Y + 178, 12, GREEN, cs)
+        c.text(x + 26, ST_Y + 170, "block authenticated", 12, fade(TEXT, cs, PANEL))
+        root_row(c, x, ST_Y + 200, w, "ConsensusState.ibc_state_root", ROOT_NEW, GREEN, cs)
+        c.paragraph(x, ST_Y + 262, "The root is read from the HostState datum inside the "
+                    "authenticated block.", 11, fade(MUTED, cs, PANEL), max_w=w)
+
+    # 4. The membership proof
+    station(c, t, 3, "Membership proof", "VerifyMembership", PURPLE)
+    x = ST_X[3] + 16
+    w = ST_W - 32
+    pa = prog(t, ST_T[3] + 0.2, ST_T[3] + 0.7)
+    if pa > 0:
+        c.text(x, ST_Y + 66, "key", 11, fade(MUTED, pa, PANEL))
+        c.text(x, ST_Y + 82, "connections/connection-0", 12, fade(TEXT, pa, PANEL), "mono")
+        c.text(x, ST_Y + 106, "value", 11, fade(MUTED, pa, PANEL))
+        c.text(x, ST_Y + 122, "state = INIT", 12, fade(TEXT, pa, PANEL), "mono")
+        c.text(x, ST_Y + 146, "+ 64 sibling hashes, carried by Hermes", 11,
+               fade(AMBER, pa, PANEL))
+        mini_tree(c, x + 20, ST_Y + 172, w - 40, pa, PANEL,
+                  prog(t, ST_T[3] + 0.8, ST_T[3] + 2.2))
+    ca = prog(t, ST_T[3] + 2.4, ST_T[3] + 2.9)
+    if ca > 0:
+        c.text(x, ST_Y + 262, f"computed root   {ROOT_NEW}", 11, fade(TEXT, ca, PANEL), "mono")
+        c.text(x, ST_Y + 280, f"consensus root  {ROOT_NEW}", 11, fade(GREEN, ca, PANEL), "mono")
+    pr = prog(t, ST_T[3] + 3.1, ST_T[3] + 3.6)
+    if pr > 0:
+        c.rrect(x, ST_Y + 310, w, 38, fill=fade((20, 60, 40), pr, PANEL),
+                outline=fade(GREEN, pr, PANEL), width=2, r=8)
+        c.text(x + w / 2, ST_Y + 329, "record proven", 13, fade(TEXT, pr, (20, 60, 40)), "bold",
+               anchor="mm")
+
+    # The chain of trust
+    links = ["built by the Gateway", "enforced by Cardano", "authenticated on Cosmos",
+             "checked against the root"]
+    for k, label in enumerate(links):
+        u = prog(t, CHAIN_T + k * 0.5, CHAIN_T + k * 0.5 + 0.4)
+        cx = ST_X[k] + ST_W / 2
+        trusted = k > 0
+        col = GREEN if trusted else FAINT
+        la = max(u, 0.0)
+        if la <= 0:
             continue
-        y = 520 - i * 58
-        x0 = 800
-        is_root = label == "root"
-        col = GREEN if is_root else BLUE
-        if label == "...":
-            c.vdots(x0 + 60, y + 18, fade(MUTED, u, PANEL))
-            continue
-        c.rrect(x0, y, 170, 36, fill=fade(PANEL_2, u, PANEL),
-                outline=fade(col, u, PANEL), width=2, r=8)
-        text = "computed root" if is_root else label
-        c.text(x0 + 10, y + 10, text, 13, fade(TEXT, u, PANEL_2), "bold")
-        if formula:
-            c.text(x0 + 180, y + 11, formula, 11, fade(MUTED, u, PANEL), "mono")
-        if not is_root and label != "leaf":
-            c.circle(x0 + 160, y + 18, 5, fill=fade(AMBER, u, PANEL_2))
-        if i > 0 and rows[i - 1][0] != "...":
-            c.arrow((x0 + 60, y + 58 - 2), (x0 + 60, y + 38), fade(BORDER, u, PANEL), 2,
-                    head=7)
-    cmp_a = prog(t, 14.6, 15.2)
-    if cmp_a > 0:
-        c.text(1000, 222, "9f3a…c21e", 14, fade(GREEN, cmp_a, PANEL), "mono")
-        c.rrect(790, 176, 360, 34, fill=fade((20, 60, 40), cmp_a, PANEL),
-                outline=fade(GREEN, cmp_a, PANEL), width=2, r=8)
-        c.text(802, 186, "ConsensusState.ibc_state_root = 9f3a…c21e", 12,
-               fade(TEXT, cmp_a, (20, 60, 40)), "mono")
-        m = prog(t, 15.2, 15.8)
-        if m > 0:
-            c.chip(1000, 252, "match", GREEN, alpha=m, under=PANEL)
-            c.check(1080, 265, 14, GREEN, m)
+        w = c.text_width(label, 12) + 22
+        c.rrect(cx - w / 2, 500, w, 30, fill=fade(PANEL, la), outline=fade(col, la), width=2,
+                r=15)
+        c.text(cx, 515, label, 12, fade(TEXT if trusted else MUTED, la, PANEL), anchor="mm")
+        if k > 0:
+            prev = ST_X[k - 1] + ST_W / 2 + (c.text_width(links[k - 1], 12) + 22) / 2
+            c.line([(prev + 4, 515), (cx - w / 2 - 4, 515)],
+                   fade(GREEN if k > 1 else FAINT, la), 2.5)
 
     caption(c, t, [
-        (1.2, "On Cardano, the HostState datum holds ibc_state_root, the root of a "
-              "64-level Merkle tree of all IBC state."),
-        (3.0, "Each IBC record is a leaf. Proving one needs the sibling hash at "
-              "every level on the way to the root."),
-        (6.0, "The Gateway rebuilds the tree from Yaci history and serializes the "
-              "leaf and its 64 siblings as an ICS-23 proof."),
-        (8.4, "Hermes passes the proof along inside the IBC message."),
-        (10.8, "VerifyMembership hashes the leaf with each sibling, level by level, "
-               "up to a root."),
-        (14.6, "The computed root matches the one stored by the last header update, "
-               "so the record is proven."),
+        (ST_T[0], "The Gateway builds a transaction that changes IBC state. It spends the "
+                  "HostState and writes a new root."),
+        (ST_T[0] + 2.0, "It also carries the sibling hashes for every key it changes."),
+        (ST_T[1], "The HostState validator recomputes the old and new root from those "
+                  "siblings. Both must match exactly."),
+        (ST_T[1] + 4.2, "So a transaction with a made-up root fails on-chain. The Gateway "
+                        "cannot write one."),
+        (ST_T[2], "Once enough blocks sit on top, the light client authenticates the block and "
+                  "stores its root."),
+        (ST_T[3], "Later, Hermes proves one record with a Merkle path. Cosmos recomputes the "
+                  "root and compares."),
+        (CHAIN_T, "Only the first step is built by the Gateway, and nothing after it relies "
+                  "on trusting the Gateway or Hermes."),
     ])
     return c.finish()
 
@@ -1088,7 +1128,7 @@ SCENES = {
     "gateway-data-sources": (lambda t: scene_gateway_calls(t / 1.1),
                              GATEWAY_CALLS_DURATION * 1.1),
     "yaci-store": (scene_yaci_store, YACI_STORE_DURATION),
-    "membership-proof": (scene_membership_proof, 18.5),
+    "ibc-state-root": (scene_root_trust, ROOT_TRUST_DURATION),
     "finality-thresholds": (scene_finality, 16.5),
     "finality-thresholds-slow": (scene_finality_slow, 19.5),
 }
