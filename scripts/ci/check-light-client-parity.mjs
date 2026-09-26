@@ -28,6 +28,7 @@ const sharedSourceFiles = [
   "host_state_datum.go",
   "ibc_state_proof.go",
   "internal/cardanodatum/tm_helper.go",
+  "internal/cardanodatum/tm_upgrade_test.go",
   "internal/cardanodatum/types.go",
   "keys.go",
   "misbehaviour_handle.go",

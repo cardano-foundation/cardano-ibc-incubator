@@ -77,6 +77,7 @@ test succeed_verify_channel_state() {
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain1-1",
       trust_level,
       trusting_period: 1209600000000000,

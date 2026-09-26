@@ -58,6 +58,7 @@ export function clientStateWithHistory(
     record(0n, 0n),
     h,
     specs,
+    [],
   );
   const consensus = record(
     BigInt(now) * 1_000_000n,

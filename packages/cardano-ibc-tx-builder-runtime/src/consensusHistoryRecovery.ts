@@ -159,7 +159,7 @@ function state(datum: string, deployment: HistoryDeployment): State {
     4,
     "client state datum",
   );
-  const clientFields = fields(clientState, 8, "client state");
+  const clientFields = fields(clientState, 9, "client state");
   const [height, value] = single(consensus, "consensus states");
   const [timeHeight, time] = single(times, "processing times");
   const [processedHeightKey, processedHeight] = single(

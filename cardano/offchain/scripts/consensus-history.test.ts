@@ -124,7 +124,7 @@ async function fixture(
     );
   const [recoveryScript, recoveryHash] = applyBytes(
     "recover_client.recover_client.withdraw",
-    [HOST_POLICY],
+    [HOST_POLICY, "00".repeat(28)],
   );
   const staged = stagedMode
     ? loadStagedTendermintValidators(lucid, HOST_POLICY, recoveryHash)
@@ -207,6 +207,7 @@ async function fixture(
     new Constr(0, [0n, 0n]),
     height(latestHeight),
     proofSpecs,
+    [],
   ]);
   const clientDatum = new Constr<Data>(0, [
     new Constr(0, [
@@ -498,6 +499,7 @@ async function fixture(
       ...clientState.fields.slice(0, 6),
       height(substituteHeight),
       proofSpecs,
+      [],
     ]);
     const substituteConsensus = consensus(nowNs - 1_000_000_000n);
     const nextClientState = new Constr(0, [
@@ -691,6 +693,7 @@ async function fixture(
       ...clientState.fields.slice(0, 6),
       height(newHeight),
       proofSpecs,
+      [],
     ]);
     const nextClient = new Constr<Data>(0, [
       new Constr(0, [

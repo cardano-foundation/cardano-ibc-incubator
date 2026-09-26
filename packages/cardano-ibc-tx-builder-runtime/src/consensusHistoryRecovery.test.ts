@@ -77,6 +77,7 @@ function publications(heights: bigint[], bodyOnly = false): Publication[] {
           new Constr(0, [0n, frozen ? 1n : 0n]),
           height(n),
           [],
+          [],
         ]),
         new Map([[height(n), recordToConstr(record).fields[2]]]),
         new Map([[height(n), record.processedTime]]),

@@ -17,6 +17,7 @@ pub type SpendClientRedeemer {
     history_siblings: List<ByteArray>,
   }
   ReclaimClient
+  UpgradeClient
 }
 
 /// The existing recovery credential also authenticates update history. Keeping
@@ -35,4 +36,5 @@ pub type RecoverClientWithdrawalRedeemer {
     escrow_policy: ByteArray,
   }
   CheckStagedClientHistory { subject_token: AuthToken }
+  UpgradeClientWithdrawal { subject_token: AuthToken }
 }

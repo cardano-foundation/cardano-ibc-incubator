@@ -23,6 +23,7 @@ fn client(n: Int) -> ClientDatum {
   ClientDatum {
     state: ClientDatumState {
       client_state: ClientState {
+        upgrade_path: [],
         chain_id: "chain-0",
         trust_level: unchecked_rational.new(1, 3),
         trusting_period: 100_000_000,

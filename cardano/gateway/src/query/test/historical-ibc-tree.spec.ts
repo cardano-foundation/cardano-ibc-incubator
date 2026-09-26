@@ -60,6 +60,7 @@ function client(n: number): ClientDatum {
     token: { policyId: clientPolicy, name }, history_root: hash(n - 1),
     state: {
       clientState: {
+        upgradePath: [],
         chainId: hex('chain-0'), trustLevel: { numerator: 1n, denominator: 3n }, trustingPeriod: 100n,
         unbondingPeriod: 200n, maxClockDrift: 1n, frozenHeight: { revisionNumber: 0n, revisionHeight: 0n }, latestHeight: height, proofSpecs: [],
       },

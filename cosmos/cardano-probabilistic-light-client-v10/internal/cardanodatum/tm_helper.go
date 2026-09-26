@@ -95,6 +95,14 @@ func (datumClientState ClientStateDatum) Cmp(tmClient *tmStruct.ClientState) err
 		)
 	}
 
+	if len(datumClientState.UpgradePath) != len(tmClient.UpgradePath) {
+		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, "ClientState: UpgradePath length mismatch")
+	}
+	for i, segment := range datumClientState.UpgradePath {
+		if string(segment) != tmClient.UpgradePath[i] {
+			return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, "ClientState: UpgradePath mismatch")
+		}
+	}
 	// TODO: Compare proof specs (when required).
 	return nil
 }

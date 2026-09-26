@@ -1169,6 +1169,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
   let mint_verifying_proof_redeemer: Redeemer =
     VerifyMembership {
       cs: ClientState {
+        upgrade_path: [],
         chain_id: #"76657373656c6f7261636c65",
         trust_level: UncheckedRational { numerator: 1, denominator: 3 },
         trusting_period: 129600000000000,
@@ -1252,6 +1253,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
       history_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       state: ClientDatumState {
         client_state: ClientState {
+          upgrade_path: [],
           chain_id: "vesseloracle",
           trust_level: UncheckedRational { numerator: 1, denominator: 3 },
           trusting_period: 129600000000000,

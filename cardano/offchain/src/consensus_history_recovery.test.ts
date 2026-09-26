@@ -81,6 +81,7 @@ function publications(heights: bigint[], variant = 0): Publication[] {
         new Constr(0, [0n, 0n]),
         height(n),
         [],
+        [],
       ]);
       const client = new Constr(0, [
         new Constr(0, [

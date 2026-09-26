@@ -290,7 +290,7 @@ export async function channelFixture(
   const [shutdownScript, shutdownScriptHash] = readValidator(
     "recover_client.recover_client.withdraw",
     lucid,
-    [hostPolicy],
+    [hostPolicy, legacyProofPolicy],
   );
   const [channelMint, channelPolicy] = readValidator(
     "minting_channel_stt.mint_channel_stt.mint",
@@ -397,6 +397,7 @@ export async function channelFixture(
     ZERO_HEIGHT,
     HEIGHT,
     proofSpecs,
+    [],
   );
   const otherClientState = record(
     fromText("otherchain-1"),

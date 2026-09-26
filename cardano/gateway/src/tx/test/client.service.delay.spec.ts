@@ -32,6 +32,7 @@ function initialDatum(): ClientDatum {
     token: { policyId: '11'.repeat(28), name: '01' },
     state: {
       clientState: {
+        upgradePath: [],
         chainId: Buffer.from('delay-0').toString('hex'),
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 1_000_000_000_000n,

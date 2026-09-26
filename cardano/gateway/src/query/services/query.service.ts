@@ -406,7 +406,7 @@ export class QueryService {
     const expectedPolicyId = deploymentConfig.validators.mintTendermintUpdateSession?.scriptHash;
     if (!expectedPolicyId) return null;
     const isStagedAction = (decoded: SpendMultitxClientRedeemer): boolean => {
-      if (typeof decoded === 'string') return false;
+      if (typeof decoded === 'string') return decoded === 'UpgradeClient';
       if ('RecoverClient' in decoded) {
         return decoded.RecoverClient.substituteToken.policyId.toLowerCase() ===
           deploymentConfig.validators.mintClientStt?.scriptHash?.toLowerCase();
@@ -1702,7 +1702,9 @@ export class QueryService {
           const stagedRedeemer = await this.findStagedClientRedeemer(clientUtxo, clientDatum, redeemers);
           let stagedHeader: TendermintHeader | null = null;
           let spendClientRedeemerData: SpendClientRedeemer | undefined;
-          if (stagedRedeemer && typeof stagedRedeemer !== 'string') {
+          if (stagedRedeemer === 'UpgradeClient') {
+            spendClientRedeemerData = 'UpgradeClient';
+          } else if (stagedRedeemer && typeof stagedRedeemer !== 'string') {
             if ('RecoverClient' in stagedRedeemer) {
               spendClientRedeemerData = {
                 RecoverClient: { substitute_token: stagedRedeemer.RecoverClient.substituteToken, history_siblings: stagedRedeemer.RecoverClient.historySiblings },

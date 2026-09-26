@@ -21,6 +21,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
       history_root: '00'.repeat(32),
       state: {
         clientState: {
+          upgradePath: [],
           chainId: toHex('counterparty-0'),
           trustLevel: { numerator: 1n, denominator: 3n },
           trustingPeriod: 100n,
@@ -133,8 +134,8 @@ describe('IBC state root recovery after packet-history pruning', () => {
     liveTree.set('commitments/ports/transfer/channels/channel-0/sequences/2', packetValue('aabb'));
     liveTree.set('receipts/ports/transfer/channels/channel-0/sequences/6', packetValue(''));
     liveTree.set('acks/ports/transfer/channels/channel-0/sequences/6', packetValue('ccdd'));
-    // Captured with the full revision-height consensus key and unchanged value encoding.
-    expect(liveTree.getRoot()).toBe('3a0d80aa4ff79b5ee3299841bad6a1449bf883d348e220a54911b228796b5ab7');
+    // Committed values include the upgrade path and full revision-height key.
+    expect(liveTree.getRoot()).toBe('9a123a86efcde215c2d6e6f6d177303041011ef138547ccaf1abbd83ec28784f');
 
     const prunedReceiptPath = 'receipts/ports/transfer/channels/channel-0/sequences/7';
     const prunedAcknowledgementPath = 'acks/ports/transfer/channels/channel-0/sequences/7';

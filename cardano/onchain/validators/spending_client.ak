@@ -8,7 +8,7 @@ use ibc/auth
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum} as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
   CheckClientHistory, ReclaimClient, RecoverClient, RecoverClientWithdrawal,
-  RecoverClientWithdrawalRedeemer, SpendClientRedeemer, UpdateClient,
+  SpendClientRedeemer, UpdateClient, UpgradeClient, UpgradeClientWithdrawal,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/height
@@ -87,14 +87,12 @@ validator spend_client(
         validator_utils.get_inline_datum(updated_output)
       expect Some(raw_support_redeemer) =
         pairs.get_first(redeemers, Withdraw(recover_client_credential))
-      expect support_redeemer: RecoverClientWithdrawalRedeemer =
-        raw_support_redeemer
 
       when redeemer is {
         ReclaimClient -> fail
         UpdateClient { msg, history_witnesses, .. } -> {
-          expect CheckClientHistory { subject_token } = support_redeemer
-          expect subject_token == datum.token
+          let expected: Data = CheckClientHistory { subject_token: datum.token }
+          expect raw_support_redeemer == expected
           // The bound support withdrawal authenticates these exact witnesses and
           // the history-root transition from this spend's transaction redeemer.
           expect
@@ -159,17 +157,20 @@ validator spend_client(
           }
         }
 
+        UpgradeClient -> {
+          let expected: Data =
+            UpgradeClientWithdrawal { subject_token: datum.token }
+          raw_support_redeemer == expected
+        }
         RecoverClient { substitute_token, .. } -> {
           trace @"spend_client: RecoverClient branch"
 
-          expect RecoverClientWithdrawal {
-            subject_token,
-            substitute_token: support_substitute,
-          } = support_redeemer
-          and {
-            subject_token == datum.token,
-            support_substitute == substitute_token,
-          }
+          let expected: Data =
+            RecoverClientWithdrawal {
+              subject_token: datum.token,
+              substitute_token,
+            }
+          raw_support_redeemer == expected
         }
       }
     }

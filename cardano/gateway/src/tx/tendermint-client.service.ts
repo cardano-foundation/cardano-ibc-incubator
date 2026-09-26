@@ -1,6 +1,14 @@
+import { ClientState as ProtoClientState, ConsensusState as ProtoConsensusState } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { initializeClientState, validateClientState } from '../shared/helpers/client-state';
+import { initializeConsensusState } from '../shared/helpers/consensus-state';
+import { initializeMerkleProof } from '../shared/helpers/merkle-proof';
+import { decodeMerkleProof } from './helper/helper';
+import { encodeClientUpgradeProof } from '../shared/types/client-upgrade';
 import {
   MsgCreateClientResponse,
   MsgCreateClient,
+  MsgUpgradeClient,
+  MsgUpgradeClientResponse,
   MsgRecoverClient,
   MsgRecoverClientResponse,
   MsgUpdateClient,
@@ -258,7 +266,8 @@ export class TendermintClientService {
       subject.trustingPeriod === substitute.trustingPeriod &&
       subject.unbondingPeriod === substitute.unbondingPeriod &&
       subject.maxClockDrift === substitute.maxClockDrift &&
-      isDeepStrictEqual(subject.proofSpecs, substitute.proofSpecs)
+      isDeepStrictEqual(subject.proofSpecs, substitute.proofSpecs) &&
+      isDeepStrictEqual(subject.upgradePath, substitute.upgradePath)
     );
   }
 
@@ -1612,6 +1621,155 @@ export class TendermintClientService {
       tokenUnit,
       datum.owner.toLowerCase(),
     );
+  }
+
+  async upgradeClient(data: MsgUpgradeClient): Promise<MsgUpgradeClientResponse> {
+    const match = /^07-tendermint-(0|[1-9][0-9]*)$/.exec(data.client_id ?? '');
+    if (
+      !match ||
+      !data.signer ||
+      data.client_state?.type_url !== '/ibc.lightclients.tendermint.v1.ClientState' ||
+      data.consensus_state?.type_url !== '/ibc.lightclients.tendermint.v1.ConsensusState' ||
+      !data.proof_upgrade_client?.length ||
+      !data.proof_upgrade_consensus_state?.length
+    ) {
+      throw new GrpcInvalidArgumentException(
+        'Upgrade requires a Tendermint client, both states, both proofs and a signer',
+      );
+    }
+    const clientId = match[1];
+    const tokenUnit = this.lucidService.getClientTokenUnit(clientId);
+    const [clientUtxo, hostUtxo] = await Promise.all([
+      this.lucidService.findUtxoByUnit(tokenUnit),
+      this.lucidService.findUtxoAtHostStateNFT(),
+    ]);
+    const [before, host] = await Promise.all([
+      this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client'),
+      this.lucidService.decodeDatum<HostStateDatum>(hostUtxo.datum!, 'host_state'),
+    ]);
+    const proposed = initializeClientState(ProtoClientState.decode(data.client_state.value));
+    const kernel = initializeConsensusState(ProtoConsensusState.decode(data.consensus_state.value));
+    const old = before.state.clientState;
+    const next: ClientState = {
+      ...proposed,
+      trustLevel: old.trustLevel,
+      trustingPeriod: old.trustingPeriod,
+      maxClockDrift: old.maxClockDrift,
+      frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
+    };
+    const invalid = validateClientState(next);
+    if (invalid) throw invalid;
+    const { validFromTime, validToTime } = await this.computeTxValidityWindow(60_000);
+    const now = BigInt(validToTime) * 1_000_000n;
+    const trusted = getHeightMapValue(before.state.consensusStates, old.latestHeight);
+    const h = next.latestHeight;
+    if (
+      !trusted ||
+      old.upgradePath.length === 0 ||
+      old.frozenHeight.revisionNumber !== 0n ||
+      old.frozenHeight.revisionHeight !== 0n ||
+      trusted.timestamp + old.trustingPeriod <= now ||
+      h.revisionNumber < old.latestHeight.revisionNumber ||
+      (h.revisionNumber === old.latestHeight.revisionNumber && h.revisionHeight <= old.latestHeight.revisionHeight) ||
+      kernel.timestamp < trusted.timestamp ||
+      kernel.timestamp > now + old.maxClockDrift ||
+      kernel.timestamp + next.trustingPeriod <= now ||
+      kernel.next_validators_hash.length !== 64
+    ) {
+      throw new GrpcFailedPreconditionException('Client is not eligible for this upgrade');
+    }
+    const insertion = await this.lucidService.prepareConsensusHistoryUpdate(clientUtxo);
+    const bootstrap = { ...kernel, root: { hash: Buffer.from('sentinel_root').toString('hex') } };
+    const after: ClientDatum = {
+      ...before,
+      history_root: insertion.newRoot,
+      state: {
+        clientState: next,
+        consensusStates: new Map([[h, bootstrap]]),
+        processedTimes: new Map([[h, now]]),
+        processedHeights: new Map([[h, getProcessedHeight(now)]]),
+      },
+    };
+    const proofRedeemer = await encodeClientUpgradeProof(
+      before,
+      after,
+      {
+        client_state: proposed,
+        consensus_state: kernel,
+        proof_client: initializeMerkleProof(decodeMerkleProof(data.proof_upgrade_client)),
+        proof_consensus: initializeMerkleProof(decodeMerkleProof(data.proof_upgrade_consensus_state)),
+        history_siblings: insertion.siblings,
+      },
+      this.lucidService.LucidImporter,
+    );
+    await this.ensureTreeAligned(host.state.ibc_state_root, hostUtxo);
+    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
+      this.ibcTreeStore.computeRootWithUpdateClientUpdate(
+        host.state.ibc_state_root,
+        data.client_id,
+        Buffer.from(await encodeClientStateValue(next, this.lucidService.LucidImporter), 'hex'),
+        [],
+        {
+          height: `${h.revisionNumber}-${h.revisionHeight}`,
+          value: Buffer.from(await encodeConsensusStateValue(bootstrap, this.lucidService.LucidImporter), 'hex'),
+        },
+      );
+    const updatedHost: HostStateDatum = {
+      ...host,
+      state: {
+        ...host.state,
+        version: host.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+    const spend = this.lucidService.hasStagedTendermintClient()
+      ? encodeSpendMultitxClientRedeemer('UpgradeClient', this.lucidService.LucidImporter)
+      : await this.lucidService.encode('UpgradeClient', 'spendClientRedeemer');
+    const withdrawal = await this.lucidService.encode(
+      { UpgradeClientWithdrawal: { subject_token: before.token } },
+      'recoverClientWithdrawalRedeemer',
+    );
+    await this.refreshWalletContext(data.signer, 'upgradeClientBuilder');
+    const unsignedTx = this.lucidService.createUnsignedUpgradeClientTransaction(
+      hostUtxo,
+      await this.lucidService.encode(
+        {
+          UpdateClient: {
+            client_state_siblings: clientStateSiblings,
+            consensus_state_siblings: consensusStateSiblings,
+          },
+        },
+        'host_state_redeemer',
+      ),
+      clientUtxo,
+      spend,
+      await this.lucidService.encode(updatedHost, 'host_state'),
+      await this.lucidService.encode(after, 'client'),
+      tokenUnit,
+      data.signer,
+      withdrawal,
+      proofRedeemer,
+    );
+    const { unsignedTxBytes } = await this.txOperationRunnerService.run({
+      operationName: 'upgradeClient',
+      unsignedTx,
+      validity: { apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime) },
+      wallet: { mode: 'refresh_from_address', address: data.signer, context: 'upgradeClient' },
+      completeOptions: { localUPLCEval: false, setCollateral: TRANSACTION_SET_COLLATERAL },
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+      syntheticEvents: [
+        {
+          type: 'upgrade_client',
+          attributes: [
+            { key: 'client_id', value: data.client_id },
+            { key: 'client_type', value: CLIENT_ID_PREFIX },
+            { key: 'consensus_height', value: `${h.revisionNumber}-${h.revisionHeight}` },
+          ],
+        },
+      ],
+    });
+    return { unsigned_tx: { type_url: '', value: unsignedTxBytes } };
   }
 
   async recoverClient(data: MsgRecoverClient): Promise<MsgRecoverClientResponse> {

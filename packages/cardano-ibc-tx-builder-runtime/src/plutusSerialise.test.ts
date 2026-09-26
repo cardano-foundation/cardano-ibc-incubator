@@ -123,14 +123,14 @@ test("public serialization rejects non-Data and malformed constructor aliases", 
 });
 
 test("public leaf extraction normalizes tagged integers and every outer-container variant", () => {
-  const client = "d8799fc24900000000000000000102030405060708ff";
+  const client = "d8799fc2490000000000000000010203040506070880ff";
   const consensus = "d87983015f41014102ffd879814100";
   const wrap = (map: string, outer = "d87983") =>
     outer +
     "d87984" + client + map + "a0a0d879824040" + "5820" + "00".repeat(32);
   const raw = wrap("a100" + consensus);
   const expected = {
-    clientValue: "d8799f0102030405060708ff",
+    clientValue: "d8799f010203040506070880ff",
     consensusValue: "d8799f01420102d8799f4100ffff",
   };
   assert.deepEqual(publicClientCommitmentValues(raw), expected);

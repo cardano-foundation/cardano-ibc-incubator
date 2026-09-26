@@ -9,7 +9,7 @@ use cardano/transaction.{
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum} as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  CheckStagedClientHistory, RecoverClientWithdrawal,
+  CheckStagedClientHistory, RecoverClientWithdrawal, UpgradeClientWithdrawal,
 } as legacy_client_redeemer
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
@@ -21,7 +21,7 @@ use ibc/client/ics_007_tendermint_client/misbehaviour_handle
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase, MisbehaviourCase}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
   FinalizeMisbehaviour, FinalizeUpdate, ReclaimClient, RecoverClient,
-  SpendMultitxClientRedeemer,
+  SpendMultitxClientRedeemer, UpgradeClient,
 }
 use ibc/client/ics_007_tendermint_client/multitx/session
 use ibc/client/ics_007_tendermint_client/multitx/types.{
@@ -131,6 +131,13 @@ validator spend_multitx_client(
             valid_to: validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
           }
         when redeemer is {
+          UpgradeClient -> {
+            expect Some(raw) =
+              pairs.get_first(redeemers, Withdraw(recover_client_credential))
+            let expected: Data =
+              UpgradeClientWithdrawal { subject_token: client_token }
+            raw == expected
+          }
           RecoverClient { substitute_token, .. } -> {
             expect Some(withdrawal_redeemer) =
               pairs.get_first(redeemers, Withdraw(recover_client_credential))

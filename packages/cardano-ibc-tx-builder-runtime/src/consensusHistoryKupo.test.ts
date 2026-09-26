@@ -13,7 +13,7 @@ const encode = (data: Data, canonical = true) => Data.to<Data>(data, undefined, 
 function datum(n: bigint, canonical = true): string {
   const client = new Constr(0, [
     '636861696e2d30', new Constr(0, [1n, 3n]), 1000n, 2000n, 10n,
-    height(0n), height(n), [],
+    height(0n), height(n), [], [],
   ]);
   const consensus = new Constr(0, [n, '33'.repeat(32), new Constr(0, ['44'.repeat(32)])]);
   return encode(new Constr(0, [new Constr(0, [

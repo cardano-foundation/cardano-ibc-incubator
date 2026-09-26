@@ -75,7 +75,8 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
   const consensusHeight = { ...proofHeight };
   const clientDatum = {
     state: {
-      clientState: { latestHeight: proofHeight, proofSpecs: [] },
+      clientState: {
+    upgradePath: [], latestHeight: proofHeight, proofSpecs: [] },
       consensusStates: new Map([
         [
           consensusHeight,
