@@ -499,7 +499,7 @@ async function fixture(
       ...clientState.fields.slice(0, 6),
       height(substituteHeight),
       proofSpecs,
-    [],
+      [],
     ]);
     const substituteConsensus = consensus(nowNs - 1_000_000_000n);
     const nextClientState = new Constr(0, [
@@ -693,7 +693,7 @@ async function fixture(
       ...clientState.fields.slice(0, 6),
       height(newHeight),
       proofSpecs,
-    [],
+      [],
     ]);
     const nextClient = new Constr<Data>(0, [
       new Constr(0, [

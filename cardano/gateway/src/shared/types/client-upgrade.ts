@@ -9,7 +9,7 @@ import {
   createTendermintClientStateSchema,
 } from './schema-fragments';
 
-export type ClientUpgrade = {
+type ClientUpgrade = {
   client_state: ClientState;
   consensus_state: ConsensusState;
   proof_client: MerkleProof;
