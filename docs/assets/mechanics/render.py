@@ -100,8 +100,8 @@ def fade(color, alpha: float, under=BG):
 # ---------------------------------------------------------------- canvas ---
 
 class Canvas:
-    def __init__(self):
-        self.img = Image.new("RGB", (W * S, H * S), BG)
+    def __init__(self, w=W, h=H):
+        self.img = Image.new("RGB", (w * S, h * S), BG)
         self.d = ImageDraw.Draw(self.img)
 
     def rrect(self, x, y, w, h, fill=None, outline=None, width=1.5, r=10):
@@ -1121,6 +1121,120 @@ def scene_finality_slow(t: float) -> Image.Image:
     return c.finish()
 
 
+# ------------------------------------------------ architecture (still) ---
+
+ARCH_W, ARCH_H = 1200, 790
+
+
+def arch_panel(c, x, y, w, h, title, sub, color):
+    c.rrect(x, y, w, h, fill=PANEL, outline=color, width=2, r=14)
+    c.text(x + 18, y + 14, title, 18, TEXT, "bold")
+    if sub:
+        c.text(x + 18, y + 40, sub, 12, MUTED)
+
+
+def arch_item(c, x, y, w, h, title, sub, color, mono=False):
+    c.rrect(x, y, w, h, fill=PANEL_2, outline=mix(BORDER, color, 0.7), width=1.5, r=10)
+    c.text(x + 12, y + 10, title, 13 if not mono else 12, color if mono else TEXT,
+           "mono" if mono else "bold")
+    if sub:
+        c.text(x + 12, y + 30, sub, 11, MUTED)
+
+
+def arch_link(c, pts, color, label=None, label_at=None, both=False):
+    for p1, p2 in zip(pts[:-2], pts[1:-1]):
+        c.line([p1, p2], color, 2)
+    c.arrow(pts[-2], pts[-1], color, 2, head=9)
+    if both:
+        c.arrow(pts[1], pts[0], color, 2, head=9)
+    if label:
+        lx, ly = label_at
+        w = c.text_width(label, 12) + 20
+        c.rrect(lx - w / 2, ly - 13, w, 26, fill=BG, outline=color, width=1.5, r=13)
+        c.text(lx, ly, label, 12, TEXT, anchor="mm")
+
+
+def draw_architecture() -> Image.Image:
+    c = Canvas(ARCH_W, ARCH_H)
+
+    # Row 1
+    arch_panel(c, 40, 30, 290, 190, "Users", "moving tokens between chains", PINK)
+    arch_item(c, 58, 90, 254, 52, "Frontend dapps", "ibc-swap, ibc-explorer", PINK)
+    arch_item(c, 58, 152, 254, 52, "User wallet", "CIP-30, signs transfers", PINK)
+
+    arch_panel(c, 390, 30, 400, 190, "Hermes relayer",
+               "Rust fork of Hermes with a Cardano ChainEndpoint", PURPLE)
+    for i, (dot, text) in enumerate([
+        (BLUE, "asks the Gateway for headers, proofs, unsigned txs"),
+        (BLUE, "checks every input with Kupo, re-evaluates with Ogmios"),
+        (PURPLE, "signs with its own key, checked against the bridge manifest"),
+        (GREEN, "relays headers, packets and proofs to Cosmos"),
+    ]):
+        y = 92 + i * 30
+        c.circle(410, y + 8, 4, fill=dot)
+        c.text(424, y, text, 13, TEXT)
+
+    arch_panel(c, 850, 30, 310, 190, "Cosmos chain", "counterparty, ibc-go v8 or v10", GREEN)
+    arch_item(c, 868, 90, 274, 52, "08-cardano-probabilistic", "light client for Cardano", GREEN)
+    arch_item(c, 868, 152, 274, 52, "IBC core and ICS-20", "connections, channels, transfer",
+              GREEN)
+
+    # Row 2
+    arch_panel(c, 40, 300, 520, 220, "Cardano Gateway", "NestJS over gRPC, holds no signing key",
+               BLUE)
+    for i, (title, sub) in enumerate([
+        ("Tx service", "builds unsigned txs with Lucid"),
+        ("Query service", "headers, proofs and events"),
+        ("IBC tree", "in memory, cached in the Gateway DB"),
+        ("Denom trace service", "plans voucher denom updates"),
+    ]):
+        r, col = divmod(i, 2)
+        arch_item(c, 58 + col * 246, 362 + r * 72, 236, 60, title, sub, BLUE)
+
+    arch_panel(c, 620, 300, 540, 220, "Cardano data services", None, TEAL)
+    for i, (title, sub, color) in enumerate([
+        ("Ogmios", "ledger queries, evaluate, submit", BLUE),
+        ("Kupo", "live UTxOs and datums", BLUE),
+        ("Yaci Store + Postgres", "indexed history, bridge_* tables", TEAL),
+        ("Blockfrost", "epoch and pool history, public nets", AMBER),
+    ]):
+        r, col = divmod(i, 2)
+        arch_item(c, 638 + col * 256, 362 + r * 72, 246, 60, title, sub, color)
+
+    # Row 3
+    arch_panel(c, 40, 600, 1120, 170, "Cardano chain", None, mix(BORDER, GREEN, 0.6))
+    arch_item(c, 58, 646, 236, 104, "cardano-node", "local node or a public relay", GREEN)
+    c.text(316, 614, "on-chain validators (Aiken)", 12, MUTED)
+    validators = [
+        ("host_state_stt", "IBC state root"),
+        ("spending_client", "Tendermint client"),
+        ("spending_connection", "connections"),
+        ("spending_channel/*", "channels, packets"),
+        ("spending_transfer_module", "ICS-20 escrow"),
+        ("minting_voucher", "voucher tokens"),
+        ("trace_registry", "denom traces"),
+        ("verifying_proof", "ICS-23 proofs"),
+    ]
+    for i, (name, sub) in enumerate(validators):
+        r, col = divmod(i, 4)
+        arch_item(c, 316 + col * 208, 646 + r * 54, 198, 46, name, None, TEAL, mono=True)
+        c.text(316 + col * 208 + 12, 646 + r * 54 + 28, sub, 11, MUTED)
+
+    # Links
+    arch_link(c, [(185, 220), (185, 300)], PINK, "build unsigned transfer", (185, 260))
+    arch_link(c, [(40, 178), (22, 178), (22, 698), (58, 698)], PINK, "wallet signs, submits",
+              (96, 560))
+    arch_link(c, [(470, 220), (470, 300)], PURPLE, "gRPC", (470, 260), both=True)
+    arch_link(c, [(710, 220), (710, 300)], PURPLE, "check, evaluate, submit", (710, 260))
+    arch_link(c, [(790, 125), (850, 125)], GREEN, both=True)
+    arch_link(c, [(560, 410), (620, 410)], BLUE, "reads", (590, 410))
+    arch_link(c, [(890, 520), (890, 600)], TEAL, "chain sync, submit", (890, 560), both=True)
+    return c.img
+
+
+STILLS = {"architecture": draw_architecture}
+
+
 # ------------------------------------------------------------- driver ---
 
 SCENES = {
@@ -1153,8 +1267,16 @@ def render(name: str) -> Path:
     return out
 
 
+def render_still(name: str) -> Path:
+    """Stills are saved at the 2x drawing resolution so they stay sharp."""
+    out = OUT_DIR / f"{name}.png"
+    STILLS[name]().quantize(colors=256, method=Image.Quantize.MEDIANCUT).save(
+        out, optimize=True)
+    return out
+
+
 if __name__ == "__main__":
-    names = sys.argv[1:] or list(SCENES)
+    names = sys.argv[1:] or [*SCENES, *STILLS]
     for name in names:
-        path = render(name)
+        path = render_still(name) if name in STILLS else render(name)
         print(f"{path.name}: {path.stat().st_size / 1e6:.2f} MB")
