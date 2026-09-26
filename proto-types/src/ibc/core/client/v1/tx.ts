@@ -568,7 +568,7 @@ function createBaseMsgUpgradeClientResponse(): MsgUpgradeClientResponse {
   };
 }
 /**
- * MsgUpgradeClientResponse defines the Msg/RecoverClient response type.
+ * MsgUpgradeClientResponse defines the Msg/UpgradeClient response type.
  * @name MsgUpgradeClientResponse
  * @package ibc.core.client.v1
  * @see proto type: ibc.core.client.v1.MsgUpgradeClientResponse
