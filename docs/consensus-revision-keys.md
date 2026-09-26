@@ -1,5 +1,0 @@
-Consensus states at `(1, 100)` and `(2, 100)` must have different commitment keys. Cardano previously stored both under `clients/<client-id>/consensusStates/100`. The Cosmos adapters also removed the revision from proof requests. This allowed a proof for one revision to be reused when another revision was requested.
-
-Cardano now commits the complete IBC height as `clients/<client-id>/consensusStates/<revision>-<height>`. Revision zero is explicit too. The Gateway uses the same keys for client creation, updates, recovery, historical reconstruction and queries. Both Cosmos adapters preserve the requested revision when checking a proof.
-
-This fixes the revision-key part of [#684](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/684). It changes commitment roots and requires a fresh deployment with matching Cardano scripts, Gateway, runtime and Cosmos adapters. Existing height-only trees cannot be reused. It does not provide a migration for existing deployments or finish the commitment versioning work in [#614](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/614).
