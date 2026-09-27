@@ -487,6 +487,7 @@ jobs:
             packages/cardano-ibc-planner/package-lock.json
             packages/cardano-ibc-tx-builder/package-lock.json
             packages/cardano-ibc-trace-registry/package-lock.json
+            dapps/ibc-swap/client/package-lock.json
             packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
       - name: Build planner
@@ -513,6 +514,11 @@ jobs:
           npm ci --prefix packages/cardano-ibc-tx-builder-runtime
           npm run --prefix packages/cardano-ibc-tx-builder-runtime build
           npm test --prefix packages/cardano-ibc-tx-builder-runtime
+
+      - name: Test Dapp asset presentation
+        run: |
+          npm ci --prefix dapps/ibc-swap/client --ignore-scripts --legacy-peer-deps
+          npm test --prefix dapps/ibc-swap/client
 
   deno-offchain:
     name: Cardano Offchain Deno

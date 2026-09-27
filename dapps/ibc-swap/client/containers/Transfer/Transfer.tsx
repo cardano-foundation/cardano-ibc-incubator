@@ -1,7 +1,5 @@
 'use client';
 
-/* global BigInt */
-
 import {
   Box,
   Button,
@@ -41,7 +39,9 @@ import {
   type TransferPlanResponse,
 } from '@/apis/restapi/cardano';
 import { useWallet } from '@meshsdk/react';
-import { formatPrice } from '@/utils/string';
+import { baseAmountToDisplayAmount, formatPrice } from '@/utils/string';
+import { tokenAmount } from '@/utils/token';
+import { cardanoTokenOption } from '@/utils/cardanoAssetPresentation';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import SwapContext from '@/contexts/SwapContext';
@@ -97,6 +97,7 @@ type EstimateFeeType = {
   destinationAddress?: string;
   tokenId?: string;
   sendAmount?: string;
+  baseAmount?: string;
 };
 
 type RoutePreviewState = {
@@ -119,14 +120,6 @@ type RouteAvailabilityStatus =
   | 'available'
   | 'unavailable'
   | 'unknown';
-
-type CardanoAsset = {
-  assetName: string;
-  quantity?: string;
-  unit?: string;
-  fingerprint?: string;
-  policyId?: string;
-};
 
 const initEstData = {
   display: false,
@@ -210,14 +203,6 @@ const formatRouteDiagnosticsMessage = (
   return `No canonical transfer route exists from ${fromChainName} to ${toChainName}. Missing live IBC transfer channel${
     missingHops.length === 1 ? '' : 's'
   } for: ${missingDescriptions.join('; ')}.`;
-};
-
-const hasPositiveIntegerAmount = (value: string): boolean => {
-  try {
-    return BigInt(value || '0') >= BigInt(1);
-  } catch {
-    return false;
-  }
 };
 
 const getCardanoBuildErrorMessage = (error: unknown): string => {
@@ -444,15 +429,7 @@ const Transfer = () => {
   // handle get cardano assets
   const cardano = useCardanoChain();
   const cardanoAddress = useSafeCardanoAddress();
-  const cardanoAssets: CardanoAsset[] = [];
-  cardano.getTotalSupply()?.forEach((asset) => {
-    const assetWithName = asset as typeof asset & { assetName: string };
-    cardanoAssets.push({
-      quantity: assetWithName.quantity,
-      assetName: assetWithName.assetName,
-      unit: asset.unit,
-    });
-  });
+  const transferToken = tokenAmount(selectedToken, sendAmount);
 
   const currentConfiguredRoute = findRuntimeRoute(
     fromNetwork.networkId,
@@ -467,7 +444,8 @@ const Transfer = () => {
     candidate.destinationChainId === toNetwork.networkId &&
     candidate.destinationAddress === destinationAddress &&
     candidate.tokenId === selectedToken.tokenId &&
-    candidate.sendAmount === sendAmount;
+    candidate.sendAmount === sendAmount &&
+    candidate.baseAmount === transferToken?.amount;
 
   const getSourceWalletAddress = (sourceChainId = fromNetwork.networkId) =>
     sourceChainId === CARDANO_CHAIN_ID
@@ -618,7 +596,7 @@ const Transfer = () => {
     }
 
     // do verify address:
-    if (!validateAddress() || !hasPositiveIntegerAmount(sendAmount)) {
+    if (!validateAddress() || !transferToken) {
       return initEstData;
     }
     const dataTransfer = getDataTransfer();
@@ -772,7 +750,7 @@ const Transfer = () => {
     // });
 
     // estimate amount after PFM
-    let estReceiveAmount = BigNumber(sendAmount);
+    let estReceiveAmount = BigNumber(transferToken.amount);
     if (chains.length > 2) {
       const feeChains = chains.slice(1, chains.length - 1);
       feeChains.forEach((chainId) => {
@@ -798,7 +776,7 @@ const Transfer = () => {
         senderAddress?.address,
         destinationAddress,
         PACKET_TIMEOUT_NANOSEC,
-        { amount: sendAmount, denom: selectedToken.tokenId! },
+        transferToken,
       );
       try {
         const est = await estimateFee(msg);
@@ -815,7 +793,10 @@ const Transfer = () => {
           display: true,
           canEst: true,
           msgs: msg,
-          estReceiveAmount: estReceiveAmount.toString(10),
+          estReceiveAmount: baseAmountToDisplayAmount(
+            estReceiveAmount.toFixed(0),
+            selectedToken.tokenExponent ?? 0,
+          ),
           estFee: `${estFee.amount} ${estFee.denom.toUpperCase()}`,
           estTime: COSMOS_TRANSFER_EST_TIME,
           sourceChainId: fromNetwork.networkId,
@@ -823,6 +804,7 @@ const Transfer = () => {
           destinationAddress,
           tokenId: selectedToken.tokenId,
           sendAmount,
+          baseAmount: transferToken.amount,
         };
       } catch (e) {
         if (estimateGenerationRef.current !== estimateGeneration) {
@@ -854,7 +836,7 @@ const Transfer = () => {
           cardanoAddress || '',
           destinationAddress,
           PACKET_TIMEOUT_NANOSEC,
-          { amount: sendAmount, denom: selectedToken.tokenId! },
+          transferToken,
           walletUtxos,
         );
         if (estimateGenerationRef.current !== estimateGeneration) {
@@ -874,7 +856,10 @@ const Transfer = () => {
           display: true,
           canEst: true,
           msgs: [unsignedTx],
-          estReceiveAmount: estReceiveAmount.toString(10),
+          estReceiveAmount: baseAmountToDisplayAmount(
+            estReceiveAmount.toFixed(0),
+            selectedToken.tokenExponent ?? 0,
+          ),
           estFee: estFee ? `${formatPrice(estFee)} lovelace` : 'See wallet',
           estTime: CARDANO_TRANSFER_EST_TIME,
           sourceChainId: fromNetwork.networkId,
@@ -882,6 +867,7 @@ const Transfer = () => {
           destinationAddress,
           tokenId: selectedToken.tokenId,
           sendAmount,
+          baseAmount: transferToken.amount,
         };
       } catch (e) {
         if (estimateGenerationRef.current !== estimateGeneration) {
@@ -912,7 +898,7 @@ const Transfer = () => {
     routeAvailability === 'available' &&
     Boolean(selectedToken.tokenId) &&
     Boolean(destinationAddress) &&
-    hasPositiveIntegerAmount(sendAmount) &&
+    Boolean(transferToken) &&
     !getSourceWalletMismatch() &&
     verifyAddress(destinationAddress, toNetwork.networkId?.toString());
 
@@ -1096,17 +1082,11 @@ const Transfer = () => {
     if (fromNetwork.networkId && fromNetwork.networkId === CARDANO_CHAIN_ID) {
       try {
         setIsFetchDataLoading(true);
-        if (cardanoAssets?.length) {
-          tokenListData =
-            cardanoAssets?.map((asset) => ({
-              tokenId: asset.unit,
-              tokenLogo: DefaultCardanoNetworkIcon.src,
-              tokenName: asset.assetName,
-              tokenSymbol: asset.unit,
-              tokenExponent: 0,
-              balance: asset.quantity,
-            })) || [];
-        }
+        tokenListData = cardano
+          .getTotalSupply()
+          .map((asset) =>
+            cardanoTokenOption(asset, DefaultCardanoNetworkIcon.src),
+          );
       } catch (error) {
         setIsFetchDataLoading(false);
       }
@@ -1115,6 +1095,18 @@ const Transfer = () => {
     setTokenList(tokenListData);
     setIsFetchDataLoading(false);
   };
+
+  useEffect(() => {
+    if (fromNetwork.networkId === CARDANO_CHAIN_ID && !isSubmitted) {
+      setTokenList(
+        cardano
+          .getTotalSupply()
+          .map((asset) =>
+            cardanoTokenOption(asset, DefaultCardanoNetworkIcon.src),
+          ),
+      );
+    }
+  }, [cardano, fromNetwork.networkId, isSubmitted]);
 
   useEffect(() => {
     handleResetSwapData();
@@ -1349,7 +1341,7 @@ const Transfer = () => {
         setEstData(calculatedEstData);
       }
     };
-    if (hasPositiveIntegerAmount(sendAmount)) {
+    if (transferToken) {
       debounce(checkEstData, 500)();
     } else {
       setEstData(initEstData);

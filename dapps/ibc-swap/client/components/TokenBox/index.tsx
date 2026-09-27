@@ -2,7 +2,8 @@ import { Box, Button, Image, Input, Text } from '@chakra-ui/react';
 import { FaChevronDown } from 'react-icons/fa';
 import { FROM_TO } from '@/constants';
 import { SwapTokenType } from '@/types/SwapDataType';
-import { formatPrice, formatTokenSymbol } from '@/utils/string';
+import { baseAmountToDisplayAmount, formatPrice } from '@/utils/string';
+import { TokenLabel } from '@/components/TokenLabel';
 import { useContext, useEffect, useState } from 'react';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
@@ -72,16 +73,15 @@ const TokenBox = ({
     token?.network?.networkId,
     token?.tokenId,
   ]);
-  const boxValue =
-    fromOrTo === FROM_TO.FROM
-      ? { value: token?.swapAmount || '0' }
-      : { defaultValue: token?.swapAmount || '0' };
+  const boxValue = { value: token?.swapAmount || '' };
   return (
     <StyledTokenBox>
       <Box display="flex" justifyContent="space-between">
         <Text className="label">{`${fromOrTo} token`}</Text>
         {fromOrTo === FROM_TO.FROM && (
-          <Text className="balance">{`Balance: ${formatPrice(balance)}`}</Text>
+          <Text className="balance">{`Balance: ${formatPrice(
+            baseAmountToDisplayAmount(balance, token?.tokenExponent ?? 0),
+          )}`}</Text>
         )}
       </Box>
       <Box display="flex" justifyContent="space-between" marginTop="5px">
@@ -116,7 +116,7 @@ const TokenBox = ({
               </Box>
             </Button>
             <Text fontSize="14px" color="#A8A8A9" pb="12px">
-              {formatTokenSymbol(token?.tokenName || '')}
+              <TokenLabel token={token} />
             </Text>
           </Box>
         </Box>

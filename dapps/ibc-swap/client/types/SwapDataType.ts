@@ -1,11 +1,10 @@
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
+import type { TokenPresentation } from './token';
 
-export type SwapTokenType = {
+export type SwapTokenType = TokenPresentation & {
   tokenId: string;
   tokenName: string;
   tokenLogo: string;
-  balance?: string;
-  tokenExponent?: number;
   swapAmount?: string;
   network: NetworkItemProps;
 };

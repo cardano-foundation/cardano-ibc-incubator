@@ -23,7 +23,12 @@ import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 import { COLOR } from '@/styles/color';
 import SwapContext from '@/contexts/SwapContext';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
-import { formatNumberInput, formatPrice } from '@/utils/string';
+import {
+  baseAmountToDisplayAmount,
+  formatNumberInput,
+  formatPrice,
+} from '@/utils/string';
+import { tokenAmount } from '@/utils/token';
 import { allChains } from '@/configs/customChainInfo';
 import TransferContext from '@/contexts/TransferContext';
 import {
@@ -172,6 +177,11 @@ const SwapContainer = () => {
 
   const calculateAndSetSwapEst = async () => {
     setEstimateData({ ...initEstData });
+    const inputToken = tokenAmount(
+      swapData.fromToken,
+      swapData.fromToken.swapAmount || '',
+    );
+    if (!inputToken) return;
     setIsEstimating(true);
 
     try {
@@ -179,8 +189,8 @@ const SwapContainer = () => {
         fromChainId:
           swapData.fromToken.network.ibcChainId ||
           swapData.fromToken.network.networkId!,
-        tokenInDenom: swapData.fromToken.tokenId,
-        tokenInAmount: swapData.fromToken.swapAmount!,
+        tokenInDenom: inputToken.denom,
+        tokenInAmount: inputToken.amount,
         toChainId:
           swapData.toToken.network.ibcChainId ||
           swapData.toToken.network.networkId!,
@@ -216,16 +226,16 @@ const SwapContainer = () => {
         ...swapData,
         toToken: {
           ...swapData.toToken,
-          swapAmount: tokenOutAmount,
+          swapAmount: baseAmountToDisplayAmount(
+            tokenOutAmount,
+            swapData.toToken.tokenExponent ?? 0,
+          ),
         },
       });
 
       const msg = await unsignedTxSwapFromCardano({
         sender: cardanoAddress!,
-        tokenIn: {
-          amount: swapData.fromToken.swapAmount!,
-          denom: swapData.fromToken.tokenId,
-        },
+        tokenIn: inputToken,
         tokenOutDenom: outToken,
         receiver: swapData.receiveAdrress || cardanoAddress!,
         transferRoutes,
@@ -258,8 +268,14 @@ const SwapContainer = () => {
       setEstimateData({
         ...initEstData,
         ...estDataResult,
-        estReceiveAmount: tokenOutAmount,
-        estMinimumReceived: `${tokenOutTransferBackAmount} ${swapData.toToken.tokenId.toUpperCase()}`,
+        estReceiveAmount: baseAmountToDisplayAmount(
+          tokenOutAmount,
+          swapData.toToken.tokenExponent ?? 0,
+        ),
+        estMinimumReceived: `${baseAmountToDisplayAmount(
+          tokenOutTransferBackAmount,
+          swapData.toToken.tokenExponent ?? 0,
+        )} ${swapData.toToken.tokenSymbol || swapData.toToken.tokenName}`,
       });
     } finally {
       setIsEstimating(false);

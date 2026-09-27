@@ -16,7 +16,7 @@ const StyledCustomTokenItemWrapper = styled(Box, {
   align-items: center;
   padding: 16px;
   cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
-  height: 48px;
+  min-height: 64px;
   padding: 9px 12px 9px 12px;
   border-radius: 10px;
   opacity: ${(props) => (props.disabled ? 0.5 : 1)};

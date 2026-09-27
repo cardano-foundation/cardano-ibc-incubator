@@ -2,12 +2,12 @@ import React, { ChangeEvent, useContext } from 'react';
 import { Box, Img, Input, Spacer, Text } from '@chakra-ui/react';
 import { IoChevronDown } from 'react-icons/io5';
 import { COLOR } from '@/styles/color';
+import { TokenLabel } from '@/components/TokenLabel';
 import TransferContext from '@/contexts/TransferContext';
 import {
   baseAmountToDisplayAmount,
   formatNumberInput,
   formatPrice,
-  formatTokenSymbol,
 } from '@/utils/string';
 
 import { StyledSelectTokenBox, StyledTokenSection } from './index.style';
@@ -80,7 +80,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
               <Box ml="10px" display="flex" alignItems="center">
                 <Box>
                   <Text fontWeight="700" fontSize="16px" lineHeight="22px">
-                    {formatTokenSymbol(selectedToken?.tokenName || '')}
+                    <TokenLabel token={selectedToken} />
                   </Text>
                 </Box>
               </Box>
