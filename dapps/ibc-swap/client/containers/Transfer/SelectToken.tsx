@@ -2,7 +2,11 @@ import React, { ChangeEvent, useContext } from 'react';
 import { Box, Img, Input, Spacer, Text } from '@chakra-ui/react';
 import { IoChevronDown } from 'react-icons/io5';
 import { COLOR } from '@/styles/color';
-import { TokenLabel } from '@/components/TokenLabel';
+import { TokenAmountUnit, TokenLabel } from '@/components/TokenLabel';
+import {
+  tokenTransferDisabledReason,
+  tokenUsesBaseUnits,
+} from '@/utils/cardanoAssetPresentation';
 import TransferContext from '@/contexts/TransferContext';
 import {
   baseAmountToDisplayAmount,
@@ -42,7 +46,9 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
   };
 
   const isDisabledAmountInput =
-    !selectedToken.tokenId || !fromNetwork.networkId || !toNetwork.networkId;
+    Boolean(tokenTransferDisabledReason(selectedToken)) ||
+    !fromNetwork.networkId ||
+    !toNetwork.networkId;
   const displayBalance = baseAmountToDisplayAmount(
     selectedToken?.balance || '0',
     selectedToken?.tokenExponent ?? 0,
@@ -56,6 +62,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
         </Text>
         <Text fontSize={14} lineHeight="20px" fontWeight={600}>
           Balance: {formatPrice(displayBalance) || 0.0}
+          <TokenAmountUnit token={selectedToken} />
         </Text>
       </Box>
       <Spacer />
@@ -66,18 +73,20 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
         pt="16px"
       >
         <StyledSelectTokenBox
+          style={{ minWidth: 0, flex: 1 }}
           onClick={isProcessingTransfer ? () => {} : handleOpenTokenModal}
           disabled={!fromNetwork?.networkId || isProcessingTransfer}
         >
           {selectedToken?.tokenId ? (
-            <Box display="flex">
+            <Box display="flex" minW={0}>
               <Img
                 src={selectedToken?.tokenLogo}
                 alt={selectedToken?.tokenName}
+                flexShrink={0}
                 width="32px"
                 height="32px"
               />
-              <Box ml="10px" display="flex" alignItems="center">
+              <Box ml="10px" minW={0} display="flex" alignItems="center">
                 <Box>
                   <Text fontWeight="700" fontSize="16px" lineHeight="22px">
                     <TokenLabel token={selectedToken} />
@@ -94,7 +103,12 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
         </StyledSelectTokenBox>
         <Input
           textAlign="right"
-          width="50%"
+          width="35%"
+          aria-label={
+            tokenUsesBaseUnits(selectedToken)
+              ? 'Amount in base units'
+              : 'Amount'
+          }
           fontSize={32}
           lineHeight="43.71px"
           fontWeight={700}
@@ -109,6 +123,9 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
           }}
         />
       </Box>
+      {selectedToken.tokenId && tokenTransferDisabledReason(selectedToken) && (
+        <Text fontSize={12}>{tokenTransferDisabledReason(selectedToken)}</Text>
+      )}
     </StyledTokenSection>
   );
 };

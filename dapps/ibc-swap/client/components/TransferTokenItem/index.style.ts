@@ -15,13 +15,17 @@ const StyledTokenItemWrapper = styled(Box, {
   justify-content: space-between;
   padding: 16px;
   cursor: pointer;
-  height: 56px;
+  min-height: 56px;
   padding: 8px 12px 8px 12px;
   border-radius: 10px;
   opacity: 0px;
   margin-top: 8px;
   margin-bottom: 16px;
   background-color: ${(props) => props.isActive && COLOR.neutral_5};
+
+  &[aria-disabled='true'] {
+    cursor: not-allowed;
+  }
 
   :hover {
     background-color: ${COLOR.neutral_5};

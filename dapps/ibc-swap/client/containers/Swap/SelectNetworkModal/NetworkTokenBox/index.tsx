@@ -11,7 +11,10 @@ import { FROM_TO } from '@/constants';
 import { SwapTokenType } from '@/types/SwapDataType';
 import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
 import { TokenLabel } from '@/components/TokenLabel';
-import { cardanoTokenOption } from '@/utils/cardanoAssetPresentation';
+import {
+  cardanoTokenOption,
+  tokenTransferDisabledReason,
+} from '@/utils/cardanoAssetPresentation';
 import { debounce } from '@/utils/helper';
 import { Loading } from '@/components/Loading/Loading';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
@@ -56,7 +59,7 @@ const NetworkTokenBox = ({
   const hasNetworkChoice = networkList.length > 1;
 
   const handleClickTokenItem = (token: TokenItemProps) => {
-    if (!networkSelected) return;
+    if (!networkSelected || tokenTransferDisabledReason(token)) return;
     setTokenSelected(token);
     onChooseToken?.({
       ...token,
@@ -85,7 +88,13 @@ const NetworkTokenBox = ({
       if (searchList?.length) {
         const newList = searchList.filter((item) =>
           (searchKey === 'tokenName'
-            ? [item.tokenName, item.tokenSymbol, item.tokenId]
+            ? [
+                item.tokenName,
+                item.tokenDisplayName,
+                item.tokenTrace,
+                item.tokenSymbol,
+                item.tokenId,
+              ]
             : [item?.[searchKey]]
           ).some((value) =>
             value?.toLowerCase().includes(searchString.toLowerCase()),

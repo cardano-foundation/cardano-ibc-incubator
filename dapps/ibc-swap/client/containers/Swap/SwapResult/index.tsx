@@ -5,7 +5,7 @@ import { Box, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
-import { TokenLabel } from '@/components/TokenLabel';
+import { TokenAmountUnit, TokenLabel } from '@/components/TokenLabel';
 import SwapContext from '@/contexts/SwapContext';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import { TxHashLink } from '@/components/TxHashLink';
@@ -94,7 +94,8 @@ export const SwapResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {swapData?.fromToken?.swapAmount}{' '}
+                {swapData?.fromToken?.swapAmount}
+                <TokenAmountUnit token={swapData.fromToken} />{' '}
                 <TokenLabel token={swapData.fromToken} />
               </Text>
             </StyledTransferFromToBox>
@@ -121,7 +122,8 @@ export const SwapResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {swapData.toToken.swapAmount}{' '}
+                {swapData.toToken.swapAmount}
+                <TokenAmountUnit token={swapData.toToken} />{' '}
                 <TokenLabel token={swapData.toToken} />
               </Text>
             </StyledTransferFromToBox>

@@ -18,6 +18,7 @@ import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import SwapContext from '@/contexts/SwapContext';
 import { FROM_TO, OSMOSIS_CHAIN_ID } from '@/constants';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
+import { tokenTransferDisabledReason } from '@/utils/cardanoAssetPresentation';
 import NetworkTokenBox from './NetworkTokenBox';
 
 import { StyledSwitchNetwork } from './index.style';
@@ -47,7 +48,10 @@ const SelectNetworkModal = ({
   }>({ fromNetworkDisabled: undefined, toNetworkDisabled: undefined });
 
   const handleSaveModal = () => {
-    if (tokenFromSelected?.tokenId && tokenToSelected?.tokenId) {
+    if (
+      !tokenTransferDisabledReason(tokenFromSelected) &&
+      !tokenTransferDisabledReason(tokenToSelected)
+    ) {
       setSwapData({
         ...swapData,
         fromToken: { ...tokenFromSelected, swapAmount: '' },
@@ -93,7 +97,9 @@ const SelectNetworkModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swapData?.fromToken?.tokenId, swapData?.toToken?.tokenId]);
 
-  const enableSwitch = tokenToSelected?.tokenId && tokenFromSelected?.tokenId;
+  const enableSwitch =
+    !tokenTransferDisabledReason(tokenToSelected) &&
+    !tokenTransferDisabledReason(tokenFromSelected);
 
   return (
     <Modal isCentered onClose={onClose} isOpen={isOpen}>
@@ -106,12 +112,14 @@ const SelectNetworkModal = ({
         h="694px"
         maxW="990px"
       >
-        <ModalHeader p={0}>Select Cardano Input And Local Osmosis Output</ModalHeader>
+        <ModalHeader p={0}>
+          Select Cardano Input And Local Osmosis Output
+        </ModalHeader>
         <ModalCloseButton w="24px" h="24px" top="24px" right="24px" />
         <ModalBody p={0}>
           <Box color={COLOR.neutral_3} fontSize="14px" mb="16px">
-            Transfers are generic ICS-20 flows. This modal is only for the
-            Local Osmosis swap demo path.
+            Transfers are generic ICS-20 flows. This modal is only for the Local
+            Osmosis swap demo path.
           </Box>
           <Box
             h="528px"
@@ -131,8 +139,7 @@ const SelectNetworkModal = ({
                 handleChangeNetwork(network, 'From')
               }
             />
-            <StyledSwitchNetwork
-            >
+            <StyledSwitchNetwork>
               <FaArrowRight color={COLOR.neutral_1} />
             </StyledSwitchNetwork>
             <NetworkTokenBox

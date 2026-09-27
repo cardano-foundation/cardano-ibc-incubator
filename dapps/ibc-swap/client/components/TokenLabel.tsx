@@ -1,19 +1,16 @@
 import type { TokenPresentation } from '../types/token';
-import { safeAssetText, shortAssetId } from '../utils/cardanoAssetPresentation';
+import {
+  safeAssetText,
+  tokenPrimaryLabel,
+  tokenUsesBaseUnits,
+} from '../utils/cardanoAssetPresentation';
 
-export const TokenLabel = ({
-  token,
-  showName = false,
-}: {
-  token?: TokenPresentation;
-  showName?: boolean;
-}) => {
+export const TokenLabel = ({ token }: { token?: TokenPresentation }) => {
   // Resumed transfers may still contain names saved by the old wallet decoder.
   const name = safeAssetText(token?.tokenName);
-  const symbol = safeAssetText(token?.tokenSymbol);
-  const fallback = token?.tokenId ? shortAssetId(token.tokenId) : '';
   return (
     <span
+      style={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}
       title={[
         name,
         safeAssetText(token?.tokenDescription),
@@ -22,7 +19,11 @@ export const TokenLabel = ({
         .filter(Boolean)
         .join('\n')}
     >
-      {(showName ? name : symbol || name) || fallback}
+      {tokenPrimaryLabel(token)}
     </span>
   );
 };
+
+export const TokenAmountUnit = ({ token }: { token?: TokenPresentation }) => (
+  <>{tokenUsesBaseUnits(token) ? ' base units' : ''}</>
+);

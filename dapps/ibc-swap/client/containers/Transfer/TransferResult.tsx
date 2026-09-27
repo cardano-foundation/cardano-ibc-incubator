@@ -7,7 +7,7 @@ import { COLOR } from '@/styles/color';
 import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
 import TransferContext from '@/contexts/TransferContext';
-import { TokenLabel } from '@/components/TokenLabel';
+import { TokenAmountUnit, TokenLabel } from '@/components/TokenLabel';
 import { IBC_SWAP_MODE, dappApiPath } from '@/configs/runtime';
 import {
   runtimeChainLabel,
@@ -457,9 +457,11 @@ export const TransferResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {sendAmount} <TokenLabel token={selectedToken} />/
-                {fromNetwork.networkPrettyName}
+                {sendAmount}
+                <TokenAmountUnit token={selectedToken} />{' '}
+                <TokenLabel token={selectedToken} />
               </Text>
+              <Text fontSize={14}>{fromNetwork.networkPrettyName}</Text>
             </StyledTransferFromToBox>
             <StyledSwitchNetwork
               style={{ borderRadius: '100%', cursor: 'auto' }}
@@ -484,8 +486,15 @@ export const TransferResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {estReceiveAmount} <TokenLabel token={selectedToken} />/
                 {toNetwork.networkPrettyName}
+              </Text>
+              <Text fontSize={14}>
+                Estimated amount: {estReceiveAmount}
+                <TokenAmountUnit token={selectedToken} />
+              </Text>
+              <Text fontSize={12} color={COLOR.neutral_3}>
+                Amount in source asset units. The denomination trace can change
+                on arrival.
               </Text>
             </StyledTransferFromToBox>
           </Box>
