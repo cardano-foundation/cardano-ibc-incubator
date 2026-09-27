@@ -132,7 +132,11 @@ const formatNumberInput = (
 
 function formatPrice(price?: string): string {
   if (!price) return '';
-  return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const [whole, fractional] = price.toString().split('.');
+  const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return fractional === undefined
+    ? groupedWhole
+    : `${groupedWhole}.${fractional}`;
 }
 
 const formatTokenSymbol = (symbol: string): string => {

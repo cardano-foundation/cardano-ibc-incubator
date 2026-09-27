@@ -57,12 +57,7 @@ const TokenBoxComponent = ({
             {tokenList?.map((token) => (
               <TransferTokenItem
                 key={token.tokenId}
-                tokenId={token.tokenId}
-                tokenName={token.tokenName}
-                tokenLogo={token.tokenLogo}
-                tokenSymbol={token.tokenSymbol}
-                balance={token.balance}
-                tokenExponent={token.tokenExponent}
+                {...token}
                 onClick={() => setCurrentToken(token)}
                 isActive={currentToken?.tokenId === token.tokenId}
               />
@@ -109,7 +104,9 @@ export const TokenModal = ({
   const handleSearch = debounce((setCurrentList: any, searchString: string) => {
     if (tokenList?.length) {
       const newList = tokenList.filter((item) =>
-        item.tokenName?.toLowerCase()?.includes(searchString.toLowerCase()),
+        [item.tokenName, item.tokenSymbol, item.tokenId].some((value) =>
+          value?.toLowerCase().includes(searchString.toLowerCase()),
+        ),
       );
       setCurrentList(newList);
     }

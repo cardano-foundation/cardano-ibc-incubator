@@ -761,7 +761,7 @@ export function createTraceRegistryClient(
     }
 
     const parsedVoucherAssetName = parseVoucherAssetName(parsed.assetNameHex);
-    if (!parsedVoucherAssetName) {
+    if (parsedVoucherAssetName?.kind !== 'ft') {
       return buildNativeAssetTrace(
         parsed.assetId,
         parsed.assetId,

@@ -1,11 +1,10 @@
 import React from 'react';
 import { List, ListItem } from '@chakra-ui/react';
+import type { TokenPresentation } from '@/types/token';
 import { TokenItem } from '../TokenItem/TokenItem';
 
-export type TokenItemProps = {
+export type TokenItemProps = TokenPresentation & {
   tokenId: string;
-  tokenName?: string;
-  tokenLogo?: string;
   isActive?: boolean;
   onClick?: () => void;
 };
@@ -34,8 +33,7 @@ export const TokenList: React.FC<TokenListProps> = ({
         {tokenList.map((token) => (
           <TokenItem
             key={token.tokenId}
-            tokenName={token.tokenName}
-            tokenLogo={token.tokenLogo}
+            {...token}
             isActive={tokenSelected?.tokenId === token.tokenId}
             onClick={
               disabledToken?.tokenId === token.tokenId

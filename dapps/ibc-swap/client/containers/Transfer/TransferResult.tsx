@@ -7,7 +7,7 @@ import { COLOR } from '@/styles/color';
 import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
 import TransferContext from '@/contexts/TransferContext';
-import { formatTokenSymbol } from '@/utils/string';
+import { TokenLabel } from '@/components/TokenLabel';
 import { IBC_SWAP_MODE, dappApiPath } from '@/configs/runtime';
 import {
   runtimeChainLabel,
@@ -457,8 +457,7 @@ export const TransferResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {sendAmount}{' '}
-                {formatTokenSymbol(selectedToken.tokenSymbol || '')}/
+                {sendAmount} <TokenLabel token={selectedToken} />/
                 {fromNetwork.networkPrettyName}
               </Text>
             </StyledTransferFromToBox>
@@ -485,8 +484,7 @@ export const TransferResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {estReceiveAmount}{' '}
-                {formatTokenSymbol(selectedToken.tokenSymbol || '')}/
+                {estReceiveAmount} <TokenLabel token={selectedToken} />/
                 {toNetwork.networkPrettyName}
               </Text>
             </StyledTransferFromToBox>

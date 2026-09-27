@@ -10,7 +10,8 @@ import EarchIcon from '@/assets/icons/earth.svg';
 import { FROM_TO } from '@/constants';
 import { SwapTokenType } from '@/types/SwapDataType';
 import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
-import { formatTokenSymbol } from '@/utils/string';
+import { TokenLabel } from '@/components/TokenLabel';
+import { cardanoTokenOption } from '@/utils/cardanoAssetPresentation';
 import { debounce } from '@/utils/helper';
 import { Loading } from '@/components/Loading/Loading';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
@@ -58,6 +59,7 @@ const NetworkTokenBox = ({
     if (!networkSelected) return;
     setTokenSelected(token);
     onChooseToken?.({
+      ...token,
       tokenId: token.tokenId!,
       tokenName: token.tokenName!,
       tokenLogo: token.tokenLogo!,
@@ -82,9 +84,12 @@ const NetworkTokenBox = ({
     ) => {
       if (searchList?.length) {
         const newList = searchList.filter((item) =>
-          item?.[searchKey]
-            ?.toLowerCase()
-            ?.includes(searchString.toLowerCase()),
+          (searchKey === 'tokenName'
+            ? [item.tokenName, item.tokenSymbol, item.tokenId]
+            : [item?.[searchKey]]
+          ).some((value) =>
+            value?.toLowerCase().includes(searchString.toLowerCase()),
+          ),
         );
         setCurrentList(newList);
       }
@@ -94,11 +99,7 @@ const NetworkTokenBox = ({
 
   useEffect(() => {
     if (selectedToken?.tokenId) {
-      setTokenSelected({
-        tokenId: selectedToken?.tokenId,
-        tokenLogo: selectedToken?.tokenLogo,
-        tokenName: selectedToken?.tokenName,
-      });
+      setTokenSelected(selectedToken);
       setNetworkSelected(selectedToken.network);
     }
   }, [selectedToken]);
@@ -108,7 +109,12 @@ const NetworkTokenBox = ({
       setNetworkSelected(networkList[0]);
       setDisabledNetwork?.(networkList[0]);
     }
-  }, [hasNetworkChoice, networkList, networkSelected?.networkId, setDisabledNetwork]);
+  }, [
+    hasNetworkChoice,
+    networkList,
+    networkSelected?.networkId,
+    setDisabledNetwork,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,14 +131,9 @@ const NetworkTokenBox = ({
       try {
         if (selectedNetworkId === CARDANO_CHAIN_ID) {
           const totalSupplyOnCardano = getCardanoTotalSupply();
-          const formatTokenList = totalSupplyOnCardano?.map((asset) => {
-            const assetWithName = asset as typeof asset & { assetName: string };
-            return {
-              tokenId: assetWithName.unit,
-              tokenName: assetWithName.assetName,
-              tokenLogo: DefaultCardanoNetworkIcon.src,
-            };
-          });
+          const formatTokenList = totalSupplyOnCardano.map((asset) =>
+            cardanoTokenOption(asset, DefaultCardanoNetworkIcon.src),
+          );
           if (!cancelled) {
             setDisplayTokenList(formatTokenList || []);
           }
@@ -186,7 +187,7 @@ const NetworkTokenBox = ({
           <Box ml="10px" display="flex" alignItems="center">
             <Box>
               <Text fontWeight="700" fontSize="18px">
-                {formatTokenSymbol(tokenSelected?.tokenName || '')}
+                <TokenLabel token={tokenSelected} />
               </Text>
               {networkSelected?.networkId ? (
                 <Text fontSize="12px">
@@ -267,17 +268,19 @@ const NetworkTokenBox = ({
             borderRightWidth="1px"
             borderColor={COLOR.neutral_5}
           >
-            {isFetchingData ? (
+            {isFetchingData && (
               <Box mt={4}>
                 <Loading />
               </Box>
-            ) : displayTokenList.length === 0 ? (
+            )}
+            {!isFetchingData && displayTokenList.length === 0 && (
               <Box py={10} px={6} textAlign="center">
                 <Text color={COLOR.neutral_3}>
                   No supported tokens available for this network yet.
                 </Text>
               </Box>
-            ) : (
+            )}
+            {!isFetchingData && displayTokenList.length > 0 && (
               <TokenList
                 tokenList={displayTokenList}
                 tokenSelected={tokenSelected}
