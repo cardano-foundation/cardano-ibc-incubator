@@ -1,6 +1,10 @@
 import { Box, Image, Text } from '@chakra-ui/react';
-import { TokenLabel } from '@/components/TokenLabel';
-import { shortAssetId } from '@/utils/cardanoAssetPresentation';
+import { TokenAmountUnit, TokenLabel } from '@/components/TokenLabel';
+import {
+  shortAssetId,
+  tokenSecondaryLabel,
+  tokenTransferDisabledReason,
+} from '@/utils/cardanoAssetPresentation';
 import type { TokenPresentation } from '@/types/token';
 import { COLOR } from '@/styles/color';
 import { baseAmountToDisplayAmount, formatPrice } from '@/utils/string';
@@ -13,16 +17,12 @@ export type TransferTokenItemProps = TokenPresentation & {
 };
 
 export const TransferTokenItem = ({
-  tokenId,
-  tokenLogo,
-  tokenName,
-  tokenSymbol,
-  balance,
-  tokenExponent,
-  tokenDescription,
   isActive,
   onClick,
+  ...token
 }: TransferTokenItemProps) => {
+  const { tokenId, tokenLogo, tokenName, balance, tokenExponent } = token;
+  const disabledReason = tokenTransferDisabledReason(token);
   const displayBalance = baseAmountToDisplayAmount(
     balance || '0',
     tokenExponent ?? 0,
@@ -30,7 +30,9 @@ export const TransferTokenItem = ({
 
   return (
     <StyledTokenItemWrapper
-      onClick={onClick}
+      onClick={disabledReason ? undefined : onClick}
+      aria-disabled={Boolean(disabledReason)}
+      title={disabledReason}
       isActive={isActive}
       id={`${tokenId}`}
     >
@@ -39,11 +41,8 @@ export const TransferTokenItem = ({
           <Image src={tokenLogo} alt={tokenName} width={30} height={30} />
         </Box>
         <Box display="block" minW={0}>
-          <StyledTokenItemName noOfLines={1}>
-            <TokenLabel
-              token={{ tokenId, tokenName, tokenSymbol, tokenDescription }}
-              showName
-            />
+          <StyledTokenItemName>
+            <TokenLabel token={token} />
           </StyledTokenItemName>
           <Text
             fontSize={12}
@@ -52,12 +51,11 @@ export const TransferTokenItem = ({
             color={COLOR.neutral_3}
             noOfLines={1}
           >
-            <TokenLabel
-              token={{ tokenId, tokenName, tokenSymbol, tokenDescription }}
-            />
-            {' · '}
+            {tokenSecondaryLabel(token)}
+            {tokenSecondaryLabel(token) && ' · '}
             {shortAssetId(tokenId || '')}
           </Text>
+          {disabledReason && <Text fontSize={12}>{disabledReason}</Text>}
         </Box>
       </Box>
       <Box display="block" alignContent="center" flexShrink={0}>
@@ -68,6 +66,7 @@ export const TransferTokenItem = ({
           color={COLOR.neutral_3}
         >
           {formatPrice(displayBalance)}
+          <TokenAmountUnit token={token} />
         </Text>
       </Box>
     </StyledTokenItemWrapper>

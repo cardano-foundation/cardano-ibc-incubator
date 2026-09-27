@@ -91,7 +91,7 @@ const StyledNetworkName = styled(Text)`
 const StyledTokenSection = styled.div`
   margin-top: 16px;
   width: 100%;
-  height: 108px;
+  min-height: 108px;
   padding: 20px 16px 16px 16px;
   gap: 0px;
   border-radius: 11px;

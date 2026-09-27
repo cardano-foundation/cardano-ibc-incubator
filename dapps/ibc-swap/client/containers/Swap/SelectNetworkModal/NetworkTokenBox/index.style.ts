@@ -15,14 +15,14 @@ const StyledNetworkBox = styled(Box, {
   border-radius: 12px;
   opacity: 0px;
   background: #0e0e124d;
-  border: ${(props) => !props.isChoseToken ? `1px solid #fd4c80` : undefined};
+  border: ${(props) => (!props.isChoseToken ? `1px solid #fd4c80` : undefined)};
 `;
 
 const StyledNetworkBoxHeader = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isChoseToken',
 })<StyledNetworkBoxProps>`
   width: 100%;
-  height: 56px;
+  min-height: 56px;
   padding: 14px 12px 14px 12px;
   gap: 16px;
   border-radius: 12px 12px 0px 0px;
@@ -30,7 +30,7 @@ const StyledNetworkBoxHeader = styled(Box, {
   background: ${COLOR.neutral_5};
   display: flex;
   justify-content: center;
-  background: ${(props) => !props.isChoseToken ? `#fd4c8014` : undefined};
+  background: ${(props) => (!props.isChoseToken ? `#fd4c8014` : undefined)};
 `;
 
 const StyledTokenBox = styled.div`

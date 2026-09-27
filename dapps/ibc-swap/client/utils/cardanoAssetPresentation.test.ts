@@ -3,13 +3,15 @@ import test from 'node:test';
 import {
   buildVoucherUserTokenNameFromFullDenom,
   buildVoucherReferenceTokenNameFromFullDenom,
-  deriveVoucherPresentation,
   type CardanoAssetDenomTrace,
 } from '@cardano-ibc/trace-registry';
 import {
   cardanoTokenOption,
   resolveCardanoWalletAssets,
-  shortAssetId,
+  tokenPrimaryLabel,
+  tokenSecondaryLabel,
+  tokenTransferDisabledReason,
+  tokenUsesBaseUnits,
 } from './cardanoAssetPresentation';
 import { tokenAmount } from './token';
 import { baseAmountToDisplayAmount, formatPrice } from './string';
@@ -45,7 +47,11 @@ test('uses verified fields while preserving wallet identity and integer balances
   );
   assert.deepEqual(cardanoTokenOption(asset, '/cardano.svg'), {
     tokenId: unit,
-    tokenName: 'Cosmos Hub Atom',
+    tokenName: fullDenom,
+    tokenTrace: fullDenom,
+    tokenDisplayName: 'Cosmos Hub Atom',
+    cardanoAssetStatus: 'verified-voucher',
+    tokenDisabledReason: undefined,
     tokenSymbol: 'ATOM',
     tokenDescription: trace.displayDescription,
     tokenLogo: trace.logo,
@@ -63,7 +69,6 @@ test('uses verified fields while preserving wallet identity and integer balances
 });
 
 test('missing or incomplete optional metadata uses denomination-trace presentation', async () => {
-  const presentation = deriveVoucherPresentation(fullDenom, 'uatom');
   const [asset] = await resolveCardanoWalletAssets([walletAsset], async () => ({
     ...trace,
     displayName: '',
@@ -72,10 +77,10 @@ test('missing or incomplete optional metadata uses denomination-trace presentati
     decimals: null,
     logo: null,
   }));
-  assert.equal(asset.tokenName, presentation.displayName);
-  assert.equal(asset.tokenSymbol, presentation.displaySymbol);
-  assert.equal(asset.tokenDescription, presentation.displayDescription);
-  assert.equal(asset.tokenExponent, 0);
+  assert.equal(asset.tokenName, fullDenom);
+  assert.equal(asset.tokenSymbol, undefined);
+  assert.equal(asset.tokenDescription, `IBC voucher for ${fullDenom}`);
+  assert.equal(asset.tokenExponent, undefined);
   assert.equal(
     cardanoTokenOption(asset, '/cardano.svg').tokenLogo,
     '/cardano.svg',
@@ -99,9 +104,9 @@ test('malformed optional metadata cannot introduce control characters or invalid
           } as CardanoAssetDenomTrace),
       );
       assert.equal(asset.tokenName, fullDenom);
-      assert.equal(asset.tokenSymbol, 'uatom');
+      assert.equal(asset.tokenSymbol, undefined);
       assert.equal(asset.tokenDescription, `IBC voucher for ${fullDenom}`);
-      assert.equal(asset.tokenExponent, 0);
+      assert.equal(asset.tokenExponent, undefined);
       assert.equal(asset.tokenLogo, undefined);
     }),
   );
@@ -115,7 +120,7 @@ test('supports an IPFS logo returned by verified metadata', async () => {
   assert.equal(asset.tokenLogo, 'https://ipfs.io/ipfs/bafyexample/atom.png');
 });
 
-test('unknown policies, malformed responses and failed lookups keep safe asset IDs', async () => {
+test('unresolved vouchers show the full asset ID and cannot enter a transaction', async () => {
   const responses = [
     null,
     { ...trace, kind: 'native' },
@@ -123,6 +128,9 @@ test('unknown policies, malformed responses and failed lookups keep safe asset I
     { ...trace, voucherPolicyId: 'cd'.repeat(28) },
     { ...trace, voucherTokenName: '00' },
     { ...trace, fullDenom: '\u0000' },
+    { ...trace, fullDenom: 'transfer/channel-1/uatom' },
+    { ...trace, path: 'transfer/channel-1' },
+    { ...trace, baseDenom: 'ueth' },
     { ...trace, displayName: { malicious: 'object' } },
   ];
   await Promise.all(
@@ -131,14 +139,17 @@ test('unknown policies, malformed responses and failed lookups keep safe asset I
         [walletAsset],
         async () => response as CardanoAssetDenomTrace | null,
       );
-      assert.equal(asset.tokenName, shortAssetId(unit));
+      assert.equal(tokenPrimaryLabel(asset), `Unresolved voucher · ${unit}`);
+      assert.ok(tokenTransferDisabledReason(asset));
+      assert.equal(tokenAmount(asset, '1'), null);
       assert.equal(asset.unit, unit);
     }),
   );
   const [failed] = await resolveCardanoWalletAssets([walletAsset], async () => {
     throw new Error('offline');
   });
-  assert.equal(failed.tokenName, shortAssetId(unit));
+  assert.equal(tokenPrimaryLabel(failed), `Unresolved voucher · ${unit}`);
+  assert.equal(tokenAmount(failed, '1'), null);
   const [badName] = await resolveCardanoWalletAssets(
     [walletAsset],
     async () => responses.at(-1) as CardanoAssetDenomTrace,
@@ -204,6 +215,7 @@ test('duplicate symbols retain separate balances, selections and transaction den
       assetId: id,
       voucherTokenName: id === unit ? voucherTokenName : secondName,
       fullDenom: id === unit ? fullDenom : 'transfer/channel-1/uatom',
+      path: id === unit ? trace.path : 'transfer/channel-1',
     }),
   );
   const options = assets.map((asset) =>
@@ -221,6 +233,10 @@ test('duplicate symbols retain separate balances, selections and transaction den
     options.map((asset) => asset.balance),
     ['123456789', '9999999'],
   );
+  assert.deepEqual(options.map(tokenPrimaryLabel), [
+    fullDenom,
+    'transfer/channel-1/uatom',
+  ]);
   assert.equal(tokenAmount(options[0], '1')?.denom, unit);
   assert.equal(tokenAmount(options[1], '1')?.denom, secondUnit);
 });
@@ -228,6 +244,8 @@ test('duplicate symbols retain separate balances, selections and transaction den
 test('amount conversion stays exact and rejects invalid or unaffordable input', () => {
   const token = {
     tokenId: unit,
+    tokenTrace: fullDenom,
+    cardanoAssetStatus: 'verified-voucher' as const,
     tokenExponent: 6,
     balance: '900719925474099312345678',
   };
@@ -241,4 +259,65 @@ test('amount conversion stays exact and rejects invalid or unaffordable input', 
     },
   );
   assert.equal(formatPrice('1234567.123456'), '1,234,567.123456');
+});
+
+test('a foreign-policy token identified as native never inherits voucher names', async () => {
+  const [asset] = await resolveCardanoWalletAssets([walletAsset], async () => ({
+    ...trace,
+    kind: 'native',
+    fullDenom: unit,
+  }));
+  assert.equal(asset.cardanoAssetStatus, 'native');
+  assert.equal(tokenPrimaryLabel(asset), unit);
+  assert.deepEqual(tokenAmount(asset, '1'), { denom: unit, amount: '1' });
+});
+
+test('persisted names and forged traces cannot bypass unresolved voucher blocking', () => {
+  const legacy = {
+    tokenId: unit,
+    tokenName: 'ATOM',
+    tokenSymbol: 'ATOM',
+    balance: '10',
+  };
+  const forged = {
+    ...legacy,
+    cardanoAssetStatus: 'verified-voucher' as const,
+    tokenTrace: 'transfer/channel-999/uatom',
+  };
+  [legacy, forged].forEach((token) => {
+    assert.equal(tokenPrimaryLabel(token), `Unresolved voucher · ${unit}`);
+    assert.equal(tokenAmount(token, '1'), null);
+    assert.equal(tokenSecondaryLabel(token), '');
+  });
+});
+
+test('reference NFTs cannot bypass the transaction guard', () => {
+  const tokenId =
+    policy + buildVoucherReferenceTokenNameFromFullDenom(fullDenom);
+  assert.equal(
+    tokenAmount({ tokenId, cardanoAssetStatus: 'native' }, '1'),
+    null,
+  );
+});
+
+test('unknown decimals are explicitly base units while verified zero decimals are known', async () => {
+  const [unknown] = await resolveCardanoWalletAssets(
+    [walletAsset],
+    async () => ({ ...trace, decimals: null }),
+  );
+  const [zero] = await resolveCardanoWalletAssets([walletAsset], async () => ({
+    ...trace,
+    decimals: 0,
+  }));
+  assert.equal(tokenUsesBaseUnits(unknown), true);
+  assert.equal(tokenUsesBaseUnits(zero), false);
+  assert.deepEqual(tokenAmount(unknown, '42'), { denom: unit, amount: '42' });
+  assert.equal(tokenAmount(unknown, '0.5'), null);
+  assert.equal(
+    tokenAmount(
+      { ...unknown, tokenDisabledReason: 'Wallet verification pending' },
+      '1',
+    ),
+    null,
+  );
 });

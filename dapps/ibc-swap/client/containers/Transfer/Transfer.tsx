@@ -41,7 +41,10 @@ import {
 import { useWallet } from '@meshsdk/react';
 import { baseAmountToDisplayAmount, formatPrice } from '@/utils/string';
 import { tokenAmount } from '@/utils/token';
-import { cardanoTokenOption } from '@/utils/cardanoAssetPresentation';
+import {
+  cardanoTokenOption,
+  tokenPrimaryLabel,
+} from '@/utils/cardanoAssetPresentation';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import SwapContext from '@/contexts/SwapContext';
@@ -439,6 +442,7 @@ const Transfer = () => {
   const estimateMatchesCurrentTransfer = (
     candidate: EstimateFeeType,
   ): boolean =>
+    Boolean(transferToken) &&
     candidate.canEst &&
     candidate.sourceChainId === fromNetwork.networkId &&
     candidate.destinationChainId === toNetwork.networkId &&
@@ -672,12 +676,12 @@ const Transfer = () => {
         'destination-chain-unavailable': `No discovered IBC transfer channels reach ${toChainName}.`,
         'no-outbound-channels': `${fromChainName} has no outbound IBC transfer channels.`,
         'no-route-found': `No IBC transfer route found from ${fromChainName} to ${toChainName}.`,
-        'missing-unwind-hop': `Token ${
-          selectedToken.tokenName || selectedToken.tokenId
-        } must unwind on a specific IBC hop before it can reach ${toChainName}, but that reverse hop is not currently available.`,
-        'ambiguous-unwind-hop': `Token ${
-          selectedToken.tokenName || selectedToken.tokenId
-        } can unwind through multiple local channels on the way to ${toChainName}; refusing to guess.`,
+        'missing-unwind-hop': `Token ${tokenPrimaryLabel(
+          selectedToken,
+        )} must unwind on a specific IBC hop before it can reach ${toChainName}, but that reverse hop is not currently available.`,
+        'ambiguous-unwind-hop': `Token ${tokenPrimaryLabel(
+          selectedToken,
+        )} can unwind through multiple local channels on the way to ${toChainName}; refusing to guess.`,
         'no-forward-route':
           formatRouteDiagnosticsMessage(
             routePlan,
@@ -1097,16 +1101,36 @@ const Transfer = () => {
   };
 
   useEffect(() => {
-    if (fromNetwork.networkId === CARDANO_CHAIN_ID && !isSubmitted) {
-      setTokenList(
-        cardano
-          .getTotalSupply()
-          .map((asset) =>
-            cardanoTokenOption(asset, DefaultCardanoNetworkIcon.src),
-          ),
-      );
+    if (
+      fromNetwork.networkId === CARDANO_CHAIN_ID &&
+      !isSubmitted &&
+      !isProcessingTransfer
+    ) {
+      const options = cardano
+        .getTotalSupply()
+        .map((asset) =>
+          cardanoTokenOption(asset, DefaultCardanoNetworkIcon.src),
+        );
+      setTokenList(options);
+      if (selectedToken.tokenId) {
+        const current = options.find(
+          (asset) => asset.tokenId === selectedToken.tokenId,
+        );
+        setSelectedToken(current || {});
+        if (!current || current.tokenExponent !== selectedToken.tokenExponent)
+          setSendAmount('');
+      }
     }
-  }, [cardano, fromNetwork.networkId, isSubmitted]);
+  }, [
+    cardano,
+    fromNetwork.networkId,
+    isSubmitted,
+    isProcessingTransfer,
+    selectedToken.tokenId,
+    selectedToken.tokenExponent,
+    setSelectedToken,
+    setSendAmount,
+  ]);
 
   useEffect(() => {
     handleResetSwapData();
