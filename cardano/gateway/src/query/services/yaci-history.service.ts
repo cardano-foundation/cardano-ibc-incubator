@@ -148,7 +148,7 @@ type BlockfrostRequestHeaders = {
   project_id?: string;
 };
 
-const CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
+const NANOSECONDS_PER_SECOND = 1_000_000_000n;
 const POOL_REGISTRATION_LOOKUP_BATCH_SIZE = 5;
 const EPOCH_PARAMS_LOOKUP_TIMEOUT_MS = 10_000;
 const EPOCH_PARAMS_LOOKUP_MAX_ATTEMPTS = 3;
@@ -687,6 +687,10 @@ export class YaciHistoryService implements HistoryService {
       "cardanoEpochParamsEndpoint",
     )?.trim().replace(/\/+$/, "");
     if (!isPublicNetwork) {
+      const localEndpoint = this.configService.get<string>("cardanoLocalEpochContextEndpoint")?.trim();
+      if (localEndpoint) {
+        return this.findLocalEpochStakeSnapshot(localEndpoint, block.epochNo);
+      }
       return ogmiosStakeDistribution;
     }
     if (!endpoint) {
@@ -733,6 +737,70 @@ export class YaciHistoryService implements HistoryService {
     } finally {
       this.currentEpochStakeSnapshotLookups.deleteIfValue(cacheKey, lookup);
     }
+  }
+
+  private async findLocalEpochStakeSnapshot(
+    endpoint: string,
+    epoch: number,
+  ): Promise<HistoryStakeDistributionEntry[]> {
+    const url = new URL(`${endpoint.replace(/\/+$/, "")}/epoch_stake`);
+    url.searchParams.set("_epoch_no", epoch.toString());
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(EPOCH_PARAMS_LOOKUP_TIMEOUT_MS),
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`Local epoch stake lookup failed for epoch ${epoch}: HTTP ${response.status}`);
+    }
+    const body: unknown = await response.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new Error("Local epoch stake response must be an object");
+    }
+    const snapshot = body as Record<string, unknown>;
+    if (snapshot.epoch_no !== epoch) {
+      throw new Error(`Local epoch stake response does not match epoch ${epoch}`);
+    }
+    const positiveStake = (value: unknown): bigint => {
+      if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) {
+        throw new Error("Local epoch stake values must be positive decimal strings");
+      }
+      return BigInt(value);
+    };
+    const totalStake = positiveStake(snapshot.total_active_stake);
+    if (!Array.isArray(snapshot.pools) || snapshot.pools.length === 0) {
+      throw new Error(`Local epoch stake response has no active pools for epoch ${epoch}`);
+    }
+    const seen = new Set<string>();
+    const distribution = snapshot.pools.map((row: unknown): HistoryStakeDistributionEntry => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        throw new Error("Local epoch stake contains an invalid pool row");
+      }
+      const pool = row as Record<string, unknown>;
+      if (typeof pool.pool_id_hex !== "string" || !/^[0-9a-f]{56}$/i.test(pool.pool_id_hex)) {
+        throw new Error("Local epoch stake contains an invalid pool id");
+      }
+      const poolId = normalizePoolId(pool.pool_id_hex);
+      if (seen.has(poolId)) {
+        throw new Error(`Local epoch stake contains duplicate pool ${poolId}`);
+      }
+      seen.add(poolId);
+      const stake = positiveStake(pool.active_stake);
+      const vrfKeyHash = pool.vrf_key_hash;
+      if (typeof vrfKeyHash !== "string" || !/^[0-9a-f]{64}$/.test(vrfKeyHash)) {
+        throw new Error(`Frozen VRF key is unavailable for local epoch pool ${poolId}`);
+      }
+      return {
+        poolId,
+        stake,
+        vrfKeyHash,
+        relativeStakeNumerator: stake,
+        relativeStakeDenominator: totalStake,
+      };
+    });
+    if (distribution.reduce((total, pool) => total + pool.stake, 0n) !== totalStake) {
+      throw new Error(`Local epoch stake total does not match active stake for epoch ${epoch}`);
+    }
+    return distribution.sort((left, right) => left.poolId.localeCompare(right.poolId));
   }
 
   private async buildCurrentEpochStakeSnapshot(
@@ -941,6 +1009,11 @@ export class YaciHistoryService implements HistoryService {
       );
     }
 
+    const localEndpoint = this.configService.get<string>("cardanoLocalEpochContextEndpoint")?.trim();
+    if (localEndpoint) {
+      return this.findObservedLocalEpochContext(block, slotBounds, ogmiosEndpoint, epochNonce, localEndpoint);
+    }
+
     if (
       process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT !==
         undefined &&
@@ -957,6 +1030,39 @@ export class YaciHistoryService implements HistoryService {
     throw new Error(
       `Ogmios can no longer acquire epoch ${block.epochNo}, and no historical stake-distribution fallback is configured`,
     );
+  }
+
+  private async findObservedLocalEpochContext(
+    block: HistoryBlock,
+    slotBounds: { currentEpochStartSlot: bigint; currentEpochEndSlotExclusive: bigint },
+    ogmiosEndpoint: string,
+    epochNonce: string,
+    endpoint: string,
+  ): Promise<HistoryEpochContextAtBlock> {
+    // Genesis parameters are constant for this chain. Stake and VRF keys must
+    // come from the recorded epoch, even when Ogmios has forgotten its blocks.
+    const [verification, stakeDistribution] = await Promise.all([
+      queryCurrentEpochVerificationData(ogmiosEndpoint, epochNonce),
+      this.findLocalEpochStakeSnapshot(endpoint, block.epochNo),
+    ]);
+    const firstRegistrationSlots = await this.findKnownPoolRegistrationSlots(
+      stakeDistribution.map((entry) => entry.poolId),
+    );
+    return {
+      epoch: block.epochNo,
+      stakeDistribution: stakeDistribution.map((entry) => ({
+        ...entry,
+        firstRegistrationSlot: firstRegistrationSlots.get(entry.poolId) ?? null,
+      })),
+      verificationContext: {
+        epochNonce: verification.epochNonce,
+        slotsPerKesPeriod: verification.slotsPerKesPeriod,
+        maxKesEvolutions: verification.maxKesEvolutions,
+        activeSlotCoefficientNumerator: verification.activeSlotCoefficientNumerator,
+        activeSlotCoefficientDenominator: verification.activeSlotCoefficientDenominator,
+        ...slotBounds,
+      },
+    };
   }
 
   private async findHistoricalEpochContextFallback(
@@ -2092,14 +2198,15 @@ export class YaciHistoryService implements HistoryService {
       return null;
     }
 
+    const slotLengthNs = BigInt(this.localSlotConfig()?.slotLength ?? 1000) * 1_000_000n;
     const systemStartUnixNs = referenceBlock.timestampUnixNs -
-      referenceBlock.slotNo * CARDANO_SLOT_LENGTH_NS;
-    const unixNs = parsedSeconds * CARDANO_SLOT_LENGTH_NS;
+      referenceBlock.slotNo * slotLengthNs;
+    const unixNs = parsedSeconds * NANOSECONDS_PER_SECOND;
     if (unixNs <= systemStartUnixNs) {
       return 0n;
     }
 
-    return (unixNs - systemStartUnixNs) / CARDANO_SLOT_LENGTH_NS;
+    return (unixNs - systemStartUnixNs) / slotLengthNs;
   }
 
   async findTxByHash(hash: string): Promise<TxDto | null> {
@@ -2207,17 +2314,33 @@ export class YaciHistoryService implements HistoryService {
     };
   }
 
+  private localSlotConfig(): { zeroTime: number; zeroSlot: number; slotLength: number } | undefined {
+    if (this.configService.get<string>("cardanoNetwork") !== "Custom") return undefined;
+    const timing = this.lucidService?.LucidImporter?.SLOT_CONFIG_NETWORK?.Custom;
+    if (!timing || !Number.isSafeInteger(timing.zeroTime) ||
+        !Number.isSafeInteger(timing.slotLength) || timing.slotLength <= 0 || timing.zeroSlot !== 0) {
+      throw new Error("Missing local Cardano slot timing from Ogmios");
+    }
+    return timing;
+  }
+
   private mapHistoryBlockRow(row: HistoryBlockRow): HistoryBlock {
     const blockTimeMs = row.block_time instanceof Date
       ? row.block_time.valueOf()
       : Number(row.block_time) * 1_000;
+    const timing = this.localSlotConfig();
+    // Yaci's block_time stores whole seconds. Derive the exact local timestamp
+    // from genesis and the absolute slot so proof timestamps retain milliseconds.
+    const timestampUnixNs = timing
+      ? (BigInt(timing.zeroTime) + BigInt(row.slot) * BigInt(timing.slotLength)) * 1_000_000n
+      : BigInt(blockTimeMs) * 1_000_000n;
     return {
       height: Number(row.number),
       hash: row.hash,
       prevHash: row.prev_hash,
       slotNo: BigInt(row.slot),
       epochNo: Number(row.epoch),
-      timestampUnixNs: BigInt(blockTimeMs) * 1_000_000n,
+      timestampUnixNs,
       slotLeader: normalizePoolId(row.slot_leader ?? ""),
     };
   }

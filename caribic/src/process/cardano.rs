@@ -1,11 +1,10 @@
 use crate::config;
-use crate::process::docker::DockerCli;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Output;
 
 pub struct CardanoCli {
-    docker: DockerCli,
     network_magic: String,
+    project_root: PathBuf,
 }
 
 impl CardanoCli {
@@ -14,14 +13,9 @@ impl CardanoCli {
         let network_magic = config::cardano_network_profile(active_network)
             .network_magic
             .to_string();
-        let cardano_dir = project_root_dir.join("chains/cardano");
-        Self::for_chain_dir_and_magic(cardano_dir.as_path(), network_magic.as_str())
-    }
-
-    pub fn for_chain_dir_and_magic(cardano_dir: &Path, network_magic: &str) -> Self {
         Self {
-            docker: DockerCli::new(cardano_dir),
-            network_magic: network_magic.to_string(),
+            project_root: project_root_dir.to_path_buf(),
+            network_magic,
         }
     }
 
@@ -48,18 +42,24 @@ impl CardanoCli {
     }
 
     pub fn exec_output(&self, cardano_cli_args: &[&str]) -> Result<Output, String> {
-        // Caribic runs Cardano queries against the managed devnet container rather than a host
-        // install, so every typed Cardano call funnels through `docker compose exec`.
-        let mut args = vec!["cardano-cli"];
-        args.extend_from_slice(cardano_cli_args);
-        self.docker
-            .compose_exec_no_tty_output("cardano-node", args.as_slice())
+        let output = self.exec_output_allow_failure(cardano_cli_args)?;
+        if output.status.success() {
+            Ok(output)
+        } else {
+            Err(format!(
+                "Cardano CLI failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ))
+        }
     }
 
     pub fn exec_output_allow_failure(&self, cardano_cli_args: &[&str]) -> Result<Output, String> {
-        let mut args = vec!["cardano-cli"];
-        args.extend_from_slice(cardano_cli_args);
-        self.docker
-            .compose_exec_no_tty_output_allow_failure("cardano-node", args.as_slice())
+        if !crate::local_network::is_local(&self.project_root) {
+            return Err("Cardano CLI queries require the local network. Public networks use the configured Gateway endpoints.".into());
+        }
+        crate::local_network::command(&self.project_root, "cli")
+            .args(cardano_cli_args)
+            .output()
+            .map_err(|error| error.to_string())
     }
 }

@@ -17,6 +17,14 @@ const DENO_INSTALL_SCRIPT: &str = "curl -fsSL https://deno.land/install.sh | sh"
 pub fn install_missing_tool(tool: &ToolStatus, host_os: &HostOs) -> Result<(), String> {
     match tool.command {
         "docker" => install_docker(host_os),
+        "python3" => match host_os {
+            HostOs::MacOs => {
+                ensure_homebrew_available()?;
+                run_command("brew", &["install", "python"])
+            }
+            HostOs::Linux => install_apt_packages(&["python3"]),
+            HostOs::Unsupported(_) => Err(tool.install_instructions.to_string()),
+        },
         "aiken" => install_aiken(),
         "deno" => install_deno(host_os),
         "go" => install_go(host_os),

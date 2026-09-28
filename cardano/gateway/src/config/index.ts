@@ -81,6 +81,7 @@ export const validatePublicNetworkStabilityConfig = (network?: string, endpoint?
     'CARDANO_STABILITY_ASSUME_STATIC_STAKE',
     'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT',
     'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE',
+    'CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT',
   ]) {
     const enabled =
       name === 'CARDANO_STABILITY_ASSUME_STATIC_STAKE' ? process.env[name] === '1' : process.env[name] !== undefined;
@@ -138,6 +139,7 @@ interface Config {
   cardanoStabilityCheckpointMaxBridgeBlocks: number;
   cardanoStabilityCheckpointMaxHeaderBytes: number;
   cardanoEpochParamsEndpoint?: string;
+  cardanoLocalEpochContextEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
   cardanoBlockfrostProjectId?: string;
 
@@ -194,6 +196,9 @@ export default (): Partial<Config> => {
       process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 768 * 1024,
     ),
     cardanoEpochParamsEndpoint,
+    cardanoLocalEpochContextEndpoint: cardanoNetwork === 'Custom'
+      ? process.env.CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT?.trim() || undefined
+      : undefined,
     cardanoPoolRegistrationHistoryEndpoint:
       process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC),
     cardanoBlockfrostProjectId:

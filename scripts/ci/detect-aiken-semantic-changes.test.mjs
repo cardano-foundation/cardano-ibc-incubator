@@ -13,8 +13,8 @@ import {
 test('scopes edits to existing workflow jobs and falls back for shared changes', () => {
   const source = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const gatewayEdit = source.replace(
-    '      - name: Check collateral selection against Hermes policy',
-    '      - name: Check gateway collateral',
+    '      - name: Check Lucid transaction compatibility',
+    '      - name: Check gateway transaction compatibility',
   );
   assert.notEqual(gatewayEdit, source);
   assert.deepEqual(classifyCiWorkflowChange(source, gatewayEdit), { relevant: false, fuzz: false });
@@ -49,7 +49,8 @@ test('separates transaction inputs from validator and fuzz infrastructure change
       ['cardano/offchain/src/deployment.ts', true, false],
       ['cardano/gateway/src/shared/types/channel/channel-datum.ts', true, false],
       ['packages/cardano-ibc-tx-builder-runtime/package-lock.json', true, false],
-      ['chains/cardano/config/devnet/genesis-conway.json', true, false],
+      ['chains/cardano/devkit/node.properties', true, false],
+      ['chains/cardano/devkit/Dockerfile', true, false],
       ['scripts/ci/collect-cardano-tx-budget-units.sh', true, false],
       ['cardano/onchain/aiken.lock', true, true],
       ['cardano/onchain/validators/new.ak', true, true],

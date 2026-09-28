@@ -367,3 +367,20 @@ export const querySystemStart = async (ogmiosUrl: string) => {
 
   return Date.parse(systemStart);
 };
+
+export async function queryLocalSlotConfig(ogmiosUrl: string) {
+  const [zeroTime, { result: genesis }] = await Promise.all([
+    querySystemStart(ogmiosUrl),
+    queryOgmiosJsonRpc(ogmiosUrl, "queryNetwork/genesisConfiguration", {
+      era: "shelley",
+    }),
+  ]);
+  const slotLength = Number(genesis?.slotLength?.milliseconds);
+  if (
+    !Number.isSafeInteger(zeroTime) || !Number.isSafeInteger(slotLength) ||
+    slotLength <= 0
+  ) {
+    throw new Error("Ogmios returned invalid local slot timing");
+  }
+  return { zeroTime, zeroSlot: 0, slotLength };
+}

@@ -62,7 +62,7 @@ impl CoreCardanoNetwork {
 
     pub fn epoch_length(self) -> u64 {
         match self {
-            Self::Local => 5_000,
+            Self::Local => 5000,
             Self::Preprod => 432_000,
             Self::Preview => 86_400,
         }
@@ -146,9 +146,6 @@ pub struct Services {
     pub db_sync: bool,
     #[serde(default)]
     pub yaci: bool,
-    pub kupo: bool,
-    pub ogmios: bool,
-    pub cardano_node: bool,
     pub postgres: bool,
 }
 

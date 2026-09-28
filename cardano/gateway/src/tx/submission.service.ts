@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Network } from '@lucid-evolution/lucid';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '../exception/grpc_exceptions';
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
@@ -563,7 +564,6 @@ export class SubmissionService {
     //
     // In that case we can safely wait until the node reaches `invalidBefore` and retry submission.
     const maxRetries = 5;
-    const slotLengthMs = 1000; // Devnet + mainnet are 1s slots in Shelley+ eras.
     const retryBackoffMs = 250; // Small cushion to avoid edge-of-slot races.
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -595,6 +595,11 @@ export class SubmissionService {
           throw new GrpcInternalException(`Cardano submission failed: ${message}`);
         }
 
+        const network = this.configService.get<Network>('cardanoNetwork');
+        const slotLengthMs = network && this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK[network]?.slotLength;
+        if (typeof slotLengthMs !== 'number' || !Number.isFinite(slotLengthMs) || slotLengthMs <= 0) {
+          throw new GrpcInternalException('Missing Cardano slot timing');
+        }
         const waitSlots = Math.max(1, invalidBefore - currentSlot);
         const waitMs = waitSlots * slotLengthMs + retryBackoffMs;
         this.logger.warn(
