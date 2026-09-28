@@ -31,6 +31,23 @@ const DOCKER_REQUIREMENT: ToolRequirement = ToolRequirement {
     install_instructions: "Go to https://www.docker.com/ and install Docker.",
 };
 
+const COMPOSE_REQUIREMENT: ToolRequirement = ToolRequirement {
+    name: "Docker Compose",
+    command: "docker",
+    args: &["compose", "version"],
+    install_instructions: "Install the Docker Compose plugin or Docker Desktop.",
+};
+
+const PYTHON_REQUIREMENT: ToolRequirement = ToolRequirement {
+    name: "Python 3.9 or newer",
+    command: "python3",
+    args: &[
+        "-c",
+        "import sys; assert sys.version_info >= (3, 9); print(sys.version.splitlines()[0])",
+    ],
+    install_instructions: "Install Python 3.9 or newer for local Cardano provisioning.",
+};
+
 const AIKEN_REQUIREMENT: ToolRequirement = ToolRequirement {
     name: "Aiken",
     command: "aiken",
@@ -64,6 +81,8 @@ const HERMES_NATIVE_TOOLCHAIN_REQUIREMENT: ToolRequirement = ToolRequirement {
 fn base_requirements() -> Vec<ToolRequirement> {
     let mut requirements = vec![
         DOCKER_REQUIREMENT,
+        COMPOSE_REQUIREMENT,
+        PYTHON_REQUIREMENT,
         AIKEN_REQUIREMENT,
         DENO_REQUIREMENT,
         GO_REQUIREMENT,

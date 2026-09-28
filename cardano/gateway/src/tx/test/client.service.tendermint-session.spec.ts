@@ -154,6 +154,8 @@ const UPDATE_MESSAGE = {
 
 function createTxBuilder(hash: string, cbor = `cbor-${hash}`, derivedOutputs: any[] = []): any {
   const builder: any = {};
+  const config = {};
+  builder.lucidConfig = () => config;
   builder.collectFrom = jest.fn().mockReturnValue(builder);
   builder.validFrom = jest.fn().mockReturnValue(builder);
   builder.validTo = jest.fn().mockReturnValue(builder);

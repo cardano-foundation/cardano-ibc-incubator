@@ -26,9 +26,6 @@
     "services": {
       "db_sync": false,
       "yaci": true,
-      "kupo": true,
-      "ogmios": true,
-      "cardano_node": true,
       "postgres": true
     },
     "networks": {

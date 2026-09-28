@@ -4,7 +4,7 @@ import {
   type Network,
   SLOT_CONFIG_NETWORK,
 } from "@lucid-evolution/lucid";
-import { querySystemStart } from "./utils.ts";
+import { queryLocalSlotConfig, querySystemStart } from "./external_cardano.ts";
 
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 
@@ -224,6 +224,12 @@ export async function buildLucidWithCompatibleProtocolParameters(
 ): Promise<LucidEvolution> {
   const chainZeroTime = await querySystemStart(ogmiosUrl);
   SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+  if (parseNetwork(networkMagic) === "Custom") {
+    Object.assign(
+      SLOT_CONFIG_NETWORK.Custom,
+      await queryLocalSlotConfig(ogmiosUrl),
+    );
+  }
   const protocolParameters = sanitizeProtocolParameters(
     await queryProtocolParametersCompat(ogmiosUrl),
   );

@@ -3,6 +3,27 @@ import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { SubmissionService } from '../submission.service';
 
 describe('SubmissionService confirmation strictness regressions', () => {
+  it.each([100, 1000])('retries early transactions using %d-millisecond slots', async (slotLength) => {
+    jest.useFakeTimers();
+    try {
+      const { configService, lucidService } = service as any;
+      configService.get.mockReturnValue('Custom');
+      lucidService.LucidImporter.SLOT_CONFIG_NETWORK = { Custom: { slotLength } };
+      const submit = lucidService.lucid.wallet().submitTx;
+      submit.mockRejectedValueOnce(new Error(
+        'outside of its validity interval: currentSlot=100 invalidBefore=102 invalidAfter=110',
+      ));
+      const result = (service as any).submitToCardano('signed-cbor');
+      await jest.advanceTimersByTimeAsync(2 * slotLength + 249);
+      expect(submit).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(result).resolves.toBe('tx-hash-abc');
+      expect(submit).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   let service: SubmissionService;
   let pendingUpdates: {
     peek: jest.Mock;

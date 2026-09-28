@@ -4,13 +4,12 @@ use crate::process::hermes::HermesCli;
 use crate::process::http::HttpHealthClient;
 use crate::process::system::SystemChecks;
 use crate::setup::{
-    configure_cardano_public_testnet_runtime, configure_local_cardano_devnet,
-    copy_cardano_env_file, download_mithril, local_cardano_spo_count, prepare_db_sync_and_gateway,
-    seed_cardano_devnet, write_cardano_runtime_selection,
+    configure_cardano_public_testnet_runtime, copy_cardano_env_file, download_mithril,
+    prepare_gateway, write_cardano_runtime_selection,
 };
 use crate::utils::{
-    diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_era,
-    get_cardano_state, get_user_ids, replace_text_in_file, wait_for_health_check, CardanoQuery,
+    execute_script, execute_script_with_progress, get_cardano_state, get_user_ids,
+    replace_text_in_file, wait_for_health_check, CardanoQuery,
 };
 use crate::{
     chains, config,
@@ -20,7 +19,6 @@ use console::style;
 use dirs::home_dir;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
-use std::cmp::min;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -45,7 +43,10 @@ const HERMES_SIGNING_KUPO_KEY_PLACEHOLDER: &str = "# __CARDANO_SIGNING_KUPO_API_
 const HERMES_SIGNING_OGMIOS_KEY_PLACEHOLDER: &str = "# __CARDANO_SIGNING_OGMIOS_API_KEY_FILE__";
 static RELAYER_REMOTE_TIP_CHECK_ONCE: Once = Once::new();
 
+mod heartbeat;
 mod hermes;
+
+pub(crate) use heartbeat::with_local_heartbeat;
 
 pub use hermes::{
     hermes_create_channel, hermes_create_client, hermes_create_connection, hermes_keys_add,
@@ -126,7 +127,8 @@ fn ibc_swap_base_path() -> Result<String, String> {
 }
 
 fn running_dapp_env_value(key: &str) -> Option<String> {
-    let container_name = docker_running_container_name(IBC_SWAP_DAPP_SERVICE)?;
+    let container_name =
+        crate::stop::dapp_container_name(Path::new(&config::get_config().project_root))?;
     let output = DockerCli::new(Path::new("."))
         .raw_output(
             [
@@ -207,12 +209,18 @@ pub(crate) fn ensure_cardano_network_switch_is_safe(
     requested_network: config::CoreCardanoNetwork,
 ) -> Result<(), String> {
     let active_network = config::active_core_cardano_network(project_root_path);
+    if active_network == config::CoreCardanoNetwork::Local
+        && requested_network == config::CoreCardanoNetwork::Local
+        && crate::stop::previous_local_network_is_running(project_root_path)
+    {
+        return Err("Run `caribic stop` before migrating the existing local network to Yaci DevKit. The new network requires fresh contract deployment and IBC routes.".into());
+    }
     if active_network == requested_network {
         return Ok(());
     }
 
     let running = cardano_network_switch_blockers(
-        crate::stop::cardano_runtime_is_running(project_root_path),
+        crate::stop::cardano_runtime_is_running(project_root_path)?,
         crate::stop::gateway_is_running(project_root_path),
         crate::stop::relayer_is_running(project_root_path),
         crate::stop::dapp_is_running(project_root_path),
@@ -439,8 +447,8 @@ fn hermes_signing_sources(
 ) -> Result<HermesSigningSources, Box<dyn std::error::Error>> {
     if cardano_chain_id == "cardano-devnet" {
         return Ok(HermesSigningSources {
-            kupo_url: "http://localhost:1442".to_string(),
-            ogmios_url: "http://localhost:1337".to_string(),
+            kupo_url: crate::local_network::endpoint(project_root, "KUPO_URL")?,
+            ogmios_url: crate::local_network::endpoint(project_root, "OGMIOS_URL")?,
             kupo_api_key: None,
             ogmios_api_key: None,
         });
@@ -652,68 +660,18 @@ fn optional_path_setting(name: &str, path: Option<&Path>) -> std::io::Result<Str
     }
 }
 
-const PUBLIC_TESTNET_FORBIDDEN_LOCAL_SERVICES: [&str; 8] = [
-    "cardano-node",
-    "cardano-node-spo2",
-    "cardano-node-spo3",
-    "cardano-node-spo4",
-    "cardano-node-spo5",
-    "cardano-node-ogmios",
-    "kupo",
-    "cardano-db-sync",
-];
-
-#[derive(Debug, Eq, PartialEq)]
-struct ManagedCardanoServicePlan {
-    base: Vec<String>,
-    follow_up: Vec<String>,
-}
-
-impl ManagedCardanoServicePlan {
-    fn all(&self) -> Vec<String> {
-        self.base
-            .iter()
-            .chain(self.follow_up.iter())
-            .cloned()
-            .collect()
-    }
-}
-
-fn managed_cardano_service_plan(
-    services: &config::Services,
-    network: config::CoreCardanoNetwork,
-    local_spo_count: usize,
-) -> ManagedCardanoServicePlan {
-    let mut base = Vec::new();
-    let mut follow_up = Vec::new();
-
-    if matches!(network, config::CoreCardanoNetwork::Local) && services.cardano_node {
-        base.push("cardano-node".to_string());
-        for index in 2..=local_spo_count {
-            base.push(format!("cardano-node-spo{index}"));
-        }
-    }
+fn public_cardano_services(services: &config::Services) -> Vec<&'static str> {
+    let mut result = Vec::new();
     if services.postgres {
-        base.push("postgres".to_string());
+        result.push("postgres");
     }
     if services.history_backend_enabled() {
-        base.push("yaci-store-postgres".to_string());
-        follow_up.push("yaci-store".to_string());
+        result.extend(["yaci-store-postgres", "yaci-store"]);
     }
-    if matches!(network, config::CoreCardanoNetwork::Local) && services.kupo {
-        follow_up.push("kupo".to_string());
-    }
-    if matches!(network, config::CoreCardanoNetwork::Local) && services.ogmios {
-        follow_up.push("cardano-node-ogmios".to_string());
-    }
-
-    ManagedCardanoServicePlan { base, follow_up }
+    result
 }
 
-fn managed_cardano_runtime_services_running(
-    cardano_dir: &Path,
-    network: config::CoreCardanoNetwork,
-) -> bool {
+fn managed_cardano_runtime_services_running(cardano_dir: &Path) -> bool {
     let output = match Command::new("docker")
         .current_dir(cardano_dir)
         .args(["compose", "ps", "--services", "--status", "running"])
@@ -730,19 +688,9 @@ fn managed_cardano_runtime_services_running(
             .filter(|line| !line.is_empty())
             .collect();
 
-    if network.is_public_testnet()
-        && PUBLIC_TESTNET_FORBIDDEN_LOCAL_SERVICES
-            .iter()
-            .any(|service| running_services.contains(*service))
-    {
-        return false;
-    }
-
-    let configuration = config::get_config().cardano;
-    managed_cardano_service_plan(&configuration.services, network, 1)
-        .all()
+    public_cardano_services(&config::get_config().cardano.services)
         .into_iter()
-        .all(|service| running_services.contains(service.as_str()))
+        .all(|service| running_services.contains(service))
 }
 
 pub fn start_relayer(
@@ -1261,316 +1209,51 @@ pub async fn start_local_cardano_network(
     if with_mithril {
         return Err("Mithril setup is deprecated, disabled, and not maintained. Use the default stake-weighted-stability light-client mode.".into());
     }
-
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.enable_steady_tick(Duration::from_millis(100));
-        progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}")
-                .map_err(|error| format!("Failed to configure progress output: {error}"))?
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-        );
-        progress_bar.set_prefix("Creating Cardano runtime ...".to_owned());
-    } else {
-        log("Creating Cardano runtime ...");
-    }
-
+    ensure_cardano_network_switch_is_safe(project_root_path, network)?;
     let cardano_dir = project_root_path.join("chains/cardano");
-    let local_spo_count = local_cardano_spo_count(with_mithril, network);
-    let active_network = config::active_core_cardano_network(project_root_path);
-    // Public runtime storage is namespaced by network, so changing profiles must
-    // not erase the target network's Gateway/Yaci state when returning to it.
-    let reset_runtime_state = clean;
-    if managed_cardano_network_running(cardano_dir.as_path()) && active_network != network {
-        return Err(format!(
-            "Managed Cardano runtime '{}' is already running. Stop it before starting '{}'.",
-            active_network.as_str(),
-            network.as_str()
-        )
-        .into());
-    }
-
-    write_cardano_runtime_selection(cardano_dir.as_path(), network, local_spo_count)?;
-    if clean {
-        let mut compose_down_args = vec!["compose", "down", "--remove-orphans"];
-        if matches!(network, config::CoreCardanoNetwork::Local) {
-            compose_down_args.insert(2, "-v");
-        } else {
-            verbose(&format!(
-                "Preserving {} Yaci history volume during clean Cardano restart",
-                network.as_str()
-            ));
-        }
-        execute_script(cardano_dir.as_path(), "docker", compose_down_args, None)?;
-    }
-    log_or_show_progress(
-        &format!(
-            "{} Configuring Cardano {} runtime",
-            style("Step 1/3").bold().dim(),
-            network.as_str(),
-        ),
-        &optional_progress_bar,
-    );
-    match network {
-        config::CoreCardanoNetwork::Local => {
-            configure_local_cardano_devnet(cardano_dir.as_path(), local_spo_count)?;
-        }
-        config::CoreCardanoNetwork::Preprod | config::CoreCardanoNetwork::Preview => {
-            configure_cardano_public_testnet_runtime(
-                cardano_dir.as_path(),
-                reset_runtime_state,
-                network,
-            )
-            .await?;
-        }
-    }
-    log_or_show_progress(
-        &format!(
-            "{} Starting Cardano services",
-            style("Step 2/3").bold().dim(),
-        ),
-        &optional_progress_bar,
-    );
-    start_local_cardano_services(cardano_dir.as_path(), network, local_spo_count)?;
-
-    log_or_show_progress(
-        "Waiting for the Cardano services to start ...",
-        &optional_progress_bar,
-    );
-
-    if matches!(network, config::CoreCardanoNetwork::Local) {
-        let ogmios_connected = wait_for_health_check(
-            "http://localhost:1337",
-            20,
-            5000,
-            None::<fn(&String) -> bool>,
-        )
-        .await;
-
-        if ogmios_connected.is_ok() {
-            ensure_local_spo_services_running(cardano_dir.as_path(), local_spo_count)?;
-            verbose("Cardano services started successfully");
-        } else {
-            let container_names = if local_spo_count > 1 {
-                let mut names = vec!["cardano-node".to_string()];
-                names.extend((2..=local_spo_count).map(|index| format!("cardano-node-spo{index}")));
-                names.extend([
-                    "cardano-cardano-node-ogmios-1".to_string(),
-                    "cardano-postgres-1".to_string(),
-                    "cardano-yaci-store-postgres-1".to_string(),
-                    "cardano-yaci-store-1".to_string(),
-                ]);
-                names
-            } else {
-                vec![
-                    "cardano-node".to_string(),
-                    "cardano-cardano-node-ogmios-1".to_string(),
-                    "cardano-postgres-1".to_string(),
-                    "cardano-yaci-store-postgres-1".to_string(),
-                    "cardano-yaci-store-1".to_string(),
-                ]
-            };
-            let container_refs: Vec<&str> = container_names.iter().map(String::as_str).collect();
-            let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_refs);
-            return Err(format!(
-                "Failed to start Cardano services - Ogmios health check failed after 100 seconds{}",
-                diagnostics
-            )
-            .into());
-        }
-    } else {
-        verbose(&format!(
-            "Cardano {} relay and history services started successfully",
-            network.as_str()
-        ));
-    }
-
-    if config::get_config()
-        .cardano
-        .services
-        .history_backend_enabled()
-    {
-        let yaci_ready = wait_for_health_check(
-            "http://localhost:8081/actuator/health",
-            YACI_HEALTH_CHECK_ATTEMPTS,
-            YACI_HEALTH_CHECK_INTERVAL_MILLIS,
-            Some(|body: &String| {
-                body.contains("\"status\":\"UP\"") || body.contains("\"status\": \"UP\"")
-            }),
-        )
-        .await;
-
-        if yaci_ready.is_err() {
-            let container_names = ["cardano-yaci-store-postgres-1", "cardano-yaci-store-1"];
-            let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
-            return Err(format!(
-                "Failed to start Yaci services - health check failed after {} seconds{}",
-                (YACI_HEALTH_CHECK_ATTEMPTS as u64 * YACI_HEALTH_CHECK_INTERVAL_MILLIS) / 1000,
-                diagnostics
-            )
-            .into());
-        }
-    }
-
-    if matches!(network, config::CoreCardanoNetwork::Local)
-        && config::get_config().cardano.services.cardano_node
-    {
-        let mut slot_querried = u64::MAX;
-        let max_retries = 24; // 24 retries × 5 seconds = 120 seconds timeout
-        let mut retry_count = 0;
-
-        while slot_querried == u64::MAX {
-            match get_cardano_state(project_root_path, CardanoQuery::Slot) {
-                Ok(value) => slot_querried = value,
-                Err(_e) => {
-                    retry_count += 1;
-
-                    if retry_count % 3 == 0 {
-                        let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
-                        let (diagnostics, should_fail_fast) =
-                            diagnose_container_failure(&container_names);
-                        if should_fail_fast {
-                            return Err(format!(
-                                "Cardano node has unrecoverable errors that require developer intervention:{}",
-                                diagnostics
-                            )
-                            .into());
-                        }
-                    }
-
-                    if retry_count >= max_retries {
-                        let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
-                        let (diagnostics, _should_fail_fast) =
-                            diagnose_container_failure(&container_names);
-                        return Err(format!(
-                            "Failed to query cardano-node state after {} seconds. The node may have crashed or is not responding.{}",
-                            max_retries * 5,
-                            diagnostics
-                        )
-                        .into());
-                    }
-                    log_or_show_progress(
-                        "Waiting for node to start up ...",
-                        &optional_progress_bar,
-                    );
-                    std::thread::sleep(Duration::from_secs(5))
-                }
-            }
-        }
-    } else {
-        verbose(&format!(
-            "Skipping local cardano-node readiness probe for {} runtime",
-            network.as_str()
-        ));
-    }
-
-    // Local Mithril used to be started here. It is now intentionally disabled
-    // while the historical code remains in-tree for reference.
-    let mithril_genesis_handle = None;
-    let skip_message = if network.uses_local_mithril() {
-        "Mithril services are deprecated and disabled; using stake-weighted-stability light-client mode"
-            .to_string()
-    } else {
-        format!(
-            "Using managed Cardano {} history runtime with stake-weighted-stability light-client mode",
-            network.as_str()
-        )
-    };
-    log_or_print_progress(skip_message.as_str(), &optional_progress_bar);
-
-    if matches!(network, config::CoreCardanoNetwork::Local) {
-        let mut current_era = get_cardano_era(project_root_path)?;
-        let target_era = "Conway";
-        let target_slot = get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
-
-        if current_era != target_era {
-            if let Some(progress_bar) = &optional_progress_bar {
-                progress_bar.enable_steady_tick(Duration::from_millis(100));
-                progress_bar.set_style(
-                    ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
-                        .map_err(|error| format!("Failed to configure progress output: {error}"))?
-                        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                        .progress_chars("#>-"),
-                );
-                progress_bar.set_prefix(
-                    "Seeding the network needs to wait until the local network enters Conway .."
-                        .to_owned(),
-                );
-                progress_bar.set_length(target_slot);
-                progress_bar.set_position(get_cardano_state(
-                    project_root_path,
-                    CardanoQuery::SlotInEpoch,
-                )?);
-            } else {
-                log("Seeding the network needs to wait until the local network enters Conway ..");
-            }
-        }
-
-        while current_era != target_era {
-            current_era = get_cardano_era(project_root_path)?;
-
-            if let Some(progress_bar) = &optional_progress_bar {
-                progress_bar.set_position(min(
-                    get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?,
-                    target_slot,
-                ));
-            } else {
-                verbose(&format!(
-                    "Current era: {}, slot in epoch: {}, slots left in epoch: {}",
-                    current_era,
-                    get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?,
-                    get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
-                ));
-            }
-            std::thread::sleep(Duration::from_secs(10));
-        }
-
-        seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar)?;
-        log_or_show_progress(
-            "Deploying the client, channel and connection contracts",
-            &optional_progress_bar,
-        );
-    } else {
-        log_or_show_progress(
-            &format!(
-                "Skipping local devnet seeding/deployment for {} runtime",
-                network.as_str()
-            ),
-            &optional_progress_bar,
-        );
-    }
-
-    if config::get_config()
-        .cardano
-        .services
-        .history_backend_enabled()
-    {
-        prepare_db_sync_and_gateway(
-            cardano_dir.as_path(),
-            clean,
-            network,
-            "stake-weighted-stability",
+    if network == config::CoreCardanoNetwork::Local {
+        fs::write(cardano_dir.join(".caribic-network"), "local\n")?;
+        crate::local_network::run(
+            project_root_path,
+            if clean { "reset" } else { "start" },
+            &[],
         )?;
+        crate::local_network::seed(project_root_path)?;
+        let environment = fs::read(project_root_path.join(".caribic/devkit/endpoints.env"))?;
+        fs::write(cardano_dir.join(".env"), environment)?;
+    } else {
+        write_cardano_runtime_selection(&cardano_dir, network)?;
+        if clean {
+            // Public history survives a clean restart.
+            execute_script(
+                &cardano_dir,
+                "docker",
+                vec!["compose", "down", "--remove-orphans"],
+                None,
+            )?;
+        }
+        configure_cardano_public_testnet_runtime(&cardano_dir, clean, network).await?;
+        start_public_cardano_services(&cardano_dir)?;
+        if config::get_config()
+            .cardano
+            .services
+            .history_backend_enabled()
+        {
+            wait_for_health_check(
+                "http://localhost:8081/actuator/health",
+                YACI_HEALTH_CHECK_ATTEMPTS,
+                YACI_HEALTH_CHECK_INTERVAL_MILLIS,
+                Some(|body: &String| {
+                    body.contains("\"status\":\"UP\"") || body.contains("\"status\": \"UP\"")
+                }),
+            )
+            .await
+            .map_err(|_| "Public Cardano history did not become ready")?;
+        }
     }
-
-    log_or_show_progress(
-        &format!(
-            "{} Copying Cardano environment file",
-            style("Step 3/3").bold().dim(),
-        ),
-        &optional_progress_bar,
-    );
-    copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.finish_and_clear();
-    }
-
-    Ok(mithril_genesis_handle)
+    prepare_gateway(&cardano_dir, clean, network, "stake-weighted-stability")?;
+    copy_cardano_env_file(&project_root_path.join("cardano"))?;
+    Ok(None)
 }
 
 pub async fn deploy_contracts(
@@ -1658,6 +1341,8 @@ pub async fn deploy_contracts(
 
     wait_for_local_offchain_wallet_utxos(project_root_path, &optional_progress_bar)?;
 
+    let local_kupo = crate::local_network::endpoint(project_root_path, "KUPO_URL")?;
+    let local_ogmios = crate::local_network::endpoint(project_root_path, "OGMIOS_URL")?;
     let deployment_result = execute_script(
         offchain_dir.as_path(),
         "deno",
@@ -1673,11 +1358,11 @@ pub async fn deploy_contracts(
             "--allow-write",
             "index.ts",
         ]),
-        Some(vec![
-            ("KUPO_URL", "http://localhost:1442"),
-            ("OGMIOS_URL", "http://localhost:1337"),
-            ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
-        ]),
+        Some(local_offchain_environment(
+            &local_kupo,
+            &local_ogmios,
+            &network_magic,
+        )),
     );
 
     if let Err(error) = deployment_result {
@@ -1817,6 +1502,24 @@ fn restore_handler_json(
     Ok(())
 }
 
+fn local_offchain_environment<'a>(
+    kupo: &'a str,
+    ogmios: &'a str,
+    network_magic: &'a str,
+) -> Vec<(&'static str, &'a str)> {
+    // Clear higher-priority provider overrides when deploying to the local chain.
+    // An explicitly selected DEPLOYER_SK still belongs to the caller.
+    vec![
+        ("KUPO_URL", kupo),
+        ("OGMIOS_URL", ogmios),
+        ("CARDANO_NETWORK_MAGIC", network_magic),
+        ("OGMIOS_HTTP_URL", ""),
+        ("OGMIOS_WS_URL", ""),
+        ("KUPO_API_KEY", ""),
+        ("OGMIOS_API_KEY", ""),
+    ]
+}
+
 fn wait_for_local_offchain_wallet_utxos(
     project_root_path: &Path,
     optional_progress_bar: &Option<ProgressBar>,
@@ -1825,11 +1528,9 @@ fn wait_for_local_offchain_wallet_utxos(
     const POLL_INTERVAL_SECS: u64 = 5;
 
     let offchain_dir = project_root_path.join("cardano").join("offchain");
-    let local_kupmios_env = vec![
-        ("KUPO_URL", "http://localhost:1442"),
-        ("OGMIOS_URL", "http://localhost:1337"),
-        ("CARDANO_NETWORK_MAGIC", "42"),
-    ];
+    let local_kupo = crate::local_network::endpoint(project_root_path, "KUPO_URL")?;
+    let local_ogmios = crate::local_network::endpoint(project_root_path, "OGMIOS_URL")?;
+    let local_kupmios_env = local_offchain_environment(&local_kupo, &local_ogmios, "42");
 
     for attempt in 1..=MAX_ATTEMPTS {
         let probe = execute_script(
@@ -2448,150 +2149,17 @@ pub async fn deploy_public_cardano_bridge(
     Ok(())
 }
 
-fn ensure_local_spo_services_running(
-    cardano_dir: &Path,
-    local_spo_count: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if local_spo_count <= 1 {
-        return Ok(());
-    }
-
-    let output = DockerCli::new(cardano_dir)
-        .compose_output(["ps", "--services", "--status", "running"].as_slice())
-        .map_err(|error| format!("Failed to inspect local SPO service status: {}", error))?;
-
-    let running_services: std::collections::HashSet<String> =
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .map(|line| line.trim().to_string())
-            .filter(|line| !line.is_empty())
-            .collect();
-    let expected_services: Vec<String> = (2..=local_spo_count)
-        .map(|index| format!("cardano-node-spo{}", index))
-        .collect();
-    let missing_services: Vec<&String> = expected_services
-        .iter()
-        .filter(|service| !running_services.contains(*service))
-        .collect();
-
-    if missing_services.is_empty() {
-        return Ok(());
-    }
-
-    let missing_names: Vec<&str> = missing_services
-        .iter()
-        .map(|service| service.as_str())
-        .collect();
-    let (diagnostics, _should_fail_fast) = diagnose_container_failure(&missing_names);
-    Err(format!(
-        "Local stability runtime is missing SPO services: {}{}",
-        missing_names.join(", "),
-        diagnostics
-    )
-    .into())
-}
-
-pub fn start_local_cardano_services(
-    cardano_dir: &Path,
-    network: config::CoreCardanoNetwork,
-    local_spo_count: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let configuration = config::get_config().cardano;
-    let plan = managed_cardano_service_plan(&configuration.services, network, local_spo_count);
-    let all_services = plan.all();
-
-    if !all_services.is_empty() {
-        let mut script_stop_args = vec!["compose", "stop"];
-        script_stop_args.extend(all_services.iter().map(String::as_str));
-        execute_script(cardano_dir, "docker", script_stop_args, None)?;
-    }
-
-    if network.is_public_testnet() {
-        let mut stop_local_service_args = vec!["compose", "stop"];
-        stop_local_service_args.extend(PUBLIC_TESTNET_FORBIDDEN_LOCAL_SERVICES);
-        execute_script(cardano_dir, "docker", stop_local_service_args, None)?;
-    }
-
-    let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> =
-        docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-
-    if matches!(network, config::CoreCardanoNetwork::Local) {
-        // Docker Desktop can race bind-mount creation for ./devnet/db on a clean restart if Ogmios
-        // starts at the same time as cardano-node. Precreate the runtime paths and bring the node
-        // up first so follow-up services see a stable database directory.
-        fs::create_dir_all(cardano_dir.join("devnet").join("db")).map_err(|error| {
-            format!(
-                "Failed to precreate Cardano local runtime database directory: {}",
-                error
-            )
-        })?;
-        fs::create_dir_all(cardano_dir.join("devnet").join("ipc")).map_err(|error| {
-            format!(
-                "Failed to precreate Cardano local runtime IPC directory: {}",
-                error
-            )
-        })?;
-        for index in 2..=local_spo_count {
-            fs::create_dir_all(
-                cardano_dir
-                    .join("devnet")
-                    .join(format!("spo{}", index))
-                    .join("db"),
-            )
-            .map_err(|error| {
-                format!(
-                    "Failed to precreate Cardano local SPO database directory: {}",
-                    error
-                )
-            })?;
-        }
-    }
-
-    if !plan.base.is_empty() {
-        let mut script_start_args = vec!["compose", "up", "-d"];
-        let mut base_service_args: Vec<&str> =
-            plan.base.iter().map(|service| service.as_str()).collect();
-        script_start_args.append(&mut base_service_args);
-        execute_script(
-            cardano_dir,
-            "docker",
-            script_start_args,
-            Some(docker_env_refs.clone()),
-        )?;
-    }
-
-    if matches!(network, config::CoreCardanoNetwork::Local) && configuration.services.cardano_node {
-        let db_dir = cardano_dir.join("devnet").join("db");
-        let mut attempts_remaining = 20;
-        while attempts_remaining > 0 && !db_dir.is_dir() {
-            thread::sleep(Duration::from_millis(250));
-            attempts_remaining -= 1;
-        }
-
-        if !db_dir.is_dir() {
-            return Err(format!(
-                "Cardano local runtime database directory did not become available at {}",
-                db_dir.display()
-            )
-            .into());
-        }
-    }
-
-    if !plan.follow_up.is_empty() {
-        let mut script_start_args = vec!["compose", "up", "-d"];
-        let mut follow_up_service_args: Vec<&str> = plan
-            .follow_up
+fn start_public_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let services = public_cardano_services(&config::get_config().cardano.services);
+    if !services.is_empty() {
+        let docker_env = get_docker_env_vars();
+        let environment = docker_env
             .iter()
-            .map(|service| service.as_str())
+            .map(|(key, value)| (*key, value.as_str()))
             .collect();
-        script_start_args.append(&mut follow_up_service_args);
-        execute_script(
-            cardano_dir,
-            "docker",
-            script_start_args,
-            Some(docker_env_refs),
-        )?;
+        let mut args = vec!["compose", "up", "-d", "--remove-orphans"];
+        args.extend(services.iter().copied());
+        execute_script(cardano_dir, "docker", args, Some(environment))?;
     }
     Ok(())
 }
@@ -2601,11 +2169,15 @@ pub async fn ensure_managed_cardano_runtime(
     clean: bool,
     network: config::CoreCardanoNetwork,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if network == config::CoreCardanoNetwork::Local {
+        start_local_cardano_network(project_root_path, clean, false, network).await?;
+        return Ok(());
+    }
     let cardano_dir = project_root_path.join("chains/cardano");
     let active_network = config::active_core_cardano_network(project_root_path);
 
     if managed_cardano_network_running(cardano_dir.as_path())
-        && managed_cardano_runtime_services_running(cardano_dir.as_path(), network)
+        && managed_cardano_runtime_services_running(cardano_dir.as_path())
         && active_network == network
         && !clean
     {
@@ -2613,11 +2185,7 @@ pub async fn ensure_managed_cardano_runtime(
             // Reapply the manifest boundary even when this network is already
             // running. Otherwise a recent follower/database (or old port mapping)
             // could survive a switch to an older deployment's manifest.
-            crate::setup::write_cardano_runtime_selection(
-                cardano_dir.as_path(),
-                network,
-                local_cardano_spo_count(false, network),
-            )?;
+            crate::setup::write_cardano_runtime_selection(cardano_dir.as_path(), network)?;
             execute_script(
                 cardano_dir.as_path(),
                 "docker",
@@ -3344,7 +2912,9 @@ fn ensure_gateway_built(
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
-    const SHARED_CARDANO_NETWORK: &str = "cardano_ibc_net";
+    let shared_cardano_network =
+        crate::setup::read_gateway_env_value(&gateway_dir.join(".env"), "CARDANO_DOCKER_NETWORK")?
+            .unwrap_or_else(|| "cardano_ibc_net".to_string());
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -3365,20 +2935,20 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     ensure_gateway_built(gateway_dir, &optional_progress_bar)?;
 
     let network_exists = DockerCli::new(Path::new("."))
-        .raw_output(["network", "inspect", SHARED_CARDANO_NETWORK].as_slice())
+        .raw_output(["network", "inspect", shared_cardano_network.as_str()].as_slice())
         .is_ok();
     if !network_exists {
         log_or_show_progress(
             &format!(
                 "Creating shared Docker network '{}' for gateway dependencies",
-                SHARED_CARDANO_NETWORK
+                shared_cardano_network.as_str()
             ),
             &optional_progress_bar,
         );
         execute_script(
             gateway_dir,
             "docker",
-            vec!["network", "create", SHARED_CARDANO_NETWORK],
+            vec!["network", "create", shared_cardano_network.as_str()],
             None,
         )?;
     }
@@ -3611,6 +3181,30 @@ fn run_dapp_compose_command(
         )
         .env("IBC_SWAP_CARDANO_CHAIN_ID", cardano_chain_id)
         .env("IBC_SWAP_CARDANO_IBC_CHAIN_ID", cardano_ibc_chain_id);
+
+    let project_root = dapps_dir.parent().ok_or("Failed to derive project root")?;
+    if core_cardano_network == config::CoreCardanoNetwork::Local {
+        let endpoints = crate::local_network::environment(project_root, true)?;
+        let required = |key: &str| {
+            endpoints
+                .get(key)
+                .ok_or_else(|| format!("DevKit endpoint {key} is missing"))
+        };
+        command.env(
+            "CARDANO_DOCKER_NETWORK",
+            required("CARDANO_DOCKER_NETWORK")?,
+        );
+        command.env("CARDANO_DOCKER_NETWORK_EXTERNAL", "true");
+        command.env("COMPOSE_PROJECT_NAME", required("DAPP_COMPOSE_PROJECT")?);
+        command.env(
+            "IBC_SWAP_KUPMIOS_INTERNAL_URL",
+            format!(
+                "{},{}",
+                required("KUPO_ENDPOINT")?,
+                required("OGMIOS_ENDPOINT")?
+            ),
+        );
+    }
 
     if core_cardano_network.is_public_testnet() {
         let project_root_path = dapps_dir
@@ -3922,6 +3516,7 @@ struct HealthServiceStatus {
 
 struct HealthContext {
     core_cardano_network: config::CoreCardanoNetwork,
+    project_root: PathBuf,
     gateway_env_path: PathBuf,
 }
 
@@ -3929,6 +3524,7 @@ fn build_health_context(project_root_path: &Path) -> HealthContext {
     let core_cardano_network = config::active_core_cardano_network(project_root_path);
     HealthContext {
         core_cardano_network,
+        project_root: project_root_path.to_path_buf(),
         gateway_env_path: project_root_path.join("cardano/gateway/.env"),
     }
 }
@@ -3992,12 +3588,45 @@ fn run_core_health_check(
     check_type: CoreHealthCheckType,
     context: &HealthContext,
 ) -> (bool, String) {
-    if context.core_cardano_network.is_public_testnet() {
+    if context.core_cardano_network == config::CoreCardanoNetwork::Local {
+        let endpoints = match crate::local_network::environment(&context.project_root, false) {
+            Ok(endpoints) => endpoints,
+            Err(error) => return (false, error),
+        };
+        let url_check = |key: &str, label: &str| {
+            endpoints
+                .get(key)
+                .map(|url| check_external_url_port(url, label))
+                .unwrap_or_else(|| (false, format!("Missing DevKit {key}")))
+        };
+        let port_check = |host: &str, port: &str, label: &str| match (
+            endpoints.get(host),
+            endpoints.get(port),
+        ) {
+            (Some(host), Some(port)) => check_external_host_port(host, port, label),
+            _ => (false, format!("Missing DevKit {host}/{port}")),
+        };
         return match check_type {
             CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
             CoreHealthCheckType::Dapp => check_dapp_service_readiness(),
             CoreHealthCheckType::CardanoNode => {
-                match (
+                port_check("CARDANO_CHAIN_HOST", "CARDANO_CHAIN_PORT", "Cardano")
+            }
+            CoreHealthCheckType::Postgres => {
+                port_check("GATEWAY_DB_HOST", "GATEWAY_DB_PORT", "Gateway database")
+            }
+            CoreHealthCheckType::Yaci => url_check("YACI_STORE_ENDPOINT", "Yaci Store"),
+            CoreHealthCheckType::Kupo => url_check("KUPO_URL", "Kupo"),
+            CoreHealthCheckType::Ogmios => url_check("OGMIOS_URL", "Ogmios"),
+            CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
+        };
+    }
+
+    match check_type {
+        CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
+        CoreHealthCheckType::Dapp => check_dapp_service_readiness(),
+        CoreHealthCheckType::CardanoNode => {
+            match (
                     external_gateway_env_value(context, "CARDANO_CHAIN_HOST"),
                     external_gateway_env_value(context, "CARDANO_CHAIN_PORT"),
                 ) {
@@ -4010,42 +3639,7 @@ fn run_core_health_check(
                             .to_string(),
                     ),
                 }
-            }
-            CoreHealthCheckType::Postgres => check_postgres_service(),
-            CoreHealthCheckType::Yaci => check_container_with_optional_port(
-                "yaci-store-1",
-                8081,
-                "Running on port 8081",
-                "Container running",
-            ),
-            CoreHealthCheckType::Kupo => {
-                external_gateway_env_value(context, "GATEWAY_RUNTIME_KUPO_ENDPOINT")
-                    .or_else(|| external_gateway_env_value(context, "KUPO_ENDPOINT"))
-                    .map(|url| check_external_url_port(url.as_str(), "Kupo"))
-                    .unwrap_or_else(|| {
-                        (
-                            false,
-                            "Missing external Kupo runtime endpoint in cardano/gateway/.env"
-                                .to_string(),
-                        )
-                    })
-            }
-            CoreHealthCheckType::Ogmios => external_gateway_env_value(context, "OGMIOS_ENDPOINT")
-                .map(|url| check_external_url_port(url.as_str(), "Ogmios"))
-                .unwrap_or_else(|| {
-                    (
-                        false,
-                        "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
-                    )
-                }),
-            CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-        };
-    }
-
-    match check_type {
-        CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
-        CoreHealthCheckType::Dapp => check_dapp_service_readiness(),
-        CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
+        }
         CoreHealthCheckType::Postgres => check_postgres_service(),
         CoreHealthCheckType::Yaci => check_container_with_optional_port(
             "yaci-store-1",
@@ -4053,18 +3647,26 @@ fn run_core_health_check(
             "Running on port 8081",
             "Container running",
         ),
-        CoreHealthCheckType::Kupo => check_container_with_optional_port(
-            "cardano-kupo",
-            1442,
-            "Running on port 1442",
-            "Container running",
-        ),
-        CoreHealthCheckType::Ogmios => check_container_with_optional_port(
-            "ogmios",
-            1337,
-            "Running on port 1337",
-            "Container running",
-        ),
+        CoreHealthCheckType::Kupo => {
+            external_gateway_env_value(context, "GATEWAY_RUNTIME_KUPO_ENDPOINT")
+                .or_else(|| external_gateway_env_value(context, "KUPO_ENDPOINT"))
+                .map(|url| check_external_url_port(url.as_str(), "Kupo"))
+                .unwrap_or_else(|| {
+                    (
+                        false,
+                        "Missing external Kupo runtime endpoint in cardano/gateway/.env"
+                            .to_string(),
+                    )
+                })
+        }
+        CoreHealthCheckType::Ogmios => external_gateway_env_value(context, "OGMIOS_ENDPOINT")
+            .map(|url| check_external_url_port(url.as_str(), "Ogmios"))
+            .unwrap_or_else(|| {
+                (
+                    false,
+                    "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
+                )
+            }),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
     }
 }
@@ -4361,6 +3963,10 @@ fn summarize_text(body: &str) -> String {
 }
 
 fn check_gateway_http_readiness_once() -> (bool, String) {
+    check_gateway_http_readiness_at("http://127.0.0.1:8000/health/ready")
+}
+
+fn check_gateway_http_readiness_at(url: &str) -> (bool, String) {
     let output = Command::new("curl")
         .args([
             "-sS",
@@ -4372,7 +3978,7 @@ fn check_gateway_http_readiness_once() -> (bool, String) {
             "30",
             "-w",
             "\n%{http_code}",
-            "http://127.0.0.1:8000/health/ready",
+            url,
         ])
         .output();
 
@@ -4446,8 +4052,11 @@ fn check_gateway_http_readiness() -> (bool, String) {
 }
 
 fn check_gateway_service_readiness() -> (bool, String) {
-    if docker_running_container_name("gateway-app").is_none() {
-        return (false, "Container not running".to_string());
+    if !crate::stop::gateway_is_running(Path::new(&config::get_config().project_root)) {
+        return (
+            false,
+            "Gateway container is not running in this checkout".to_string(),
+        );
     }
 
     if !is_port_accessible(5001) {
@@ -4472,8 +4081,11 @@ fn check_gateway_service_readiness() -> (bool, String) {
 }
 
 fn check_dapp_service_readiness() -> (bool, String) {
-    if docker_running_container_name(IBC_SWAP_DAPP_SERVICE).is_none() {
-        return (false, "Container not running".to_string());
+    if !crate::stop::dapp_is_running(Path::new(&config::get_config().project_root)) {
+        return (
+            false,
+            "Dapp container is not running in this checkout".to_string(),
+        );
     }
 
     let port = match ibc_swap_host_port() {
@@ -4506,14 +4118,6 @@ fn check_dapp_service_readiness() -> (bool, String) {
                 port, url
             ),
         )
-    }
-}
-
-fn check_container_only(name_filter: &str) -> (bool, String) {
-    if docker_running_container_name(name_filter).is_some() {
-        (true, "Container running".to_string())
-    } else {
-        (false, "Container not running".to_string())
     }
 }
 
@@ -4621,25 +4225,54 @@ mod tests {
     use super::{
         cardano_network_switch_blockers, demeter_endpoint_requires_header_key,
         hermes_signing_sources, ibc_swap_dapp_url_for, inject_bridge_manifest_path,
-        inject_hermes_signing_sources, managed_cardano_service_plan, normalize_ibc_swap_base_path,
-        ogmios_http_url, persist_optional_hermes_api_key, redact_endpoint_in_message,
-        redact_external_endpoint, require_bridge_manifest_path,
+        inject_hermes_signing_sources, local_offchain_environment, normalize_ibc_swap_base_path,
+        ogmios_http_url, persist_optional_hermes_api_key, public_cardano_services,
+        redact_endpoint_in_message, redact_external_endpoint, require_bridge_manifest_path,
         resolve_hermes_signing_endpoint_auth, snapshot_hermes_bridge_manifest,
         write_owner_only_file, DemeterSigningAuthentication, HermesSigningSources,
-        PUBLIC_TESTNET_FORBIDDEN_LOCAL_SERVICES,
     };
-    use crate::config::{CoreCardanoNetwork, Services};
+    use crate::config::Services;
     use std::path::Path;
 
     fn all_services_enabled() -> Services {
         Services {
             db_sync: false,
             yaci: true,
-            kupo: true,
-            ogmios: true,
-            cardano_node: true,
             postgres: true,
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn devkit_offchain_children_override_stale_endpoints_without_replacing_the_deployer() {
+        let output = std::process::Command::new("sh")
+            .args([
+                "-c",
+                r#"printf '%s\n' "$KUPO_URL" "$OGMIOS_URL" "$OGMIOS_HTTP_URL" "$OGMIOS_WS_URL" "$KUPO_API_KEY" "$OGMIOS_API_KEY" "$DEPLOYER_SK""#,
+            ])
+            .env("KUPO_URL", "http://localhost:1442")
+            .env("OGMIOS_URL", "http://localhost:1337")
+            .env("OGMIOS_HTTP_URL", "http://localhost:1337")
+            .env("OGMIOS_WS_URL", "ws://localhost:1337")
+            .env("KUPO_API_KEY", "old-kupo-key")
+            .env("OGMIOS_API_KEY", "old-ogmios-key")
+            .env("DEPLOYER_SK", "explicit-deployer")
+            .envs(local_offchain_environment(
+                "http://127.0.0.1:11442",
+                "http://127.0.0.1:11337",
+                "42",
+            ))
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let output = String::from_utf8(output.stdout).unwrap();
+        let values: Vec<_> = output.lines().collect();
+        assert_eq!(
+            &values[..2],
+            ["http://127.0.0.1:11442", "http://127.0.0.1:11337"]
+        );
+        assert_eq!(values[6], "explicit-deployer");
+        assert_eq!(&values[2..6], ["", "", "", ""]);
     }
 
     #[test]
@@ -4941,38 +4574,11 @@ mod tests {
     }
 
     #[test]
-    fn public_testnet_plan_keeps_history_but_excludes_local_chain_services() {
-        for network in [CoreCardanoNetwork::Preprod, CoreCardanoNetwork::Preview] {
-            let services = managed_cardano_service_plan(&all_services_enabled(), network, 5).all();
-
-            assert!(services.iter().any(|service| service == "postgres"));
-            assert!(services
-                .iter()
-                .any(|service| service == "yaci-store-postgres"));
-            assert!(services.iter().any(|service| service == "yaci-store"));
-            for forbidden in PUBLIC_TESTNET_FORBIDDEN_LOCAL_SERVICES {
-                assert!(
-                    !services.iter().any(|service| service == forbidden),
-                    "{network:?} unexpectedly manages {forbidden}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn local_plan_still_manages_enabled_node_kupo_and_ogmios_services() {
-        let services =
-            managed_cardano_service_plan(&all_services_enabled(), CoreCardanoNetwork::Local, 2)
-                .all();
-
-        for expected in [
-            "cardano-node",
-            "cardano-node-spo2",
-            "kupo",
-            "cardano-node-ogmios",
-        ] {
-            assert!(services.iter().any(|service| service == expected));
-        }
+    fn public_services_only_run_databases_and_history() {
+        assert_eq!(
+            public_cardano_services(&all_services_enabled()),
+            ["postgres", "yaci-store-postgres", "yaci-store"]
+        );
     }
 
     #[test]

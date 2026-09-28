@@ -1,10 +1,4 @@
 import { clientRegistryData } from "../client-registry.ts";
-import alonzo from "../../../../chains/cardano/config/devnet/genesis-alonzo.json" with {
-  type: "json",
-};
-import shelley from "../../../../chains/cardano/config/devnet/genesis-shelley.json" with {
-  type: "json",
-};
 import {
   applyDoubleCborEncoding,
   Constr,
@@ -31,6 +25,26 @@ import {
   readValidator,
 } from "../utils.ts";
 import { HostStateDatum, HostStateRedeemer } from "../../types/index.ts";
+
+// Keep emulator transaction limits aligned with the sole local provisioner.
+const devkitParameters = new Map(
+  Deno.readTextFileSync(
+    new URL(
+      "../../../../chains/cardano/devkit/node.properties",
+      import.meta.url,
+    ),
+  ).split(/\r?\n/).filter((line) => line.includes("=")).map((line) => {
+    const [key, value] = line.split("=");
+    return [key, Number(value)] as const;
+  }),
+);
+function localLimit(name: string): number {
+  const value = devkitParameters.get(name);
+  if (value === undefined || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`Invalid DevKit transaction limit: ${name}`);
+  }
+  return value;
+}
 
 // These are complete, balanced transactions evaluated by Lucid's phase-two
 // evaluator. Every script witness comes from the production Aiken blueprint;
@@ -231,9 +245,9 @@ export async function channelFixture(
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account], {
     ...PROTOCOL_PARAMETERS_DEFAULT,
-    maxTxSize: shelley.protocolParams.maxTxSize,
-    maxTxExMem: BigInt(alonzo.maxTxExUnits.exUnitsMem),
-    maxTxExSteps: BigInt(alonzo.maxTxExUnits.exUnitsSteps),
+    maxTxSize: localLimit("maxTxSize"),
+    maxTxExMem: BigInt(localLimit("maxTxExUnitsMem")),
+    maxTxExSteps: BigInt(localLimit("maxTxExUnitsSteps")),
   });
   const lucid = await Lucid(emulator, "Custom");
   lucid.selectWallet.fromSeed(account.seedPhrase);

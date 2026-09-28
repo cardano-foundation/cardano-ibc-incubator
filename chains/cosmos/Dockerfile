@@ -39,6 +39,17 @@ RUN /usr/local/bin/patch-cardano-light-client /src/ibc-go /cardano-ibc \
          cd /src/ibc-go/simapp && go mod tidy; \
        fi
 
+ARG LOCAL_FIXTURE_CLOCK=0
+COPY chains/cosmos/scripts/patch_local_clock.sh /usr/local/bin/patch-local-clock
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    case "${LOCAL_FIXTURE_CLOCK}" in \
+      0) ;; \
+      1) test "${IBC_GO_MAJOR}" = 8 \
+         && test "${IBC_GO_COMMIT}" = 53eaba19375dab0145509af101dbce193284ec5d \
+         && sh /usr/local/bin/patch-local-clock ;; \
+      *) exit 1 ;; \
+    esac
+
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd /src/ibc-go \
@@ -55,19 +66,23 @@ ARG PROFILE
 ARG IBC_GO_VERSION
 ARG IBC_GO_COMMIT
 ARG IBC_SEMANTICS
+ARG LOCAL_FIXTURE_CLOCK=0
 
 LABEL org.opencontainers.image.title="Cardano IBC Cosmos compatibility chain" \
       org.opencontainers.image.source="https://github.com/cardano-foundation/cardano-ibc-incubator" \
       org.cardano-ibc.profile="${PROFILE}" \
       org.cardano-ibc.ibc-go-version="${IBC_GO_VERSION}" \
       org.cardano-ibc.ibc-go-commit="${IBC_GO_COMMIT}" \
-      org.cardano-ibc.semantics="${IBC_SEMANTICS}"
+      org.cardano-ibc.semantics="${IBC_SEMANTICS}" \
+      org.cardano-ibc.local-clock="${LOCAL_FIXTURE_CLOCK}"
 
 RUN apk add --no-cache bash ca-certificates curl jq sed
 
 COPY --from=builder /out/simd /usr/local/bin/simd
 COPY chains/cosmos/scripts/setup_profile.sh /usr/local/bin/setup-cosmos-profile
+COPY chains/cosmos/scripts/local_clock.sh /usr/local/lib/cosmos-local-clock.sh
 COPY chains/cosmos/config /opt/cardano-ibc/cosmos-profile-config
+RUN printf '%s\n' "${LOCAL_FIXTURE_CLOCK}" > /opt/cardano-ibc/local-clock-enabled
 
 ENV SIMD_HOME=/var/lib/simd
 WORKDIR /var/lib/simd

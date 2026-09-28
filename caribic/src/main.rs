@@ -15,6 +15,7 @@ mod config;
 mod demos;
 mod install;
 mod light_client_test;
+mod local_network;
 mod logger;
 mod process;
 mod route_setup;
@@ -38,7 +39,7 @@ pub(crate) enum LightClientTest {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
-    /// Starts everything (network + bridge + IBC Swap dapp)
+    /// Starts the network and bridge, plus the IBC Swap dapp where supported
     All,
     /// Starts the managed Cardano network/runtime services
     Network,
@@ -139,11 +140,16 @@ enum SetupCommand {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Inspect or manage the Yaci DevKit local network
+    Devkit {
+        #[arg(value_enum)]
+        action: commands::devkit::DevkitAction,
+    },
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts the network, bridge, and IBC Swap dapp; optionally specify: all, network, bridge, gateway, dapp, relayer (mithril is disabled)
+    /// Starts bridge components. No argument starts the network and bridge, plus the IBC Swap dapp where supported. DevKit uses the Cosmos CLI workflow
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -398,6 +404,7 @@ async fn main() {
 
     // Dispatch each subcommand to its module-level handler.
     let command_result: Result<(), String> = match args.command {
+        Commands::Devkit { action } => commands::devkit::run_devkit(project_root_path, action),
         Commands::Check => commands::run_check().await,
         Commands::Install => commands::run_install(project_root_path),
         Commands::Chains => commands::run_chains(),
@@ -490,6 +497,15 @@ async fn main() {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+
+    #[test]
+    fn local_start_has_one_provisioner() {
+        assert!(
+            Args::try_parse_from(["caribic", "start", "network", "--network", "local"]).is_ok()
+        );
+        assert!(Args::try_parse_from(["caribic", "start", "--local-runtime", "legacy"]).is_err());
+        assert!(Args::try_parse_from(["caribic", "start", "--local-runtime", "devkit"]).is_err());
+    }
 
     #[test]
     fn light_client_flag_defaults_to_recover_client() {

@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use super::clock::FixtureClock;
 use super::config::{CosmosProfileConfig, RELAYER_MNEMONIC};
 use crate::chains::hermes_support::{
     self, HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
@@ -32,8 +33,11 @@ pub(super) fn configure_classic_profile(
         .into());
     }
 
+    let clock = FixtureClock::selected(project_root_path, profile)?;
+    clock.validate_retained_state(&profile.state_dir(project_root_path))?;
+    let synchronized_clock = matches!(clock, FixtureClock::Devkit { .. });
     hermes_support::ensure_cosmos_chain_in_hermes_config(
-        &hermes_profile(profile),
+        &hermes_profile(profile, synchronized_clock),
         &format!(
             "Local {} chain used by Cardano compatibility routes",
             profile.display_name
@@ -42,7 +46,10 @@ pub(super) fn configure_classic_profile(
     ensure_relayer_key(project_root_path, profile)
 }
 
-fn hermes_profile(profile: CosmosProfileConfig) -> HermesCosmosChainProfile {
+fn hermes_profile(
+    profile: CosmosProfileConfig,
+    synchronized_clock: bool,
+) -> HermesCosmosChainProfile {
     HermesCosmosChainProfile {
         id: profile.chain_id.to_string(),
         rpc_addr: format!("http://127.0.0.1:{}", profile.rpc_port),
@@ -66,7 +73,7 @@ fn hermes_profile(profile: CosmosProfileConfig) -> HermesCosmosChainProfile {
         gas_multiplier: "1.8",
         max_msg_num: 20,
         max_tx_size: HERMES_CONSERVATIVE_MAX_TX_SIZE,
-        clock_drift: "8760h",
+        clock_drift: if synchronized_clock { "20s" } else { "8760h" },
         max_block_time: "10s",
         trusting_period: "10days",
         memo_prefix: Some("Cardano IBC compatibility"),
@@ -160,11 +167,18 @@ mod tests {
         assert!(setup_script.contains("MAX_TX_BYTES=1048576"));
 
         for test_profile in [CosmosTestProfile::V8Classic, CosmosTestProfile::V10Classic] {
-            let profile = hermes_profile(*test_profile.config());
+            let profile = hermes_profile(*test_profile.config(), false);
             assert_eq!(profile.max_tx_size, HERMES_CONSERVATIVE_MAX_TX_SIZE);
             assert_eq!(profile.max_gas, INJECTIVE_MAX_TX_GAS);
             assert!(profile.max_tx_size < LOCAL_SIMD_MAX_TX_BYTES);
         }
+    }
+
+    #[test]
+    fn synchronized_devkit_clock_uses_the_verified_twenty_second_drift() {
+        let profile = *CosmosTestProfile::V8Classic.config();
+        assert_eq!(hermes_profile(profile, true).clock_drift, "20s");
+        assert_eq!(hermes_profile(profile, false).clock_drift, "8760h");
     }
 
     #[test]

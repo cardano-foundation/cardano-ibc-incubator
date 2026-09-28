@@ -18,9 +18,24 @@ cargo install --path .
 ```
 ## Commands overview
 
+### Local Cardano network
+
+`caribic start` uses Yaci DevKit to seed five producers in genesis. Docker Compose and Python 3.9+ are required.
+Epochs retain 5,000 one-second slots (83 minutes 20 seconds). Seeding the pools avoids waiting for registration to activate.
+Fresh network startup took about 2½ minutes with cached images on a 3-CPU, 4-GiB Docker VM. Image downloads and bridge deployment add time.
+
+DevKit supplies the genesis templates and key-generation scripts. As Cardano versions change we can adopt upstream provisioning fixes instead of maintaining those pieces ourselves. Caribic adds the five-producer configuration and handles funding and bridge connections.
+
+To migrate or reset, run `caribic stop` followed by `caribic start --clean`. Recreate IBC routes and reset the paired Cosmos fixture with `--chain-flag stateful=false`. `caribic stop network` retains the chain.
+
+Use `caribic devkit status` to inspect the network and `caribic devkit test` to check payments and block proofs. The diagnostic requires Node 22+.
+Set port overrides in `chains/cardano/devkit/.env` using [`.env.example`](../chains/cardano/devkit/.env.example). Exported endpoints and reports live in `.caribic/devkit/`.
+
+Local pairing currently supports Cosmos `v8-classic`. Other profiles need clock integration and the Osmosis UI is skipped. Full IBC round-trip validation is still pending.
+
 ### `caribic check`
 
-Verifies Docker, Aiken, Deno, Go, and the native Hermes build toolchain on Linux. It does not currently probe Node.js or Rust/Cargo.
+Verifies Docker, Docker Compose, Python, Aiken, Deno, Go, and the native Hermes build toolchain on Linux. It does not currently probe Node.js or Rust/Cargo.
 
 ### `caribic install`
 
@@ -38,7 +53,7 @@ Starts services. Run `caribic --help` to see an actively maintained exhaustive l
 
 With no target, `caribic start` behaves like `caribic start all`: it starts the
 network and bridge stack (including Gateway and Hermes), then starts the IBC
-Swap dapp after those dependencies are ready.
+Swap dapp after those dependencies are ready. Local DevKit startup currently skips the dapp.
 
 Examples:
 
@@ -320,7 +335,7 @@ deno run --allow-net --allow-read --allow-write --allow-env caribic/tools/provis
 
 ### 1. Understand the managed public-network services
 
-For preprod and preview, Caribic never starts its local `cardano-node`, Kupo, Ogmios, or Ogmios proxy services, regardless of the local-devnet service switches in `default-config.json`. It manages only Postgres and the Yaci history follower; Yaci and the Gateway's block-witness fetch use the external raw relay configured by `CARDANO_CHAIN_HOST`, while transaction building and submission use the external Kupo/Ogmios endpoints.
+For preprod and preview, Caribic never starts its local `cardano-node`, Kupo, Ogmios, or Ogmios proxy services, regardless of local network configuration. It manages only Postgres and the Yaci history follower; Yaci and the Gateway's block-witness fetch use the external raw relay configured by `CARDANO_CHAIN_HOST`, while transaction building and submission use the external Kupo/Ogmios endpoints.
 
 The built-in profiles carry the correct chain identities and protocol magic (`1` for preprod and `2` for preview), so no custom Caribic config is needed. Rebuild the CLI with `cargo install --path caribic --force` after changing branches.
 

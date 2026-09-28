@@ -9,6 +9,7 @@ const {
   queryProtocolParametersCompat,
   resolveOgmiosHttpUrl,
   querySystemStart,
+  queryLocalSlotConfig,
   sanitizeProtocolParameters,
 } = await import("../src/external_cardano.ts");
 
@@ -45,6 +46,12 @@ const provider = new Kupmios(
   ),
 );
 SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+if (parseNetwork(cardanoNetworkMagic) === "Custom") {
+  Object.assign(
+    SLOT_CONFIG_NETWORK.Custom,
+    await queryLocalSlotConfig(ogmiosUrl),
+  );
+}
 const lucid = await Lucid(
   provider,
   parseNetwork(cardanoNetworkMagic),

@@ -16,6 +16,7 @@ MINIMUM_GAS_PRICES="${COSMOS_MINIMUM_GAS_PRICES:-0.0025stake}"
 GENESIS_TIME="${COSMOS_GENESIS_TIME:-2025-12-31T23:59:00Z}"
 MAX_TX_BYTES=1048576
 GOV_VOTING_PERIOD="${COSMOS_GOV_VOTING_PERIOD:-30s}"
+GOV_EXPEDITED_VOTING_PERIOD="${COSMOS_GOV_EXPEDITED_VOTING_PERIOD:-10s}"
 GOV_MAX_DEPOSIT_PERIOD="${COSMOS_GOV_MAX_DEPOSIT_PERIOD:-60s}"
 
 # The generic ibc-go v8/v10 profiles model Injective's current public capacity
@@ -36,6 +37,9 @@ RPC_MAX_BODY_BYTES=4000000
 
 GENESIS_FILE="${SIMD_HOME}/config/genesis.json"
 CONFIG_FILE="${SIMD_HOME}/config/config.toml"
+
+. /usr/local/lib/cosmos-local-clock.sh
+check_local_clock "$(cat /opt/cardano-ibc/local-clock-enabled)"
 
 case "${IBC_SEMANTICS}" in
   classic|v2) ;;
@@ -92,6 +96,7 @@ if [ ! -f "${GENESIS_FILE}" ]; then
   jq \
     --arg genesis_time "${GENESIS_TIME}" \
     --arg gov_voting_period "${GOV_VOTING_PERIOD}" \
+    --arg gov_expedited_voting_period "${GOV_EXPEDITED_VOTING_PERIOD}" \
     --arg gov_max_deposit_period "${GOV_MAX_DEPOSIT_PERIOD}" \
     --arg block_max_bytes "${BLOCK_MAX_BYTES}" \
     --arg block_max_gas "${BLOCK_MAX_GAS}" \
@@ -114,6 +119,7 @@ if [ ! -f "${GENESIS_FILE}" ]; then
       | .app_state.staking.params.historical_entries = $staking_historical_entries
       | .app_state.ibc.client_genesis.params.allowed_clients = ["07-tendermint", "08-cardano-probabilistic"]
       | .app_state.gov.params.voting_period = $gov_voting_period
+      | .app_state.gov.params.expedited_voting_period = $gov_expedited_voting_period
       | .app_state.gov.params.max_deposit_period = $gov_max_deposit_period
       | .app_state.bank.denom_metadata = [{
           "description": "Deterministic token for Cardano IBC compatibility tests",
@@ -176,6 +182,8 @@ grep -q "^max_body_bytes = ${RPC_MAX_BODY_BYTES}$" "${CONFIG_FILE}" || {
   echo "[${PROFILE}] Could not configure max_body_bytes in ${CONFIG_FILE}." >&2
   exit 1
 }
+
+record_local_clock
 
 exec simd start \
   --home "${SIMD_HOME}" \
