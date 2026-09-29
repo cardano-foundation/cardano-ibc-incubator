@@ -97,6 +97,14 @@ export async function completeReferenceBatchTx(
 ) {
   const txBuilder = buildReferenceBatchTx(lucid, referenceAddress, validators);
   if (validTo !== undefined) txBuilder.validTo(validTo);
+  if (funding?.leftoverAsFee) {
+    // Set the reserved fee before balancing so Lucid does not construct a
+    // temporary change output that can push a near-limit batch over maxTxSize.
+    const { totalOutputAssets } = await txBuilder.config();
+    txBuilder.setMinFee(
+      funding.utxo.assets.lovelace - totalOutputAssets.lovelace,
+    );
+  }
   const availableWalletInputs = funding
     ? [funding.utxo]
     : await lucid.wallet().getUtxos();
