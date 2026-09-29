@@ -26,6 +26,7 @@ import (
 
 // VerifyIbcStateMembership verifies a Gateway-provided proof for `key -> value`
 // against an authenticated `ibc_state_root`.
+// Packet receipts support only VerifyIbcStateNonMembership under the current codec.
 //
 // This verifier mirrors the on-chain commitment scheme in:
 // `cardano/onchain/lib/ibc/core/ics-025-handler-interface/ibc_state_commitment.ak`.
@@ -41,6 +42,12 @@ import (
 //   - Backwards-compatible: the Gateway currently returns a JSON-encoded proof with
 //     the same logical fields (key/value + 64 sibling hashes encoded as InnerOps).
 func VerifyIbcStateMembership(root []byte, key []byte, value []byte, proofBytes []byte) error {
+	// Cardano commits an empty receipt bytestring, not ibc-go's 0x01 sentinel.
+	// Reject before the raw-byte equality shortcut as well as semantic comparison.
+	if strings.HasPrefix(string(key), "receipts/ports/") {
+		return fmt.Errorf("packet receipt membership is unsupported: only non-membership proofs are supported")
+	}
+
 	exist, err := decodeExistenceProof(proofBytes)
 	if err != nil {
 		return err
@@ -131,9 +138,8 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 
 	case strings.HasPrefix(keyStr, "commitments/ports/"),
 		strings.HasPrefix(keyStr, "acks/ports/"),
-		strings.HasPrefix(keyStr, "receipts/ports/"),
 		strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
-		// Packet commitments / acknowledgements / receipts are stored on Cosmos chains
+		// Packet commitments and acknowledgements are stored on Cosmos chains
 		// as raw bytes (not protobuf-encoded). Cardano commits to the CBOR-serialised
 		// Plutus `ByteArray` for these values, so we need to unwrap the committed
 		// CBOR bytestring and compare the underlying bytes.
