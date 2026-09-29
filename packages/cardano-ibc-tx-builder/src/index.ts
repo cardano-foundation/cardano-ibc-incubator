@@ -6,6 +6,7 @@ import {
 } from './ics20-json-codec';
 
 export * from './ics20-json-codec';
+export * from './packet-lanes';
 
 const LOVELACE = 'lovelace';
 const CIP67_FT_LABEL_HEX = '0014df10';

@@ -19,6 +19,7 @@ exports.buildUnsignedSendPacketTx = buildUnsignedSendPacketTx;
 const blake2b_1 = require("@noble/hashes/blake2b");
 const ics20_json_codec_1 = require("./ics20-json-codec");
 __exportStar(require("./ics20-json-codec"), exports);
+__exportStar(require("./packet-lanes"), exports);
 const LOVELACE = 'lovelace';
 const CIP67_FT_LABEL_HEX = '0014df10';
 exports.MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
