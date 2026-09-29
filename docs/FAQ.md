@@ -96,10 +96,14 @@ on 2026-09-29.
 That is a projection from separate benchmarks, not an integrated IAVL send test.
 The compressed collision-bucket prototype projects 16.20 million and preserves
 existing roots by allowing colliding keys to share an outer leaf. Its narrow
-margin still needs integrated testing. IAVL also requires recovery to preserve
-tree structure and node versions through snapshots or exact history replay.
-The current key/value set alone cannot reproduce its root. These results favor
-further work on collision buckets.
+margin still needs integrated testing. These results favor further work on
+collision buckets.
+
+Our current tree, and the proposed collision buckets, can be reconstructed from the complete current key/value set. Insertion order does not matter. The same entries produce the same root.
+
+With IAVL, the root also depends on tree structure and node versions, which reflect the update history. Inserting those same entries into a fresh IAVL tree can produce a different root.
+
+So IAVL recovery needs either a snapshot preserving that structure and those versions, or replay of the exact updates and version boundaries. That is the extra recovery requirement we are referring to.
 
 ## Why is voucher denom trace mapping on-chain, but still outside HostState?
 
