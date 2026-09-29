@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.4.29",
+    "@lucid-evolution/provider": "npm:@lucid-evolution/provider@0.1.90",
+    "@lucid-evolution/uplc": "npm:@lucid-evolution/uplc@0.2.23"
+  },
+  "nodeModulesDir": "auto"
+}

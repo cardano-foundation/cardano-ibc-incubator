@@ -1,0 +1,10 @@
+/build/
+/artifacts/
+/lib/vectors.test.ak
+/lib/sparse_baseline.ak
+/plutus.json
+/node_modules/
+
+/lib/bucket_vectors.test.ak
+
+/lib/batch_vectors.test.ak

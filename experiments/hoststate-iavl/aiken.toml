@@ -1,0 +1,9 @@
+name = "cardanofoundation/hoststate-iavl-experiment"
+version = "0.0.1"
+licences = ["Apache-2.0"]
+description = "Experimental Cosmos IAVL update witnesses and Cardano cost measurements"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "3.1.0"
+source = "github"
