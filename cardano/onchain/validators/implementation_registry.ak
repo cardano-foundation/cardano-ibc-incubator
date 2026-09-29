@@ -21,7 +21,7 @@ use ibc/migration/types.{
   Restoration, Restore, Restrict, Rotate, RotateAuthority, host_role,
   transfer_role,
 }
-use ibc/utils/string
+use ibc/utils/text_bytes
 use ibc/utils/validator_utils
 
 // All migrated objects use the ordinary raw datum/redeemer ABI. Only the
@@ -461,7 +461,7 @@ validator implementation_registry {
                 name: host_state_token_name,
               },
               prefix,
-              string.int_to_string(sequence),
+              text_bytes.int_to_decimal_bytes(sequence),
             ),
           }
         expect moved_object(transaction, old, own_ref, role, token)

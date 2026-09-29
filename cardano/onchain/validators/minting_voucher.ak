@@ -30,8 +30,8 @@ use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/encoding/hex
 use ibc/utils/shutdown
-use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 validator mint_voucher(
@@ -153,8 +153,7 @@ validator mint_voucher(
           )
         trace @"mint_voucher: minted token is valid"
 
-        expect Some(receiver_public_key_hash) =
-          string_utils.hex_string_to_bytes(data.receiver)
+        expect Some(receiver_public_key_hash) = hex.decode(data.receiver)
         trace @"mint_voucher: converted receiver to public key hash"
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
@@ -330,8 +329,7 @@ validator mint_voucher(
           )
         trace @"mint_voucher: minted token is valid"
 
-        expect Some(sender_public_key_hash) =
-          string_utils.hex_string_to_bytes(data.sender)
+        expect Some(sender_public_key_hash) = hex.decode(data.sender)
         trace @"mint_voucher: converted sender to public key hash"
 
         let sender_address = from_verification_key(sender_public_key_hash)

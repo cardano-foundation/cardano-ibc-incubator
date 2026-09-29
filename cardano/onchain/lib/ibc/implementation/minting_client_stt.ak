@@ -20,7 +20,7 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   CreateClient, HostStateRedeemer,
 }
 use ibc/utils/shutdown
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 use ibc/utils/validator_utils
 
 fn find_host_state_input(
@@ -102,7 +102,7 @@ pub fn validate_create(
       policy_id: host_state_nft_policy_id,
       name: host_state_token_name,
     }
-  let id_str = string_utils.int_to_string(client_id_sequence)
+  let id_str = text_bytes.int_to_decimal_bytes(client_id_sequence)
   let client_token_name =
     auth.generate_token_name(host_state_nft, client_prefix, id_str)
   let client_token =

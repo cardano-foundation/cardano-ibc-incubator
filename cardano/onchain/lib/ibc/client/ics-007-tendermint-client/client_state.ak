@@ -13,7 +13,7 @@ use ibc/core/ics_002_client_semantics/types/client.{
 }
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{ProofSpec, validate_specs}
 use ibc/core/ics_023_vector_commitments/merkle.{MerklePath, MerkleProof}
-use ibc/utils/string
+use ibc/utils/text_bytes
 use ibc/utils/time.{Duration, Time}
 
 pub type ClientState {
@@ -57,7 +57,7 @@ pub fn get_chain_id(cs: ClientState) -> ByteArray {
 /// Validate performs a basic validation of the client state fields.
 pub fn validate(cs: ClientState) -> Bool {
   // chain id cannot be empty string.
-  expect string.trim_space(cs.chain_id) != ""
+  expect text_bytes.trim_ascii_spaces(cs.chain_id) != ""
   // chain id not too long
   expect bytearray.length(cs.chain_id) <= max_chain_id_len
   // trustLevel must be within [1/3, 1]

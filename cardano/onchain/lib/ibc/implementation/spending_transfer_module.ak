@@ -37,7 +37,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   Operator, ReclaimModule,
 }
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
-use ibc/utils/string as string_utils
+use ibc/encoding/hex
 use ibc/utils/validator_utils
 
 pub fn validate(
@@ -312,8 +312,7 @@ fn module_callback(
           bytearray.length(data.denom) - 1
             |> bytearray.slice(data.denom, voucher_prefix_len, _)
 
-        expect Some(escrowed_token_unit) =
-          string_utils.hex_string_to_bytes(unprefixed_denom)
+        expect Some(escrowed_token_unit) = hex.decode(unprefixed_denom)
         trace @"spend_transfer_module: demon convert to token unit valid"
 
         let (escrowed_token_policy_id, escrowed_token_name) =
@@ -344,8 +343,7 @@ fn module_callback(
             expected_escrow_value_difference,
           )
 
-        expect Some(receiver_public_key_hash) =
-          string_utils.hex_string_to_bytes(data.receiver)
+        expect Some(receiver_public_key_hash) = hex.decode(data.receiver)
         expect bytearray.length(receiver_public_key_hash) == 28
         let receiver_credential = VerificationKey(receiver_public_key_hash)
 
@@ -567,8 +565,7 @@ fn module_operator(
       expect fungible_token_packet_data.matches_valid_bytes(data, packet.data)
 
       // Every outbound transfer must be refundable to a Cardano payment key.
-      expect Some(sender_public_key_hash) =
-        string_utils.hex_string_to_bytes(data.sender)
+      expect Some(sender_public_key_hash) = hex.decode(data.sender)
       expect bytearray.length(sender_public_key_hash) == 28
       trace @"spend_transfer_module: sender is a valid public key hash"
 
@@ -589,8 +586,7 @@ fn module_operator(
           )
         trace @"spend_transfer_module: tx not mint voucher token"
 
-        expect Some(escrowed_token_unit) =
-          string_utils.hex_string_to_bytes(data.denom)
+        expect Some(escrowed_token_unit) = hex.decode(data.denom)
         trace @"spend_transfer_module: demon convert to token unit valid"
 
         let (escrowed_token_policy_id, escrowed_token_name) =

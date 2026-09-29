@@ -16,7 +16,7 @@ use ibc/apps/transfer/types/transfer_module_datum.{
 }
 use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
-use ibc/utils/string as string_utils
+use ibc/encoding/hex
 use ibc/utils/validator_utils
 
 validator mint_transfer_escrow_shard(
@@ -88,7 +88,7 @@ fn validate_create_escrow_shard(
   expect fungible_token_packet_data.validate_basic(data)
 
   // Native escrow denoms are encoded Cardano token units.
-  expect Some(escrowed_token_unit) = string_utils.hex_string_to_bytes(denom)
+  expect Some(escrowed_token_unit) = hex.decode(denom)
   let (escrowed_token_policy_id, escrowed_token_name) =
     validator_utils.extract_token_unit(escrowed_token_unit)
   expect Some(transfer_amount) = int.from_utf8(data.amount)

@@ -1,7 +1,7 @@
 use aiken/crypto
 use aiken/primitive/bytearray
 use ibc/core/ics_002_client_semantics/registry.{ClientRegistration, Tendermint}
-use ibc/utils/string
+use ibc/utils/text_bytes
 
 pub type RegistryCase {
   first: ClientRegistration,
@@ -19,7 +19,8 @@ pub fn registry_case(
   reverse: Bool,
   reverse_references: Bool,
 ) -> RegistryCase {
-  let client_type = bytearray.concat("99-client-", string.int_to_string(suffix))
+  let client_type =
+    bytearray.concat("99-client-", text_bytes.int_to_decimal_bytes(suffix))
   RegistryCase {
     first: registration(client_type, seed),
     // A numeric suffix catches confusion between the type and instance number.
@@ -27,7 +28,7 @@ pub fn registry_case(
       bytearray.concat(client_type, "-0"),
       bytearray.concat(seed, "other"),
     ),
-    sequence: string.int_to_string(sequence),
+    sequence: text_bytes.int_to_decimal_bytes(sequence),
     sequence_number: sequence,
     reverse,
     reverse_references,

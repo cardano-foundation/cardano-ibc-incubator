@@ -50,7 +50,7 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   CreateChannel, HostStateRedeemer,
 }
 use ibc/utils/shutdown
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 use ibc/utils/validator_utils
 
 fn find_host_state_input(
@@ -195,7 +195,7 @@ pub fn validate_create(
     )
 
   let client_state_active = client_datum.status == Active
-  let id_str = string_utils.int_to_string(channel_id_sequence)
+  let id_str = text_bytes.int_to_decimal_bytes(channel_id_sequence)
   let host_state_nft =
     AuthToken {
       policy_id: host_state_nft_policy_id,
@@ -214,7 +214,7 @@ pub fn validate_create(
     order.string(channel_output_datum.state.channel.ordering)
       |> version.verify_supported_feature(connection_version, _)
   let channel_id =
-    string_utils.int_to_string(channel_id_sequence)
+    text_bytes.int_to_decimal_bytes(channel_id_sequence)
       |> channel_keys.format_channel_identifier()
   let ibc_module_redeemer =
     validator_utils.extract_module_redeemer(
