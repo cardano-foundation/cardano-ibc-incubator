@@ -473,6 +473,22 @@ describe('deployment-bound tree stores', () => {
 });
 
 describe('guarded tree publication', () => {
+  it('uses an authenticated state read without applying an operation restriction', async () => {
+    const readers = emptyReaders();
+    const restrictions: Array<bigint | undefined> = [];
+    const findHostState = readers.lucid.findUtxoAtHostStateNFT;
+    readers.lucid.findUtxoAtHostStateNFT = async (restriction) => {
+      restrictions.push(restriction);
+      return findHostState(restriction);
+    };
+    const store = new IbcTreeStateStore(deployment, readers.kupo, readers.lucid);
+
+    await store.getAlignedSnapshot();
+
+    assert.ok(restrictions.length > 0);
+    assert.deepEqual(new Set(restrictions), new Set([0n]));
+  });
+
   it('returns independent snapshots and does not expose an unbound snapshot', async () => {
     const readers = emptyReaders();
     const store = new IbcTreeStateStore(deployment, readers.kupo, readers.lucid);

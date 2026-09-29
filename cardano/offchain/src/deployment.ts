@@ -1,4 +1,8 @@
 import {
+  assertEmergencyAuthority,
+  type Authority,
+} from "../types/plutus/Migration.ts";
+import {
   type HistoryBootstrap,
   requireHistoryBootstrap,
   requireHistoryStart,
@@ -20,9 +24,11 @@ import {
   buildMockTokenMintTx,
   buildReferenceBatchTx,
   buildReferenceFundingTx,
+  buildRegistryBootstrapTx,
   completeReferenceBatchTx,
   IDENTIFIER_THREAD_COMPLETE_OPTIONS,
   type IdentifierThreadMint,
+  verifyReferencePublications,
 } from "./deployment-transactions.ts";
 import { ensureDir } from "@std/fs";
 import {
@@ -37,6 +43,8 @@ import {
   type Script,
   ScriptHash,
   type SpendingValidator,
+  type TxSignBuilder,
+  type TxSigned,
   UTxO,
   validatorToRewardAddress,
   validatorToScriptHash,
@@ -76,6 +84,12 @@ import {
   type TraceRegistryShardDatum,
   TransferModuleDatum,
 } from "../types/index.ts";
+import {
+  assertGovernance,
+  type Governance,
+  Registry,
+} from "../types/plutus/Migration.ts";
+import { canonicalMigrationJson, MIGRATION_PROFILE } from "./migration-plan.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -205,6 +219,27 @@ export class DeploymentIbcTree {
     this.dirty = true;
   }
 
+  /** Delete a leaf from a built tree in O(depth), without rescanning inventory. */
+  async remove(key: string): Promise<void> {
+    await this.rebuildIfNeeded();
+    if (!this.leaves.delete(key)) {
+      throw new Error("Cannot remove absent tree leaf");
+    }
+    let index = await keyIndex64(key);
+    this.nodesByHeight[0].delete(index);
+    for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
+      const parent = index >> 1n;
+      const value = await innerHash(
+        this.nodesByHeight[height].get(parent << 1n) ?? EMPTY_HASH,
+        this.nodesByHeight[height].get((parent << 1n) | 1n) ?? EMPTY_HASH,
+      );
+      if (value === EMPTY_HASH) this.nodesByHeight[height + 1].delete(parent);
+      else this.nodesByHeight[height + 1].set(parent, value);
+      index = parent;
+    }
+    this.root = this.nodesByHeight[MERKLE_DEPTH_BITS].get(0n) ?? EMPTY_HASH;
+  }
+
   async getRoot(): Promise<string> {
     await this.rebuildIfNeeded();
     return this.root;
@@ -234,8 +269,12 @@ export class DeploymentIbcTree {
 
     for (const [key, value] of this.leaves.entries()) {
       const keyHash = await sha256Hex(new TextEncoder().encode(key));
+      const path = BigInt(`0x${keyHash.slice(0, 16)}`);
+      if (nodesByHeight[0].has(path)) {
+        throw new Error("Ambiguous tree key path");
+      }
       nodesByHeight[0].set(
-        BigInt(`0x${keyHash.slice(0, 16)}`),
+        path,
         await leafHash(keyHash, value),
       );
     }
@@ -306,11 +345,37 @@ const buildBindPortHostStateUpdate = async (
   };
 };
 
+export type DeploymentOptions = {
+  deploymentMode?: "upgradeable" | "legacy";
+  migration?: {
+    governance: Governance;
+    emergency: Authority;
+    bootstrapSigners: string[];
+    signRegistryBootstrap?: (transaction: TxSignBuilder) => Promise<TxSigned>;
+  };
+};
+
 export const createDeployment = async (
   lucid: LucidEvolution,
   mode?: string,
+  options: DeploymentOptions = {},
 ) => {
-  console.log("Create deployment info");
+  if (
+    options.deploymentMode !== "upgradeable" &&
+    options.deploymentMode !== "legacy"
+  ) {
+    throw new Error(
+      "Explicit deploymentMode required: upgradeable or legacy (no recovery)",
+    );
+  }
+  if (
+    (options.deploymentMode === "upgradeable") !== Boolean(options.migration)
+  ) {
+    throw new Error(
+      "Deployment mode and migration governance configuration disagree",
+    );
+  }
+  console.log(`Create ${options.deploymentMode} deployment info`);
   // Resolve the replay boundary before submitting any deployment transaction.
   // Public deployments reuse the stable checkpoint selected for their Yaci follower.
   const networkMagic = Number(Deno.env.get("CARDANO_NETWORK_MAGIC") || 42);
@@ -325,6 +390,30 @@ export const createDeployment = async (
   requireHistoryStart(historyStart, networkMagic);
   const walletAddress = await lucid.wallet().address();
   const deployerPaymentKeyHash = getPaymentCredentialHash(walletAddress);
+  const migration = options.migration;
+  const nonceCount = RESERVED_DEPLOYMENT_NONCE_COUNT + (migration ? 1 : 0);
+  if (migration) {
+    assertGovernance(migration.governance);
+    assertEmergencyAuthority(migration.emergency, migration.governance);
+    const signers = new Set(migration.bootstrapSigners);
+    if (
+      BigInt(
+        migration.governance.signers.filter((key) => signers.has(key)).length,
+      ) < migration.governance.quorum
+    ) {
+      throw new Error(
+        "Registry bootstrap requires an explicitly selected governance quorum",
+      );
+    }
+    if (
+      !migration.signRegistryBootstrap &&
+      (signers.size !== 1 || !signers.has(deployerPaymentKeyHash))
+    ) {
+      throw new Error(
+        "Multisigner registry bootstrap requires a signRegistryBootstrap callback; no fallback deployment key is permitted",
+      );
+    }
+  }
   const backupOperatorKeyHash = Deno.env.get("DEPLOYER_BACKUP_PAYMENT_KEY_HASH")
     ?.trim();
   const deploymentReportEnabled = mode !== undefined && mode != EMULATOR_ENV;
@@ -355,12 +444,12 @@ export const createDeployment = async (
     }
     const nonces = selectDeploymentNonceUtxos(
       walletUtxos,
-      RESERVED_DEPLOYMENT_NONCE_COUNT,
+      nonceCount,
       new Set(collateral.map(utxoRefKey)),
     );
-    if (nonces.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
+    if (nonces.length < nonceCount) {
       throw new Error(
-        `Not enough distinct wallet UTxOs to deploy (need at least ${RESERVED_DEPLOYMENT_NONCE_COUNT}).`,
+        `Not enough distinct wallet UTxOs to deploy (need at least ${nonceCount}).`,
       );
     }
     const plan = await loadDeploymentPlan(lucid, {
@@ -372,6 +461,13 @@ export const createDeployment = async (
       deployerPaymentKeyHash,
       backupOperatorKeyHash,
       benchmarkVoucherEnabled: Deno.env.get("CARDANO_NETWORK_MAGIC") === "42",
+      migration: migration
+        ? {
+          registryNonce: buildOutputReference(nonces[nonceCount - 1]),
+          governance: migration.governance,
+          emergency: migration.emergency,
+        }
+        : undefined,
     });
     assertDeploymentReferenceValidatorsFit(
       lucid,
@@ -401,7 +497,7 @@ export const createDeployment = async (
   // needs a unique OutputReference nonce. Re-querying "the first wallet UTxO"
   // between sequential mints is fragile on local devnets because the indexer can
   // momentarily lag behind the just-submitted transaction set.
-  const deploymentSplitOutputCount = RESERVED_DEPLOYMENT_NONCE_COUNT + 16;
+  const deploymentSplitOutputCount = nonceCount + 16;
   if (signerUtxos.length < deploymentSplitOutputCount) {
     const address = await lucid.wallet().address();
     await submitTx(
@@ -532,6 +628,29 @@ export const createDeployment = async (
   };
 
   const plan = deploymentPlan!;
+  let implementationRegistryUtxo: UTxO | undefined;
+  if (migration) {
+    if (
+      !plan.registry || !plan.mintImplementationRegistry ||
+      !plan.implementationRegistry
+    ) throw new Error("Missing preflighted migration artifacts");
+    const bootstrap = await buildRegistryBootstrapTx(lucid, {
+      nonce: reservedNonceUtxos[nonceCount - 1],
+      policy: plan.mintImplementationRegistry.script,
+      address: plan.implementationRegistry.address,
+      registry: plan.registry,
+      signers: migration.bootstrapSigners,
+    }).complete({ localUPLCEval: mode === EMULATOR_ENV });
+    const signed = migration.signRegistryBootstrap
+      ? await migration.signRegistryBootstrap(bootstrap)
+      : await bootstrap.sign.withWallet().complete();
+    const hash = await signed.submit();
+    await lucid.awaitTx(hash);
+    implementationRegistryUtxo = await lucid.utxoByUnit(
+      plan.registry.token.policy_id + plan.registry.token.name,
+    );
+    reservedDeploymentRefs = await setSpendableWalletUtxos();
+  }
   const referredValidators = plan.referenceValidators.map(({ script }) =>
     script
   );
@@ -604,6 +723,7 @@ export const createDeployment = async (
   );
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   const bootstrapReferenceScripts: BootstrapReferenceScripts = {
+    implementationRegistry: implementationRegistryUtxo,
     hostStateStt: requireReferenceUtxo(
       bootstrapRefUtxosInfo,
       hostStateStt.scriptHash,
@@ -741,6 +861,30 @@ export const createDeployment = async (
   const deployedAt = new Date().toISOString();
 
   const deploymentInfo: DeploymentTemplate = {
+    deploymentMode: options.deploymentMode,
+    ...(plan.registry && plan.implementationRegistry
+      ? {
+        migration: {
+          profile: MIGRATION_PROFILE,
+          registryUnit: plan.registry.token.policy_id +
+            plan.registry.token.name,
+          registryAddress: plan.implementationRegistry.address,
+          registryReference: refUtxosInfo[plan.implementationRegistry.hash],
+          registryDatum: Data.to(plan.registry, Registry),
+          generation: "1",
+          compatibility: plan.registry.current.compatibility,
+          originalAddresses: [
+            plan.hostState,
+            plan.spendClient,
+            plan.spendConnection,
+            plan.spendingChannel.base,
+            plan.spendTransferModule,
+          ].map(({ address }) => address),
+          baseline: JSON.parse(canonicalMigrationJson(plan)),
+          lineage: [],
+        },
+      }
+      : {}),
     backupOperatorKeyHash: backupOperatorKeyHash?.toLowerCase() || undefined,
     clientRegistrations: plan.clientRegistrations,
     deployedAt,
@@ -970,6 +1114,7 @@ type ReferenceValidatorBatch = {
 type ReferenceUtxoMap = Record<string, UTxO>;
 
 type BootstrapReferenceScripts = {
+  implementationRegistry?: UTxO;
   hostStateStt: UTxO;
   mintIdentifier: UTxO;
   mintPort: UTxO;
@@ -1374,7 +1519,7 @@ export async function createReferenceUtxos(
       // Clear Lucid's override before querying the provider so the funding
       // transaction selects from live wallet state, excluding reserved nonces
       // and collateral.
-      lucid.overrideUTxOs([]);
+      lucid.clearUTxOOverride();
       const spendableWalletUtxos = filterReservedWalletUtxos(
         await getLiveWalletUtxos(lucid),
         reservedWalletRefs,
@@ -1516,7 +1661,37 @@ export async function createReferenceUtxos(
           `${batchLabel(batch)}:`,
           signed.txHash,
         );
-        for (const output of outputs) {
+        const adoptionDeadline = Date.now() +
+          REFERENCE_UTXO_ADOPTION_TIMEOUT_MS;
+        let observed: UTxO[];
+        while (true) {
+          observed = (await lucid.utxosAt(referenceAddress)).filter((utxo) =>
+            utxo.txHash === signed.txHash
+          );
+          if (
+            batch.validators.every((validator) =>
+              observed.some((utxo) =>
+                utxo.scriptRef &&
+                validatorToScriptHash(utxo.scriptRef) ===
+                  validatorToScriptHash(validator)
+              )
+            )
+          ) break;
+          if (Date.now() >= adoptionDeadline) {
+            throw new Error(
+              `Timed out waiting for canonical reference outputs ${signed.txHash}`,
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        const publications = verifyReferencePublications(
+          signed.txHash,
+          referenceAddress,
+          batch.validators,
+          outputs,
+          observed,
+        );
+        for (const output of publications) {
           if (!output.scriptRef) {
             continue;
           }
@@ -1618,6 +1793,9 @@ const deployTransferModule = async (
     lucid
       .newTx()
       .readFrom([
+        ...(bootstrapReferenceScripts.implementationRegistry
+          ? [bootstrapReferenceScripts.implementationRegistry]
+          : []),
         bootstrapReferenceScripts.hostStateStt,
         bootstrapReferenceScripts.mintPort,
         bootstrapReferenceScripts.mintIdentifier,
@@ -1768,6 +1946,9 @@ const deployGenericModule = async (
     lucid
       .newTx()
       .readFrom([
+        ...(bootstrapReferenceScripts.implementationRegistry
+          ? [bootstrapReferenceScripts.implementationRegistry]
+          : []),
         bootstrapReferenceScripts.hostStateStt,
         bootstrapReferenceScripts.mintPort,
         bootstrapReferenceScripts.mintIdentifier,

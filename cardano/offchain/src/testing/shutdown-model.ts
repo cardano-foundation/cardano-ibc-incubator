@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
+import { createCardanoScalusEvaluator } from "../scalus-evaluator.ts";
 import {
   CML,
   Constr,
@@ -101,7 +102,9 @@ export async function deploymentScenario() {
     },
   ], { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: 16384 });
   emulator.time = 1_700_000_000_000;
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(seedPhrase);
   let fees = 0n;
   const submitTx = emulator.submitTx.bind(emulator);
@@ -149,7 +152,9 @@ export async function deploymentScenario() {
   const realNow = Date.now;
   Date.now = () => emulator.now();
   try {
-    const deployment = await createDeployment(lucid, EMULATOR_ENV);
+    const deployment = await createDeployment(lucid, EMULATOR_ENV, {
+      deploymentMode: "legacy",
+    });
     lucid.overrideUTxOs(await emulator.getUtxos(address));
     const tree = new DeploymentIbcTree();
     const hostUnit = deployment.hostStateNFT!.policyId +

@@ -57,6 +57,25 @@ class NodeTopologyTests(unittest.TestCase):
                 main(args)
             self.assertEqual(topology.read_text(), native)
 
+    def test_rehearsal_peers_can_keep_forging_without_the_primary(self):
+        for producer in range(2, 6):
+            with self.subTest(producer=producer), tempfile.TemporaryDirectory() as folder:
+                topology = Path(folder) / "topology.json"
+                topology.write_text('{"localRoots": [], "publicRoots": []}')
+                args = [*native_files(folder), "--topology", str(topology)]
+                with patch.dict(os.environ, {"DEVKIT_PEER": "true", "DEVKIT_FULL_MESH": "true",
+                                             "DEVKIT_PRODUCER": f"producer-{producer}",
+                                             "DEVKIT_CLOCK_FILE": "/runtime/migration-clock.rc",
+                                             "FAKETIME_DONT_FAKE_MONOTONIC": "0"}), patch("cardano_node.os.execv"):
+                    main(args)
+                    self.assertEqual(os.environ["FAKETIME_DONT_FAKE_MONOTONIC"], "1")
+                    main(args)
+                roots = json.loads(topology.read_text())["localRoots"]
+                addresses = {point["address"] for point in roots[0]["accessPoints"]}
+                self.assertEqual(addresses, {"devkit.local", *{
+                    f"producer-{i}.local" for i in range(2, 6) if i != producer}})
+                self.assertEqual(roots[0]["valency"], 4)
+
     def test_version_does_not_require_topology_and_malformed_run_does_not_launch(self):
         with patch.dict(os.environ, {"DEVKIT_PEER": "false"}), patch("cardano_node.os.execv") as launch:
             main(["--version"])

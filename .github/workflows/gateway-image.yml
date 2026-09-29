@@ -7,6 +7,7 @@ on:
       - ".dockerignore"
       - ".github/workflows/gateway-image.yml"
       - "cardano/gateway/**"
+      - "cardano/vendor/uplc/**"
       - "packages/cardano-ibc-planner/**"
       - "packages/cardano-ibc-trace-registry/**"
       - "packages/cardano-ibc-tx-builder/**"
@@ -20,6 +21,7 @@ on:
       - ".dockerignore"
       - ".github/workflows/gateway-image.yml"
       - "cardano/gateway/**"
+      - "cardano/vendor/uplc/**"
       - "packages/cardano-ibc-planner/**"
       - "packages/cardano-ibc-trace-registry/**"
       - "packages/cardano-ibc-tx-builder/**"
@@ -27,6 +29,12 @@ on:
       - "proto-types/**"
       - "manifests/**"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the image (leave disabled for a build-only rehearsal)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -48,7 +56,7 @@ jobs:
 
   pull-request-build:
     name: Build Gateway image
-    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'docs/')) }}
+    if: ${{ !cancelled() && ((needs.docs-update.outputs.run_jobs == 'true' && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'docs/')) || (github.event_name == 'workflow_dispatch' && !inputs.publish)) }}
     needs: docs-update
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -74,7 +82,7 @@ jobs:
 
   gateway-image:
     name: Build and publish Gateway image
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:

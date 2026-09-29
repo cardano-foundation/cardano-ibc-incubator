@@ -1,3 +1,7 @@
+import { deploymentOptionsFromEnvironment } from "./src/deployment-mode.ts";
+const deploymentOptions = await deploymentOptionsFromEnvironment();
+import { toOgmiosScript } from "./src/ogmios-script.ts";
+import { createCardanoScalusEvaluator } from "./src/scalus-evaluator.ts";
 import {
   installManagedCardanoAuthFetch,
   resolveManagedKupmiosHeaders,
@@ -11,7 +15,6 @@ const {
   queryOgmiosJsonRpc,
   queryProtocolParametersCompat,
   resolveOgmiosHttpUrl,
-  querySystemStart,
   queryLocalSlotConfig,
   sanitizeProtocolParameters,
 } = await import("./src/external_cardano.ts");
@@ -74,7 +77,6 @@ const kupmiosSubmitTimeoutMs = parsePositiveIntEnv(
   DEFAULT_KUPMIOS_SUBMIT_TIMEOUT_MS,
 );
 installManagedCardanoAuthFetch();
-const chainZeroTime = await querySystemStart(ogmiosUrl);
 const protocolParameters = sanitizeProtocolParameters(
   await queryProtocolParametersCompat(ogmiosUrl),
 );
@@ -87,7 +89,6 @@ const {
 } = await import(
   "@lucid-evolution/lucid"
 );
-const { applySingleCborEncoding } = await import("@lucid-evolution/utils");
 const { createDeployment } = await import("./src/deployment.ts");
 const { KUPMIOS_ENV } = await import("./src/constants.ts");
 
@@ -107,32 +108,6 @@ type RawKupoUtxo = {
 };
 
 function toOgmiosAdditionalUtxos(utxos: any[] = []): any[] {
-  const toOgmiosScript = (scriptRef: any) => {
-    if (!scriptRef) {
-      return null;
-    }
-
-    switch (scriptRef.type) {
-      case "PlutusV1":
-        return {
-          language: "plutus:v1",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      case "PlutusV2":
-        return {
-          language: "plutus:v2",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      case "PlutusV3":
-        return {
-          language: "plutus:v3",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
-      default:
-        return null;
-    }
-  };
-
   const toOgmiosAssets = (assets: Record<string, bigint>) => {
     const mapped: Record<string, Record<string, number>> = {};
     Object.entries(assets ?? {}).forEach(([unit, amount]) => {
@@ -554,25 +529,24 @@ try {
     );
   }
   const cardanoNetwork = parseNetwork(cardanoNetworkMagic);
-  SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
-  if (cardanoNetwork === "Custom") {
-    Object.assign(
-      SLOT_CONFIG_NETWORK.Custom,
-      await queryLocalSlotConfig(ogmiosUrl),
-    );
-  }
+  const slotConfig = cardanoNetwork === "Custom"
+    ? await queryLocalSlotConfig(ogmiosUrl)
+    : SLOT_CONFIG_NETWORK[cardanoNetwork];
   const lucid = await Lucid(
     provider,
     cardanoNetwork,
     {
       presetProtocolParameters: protocolParameters,
+      evaluator: createCardanoScalusEvaluator(),
+      slotConfig,
     } as any,
   );
 
   lucid.selectWallet.fromPrivateKey(deployerSk);
 
   console.log("=".repeat(70));
-  await createDeployment(lucid, KUPMIOS_ENV);
+  console.log(`Deployment mode: ${deploymentOptions.deploymentMode}`);
+  await createDeployment(lucid, KUPMIOS_ENV, deploymentOptions);
 } catch (error) {
   console.error("ERR: ", error);
   throw error;

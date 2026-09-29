@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { queryLocalSlotConfig, queryTransactionInclusionBlockHeight } from '../../helpers/time';
 import { Network } from '@lucid-evolution/lucid';
+import { createScalusEvaluator } from '@lucid-evolution/scalus-uplc';
 import { applyDoubleCborEncoding } from '@lucid-evolution/utils';
 import { gatewayDiagnostics } from '../../helpers/gateway-diagnostics';
 import {
@@ -961,6 +962,7 @@ export const LucidClient = {
             'Kupmios.evaluateTx',
           );
         } catch (error) {
+          gatewayDiagnostics.record('evaluateTx-body', () => ({ txCbor: tx }));
           gatewayDiagnostics.record('evaluateTx-failure', () => ({
             txCbor: tx,
             additionalUTxOs: additionalUTxOs ?? [],
@@ -1007,19 +1009,20 @@ export const LucidClient = {
     );
     console.log('[startup] Ogmios protocol parameters loaded');
     console.log(`[startup] Constructing Lucid for network=${network}`);
+    const isDevnetWithRuntimeSlotConfig = network === 'Custom';
+    const slotConfig = isDevnetWithRuntimeSlotConfig
+      ? await retryWithBackoff(() => queryLocalSlotConfig(rawOgmiosEndpoint), 'Ogmios slot timing query')
+      : undefined;
     const lucid = await Lucid.Lucid(provider, network, {
       presetProtocolParameters: protocolParameters,
+      // Lucid Evolution's maintainer advised us to move to Scalus while reviewing our evaluator update.
+      // https://github.com/Anastasia-Labs/lucid-evolution/pull/734
+      evaluator: createScalusEvaluator({ protocolMajorVersion: 10 }),
+      slotConfig,
     } as any);
     console.log('[startup] Lucid constructed successfully');
 
-    const isDevnetWithRuntimeSlotConfig = network === 'Custom';
     if (isDevnetWithRuntimeSlotConfig) {
-      console.log('[startup] Querying Ogmios slot timing');
-      const slotConfig = await retryWithBackoff(
-        () => queryLocalSlotConfig(rawOgmiosEndpoint),
-        'Ogmios slot timing query',
-      );
-      console.log('[startup] Ogmios slot timing loaded');
       Object.assign(Lucid.SLOT_CONFIG_NETWORK[network], slotConfig);
     }
     // const lucid = await Lucid.Lucid.new(

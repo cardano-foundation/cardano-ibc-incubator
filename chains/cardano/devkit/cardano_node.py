@@ -84,6 +84,21 @@ def main(args):
         }]
         topology["publicRoots"] = []
         path.write_text(json.dumps(topology, indent=2) + "\n")
+    if args[:1] == ["run"] and peer and os.environ.get("DEVKIT_FULL_MESH") == "true":
+        path = argument_path(args, "--topology")
+        topology = json.loads(path.read_text())
+        own = os.environ["DEVKIT_PRODUCER"]
+        peers = ["devkit", *[f"producer-{index}" for index in range(2, 6)]]
+        topology["localRoots"] = [{
+            "accessPoints": [{"address": name + ".local", "port": 3001} for name in peers if name != own],
+            "valency": 4,
+        }]
+        topology["publicRoots"] = []
+        path.write_text(json.dumps(topology, indent=2) + "\n")
+    if args[:1] == ["run"] and os.environ.get("DEVKIT_CLOCK_FILE"):
+        # Clock jumps must not advance Cardano's monotonic timers. The Java CLI
+        # keeps its own setting from entrypoint.sh for its timed waits.
+        os.environ["FAKETIME_DONT_FAKE_MONOTONIC"] = "1"
     binary = "/usr/local/bin/cardano-node"
     os.execv(binary, [binary, *args])
 

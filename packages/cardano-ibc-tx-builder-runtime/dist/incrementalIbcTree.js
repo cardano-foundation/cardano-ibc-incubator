@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IncrementalIbcTree = void 0;
+exports.computeIbcTreeWitnessRoot = computeIbcTreeWitnessRoot;
 exports.verifyIbcTreeWitness = verifyIbcTreeWitness;
 const node_buffer_1 = require("node:buffer");
 const node_crypto_1 = require("node:crypto");
@@ -41,12 +42,9 @@ function leafHash(digest, value) {
             .toString("hex");
 }
 /** Pure membership/exclusion check; malformed inputs throw, mismatch is false. */
-function verifyIbcTreeWitness(key, valueHex, siblings, expectedRoot) {
+function computeIbcTreeWitnessRoot(key, valueHex, siblings) {
     const digest = keyDigest(key);
     const value = normalizeValue(valueHex);
-    const root = normalizeValue(expectedRoot);
-    if (root.length !== 64)
-        throw new Error("IBC tree root must be 32-byte hex");
     if (!Array.isArray(siblings) || siblings.length !== DEPTH) {
         throw new Error("IBC tree witness must have exactly 64 siblings");
     }
@@ -62,7 +60,13 @@ function verifyIbcTreeWitness(key, valueHex, siblings, expectedRoot) {
             : innerHash(sibling, current);
         index >>= 1n;
     }
-    return current === root;
+    return current;
+}
+function verifyIbcTreeWitness(key, valueHex, siblings, expectedRoot) {
+    const root = normalizeValue(expectedRoot);
+    if (root.length !== 64)
+        throw new Error("IBC tree root must be 32-byte hex");
+    return computeIbcTreeWitnessRoot(key, valueHex, siblings) === root;
 }
 /**
  * Persistent, incremental version of DeploymentIbcTree's SHA-256 depth-64 tree.

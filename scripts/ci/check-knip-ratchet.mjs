@@ -21,7 +21,6 @@ const scopes = [
 
 const allowed = new Set([
   'gateway:src/api/api.dto.ts:exports:Coin',
-  'gateway:src/config/bridge-manifest.ts:exports:requireSttDeploymentConfig',
   'gateway:src/config/bridge-manifest.ts:types:BridgeManifestCardanoIdentity',
   'gateway:src/query/services/denom-trace.service.ts:types:TraceRegistryShardStats',
   'gateway:src/query/services/denom-trace.service.ts:types:TraceRegistrySimulationSample',

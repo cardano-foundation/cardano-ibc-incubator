@@ -27,12 +27,12 @@
     "js-sha3": "^0.9.3"
   },
   "devDependencies": {
-    "@lucid-evolution/lucid": "^0.4.29",
+    "@lucid-evolution/lucid": "^0.6.5",
     "@types/node": "^24.0.3",
     "typescript": "^5.8.3"
   },
   "peerDependencies": {
-    "@lucid-evolution/lucid": "^0.4.29",
+    "@lucid-evolution/lucid": "^0.6.5",
     "@noble/hashes": "^1.8.0",
     "js-sha3": "^0.9.3"
   }

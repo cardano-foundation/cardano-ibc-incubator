@@ -53,10 +53,11 @@ import { MsgPrunePacketHistory, MsgPrunePacketHistoryResponse } from '@cardano-i
 import { validateAndFormatPrunePacketHistoryParams } from './helper/packet.validate';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 import { GrpcAuthGuard } from '../security/grpc-auth.guard';
+import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import { ObserveTxRequest, ObserveTxResponse } from './dto/observe-tx.dto';
 
 @Controller()
-@UseGuards(GrpcAuthGuard)
+@UseGuards(GrpcAuthGuard, HistoricalReadOnlyGuard)
 export class TxController {
   constructor(
     private readonly clientService: ClientService,

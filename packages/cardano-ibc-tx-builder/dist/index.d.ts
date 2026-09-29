@@ -183,8 +183,8 @@ export type SendPacketBuildDependencies<TreeCommit = () => void> = {
         retryDelayMs: number;
     }) => Promise<UTxO[]>;
     findTransferEscrowShard: (channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint, balanceDelta?: bigint) => Promise<TransferEscrowShardLookup>;
-    createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder;
-    createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder;
+    createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder | Promise<TxBuilder>;
+    createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder | Promise<TxBuilder>;
     invalidArgument: (message: string) => Error;
     failedPrecondition?: (message: string) => Error;
     internalError: (message: string) => Error;

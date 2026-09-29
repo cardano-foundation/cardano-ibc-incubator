@@ -65,7 +65,7 @@ export class GatewayReadinessService {
     let liveHostStateTxHash: string | null = null;
 
     try {
-      const liveHostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+      const liveHostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT(0n);
       liveHostStateTxHash = liveHostStateUtxo?.txHash ?? null;
 
       const proofHeight = await withTimeout(

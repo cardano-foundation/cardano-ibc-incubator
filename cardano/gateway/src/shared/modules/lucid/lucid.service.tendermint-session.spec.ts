@@ -14,6 +14,9 @@ function createBuilder(): any {
 function createService(builder: any): any {
   const service: any = Object.create(LucidService.prototype);
   service.configService = {
+    getOrThrow(name: string) {
+      return this.get(name);
+    },
     get: jest.fn().mockReturnValue({
       hostStateNFT: { policyId: 'host-policy', name: 'host-name' },
       validators: {
@@ -42,13 +45,13 @@ function createService(builder: any): any {
 }
 
 describe('LucidService staged Tendermint transaction wiring', () => {
-  it('mints the session NFT from the declared seed', () => {
+  it('mints the session NFT from the declared seed', async () => {
     const builder = createBuilder();
     const service = createService(builder);
     const seed = { txHash: 'seed', outputIndex: 1 };
 
     expect(
-      service.createUnsignedTendermintSessionTransaction(
+      await service.createUnsignedTendermintSessionTransaction(
         seed,
         'mint-redeemer',
         'initial-datum',
@@ -68,12 +71,12 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     expect(builder.addSignerKey).toHaveBeenCalledWith('owner-key-hash');
   });
 
-  it('spends and recreates the unique session output for one verification batch', () => {
+  it('spends and recreates the unique session output for one verification batch', async () => {
     const builder = createBuilder();
     const service = createService(builder);
     const session = { txHash: 'session-input', outputIndex: 2 };
 
-    service.createUnsignedAdvanceTendermintSessionTransaction(
+    await service.createUnsignedAdvanceTendermintSessionTransaction(
       session,
       'verify-redeemer',
       'next-datum',
@@ -91,12 +94,12 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     expect(builder.addSignerKey).toHaveBeenCalledWith('signer-key-hash');
   });
 
-  it('cancels a session by consuming it, burning its NFT, and requiring its owner', () => {
+  it('cancels a session by consuming it, burning its NFT, and requiring its owner', async () => {
     const builder = createBuilder();
     const service = createService(builder);
     const session = { txHash: 'session-input', outputIndex: 2 };
 
-    service.createUnsignedCancelTendermintSessionTransaction(
+    await service.createUnsignedCancelTendermintSessionTransaction(
       session,
       'cancel-redeemer',
       'burn-redeemer',
@@ -114,7 +117,7 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     expect(builder.pay.ToContract).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])('atomically finalizes authenticated sessions, explicit evidence: %s', (evidence) => {
+  it.each([false, true])('atomically finalizes authenticated sessions, explicit evidence: %s', async (evidence) => {
     const builder = createBuilder();
     const service = createService(builder);
     const host = { txHash: 'host-input', outputIndex: 0, datum: 'raw-host', datumHash: 'old-hash' };
@@ -122,7 +125,7 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     const session = { txHash: 'session-input', outputIndex: 0 };
     const secondSession = { txHash: 'second-session-input', outputIndex: 0 };
 
-    service.createUnsignedFinalizeTendermintSessionTransaction(
+    await service.createUnsignedFinalizeTendermintSessionTransaction(
       host,
       'host-redeemer',
       client,
@@ -151,9 +154,13 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       'host-redeemer',
     );
     expect(builder.collectFrom).toHaveBeenCalledWith([client], 'client-redeemer');
-    expect(builder.collectFrom).toHaveBeenCalledWith(evidence ? [session, secondSession] : [session], 'finalize-session');
+    expect(builder.collectFrom).toHaveBeenCalledWith(
+      evidence ? [session, secondSession] : [session],
+      'finalize-session',
+    );
     expect(builder.mintAssets).toHaveBeenCalledWith(
-      evidence ? { 'session-unit': -1n, 'second-session-unit': -1n } : { 'session-unit': -1n }, 'burn-session',
+      evidence ? { 'session-unit': -1n, 'second-session-unit': -1n } : { 'session-unit': -1n },
+      'burn-session',
     );
     expect(builder.pay.ToContract).toHaveBeenCalledWith(
       'addr_test1host',

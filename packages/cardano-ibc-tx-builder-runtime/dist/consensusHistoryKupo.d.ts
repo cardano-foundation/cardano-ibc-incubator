@@ -3,4 +3,5 @@ import type { IbcTreeLucidService } from './ibcStateRoot';
 export declare function createKupoConsensusHistoryReader(endpoint: string, options?: {
     fetchImpl?: typeof fetch;
     headers?: Record<string, string>;
+    allowScriptMigration?: boolean;
 }): NonNullable<IbcTreeLucidService['consensusHistoryRecords']>;

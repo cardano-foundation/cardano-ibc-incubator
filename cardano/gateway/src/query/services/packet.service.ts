@@ -31,7 +31,6 @@ import {
 } from '../../constant';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
-import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
 import {
   validQueryPacketAcknowledgementParam,
   validQueryPacketAcknowledgementsParam,
@@ -54,7 +53,7 @@ import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { assertProofContextHostState, resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
+import { assertProofContextHostState, resolveProofContextForQuery } from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
 import { decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
@@ -79,29 +78,6 @@ export class PacketService {
     private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
 
-  private async getProofHeight(): Promise<bigint> {
-    return resolveProofHeightForCurrentRoot({
-      logger: this.logger,
-      lucidService: this.lucidService,
-      mithrilService: this.mithrilService,
-      historyService: this.historyService,
-      context: 'queryPacketProof',
-      lightClientMode:
-        this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
-        'stake-weighted-stability',
-    });
-  }
-
-  private async getQueryHeight(): Promise<bigint> {
-    try {
-      const height = await this.getProofHeight();
-      return height > 0n ? height : 1n;
-    } catch {
-      // Avoid returning an invalid IBC height (revision_height=0), which Hermes rejects.
-      return 1n;
-    }
-  }
-
   private async getProofContext(requestedHeight?: bigint) {
     const lightClientMode =
       this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
@@ -120,17 +96,10 @@ export class PacketService {
     });
   }
 
-  private async findChannelUtxo(channelTokenUnit: string) {
-    const deploymentConfig = this.configService.get('deployment');
-    return this.lucidService.findUtxoAtWithUnit(deploymentConfig.validators.spendChannel.address, channelTokenUnit);
-  }
-
-  private async getChannelUtxo(channelId: string, queryHeight?: bigint) {
+  private async getChannelUtxo(channelId: string, queryHeight: bigint) {
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
     const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-    return queryHeight
-      ? this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, queryHeight)
-      : this.findChannelUtxo(channelTokenUnit);
+    return this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, queryHeight);
   }
 
   private packetMatchesAcknowledgementQuery(
@@ -320,7 +289,7 @@ export class PacketService {
     }
 
     const response: QueryPacketAcknowledgementResponse = {
-      acknowledgement: acknowledgementHex,
+      acknowledgement: Buffer.from(acknowledgementHex, 'hex'),
       proof: ackProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
@@ -349,7 +318,8 @@ export class PacketService {
     let { 'pagination.offset': offset = '0' } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const utxo = await this.getChannelUtxo(channelId);
+    const proofContext = await this.getProofContext();
+    const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetAcknowledgementSeqs = [...channelDatumDecoded.state.packet_acknowledgement.keys()];
 
@@ -366,7 +336,8 @@ export class PacketService {
       nextKey = to < packetAcknowledgementSeqs.length ? generatePaginationKey(pageKeyDto) : '';
     }
 
-    const queryHeight = await this.getQueryHeight();
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const queryHeight = proofContext.proofHeight;
     const response: QueryPacketAcknowledgementsResponse = {
       acknowledgements: packetAckSeqs.map((seq) => ({
         /** channel port identifier. */
@@ -376,7 +347,7 @@ export class PacketService {
         /** packet sequence. */
         sequence: seq.toString(),
         /** embedded data that represents packet state. */
-        data: bytesFromBase64(channelDatumDecoded.state.packet_acknowledgement.get(seq)!),
+        data: Buffer.from(channelDatumDecoded.state.packet_acknowledgement.get(seq)!, 'hex'),
       })),
       /** pagination response */
       pagination: {
@@ -406,6 +377,9 @@ export class PacketService {
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitment = channelDatumDecoded.state.packet_commitment.get(BigInt(sequence));
+    if (!packetCommitment) {
+      throw new GrpcNotFoundException("Not found: 'Packet Commitment' not found");
+    }
 
     // Generate ICS-23 proof from the IBC state tree
     // Path: commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}
@@ -426,7 +400,7 @@ export class PacketService {
     }
 
     const response: QueryPacketCommitmentResponse = {
-      commitment: packetCommitment,
+      commitment: Buffer.from(packetCommitment, 'hex'),
       proof: commitmentProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
@@ -453,7 +427,8 @@ export class PacketService {
     let { 'pagination.offset': offset = '0' } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const utxo = await this.getChannelUtxo(channelId);
+    const proofContext = await this.getProofContext();
+    const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitmentSeqs = [...channelDatumDecoded.state.packet_commitment.keys()];
 
@@ -470,7 +445,8 @@ export class PacketService {
       nextKey = to < packetCommitmentSeqs.length ? generatePaginationKey(pageKeyDto) : '';
     }
 
-    const queryHeight = await this.getQueryHeight();
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const queryHeight = proofContext.proofHeight;
     const response: QueryPacketCommitmentsResponse = {
       commitments: packetCmmSeqs.map((seq) => ({
         /** channel port identifier. */
@@ -480,7 +456,7 @@ export class PacketService {
         /** packet sequence. */
         sequence: seq.toString(),
         /** embedded data that represents packet state. */
-        data: bytesFromBase64(channelDatumDecoded.state.packet_commitment.get(seq)!),
+        data: Buffer.from(channelDatumDecoded.state.packet_commitment.get(seq)!, 'hex'),
       })),
       /** pagination response */
       pagination: {
@@ -559,12 +535,14 @@ export class PacketService {
       'QueryUnreceivedPacketsRequest',
     );
 
-    const utxo = await this.getChannelUtxo(channelId);
+    const proofContext = await this.getProofContext();
+    const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetReceiptSeqs = channelDatumDecoded.state.packet_receipt;
     const sequences = request.packet_commitment_sequences.filter((seq) => !packetReceiptSeqs.has(BigInt(seq)));
 
-    const queryHeight = await this.getQueryHeight();
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const queryHeight = proofContext.proofHeight;
     const response: QueryUnreceivedPacketsResponse = {
       /** list of unreceived packet sequences */
       sequences: sequences,
@@ -588,12 +566,14 @@ export class PacketService {
       'QueryUnreceivedAcksRequest',
     );
 
-    const utxo = await this.getChannelUtxo(channelId);
+    const proofContext = await this.getProofContext();
+    const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitsSeqs = channelDatumDecoded.state.packet_commitment;
     const sequences = packetAcksSequences.filter((seq) => packetCommitsSeqs.has(BigInt(seq)));
 
-    const queryHeight = await this.getQueryHeight();
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const queryHeight = proofContext.proofHeight;
     const response: QueryUnreceivedAcksResponse = {
       /** list of unreceived packet sequences */
       sequences: sequences,

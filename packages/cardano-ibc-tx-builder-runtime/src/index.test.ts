@@ -136,7 +136,7 @@ describe('tx-builder runtime serialization', () => {
 });
 
 describe('voucher send value conservation', () => {
-  it('burns the sender voucher while retaining HostState and channel reserves', () => {
+  it('burns the sender voucher while retaining HostState and channel reserves', async () => {
     const outputs: unknown[][] = [];
     const mints: unknown[][] = [];
     const tx = {
@@ -156,7 +156,7 @@ describe('voucher send value conservation', () => {
     Object.assign(adapter, { referenceScripts: {} });
     const hostAssets = { lovelace: 8_000_000n, 'host-nft': 1n, reserve: 7n };
     const channelAssets = { lovelace: 9_000_000n, 'channel-nft': 1n };
-    adapter.createUnsignedSendPacketBurnTx({
+    await adapter.createUnsignedSendPacketBurnTx({
       hostStateUtxo: { assets: hostAssets, datum: 'host-datum' },
       channelUTxO: { assets: channelAssets },
       channelToken: { policyId: 'channel-policy', name: 'channel-name' },

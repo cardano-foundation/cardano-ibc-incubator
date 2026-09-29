@@ -42,7 +42,7 @@ type Publication = {
 
 // Unsigned CBOR fixtures exercise recovery, not script authorization. Production
 // ledger acceptance is covered separately by the signed integration fixtures.
-function publications(heights: bigint[], bodyOnly = false): Publication[] {
+function publications(heights: bigint[], bodyOnly = false, migrationAddresses?: string[]): Publication[] {
   const db = new DatabaseSync(":memory:");
   const tree = new IncrementalIbcTree(db);
   const result: Publication[] = [];
@@ -85,7 +85,7 @@ function publications(heights: bigint[], bodyOnly = false): Publication[] {
       const output: UTxO = {
         txHash: "00".repeat(32),
         outputIndex: 0,
-        address,
+        address: migrationAddresses?.[result.length] ?? address,
         assets: { lovelace: 10_000_000n, [unit]: 1n },
         datum: encode(
           new Constr(0, [
@@ -95,6 +95,7 @@ function publications(heights: bigint[], bodyOnly = false): Publication[] {
           ]),
         ),
       };
+      if (migrationAddresses && previous && frozen) output.datum = previous.output.datum;
       const inputs = CML.TransactionInputList.new();
       inputs.add(
         CML.TransactionInput.new(
@@ -414,5 +415,51 @@ test("recovery rejects a combined client and public-root datum", async () => {
     );
   } finally {
     history.close();
+  }
+});
+
+// These are canonical-CBOR replay tests. Actual spending-script authorization
+// is exercised separately by the compiled-validator migration rehearsal.
+test("cold history follows V1 to V2 to V3 NFT custody and keeps pre-migration witnesses", async () => {
+  const v2 = CML.EnterpriseAddress.new(0, CML.Credential.new_script(CML.ScriptHash.from_hex("66".repeat(28)))).to_address().to_bech32();
+  const v3 = CML.EnterpriseAddress.new(0, CML.Credential.new_script(CML.ScriptHash.from_hex("77".repeat(28)))).to_address().to_bech32();
+  const items = publications([1n, 2n, 2n, 3n, 3n, 4n], false, [address, address, v2, v2, v3, v3]);
+  // A fresh database for every historical boundary, and again after a rollback
+  // to V2: no cached address whitelist or local migration checkpoint is used.
+  for (const length of [2, 3, 4, 5, 6, 4]) {
+    const prefix = items.slice(0, length);
+    const index = new ConsensusHistoryRecovery(":memory:", {clientToken: token, stateAddress: prefix.at(-1)!.output.address,
+      allowScriptMigration: true, bootstrap: {txHash: items[0].output.txHash, outputIndex: 0}});
+    try {
+      const result = await index.recover(source(prefix));
+      assert.equal(index.current().utxo.txHash, prefix.at(-1)!.output.txHash);
+      const witness = index.witness(token, {revisionNumber: 1n, revisionHeight: 1n});
+      assert(verifyIbcTreeWitness(witness.key, witness.value, witness.siblings, result.root));
+      assert.equal(witness.value, encodeConsensusHistoryRecord(items[0].record));
+    } finally { index.close(); }
+  }
+  const legacy = recovery(items);
+  try { await assert.rejects(legacy.recover(source(items)), /invalid authenticated state output/); }
+  finally { legacy.close(); }
+});
+
+test("migration history rejects remint and omitted predecessors at the intended guard", async () => {
+  for (const change of ["remint", "omit"] as const) {
+    const items = publications([1n, 2n, 3n]);
+    if (change === "remint") {
+      const last = items.at(-1)!;
+      const body = CML.Transaction.from_cbor_hex(last.transaction.cbor).body();
+      const mint = CML.Mint.new();
+      mint.set(CML.ScriptHash.from_hex(token.policyId), CML.AssetName.from_hex(token.name), 1n);
+      body.set_mint(mint);
+      last.output.txHash = CML.hash_transaction(body).to_hex();
+      last.transaction = {...last.transaction, txHash: last.output.txHash, cbor: CML.Transaction.new(body, CML.TransactionWitnessSet.new(), true).to_cbor_hex()};
+    }
+    const index = new ConsensusHistoryRecovery(":memory:", {clientToken: token, stateAddress: address,
+      allowScriptMigration: true, bootstrap: {txHash: items[0].output.txHash, outputIndex: 0}});
+    try {
+      await assert.rejects(index.recover(source(change === "omit" ? [items[0], items[2]] : items)),
+        change === "remint" ? /continuation cannot mint or burn/ : /missing a predecessor/);
+    } finally { index.close(); }
   }
 });
