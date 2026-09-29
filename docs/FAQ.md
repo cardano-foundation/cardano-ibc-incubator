@@ -99,8 +99,7 @@ existing roots by allowing colliding keys to share an outer leaf. Its narrow
 margin still needs integrated testing. IAVL also requires recovery to preserve
 tree structure and node versions through snapshots or exact history replay.
 The current key/value set alone cannot reproduce its root. These results favor
-further work on collision buckets. Neither prototype has replaced the production
-tree or resolved #482 on `main`.
+further work on collision buckets.
 
 ## Why is voucher denom trace mapping on-chain, but still outside HostState?
 
