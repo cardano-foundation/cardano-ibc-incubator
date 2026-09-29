@@ -1,21 +1,21 @@
 use aiken/collection/list
-use ibc/utils/string.{
-  hex_string_to_bytes, is_only_space, is_uint_string, slash_char, split,
-  trim_space,
+use ibc/utils/text_bytes.{
+  ascii_slash, is_canonical_unsigned_decimal, is_empty_or_ascii_spaces,
+  split_on_ascii_byte, trim_ascii_spaces,
 }
 
-test test_trim_space() {
+test test_trim_ascii_spaces() {
   and {
-    trim_space("") == "",
-    trim_space("             ") == "",
-    trim_space("   abc") == "abc",
-    trim_space("abc    ") == "abc",
-    trim_space("    abc    ") == "abc",
-    trim_space("    a   b  cd    ") == "a   b  cd",
+    trim_ascii_spaces("") == "",
+    trim_ascii_spaces("             ") == "",
+    trim_ascii_spaces("   abc") == "abc",
+    trim_ascii_spaces("abc    ") == "abc",
+    trim_ascii_spaces("    abc    ") == "abc",
+    trim_ascii_spaces("    a   b  cd    ") == "a   b  cd",
   }
 }
 
-test test_split() {
+test test_split_on_ascii_byte() {
   let test_cases =
     [
       // Original test case
@@ -34,15 +34,13 @@ test test_split() {
       ("special@characters#test", ["special@characters#test"]),
     ]
 
-  list.all(test_cases, fn(case) { split(case.1st, slash_char) == case.2nd })
+  list.all(
+    test_cases,
+    fn(case) { split_on_ascii_byte(case.1st, ascii_slash) == case.2nd },
+  )
 }
 
-test test_hex_string_to_bytes() {
-  let test_cases = [("abcd1234", Some(#"abcd1234")), ("123x", None)]
-  list.all(test_cases, fn(case) { hex_string_to_bytes(case.1st) == case.2nd })
-}
-
-test test_is_int_string() {
+test canonical_unsigned_decimal_examples() {
   let test_cases =
     [
       // Valid unsigned integers
@@ -68,29 +66,40 @@ test test_is_int_string() {
     ]
 
   // Scientific notation is not allowed
-  list.all(test_cases, fn(case) { is_uint_string(case.1st) == case.2nd })
+  list.all(
+    test_cases,
+    fn(case) { is_canonical_unsigned_decimal(case.1st) == case.2nd },
+  )
 }
 
-test trim_space_and_is_only_space_empty_string() {
+test ascii_space_checks_accept_empty_input() {
   let empty_string = ""
-  trim_space(empty_string) == "" && is_only_space(empty_string)
+  trim_ascii_spaces(empty_string) == "" && is_empty_or_ascii_spaces(
+    empty_string,
+  )
 }
 
-test trim_space_and_is_only_space_non_empty_string() {
+test ascii_space_checks_reject_non_space_bytes() {
   let non_empty_string = "lorem ipsum"
-  trim_space(non_empty_string) != "" && !is_only_space(non_empty_string)
+  trim_ascii_spaces(non_empty_string) != "" && !is_empty_or_ascii_spaces(
+    non_empty_string,
+  )
 }
 
-test trim_space_and_is_only_space_non_empty_string_with_spaces() {
+test ascii_space_checks_reject_text_with_outer_spaces() {
   let non_empty_string = " lorem ipsum "
-  trim_space(non_empty_string) != "" && !is_only_space(non_empty_string)
+  trim_ascii_spaces(non_empty_string) != "" && !is_empty_or_ascii_spaces(
+    non_empty_string,
+  )
 }
 
-test trim_space_and_is_only_space_blank_string() {
+test ascii_space_checks_accept_spaces() {
   let blank_string = " "
-  trim_space(blank_string) == "" && is_only_space(blank_string)
+  trim_ascii_spaces(blank_string) == "" && is_empty_or_ascii_spaces(
+    blank_string,
+  )
 }
 
-test is_only_space_succeed_empty_string() {
-  is_only_space("")
+test empty_input_is_empty_or_ascii_spaces() {
+  is_empty_or_ascii_spaces("")
 }

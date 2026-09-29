@@ -20,8 +20,8 @@ use ibc/apps/transfer/voucher_flow
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/packet.{Packet}
+use ibc/encoding/hex
 use ibc/testing/fuzz_dsl
-use ibc/utils/string as string_utils
 
 const channel_id = "channel-0"
 
@@ -129,7 +129,7 @@ fn empty_mint() -> Value {
 }
 
 fn receiver_address(receiver: ByteArray) -> Option<Address> {
-  when string_utils.hex_string_to_bytes(receiver) is {
+  when hex.decode(receiver) is {
     Some(public_key_hash) -> Some(from_verification_key(public_key_hash))
     None -> None
   }

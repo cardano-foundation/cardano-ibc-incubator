@@ -6,7 +6,7 @@ use cardano/transaction.{Output}
 use ibc/client/ics_007_tendermint_client/adapter as tendermint
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_002_client_semantics/client_view.{ClientView}
-use ibc/utils/string
+use ibc/utils/text_bytes
 
 /// Implementations are explicitly compiled into the adapter dispatcher. A
 /// relayer cannot register executable code or choose its own verification rules.
@@ -51,7 +51,7 @@ pub fn matches_id(
   let length = bytearray.length(prefix)
   and {
     bytearray.take(client_id, length) == prefix,
-    string.is_uint_string(bytearray.drop(client_id, length)),
+    text_bytes.is_canonical_unsigned_decimal(bytearray.drop(client_id, length)),
   }
 }
 

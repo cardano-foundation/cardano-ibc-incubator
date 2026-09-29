@@ -2,7 +2,7 @@ use aiken/builtin
 use aiken/primitive/bytearray.{at, concat, length, push}
 use aiken/primitive/int
 use ibc/apps/transfer/types/ibc_trace
-use ibc/utils/string
+use ibc/utils/text_bytes
 
 /// The maximum encoded ICS-20 packet accepted by the on-chain validators.
 pub const max_packet_bytes = 512
@@ -46,8 +46,8 @@ pub fn validate_basic(ftpd: FungibleTokenPacketData) -> Bool {
   packet_fields_valid(ftpd) && when int.from_utf8(ftpd.amount) is {
     Some(amount) -> and {
         amount > 0,
-        string.trim_space(ftpd.sender) != "",
-        string.trim_space(ftpd.receiver) != "",
+        text_bytes.trim_ascii_spaces(ftpd.sender) != "",
+        text_bytes.trim_ascii_spaces(ftpd.receiver) != "",
         ibc_trace.validate_prefixed_denom(ftpd.denom),
       }
     None -> False

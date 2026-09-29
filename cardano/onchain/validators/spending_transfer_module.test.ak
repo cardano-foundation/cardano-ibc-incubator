@@ -52,8 +52,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ShutdownState,
   ShuttingDown, empty_ibc_state_root,
 }
+use ibc/encoding/hex
 use ibc/testing/fuzz_dsl
-use ibc/utils/string as string_utils
 use spending_transfer_module
 
 //=====================================Test================================================
@@ -783,8 +783,7 @@ fn recv_source_unescrow_fixture_amount(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let receiver = mock.cardano_public_key_hash
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
   let receiver_output =
     Output {
       address: from_verification_key(receiver_public_key_hash),
@@ -877,7 +876,7 @@ fn timeout_unescrow_fixture_amount(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let sender = mock.cardano_public_key_hash
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
   let receiver_output =
     Output {
       address: from_verification_key(sender_public_key_hash),
@@ -983,7 +982,7 @@ fn native_asset_timeout_fixture_amount(
   let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   let native_token_name = "coin"
   let denom = native_asset_denom()
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
   let receiver_output =
     Output {
       address: from_verification_key(sender_public_key_hash),
@@ -1934,8 +1933,7 @@ test on_recv_packet_unescrow_succeed() {
 
   let receiver = mock.cardano_public_key_hash
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
 
   let receiver_output =
     Output {
@@ -2053,8 +2051,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
 
   let receiver = mock.cardano_public_key_hash
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
 
   let receiver_output =
     Output {
@@ -2794,7 +2791,7 @@ test on_timeout_packet_unescrow_succeed() {
 
   let sender = mock.cardano_public_key_hash
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
 
   let receiver_output =
     Output {
@@ -2914,7 +2911,7 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
   let native_token_name = "coin"
   let denom = native_asset_denom()
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
   let receiver_output =
     Output {
       address: from_verification_key(sender_public_key_hash),
@@ -3131,7 +3128,7 @@ fn source_recv_payout(address: Address, amount: Int) -> Output {
 }
 
 fn source_recv_receiver_address(receiver: ByteArray) -> Address {
-  expect Some(key_hash) = string_utils.hex_string_to_bytes(receiver)
+  expect Some(key_hash) = hex.decode(receiver)
   from_verification_key(key_hash)
 }
 
@@ -3214,7 +3211,7 @@ test on_recv_packet_source_rejects_payout_to_another_key() fail {
 
 test on_recv_packet_source_rejects_script_credential_with_receiver_hash() fail {
   let receiver = setup().cardano_public_key_hash
-  expect Some(key_hash) = string_utils.hex_string_to_bytes(receiver)
+  expect Some(key_hash) = hex.decode(receiver)
   validate_source_recv_payout(
     receiver,
     [],
@@ -3445,7 +3442,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   let sender = mock.cardano_public_key_hash
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
 
   let receiver_output =
     Output {

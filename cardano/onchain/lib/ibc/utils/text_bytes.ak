@@ -1,12 +1,15 @@
+//// ByteArray helpers for protocol text. These operations use ASCII delimiters
+//// and digits without treating input as Aiken String values.
+
 use aiken/builtin
 use aiken/primitive/bytearray
 use aiken/primitive/string
 
-pub const slash_char = 47
+/// ASCII byte value of `/`.
+pub const ascii_slash = 47
 
-// slash character in int
-
-pub fn trim_space(str: ByteArray) -> ByteArray {
+/// Remove only leading and trailing ASCII spaces (0x20).
+pub fn trim_ascii_spaces(str: ByteArray) -> ByteArray {
   str |> trim_left() |> trim_right()
 }
 
@@ -35,8 +38,8 @@ fn trim_right(str: ByteArray) -> ByteArray {
   }
 }
 
-pub fn split(str: ByteArray, sep: Int) -> List<ByteArray> {
-  // valid 1 bytes utf-8 character
+/// Split on one ASCII byte (0-127), preserving empty segments.
+pub fn split_on_ascii_byte(str: ByteArray, sep: Int) -> List<ByteArray> {
   expect 0 <= sep && sep <= 127
   do_split(str, sep, bytearray.length(str), 0, identity)
 }
@@ -76,59 +79,13 @@ fn do_split(
   }
 }
 
-pub fn hex_string_to_bytes(str: ByteArray) -> Option<ByteArray> {
-  let length = bytearray.length(str)
-  if length % 2 == 0 {
-    decode_hex_pairs(str, length - 2, #"")
-  } else {
-    None
-  }
-}
-
-// ASCII values through lowercase f are represented. Zero means invalid;
-// valid hex characters (both cases) contain nibble + 1. Range-check before
-// indexing so every non-ASCII or out-of-range character returns None.
-const hex_decode_table =
-  #"0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000102030405060708090a000000000000000b0c0d0e0f1000000000000000000000000000000000000000000000000000000b0c0d0e0f10"
-
-fn decode_hex_pairs(
-  str: ByteArray,
-  index: Int,
-  acc: ByteArray,
-) -> Option<ByteArray> {
-  if index < 0 {
-    Some(acc)
-  } else {
-    let high = hex_digit(builtin.index_bytearray(str, index))
-    let low = hex_digit(builtin.index_bytearray(str, index + 1))
-    if high * low == 0 {
-      None
-    } else {
-      // Reading pairs backwards and prepending preserves byte order and zeros.
-      decode_hex_pairs(
-        str,
-        index - 2,
-        builtin.cons_bytearray(16 * high + low - 17, acc),
-      )
-    }
-  }
-}
-
-fn hex_digit(char: Int) -> Int {
-  if char > 102 {
-    0
-  } else {
-    builtin.index_bytearray(hex_decode_table, char)
-  }
-}
-
-pub fn int_to_string(n: Int) -> ByteArray {
+/// Encode an integer as decimal text bytes using the standard library.
+pub fn int_to_decimal_bytes(n: Int) -> ByteArray {
   string.from_int(n) |> string.to_bytearray()
 }
 
-/// Custom function for checking whether a string in ids is a valid
-/// unsigned integer
-pub fn is_uint_string(n: ByteArray) -> Bool {
+/// Accept `0` or a nonempty sequence of ASCII digits without leading zeros.
+pub fn is_canonical_unsigned_decimal(n: ByteArray) -> Bool {
   if bytearray.length(n) == 0 {
     False
   } else if n == "0" {
@@ -155,6 +112,7 @@ fn only_spaces(str: ByteArray, length: Int, i: Int) -> Bool {
   }
 }
 
-pub fn is_only_space(str: ByteArray) -> Bool {
+/// Accept empty input or bytes consisting entirely of ASCII spaces (0x20).
+pub fn is_empty_or_ascii_spaces(str: ByteArray) -> Bool {
   only_spaces(str, bytearray.length(str), 0)
 }

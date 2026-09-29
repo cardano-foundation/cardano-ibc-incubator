@@ -7,7 +7,7 @@ use aiken/primitive/bytearray
 use ibc/apps/transfer/trace_registry as registry
 use ibc/apps/transfer/voucher_metadata
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
-use ibc/utils/string as strings
+use ibc/encoding/hex
 
 // Independent scalar hex oracle: deliberately does not use the lookup table.
 fn hex_reference(bytes: ByteArray) -> ByteArray {
@@ -357,8 +357,8 @@ test migration_budget_hex_all_character_values_in_both_positions() {
       let high = builtin.cons_bytearray(char, #"30")
       let low = builtin.cons_bytearray(48, builtin.cons_bytearray(char, #""))
       and {
-        strings.hex_string_to_bytes(high) == reference_decode_hex([char, 48]),
-        strings.hex_string_to_bytes(low) == reference_decode_hex([48, char]),
+        hex.decode(high) == reference_decode_hex([char, 48]),
+        hex.decode(low) == reference_decode_hex([48, char]),
       }
     },
   )
@@ -366,12 +366,12 @@ test migration_budget_hex_all_character_values_in_both_positions() {
 
 test migration_budget_hex_preserves_order_case_zeros_and_empty() {
   and {
-    strings.hex_string_to_bytes("aB00fF9C") == Some(#"ab00ff9c"),
-    strings.hex_string_to_bytes("0001") == Some(#"0001"),
-    strings.hex_string_to_bytes("") == Some(#""),
-    strings.hex_string_to_bytes("0") == None,
-    strings.hex_string_to_bytes("0g") == None,
-    strings.hex_string_to_bytes(#"ff30") == None,
+    hex.decode("aB00fF9C") == Some(#"ab00ff9c"),
+    hex.decode("0001") == Some(#"0001"),
+    hex.decode("") == Some(#""),
+    hex.decode("0") == None,
+    hex.decode("0g") == None,
+    hex.decode(#"ff30") == None,
   }
 }
 
@@ -400,7 +400,7 @@ test migration_budget_hex_matches_independent_decoder(
       @"fuzz.unit.migration.hex.arbitrary-byte-inputs"
     },
   )
-  strings.hex_string_to_bytes(text) == expected
+  hex.decode(text) == expected
 }
 
 test migration_budget_update_accepts_exact_witness() {

@@ -36,7 +36,7 @@ use ibc/migration/types.{
   Restoration, Restore, Restrict, Rotate, RotateAuthority, minimum_delay_ms,
   registry_token_name,
 }
-use ibc/utils/string
+use ibc/utils/text_bytes
 use implementation_registry
 use minting_implementation_registry
 use upgradeable/host_state as host_wrapper
@@ -421,7 +421,7 @@ fn core_token(role: Int, sequence: Int) -> AuthToken {
     name: auth.generate_token_name(
       AuthToken { policy_id: hash(2), name: host_state_token_name },
       prefix,
-      string.int_to_string(sequence),
+      text_bytes.int_to_decimal_bytes(sequence),
     ),
   }
 }

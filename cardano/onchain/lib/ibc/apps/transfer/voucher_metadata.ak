@@ -4,7 +4,7 @@ use aiken/crypto
 use aiken/primitive/bytearray
 use cardano/assets.{AssetName, PolicyId}
 use ibc/core/ics_004/types/keys as chan_keys_mod
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 
 pub const voucher_metadata_version = 1
 
@@ -70,10 +70,11 @@ pub fn build_datum(
 
 pub fn split_full_denom_trace(full_denom: ByteArray) -> DenomTrace {
   // Parse leading port/channel pairs; the remaining suffix is the base denom.
-  let normalized = string_utils.trim_space(full_denom)
+  let normalized = text_bytes.trim_ascii_spaces(full_denom)
   expect normalized != ""
 
-  let segments = string_utils.split(normalized, string_utils.slash_char)
+  let segments =
+    text_bytes.split_on_ascii_byte(normalized, text_bytes.ascii_slash)
   expect !list.any(segments, fn(segment) { segment == "" })
 
   do_split_full_denom_trace(segments, [])
@@ -107,11 +108,11 @@ fn do_split_full_denom_trace(
 
 fn canonical_label(base_denom: ByteArray) -> ByteArray {
   // For now, name/ticker are the final slash-separated base-denom segment.
-  let trimmed = string_utils.trim_space(base_denom)
+  let trimmed = text_bytes.trim_ascii_spaces(base_denom)
   if trimmed == "" {
     "IBC"
   } else {
-    string_utils.split(trimmed, string_utils.slash_char)
+    text_bytes.split_on_ascii_byte(trimmed, text_bytes.ascii_slash)
       |> list.foldl(
           "IBC",
           fn(segment, current) {

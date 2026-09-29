@@ -4,7 +4,7 @@ use aiken/collection/list
 use aiken/primitive/bytearray
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata.{DenomTrace, split_full_denom_trace}
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 
 // These are protocol limits, not relayer tuning knobs. Keep the mirrored
 // constants in the Gateway's `shared/types/trace-registry.ts` aligned when
@@ -95,7 +95,9 @@ pub fn full_denom_is_within_limits(full_denom: ByteArray) -> Bool {
       if path == "" {
         0
       } else {
-        list.length(string_utils.split(path, string_utils.slash_char)) / 2
+        list.length(
+          text_bytes.split_on_ascii_byte(path, text_bytes.ascii_slash),
+        ) / 2
       }
 
     trace_hops <= max_trace_hops

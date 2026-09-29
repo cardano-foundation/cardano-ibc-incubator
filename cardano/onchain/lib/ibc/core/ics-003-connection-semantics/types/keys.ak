@@ -1,5 +1,5 @@
 use aiken/primitive/bytearray
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 
 pub const connection_prefix = "connection"
 
@@ -23,7 +23,7 @@ pub fn is_valid_connection_id(connection_id: ByteArray) -> Bool {
   if prefix == connection_prefix_with_separator {
     let str_id =
       bytearray.drop(connection_id, connection_prefix_with_separator_len)
-    string_utils.is_uint_string(str_id)
+    text_bytes.is_canonical_unsigned_decimal(str_id)
   } else {
     False
   }

@@ -1,16 +1,17 @@
 use aiken/collection/list
 use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_024_host_requirements/validate as validate_mod
-use ibc/utils/string.{slash_char}
+use ibc/utils/text_bytes
 
 pub fn validate_prefixed_denom(denom: ByteArray) -> Bool {
-  let denom_split = string.split(denom, slash_char)
+  let denom_split =
+    text_bytes.split_on_ascii_byte(denom, text_bytes.ascii_slash)
 
-  if denom_split == [denom] && string.trim_space(denom) != "" {
+  if denom_split == [denom] && text_bytes.trim_ascii_spaces(denom) != "" {
     True
   } else {
     expect Some(base) = list.last(denom_split)
-    if string.is_only_space(base) {
+    if text_bytes.is_empty_or_ascii_spaces(base) {
       False
     } else {
       let paths =

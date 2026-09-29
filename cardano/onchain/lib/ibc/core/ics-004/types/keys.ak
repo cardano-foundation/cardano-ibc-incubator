@@ -1,5 +1,5 @@
 use aiken/primitive/bytearray
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 
 pub const channel_prefix = "channel"
 
@@ -21,7 +21,7 @@ pub fn is_valid_channel_id(channel_id: ByteArray) -> Bool {
   let prefix = bytearray.take(channel_id, channel_prefix_with_separator_len)
   if prefix == channel_prefix_with_separator {
     let str_id = bytearray.drop(channel_id, channel_prefix_with_separator_len)
-    string_utils.is_uint_string(str_id)
+    text_bytes.is_canonical_unsigned_decimal(str_id)
   } else {
     False
   }

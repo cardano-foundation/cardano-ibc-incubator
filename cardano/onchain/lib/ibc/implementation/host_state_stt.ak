@@ -37,7 +37,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
   validate_authorize_finalization, validate_shutdown_authority,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 use ibc/utils/validator_utils
 
 /// Find the HostState UTXO input being spent
@@ -157,7 +157,11 @@ fn authenticate_created_state_thread(
   sequence: Int,
 ) -> Bool {
   let expected_name =
-    state_thread_name(nft_policy, prefix, string_utils.int_to_string(sequence))
+    state_thread_name(
+      nft_policy,
+      prefix,
+      text_bytes.int_to_decimal_bytes(sequence),
+    )
   and {
     token.policy_id == policy_id,
     token.name == expected_name,
@@ -269,7 +273,7 @@ pub fn validate_create_client_root(
   let client_id =
     registry.identifier(
       registration,
-      string_utils.int_to_string(old_datum.state.next_client_sequence),
+      text_bytes.int_to_decimal_bytes(old_datum.state.next_client_sequence),
     )
 
   // Commitment keys (IBC paths).
@@ -278,7 +282,7 @@ pub fn validate_create_client_root(
   // The initial consensus state is stored at the client's latest height.
   let latest_height = client_datum.latest_height
   let consensus_height =
-    string_utils.int_to_string(latest_height.revision_height)
+    text_bytes.int_to_decimal_bytes(latest_height.revision_height)
   let consensus_state_key =
     client_keys.full_client_consensus_state_path(client_id, consensus_height)
 
@@ -394,7 +398,7 @@ pub fn validate_update_client_root(
         after_client,
         client_keys.full_client_consensus_state_path(
           client_id,
-          string_utils.int_to_string(new_height.revision_height),
+          text_bytes.int_to_decimal_bytes(new_height.revision_height),
         ),
         "",
         cbor.serialise(new_consensus),
@@ -444,7 +448,7 @@ pub fn validate_create_connection_root(
   //
   // This matches the off-chain convention: `connection-{sequence}`.
   let connection_id =
-    string_utils.int_to_string(old_datum.state.next_connection_sequence)
+    text_bytes.int_to_decimal_bytes(old_datum.state.next_connection_sequence)
       |> conn_id_keys.format_connection_identifier()
 
   // Commitment key (IBC path).
@@ -510,7 +514,7 @@ pub fn validate_create_channel_root(
   //
   // This matches the off-chain convention: `channel-{sequence}`.
   let channel_id =
-    string_utils.int_to_string(old_datum.state.next_channel_sequence)
+    text_bytes.int_to_decimal_bytes(old_datum.state.next_channel_sequence)
       |> chan_id_keys.format_channel_identifier()
 
   // Commitment keys (IBC paths).
