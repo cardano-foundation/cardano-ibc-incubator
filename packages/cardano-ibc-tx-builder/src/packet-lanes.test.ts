@@ -15,7 +15,7 @@ test("packet lane identities match the Aiken and Go wire vectors", () => {
     [1n, 2n, 3n, 4n, 5n].map((sequence) =>
       packetLane("transfer", "channel-0", sequence, 16),
     ),
-    [7, 14, 6, 15, 12],
+    [1, 2, 3, 4, 5],
   );
   assert.equal(
     packetLaneTokenName("transfer", "channel-0", 0, 16),
@@ -38,7 +38,7 @@ test("all packet keys use the sequence lane and aliases fail closed", () => {
         `${kind}/ports/transfer/channels/channel-0/sequences/1`,
         16,
       ),
-      7,
+      1,
     );
   }
   for (const suffix of ["0", "01", "-1", "1/extra", "18446744073709551616"]) {
@@ -87,4 +87,14 @@ test("same asset deposits on the same channel have separate liquidity identities
       0,
     ),
   );
+});
+
+test("every consecutive window up to the lane count is disjoint including wraparound", () => {
+  for (let count = 1; count <= 64; count++) {
+    for (const first of [1n, 2n, 15n, 16n, 63n, MAX_PACKET_SEQUENCE - BigInt(count) + 1n]) {
+      const lanes = Array.from({ length: count }, (_, i) => packetLane("transfer", "channel-0", first + BigInt(i), count));
+      assert.equal(new Set(lanes).size, count);
+    }
+    assert.equal(packetLane("transfer", "channel-0", 1n, count), packetLane("transfer", "channel-0", BigInt(count) + 1n, count));
+  }
 });

@@ -1,6 +1,9 @@
 use aiken/collection/list
+use cardano/address.{Address}
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, Output, OutputReference}
+use cardano/transaction.{
+  InlineDatum, Input, Output, OutputReference, Transaction,
+}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/packet_lanes
 use ibc/utils/validator_utils
@@ -15,6 +18,12 @@ pub type LiquidityDatum {
   asset_name: ByteArray,
   deposit: OutputReference,
   amount: Int,
+  reserve_owner: Address,
+}
+
+pub type ReserveRefund {
+  liquidity_policy: PolicyId,
+  token_name: ByteArray,
 }
 
 pub fn identity(datum: LiquidityDatum, liquidity_policy: PolicyId) -> AuthToken {
@@ -84,6 +93,107 @@ pub fn released_amount(
     }
   expect new_reserve >= reserve
   released
+}
+
+pub fn reserve(input: Input, datum: LiquidityDatum) -> Int {
+  assets.lovelace_of(input.output.value) - if datum.asset_policy == "" && datum.asset_name == "" {
+    datum.amount
+  } else {
+    0
+  }
+}
+
+/// A full drain burns its identity and refunds the entire reserve to the
+/// immutable owner. The per-identity refund datum prevents one payment from
+/// satisfying several retirements. The operation validator must authorize the
+/// returned principal separately, or require it to be zero for empty cleanup.
+pub fn retired_amount(
+  input: Input,
+  transaction: Transaction,
+  liquidity_policy: PolicyId,
+) -> Int {
+  expect old: LiquidityDatum = validator_utils.get_inline_datum(input.output)
+  expect valid_value(input.output, old, liquidity_policy)
+  let token = identity(old, liquidity_policy)
+  expect [authenticated_input] =
+    list.filter(
+      transaction.inputs,
+      fn(candidate) { auth.contain_auth_token(candidate.output, token) },
+    )
+  expect authenticated_input == input
+  expect assets.quantity_of(transaction.mint, token.policy_id, token.name) == -1
+  expect
+    list.all(
+      transaction.outputs,
+      fn(output) {
+        assets.quantity_of(output.value, token.policy_id, token.name) == 0
+      },
+    )
+  let refund: Data = ReserveRefund { liquidity_policy, token_name: token.name }
+  expect [payment] =
+    list.filter(
+      transaction.outputs,
+      fn(output) {
+        output.address == old.reserve_owner && output.datum == InlineDatum(
+          refund,
+        )
+      },
+    )
+  expect assets.match_assets(payment.value, assets.zero)
+  expect assets.lovelace_of(payment.value) >= reserve(input, old)
+  old.amount
+}
+
+/// Merge balances into one existing identity without releasing principal.
+/// Every removed output burns its NFT and reimburses its own reserve owner.
+/// The survivor retains its owner and at least its existing ADA reserve.
+pub fn consolidate(
+  inputs: List<Input>,
+  transaction: Transaction,
+  liquidity_policy: PolicyId,
+  survivor_ref: OutputReference,
+) -> Bool {
+  expect list.length(inputs) >= 2 && list.length(inputs) <= 5
+  expect
+    list.length(
+      list.unique(list.map(inputs, fn(input) { input.output_reference })),
+    ) == list.length(inputs)
+  expect Some(survivor) = transaction.find_input(inputs, survivor_ref)
+  expect old: LiquidityDatum = validator_utils.get_inline_datum(survivor.output)
+  expect valid_value(survivor.output, old, liquidity_policy)
+  let token = identity(old, liquidity_policy)
+  expect assets.quantity_of(transaction.mint, token.policy_id, token.name) == 0
+  expect [output] =
+    list.filter(
+      transaction.outputs,
+      fn(candidate) { auth.contain_auth_token(candidate, token) },
+    )
+  expect output.address == survivor.output.address
+  let total =
+    list.foldl(
+      inputs,
+      0,
+      fn(input, amount) {
+        expect list.has(transaction.inputs, input)
+        expect datum: LiquidityDatum =
+          validator_utils.get_inline_datum(input.output)
+        expect datum.port_id == old.port_id
+        expect datum.channel_id == old.channel_id
+        expect datum.denom == old.denom
+        expect datum.asset_policy == old.asset_policy
+        expect datum.asset_name == old.asset_name
+        if input.output_reference == survivor_ref {
+          amount + datum.amount
+        } else {
+          amount + retired_amount(input, transaction, liquidity_policy)
+        }
+      },
+    )
+  expect new: LiquidityDatum = validator_utils.get_inline_datum(output)
+  expect new == LiquidityDatum { ..old, amount: total }
+  expect valid_value(output, new, liquidity_policy)
+  let updated = Input { ..survivor, output }
+  reserve(updated, new) >= reserve(survivor, old)
 }
 
 /// Sum only identities for the exact local channel and denomination. Repeated

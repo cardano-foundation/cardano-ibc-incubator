@@ -18,6 +18,7 @@ fn datum(index: Int, amount: Int) -> LiquidityDatum {
       output_index: index,
     },
     amount,
+    reserve_owner: address.from_verification_key(liquidity_policy),
   }
 }
 
@@ -148,5 +149,119 @@ test liquidity_cannot_hide_unrelated_assets() {
     },
     datum(0, 10),
     liquidity_policy,
+  )
+}
+
+fn retirement(index: Int, amount: Int) -> transaction.Transaction {
+  let old = datum(index, amount)
+  let token = liquidity.identity(old, liquidity_policy)
+  let payment =
+    Output {
+      address: old.reserve_owner,
+      value: assets.from_lovelace(2_000_000),
+      datum: InlineDatum(
+        liquidity.ReserveRefund { liquidity_policy, token_name: token.name },
+      ),
+      reference_script: None,
+    }
+  transaction.Transaction {
+    ..transaction.placeholder,
+    inputs: [input(index, amount)],
+    outputs: [payment],
+    mint: assets.from_asset(liquidity_policy, token.name, -1),
+  }
+}
+
+test liquidity_full_drain_burns_identity_and_returns_reserve() {
+  liquidity.retired_amount(input(0, 10), retirement(0, 10), liquidity_policy) == 10
+}
+
+test liquidity_empty_retirement_reclaims_reserve() {
+  liquidity.retired_amount(input(0, 0), retirement(0, 0), liquidity_policy) == 0
+}
+
+test liquidity_retirement_requires_burn() fail {
+  let tx = retirement(0, 10)
+  expect _ =
+    liquidity.retired_amount(
+      input(0, 10),
+      transaction.Transaction { ..tx, mint: assets.zero },
+      liquidity_policy,
+    )
+}
+
+test liquidity_retirement_requires_full_reserve() fail {
+  let tx = retirement(0, 10)
+  expect [payment] = tx.outputs
+  expect _ =
+    liquidity.retired_amount(
+      input(0, 10),
+      transaction.Transaction {
+        ..tx,
+        outputs: [Output { ..payment, value: assets.from_lovelace(1_999_999) }],
+      },
+      liquidity_policy,
+    )
+}
+
+test liquidity_retirement_cannot_redirect_reserve() fail {
+  let tx = retirement(0, 10)
+  expect [payment] = tx.outputs
+  expect _ =
+    liquidity.retired_amount(
+      input(0, 10),
+      transaction.Transaction {
+        ..tx,
+        outputs: [
+          Output { ..payment, address: address.from_script(liquidity_policy) },
+        ],
+      },
+      liquidity_policy,
+    )
+}
+
+test liquidity_retirement_cannot_keep_identity() fail {
+  let tx = retirement(0, 10)
+  expect _ =
+    liquidity.retired_amount(
+      input(0, 10),
+      transaction.Transaction {
+        ..tx,
+        outputs: [output(datum(0, 0)), ..tx.outputs],
+      },
+      liquidity_policy,
+    )
+}
+
+fn consolidation() -> transaction.Transaction {
+  let donor = retirement(1, 20)
+  transaction.Transaction {
+    ..donor,
+    inputs: [input(0, 10), input(1, 20)],
+    outputs: [output(datum(0, 30)), ..donor.outputs],
+  }
+}
+
+test liquidity_consolidation_preserves_principal_and_refunds_donor_reserve() {
+  let tx = consolidation()
+  liquidity.consolidate(
+    tx.inputs,
+    tx,
+    liquidity_policy,
+    input(0, 10).output_reference,
+  )
+}
+
+test liquidity_consolidation_cannot_take_principal() fail {
+  let tx = consolidation()
+  let donor = retirement(1, 20)
+  liquidity.consolidate(
+    tx.inputs,
+    transaction.Transaction {
+      ..tx,
+      outputs: [output(datum(0, 29)), ..donor.outputs],
+    },
+    liquidity_policy,
+    input(0, 10).output_reference,
   )
 }

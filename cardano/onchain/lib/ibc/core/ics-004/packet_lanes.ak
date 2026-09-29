@@ -1,4 +1,3 @@
-use aiken/builtin
 use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
@@ -29,7 +28,7 @@ fn channel_identity(port: ByteArray, channel: ByteArray) -> ByteArray {
 }
 
 /// Membership, receipt and acknowledgement keys share their sequence's lane.
-/// The first eight SHA-256 bytes are interpreted as an unsigned big-endian int.
+/// Consecutive sequences occupy distinct lanes until the fixed count wraps.
 pub fn packet_lane(
   port: ByteArray,
   channel: ByteArray,
@@ -38,13 +37,8 @@ pub fn packet_lane(
 ) -> Int {
   expect valid_lane_count(count)
   expect sequence > 0 && sequence <= max_packet_sequence
-  let hash =
-    "cardano-ibc/packet-lane/v1"
-      |> bytearray.concat(#[0])
-      |> bytearray.concat(channel_identity(port, channel))
-      |> bytearray.concat(bytearray.from_int_big_endian(sequence, 8))
-      |> crypto.sha2_256
-  builtin.bytearray_to_integer(True, bytearray.take(hash, 8)) % count
+  expect _ = channel_identity(port, channel)
+  sequence % count
 }
 
 pub fn lane_token_name(

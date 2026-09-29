@@ -68,17 +68,7 @@ export function packetLane(
   if (sequence <= 0n || sequence > MAX_PACKET_SEQUENCE) {
     throw new Error("Packet sequence must be a positive uint64");
   }
-  const hash = sha256(
-    concat(
-      domain("packet-lane"),
-      framed(port),
-      framed(channel),
-      unsigned(sequence, 8),
-    ),
-  );
-  let index = 0n;
-  for (const byte of hash.subarray(0, 8)) index = (index << 8n) | BigInt(byte);
-  return Number(index % BigInt(count));
+  return Number(sequence % BigInt(count));
 }
 
 export type PacketKey = {

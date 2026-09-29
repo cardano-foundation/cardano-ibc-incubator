@@ -11,7 +11,7 @@ import (
 )
 
 func TestPacketLaneWireVectors(t *testing.T) {
-	for index, want := range []uint32{7, 14, 6, 15, 12} {
+	for index, want := range []uint32{1, 2, 3, 4, 5} {
 		got, err := PacketLane("transfer", "channel-0", uint64(index+1), 16)
 		if err != nil || got != want {
 			t.Fatalf("sequence %d: got %d, %v, want %d", index+1, got, err, want)
@@ -55,7 +55,7 @@ func TestPacketLaneProofBindsChannelLaneAndHeight(t *testing.T) {
 	key := []byte("commitments/ports/transfer/channels/channel-0/sequences/1")
 	value := bytes.Repeat([]byte{0xab}, 32)
 	proof, hash := packetLaneProof(key, value)
-	root := PacketLaneRoot{Port: "transfer", Channel: "channel-0", Lane: 7, LaneCount: 16, Height: 42, Version: 1, Root: hash}
+	root := PacketLaneRoot{Port: "transfer", Channel: "channel-0", Lane: 1, LaneCount: 16, Height: 42, Version: 1, Root: hash}
 	if err := VerifyPacketLaneMembership(root, 42, key, value, proof); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestPacketLaneAbsenceBindsExactLane(t *testing.T) {
 	key := []byte("receipts/ports/transfer/channels/channel-0/sequences/1")
 	existence, hash := packetLaneProof(key, nil)
 	proof := &ics23.NonExistenceProof{Key: key, Left: existence}
-	root := PacketLaneRoot{Port: "transfer", Channel: "channel-0", Lane: 7, LaneCount: 16, Height: 42, Root: hash}
+	root := PacketLaneRoot{Port: "transfer", Channel: "channel-0", Lane: 1, LaneCount: 16, Height: 42, Root: hash}
 	if err := VerifyPacketLaneNonMembership(root, 42, key, proof); err != nil {
 		t.Fatal(err)
 	}
@@ -96,9 +96,24 @@ func TestPacketLaneAbsenceBindsExactLane(t *testing.T) {
 func TestPacketLaneMalformedInnerOperationReturnsError(t *testing.T) {
 	key := []byte("receipts/ports/transfer/channels/channel-0/sequences/1")
 	proof, hash := packetLaneProof(key, []byte{1})
-	root := PacketLaneRoot{Port: "transfer", Channel: "channel-0", Lane: 7, LaneCount: 16, Height: 42, Root: hash}
+	root := PacketLaneRoot{Port: "transfer", Channel: "channel-0", Lane: 1, LaneCount: 16, Height: 42, Root: hash}
 	proof.Path[0] = nil
 	if err := VerifyPacketLaneMembership(root, 42, key, []byte{1}, proof); err == nil {
 		t.Fatal("accepted nil inner operation")
+	}
+}
+
+func TestConsecutivePacketLanesWrapWithoutCollisions(t *testing.T) {
+	for count := uint32(1); count <= 64; count++ {
+		for _, first := range []uint64{1, 2, 15, 16, 63, ^uint64(0) - uint64(count) + 1} {
+			seen := map[uint32]bool{}
+			for offset := uint32(0); offset < count; offset++ {
+				lane, err := PacketLane("transfer", "channel-0", first+uint64(offset), count)
+				if err != nil || seen[lane] {
+					t.Fatalf("count %d first %d offset %d: duplicate or error %v", count, first, offset, err)
+				}
+				seen[lane] = true
+			}
+		}
 	}
 }

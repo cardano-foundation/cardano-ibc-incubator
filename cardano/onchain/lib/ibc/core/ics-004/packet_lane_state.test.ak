@@ -133,7 +133,7 @@ test packet_lane_state_rejects_forged_root() {
 
 test packet_lane_state_rejects_identity_mint_during_update() fail {
   let (tx, ref, updates) = prepared(1)
-  let name = packet_lanes.lane_token_name("transfer", "channel-0", 7, 16)
+  let name = packet_lanes.lane_token_name("transfer", "channel-0", 1, 16)
   packet_lane_state.validate_transition(
     Transaction { ..tx, mint: assets.from_asset(policy, name, 1) },
     ref,
@@ -145,7 +145,7 @@ test packet_lane_state_rejects_identity_mint_during_update() fail {
 test packet_lane_state_rejects_identity_removed_from_input() fail {
   let (tx, ref, updates) = prepared(1)
   expect [input] = tx.inputs
-  let name = packet_lanes.lane_token_name("transfer", "channel-0", 7, 16)
+  let name = packet_lanes.lane_token_name("transfer", "channel-0", 1, 16)
   packet_lane_state.validate_transition(
     Transaction {
       ..tx,

@@ -43,14 +43,11 @@ func PacketLane(port, channel string, sequence uint64, count uint32) (uint32, er
 	if count == 0 || count > MaxPacketLanes || sequence == 0 {
 		return 0, fmt.Errorf("invalid packet lane count or sequence")
 	}
-	identity, err := laneChannelIdentity(port, channel)
+	_, err := laneChannelIdentity(port, channel)
 	if err != nil {
 		return 0, err
 	}
-	preimage := append(laneDomain("packet-lane"), identity...)
-	preimage = binary.BigEndian.AppendUint64(preimage, sequence)
-	hash := sha256.Sum256(preimage)
-	return uint32(binary.BigEndian.Uint64(hash[:8]) % uint64(count)), nil
+	return uint32(sequence % uint64(count)), nil
 }
 
 func PacketLaneTokenName(port, channel string, lane, count uint32) ([]byte, error) {

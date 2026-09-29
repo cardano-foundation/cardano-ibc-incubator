@@ -26,7 +26,7 @@ fn height(value: Int) -> Height {
 }
 
 fn empty() -> PacketLaneDatum {
-  packet_lane_datum.empty("transfer", "channel-0", 7, 16)
+  packet_lane_datum.empty("transfer", "channel-0", 1, 16)
 }
 
 fn committed() -> PacketLaneDatum {

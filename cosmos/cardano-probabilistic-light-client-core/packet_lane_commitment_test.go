@@ -18,7 +18,7 @@ func laneDatumFixture(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	datum := packetLaneDatum{
-		Port: []byte("transfer"), Channel: []byte("channel-0"), Lane: 7, LaneCount: 16,
+		Port: []byte("transfer"), Channel: []byte("channel-0"), Lane: 1, LaneCount: 16,
 		Version: 1, Root: bytes.Repeat([]byte{0xab}, 32),
 		Commitments: cbor.RawMessage{0xa0}, Receipts: cbor.RawMessage{0x80},
 		Acknowledgements: cbor.RawMessage{0xa0}, MinimumReceiveProofHeight: height,
@@ -33,7 +33,7 @@ func laneDatumFixture(t *testing.T) []byte {
 
 func TestPacketLaneDatumBindsIdentity(t *testing.T) {
 	raw := laneDatumFixture(t)
-	root, err := decodePacketLaneRoot(raw, 42, "transfer", "channel-0", 7, 16)
+	root, err := decodePacketLaneRoot(raw, 42, "transfer", "channel-0", 1, 16)
 	if err != nil || root.Height != 42 || root.Version != 1 || !bytes.Equal(root.Root, bytes.Repeat([]byte{0xab}, 32)) {
 		t.Fatalf("decode root: %+v, %v", root, err)
 	}
@@ -42,13 +42,13 @@ func TestPacketLaneDatumBindsIdentity(t *testing.T) {
 			t.Fatalf("accepted wrong lane %d", lane)
 		}
 	}
-	if _, err := decodePacketLaneRoot(raw, 42, "transfer", "channel-0", 7, 32); err == nil {
+	if _, err := decodePacketLaneRoot(raw, 42, "transfer", "channel-0", 1, 32); err == nil {
 		t.Fatal("accepted different partition count")
 	}
-	if _, err := decodePacketLaneRoot(raw, 42, "transfer", "channel-1", 7, 16); err == nil {
+	if _, err := decodePacketLaneRoot(raw, 42, "transfer", "channel-1", 1, 16); err == nil {
 		t.Fatal("accepted different channel")
 	}
-	if _, err := decodePacketLaneRoot(raw[2:], 42, "transfer", "channel-0", 7, 16); err == nil {
+	if _, err := decodePacketLaneRoot(raw[2:], 42, "transfer", "channel-0", 1, 16); err == nil {
 		t.Fatal("accepted untagged datum")
 	}
 }
@@ -56,7 +56,7 @@ func TestPacketLaneDatumBindsIdentity(t *testing.T) {
 func laneBlockFixture(t *testing.T, invalid []uint, spentLater bool) ([]byte, string, []byte) {
 	t.Helper()
 	policy := bytes.Repeat([]byte{0x11}, 28)
-	name, err := PacketLaneTokenName("transfer", "channel-0", 7, 16)
+	name, err := PacketLaneTokenName("transfer", "channel-0", 1, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,12 +103,12 @@ func laneBlockFixture(t *testing.T, invalid []uint, spentLater bool) ([]byte, st
 
 func TestPacketLaneExtractsRootFromActualAnchorHeight(t *testing.T) {
 	block, hash, policy := laneBlockFixture(t, []uint{}, false)
-	root, err := ExtractPacketLaneRootFromAnchorBlock(block, hash, 0, policy, "transfer", "channel-0", 7, 16)
-	if err != nil || root.Height != 42 || root.Lane != 7 {
+	root, err := ExtractPacketLaneRootFromAnchorBlock(block, hash, 0, policy, "transfer", "channel-0", 1, 16)
+	if err != nil || root.Height != 42 || root.Lane != 1 {
 		t.Fatalf("extract root: %+v, %v", root, err)
 	}
 	policy[0] = 0x44
-	if _, err := ExtractPacketLaneRootFromAnchorBlock(block, hash, 0, policy, "transfer", "channel-0", 7, 16); err == nil {
+	if _, err := ExtractPacketLaneRootFromAnchorBlock(block, hash, 0, policy, "transfer", "channel-0", 1, 16); err == nil {
 		t.Fatal("accepted counterfeit lane policy")
 	}
 }
@@ -123,7 +123,7 @@ func TestPacketLaneRejectsInvalidOrSupersededOutput(t *testing.T) {
 		{[]uint{}, true, "spent within anchor block"},
 	} {
 		block, hash, policy := laneBlockFixture(t, tc.invalid, tc.spent)
-		_, err := ExtractPacketLaneRootFromAnchorBlock(block, hash, 0, policy, "transfer", "channel-0", 7, 16)
+		_, err := ExtractPacketLaneRootFromAnchorBlock(block, hash, 0, policy, "transfer", "channel-0", 1, 16)
 		if err == nil || !strings.Contains(err.Error(), tc.error) {
 			t.Fatalf("expected %q, got %v", tc.error, err)
 		}
@@ -132,7 +132,7 @@ func TestPacketLaneRejectsInvalidOrSupersededOutput(t *testing.T) {
 
 func TestPacketLaneInvalidLaterTransactionDoesNotSpendItsNormalInputs(t *testing.T) {
 	block, hash, policy := laneBlockFixture(t, []uint{1}, true)
-	if _, err := ExtractPacketLaneRootFromAnchorBlock(block, hash, 0, policy, "transfer", "channel-0", 7, 16); err != nil {
+	if _, err := ExtractPacketLaneRootFromAnchorBlock(block, hash, 0, policy, "transfer", "channel-0", 1, 16); err != nil {
 		t.Fatalf("phase-2 invalid later transaction consumed a normal input: %v", err)
 	}
 }
