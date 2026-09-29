@@ -89,7 +89,10 @@ commitment updates and exclude the other bridge validators.
 
 Applying that measured cost increase to the existing first native send fixture
 at 64 commitments raises its 15.94 million memory units to a projected 18.36
-million against the configured 16.50 million limit.
+million against Cardano mainnet's 16.50 million per-transaction memory limit.
+The benchmark uses the same limit, checked against the
+[live mainnet protocol parameters](https://api.koios.rest/api/v1/cli_protocol_params)
+on 2026-09-29.
 That is a projection from separate benchmarks, not an integrated IAVL send test.
 The compressed collision-bucket prototype projects 16.20 million and preserves
 existing roots by allowing colliding keys to share an outer leaf. Its narrow
