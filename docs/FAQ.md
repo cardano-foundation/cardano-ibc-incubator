@@ -74,6 +74,31 @@ The grace-period deadline does not automatically destroy `HostState`. Remaining
 settlement paths can continue while the required state and scripts are available
 but the lost key cannot cancel shutdown or complete the administrative cleanup.
 
+## Why doesn't HostState use IAVL like Cosmos SDK?
+
+Two different keys can map to the same 64-bit path in the current `HostState`
+tree. Binding leaves to the full key hash prevents proof substitution but still
+does not let those keys coexist. To investigate [#482](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/482)
+we built an [IAVL prototype and cost comparison](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/f75ac3992d3b9a0c0a158d491990888205b7ef80/experiments/hoststate-iavl/README.md)
+using the [versioned tree used by Cosmos SDK](https://github.com/cosmos/iavl/tree/v1.2.2).
+IAVL removes that routing limit but significantly increased execution cost in
+our prototype. At 65,536 keys the two commitment updates needed for a send used
+6.04 million memory units instead of 3.62 million, about 67% more. The signed
+transaction shrank from 5,104 to 3,587 bytes. These measurements cover only the
+commitment updates and exclude the other bridge validators.
+
+Applying that measured cost increase to the existing first native send fixture
+at 64 commitments raises its 15.94 million memory units to a projected 18.36
+million against the configured 16.50 million limit.
+That is a projection from separate benchmarks, not an integrated IAVL send test.
+The compressed collision-bucket prototype projects 16.20 million and preserves
+existing roots by allowing colliding keys to share an outer leaf. Its narrow
+margin still needs integrated testing. IAVL also requires recovery to preserve
+tree structure and node versions through snapshots or exact history replay.
+The current key/value set alone cannot reproduce its root. These results favor
+further work on collision buckets. Neither prototype has replaced the production
+tree or resolved #482 on `main`.
+
 ## Why is voucher denom trace mapping on-chain, but still outside HostState?
 
 Because the security roles are different.
