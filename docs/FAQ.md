@@ -103,7 +103,7 @@ Our current tree, and the proposed collision buckets, can be reconstructed from 
 
 With IAVL, the root also depends on tree structure and node versions, which reflect the update history. Inserting those same entries into a fresh IAVL tree can produce a different root.
 
-So IAVL recovery needs either a snapshot preserving that structure and those versions, or replay of the exact updates and version boundaries. That is the extra recovery requirement we are referring to.
+So IAVL recovery needs either a snapshot preserving that structure and those versions, or replay of the exact updates and version boundaries.
 
 ## Why is voucher denom trace mapping on-chain, but still outside HostState?
 
