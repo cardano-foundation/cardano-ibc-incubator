@@ -37,7 +37,7 @@ export interface IbcTreeLucidService {
         consensusValue: string;
         archived: boolean;
     }>>;
-    findUtxoAtHostStateNFT(): Promise<IbcTreeUtxo | undefined>;
+    findUtxoAtHostStateNFT(restriction?: bigint): Promise<IbcTreeUtxo | undefined>;
     decodeDatum<T>(encodedDatum: string, type: 'host_state' | 'client' | 'consensus_state' | 'connection' | 'channel'): Promise<T>;
 }
 type AuthTokenLike = {

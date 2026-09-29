@@ -246,10 +246,10 @@ export type SendPacketBuildDependencies<TreeCommit = () => void> = {
   ) => Promise<TransferEscrowShardLookup>;
   createUnsignedSendPacketBurnTx: (
     dto: UnsignedSendPacketBurnTxInput,
-  ) => TxBuilder;
+  ) => TxBuilder | Promise<TxBuilder>;
   createUnsignedSendPacketEscrowTx: (
     dto: UnsignedSendPacketEscrowTxInput,
-  ) => TxBuilder;
+  ) => TxBuilder | Promise<TxBuilder>;
   invalidArgument: (message: string) => Error;
   failedPrecondition?: (message: string) => Error;
   internalError: (message: string) => Error;
@@ -411,7 +411,7 @@ export async function buildUnsignedSendPacketTx<TreeCommit = () => void>(
       senderVoucherTokenUtxo,
     ]);
 
-    const unsignedTx = deps.createUnsignedSendPacketBurnTx({
+    const unsignedTx = await deps.createUnsignedSendPacketBurnTx({
       hostStateUtxo,
       channelUTxO: context.channelUtxo,
       connectionUTxO: context.connectionUtxo,
@@ -476,7 +476,7 @@ export async function buildUnsignedSendPacketTx<TreeCommit = () => void>(
     sendPacketOperator.token.amount,
   );
 
-  const unsignedTx = deps.createUnsignedSendPacketEscrowTx({
+  const unsignedTx = await deps.createUnsignedSendPacketEscrowTx({
     hostStateUtxo,
     channelUTxO: context.channelUtxo,
     connectionUTxO: context.connectionUtxo,

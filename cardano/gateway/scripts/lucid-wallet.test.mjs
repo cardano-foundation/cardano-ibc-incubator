@@ -41,12 +41,12 @@ test('completion replaces spent inputs captured by an earlier wallet snapshot', 
   const account = generateEmulatorAccount({ lovelace: 750_000_000n });
   const recipient = generateEmulatorAccount({ lovelace: 0n });
   const emulator = new Emulator([account]);
-  const lucid = await Lucid(emulator, 'Custom');
+  const lucid = await Lucid(emulator, 'Custom', { slotConfig: { zeroTime: emulator.time, zeroSlot: 0, slotLength: 1000 } });
   const oldUtxos = await lucid.utxosAt(account.address);
   lucid.selectWallet.fromAddress(account.address, oldUtxos);
   const tx = lucid.newTx().pay.ToAddress(recipient.address, { lovelace: 2_000_000n });
 
-  const spender = await Lucid(emulator, 'Custom');
+  const spender = await Lucid(emulator, 'Custom', { slotConfig: { zeroTime: emulator.time, zeroSlot: 0, slotLength: 1000 } });
   spender.selectWallet.fromSeed(account.seedPhrase);
   const payment = await spender.newTx().pay.ToAddress(recipient.address, { lovelace: 2_000_000n }).complete();
   const signed = await payment.sign.withWallet().complete();
@@ -66,7 +66,7 @@ test('completion binds refreshed funding, collateral, change and wallet identity
   const fresh = generateEmulatorAccount({ lovelace: 750_000_000n });
   const recipient = generateEmulatorAccount({ lovelace: 0n });
   const emulator = new Emulator([old, old, old, fresh, fresh, fresh]);
-  const lucid = await Lucid(emulator, 'Custom');
+  const lucid = await Lucid(emulator, 'Custom', { slotConfig: { zeroTime: emulator.time, zeroSlot: 0, slotLength: 1000 } });
   lucid.selectWallet.fromAddress(old.address, await lucid.utxosAt(old.address));
   const policy = { type: 'PlutusV2', script: '49480100002221200101' };
   const unit = mintingPolicyToId(policy) + '01';

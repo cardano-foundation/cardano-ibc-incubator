@@ -67,7 +67,7 @@ class Command implements fc.AsyncCommand<Model, Real> {
         await real.rejectPrematureCleanup(value);
         break;
       case "observe":
-        real.lucid.overrideUTxOs([]);
+        real.lucid.clearUTxOOverride();
         break;
     }
     assertEquals(

@@ -5,16 +5,19 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = exports.OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = exports.transferEscrowShardTokenName = exports.AsyncMutex = void 0;
 exports.withKupoStringQuantityHeader = withKupoStringQuantityHeader;
+exports.normalizeBridgeManifest = normalizeBridgeManifest;
 exports.ogmiosRequest = ogmiosRequest;
 exports.mapOgmiosProtocolParameters = mapOgmiosProtocolParameters;
 exports.queryProtocolParametersCompat = queryProtocolParametersCompat;
 exports.retryWithBackoff = retryWithBackoff;
 exports.createTxBuilderRuntime = createTxBuilderRuntime;
+const migrationRuntime_1 = require("./migrationRuntime");
 const crypto_1 = __importDefault(require("crypto"));
 const tx_builder_1 = require("@cardano-ibc/tx-builder");
 const trace_registry_1 = require("@cardano-ibc/trace-registry");
 const ws_1 = __importDefault(require("ws"));
 const asyncMutex_1 = require("./asyncMutex");
+const executionBudget_1 = require("./executionBudget");
 const ibcStateRoot_1 = require("./ibcStateRoot");
 const consensusHistoryKupo_1 = require("./consensusHistoryKupo");
 const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
@@ -157,7 +160,9 @@ function normalizeBridgeManifest(manifest) {
             ics20_packet_codec: ics20PacketCodec,
         },
         deployment: {
+            deploymentMode: (0, migrationRuntime_1.checkedDeploymentMode)(manifest.deploymentMode ?? 'upgradeable', manifest.migration),
             deployedAt: manifest.deployed_at,
+            ...(manifest.migration !== undefined ? { migration: (0, migrationRuntime_1.requireMigrationConfig)(manifest.migration) } : {}),
             consensusHistoryFormat: manifest.consensus_history_format,
             ...(manifest.history ? { history: manifest.history } : {}),
             ics20PacketCodec,
@@ -733,8 +738,8 @@ function mapOgmiosProtocolParameters(result) {
         govActionDeposit: lovelaceValue(result.governanceActionDeposit),
         priceMem: parseOgmiosRatio(result.scriptExecutionPrices?.memory, 'scriptExecutionPrices.memory'),
         priceStep: parseOgmiosRatio(result.scriptExecutionPrices?.cpu, 'scriptExecutionPrices.cpu'),
-        maxTxExMem: BigInt(result.maxExecutionUnitsPerTransaction?.memory ?? 0),
-        maxTxExSteps: BigInt(result.maxExecutionUnitsPerTransaction?.cpu ?? 0),
+        maxTxExMem: (0, executionBudget_1.parseExecutionLimit)(result.maxExecutionUnitsPerTransaction?.memory, 'memory'),
+        maxTxExSteps: (0, executionBudget_1.parseExecutionLimit)(result.maxExecutionUnitsPerTransaction?.cpu, 'cpu'),
         coinsPerUtxoByte: BigInt(coinsPerUtxoByte),
         collateralPercentage: result.collateralPercentage,
         maxCollateralInputs: result.maxCollateralInputs,
@@ -901,11 +906,21 @@ async function retryWithBackoff(operation, wait = (durationMs) => new Promise((r
 async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, headers, fetchImpl = fetch) {
     const Lucid = await timed(logger, '[context]', 'import lucid', () => eval(`import('@lucid-evolution/lucid')`));
     const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, withKupoStringQuantityHeader(headers));
+    const evaluateOnLedger = provider.evaluateTx.bind(provider);
+    // This runtime builds one transaction from live UTxOs, not an unconfirmed
+    // chain. Resolve every input/reference from the node's ledger. Besides
+    // rejecting stale or invented inputs, this avoids Ogmios's older explicit
+    // JSON script decoder: it checks at the language's introduction version.
+    // Do not retry with operator-supplied UTxOs or a local evaluator on failure.
+    provider.evaluateTx = (transaction) => evaluateOnLedger(transaction);
     const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => queryProtocolParametersCompat(ogmiosEndpoint, headers?.ogmiosHeader, fetchImpl))));
+    const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader));
     const lucid = await timed(logger, '[context]', 'create lucid runtime', () => Lucid.Lucid(provider, cardanoNetwork, {
         presetProtocolParameters: protocolParameters,
+        slotConfig: cardanoNetwork === 'Custom'
+            ? { zeroTime: chainZeroTime, zeroSlot: 0, slotLength: 1000 }
+            : undefined,
     }));
-    const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader));
     const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork];
     if (!slotConfig) {
         throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);
@@ -1091,7 +1106,7 @@ function createTxBuilderRuntime(config) {
         if (bridgeManifest.validators.spend_consensus_state) {
             throw new Error('Archive-UTxO deployments are not supported, deploy the proof-backed client contracts');
         }
-        const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment, (0, consensusHistoryKupo_1.createKupoConsensusHistoryReader)(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader }));
+        const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment, (0, consensusHistoryKupo_1.createKupoConsensusHistoryReader)(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader, allowScriptMigration: !!deployment.migration }));
         await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
         const treeStore = new ibcStateRoot_1.IbcTreeStateStore({
@@ -1251,11 +1266,20 @@ function createTxBuilderRuntime(config) {
             context.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
             context.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, 'sendPacket');
             const completedUnsignedTx = await timed(logger, scope, 'complete unsigned tx', () => unsignedTx.validFrom(validFromTime).validTo(validToTime).complete({
-                localUPLCEval: true,
+                // Standalone SDK consumers use their configured ledger evaluator.
+                // Their npm graph need not contain the repository's patched local
+                // evaluator; never fall back to an older cost-model implementation.
+                localUPLCEval: false,
                 setCollateral: TRANSACTION_SET_COLLATERAL,
             }));
+            // Ogmios evaluation does not perform every phase-one ledger check. Check
+            // final (including Lucid's budget margin) aggregate units against fresh
+            // ledger limits, not just each evaluator result or cached startup limits.
+            const executionLimits = await timed(logger, scope, 'fetch ledger execution limits', () => queryProtocolParametersCompat(context.ogmiosEndpoint, context.kupmiosHeaders?.ogmiosHeader, config.fetchImpl ?? fetch));
+            const transaction = completedUnsignedTx.toTransaction();
+            (0, executionBudget_1.assertExecutionBudget)(transaction.witness_set().redeemers(), executionLimits);
             const unsignedTxCbor = completedUnsignedTx.toCBOR();
-            const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
+            const feeLovelace = transaction.body().fee().toString();
             logger.log(`${scope} prepared unsigned Cardano transfer in ${elapsedMs(buildStartedAt)}`);
             return {
                 result: 0,

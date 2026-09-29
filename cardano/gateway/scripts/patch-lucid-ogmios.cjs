@@ -6,7 +6,7 @@ const path = require('node:path');
 // https://github.com/CardanoSolutions/ogmios/blob/v6.12.0/server/src/Ogmios/Data/Json/Query.hs#L2123-L2170
 const directory = path.dirname(require.resolve('@lucid-evolution/provider'));
 const metadata = JSON.parse(fs.readFileSync(path.join(directory, '../package.json'), 'utf8'));
-if (metadata.version !== '0.1.94') {
+if (metadata.version !== '0.2.4') {
   throw new Error(`Review the Lucid Ogmios patch before using provider version ${metadata.version}`);
 }
 

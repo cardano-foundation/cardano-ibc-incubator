@@ -72,6 +72,7 @@ describe('GatewayReadinessService', () => {
         message: 'Yaci has indexed the current HostState tx at block 1234 and Gateway has accepted it for proof serving.',
       },
     });
+    expect(lucidServiceMock.findUtxoAtHostStateNFT).toHaveBeenCalledWith(0n);
     expect(resolveProofHeightForCurrentRoot).toHaveBeenCalledWith(
       expect.objectContaining({
         context: 'health/ready',

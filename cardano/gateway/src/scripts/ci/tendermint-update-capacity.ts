@@ -559,7 +559,7 @@ function buildStructuralTransactions(
   return { unsigned, signed };
 }
 
-function inspectShape(transaction: InstanceType<typeof Lucid.CML.Transaction>): CapacityTransactionShape {
+function inspectShape(transaction: ReturnType<typeof Lucid.CML.Transaction.from_cbor_hex>): CapacityTransactionShape {
   const body = transaction.body();
   const witnesses = transaction.witness_set();
   const redeemers = witnesses.redeemers()?.as_map_redeemer_key_to_redeemer_val();

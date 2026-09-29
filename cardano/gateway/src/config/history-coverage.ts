@@ -1,4 +1,5 @@
 import { requireHistoryBootstrap } from '@cardano-ibc/tx-builder-runtime/historyBootstrap';
+import { validateHistoryBootstrap } from '@cardano-ibc/tx-builder-runtime/consensusHistoryRecovery';
 import type { BridgeManifest } from './bridge-manifest';
 import { decodeHostStateDatum } from '../shared/types/host-state-datum';
 
@@ -58,7 +59,7 @@ export async function verifyHistoryCoverage(
   for (const ref of refs.values()) {
     const rows = await sql.query(
       `
-      SELECT t.block, a.inline_datum, a.amounts, b.hash
+      SELECT t.block, t.tx_index, a.inline_datum, a.amounts, b.hash, b.slot, c.cbor_data
       FROM address_utxo a JOIN transaction t ON t.tx_hash=a.tx_hash AND t.block=a.block
       JOIN block b ON b.number=t.block AND b.hash=t.block_hash
       JOIN transaction_cbor c ON c.tx_hash=t.tx_hash
@@ -84,6 +85,23 @@ export async function verifyHistoryCoverage(
       const datum = await decodeHostStateDatum(row.inline_datum, lucid);
       if (datum.state.version !== 0n || datum.nft_policy !== manifest.host_state_nft.policy_id)
         mismatch('anchor is not the initial HostState output');
+      try {
+        validateHistoryBootstrap(
+          {
+            txHash: anchor.tx_hash,
+            blockHash: row.hash,
+            blockHeight: Number(row.block),
+            slot: Number(row.slot),
+            transactionIndex: Number(row.tx_index),
+            cbor: Buffer.from(row.cbor_data).toString('hex'),
+            valid: true,
+          },
+          { policyId: manifest.host_state_nft.policy_id, name: manifest.host_state_nft.token_name },
+          anchor.output_index,
+        );
+      } catch (error) {
+        mismatch(`creation anchor lacks hash-checked NFT mint evidence (${String(error)})`);
+      }
     }
   }
   if (h.start !== 'origin') {

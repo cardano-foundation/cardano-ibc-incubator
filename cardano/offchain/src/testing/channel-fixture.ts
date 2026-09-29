@@ -14,6 +14,7 @@ import {
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
+import { createCardanoScalusEvaluator } from "../scalus-evaluator.ts";
 import {
   buildChannelValidators,
   DeploymentIbcTree,
@@ -249,7 +250,9 @@ export async function channelFixture(
     maxTxExMem: BigInt(localLimit("maxTxExUnitsMem")),
     maxTxExSteps: BigInt(localLimit("maxTxExUnitsSteps")),
   });
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(account.seedPhrase);
   const now = emulator.now();
   const clientPolicy = hash("11");

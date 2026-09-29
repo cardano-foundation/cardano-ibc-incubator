@@ -21,7 +21,7 @@ function datum(n: bigint, canonical = true): string {
   ]), token, '55'.repeat(32)]), canonical);
 }
 
-function context() {
+function context(allowScriptMigration = false) {
   // Genesis and a freeze republish height 1 in the SAME block. The first
   // publication has indefinite containers; both normalize to the same ledger value.
   const datums: Record<string, { datum: string } | null> = {
@@ -47,8 +47,18 @@ function context() {
     urls.push(url);
     return new Response(JSON.stringify(url.includes('/matches/') ? matches : datums[url.split('/').at(-1)!]));
   }) as typeof fetch;
-  return { datums, matches, current, urls, read: createKupoConsensusHistoryReader('https://kupo.example', { fetchImpl }) };
+  return { datums, matches, current, urls, read: createKupoConsensusHistoryReader('https://kupo.example', { fetchImpl, allowScriptMigration }) };
 }
+
+test('migration public history includes old script addresses without changing the authenticated token or datum', async () => {
+  const ctx = context(true);
+  ctx.matches[0].address = 'original-client';
+  ctx.matches[1].address = 'second-client';
+  const records = await ctx.read(ctx.current);
+  assert.equal(records[0].consensusValue, publicClientCommitmentValues(ctx.datums.first!.datum).consensusValue);
+  ctx.matches[1].value.assets[`${policy}.${name}`] = '2';
+  await assert.rejects(ctx.read(ctx.current), /unauthenticated/);
+});
 
 test('Kupo reads spent checkpoints in ledger order and normalizes public CBOR', async () => {
   const ctx = context();

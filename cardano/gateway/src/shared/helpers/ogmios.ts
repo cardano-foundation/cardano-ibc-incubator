@@ -134,6 +134,12 @@ const openOgmiosConnection = async (ogmiosUrl: string): Promise<WebSocket> => {
       }
       settled = true;
       cleanup();
+      // ws emits an asynchronous error when terminating a CONNECTING socket.
+      // Keep a listener through close after removing the request handlers, so
+      // an unavailable node rejects this query instead of crashing Gateway.
+      const ignoreTerminationError = () => undefined;
+      client.on('error', ignoreTerminationError);
+      client.once('close', () => client.off('error', ignoreTerminationError));
       client.terminate();
       reject(new Error(`Ogmios WebSocket connection timed out after ${OGMIOS_OPEN_TIMEOUT_MS}ms`));
     }, OGMIOS_OPEN_TIMEOUT_MS);

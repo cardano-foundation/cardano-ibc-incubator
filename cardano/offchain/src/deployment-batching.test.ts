@@ -98,7 +98,7 @@ function startBlockProducer(emulator: Emulator) {
 function reserveWalletUtxos(lucid: LucidEvolution, reserved: UTxO[]) {
   return async () => {
     const reservedRefs = new Set(reserved.map(refKey));
-    lucid.overrideUTxOs([]);
+    lucid.clearUTxOOverride();
     const spendable = (await lucid.wallet().getUtxos()).filter((utxo) =>
       !reservedRefs.has(refKey(utxo))
     );
@@ -154,7 +154,7 @@ Deno.test("trace registry shards and directory are adopted in one block", async 
   assertEquals(producer.submittedAt.length, TRACE_REGISTRY_SHARD_COUNT + 1);
   assertEquals(new Set(producer.submittedAt).size, 1);
 
-  lucid.overrideUTxOs([]);
+  lucid.clearUTxOOverride();
   const threads = await lucid.utxosAt(plan.traceRegistry.address);
   assertEquals(threads.length, TRACE_REGISTRY_SHARD_COUNT + 1);
   const policyId = plan.mintIdentifier.hash;
@@ -207,7 +207,7 @@ Deno.test("reference scripts are published by one chained funding round", async 
     Object.keys(published).sort(),
     validators.map(validatorToScriptHash).sort(),
   );
-  lucid.overrideUTxOs([]);
+  lucid.clearUTxOOverride();
   const onChain = await lucid.utxosAt(plan.referenceHolder.address);
   assertEquals(onChain.length, validators.length);
   for (const [hash, utxo] of Object.entries(published)) {

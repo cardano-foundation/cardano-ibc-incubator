@@ -40,6 +40,7 @@ type YaciAddressUtxoRow = {
 
 type SpoEventRow = {
   tx_hash: string;
+  cert_index: number;
   pool_id?: string | null;
   slot_no?: string | number | null;
 };
@@ -110,6 +111,7 @@ const bridgeConfigFileReader = {
 
 export async function ensureBridgeHistoryTables(database: Pick<Pool, 'query'> = historyPool) {
   await database.query(`
+    SELECT pg_advisory_xact_lock(462, 2);
     CREATE TABLE IF NOT EXISTS bridge_history_sync_state (
       cursor_name text PRIMARY KEY,
       last_block bigint NOT NULL DEFAULT -1,
@@ -185,16 +187,26 @@ export async function ensureBridgeHistoryTables(database: Pick<Pool, 'query'> = 
     CREATE TABLE IF NOT EXISTS bridge_spo_event_history (
       event_type text NOT NULL,
       tx_hash varchar(64) NOT NULL,
+      cert_index integer NOT NULL DEFAULT 0,
       block_no bigint NOT NULL,
       pool_id text,
       slot_no bigint,
       created_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (event_type, tx_hash)
+      PRIMARY KEY (event_type, tx_hash, cert_index)
     );
 
     ALTER TABLE bridge_spo_event_history
+      ADD COLUMN IF NOT EXISTS cert_index integer NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS pool_id text,
       ADD COLUMN IF NOT EXISTS slot_no bigint;
+
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'bridge_spo_event_history'::regclass
+        AND contype = 'p' AND array_length(conkey, 1) = 2) THEN
+        ALTER TABLE bridge_spo_event_history DROP CONSTRAINT bridge_spo_event_history_pkey;
+        ALTER TABLE bridge_spo_event_history ADD PRIMARY KEY (event_type, tx_hash, cert_index);
+      END IF;
+    END $$;
 
     CREATE INDEX IF NOT EXISTS idx_bridge_spo_event_history_block_no
       ON bridge_spo_event_history(block_no, event_type);
@@ -214,9 +226,23 @@ export async function ensureBridgeHistoryTables(database: Pick<Pool, 'query'> = 
     CREATE INDEX IF NOT EXISTS idx_bridge_pool_registration_cache_slot
       ON bridge_pool_registration_cache(first_registration_slot);
 
-    INSERT INTO bridge_history_sync_state(cursor_name, last_block, last_block_hash)
-    VALUES ('default', -1, NULL)
-    ON CONFLICT (cursor_name) DO NOTHING;
+    CREATE TABLE IF NOT EXISTS bridge_history_block_checkpoints (
+      block_no bigint PRIMARY KEY, block_hash varchar(64) NOT NULL
+    );
+
+    DO $$ BEGIN
+      PERFORM pg_advisory_xact_lock(462, 2);
+      IF NOT EXISTS (SELECT 1 FROM bridge_history_sync_state WHERE cursor_name = 'complete-block-v2') THEN
+        DELETE FROM bridge_tx_evidence;
+        DELETE FROM bridge_tx_history;
+        DELETE FROM bridge_utxo_history;
+        DELETE FROM bridge_spo_event_history;
+        DELETE FROM bridge_history_block_checkpoints;
+        DELETE FROM bridge_pool_registration_cache WHERE source IN ('yaci_projection', 'yaci');
+        INSERT INTO bridge_history_sync_state(cursor_name, last_block, last_block_hash)
+        VALUES ('complete-block-v2', -1, NULL);
+      END IF;
+    END $$;
   `);
 }
 
@@ -509,31 +535,58 @@ const relevantSpentOutputsSql = `
 export async function getNextRelevantBlock(
   client: PoolClient,
   lastBlock: number,
-  filter: BridgeProjectionFilter,
 ): Promise<number | null> {
   const result = await client.query<{ block_no: string | null }>(
     `
-      SELECT MIN(candidate_block)::text AS block_no
-      FROM (
-        SELECT MIN(utxo.block)::bigint AS candidate_block
-        FROM address_utxo utxo
-        WHERE utxo.block > $1 AND ${relevantOutputSql('utxo')}
-        UNION ALL
-        SELECT MIN(spent.spent_at_block)::bigint AS candidate_block
-        ${relevantSpentOutputsSql}
-        WHERE spent.spent_at_block > $1 AND tx.invalid = false
-          AND ${relevantOutputSql('utxo')}
-        UNION ALL
-        SELECT MIN(block)::bigint AS candidate_block FROM pool_registration WHERE block > $1
-        UNION ALL
-        SELECT MIN(block)::bigint AS candidate_block FROM pool_retirement WHERE block > $1
-      ) next_blocks
-      WHERE candidate_block IS NOT NULL
+      SELECT MIN(number)::text AS block_no FROM block
+      WHERE number > $1 AND (no_of_txs > 0 OR no_of_txs IS NULL)
     `,
-    [lastBlock, filter.relevantAddresses, filter.relevantPolicies],
+    [lastBlock],
   );
   const blockNo = result.rows[0]?.block_no;
   return blockNo === null || blockNo === undefined ? null : Number(blockNo);
+}
+
+/** Yaci publishes its component tables asynchronously. A header/output can
+ * precede the transaction row. Never advance past an incompletely indexed
+ * block, including one whose watched outputs have not appeared yet. These are
+ * discovery checks; proof serving still authenticates canonical raw evidence.
+ */
+export async function isBlockProjectionComplete(client: PoolClient, blockNo: number): Promise<boolean> {
+  const header = (await client.query<{ hash: string; no_of_txs: number }>(
+    'SELECT hash, no_of_txs FROM block WHERE number = $1', [blockNo],
+  )).rows[0];
+  if (!header || header.no_of_txs === null || !Number.isSafeInteger(Number(header.no_of_txs)) || Number(header.no_of_txs) < 0) return false;
+  const transactions = (await client.query<{ tx_hash: string; invalid: boolean | null; cbor_hex: string | null }>(`
+    SELECT tx.tx_hash, tx.invalid, encode(c.cbor_data, 'hex') AS cbor_hex
+    FROM transaction tx LEFT JOIN transaction_cbor c ON c.tx_hash = tx.tx_hash
+    WHERE tx.block = $1 AND tx.block_hash = $2
+  `, [blockNo, header.hash])).rows;
+  if (transactions.length !== Number(header.no_of_txs)) return false;
+  const outputs = new Set((await client.query<{ tx_hash: string; output_index: number }>(
+    'SELECT tx_hash, output_index FROM address_utxo WHERE block = $1', [blockNo],
+  )).rows.map((row) => `${row.tx_hash}:${row.output_index}`));
+  const inputs = new Set((await client.query<{ tx_hash: string; output_index: number; spent_tx_hash: string }>(`
+    SELECT tx_hash, output_index, spent_tx_hash FROM tx_input
+    WHERE spent_at_block = $1 AND spent_at_block_hash = $2
+  `, [blockNo, header.hash])).rows.map((row) => `${row.spent_tx_hash}:${row.tx_hash}:${row.output_index}`));
+  for (const transaction of transactions) {
+    if (typeof transaction.invalid !== 'boolean' || !transaction.cbor_hex) return false;
+    if (transaction.invalid) continue; // Invalid scripts do not spend normal state inputs.
+    const { txBodyCborHex } = decodeTransactionEvidence(transaction.cbor_hex);
+    const body = CML.TransactionBody.from_cbor_hex(txBodyCborHex);
+    if (CML.hash_transaction(body).to_hex() !== transaction.tx_hash) {
+      throw new Error(`Yaci transaction CBOR/hash mismatch at block ${blockNo}`);
+    }
+    for (let i = 0; i < body.outputs().len(); i++) {
+      if (!outputs.has(`${transaction.tx_hash}:${i}`)) return false;
+    }
+    for (let i = 0; i < body.inputs().len(); i++) {
+      const input = body.inputs().get(i);
+      if (!inputs.has(`${transaction.tx_hash}:${input.transaction_id().to_hex()}:${input.index()}`)) return false;
+    }
+  }
+  return true;
 }
 
 async function deriveHostStateEvidence(
@@ -697,7 +750,7 @@ async function getSyncState(client: PoolClient): Promise<{ lastBlock: number; la
     `
       SELECT last_block, last_block_hash
       FROM bridge_history_sync_state
-      WHERE cursor_name = 'default'
+      WHERE cursor_name = 'complete-block-v2'
       LIMIT 1
     `,
   );
@@ -715,7 +768,7 @@ async function updateSyncState(client: PoolClient, lastBlock: number, lastBlockH
     `
       UPDATE bridge_history_sync_state
       SET last_block = $1, last_block_hash = $2, updated_at = now()
-      WHERE cursor_name = 'default'
+      WHERE cursor_name = 'complete-block-v2'
     `,
     [lastBlock, lastBlockHash],
   );
@@ -738,10 +791,9 @@ async function getProjectedBlockHash(client: PoolClient, blockNo: number): Promi
   const result = await client.query<{ block_hash: string | null }>(
     `
       SELECT block_hash
-      FROM bridge_tx_history
+      FROM bridge_history_block_checkpoints
       WHERE block_no = $1
         AND block_hash IS NOT NULL
-      ORDER BY tx_index DESC
       LIMIT 1
     `,
     [blockNo],
@@ -754,9 +806,17 @@ async function deleteProjectionRowsAtOrAboveBlock(client: PoolClient, blockNo: n
   await client.query(`DELETE FROM bridge_tx_history WHERE block_no >= $1`, [blockNo]);
   await client.query(`DELETE FROM bridge_utxo_history WHERE block_no >= $1`, [blockNo]);
   await client.query(`DELETE FROM bridge_spo_event_history WHERE block_no >= $1`, [blockNo]);
+  await client.query(`DELETE FROM bridge_history_block_checkpoints WHERE block_no >= $1`, [blockNo]);
+  await client.query(`DELETE FROM bridge_pool_registration_cache WHERE source IN ('yaci_projection', 'yaci')`);
+  await client.query(`
+    INSERT INTO bridge_pool_registration_cache(pool_id, first_registration_slot, source)
+    SELECT pool_id, MIN(slot_no), 'yaci_projection' FROM bridge_spo_event_history
+    WHERE event_type = 'register' AND pool_id IS NOT NULL AND slot_no IS NOT NULL
+    GROUP BY pool_id ON CONFLICT (pool_id) DO NOTHING
+  `);
 }
 
-async function reconcileCursor(client: PoolClient) {
+export async function reconcileCursor(client: PoolClient) {
   let { lastBlock, lastBlockHash } = await getSyncState(client);
 
   while (lastBlock >= 0) {
@@ -770,7 +830,7 @@ async function reconcileCursor(client: PoolClient) {
 
     const canonicalHash = canonicalBlock.hash.toLowerCase();
     if (!lastBlockHash) {
-      lastBlockHash = (await getProjectedBlockHash(client, lastBlock)) ?? canonicalHash;
+      lastBlockHash = await getProjectedBlockHash(client, lastBlock);
       if (lastBlockHash === canonicalHash) {
         break;
       }
@@ -797,28 +857,40 @@ export async function processBlock(
   projectionFilter: BridgeProjectionFilter,
   blockNo: number,
 ): Promise<boolean> {
-  const poolRegistrations = await client.query<SpoEventRow>(
-    `
-      SELECT pr.tx_hash, pr.pool_id, b.slot AS slot_no
-      FROM pool_registration pr
-      JOIN block b ON b.number = pr.block
-      WHERE pr.block = $1
-      ORDER BY pr.tx_index ASC
-    `,
-    [blockNo],
-  );
-  for (const row of poolRegistrations.rows) {
+  if (!await isBlockProjectionComplete(client, blockNo)) return false;
+  // Certificate tables are asynchronous too. Derive these events from the
+  // already hash-checked bodies so a late certificate cannot be skipped.
+  const certificateTransactions = (await client.query<{ tx_hash: string; slot: string; cbor_hex: string }>(`
+    SELECT tx.tx_hash, tx.slot, encode(c.cbor_data, 'hex') AS cbor_hex
+    FROM transaction tx JOIN transaction_cbor c ON c.tx_hash = tx.tx_hash
+    JOIN block canonical ON canonical.number = tx.block AND canonical.hash = tx.block_hash
+    WHERE tx.block = $1 AND tx.invalid = false ORDER BY tx.tx_index
+  `, [blockNo])).rows;
+  const poolRegistrations: SpoEventRow[] = [], poolRetirements: SpoEventRow[] = [];
+  for (const transaction of certificateTransactions) {
+    const body = CML.TransactionBody.from_cbor_hex(decodeTransactionEvidence(transaction.cbor_hex).txBodyCborHex);
+    const certificates = body.certs();
+    for (let i = 0; certificates && i < certificates.len(); i++) {
+      const certificate = certificates.get(i);
+      const registration = certificate.as_pool_registration();
+      const retirement = certificate.as_pool_retirement();
+      const common = { tx_hash: transaction.tx_hash, cert_index: i, slot_no: transaction.slot };
+      if (registration) poolRegistrations.push({ ...common, pool_id: registration.pool_params().operator().to_hex() });
+      if (retirement) poolRetirements.push({ ...common, pool_id: retirement.pool().to_hex() });
+    }
+  }
+  for (const row of poolRegistrations) {
     const poolId = normalizePoolId(row.pool_id);
     await client.query(
       `
-        INSERT INTO bridge_spo_event_history(event_type, tx_hash, block_no, pool_id, slot_no)
-        VALUES ('register', $1, $2, $3, $4)
-        ON CONFLICT (event_type, tx_hash) DO UPDATE SET
+        INSERT INTO bridge_spo_event_history(event_type, tx_hash, block_no, pool_id, slot_no, cert_index)
+        VALUES ('register', $1, $2, $3, $4, $5)
+        ON CONFLICT (event_type, tx_hash, cert_index) DO UPDATE SET
           block_no = EXCLUDED.block_no,
           pool_id = EXCLUDED.pool_id,
           slot_no = EXCLUDED.slot_no
       `,
-      [row.tx_hash.toLowerCase(), blockNo, poolId, row.slot_no ?? null],
+      [row.tx_hash.toLowerCase(), blockNo, poolId, row.slot_no ?? null, row.cert_index],
     );
 
     if (poolId && row.slot_no !== null && row.slot_no !== undefined) {
@@ -834,33 +906,24 @@ export async function processBlock(
             source = EXCLUDED.source,
             source_tx_hash = EXCLUDED.source_tx_hash,
             updated_at = now()
+          WHERE bridge_pool_registration_cache.source IN ('yaci_projection', 'yaci')
         `,
         [poolId, row.slot_no, row.tx_hash.toLowerCase()],
       );
     }
   }
 
-  const poolRetirements = await client.query<SpoEventRow>(
-    `
-      SELECT pr.tx_hash, pr.pool_id, b.slot AS slot_no
-      FROM pool_retirement pr
-      JOIN block b ON b.number = pr.block
-      WHERE pr.block = $1
-      ORDER BY pr.tx_index ASC
-    `,
-    [blockNo],
-  );
-  for (const row of poolRetirements.rows) {
+  for (const row of poolRetirements) {
     await client.query(
       `
-        INSERT INTO bridge_spo_event_history(event_type, tx_hash, block_no, pool_id, slot_no)
-        VALUES ('unregister', $1, $2, $3, $4)
-        ON CONFLICT (event_type, tx_hash) DO UPDATE SET
+        INSERT INTO bridge_spo_event_history(event_type, tx_hash, block_no, pool_id, slot_no, cert_index)
+        VALUES ('unregister', $1, $2, $3, $4, $5)
+        ON CONFLICT (event_type, tx_hash, cert_index) DO UPDATE SET
           block_no = EXCLUDED.block_no,
           pool_id = EXCLUDED.pool_id,
           slot_no = EXCLUDED.slot_no
       `,
-      [row.tx_hash.toLowerCase(), blockNo, normalizePoolId(row.pool_id), row.slot_no ?? null],
+      [row.tx_hash.toLowerCase(), blockNo, normalizePoolId(row.pool_id), row.slot_no ?? null, row.cert_index],
     );
   }
 
@@ -996,31 +1059,37 @@ export async function processBlock(
   }
 
   const canonicalBlock = await getCanonicalBlock(client, blockNo);
+  if (!canonicalBlock) throw new Error('Canonical block disappeared during projection');
+  await client.query(`INSERT INTO bridge_history_block_checkpoints VALUES ($1, $2)
+    ON CONFLICT (block_no) DO UPDATE SET block_hash = EXCLUDED.block_hash`, [blockNo, canonicalBlock.hash]);
   await updateSyncState(client, blockNo, normalizeHex(canonicalBlock?.hash) ?? null);
   process.stdout.write(`bridge-history-sync indexed block ${blockNo}\n`);
   return true;
 }
 
-async function processNextBlock(): Promise<boolean> {
-  const projectionFilter = tryResolveBridgeProjectionFilter();
+export async function processNextBlock(
+  database: Pick<Pool, 'connect'> = historyPool,
+  projectionFilter = tryResolveBridgeProjectionFilter(),
+): Promise<boolean> {
   if (!projectionFilter) {
     return false;
   }
 
-  const client = await historyPool.connect();
+  const client = await database.connect();
   try {
-    await client.query('BEGIN');
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    await client.query('SELECT pg_advisory_xact_lock(462, 2)');
     const syncState = await reconcileCursor(client);
 
-    const nextBlock = await getNextRelevantBlock(client, syncState.lastBlock, projectionFilter);
+    const nextBlock = await getNextRelevantBlock(client, syncState.lastBlock);
     if (nextBlock === null) {
-      await client.query('ROLLBACK');
+      await client.query('COMMIT');
       return false;
     }
 
     const processed = await processBlock(client, projectionFilter, nextBlock);
     if (!processed) {
-      await client.query('ROLLBACK');
+      await client.query('COMMIT');
       return false;
     }
 

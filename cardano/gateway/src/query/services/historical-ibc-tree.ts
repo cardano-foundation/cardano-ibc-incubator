@@ -10,6 +10,7 @@ import {
 import type { ClientDatum } from '../../shared/types/client-datum';
 
 export type HistoricalTreeDeployment = {
+  migration?: { profile: string };
   hostStateNFT: { policyId: string; name: string };
   validators: {
     mintClientStt: { scriptHash: string };
@@ -34,7 +35,9 @@ type OutputRow = {
 
 type OutputFilter = { policy: string; address?: string; unit?: string; outRef?: IbcTreeHostStateRef; unspent: boolean };
 const PAGE_SIZE = 500;
-const fail = (detail: string): never => { throw new Error(`Historical IBC tree unavailable: ${detail}`); };
+const fail = (detail: string): never => {
+  throw new Error(`Historical IBC tree unavailable: ${detail}`);
+};
 const ref = (utxo: IbcTreeHostStateRef) => `${utxo.txHash}#${utxo.outputIndex}`;
 
 function natural(value: string | number, label: string): number {
@@ -47,16 +50,26 @@ function natural(value: string | number, label: string): number {
 }
 
 function output(row: OutputRow, filter: OutputFilter): IbcTreeUtxo {
-  if (!/^[0-9a-f]{64}$/.test(row.tx_hash) || !row.address ||
-    !row.inline_datum || !/^(?:[0-9a-f]{2})+$/.test(row.inline_datum)) {
+  if (
+    !/^[0-9a-f]{64}$/.test(row.tx_hash) ||
+    !row.address ||
+    !row.inline_datum ||
+    !/^(?:[0-9a-f]{2})+$/.test(row.inline_datum)
+  ) {
     return fail('missing or malformed historical output datum/reference');
   }
   natural(row.block, 'output block');
   natural(row.tx_index, 'transaction index');
   if (!Array.isArray(row.amounts)) return fail('missing historical output assets');
-  const tokens = row.amounts.filter(({ unit }) => filter.unit ? unit === filter.unit : unit?.startsWith(filter.policy));
-  if (tokens.length !== 1 || !/^[0-9a-f]{56,120}$/.test(tokens[0].unit) ||
-    tokens[0].unit.length % 2 !== 0 || String(tokens[0].quantity) !== '1') {
+  const tokens = row.amounts.filter(({ unit }) =>
+    filter.unit ? unit === filter.unit : unit?.startsWith(filter.policy),
+  );
+  if (
+    tokens.length !== 1 ||
+    !/^[0-9a-f]{56,120}$/.test(tokens[0].unit) ||
+    tokens[0].unit.length % 2 !== 0 ||
+    String(tokens[0].quantity) !== '1'
+  ) {
     return fail('ambiguous or non-unit state authentication token');
   }
   // The tree builder needs the state identity, not the output's funding assets.
@@ -81,14 +94,16 @@ export async function reconstructHistoricalIbcTree(
 ): Promise<IbcTreeSnapshot & { blockHash: string }> {
   if (height <= 0n || height > BigInt(Number.MAX_SAFE_INTEGER)) return fail('invalid requested block height');
   const blocks = await sql.query('SELECT hash FROM block WHERE number = $1', [height.toString()]);
-  if (blocks.length !== 1 || !/^[0-9a-f]{64}$/.test(blocks[0].hash)) return fail('requested canonical block is not indexed');
+  if (blocks.length !== 1 || !/^[0-9a-f]{64}$/.test(blocks[0].hash))
+    return fail('requested canonical block is not indexed');
   const blockHash = blocks[0].hash as string;
 
   async function* outputs(filter: OutputFilter): AsyncGenerator<IbcTreeUtxo> {
     if (!/^[0-9a-f]{56}$/.test(filter.policy)) return fail('invalid deployment policy');
     let cursor: Array<string | number> = [-1, -1, '', -1];
     for (;;) {
-      const rows: OutputRow[] = await sql.query(`
+      const rows: OutputRow[] = await sql.query(
+        `
         /* historical-ibc-tree:outputs */
         SELECT a.tx_hash, a.output_index, t.block, t.tx_index,
           COALESCE(NULLIF(a.owner_addr_full, ''), a.owner_addr) AS address,
@@ -115,8 +130,19 @@ export async function reconstructHistoricalIbcTree(
           AND (t.block, t.tx_index, a.tx_hash, a.output_index) > ($6, $7, $8, $9)
         ORDER BY t.block, t.tx_index, a.tx_hash, a.output_index
         LIMIT $10
-      `, [height.toString(), filter.policy, filter.address ?? null, filter.unit ?? null, filter.unspent,
-        ...cursor, PAGE_SIZE, filter.outRef?.txHash ?? null, filter.outRef?.outputIndex ?? null]);
+      `,
+        [
+          height.toString(),
+          filter.policy,
+          filter.address ?? null,
+          filter.unit ?? null,
+          filter.unspent,
+          ...cursor,
+          PAGE_SIZE,
+          filter.outRef?.txHash ?? null,
+          filter.outRef?.outputIndex ?? null,
+        ],
+      );
       if (rows.length > PAGE_SIZE) return fail('history page exceeded its limit');
       for (const row of rows) yield output(row, filter);
       if (rows.length < PAGE_SIZE) return;
@@ -139,7 +165,12 @@ export async function reconstructHistoricalIbcTree(
   const hostUnit = deployment.hostStateNFT.policyId + deployment.hostStateNFT.name;
   // Authenticate the requested HostState by its indexed output reference. Its
   // unique NFT and unspent-at-height check avoid scanning the whole chain.
-  const hosts = await collect({ policy: deployment.hostStateNFT.policyId, unit: hostUnit, outRef: expectedHostState, unspent: true });
+  const hosts = await collect({
+    policy: deployment.hostStateNFT.policyId,
+    unit: hostUnit,
+    outRef: expectedHostState,
+    unspent: true,
+  });
   if (hosts.length !== 1 || ref(hosts[0]) !== ref(expectedHostState)) {
     throw new StaleIbcTreeStateError('Historical HostState differs from canonical Yaci outputs at the requested block');
   }
@@ -147,7 +178,7 @@ export async function reconstructHistoricalIbcTree(
   const { validators } = deployment;
   const stateOutputs = (policy: string, address: string) => {
     if (!address) return fail('missing deployment state address');
-    return collect({ policy, address, unspent: true });
+    return collect({ policy, address: deployment.migration ? undefined : address, unspent: true });
   };
   const historyRecords: NonNullable<IbcTreeLucidService['consensusHistoryRecords']> = async (client) => {
     const current = await lucid.decodeDatum<ClientDatum>(client.datum!, 'client');
@@ -157,44 +188,68 @@ export async function reconstructHistoricalIbcTree(
     const key = (h: typeof latestHeight) => `${h.revisionNumber}-${h.revisionHeight}`;
     const records = new Map<string, Awaited<ReturnType<typeof historyRecords>>[number]>();
     let last: IbcTreeUtxo | undefined;
-    for await (const checkpoint of outputs({ policy: current.token.policyId, address: client.address, unit, unspent: false })) {
+    for await (const checkpoint of outputs({
+      policy: current.token.policyId,
+      address: deployment.migration ? undefined : client.address,
+      unit,
+      unspent: false,
+    })) {
       const datum = await lucid.decodeDatum<ClientDatum>(checkpoint.datum!, 'client');
       const state = datum.state;
-      if (datum.token.policyId + datum.token.name !== unit || state.consensusStates.size !== 1 ||
-        state.processedTimes.size !== 1 || state.processedHeights.size !== 1) return fail('invalid historical client checkpoint');
+      if (
+        datum.token.policyId + datum.token.name !== unit ||
+        state.consensusStates.size !== 1 ||
+        state.processedTimes.size !== 1 ||
+        state.processedHeights.size !== 1
+      )
+        return fail('invalid historical client checkpoint');
       const [[h, consensusState]] = [...state.consensusStates];
       const [[timeHeight, processedTime]] = [...state.processedTimes];
       const [[processingHeight, processedHeight]] = [...state.processedHeights];
-      if (key(h) !== key(timeHeight) || key(h) !== key(processingHeight) || key(h) !== key(state.clientState.latestHeight)) {
+      if (
+        key(h) !== key(timeHeight) ||
+        key(h) !== key(processingHeight) ||
+        key(h) !== key(state.clientState.latestHeight)
+      ) {
         return fail('misaligned historical checkpoint metadata');
       }
       const consensusValue = publicClientCommitmentValues(checkpoint.datum!).consensusValue;
       const existing = records.get(key(h));
-      if (existing && existing.consensusValue !== consensusValue) return fail('conflicting historical consensus states');
-      if (!existing) records.set(key(h), {
-        datum: { clientToken: datum.token, height: h, consensusState, processedTime, processedHeight },
-        consensusValue,
-        archived: key(h) !== key(latestHeight),
-      });
+      if (existing && existing.consensusValue !== consensusValue)
+        return fail('conflicting historical consensus states');
+      if (!existing)
+        records.set(key(h), {
+          datum: { clientToken: datum.token, height: h, consensusState, processedTime, processedHeight },
+          consensusValue,
+          archived: key(h) !== key(latestHeight),
+        });
       last = checkpoint;
     }
-    if (!last || ref(last) !== ref(client) || last.datum !== client.datum) return fail('checkpoint history did not reach the historical client output');
+    if (!last || ref(last) !== ref(client) || last.datum !== client.datum)
+      return fail('checkpoint history did not reach the historical client output');
     return [...records.values()];
   };
 
   // An isolated store reuses production leaf encoding/root checks. It cannot
   // publish a historical snapshot into the Gateway's live transaction store.
-  const store = new IbcTreeStateStore({
-    network, hostStateNFT: deployment.hostStateNFT, clientPolicyId: validators.mintClientStt.scriptHash,
-  }, {
-    queryAllClientUtxos: () => stateOutputs(validators.mintClientStt.scriptHash, validators.spendClient.address),
-    queryAllConnectionUtxos: () => stateOutputs(validators.mintConnectionStt.scriptHash, validators.spendConnection.address),
-    queryAllChannelUtxos: () => stateOutputs(validators.mintChannelStt.scriptHash, validators.spendChannel.address),
-  }, {
-    LucidImporter: lucid.LucidImporter,
-    decodeDatum: (datum, type) => lucid.decodeDatum(datum, type),
-    findUtxoAtHostStateNFT: async () => host,
-    consensusHistoryRecords: historyRecords,
-  });
-  return { ...await store.rebuildTreeFromChain(), blockHash };
+  const store = new IbcTreeStateStore(
+    {
+      network,
+      hostStateNFT: deployment.hostStateNFT,
+      clientPolicyId: validators.mintClientStt.scriptHash,
+    },
+    {
+      queryAllClientUtxos: () => stateOutputs(validators.mintClientStt.scriptHash, validators.spendClient.address),
+      queryAllConnectionUtxos: () =>
+        stateOutputs(validators.mintConnectionStt.scriptHash, validators.spendConnection.address),
+      queryAllChannelUtxos: () => stateOutputs(validators.mintChannelStt.scriptHash, validators.spendChannel.address),
+    },
+    {
+      LucidImporter: lucid.LucidImporter,
+      decodeDatum: (datum, type) => lucid.decodeDatum(datum, type),
+      findUtxoAtHostStateNFT: async () => host,
+      consensusHistoryRecords: historyRecords,
+    },
+  );
+  return { ...(await store.rebuildTreeFromChain()), blockHash };
 }

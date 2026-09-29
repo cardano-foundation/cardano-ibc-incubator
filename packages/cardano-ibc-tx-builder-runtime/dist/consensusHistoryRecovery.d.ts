@@ -4,6 +4,8 @@ export interface HistoryDeployment {
     readonly layout?: "production";
     readonly clientToken: ConsensusHistoryClientToken;
     readonly stateAddress: string;
+    /** Replay the immutable NFT across script addresses; the live anchor must still match stateAddress. */
+    readonly allowScriptMigration?: boolean;
     readonly bootstrap: {
         readonly txHash: string;
         readonly outputIndex: number;

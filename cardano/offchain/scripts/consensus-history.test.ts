@@ -28,6 +28,7 @@ import {
 } from "../src/consensus_history_recovery.ts";
 import { historyPacketFixture } from "./consensus-history-packet-fixture.ts";
 import { serialisePlutusData } from "../src/plutus_serialise.ts";
+import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 import {
   consensusHistoryKey,
   encodeConsensusHistoryRecord,
@@ -107,10 +108,11 @@ async function fixture(
     priceStep: parameters.priceStep,
     minFeeRefScriptCostPerByte: parameters.minFeeRefScriptCostPerByte,
   });
-  emulator.protocolParameters.costModels.PlutusV3 = Object.fromEntries(
-    parameters.plutusV3CostModel.map((cost, index) => [String(index), cost]),
-  );
-  const lucid = await Lucid(emulator, "Preprod");
+  emulator.protocolParameters.costModels.PlutusV3 =
+    parameters.plutusV3CostModel;
+  const lucid = await Lucid(emulator, "Preprod", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   if (captureSignerFixture) {
     lucid.selectWallet.fromPrivateKey(account.privateKey);
   } else lucid.selectWallet.fromSeed(account.seedPhrase);

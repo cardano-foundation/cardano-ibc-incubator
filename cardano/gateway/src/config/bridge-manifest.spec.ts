@@ -23,6 +23,7 @@ function buildValidator(name: string) {
 
 function buildHandlerJsonDeployment() {
   return {
+    deploymentMode: 'legacy',
     deployedAt: '2026-04-01T12:34:56.000Z',
     consensusHistoryFormat: CONSENSUS_HISTORY_FORMAT,
     ics20PacketCodec: ICS20_PACKET_CODEC.STRICT,
@@ -502,4 +503,48 @@ describe('bridge manifest normalization', () => {
     expect(fs.readFileSync).toHaveBeenCalledWith(DEFAULT_HANDLER_JSON_PATH, 'utf8');
     expect(loaded.deployment.hostStateNFT).toEqual(handlerJsonDeployment.hostStateNFT);
   });
+});
+
+
+describe('migration operational counterparty boundary', () => {
+  const matrix = ['handler', 'manifest'].flatMap(source => [false, true].flatMap(migration =>
+    ['mithril', 'stake-weighted-stability'].flatMap(mode => [false, true].map(readOnly => [source, migration, mode, readOnly] as const))));
+  it.each(matrix)('%s migration=%s mode=%s historical-only=%s', (source, migration, mode, readOnly) => {
+    const handler = { ...buildStagedHandlerJsonDeployment(), deploymentMode: migration ? 'upgradeable' : 'legacy', ...(migration ? { migration: {
+      profile: 'cardano-ibc-compatible-v3', registryUnit: 'ab'.repeat(28) + '01', registryAddress: 'registry-address',
+      generation: '1', compatibility: 'cd'.repeat(32), originalAddresses: ['host', 'client', 'connection', 'channel', 'transfer'],
+    } } : {}) };
+    const manifest = normalizeHandlerJsonDeploymentConfig(handler, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' }).bridgeManifest;
+    const fs = { readFileSync: jest.fn(() => JSON.stringify(source === 'handler' ? handler : manifest)) };
+    const env = { [source === 'handler' ? 'HANDLER_JSON_PATH' : 'BRIDGE_MANIFEST_PATH']: 'fixture.json',
+      CARDANO_LIGHT_CLIENT_MODE: mode, GATEWAY_HISTORICAL_READ_ONLY: String(readOnly) };
+    if (migration && mode === 'mithril') expect(() => loadBridgeConfigFromEnv(env, fs)).toThrow('historical Mithril certification');
+    else expect(loadBridgeConfigFromEnv(env, fs).deployment.migration?.profile).toBe(migration ? 'cardano-ibc-compatible-v3' : undefined);
+  });
+});
+
+
+describe('deployment recovery capability selection', () => {
+  it('rejects an upgradeable label with missing recovery configuration', () => {
+    expect(() => normalizeHandlerJsonDeploymentConfig({...buildHandlerJsonDeployment(), deploymentMode: 'upgradeable'}, {chain_id:'devnet', network_magic:42, network:'Custom'})).toThrow('recovery configuration disagree');
+  });
+  it('requires explicit legacy selection for old unlabelled manifests at startup', () => {
+    const handler = buildHandlerJsonDeployment();
+    const {deploymentMode: _mode, ...old} = handler;
+    const fs = {readFileSync: () => JSON.stringify(old)};
+    expect(() => loadBridgeConfigFromEnv({}, fs)).toThrow('recovery configuration disagree');
+    expect(loadBridgeConfigFromEnv({IBC_DEPLOYMENT_MODE:'legacy'}, fs).deployment.migration).toBeUndefined();
+  });
+});
+
+
+it('publishes explicit legacy selection through Gateway into the actual SDK normalizer', async () => {
+  const {normalizeBridgeManifest} = await import('@cardano-ibc/tx-builder-runtime');
+  const {deploymentMode: _mode, ...old} = buildHandlerJsonDeployment();
+  const loaded = loadBridgeConfigFromEnv({IBC_DEPLOYMENT_MODE:'legacy'}, {readFileSync: () => JSON.stringify(old)});
+  const wire = JSON.parse(JSON.stringify(loaded.bridgeManifest));
+  expect(wire.deploymentMode).toBe('legacy');
+  expect(normalizeBridgeManifest(wire).deployment.deploymentMode).toBe('legacy');
+  expect(() => normalizeBridgeManifest({...wire, deploymentMode:undefined})).toThrow('recovery configuration disagree');
+  expect(() => loadBridgeConfigFromEnv({IBC_DEPLOYMENT_MODE:'upgradeable'}, {readFileSync: () => JSON.stringify(old)})).toThrow('recovery configuration disagree');
 });

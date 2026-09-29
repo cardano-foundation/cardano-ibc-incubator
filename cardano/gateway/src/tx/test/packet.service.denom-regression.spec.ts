@@ -649,13 +649,15 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
   });
 
-  it.each<[string, (packet: Ics20ClassicPacketData) => string]>([
+  it.each<[string, (packet: Ics20ClassicPacketData) => string, boolean]>([
     [
       'ibc-go v8',
       (packet) => stringifyIcs20PacketData({ ...packet, memo: '<memo>' }).replace('<memo>', '\\u003cmemo\\u003e'),
+      false,
     ],
-    ['ibc-go v10', (packet) => JSON.stringify(packet)],
-  ])('maps recv %s packet bytes through voucher unescrow', async (_profile, encodePacket) => {
+    ['ibc-go v10', (packet) => JSON.stringify(packet), false],
+    ['first-seen foreign voucher', (packet) => JSON.stringify(packet), true],
+  ])('builds recv %s using the submitted transaction budget', async (_profile, encodePacket, firstSeen) => {
     const loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -725,14 +727,21 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       encode: jest.fn().mockResolvedValue('encoded'),
       credentialToAddress: jest.fn().mockReturnValue('addr_test1receiverresolved'),
       createUnsignedRecvPacketUnescrowTx: jest.fn().mockReturnValue({ tag: 'unsigned-recv-unescrow' }),
-      createUnsignedRecvPacketMintTx: jest.fn().mockReturnValue({ tag: 'unsigned-recv-mint' }),
+      createUnsignedRecvPacketMintTx: jest.fn().mockReturnValue({ tag: 'atomic-recv-mint' }),
+      createUnsignedTraceRegistryUpdateTx: jest.fn().mockResolvedValue({ tag: 'registry-prelude' }),
       createUnsignedRecvPacketTx: jest.fn().mockReturnValue({ tag: 'unsigned-recv-generic' }),
       LucidImporter: {},
     };
 
     const denomTraceServiceMock = {
       findByIbcDenomHash: jest.fn(),
-      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(firstSeen
+        ? { kind: 'append', traceRegistryShardUtxo: { txHash: 'shard', outputIndex: 0 } }
+        : existingTraceRegistryProof),
+      shouldRolloverForUnsignedTx: jest.fn(async (candidate) => {
+        expect(candidate).toEqual({ tag: 'atomic-recv-mint' });
+        return false;
+      }),
     };
 
     const service = new PacketService(
@@ -844,13 +853,13 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     });
 
     const voucherDenomWithHexLovelaceBase = `transfer/channel-44/${convertString2Hex('lovelace')}`;
-    await service.buildUnsignedRecvPacketTx(
+    const result = await service.buildUnsignedRecvPacketTx(
       {
         channelId: 'channel-7',
         packetSequence,
         packetData: convertString2Hex(
           encodePacket({
-            denom: voucherDenomWithHexLovelaceBase,
+            denom: firstSeen ? 'stake' : voucherDenomWithHexLovelaceBase,
             amount: '10',
             sender: 'sender-credential',
             receiver: 'receiver-credential',
@@ -866,6 +875,19 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       },
       'addr_test1operator',
     );
+
+    if (firstSeen) {
+      expect(result.unsignedTx).toEqual({ tag: 'atomic-recv-mint' });
+      expect(result).not.toHaveProperty('traceRegistryPrelude');
+      expect(result.pendingTreeUpdate).toBeDefined();
+      expect(denomTraceServiceMock.shouldRolloverForUnsignedTx).toHaveBeenCalledTimes(1);
+      expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledTimes(1);
+      expect(lucidServiceMock.createUnsignedTraceRegistryUpdateTx).not.toHaveBeenCalled();
+      expect(lucidServiceMock.createUnsignedRecvPacketMintTx).toHaveBeenCalledTimes(2);
+      expect(lucidServiceMock.createUnsignedRecvPacketMintTx).toHaveBeenLastCalledWith(expect.objectContaining({ traceRegistryUpdate: expect.objectContaining({ kind: 'append' }) }));
+      expect(lucidServiceMock.createUnsignedRecvPacketUnescrowTx).not.toHaveBeenCalled();
+      return;
+    }
 
     expect(lucidServiceMock.createUnsignedRecvPacketUnescrowTx).toHaveBeenCalledWith(
       expect.objectContaining({

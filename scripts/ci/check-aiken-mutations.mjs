@@ -37,7 +37,7 @@ const mutations = [
     kills: ['recv_packet_rejects_existing_receipt'],
   },
   {
-    name: 'native-send-amount', file: 'validators/spending_transfer_module.ak',
+    name: 'native-send-amount', file: 'lib/ibc/implementation/spending_transfer_module.ak',
     before: '        valid_transfer_amount\n', after: '        valid_transfer_amount || True\n',
     tests: ['prop_funds_native_send_amount', 'prop_funds_native_send_short', 'prop_funds_native_send_excess'],
     kills: ['prop_funds_native_send_short', 'prop_funds_native_send_excess'],
@@ -49,7 +49,7 @@ const mutations = [
     kills: ['prop_funds_asset_refund_short', 'prop_funds_asset_refund_excess'],
   },
   {
-    name: 'send-commitment-binding', file: 'validators/spending_transfer_module.ak',
+    name: 'send-commitment-binding', file: 'lib/ibc/implementation/spending_transfer_module.ak',
     before: '              commitment == packet_mod.commit_packet(packet),',
     after: '              commitment == packet_mod.commit_packet(packet) || True,',
     tests: ['regression_transfer_module_native_send_escrow_increases_exactly', 'transfer_send_rejects_mismatched_packet_commitment'],

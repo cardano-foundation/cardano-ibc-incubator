@@ -230,7 +230,7 @@ export async function runLiveHistoryTest(args: string[]): Promise<void> {
     } };
     assert(verifyIbcTreeWitness(consensusHistoryKey(record.clientToken, proofHeight),
       encodeConsensusHistoryRecord(record), witness.siblings, datum.history_root), 'Recovered private witness root mismatch');
-    const host = await lucid.findUtxoAtHostStateNFT();
+    const host = await lucid.findUtxoAtHostStateNFT(0n);
     assert(host?.datum, 'Live HostState has no inline datum');
     const hostDatum = await lucid.decodeDatum<HostStateDatum>(host.datum, 'host_state');
     assert(store.isTreeAligned(hostDatum.state.ibc_state_root, host), 'Cold public tree is not aligned with live HostState');

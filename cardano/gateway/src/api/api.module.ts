@@ -1,3 +1,4 @@
+import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import { Logger, Module } from '@nestjs/common';
 import { ApiController } from './api.controller';
 import { QueryModule } from '~@/query/query.module';
@@ -15,6 +16,7 @@ import { PlannerClientService } from './planner-client.service';
   controllers: [ApiController],
   providers: [
     Logger,
+    HistoricalReadOnlyGuard,
     CheqdIcqService,
     PlannerClientService,
     LocalOsmosisSwapPlannerService,

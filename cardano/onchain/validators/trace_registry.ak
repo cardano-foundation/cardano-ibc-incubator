@@ -160,9 +160,7 @@ fn validate_insert_trace(
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect
-    bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
-  expect full_denom_is_within_limits(full_denom)
+  // entry_is_admissible below enforces length, denom limits and exact hash.
 
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
   expect entry_is_admissible(expected_entry)
@@ -171,14 +169,12 @@ fn validate_insert_trace(
   // Plain appends do not spend the directory. Instead they must carry the
   // current directory as a reference input so the validator can authenticate
   // that the spent shard token is still the bucket's active writable shard.
-  let directory_input =
-    find_unique_directory_input(
+  let directory_datum =
+    find_unique_directory_datum(
       reference_inputs,
       spent_output.address,
       directory_auth_token,
     )
-  expect Directory(directory_datum): TraceRegistryDatum =
-    validator_utils.get_inline_datum(directory_input.output)
   expect directory_is_within_capacity(directory_datum)
   expect Some(directory_bucket) =
     find_bucket(directory_datum.buckets, old_datum.bucket_index)
@@ -203,13 +199,7 @@ fn validate_insert_trace(
   let bucket_index_matches_hash =
     old_datum.bucket_index == bucket_index_for_hash(voucher_hash)
   let active_shard_matches_directory =
-    bucket_has_active_shard(
-      directory_datum,
-      old_datum.bucket_index,
-      shard_token.name,
-    )
-  let voucher_hash_matches =
-    voucher_asset_name.voucher_denom_hash(full_denom) == voucher_hash
+    directory_bucket.active_shard_name == shard_token.name
   let matching_voucher_mint =
     matching_voucher_mint_present(
       mint,
@@ -244,7 +234,6 @@ fn validate_insert_trace(
     // may still exist and be readable, but it can no longer accept inserts once
     // the directory points the bucket at a newer active shard.
     active_shard_matches_directory,
-    voucher_hash_matches,
     matching_voucher_mint,
     voucher_hash_is_new,
     archived_shards_are_clean,
@@ -268,9 +257,7 @@ fn validate_rollover_insert_trace(
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect
-    bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
-  expect full_denom_is_within_limits(full_denom)
+  // entry_is_admissible below enforces length, denom limits and exact hash.
   expect bytearray.length(new_active_shard_name) > 0
 
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
@@ -280,14 +267,12 @@ fn validate_rollover_insert_trace(
   // Rollovers do spend the directory, so the old directory state is read from
   // normal inputs rather than reference inputs. This lets the shard validator
   // prove the consumed shard was the bucket's old active shard at rollover time.
-  let directory_input =
-    find_unique_directory_input(
+  let old_directory =
+    find_unique_directory_datum(
       inputs,
       spent_output.address,
       directory_auth_token,
     )
-  expect Directory(old_directory): TraceRegistryDatum =
-    validator_utils.get_inline_datum(directory_input.output)
   expect directory_is_within_capacity(old_directory)
   expect Some(directory_bucket) =
     find_bucket(old_directory.buckets, old_datum.bucket_index)
@@ -356,11 +341,7 @@ fn validate_rollover_insert_trace(
     // Without this check, a rollover could be forged from an arbitrary archived
     // shard by manufacturing matching outputs. The spent shard must be the one
     // the directory currently recognizes as writable for this bucket.
-    bucket_has_active_shard(
-      old_directory,
-      old_datum.bucket_index,
-      current_active_token.name,
-    ),
+    directory_bucket.active_shard_name == current_active_token.name,
     voucher_asset_name.voucher_denom_hash(full_denom) == voucher_hash,
     matching_voucher_mint_present(
       mint,
@@ -606,35 +587,34 @@ fn output_has_exact_directory_token(
   )
 }
 
-fn find_unique_directory_input(
+fn find_unique_directory_datum(
   inputs: List<Input>,
   expected_address,
   directory_auth_token: AuthToken,
-) -> Input {
-  // We require exactly one authenticated directory witness. This prevents
-  // ambiguous transactions from presenting multiple directory candidates and
-  // lets shard writes bind themselves to one authoritative bucket view using
-  // the exact directory token chosen at deployment time.
-  expect [input] =
-    list.filter(
+) -> TraceRegistryDirectoryDatum {
+  // Filter and decode together: the exact authenticated witness, shape and
+  // uniqueness checks are unchanged, but its directory is decoded only once.
+  expect [directory] =
+    list.filter_map(
       inputs,
       fn(input) {
-        // Reference-script UTxOs also appear in `reference_inputs`, but they do
-        // not carry a trace-registry directory datum. Branch explicitly before
-        // decoding so non-directory helper UTxOs cannot crash this filter.
         if output_has_exact_directory_token(
           input.output,
           expected_address,
           directory_auth_token,
         ) {
-          has_directory_datum(input.output)
+          expect datum: TraceRegistryDatum =
+            validator_utils.get_inline_datum(input.output)
+          when datum is {
+            Directory(directory) -> Some(directory)
+            _ -> None
+          }
         } else {
-          False
+          None
         }
       },
     )
-
-  input
+  directory
 }
 
 fn find_unique_output(
@@ -645,35 +625,31 @@ fn find_unique_output(
   output
 }
 
-fn has_shard_datum(output: Output) -> Bool {
-  expect datum: TraceRegistryDatum = validator_utils.get_inline_datum(output)
-
-  when datum is {
-    Shard(_) -> True
-    _ -> False
-  }
-}
-
-fn find_unique_shard_input(
+fn find_unique_shard_datum(
   inputs: List<Input>,
   expected_address,
   shard_token: AuthToken,
-) -> Input {
-  expect [input] =
-    list.filter(
+) -> TraceRegistryShardDatum {
+  expect [shard] =
+    list.filter_map(
       inputs,
       fn(input) {
-        if input.output.address != expected_address {
-          False
-        } else if !output_has_only_token(input.output, shard_token) {
-          False
+        if input.output.address != expected_address || !output_has_only_token(
+          input.output,
+          shard_token,
+        ) {
+          None
         } else {
-          has_shard_datum(input.output)
+          expect datum: TraceRegistryDatum =
+            validator_utils.get_inline_datum(input.output)
+          when datum is {
+            Shard(shard) -> Some(shard)
+            _ -> None
+          }
         }
       },
     )
-
-  input
+  shard
 }
 
 fn bucket_shards_do_not_contain_hash(
@@ -688,14 +664,12 @@ fn bucket_shards_do_not_contain_hash(
   list.all(
     shard_names,
     fn(shard_name) {
-      let shard_input =
-        find_unique_shard_input(
+      let shard =
+        find_unique_shard_datum(
           reference_inputs,
           expected_address,
           AuthToken { policy_id: shard_nft_policy_id, name: shard_name },
         )
-      expect Shard(shard): TraceRegistryDatum =
-        validator_utils.get_inline_datum(shard_input.output)
 
       and {
         shard.bucket_index == bucket_index_for_hash(voucher_hash),
@@ -714,17 +688,6 @@ fn find_bucket(
   bucket_index: Int,
 ) -> Option<TraceRegistryDirectoryBucket> {
   list.find(buckets, fn(bucket) { bucket.bucket_index == bucket_index })
-}
-
-fn bucket_has_active_shard(
-  directory: TraceRegistryDirectoryDatum,
-  bucket_index: Int,
-  shard_name: ByteArray,
-) -> Bool {
-  when find_bucket(directory.buckets, bucket_index) is {
-    Some(bucket) -> bucket.active_shard_name == shard_name
-    None -> False
-  }
 }
 
 fn bucket_indices_are_unique(

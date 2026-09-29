@@ -5,6 +5,7 @@ import {
   channelFixture,
   defaultChannelParameters,
 } from "./testing/channel-fixture.ts";
+import { isScriptEvaluationFailure } from "./scalus-evaluator.ts";
 
 const encode = (data: Data) => Data.to(data);
 
@@ -72,14 +73,16 @@ for (
     const input = seed(validatorToAddress("Custom", operation.script), {
       lovelace: 10_000_000n,
     }, Data.void());
-    await assertRejects(
+    const rejection = await assertRejects(
       () =>
         lucid.newTx().readFrom([reference(operation.script)])
           .collectFrom([input], encode(channelToken))
           .pay.ToAddress(account.address, { lovelace: 5_000_000n })
           .complete({ localUPLCEval: true }),
-      Error,
-      "failed script execution Spend[",
+    );
+    assert(
+      isScriptEvaluationFailure(rejection),
+      "expected a recognized script-evaluation rejection",
     );
   });
 }

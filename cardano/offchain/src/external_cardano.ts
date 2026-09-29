@@ -1,4 +1,5 @@
 import WebSocket, { type RawData } from "ws";
+import type { ProtocolParameters } from "@lucid-evolution/lucid";
 
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 
@@ -60,13 +61,8 @@ function parseRatio(value: string): number {
 
 function toCostModelEntries(
   values: unknown[] | undefined,
-): Record<string, number> {
-  return Object.fromEntries(
-    (values ?? []).map((value, index) => [
-      index.toString(),
-      toSafeCostModelInteger(value),
-    ]),
-  );
+): number[] {
+  return (values ?? []).map(toSafeCostModelInteger);
 }
 
 export function resolveOgmiosHttpUrl(ogmiosUrl: string): string {
@@ -169,29 +165,23 @@ function resolveOgmiosWsVariants(ogmiosUrl: string): Array<{
   return variants;
 }
 
-export function sanitizeProtocolParameters(protocolParameters: any): any {
-  if (!protocolParameters?.costModels) {
-    return protocolParameters;
-  }
-
+export function sanitizeProtocolParameters(
+  protocolParameters: ProtocolParameters,
+): ProtocolParameters {
   let sanitizedEntries = 0;
-  const sanitizedCostModels: Record<string, Record<string, number>> = {};
-
-  for (
-    const [version, model] of Object.entries(
-      protocolParameters.costModels as Record<string, Record<string, unknown>>,
-    )
-  ) {
-    const sanitizedModel: Record<string, number> = {};
-    for (const [index, value] of Object.entries(model ?? {})) {
+  const sanitizeModel = (model: number[]): number[] =>
+    model.map((value) => {
       const sanitized = toSafeCostModelInteger(value);
       if (sanitized !== value) {
         sanitizedEntries += 1;
       }
-      sanitizedModel[index] = sanitized;
-    }
-    sanitizedCostModels[version] = sanitizedModel;
-  }
+      return sanitized;
+    });
+  const sanitizedCostModels: ProtocolParameters["costModels"] = {
+    PlutusV1: sanitizeModel(protocolParameters.costModels.PlutusV1),
+    PlutusV2: sanitizeModel(protocolParameters.costModels.PlutusV2),
+    PlutusV3: sanitizeModel(protocolParameters.costModels.PlutusV3),
+  };
 
   if (sanitizedEntries > 0) {
     console.warn(
@@ -205,7 +195,9 @@ export function sanitizeProtocolParameters(protocolParameters: any): any {
   };
 }
 
-export async function queryProtocolParametersCompat(ogmiosUrl: string) {
+export async function queryProtocolParametersCompat(
+  ogmiosUrl: string,
+): Promise<ProtocolParameters> {
   const { result } = await queryOgmiosJsonRpc(
     ogmiosUrl,
     "queryLedgerState/protocolParameters",

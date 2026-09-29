@@ -107,6 +107,8 @@ def main():
                 env[key] = value.strip().strip('"')
         for key in ["KUPO_API_KEY", "OGMIOS_API_KEY"]:
             env.pop(key, None)
+        env["IBC_DEPLOYMENT_MODE"] = "legacy"
+        env.pop("MIGRATION_GOVERNANCE_FILE", None)
         inventory_path = runtime_root / "deployment-plan.json"
         cost_path = runtime_root / "deployment-cost-report.json"
         env.update({"KUPO_URL": kupo, "OGMIOS_URL": ogmios, "CARDANO_NETWORK_MAGIC": "42", "DEPLOYMENT_PLAN_OUTPUT": str(inventory_path), "DEPLOYMENT_COST_REPORT_PATH": str(cost_path)})
