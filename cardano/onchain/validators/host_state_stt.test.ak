@@ -5621,6 +5621,63 @@ fn containment_restricted(
   )
 }
 
+fn registry_bound_heartbeat(
+  registry: Registry,
+  generation: Int,
+  own_ref: OutputReference,
+) -> Bool {
+  let Pair(redeemer, tx) = containment_host_case(6)
+  let reference =
+    Input {
+      output_reference: test_object_ref(462),
+      output: Output {
+        address: Address(Script(bytearray.from_int_big_endian(465, 28)), None),
+        value: from_asset(registry.token.policy_id, registry.token.name, 1),
+        datum: InlineDatum(registry),
+        reference_script: None,
+      },
+    }
+  let raw: Data = redeemer
+  migration_host.host_state.spend(
+    registry.token.policy_id,
+    generation,
+    None,
+    raw,
+    own_ref,
+    Transaction {
+      ..tx,
+      reference_inputs: [reference],
+      validity_range: interval.between(1_000, 2_000),
+    },
+  )
+}
+
+test registry_bound_heartbeat_accepts_current_host() {
+  registry_bound_heartbeat(containment_registry(0), 1, test_host_ref())
+}
+
+test registry_bound_heartbeat_rejects_another_role_address() fail {
+  let registry = containment_registry(0)
+  expect [host, client, ..rest] = registry.current.addresses
+  let registry =
+    Registry {
+      ..registry,
+      current: Implementation {
+        ..registry.current,
+        addresses: [client, host, ..rest],
+      },
+    }
+  registry_bound_heartbeat(registry, 1, test_host_ref())
+}
+
+test registry_bound_heartbeat_rejects_missing_own_input() fail {
+  registry_bound_heartbeat(containment_registry(0), 1, test_object_ref(999))
+}
+
+test registry_bound_heartbeat_rejects_wrong_generation() fail {
+  registry_bound_heartbeat(containment_registry(0), 2, test_host_ref())
+}
+
 test containment_current_ready_permits_send() {
   containment_execute(0, 0, False)
 }

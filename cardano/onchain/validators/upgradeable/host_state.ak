@@ -9,7 +9,6 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
 }
 use ibc/implementation/host_state_stt
 use ibc/migration/auth as migration
-use ibc/migration/types.{host_role}
 use ibc/utils/validator_utils
 
 validator host_state(registry_policy: ByteArray, generation: Int) {
@@ -22,14 +21,8 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
     if migration.is_migration(raw) {
       migration.migration_witness(transaction, registry_policy)
     } else {
-      let registry =
-        migration.active_spend(
-          transaction,
-          registry_policy,
-          generation,
-          host_role,
-          own_ref,
-        )
+      let registry = migration.active_registry(transaction, registry_policy)
+      expect registry.current.generation == generation
       expect
         !registry.preparing || assets.tokens(
           transaction.mint,
@@ -47,10 +40,11 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
             )
           _ -> migration.permitted(registry.restrictions, 1)
         }
-      // Decode this common prefix once instead of three indexed traversals.
+      // Decode the role addresses once for authentication and state transitions.
       // Every role address must exist; each needed credential is still decoded.
       expect [
-        _, client_address, connection_address, channel_address, transfer_address,
+        host_address, client_address, connection_address, channel_address,
+        transfer_address,
       ] = registry.current.addresses
       // Keep transaction decoding in the entry point to fit reference publication.
       let nft_policy = registry.host_policy
@@ -71,6 +65,14 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
         extra_signatories,
         ..
       } = transaction
+      // Reuse the decoded HostState role address instead of looking it up again.
+      let own_input =
+        list.expect_find(
+          inputs,
+          fn(input) { input.output_reference == own_ref },
+        )
+      let own_address: Data = own_input.output.address
+      expect own_address == host_address
       // 2. Find input HostState UTXO
       let host_input = host_state_stt.find_host_state_input(inputs, nft_policy)
       let old_datum = host_state_stt.decode_host_state_datum(host_input.output)
