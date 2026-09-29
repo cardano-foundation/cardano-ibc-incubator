@@ -436,38 +436,22 @@ mod tests {
                     .as_nanos(),
                 NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
             ));
-            super::super::write_owner_only_file(
-                &directory.join("source.toml"),
-                TEMPLATE.as_bytes(),
-            )
-            .unwrap();
-            let script = format!(
-                r#"#!/usr/bin/env python3
-import pathlib, sys, time
-assert sys.argv[1] == '--config'
-config = pathlib.Path(sys.argv[2]).read_text()
-if sys.argv[3:] == ['config', 'validate']:
-    assert 'refresh = true' in config
-    sys.exit(0)
-assert sys.argv[3:] == ['--json', 'start', '--full-scan']
-assert 'refresh = false' in config
-if {fail_start}:
-    print('fixture startup failure', flush=True)
-    sys.exit(4)
-print('spawning Wallet worker: wallet::cardano-devnet', flush=True)
-while True:
-    time.sleep(1)
-"#,
-                fail_start = if fail_start { "True" } else { "False" }
-            );
-            let binary = directory.join("hermes");
-            super::super::write_owner_only_file(&binary, script.as_bytes()).unwrap();
-            fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
+            let source = if fail_start {
+                format!("{TEMPLATE}\n# heartbeat_test_fail_start\n")
+            } else {
+                TEMPLATE.to_owned()
+            };
+            super::super::write_owner_only_file(&directory.join("source.toml"), source.as_bytes())
+                .unwrap();
             Self(directory)
         }
 
         fn spawn(&self) -> HeartbeatProcess {
-            HeartbeatProcess::spawn(&self.0.join("hermes"), &self.0.join("source.toml")).unwrap()
+            // Execute a checked-in fixture so parallel subprocesses cannot inherit
+            // a writer for a newly created executable and cause Linux ETXTBSY.
+            let binary =
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/heartbeat-hermes.py");
+            HeartbeatProcess::spawn(&binary, &self.0.join("source.toml")).unwrap()
         }
     }
 
