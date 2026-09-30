@@ -130,6 +130,20 @@ pub fn transfer_is_drained(
   }
 }
 
+/// Packet-lane obligations can only be discharged before channel retirement.
+/// Voucher lookup state must outlive every channel that can still return it.
+pub fn voucher_dependencies_drained(
+  transaction: Transaction,
+  host_policy: PolicyId,
+) -> Bool {
+  let host = shutdown_host(transaction, host_policy)
+  expect datum: HostStateDatum = validator_utils.get_inline_datum(host.output)
+  datum.control.live_channels == 0 && transfer_is_drained(
+    transaction,
+    host_policy,
+  )
+}
+
 // Cleanup transactions consume one script address at a time. Sum its inputs
 // once so a single payment cannot satisfy several independent refunds.
 pub fn reclaim(

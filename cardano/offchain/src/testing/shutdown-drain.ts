@@ -26,6 +26,7 @@ import {
   getAddressDetails,
   toHex,
   type UTxO,
+  walletFromSeed,
 } from "@lucid-evolution/lucid";
 import {
   HostStateDatum,
@@ -64,7 +65,7 @@ const packetCommitment = async (packet: Constr<Data>) => {
       await sha256(packet.fields[5] as string),
   );
 };
-export type DrainMode = "timeout" | "error-ack" | "return";
+export type DrainMode = "timeout" | "error-ack" | "return" | "voucher";
 export interface DrainCase {
   mode: DrainMode;
   amount: bigint;
@@ -90,7 +91,15 @@ export async function checkShutdownDrain(
   const f = await deploymentScenario();
   const { lucid, emulator, deployment } = f;
   const v = deployment.validators;
-  const recipientKey = getAddressDetails(f.address).paymentCredential!.hash;
+  const voucherUserSeed =
+    "letter advice cage absurd amount doctor acoustic avoid letter advice cage above";
+  const voucherUserAddress = walletFromSeed(voucherUserSeed, {
+    network: "Custom",
+    addressType: "Enterprise",
+  }).address;
+  const recipientKey =
+    getAddressDetails(mode === "voucher" ? voucherUserAddress : f.address)
+      .paymentCredential!.hash;
   const recipient = credentialToAddress("Custom", {
     type: "Key",
     hash: recipientKey,
@@ -121,12 +130,18 @@ export async function checkShutdownDrain(
       String(token.fields[0]) + String(token.fields[1]);
     const payloadFields = {
       amount: amount.toString(),
-      denom: mode === "return"
+      denom: mode === "voucher"
+        ? "uatom"
+        : mode === "return"
         ? `transfer/channel-7/${fromText("lovelace")}`
         : fromText("lovelace"),
       memo: "shutdown drain",
-      receiver: mode === "return" ? recipientKey : "cosmos1receiver",
-      sender: mode === "return" ? "cosmos1sender" : recipientKey,
+      receiver: (mode === "return" || mode === "voucher")
+        ? recipientKey
+        : "cosmos1receiver",
+      sender: (mode === "return" || mode === "voucher")
+        ? "cosmos1sender"
+        : recipientKey,
     };
     const payload = fromText(JSON.stringify(payloadFields));
     const timeout =
@@ -136,9 +151,13 @@ export async function checkShutdownDrain(
     const packet = record(
       1n,
       port,
-      fromText(mode === "return" ? "channel-7" : "channel-0"),
+      fromText(
+        (mode === "return" || mode === "voucher") ? "channel-7" : "channel-0",
+      ),
       port,
-      fromText(mode === "return" ? "channel-0" : "channel-7"),
+      fromText(
+        (mode === "return" || mode === "voucher") ? "channel-0" : "channel-7",
+      ),
       payload,
       timeoutHeight,
       timeout,
@@ -233,7 +252,8 @@ export async function checkShutdownDrain(
     const funding = (await emulator.getUtxos(f.address)).sort((a, b) =>
       a.assets.lovelace > b.assets.lovelace ? -1 : 1
     )[0];
-    const snapshotAda = 21_000_000n + 2n * amount;
+    const snapshotAda = (mode === "voucher" ? 41_000_000n : 21_000_000n) +
+      2n * amount;
     assert(funding.assets.lovelace > snapshotAda + 2_000_000n);
     funding.assets.lovelace -= snapshotAda;
     const clientUtxo = snapshot(v.spendClient.address, {
@@ -311,6 +331,25 @@ export async function checkShutdownDrain(
       "initialize packet lanes",
     );
     laneDeployment.scripts.push(configuration, await f.host());
+    if (mode === "voucher") {
+      const { checkVoucherDrain } = await import("./shutdown-voucher-drain.ts");
+      snapshot(
+        voucherUserAddress,
+        { lovelace: 23_000_000n + 2n * amount },
+        Data.void(),
+      );
+      await checkVoucherDrain(
+        f,
+        laneDeployment,
+        snapshot,
+        packet,
+        proof.proof,
+        amount,
+        voucherUserSeed,
+        voucherUserAddress,
+      );
+      return;
+    }
     // Complete the single assumed pre-shutdown history. Principal and reserves
     // are deducted from the genesis wallet above. All subsequent changes submit.
     const laneUnit = p.state.scriptHash +

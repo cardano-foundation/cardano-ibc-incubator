@@ -4,6 +4,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Mint, OutputReference, Transaction}
+use ibc/apps/transfer/packet_accounting
 use ibc/apps/transfer/packet_batch.{
   Acknowledge, Prune, Receive, Reject, SendBatch, Timeout, TimeoutOnClose,
   TransferIntent,
@@ -80,7 +81,7 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
               ref,
               lane_policy,
               lane.updates,
-              Some(op),
+              fn(old) { packet_accounting.balance_after(transaction, old, op) },
             )
           }
           Acknowledge { lane, .. } ->
@@ -89,7 +90,7 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
               ref,
               lane_policy,
               lane.updates,
-              Some(op),
+              fn(old) { packet_accounting.balance_after(transaction, old, op) },
             )
           Timeout { lane, .. } ->
             action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
@@ -97,7 +98,7 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
               ref,
               lane_policy,
               lane.updates,
-              Some(op),
+              fn(old) { packet_accounting.balance_after(transaction, old, op) },
             )
           TimeoutOnClose { lane, .. } ->
             action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
@@ -105,7 +106,7 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
               ref,
               lane_policy,
               lane.updates,
-              Some(op),
+              fn(old) { packet_accounting.balance_after(transaction, old, op) },
             )
           Receive { lane, .. } ->
             action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
@@ -113,7 +114,7 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
               ref,
               lane_policy,
               lane.updates,
-              Some(op),
+              fn(old) { packet_accounting.balance_after(transaction, old, op) },
             )
           Reject { lane, .. } ->
             action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
@@ -121,7 +122,7 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
               ref,
               lane_policy,
               lane.updates,
-              Some(op),
+              fn(old) { packet_accounting.balance_after(transaction, old, op) },
             )
           Prune { lane, .. } ->
             action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
@@ -129,7 +130,7 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
               ref,
               lane_policy,
               lane.updates,
-              Some(op),
+              fn(old) { packet_accounting.balance_after(transaction, old, op) },
             )
           _ -> False
         }

@@ -215,6 +215,7 @@ export async function deploymentScenario() {
       },
     });
     const api = {
+      seedPhrase,
       host,
       hostDatum,
       async createClient(height: number, root = "11".repeat(32)) {
@@ -539,6 +540,8 @@ export async function deploymentScenario() {
           transfer: validators.spendTransferModule.address,
           module: validators.spendMockModule!.address,
           trace: validators.spendTraceRegistry!.address,
+          "packet-registry": deployment.packetState.state.address,
+          "packet-config": deployment.packetState.configuration.address,
         };
         return Object.fromEntries(
           Object.entries(addresses).map((
@@ -598,6 +601,8 @@ export async function deploymentScenario() {
               "packet-liquidity",
               "client",
               "connection",
+              "trace",
+              "metadata",
             ].includes(group.kind)
           );
         }

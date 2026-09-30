@@ -1,6 +1,8 @@
+use aiken/collection/list
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Transaction}
-use ibc/apps/transfer/packet_batch.{SendBatch}
+use ibc/apps/transfer/packet_batch.{SendBatch, TransferIntent}
+use ibc/apps/transfer/types/coin
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/packet_config
 use ibc/core/ics_004/packet_lanes
@@ -20,7 +22,6 @@ validator packet_send(
     expect
       validator_utils.require_exact_marker_mint(transaction.mint, policy, "", 1)
     let config = packet_config.reference(transaction, config_token)
-    expect packet_config.active(transaction, config.host_policy)
     let authorized =
       packet_batch.authorization(transaction, config.batch_policy)
     expect authorized.channel_token.policy_id == channel_policy
@@ -31,6 +32,21 @@ validator packet_send(
     expect sequencer: SendSequencerDatum =
       validator_utils.get_inline_datum(
         packet_batch.input_at(transaction, sequencer_ref).output,
+      )
+    expect
+      packet_config.active(transaction, config.host_policy) || list.all(
+        intents,
+        fn(ref) {
+          expect intent: TransferIntent =
+            validator_utils.get_inline_datum(
+              packet_batch.input_at(transaction, ref).output,
+            )
+          !coin.sender_chain_is_source(
+            sequencer.port_id,
+            sequencer.channel_id,
+            intent.data.denom,
+          )
+        },
       )
     let token =
       AuthToken {

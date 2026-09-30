@@ -1,8 +1,6 @@
 use aiken/collection/list
 use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Transaction}
-use ibc/apps/transfer/packet_accounting
-use ibc/apps/transfer/packet_batch.{BatchOperation}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/packet_lane_datum.{LaneUpdate, PacketLaneDatum}
 use ibc/core/ics_004/packet_lanes
@@ -22,7 +20,7 @@ pub fn validate_transition(
     spent_ref,
     lane_policy,
     updates,
-    None,
+    fn(old) { old.balances },
   )
 }
 
@@ -31,7 +29,7 @@ pub fn validate_transition_with_balances(
   spent_ref: OutputReference,
   lane_policy: PolicyId,
   updates: List<LaneUpdate>,
-  operation: Option<BatchOperation>,
+  update_balances: fn(PacketLaneDatum) -> Pairs<ByteArray, Int>,
 ) -> Bool {
   expect Some(input) = transaction.find_input(transaction.inputs, spent_ref)
   expect old: PacketLaneDatum = validator_utils.get_inline_datum(input.output)
@@ -61,12 +59,5 @@ pub fn validate_transition_with_balances(
     )
   expect new: PacketLaneDatum = validator_utils.get_inline_datum(output)
   let expected = packet_lane_datum.apply_updates(old, updates)
-  new == when operation is {
-    None -> expected
-    Some(op) ->
-      PacketLaneDatum {
-        ..expected,
-        balances: packet_accounting.balance_after(transaction, old, op),
-      }
-  }
+  new == PacketLaneDatum { ..expected, balances: update_balances(old) }
 }
