@@ -2,7 +2,7 @@ use aiken/collection/list
 use cardano/address
 use cardano/assets
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
+  InlineDatum, Input, Mint, Output, OutputReference, Transaction,
 }
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/packet_lane_datum.{
@@ -218,7 +218,8 @@ fn compaction() -> (Transaction, OutputReference, OutputReference) {
 
 test balance_compaction_cancels_cross_lane_round_trip() {
   let (tx, left, right) = compaction()
-  packet_lane_state.compact_balances(tx, left, right, policy) && packet_lane_state.compact_balances(
+  packet_lane_state.compact_balances(operation_policy, tx, left, right, policy) && packet_lane_state.compact_balances(
+    operation_policy,
     tx,
     right,
     left,
@@ -240,6 +241,7 @@ test balance_compaction_rejects_unbacked_obligation_removal() {
       },
     }
   !packet_lane_state.compact_balances(
+    operation_policy,
     Transaction { ..tx, inputs: [a, forged] },
     left,
     right,
@@ -253,6 +255,7 @@ test balance_compaction_rejects_changed_packet_root() fail {
   expect InlineDatum(raw) = a.datum
   expect old: PacketLaneDatum = raw
   packet_lane_state.compact_balances(
+    operation_policy,
     Transaction {
       ..tx,
       outputs: [
@@ -273,6 +276,7 @@ test balance_compaction_rejects_counterfeit_identity() fail {
   let (tx, left, right) = compaction()
   expect [a, b] = tx.inputs
   packet_lane_state.compact_balances(
+    operation_policy,
     Transaction {
       ..tx,
       inputs: [
@@ -293,7 +297,23 @@ test balance_compaction_rejects_duplicate_continuation() fail {
   let (tx, left, right) = compaction()
   expect [a, b] = tx.outputs
   packet_lane_state.compact_balances(
+    operation_policy,
     Transaction { ..tx, outputs: [a, a, b] },
+    left,
+    right,
+    policy,
+  )
+}
+
+const operation_policy =
+  #"22222222222222222222222222222222222222222222222222222222"
+
+test balance_compaction_cannot_replace_packet_execution() fail {
+  let (tx, left, right) = compaction()
+  let operation: Data = #""
+  packet_lane_state.compact_balances(
+    operation_policy,
+    Transaction { ..tx, redeemers: [Pair(Mint(operation_policy), operation)] },
     left,
     right,
     policy,

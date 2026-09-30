@@ -31,6 +31,7 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
     when action is {
       CompactBalances { peer_ref } ->
         packet_lane_state.compact_balances(
+          batch_policy,
           transaction,
           ref,
           peer_ref,

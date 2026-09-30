@@ -1,6 +1,7 @@
 use aiken/collection/list
+use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{OutputReference, Transaction}
+use cardano/transaction.{Mint, OutputReference, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/packet_balances
 use ibc/core/ics_004/packet_lane_datum.{LaneUpdate, PacketLaneDatum}
@@ -70,11 +71,15 @@ pub fn validate_transition_with_balances(
 /// Both independently authenticated lanes are spent. Their packet state and ADA
 /// reserves are preserved, and each asset's combined obligation is conserved.
 pub fn compact_balances(
+  operation_policy: PolicyId,
   transaction: Transaction,
   spent_ref: OutputReference,
   peer_ref: OutputReference,
   lane_policy: PolicyId,
 ) -> Bool {
+  // Packet policies rely on the Lane action for their exact state updates.
+  // Maintenance must never substitute for that action in a packet transaction.
+  expect None = pairs.get_first(transaction.redeemers, Mint(operation_policy))
   expect spent_ref != peer_ref
   let (old, new) = balance_continuation(transaction, spent_ref, lane_policy)
   let (peer, next_peer) =
