@@ -245,10 +245,7 @@ export async function deploymentScenario() {
           hostTx(input, next, {
             CreateClient: { client_state_siblings, consensus_state_siblings },
           })
-            .attach.MintingPolicy({
-              type: "PlutusV3",
-              script: deployment.validators.mintClientStt.script,
-            })
+            .readFrom([deployment.validators.mintClientStt.refUtxo])
             .mintAssets({ [nft.policy_id + nft.name]: 1n }, Data.void())
             .pay.ToContract(deployment.validators.spendClient.address, {
               kind: "inline",
