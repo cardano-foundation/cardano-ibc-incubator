@@ -127,6 +127,8 @@ fn install_aiken() -> Result<(), String> {
             "--locked",
             "--git",
             "https://github.com/aiken-lang/aiken.git",
+            "--tag",
+            "v1.1.24",
             "aiken",
         ],
     )

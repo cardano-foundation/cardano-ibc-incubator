@@ -35,7 +35,7 @@ jobs:
 
       - uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:

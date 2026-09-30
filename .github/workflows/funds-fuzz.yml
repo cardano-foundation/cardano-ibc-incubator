@@ -36,7 +36,7 @@ jobs:
           deno-version: v2.x
       - uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
         run: aiken build --deny --trace-level silent

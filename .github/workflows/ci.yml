@@ -560,7 +560,7 @@ jobs:
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
@@ -625,7 +625,7 @@ jobs:
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
@@ -683,7 +683,7 @@ jobs:
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - name: Check independent migration packet model and transition coverage
         working-directory: cardano/onchain
@@ -724,7 +724,7 @@ jobs:
           deno-version: v2.x
       - uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
         run: aiken build --deny --trace-level silent
@@ -760,7 +760,7 @@ jobs:
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - name: Check formatting
         run: aiken fmt --check
@@ -803,7 +803,7 @@ jobs:
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       # This intentionally runs every test once. It catches broad collection or
       # fixture-construction failures before the deeper fuzz shards finish.
@@ -839,7 +839,7 @@ jobs:
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - name: Run property shard
         run: |
@@ -874,7 +874,7 @@ jobs:
           node-version: 22
       - uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
       - name: Fetch and validate Aiken dependencies
         working-directory: cardano/onchain
         run: aiken check --deny --skip-tests
@@ -1031,7 +1031,7 @@ jobs:
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
@@ -1104,7 +1104,7 @@ jobs:
         if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - name: Regenerate proto types
         run: |
