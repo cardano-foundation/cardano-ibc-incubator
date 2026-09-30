@@ -4,6 +4,7 @@ import { LucidModule } from 'src/shared/modules/lucid/lucid.module';
 import { ClientService } from './client.service';
 import { ChannelService } from './channel.service';
 import { ConnectionService } from './connection.service';
+import { PacketLaneService } from './packet-lane.service';
 import { PacketService } from './packet.service';
 import { AsyncIcqHostService } from './async-icq-host.service';
 import { SubmissionService } from './submission.service';
@@ -27,6 +28,7 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     ConnectionService,
     ChannelService,
     PacketService,
+    PacketLaneService,
     AsyncIcqHostService,
     SubmissionService,
     TxEventsService,

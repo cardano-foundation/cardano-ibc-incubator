@@ -107,6 +107,10 @@ export interface ClientState {
    */
   latest_checkpoint_slot: bigint;
   latest_checkpoint_timestamp: bigint;
+  /**
+   * Required deployment policy for packet lane identities.
+   */
+  packet_lane_policy_id: Uint8Array;
 }
 /**
  * @name ConsensusState
@@ -121,6 +125,10 @@ export interface ConsensusState {
   unique_pools_count: bigint;
   unique_stake_bps: bigint;
   security_score_bps: bigint;
+  /**
+   * Canonical CBOR snapshot of live host and lane outputs at this height.
+   */
+  packet_state_snapshot: Uint8Array;
 }
 /**
  * @name Misbehaviour
@@ -179,7 +187,7 @@ export interface ProbabilisticHeader {
 function createBaseHeight(): Height {
   return {
     revision_number: BigInt(0),
-    revision_height: BigInt(0),
+    revision_height: BigInt(0)
   };
 }
 /**
@@ -226,10 +234,8 @@ export const Height = {
   },
   toJSON(message: Height): unknown {
     const obj: any = {};
-    message.revision_number !== undefined &&
-      (obj.revision_number = (message.revision_number || BigInt(0)).toString());
-    message.revision_height !== undefined &&
-      (obj.revision_height = (message.revision_height || BigInt(0)).toString());
+    message.revision_number !== undefined && (obj.revision_number = (message.revision_number || BigInt(0)).toString());
+    message.revision_height !== undefined && (obj.revision_height = (message.revision_height || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Height>, I>>(object: I): Height {
@@ -241,7 +247,7 @@ export const Height = {
       message.revision_height = BigInt(object.revision_height.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseStakeDistributionEntry(): StakeDistributionEntry {
   return {
@@ -250,7 +256,7 @@ function createBaseStakeDistributionEntry(): StakeDistributionEntry {
     vrf_key_hash: new Uint8Array(),
     first_registration_slot: BigInt(0),
     relative_stake_numerator: BigInt(0),
-    relative_stake_denominator: BigInt(0),
+    relative_stake_denominator: BigInt(0)
   };
 }
 /**
@@ -318,28 +324,19 @@ export const StakeDistributionEntry = {
     if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
     if (isSet(object.stake)) obj.stake = BigInt(object.stake.toString());
     if (isSet(object.vrf_key_hash)) obj.vrf_key_hash = bytesFromBase64(object.vrf_key_hash);
-    if (isSet(object.first_registration_slot))
-      obj.first_registration_slot = BigInt(object.first_registration_slot.toString());
-    if (isSet(object.relative_stake_numerator))
-      obj.relative_stake_numerator = BigInt(object.relative_stake_numerator.toString());
-    if (isSet(object.relative_stake_denominator))
-      obj.relative_stake_denominator = BigInt(object.relative_stake_denominator.toString());
+    if (isSet(object.first_registration_slot)) obj.first_registration_slot = BigInt(object.first_registration_slot.toString());
+    if (isSet(object.relative_stake_numerator)) obj.relative_stake_numerator = BigInt(object.relative_stake_numerator.toString());
+    if (isSet(object.relative_stake_denominator)) obj.relative_stake_denominator = BigInt(object.relative_stake_denominator.toString());
     return obj;
   },
   toJSON(message: StakeDistributionEntry): unknown {
     const obj: any = {};
     message.pool_id !== undefined && (obj.pool_id = message.pool_id);
     message.stake !== undefined && (obj.stake = (message.stake || BigInt(0)).toString());
-    message.vrf_key_hash !== undefined &&
-      (obj.vrf_key_hash = base64FromBytes(
-        message.vrf_key_hash !== undefined ? message.vrf_key_hash : new Uint8Array(),
-      ));
-    message.first_registration_slot !== undefined &&
-      (obj.first_registration_slot = (message.first_registration_slot || BigInt(0)).toString());
-    message.relative_stake_numerator !== undefined &&
-      (obj.relative_stake_numerator = (message.relative_stake_numerator || BigInt(0)).toString());
-    message.relative_stake_denominator !== undefined &&
-      (obj.relative_stake_denominator = (message.relative_stake_denominator || BigInt(0)).toString());
+    message.vrf_key_hash !== undefined && (obj.vrf_key_hash = base64FromBytes(message.vrf_key_hash !== undefined ? message.vrf_key_hash : new Uint8Array()));
+    message.first_registration_slot !== undefined && (obj.first_registration_slot = (message.first_registration_slot || BigInt(0)).toString());
+    message.relative_stake_numerator !== undefined && (obj.relative_stake_numerator = (message.relative_stake_numerator || BigInt(0)).toString());
+    message.relative_stake_denominator !== undefined && (obj.relative_stake_denominator = (message.relative_stake_denominator || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<StakeDistributionEntry>, I>>(object: I): StakeDistributionEntry {
@@ -359,7 +356,7 @@ export const StakeDistributionEntry = {
       message.relative_stake_denominator = BigInt(object.relative_stake_denominator.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseEpochContext(): EpochContext {
   return {
@@ -368,7 +365,7 @@ function createBaseEpochContext(): EpochContext {
     epoch_nonce: new Uint8Array(),
     slots_per_kes_period: BigInt(0),
     epoch_start_slot: BigInt(0),
-    epoch_end_slot_exclusive: BigInt(0),
+    epoch_end_slot_exclusive: BigInt(0)
   };
 }
 /**
@@ -434,36 +431,25 @@ export const EpochContext = {
   fromJSON(object: any): EpochContext {
     const obj = createBaseEpochContext();
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
-    if (Array.isArray(object?.stake_distribution))
-      obj.stake_distribution = object.stake_distribution.map((e: any) => StakeDistributionEntry.fromJSON(e));
+    if (Array.isArray(object?.stake_distribution)) obj.stake_distribution = object.stake_distribution.map((e: any) => StakeDistributionEntry.fromJSON(e));
     if (isSet(object.epoch_nonce)) obj.epoch_nonce = bytesFromBase64(object.epoch_nonce);
-    if (isSet(object.slots_per_kes_period))
-      obj.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
+    if (isSet(object.slots_per_kes_period)) obj.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
     if (isSet(object.epoch_start_slot)) obj.epoch_start_slot = BigInt(object.epoch_start_slot.toString());
-    if (isSet(object.epoch_end_slot_exclusive))
-      obj.epoch_end_slot_exclusive = BigInt(object.epoch_end_slot_exclusive.toString());
+    if (isSet(object.epoch_end_slot_exclusive)) obj.epoch_end_slot_exclusive = BigInt(object.epoch_end_slot_exclusive.toString());
     return obj;
   },
   toJSON(message: EpochContext): unknown {
     const obj: any = {};
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
     if (message.stake_distribution) {
-      obj.stake_distribution = message.stake_distribution.map((e) =>
-        e ? StakeDistributionEntry.toJSON(e) : undefined,
-      );
+      obj.stake_distribution = message.stake_distribution.map(e => e ? StakeDistributionEntry.toJSON(e) : undefined);
     } else {
       obj.stake_distribution = [];
     }
-    message.epoch_nonce !== undefined &&
-      (obj.epoch_nonce = base64FromBytes(
-        message.epoch_nonce !== undefined ? message.epoch_nonce : new Uint8Array(),
-      ));
-    message.slots_per_kes_period !== undefined &&
-      (obj.slots_per_kes_period = (message.slots_per_kes_period || BigInt(0)).toString());
-    message.epoch_start_slot !== undefined &&
-      (obj.epoch_start_slot = (message.epoch_start_slot || BigInt(0)).toString());
-    message.epoch_end_slot_exclusive !== undefined &&
-      (obj.epoch_end_slot_exclusive = (message.epoch_end_slot_exclusive || BigInt(0)).toString());
+    message.epoch_nonce !== undefined && (obj.epoch_nonce = base64FromBytes(message.epoch_nonce !== undefined ? message.epoch_nonce : new Uint8Array()));
+    message.slots_per_kes_period !== undefined && (obj.slots_per_kes_period = (message.slots_per_kes_period || BigInt(0)).toString());
+    message.epoch_start_slot !== undefined && (obj.epoch_start_slot = (message.epoch_start_slot || BigInt(0)).toString());
+    message.epoch_end_slot_exclusive !== undefined && (obj.epoch_end_slot_exclusive = (message.epoch_end_slot_exclusive || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<EpochContext>, I>>(object: I): EpochContext {
@@ -471,8 +457,7 @@ export const EpochContext = {
     if (object.epoch !== undefined && object.epoch !== null) {
       message.epoch = BigInt(object.epoch.toString());
     }
-    message.stake_distribution =
-      object.stake_distribution?.map((e) => StakeDistributionEntry.fromPartial(e)) || [];
+    message.stake_distribution = object.stake_distribution?.map(e => StakeDistributionEntry.fromPartial(e)) || [];
     message.epoch_nonce = object.epoch_nonce ?? new Uint8Array();
     if (object.slots_per_kes_period !== undefined && object.slots_per_kes_period !== null) {
       message.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
@@ -484,12 +469,12 @@ export const EpochContext = {
       message.epoch_end_slot_exclusive = BigInt(object.epoch_end_slot_exclusive.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseOperationalCertificateCounter(): OperationalCertificateCounter {
   return {
     pool_id: new Uint8Array(),
-    sequence_number: BigInt(0),
+    sequence_number: BigInt(0)
   };
 }
 /**
@@ -536,22 +521,18 @@ export const OperationalCertificateCounter = {
   },
   toJSON(message: OperationalCertificateCounter): unknown {
     const obj: any = {};
-    message.pool_id !== undefined &&
-      (obj.pool_id = base64FromBytes(message.pool_id !== undefined ? message.pool_id : new Uint8Array()));
-    message.sequence_number !== undefined &&
-      (obj.sequence_number = (message.sequence_number || BigInt(0)).toString());
+    message.pool_id !== undefined && (obj.pool_id = base64FromBytes(message.pool_id !== undefined ? message.pool_id : new Uint8Array()));
+    message.sequence_number !== undefined && (obj.sequence_number = (message.sequence_number || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<OperationalCertificateCounter>, I>>(
-    object: I,
-  ): OperationalCertificateCounter {
+  fromPartial<I extends Exact<DeepPartial<OperationalCertificateCounter>, I>>(object: I): OperationalCertificateCounter {
     const message = createBaseOperationalCertificateCounter();
     message.pool_id = object.pool_id ?? new Uint8Array();
     if (object.sequence_number !== undefined && object.sequence_number !== null) {
       message.sequence_number = BigInt(object.sequence_number.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseClientState(): ClientState {
   return {
@@ -582,6 +563,7 @@ function createBaseClientState(): ClientState {
     max_clock_drift: Duration.fromPartial({}),
     latest_checkpoint_slot: BigInt(0),
     latest_checkpoint_timestamp: BigInt(0),
+    packet_lane_policy_id: new Uint8Array()
   };
 }
 /**
@@ -656,10 +638,7 @@ export const ClientState = {
       OperationalCertificateCounter.encode(v!, writer.uint32(186).fork()).ldelim();
     }
     if (message.operational_certificate_counter_history_start_height !== undefined) {
-      Height.encode(
-        message.operational_certificate_counter_history_start_height,
-        writer.uint32(194).fork(),
-      ).ldelim();
+      Height.encode(message.operational_certificate_counter_history_start_height, writer.uint32(194).fork()).ldelim();
     }
     if (message.active_slot_coefficient_numerator !== BigInt(0)) {
       writer.uint32(200).uint64(message.active_slot_coefficient_numerator);
@@ -675,6 +654,9 @@ export const ClientState = {
     }
     if (message.latest_checkpoint_timestamp !== BigInt(0)) {
       writer.uint32(232).uint64(message.latest_checkpoint_timestamp);
+    }
+    if (message.packet_lane_policy_id.length !== 0) {
+      writer.uint32(242).bytes(message.packet_lane_policy_id);
     }
     return writer;
   },
@@ -746,15 +728,10 @@ export const ClientState = {
           message.max_kes_evolutions = reader.uint64();
           break;
         case 23:
-          message.latest_checkpoint_operational_certificate_counters.push(
-            OperationalCertificateCounter.decode(reader, reader.uint32()),
-          );
+          message.latest_checkpoint_operational_certificate_counters.push(OperationalCertificateCounter.decode(reader, reader.uint32()));
           break;
         case 24:
-          message.operational_certificate_counter_history_start_height = Height.decode(
-            reader,
-            reader.uint32(),
-          );
+          message.operational_certificate_counter_history_start_height = Height.decode(reader, reader.uint32());
           break;
         case 25:
           message.active_slot_coefficient_numerator = reader.uint64();
@@ -771,6 +748,9 @@ export const ClientState = {
         case 29:
           message.latest_checkpoint_timestamp = reader.uint64();
           break;
+        case 30:
+          message.packet_lane_policy_id = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -785,147 +765,77 @@ export const ClientState = {
     if (isSet(object.frozen_height)) obj.frozen_height = Height.fromJSON(object.frozen_height);
     if (isSet(object.current_epoch)) obj.current_epoch = BigInt(object.current_epoch.toString());
     if (isSet(object.trusting_period)) obj.trusting_period = Duration.fromJSON(object.trusting_period);
-    if (Array.isArray(object?.upgrade_path))
-      obj.upgrade_path = object.upgrade_path.map((e: any) => String(e));
-    if (isSet(object.host_state_nft_policy_id))
-      obj.host_state_nft_policy_id = bytesFromBase64(object.host_state_nft_policy_id);
-    if (isSet(object.host_state_nft_token_name))
-      obj.host_state_nft_token_name = bytesFromBase64(object.host_state_nft_token_name);
-    if (Array.isArray(object?.epoch_stake_distribution))
-      obj.epoch_stake_distribution = object.epoch_stake_distribution.map((e: any) =>
-        StakeDistributionEntry.fromJSON(e),
-      );
+    if (Array.isArray(object?.upgrade_path)) obj.upgrade_path = object.upgrade_path.map((e: any) => String(e));
+    if (isSet(object.host_state_nft_policy_id)) obj.host_state_nft_policy_id = bytesFromBase64(object.host_state_nft_policy_id);
+    if (isSet(object.host_state_nft_token_name)) obj.host_state_nft_token_name = bytesFromBase64(object.host_state_nft_token_name);
+    if (Array.isArray(object?.epoch_stake_distribution)) obj.epoch_stake_distribution = object.epoch_stake_distribution.map((e: any) => StakeDistributionEntry.fromJSON(e));
     if (isSet(object.epoch_nonce)) obj.epoch_nonce = bytesFromBase64(object.epoch_nonce);
-    if (isSet(object.slots_per_kes_period))
-      obj.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
-    if (isSet(object.current_epoch_start_slot))
-      obj.current_epoch_start_slot = BigInt(object.current_epoch_start_slot.toString());
-    if (isSet(object.current_epoch_end_slot_exclusive))
-      obj.current_epoch_end_slot_exclusive = BigInt(object.current_epoch_end_slot_exclusive.toString());
-    if (isSet(object.system_start_unix_ns))
-      obj.system_start_unix_ns = BigInt(object.system_start_unix_ns.toString());
+    if (isSet(object.slots_per_kes_period)) obj.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
+    if (isSet(object.current_epoch_start_slot)) obj.current_epoch_start_slot = BigInt(object.current_epoch_start_slot.toString());
+    if (isSet(object.current_epoch_end_slot_exclusive)) obj.current_epoch_end_slot_exclusive = BigInt(object.current_epoch_end_slot_exclusive.toString());
+    if (isSet(object.system_start_unix_ns)) obj.system_start_unix_ns = BigInt(object.system_start_unix_ns.toString());
     if (isSet(object.slot_length_ns)) obj.slot_length_ns = BigInt(object.slot_length_ns.toString());
-    if (Array.isArray(object?.epoch_contexts))
-      obj.epoch_contexts = object.epoch_contexts.map((e: any) => EpochContext.fromJSON(e));
-    if (isSet(object.latest_checkpoint_height))
-      obj.latest_checkpoint_height = Height.fromJSON(object.latest_checkpoint_height);
-    if (isSet(object.latest_checkpoint_block_hash))
-      obj.latest_checkpoint_block_hash = String(object.latest_checkpoint_block_hash);
-    if (isSet(object.latest_checkpoint_epoch))
-      obj.latest_checkpoint_epoch = BigInt(object.latest_checkpoint_epoch.toString());
-    if (isSet(object.max_kes_evolutions))
-      obj.max_kes_evolutions = BigInt(object.max_kes_evolutions.toString());
-    if (Array.isArray(object?.latest_checkpoint_operational_certificate_counters))
-      obj.latest_checkpoint_operational_certificate_counters =
-        object.latest_checkpoint_operational_certificate_counters.map((e: any) =>
-          OperationalCertificateCounter.fromJSON(e),
-        );
-    if (isSet(object.operational_certificate_counter_history_start_height))
-      obj.operational_certificate_counter_history_start_height = Height.fromJSON(
-        object.operational_certificate_counter_history_start_height,
-      );
-    if (isSet(object.active_slot_coefficient_numerator))
-      obj.active_slot_coefficient_numerator = BigInt(object.active_slot_coefficient_numerator.toString());
-    if (isSet(object.active_slot_coefficient_denominator))
-      obj.active_slot_coefficient_denominator = BigInt(object.active_slot_coefficient_denominator.toString());
+    if (Array.isArray(object?.epoch_contexts)) obj.epoch_contexts = object.epoch_contexts.map((e: any) => EpochContext.fromJSON(e));
+    if (isSet(object.latest_checkpoint_height)) obj.latest_checkpoint_height = Height.fromJSON(object.latest_checkpoint_height);
+    if (isSet(object.latest_checkpoint_block_hash)) obj.latest_checkpoint_block_hash = String(object.latest_checkpoint_block_hash);
+    if (isSet(object.latest_checkpoint_epoch)) obj.latest_checkpoint_epoch = BigInt(object.latest_checkpoint_epoch.toString());
+    if (isSet(object.max_kes_evolutions)) obj.max_kes_evolutions = BigInt(object.max_kes_evolutions.toString());
+    if (Array.isArray(object?.latest_checkpoint_operational_certificate_counters)) obj.latest_checkpoint_operational_certificate_counters = object.latest_checkpoint_operational_certificate_counters.map((e: any) => OperationalCertificateCounter.fromJSON(e));
+    if (isSet(object.operational_certificate_counter_history_start_height)) obj.operational_certificate_counter_history_start_height = Height.fromJSON(object.operational_certificate_counter_history_start_height);
+    if (isSet(object.active_slot_coefficient_numerator)) obj.active_slot_coefficient_numerator = BigInt(object.active_slot_coefficient_numerator.toString());
+    if (isSet(object.active_slot_coefficient_denominator)) obj.active_slot_coefficient_denominator = BigInt(object.active_slot_coefficient_denominator.toString());
     if (isSet(object.max_clock_drift)) obj.max_clock_drift = Duration.fromJSON(object.max_clock_drift);
-    if (isSet(object.latest_checkpoint_slot))
-      obj.latest_checkpoint_slot = BigInt(object.latest_checkpoint_slot.toString());
-    if (isSet(object.latest_checkpoint_timestamp))
-      obj.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
+    if (isSet(object.latest_checkpoint_slot)) obj.latest_checkpoint_slot = BigInt(object.latest_checkpoint_slot.toString());
+    if (isSet(object.latest_checkpoint_timestamp)) obj.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
+    if (isSet(object.packet_lane_policy_id)) obj.packet_lane_policy_id = bytesFromBase64(object.packet_lane_policy_id);
     return obj;
   },
   toJSON(message: ClientState): unknown {
     const obj: any = {};
     message.chain_id !== undefined && (obj.chain_id = message.chain_id);
-    message.latest_height !== undefined &&
-      (obj.latest_height = message.latest_height ? Height.toJSON(message.latest_height) : undefined);
-    message.frozen_height !== undefined &&
-      (obj.frozen_height = message.frozen_height ? Height.toJSON(message.frozen_height) : undefined);
-    message.current_epoch !== undefined &&
-      (obj.current_epoch = (message.current_epoch || BigInt(0)).toString());
-    message.trusting_period !== undefined &&
-      (obj.trusting_period = message.trusting_period ? Duration.toJSON(message.trusting_period) : undefined);
+    message.latest_height !== undefined && (obj.latest_height = message.latest_height ? Height.toJSON(message.latest_height) : undefined);
+    message.frozen_height !== undefined && (obj.frozen_height = message.frozen_height ? Height.toJSON(message.frozen_height) : undefined);
+    message.current_epoch !== undefined && (obj.current_epoch = (message.current_epoch || BigInt(0)).toString());
+    message.trusting_period !== undefined && (obj.trusting_period = message.trusting_period ? Duration.toJSON(message.trusting_period) : undefined);
     if (message.upgrade_path) {
-      obj.upgrade_path = message.upgrade_path.map((e) => e);
+      obj.upgrade_path = message.upgrade_path.map(e => e);
     } else {
       obj.upgrade_path = [];
     }
-    message.host_state_nft_policy_id !== undefined &&
-      (obj.host_state_nft_policy_id = base64FromBytes(
-        message.host_state_nft_policy_id !== undefined ? message.host_state_nft_policy_id : new Uint8Array(),
-      ));
-    message.host_state_nft_token_name !== undefined &&
-      (obj.host_state_nft_token_name = base64FromBytes(
-        message.host_state_nft_token_name !== undefined
-          ? message.host_state_nft_token_name
-          : new Uint8Array(),
-      ));
+    message.host_state_nft_policy_id !== undefined && (obj.host_state_nft_policy_id = base64FromBytes(message.host_state_nft_policy_id !== undefined ? message.host_state_nft_policy_id : new Uint8Array()));
+    message.host_state_nft_token_name !== undefined && (obj.host_state_nft_token_name = base64FromBytes(message.host_state_nft_token_name !== undefined ? message.host_state_nft_token_name : new Uint8Array()));
     if (message.epoch_stake_distribution) {
-      obj.epoch_stake_distribution = message.epoch_stake_distribution.map((e) =>
-        e ? StakeDistributionEntry.toJSON(e) : undefined,
-      );
+      obj.epoch_stake_distribution = message.epoch_stake_distribution.map(e => e ? StakeDistributionEntry.toJSON(e) : undefined);
     } else {
       obj.epoch_stake_distribution = [];
     }
-    message.epoch_nonce !== undefined &&
-      (obj.epoch_nonce = base64FromBytes(
-        message.epoch_nonce !== undefined ? message.epoch_nonce : new Uint8Array(),
-      ));
-    message.slots_per_kes_period !== undefined &&
-      (obj.slots_per_kes_period = (message.slots_per_kes_period || BigInt(0)).toString());
-    message.current_epoch_start_slot !== undefined &&
-      (obj.current_epoch_start_slot = (message.current_epoch_start_slot || BigInt(0)).toString());
-    message.current_epoch_end_slot_exclusive !== undefined &&
-      (obj.current_epoch_end_slot_exclusive = (
-        message.current_epoch_end_slot_exclusive || BigInt(0)
-      ).toString());
-    message.system_start_unix_ns !== undefined &&
-      (obj.system_start_unix_ns = (message.system_start_unix_ns || BigInt(0)).toString());
-    message.slot_length_ns !== undefined &&
-      (obj.slot_length_ns = (message.slot_length_ns || BigInt(0)).toString());
+    message.epoch_nonce !== undefined && (obj.epoch_nonce = base64FromBytes(message.epoch_nonce !== undefined ? message.epoch_nonce : new Uint8Array()));
+    message.slots_per_kes_period !== undefined && (obj.slots_per_kes_period = (message.slots_per_kes_period || BigInt(0)).toString());
+    message.current_epoch_start_slot !== undefined && (obj.current_epoch_start_slot = (message.current_epoch_start_slot || BigInt(0)).toString());
+    message.current_epoch_end_slot_exclusive !== undefined && (obj.current_epoch_end_slot_exclusive = (message.current_epoch_end_slot_exclusive || BigInt(0)).toString());
+    message.system_start_unix_ns !== undefined && (obj.system_start_unix_ns = (message.system_start_unix_ns || BigInt(0)).toString());
+    message.slot_length_ns !== undefined && (obj.slot_length_ns = (message.slot_length_ns || BigInt(0)).toString());
     if (message.epoch_contexts) {
-      obj.epoch_contexts = message.epoch_contexts.map((e) => (e ? EpochContext.toJSON(e) : undefined));
+      obj.epoch_contexts = message.epoch_contexts.map(e => e ? EpochContext.toJSON(e) : undefined);
     } else {
       obj.epoch_contexts = [];
     }
-    message.latest_checkpoint_height !== undefined &&
-      (obj.latest_checkpoint_height = message.latest_checkpoint_height
-        ? Height.toJSON(message.latest_checkpoint_height)
-        : undefined);
-    message.latest_checkpoint_block_hash !== undefined &&
-      (obj.latest_checkpoint_block_hash = message.latest_checkpoint_block_hash);
-    message.latest_checkpoint_epoch !== undefined &&
-      (obj.latest_checkpoint_epoch = (message.latest_checkpoint_epoch || BigInt(0)).toString());
-    message.max_kes_evolutions !== undefined &&
-      (obj.max_kes_evolutions = (message.max_kes_evolutions || BigInt(0)).toString());
+    message.latest_checkpoint_height !== undefined && (obj.latest_checkpoint_height = message.latest_checkpoint_height ? Height.toJSON(message.latest_checkpoint_height) : undefined);
+    message.latest_checkpoint_block_hash !== undefined && (obj.latest_checkpoint_block_hash = message.latest_checkpoint_block_hash);
+    message.latest_checkpoint_epoch !== undefined && (obj.latest_checkpoint_epoch = (message.latest_checkpoint_epoch || BigInt(0)).toString());
+    message.max_kes_evolutions !== undefined && (obj.max_kes_evolutions = (message.max_kes_evolutions || BigInt(0)).toString());
     if (message.latest_checkpoint_operational_certificate_counters) {
-      obj.latest_checkpoint_operational_certificate_counters =
-        message.latest_checkpoint_operational_certificate_counters.map((e) =>
-          e ? OperationalCertificateCounter.toJSON(e) : undefined,
-        );
+      obj.latest_checkpoint_operational_certificate_counters = message.latest_checkpoint_operational_certificate_counters.map(e => e ? OperationalCertificateCounter.toJSON(e) : undefined);
     } else {
       obj.latest_checkpoint_operational_certificate_counters = [];
     }
-    message.operational_certificate_counter_history_start_height !== undefined &&
-      (obj.operational_certificate_counter_history_start_height =
-        message.operational_certificate_counter_history_start_height
-          ? Height.toJSON(message.operational_certificate_counter_history_start_height)
-          : undefined);
-    message.active_slot_coefficient_numerator !== undefined &&
-      (obj.active_slot_coefficient_numerator = (
-        message.active_slot_coefficient_numerator || BigInt(0)
-      ).toString());
-    message.active_slot_coefficient_denominator !== undefined &&
-      (obj.active_slot_coefficient_denominator = (
-        message.active_slot_coefficient_denominator || BigInt(0)
-      ).toString());
-    message.max_clock_drift !== undefined &&
-      (obj.max_clock_drift = message.max_clock_drift ? Duration.toJSON(message.max_clock_drift) : undefined);
-    message.latest_checkpoint_slot !== undefined &&
-      (obj.latest_checkpoint_slot = (message.latest_checkpoint_slot || BigInt(0)).toString());
-    message.latest_checkpoint_timestamp !== undefined &&
-      (obj.latest_checkpoint_timestamp = (message.latest_checkpoint_timestamp || BigInt(0)).toString());
+    message.operational_certificate_counter_history_start_height !== undefined && (obj.operational_certificate_counter_history_start_height = message.operational_certificate_counter_history_start_height ? Height.toJSON(message.operational_certificate_counter_history_start_height) : undefined);
+    message.active_slot_coefficient_numerator !== undefined && (obj.active_slot_coefficient_numerator = (message.active_slot_coefficient_numerator || BigInt(0)).toString());
+    message.active_slot_coefficient_denominator !== undefined && (obj.active_slot_coefficient_denominator = (message.active_slot_coefficient_denominator || BigInt(0)).toString());
+    message.max_clock_drift !== undefined && (obj.max_clock_drift = message.max_clock_drift ? Duration.toJSON(message.max_clock_drift) : undefined);
+    message.latest_checkpoint_slot !== undefined && (obj.latest_checkpoint_slot = (message.latest_checkpoint_slot || BigInt(0)).toString());
+    message.latest_checkpoint_timestamp !== undefined && (obj.latest_checkpoint_timestamp = (message.latest_checkpoint_timestamp || BigInt(0)).toString());
+    message.packet_lane_policy_id !== undefined && (obj.packet_lane_policy_id = base64FromBytes(message.packet_lane_policy_id !== undefined ? message.packet_lane_policy_id : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -943,11 +853,10 @@ export const ClientState = {
     if (object.trusting_period !== undefined && object.trusting_period !== null) {
       message.trusting_period = Duration.fromPartial(object.trusting_period);
     }
-    message.upgrade_path = object.upgrade_path?.map((e) => e) || [];
+    message.upgrade_path = object.upgrade_path?.map(e => e) || [];
     message.host_state_nft_policy_id = object.host_state_nft_policy_id ?? new Uint8Array();
     message.host_state_nft_token_name = object.host_state_nft_token_name ?? new Uint8Array();
-    message.epoch_stake_distribution =
-      object.epoch_stake_distribution?.map((e) => StakeDistributionEntry.fromPartial(e)) || [];
+    message.epoch_stake_distribution = object.epoch_stake_distribution?.map(e => StakeDistributionEntry.fromPartial(e)) || [];
     message.epoch_nonce = object.epoch_nonce ?? new Uint8Array();
     if (object.slots_per_kes_period !== undefined && object.slots_per_kes_period !== null) {
       message.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
@@ -955,10 +864,7 @@ export const ClientState = {
     if (object.current_epoch_start_slot !== undefined && object.current_epoch_start_slot !== null) {
       message.current_epoch_start_slot = BigInt(object.current_epoch_start_slot.toString());
     }
-    if (
-      object.current_epoch_end_slot_exclusive !== undefined &&
-      object.current_epoch_end_slot_exclusive !== null
-    ) {
+    if (object.current_epoch_end_slot_exclusive !== undefined && object.current_epoch_end_slot_exclusive !== null) {
       message.current_epoch_end_slot_exclusive = BigInt(object.current_epoch_end_slot_exclusive.toString());
     }
     if (object.system_start_unix_ns !== undefined && object.system_start_unix_ns !== null) {
@@ -967,7 +873,7 @@ export const ClientState = {
     if (object.slot_length_ns !== undefined && object.slot_length_ns !== null) {
       message.slot_length_ns = BigInt(object.slot_length_ns.toString());
     }
-    message.epoch_contexts = object.epoch_contexts?.map((e) => EpochContext.fromPartial(e)) || [];
+    message.epoch_contexts = object.epoch_contexts?.map(e => EpochContext.fromPartial(e)) || [];
     if (object.latest_checkpoint_height !== undefined && object.latest_checkpoint_height !== null) {
       message.latest_checkpoint_height = Height.fromPartial(object.latest_checkpoint_height);
     }
@@ -978,31 +884,15 @@ export const ClientState = {
     if (object.max_kes_evolutions !== undefined && object.max_kes_evolutions !== null) {
       message.max_kes_evolutions = BigInt(object.max_kes_evolutions.toString());
     }
-    message.latest_checkpoint_operational_certificate_counters =
-      object.latest_checkpoint_operational_certificate_counters?.map((e) =>
-        OperationalCertificateCounter.fromPartial(e),
-      ) || [];
-    if (
-      object.operational_certificate_counter_history_start_height !== undefined &&
-      object.operational_certificate_counter_history_start_height !== null
-    ) {
-      message.operational_certificate_counter_history_start_height = Height.fromPartial(
-        object.operational_certificate_counter_history_start_height,
-      );
+    message.latest_checkpoint_operational_certificate_counters = object.latest_checkpoint_operational_certificate_counters?.map(e => OperationalCertificateCounter.fromPartial(e)) || [];
+    if (object.operational_certificate_counter_history_start_height !== undefined && object.operational_certificate_counter_history_start_height !== null) {
+      message.operational_certificate_counter_history_start_height = Height.fromPartial(object.operational_certificate_counter_history_start_height);
     }
-    if (
-      object.active_slot_coefficient_numerator !== undefined &&
-      object.active_slot_coefficient_numerator !== null
-    ) {
+    if (object.active_slot_coefficient_numerator !== undefined && object.active_slot_coefficient_numerator !== null) {
       message.active_slot_coefficient_numerator = BigInt(object.active_slot_coefficient_numerator.toString());
     }
-    if (
-      object.active_slot_coefficient_denominator !== undefined &&
-      object.active_slot_coefficient_denominator !== null
-    ) {
-      message.active_slot_coefficient_denominator = BigInt(
-        object.active_slot_coefficient_denominator.toString(),
-      );
+    if (object.active_slot_coefficient_denominator !== undefined && object.active_slot_coefficient_denominator !== null) {
+      message.active_slot_coefficient_denominator = BigInt(object.active_slot_coefficient_denominator.toString());
     }
     if (object.max_clock_drift !== undefined && object.max_clock_drift !== null) {
       message.max_clock_drift = Duration.fromPartial(object.max_clock_drift);
@@ -1013,8 +903,9 @@ export const ClientState = {
     if (object.latest_checkpoint_timestamp !== undefined && object.latest_checkpoint_timestamp !== null) {
       message.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
     }
+    message.packet_lane_policy_id = object.packet_lane_policy_id ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseConsensusState(): ConsensusState {
   return {
@@ -1025,6 +916,7 @@ function createBaseConsensusState(): ConsensusState {
     unique_pools_count: BigInt(0),
     unique_stake_bps: BigInt(0),
     security_score_bps: BigInt(0),
+    packet_state_snapshot: new Uint8Array()
   };
 }
 /**
@@ -1056,6 +948,9 @@ export const ConsensusState = {
     if (message.security_score_bps !== BigInt(0)) {
       writer.uint32(56).uint64(message.security_score_bps);
     }
+    if (message.packet_state_snapshot.length !== 0) {
+      writer.uint32(66).bytes(message.packet_state_snapshot);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -1086,6 +981,9 @@ export const ConsensusState = {
         case 7:
           message.security_score_bps = reader.uint64();
           break;
+        case 8:
+          message.packet_state_snapshot = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1099,29 +997,22 @@ export const ConsensusState = {
     if (isSet(object.ibc_state_root)) obj.ibc_state_root = bytesFromBase64(object.ibc_state_root);
     if (isSet(object.accepted_block_hash)) obj.accepted_block_hash = String(object.accepted_block_hash);
     if (isSet(object.accepted_epoch)) obj.accepted_epoch = BigInt(object.accepted_epoch.toString());
-    if (isSet(object.unique_pools_count))
-      obj.unique_pools_count = BigInt(object.unique_pools_count.toString());
+    if (isSet(object.unique_pools_count)) obj.unique_pools_count = BigInt(object.unique_pools_count.toString());
     if (isSet(object.unique_stake_bps)) obj.unique_stake_bps = BigInt(object.unique_stake_bps.toString());
-    if (isSet(object.security_score_bps))
-      obj.security_score_bps = BigInt(object.security_score_bps.toString());
+    if (isSet(object.security_score_bps)) obj.security_score_bps = BigInt(object.security_score_bps.toString());
+    if (isSet(object.packet_state_snapshot)) obj.packet_state_snapshot = bytesFromBase64(object.packet_state_snapshot);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
     const obj: any = {};
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
-    message.ibc_state_root !== undefined &&
-      (obj.ibc_state_root = base64FromBytes(
-        message.ibc_state_root !== undefined ? message.ibc_state_root : new Uint8Array(),
-      ));
+    message.ibc_state_root !== undefined && (obj.ibc_state_root = base64FromBytes(message.ibc_state_root !== undefined ? message.ibc_state_root : new Uint8Array()));
     message.accepted_block_hash !== undefined && (obj.accepted_block_hash = message.accepted_block_hash);
-    message.accepted_epoch !== undefined &&
-      (obj.accepted_epoch = (message.accepted_epoch || BigInt(0)).toString());
-    message.unique_pools_count !== undefined &&
-      (obj.unique_pools_count = (message.unique_pools_count || BigInt(0)).toString());
-    message.unique_stake_bps !== undefined &&
-      (obj.unique_stake_bps = (message.unique_stake_bps || BigInt(0)).toString());
-    message.security_score_bps !== undefined &&
-      (obj.security_score_bps = (message.security_score_bps || BigInt(0)).toString());
+    message.accepted_epoch !== undefined && (obj.accepted_epoch = (message.accepted_epoch || BigInt(0)).toString());
+    message.unique_pools_count !== undefined && (obj.unique_pools_count = (message.unique_pools_count || BigInt(0)).toString());
+    message.unique_stake_bps !== undefined && (obj.unique_stake_bps = (message.unique_stake_bps || BigInt(0)).toString());
+    message.security_score_bps !== undefined && (obj.security_score_bps = (message.security_score_bps || BigInt(0)).toString());
+    message.packet_state_snapshot !== undefined && (obj.packet_state_snapshot = base64FromBytes(message.packet_state_snapshot !== undefined ? message.packet_state_snapshot : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -1143,14 +1034,15 @@ export const ConsensusState = {
     if (object.security_score_bps !== undefined && object.security_score_bps !== null) {
       message.security_score_bps = BigInt(object.security_score_bps.toString());
     }
+    message.packet_state_snapshot = object.packet_state_snapshot ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseMisbehaviour(): Misbehaviour {
   return {
     client_id: "",
     probabilistic_header1: undefined,
-    probabilistic_header2: undefined,
+    probabilistic_header2: undefined
   };
 }
 /**
@@ -1198,23 +1090,15 @@ export const Misbehaviour = {
   fromJSON(object: any): Misbehaviour {
     const obj = createBaseMisbehaviour();
     if (isSet(object.client_id)) obj.client_id = String(object.client_id);
-    if (isSet(object.probabilistic_header1))
-      obj.probabilistic_header1 = ProbabilisticHeader.fromJSON(object.probabilistic_header1);
-    if (isSet(object.probabilistic_header2))
-      obj.probabilistic_header2 = ProbabilisticHeader.fromJSON(object.probabilistic_header2);
+    if (isSet(object.probabilistic_header1)) obj.probabilistic_header1 = ProbabilisticHeader.fromJSON(object.probabilistic_header1);
+    if (isSet(object.probabilistic_header2)) obj.probabilistic_header2 = ProbabilisticHeader.fromJSON(object.probabilistic_header2);
     return obj;
   },
   toJSON(message: Misbehaviour): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.probabilistic_header1 !== undefined &&
-      (obj.probabilistic_header1 = message.probabilistic_header1
-        ? ProbabilisticHeader.toJSON(message.probabilistic_header1)
-        : undefined);
-    message.probabilistic_header2 !== undefined &&
-      (obj.probabilistic_header2 = message.probabilistic_header2
-        ? ProbabilisticHeader.toJSON(message.probabilistic_header2)
-        : undefined);
+    message.probabilistic_header1 !== undefined && (obj.probabilistic_header1 = message.probabilistic_header1 ? ProbabilisticHeader.toJSON(message.probabilistic_header1) : undefined);
+    message.probabilistic_header2 !== undefined && (obj.probabilistic_header2 = message.probabilistic_header2 ? ProbabilisticHeader.toJSON(message.probabilistic_header2) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Misbehaviour>, I>>(object: I): Misbehaviour {
@@ -1227,7 +1111,7 @@ export const Misbehaviour = {
       message.probabilistic_header2 = ProbabilisticHeader.fromPartial(object.probabilistic_header2);
     }
     return message;
-  },
+  }
 };
 function createBaseProbabilisticBlock(): ProbabilisticBlock {
   return {
@@ -1237,7 +1121,7 @@ function createBaseProbabilisticBlock(): ProbabilisticBlock {
     epoch: BigInt(0),
     timestamp: BigInt(0),
     block_cbor: new Uint8Array(),
-    header_cbor: new Uint8Array(),
+    header_cbor: new Uint8Array()
   };
 }
 /**
@@ -1324,14 +1208,8 @@ export const ProbabilisticBlock = {
     message.hash !== undefined && (obj.hash = message.hash);
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
-    message.block_cbor !== undefined &&
-      (obj.block_cbor = base64FromBytes(
-        message.block_cbor !== undefined ? message.block_cbor : new Uint8Array(),
-      ));
-    message.header_cbor !== undefined &&
-      (obj.header_cbor = base64FromBytes(
-        message.header_cbor !== undefined ? message.header_cbor : new Uint8Array(),
-      ));
+    message.block_cbor !== undefined && (obj.block_cbor = base64FromBytes(message.block_cbor !== undefined ? message.block_cbor : new Uint8Array()));
+    message.header_cbor !== undefined && (obj.header_cbor = base64FromBytes(message.header_cbor !== undefined ? message.header_cbor : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ProbabilisticBlock>, I>>(object: I): ProbabilisticBlock {
@@ -1352,7 +1230,7 @@ export const ProbabilisticBlock = {
     message.block_cbor = object.block_cbor ?? new Uint8Array();
     message.header_cbor = object.header_cbor ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseProbabilisticHeader(): ProbabilisticHeader {
   return {
@@ -1363,7 +1241,7 @@ function createBaseProbabilisticHeader(): ProbabilisticHeader {
     host_state_tx_output_index: 0,
     bridge_blocks: [],
     new_epoch_context: undefined,
-    is_checkpoint: false,
+    is_checkpoint: false
   };
 }
 /**
@@ -1442,43 +1320,31 @@ export const ProbabilisticHeader = {
     const obj = createBaseProbabilisticHeader();
     if (isSet(object.trusted_height)) obj.trusted_height = Height.fromJSON(object.trusted_height);
     if (isSet(object.anchor_block)) obj.anchor_block = ProbabilisticBlock.fromJSON(object.anchor_block);
-    if (Array.isArray(object?.descendant_blocks))
-      obj.descendant_blocks = object.descendant_blocks.map((e: any) => ProbabilisticBlock.fromJSON(e));
+    if (Array.isArray(object?.descendant_blocks)) obj.descendant_blocks = object.descendant_blocks.map((e: any) => ProbabilisticBlock.fromJSON(e));
     if (isSet(object.host_state_tx_hash)) obj.host_state_tx_hash = String(object.host_state_tx_hash);
-    if (isSet(object.host_state_tx_output_index))
-      obj.host_state_tx_output_index = Number(object.host_state_tx_output_index);
-    if (Array.isArray(object?.bridge_blocks))
-      obj.bridge_blocks = object.bridge_blocks.map((e: any) => ProbabilisticBlock.fromJSON(e));
-    if (isSet(object.new_epoch_context))
-      obj.new_epoch_context = EpochContext.fromJSON(object.new_epoch_context);
+    if (isSet(object.host_state_tx_output_index)) obj.host_state_tx_output_index = Number(object.host_state_tx_output_index);
+    if (Array.isArray(object?.bridge_blocks)) obj.bridge_blocks = object.bridge_blocks.map((e: any) => ProbabilisticBlock.fromJSON(e));
+    if (isSet(object.new_epoch_context)) obj.new_epoch_context = EpochContext.fromJSON(object.new_epoch_context);
     if (isSet(object.is_checkpoint)) obj.is_checkpoint = Boolean(object.is_checkpoint);
     return obj;
   },
   toJSON(message: ProbabilisticHeader): unknown {
     const obj: any = {};
-    message.trusted_height !== undefined &&
-      (obj.trusted_height = message.trusted_height ? Height.toJSON(message.trusted_height) : undefined);
-    message.anchor_block !== undefined &&
-      (obj.anchor_block = message.anchor_block ? ProbabilisticBlock.toJSON(message.anchor_block) : undefined);
+    message.trusted_height !== undefined && (obj.trusted_height = message.trusted_height ? Height.toJSON(message.trusted_height) : undefined);
+    message.anchor_block !== undefined && (obj.anchor_block = message.anchor_block ? ProbabilisticBlock.toJSON(message.anchor_block) : undefined);
     if (message.descendant_blocks) {
-      obj.descendant_blocks = message.descendant_blocks.map((e) =>
-        e ? ProbabilisticBlock.toJSON(e) : undefined,
-      );
+      obj.descendant_blocks = message.descendant_blocks.map(e => e ? ProbabilisticBlock.toJSON(e) : undefined);
     } else {
       obj.descendant_blocks = [];
     }
     message.host_state_tx_hash !== undefined && (obj.host_state_tx_hash = message.host_state_tx_hash);
-    message.host_state_tx_output_index !== undefined &&
-      (obj.host_state_tx_output_index = Math.round(message.host_state_tx_output_index));
+    message.host_state_tx_output_index !== undefined && (obj.host_state_tx_output_index = Math.round(message.host_state_tx_output_index));
     if (message.bridge_blocks) {
-      obj.bridge_blocks = message.bridge_blocks.map((e) => (e ? ProbabilisticBlock.toJSON(e) : undefined));
+      obj.bridge_blocks = message.bridge_blocks.map(e => e ? ProbabilisticBlock.toJSON(e) : undefined);
     } else {
       obj.bridge_blocks = [];
     }
-    message.new_epoch_context !== undefined &&
-      (obj.new_epoch_context = message.new_epoch_context
-        ? EpochContext.toJSON(message.new_epoch_context)
-        : undefined);
+    message.new_epoch_context !== undefined && (obj.new_epoch_context = message.new_epoch_context ? EpochContext.toJSON(message.new_epoch_context) : undefined);
     message.is_checkpoint !== undefined && (obj.is_checkpoint = message.is_checkpoint);
     return obj;
   },
@@ -1490,14 +1356,14 @@ export const ProbabilisticHeader = {
     if (object.anchor_block !== undefined && object.anchor_block !== null) {
       message.anchor_block = ProbabilisticBlock.fromPartial(object.anchor_block);
     }
-    message.descendant_blocks = object.descendant_blocks?.map((e) => ProbabilisticBlock.fromPartial(e)) || [];
+    message.descendant_blocks = object.descendant_blocks?.map(e => ProbabilisticBlock.fromPartial(e)) || [];
     message.host_state_tx_hash = object.host_state_tx_hash ?? "";
     message.host_state_tx_output_index = object.host_state_tx_output_index ?? 0;
-    message.bridge_blocks = object.bridge_blocks?.map((e) => ProbabilisticBlock.fromPartial(e)) || [];
+    message.bridge_blocks = object.bridge_blocks?.map(e => ProbabilisticBlock.fromPartial(e)) || [];
     if (object.new_epoch_context !== undefined && object.new_epoch_context !== null) {
       message.new_epoch_context = EpochContext.fromPartial(object.new_epoch_context);
     }
     message.is_checkpoint = object.is_checkpoint ?? false;
     return message;
-  },
+  }
 };

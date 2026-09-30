@@ -1,3 +1,4 @@
+import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Constr, Data } from '@lucid-evolution/lucid';
@@ -81,13 +82,13 @@ function makeLogger(): Logger {
 
 function makeChannelDatum(overrides: Record<string, unknown> = {}) {
   return {
-    port: toHex('transfer'),
+    port: toHex('mock'),
     state: {
       channel: {
         state: 'Open',
         ordering: 'Unordered',
         counterparty: {
-          port_id: toHex('transfer'),
+          port_id: toHex('mock'),
           channel_id: toHex('channel-7'),
         },
         connection_hops: [toHex('connection-0')],
@@ -112,7 +113,9 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
 
 function makeHistoricalTree() {
   const tree = {
-    get: jest.fn((path: string) => path === 'clients/07-tendermint-0/consensusStates/77' ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined),
+    get: jest.fn((path: string) =>
+      path === 'clients/07-tendermint-0/consensusStates/77' ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
+    ),
     generateProof: jest.fn((path: string) => ({ path })),
     generateNonExistenceProof: jest.fn((path: string) => ({ path })),
     clone: jest.fn(),
@@ -140,10 +143,11 @@ function makeDeps() {
     get: jest.fn((key: string) => {
       if (key === 'cardanoLightClientMode') return 'mithril';
       if (key === 'cardanoChainId') return 'cardano-devnet';
-      if (key === 'deployment') return {
-        hostStateNFT: { policyId: 'host-policy', name: 'host-token' },
-        validators: { mintConnectionStt: { scriptHash: 'connection-policy' } },
-      };
+      if (key === 'deployment')
+        return {
+          hostStateNFT: { policyId: 'host-policy', name: 'host-token' },
+          validators: { mintConnectionStt: { scriptHash: 'connection-policy' } },
+        };
       return undefined;
     }),
   } as unknown as ConfigService;
@@ -172,15 +176,19 @@ function makeDeps() {
       outputIndex: 0,
       datum: 'live-datum',
     })),
-    consensusHistoryRecords: jest.fn(async () => [{
-      datum: {
-        clientToken: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
-        height: { revisionNumber: 0n, revisionHeight: 77n },
-        consensusState: { timestamp: 1_000n, next_validators_hash: '11'.repeat(32), root: { hash: '22'.repeat(32) } },
-        processedTime: 2_000n, processedHeight: 20n,
+    consensusHistoryRecords: jest.fn(async () => [
+      {
+        datum: {
+          clientToken: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
+          height: { revisionNumber: 0n, revisionHeight: 77n },
+          consensusState: { timestamp: 1_000n, next_validators_hash: '11'.repeat(32), root: { hash: '22'.repeat(32) } },
+          processedTime: 2_000n,
+          processedHeight: 20n,
+        },
+        consensusValue: CONSENSUS_VALUE,
+        archived: false,
       },
-      consensusValue: CONSENSUS_VALUE, archived: false,
-    }]),
+    ]),
     getChannelTokenUnit: jest.fn(() => ['policy', 'channel-token']),
     getClientAuthTokenUnit: jest.fn(() => CLIENT_TOKEN_UNIT),
     generateTokenName: jest.fn(() => 'connection-token'),
@@ -242,8 +250,15 @@ describe('proof-bearing services with captured query heights', () => {
     (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum());
     (decodeConnectionDatum as jest.Mock).mockResolvedValue({
       state: {
-        client_id: toHex('07-tendermint-0'), versions: [], state: 'Open', delay_period: 0n,
-        counterparty: { client_id: toHex('07-tendermint-1'), connection_id: toHex('connection-2'), prefix: { key_prefix: toHex('ibc') } },
+        client_id: toHex('07-tendermint-0'),
+        versions: [],
+        state: 'Open',
+        delay_period: 0n,
+        counterparty: {
+          client_id: toHex('07-tendermint-1'),
+          connection_id: toHex('connection-2'),
+          prefix: { key_prefix: toHex('ibc') },
+        },
       },
     });
     (decodeClientDatum as jest.Mock).mockResolvedValue({
@@ -317,7 +332,7 @@ describe('proof-bearing services with captured query heights', () => {
       HISTORICAL_HEIGHT,
     );
     expect(deps.mocks.lucidService.findUtxoByUnit).not.toHaveBeenCalled();
-    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('channelEnds/ports/transfer/channels/channel-0');
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('channelEnds/ports/mock/channels/channel-0');
     expect(deps.treeStore.getCurrentTree).not.toHaveBeenCalled();
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
@@ -332,10 +347,11 @@ describe('proof-bearing services with captured query heights', () => {
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
+      createPacketStateMock() as any,
     );
 
     const response = await service.queryPacketCommitment(
-      { channel_id: 'channel-0', port_id: 'transfer', sequence: 7n } as any,
+      { channel_id: 'channel-0', port_id: 'mock', sequence: 7n } as any,
       { queryHeight: HISTORICAL_HEIGHT },
     );
 
@@ -344,7 +360,7 @@ describe('proof-bearing services with captured query heights', () => {
       HISTORICAL_HEIGHT,
     );
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
-      'commitments/ports/transfer/channels/channel-0/sequences/7',
+      'commitments/ports/mock/channels/channel-0/sequences/7',
     );
     expect(deps.treeStore.getCurrentTree).not.toHaveBeenCalled();
     expect(response.commitment).toBe('commitment-bytes');
@@ -366,16 +382,15 @@ describe('proof-bearing services with captured query heights', () => {
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
+      createPacketStateMock() as any,
     );
 
     const response = await service.queryPacketAcknowledgement(
-      { channel_id: 'channel-0', port_id: 'transfer', sequence: 7n } as any,
+      { channel_id: 'channel-0', port_id: 'mock', sequence: 7n } as any,
       { queryHeight: HISTORICAL_HEIGHT },
     );
 
-    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
-      'acks/ports/transfer/channels/channel-0/sequences/7',
-    );
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('acks/ports/mock/channels/channel-0/sequences/7');
     expect(response.acknowledgement).toBe(SUCCESS_ACKNOWLEDGEMENT_HEX);
     expect(deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName).not.toHaveBeenCalled();
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
@@ -421,9 +436,9 @@ describe('proof-bearing services with captured query heights', () => {
         RecvPacket: {
           packet: {
             sequence: 7n,
-            source_port: toHex('transfer'),
+            source_port: toHex('mock'),
             source_channel: toHex('channel-7'),
-            destination_port: toHex('transfer'),
+            destination_port: toHex('mock'),
             destination_channel: toHex('channel-0'),
           },
         },
@@ -455,10 +470,11 @@ describe('proof-bearing services with captured query heights', () => {
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
+      createPacketStateMock() as any,
     );
 
     const response = await service.queryPacketAcknowledgement(
-      { channel_id: 'channel-0', port_id: 'transfer', sequence: 7n } as any,
+      { channel_id: 'channel-0', port_id: 'mock', sequence: 7n } as any,
       { queryHeight: HISTORICAL_HEIGHT },
     );
 
@@ -482,15 +498,16 @@ describe('proof-bearing services with captured query heights', () => {
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
+      createPacketStateMock() as any,
     );
 
     const response = await service.queryPacketReceipt(
-      { channel_id: 'channel-0', port_id: 'transfer', sequence: 8n } as any,
+      { channel_id: 'channel-0', port_id: 'mock', sequence: 8n } as any,
       { queryHeight: HISTORICAL_HEIGHT },
     );
 
     expect(deps.historicalTree.generateNonExistenceProof).toHaveBeenCalledWith(
-      'receipts/ports/transfer/channels/channel-0/sequences/8',
+      'receipts/ports/mock/channels/channel-0/sequences/8',
     );
     expect(response.received).toBe(false);
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
@@ -506,15 +523,14 @@ describe('proof-bearing services with captured query heights', () => {
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
+      createPacketStateMock() as any,
     );
 
-    const response = await service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'transfer' } as any, {
+    const response = await service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'mock' } as any, {
       queryHeight: HISTORICAL_HEIGHT,
     });
 
-    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
-      'nextSequenceRecv/ports/transfer/channels/channel-0',
-    );
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('nextSequenceRecv/ports/mock/channels/channel-0');
     expect(response.next_sequence_receive).toBe('10');
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
@@ -532,6 +548,7 @@ describe('proof-bearing services with captured query heights', () => {
       {} as DenomTraceService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
+      createPacketStateMock() as any,
     );
 
     const response = await service.queryClientState({ client_id: '07-tendermint-0' } as any, {
@@ -559,6 +576,7 @@ describe('proof-bearing services with captured query heights', () => {
       {} as DenomTraceService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
+      createPacketStateMock() as any,
     );
 
     const response = await service.queryConsensusState(
@@ -576,98 +594,189 @@ describe('proof-bearing services with captured query heights', () => {
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
-  it.each([449n, 9_007_199_254_740_993n])('looks up a consensus height %s received over protobuf without losing precision', async (height) => {
-    const options = createGrpcOptions({}).options;
-    const definition = loadSync(options.protoPath!, options.loader);
-    const method = (definition['ibc.core.client.v1.Query'] as ServiceDefinition).ConsensusState;
-    const request = method.requestDeserialize(method.requestSerialize({
-      client_id: '07-tendermint-0', revision_number: '1',
-      revision_height: height.toString(), latest_height: false,
-    })) as Parameters<QueryService['queryConsensusState']>[0];
-    expect(typeof request.revision_height).toBe('object');
-    expect(request.revision_height.toString()).toBe(height.toString());
-    const datum = new Map([[{ revisionNumber: 1n, revisionHeight: height }, {
-      timestamp: 1_000_000_001n, root: { hash: 'ab'.repeat(32) }, next_validators_hash: 'cd'.repeat(32),
-    }]]);
-    (decodeClientDatum as jest.Mock).mockResolvedValue({
-      token: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
-      state: { clientState: { latestHeight: { revisionNumber: 1n, revisionHeight: height } }, consensusStates: datum },
-    });
-    (normalizeConsensusStateFromDatum as jest.Mock).mockImplementation(
-      jest.requireActual('@shared/helpers/consensus-state').normalizeConsensusStateFromDatum,
-    );
-    const deps = makeDeps();
-    deps.mocks.lucidService.consensusHistoryRecords.mockResolvedValue([{
-      datum: {
-        clientToken: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
-        height: { revisionNumber: 1n, revisionHeight: height },
-        consensusState: datum.values().next().value!,
-        processedTime: 2_000n, processedHeight: 20n,
-      },
-      consensusValue: CONSENSUS_VALUE, archived: false,
-    }]);
-    deps.historicalTree.get.mockImplementation((path) => path === `clients/07-tendermint-0/consensusStates/${height}` ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined);
-    const service = new QueryService(
-      deps.logger, deps.configService, deps.lucidService, {} as KupoService,
-      deps.historyService, {} as MiniProtocalsService, deps.mithrilService,
-      {} as DenomTraceService, deps.ibcTreeCacheService as any, deps.treeStore,
-    );
-    const response = await service.queryConsensusState(request, { queryHeight: HISTORICAL_HEIGHT });
-    expect(ConsensusState.decode(response.consensus_state!.value).timestamp).toEqual({ seconds: 1n, nanos: 1 });
-    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(`clients/07-tendermint-0/consensusStates/${height}`);
-    expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
-  });
+  it.each([449n, 9_007_199_254_740_993n])(
+    'looks up a consensus height %s received over protobuf without losing precision',
+    async (height) => {
+      const options = createGrpcOptions({}).options;
+      const definition = loadSync(options.protoPath!, options.loader);
+      const method = (definition['ibc.core.client.v1.Query'] as ServiceDefinition).ConsensusState;
+      const request = method.requestDeserialize(
+        method.requestSerialize({
+          client_id: '07-tendermint-0',
+          revision_number: '1',
+          revision_height: height.toString(),
+          latest_height: false,
+        }),
+      ) as Parameters<QueryService['queryConsensusState']>[0];
+      expect(typeof request.revision_height).toBe('object');
+      expect(request.revision_height.toString()).toBe(height.toString());
+      const datum = new Map([
+        [
+          { revisionNumber: 1n, revisionHeight: height },
+          {
+            timestamp: 1_000_000_001n,
+            root: { hash: 'ab'.repeat(32) },
+            next_validators_hash: 'cd'.repeat(32),
+          },
+        ],
+      ]);
+      (decodeClientDatum as jest.Mock).mockResolvedValue({
+        token: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
+        state: {
+          clientState: { latestHeight: { revisionNumber: 1n, revisionHeight: height } },
+          consensusStates: datum,
+        },
+      });
+      (normalizeConsensusStateFromDatum as jest.Mock).mockImplementation(
+        jest.requireActual('@shared/helpers/consensus-state').normalizeConsensusStateFromDatum,
+      );
+      const deps = makeDeps();
+      deps.mocks.lucidService.consensusHistoryRecords.mockResolvedValue([
+        {
+          datum: {
+            clientToken: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
+            height: { revisionNumber: 1n, revisionHeight: height },
+            consensusState: datum.values().next().value!,
+            processedTime: 2_000n,
+            processedHeight: 20n,
+          },
+          consensusValue: CONSENSUS_VALUE,
+          archived: false,
+        },
+      ]);
+      deps.historicalTree.get.mockImplementation((path) =>
+        path === `clients/07-tendermint-0/consensusStates/${height}` ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
+      );
+      const service = new QueryService(
+        deps.logger,
+        deps.configService,
+        deps.lucidService,
+        {} as KupoService,
+        deps.historyService,
+        {} as MiniProtocalsService,
+        deps.mithrilService,
+        {} as DenomTraceService,
+        deps.ibcTreeCacheService as any,
+        deps.treeStore,
+        createPacketStateMock() as any,
+      );
+      const response = await service.queryConsensusState(request, { queryHeight: HISTORICAL_HEIGHT });
+      expect(ConsensusState.decode(response.consensus_state!.value).timestamp).toEqual({ seconds: 1n, nanos: 1 });
+      expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
+        `clients/07-tendermint-0/consensusStates/${height}`,
+      );
+      expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+    },
+  );
 
   const latestQueries = [
     {
-      name: 'channel', unit: CHANNEL_TOKEN_UNIT, path: 'channelEnds/ports/transfer/channels/channel-0',
-      run: (deps: ReturnType<typeof makeDeps>) => new ChannelService(
-        deps.logger, deps.configService, deps.lucidService, {} as KupoService,
-        deps.mithrilService, deps.historyService, deps.ibcTreeCacheService as any, deps.treeStore,
-      ).queryChannel({ channel_id: 'channel-0' } as any),
+      name: 'channel',
+      unit: CHANNEL_TOKEN_UNIT,
+      path: 'channelEnds/ports/mock/channels/channel-0',
+      run: (deps: ReturnType<typeof makeDeps>) =>
+        new ChannelService(
+          deps.logger,
+          deps.configService,
+          deps.lucidService,
+          {} as KupoService,
+          deps.mithrilService,
+          deps.historyService,
+          deps.ibcTreeCacheService as any,
+          deps.treeStore,
+        ).queryChannel({ channel_id: 'channel-0' } as any),
     },
     {
-      name: 'connection', unit: 'connection-policyconnection-token', path: 'connections/connection-0',
-      run: (deps: ReturnType<typeof makeDeps>) => new ConnectionService(
-        deps.logger, deps.configService, deps.lucidService, {} as KupoService,
-        deps.mithrilService, deps.historyService, deps.ibcTreeCacheService as any, deps.treeStore,
-      ).queryConnection({ connection_id: 'connection-0' } as any),
+      name: 'connection',
+      unit: 'connection-policyconnection-token',
+      path: 'connections/connection-0',
+      run: (deps: ReturnType<typeof makeDeps>) =>
+        new ConnectionService(
+          deps.logger,
+          deps.configService,
+          deps.lucidService,
+          {} as KupoService,
+          deps.mithrilService,
+          deps.historyService,
+          deps.ibcTreeCacheService as any,
+          deps.treeStore,
+        ).queryConnection({ connection_id: 'connection-0' } as any),
     },
     {
-      name: 'packet commitment', unit: CHANNEL_TOKEN_UNIT, path: 'commitments/ports/transfer/channels/channel-0/sequences/7',
-      run: (deps: ReturnType<typeof makeDeps>) => new PacketService(
-        deps.logger, deps.configService, deps.lucidService, deps.mithrilService,
-        deps.historyService, deps.ibcTreeCacheService as any, deps.treeStore,
-      ).queryPacketCommitment({ channel_id: 'channel-0', port_id: 'transfer', sequence: 7n } as any),
+      name: 'packet commitment',
+      unit: CHANNEL_TOKEN_UNIT,
+      path: 'commitments/ports/mock/channels/channel-0/sequences/7',
+      run: (deps: ReturnType<typeof makeDeps>) =>
+        new PacketService(
+          deps.logger,
+          deps.configService,
+          deps.lucidService,
+          deps.mithrilService,
+          deps.historyService,
+          deps.ibcTreeCacheService as any,
+          deps.treeStore,
+          createPacketStateMock() as any,
+        ).queryPacketCommitment({ channel_id: 'channel-0', port_id: 'mock', sequence: 7n } as any),
     },
     {
-      name: 'client', unit: CLIENT_TOKEN_UNIT, path: 'clients/07-tendermint-0/clientState',
-      run: (deps: ReturnType<typeof makeDeps>) => new QueryService(
-        deps.logger, deps.configService, deps.lucidService, {} as KupoService,
-        deps.historyService, {} as MiniProtocalsService, deps.mithrilService,
-        {} as DenomTraceService, deps.ibcTreeCacheService as any, deps.treeStore,
-      ).queryClientState({ client_id: '07-tendermint-0' } as any),
+      name: 'client',
+      unit: CLIENT_TOKEN_UNIT,
+      path: 'clients/07-tendermint-0/clientState',
+      run: (deps: ReturnType<typeof makeDeps>) =>
+        new QueryService(
+          deps.logger,
+          deps.configService,
+          deps.lucidService,
+          {} as KupoService,
+          deps.historyService,
+          {} as MiniProtocalsService,
+          deps.mithrilService,
+          {} as DenomTraceService,
+          deps.ibcTreeCacheService as any,
+          deps.treeStore,
+          createPacketStateMock() as any,
+        ).queryClientState({ client_id: '07-tendermint-0' } as any),
     },
     {
-      name: 'consensus state', unit: CLIENT_TOKEN_UNIT, path: 'clients/07-tendermint-0/consensusStates/77',
-      run: (deps: ReturnType<typeof makeDeps>) => new QueryService(
-        deps.logger, deps.configService, deps.lucidService, {} as KupoService,
-        deps.historyService, {} as MiniProtocalsService, deps.mithrilService,
-        {} as DenomTraceService, deps.ibcTreeCacheService as any, deps.treeStore,
-      ).queryConsensusState({ client_id: '07-tendermint-0', revision_number: 0n, revision_height: 77n, latest_height: false } as any),
+      name: 'consensus state',
+      unit: CLIENT_TOKEN_UNIT,
+      path: 'clients/07-tendermint-0/consensusStates/77',
+      run: (deps: ReturnType<typeof makeDeps>) =>
+        new QueryService(
+          deps.logger,
+          deps.configService,
+          deps.lucidService,
+          {} as KupoService,
+          deps.historyService,
+          {} as MiniProtocalsService,
+          deps.mithrilService,
+          {} as DenomTraceService,
+          deps.ibcTreeCacheService as any,
+          deps.treeStore,
+          createPacketStateMock() as any,
+        ).queryConsensusState({
+          client_id: '07-tendermint-0',
+          revision_number: 0n,
+          revision_height: 77n,
+          latest_height: false,
+        } as any),
     },
   ];
   for (const query of latestQueries) {
     it(`serves latest ${query.name} values and proofs from the captured accepted height`, async () => {
       const deps = makeDeps();
       const response = await query.run(deps);
-      expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo)
-        .toHaveBeenCalledWith(query.unit, LATEST_ACCEPTED_HEIGHT);
+      expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo).toHaveBeenCalledWith(
+        query.unit,
+        LATEST_ACCEPTED_HEIGHT,
+      );
       expect(deps.capturedTree.generateProof).toHaveBeenCalledWith(query.path);
       expect(deps.treeStore.getCurrentTree).not.toHaveBeenCalled();
       if (query.name === 'consensus state') {
         expect(deps.mocks.lucidService.findUtxoByUnit).toHaveBeenCalledWith(CLIENT_TOKEN_UNIT);
-        expect(deps.mocks.lucidService.consensusHistoryRecords).toHaveBeenCalledWith(expect.objectContaining({ txHash: 'live-utxo' }));
+        expect(deps.mocks.lucidService.consensusHistoryRecords).toHaveBeenCalledWith(
+          expect.objectContaining({ txHash: 'live-utxo' }),
+        );
       } else {
         expect(deps.mocks.lucidService.findUtxoByUnit).not.toHaveBeenCalled();
       }
@@ -680,17 +789,23 @@ describe('proof-bearing services with captured query heights', () => {
     const deps = makeDeps();
     let lookupStarted!: () => void;
     let releaseLookup!: () => void;
-    const started = new Promise<void>((resolve) => { lookupStarted = resolve; });
+    const started = new Promise<void>((resolve) => {
+      lookupStarted = resolve;
+    });
     deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo.mockImplementationOnce(async () => {
       lookupStarted();
-      await new Promise<void>((resolve) => { releaseLookup = resolve; });
+      await new Promise<void>((resolve) => {
+        releaseLookup = resolve;
+      });
       return { txHash: 'captured-channel', outputIndex: 0, datum: 'captured-channel-datum' };
     });
     const pending = latestQueries[0].run(deps);
     await started;
     const newerTree = makeHistoricalTree();
     deps.mocks.treeStore.getAlignedSnapshot.mockResolvedValue({
-      version: 2, root: 'bb'.repeat(32), tree: newerTree,
+      version: 2,
+      root: 'bb'.repeat(32),
+      tree: newerTree,
       hostState: { txHash: 'newer-host-state', outputIndex: 1 },
     });
     releaseLookup();
@@ -709,22 +824,34 @@ describe('proof-bearing services with captured query heights', () => {
         const deps = makeDeps();
         let lookupStarted!: () => void;
         let releaseLookup!: () => void;
-        const started = new Promise<void>((resolve) => { lookupStarted = resolve; });
+        const started = new Promise<void>((resolve) => {
+          lookupStarted = resolve;
+        });
         deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo.mockImplementationOnce(async () => {
           lookupStarted();
-          await new Promise<void>((resolve) => { releaseLookup = resolve; });
+          await new Promise<void>((resolve) => {
+            releaseLookup = resolve;
+          });
           return { txHash: 'replacement-channel', outputIndex: 0, datum: 'replacement-channel-datum' };
         });
         const service = new ChannelService(
-          deps.logger, deps.configService, deps.lucidService, {} as KupoService,
-          deps.mithrilService, deps.historyService, deps.ibcTreeCacheService as any, deps.treeStore,
+          deps.logger,
+          deps.configService,
+          deps.lucidService,
+          {} as KupoService,
+          deps.mithrilService,
+          deps.historyService,
+          deps.ibcTreeCacheService as any,
+          deps.treeStore,
         );
         const pending = service.queryChannel({ channel_id: 'channel-0' } as any, {
           queryHeight: historical ? HISTORICAL_HEIGHT : undefined,
         });
         await started;
         deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
-          txHash: 'replacement-host-state', outputIndex: 1, datum: 'replacement-host-state-datum',
+          txHash: 'replacement-host-state',
+          outputIndex: 1,
+          datum: 'replacement-host-state-datum',
         });
         deps.mocks.lucidService.decodeDatum.mockResolvedValue({
           state: { ibc_state_root: changedRoot ? 'cd'.repeat(32) : HISTORICAL_ROOT },
@@ -732,8 +859,9 @@ describe('proof-bearing services with captured query heights', () => {
         releaseLookup();
 
         await expect(pending).rejects.toThrow(/no longer identifies the captured output/);
-        expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo)
-          .toHaveBeenLastCalledWith(historical ? HISTORICAL_HEIGHT : LATEST_ACCEPTED_HEIGHT);
+        expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenLastCalledWith(
+          historical ? HISTORICAL_HEIGHT : LATEST_ACCEPTED_HEIGHT,
+        );
         expect(deps.capturedTree.generateProof).not.toHaveBeenCalled();
         expect(deps.historicalTree.generateProof).not.toHaveBeenCalled();
       });

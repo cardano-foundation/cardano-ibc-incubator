@@ -197,6 +197,7 @@ async function fixture(
     voucherMetadata.scriptHash,
     mintChannelStt.scriptHash,
     hostPolicy,
+    { policy_id: hostPolicy, name: fromText("ibc_packet_config") },
   ]);
   const mintTransferEscrowShard = validator(
     "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint",

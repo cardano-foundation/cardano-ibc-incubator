@@ -807,6 +807,42 @@ type Module = "transfer" | "mock" | "icq";
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
+  packetState: {
+    operations: Record<
+      string,
+      {
+        title: string;
+        script: string;
+        scriptHash: string;
+        address: string;
+        refUtxo: UTxO;
+      }
+    >;
+    format: "packet-lanes-v1";
+    laneCount: number;
+    configToken: { policyId: string; name: string };
+    state: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    batch: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    guard: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+  };
   history:
     import("../../../packages/cardano-ibc-tx-builder-runtime/src/historyBootstrap.ts").HistoryBootstrap;
   deployedAt: string;

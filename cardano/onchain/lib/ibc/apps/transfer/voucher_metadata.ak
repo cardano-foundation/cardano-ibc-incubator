@@ -21,16 +21,17 @@ pub fn build_datum(
   let denom_trace = split_full_denom_trace(full_denom)
   let label = canonical_label(denom_trace.base_denom)
 
+  // Map entries follow Lucid's lexicographic byte-key serialization order.
   // CIP-68 user-facing metadata; derived on-chain, not relayer-provided.
   let metadata_map =
     builtin.map_data(
       [
-        Pair(builtin.b_data("name"), builtin.b_data(label)),
-        Pair(builtin.b_data("ticker"), builtin.b_data(label)),
         Pair(
           builtin.b_data("description"),
           builtin.b_data(description(full_denom)),
         ),
+        Pair(builtin.b_data("name"), builtin.b_data(label)),
+        Pair(builtin.b_data("ticker"), builtin.b_data(label)),
       ],
     )
 
@@ -38,7 +39,6 @@ pub fn build_datum(
   let extra_map =
     builtin.map_data(
       [
-        Pair(builtin.b_data("path"), builtin.b_data(denom_trace.path)),
         Pair(
           builtin.b_data("baseDenom"),
           builtin.b_data(denom_trace.base_denom),
@@ -48,6 +48,7 @@ pub fn build_datum(
           builtin.b_data("ibcDenomHash"),
           builtin.b_data(ibc_denom_hash(full_denom)),
         ),
+        Pair(builtin.b_data("path"), builtin.b_data(denom_trace.path)),
         Pair(
           builtin.b_data("traceVersion"),
           builtin.i_data(voucher_metadata_version),

@@ -27,17 +27,17 @@ import {
   HostStateDatum,
 } from "../../types/host-state-datum";
 import {
+  GrpcFailedPreconditionException,
   GrpcInternalException,
   GrpcNotFoundException,
-  GrpcFailedPreconditionException,
 } from "~@/exception/grpc_exceptions";
 import { ClientDatum, encodeClientDatum } from "../../types/client-datum";
 import { decodeClientDatum } from "../../types/client-datum";
 import {
   encodeMintClientRedeemer,
   encodeSpendClientRedeemer,
-  SpendClientRedeemer,
   MintClientRedeemer,
+  SpendClientRedeemer,
 } from "../../types/client-redeemer";
 import {
   encodeRecoverClientWithdrawalRedeemer,
@@ -46,8 +46,8 @@ import {
 import { AuthToken, encodeAuthToken } from "../../types/auth-token";
 import { Height } from "../../types/height";
 import {
-  ConsensusStateDatum,
   ConsensusHistoryWitness,
+  ConsensusStateDatum,
   decodeConsensusStateDatum,
   encodeConsensusStateDatum,
 } from "../../types/consensus-state-datum";
@@ -108,8 +108,8 @@ import {
   TransferModuleDatum,
 } from "@shared/types/apps/transfer/transfer-module-datum";
 import {
-  UnsignedAckPacketModuleDto,
   UnsignedAckPacketMintDto,
+  UnsignedAckPacketModuleDto,
   UnsignedAckPacketSucceedDto,
   UnsignedAckPacketUnescrowDto,
   UnsignedChannelCloseConfirmDto,
@@ -121,11 +121,11 @@ import {
   UnsignedConnectionOpenAckDto,
   UnsignedPrunePacketHistoryDto,
   UnsignedRecvPacketDto,
-  UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
+  UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketUnescrowDto,
-  UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
+  UnsignedSendPacketModuleDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
 } from "./dtos";
@@ -190,9 +190,8 @@ function encodeTransferEscrowShardRedeemer(
     registry_siblings: Data.Array(Data.Bytes()),
   });
   // Lucid encodes Aiken's sole constructor from its fields, not a one-member enum.
-  const createEscrowShard = (
-    data as { CreateEscrowShard: Record<string, unknown> }
-  ).CreateEscrowShard;
+  const createEscrowShard =
+    (data as { CreateEscrowShard: Record<string, unknown> }).CreateEscrowShard;
 
   return Data.to(
     createEscrowShard as never,
@@ -292,9 +291,8 @@ export class LucidService implements OnModuleInit {
       receivePacket:
         deploymentConfig.validators.spendChannel.refValidator.recv_packet
           .refUtxo,
-      prunePacketHistory:
-        deploymentConfig.validators.spendChannel.refValidator
-          .prune_packet_history.refUtxo,
+      prunePacketHistory: deploymentConfig.validators.spendChannel.refValidator
+        .prune_packet_history.refUtxo,
       ackPacket:
         deploymentConfig.validators.spendChannel.refValidator.acknowledge_packet
           .refUtxo,
@@ -313,12 +311,16 @@ export class LucidService implements OnModuleInit {
 
   private async loadReferenceScripts(): Promise<ReferenceScripts> {
     const entries: Array<[keyof ReferenceScripts, UTxO]> = [];
-    for (const [label, outRef] of Object.entries(this.referenceScriptOutRefs) as Array<
-      [
-        keyof ReferenceScripts,
-        Pick<UTxO, "txHash" | "outputIndex"> | undefined,
-      ]
-    >) {
+    for (
+      const [label, outRef] of Object.entries(
+        this.referenceScriptOutRefs,
+      ) as Array<
+        [
+          keyof ReferenceScripts,
+          Pick<UTxO, "txHash" | "outputIndex"> | undefined,
+        ]
+      >
+    ) {
       if (!outRef) {
         continue;
       }
@@ -380,7 +382,9 @@ export class LucidService implements OnModuleInit {
         String(label)
       }" at ${outRef.txHash}#${outRef.outputIndex}${
         lastError
-          ? `: ${lastError instanceof Error ? lastError.message : String(lastError)}`
+          ? `: ${
+            lastError instanceof Error ? lastError.message : String(lastError)
+          }`
           : ""
       }`,
     );
@@ -467,32 +471,64 @@ export class LucidService implements OnModuleInit {
   }
 
   private requireConsensusHistory(): ConsensusHistoryService {
-    if (!this.consensusHistory) throw new GrpcFailedPreconditionException("Consensus history service is unavailable");
+    if (!this.consensusHistory) {
+      throw new GrpcFailedPreconditionException(
+        "Consensus history service is unavailable",
+      );
+    }
     return this.consensusHistory;
   }
 
   public async prepareConsensusHistoryUpdate(clientUtxo: UTxO) {
-    const client = await this.decodeDatum<ClientDatum>(clientUtxo.datum!, "client");
-    return this.requireConsensusHistory().insertion(clientUtxo, client,
-      () => this.findUtxoByUnit(client.token.policyId + client.token.name));
+    const client = await this.decodeDatum<ClientDatum>(
+      clientUtxo.datum!,
+      "client",
+    );
+    return this.requireConsensusHistory().insertion(
+      clientUtxo,
+      client,
+      () => this.findUtxoByUnit(client.token.policyId + client.token.name),
+    );
   }
 
   public async consensusHistoryRecords(clientUtxo: UTxO) {
-    const client = await this.decodeDatum<ClientDatum>(clientUtxo.datum!, "client");
-    return this.requireConsensusHistory().records(clientUtxo, client,
-      () => this.findUtxoByUnit(client.token.policyId + client.token.name));
+    const client = await this.decodeDatum<ClientDatum>(
+      clientUtxo.datum!,
+      "client",
+    );
+    return this.requireConsensusHistory().records(
+      clientUtxo,
+      client,
+      () => this.findUtxoByUnit(client.token.policyId + client.token.name),
+    );
   }
 
   /** Hydrate the client in memory. The redeemer carries the authenticated records. */
   public async resolveClientAtHeights(
     clientUtxo: UTxO,
     heights: Height[],
-  ): Promise<{ clientUtxo: UTxO; clientDatum: ClientDatum; historyWitnesses: ConsensusHistoryWitness[] }> {
-    const original = await this.decodeDatum<ClientDatum>(clientUtxo.datum!, "client");
-    const clientAddress = this.normalizeAddressOrCredential(this.configService.get("deployment").validators.spendClient.address);
-    if (clientUtxo.address !== clientAddress || original.token.policyId !== this.getClientPolicyId() ||
-      clientUtxo.assets[original.token.policyId + original.token.name] !== 1n) {
-      throw new GrpcFailedPreconditionException("Client UTxO authentication failed");
+  ): Promise<
+    {
+      clientUtxo: UTxO;
+      clientDatum: ClientDatum;
+      historyWitnesses: ConsensusHistoryWitness[];
+    }
+  > {
+    const original = await this.decodeDatum<ClientDatum>(
+      clientUtxo.datum!,
+      "client",
+    );
+    const clientAddress = this.normalizeAddressOrCredential(
+      this.configService.get("deployment").validators.spendClient.address,
+    );
+    if (
+      clientUtxo.address !== clientAddress ||
+      original.token.policyId !== this.getClientPolicyId() ||
+      clientUtxo.assets[original.token.policyId + original.token.name] !== 1n
+    ) {
+      throw new GrpcFailedPreconditionException(
+        "Client UTxO authentication failed",
+      );
     }
     const clientDatum: ClientDatum = {
       ...original,
@@ -505,29 +541,58 @@ export class LucidService implements OnModuleInit {
     };
     const historical: Height[] = [];
     for (const height of heights) {
-      if (getHeightMapValue(clientDatum.state.consensusStates, height) !== undefined) {
-        if (getHeightMapValue(clientDatum.state.processedTimes, height) === undefined ||
-          getHeightMapValue(clientDatum.state.processedHeights, height) === undefined) {
-          throw new GrpcFailedPreconditionException("Client consensus state is missing processed metadata");
+      if (
+        getHeightMapValue(clientDatum.state.consensusStates, height) !==
+          undefined
+      ) {
+        if (
+          getHeightMapValue(clientDatum.state.processedTimes, height) ===
+            undefined ||
+          getHeightMapValue(clientDatum.state.processedHeights, height) ===
+            undefined
+        ) {
+          throw new GrpcFailedPreconditionException(
+            "Client consensus state is missing processed metadata",
+          );
         }
         continue;
       }
       const latest = original.state.clientState.latestHeight;
-      if (height.revisionNumber > latest.revisionNumber ||
-        (height.revisionNumber === latest.revisionNumber && height.revisionHeight >= latest.revisionHeight)) {
-        throw new GrpcNotFoundException("Requested consensus height is not an archived client height");
+      if (
+        height.revisionNumber > latest.revisionNumber ||
+        (height.revisionNumber === latest.revisionNumber &&
+          height.revisionHeight >= latest.revisionHeight)
+      ) {
+        throw new GrpcNotFoundException(
+          "Requested consensus height is not an archived client height",
+        );
       }
-      if (!historical.some((item) => item.revisionNumber === height.revisionNumber && item.revisionHeight === height.revisionHeight)) {
+      if (
+        !historical.some(
+          (item) =>
+            item.revisionNumber === height.revisionNumber &&
+            item.revisionHeight === height.revisionHeight,
+        )
+      ) {
         historical.push(height);
       }
     }
-    const historyWitnesses = historical.length === 0 ? [] : await this.requireConsensusHistory().witnesses(
-      clientUtxo, original, () => this.findUtxoByUnit(original.token.policyId + original.token.name), historical,
-    );
+    const historyWitnesses = historical.length === 0
+      ? []
+      : await this.requireConsensusHistory().witnesses(
+        clientUtxo,
+        original,
+        () =>
+          this.findUtxoByUnit(original.token.policyId + original.token.name),
+        historical,
+      );
     for (const { record: datum } of historyWitnesses) {
       clientDatum.state.consensusStates.set(datum.height, datum.consensusState);
       clientDatum.state.processedTimes.set(datum.height, datum.processedTime);
-      clientDatum.state.processedHeights.set(datum.height, datum.processedHeight);
+      clientDatum.state.processedHeights.set(
+        datum.height,
+        datum.processedHeight,
+      );
     }
     return { clientUtxo, clientDatum, historyWitnesses };
   }
@@ -704,7 +769,9 @@ export class LucidService implements OnModuleInit {
   public async getPublicKeyHash(address: string): Promise<string> {
     const paymentCredential = getAddressDetails(address).paymentCredential;
     if (!paymentCredential) {
-      throw new GrpcInternalException(`Address ${address} does not contain a payment credential`);
+      throw new GrpcInternalException(
+        `Address ${address} does not contain a payment credential`,
+      );
     }
     return paymentCredential.hash;
   }
@@ -797,7 +864,10 @@ export class LucidService implements OnModuleInit {
       switch (type) {
         case "consensus_state":
         case "consensusState":
-          return decodeConsensusStateDatum(encodedDatum, this.LucidImporter) as T;
+          return decodeConsensusStateDatum(
+            encodedDatum,
+            this.LucidImporter,
+          ) as T;
         case "client":
           return (await decodeClientDatum(
             encodedDatum,
@@ -848,7 +918,10 @@ export class LucidService implements OnModuleInit {
       switch (type) {
         case "consensus_state":
         case "consensusState":
-          return encodeConsensusStateDatum(data as ConsensusStateDatum, this.LucidImporter);
+          return encodeConsensusStateDatum(
+            data as ConsensusStateDatum,
+            this.LucidImporter,
+          );
         case "client":
           return await encodeClientDatum(
             data as ClientDatum,
@@ -1061,7 +1134,9 @@ export class LucidService implements OnModuleInit {
     return validator.address;
   }
 
-  public async queryLedgerStateUtxosAtAddresses(addresses: string[]): Promise<LedgerStateUtxo[]> {
+  public async queryLedgerStateUtxosAtAddresses(
+    addresses: string[],
+  ): Promise<LedgerStateUtxo[]> {
     const ogmiosEndpoint = this.configService.get<string>("ogmiosEndpoint");
     if (!ogmiosEndpoint) {
       throw new GrpcInternalException(
@@ -1109,7 +1184,9 @@ export class LucidService implements OnModuleInit {
     const deploymentConfig = this.configService.get("deployment");
     const support = deploymentConfig.validators.recoverClient;
     if (!support?.address || !this.referenceScripts.recoverClient) {
-      throw new GrpcFailedPreconditionException("Client history verification script is unavailable");
+      throw new GrpcFailedPreconditionException(
+        "Client history verification script is unavailable",
+      );
     }
     const tx: TxBuilder = this.newTxBuilder();
 
@@ -1243,7 +1320,9 @@ export class LucidService implements OnModuleInit {
     const recoveryConfig = deploymentConfig.validators.recoverClient;
     const recoveryReference = this.referenceScripts.recoverClient;
     if (!recoveryConfig?.address || !recoveryReference) {
-      throw new GrpcInternalException('Staged Tendermint history support is not configured');
+      throw new GrpcInternalException(
+        "Staged Tendermint history support is not configured",
+      );
     }
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
       deploymentConfig.hostStateNFT.name;
@@ -1263,10 +1342,20 @@ export class LucidService implements OnModuleInit {
       ])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
-      .collectFrom([sessionUtxo, ...additionalSessions.map(({ utxo }) => utxo)], encodedSpendSessionRedeemer)
+      .collectFrom(
+        [sessionUtxo, ...additionalSessions.map(({ utxo }) => utxo)],
+        encodedSpendSessionRedeemer,
+      )
       .mintAssets(
-        Object.fromEntries([sessionTokenUnit, ...additionalSessions.map(({ tokenUnit }) => tokenUnit)]
-          .map((tokenUnit) => [tokenUnit, -1n])),
+        Object.fromEntries(
+          [
+            sessionTokenUnit,
+            ...additionalSessions.map(({ tokenUnit }) => tokenUnit),
+          ].map((tokenUnit) => [
+            tokenUnit,
+            -1n,
+          ]),
+        ),
         encodedBurnSessionRedeemer,
       )
       .pay.ToContract(
@@ -1695,7 +1784,9 @@ export class LucidService implements OnModuleInit {
     const deploymentConfig = this.configService.get("deployment");
     const moduleConfig = deploymentConfig.modules[moduleKey];
     if (!moduleConfig) {
-      throw new GrpcInternalException(`Missing deployment module for ${moduleKey}`);
+      throw new GrpcInternalException(
+        `Missing deployment module for ${moduleKey}`,
+      );
     }
     return moduleConfig.address;
   }
@@ -1723,7 +1814,9 @@ export class LucidService implements OnModuleInit {
     return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
   }
 
-  private requireTransferEscrowDatum(encodedTransferEscrowDatum?: string): string {
+  private requireTransferEscrowDatum(
+    encodedTransferEscrowDatum?: string,
+  ): string {
     if (!encodedTransferEscrowDatum) {
       throw new GrpcInternalException(
         "Transfer escrow datum is required for sharded escrow updates",
@@ -2115,10 +2208,7 @@ export class LucidService implements OnModuleInit {
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [transferEscrowUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
+      .collectFrom([transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([
         dto.connectionUtxo,
         dto.clientUtxo,
@@ -2352,18 +2442,14 @@ export class LucidService implements OnModuleInit {
 
     this.applyTraceRegistryUpdate(tx, dto);
 
-    tx
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+    tx.collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
         [dto.transferModuleUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .mintAssets(
-        mintVoucherAssets,
-        dto.encodedMintVoucherRedeemer,
-      )
+      .mintAssets(mintVoucherAssets, dto.encodedMintVoucherRedeemer)
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         {
@@ -2596,10 +2682,7 @@ export class LucidService implements OnModuleInit {
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [transferEscrowUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
+      .collectFrom([transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([
         dto.transferModuleReferenceUtxo,
         dto.connectionUtxo,
@@ -2681,18 +2764,14 @@ export class LucidService implements OnModuleInit {
 
     this.applyTraceRegistryUpdate(tx, dto);
 
-    tx
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+    tx.collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
         [dto.transferModuleReferenceUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .mintAssets(
-        mintVoucherAssets,
-        dto.encodedMintVoucherRedeemer,
-      )
+      .mintAssets(mintVoucherAssets, dto.encodedMintVoucherRedeemer)
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         {
@@ -2755,15 +2834,19 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedSendPacketEscrowTxInput,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
-    return createUnsignedSendPacketEscrowTx({
-      newTx: () => this.newTxBuilder(),
-      hostStateAddress: deploymentConfig.validators.hostStateStt.address,
-      hostStateTokenUnit: deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name,
-      transferModuleRootAddress: deploymentConfig.modules.transfer.address,
-      referenceScripts: this.referenceScripts,
-      encodeAuthToken: (token) => encodeAuthToken(token, this.LucidImporter),
-      internalError: (message) => new GrpcInternalException(message),
-    }, dto);
+    return createUnsignedSendPacketEscrowTx(
+      {
+        newTx: () => this.newTxBuilder(),
+        hostStateAddress: deploymentConfig.validators.hostStateStt.address,
+        hostStateTokenUnit: deploymentConfig.hostStateNFT.policyId +
+          deploymentConfig.hostStateNFT.name,
+        transferModuleRootAddress: deploymentConfig.modules.transfer.address,
+        referenceScripts: this.referenceScripts,
+        encodeAuthToken: (token) => encodeAuthToken(token, this.LucidImporter),
+        internalError: (message) => new GrpcInternalException(message),
+      },
+      dto,
+    );
   }
 
   public createUnsignedSendPacketModuleTx(
@@ -2869,11 +2952,7 @@ export class LucidService implements OnModuleInit {
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
 
-    this.payModuleUtxo(
-      tx,
-      "transfer",
-      dto.transferModuleReferenceUtxo,
-    );
+    this.payModuleUtxo(tx, "transfer", dto.transferModuleReferenceUtxo);
 
     return tx;
   }
@@ -2909,18 +2988,14 @@ export class LucidService implements OnModuleInit {
 
     this.applyTraceRegistryUpdate(tx, dto);
 
-    tx
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+    tx.collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
         [dto.transferModuleReferenceUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .mintAssets(
-        mintVoucherAssets,
-        dto.encodedMintVoucherRedeemer,
-      )
+      .mintAssets(mintVoucherAssets, dto.encodedMintVoucherRedeemer)
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         {
@@ -3000,10 +3075,7 @@ export class LucidService implements OnModuleInit {
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [transferEscrowUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
+      .collectFrom([transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([
         dto.transferModuleReferenceUtxo,
         dto.connectionUtxo,
@@ -3064,7 +3136,7 @@ export class LucidService implements OnModuleInit {
       .scriptHash;
   }
 
-  private applyTraceRegistryUpdate(
+  public applyTraceRegistryUpdate(
     tx: TxBuilder,
     dto: {
       traceRegistryUpdate?:
@@ -3221,17 +3293,20 @@ export class LucidService implements OnModuleInit {
     // validators expect a finite upper bound, so give the probe the same
     // ledger-anchored validity style the production tx runner uses.
     const ogmiosEndpoint = this.configService.get<string>("ogmiosEndpoint");
-    const cardanoNetwork = this.configService.get<"Mainnet" | "Preview" | "Preprod" | "Custom">("cardanoNetwork");
+    const cardanoNetwork = this.configService.get<
+      "Mainnet" | "Preview" | "Preprod" | "Custom"
+    >("cardanoNetwork");
     const slotConfig = cardanoNetwork
       ? this.LucidImporter.SLOT_CONFIG_NETWORK?.[cardanoNetwork]
       : undefined;
 
     if (ogmiosEndpoint && slotConfig && slotConfig.slotLength > 0) {
-      const { validFromTime, validToTime } = await computeLedgerAnchoredValidityWindow(
-        ogmiosEndpoint,
-        slotConfig,
-        TRANSACTION_TIME_TO_LIVE,
-      );
+      const { validFromTime, validToTime } =
+        await computeLedgerAnchoredValidityWindow(
+          ogmiosEndpoint,
+          slotConfig,
+          TRANSACTION_TIME_TO_LIVE,
+        );
       tx.validFrom(validFromTime);
       tx.validTo(validToTime);
     } else {

@@ -10,16 +10,13 @@ import {
   type LucidEvolution,
   SLOT_CONFIG_NETWORK,
   type TxBuilder,
+  type UTxO,
 } from "@lucid-evolution/lucid";
 import { createCostModels } from "@lucid-evolution/utils";
 import { generateEmulatorAccount } from "@lucid-evolution/provider";
 import parameters from "../../scripts/fixtures/mainnet-protocol-parameters.json" with {
   type: "json",
 };
-import {
-  packetLaneTokenName,
-  sendSequencerTokenName,
-} from "../../../../packages/cardano-ibc-tx-builder/src/packet-lanes.ts";
 import { readValidator } from "../utils.ts";
 import {
   channelActions,
@@ -32,6 +29,7 @@ import {
   isolateEvaluation,
 } from "./isolated-evaluation.ts";
 import {
+  buildPacketLaneInitialization,
   buildTransferIntent,
   encode,
   type PacketLaneDeployment,
@@ -43,13 +41,25 @@ import {
 // batching and packet completion are balanced, signed transactions executing
 // the compiled validators with the pinned mainnet protocol parameters.
 export async function packetLaneFixture(laneCount = 16) {
-  const fixture = await channelFixture(channelActions[4], {
-    ...defaultChannelParameters,
-    port: "transfer",
-    remotePort: "transfer",
-    version: "ics20-1",
-    ordered: false,
-  });
+  const node = Deno.env.get("PACKET_LANE_NODE_URL");
+  let clock: { time: number; slot: number } | undefined;
+  if (node) {
+    const start = await nodeRpc(node, "queryNetwork/startTime", {});
+    const tip = await nodeRpc(node, "queryLedgerState/tip", {});
+    clock = { time: Date.parse(start) + tip.slot * 1_000, slot: tip.slot };
+  }
+  const fixture = await channelFixture(
+    channelActions[4],
+    {
+      ...defaultChannelParameters,
+      port: "transfer",
+      remotePort: "transfer",
+      version: "ics20-1",
+      ordered: false,
+    },
+    "none",
+    clock,
+  );
   const { emulator, seed, channelToken, packetContext: context } = fixture;
   Object.assign(emulator.protocolParameters, {
     maxTxSize: parameters.maxTxSize,
@@ -69,34 +79,104 @@ export async function packetLaneFixture(laneCount = 16) {
     type: "Script",
     hash: "fe".repeat(28),
   });
-  const statePolicy = "99".repeat(28);
-  const sequencerToken = record(
-    statePolicy,
-    sendSequencerTokenName("transfer", "channel-0"),
+  const configToken = record("98".repeat(28), fromText("ibc_packet_config"));
+  const [stateScript, statePolicy, registryAddress] = readValidator(
+    "minting_packet_lanes.minting_packet_lanes.mint",
+    fixture.lucid,
+    [record("97".repeat(32), 0n), configToken, channelToken.fields[0]],
   );
+  const metadataHash = "95".repeat(28);
+  const [voucherScript, voucherPolicy] = readValidator(
+    "minting_voucher.mint_voucher.mint",
+    fixture.lucid,
+    [
+      record("94".repeat(28), "01"),
+      record("94".repeat(28), "02"),
+      metadataHash,
+      channelToken.fields[0],
+      "93".repeat(28),
+      configToken,
+    ],
+  );
+  const [traceScript, traceHash, traceAddress] = readValidator(
+    "trace_registry.spend_trace_registry.spend",
+    fixture.lucid,
+    [
+      "94".repeat(28),
+      record("94".repeat(28), "02"),
+      voucherPolicy,
+      "",
+      "93".repeat(28),
+    ],
+  );
+  const operations: PacketLaneDeployment["operations"] = {};
+  for (
+    const name of [
+      "send",
+      "acknowledge",
+      "timeout",
+      "reject",
+      "receive",
+      "prune",
+      "timeout_on_close",
+      "retire",
+      "funds",
+      "send_funds",
+    ]
+  ) {
+    const params = ["funds", "send_funds"].includes(name)
+      ? [configToken, voucherPolicy]
+      : [
+        configToken,
+        channelToken.fields[0],
+        statePolicy,
+        "11".repeat(28),
+        "22".repeat(28),
+        BigInt(laneCount),
+        voucherPolicy,
+        ...(!["send", "retire"].includes(name) ? [context.verifyPolicy] : []),
+      ];
+    const [script, policy] = readValidator(
+      `packet_${name}.packet_${name}.mint`,
+      fixture.lucid,
+      params,
+    );
+    operations[name] = {
+      policy,
+      reference: seed(locked, { lovelace: 100_000_000n }, Data.void(), {
+        ...script,
+        script: applyDoubleCborEncoding(script.script),
+      }),
+    };
+  }
   const [batchScript, batchPolicy, batchAddress] = readValidator(
     "packet_lane_batch.packet_lane_batch.mint",
     fixture.lucid,
     [
-      channelToken,
-      sequencerToken,
-      statePolicy,
-      "11".repeat(28),
-      "22".repeat(28),
-      BigInt(laneCount),
+      channelToken.fields[0],
+      record(...Object.values(operations).map((v) => v.policy)),
     ],
   );
-  const [guardScript, , guardAddress] = readValidator(
+  const [guardScript, guardHash, guardAddress] = readValidator(
     "packet_lane_guard.packet_lane_guard.spend",
     fixture.lucid,
-    [batchPolicy],
+    [batchPolicy, statePolicy],
   );
-  const scripts = [batchScript, guardScript].map((script) =>
+  const scripts = [batchScript, guardScript, stateScript, voucherScript].map((
+    script,
+  ) =>
     seed(locked, { lovelace: 100_000_000n }, Data.void(), {
       ...script,
       script: applyDoubleCborEncoding(script.script),
     })
   );
+  const proofVerifier = {
+    policy: context.verifyPolicy,
+    reference: seed(locked, { lovelace: 100_000_000n }, Data.void(), {
+      ...context.verifyScript,
+      script: applyDoubleCborEncoding(context.verifyScript.script),
+    }),
+  };
   const channelUnit = String(channelToken.fields[0]) +
     String(channelToken.fields[1]);
   const channel =
@@ -108,38 +188,24 @@ export async function packetLaneFixture(laneCount = 16) {
   channel.address = locked;
   context.client.address = locked;
   context.connection.address = locked;
-  seed(guardAddress, {
+  const configuration = seed(
+    locked,
+    {
+      lovelace: 5_000_000n,
+      [String(configToken.fields[0]) + String(configToken.fields[1])]: 1n,
+    },
+    encode(
+      record(statePolicy, batchPolicy, guardHash, BigInt(laneCount), traceHash),
+    ),
+  );
+  seed(registryAddress, {
     lovelace: 5_000_000n,
-    [statePolicy + String(sequencerToken.fields[1])]: 1n,
-  }, encode(record(fromText("transfer"), fromText("channel-0"), 0n, 1n)));
-  for (let lane = 0; lane < laneCount; lane++) {
-    seed(
-      guardAddress,
-      {
-        lovelace: 5_000_000n,
-        [
-          statePolicy +
-          packetLaneTokenName("transfer", "channel-0", lane, laneCount)
-        ]: 1n,
-      },
-      encode(
-        record(
-          fromText("transfer"),
-          fromText("channel-0"),
-          BigInt(lane),
-          BigInt(laneCount),
-          0n,
-          "00".repeat(32),
-          new Map(),
-          [],
-          new Map(),
-          record(0n, 0n),
-          record(0n, 0n),
-        ),
-      ),
-    );
-  }
+    [statePolicy + fromText("ibc_packet_registry")]: 1n,
+  }, encode(record(0n)));
   const deployment: PacketLaneDeployment = {
+    operations,
+    proofVerifier,
+    voucherPolicy,
     batchPolicy,
     batchAddress,
     guardAddress,
@@ -222,14 +288,18 @@ export async function packetLaneFixture(laneCount = 16) {
   state.fields[3] = new Map([[height, 0n]]);
   context.client.datum = encode(client);
 
-  async function wallet() {
+  async function wallet(enterprise = false) {
     const account = generateEmulatorAccount({ lovelace: 300_000_000n });
-    seed(account.address, account.assets, Data.void());
-    seed(account.address, { lovelace: 5_000_000n }, Data.void());
     const clock = { ...SLOT_CONFIG_NETWORK.Custom };
     const lucid = await Lucid(emulator, "Custom");
     SLOT_CONFIG_NETWORK.Custom = clock;
-    lucid.selectWallet.fromSeed(account.seedPhrase);
+    lucid.selectWallet.fromSeed(
+      account.seedPhrase,
+      enterprise ? { addressType: "Enterprise" } : {},
+    );
+    const address = await lucid.wallet().address();
+    seed(address, account.assets, Data.void());
+    seed(address, { lovelace: 5_000_000n }, Data.void());
     // uplc 0.2.23 mishandles the 350-entry model (bitwise builtins receive
     // prohibitive default costs). Its supported 297-entry prefix has exactly
     // the same ledger costs for the builtins used here. Only evaluation uses
@@ -244,6 +314,42 @@ export async function packetLaneFixture(laneCount = 16) {
       ),
     });
     isolateEvaluation(lucid, emulator, evaluationModels.to_cbor_bytes());
+    if (node) {
+      nodeEvaluations.set(lucid, { node, emulator });
+      emulator.evaluateTx = async (tx, additional = []) => {
+        const body = CML.Transaction.from_cbor_hex(tx).body();
+        const refs: Array<{ txHash: string; outputIndex: number }> = [];
+        for (
+          const inputs of [
+            body.inputs(),
+            body.reference_inputs(),
+            body.collateral_inputs(),
+          ]
+        ) {
+          if (!inputs) continue;
+          for (let i = 0; i < inputs.len(); i++) {
+            refs.push({
+              txHash: inputs.get(i).transaction_id().to_hex(),
+              outputIndex: Number(inputs.get(i).index()),
+            });
+          }
+        }
+        const inputs = new Map(
+          [...await emulator.getUtxosByOutRef(refs), ...additional].map(
+            (input) => [`${input.txHash}#${input.outputIndex}`, input],
+          ),
+        );
+        const result = await nodeRpc(node, "evaluateTransaction", {
+          transaction: { cbor: tx },
+          additionalUtxo: [...inputs.values()].map(nodeUtxo),
+        });
+        return result.map((item: any) => ({
+          redeemer_tag: item.validator.purpose,
+          redeemer_index: item.validator.index,
+          ex_units: { mem: item.budget.memory, steps: item.budget.cpu },
+        }));
+      };
+    }
     return lucid;
   }
 
@@ -278,7 +384,30 @@ export async function packetLaneFixture(laneCount = 16) {
     assert(intents.length === count);
     return { intents, users };
   }
-  return { ...fixture, deployment, wallet, admit, proofs };
+  const initializer = await wallet();
+  const initialization = await buildPacketLaneInitialization(
+    initializer,
+    deployment,
+    configuration,
+    registryAddress,
+  );
+  await (await signMeasured(
+    initializer,
+    initialization,
+    `${laneCount}-lane issuance`,
+  )).submit();
+  emulator.awaitBlock();
+  deployment.scripts.push(configuration);
+  return {
+    ...fixture,
+    deployment,
+    wallet,
+    admit,
+    proofs,
+    metadataHash,
+    traceScript,
+    traceAddress,
+  };
 }
 
 export async function signMeasured(
@@ -297,11 +426,52 @@ export async function signMeasured(
     bytes <= limits.maxTxSize,
     `${label}: ${bytes} bytes exceeds ${limits.maxTxSize}`,
   );
-  assert(units.mem() <= limits.maxTxExMem, `${label}: memory budget exceeded`);
+  assert(
+    units.mem() <= limits.maxTxExMem,
+    `${label}: ${units.mem()} memory exceeds ${limits.maxTxExMem}`,
+  );
   assert(units.steps() <= limits.maxTxExSteps, `${label}: CPU budget exceeded`);
   console.log(
     `${label}: ${bytes} bytes, ${units.mem()} memory, ${units.steps()} CPU`,
   );
+  const node = nodeEvaluations.get(lucid);
+  if (node) {
+    const body = signed.toTransaction().body();
+    const refs: Array<{ txHash: string; outputIndex: number }> = [];
+    for (
+      const inputs of [
+        body.inputs(),
+        body.reference_inputs(),
+        body.collateral_inputs(),
+      ]
+    ) {
+      if (!inputs) continue;
+      for (let i = 0; i < inputs.len(); i++) {
+        refs.push({
+          txHash: inputs.get(i).transaction_id().to_hex(),
+          outputIndex: Number(inputs.get(i).index()),
+        });
+      }
+    }
+    const utxos = await node.emulator.getUtxosByOutRef(refs);
+    const result = await nodeRpc(node.node, "evaluateTransaction", {
+      transaction: { cbor: signed.toCBOR() },
+      additionalUtxo: utxos.map(nodeUtxo),
+    });
+    const memory = result.reduce(
+      (sum: bigint, item: any) => sum + BigInt(item.budget.memory),
+      0n,
+    );
+    const cpu = result.reduce(
+      (sum: bigint, item: any) => sum + BigInt(item.budget.cpu),
+      0n,
+    );
+    console.log(`${label}: node confirmed ${memory} memory, ${cpu} CPU`);
+    assert(
+      memory <= units.mem() && cpu <= units.steps(),
+      `${label}: node execution exceeds signed budget`,
+    );
+  }
   return signed;
 }
 
@@ -319,4 +489,54 @@ export function snapshot(
     time: emulator.time,
   });
   return () => Object.assign(emulator, structuredClone(saved));
+}
+
+const nodeEvaluations = new WeakMap<
+  LucidEvolution,
+  {
+    node: string;
+    emulator: Awaited<ReturnType<typeof channelFixture>>["emulator"];
+  }
+>();
+async function nodeRpc(
+  url: string,
+  method: string,
+  params: unknown,
+): Promise<any> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await response.json();
+  if (!response.ok || body.error) {
+    throw new Error(`Node evaluation: ${JSON.stringify(body.error ?? body)}`);
+  }
+  return body.result;
+}
+function nodeUtxo(utxo: UTxO) {
+  const value: Record<string, Record<string, number>> = {
+    ada: { lovelace: Number(utxo.assets.lovelace ?? 0n) },
+  };
+  for (const [unit, amount] of Object.entries(utxo.assets)) {
+    if (unit === "lovelace") continue;
+    (value[unit.slice(0, 56)] ??= {})[unit.slice(56)] = Number(amount);
+  }
+  return {
+    transaction: { id: utxo.txHash },
+    index: utxo.outputIndex,
+    address: utxo.address,
+    value,
+    datum: utxo.datumHash ? undefined : utxo.datum,
+    datumHash: utxo.datumHash,
+    script: utxo.scriptRef
+      ? "d818" +
+        CML.PlutusV3Script.from_raw_bytes(
+          CML.Script.new_plutus_v3(
+            CML.PlutusV3Script.from_cbor_hex(utxo.scriptRef.script),
+          ).to_cbor_bytes(),
+        ).to_cbor_hex()
+      : undefined,
+  };
 }

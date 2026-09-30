@@ -304,6 +304,24 @@ fn find_authenticated_input(
   )
 }
 
+pub fn validate_current_referred_client(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  client_minting_policy_id: PolicyId,
+  client_id: ByteArray,
+) -> ClientDatum {
+  let token =
+    expected_client_token(
+      referrer_token_name,
+      client_minting_policy_id,
+      client_id,
+    )
+  expect Some(input) = find_authenticated_input(reference_inputs, token)
+  expect datum: ClientDatum = get_inline_datum(input.output)
+  expect datum.token == token
+  datum
+}
+
 pub fn validate_referred_client(
   reference_inputs: List<Input>,
   referrer_token_name: ByteArray,

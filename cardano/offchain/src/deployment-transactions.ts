@@ -1,5 +1,8 @@
+import type { DeploymentPlan } from "./deployment-plan.ts";
 import {
+  Constr,
   Data,
+  fromText,
   type LucidEvolution,
   type MintingPolicy,
   type Script,
@@ -54,6 +57,15 @@ export type HostStateBootstrap = {
   hostStateAddress: string;
   encodedDatum: string;
   encodedRedeemer: string;
+  packetPlan: Pick<
+    DeploymentPlan,
+    | "packetConfig"
+    | "packetState"
+    | "packetBatch"
+    | "packetGuard"
+    | "packetLaneCount"
+    | "traceRegistry"
+  >;
 };
 
 /** The initial HostState mint carries the NFT policy inline in its witnesses. */
@@ -61,7 +73,31 @@ export function buildHostStateBootstrapTx(
   lucid: LucidEvolution,
   bootstrap: HostStateBootstrap,
 ) {
+  const plan = bootstrap.packetPlan;
+  const record = (...fields: Data[]) => Data.to(new Constr(0, fields));
   return lucid.newTx()
+    .attach.MintingPolicy(plan.packetConfig.script)
+    .attach.MintingPolicy(plan.packetState.script)
+    .mintAssets({
+      [plan.packetConfig.hash + fromText("ibc_packet_config")]: 1n,
+    }, Data.void())
+    .mintAssets({
+      [plan.packetState.hash + fromText("ibc_packet_registry")]: 1n,
+    }, record())
+    .pay.ToContract(plan.packetConfig.address, {
+      kind: "inline",
+      value: record(
+        plan.packetState.hash,
+        plan.packetBatch.hash,
+        plan.packetGuard.hash,
+        BigInt(plan.packetLaneCount),
+        plan.traceRegistry.hash,
+      ),
+    }, { [plan.packetConfig.hash + fromText("ibc_packet_config")]: 1n })
+    .pay.ToContract(plan.packetState.address, {
+      kind: "inline",
+      value: record(0n),
+    }, { [plan.packetState.hash + fromText("ibc_packet_registry")]: 1n })
     .collectFrom([bootstrap.nonceUtxo])
     .attach.MintingPolicy(bootstrap.mintingPolicy)
     .mintAssets(

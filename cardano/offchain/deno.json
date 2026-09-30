@@ -1,5 +1,7 @@
 {
   "imports": {
+    "@cardano-ibc/tx-builder/dist/packet-lanes": "../../packages/cardano-ibc-tx-builder/src/packet-lanes.ts",
+    "@cardano-ibc/tx-builder/dist/ics20-json-codec": "../../packages/cardano-ibc-tx-builder/src/ics20-json-codec.ts",
     "@std/assert": "jsr:@std/assert@^1.0.11",
     "@std/toml": "jsr:@std/toml@1.0.11",
     "@std/crypto": "jsr:@std/crypto@^1.0.5",

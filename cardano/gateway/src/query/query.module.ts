@@ -7,6 +7,7 @@ import { KupoModule } from '../shared/modules/kupo/kupo.module';
 import { HISTORY_SERVICE } from './services/history.service';
 import { ConnectionService } from './services/connection.service';
 import { ChannelService } from './services/channel.service';
+import { PacketStateService } from './services/packet-state.service';
 import { PacketService } from './services/packet.service';
 import { MiniProtocalsService } from '../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilModule } from '../shared/modules/mithril/mithril.module';
@@ -34,6 +35,7 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     ConnectionService,
     ChannelService,
     PacketService,
+    PacketStateService,
     DenomTraceService,
     BridgeManifestService,
     IbcTreeCacheService,
@@ -45,6 +47,7 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     ConnectionService,
     ChannelService,
     PacketService,
+    PacketStateService,
     DenomTraceService,
     BridgeManifestService,
     IbcTreeCacheService,

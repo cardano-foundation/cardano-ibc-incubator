@@ -135,6 +135,7 @@ export async function sendPacketFixture(
       metadataHash,
       channelPolicy,
       context.hostPolicy,
+      record("98".repeat(28), fromText("ibc_packet_config")),
     ],
   );
   const [moduleScript, moduleHash, moduleAddress] = readValidator(

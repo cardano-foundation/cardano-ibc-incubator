@@ -10,6 +10,9 @@ option go_package = "github.com/cosmos/ibc-go/v7/modules/cardano/types";
 // CardanoMsg defines the Cardano-specific transaction submission service.
 // This service is used by the Hermes relayer to submit signed Cardano transactions.
 service CardanoMsg {
+  // Initializes channel lanes or builds the next bounded batch from included intents.
+  rpc BuildPacketBatch(BuildPacketBatchRequest) returns (BuildPacketBatchResponse);
+
   // BuildHostStateHeartbeat builds a HostState-only transaction when the
   // current Cardano epoch does not yet contain a HostState anchor.
   rpc BuildHostStateHeartbeat(BuildHostStateHeartbeatRequest) returns (BuildHostStateHeartbeatResponse);
@@ -140,4 +143,17 @@ message Event {
 message EventAttribute {
   string key = 1;
   string value = 2;
+}
+
+message BuildPacketBatchRequest {
+  string signer = 1;
+  string port_id = 2;
+  string channel_id = 3;
+  string intent_tx_hash = 4;
+}
+message BuildPacketBatchResponse {
+  string stage = 1;
+  google.protobuf.Any unsigned_tx = 2;
+  repeated string intent_tx_hashes = 3;
+  string included_tx_hash = 4;
 }

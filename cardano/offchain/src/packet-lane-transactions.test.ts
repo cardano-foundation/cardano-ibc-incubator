@@ -1,20 +1,37 @@
+import {
+  ConsensusHistoryCommitment,
+  recordFromConstr,
+} from "./consensus_history_commitment.ts";
+import { readValidator } from "./utils.ts";
+import { membershipProof } from "./testing/channel-fixture.ts";
 import { absenceProof } from "./testing/packet-budget-fixture.ts";
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
+  applyDoubleCborEncoding,
   CML,
   type Constr,
+  credentialToAddress,
   Data,
   fromText,
+  getAddressDetails,
   type UTxO,
 } from "@lucid-evolution/lucid";
 import {
   buildLiquidityRetirement,
   buildPacketAcknowledgement,
+  buildPacketPrune,
+  buildPacketReceive,
+  buildPacketRejection,
   buildPacketSendBatch,
   buildPacketTimeout,
+  buildPacketTimeoutOnClose,
+  buildTransferIntent,
   buildTransferIntentCancellation,
   encode,
   record,
+  sha256,
+  variant,
+  voucherTokenName,
 } from "./packet-lane-transactions.ts";
 import {
   packetLaneFixture,
@@ -118,7 +135,7 @@ Deno.test("same-lane sends use sequential witnesses and stale packet completions
   await assertRejects(
     () => f.emulator.evaluateTx(corrupted),
     Error,
-    "validator crashed",
+    "validator",
   );
   await signed.submit();
   f.emulator.awaitBlock();
@@ -299,7 +316,7 @@ Deno.test("authenticated timeout drains liquidity, burns its identity and refund
   await assertRejects(
     () => f.emulator.evaluateTx(corrupted),
     Error,
-    "validator crashed",
+    "validator",
   );
   await signed.submit();
   f.emulator.awaitBlock();
@@ -327,29 +344,31 @@ Deno.test("authenticated timeout drains liquidity, burns its identity and refund
 
 function changeMintRedeemer(
   transaction: CML.Transaction,
-  mutate: (operation: Constr<Data>) => void,
+  mutate: (operation: Constr<Data>, authorized: Constr<Data>) => void,
 ): string {
   const witnesses = transaction.witness_set();
-  const data = Data.from(witnesses.redeemers()!.to_cbor_hex());
+  const original = witnesses.redeemers()!.to_flat_format();
+  const redeemers = CML.MapRedeemerKeyToRedeemerVal.new();
   let found = false;
-  if (data instanceof Map) {
-    for (const [key, value] of data) {
-      if ((key as bigint[])[0] === 1n) {
-        mutate((value as Data[])[0] as Constr<Data>);
-        found = true;
-      }
+  for (let i = 0; i < original.len(); i++) {
+    const redeemer = original.get(i);
+    const data = Data.from(redeemer.data().to_cbor_hex()) as Constr<Data>;
+    if (redeemer.tag() === CML.RedeemerTag.Mint && data.fields?.length === 3) {
+      mutate(data.fields[1] as Constr<Data>, data);
+      found = true;
     }
-  } else {
-    assert(Array.isArray(data));
-    for (const value of data as Data[][]) {
-      if (value[0] === 1n) {
-        mutate(value[2] as Constr<Data>);
-        found = true;
-      }
-    }
+    redeemers.insert(
+      CML.RedeemerKey.new(redeemer.tag(), redeemer.index()),
+      CML.RedeemerVal.new(
+        CML.PlutusData.from_cbor_hex(encode(data)),
+        redeemer.ex_units(),
+      ),
+    );
   }
   assert(found);
-  witnesses.set_redeemers(CML.Redeemers.from_cbor_hex(encode(data)));
+  witnesses.set_redeemers(
+    CML.Redeemers.new_map_redeemer_key_to_redeemer_val(redeemers),
+  );
   // Evaluate scripts directly. Signatures are intentionally invalid after
   // tampering, so a submission failure alone would not test the validator.
   return CML.Transaction.new(
@@ -377,4 +396,528 @@ Deno.test("a funded intent can be cancelled by its owner before batching", async
   await (await signMeasured(users[0], tx, "intent cancellation")).submit();
   f.emulator.awaitBlock();
   assertEquals((await users[0].utxosByOutRef(intents)).length, 0);
+});
+
+Deno.test("returning native packets partially release then retire a deposit with independent receipt proofs", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  const batch = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, batch.tx, "return deposit")).submit();
+  f.emulator.awaitBlock();
+  const receiver =
+    getAddressDetails(await wallet.wallet().address()).paymentCredential!.hash;
+  for (let sequence = 1n; sequence <= 2n; sequence++) {
+    const timeout = BigInt(f.emulator.now() + 3_600_000) * 1_000_000n;
+    const payload = fromText(
+      JSON.stringify({
+        denom: `transfer/channel-7/${fromText("lovelace")}`,
+        amount: "1000000",
+        sender: "cosmos1sender",
+        receiver,
+        memo: "",
+      }),
+    );
+    const packet = record(
+      sequence,
+      fromText("transfer"),
+      fromText("channel-7"),
+      fromText("transfer"),
+      fromText("channel-0"),
+      payload,
+      record(0n, 0n),
+      timeout,
+    );
+    const commitment = await sha256(
+      timeout.toString(16).padStart(16, "0") + "00".repeat(16) +
+        await sha256(payload),
+    );
+    const proof = await membershipProof(
+      fromText(
+        `commitments/ports/transfer/channels/channel-7/sequences/${sequence}`,
+      ),
+      commitment,
+    );
+    const height = record(1n, 18n + sequence);
+    checkpoint(f, height, proof.root);
+    const inputs = await wallet.utxosAt(f.deployment.batchAddress);
+    const received = await buildPacketReceive(
+      wallet,
+      f.deployment,
+      packet,
+      height,
+      proof.proof,
+      inputs,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    const signed = await signMeasured(
+      wallet,
+      received.tx,
+      sequence === 1n ? "partial native receive" : "full-drain native receive",
+    );
+    const corrupted = changeMintRedeemer(
+      signed.toTransaction(),
+      (operation) => {
+        (operation.fields[1] as Constr<Data>).fields[3] = fromText(
+          "11".repeat(28),
+        );
+      },
+    );
+    await assertRejects(
+      () => f.emulator.evaluateTx(corrupted),
+      Error,
+      "validator",
+    );
+    await signed.submit();
+    f.emulator.awaitBlock();
+    const remaining = await wallet.utxosAt(f.deployment.batchAddress);
+    assertEquals(remaining.length, sequence === 1n ? 1 : 0);
+    if (remaining.length) {
+      assertEquals(
+        (Data.from(remaining[0].datum!) as Constr<Data>).fields[6],
+        1_000_000n,
+      );
+    }
+    await assertRejects(
+      () =>
+        buildPacketReceive(
+          wallet,
+          f.deployment,
+          packet,
+          height,
+          proof.proof,
+          remaining,
+          f.emulator.now(),
+          f.emulator.now() + 60_000,
+        ),
+      Error,
+      "already received",
+    );
+  }
+});
+
+Deno.test("an authenticated error acknowledgement refunds principal and retires its deposit", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  const batch = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, batch.tx, "rejected deposit")).submit();
+  f.emulator.awaitBlock();
+  const rejection = "receiver rejected transfer";
+  const proof = await membershipProof(
+    fromText("acks/ports/transfer/channels/channel-7/sequences/1"),
+    await sha256(fromText(JSON.stringify({ error: rejection }))),
+  );
+  const height = record(1n, 19n);
+  checkpoint(f, height, proof.root);
+  const inputs = await wallet.utxosAt(f.deployment.batchAddress);
+  const refund = await buildPacketRejection(
+    wallet,
+    f.deployment,
+    batch.packets[0],
+    height,
+    proof.proof,
+    inputs,
+    rejection,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, refund.tx, "error acknowledgement refund"))
+    .submit();
+  f.emulator.awaitBlock();
+  assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+});
+
+function checkpoint(
+  f: Awaited<ReturnType<typeof packetLaneFixture>>,
+  height: Constr<Data>,
+  root: string,
+) {
+  const client = Data.from(f.deployment.client.datum!) as Constr<Data>;
+  const state = client.fields[0] as Constr<Data>;
+  (state.fields[0] as Constr<Data>).fields[6] = height;
+  state.fields[1] = new Map([[
+    height,
+    record(
+      BigInt(f.emulator.now()) * 1_000_000n,
+      "00".repeat(32),
+      record(root),
+    ),
+  ]]);
+  state.fields[2] = new Map([[height, 0n]]);
+  state.fields[3] = new Map([[height, 0n]]);
+  f.deployment.client.datum = encode(client);
+}
+
+for (const firstSeen of [false, true]) {
+  Deno.test(`${firstSeen ? "first-seen" : "existing"} vouchers receive through packet lanes then burn on a funded return batch`, async () => {
+    const f = await packetLaneFixture();
+    const wallet = await f.wallet(true);
+    const receiver =
+      getAddressDetails(await wallet.wallet().address()).paymentCredential!
+        .hash;
+    const fullDenom = "transfer/channel-0/uatom";
+    const token = voucherTokenName(fullDenom);
+    const unit = f.deployment.voucherPolicy! + token;
+    const metadata = record(
+      new Map([
+        [fromText("name"), fromText("uatom")],
+        [fromText("ticker"), fromText("uatom")],
+        [fromText("description"), fromText(`IBC voucher for ${fullDenom}`)],
+      ]),
+      1n,
+      new Map<Data, Data>([
+        [fromText("path"), fromText("transfer/channel-0")],
+        [fromText("baseDenom"), fromText("uatom")],
+        [fromText("fullDenom"), fromText(fullDenom)],
+        [fromText("ibcDenomHash"), fromText(await sha256(fromText(fullDenom)))],
+        [fromText("traceVersion"), 1n],
+        [fromText("voucherPolicyId"), fromText(f.deployment.voucherPolicy!)],
+        [fromText("voucherTokenName"), fromText(token)],
+      ]),
+    );
+    let registration: {
+      directory: UTxO;
+      shard: UTxO;
+      reference: UTxO;
+      address: string;
+      updated: string;
+      redeemer: string;
+    } | undefined;
+    if (!firstSeen) {
+      f.deployment.scripts.push(
+        f.seed(
+          credentialToAddress("Custom", {
+            type: "Script",
+            hash: f.metadataHash,
+          }),
+          {
+            lovelace: 5_000_000n,
+            [f.deployment.voucherPolicy! + "000643b0" + token.slice(8)]: 1n,
+          },
+          encode(metadata),
+        ),
+      );
+    } else {
+      const policy = "94".repeat(28);
+      const [script, , address] = readValidator(
+        "trace_registry.spend_trace_registry.spend",
+        wallet,
+        [
+          policy,
+          record(policy, "02"),
+          f.deployment.voucherPolicy!,
+          "",
+          "93".repeat(28),
+        ],
+      );
+      const bucket = parseInt(token.slice(8, 9), 16);
+      const name = (index: number) => fromText(`shard-${index}`);
+      const directory = f.seed(
+        address,
+        { lovelace: 10_000_000n, [policy + "02"]: 1n },
+        encode(variant(
+          1,
+          record(
+            Array.from(
+              { length: 16 },
+              (_, index) => record(BigInt(index), name(index), []),
+            ),
+          ),
+        )),
+      );
+      const shard = f.seed(address, {
+        lovelace: 10_000_000n,
+        [policy + name(bucket)]: 1n,
+      }, encode(variant(0, record(BigInt(bucket), []))));
+      const reference = f.seed(
+        address,
+        { lovelace: 100_000_000n },
+        Data.void(),
+        { ...script, script: applyDoubleCborEncoding(script.script) },
+      );
+      registration = {
+        directory,
+        shard,
+        reference,
+        address,
+        updated: encode(
+          variant(
+            0,
+            record(BigInt(bucket), [
+              record(token.slice(8), fromText(fullDenom)),
+            ]),
+          ),
+        ),
+        redeemer: encode(variant(0, token.slice(8), fromText(fullDenom))),
+      };
+    }
+    const timeout = BigInt(f.emulator.now() + 3_600_000) * 1_000_000n;
+    const payload = fromText(
+      JSON.stringify({
+        denom: "uatom",
+        amount: "1000",
+        sender: "cosmos1sender",
+        receiver,
+        memo: "",
+      }),
+    );
+    const packet = record(
+      1n,
+      fromText("transfer"),
+      fromText("channel-7"),
+      fromText("transfer"),
+      fromText("channel-0"),
+      payload,
+      record(0n, 0n),
+      timeout,
+    );
+    const commitment = await sha256(
+      timeout.toString(16).padStart(16, "0") + "00".repeat(16) +
+        await sha256(payload),
+    );
+    const proof = await membershipProof(
+      fromText("commitments/ports/transfer/channels/channel-7/sequences/1"),
+      commitment,
+    );
+    const height = record(1n, 19n);
+    checkpoint(f, height, proof.root);
+    const receive = await buildPacketReceive(
+      wallet,
+      f.deployment,
+      packet,
+      height,
+      proof.proof,
+      [],
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    if (registration) {
+      receive.tx.readFrom([registration.directory, registration.reference])
+        .collectFrom([registration.shard], registration.redeemer)
+        .pay.ToContract(registration.address, {
+          kind: "inline",
+          value: registration.updated,
+        }, registration.shard.assets)
+        .mintAssets({
+          [f.deployment.voucherPolicy! + "000643b0" + token.slice(8)]: 1n,
+        }, encode(variant(4)))
+        .pay.ToContract(
+          credentialToAddress("Custom", {
+            type: "Script",
+            hash: f.metadataHash,
+          }),
+          { kind: "inline", value: encode(metadata) },
+          { [f.deployment.voucherPolicy! + "000643b0" + token.slice(8)]: 1n },
+        );
+    }
+    await (await signMeasured(wallet, receive.tx, "voucher receive")).submit();
+    f.emulator.awaitBlock();
+    assertEquals(
+      (await wallet.wallet().getUtxos()).reduce(
+        (sum, u) => sum + (u.assets[unit] ?? 0n),
+        0n,
+      ),
+      1000n,
+    );
+    const admission = await buildTransferIntent(wallet, f.deployment, {
+      amount: 1000n,
+      assetUnit: unit,
+      fullDenom,
+      receiver: "cosmos1receiver",
+      timeoutTimestamp: timeout,
+    });
+    const intentHash =
+      await (await (await admission.complete()).sign.withWallet().complete())
+        .submit();
+    f.emulator.awaitBlock();
+    const intents = (await wallet.utxosAt(f.deployment.guardAddress)).filter(
+      (u) => u.txHash === intentHash,
+    );
+    const batch = await buildPacketSendBatch(
+      wallet,
+      f.deployment,
+      intents,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, batch.tx, "voucher return burn"))
+      .submit();
+    f.emulator.awaitBlock();
+    assertEquals(
+      (await wallet.wallet().getUtxos()).reduce(
+        (sum, u) => sum + (u.assets[unit] ?? 0n),
+        0n,
+      ),
+      0n,
+    );
+    assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+    const absent = await absenceProof(
+      fromText("commitments/ports/transfer/channels/channel-7/sequences/1"),
+    );
+    const pruningHeight = record(1n, 20n);
+    checkpoint(f, pruningHeight, absent.root);
+    const prune = await buildPacketPrune(
+      wallet,
+      f.deployment,
+      1n,
+      pruningHeight,
+      absent.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, prune.tx, "packet lane pruning"))
+      .submit();
+    f.emulator.awaitBlock();
+    const laneUnit = Object.keys(prune.input.assets).find((unit) =>
+      unit.startsWith(f.deployment.statePolicy)
+    )!;
+    const lane = Data.from(
+      (await wallet.utxoByUnit(laneUnit)).datum!,
+    ) as Constr<Data>;
+    assertEquals(lane.fields[7], []);
+    assertEquals(lane.fields[8], new Map());
+    assertEquals(lane.fields[9], pruningHeight);
+  });
+}
+
+Deno.test("an acknowledgement authenticates an older consensus checkpoint against the current client history", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  const batch = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, batch.tx, "history deposit")).submit();
+  f.emulator.awaitBlock();
+  const proof = f.proofs.get(1n)!;
+  const client = Data.from(f.deployment.client.datum!) as Constr<Data>;
+  const state = client.fields[0] as Constr<Data>;
+  const old =
+    [...(state.fields[1] as Map<Constr<Data>, Data>)].find(([h]) =>
+      encode(h) === encode(proof.height)
+    )![1];
+  const saved = record(client.fields[1], proof.height, old, 0n, 0n);
+  const item = recordFromConstr(saved);
+  const history = new ConsensusHistoryCommitment();
+  history.append(item);
+  client.fields[2] = await history.getRoot();
+  f.deployment.client.datum = encode(client);
+  checkpoint(f, record(1n, 19n), "a1".repeat(32));
+  const witness = await history.witness(item.clientToken, item.height);
+  f.deployment.historyWitness = record(saved, witness.siblings);
+  const ack = await buildPacketAcknowledgement(
+    wallet,
+    f.deployment,
+    batch.packets[0],
+    proof.height,
+    proof.proof,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  const signed = await signMeasured(
+    wallet,
+    ack.tx,
+    "historical acknowledgement",
+  );
+  const invalid = changeMintRedeemer(
+    signed.toTransaction(),
+    (_, authorized) => {
+      const history = (authorized.fields[2] as Constr<Data>)
+        .fields[0] as Constr<Data>;
+      (history.fields[1] as string[])[0] = "ff".repeat(32);
+    },
+  );
+  await assertRejects(
+    () => f.emulator.evaluateTx(invalid),
+    Error,
+    "validator",
+  );
+  // A correct historical proof is usable after the client has advanced.
+  await signed.submit();
+  f.emulator.awaitBlock();
+  assertEquals((await wallet.utxosByOutRef([ack.input])).length, 0);
+});
+
+Deno.test("timeout on close proves closure and receipt absence at the same authenticated height", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  const batch = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, batch.tx, "close-timeout deposit"))
+    .submit();
+  f.emulator.awaitBlock();
+  const connection = (Data.from(f.deployment.connection.datum!) as Constr<Data>)
+    .fields[0] as Constr<Data>;
+  const remoteConnection = String(
+    (connection.fields[3] as Constr<Data>).fields[1],
+  );
+  const bytes = (field: number, hex: string) =>
+    (field * 8 + 2).toString(16).padStart(2, "0") +
+    (hex.length / 2).toString(16).padStart(2, "0") + hex;
+  const closed = "08041001" +
+    bytes(3, bytes(1, fromText("transfer")) + bytes(2, fromText("channel-0"))) +
+    bytes(4, remoteConnection) + bytes(5, fromText("ics20-1"));
+  const membership = await membershipProof(
+    fromText("channelEnds/ports/transfer/channels/channel-7"),
+    closed,
+  );
+  const layers = membership.proof.fields[0] as Constr<Data>[];
+  const left = (layers[0].fields[0] as Constr<Data>).fields[0];
+  const empty = record("", "", record(0n, 0n, 0n, 0n, ""), []);
+  const absence = record([
+    record(
+      variant(
+        1,
+        record(
+          fromText("receipts/ports/transfer/channels/channel-7/sequences/1"),
+          left,
+          empty,
+        ),
+      ),
+    ),
+    layers[1],
+  ]);
+  const height = record(1n, 19n);
+  checkpoint(f, height, membership.root);
+  // The timestamp has not elapsed. Only the authenticated closed channel permits refund.
+  const liquidity = await wallet.utxosAt(f.deployment.batchAddress);
+  const refund = await buildPacketTimeoutOnClose(
+    wallet,
+    f.deployment,
+    batch.packets[0],
+    height,
+    absence,
+    membership.proof,
+    liquidity,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  const signed = await signMeasured(wallet, refund.tx, "timeout on close");
+  await signed.submit();
+  f.emulator.awaitBlock();
+  assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
 });

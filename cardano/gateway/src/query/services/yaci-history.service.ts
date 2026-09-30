@@ -27,8 +27,12 @@ import {
   HistoryTxRedeemer,
 } from "./history.service";
 
-import { reconstructHistoricalIbcTree } from './historical-ibc-tree';
-import { StaleIbcTreeStateError, type IbcTreeHostStateRef, type IbcTreeSnapshot } from '../../shared/helpers/ibc-state-root';
+import { reconstructHistoricalIbcTree } from "./historical-ibc-tree";
+import {
+  type IbcTreeHostStateRef,
+  type IbcTreeSnapshot,
+  StaleIbcTreeStateError,
+} from "../../shared/helpers/ibc-state-root";
 
 type BridgeUtxoHistoryRow = {
   address: string;
@@ -203,31 +207,59 @@ class HistoricalStakeLookupError extends Error {
 @Injectable()
 export class YaciHistoryService implements HistoryService {
   private poolRegistrationCacheTableReady = false;
-  private readonly historicalTreeRebuilds = new Map<string, Promise<IbcTreeSnapshot>>();
+  private readonly historicalTreeRebuilds = new Map<
+    string,
+    Promise<IbcTreeSnapshot>
+  >();
 
-  async rebuildIbcStateTreeAtBlock(height: bigint, hostState: IbcTreeHostStateRef): Promise<IbcTreeSnapshot> {
+  async rebuildIbcStateTreeAtBlock(
+    height: bigint,
+    hostState: IbcTreeHostStateRef,
+  ): Promise<IbcTreeSnapshot> {
     const captured = { ...hostState };
     const key = `${height}:${captured.txHash}#${captured.outputIndex}`;
     let pending = this.historicalTreeRebuilds.get(key);
     if (!pending) {
       if (this.historicalTreeRebuilds.size >= 4) {
-        throw new Error('Historical IBC tree rebuild capacity reached; retry later');
+        throw new Error(
+          "Historical IBC tree rebuild capacity reached; retry later",
+        );
       }
       pending = (async () => {
-        const snapshot = await this.entityManager.transaction('REPEATABLE READ', async (manager) => {
-          await manager.query('SET TRANSACTION READ ONLY');
-          await manager.query('SET LOCAL statement_timeout = 30000');
-          return reconstructHistoricalIbcTree(
-            manager, this.configService.getOrThrow('deployment'), this.configService.getOrThrow('cardanoNetwork'),
-            this.lucidService, height, captured,
-          );
-        });
+        const snapshot = await this.entityManager.transaction(
+          "REPEATABLE READ",
+          async (manager) => {
+            await manager.query("SET TRANSACTION READ ONLY");
+            await manager.query("SET LOCAL statement_timeout = 30000");
+            return reconstructHistoricalIbcTree(
+              manager,
+              this.configService.getOrThrow("deployment"),
+              this.configService.getOrThrow("cardanoNetwork"),
+              this.lucidService,
+              height,
+              captured,
+            );
+          },
+        );
         // A rollback during the read snapshot must not publish an orphaned tree.
-        const canonical = await this.entityManager.query('SELECT hash FROM block WHERE number = $1', [height.toString()]);
-        if (canonical.length !== 1 || canonical[0].hash !== snapshot.blockHash) {
-          throw new StaleIbcTreeStateError('Requested historical block changed during IBC tree reconstruction');
+        const canonical = await this.entityManager.query(
+          "SELECT hash FROM block WHERE number = $1",
+          [
+            height.toString(),
+          ],
+        );
+        if (
+          canonical.length !== 1 || canonical[0].hash !== snapshot.blockHash
+        ) {
+          throw new StaleIbcTreeStateError(
+            "Requested historical block changed during IBC tree reconstruction",
+          );
         }
-        return { root: snapshot.root, hostState: snapshot.hostState, tree: snapshot.tree };
+        return {
+          root: snapshot.root,
+          hostState: snapshot.hostState,
+          tree: snapshot.tree,
+        };
       })();
       this.historicalTreeRebuilds.set(key, pending);
     }
@@ -235,7 +267,9 @@ export class YaciHistoryService implements HistoryService {
       const snapshot = await pending;
       return { ...snapshot, tree: snapshot.tree.clone() };
     } finally {
-      if (this.historicalTreeRebuilds.get(key) === pending) this.historicalTreeRebuilds.delete(key);
+      if (this.historicalTreeRebuilds.get(key) === pending) {
+        this.historicalTreeRebuilds.delete(key);
+      }
     }
   }
   private readonly epochNonceCache: BoundedCache<string, string>;
@@ -1563,21 +1597,27 @@ export class YaciHistoryService implements HistoryService {
 
   private isExplicitLocalDevnet(): boolean {
     // Never infer this exception from the configuration's local defaults.
-    return process.env.CARDANO_CHAIN_ID === "cardano-devnet" &&
+    return (
+      process.env.CARDANO_CHAIN_ID === "cardano-devnet" &&
       process.env.CARDANO_NETWORK_MAGIC === "42" &&
       process.env.CARDANO_CHAIN_NETWORK_MAGIC === "42" &&
       this.configService.get<string>("cardanoChainId") === "cardano-devnet" &&
       this.configService.get<number>("cardanoChainNetworkMagic") === 42 &&
-      this.configService.get<string>("cardanoNetwork") === "Custom";
+      this.configService.get<string>("cardanoNetwork") === "Custom"
+    );
   }
 
   private async fetchLocalEpochNonce(epoch: number): Promise<string> {
     if (!Number.isSafeInteger(epoch) || epoch < 0) {
-      throw new Error("Local Cardano epoch must be a non-negative safe integer");
+      throw new Error(
+        "Local Cardano epoch must be a non-negative safe integer",
+      );
     }
     const genesisNonce = normalizeHex(process.env.CARDANO_EPOCH_NONCE_GENESIS);
     if (!/^[0-9a-f]{64}$/.test(genesisNonce)) {
-      throw new Error("Local Cardano genesis nonce must be configured from the actual node genesis hash");
+      throw new Error(
+        "Local Cardano genesis nonce must be configured from the actual node genesis hash",
+      );
     }
 
     // The optional Yaci epoch-nonce module reconstructs these values from the
@@ -1618,7 +1658,8 @@ export class YaciHistoryService implements HistoryService {
     const row = rows[0];
     const nonce = normalizeHex(row.nonce);
     if (
-      rows.length !== 1 || parseNonNegativeBigInt(row.epoch) !== BigInt(epoch) ||
+      rows.length !== 1 ||
+      parseNonNegativeBigInt(row.epoch) !== BigInt(epoch) ||
       parseNonNegativeBigInt(row.block_epoch) !== BigInt(epoch) ||
       !/^[0-9a-f]{64}$/.test(normalizeHex(row.block_hash)) ||
       !/^[0-9a-f]{64}$/.test(nonce) ||
@@ -1906,9 +1947,10 @@ export class YaciHistoryService implements HistoryService {
     const registrationRows: CachedPoolRegistrationRow[] = rows;
     return new Map(
       registrationRows
-        .filter((row): row is PoolRegistrationSlotRow =>
-          row.first_registration_slot !== null &&
-          row.first_registration_slot !== undefined
+        .filter(
+          (row): row is PoolRegistrationSlotRow =>
+            row.first_registration_slot !== null &&
+            row.first_registration_slot !== undefined,
         )
         .map((
           row,
@@ -2095,6 +2137,27 @@ export class YaciHistoryService implements HistoryService {
     }
 
     return this.mapTxRow(rows[0]);
+  }
+
+  async findIntentSpendingTransaction(
+    hash: string,
+    address: string,
+  ): Promise<HistoryTxEvidence | null> {
+    const rows = await this.entityManager.query(
+      `
+      SELECT DISTINCT spent.spent_tx_hash AS tx_hash
+      FROM tx_input spent
+      JOIN address_utxo utxo ON utxo.tx_hash = spent.tx_hash AND utxo.output_index = spent.output_index
+      JOIN transaction tx ON tx.tx_hash = spent.spent_tx_hash
+        AND tx.block = spent.spent_at_block AND tx.block_hash = spent.spent_at_block_hash
+      JOIN block canonical ON canonical.number = tx.block AND canonical.hash = tx.block_hash
+      WHERE spent.tx_hash = $1 AND tx.invalid = false
+        AND (utxo.owner_addr = $2 OR utxo.owner_addr_full = $2)
+    `,
+      [hash.toLowerCase(), address],
+    );
+    if (rows.length !== 1) return null;
+    return this.findTransactionEvidenceByHash(rows[0].tx_hash);
   }
 
   async findTransactionEvidenceByHash(

@@ -169,9 +169,46 @@ pub fn apply_update(
   let key_hash = builtin.sha2_256(key)
 
   let old_leaf = leaf_hash(key_hash, value_hash(old_value))
-  let computed_old_root = compute_root(key, old_leaf, siblings)
-  expect computed_old_root == old_root
-
   let new_leaf = leaf_hash(key_hash, value_hash(new_value))
-  compute_root(key, new_leaf, siblings)
+  let path =
+    builtin.bytearray_to_integer(True, builtin.slice_bytearray(0, 8, key_hash))
+  let (computed_old, computed_new) =
+    updated_roots(path, old_leaf, new_leaf, siblings, 0)
+  expect computed_old == old_root
+  computed_new
+}
+
+// Both roots follow the same path. Validate each sibling and decode each path
+// bit once. Every intermediate node is either a 32-byte constant or SHA-256.
+fn updated_roots(
+  path: Int,
+  old: ByteArray,
+  new: ByteArray,
+  siblings: List<ByteArray>,
+  depth: Int,
+) -> (ByteArray, ByteArray) {
+  if depth == merkle_depth_bits {
+    expect siblings == []
+    (old, new)
+  } else {
+    expect [sibling, ..rest] = siblings
+    expect bytearray.length(sibling) == hash_size_bytes
+    let (next_old, next_new) =
+      if path % 2 == 0 {
+        (hash_children(old, sibling), hash_children(new, sibling))
+      } else {
+        (hash_children(sibling, old), hash_children(sibling, new))
+      }
+    updated_roots(path / 2, next_old, next_new, rest, depth + 1)
+  }
+}
+
+fn hash_children(left: ByteArray, right: ByteArray) -> ByteArray {
+  if left == empty_hash && right == empty_hash {
+    empty_hash
+  } else {
+    builtin.append_bytearray(#[1], left)
+      |> builtin.append_bytearray(right)
+      |> builtin.sha2_256()
+  }
 }

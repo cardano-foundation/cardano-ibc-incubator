@@ -580,6 +580,7 @@ export const createDeployment = async (
     mintHostStateNFTPolicyId,
     plan.hostState,
     deployerPaymentKeyHash,
+    plan,
   );
   const hostStateTree = new DeploymentIbcTree();
 
@@ -734,7 +735,30 @@ export const createDeployment = async (
 
   const deployedAt = new Date().toISOString();
 
+  const packetValidator = (planned: PlannedValidator) => ({
+    title: planned.title,
+    script: planned.script.script,
+    scriptHash: planned.hash,
+    address: planned.address,
+    refUtxo: refUtxosInfo[planned.hash],
+  });
   const deploymentInfo: DeploymentTemplate = {
+    packetState: {
+      operations: Object.fromEntries(
+        Object.entries(plan.packetOperations).map((
+          [name, validator],
+        ) => [name, packetValidator(validator)]),
+      ),
+      format: "packet-lanes-v1",
+      laneCount: plan.packetLaneCount,
+      configToken: {
+        policyId: plan.packetConfig.hash,
+        name: fromText("ibc_packet_config"),
+      },
+      state: packetValidator(plan.packetState),
+      batch: packetValidator(plan.packetBatch),
+      guard: packetValidator(plan.packetGuard),
+    },
     deployedAt,
     consensusHistoryFormat: "proof-backed-v1",
     history: requireHistoryBootstrap({
@@ -2210,6 +2234,7 @@ const deployHostState = async (
   mintHostStateNFTPolicyId: string,
   planned: PlannedValidator,
   deployerPaymentKeyHash: string,
+  packetPlan: DeploymentPlan,
 ) => {
   console.log("Deploy HostState (STT Architecture)");
 
@@ -2275,6 +2300,7 @@ const deployHostState = async (
   await submitTx(
     () =>
       buildHostStateBootstrapTx(lucid, {
+        packetPlan,
         nonceUtxo,
         mintingPolicy: mintHostStateNFTValidator,
         hostStateNftUnit: hostStateNFTUnit,

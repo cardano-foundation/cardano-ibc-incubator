@@ -560,6 +560,10 @@ jobs:
         working-directory: cardano/offchain
         run: deno task test:channels:fuzz
 
+      - name: Evaluate funded packet batches and independent lanes
+        working-directory: cardano/offchain
+        run: deno task test:packet-lanes
+
       - name: Test shutdown finalization
         working-directory: cardano/offchain
         run: deno task test:shutdown
