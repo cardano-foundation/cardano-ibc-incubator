@@ -3,6 +3,7 @@ name = "cardanofoundation/cardano-ibc"
  
 # Project's version, we recommend semantic versioning for libraries
 version = "0.2.0"
+compiler = "v1.1.24"
  
 # One or more license(s); we recommend Apache-2.0 or MPL-2.0 for open source
 # projects.

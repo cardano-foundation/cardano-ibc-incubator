@@ -26,7 +26,7 @@ Containment takes effect on canonical inclusion and is enforced against direct t
 
 Select `IBC_DEPLOYMENT_MODE=upgradeable` and supply a valid `MIGRATION_GOVERNANCE_FILE` before deploying. Configuration needs explicit signer hashes, quorum, delay and a disjoint emergency signer set. Missing or contradictory configuration fails before deployment. Intentional immutable deployment requires explicit `legacy` selection. Readiness checks authenticate deployed registry/state identities and current addresses rather than trusting a manifest label.
 
-Retain the original handler, applied policies, full canonical history and reviewed successor blueprint. Use Aiken `1.1.21` and Deno `2.9.6` with locked dependencies. Set `KUPO_URL`, `OGMIOS_URL` and `CARDANO_NETWORK_MAGIC` explicitly. The migration CLI does not load `.env.default`. Submission uses the explicitly supplied `MIGRATION_EXECUTOR_SK`. Ensure the counterparty can catch up and its trust window accommodates the pause. Fund the executor separately for fees, collateral and deposits.
+Retain the original handler, applied policies, full canonical history and reviewed successor blueprint. Use Aiken `1.1.24` and Deno `2.9.6` with locked dependencies. Set `KUPO_URL`, `OGMIOS_URL` and `CARDANO_NETWORK_MAGIC` explicitly. The migration CLI does not load `.env.default`. Submission uses the explicitly supplied `MIGRATION_EXECUTOR_SK`. Ensure the counterparty can catch up and its trust window accommodates the pause. Fund the executor separately for fees, collateral and deposits.
 
 From `cardano/offchain`, inspect and prepare the reviewed plan:
 
