@@ -319,3 +319,26 @@ test balance_compaction_cannot_replace_packet_execution() fail {
     policy,
   )
 }
+
+test packet_update_rejects_a_canonical_but_unearned_balance() {
+  let (tx, ref, updates) = prepared(1)
+  expect [output] = tx.outputs
+  expect InlineDatum(raw) = output.datum
+  expect new: PacketLaneDatum = raw
+  !packet_lane_state.validate_transition(
+    Transaction {
+      ..tx,
+      outputs: [
+        Output {
+          ..output,
+          datum: InlineDatum(
+            PacketLaneDatum { ..new, balances: [Pair(accounting_key, 1)] },
+          ),
+        },
+      ],
+    },
+    ref,
+    policy,
+    updates,
+  )
+}

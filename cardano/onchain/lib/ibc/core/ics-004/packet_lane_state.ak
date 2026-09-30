@@ -62,7 +62,7 @@ pub fn validate_transition_with_balances(
   expect new: PacketLaneDatum = validator_utils.get_inline_datum(output)
   let expected = packet_lane_datum.apply_updates(old, updates)
   let balances = update_balances(old)
-  packet_balances.valid(balances) && new == PacketLaneDatum {
+  packet_balances.within_capacity(balances) && new == PacketLaneDatum {
     ..expected,
     balances,
   }

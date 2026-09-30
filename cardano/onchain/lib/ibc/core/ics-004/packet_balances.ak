@@ -5,12 +5,24 @@ use aiken/primitive/bytearray
 /// Fixed-size denomination hashes keep accounting bounded independently of packet pruning.
 pub const max_entries = 8
 
-pub fn valid(balances: Pairs<ByteArray, Int>) -> Bool {
+/// Packet callbacks preserve canonical hashes and remove zeros by construction.
+/// They still enforce the capacity and integer bounds on every update.
+pub fn within_capacity(balances: Pairs<ByteArray, Int>) -> Bool {
   list.length(balances) <= max_entries && list.all(
     balances,
     fn(entry) {
+      let Pair(_, amount) = entry
+      absolute(amount) <= 18_446_744_073_709_551_615
+    },
+  )
+}
+
+pub fn valid(balances: Pairs<ByteArray, Int>) -> Bool {
+  within_capacity(balances) && list.all(
+    balances,
+    fn(entry) {
       let Pair(key, amount) = entry
-      bytearray.length(key) == 32 && amount != 0 && absolute(amount) <= 18_446_744_073_709_551_615
+      bytearray.length(key) == 32 && amount != 0
     },
   ) && pairs.keys(balances) == list.sort(
     list.unique(pairs.keys(balances)),
