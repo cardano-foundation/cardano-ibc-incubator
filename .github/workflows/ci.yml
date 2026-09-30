@@ -757,13 +757,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Aiken
+      # Keep the existing source format while upgrading the compiler.
+      - name: Setup Aiken formatter
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.24
+          version: v1.1.21
 
       - name: Check formatting
         run: aiken fmt --check
+
+      - name: Setup Aiken compiler
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.24
 
       - name: Check fuzz imports stay in tests
         working-directory: .
