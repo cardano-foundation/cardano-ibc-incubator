@@ -2,6 +2,7 @@ import { Data } from "@lucid-evolution/lucid";
 
 export const TransferModuleDatumSchema = Data.Object({
   escrow_shard_registry_root: Data.Bytes(),
+  outstanding_voucher_obligation: Data.Integer(),
 });
 
 export type TransferModuleDatum = Data.Static<

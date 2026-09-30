@@ -2,6 +2,9 @@ import { Logger, Module } from '@nestjs/common';
 import { TxController } from './tx.controller';
 import { LucidModule } from 'src/shared/modules/lucid/lucid.module';
 import { ClientService } from './client.service';
+import { TendermintClientService, TENDERMINT_HEADER_TYPE_URL } from './tendermint-client.service';
+import { LIGHT_CLIENT_HANDLERS, type LightClientHandler } from './light-client-handler';
+import { TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '../shared/types/misbehaviour/misbehaviour';
 import { ChannelService } from './channel.service';
 import { ConnectionService } from './connection.service';
 import { PacketLaneService } from './packet-lane.service';
@@ -17,6 +20,7 @@ import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { WalletContextService } from './wallet-context.service';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 import { GRPC_AUTH_TOKEN, GrpcAuthGuard, loadGrpcAuthToken } from '../security/grpc-auth.guard';
+import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import { HealthModule } from '../health/health.module';
 import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
 
@@ -25,6 +29,20 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
   controllers: [TxController],
   providers: [
     ClientService,
+    TendermintClientService,
+    {
+      provide: LIGHT_CLIENT_HANDLERS,
+      inject: [TendermintClientService],
+      useFactory: (service: TendermintClientService): readonly LightClientHandler[] => [
+        {
+          clientType: '07-tendermint',
+          clientStateTypeUrl: '/ibc.lightclients.tendermint.v1.ClientState',
+          consensusStateTypeUrl: '/ibc.lightclients.tendermint.v1.ConsensusState',
+          clientMessageTypeUrls: [TENDERMINT_HEADER_TYPE_URL, TENDERMINT_MISBEHAVIOUR_TYPE_URL],
+          service,
+        },
+      ],
+    },
     ConnectionService,
     ChannelService,
     PacketService,
@@ -38,6 +56,7 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     IbcTreePendingUpdatesService,
     HostStateHeartbeatService,
     GrpcAuthGuard,
+    HistoricalReadOnlyGuard,
     {
       provide: GRPC_AUTH_TOKEN,
       useFactory: loadGrpcAuthToken,

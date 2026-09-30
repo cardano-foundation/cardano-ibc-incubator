@@ -5,11 +5,12 @@ import {
   resolveManagedKupoUrl,
   resolveManagedOgmiosUrl,
 } from "../src/http_auth.ts";
+import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 const {
   parseNetwork,
   queryProtocolParametersCompat,
   resolveOgmiosHttpUrl,
-  querySystemStart,
+  queryLocalSlotConfig,
   sanitizeProtocolParameters,
 } = await import("../src/external_cardano.ts");
 
@@ -54,7 +55,6 @@ function resolveUnsignedTxHex(serialized: string): string {
 }
 
 installManagedCardanoAuthFetch();
-const chainZeroTime = await querySystemStart(ogmiosUrl);
 const protocolParameters = sanitizeProtocolParameters(
   await queryProtocolParametersCompat(ogmiosUrl),
 );
@@ -72,12 +72,17 @@ const provider = new Kupmios(
     ogmiosApiKey,
   ),
 );
-SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+const network = parseNetwork(cardanoNetworkMagic);
+const slotConfig = network === "Custom"
+  ? await queryLocalSlotConfig(ogmiosUrl)
+  : SLOT_CONFIG_NETWORK[network];
 const lucid = await Lucid(
   provider,
-  parseNetwork(cardanoNetworkMagic),
+  network,
   {
     presetProtocolParameters: protocolParameters,
+    evaluator: createCardanoScalusEvaluator(),
+    slotConfig,
   } as any,
 );
 lucid.selectWallet.fromPrivateKey(deployerSk);

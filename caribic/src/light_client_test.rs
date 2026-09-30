@@ -188,7 +188,7 @@ fn run_recover_client(
 }
 
 fn local_subject_trusting_period(project_root_path: &Path) -> Result<u64, String> {
-    let genesis_path = project_root_path.join("chains/cardano/devnet/genesis-shelley.json");
+    let genesis_path = project_root_path.join(".caribic/devkit/genesis.json");
     let genesis_text = std::fs::read_to_string(&genesis_path).map_err(|error| {
         format!(
             "Could not read local Cardano genesis at {}: {error}",
@@ -197,6 +197,7 @@ fn local_subject_trusting_period(project_root_path: &Path) -> Result<u64, String
     })?;
     let genesis: serde_json::Value = serde_json::from_str(&genesis_text)
         .map_err(|error| format!("Could not parse {}: {error}", genesis_path.display()))?;
+    let genesis = &genesis["shelley"];
     let system_start = genesis
         .get("systemStart")
         .and_then(serde_json::Value::as_str)
@@ -220,7 +221,14 @@ fn local_subject_trusting_period(project_root_path: &Path) -> Result<u64, String
         .ok_or_else(|| "Local Cardano tip has no numeric slot".to_string())?;
 
     let cardano_tip_ms = system_start_ms + tip_slot as f64 * slot_length_seconds * 1_000.0;
-    let clock_offset_ms = (Utc::now().timestamp_millis() as f64 - cardano_tip_ms).max(0.0);
+    let offset = crate::local_network::endpoint(project_root_path, "CARDANO_LOCAL_CLOCK_OFFSET")?;
+    let offset_seconds = offset
+        .strip_suffix('s')
+        .and_then(|value| value.parse::<i64>().ok())
+        .ok_or("Invalid local network clock offset")?;
+    // The paired Cosmos fixture shares Cardano's saved clock offset.
+    let cosmos_now_ms = Utc::now().timestamp_millis() as f64 + offset_seconds as f64 * 1_000.0;
+    let clock_offset_ms = (cosmos_now_ms - cardano_tip_ms).max(0.0);
 
     subject_trusting_period_for_clock_offset_ms(clock_offset_ms)
 }
@@ -402,7 +410,9 @@ mod tests {
     fn local_default_trusting_period_is_longer_than_the_subject_fixture() {
         let local_setup = include_str!("setup.rs");
 
-        assert!(local_setup.contains("CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS\", \"315360000"));
+        assert!(local_setup.contains(
+            "\"CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS\",\n                \"315360000\""
+        ));
     }
 
     #[test]

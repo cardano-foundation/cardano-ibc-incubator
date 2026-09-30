@@ -15,7 +15,7 @@ export interface YaciHistorySqlClient {
 }
 
 const NFT_OUTPUT = `
-  (a.owner_addr = $1 OR a.owner_addr_full = $1)
+  ($1::text IS NULL OR a.owner_addr = $1 OR a.owner_addr_full = $1)
   AND EXISTS (
     SELECT 1
     FROM jsonb_array_elements(COALESCE(a.amounts::jsonb, '[]'::jsonb)) AS amount
@@ -83,7 +83,7 @@ function canonicalValidity(invalid: unknown): true {
 /** Discover creation from canonical raw history, never an application cache. */
 export async function discoverYaciHistoryBootstrap(
   client: YaciHistorySqlClient,
-  deployment: Pick<HistoryDeployment, "clientToken" | "stateAddress">,
+  deployment: Pick<HistoryDeployment, "clientToken" | "stateAddress" | "allowScriptMigration">,
 ): Promise<HistoryDeployment["bootstrap"]> {
   const policy = hex(deployment.clientToken.policyId, "NFT policy", 28);
   const name = deployment.clientToken.name;
@@ -113,7 +113,7 @@ export async function discoverYaciHistoryBootstrap(
       ORDER BY t.block ASC, t.tx_index ASC, a.output_index ASC
       LIMIT 1
     `,
-      [deployment.stateAddress, token.policyId + token.name],
+      [deployment.allowScriptMigration ? null : deployment.stateAddress, token.policyId + token.name],
     )).rows;
     if (rows.length !== 1) {
       throw new Error("Yaci client NFT creation is unavailable");
@@ -139,7 +139,7 @@ export async function discoverYaciHistoryBootstrap(
       evidence,
       token,
       outputIndex,
-      deployment.stateAddress,
+      deployment.allowScriptMigration ? undefined : deployment.stateAddress,
     );
     await client.query("COMMIT");
     transactionOpen = false;
@@ -195,8 +195,8 @@ export function createYaciHistorySource(
     throw new Error("Yaci NFT name is invalid hex");
   }
   const unit = policy + name.toLowerCase();
-  const address = deployment.stateAddress;
-  if (!address) throw new Error("Yaci history state address is required");
+  const address = deployment.allowScriptMigration ? null : deployment.stateAddress;
+  if (!deployment.stateAddress) throw new Error("Yaci history state address is required");
   const bootstrapHash = hex(deployment.bootstrap.txHash, "bootstrap hash", 32);
   const bootstrapIndex = integer(
     deployment.bootstrap.outputIndex,

@@ -6,7 +6,7 @@ import * as Lucid from '@lucid-evolution/lucid';
 import { decodeHostStateDatum, encodeHostStateDatum, HostStateDatum } from './host-state-datum';
 
 const INJECTIVE_COMPATIBILITY_FIXTURE = readFileSync(
-  resolve(__dirname, '../../../../../tests/injective-light-client-compat/host_state_datum.hex'),
+  resolve(__dirname, '../../../../../tests/injective-light-client-compat/host_state_datum_with_counts.hex'),
   'utf8',
 ).trim();
 
@@ -36,6 +36,9 @@ describe('HostState datum Injective compatibility', () => {
           ],
         ]),
         shutdown: 'Active',
+        live_clients: 0n,
+        live_connections: 0n,
+        live_channels: 0n,
       },
     };
 

@@ -224,10 +224,16 @@ async function checkVoucherCase(sample: FundsCase) {
     const expected = new Map(distributed);
     if (supply > away) expected.set(f.account.address, supply - away);
     assertEquals(ledgerBalances(f.emulator, voucher.unit), expected);
-    await assertFundsState(f, sample.parameters.amount, [
-      firstPacket(f),
-      ...pending,
-    ], history);
+    await assertFundsState(
+      f,
+      sample.parameters.amount,
+      [
+        firstPacket(f),
+        ...pending,
+      ],
+      history,
+      supply + pending.reduce((sum, packet) => sum + packet.amount, 0n),
+    );
     const metadata = await f.lucid.utxoByUnit(
       Object.keys(voucher.metadata.assets).find((unit) => unit !== "lovelace")!,
     );

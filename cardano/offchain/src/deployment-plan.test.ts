@@ -11,6 +11,7 @@ import {
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
+import { createCardanoScalusEvaluator } from "./scalus-evaluator.ts";
 import {
   DEPLOYMENT_PLAN_FIXTURE,
   loadDeploymentPlan,
@@ -26,6 +27,34 @@ const lucidLoader = {
   config: () => ({ network: "Preview" }),
 } as unknown as LucidEvolution;
 const inputs = { ...DEPLOYMENT_PLAN_FIXTURE, benchmarkVoucherEnabled: false };
+
+Deno.test("the backup is fixed in the deployed HostState script", async () => {
+  const withoutBackup = await loadDeploymentPlan(lucidLoader, inputs);
+  const withBackup = await loadDeploymentPlan(lucidLoader, {
+    ...inputs,
+    backupOperatorKeyHash: "55".repeat(28),
+  });
+  assertNotEquals(withBackup.hostState.hash, withoutBackup.hostState.hash);
+  assertEquals(withBackup.hostNft.hash, withoutBackup.hostNft.hash);
+  await assertRejects(
+    () =>
+      loadDeploymentPlan(lucidLoader, {
+        ...inputs,
+        backupOperatorKeyHash: inputs.deployerPaymentKeyHash,
+      }),
+    Error,
+    "different 28-byte payment key hash",
+  );
+  await assertRejects(
+    () =>
+      loadDeploymentPlan(lucidLoader, {
+        ...inputs,
+        backupOperatorKeyHash: "not-a-key-hash",
+      }),
+    Error,
+    "different 28-byte payment key hash",
+  );
+});
 
 Deno.test("production plan is deterministic and partitions every loaded script by publication", async () => {
   const plan = await loadDeploymentPlan(lucidLoader, inputs);
@@ -204,7 +233,9 @@ for (const splitRequired of [false, true]) {
         maxTxSize: 5_000,
       },
     );
-    const lucid = await Lucid(emulator, "Custom");
+    const lucid = await Lucid(emulator, "Custom", {
+      evaluator: createCardanoScalusEvaluator(),
+    });
     lucid.selectWallet.fromSeed(seed);
     let submissions = 0;
     emulator.submitTx = () => {
@@ -212,7 +243,7 @@ for (const splitRequired of [false, true]) {
       return Promise.reject(new Error("Preflight must stop before submission"));
     };
     await assertRejects(
-      () => createDeployment(lucid),
+      () => createDeployment(lucid, undefined, { deploymentMode: "legacy" }),
       Error,
       "complete deployment validator preflight",
     );

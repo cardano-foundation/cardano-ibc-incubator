@@ -23,9 +23,8 @@ const aikenFuzzInfrastructurePaths = new Set([
 
 const aikenInfrastructurePaths = new Set([
   ...aikenFuzzInfrastructurePaths,
-  'chains/cardano/config/devnet/genesis-alonzo.json',
-  'chains/cardano/config/devnet/genesis-shelley.json',
-  'chains/cardano/config/devnet/genesis-conway.json',
+  'chains/cardano/devkit/node.properties',
+  'chains/cardano/devkit/Dockerfile',
   'scripts/ci/collect-cardano-tx-budget-units.sh',
   'scripts/ci/check-aiken-wire-schema.mjs',
   'scripts/ci/check-aiken-wire-schema.test.mjs',

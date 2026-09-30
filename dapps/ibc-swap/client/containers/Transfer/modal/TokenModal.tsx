@@ -20,6 +20,7 @@ import {
 } from '@/components/TransferTokenItem/TransferTokenItem';
 import TransferContext from '@/contexts/TransferContext';
 import { debounce } from '@/utils/helper';
+import { tokenTransferDisabledReason } from '@/utils/cardanoAssetPresentation';
 import { Loading } from '@/components/Loading/Loading';
 
 import { StyledTokenBox } from '../index.style';
@@ -57,12 +58,7 @@ const TokenBoxComponent = ({
             {tokenList?.map((token) => (
               <TransferTokenItem
                 key={token.tokenId}
-                tokenId={token.tokenId}
-                tokenName={token.tokenName}
-                tokenLogo={token.tokenLogo}
-                tokenSymbol={token.tokenSymbol}
-                balance={token.balance}
-                tokenExponent={token.tokenExponent}
+                {...token}
                 onClick={() => setCurrentToken(token)}
                 isActive={currentToken?.tokenId === token.tokenId}
               />
@@ -92,8 +88,12 @@ export const TokenModal = ({
   const [displayTokenList, setDisplayTokenList] =
     useState<TransferTokenItemProps[]>(tokenList);
 
+  const latestToken = tokenList.find(
+    (token) => token.tokenId === currentToken?.tokenId,
+  );
   const handleSave = () => {
-    setSelectedToken(currentToken);
+    if (!latestToken || tokenTransferDisabledReason(latestToken)) return;
+    setSelectedToken(latestToken);
     onClose();
   };
 
@@ -109,7 +109,15 @@ export const TokenModal = ({
   const handleSearch = debounce((setCurrentList: any, searchString: string) => {
     if (tokenList?.length) {
       const newList = tokenList.filter((item) =>
-        item.tokenName?.toLowerCase()?.includes(searchString.toLowerCase()),
+        [
+          item.tokenName,
+          item.tokenDisplayName,
+          item.tokenTrace,
+          item.tokenSymbol,
+          item.tokenId,
+        ].some((value) =>
+          value?.toLowerCase().includes(searchString.toLowerCase()),
+        ),
       );
       setCurrentList(newList);
     }
@@ -187,6 +195,7 @@ export const TokenModal = ({
               fontWeight={700}
               lineHeight="22px"
               onClick={handleSave}
+              isDisabled={Boolean(tokenTransferDisabledReason(latestToken))}
               _hover={{
                 bg: COLOR.primary,
               }}

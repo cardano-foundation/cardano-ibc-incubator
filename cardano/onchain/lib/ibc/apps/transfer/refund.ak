@@ -9,7 +9,7 @@ use ibc/apps/transfer/escrow.{TransferModuleSpend}
 use ibc/apps/transfer/mint_voucher_redeemer.{MintVoucherRedeemer, RefundVoucher}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
-use ibc/utils/string as string_utils
+use ibc/encoding/hex
 use ibc/utils/validator_utils
 
 pub fn validate_refund_packet_token(
@@ -34,8 +34,7 @@ pub fn validate_refund_packet_token(
     // release escrow back to the original sender address.
     expect None = pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
 
-    expect Some(escrowed_token_unit) =
-      string_utils.hex_string_to_bytes(data.denom)
+    expect Some(escrowed_token_unit) = hex.decode(data.denom)
     trace @"spend_transfer_module: demon convert to token unit valid"
 
     let (escrowed_token_policy_id, escrowed_token_name) =
@@ -69,8 +68,7 @@ pub fn validate_refund_packet_token(
 
     trace @"spend_transfer_module (validate_refund_packet_token): unescrowed amount is valid"
 
-    expect Some(sender_public_key_hash) =
-      string_utils.hex_string_to_bytes(data.sender)
+    expect Some(sender_public_key_hash) = hex.decode(data.sender)
     let receiver_address = from_verification_key(sender_public_key_hash)
 
     // Check the sender's balance delta across all outputs at their address; this

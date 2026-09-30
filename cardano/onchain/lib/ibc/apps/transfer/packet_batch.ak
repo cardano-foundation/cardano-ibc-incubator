@@ -13,16 +13,16 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/consensus_history.{Witness}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+use ibc/core/ics_002_client_semantics/client_view
+use ibc/core/ics_002_client_semantics/types/client.{Active}
+use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
   BatchVerifyMembershipAndNonMembership, VerifyMembership,
   VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
   VerifyProofRedeemer,
 }
-use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
@@ -41,7 +41,7 @@ use ibc/core/ics_004/types/state.{Closed, Open}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/channel_keys as channel_paths
 use ibc/core/ics_024_host_requirements/packet_keys
-use ibc/utils/string as string_utils
+use ibc/encoding/hex
 use ibc/utils/validator_utils
 
 pub type TransferIntent {
@@ -147,13 +147,16 @@ pub fn operation(transaction: Transaction, policy: PolicyId) -> BatchOperation {
   authorization(transaction, policy).operation
 }
 
-fn history_witness(
-  transaction: Transaction,
-  policy: PolicyId,
-) -> Option<Witness> {
+fn history_witness(transaction: Transaction, policy: PolicyId) -> Option<Data> {
   expect Some(raw) = pairs.get_first(transaction.redeemers, Mint(policy))
   expect authorized: AuthorizedOperation = raw
-  authorized.history_witness
+  when authorized.history_witness is {
+    None -> None
+    Some(witness) -> {
+      let raw: Data = witness
+      Some(raw)
+    }
+  }
 }
 
 // Issuance pins this NFT to the lane guard. Spending it runs the exact state
@@ -186,7 +189,10 @@ fn require_proof(
 ) -> Bool {
   expect
     validator_utils.require_exact_marker_mint(transaction.mint, policy, "", 1)
-  validator_utils.verify_proof_envelope(transaction.redeemers, policy).proof == expected
+  validator_utils.proof_matches(
+    validator_utils.verify_proof_envelope(transaction.redeemers, policy).proof,
+    expected,
+  )
 }
 
 fn unique_refs(refs: List<OutputReference>) -> Bool {
@@ -219,7 +225,7 @@ fn asset_and_amount(
 ) -> (ByteArray, ByteArray, Int) {
   expect fungible_token_packet_data.validate_basic(data)
   let (policy, name) =
-    when string_utils.hex_string_to_bytes(data.denom) is {
+    when hex.decode(data.denom) is {
       Some(unit) -> validator_utils.extract_token_unit(unit)
       None ->
         (voucher_policy, voucher_asset_name.voucher_user_token_name(data.denom))
@@ -272,26 +278,20 @@ pub fn validate_send(
       connection_id,
     )
   let client =
-    validator_utils.validate_current_referred_client(
+    validator_utils.validate_referred_client(
       transaction.reference_inputs,
       channel_token.name,
       client_policy,
       connection.state.client_id,
+      valid_to,
+      None,
+      None,
     )
   expect connection.state.state == connection_state.Open
-  expect
-    client_state.status(
-      client.state.client_state,
-      valid_to,
-      client.state.consensus_states,
-    ) == Active
-  let latest_height = client_state.get_latest_height(client.state.client_state)
+  expect client.status == Active
+  let latest_height = client.latest_height
   expect Some(latest_timestamp) =
-    client_state.get_timestamp_at_height(
-      client.state.client_state,
-      client.state.consensus_states,
-      latest_height,
-    )
+    client_view.timestamp_at_height(client, latest_height)
   let sequencer_input = input_at(transaction, sequencer_ref)
   expect auth.contain_auth_token(sequencer_input.output, sequencer_token)
   expect
@@ -407,12 +407,7 @@ pub fn validate_settlement(
       history_witness(transaction, policy),
     )
   expect connection.state.state == connection_state.Open
-  expect
-    client_state.status(
-      client.state.client_state,
-      valid_to,
-      client.state.consensus_states,
-    ) == Active
+  expect client.status == Active
   expect Some(consensus) =
     pairs.get_first(client.state.consensus_states, proof_height)
   expect Some(processed_time) =
@@ -496,8 +491,10 @@ pub fn validate_settlement(
           }
         }
         _ -> {
+          expect Some(timestamp) =
+            client_view.timestamp_at_height(client, proof_height)
           expect
-            packet.timeout_timestamp > 0 && consensus.timestamp >= packet.timeout_timestamp
+            packet.timeout_timestamp > 0 && timestamp >= packet.timeout_timestamp
           VerifyNonMembership {
             cs: absence.cs,
             cons_state: absence.cons_state,
@@ -596,7 +593,7 @@ fn validate_release(
     )
   expect released == amount
   expect assets.tokens(transaction.mint, policy) == burns
-  expect Some(owner) = string_utils.hex_string_to_bytes(recipient)
+  expect Some(owner) = hex.decode(recipient)
   expect bytearray.length(owner) == 28
   let refund: Data =
     PacketRefund { port_id: port, channel_id: channel, sequence }
@@ -653,12 +650,7 @@ pub fn validate_receive(
       history_witness(transaction, policy),
     )
   expect connection.state.state == connection_state.Open
-  expect
-    client_state.status(
-      client.state.client_state,
-      valid_to,
-      client.state.consensus_states,
-    ) == Active
+  expect client.status == Active
   expect Some(consensus) =
     pairs.get_first(client.state.consensus_states, proof_height)
   expect Some(processed_time) =
@@ -774,7 +766,7 @@ fn validate_voucher_payment(
   let name = voucher_asset_name.voucher_user_token_name(denom)
   expect assets.quantity_of(transaction.mint, voucher_policy, name) == amount
   expect assets.tokens(transaction.mint, policy) == dict.singleton(marker, 1)
-  expect Some(owner) = string_utils.hex_string_to_bytes(recipient)
+  expect Some(owner) = hex.decode(recipient)
   expect bytearray.length(owner) == 28
   let refund: Data =
     PacketRefund { port_id: port, channel_id: channel, sequence }
@@ -818,12 +810,7 @@ pub fn validate_prune(
       history_witness(transaction, policy),
     )
   expect connection.state.state == connection_state.Open
-  expect
-    client_state.status(
-      client.state.client_state,
-      valid_to,
-      client.state.consensus_states,
-    ) == Active
+  expect client.status == Active
   expect Some(consensus) =
     pairs.get_first(client.state.consensus_states, proof_height)
   expect Some(processed_time) =
@@ -896,8 +883,7 @@ pub fn validate_send_funds(
         expect intent.port_id == packet.source_port
         expect intent.channel_id == packet.source_channel
         expect bytearray.length(intent.owner) == 28
-        expect Some(sender) =
-          string_utils.hex_string_to_bytes(intent.data.sender)
+        expect Some(sender) = hex.decode(intent.data.sender)
         expect sender == intent.owner
         expect packet.timeout_timestamp == intent.timeout_timestamp
         expect

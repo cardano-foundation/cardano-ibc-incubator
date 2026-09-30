@@ -322,7 +322,7 @@ fn find_chain_block_bounds(lines: &[&str], target_chain_id: &str) -> Option<(usi
     None
 }
 
-fn extract_chain_block(config: &str, target_chain_id: &str) -> Option<String> {
+pub(crate) fn extract_chain_block(config: &str, target_chain_id: &str) -> Option<String> {
     let lines: Vec<&str> = config.lines().collect();
     let (block_start, block_end) = find_chain_block_bounds(&lines, target_chain_id)?;
     Some(lines[block_start..block_end].join("\n"))

@@ -31,6 +31,11 @@ fn validate_shutdown_authority(
   and {
     host_state_datum.nft_policy == host_state_nft_policy_id,
     list.has(extra_signatories, host_state_datum.deployer),
+    host_state_datum.control.live_clients == 0,
+    host_state_datum.control.live_connections == 0,
+    host_state_datum.control.live_channels == 0,
+    // The transfer registration is removed only after its root is drained.
+    !pairs.has_key(host_state_datum.control.port_registry, "transfer"),
     when host_state_datum.control.shutdown is {
       ShuttingDown { grace_period_end, .. } ->
         validator_utils.get_tx_valid_from(validity_range) >= grace_period_end

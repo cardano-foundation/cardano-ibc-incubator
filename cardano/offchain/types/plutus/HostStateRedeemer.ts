@@ -60,6 +60,14 @@ export const HostStateRedeemerSchema = Data.Enum([
   Data.Object({ EnterShutdown: EnterShutdownSchema }),
   Data.Literal("FinalizeShutdown"),
   Data.Literal("Heartbeat"),
+  Data.Literal("AuthorizeFinalization"),
+  Data.Object({
+    RetireState: Data.Object({
+      kind: Data.Integer(),
+      token_name: Data.Bytes(),
+    }),
+  }),
+  Data.Literal("ClaimBackup"),
 ]);
 
 export type HostStateRedeemer = Data.Static<typeof HostStateRedeemerSchema>;

@@ -1,6 +1,6 @@
 use aiken/collection/list
 use aiken/primitive/bytearray
-use ibc/utils/string
+use ibc/utils/text_bytes
 
 pub const default_max_character_length = 64
 
@@ -24,7 +24,7 @@ pub fn channel_identifier_validator(id: ByteArray) -> Bool {
 
 fn default_identifier_validator(id: ByteArray, min: Int, max: Int) -> Bool {
   and {
-    string.trim_space(id) != "",
+    text_bytes.trim_ascii_spaces(id) != "",
     min <= bytearray.length(id) && bytearray.length(id) <= max,
     is_valid_id(id),
   }

@@ -167,11 +167,11 @@ describe('Yaci local epoch nonces', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  it('keeps the configured public Koios path unchanged', async () => {
-    configuration.cardanoEpochParamsEndpoint = 'https://preprod.koios.rest/api/v1';
+  it('uses the configured public Blockfrost path', async () => {
+    configuration.cardanoEpochParamsEndpoint = 'https://cardano-preprod.blockfrost.io/api/v0';
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
-      json: async () => [{ epoch_no: 1, nonce: '77'.repeat(32) }],
+      json: async () => ({ epoch: 1, nonce: '77'.repeat(32) }),
     } as Response);
     await expect(service['fetchEpochNonce'](1)).resolves.toBe('77'.repeat(32));
     expect(fetchMock).toHaveBeenCalledTimes(1);

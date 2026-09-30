@@ -50,12 +50,10 @@ bytes, 90,112 block-body bytes, 16,500,000 transaction memory units,
 20,000,000,000 block steps. The transaction-budget CI uses the same values and
 keeps its existing 750-byte and 5% reserves.
 
-The active local ledger source is
-`chains/cardano/config/devnet/genesis-alonzo.json` together with the Shelley
-genesis in that directory. `chains/cardano/config/protocol-parameters.json` is
-not loaded by Caribic.
+Local ledger limits come from `chains/cardano/devkit/node.properties`.
+`chains/cardano/config/protocol-parameters.json` is not loaded by Caribic.
 
-The local Cardano ledger is pinned to protocol version 10 and the repository
+The local Cardano ledger is pinned to protocol version 10 and DevKit's
 cost models. Protocol version 10 is required by the bitwise Plutus V3 builtins
 used by the supported ICS-20 codecs. The numeric capacity is strict, but this
 does not claim byte-for-byte protocol-version 11 execution parity. Full current
@@ -105,7 +103,6 @@ scenarios remain report-only and are not covered by this ratchet.
 
 Sources:
 
-- Cardano epoch 651 parameters: <https://api.koios.rest/api/v1/epoch_params?epoch_no=eq.651>
 - Injective consensus parameters at height 180448981: <https://sentry.tm.injective.network/consensus_params?height=180448981>
 - Injective staking parameters: <https://sentry.lcd.injective.network/cosmos/staking/v1beta1/params>
 - Injective transaction-fee parameters: <https://sentry.lcd.injective.network/injective/txfees/v1beta1/params>

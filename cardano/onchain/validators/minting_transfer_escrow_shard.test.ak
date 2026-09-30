@@ -135,7 +135,10 @@ fn create_transaction_with_registry(
     Output {
       ..mock.module_input.output,
       datum: InlineDatum(
-        TransferModuleDatum { escrow_shard_registry_root: new_root },
+        TransferModuleDatum {
+          escrow_shard_registry_root: new_root,
+          outstanding_voucher_obligation: 0,
+        },
       ),
     }
   let created_output =
@@ -227,7 +230,10 @@ test create_second_transfer_escrow_shard_succeeds() {
         output: Output {
           ..first.module_input.output,
           datum: InlineDatum(
-            TransferModuleDatum { escrow_shard_registry_root: first_root },
+            TransferModuleDatum {
+              escrow_shard_registry_root: first_root,
+              outstanding_voucher_obligation: 0,
+            },
           ),
         },
       },

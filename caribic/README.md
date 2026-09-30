@@ -18,9 +18,24 @@ cargo install --path .
 ```
 ## Commands overview
 
+### Local Cardano network
+
+`caribic start` uses Yaci DevKit to seed five producers in genesis. Docker Compose and Python 3.9+ are required.
+Epochs retain 5,000 one-second slots (83 minutes 20 seconds). Seeding the pools avoids waiting for registration to activate.
+Fresh network startup took about 2½ minutes with cached images on a 3-CPU, 4-GiB Docker VM. Image downloads and bridge deployment add time.
+
+DevKit supplies the genesis templates and key-generation scripts. As Cardano versions change we can adopt upstream provisioning fixes instead of maintaining those pieces ourselves. Caribic adds the five-producer configuration and handles funding and bridge connections.
+
+To migrate or reset, run `caribic stop` followed by `caribic start --clean`. Recreate IBC routes and reset the paired Cosmos fixture with `--chain-flag stateful=false`. `caribic stop network` retains the chain.
+
+Use `caribic devkit status` to inspect the network and `caribic devkit test` to check payments and block proofs. The diagnostic requires Node 22+.
+Set port overrides in `chains/cardano/devkit/.env` using [`.env.example`](../chains/cardano/devkit/.env.example). Exported endpoints and reports live in `.caribic/devkit/`.
+
+Local pairing currently supports Cosmos `v8-classic`. Other profiles need clock integration and the Osmosis UI is skipped. Full IBC round-trip validation is still pending.
+
 ### `caribic check`
 
-Verifies Docker, Aiken, Deno, Go, and the native Hermes build toolchain on Linux. It does not currently probe Node.js or Rust/Cargo.
+Verifies Docker, Docker Compose, Python, Aiken, Deno, Go, and the native Hermes build toolchain on Linux. It does not currently probe Node.js or Rust/Cargo.
 
 ### `caribic install`
 
@@ -38,7 +53,7 @@ Starts services. Run `caribic --help` to see an actively maintained exhaustive l
 
 With no target, `caribic start` behaves like `caribic start all`: it starts the
 network and bridge stack (including Gateway and Hermes), then starts the IBC
-Swap dapp after those dependencies are ready.
+Swap dapp after those dependencies are ready. Local DevKit startup currently skips the dapp.
 
 Examples:
 
@@ -58,10 +73,10 @@ caribic chain start --chain cosmos --network v10-v2
 Public-testnet Yaci checkpoint note:
 - `caribic start --network preprod` and `caribic start --network preview` require Yaci to start from an explicit recent checkpoint, not genesis.
 - Before generating it, copy `cardano/gateway/.env.example` to `cardano/gateway/.env` and configure an external raw relay plus Kupo and Ogmios for the selected network. The official raw relay is `preprod-node.play.dev.cardano.org:3001` for Preprod or `preview-node.play.dev.cardano.org:3001` for Preview; use matching-network Kupo/Ogmios endpoints.
-- Generate and persist a checkpoint before deploying bridge contracts:
+- Generate and persist a checkpoint before deploying bridge contracts. The command picks the block 2161 below the tip, one past the 2160-block rollback limit, so the checkpoint is final but only about half a day old. Pass `--depth` to go further back.
 
 ```bash
-caribic yaci-checkpoint --network preprod --epochs-back 2 --write-env
+caribic yaci-checkpoint --network preprod --write-env
 caribic start network --network preprod
 # Replace preprod with preview for Cardano Preview.
 ```
@@ -320,7 +335,7 @@ deno run --allow-net --allow-read --allow-write --allow-env caribic/tools/provis
 
 ### 1. Understand the managed public-network services
 
-For preprod and preview, Caribic never starts its local `cardano-node`, Kupo, Ogmios, or Ogmios proxy services, regardless of the local-devnet service switches in `default-config.json`. It manages only Postgres and the Yaci history follower; Yaci and the Gateway's block-witness fetch use the external raw relay configured by `CARDANO_CHAIN_HOST`, while transaction building and submission use the external Kupo/Ogmios endpoints.
+For preprod and preview, Caribic never starts its local `cardano-node`, Kupo, Ogmios, or Ogmios proxy services, regardless of local network configuration. It manages only Postgres and the Yaci history follower; Yaci and the Gateway's block-witness fetch use the external raw relay configured by `CARDANO_CHAIN_HOST`, while transaction building and submission use the external Kupo/Ogmios endpoints.
 
 The built-in profiles carry the correct chain identities and protocol magic (`1` for preprod and `2` for preview), so no custom Caribic config is needed. Rebuild the CLI with `cargo install --path caribic --force` after changing branches.
 
@@ -351,20 +366,21 @@ For Preview, use `preview-node.play.dev.cardano.org:3001`, Preview Kupo/Ogmios e
 
 **Where the Demeter API keys go:** the unauthenticated host forms shown above require separate `KUPO_API_KEY` and `OGMIOS_API_KEY` values. Caribic and the Gateway authenticate Kupo's base host with the `dmtr-api-key` header; for Ogmios HTTP JSON-RPC they derive Demeter's authenticated `<ogmios-api-key>.<base-host>` URL because header authentication on the base host can time out. Hermes uses the same split for its independent signing checks. If either configured endpoint already uses its matching key-in-hostname form, Caribic does not also create or pass a header-key file for it. Non-Demeter providers follow their own authentication rules. You may instead export `CARIBIC_CARDANO_NETWORK=preprod` together with `CARIBIC_KUPO_API_KEY` / `CARIBIC_OGMIOS_API_KEY` before `caribic start`; the network marker is mandatory for process overrides so stale Preprod values cannot cross into Preview. If you later run the swap dapp (step 8), configured key values remain server-only and are passed there as `IBC_SWAP_KUPO_API_KEY` / `IBC_SWAP_OGMIOS_API_KEY`.
 
-**Where the Koios API key goes:** for paid/rate-limited Koios access, set `CARDANO_KOIOS_API_KEY=<token>` in `cardano/gateway/.env`. The `yaci-checkpoint --network ...` command also accepts `CARIBIC_KOIOS_API_KEY`, `CARDANO_KOIOS_API_KEY`, or `KOIOS_API_KEY` directly; when those process overrides are consumed by `caribic start`, accompany them with `CARIBIC_CARDANO_NETWORK=preprod` or `preview`. Caribic uses the token for checkpoint queries, while Gateway uses it for epoch-params and pool-registration-history queries.
+**Where the Blockfrost project id goes:** set `CARDANO_BLOCKFROST_PROJECT_ID=<id>` in `cardano/gateway/.env`. The `yaci-checkpoint --network ...` command also accepts `CARIBIC_BLOCKFROST_PROJECT_ID`, `CARDANO_BLOCKFROST_PROJECT_ID`, or `BLOCKFROST_PROJECT_ID` from the process environment. When using a process override with `caribic start`, set `CARIBIC_CARDANO_NETWORK=preprod` or `preview` too so credentials cannot cross networks. Caribic uses the project id for checkpoint queries, while Gateway uses it for epoch and pool history.
 
 ### 3. Resolve and persist a Yaci checkpoint
 
-Preprod history must sync from a recent checkpoint, never from genesis:
+Preprod history must sync from a recent checkpoint, never from genesis. By default this is the block 2161 below the tip:
 
 ```bash
-caribic yaci-checkpoint --network preprod --epochs-back 2 --write-env
+caribic yaci-checkpoint --network preprod --write-env
 ```
 
 ### 4. Start the preprod runtime and deploy the bridge
 
 ```bash
 export DEPLOYER_SK=$(cat ~/.caribic/preprod-deployer.sk)   # or your own funded preprod signing key
+# Optional: set DEPLOYER_BACKUP_PAYMENT_KEY_HASH to a different 56-character payment key hash before first deployment.
 caribic start --network preprod
 ```
 
@@ -375,6 +391,12 @@ caribic health-check
 ```
 
 A successful deploy is cached via the artifacts in `manifests/preprod/`; set `CARIBIC_FORCE_PREPROD_DEPLOY=1` to force a redeploy.
+
+The backup hash is baked into the deployed HostState validator. It cannot be
+added or changed later. The named backup wallet can take over at any time by
+setting `DEPLOYER_SK` to its signing key and running
+`cardano/offchain/scripts/shutdown-deployment.ts claim-backup` using the
+deployment's `handler.json`.
 
 ### 5. Add the Injective testnet relayer key
 
@@ -465,7 +487,7 @@ Channels and denom traces are discovered at runtime through the planner and the 
 
 The Injective-side Cardano client can only be updated with headers whose size and gas grow with the update gap (~4.6–8KB and ~85k gas per preprod block), and update targets must be blocks containing a HostState transaction. In practice this means:
 
-- The tracked Cardano Hermes profile sets `host_state_heartbeat_interval = '60s'`. Once per poll Hermes asks the Gateway whether the current Cardano epoch already contains a HostState transaction; if not, it submits a root-preserving heartbeat that spends and recreates HostState to provide an epoch anchor. Ordinary IBC transactions satisfy the same check, so this produces at most one proactive heartbeat per otherwise idle epoch, not one transaction per minute. Heartbeats require the HostState deployment authority, and concurrent authorized relayers are safe because only one transaction can consume the current HostState UTxO; losing attempts retry from fresh Gateway state on the next poll.
+- The tracked Cardano Hermes profile sets `host_state_heartbeat_interval = '60s'` as its retry interval. Hermes checks at startup, then uses Gateway's suggested delay to wait until the current epoch's slot midpoint. If no ordinary IBC transaction has refreshed HostState by then, it submits a root-preserving heartbeat. After any HostState transaction in the epoch, Hermes waits toward the next epoch midpoint but rechecks hourly for rollbacks. Failed attempts retry after 60 seconds. Heartbeats currently require the HostState deployment authority.
 
 - The Hermes daemon does NOT keep this client fresh on its own: its refresh policy triggers near the trusting-period threshold (days), which suits ordinary Tendermint clients but not one whose update cost grows per block of gap. Run an explicit refresh loop while the route is up, for example:
 

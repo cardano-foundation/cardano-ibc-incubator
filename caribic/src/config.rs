@@ -52,17 +52,17 @@ impl CoreCardanoNetwork {
         matches!(self, Self::Preprod | Self::Preview)
     }
 
-    pub fn koios_base_url(self) -> Option<&'static str> {
+    pub fn blockfrost_base_url(self) -> Option<&'static str> {
         match self {
             Self::Local => None,
-            Self::Preprod => Some("https://preprod.koios.rest/api/v1"),
-            Self::Preview => Some("https://preview.koios.rest/api/v1"),
+            Self::Preprod => Some("https://cardano-preprod.blockfrost.io/api/v0"),
+            Self::Preview => Some("https://cardano-preview.blockfrost.io/api/v0"),
         }
     }
 
     pub fn epoch_length(self) -> u64 {
         match self {
-            Self::Local => 5_000,
+            Self::Local => 5000,
             Self::Preprod => 432_000,
             Self::Preview => 86_400,
         }
@@ -146,9 +146,6 @@ pub struct Services {
     pub db_sync: bool,
     #[serde(default)]
     pub yaci: bool,
-    pub kupo: bool,
-    pub ogmios: bool,
-    pub cardano_node: bool,
     pub postgres: bool,
 }
 

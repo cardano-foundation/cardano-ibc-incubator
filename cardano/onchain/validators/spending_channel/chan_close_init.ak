@@ -1,10 +1,6 @@
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Transaction}
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{
-  ClientDatum, ClientDatumState,
-}
-use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -19,7 +15,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnChanCloseInit}
 use ibc/utils/validator_utils
 
 validator chan_close_init(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
@@ -49,8 +45,6 @@ validator chan_close_init(
     expect updated_datum: ChannelDatum =
       validator_utils.get_inline_datum(updated_output)
 
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-
     let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
@@ -70,7 +64,7 @@ validator chan_close_init(
       validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
-        client_minting_policy_id,
+        client_registry,
         connection_minting_policy_id,
         connection_id,
         validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
@@ -83,12 +77,7 @@ validator chan_close_init(
     trace @"chan_close_init: Connection is open"
     trace @"chan_close_init: reference_inputs contain Client utxo"
 
-    expect
-      client_state_mod.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == client_status_mod.Active
+    expect client_datum.status == client_status_mod.Active
     trace @"chan_close_init: client status is active"
 
     let ibc_module_redeemer =

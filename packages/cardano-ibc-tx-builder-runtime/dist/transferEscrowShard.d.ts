@@ -4,6 +4,7 @@ import { ICS23MerkleTree } from './ics23MerkleTree';
 export declare const TRANSFER_ESCROW_SHARD_REGISTERED_VALUE: Buffer<ArrayBuffer>;
 type TransferModuleDatum = {
     escrow_shard_registry_root: string;
+    outstanding_voucher_obligation: bigint;
 };
 type TransferEscrowDatum = {
     channel_id: string;

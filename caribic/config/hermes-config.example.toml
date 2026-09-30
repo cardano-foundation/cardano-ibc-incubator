@@ -106,9 +106,9 @@ max_total_protocol_output_lovelace = 50000000
 max_wallet_lovelace_top_up = 5000000
 max_validity_interval_slots = 3600
 
-# Poll for a HostState heartbeat once a minute. The Gateway only builds a
-# transaction when no ordinary IBC transition has created an anchor in the
-# current Cardano epoch, so this does not produce one transaction per poll.
+# Check for a HostState heartbeat at the epoch midpoint. Hermes sleeps until
+# Gateway's suggested check time and uses this interval to retry failures.
+# An ordinary IBC transition before the midpoint avoids the heartbeat.
 # The configured Cardano key must match the HostState deployment authority.
 host_state_heartbeat_interval = '60s'
 

@@ -12,7 +12,6 @@ import {
   type TxBuilder,
   type UTxO,
 } from "@lucid-evolution/lucid";
-import { createCostModels } from "@lucid-evolution/utils";
 import { generateEmulatorAccount } from "@lucid-evolution/provider";
 import parameters from "../../scripts/fixtures/mainnet-protocol-parameters.json" with {
   type: "json",
@@ -72,9 +71,8 @@ export async function packetLaneFixture(laneCount = 16) {
     priceStep: parameters.priceStep,
     minFeeRefScriptCostPerByte: parameters.minFeeRefScriptCostPerByte,
   });
-  emulator.protocolParameters.costModels.PlutusV3 = Object.fromEntries(
-    parameters.plutusV3CostModel.map((cost, index) => [String(index), cost]),
-  );
+  emulator.protocolParameters.costModels.PlutusV3 =
+    parameters.plutusV3CostModel;
   const locked = credentialToAddress("Custom", {
     type: "Script",
     hash: "fe".repeat(28),
@@ -300,20 +298,7 @@ export async function packetLaneFixture(laneCount = 16) {
     const address = await lucid.wallet().address();
     seed(address, account.assets, Data.void());
     seed(address, { lovelace: 5_000_000n }, Data.void());
-    // uplc 0.2.23 mishandles the 350-entry model (bitwise builtins receive
-    // prohibitive default costs). Its supported 297-entry prefix has exactly
-    // the same ledger costs for the builtins used here. Only evaluation uses
-    // this projection. Transaction construction keeps all 350 entries.
-    const evaluationModels = createCostModels({
-      ...emulator.protocolParameters.costModels,
-      PlutusV3: Object.fromEntries(
-        parameters.plutusV3CostModel.slice(0, 297).map((
-          cost,
-          index,
-        ) => [String(index), cost]),
-      ),
-    });
-    isolateEvaluation(lucid, emulator, evaluationModels.to_cbor_bytes());
+    isolateEvaluation(lucid, emulator);
     if (node) {
       nodeEvaluations.set(lucid, { node, emulator });
       emulator.evaluateTx = async (tx, additional = []) => {

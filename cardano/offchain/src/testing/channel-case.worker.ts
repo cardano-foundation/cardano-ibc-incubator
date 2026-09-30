@@ -47,6 +47,26 @@ async function checkCase({ action, parameters }: ChannelCase) {
       }
     }
   }
+  for (
+    const mutation of [
+      "wrong_client_script",
+      "wrong_client_policy",
+      "wrong_client_datum_token",
+      "wrong_client_sequence",
+      ...(action.proofState === 0 ? [] : [
+        "proof_from_other_client",
+        "missing_client_verifier",
+      ] as const),
+    ] as const
+  ) {
+    try {
+      await assertTransactionRejected(
+        await channelFixture(action, parameters, mutation),
+      );
+    } catch (error) {
+      throw new Error(`${action.name}: ${mutation}`, { cause: error });
+    }
+  }
 }
 
 function describeError(error: unknown): string {

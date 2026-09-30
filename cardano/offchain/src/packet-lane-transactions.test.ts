@@ -39,6 +39,10 @@ import {
   snapshot,
 } from "./testing/packet-lane-fixture.ts";
 
+const scriptFailureMessage = Deno.env.get("PACKET_LANE_NODE_URL")
+  ? "validator"
+  : "failed script execution";
+
 Deno.test("five funded requests batch without acknowledgements and complete through independent lane transactions", async () => {
   const f = await packetLaneFixture();
   const { intents } = await f.admit(5);
@@ -135,7 +139,7 @@ Deno.test("same-lane sends use sequential witnesses and stale packet completions
   await assertRejects(
     () => f.emulator.evaluateTx(corrupted),
     Error,
-    "validator",
+    scriptFailureMessage,
   );
   await signed.submit();
   f.emulator.awaitBlock();
@@ -316,7 +320,7 @@ Deno.test("authenticated timeout drains liquidity, burns its identity and refund
   await assertRejects(
     () => f.emulator.evaluateTx(corrupted),
     Error,
-    "validator",
+    scriptFailureMessage,
   );
   await signed.submit();
   f.emulator.awaitBlock();
@@ -473,7 +477,7 @@ Deno.test("returning native packets partially release then retire a deposit with
     await assertRejects(
       () => f.emulator.evaluateTx(corrupted),
       Error,
-      "validator",
+      scriptFailureMessage,
     );
     await signed.submit();
     f.emulator.awaitBlock();
@@ -848,7 +852,7 @@ Deno.test("an acknowledgement authenticates an older consensus checkpoint agains
   await assertRejects(
     () => f.emulator.evaluateTx(invalid),
     Error,
-    "validator",
+    scriptFailureMessage,
   );
   // A correct historical proof is usable after the client has advanced.
   await signed.submit();

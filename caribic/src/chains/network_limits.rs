@@ -23,8 +23,6 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use serde_json::Value;
-
     fn project_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -39,55 +37,32 @@ mod tests {
 
     #[test]
     fn local_cardano_capacity_matches_mainnet() {
-        let alonzo: Value =
-            serde_json::from_str(&read("chains/cardano/config/devnet/genesis-alonzo.json"))
-                .expect("local Alonzo genesis should be JSON");
-        assert_eq!(alonzo["maxTxExUnits"]["exUnitsMem"], 16_500_000);
-        assert_eq!(alonzo["maxTxExUnits"]["exUnitsSteps"], 10_000_000_000_u64);
-        assert_eq!(alonzo["maxBlockExUnits"]["exUnitsMem"], 72_000_000);
-        assert_eq!(
-            alonzo["maxBlockExUnits"]["exUnitsSteps"],
-            20_000_000_000_u64
-        );
-
-        let shelley: Value =
-            serde_json::from_str(&read("chains/cardano/config/devnet/genesis-shelley.json"))
-                .expect("local Shelley genesis should be JSON");
-        assert_eq!(shelley["protocolParams"]["maxTxSize"], 16_384);
-        assert_eq!(shelley["protocolParams"]["maxBlockBodySize"], 90_112);
-        assert_eq!(shelley["protocolParams"]["maxBlockHeaderSize"], 1_100);
+        let properties = read("chains/cardano/devkit/node.properties");
+        let parameters: std::collections::HashMap<_, _> = properties
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .collect();
+        for (key, expected) in [
+            ("maxTxExUnitsMem", "16500000"),
+            ("maxTxExUnitsSteps", "10000000000"),
+            ("maxBlockExUnitsMem", "72000000"),
+            ("maxBlockExUnitsSteps", "20000000000"),
+            ("maxTxSize", "16384"),
+            ("maxBlockBodySize", "90112"),
+            ("maxBlockHeaderSize", "1100"),
+        ] {
+            assert_eq!(parameters.get(key).copied(), Some(expected), "{key}");
+        }
 
         let ci = read(".github/workflows/ci.yml");
         assert!(ci.contains("run: deno task test:tx-budgets"));
         let fixture = read("cardano/offchain/src/testing/channel-fixture.ts");
-        assert!(fixture.contains("chains/cardano/config/devnet/genesis-alonzo.json"));
-        assert!(fixture.contains("chains/cardano/config/devnet/genesis-shelley.json"));
-        assert!(fixture.contains("maxTxSize: shelley.protocolParams.maxTxSize"));
-        assert!(fixture.contains("maxTxExMem: BigInt(alonzo.maxTxExUnits.exUnitsMem)"));
-        assert!(fixture.contains("maxTxExSteps: BigInt(alonzo.maxTxExUnits.exUnitsSteps)"));
-    }
-
-    #[test]
-    fn local_cardano_plutus_v3_cost_model_supports_protocol_version() {
-        let shelley: Value =
-            serde_json::from_str(&read("chains/cardano/config/devnet/genesis-shelley.json"))
-                .expect("local Shelley genesis should be JSON");
-        let protocol_major = shelley["protocolParams"]["protocolVersion"]["major"]
-            .as_u64()
-            .expect("local Shelley genesis should declare a protocol major version");
-
-        let conway: Value =
-            serde_json::from_str(&read("chains/cardano/config/devnet/genesis-conway.json"))
-                .expect("local Conway genesis should be JSON");
-        let plutus_v3_cost_model = conway["plutusV3CostModel"]
-            .as_array()
-            .expect("local Conway genesis should declare a PlutusV3 cost model");
-
-        assert!(
-            protocol_major < 10 || plutus_v3_cost_model.len() >= 297,
-            "Cardano protocol version {protocol_major} requires the 297-entry PlutusV3 PV10 cost model, but the local Conway genesis has {} entries",
-            plutus_v3_cost_model.len()
-        );
+        assert!(fixture.contains("chains/cardano/devkit/node.properties"));
+        assert!(fixture.contains("maxTxSize: localLimit(\"maxTxSize\")"));
+        assert!(fixture.contains("maxTxExMem: BigInt(localLimit(\"maxTxExUnitsMem\"))"));
+        assert!(fixture.contains("maxTxExSteps: BigInt(localLimit(\"maxTxExUnitsSteps\"))"));
+        // The DevKit smoke test checks its generated PlutusV3 cost model at runtime.
+        assert_eq!(parameters.get("protocolMajorVer").copied(), Some("10"));
     }
 
     #[test]

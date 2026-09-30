@@ -2,15 +2,13 @@ use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{
-  ClientDatum, ClientDatumState,
-}
-use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyMembership,
+use ibc/core/ics_002_client_semantics/client_view.{
+  ClientStateView as ClientDatumState,
 }
+use ibc/core/ics_002_client_semantics/registry
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
+use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{VerifyMembership}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
@@ -29,12 +27,12 @@ use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, OnAcknowledgementPacket,
 }
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
 
 validator acknowledge_packet(
-  client_minting_policy_id: PolicyId,
+  client_registry: Data,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
@@ -64,8 +62,6 @@ validator acknowledge_packet(
       )
     expect updated_datum: ChannelDatum =
       validator_utils.get_inline_datum(updated_output)
-
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
     let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
@@ -102,13 +98,26 @@ validator acknowledge_packet(
       }
     trace @"acknowledge_packet: packet info matched channel state"
 
-    let (connection_datum, client_datum) =
-      validator_utils.validate_referred_connection_and_client(
+    let connection_datum =
+      validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,
-        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
+      )
+    let client_registration =
+      registry.for_client(client_registry, connection_datum.state.client_id)
+    let verify_proof_policy_id =
+      validator_utils.registered_proof_policy(
+        client_registration,
+        verify_proof_policy_id,
+      )
+    let client_datum =
+      validator_utils.validate_registered_client(
+        reference_inputs,
+        datum.token.name,
+        client_registration,
+        connection_datum.state.client_id,
         validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
         Some(proof_height),
         validator_utils.verify_proof_envelope(redeemers, verify_proof_policy_id).history_witness,
@@ -121,11 +130,7 @@ validator acknowledge_packet(
     trace @"acknowledge_packet: reference_inputs contain Client utxo"
 
     let is_client_status_active =
-      client_state_mod.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == client_status_mod.Active
+      client_datum.status == client_status_mod.Active
     trace @"acknowledge_packet: client status is active"
 
     expect Some(commitment) =
@@ -199,7 +204,7 @@ fn validate_acknowledge_packet_proof(
   connection: ConnectionEnd,
   client_datum_state: ClientDatumState,
   proof_height: Height,
-  proof: MerkleProof,
+  proof: Data,
   packet: Packet,
   acknowledgement: ByteArray,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
@@ -233,16 +238,19 @@ fn validate_acknowledge_packet_proof(
 
   let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
 
-  verify_proof_redeemer == VerifyMembership {
-    cs: client_datum_state.client_state,
-    cons_state: consensus_state,
-    height: proof_height,
-    processed_time,
-    processed_height,
-    delay_time_period: time_delay,
-    delay_block_period: block_delay,
-    proof,
-    path: merkle_path,
-    value: commit_ack,
-  }
+  validator_utils.proof_matches(
+    verify_proof_redeemer,
+    VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      processed_time,
+      processed_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof,
+      path: merkle_path,
+      value: commit_ack,
+    },
+  )
 }

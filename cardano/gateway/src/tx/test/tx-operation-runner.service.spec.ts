@@ -9,6 +9,7 @@ describe('TxOperationRunnerService', () => {
       explicitSelectionScopeId: null as number | null,
     };
     const lucidService = {
+      lucid: { wallet: jest.fn(() => ({ address: 'selected-wallet' })) },
       beginWalletSelectionScope: jest.fn(() => {
         const scopeId = ++walletSelectionState.nextScopeId;
         walletSelectionState.activeScopeId = scopeId;
@@ -61,6 +62,46 @@ describe('TxOperationRunnerService', () => {
     };
   };
 
+  it('rejects direct runner entrypoints before constructing or completing in historical mode', async () => {
+    const original = process.env.GATEWAY_HISTORICAL_READ_ONLY;
+    try {
+      process.env.GATEWAY_HISTORICAL_READ_ONLY = 'true';
+      const { service, lucidService } = makeService();
+      delete process.env.GATEWAY_HISTORICAL_READ_ONLY;
+      const build = jest.fn();
+      await expect(service.run({ unsignedTx: build } as never)).rejects.toThrow('historical read-only mode');
+      await expect(service.runChain({ build } as never)).rejects.toThrow('historical read-only mode');
+      expect(build).not.toHaveBeenCalled();
+      expect(lucidService.beginWalletSelectionScope).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) delete process.env.GATEWAY_HISTORICAL_READ_ONLY;
+      else process.env.GATEWAY_HISTORICAL_READ_ONLY = original;
+    }
+  });
+
+  it('constructs a lazy builder after fresh wallet selection so it cannot capture the previous transaction inputs', async () => {
+    const { service, lucidService, walletContextService } = makeService();
+    let selectedInput = 'spent-previous-operation-input';
+    walletContextService.selectWalletFromAddressWithRetry.mockImplementation(async () => {
+      selectedInput = 'canonical-unspent-input';
+      lucidService.selectWalletFromAddress();
+    });
+    const factory = jest.fn(() => {
+      const capturedInput = selectedInput;
+      return { lucidConfig: () => ({}), complete: async () => {
+        if (capturedInput !== 'canonical-unspent-input') throw new Error('Builder captured stale wallet');
+        return { toCBOR: () => '00', toHash: () => 'heartbeat-hash' };
+      } } as never;
+    });
+    const result = await service.run({
+      operationName: 'hostStateHeartbeat', unsignedTx: factory,
+      wallet: { mode: 'refresh_from_address', address: 'authority', context: 'heartbeat' },
+      validity: { apply: (tx) => tx },
+    });
+    expect(result.unsignedTxHash).toBe('heartbeat-hash');
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
   it('completes tx and registers pending update/events for refresh wallet mode', async () => {
     const {
       service,
@@ -76,7 +117,8 @@ describe('TxOperationRunnerService', () => {
     };
 
     const complete = jest.fn().mockResolvedValue(completedTx);
-    const txBuilder = { complete } as any;
+    const builderConfig = { wallet: { address: 'old-wallet' } };
+    const txBuilder = { complete, lucidConfig: () => builderConfig } as any;
 
     const pendingTreeUpdate = {
       expectedNewRoot: 'abc123',
@@ -111,6 +153,7 @@ describe('TxOperationRunnerService', () => {
     expect(lucidService.beginWalletSelectionScope).toHaveBeenCalledTimes(1);
     expect(lucidService.assertWalletSelectionScopeSatisfied).toHaveBeenCalledTimes(1);
     expect(lucidService.endWalletSelectionScope).toHaveBeenCalledTimes(1);
+    expect(builderConfig.wallet).toEqual({ address: 'selected-wallet' });
     expect(complete).toHaveBeenCalledWith({
       localUPLCEval: false,
       // Keep normal completion below Hermes's default 10 ADA collateral cap.
@@ -143,6 +186,7 @@ describe('TxOperationRunnerService', () => {
       lucidService.selectWalletFromAddress();
     });
     const txBuilder = {
+      lucidConfig: () => ({}),
       complete: jest.fn().mockResolvedValue({
         toCBOR: () => 'deadbeef',
         toHash: () => 'txhash-send-packet',
@@ -177,6 +221,7 @@ describe('TxOperationRunnerService', () => {
     const { service } = makeService();
 
     const txBuilder = {
+      lucidConfig: () => ({}),
       complete: jest.fn(),
     } as any;
 
@@ -201,6 +246,7 @@ describe('TxOperationRunnerService', () => {
 
     const expectedError = new Error('completion failed');
     const txBuilder = {
+      lucidConfig: () => ({}),
       complete: jest.fn().mockRejectedValue(expectedError),
     } as any;
 
@@ -231,9 +277,11 @@ describe('TxOperationRunnerService', () => {
     };
 
     const txBuilderFirst = {
+      lucidConfig: () => ({}),
       complete: jest.fn().mockRejectedValue(transientError),
     } as any;
     const txBuilderSecond = {
+      lucidConfig: () => ({}),
       complete: jest.fn().mockResolvedValue(completedTx),
     } as any;
     const rebuildUnsignedTx = jest.fn().mockResolvedValue(txBuilderSecond);
@@ -272,6 +320,7 @@ describe('TxOperationRunnerService', () => {
 
     const retryableError = new Error('completion timeout');
     const txBuilder = {
+      lucidConfig: () => ({}),
       complete: jest.fn().mockRejectedValue(retryableError),
     } as any;
     const onRetry = jest.fn();
@@ -320,9 +369,11 @@ describe('TxOperationRunnerService', () => {
       toHash: jest.fn().mockReturnValue('txhash-timeout-packet'),
     };
     const txBuilderFirst = {
+      lucidConfig: () => ({}),
       complete: jest.fn().mockRejectedValue(transientError),
     } as any;
     const txBuilderSecond = {
+      lucidConfig: () => ({}),
       complete: jest.fn().mockResolvedValue(completedTx),
     } as any;
     const rebuildUnsignedTx = jest.fn().mockImplementation(async () => {

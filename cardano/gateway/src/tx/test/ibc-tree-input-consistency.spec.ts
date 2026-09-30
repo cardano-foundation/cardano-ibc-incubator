@@ -1,4 +1,4 @@
-import { ClientService } from '../client.service';
+import { TendermintClientService as ClientService } from '../tendermint-client.service';
 import { ConnectionService } from '../connection.service';
 import { ChannelService } from '../channel.service';
 import { PacketService } from '../packet.service';

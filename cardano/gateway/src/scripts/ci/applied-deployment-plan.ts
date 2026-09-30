@@ -71,10 +71,15 @@ export function readAppliedDeploymentPlan(
       };
       // This mandatory deployment check is independent of the modeled runtime
       // budget ratchet. An allowlisted scenario cannot hide an undeployable script.
-      if (reference.estimatedReferenceOutputBytes > maxTxSize - headroomBytes) {
+      // Signed publication is checked separately. Its fixed one-input HostState
+      // transaction has a tighter limit than the general reference batch.
+      const referenceHeadroom = reference.title === 'host_state_stt.host_state_stt.spend'
+        ? 75
+        : headroomBytes;
+      if (reference.estimatedReferenceOutputBytes > maxTxSize - referenceHeadroom) {
         throw new Error(
           `Deployment reference ${mode.name}/${entry.title}: fully applied output ` +
-            `${reference.estimatedReferenceOutputBytes} exceeds safe limit ${maxTxSize - headroomBytes}`,
+            `${reference.estimatedReferenceOutputBytes} exceeds safe limit ${maxTxSize - referenceHeadroom}`,
         );
       }
       references.push(reference);

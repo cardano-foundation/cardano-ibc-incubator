@@ -1,4 +1,7 @@
+import * as stabilityEvidence from '../services/stability-evidence';
 import { Logger } from '@nestjs/common';
+import { BridgeMigrationInProgressError } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
+import { GrpcFailedPreconditionException } from '../../exception/grpc_exceptions';
 import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { ibcTreeCacheIdForRoot } from '../../shared/services/ibc-tree-cache.service';
 import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from '../services/proof-context';
@@ -39,6 +42,7 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
   };
 
   const historyService = {
+    findBlockByHeight: jest.fn().mockResolvedValue({ height: 123, hash: 'anchor-123' }),
     rebuildIbcStateTreeAtBlock: jest.fn(async () => ({
       tree: tree.clone(),
       root,
@@ -47,6 +51,7 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
     findHostStateUtxoAtOrBeforeBlockNo: jest.fn().mockImplementation(async (height: bigint) => ({
       txHash: height === 200n ? 'live-host-state' : 'historical-host-state',
       outputIndex: 0,
+      blockNo: Number(height),
       datum: height === 200n ? 'live-datum' : 'historical-datum',
     })),
   };
@@ -93,15 +98,16 @@ describe('proof-context stability acceptance', () => {
       debug: jest.fn(),
       warn: jest.fn(),
     } as unknown as Logger;
+    const findUtxoAtHostStateNFT = jest.fn().mockResolvedValue({
+      txHash: 'live-host-state-tx',
+      outputIndex: 0,
+    });
 
     await expect(
       resolveProofHeightForCurrentRoot({
         logger,
         lucidService: {
-          findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({
-            txHash: 'live-host-state-tx',
-            outputIndex: 0,
-          }),
+          findUtxoAtHostStateNFT,
         } as any,
         mithrilService: {} as any,
         historyService: {
@@ -139,10 +145,19 @@ describe('proof-context stability acceptance', () => {
         delayMs: 0,
       }),
     ).rejects.toThrow(/stability|accepted/i);
+    expect(findUtxoAtHostStateNFT).toHaveBeenCalledWith(0n);
   });
 });
 
 describe('resolveProofContextForQuery', () => {
+  it('reports the current migration pause as an actionable RPC precondition failure', async () => {
+    const deps = makeDeps(makeTree('moving'));
+    deps.mocks.ibcTreeStore.getAlignedSnapshot.mockRejectedValue(new BridgeMigrationInProgressError());
+    await expect(resolveProofContextForQuery({ ...deps, context: 'packet-list' })).rejects.toThrow(
+      GrpcFailedPreconditionException,
+    );
+    expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
+  });
   const historical = (deps: ReturnType<typeof makeDeps>) =>
     resolveProofContextForQuery({
       ...deps,
@@ -152,6 +167,114 @@ describe('resolveProofContextForQuery', () => {
       maxAttempts: 1,
       delayMs: 0,
     });
+
+  it.each(['Bridge migration is in progress', 'Stale implementation manifest', 'Current root is not yet accepted'])(
+    'serves an independently accepted historical anchor while the live path rejects: %s',
+    async (reason) => {
+      const tree = makeTree('before-migration');
+      const deps = makeDeps(tree);
+      deps.mocks.lucidService.findUtxoAtHostStateNFT.mockRejectedValue(new Error(reason));
+      deps.mocks.ibcTreeStore.getAlignedSnapshot.mockRejectedValue(new Error(reason));
+      const acceptance = jest
+        .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+        .mockResolvedValue({ anchorHeight: 123n, anchorBlock: { hash: 'anchor-123' } } as never);
+      try {
+        const context = await resolveProofContextForQuery({
+          ...deps,
+          context: 'historical-settlement',
+          requestedHeight: 123n,
+          lightClientMode: 'stake-weighted-stability',
+          maxAttempts: 1,
+          delayMs: 0,
+        });
+        expect(acceptance).toHaveBeenCalledWith(expect.objectContaining({ height: 123n }));
+        expect(context.tree.verifyProof(context.tree.generateProof('clients/before-migration/clientState'))).toBe(true);
+        expect(context.proofHeight).toBe(123n);
+        expect(deps.mocks.lucidService.findUtxoAtHostStateNFT).not.toHaveBeenCalled();
+        expect(deps.mocks.ibcTreeStore.getAlignedSnapshot).not.toHaveBeenCalled();
+      } finally {
+        acceptance.mockRestore();
+      }
+    },
+  );
+
+  it('rejects an unstable historical anchor before loading a cached proof even when current state is unavailable', async () => {
+    const tree = makeTree('old');
+    const deps = makeDeps(tree, { tree, root: tree.getRoot() });
+    deps.mocks.lucidService.findUtxoAtHostStateNFT.mockRejectedValue(new Error('Bridge migration is in progress'));
+    const acceptance = jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      .mockRejectedValue(new Error('stability thresholds not met at requested height'));
+    try {
+      await expect(
+        resolveProofContextForQuery({
+          ...deps,
+          context: 'historical-settlement',
+          requestedHeight: 123n,
+          lightClientMode: 'stake-weighted-stability',
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+      ).rejects.toThrow('stability thresholds not met');
+      expect(deps.mocks.ibcTreeCacheService.load).not.toHaveBeenCalled();
+      expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
+    } finally {
+      acceptance.mockRestore();
+    }
+  });
+
+  it('proves an unchanged HostState root at a later stable anchor', async () => {
+    const tree = makeTree('old');
+    const deps = makeDeps(tree, { tree, root: tree.getRoot() });
+    deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+      txHash: 'older-host',
+      outputIndex: 0,
+      blockNo: 122,
+      datum: 'older-datum',
+    });
+    const acceptance = jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      .mockResolvedValue({ anchorHeight: 123n, anchorBlock: { hash: 'anchor-123' } } as never);
+    try {
+      await expect(
+        resolveProofContextForQuery({
+          ...deps,
+          context: 'historical-settlement',
+          requestedHeight: 123n,
+          lightClientMode: 'stake-weighted-stability',
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+      ).resolves.toMatchObject({ proofHeight: 123n, anchorBlockHash: 'anchor-123' });
+      expect(deps.mocks.ibcTreeCacheService.load).toHaveBeenCalled();
+    } finally {
+      acceptance.mockRestore();
+    }
+  });
+
+  it('rejects a warm historical cache when its accepted anchor is rolled back during the query', async () => {
+    const tree = makeTree('old');
+    const deps = makeDeps(tree, { tree, root: tree.getRoot() });
+    deps.mocks.historyService.findBlockByHeight.mockResolvedValue({ height: 123, hash: 'replacement-anchor' });
+    const acceptance = jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      .mockResolvedValue({ anchorHeight: 123n, anchorBlock: { hash: 'anchor-123' } } as never);
+    try {
+      await expect(
+        resolveProofContextForQuery({
+          ...deps,
+          context: 'historical-settlement',
+          requestedHeight: 123n,
+          lightClientMode: 'stake-weighted-stability',
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+      ).rejects.toThrow('Canonical anchor changed');
+      expect(deps.mocks.historyService.rebuildIbcStateTreeAtBlock).not.toHaveBeenCalled();
+    } finally {
+      acceptance.mockRestore();
+    }
+  });
 
   it('reconstructs a missing snapshot, serves a valid proof and caches only historical aliases', async () => {
     const tree = makeTree('old');
@@ -342,6 +465,10 @@ describe('resolveProofContextForQuery', () => {
   it('proves the captured HostState at a later settled height without requiring a new HostState output', async () => {
     const tree = makeTree('first');
     const deps = makeDeps(tree);
+    deps.mocks.historyService.findBlockByHeight.mockResolvedValue({ height: 200, hash: 'anchor-200' });
+    const evidence = jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      .mockResolvedValue({ anchorHeight: 200n, anchorBlock: { hash: 'anchor-200' } } as never);
     const acceptance = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(200n);
     try {
       const context = await resolveProofContextForQuery({
@@ -354,9 +481,11 @@ describe('resolveProofContextForQuery', () => {
       expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledWith(200n);
       expect(context.tree.getRoot()).toBe(tree.getRoot());
       expect(context.proofHeight).toBe(200n);
+      expect(context.anchorBlockHash).toBe('anchor-200');
       expect(deps.mocks.lucidService.findUtxoAtHostStateNFT).not.toHaveBeenCalled();
     } finally {
       acceptance.mockRestore();
+      evidence.mockRestore();
     }
   });
 

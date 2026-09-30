@@ -1,5 +1,4 @@
 {
-  "source": "https://api.koios.rest/api/v1/epoch_params",
   "network": "mainnet",
   "epoch": 654,
   "observedDate": "2026-09-09",

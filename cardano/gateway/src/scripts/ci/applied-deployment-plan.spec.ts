@@ -77,6 +77,18 @@ describe('fully applied production deployment inventory', () => {
     expect(read).toThrow(/local-benchmark\/previously.unlisted.mint.*15635.*15634/);
   });
 
+  it('keeps a separate HostState limit for dedicated publication', () => {
+    const plan = fixture();
+    const host = reference('host_state_stt.host_state_stt.spend');
+    host.estimatedReferenceOutputBytes = 16_309;
+    plan.modes[0].referenceValidators = [host];
+    writeFileSync(planPath, JSON.stringify(plan));
+    expect(read()).toHaveLength(2);
+    host.estimatedReferenceOutputBytes = 16_310;
+    writeFileSync(planPath, JSON.stringify(plan));
+    expect(read).toThrow(/host_state_stt\.host_state_stt\.spend.*16310.*16309/);
+  });
+
   it('rejects duplicate references instead of hiding omissions behind the count', () => {
     const plan = fixture();
     plan.modes[0].referenceValidators.push(reference());

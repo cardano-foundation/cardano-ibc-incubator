@@ -16,9 +16,43 @@ import { decodeMerkleProof } from './helper';
 import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import { ChannelOpenAckOperator } from '../dto/channel/channel-open-ack-operator.dto';
-import { CHANNEL_ID_PREFIX } from 'src/constant';
+import { CHANNEL_ID_PREFIX, CONNECTION_ID_PREFIX } from 'src/constant';
 import { ChannelOpenConfirmOperator } from '../dto/channel/channel-open-confirm-operator.dto';
 import { Order as ChannelOrder } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
+
+function validateChannelOrdering(ordering: ChannelOrder): Order {
+  switch (ordering) {
+    case ChannelOrder.ORDER_UNORDERED:
+      return Order.Unordered;
+    case ChannelOrder.ORDER_ORDERED:
+      return Order.Ordered;
+    default:
+      throw new GrpcInvalidArgumentException('Invalid argument: "channel.ordering" must be ordered or unordered');
+  }
+}
+
+function validateIdentifierSequence(identifier: string, prefix: string, field: string): string {
+  const prefixWithSeparator = `${prefix}-`;
+  const sequence = identifier?.startsWith(prefixWithSeparator) ? identifier.slice(prefixWithSeparator.length) : '';
+  if (!/^(0|[1-9][0-9]*)$/.test(sequence)) {
+    throw new GrpcInvalidArgumentException(
+      `Invalid argument: "${field}" must be ${prefix}-{sequence} with a non-negative decimal sequence and no leading zeros`,
+    );
+  }
+  return sequence;
+}
+
+function validateConnectionHops(connectionHops: string[]): string {
+  if (connectionHops?.length !== 1) {
+    throw new GrpcInvalidArgumentException(
+      'Invalid argument: "channel.connection_hops" must contain exactly one connection',
+    );
+  }
+  const connectionId = connectionHops[0];
+  validateIdentifierSequence(connectionId, CONNECTION_ID_PREFIX, 'channel.connection_hops[0]');
+  return connectionId;
+}
+
 export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit): {
   constructedAddress: string;
   channelOpenInitOperator: ChannelOpenInitOperator;
@@ -27,29 +61,13 @@ export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit)
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
-  if (data.channel.connection_hops.length == 0) {
-    throw new GrpcInvalidArgumentException('Invalid connection id: Connection Id is not valid');
-  }
+  const connectionId = validateConnectionHops(data.channel.connection_hops);
+  const ordering = validateChannelOrdering(data.channel.ordering);
   // Prepare the Channel open init operator object
-  let orderingChannel: Order;
-  switch (data.channel.ordering) {
-    case ChannelOrder.ORDER_NONE_UNSPECIFIED:
-      orderingChannel = Order.None;
-      break;
-    case ChannelOrder.ORDER_UNORDERED:
-      orderingChannel = Order.Unordered;
-      break;
-    case ChannelOrder.ORDER_ORDERED:
-      orderingChannel = Order.Ordered;
-      break;
-    default:
-      throw new GrpcInvalidArgumentException('Invalid argument: "channel.ordering" is not recognized');
-  }
   const channelOpenInitOperator: ChannelOpenInitOperator = {
-    //TODO: check in channel.connection_hops
-    connectionId: data.channel.connection_hops[0],
+    connectionId,
     counterpartyPortId: data.channel.counterparty.port_id,
-    ordering: orderingChannel,
+    ordering,
     version: data.channel.version,
     port_id: data.port_id,
   };
@@ -63,16 +81,14 @@ export function validateAndFormatChannelOpenTryParams(data: MsgChannelOpenTry): 
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
-  if (data.channel.connection_hops.length == 0) {
-    throw new GrpcInvalidArgumentException('Invalid connection id: Connection Id is not valid');
-  }
+  const connectionId = validateConnectionHops(data.channel.connection_hops);
+  const ordering = validateChannelOrdering(data.channel.ordering);
   const decodedProofInitMsg: MerkleProof = decodeMerkleProof(data.proof_init);
   // Prepare the Channel open try operator object
   const channelOpenTryOperator: ChannelOpenTryOperator = {
-    //TODO: check with connection_hops
-    connectionId: data.channel.connection_hops[0],
+    connectionId,
     counterparty: data.channel.counterparty,
-    ordering: Order.Unordered,
+    ordering,
     version: data.channel.version,
     port_id: data.port_id,
     counterpartyVersion: data.counterparty_version,
@@ -93,11 +109,7 @@ export function validateAndFormatChannelOpenAckParams(data: MsgChannelOpenAck): 
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
-  if (!data.channel_id?.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  const channelSequence: string = data.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+  const channelSequence = validateIdentifierSequence(data.channel_id, CHANNEL_ID_PREFIX, 'channel_id');
   const decodedProofTryMsg: MerkleProof = decodeMerkleProof(data.proof_try);
   // Prepare the Channel open ack operator object
   const channelOpenAckOperator: ChannelOpenAckOperator = {
@@ -120,12 +132,8 @@ export function validateAndFormatChannelOpenConfirmParams(data: MsgChannelOpenCo
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
-  if (!data.channel_id?.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
+  const channelSequence = validateIdentifierSequence(data.channel_id, CHANNEL_ID_PREFIX, 'channel_id');
   const decodedProofTryMsg: MerkleProof = decodeMerkleProof(data.proof_ack);
-  const channelSequence: string = data.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
   // Prepare the Channel open init operator object
   const channelOpenConfirmOperator: ChannelOpenConfirmOperator = {
     //TODO: recheck
@@ -146,7 +154,7 @@ export function validateAndFormatChannelCloseInitParams(data: MsgChannelCloseIni
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
-  const channelSequence: string = data.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+  const channelSequence = validateIdentifierSequence(data.channel_id, CHANNEL_ID_PREFIX, 'channel_id');
 
   const channelCloseInitOperator: ChannelCloseInitOperator = {
     port_id: data.port_id,
@@ -164,14 +172,8 @@ export function validateAndFormatChannelCloseConfirmParams(data: MsgChannelClose
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
-  if (!data.channel_id?.startsWith(`${CHANNEL_ID_PREFIX}-`)) {
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  }
-
+  const channelSequence = validateIdentifierSequence(data.channel_id, CHANNEL_ID_PREFIX, 'channel_id');
   const decodedProofInitMsg: MerkleProof = decodeMerkleProof(data.proof_init);
-  const channelSequence: string = data.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
   const channelCloseConfirmOperator: ChannelCloseConfirmOperator = {
     port_id: data.port_id,

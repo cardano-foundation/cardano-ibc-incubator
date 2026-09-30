@@ -65,6 +65,9 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
   const service: any = Object.create(LucidService.prototype);
 
   service.configService = {
+    getOrThrow(name: string) {
+      return this.get(name);
+    },
     get: jest.fn().mockReturnValue(deploymentConfig),
   };
   service.lucid = {
@@ -87,7 +90,12 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
   service.LucidImporter = {
     Data: {
       Bytes: jest.fn().mockReturnValue('bytes-schema'),
+      Integer: jest.fn().mockReturnValue('integer-schema'),
       Object: jest.fn((shape: unknown) => shape),
+      from: jest.fn().mockReturnValue({
+        escrow_shard_registry_root: '00'.repeat(32),
+        outstanding_voucher_obligation: 0n,
+      }),
       to: jest.fn().mockReturnValue('encoded-auth-token'),
     },
   };
@@ -96,7 +104,7 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
 };
 
 describe('LucidService voucher refund invariants', () => {
-  it('spends and recreates the registered transfer-module root for recv voucher minting', () => {
+  it('spends and recreates the registered transfer-module root for recv voucher minting', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
     const transferModuleUtxo = {
@@ -107,9 +115,10 @@ describe('LucidService voucher refund invariants', () => {
         'module-policy.module-token': 1n,
         'port-policy.port-token': 1n,
       },
+      datum: 'encoded-transfer-module-datum',
     } as any;
 
-    service.createUnsignedRecvPacketMintTx({
+    await service.createUnsignedRecvPacketMintTx({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
       connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
@@ -135,15 +144,20 @@ describe('LucidService voucher refund invariants', () => {
     expect(txBuilder.collectFrom).toHaveBeenCalledWith([transferModuleUtxo], 'encoded-transfer-redeemer');
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
       deploymentConfig.modules.transfer.address,
-      undefined,
+      { kind: 'inline', value: 'encoded-auth-token' },
       transferModuleUtxo.assets,
+    );
+    expect(service.LucidImporter.Data.to).toHaveBeenCalledWith(
+      expect.objectContaining({ outstanding_voucher_obligation: 12n }),
+      expect.anything(),
+      { canonical: true },
     );
     expect(txBuilder.readFrom.mock.calls[0][0]).toEqual(
       expect.arrayContaining([expect.objectContaining({ txHash: 'ref-spend-transfer' })]),
     );
   });
 
-  it('anchors recv unescrow shard callbacks to the registered module root reference', () => {
+  it('anchors recv unescrow shard callbacks to the registered module root reference', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
     const denomToken = 'policy-id.native-token';
@@ -164,7 +178,7 @@ describe('LucidService voucher refund invariants', () => {
       datum: 'encoded-transfer-escrow-datum',
     } as any;
 
-    service.createUnsignedRecvPacketUnescrowTx({
+    await service.createUnsignedRecvPacketUnescrowTx({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
       connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
@@ -197,11 +211,11 @@ describe('LucidService voucher refund invariants', () => {
     ]);
   });
 
-  it('spends and preserves the transfer-module root for successful acknowledgements', () => {
+  it('spends and preserves the transfer-module root for successful acknowledgements', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
 
-    service.createUnsignedAckPacketSucceedTx({
+    await service.createUnsignedAckPacketSucceedTx({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
       connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
@@ -220,10 +234,7 @@ describe('LucidService voucher refund invariants', () => {
       encodedVerifyProofRedeemer: 'encoded-verify-proof-redeemer',
     });
 
-    expect(txBuilder.collectFrom).toHaveBeenCalledWith(
-      [transferModuleReferenceUtxo],
-      'encoded-transfer-redeemer',
-    );
+    expect(txBuilder.collectFrom).toHaveBeenCalledWith([transferModuleReferenceUtxo], 'encoded-transfer-redeemer');
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
       deploymentConfig.modules.transfer.address,
       { kind: 'inline', value: transferModuleReferenceUtxo.datum },
@@ -231,11 +242,11 @@ describe('LucidService voucher refund invariants', () => {
     );
   });
 
-  it('spends and preserves the transfer-module root in acknowledgement refund mint tx', () => {
+  it('spends and preserves the transfer-module root in acknowledgement refund mint tx', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
 
-    service.createUnsignedAckPacketMintTx({
+    await service.createUnsignedAckPacketMintTx({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
       connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
@@ -273,11 +284,11 @@ describe('LucidService voucher refund invariants', () => {
     ]);
   });
 
-  it('spends and preserves the transfer-module root in timeout refund mint tx', () => {
+  it('spends and preserves the transfer-module root in timeout refund mint tx', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
 
-    service.createUnsignedTimeoutPacketMintTx({
+    await service.createUnsignedTimeoutPacketMintTx({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
       connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
@@ -316,7 +327,7 @@ describe('LucidService voucher refund invariants', () => {
     ]);
   });
 
-  it('creates a transfer escrow shard by spending and recreating the module root', () => {
+  it('creates a transfer escrow shard by spending and recreating the module root', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
     const denomToken = 'policy-id.native-token';
@@ -334,7 +345,7 @@ describe('LucidService voucher refund invariants', () => {
       },
     } as any;
 
-    service.createUnsignedSendPacketEscrowTx({
+    await service.createUnsignedSendPacketEscrowTx({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       channelUTxO: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
       connectionUTxO: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
@@ -391,11 +402,13 @@ describe('LucidService voucher refund invariants', () => {
     ]);
   });
 
-  it('uses the shared escrow builder for an existing shard without consuming the module root', () => {
+  it('uses the shared escrow builder for an existing shard without consuming the module root', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
     const transferEscrowUtxo = {
-      txHash: 'existing-escrow', outputIndex: 0, address: 'addr_test1transfer',
+      txHash: 'existing-escrow',
+      outputIndex: 0,
+      address: 'addr_test1transfer',
       assets: { lovelace: 2_000_000n, 'native-token': 40n, 'shard-token': 1n },
       datum: 'escrow-datum',
     };
@@ -427,7 +440,7 @@ describe('LucidService voucher refund invariants', () => {
       transferEscrowShardTokenUnit: 'shard-token',
     };
 
-    expect(service.createUnsignedSendPacketEscrowTx(dto)).toBe(txBuilder);
+    expect(await service.createUnsignedSendPacketEscrowTx(dto)).toBe(txBuilder);
     expect(txBuilder.readFrom).toHaveBeenCalledWith([transferModuleReferenceUtxo]);
     expect(txBuilder.collectFrom).toHaveBeenCalledWith([transferEscrowUtxo], 'transfer-redeemer');
     expect(txBuilder.collectFrom).not.toHaveBeenCalledWith([transferModuleReferenceUtxo], expect.anything());
@@ -440,15 +453,16 @@ describe('LucidService voucher refund invariants', () => {
     expect(transferEscrowUtxo.assets['native-token']).toBe(40n);
   });
 
-  it('preserves gRPC internal errors from shared escrow input validation', () => {
+  it('preserves gRPC internal errors from shared escrow input validation', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
-    expect(() => service.createUnsignedSendPacketEscrowTx({ walletUtxos: [] }))
-      .toThrow(GrpcInternalException);
+    await expect(async () => await service.createUnsignedSendPacketEscrowTx({ walletUtxos: [] })).rejects.toThrow(
+      GrpcInternalException,
+    );
     expect(service.lucid.newTx).not.toHaveBeenCalled();
   });
 
-  it('spends and updates the transfer escrow shard in acknowledgement native-token refunds', () => {
+  it('spends and updates the transfer escrow shard in acknowledgement native-token refunds', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
     const denomToken = 'policy-id.native-token';
@@ -465,7 +479,7 @@ describe('LucidService voucher refund invariants', () => {
       datum: encodedTransferEscrowDatum,
     } as any;
 
-    service.createUnsignedAckPacketUnescrowTx({
+    await service.createUnsignedAckPacketUnescrowTx({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
       connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
@@ -494,9 +508,7 @@ describe('LucidService voucher refund invariants', () => {
       return call[1] === 'encoded-transfer-redeemer';
     });
     expect(transferSpendCall?.[0]).toEqual([transferEscrowUtxo]);
-    expect(txBuilder.readFrom).toHaveBeenCalledWith(
-      expect.arrayContaining([transferModuleReferenceUtxo]),
-    );
+    expect(txBuilder.readFrom).toHaveBeenCalledWith(expect.arrayContaining([transferModuleReferenceUtxo]));
 
     const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {
       return call[0] === deploymentConfig.modules.transfer.address;
@@ -514,7 +526,7 @@ describe('LucidService voucher refund invariants', () => {
     ]);
   });
 
-  it('retains permanent shard membership after a final timeout native-token refund', () => {
+  it('retains permanent shard membership after a final timeout native-token refund', async () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
     const denomToken = 'policy-id.native-token';
@@ -532,7 +544,7 @@ describe('LucidService voucher refund invariants', () => {
       datum: encodedTransferEscrowDatum,
     } as any;
 
-    service.createUnsignedTimeoutPacketUnescrowTx({
+    await service.createUnsignedTimeoutPacketUnescrowTx({
       hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
       channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
       connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
@@ -563,13 +575,8 @@ describe('LucidService voucher refund invariants', () => {
       return call[1] === 'encoded-transfer-redeemer';
     });
     expect(transferSpendCall?.[0]).toEqual([transferEscrowUtxo]);
-    expect(txBuilder.readFrom).toHaveBeenCalledWith(
-      expect.arrayContaining([transferModuleReferenceUtxo]),
-    );
-    expect(txBuilder.mintAssets).not.toHaveBeenCalledWith(
-      { [transferEscrowShardTokenUnit]: -1n },
-      expect.anything(),
-    );
+    expect(txBuilder.readFrom).toHaveBeenCalledWith(expect.arrayContaining([transferModuleReferenceUtxo]));
+    expect(txBuilder.mintAssets).not.toHaveBeenCalledWith({ [transferEscrowShardTokenUnit]: -1n }, expect.anything());
 
     const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {
       return call[0] === transferModuleAddress;

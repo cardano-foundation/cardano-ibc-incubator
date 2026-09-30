@@ -1,3 +1,5 @@
+import { checkedDeploymentMode } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
+import { requireMigrationConfig, type MigrationRuntimeConfig } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
 import { requireHistoryBootstrap, type HistoryBootstrap } from '@cardano-ibc/tx-builder-runtime/historyBootstrap';
 type RefUtxo = {
   txHash: string;
@@ -106,6 +108,8 @@ type PacketStateManifest = {
 
 export type DeploymentConfig = {
   packetState: PacketStateDeployment;
+  deploymentMode?: 'upgradeable' | 'legacy';
+  migration?: MigrationRuntimeConfig;
   deployedAt: string;
   consensusHistoryFormat: typeof CONSENSUS_HISTORY_FORMAT;
   history?: HistoryBootstrap;
@@ -202,6 +206,8 @@ type BridgeManifestTraceRegistry = {
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
 export type BridgeManifest = {
   packet_state: PacketStateManifest;
+  deploymentMode?: 'upgradeable' | 'legacy';
+  migration?: MigrationRuntimeConfig;
   schema_version: number;
   consensus_history_format: typeof CONSENSUS_HISTORY_FORMAT;
   deployment_id: string;
@@ -733,7 +739,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
 
   return {
     packetState: requirePacketState(deploymentAny.packetState),
+    deploymentMode: checkedDeploymentMode(deploymentAny.deploymentMode, deploymentAny.migration),
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
+    ...(deploymentAny.migration !== undefined ? { migration: requireMigrationConfig(deploymentAny.migration) } : {}),
     consensusHistoryFormat,
     ...(deploymentAny.history ? { history: requireHistoryBootstrap(deploymentAny.history, 42) } : {}),
     // Packet wire encoding is independent of the required client-history ABI.
@@ -823,6 +831,8 @@ export function normalizeHandlerJsonDeploymentConfig(
     bridgeManifest: {
       schema_version: 5,
       packet_state: packetStateToManifest(normalizedDeployment.packetState),
+      ...(normalizedDeployment.deploymentMode ? { deploymentMode: normalizedDeployment.deploymentMode } : {}),
+      ...(normalizedDeployment.migration ? { migration: normalizedDeployment.migration } : {}),
       consensus_history_format: normalizedDeployment.consensusHistoryFormat,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
@@ -912,6 +922,8 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
     packet_state: packetStateToManifest(packetStateFromManifest(manifestAny.packet_state)),
+    deploymentMode: checkedDeploymentMode(manifestAny.deploymentMode, manifestAny.migration),
+    ...(manifestAny.migration !== undefined ? { migration: requireMigrationConfig(manifestAny.migration) } : {}),
     consensus_history_format: consensusHistoryFormat,
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
     deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
@@ -997,6 +1009,8 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     deployment: {
       packetState: packetStateFromManifest(bridgeManifest.packet_state),
       deployedAt: bridgeManifest.deployed_at,
+      ...(bridgeManifest.deploymentMode ? { deploymentMode: bridgeManifest.deploymentMode } : {}),
+      ...(bridgeManifest.migration ? { migration: bridgeManifest.migration } : {}),
       consensusHistoryFormat,
       ...(bridgeManifest.history ? { history: bridgeManifest.history } : {}),
       ics20PacketCodec: bridgeManifest.ics20_packet_codec,
@@ -1087,13 +1101,30 @@ export function loadBridgeConfigFromEnv(
     network: deriveCardanoNetwork(cardanoNetworkMagic),
   };
 
+  const supportedOperationalProfile = (loaded: LoadedBridgeConfig): LoadedBridgeConfig => {
+    const selected = env.IBC_DEPLOYMENT_MODE ?? loaded.deployment.deploymentMode ?? 'upgradeable';
+    checkedDeploymentMode(selected, loaded.deployment.migration);
+    if (loaded.deployment.deploymentMode && selected !== loaded.deployment.deploymentMode)
+      throw new Error('Configured deployment mode conflicts with authenticated deployment artifacts');
+    // Publish the validated startup selection, including older unlabelled inputs.
+    // Downstream SDKs must receive the same explicit capability decision.
+    loaded.deployment.deploymentMode = selected as 'upgradeable' | 'legacy';
+    loaded.bridgeManifest.deploymentMode = loaded.deployment.deploymentMode;
+    if (loaded.deployment.migration && env.CARDANO_LIGHT_CLIENT_MODE === 'mithril') {
+      throw new Error(
+        'Compatible implementation migration currently supports stake-weighted-stability only; exact historical Mithril certification across migration is unsupported. Use the reviewed probabilistic counterparty profile or retain a non-migration deployment.',
+      );
+    }
+    return loaded;
+  };
+
   if (bridgeManifestPath) {
     const manifestJson = JSON.parse(fs.readFileSync(bridgeManifestPath, 'utf8'));
-    return normalizeBridgeManifestConfig(manifestJson);
+    return supportedOperationalProfile(normalizeBridgeManifestConfig(manifestJson));
   }
 
   // The deployment JSON remains the local/devnet default until manifest-based
   // startup becomes the universal operator path.
   const handlerJson = JSON.parse(fs.readFileSync(explicitHandlerPath || DEFAULT_HANDLER_JSON_PATH, 'utf8'));
-  return normalizeHandlerJsonDeploymentConfig(handlerJson, cardano);
+  return supportedOperationalProfile(normalizeHandlerJsonDeploymentConfig(handlerJson, cardano));
 }

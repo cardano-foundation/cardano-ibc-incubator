@@ -52,8 +52,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ShutdownState,
   ShuttingDown, empty_ibc_state_root,
 }
+use ibc/encoding/hex
 use ibc/testing/fuzz_dsl
-use ibc/utils/string as string_utils
 use spending_transfer_module
 
 //=====================================Test================================================
@@ -96,7 +96,13 @@ fn host_state_datum(
     },
     nft_policy,
     deployer: #"00000000000000000000000000000000000000000000000000000000",
-    control: HostStateControl { port_registry: [], shutdown },
+    control: HostStateControl {
+      port_registry: [],
+      shutdown,
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
+    },
   }
 }
 
@@ -159,6 +165,7 @@ fn setup() -> MockData {
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: empty_escrow_shard_registry_root,
+          outstanding_voucher_obligation: 0,
         },
       ),
       reference_script: None,
@@ -448,6 +455,24 @@ fn module_output_with_registered_shard(module_output: Output) -> Output {
     datum: InlineDatum(
       TransferModuleDatum {
         escrow_shard_registry_root: #"1111111111111111111111111111111111111111111111111111111111111111",
+        outstanding_voucher_obligation: 0,
+      },
+    ),
+  }
+}
+
+fn module_output_with_voucher_obligation(
+  module_output: Output,
+  obligation: Int,
+) -> Output {
+  expect InlineDatum(raw_datum) = module_output.datum
+  expect datum: TransferModuleDatum = raw_datum
+  Output {
+    ..module_output,
+    datum: InlineDatum(
+      TransferModuleDatum {
+        ..datum,
+        outstanding_voucher_obligation: obligation,
       },
     ),
   }
@@ -758,8 +783,7 @@ fn recv_source_unescrow_fixture_amount(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let receiver = mock.cardano_public_key_hash
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
   let receiver_output =
     Output {
       address: from_verification_key(receiver_public_key_hash),
@@ -852,7 +876,7 @@ fn timeout_unescrow_fixture_amount(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let sender = mock.cardano_public_key_hash
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
   let receiver_output =
     Output {
       address: from_verification_key(sender_public_key_hash),
@@ -958,7 +982,7 @@ fn native_asset_timeout_fixture_amount(
   let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   let native_token_name = "coin"
   let denom = native_asset_denom()
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
   let receiver_output =
     Output {
       address: from_verification_key(sender_public_key_hash),
@@ -1040,7 +1064,15 @@ fn ack_success_fixture(
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let receiver = mock.cardano_public_key_hash
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let module_input =
+    Input {
+      ..mock.module_input,
+      output: module_output_with_voucher_obligation(
+        mock.module_input.output,
+        1234,
+      ),
+    }
+  let inputs = [module_input, mock.channel_input, mock.host_state_input]
   let outputs =
     [mock.module_output, mock.channel_output, mock.host_state_output]
   let source_port = mock.port_id
@@ -1162,7 +1194,11 @@ fn voucher_recv_sink_fixture_amount(
   let mock = setup()
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_obligation(mock.module_output, transfer_amount),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
   let (ftpd, packet) =
     build_packet(
@@ -1435,6 +1471,7 @@ test transfer_module_root_rejects_registry_mutation_without_mint() fail {
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: #"1111111111111111111111111111111111111111111111111111111111111111",
+          outstanding_voucher_obligation: 0,
         },
       ),
     }
@@ -1718,7 +1755,11 @@ test on_recv_packet_mint_voucher_succeed() {
 
   //==========================arrange outputs=========================
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_obligation(mock.module_output, 1234),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -1802,7 +1843,11 @@ fn on_recv_packet_mint_voucher_prebuilt_succeeds(
 
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_obligation(mock.module_output, 100),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
   let (ftpd, packet) =
     build_prebuilt_packet_with_memo(
@@ -1888,8 +1933,7 @@ test on_recv_packet_unescrow_succeed() {
 
   let receiver = mock.cardano_public_key_hash
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
 
   let receiver_output =
     Output {
@@ -2007,8 +2051,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
 
   let receiver = mock.cardano_public_key_hash
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
 
   let receiver_output =
     Output {
@@ -2748,7 +2791,7 @@ test on_timeout_packet_unescrow_succeed() {
 
   let sender = mock.cardano_public_key_hash
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
 
   let receiver_output =
     Output {
@@ -2868,7 +2911,7 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
   let native_token_name = "coin"
   let denom = native_asset_denom()
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
   let receiver_output =
     Output {
       address: from_verification_key(sender_public_key_hash),
@@ -3085,7 +3128,7 @@ fn source_recv_payout(address: Address, amount: Int) -> Output {
 }
 
 fn source_recv_receiver_address(receiver: ByteArray) -> Address {
-  expect Some(key_hash) = string_utils.hex_string_to_bytes(receiver)
+  expect Some(key_hash) = hex.decode(receiver)
   from_verification_key(key_hash)
 }
 
@@ -3168,7 +3211,7 @@ test on_recv_packet_source_rejects_payout_to_another_key() fail {
 
 test on_recv_packet_source_rejects_script_credential_with_receiver_hash() fail {
   let receiver = setup().cardano_public_key_hash
-  expect Some(key_hash) = string_utils.hex_string_to_bytes(receiver)
+  expect Some(key_hash) = hex.decode(receiver)
   validate_source_recv_payout(
     receiver,
     [],
@@ -3212,7 +3255,15 @@ test on_acknowledgement_packet_result_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let module_input =
+    Input {
+      ..mock.module_input,
+      output: module_output_with_voucher_obligation(
+        mock.module_input.output,
+        1234,
+      ),
+    }
+  let inputs = [module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let outputs =
@@ -3391,7 +3442,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   let sender = mock.cardano_public_key_hash
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
 
   let receiver_output =
     Output {

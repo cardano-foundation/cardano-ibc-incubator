@@ -410,7 +410,7 @@ async function encodeRepresentativeDatums(
     },
     nft_policy: HOST_STATE_POLICY_ID,
     deployer: 'f6'.repeat(28),
-    control: { port_registry: new Map(), shutdown: 'Active' },
+    control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
   };
 
   return {
@@ -559,7 +559,7 @@ function buildStructuralTransactions(
   return { unsigned, signed };
 }
 
-function inspectShape(transaction: InstanceType<typeof Lucid.CML.Transaction>): CapacityTransactionShape {
+function inspectShape(transaction: ReturnType<typeof Lucid.CML.Transaction.from_cbor_hex>): CapacityTransactionShape {
   const body = transaction.body();
   const witnesses = transaction.witness_set();
   const redeemers = witnesses.redeemers()?.as_map_redeemer_key_to_redeemer_val();

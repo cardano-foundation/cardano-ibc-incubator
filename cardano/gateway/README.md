@@ -122,12 +122,9 @@ So the runtime split is:
 
 Stake-weighted stability also needs a pool-age lookup because active pools can have registered long before a bridge
 deployment checkpoint. The Gateway first uses `bridge_pool_registration_cache`, then local Yaci registration tables, then
-the optional `CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT` for cache misses. Preprod and preview default that endpoint to
-Koios so a checkpointed stack can resolve old pool registrations without replaying the full chain history.
-
-Stake-weighted stability uses Koios via `CARDANO_EPOCH_PARAMS_ENDPOINT` for epoch nonces because Demeter Ogmios
-endpoints consistently time out after 20 seconds on `queryLedgerState/nonces`. If Koios rate limits the public tier, set
-`CARDANO_KOIOS_API_KEY` (or `KOIOS_API_KEY`) and Gateway will send it as `Authorization: Bearer <token>` on Koios calls.
+Blockfrost pool updates for cache misses. Public-network epoch nonces, stake snapshots and historical pool registrations
+also come from Blockfrost. Set `CARDANO_BLOCKFROST_PROJECT_ID` for the hosted API. The local devnet instead uses its
+own Ogmios and Yaci data, including the Yaci epoch-nonce index.
 
 ## Installation
 

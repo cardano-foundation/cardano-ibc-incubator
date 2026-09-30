@@ -16,4 +16,4 @@ export type UnsignedAckPacketSucceedDto = WithHostStateUpdate &
   WithTransferModuleSpend &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'ackPacketPolicyId'> &
-  WithVerifyProof;
+  WithVerifyProof & { voucherObligationDelta?: bigint };

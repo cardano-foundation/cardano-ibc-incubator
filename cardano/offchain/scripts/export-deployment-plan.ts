@@ -35,11 +35,13 @@ for (const benchmarkVoucherEnabled of [false, true]) {
   const name = benchmarkVoucherEnabled ? "local-benchmark" : "production";
   const plan = await loadDeploymentPlan(lucid, {
     ...DEPLOYMENT_PLAN_FIXTURE,
+    backupOperatorKeyHash: "55".repeat(28),
     benchmarkVoucherEnabled,
   });
   modes.push({
     name,
     inputs: plan.inputs,
+    clientRegistrations: plan.clientRegistrations,
     referenceValidators: plan.referenceValidators.map(entry),
     inlineValidators: plan.inlineValidators.map(entry),
   });

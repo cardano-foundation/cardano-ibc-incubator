@@ -5,7 +5,7 @@ import { Box, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
-import { formatTokenSymbol } from '@/utils/string';
+import { TokenAmountUnit, TokenLabel } from '@/components/TokenLabel';
 import SwapContext from '@/contexts/SwapContext';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import { TxHashLink } from '@/components/TxHashLink';
@@ -94,8 +94,9 @@ export const SwapResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {swapData?.fromToken?.swapAmount}{' '}
-                {formatTokenSymbol(swapData?.fromToken?.tokenName || '')}
+                {swapData?.fromToken?.swapAmount}
+                <TokenAmountUnit token={swapData.fromToken} />{' '}
+                <TokenLabel token={swapData.fromToken} />
               </Text>
             </StyledTransferFromToBox>
             <StyledSwitchNetwork
@@ -121,8 +122,9 @@ export const SwapResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {swapData.toToken.swapAmount}{' '}
-                {formatTokenSymbol(swapData?.toToken?.tokenName || '')}
+                {swapData.toToken.swapAmount}
+                <TokenAmountUnit token={swapData.toToken} />{' '}
+                <TokenLabel token={swapData.toToken} />
               </Text>
             </StyledTransferFromToBox>
           </Box>
@@ -140,10 +142,7 @@ export const SwapResult = ({
               >
                 Minimum received
               </Text>
-              <Text>
-                {minimumReceived}{' '}
-                {/* {formatTokenSymbol(swapData?.toToken?.tokenName || '')} */}
-              </Text>
+              <Text>{minimumReceived}</Text>
             </Box>
             <Box
               alignItems="center"
@@ -164,8 +163,7 @@ export const SwapResult = ({
                 lineHeight="20px"
                 color={COLOR.success}
               >
-                {estFee}{' '}
-                {/* {formatTokenSymbol(swapData?.fromToken?.tokenName || '')} */}
+                {estFee}
               </Text>
             </Box>
           </StyledTransferCalculatorBox>

@@ -9,6 +9,27 @@ const root = resolve('cardano/onchain');
 const output = resolve(process.argv[2] ?? 'aiken-mutations.json');
 const mutations = [
   {
+    name: 'registered-client-script', file: 'lib/ibc/utils/validator_utils.ak',
+    before: '    registration.spend_validator == "" || output.address.payment_credential == Script(',
+    after: '    (registration.spend_validator == "" || True) || output.address.payment_credential == Script(',
+    tests: ['prop_registered_client_isolates_same_sequence_instances', 'prop_registered_client_rejects_cross_type_script'],
+    kills: ['prop_registered_client_rejects_cross_type_script'],
+  },
+  {
+    name: 'registered-client-datum-token', file: 'lib/ibc/utils/validator_utils.ak',
+    before: '  expect view.token == token\n',
+    after: '  expect view.token == token || True\n',
+    tests: ['prop_registered_client_isolates_same_sequence_instances', 'prop_registered_client_rejects_cross_type_datum'],
+    kills: ['prop_registered_client_rejects_cross_type_datum'],
+  },
+  {
+    name: 'registered-client-proof-policy', file: 'lib/ibc/utils/validator_utils.ak',
+    before: '  if registration.proof_policy == "" {',
+    after: '  if registration.proof_policy == "" || True {',
+    tests: ['registered_client_cannot_use_another_registered_types_verifier', 'prop_registered_client_rejects_another_types_proof_marker'],
+    kills: ['prop_registered_client_rejects_another_types_proof_marker'],
+  },
+  {
     name: 'receive-replay', file: 'validators/spending_channel/recv_packet.ak',
     before: '      (!pairs.has_key(cur_packet_receipt, packet.sequence))?,',
     after: '      (!pairs.has_key(cur_packet_receipt, packet.sequence) || True)?,',
@@ -16,7 +37,7 @@ const mutations = [
     kills: ['recv_packet_rejects_existing_receipt'],
   },
   {
-    name: 'native-send-amount', file: 'validators/spending_transfer_module.ak',
+    name: 'native-send-amount', file: 'lib/ibc/implementation/spending_transfer_module.ak',
     before: '        valid_transfer_amount\n', after: '        valid_transfer_amount || True\n',
     tests: ['prop_funds_native_send_amount', 'prop_funds_native_send_short', 'prop_funds_native_send_excess'],
     kills: ['prop_funds_native_send_short', 'prop_funds_native_send_excess'],
@@ -28,7 +49,7 @@ const mutations = [
     kills: ['prop_funds_asset_refund_short', 'prop_funds_asset_refund_excess'],
   },
   {
-    name: 'send-commitment-binding', file: 'validators/spending_transfer_module.ak',
+    name: 'send-commitment-binding', file: 'lib/ibc/implementation/spending_transfer_module.ak',
     before: '              commitment == packet_mod.commit_packet(packet),',
     after: '              commitment == packet_mod.commit_packet(packet) || True,',
     tests: ['regression_transfer_module_native_send_escrow_increases_exactly', 'transfer_send_rejects_mismatched_packet_commitment'],

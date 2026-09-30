@@ -145,7 +145,13 @@ fn host_state_datum(
     },
     nft_policy,
     deployer: trusted_deployer,
-    control: HostStateControl { port_registry: [], shutdown: Active },
+    control: HostStateControl {
+      port_registry: [],
+      shutdown: Active,
+      live_clients: 0,
+      live_connections: next_connection_sequence,
+      live_channels: 0,
+    },
   }
 }
 
@@ -436,6 +442,7 @@ fn run_conn_open_try_transition(
           fixture.client_minting_policy_id,
           fixture.connection_minting_policy_id,
           "unused channel minting policy",
+          "",
           None,
           fixture.host_redeemer,
           fixture.host_input.output_reference,

@@ -28,6 +28,7 @@ import {
 } from "../src/consensus_history_recovery.ts";
 import { historyPacketFixture } from "./consensus-history-packet-fixture.ts";
 import { serialisePlutusData } from "../src/plutus_serialise.ts";
+import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 import {
   consensusHistoryKey,
   encodeConsensusHistoryRecord,
@@ -107,10 +108,11 @@ async function fixture(
     priceStep: parameters.priceStep,
     minFeeRefScriptCostPerByte: parameters.minFeeRefScriptCostPerByte,
   });
-  emulator.protocolParameters.costModels.PlutusV3 = Object.fromEntries(
-    parameters.plutusV3CostModel.map((cost, index) => [String(index), cost]),
-  );
-  const lucid = await Lucid(emulator, "Preprod");
+  emulator.protocolParameters.costModels.PlutusV3 =
+    parameters.plutusV3CostModel;
+  const lucid = await Lucid(emulator, "Preprod", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   if (captureSignerFixture) {
     lucid.selectWallet.fromPrivateKey(account.privateKey);
   } else lucid.selectWallet.fromSeed(account.seedPhrase);
@@ -157,6 +159,7 @@ async function fixture(
       clientPolicyId,
       packet?.connectionPolicy ?? dummy,
       packet?.channelPolicy ?? dummy,
+      "",
     ],
   );
   const rewardAddress = validatorToRewardAddress("Preprod", recoveryScript);
@@ -392,7 +395,13 @@ async function fixture(
     },
     nft_policy: HOST_POLICY,
     deployer: signer,
-    control: { port_registry: new Map(), shutdown: "Active" },
+    control: {
+      port_registry: new Map(),
+      shutdown: "Active",
+      live_clients: createClient ? 0n : 1n,
+      live_connections: 0n,
+      live_channels: 0n,
+    },
   };
   let host = seed(
     hostAddress,
@@ -430,7 +439,11 @@ async function fixture(
       HostStateDatum,
       { canonical: true },
     );
-    hostDatum = { ...hostDatum, state: { ...hostDatum.state, version: 1n } };
+    hostDatum = {
+      ...hostDatum,
+      state: { ...hostDatum.state, version: 1n },
+      control: { ...hostDatum.control, live_clients: 1n },
+    };
     const created = await lucid.newTx().readFrom([references[0], references[1]])
       .collectFrom(
         [host],

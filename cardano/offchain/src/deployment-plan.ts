@@ -1,4 +1,8 @@
 import {
+  type ClientRegistration,
+  clientRegistryData,
+} from "./client-registry.ts";
+import {
   Constr,
   Data,
   fromText,
@@ -15,6 +19,18 @@ import {
   generatePortTokenName,
   readValidator,
 } from "./utils.ts";
+import {
+  AddressSchema,
+  assertEmergencyAuthority,
+  assertGovernance,
+  type Authority,
+  AuthoritySchema,
+  CredentialSchema,
+  type Governance,
+  GovernanceSchema,
+  plutusAddress,
+} from "../types/plutus/Migration.ts";
+import { CHANNEL_OPERATION_NAMES, initialRegistry } from "./migration-plan.ts";
 import { TRANSFER_MODULE_PORT } from "./constants.ts";
 
 export const GENERIC_MODULE_SPEND_VALIDATOR_TITLE =
@@ -32,7 +48,13 @@ export type DeploymentPlanInputs = {
   transferModuleNonce: OutputReference;
   traceDirectoryNonce: OutputReference;
   deployerPaymentKeyHash: string;
+  backupOperatorKeyHash?: string;
   benchmarkVoucherEnabled: boolean;
+  migration?: {
+    registryNonce: OutputReference;
+    governance: Governance;
+    emergency: Authority;
+  };
 };
 
 export const loadStagedTendermintValidators = (
@@ -94,32 +116,22 @@ export const loadStagedTendermintValidators = (
 
 export const buildChannelValidators = (
   lucid: LucidEvolution,
-  mintClientPolicyId: string,
+  clientRegistry: Data,
   mintConnectionPolicyId: string,
   mintPortPolicyId: string,
   verifyProofScriptHash: string,
   hostStateNftPolicyId: string,
 ) => {
-  const names = [
-    "chan_open_ack",
-    "chan_open_confirm",
-    "chan_close_init",
-    "chan_close_confirm",
-    "recv_packet",
-    "send_packet",
-    "timeout_packet",
-    "acknowledge_packet",
-    "prune_packet_history",
-  ];
-  const load = (title: string, args: string[]): PlannedValidator => {
+  const names = CHANNEL_OPERATION_NAMES;
+  const load = (title: string, args: Data[]): PlannedValidator => {
     const [script, hash, address] = readValidator(title, lucid, args);
     return { title, publication: "runtime", script, hash, address };
   };
   const referredScripts: Record<string, PlannedValidator> = {};
   for (const name of names) {
     const args = name === "prune_packet_history"
-      ? [mintClientPolicyId, mintConnectionPolicyId, verifyProofScriptHash]
-      : [mintClientPolicyId, mintConnectionPolicyId, mintPortPolicyId];
+      ? [clientRegistry, mintConnectionPolicyId, verifyProofScriptHash]
+      : [clientRegistry, mintConnectionPolicyId, mintPortPolicyId];
     if (
       !["prune_packet_history", "send_packet", "chan_close_init"].includes(name)
     ) {
@@ -129,7 +141,7 @@ export const buildChannelValidators = (
     referredScripts[name] = load(`spending_channel/${name}.${name}.mint`, args);
   }
   const base = load("spending_channel.spend_channel.spend", [
-    ...Object.values(referredScripts).map(({ hash }) => hash),
+    ...CHANNEL_OPERATION_NAMES.map((name) => referredScripts[name].hash),
     hostStateNftPolicyId,
   ]);
   return { base, referredScripts };
@@ -139,34 +151,27 @@ export const buildChannelValidators = (
 export const loadHostStateValidator = (
   lucid: LucidEvolution,
   hostPolicy: string,
-  clientHash: string,
+  clientRegistry: Data,
   connectionHash: string,
   channelHash: string,
   clientMintPolicyId: string,
   connectionMintPolicyId: string,
   channelMintPolicyId: string,
+  backupOperatorKeyHash = "",
 ) =>
   readValidator(
     "host_state_stt.host_state_stt.spend",
     lucid,
     [
       hostPolicy,
-      clientHash,
+      clientRegistry,
       connectionHash,
       channelHash,
       clientMintPolicyId,
       connectionMintPolicyId,
       channelMintPolicyId,
+      backupOperatorKeyHash,
     ],
-    Data.Tuple([
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [string, string, string, string, string, string, string],
   );
 
 /**
@@ -178,6 +183,17 @@ export const loadDeploymentPlan = async (
   lucid: LucidEvolution,
   inputs: DeploymentPlanInputs,
 ) => {
+  const backupOperatorKeyHash = inputs.backupOperatorKeyHash?.toLowerCase() ??
+    "";
+  if (
+    backupOperatorKeyHash !== "" &&
+    (!/^[0-9a-f]{56}$/.test(backupOperatorKeyHash) ||
+      backupOperatorKeyHash === inputs.deployerPaymentKeyHash.toLowerCase())
+  ) {
+    throw new Error(
+      "Backup operator must be a different 28-byte payment key hash",
+    );
+  }
   const validators: PlannedValidator[] = [];
   const register = (
     title: string,
@@ -228,6 +244,37 @@ export const loadDeploymentPlan = async (
     "runtime",
     bytes(hostPolicy),
   );
+  const implementationRegistry = inputs.migration
+    ? load("implementation_registry.implementation_registry.spend", "runtime")
+    : null;
+  if (inputs.migration) {
+    assertGovernance(inputs.migration.governance);
+    assertEmergencyAuthority(
+      inputs.migration.emergency,
+      inputs.migration.governance,
+    );
+  }
+  const mintImplementationRegistry = inputs.migration && implementationRegistry
+    ? load(
+      "minting_implementation_registry.mint_implementation_registry.mint",
+      "inline",
+      [
+        inputs.migration.registryNonce,
+        plutusAddress(implementationRegistry.address),
+        hostPolicy,
+        inputs.migration.governance,
+        inputs.migration.emergency,
+      ],
+      Data.Tuple([
+        OutputReferenceSchema,
+        AddressSchema,
+        Data.Bytes(),
+        GovernanceSchema,
+        AuthoritySchema,
+      ]),
+    )
+    : null;
+  const registryPolicy = mintImplementationRegistry?.hash;
   const staged = loadStagedTendermintValidators(
     lucid,
     hostPolicy,
@@ -251,72 +298,162 @@ export const loadDeploymentPlan = async (
       staged.sessionMint.address,
     ],
   );
-  const spendClient = register(
-    "spending_multitx_client.spend_multitx_client.spend",
-    "runtime",
-    [
-      staged.clientSpend.validator,
-      staged.clientSpend.scriptHash,
-      staged.clientSpend.address,
-    ],
-  );
-  const mintClient = load(
-    "minting_client_stt.mint_client_stt.mint",
-    "runtime",
-    bytes(spendClient.hash, hostPolicy),
-  );
-  const spendConnection = load(
-    "spending_connection.spend_connection.spend",
-    "runtime",
-    bytes(mintClient.hash, verifyProof.hash, hostPolicy),
-  );
-  const mintConnection = load(
-    "minting_connection_stt.mint_connection_stt.mint",
-    "runtime",
-    bytes(mintClient.hash, verifyProof.hash, spendConnection.hash, hostPolicy),
-  );
-  const { base: spendChannel, referredScripts } = buildChannelValidators(
+  const spendClient = registryPolicy
+    ? load(
+      "upgradeable/client.client.spend",
+      "runtime",
+      [
+        registryPolicy,
+        1n,
+        hostPolicy,
+        sessionMint.hash,
+        { Script: [recoverClient.hash] },
+      ],
+      Data.Tuple([
+        Data.Bytes(),
+        Data.Integer(),
+        Data.Bytes(),
+        Data.Bytes(),
+        CredentialSchema,
+      ]),
+    )
+    : register(
+      "spending_multitx_client.spend_multitx_client.spend",
+      "runtime",
+      [
+        staged.clientSpend.validator,
+        staged.clientSpend.scriptHash,
+        staged.clientSpend.address,
+      ],
+    );
+  const mintClient = registryPolicy
+    ? load("upgradeable/mint_client.mint_client.mint", "runtime", [
+      registryPolicy,
+    ])
+    : load(
+      "minting_client_stt.mint_client_stt.mint",
+      "runtime",
+      bytes(spendClient.hash, hostPolicy),
+    );
+  const clientRegistrations: ClientRegistration[] = [{
+    clientType: "07-tendermint",
+    implementation: "tendermint",
+    mintPolicy: mintClient.hash,
+    spendValidator: spendClient.hash,
+    proofPolicy: verifyProof.hash,
+  }];
+  // Migration keeps the client policy stable while its spending address changes.
+  // Upgradeable wrappers authenticate that address through the live registry.
+  const clients = registryPolicy
+    ? mintClient.hash
+    : clientRegistryData(clientRegistrations);
+  const spendConnection = registryPolicy
+    ? load(
+      "upgradeable/connection.connection.spend",
+      "runtime",
+      [registryPolicy, 1n, hostPolicy, mintClient.hash, verifyProof.hash],
+      Data.Tuple([
+        Data.Bytes(),
+        Data.Integer(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+      ]),
+    )
+    : load(
+      "spending_connection.spend_connection.spend",
+      "runtime",
+      [clients, verifyProof.hash, hostPolicy],
+    );
+  const mintConnection = registryPolicy
+    ? load("upgradeable/mint_connection.mint_connection.mint", "runtime", [
+      registryPolicy,
+      verifyProof.hash,
+    ])
+    : load(
+      "minting_connection_stt.mint_connection_stt.mint",
+      "runtime",
+      [
+        clients,
+        verifyProof.hash,
+        spendConnection.hash,
+        hostPolicy,
+      ],
+    );
+  const { base: legacySpendChannel, referredScripts } = buildChannelValidators(
     lucid,
-    mintClient.hash,
+    clients,
     mintConnection.hash,
     mintPort.hash,
     verifyProof.hash,
     hostPolicy,
   );
-  validators.push(...Object.values(referredScripts), spendChannel);
-  const mintChannel = load(
-    "minting_channel_stt.mint_channel_stt.mint",
-    "runtime",
-    bytes(
-      mintClient.hash,
-      mintConnection.hash,
+  validators.push(...Object.values(referredScripts));
+  const spendChannel = registryPolicy
+    ? load(
+      "upgradeable/channel.channel.spend",
+      "runtime",
+      [
+        registryPolicy,
+        1n,
+        hostPolicy,
+        CHANNEL_OPERATION_NAMES.map((name) => referredScripts[name].hash),
+      ],
+      Data.Tuple([
+        Data.Bytes(),
+        Data.Integer(),
+        Data.Bytes(),
+        Data.Array(Data.Bytes()),
+      ]),
+    )
+    : legacySpendChannel;
+  if (!registryPolicy) validators.push(spendChannel);
+  const mintChannel = registryPolicy
+    ? load("upgradeable/mint_channel.mint_channel.mint", "runtime", [
+      registryPolicy,
       mintPort.hash,
       verifyProof.hash,
-      spendChannel.hash,
-      hostPolicy,
       recoverClient.hash,
-    ),
-  );
+    ])
+    : load(
+      "minting_channel_stt.mint_channel_stt.mint",
+      "runtime",
+      [
+        clients,
+        mintConnection.hash,
+        mintPort.hash,
+        verifyProof.hash,
+        spendChannel.hash,
+        hostPolicy,
+        recoverClient.hash,
+      ],
+    );
+  const hostState = registryPolicy
+    ? load("upgradeable/host_state.host_state.spend", "bootstrap", [
+      registryPolicy,
+      1n,
+    ], Data.Tuple([Data.Bytes(), Data.Integer()]))
+    : register(
+      "host_state_stt.host_state_stt.spend",
+      "bootstrap",
+      loadHostStateValidator(
+        lucid,
+        hostPolicy,
+        clients,
+        spendConnection.hash,
+        spendChannel.hash,
+        mintClient.hash,
+        mintConnection.hash,
+        mintChannel.hash,
+        backupOperatorKeyHash,
+      ),
+    );
   const packetLaneCount = 16;
   const packetState = load(
     "minting_packet_lanes.minting_packet_lanes.mint",
     "runtime",
     [inputs.hostStateNonce, packetConfigToken, mintChannel.hash],
     Data.Tuple([OutputReferenceSchema, AuthTokenSchema, Data.Bytes()]),
-  );
-  const hostState = register(
-    "host_state_stt.host_state_stt.spend",
-    "bootstrap",
-    loadHostStateValidator(
-      lucid,
-      hostPolicy,
-      spendClient.hash,
-      spendConnection.hash,
-      spendChannel.hash,
-      mintClient.hash,
-      mintConnection.hash,
-      mintChannel.hash,
-    ),
   );
   const mintIdentifier = load(
     "minting_identifier.minting_identifier.mint",
@@ -427,30 +564,55 @@ export const loadDeploymentPlan = async (
     [portToken, hostPolicy],
     Data.Tuple([AuthTokenSchema, Data.Bytes()]),
   );
-  const spendTransferModule = load(
-    "spending_transfer_module.spend_transfer_module.spend",
-    "runtime",
-    [
-      portToken,
-      identifierToken,
-      portId,
-      mintTransferEscrowShard.hash,
-      mintChannel.hash,
-      mintVoucher.hash,
-      hostPolicy,
-      recoverClient.hash,
-    ],
-    Data.Tuple([
-      AuthTokenSchema,
-      AuthTokenSchema,
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]),
-  );
+  const spendTransferModule = registryPolicy
+    ? load(
+      "upgradeable/transfer.transfer.spend",
+      "runtime",
+      [
+        registryPolicy,
+        1n,
+        hostPolicy,
+        mintChannel.hash,
+        mintTransferEscrowShard.hash,
+        portToken,
+        identifierToken,
+        mintVoucher.hash,
+      ],
+      Data.Tuple([
+        Data.Bytes(),
+        Data.Integer(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        AuthTokenSchema,
+        AuthTokenSchema,
+        Data.Bytes(),
+      ]),
+    )
+    : load(
+      "spending_transfer_module.spend_transfer_module.spend",
+      "runtime",
+      [
+        portToken,
+        identifierToken,
+        portId,
+        mintTransferEscrowShard.hash,
+        mintChannel.hash,
+        mintVoucher.hash,
+        hostPolicy,
+        recoverClient.hash,
+      ],
+      Data.Tuple([
+        AuthTokenSchema,
+        AuthTokenSchema,
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+      ]),
+    );
   const benchmarkVoucher = inputs.benchmarkVoucherEnabled
     ? load(
       "minting_trace_registry_benchmark_voucher.mint_trace_registry_benchmark_voucher.mint",
@@ -487,8 +649,11 @@ export const loadDeploymentPlan = async (
   );
   const mockToken = load("minting_mock_token.mint_mock_token.mint", "inline");
 
-  return {
+  const plan = {
     inputs,
+    implementationRegistry,
+    mintImplementationRegistry,
+    clientRegistrations,
     validators,
     referenceValidators: validators.filter(({ publication }) =>
       publication !== "inline"
@@ -528,13 +693,17 @@ export const loadDeploymentPlan = async (
     referenceHolder,
     mockToken,
   };
+  return {
+    ...plan,
+    registry: inputs.migration ? await initialRegistry(plan) : null,
+  };
 };
 export type DeploymentPlan = Awaited<ReturnType<typeof loadDeploymentPlan>>;
 
 /** Stable, real-width inputs for CI measurements, independent of live wallets. */
 export const DEPLOYMENT_PLAN_FIXTURE: Omit<
   DeploymentPlanInputs,
-  "benchmarkVoucherEnabled"
+  "benchmarkVoucherEnabled" | "migration"
 > = {
   hostStateNonce: { transaction_id: "11".repeat(32), output_index: 0n },
   transferModuleNonce: { transaction_id: "22".repeat(32), output_index: 1n },

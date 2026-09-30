@@ -7,7 +7,7 @@
 // - Derives the Cardano testnet enterprise address for the selected network and
 //   requests faucet funds (automatically when a faucet API key is set, otherwise
 //   via the web UI).
-// - Polls Koios until the address is funded, then prints the export line.
+// - Polls Blockfrost until the address is funded, then prints the export line.
 //
 // Usage:
 //   deno run --allow-net --allow-read --allow-write --allow-env caribic/tools/provision-preprod-deployer.ts [--network preprod|preview] [--no-wait]
@@ -31,7 +31,7 @@ type NetworkProfile = {
   keyPath: string;
   faucetUrl: string;
   faucetApiKeyEnv: string;
-  koiosAddressInfoUrl: string;
+  blockfrostUrl: string;
 };
 
 const SUPPORTED_NETWORKS = ["preprod", "preview"] as const;
@@ -52,6 +52,7 @@ Options:
 Environment:
   CARDANO_<NETWORK>_FAUCET_API_KEY  Network-specific faucet API key, e.g. CARDANO_PREVIEW_FAUCET_API_KEY
   CARDANO_FAUCET_API_KEY            Fallback faucet API key used when the network-specific key is unset
+  CARDANO_BLOCKFROST_PROJECT_ID     Blockfrost project id for the selected network
 `;
 }
 
@@ -135,7 +136,8 @@ function networkProfile(
     keyPath: keyPath ?? `${homeDir()}/.caribic/${network}-deployer.sk`,
     faucetUrl: `https://faucet.${network}.world.dev.cardano.org/send-money`,
     faucetApiKeyEnv: `CARDANO_${network.toUpperCase()}_FAUCET_API_KEY`,
-    koiosAddressInfoUrl: `https://${network}.koios.rest/api/v1/address_info`,
+    blockfrostUrl: Deno.env.get("CARDANO_BLOCKFROST_ENDPOINT")?.trim() ||
+      `https://cardano-${network}.blockfrost.io/api/v0`,
   };
 }
 
@@ -190,36 +192,47 @@ function deriveAddress(privateKey: string): string {
   return bech32.encode("addr_test", bech32.toWords(addressBytes), 1023);
 }
 
-function koiosHeaders(
-  extra: Record<string, string> = {},
+function blockfrostProjectId(network: CardanoTestNetwork): string | undefined {
+  return (Deno.env.get("CARDANO_BLOCKFROST_PROJECT_ID") ??
+    Deno.env.get(`BLOCKFROST_PROJECT_ID_${network.toUpperCase()}`) ??
+    Deno.env.get("BLOCKFROST_PROJECT_ID"))?.trim() || undefined;
+}
+
+function blockfrostHeaders(
+  network: CardanoTestNetwork,
 ): Record<string, string> {
-  const apiKey = Deno.env.get("CARIBIC_KOIOS_API_KEY") ??
-    Deno.env.get("CARDANO_KOIOS_API_KEY") ??
-    Deno.env.get("KOIOS_API_KEY");
-  const headers = { ...extra };
-  if (apiKey?.trim()) {
-    const token = apiKey.trim();
-    headers.authorization = /^Bearer\s+/i.test(token)
-      ? token
-      : `Bearer ${token}`;
+  const projectId = blockfrostProjectId(network);
+  if (!projectId) {
+    throw new Error(
+      "CARDANO_BLOCKFROST_PROJECT_ID is required to poll the deployer balance",
+    );
   }
-  return headers;
+  return { project_id: projectId };
 }
 
 async function queryBalanceLovelace(
   profile: NetworkProfile,
   address: string,
 ): Promise<bigint> {
-  const response = await fetch(profile.koiosAddressInfoUrl, {
-    method: "POST",
-    headers: koiosHeaders({ "content-type": "application/json" }),
-    body: JSON.stringify({ _addresses: [address] }),
-  });
+  const response = await fetch(
+    `${profile.blockfrostUrl.replace(/\/+$/, "")}/addresses/${address}`,
+    {
+      headers: blockfrostHeaders(profile.network),
+    },
+  );
+  if (response.status === 404) return 0n;
   if (!response.ok) {
-    throw new Error(`${profile.label} Koios returned ${response.status}`);
+    throw new Error(`${profile.label} Blockfrost returned ${response.status}`);
   }
-  const info = await response.json();
-  return BigInt(info[0]?.balance ?? "0");
+  const info = await response.json() as {
+    amount?: { unit?: string; quantity?: string }[];
+  };
+  const lovelace = info.amount?.find((entry) => entry.unit === "lovelace")
+    ?.quantity;
+  if (lovelace === undefined) {
+    throw new Error("Blockfrost omitted the address's lovelace balance");
+  }
+  return BigInt(lovelace);
 }
 
 async function requestFaucetFunds(
@@ -265,9 +278,9 @@ async function run(): Promise<void> {
   const address = deriveAddress(privateKey);
   console.log(`Deployer address (${profile.network}): ${address}`);
 
-  const initialBalance = await queryBalanceLovelace(profile, address).catch(
-    () => 0n,
-  );
+  const initialBalance = options.noWait && !blockfrostProjectId(profile.network)
+    ? 0n
+    : await queryBalanceLovelace(profile, address);
   if (initialBalance > 0n) {
     console.log(
       `Address already funded on ${profile.network}: ${initialBalance} lovelace`,
@@ -278,7 +291,7 @@ async function run(): Promise<void> {
       console.log("Skipping balance polling (--no-wait).");
     } else {
       console.log(
-        `Waiting for ${profile.network} funds to arrive (checking Koios every 15s)...`,
+        `Waiting for ${profile.network} funds to arrive (checking Blockfrost every 15s)...`,
       );
       let funded = false;
       for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {

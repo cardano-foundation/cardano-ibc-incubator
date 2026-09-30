@@ -15,6 +15,7 @@ mod config;
 mod demos;
 mod install;
 mod light_client_test;
+mod local_network;
 mod logger;
 mod process;
 mod route_setup;
@@ -38,7 +39,7 @@ pub(crate) enum LightClientTest {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
-    /// Starts everything (network + bridge + IBC Swap dapp)
+    /// Starts the network and bridge, plus the IBC Swap dapp where supported
     All,
     /// Starts the managed Cardano network/runtime services
     Network,
@@ -139,11 +140,16 @@ enum SetupCommand {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Inspect or manage the Yaci DevKit local network
+    Devkit {
+        #[arg(value_enum)]
+        action: commands::devkit::DevkitAction,
+    },
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts the network, bridge, and IBC Swap dapp; optionally specify: all, network, bridge, gateway, dapp, relayer (mithril is disabled)
+    /// Starts bridge components. No argument starts the network and bridge, plus the IBC Swap dapp where supported. DevKit uses the Cosmos CLI workflow
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -194,9 +200,10 @@ enum Commands {
         /// Cardano network profile to query
         #[arg(long, default_value = "preprod")]
         network: String,
-        /// Select the first block of tip_epoch - epochs_back
-        #[arg(long, default_value_t = 2)]
-        epochs_back: u64,
+        /// Select the block this many blocks below the tip (at least 2161, one
+        /// past the 2160-block rollback limit, so the checkpoint is final)
+        #[arg(long, default_value_t = commands::DEFAULT_YACI_CHECKPOINT_DEPTH)]
+        depth: u64,
         /// Write the network marker and YACI_SYNC_START_* values into cardano/gateway/.env
         #[arg(long, default_value_t = false)]
         write_env: bool,
@@ -397,6 +404,7 @@ async fn main() {
 
     // Dispatch each subcommand to its module-level handler.
     let command_result: Result<(), String> = match args.command {
+        Commands::Devkit { action } => commands::devkit::run_devkit(project_root_path, action),
         Commands::Check => commands::run_check().await,
         Commands::Install => commands::run_install(project_root_path),
         Commands::Chains => commands::run_chains(),
@@ -424,11 +432,9 @@ async fn main() {
         }
         Commands::YaciCheckpoint {
             network,
-            epochs_back,
+            depth,
             write_env,
-        } => {
-            commands::run_yaci_checkpoint(project_root_path, &network, epochs_back, write_env).await
-        }
+        } => commands::run_yaci_checkpoint(project_root_path, &network, depth, write_env).await,
         Commands::Audit => commands::run_audit(project_root_path),
         Commands::ListClients { chain } => commands::run_list_clients(&chain),
         Commands::CreateClient { a_chain, b_chain } => {
@@ -491,6 +497,15 @@ async fn main() {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+
+    #[test]
+    fn local_start_has_one_provisioner() {
+        assert!(
+            Args::try_parse_from(["caribic", "start", "network", "--network", "local"]).is_ok()
+        );
+        assert!(Args::try_parse_from(["caribic", "start", "--local-runtime", "legacy"]).is_err());
+        assert!(Args::try_parse_from(["caribic", "start", "--local-runtime", "devkit"]).is_err());
+    }
 
     #[test]
     fn light_client_flag_defaults_to_recover_client() {

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint \"**/*.{ts,tsx}\"",
-    "test": "node --test configs/*.test.js",
+    "test": "node --test configs/*.test.js && tsx --tsconfig tsconfig.test.json --test utils/*.test.ts components/*.test.tsx",
     "test:runtime-image": "node scripts/smoke-standalone-runtime.mjs",
     "postinstall": "husky install"
   },
@@ -99,7 +99,8 @@
     "husky": "8.0.1",
     "lint-staged": "13.0.3",
     "prettier": "2.7.1",
-    "typescript": "5.5.3"
+    "typescript": "5.5.3",
+    "tsx": "^4.20.6"
   },
   "lint-staged": {
     "**/*.{ts,tsx}": [

@@ -5,6 +5,7 @@ import { convertString2Hex } from '@shared/helpers/hex';
 import { DenomTraceService } from '../../query/services/denom-trace.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { PacketService } from '../packet.service';
+import { MsgTransfer } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 
 describe('PacketService signer wallet selection for escrow', () => {
   let service: PacketService;
@@ -18,7 +19,9 @@ describe('PacketService signer wallet selection for escrow', () => {
     encode: jest.Mock;
     createUnsignedSendPacketEscrowTx: jest.Mock;
     tryFindUtxosAt: jest.Mock;
+    selectWalletFromAddress: jest.Mock;
   };
+  let txOperationRunnerMock: { run: jest.Mock };
 
   beforeEach(() => {
     const loggerMock = {
@@ -71,14 +74,16 @@ describe('PacketService signer wallet selection for escrow', () => {
       encode: jest.fn().mockResolvedValue('encoded'),
       createUnsignedSendPacketEscrowTx: jest.fn().mockReturnValue({ tag: 'unsigned-escrow' }),
       tryFindUtxosAt: jest.fn(),
+      selectWalletFromAddress: jest.fn(),
     };
+    txOperationRunnerMock = { run: jest.fn().mockResolvedValue({ unsignedTxBytes: new Uint8Array([1]) }) };
 
     service = new PacketService(
       loggerMock,
       configServiceMock,
       lucidServiceMock as unknown as LucidService,
       {} as DenomTraceService,
-      {} as any,
+      txOperationRunnerMock as any,
       { executePacket: jest.fn() } as any,
       createTestTreeStore(),
     );
@@ -201,6 +206,45 @@ describe('PacketService signer wallet selection for escrow', () => {
       address: signerAddress,
       utxos: signerWalletUtxos,
     });
+  });
+
+  it('keeps the full signer address for wallet lookup while sending the payment key hash', async () => {
+    const paymentKeyHash = '216e8fc9cdc8d2a748d754c319ee95bd5410f69a6a4e23165e4e5d50';
+    const signerAddress = `60${paymentKeyHash}`;
+    const walletUtxos = [{ txHash: 'wallet', outputIndex: 0, assets: { lovelace: 4_000_000n } }];
+    lucidServiceMock.tryFindUtxosAt.mockResolvedValue(walletUtxos);
+    jest.spyOn(service as any, 'computeTxValidityWindow').mockResolvedValue({
+      currentSlot: 1,
+      currentLedgerTime: 1000,
+      validFromTime: 1000,
+      validToSlot: 2,
+      validToTime: 2000,
+    });
+
+    await service.sendPacket({
+      source_port: 'transfer',
+      source_channel: 'channel-7',
+      token: { denom: 'lovelace', amount: '10' },
+      sender: signerAddress,
+      signer: signerAddress,
+      receiver: 'cosmos1receiver',
+      timeout_height: undefined,
+      timeout_timestamp: '0',
+      memo: '',
+    } as unknown as MsgTransfer);
+
+    expect(lucidServiceMock.tryFindUtxosAt).toHaveBeenCalledWith(signerAddress, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    expect(lucidServiceMock.selectWalletFromAddress).toHaveBeenCalledWith(signerAddress, walletUtxos);
+    expect(lucidServiceMock.createUnsignedSendPacketEscrowTx).toHaveBeenCalledWith(
+      expect.objectContaining({ senderAddress: paymentKeyHash, constructedAddress: signerAddress }),
+    );
+    const spendChannelCall = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'spendChannelRedeemer');
+    const packetDataHex = spendChannelCall?.[0]?.SendPacket?.packet?.data as string;
+    expect(JSON.parse(Buffer.from(packetDataHex, 'hex').toString('utf8')).sender).toBe(paymentKeyHash);
+    expect(txOperationRunnerMock.run).toHaveBeenCalledTimes(1);
   });
 
   it('fails hard when signer wallet UTxOs cannot be resolved for escrow', async () => {

@@ -7,7 +7,7 @@ import { StaleIbcTreeStateError } from '../../shared/helpers/ibc-state-root';
 import { createTestTreeContext } from '../../shared/testing/ibc-tree-test-store';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from '../../shared/types/client-datum';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { ClientService } from '../client.service';
+import { TendermintClientService as ClientService } from '../tendermint-client.service';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
 import { RecoverClientOperatorDto } from '../dto';
 
@@ -161,7 +161,7 @@ describe('ClientService recovery transaction', () => {
       hostStateDatum: {
         deployer: 'deployer',
         nft_policy: 'host-policy',
-        control: { port_registry: new Map(), shutdown: 'Active' },
+        control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
         state: {
           version: 1n,
           ibc_state_root: tree.getRoot(),

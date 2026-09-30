@@ -1,9 +1,10 @@
+use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
 use aiken/primitive/bytearray
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata.{DenomTrace, split_full_denom_trace}
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 
 // These are protocol limits, not relayer tuning knobs. Keep the mirrored
 // constants in the Gateway's `shared/types/trace-registry.ts` aligned when
@@ -94,7 +95,9 @@ pub fn full_denom_is_within_limits(full_denom: ByteArray) -> Bool {
       if path == "" {
         0
       } else {
-        list.length(string_utils.split(path, string_utils.slash_char)) / 2
+        list.length(
+          text_bytes.split_on_ascii_byte(path, text_bytes.ascii_slash),
+        ) / 2
       }
 
     trace_hops <= max_trace_hops
@@ -127,10 +130,15 @@ pub fn directory_bucket_is_within_capacity(
     bucket.bucket_index >= 0,
     bucket.bucket_index < bucket_count,
     valid_shard_name(bucket.active_shard_name),
-    list.length(archived_names) <= max_archived_shards_per_bucket,
-    list.all(archived_names, valid_shard_name),
-    !list.has(archived_names, bucket.active_shard_name),
-    bytearrays_are_unique(archived_names),
+    when archived_names is {
+      [] -> True
+      _ -> and {
+          list.length(archived_names) <= max_archived_shards_per_bucket,
+          list.all(archived_names, valid_shard_name),
+          !list.has(archived_names, bucket.active_shard_name),
+          bytearrays_are_unique(archived_names),
+        }
+    },
   }
 }
 
@@ -138,10 +146,8 @@ pub fn directory_is_within_capacity(
   directory: TraceRegistryDirectoryDatum,
 ) -> Bool {
   and {
-    list.length(directory.buckets) <= bucket_count,
     bytearray.length(cbor.serialise(Directory(directory))) <= max_directory_datum_bytes,
-    list.all(directory.buckets, directory_bucket_is_within_capacity),
-    bucket_indices_are_unique(directory.buckets),
+    directory_buckets_valid(directory.buckets, #"0000", 0),
   }
 }
 
@@ -157,15 +163,24 @@ fn bytearrays_are_unique(values: List<ByteArray>) -> Bool {
   }
 }
 
-fn bucket_indices_are_unique(
+// Validate each index before using it in a bitmap. Preserve both the explicit
+// count cap and every bucket constraint while traversing the directory once.
+fn directory_buckets_valid(
   buckets: List<TraceRegistryDirectoryBucket>,
+  seen: ByteArray,
+  count: Int,
 ) -> Bool {
   when buckets is {
     [] -> True
-    [bucket, ..rest] ->
-      list.find(
-        rest,
-        fn(candidate) { candidate.bucket_index == bucket.bucket_index },
-      ) == None && bucket_indices_are_unique(rest)
+    [bucket, ..rest] -> and {
+        count < bucket_count,
+        directory_bucket_is_within_capacity(bucket),
+        !builtin.read_bit(seen, bucket.bucket_index),
+        directory_buckets_valid(
+          rest,
+          builtin.write_bits(seen, [bucket.bucket_index], True),
+          count + 1,
+        ),
+      }
   }
 }

@@ -8,7 +8,10 @@ x-common-environment: &common-environment
   COSMOS_GENESIS_ACCOUNT_BALANCE: 100000000000stake,100000000000utest
   COSMOS_GENTX_AMOUNT: 500000000stake
   COSMOS_MINIMUM_GAS_PRICES: 0.0025stake
-  COSMOS_GENESIS_TIME: "2025-12-31T23:59:00Z"
+  COSMOS_GENESIS_TIME: ${COSMOS_GENESIS_TIME:-2025-12-31T23:59:00Z}
+  COSMOS_LOCAL_CLOCK_MODE: ${COSMOS_LOCAL_CLOCK_MODE:-real}
+  DEVKIT_CLOCK_OFFSET: ${DEVKIT_CLOCK_OFFSET:-}
+  COSMOS_LOCAL_CARDANO_NETWORK_ID: ${COSMOS_LOCAL_CARDANO_NETWORK_ID:-}
 
 x-common-service: &common-service
   restart: unless-stopped
@@ -23,7 +26,7 @@ services:
   v8-classic:
     <<: *common-service
     profiles: ["v8-classic"]
-    image: local:cardano-ibc-v8-classic
+    image: ${COSMOS_V8_CLASSIC_IMAGE:-local:cardano-ibc-v8-classic}
     build:
       context: ../..
       dockerfile: chains/cosmos/Dockerfile
@@ -35,6 +38,7 @@ services:
         IBC_GO_REF: v8.7.0
         IBC_GO_COMMIT: 53eaba19375dab0145509af101dbce193284ec5d
         IBC_SEMANTICS: classic
+        LOCAL_FIXTURE_CLOCK: ${COSMOS_LOCAL_CLOCK_BUILD:-0}
     environment:
       <<: *common-environment
       COSMOS_PROFILE: v8-classic

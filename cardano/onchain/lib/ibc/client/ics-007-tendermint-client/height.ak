@@ -1,6 +1,6 @@
 use aiken/primitive/bytearray
 use aiken/primitive/int
-use ibc/utils/string
+use ibc/utils/text_bytes
 
 pub type Height {
   // the revision that the client is currently on
@@ -22,7 +22,7 @@ pub fn parse_chain_id(chain_id: ByteArray) -> Int {
     0
   } else {
     let revision_number = bytearray.drop(chain_id, dash_index + 1)
-    if string.is_uint_string(revision_number) {
+    if text_bytes.is_canonical_unsigned_decimal(revision_number) {
       expect Some(parsed_revision_number) = int.from_utf8(revision_number)
       parsed_revision_number
     } else {

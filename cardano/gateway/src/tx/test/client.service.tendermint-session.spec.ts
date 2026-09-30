@@ -15,11 +15,10 @@ import * as HeaderCodec from '../../shared/types/header';
 import * as ClientMessageCodec from '../../shared/types/msgs/client-message';
 import * as MisbehaviourCodec from '../../shared/types/misbehaviour/misbehaviour';
 import {
-  ClientService,
-  TENDERMINT_FINALIZATION_TIME_TO_LIVE,
+  TendermintClientService as ClientService,
   TENDERMINT_HEADER_TYPE_URL,
   TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE,
-} from '../client.service';
+} from '../tendermint-client.service';
 import {
   MAX_TENDERMINT_UPDATE_TX_CHAIN_LENGTH,
   TENDERMINT_UPDATE_TX_CHAIN_TYPE_URL,
@@ -38,7 +37,7 @@ const DIGEST = '11'.repeat(32);
 const TEST_CURRENT_LEDGER_TIME_MS = 1_000;
 const TEST_VALID_FROM_TIME_MS = 1_000;
 const TEST_VALID_TO_TIME_MS = 1_801_000;
-const TEST_FINAL_VALID_TO_TIME_MS = TEST_CURRENT_LEDGER_TIME_MS + TENDERMINT_FINALIZATION_TIME_TO_LIVE;
+const TEST_FINAL_VALID_TO_TIME_MS = TEST_CURRENT_LEDGER_TIME_MS + 3 * 60 * 1000;
 const TEST_SLOT_CONFIG = { zeroTime: 0, zeroSlot: 0, slotLength: 1_000 };
 
 const PLAN: UpdatePlan = {
@@ -155,6 +154,8 @@ const UPDATE_MESSAGE = {
 
 function createTxBuilder(hash: string, cbor = `cbor-${hash}`, derivedOutputs: any[] = []): any {
   const builder: any = {};
+  const config = {};
+  builder.lucidConfig = () => config;
   builder.collectFrom = jest.fn().mockReturnValue(builder);
   builder.validFrom = jest.fn().mockReturnValue(builder);
   builder.validTo = jest.fn().mockReturnValue(builder);
@@ -443,7 +444,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
     );
     expect(verifyClientMessage).not.toHaveBeenCalled();
     expect(checkForMisbehaviour).not.toHaveBeenCalled();
-    expect((service as any).computeTxValidityWindow).toHaveBeenCalledWith(29_000, TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE);
+    expect((service as any).computeTxValidityWindow).toHaveBeenCalledWith(5_000, TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE);
     expect((service as any).refreshWalletContext).not.toHaveBeenCalled();
     expect(lucidService.createUnsignedTendermintSessionTransaction).toHaveBeenCalled();
     expect(buildFinal).not.toHaveBeenCalled();
@@ -716,7 +717,7 @@ describe('ClientService staged Tendermint update chain integration', () => {
     expect(finalBuilder.collectFrom).toHaveBeenCalledWith([utxo('signer-funding')]);
     expect(finalBuilder.validFrom).toHaveBeenCalledWith(TEST_VALID_FROM_TIME_MS);
     expect(finalBuilder.validTo).toHaveBeenCalledWith(TEST_FINAL_VALID_TO_TIME_MS);
-    expect(computeValidityWindow).toHaveBeenCalledWith(29_000, TENDERMINT_FINALIZATION_TIME_TO_LIVE);
+    expect(computeValidityWindow).toHaveBeenCalledWith(5_000, 3 * 60 * 1000);
     expect(pendingUpdates.take('finalize-hash')).toBe(pending);
     expect(runnerChainSpy).toHaveBeenCalledWith(
       expect.objectContaining({ operationName: 'buildTendermintUpdateFinalization' }),

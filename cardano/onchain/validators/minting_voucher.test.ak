@@ -43,8 +43,8 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/encoding/hex
 use ibc/testing/fuzz_dsl
-use ibc/utils/string as string_utils
 use minting_voucher
 use trace_registry as trace_registry_validator
 
@@ -544,8 +544,7 @@ fn first_seen_voucher_fixture(
           1,
         )
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
   let voucher_output =
     Output {
       address: from_verification_key(receiver_public_key_hash),
@@ -1185,8 +1184,7 @@ fn mint_voucher_succeeds_with_archive_profile(
           1,
         )
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
 
   let voucher_output =
     Output {
@@ -1412,8 +1410,7 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
           1,
         )
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
   let voucher_output =
     Output {
       address: from_verification_key(receiver_public_key_hash),
@@ -1590,8 +1587,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
           1,
         )
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
 
   let voucher_output =
     Output {
@@ -1703,8 +1699,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
       },
     )
 
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
+  expect Some(receiver_public_key_hash) = hex.decode(receiver)
 
   let transaction =
     Transaction {
@@ -1966,7 +1961,7 @@ fn check_refund_voucher(use_timeout_on_close: Bool) {
       reference_token_name,
     )
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
 
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
@@ -2112,7 +2107,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
       reference_token_name,
     )
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
 
   let wrong_mint =
     from_asset(
@@ -2242,7 +2237,7 @@ test test_refund_voucher_fails_with_wrong_metadata_mapping() fail {
       reference_token_name,
     )
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
 
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
@@ -2374,7 +2369,7 @@ test test_refund_voucher_fail() fail {
       ftpd.denom,
     )
 
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  expect Some(sender_public_key_hash) = hex.decode(sender)
 
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)

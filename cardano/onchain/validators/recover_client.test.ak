@@ -10,13 +10,16 @@ use cardano/transaction.{
   Spend, Transaction, Withdraw,
 }
 use host_state_stt
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
 use ibc/auth.{AuthToken, generate_token_name}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  CheckClientHistory, CheckStagedClientHistory, RecoverClient,
-  RecoverClientWithdrawal, RecoverClientWithdrawalRedeemer,
+  CheckClientHistory, CheckStagedClientHistory, ReclaimTransferWithdrawal,
+  RecoverClient, RecoverClientWithdrawal, RecoverClientWithdrawalRedeemer,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
@@ -92,6 +95,62 @@ fn subject_token() -> AuthToken {
 
 fn substitute_token() -> AuthToken {
   AuthToken { policy_id: client_policy, name: substitute_name }
+}
+
+fn reclaim_transfer(escrow_root: ByteArray, obligation: Int) -> Bool {
+  let port_policy = #"77777777777777777777777777777777777777777777777777777777"
+  let module_policy =
+    #"88888888888888888888888888888888888888888888888888888888"
+  let port_name = "transfer"
+  let module_name = "module"
+  let input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"9999999999999999999999999999999999999999999999999999999999999999",
+        output_index: 0,
+      },
+      output: Output {
+        address: address.from_script("transfer module"),
+        value: from_asset(port_policy, port_name, 1)
+          |> assets.add(module_policy, module_name, 1),
+        datum: InlineDatum(
+          TransferModuleDatum {
+            escrow_shard_registry_root: escrow_root,
+            outstanding_voucher_obligation: obligation,
+          },
+        ),
+        reference_script: None,
+      },
+    }
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [input],
+      mint: from_asset(port_policy, port_name, -1)
+        |> assets.add(module_policy, module_name, -1),
+    }
+  recover_client.recover_client.withdraw(
+    host_policy,
+    ReclaimTransferWithdrawal {
+      port_unit: bytearray.concat(port_policy, port_name),
+      module_unit: bytearray.concat(module_policy, module_name),
+      escrow_policy: "unused escrow policy",
+    },
+    address.Script(recovery_script_hash),
+    transaction,
+  )
+}
+
+test reclaim_transfer_accepts_zero_voucher_obligation() {
+  reclaim_transfer(empty_escrow_shard_registry_root, 0)
+}
+
+test reclaim_transfer_rejects_outstanding_voucher_obligation() fail {
+  reclaim_transfer(empty_escrow_shard_registry_root, 1)
+}
+
+test reclaim_transfer_rejects_outstanding_escrow() fail {
+  reclaim_transfer(#"11", 0)
 }
 
 test recovery_token_names_match_client_stt_derivation() {
@@ -227,7 +286,13 @@ fn host_datum() -> HostStateDatum {
     },
     nft_policy: host_policy,
     deployer,
-    control: HostStateControl { port_registry: [], shutdown: Active },
+    control: HostStateControl {
+      port_registry: [],
+      shutdown: Active,
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
+    },
   }
 }
 
@@ -624,6 +689,7 @@ fn run_atomic_recovery_with_validation(
         client_policy,
         "unused connection minting policy",
         "unused channel minting policy",
+        "",
         Some(old_host_datum),
         host_update_redeemer,
         host_reference,
@@ -926,6 +992,7 @@ fn run_atomic_staged_freeze(correct_root: Bool, verify_validators: Bool) -> Bool
         client_policy,
         "unused connection minting policy",
         "unused channel minting policy",
+        "",
         Some(old_host),
         host_redeemer,
         host_reference,

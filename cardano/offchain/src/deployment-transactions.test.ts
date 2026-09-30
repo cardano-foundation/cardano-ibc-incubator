@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
   Data,
   fromText,
@@ -11,6 +11,7 @@ import {
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
+import { createCardanoScalusEvaluator } from "./scalus-evaluator.ts";
 import { HostStateDatum, HostStateNftRedeemer } from "../types/index.ts";
 import { loadDeploymentPlan } from "./deployment-plan.ts";
 import {
@@ -22,6 +23,7 @@ import {
   buildMockTokenMintTx,
   buildReferenceBatchTx,
   completeReferenceBatchTx,
+  verifyReferencePublications,
 } from "./deployment-transactions.ts";
 
 const MAX_TX_SIZE = 16_384;
@@ -46,7 +48,9 @@ async function deploymentFixture(benchmarkVoucherEnabled = true) {
     { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: MAX_TX_SIZE },
   );
   emulator.time = TEST_TIME;
-  const lucid = await Lucid(emulator, "Custom");
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+  });
   lucid.selectWallet.fromSeed(TEST_SEED);
   const walletUtxos = await lucid.wallet().getUtxos();
   const nonceUtxo = walletUtxos.find(({ outputIndex }) => outputIndex === 2)!;
@@ -61,6 +65,7 @@ async function deploymentFixture(benchmarkVoucherEnabled = true) {
     transferModuleNonce: outref(3),
     traceDirectoryNonce: outref(4),
     deployerPaymentKeyHash: paymentCredential.hash,
+    backupOperatorKeyHash: "55".repeat(28),
     benchmarkVoucherEnabled,
   });
   return { lucid, emulator, address, nonceUtxo, plan };
@@ -72,9 +77,12 @@ function assertSignedTransactionFits(signed: TxSigned, label: string) {
   assert(body.fee() > 0n, `${label}: the balanced transaction has a fee`);
   assertEquals(transaction.witness_set().vkeywitnesses()?.len(), 1);
   const signedBytes = signed.toCBOR().length / 2;
+  // The HostState publication uses one dedicated funding input and one output.
+  // Keep its tighter limit measured against the actual signed transaction.
+  const headroom = label === "host_state_stt.host_state_stt.spend" ? 50 : 200;
   assert(
-    signedBytes <= MAX_TX_SIZE - 200,
-    `${label}: signed transaction is ${signedBytes} bytes, leaving less than 200 bytes below ${MAX_TX_SIZE}`,
+    signedBytes <= MAX_TX_SIZE - headroom,
+    `${label}: signed transaction is ${signedBytes} bytes, leaving less than ${headroom} bytes below ${MAX_TX_SIZE}`,
   );
   console.log(
     `${label}: ${signedBytes} signed bytes, fee ${body.fee()} lovelace`,
@@ -123,7 +131,7 @@ Deno.test("every applied reference validator fits its signed production transact
           lucid,
           plan.referenceHolder.address,
           validators,
-          dedicatedFunding,
+          dedicatedFunding && { utxo: dedicatedFunding, leftoverAsFee: true },
         );
         assertSignedTransactionFits(result.signedTx, title);
         const referenceOutputs = result.outputs.filter(({ scriptRef }) =>
@@ -164,6 +172,46 @@ Deno.test("every applied reference validator fits its signed production transact
         const published = await lucid.utxosAt(plan.referenceHolder.address);
         assertEquals(published.length, 1);
         assertEquals(published[0].txHash, result.signedTx.toHash());
+        assertEquals(
+          verifyReferencePublications(
+            result.signedTx.toHash(),
+            plan.referenceHolder.address,
+            validators,
+            result.outputs,
+            published,
+          ),
+          published,
+        );
+        for (
+          const mutation of [
+            "hash",
+            "index",
+            "address",
+            "assets",
+            "datum",
+            "duplicate",
+          ] as const
+        ) {
+          const incorrect = structuredClone(published);
+          if (mutation === "hash") incorrect[0].txHash = "00".repeat(32);
+          if (mutation === "index") incorrect[0].outputIndex++;
+          if (mutation === "address") incorrect[0].address = address;
+          if (mutation === "assets") incorrect[0].assets.lovelace++;
+          if (mutation === "datum") incorrect[0].datum = Data.to(1n);
+          if (mutation === "duplicate") incorrect.push(incorrect[0]);
+          assertThrows(
+            () =>
+              verifyReferencePublications(
+                result.signedTx.toHash(),
+                plan.referenceHolder.address,
+                validators,
+                result.outputs,
+                incorrect,
+              ),
+            Error,
+            mutation === "duplicate" ? "unique" : "signed publication",
+          );
+        }
       });
     }
   }
@@ -215,7 +263,13 @@ Deno.test("HostState bootstrap evaluates and fits with inline policy, datum and 
     },
     nft_policy: plan.hostNft.hash,
     deployer: plan.inputs.deployerPaymentKeyHash,
-    control: { port_registry: new Map(), shutdown: "Active" },
+    control: {
+      port_registry: new Map(),
+      shutdown: "Active",
+      live_clients: 0n,
+      live_connections: 0n,
+      live_channels: 0n,
+    },
   };
   const encodedDatum = Data.to(datum, HostStateDatum, { canonical: true });
   const completed = await buildHostStateBootstrapTx(lucid, {
@@ -234,7 +288,13 @@ Deno.test("HostState bootstrap evaluates and fits with inline policy, datum and 
   const transaction = signed.toTransaction();
   const scripts = transaction.witness_set().plutus_v3_scripts();
   assertEquals(scripts?.len(), 3);
-  assertEquals(scripts!.get(0).hash().to_hex(), plan.hostNft.hash);
+  assertEquals(
+    Array.from(
+      { length: scripts!.len() },
+      (_, i) => scripts!.get(i).hash().to_hex(),
+    ).sort(),
+    [plan.hostNft.hash, plan.packetConfig.hash, plan.packetState.hash].sort(),
+  );
   assertEquals(transaction.body().reference_inputs()?.len() ?? 0, 0);
   assertEquals(await signed.submit(), signed.toHash());
   emulator.awaitBlock();

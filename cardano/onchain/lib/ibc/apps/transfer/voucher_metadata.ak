@@ -2,10 +2,9 @@ use aiken/builtin
 use aiken/collection/list
 use aiken/crypto
 use aiken/primitive/bytearray
-use aiken/primitive/string
 use cardano/assets.{AssetName, PolicyId}
 use ibc/core/ics_004/types/keys as chan_keys_mod
-use ibc/utils/string as string_utils
+use ibc/utils/text_bytes
 
 pub const voucher_metadata_version = 1
 
@@ -72,10 +71,11 @@ pub fn build_datum(
 
 pub fn split_full_denom_trace(full_denom: ByteArray) -> DenomTrace {
   // Parse leading port/channel pairs; the remaining suffix is the base denom.
-  let normalized = string_utils.trim_space(full_denom)
+  let normalized = text_bytes.trim_ascii_spaces(full_denom)
   expect normalized != ""
 
-  let segments = string_utils.split(normalized, string_utils.slash_char)
+  let segments =
+    text_bytes.split_on_ascii_byte(normalized, text_bytes.ascii_slash)
   expect !list.any(segments, fn(segment) { segment == "" })
 
   do_split_full_denom_trace(segments, [])
@@ -109,11 +109,11 @@ fn do_split_full_denom_trace(
 
 fn canonical_label(base_denom: ByteArray) -> ByteArray {
   // For now, name/ticker are the final slash-separated base-denom segment.
-  let trimmed = string_utils.trim_space(base_denom)
+  let trimmed = text_bytes.trim_ascii_spaces(base_denom)
   if trimmed == "" {
     "IBC"
   } else {
-    string_utils.split(trimmed, string_utils.slash_char)
+    text_bytes.split_on_ascii_byte(trimmed, text_bytes.ascii_slash)
       |> list.foldl(
           "IBC",
           fn(segment, current) {
@@ -138,28 +138,30 @@ fn ibc_denom_hash(full_denom: ByteArray) -> ByteArray {
 }
 
 fn hex_ascii(bytes: ByteArray) -> ByteArray {
-  // Match the TypeScript encoder's lowercase ASCII hex representation.
-  bytes
-    |> bytearray.to_hex
-    |> string.to_bytearray
-    |> ascii_lower
+  // One immutable two-character lookup per byte; exact lowercase CIP-68 hex.
+  hex_ascii_go(bytes, bytearray.length(bytes) - 1, #"")
 }
 
-fn ascii_lower(bytes: ByteArray) -> ByteArray {
-  bytearray.foldr(
-    bytes,
-    "",
-    fn(byte, acc) {
-      bytearray.push(
+const lowercase_hex_pairs =
+  #"3030303130323033303430353036303730383039306130623063306430653066313031313132313331343135313631373138313931613162316331643165316632303231323232333234323532363237323832393261326232633264326532663330333133323333333433353336333733383339336133623363336433653366343034313432343334343435343634373438343934613462346334643465346635303531353235333534353535363537353835393561356235633564356535663630363136323633363436353636363736383639366136623663366436653666373037313732373337343735373637373738373937613762376337643765376638303831383238333834383538363837383838393861386238633864386538663930393139323933393439353936393739383939396139623963396439653966613061316132613361346135613661376138613961616162616361646165616662306231623262336234623562366237623862396261626262636264626562666330633163326333633463356336633763386339636163626363636463656366643064316432643364346435643664376438643964616462646364646465646665306531653265336534653565366537653865396561656265636564656565666630663166326633663466356636663766386639666166626663666466656666"
+
+fn hex_ascii_go(bytes: ByteArray, index: Int, acc: ByteArray) -> ByteArray {
+  if index < 0 {
+    acc
+  } else {
+    hex_ascii_go(
+      bytes,
+      index - 1,
+      builtin.append_bytearray(
+        builtin.slice_bytearray(
+          2 * builtin.index_bytearray(bytes, index),
+          2,
+          lowercase_hex_pairs,
+        ),
         acc,
-        if byte >= 65 && byte <= 90 {
-          byte + 32
-        } else {
-          byte
-        },
-      )
-    },
-  )
+      ),
+    )
+  }
 }
 
 fn join_segments(segments: List<ByteArray>) -> ByteArray {

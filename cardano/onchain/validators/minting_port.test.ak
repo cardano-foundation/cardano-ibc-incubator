@@ -6,13 +6,19 @@ use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
 }
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  ModuleRegistration, host_state_token_name,
+  Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
+  host_state_token_name,
 }
-use ibc/core/ics_025_handler_interface/host_state_redeemer.{BindPort}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  AuthorizeFinalization, BindPort,
+}
 use minting_port
 
 type MockData {
@@ -138,6 +144,161 @@ test mint_port_succeed() {
   validate_mint_port(
     mock,
     from_asset(mock.port_token.policy_id, mock.port_token.name, 1),
+  )
+}
+
+fn finalization_burn_with_counts(
+  live_clients: Int,
+  live_connections: Int,
+  live_channels: Int,
+  escrow_root: ByteArray,
+  voucher_obligation: Int,
+  root_at_registered_script: Bool,
+) -> Bool {
+  let mock = setup()
+  let module_token =
+    AuthToken {
+      policy_id: "mock module token policy",
+      name: "mock module token",
+    }
+  let datum =
+    HostStateDatum {
+      state: HostState {
+        version: 1,
+        ibc_state_root: "root",
+        next_client_sequence: 0,
+        next_connection_sequence: 0,
+        next_channel_sequence: 0,
+        bound_port: [],
+        last_update_time: 0,
+      },
+      nft_policy: mock.host_state_nft_policy_id,
+      deployer: "deployer",
+      control: HostStateControl {
+        port_registry: [
+          Pair(
+            "transfer",
+            ModuleRegistration {
+              module_script_hash: mock.spend_module_script_hash,
+              port_token: mock.port_token,
+              module_token,
+            },
+          ),
+        ],
+        shutdown: Active,
+        live_clients,
+        live_connections,
+        live_channels,
+      },
+    }
+  let host_input =
+    Input {
+      ..mock.host_state_input,
+      output: Output {
+        ..mock.host_state_input.output,
+        datum: InlineDatum(datum),
+      },
+    }
+  let host_redeemer: Redeemer = AuthorizeFinalization
+  let root_input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"9999999999999999999999999999999999999999999999999999999999999999",
+        output_index: 0,
+      },
+      output: Output {
+        address: from_script(
+          if root_at_registered_script {
+            mock.spend_module_script_hash
+          } else {
+            "wrong module script hash"
+          },
+        ),
+        value: from_asset(mock.port_token.policy_id, mock.port_token.name, 1)
+          |> assets.add(module_token.policy_id, module_token.name, 1),
+        datum: InlineDatum(
+          TransferModuleDatum {
+            escrow_shard_registry_root: escrow_root,
+            outstanding_voucher_obligation: voucher_obligation,
+          },
+        ),
+        reference_script: None,
+      },
+    }
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [host_input, root_input],
+      mint: from_asset(mock.port_minting_policy_id, mock.port_token.name, -1),
+      redeemers: [Pair(Spend(host_input.output_reference), host_redeemer)],
+    }
+  minting_port.mint_port.mint(
+    mock.host_state_nft_policy_id,
+    Void,
+    mock.port_minting_policy_id,
+    transaction,
+  )
+}
+
+test finalization_burn_requires_zero_live_counts() {
+  and {
+    finalization_burn_with_counts(
+      0,
+      0,
+      0,
+      empty_escrow_shard_registry_root,
+      0,
+      True,
+    ),
+    !finalization_burn_with_counts(
+      1,
+      0,
+      0,
+      empty_escrow_shard_registry_root,
+      0,
+      True,
+    ),
+    !finalization_burn_with_counts(
+      0,
+      1,
+      0,
+      empty_escrow_shard_registry_root,
+      0,
+      True,
+    ),
+    !finalization_burn_with_counts(
+      0,
+      0,
+      1,
+      empty_escrow_shard_registry_root,
+      0,
+      True,
+    ),
+  }
+}
+
+test finalization_burn_requires_drained_transfer_root() {
+  and {
+    !finalization_burn_with_counts(0, 0, 0, #"11", 0, True),
+    !finalization_burn_with_counts(
+      0,
+      0,
+      0,
+      empty_escrow_shard_registry_root,
+      1,
+      True,
+    ),
+  }
+}
+
+test finalization_burn_rejects_unregistered_root_script() fail {
+  finalization_burn_with_counts(
+    0,
+    0,
+    0,
+    empty_escrow_shard_registry_root,
+    0,
+    False,
   )
 }
 

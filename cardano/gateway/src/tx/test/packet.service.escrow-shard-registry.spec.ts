@@ -20,12 +20,12 @@ const SHARD_TOKEN_NAME = transferEscrowShardTokenName(CHANNEL_ID, PACKET_DENOM);
 const SHARD_TOKEN_UNIT = SHARD_POLICY_ID + SHARD_TOKEN_NAME;
 
 const encodedEscrowDatum = (channelId: string, denom: string, amount = 0n) => `escrow:${channelId}:${denom}:${amount}`;
-const encodedModuleDatum = (root: string) => `module:${root}`;
+const encodedModuleDatum = (root: string, obligation = 0n) => `module:${root}:${obligation}`;
 
-const rootUtxo = (root: string) => ({
+const rootUtxo = (root: string, obligation = 0n) => ({
   txHash: 'root',
   outputIndex: 0,
-  datum: encodedModuleDatum(root),
+  datum: encodedModuleDatum(root, obligation),
   assets: {
     lovelace: 5_000_000n,
     [TRANSFER_MODULE_IDENTIFIER]: 1n,
@@ -69,13 +69,17 @@ function createService(findUtxoAt: jest.Mock): PacketService {
         return encodedEscrowDatum(value.channel_id, value.denom, value.escrowed_amount);
       }
       if (type === 'transferModule') {
-        return encodedModuleDatum(value.escrow_shard_registry_root);
+        return encodedModuleDatum(value.escrow_shard_registry_root, value.outstanding_voucher_obligation);
       }
       throw new Error(`Unexpected codec ${type}`);
     }),
     decodeDatum: jest.fn().mockImplementation(async (datum: string, type: string) => {
       if (type === 'transferModule' && datum.startsWith('module:')) {
-        return { escrow_shard_registry_root: datum.slice('module:'.length) };
+        const [, escrow_shard_registry_root, obligation] = datum.split(':');
+        return {
+          escrow_shard_registry_root,
+          outstanding_voucher_obligation: BigInt(obligation),
+        };
       }
       if (type === 'transferEscrow' && datum.startsWith('escrow:')) {
         const [, channel_id, denom, amount] = datum.split(':');
@@ -98,7 +102,7 @@ function createService(findUtxoAt: jest.Mock): PacketService {
 
 describe('PacketService escrow shard registry lookup', () => {
   it('returns a 64-sibling insertion witness and updated root for a missing shard', async () => {
-    const service = createService(jest.fn().mockResolvedValue([rootUtxo('00'.repeat(32))]));
+    const service = createService(jest.fn().mockResolvedValue([rootUtxo('00'.repeat(32), 17n)]));
 
     const lookup = await (service as any).findTransferEscrowShard(CHANNEL_ID, PACKET_DENOM, 'lovelace');
 
@@ -106,7 +110,7 @@ describe('PacketService escrow shard registry lookup', () => {
       kind: 'missing',
       shardTokenUnit: SHARD_TOKEN_UNIT,
       encodedDatum: encodedEscrowDatum(CHANNEL_ID, PACKET_DENOM),
-      encodedUpdatedTransferModuleDatum: encodedModuleDatum(existingRegistryRoot()),
+      encodedUpdatedTransferModuleDatum: encodedModuleDatum(existingRegistryRoot(), 17n),
     });
     expect(lookup.registrySiblings).toHaveLength(64);
     expect(lookup.registrySiblings).toEqual(Array(64).fill('00'.repeat(32)));
