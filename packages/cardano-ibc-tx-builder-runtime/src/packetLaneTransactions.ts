@@ -74,6 +74,15 @@ const operationNames = [
   "timeout_on_close",
 ];
 
+function addLaneBalance(datum: Constr<Data>, denom: string, delta: bigint) {
+  const balances = datum.fields[11] as Map<string, bigint>;
+  const key = fromText(denom);
+  const amount = (balances.get(key) ?? 0n) + delta;
+  if (amount === 0n) balances.delete(key);
+  else balances.set(key, amount);
+  datum.fields[11] = new Map([...balances].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+}
+
 async function authorizeOperation(
   tx: ReturnType<LucidEvolution["newTx"]>,
   deployment: PacketLaneDeployment,
@@ -442,6 +451,7 @@ export async function buildPacketSendBatch(
     lane.tree.set(key, commitment);
     lane.updates.push(record(variant(0, packet), [siblings]));
     (lane.datum.fields[6] as Map<bigint, string>).set(sequence, commitment);
+    addLaneBalance(lane.datum, data.denom, BigInt(data.amount) * (data.denom.startsWith(`${port}/${channelId}/`) ? -1n : 1n));
     if (data.denom.startsWith(`${port}/${channelId}/`)) {
       const unit = localAssetUnit(data.denom, deployment);
       mint[unit] = (mint[unit] ?? 0n) - BigInt(data.amount);
@@ -612,6 +622,10 @@ async function buildPacketCompletion(
   const mint: Record<string, bigint> = {
     [deployment.batchPolicy + fromText("acknowledge")]: 1n,
   };
+  if (liquidity) {
+    const data = JSON.parse(toText(String(packet.fields[5])));
+    addLaneBalance(datum, data.denom, BigInt(data.amount) * (data.denom.startsWith(`${port}/${channelId}/`) ? 1n : -1n));
+  }
   let tx = lucid.newTx().readFrom([
     deployment.channel,
     deployment.connection,
@@ -911,6 +925,7 @@ export async function buildPacketLaneInitialization(
           new Map(),
           record(0n, 0n),
           record(0n, 0n),
+          new Map(),
         ),
       ),
     }, { [token]: 1n });
@@ -1047,6 +1062,7 @@ export async function buildPacketReceive(
     toText(String(packet.fields[2]))
   }/`;
 
+  addLaneBalance(datum, data.denom.startsWith(prefix) ? data.denom.slice(prefix.length) : `${port}/${channelId}/${data.denom}`, BigInt(data.amount) * (data.denom.startsWith(prefix) ? -1n : 1n));
   const fields = record(
     ...[data.denom, data.amount, data.sender, data.receiver, data.memo ?? ""]
       .map(fromText),

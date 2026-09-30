@@ -84,7 +84,11 @@ pub fn retires_state(
   expect old_datum: HostStateDatum =
     validator_utils.get_inline_datum(host.output)
   expect new_datum: HostStateDatum = validator_utils.get_inline_datum(successor)
-  kind == expected_kind && validate_retire_state(old_datum, new_datum, kind)
+  ( expected_kind == 2 || old_datum.control.live_channels == 0 ) && kind == expected_kind && validate_retire_state(
+    old_datum,
+    new_datum,
+    kind,
+  )
 }
 
 /// Client, connection and voucher lookup state remains necessary while a

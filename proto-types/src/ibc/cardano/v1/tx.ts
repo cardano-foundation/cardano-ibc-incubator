@@ -209,14 +209,14 @@ export interface BuildPacketBatchRequest {
  * @see proto type: ibc.cardano.v1.BuildPacketBatchResponse
  */
 export interface BuildPacketBatchResponse {
-  included_tx_hash: string;
   stage: string;
   unsigned_tx?: Any;
   intent_tx_hashes: string[];
+  included_tx_hash: string;
 }
 function createBaseBuildHostStateHeartbeatRequest(): BuildHostStateHeartbeatRequest {
   return {
-    signer: ""
+    signer: "",
   };
 }
 /**
@@ -226,7 +226,10 @@ function createBaseBuildHostStateHeartbeatRequest(): BuildHostStateHeartbeatRequ
  */
 export const BuildHostStateHeartbeatRequest = {
   typeUrl: "/ibc.cardano.v1.BuildHostStateHeartbeatRequest",
-  encode(message: BuildHostStateHeartbeatRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: BuildHostStateHeartbeatRequest,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.signer !== "") {
       writer.uint32(10).string(message.signer);
     }
@@ -259,11 +262,13 @@ export const BuildHostStateHeartbeatRequest = {
     message.signer !== undefined && (obj.signer = message.signer);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<BuildHostStateHeartbeatRequest>, I>>(object: I): BuildHostStateHeartbeatRequest {
+  fromPartial<I extends Exact<DeepPartial<BuildHostStateHeartbeatRequest>, I>>(
+    object: I,
+  ): BuildHostStateHeartbeatRequest {
     const message = createBaseBuildHostStateHeartbeatRequest();
     message.signer = object.signer ?? "";
     return message;
-  }
+  },
 };
 function createBaseBuildHostStateHeartbeatResponse(): BuildHostStateHeartbeatResponse {
   return {
@@ -281,7 +286,10 @@ function createBaseBuildHostStateHeartbeatResponse(): BuildHostStateHeartbeatRes
  */
 export const BuildHostStateHeartbeatResponse = {
   typeUrl: "/ibc.cardano.v1.BuildHostStateHeartbeatResponse",
-  encode(message: BuildHostStateHeartbeatResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: BuildHostStateHeartbeatResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.heartbeat_required === true) {
       writer.uint32(8).bool(message.heartbeat_required);
     }
@@ -351,7 +359,9 @@ export const BuildHostStateHeartbeatResponse = {
       (obj.next_check_delay_ms = (message.next_check_delay_ms || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<BuildHostStateHeartbeatResponse>, I>>(object: I): BuildHostStateHeartbeatResponse {
+  fromPartial<I extends Exact<DeepPartial<BuildHostStateHeartbeatResponse>, I>>(
+    object: I,
+  ): BuildHostStateHeartbeatResponse {
     const message = createBaseBuildHostStateHeartbeatResponse();
     message.heartbeat_required = object.heartbeat_required ?? false;
     if (object.current_epoch !== undefined && object.current_epoch !== null) {
@@ -367,7 +377,7 @@ export const BuildHostStateHeartbeatResponse = {
       message.next_check_delay_ms = BigInt(object.next_check_delay_ms.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseMsgPrunePacketHistory(): MsgPrunePacketHistory {
   return {
@@ -376,7 +386,7 @@ function createBaseMsgPrunePacketHistory(): MsgPrunePacketHistory {
     channel_id: "",
     sequence: BigInt(0),
     proof_commitment_absence: new Uint8Array(),
-    proof_height: undefined
+    proof_height: undefined,
   };
 }
 /**
@@ -445,7 +455,8 @@ export const MsgPrunePacketHistory = {
     if (isSet(object.port_id)) obj.port_id = String(object.port_id);
     if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
     if (isSet(object.sequence)) obj.sequence = BigInt(object.sequence.toString());
-    if (isSet(object.proof_commitment_absence)) obj.proof_commitment_absence = bytesFromBase64(object.proof_commitment_absence);
+    if (isSet(object.proof_commitment_absence))
+      obj.proof_commitment_absence = bytesFromBase64(object.proof_commitment_absence);
     if (isSet(object.proof_height)) obj.proof_height = Height.fromJSON(object.proof_height);
     return obj;
   },
@@ -455,8 +466,12 @@ export const MsgPrunePacketHistory = {
     message.port_id !== undefined && (obj.port_id = message.port_id);
     message.channel_id !== undefined && (obj.channel_id = message.channel_id);
     message.sequence !== undefined && (obj.sequence = (message.sequence || BigInt(0)).toString());
-    message.proof_commitment_absence !== undefined && (obj.proof_commitment_absence = base64FromBytes(message.proof_commitment_absence !== undefined ? message.proof_commitment_absence : new Uint8Array()));
-    message.proof_height !== undefined && (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
+    message.proof_commitment_absence !== undefined &&
+      (obj.proof_commitment_absence = base64FromBytes(
+        message.proof_commitment_absence !== undefined ? message.proof_commitment_absence : new Uint8Array(),
+      ));
+    message.proof_height !== undefined &&
+      (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgPrunePacketHistory>, I>>(object: I): MsgPrunePacketHistory {
@@ -472,11 +487,11 @@ export const MsgPrunePacketHistory = {
       message.proof_height = Height.fromPartial(object.proof_height);
     }
     return message;
-  }
+  },
 };
 function createBaseMsgPrunePacketHistoryResponse(): MsgPrunePacketHistoryResponse {
   return {
-    unsigned_tx: undefined
+    unsigned_tx: undefined,
   };
 }
 /**
@@ -516,21 +531,24 @@ export const MsgPrunePacketHistoryResponse = {
   },
   toJSON(message: MsgPrunePacketHistoryResponse): unknown {
     const obj: any = {};
-    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgPrunePacketHistoryResponse>, I>>(object: I): MsgPrunePacketHistoryResponse {
+  fromPartial<I extends Exact<DeepPartial<MsgPrunePacketHistoryResponse>, I>>(
+    object: I,
+  ): MsgPrunePacketHistoryResponse {
     const message = createBaseMsgPrunePacketHistoryResponse();
     if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
       message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
     }
     return message;
-  }
+  },
 };
 function createBaseSubmitSignedTxRequest(): SubmitSignedTxRequest {
   return {
     signed_tx_cbor: "",
-    description: ""
+    description: "",
   };
 }
 /**
@@ -587,13 +605,13 @@ export const SubmitSignedTxRequest = {
     message.signed_tx_cbor = object.signed_tx_cbor ?? "";
     message.description = object.description ?? "";
     return message;
-  }
+  },
 };
 function createBaseTendermintUpdateTxChain(): TendermintUpdateTxChain {
   return {
     version: 0,
     unsigned_tx_cbor: [],
-    rebuild_after_submission: false
+    rebuild_after_submission: false,
   };
 }
 /**
@@ -644,34 +662,37 @@ export const TendermintUpdateTxChain = {
   fromJSON(object: any): TendermintUpdateTxChain {
     const obj = createBaseTendermintUpdateTxChain();
     if (isSet(object.version)) obj.version = Number(object.version);
-    if (Array.isArray(object?.unsigned_tx_cbor)) obj.unsigned_tx_cbor = object.unsigned_tx_cbor.map((e: any) => String(e));
-    if (isSet(object.rebuild_after_submission)) obj.rebuild_after_submission = Boolean(object.rebuild_after_submission);
+    if (Array.isArray(object?.unsigned_tx_cbor))
+      obj.unsigned_tx_cbor = object.unsigned_tx_cbor.map((e: any) => String(e));
+    if (isSet(object.rebuild_after_submission))
+      obj.rebuild_after_submission = Boolean(object.rebuild_after_submission);
     return obj;
   },
   toJSON(message: TendermintUpdateTxChain): unknown {
     const obj: any = {};
     message.version !== undefined && (obj.version = Math.round(message.version));
     if (message.unsigned_tx_cbor) {
-      obj.unsigned_tx_cbor = message.unsigned_tx_cbor.map(e => e);
+      obj.unsigned_tx_cbor = message.unsigned_tx_cbor.map((e) => e);
     } else {
       obj.unsigned_tx_cbor = [];
     }
-    message.rebuild_after_submission !== undefined && (obj.rebuild_after_submission = message.rebuild_after_submission);
+    message.rebuild_after_submission !== undefined &&
+      (obj.rebuild_after_submission = message.rebuild_after_submission);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<TendermintUpdateTxChain>, I>>(object: I): TendermintUpdateTxChain {
     const message = createBaseTendermintUpdateTxChain();
     message.version = object.version ?? 0;
-    message.unsigned_tx_cbor = object.unsigned_tx_cbor?.map(e => e) || [];
+    message.unsigned_tx_cbor = object.unsigned_tx_cbor?.map((e) => e) || [];
     message.rebuild_after_submission = object.rebuild_after_submission ?? false;
     return message;
-  }
+  },
 };
 function createBaseSubmitSignedTxResponse(): SubmitSignedTxResponse {
   return {
     tx_hash: "",
     height: "",
-    events: []
+    events: [],
   };
 }
 /**
@@ -729,7 +750,7 @@ export const SubmitSignedTxResponse = {
     message.tx_hash !== undefined && (obj.tx_hash = message.tx_hash);
     message.height !== undefined && (obj.height = message.height);
     if (message.events) {
-      obj.events = message.events.map(e => e ? Event.toJSON(e) : undefined);
+      obj.events = message.events.map((e) => (e ? Event.toJSON(e) : undefined));
     } else {
       obj.events = [];
     }
@@ -739,14 +760,14 @@ export const SubmitSignedTxResponse = {
     const message = createBaseSubmitSignedTxResponse();
     message.tx_hash = object.tx_hash ?? "";
     message.height = object.height ?? "";
-    message.events = object.events?.map(e => Event.fromPartial(e)) || [];
+    message.events = object.events?.map((e) => Event.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseObserveTxRequest(): ObserveTxRequest {
   return {
     tx_hash: "",
-    allow_untracked: false
+    allow_untracked: false,
   };
 }
 /**
@@ -804,13 +825,13 @@ export const ObserveTxRequest = {
     message.tx_hash = object.tx_hash ?? "";
     message.allow_untracked = object.allow_untracked ?? false;
     return message;
-  }
+  },
 };
 function createBaseObserveTxResponse(): ObserveTxResponse {
   return {
     tx_hash: "",
     height: "",
-    events: []
+    events: [],
   };
 }
 /**
@@ -868,7 +889,7 @@ export const ObserveTxResponse = {
     message.tx_hash !== undefined && (obj.tx_hash = message.tx_hash);
     message.height !== undefined && (obj.height = message.height);
     if (message.events) {
-      obj.events = message.events.map(e => e ? Event.toJSON(e) : undefined);
+      obj.events = message.events.map((e) => (e ? Event.toJSON(e) : undefined));
     } else {
       obj.events = [];
     }
@@ -878,14 +899,14 @@ export const ObserveTxResponse = {
     const message = createBaseObserveTxResponse();
     message.tx_hash = object.tx_hash ?? "";
     message.height = object.height ?? "";
-    message.events = object.events?.map(e => Event.fromPartial(e)) || [];
+    message.events = object.events?.map((e) => Event.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseEvent(): Event {
   return {
     type: "",
-    attributes: []
+    attributes: [],
   };
 }
 /**
@@ -928,14 +949,15 @@ export const Event = {
   fromJSON(object: any): Event {
     const obj = createBaseEvent();
     if (isSet(object.type)) obj.type = String(object.type);
-    if (Array.isArray(object?.attributes)) obj.attributes = object.attributes.map((e: any) => EventAttribute.fromJSON(e));
+    if (Array.isArray(object?.attributes))
+      obj.attributes = object.attributes.map((e: any) => EventAttribute.fromJSON(e));
     return obj;
   },
   toJSON(message: Event): unknown {
     const obj: any = {};
     message.type !== undefined && (obj.type = message.type);
     if (message.attributes) {
-      obj.attributes = message.attributes.map(e => e ? EventAttribute.toJSON(e) : undefined);
+      obj.attributes = message.attributes.map((e) => (e ? EventAttribute.toJSON(e) : undefined));
     } else {
       obj.attributes = [];
     }
@@ -944,14 +966,14 @@ export const Event = {
   fromPartial<I extends Exact<DeepPartial<Event>, I>>(object: I): Event {
     const message = createBaseEvent();
     message.type = object.type ?? "";
-    message.attributes = object.attributes?.map(e => EventAttribute.fromPartial(e)) || [];
+    message.attributes = object.attributes?.map((e) => EventAttribute.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseEventAttribute(): EventAttribute {
   return {
     key: "",
-    value: ""
+    value: "",
   };
 }
 /**
@@ -1008,14 +1030,14 @@ export const EventAttribute = {
     message.key = object.key ?? "";
     message.value = object.value ?? "";
     return message;
-  }
+  },
 };
 function createBaseBuildPacketBatchRequest(): BuildPacketBatchRequest {
   return {
     signer: "",
     port_id: "",
     channel_id: "",
-    intent_tx_hash: ""
+    intent_tx_hash: "",
   };
 }
 /**
@@ -1089,14 +1111,14 @@ export const BuildPacketBatchRequest = {
     message.channel_id = object.channel_id ?? "";
     message.intent_tx_hash = object.intent_tx_hash ?? "";
     return message;
-  }
+  },
 };
 function createBaseBuildPacketBatchResponse(): BuildPacketBatchResponse {
   return {
     stage: "",
     unsigned_tx: undefined,
     intent_tx_hashes: [],
-    included_tx_hash: ""
+    included_tx_hash: "",
   };
 }
 /**
@@ -1116,7 +1138,9 @@ export const BuildPacketBatchResponse = {
     for (const v of message.intent_tx_hashes) {
       writer.uint32(26).string(v!);
     }
-    if (message.included_tx_hash !== "") writer.uint32(34).string(message.included_tx_hash);
+    if (message.included_tx_hash !== "") {
+      writer.uint32(34).string(message.included_tx_hash);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BuildPacketBatchResponse {
@@ -1149,29 +1173,34 @@ export const BuildPacketBatchResponse = {
     const obj = createBaseBuildPacketBatchResponse();
     if (isSet(object.stage)) obj.stage = String(object.stage);
     if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
-    if (Array.isArray(object?.intent_tx_hashes)) obj.intent_tx_hashes = object.intent_tx_hashes.map((e: any) => String(e));
-    obj.included_tx_hash = String(object.included_tx_hash ?? "");
+    if (Array.isArray(object?.intent_tx_hashes))
+      obj.intent_tx_hashes = object.intent_tx_hashes.map((e: any) => String(e));
+    if (isSet(object.included_tx_hash)) obj.included_tx_hash = String(object.included_tx_hash);
     return obj;
   },
   toJSON(message: BuildPacketBatchResponse): unknown {
-    const obj: any = {included_tx_hash: message.included_tx_hash};
+    const obj: any = {};
     message.stage !== undefined && (obj.stage = message.stage);
-    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     if (message.intent_tx_hashes) {
-      obj.intent_tx_hashes = message.intent_tx_hashes.map(e => e);
+      obj.intent_tx_hashes = message.intent_tx_hashes.map((e) => e);
     } else {
       obj.intent_tx_hashes = [];
     }
+    message.included_tx_hash !== undefined && (obj.included_tx_hash = message.included_tx_hash);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<BuildPacketBatchResponse>, I>>(object: I): BuildPacketBatchResponse {
+  fromPartial<I extends Exact<DeepPartial<BuildPacketBatchResponse>, I>>(
+    object: I,
+  ): BuildPacketBatchResponse {
     const message = createBaseBuildPacketBatchResponse();
-    message.included_tx_hash = object.included_tx_hash ?? "";
     message.stage = object.stage ?? "";
     if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
       message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
     }
-    message.intent_tx_hashes = object.intent_tx_hashes?.map(e => e) || [];
+    message.intent_tx_hashes = object.intent_tx_hashes?.map((e) => e) || [];
+    message.included_tx_hash = object.included_tx_hash ?? "";
     return message;
-  }
+  },
 };

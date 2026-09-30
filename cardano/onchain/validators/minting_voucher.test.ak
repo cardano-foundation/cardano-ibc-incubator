@@ -2576,6 +2576,7 @@ fn check_packet_voucher(
     }
   let config =
     PacketConfig {
+      host_policy,
       state_policy: #"00",
       batch_policy,
       guard_hash: #"00",

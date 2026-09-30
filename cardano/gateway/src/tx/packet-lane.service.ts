@@ -98,6 +98,7 @@ export class PacketLaneService {
     ]);
     if (scripts.length !== 4) throw new Error('Packet script references unavailable');
     scripts.push(await this.lucid.findUtxoByUnit(config.configToken.policyId + config.configToken.name));
+    scripts.push(await this.lucid.findUtxoByUnit(manifest.hostStateNFT.policyId + manifest.hostStateNFT.name));
     const operations: PacketLaneDeployment['operations'] = {};
     const operationRefs = await this.lucid.lucid.utxosByOutRef(Object.values(config.operations).map((v) => v.refUtxo));
     for (const [name, validator] of Object.entries(config.operations)) {

@@ -20,6 +20,7 @@ validator packet_send(
     expect
       validator_utils.require_exact_marker_mint(transaction.mint, policy, "", 1)
     let config = packet_config.reference(transaction, config_token)
+    expect packet_config.active(transaction, config.host_policy)
     let authorized =
       packet_batch.authorization(transaction, config.batch_policy)
     expect authorized.channel_token.policy_id == channel_policy

@@ -148,7 +148,13 @@ func AdvancePacketStateSnapshot(previous PacketStateSnapshot, blocks [][]byte, l
 			}
 			for name := range spent {
 				if !continued[name] {
-					return PacketStateSnapshot{}, fmt.Errorf("missing lane continuation")
+					nameBytes, err := hex.DecodeString(name)
+					if err != nil || tx.AssetMint() == nil || tx.AssetMint().Asset(ledger.NewBlake2b224(lanePolicy), nameBytes) != -1 {
+						return PacketStateSnapshot{}, fmt.Errorf("missing lane continuation or authenticated retirement")
+					}
+					// Block authentication and phase-2 validity establish execution of
+					// the lane policy's drained-channel retirement checks.
+					delete(next.Lanes, name)
 				}
 			}
 		}

@@ -39,6 +39,7 @@ function fixture() {
         new Map(),
         new Datum([0n, 0n]),
         new Datum([0n, 0n]),
+        new Map(),
       ]),
     });
   }

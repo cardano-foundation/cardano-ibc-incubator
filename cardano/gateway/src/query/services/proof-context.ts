@@ -76,26 +76,6 @@ function isMissingCurrentLiveHostStateEvidence(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('Historical tx evidence unavailable for current live HostState tx');
 }
-export async function resolveCurrentLiveHostStateTxHeight({
-  lucidService,
-  historyService,
-}: Pick<ProofContextDeps, 'lucidService' | 'historyService'>): Promise<bigint> {
-  const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT(0n);
-  const txEvidence = await historyService.findTransactionEvidenceByHash(liveHostStateUtxo.txHash);
-  if (txEvidence) {
-    return BigInt(txEvidence.blockNo);
-  }
-
-  const tx = await historyService.findTxByHash(liveHostStateUtxo.txHash);
-  if (tx?.height !== undefined && tx?.height !== null) {
-    return BigInt(tx.height);
-  }
-
-  throw new GrpcInternalException(
-    `Historical tx evidence unavailable for current live HostState tx ${liveHostStateUtxo.txHash}`,
-  );
-}
-
 // A proof's accepted height must identify the same HostState output as its captured tree.
 async function resolveProofAnchorForCurrentRoot({
   logger,

@@ -26,7 +26,12 @@ import {
   enterShutdown,
   partitionShutdownReferences,
 } from "../../scripts/shutdown-deployment.ts";
-import { buildReclaimStateTx, scanDeploymentState } from "../shutdown.ts";
+import {
+  buildReclaimStateTx,
+  buildRetirePacketLanesTx,
+  packetShutdownReferences,
+  scanDeploymentState,
+} from "../shutdown.ts";
 import { membershipProof } from "./channel-fixture.ts";
 import { generateTokenName, readValidator } from "../utils.ts";
 const record = (...fields: Data[]) => new Constr(0, fields);
@@ -117,7 +122,7 @@ export async function deploymentScenario() {
       const limits = lucid.config().protocolParameters!;
       assert(
         units.mem() <= limits.maxTxExMem,
-        "Transaction exceeds memory limit",
+        `Transaction memory ${units.mem()} exceeds limit ${limits.maxTxExMem}`,
       );
       assert(
         units.steps() <= limits.maxTxExSteps,
@@ -245,10 +250,7 @@ export async function deploymentScenario() {
           hostTx(input, next, {
             CreateClient: { client_state_siblings, consensus_state_siblings },
           })
-            .attach.MintingPolicy({
-              type: "PlutusV3",
-              script: deployment.validators.mintClientStt.script,
-            })
+            .readFrom([deployment.validators.mintClientStt.refUtxo])
             .mintAssets({ [nft.policy_id + nft.name]: 1n }, Data.void())
             .pay.ToContract(deployment.validators.spendClient.address, {
               kind: "inline",
@@ -580,11 +582,54 @@ export async function deploymentScenario() {
         if (dependenciesRemain) {
           groups = groups.filter((group) => group.kind !== "transfer");
         }
+        if (
+          groups.some((group) =>
+            ["packet-registry", "packet-certificates"].includes(group.kind)
+          )
+        ) {
+          groups = groups.filter((group) => group.kind !== "packet-config");
+        }
+        if (groups.some((group) => group.kind === "channel")) {
+          groups = groups.filter((group) =>
+            ![
+              "packet-registry",
+              "packet-certificates",
+              "packet-lanes",
+              "packet-liquidity",
+              "client",
+              "connection",
+            ].includes(group.kind)
+          );
+        }
         const group = groups[index % groups.length];
+        if (group.kind === "channel") {
+          const retirement = await buildRetirePacketLanesTx(
+            lucid,
+            deployment,
+            await host(),
+            group.utxos[0],
+            address,
+            emulator.now(),
+          );
+          if (retirement) {
+            await api.submit(retirement, "retire packet lanes");
+            return group.kind;
+          }
+        }
+        const packetReferences = await packetShutdownReferences(
+          lucid,
+          deployment,
+          { ...group, utxos: [group.utxos[0]] },
+        );
         const transferRoot = group.kind === "channel" ||
             group.kind === "client" || group.kind === "connection" ||
             group.kind === "trace" || group.kind === "metadata"
           ? await lucid.utxoByUnit(deployment.modules.transfer.identifier)
+          : ["packet-registry", "packet-certificates"].includes(group.kind)
+          ? await lucid.utxoByUnit(
+            deployment.packetState.configToken.policyId +
+              deployment.packetState.configToken.name,
+          )
           : undefined;
         await api.submit(
           buildReclaimStateTx(
@@ -595,6 +640,7 @@ export async function deploymentScenario() {
             address,
             emulator.now(),
             transferRoot,
+            packetReferences,
           ),
           `reclaim ${group.kind}`,
         );

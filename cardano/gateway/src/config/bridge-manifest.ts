@@ -73,7 +73,7 @@ function requireConsensusHistoryFormat(value: unknown): typeof CONSENSUS_HISTORY
   return value;
 }
 
-export const PACKET_OPERATIONS = [
+const PACKET_OPERATIONS = [
   'send',
   'acknowledge',
   'timeout',
@@ -86,7 +86,7 @@ export const PACKET_OPERATIONS = [
   'send_funds',
 ] as const;
 
-export type PacketStateDeployment = {
+type PacketStateDeployment = {
   operations: Record<string, DeploymentValidator>;
   format: 'packet-lanes-v1';
   laneCount: number;

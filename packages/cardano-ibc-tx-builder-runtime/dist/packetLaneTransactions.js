@@ -51,6 +51,16 @@ const operationNames = [
     "prune",
     "timeout_on_close",
 ];
+function addLaneBalance(datum, denom, delta) {
+    const balances = datum.fields[11];
+    const key = (0, lucid_1.fromText)(denom);
+    const amount = (balances.get(key) ?? 0n) + delta;
+    if (amount === 0n)
+        balances.delete(key);
+    else
+        balances.set(key, amount);
+    datum.fields[11] = new Map([...balances].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+}
 async function authorizeOperation(tx, deployment, operation, mint) {
     const authorized = (0, exports.encode)((0, exports.record)(decode(deployment.channel).fields[2], operation, deployment.historyWitness
         ? (0, exports.variant)(0, deployment.historyWitness)
@@ -307,6 +317,7 @@ async function buildPacketSendBatch(lucid, deployment, intents, validFrom, valid
         lane.tree.set(key, commitment);
         lane.updates.push((0, exports.record)((0, exports.variant)(0, packet), [siblings]));
         lane.datum.fields[6].set(sequence, commitment);
+        addLaneBalance(lane.datum, data.denom, BigInt(data.amount) * (data.denom.startsWith(`${port}/${channelId}/`) ? -1n : 1n));
         if (data.denom.startsWith(`${port}/${channelId}/`)) {
             const unit = localAssetUnit(data.denom, deployment);
             mint[unit] = (mint[unit] ?? 0n) - BigInt(data.amount);
@@ -414,6 +425,10 @@ async function buildPacketCompletion(lucid, deployment, packet, proofHeight, pro
     const mint = {
         [deployment.batchPolicy + (0, lucid_1.fromText)("acknowledge")]: 1n,
     };
+    if (liquidity) {
+        const data = JSON.parse((0, lucid_1.toText)(String(packet.fields[5])));
+        addLaneBalance(datum, data.denom, BigInt(data.amount) * (data.denom.startsWith(`${port}/${channelId}/`) ? 1n : -1n));
+    }
     let tx = lucid.newTx().readFrom([
         deployment.channel,
         deployment.connection,
@@ -584,7 +599,7 @@ async function buildPacketLaneInitialization(lucid, deployment, config, registry
         mint[token] = 1n;
         tx = tx.pay.ToContract(deployment.guardAddress, {
             kind: "inline",
-            value: (0, exports.encode)((0, exports.record)((0, lucid_1.fromText)(port), (0, lucid_1.fromText)(channelId), BigInt(lane), BigInt(deployment.laneCount), 0n, "00".repeat(32), new Map(), [], new Map(), (0, exports.record)(0n, 0n), (0, exports.record)(0n, 0n))),
+            value: (0, exports.encode)((0, exports.record)((0, lucid_1.fromText)(port), (0, lucid_1.fromText)(channelId), BigInt(lane), BigInt(deployment.laneCount), 0n, "00".repeat(32), new Map(), [], new Map(), (0, exports.record)(0n, 0n), (0, exports.record)(0n, 0n), new Map())),
         }, { [token]: 1n });
     }
     return tx.mintAssets(mint, (0, exports.encode)((0, exports.variant)(1, decode(deployment.channel).fields[2])));
@@ -676,6 +691,7 @@ async function buildPacketReceive(lucid, deployment, packet, proofHeight, proof,
         datum.fields[10] = proofHeight;
     const data = JSON.parse((0, lucid_1.toText)(String(packet.fields[5])));
     const prefix = `${(0, lucid_1.toText)(String(packet.fields[1]))}/${(0, lucid_1.toText)(String(packet.fields[2]))}/`;
+    addLaneBalance(datum, data.denom.startsWith(prefix) ? data.denom.slice(prefix.length) : `${port}/${channelId}/${data.denom}`, BigInt(data.amount) * (data.denom.startsWith(prefix) ? -1n : 1n));
     const fields = (0, exports.record)(...[data.denom, data.amount, data.sender, data.receiver, data.memo ?? ""]
         .map(lucid_1.fromText));
     const operation = (0, exports.variant)(5, packet, fields, proofHeight, proof, (0, exports.record)((0, exports.outRef)(input), updates), liquidity.map(exports.outRef));

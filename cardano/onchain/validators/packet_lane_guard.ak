@@ -1,4 +1,5 @@
 use aiken/builtin
+use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
@@ -15,6 +16,7 @@ pub type GuardAction {
   IntentCancel
   Sequence
   Lane
+  Retire
 }
 
 validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
@@ -25,6 +27,21 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
     transaction: Transaction,
   ) {
     when action is {
+      Retire -> {
+        let input = packet_batch.input_at(transaction, ref)
+        expect assets.tokens(input.output.value, lane_policy) != dict.empty
+        list.all(
+          dict.to_pairs(assets.tokens(input.output.value, lane_policy)),
+          fn(entry) {
+            let Pair(name, quantity) = entry
+            quantity == 1 && assets.quantity_of(
+              transaction.mint,
+              lane_policy,
+              name,
+            ) == -1
+          },
+        )
+      }
       IntentCancel -> {
         let input = packet_batch.input_at(transaction, ref)
         expect intent: TransferIntent =
@@ -52,62 +69,71 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
           list.has(intents, ref)
         }
       }
-      Lane ->
-        when packet_batch.operation(transaction, batch_policy) is {
+      Lane -> {
+        let op = packet_batch.operation(transaction, batch_policy)
+        when op is {
           SendBatch { lanes, .. } -> {
             expect Some(lane) =
               list.find(lanes, fn(lane) { lane.input_ref == ref })
-            packet_lane_state.validate_transition(
+            packet_lane_state.validate_transition_with_balances(
               transaction,
               ref,
               lane_policy,
               lane.updates,
+              Some(op),
             )
           }
           Acknowledge { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition(
+            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
               transaction,
               ref,
               lane_policy,
               lane.updates,
+              Some(op),
             )
           Timeout { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition(
+            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
               transaction,
               ref,
               lane_policy,
               lane.updates,
+              Some(op),
             )
           TimeoutOnClose { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition(
+            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
               transaction,
               ref,
               lane_policy,
               lane.updates,
+              Some(op),
             )
           Receive { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition(
+            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
               transaction,
               ref,
               lane_policy,
               lane.updates,
+              Some(op),
             )
           Reject { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition(
+            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
               transaction,
               ref,
               lane_policy,
               lane.updates,
+              Some(op),
             )
           Prune { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition(
+            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
               transaction,
               ref,
               lane_policy,
               lane.updates,
+              Some(op),
             )
           _ -> False
         }
+      }
     }
   }
 

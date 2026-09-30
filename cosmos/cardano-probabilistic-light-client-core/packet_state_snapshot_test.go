@@ -218,3 +218,40 @@ func TestGatewaySnapshotCarriesUnchangedLaneOnlyAcrossAuthenticatedBodies(t *tes
 		t.Fatal("untouched lane changed")
 	}
 }
+
+func TestPacketSnapshotRemovesOnlyAuthenticatedRetiredLane(t *testing.T) {
+	start := snapshotStart()
+	issued, err := advanceSnapshot(t, start, snapshotBlock(t, start, []cbor.RawMessage{snapshotLaneTx(t, 0, nil, 1)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old TrackedPacketLane
+	for _, lane := range issued.Lanes {
+		old = lane
+	}
+	for _, amount := range []int64{-2, -1, 0, 1} {
+		raw := snapshotLaneTx(t, 1, &old, 0)
+		var body map[uint64]cbor.RawMessage
+		if err := cbor.Unmarshal(raw, &body); err != nil {
+			t.Fatal(err)
+		}
+		policy := bytes.Repeat([]byte{0x11}, 28)
+		name, _ := PacketLaneTokenName("transfer", "channel-0", 1, 16)
+		body[9], _ = cbor.Marshal(map[cbor.ByteString]any{cbor.ByteString(policy): map[cbor.ByteString]int64{cbor.ByteString(name): amount}})
+		raw, _ = cbor.Marshal(body)
+		next, err := advanceSnapshot(t, issued, snapshotBlock(t, issued, []cbor.RawMessage{raw}))
+		if amount == -1 {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(next.Lanes) != 0 {
+				t.Fatal("retired lane remains authenticated")
+			}
+			if _, err := next.PacketRoot([]byte("receipts/ports/transfer/channels/channel-0/sequences/1"), next.Height); err == nil {
+				t.Fatal("retired lane supplied a newer absence proof")
+			}
+		} else if err == nil {
+			t.Fatalf("accepted retirement mint %d", amount)
+		}
+	}
+}

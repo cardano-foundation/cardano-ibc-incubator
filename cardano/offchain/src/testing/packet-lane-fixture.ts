@@ -16,6 +16,7 @@ import { generateEmulatorAccount } from "@lucid-evolution/provider";
 import parameters from "../../scripts/fixtures/mainnet-protocol-parameters.json" with {
   type: "json",
 };
+import { createCardanoScalusEvaluator } from "../scalus-evaluator.ts";
 import { readValidator } from "../utils.ts";
 import {
   channelActions,
@@ -193,7 +194,14 @@ export async function packetLaneFixture(laneCount = 16) {
       [String(configToken.fields[0]) + String(configToken.fields[1])]: 1n,
     },
     encode(
-      record(statePolicy, batchPolicy, guardHash, BigInt(laneCount), traceHash),
+      record(
+        statePolicy,
+        batchPolicy,
+        guardHash,
+        BigInt(laneCount),
+        traceHash,
+        context.hostPolicy,
+      ),
     ),
   );
   seed(registryAddress, {
@@ -289,7 +297,9 @@ export async function packetLaneFixture(laneCount = 16) {
   async function wallet(enterprise = false) {
     const account = generateEmulatorAccount({ lovelace: 300_000_000n });
     const clock = { ...SLOT_CONFIG_NETWORK.Custom };
-    const lucid = await Lucid(emulator, "Custom");
+    const lucid = await Lucid(emulator, "Custom", {
+      evaluator: createCardanoScalusEvaluator(),
+    });
     SLOT_CONFIG_NETWORK.Custom = clock;
     lucid.selectWallet.fromSeed(
       account.seedPhrase,
@@ -383,6 +393,11 @@ export async function packetLaneFixture(laneCount = 16) {
   )).submit();
   emulator.awaitBlock();
   deployment.scripts.push(configuration);
+  deployment.scripts.push(
+    await fixture.lucid.utxoByUnit(
+      context.hostPolicy + fromText("ibc_host_state"),
+    ),
+  );
   return {
     ...fixture,
     deployment,

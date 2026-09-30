@@ -9,15 +9,23 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/packet_config.{PacketRegistry, registry_token_name}
 use ibc/core/ics_004/packet_lane_datum.{PacketLaneDatum}
 use ibc/core/ics_004/packet_lanes
+use ibc/core/ics_004/packet_shutdown
 use ibc/core/ics_004/send_sequencer.{SendSequencerDatum}
 use ibc/core/ics_004/types/keys
 use ibc/core/ics_004/types/state.{Closed, Init, Open, TryOpen}
+use ibc/core/ics_025_handler_interface/host_state.{
+  HostStateDatum, host_state_token_name,
+}
 use ibc/utils/int as int_utils
+use ibc/utils/shutdown
 use ibc/utils/validator_utils
 
 pub type IssueLanes {
   CreateRegistry
   CreateChannelLanes { channel_token: AuthToken }
+  RetireRegistry
+  RetireChannelLanes { channel_token: AuthToken }
+  RetireCertificates
 }
 
 validator minting_packet_lanes(
@@ -29,6 +37,51 @@ validator minting_packet_lanes(
     let registry_token =
       AuthToken { policy_id: policy, name: registry_token_name }
     when action is {
+      RetireChannelLanes { .. } -> {
+        let config = packet_config.reference(transaction, config_token)
+        expect config.state_policy == policy
+        // The batch retirement validator authenticates the channel and exact
+        // complete set of lane burns. Avoid decoding its unrelated proof cases.
+        validator_utils.require_exact_marker_mint(
+          transaction.mint,
+          config.batch_policy,
+          "retire_channel",
+          1,
+        )
+      }
+      RetireRegistry | RetireCertificates -> {
+        let config = packet_config.reference(transaction, config_token)
+        expect config.state_policy == policy
+        expect [host] =
+          list.filter(
+            transaction.reference_inputs,
+            fn(input) {
+              assets.has_nft(
+                input.output.value,
+                config.host_policy,
+                host_state_token_name,
+              )
+            },
+          )
+        expect datum: HostStateDatum =
+          validator_utils.get_inline_datum(host.output)
+        expect datum.control.live_channels == 0
+        expect
+          if action == RetireRegistry {
+            assets.tokens(transaction.mint, policy) == dict.singleton(
+              registry_token_name,
+              -1,
+            )
+          } else {
+            assets.quantity_of(transaction.mint, policy, registry_token_name) == 0 && shutdown.burns_only(
+              transaction.mint,
+              policy,
+            )
+          }
+        expect
+          shutdown.authority(transaction, config.host_policy) == datum.deployer
+        shutdown.burns_script_tokens(transaction, policy)
+      }
       CreateRegistry -> {
         expect Some(_) = transaction.find_input(transaction.inputs, nonce)
         expect
@@ -158,14 +211,21 @@ validator minting_packet_lanes(
   ) {
     expect Some(input) = transaction.find_input(transaction.inputs, ref)
     expect Script(policy) = input.output.address.payment_credential
-    expect
-      auth.contain_auth_token(
-        input.output,
-        AuthToken { policy_id: policy, name: registry_token_name },
-      )
     expect Some(raw) = pairs.get_first(transaction.redeemers, Mint(policy))
-    expect CreateChannelLanes { .. }: IssueLanes = raw
-    True
+    expect action: IssueLanes = raw
+    when action is {
+      CreateChannelLanes { .. } ->
+        assets.has_nft(input.output.value, policy, registry_token_name)
+      RetireChannelLanes { channel_token } ->
+        assets.has_nft(
+          input.output.value,
+          policy,
+          packet_shutdown.certificate_name(channel_token),
+        )
+      RetireRegistry | RetireCertificates ->
+        shutdown.burns_script_tokens(transaction, policy)
+      _ -> False
+    }
   }
 
   else(_) {

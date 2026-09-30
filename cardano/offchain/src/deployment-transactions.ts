@@ -156,6 +156,7 @@ export type HostStateBootstrap = {
   encodedRedeemer: string;
   packetPlan: Pick<
     DeploymentPlan,
+    | "hostNft"
     | "packetConfig"
     | "packetState"
     | "packetBatch"
@@ -189,6 +190,7 @@ export function buildHostStateBootstrapTx(
         plan.packetGuard.hash,
         BigInt(plan.packetLaneCount),
         plan.traceRegistry.hash,
+        plan.hostNft.hash,
       ),
     }, { [plan.packetConfig.hash + fromText("ibc_packet_config")]: 1n })
     .pay.ToContract(plan.packetState.address, {

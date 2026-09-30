@@ -49,11 +49,15 @@ pub fn lane_token_name(
 ) -> ByteArray {
   expect valid_lane_count(count)
   expect lane >= 0 && lane < count
+  lane_token_prefix(port, channel)
+    |> bytearray.concat(bytearray.from_int_big_endian(lane, 4))
+    |> crypto.sha2_256
+}
+
+pub fn lane_token_prefix(port: ByteArray, channel: ByteArray) -> ByteArray {
   "cardano-ibc/packet-lane-token/v1"
     |> bytearray.concat(#[0])
     |> bytearray.concat(channel_identity(port, channel))
-    |> bytearray.concat(bytearray.from_int_big_endian(lane, 4))
-    |> crypto.sha2_256
 }
 
 pub fn sequencer_token_name(port: ByteArray, channel: ByteArray) -> ByteArray {

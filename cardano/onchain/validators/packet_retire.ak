@@ -1,8 +1,9 @@
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Transaction}
-use ibc/apps/transfer/packet_batch.{Consolidate, RetireEmpty}
+use ibc/apps/transfer/packet_batch.{Consolidate, RetireEmpty, RetireLanes}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/packet_config
+use ibc/core/ics_004/packet_shutdown
 use ibc/utils/validator_utils
 
 validator packet_retire(
@@ -23,12 +24,21 @@ validator packet_retire(
     expect authorized.channel_token.policy_id == channel_policy
     expect config.state_policy == lane_policy && config.lane_count == lane_count
     let op = authorized.operation
-    expect
-      when op is {
-        RetireEmpty { .. } | Consolidate { .. } -> True
-        _ -> False
-      }
-    packet_batch.validate_retirement(transaction, config.batch_policy, op)
+    if op == RetireLanes {
+      packet_shutdown.retire_lanes(
+        transaction,
+        config.state_policy,
+        config_token,
+        authorized.channel_token,
+      )
+    } else {
+      expect
+        when op is {
+          RetireEmpty { .. } | Consolidate { .. } -> True
+          _ -> False
+        }
+      packet_batch.validate_retirement(transaction, config.batch_policy, op)
+    }
   }
 
   else(_) {

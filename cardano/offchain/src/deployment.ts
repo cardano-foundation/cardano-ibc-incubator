@@ -870,6 +870,7 @@ export const createDeployment = async (
   });
   const deploymentInfo: DeploymentTemplate = {
     packetState: {
+      configuration: packetValidator(plan.packetConfig),
       operations: Object.fromEntries(
         Object.entries(plan.packetOperations).map((
           [name, validator],

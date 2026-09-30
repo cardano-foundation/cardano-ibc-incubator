@@ -971,6 +971,13 @@ type Tokens = "mock";
 
 export type DeploymentTemplate = {
   packetState: {
+    configuration: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo?: UTxO;
+    };
     operations: Record<
       string,
       {

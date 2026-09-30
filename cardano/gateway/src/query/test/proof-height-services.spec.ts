@@ -253,73 +253,75 @@ function makeDeps(lightClientMode = 'mithril') {
   };
 }
 
-describe('proof-bearing services with captured query heights', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    (decodeSpendChannelRedeemer as jest.Mock).mockReset();
-    (decodeIBCModuleRedeemer as jest.Mock).mockReset();
-    (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum());
-    (decodeConnectionDatum as jest.Mock).mockResolvedValue({
-      state: {
-        client_id: toHex('07-tendermint-0'),
-        versions: [],
-        state: 'Open',
-        delay_period: 0n,
-        counterparty: {
-          client_id: toHex('07-tendermint-1'),
-          connection_id: toHex('connection-2'),
-          prefix: { key_prefix: toHex('ibc') },
-        },
+function resetProofServiceMocks() {
+  jest.clearAllMocks();
+  (decodeSpendChannelRedeemer as jest.Mock).mockReset();
+  (decodeIBCModuleRedeemer as jest.Mock).mockReset();
+  (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum());
+  (decodeConnectionDatum as jest.Mock).mockResolvedValue({
+    state: {
+      client_id: toHex('07-tendermint-0'),
+      versions: [],
+      state: 'Open',
+      delay_period: 0n,
+      counterparty: {
+        client_id: toHex('07-tendermint-1'),
+        connection_id: toHex('connection-2'),
+        prefix: { key_prefix: toHex('ibc') },
       },
-    });
-    (decodeClientDatum as jest.Mock).mockResolvedValue({
-      token: {
-        policyId: CLIENT_POLICY_ID,
-        name: CLIENT_TOKEN_NAME,
-      },
-      state: {
-        clientState: {
-          latestHeight: {
-            revisionNumber: 0n,
-            revisionHeight: 77n,
-          },
-        },
-        consensusStates: new Map([
-          [
-            { revisionNumber: 0n, revisionHeight: 77n },
-            {
-              timestamp: 1_000n,
-              next_validators_hash: '11'.repeat(32),
-              root: { hash: '22'.repeat(32) },
-            },
-          ],
-        ]),
-        processedTimes: new Map([[{ revisionNumber: 0n, revisionHeight: 77n }, 2_000n]]),
-        processedHeights: new Map([[{ revisionNumber: 0n, revisionHeight: 77n }, 20n]]),
-      },
-    });
-    (normalizeClientStateFromDatum as jest.Mock).mockReturnValue(
-      ClientState.fromPartial({
-        chain_id: 'counterparty',
-        latest_height: {
-          revision_number: 0n,
-          revision_height: 77n,
-        },
-      }),
-    );
-    (normalizeConsensusStateFromDatum as jest.Mock).mockReturnValue(
-      ConsensusState.fromPartial({
-        timestamp: {
-          seconds: 1n,
-          nanos: 0,
-        },
-        root: {
-          hash: new Uint8Array([1]),
-        },
-        next_validators_hash: new Uint8Array([2]),
-      }),
-    );
+    },
   });
+  (decodeClientDatum as jest.Mock).mockResolvedValue({
+    token: {
+      policyId: CLIENT_POLICY_ID,
+      name: CLIENT_TOKEN_NAME,
+    },
+    state: {
+      clientState: {
+        latestHeight: {
+          revisionNumber: 0n,
+          revisionHeight: 77n,
+        },
+      },
+      consensusStates: new Map([
+        [
+          { revisionNumber: 0n, revisionHeight: 77n },
+          {
+            timestamp: 1_000n,
+            next_validators_hash: '11'.repeat(32),
+            root: { hash: '22'.repeat(32) },
+          },
+        ],
+      ]),
+      processedTimes: new Map([[{ revisionNumber: 0n, revisionHeight: 77n }, 2_000n]]),
+      processedHeights: new Map([[{ revisionNumber: 0n, revisionHeight: 77n }, 20n]]),
+    },
+  });
+  (normalizeClientStateFromDatum as jest.Mock).mockReturnValue(
+    ClientState.fromPartial({
+      chain_id: 'counterparty',
+      latest_height: {
+        revision_number: 0n,
+        revision_height: 77n,
+      },
+    }),
+  );
+  (normalizeConsensusStateFromDatum as jest.Mock).mockReturnValue(
+    ConsensusState.fromPartial({
+      timestamp: {
+        seconds: 1n,
+        nanos: 0,
+      },
+      root: {
+        hash: new Uint8Array([1]),
+      },
+      next_validators_hash: new Uint8Array([2]),
+    }),
+  );
+}
+
+describe('proof-bearing services with captured query heights', () => {
+  beforeEach(resetProofServiceMocks);
 
   it('serves channel proofs from the cached tree at the requested height', async () => {
     const deps = makeDeps();
@@ -864,12 +866,10 @@ describe('proof-bearing services with captured query heights', () => {
       async (rollback) => {
         const deps = makeDeps('stake-weighted-stability');
         const settled = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT);
-        const evidence = jest
-          .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
-          .mockResolvedValue({
-            anchorHeight: LATEST_ACCEPTED_HEIGHT,
-            anchorBlock: { hash: 'accepted-anchor' },
-          } as never);
+        const evidence = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight').mockResolvedValue({
+          anchorHeight: LATEST_ACCEPTED_HEIGHT,
+          anchorBlock: { hash: 'accepted-anchor' },
+        } as never);
         (decodeChannelDatum as jest.Mock).mockImplementationOnce(async () => {
           if (rollback)
             deps.mocks.historyService.findBlockByHeight.mockResolvedValue({

@@ -4,7 +4,7 @@ use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/apps/transfer/packet_batch.{
   Acknowledge, AuthorizedOperation, Consolidate, Prune, Receive, Reject,
-  RetireEmpty, SendBatch, Timeout, TimeoutOnClose,
+  RetireEmpty, RetireLanes, SendBatch, Timeout, TimeoutOnClose,
 }
 use ibc/utils/validator_utils
 
@@ -41,7 +41,7 @@ validator packet_lane_batch(
         Receive { .. } -> policies.receive
         Prune { .. } -> policies.prune
         TimeoutOnClose { .. } -> policies.timeout_on_close
-        RetireEmpty { .. } | Consolidate { .. } -> policies.retire
+        RetireEmpty { .. } | Consolidate { .. } | RetireLanes -> policies.retire
       }
     let funds_policy =
       when authorized.operation is {

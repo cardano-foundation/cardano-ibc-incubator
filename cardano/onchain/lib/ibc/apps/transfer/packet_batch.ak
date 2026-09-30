@@ -115,6 +115,7 @@ pub type BatchOperation {
     liquidity_refs: List<OutputReference>,
     proof_close: MerkleProof,
   }
+  RetireLanes
 }
 
 pub type AuthorizedOperation {

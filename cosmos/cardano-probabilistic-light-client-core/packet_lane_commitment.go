@@ -21,6 +21,7 @@ type packetLaneDatum struct {
 	Acknowledgements          cbor.RawMessage
 	MinimumReceiveProofHeight cbor.RawMessage
 	MaximumReceiveProofHeight cbor.RawMessage
+	Balances                  cbor.RawMessage
 }
 
 // ExtractPacketLaneRootFromAnchorBlock requires an already authenticated and

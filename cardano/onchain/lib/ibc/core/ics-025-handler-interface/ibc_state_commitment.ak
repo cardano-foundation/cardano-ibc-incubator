@@ -77,8 +77,7 @@ pub fn leaf_hash(key_hash: ByteArray, value_hash: ByteArray) -> ByteArray {
   if value_hash == empty_value_hash {
     empty_hash
   } else {
-    builtin.append_bytearray(#[0], key_hash)
-      |> builtin.append_bytearray(value_hash)
+    builtin.cons_bytearray(0, builtin.append_bytearray(key_hash, value_hash))
       |> builtin.sha2_256()
   }
 }
@@ -101,8 +100,7 @@ fn inner_hash_validated(left: ByteArray, right: ByteArray) -> ByteArray {
   if left == empty_hash && right == empty_hash {
     empty_hash
   } else {
-    builtin.append_bytearray(#[1], left)
-      |> builtin.append_bytearray(right)
+    builtin.cons_bytearray(1, builtin.append_bytearray(left, right))
       |> builtin.sha2_256()
   }
 }
@@ -199,20 +197,10 @@ fn updated_roots(
     expect bytearray.length(sibling) == hash_size_bytes
     let (next_old, next_new) =
       if path % 2 == 0 {
-        (hash_children(old, sibling), hash_children(new, sibling))
+        (inner_hash_validated(old, sibling), inner_hash_validated(new, sibling))
       } else {
-        (hash_children(sibling, old), hash_children(sibling, new))
+        (inner_hash_validated(sibling, old), inner_hash_validated(sibling, new))
       }
     updated_roots(path / 2, next_old, next_new, rest, depth + 1)
-  }
-}
-
-fn hash_children(left: ByteArray, right: ByteArray) -> ByteArray {
-  if left == empty_hash && right == empty_hash {
-    empty_hash
-  } else {
-    builtin.append_bytearray(#[1], left)
-      |> builtin.append_bytearray(right)
-      |> builtin.sha2_256()
   }
 }

@@ -1,6 +1,5 @@
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { PacketStateService, latestPacketProofHeight } from './packet-state.service';
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   QueryClientStateRequest,
@@ -105,19 +104,13 @@ import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@lucid-evolution/lucid';
-import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
-import {
-  decodeMintChannelRedeemer,
-  decodeSpendChannelRedeemer,
-  SpendChannelRedeemer,
-} from '../../shared/types/channel/channel-redeemer';
+import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import {
   decodeMintConnectionRedeemer,
   decodeSpendConnectionRedeemer,
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
-import { Packet } from '@shared/types/channel/packet';
 import {
   decodeMintClientRedeemer,
   findSpendClientRedeemer,
@@ -138,7 +131,6 @@ import type { GatewayEvent } from '../../tx/tx-events.service';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { getNanoseconds } from '../../shared/helpers/time';
 import { operationalCertificatePoolIdBytes } from '../../shared/helpers/ogmios';
 import { doubleToFraction } from '../../shared/helpers/number';
 import {
@@ -155,10 +147,8 @@ import {
 } from '@cardano-ibc/proto-types/build/ibc/applications/transfer/v1/query';
 import { Denom, Hop } from '@cardano-ibc/proto-types/build/ibc/applications/transfer/v1/token';
 import { DenomTraceService } from './denom-trace.service';
-import { convertHex2String } from '@shared/helpers/hex';
 import { HISTORY_SERVICE, HistoryBlock, HistoryService, HistoryTxEvidence } from './history.service';
 import {
-  resolveCurrentLiveHostStateTxHeight,
   assertProofContextHostState,
   resolveProofContextForQuery,
   resolveProofHeightForCurrentRoot,
@@ -172,7 +162,6 @@ import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.servic
 import { ProofQueryOptions } from '../helpers/query-height';
 import { BoundedCache } from '../../shared/helpers/bounded-cache';
 import { MetricsService } from '../../health/metrics.service';
-import { getHeightMapValue } from '../../shared/helpers/verify';
 import { validPagination } from '../helpers/helper';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
@@ -219,15 +208,11 @@ type PacketEventQuery = {
   eventType?: string;
 };
 
-const STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS = 40;
-const STABILITY_LATEST_HEIGHT_DELAY_MS = 2_000;
 const MAX_PROTO_UINT64 = (1n << 64n) - 1n;
 export const TX_REDEEMER_CACHE_MAX_ENTRIES = 1024;
 export const TX_REDEEMER_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const TX_REDEEMER_CACHE_METRIC = 'tx_redeemers';
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const consensusHeightKey = (height: Height): string =>
   `${height.revisionNumber.toString()}/${height.revisionHeight.toString()}`;
@@ -240,24 +225,6 @@ const compareConsensusHeights = (left: Height, right: Height): number => {
   return left.revisionHeight < right.revisionHeight ? -1 : 1;
 };
 
-function getPacketFromSpendChannelRedeemer(redeemer: SpendChannelRedeemer): Packet | undefined {
-  if (typeof redeemer === 'string') return undefined;
-  if ('RecvPacket' in redeemer) return redeemer.RecvPacket.packet;
-  if ('AcknowledgePacket' in redeemer) return redeemer.AcknowledgePacket.packet;
-  if ('TimeoutPacket' in redeemer) return redeemer.TimeoutPacket.packet;
-  if ('TimeoutOnClose' in redeemer) return redeemer.TimeoutOnClose.packet;
-  if ('SendPacket' in redeemer) return redeemer.SendPacket.packet;
-  return undefined;
-}
-
-function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes('Target point is too old') ||
-    message.includes('Failed to acquire requested point') ||
-    message.includes('stake-weighted stability currently supports only current-epoch anchors')
-  );
-}
 @Injectable()
 export class QueryService {
   private readonly txEvidenceCache: BoundedCache<string, Promise<HistoryTxEvidence>>;
@@ -841,7 +808,7 @@ export class QueryService {
     };
   }
 
-  async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
+  async latestHeight(_request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
     if (this.getLightClientMode() === 'stake-weighted-stability') {
       return this.latestCertifiedHeight();
     }
@@ -1265,10 +1232,10 @@ export class QueryService {
     }
     try {
       const deploymentConfig = this.configService.get('deployment');
-      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
 
-      const mintConnScriptHash = deploymentConfig.validators.mintConnectionStt.scriptHash;
+      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
       const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
+      const mintConnScriptHash = deploymentConfig.validators.mintConnectionStt.scriptHash;
 
       const connectionBaseToken = hostStateNFT;
       const channelBaseToken = hostStateNFT;
@@ -1442,7 +1409,7 @@ export class QueryService {
   private async _parseEventConnection(
     utxo: UtxoDto,
     tokenBase: AuthToken,
-    mintScriptHash: string,
+    _mintScriptHash: string,
   ): Promise<ResponseDeliverTx | null> {
     let connDatumDecoded: ConnectionDatum;
     try {
@@ -1453,7 +1420,6 @@ export class QueryService {
     const currentConnectionId = getConnectionIdByTokenName(utxo.assetsName, tokenBase, CONNECTION_TOKEN_PREFIX);
     const txsResult = normalizeTxsResultFromConnDatum(connDatumDecoded, currentConnectionId);
 
-    const spendAddress = this.configService.get('deployment').validators.spendConnection.address;
     const redeemers = await this.getTransactionRedeemers(utxo.txHash);
     redeemers
       .filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10)
@@ -1497,7 +1463,7 @@ export class QueryService {
   private async _parseEventChannel(
     utxo: UtxoDto,
     tokenBase: AuthToken,
-    mintScriptHash: string,
+    _mintScriptHash: string,
   ): Promise<ResponseDeliverTx | null> {
     let channelDatumDecoded: ChannelDatum;
     try {
@@ -1511,7 +1477,6 @@ export class QueryService {
 
     const txsResult = normalizeTxsResultFromChannelDatum(channelDatumDecoded, currentConnectionId, currentChannelId);
 
-    const spendAddress = this.configService.get('deployment').validators.spendChannel.address;
     let redeemers = await this.getTransactionRedeemers(utxo.txHash);
 
     redeemers = redeemers.filter((redeemer) => ![REDEEMER_EMPTY_DATA].includes(redeemer.data));
@@ -1542,7 +1507,6 @@ export class QueryService {
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_CONFIRM;
           if (spendRedeemer.hasOwnProperty('RecvPacket') || spendRedeemer.hasOwnProperty('SendPacket')) {
             // find redeemer module recv packet -> get packet ack
-            const spendTransferModuleAddress = this.configService.get('deployment').modules.transfer.address;
             const spendMockModuleAddress = this.configService.get('deployment').modules?.mock?.address;
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
@@ -1652,7 +1616,6 @@ export class QueryService {
   private async _parseEventClient(utxos: UtxoDto[]): Promise<ResponseDeliverTx[]> {
     const deploymentConfig = this.configService.get('deployment');
     const mintClientScriptHash = deploymentConfig.validators.mintClientStt.scriptHash;
-    const spendClientAddress = deploymentConfig.validators.spendClient.address;
     const tokenBase = deploymentConfig.hostStateNFT;
 
     const txsResults = await Promise.all(
@@ -1963,10 +1926,6 @@ export class QueryService {
         limit,
         page,
       } = request;
-      const deploymentConfig = this.configService.get('deployment');
-      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
-      const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
-      const spendAddress = deploymentConfig.validators.spendChannel.address;
       if (!srcChannelId?.startsWith(`${CHANNEL_ID_PREFIX}-`))
         throw new GrpcInvalidArgumentException(
           `Invalid argument: "packet_src_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,

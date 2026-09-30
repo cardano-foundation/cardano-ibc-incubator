@@ -121,6 +121,7 @@ export const buildChannelValidators = (
   mintPortPolicyId: string,
   verifyProofScriptHash: string,
   hostStateNftPolicyId: string,
+  packetConfigPolicy = "",
 ) => {
   const names = CHANNEL_OPERATION_NAMES;
   const load = (title: string, args: Data[]): PlannedValidator => {
@@ -141,6 +142,7 @@ export const buildChannelValidators = (
     referredScripts[name] = load(`spending_channel/${name}.${name}.mint`, args);
   }
   const base = load("spending_channel.spend_channel.spend", [
+    packetConfigPolicy,
     ...CHANNEL_OPERATION_NAMES.map((name) => referredScripts[name].hash),
     hostStateNftPolicyId,
   ]);
@@ -228,7 +230,8 @@ export const loadDeploymentPlan = async (
   const hostPolicy = hostNft.hash;
   const packetConfig = load("packet_config.mint_packet_config.mint", "inline", [
     inputs.hostStateNonce,
-  ], Data.Tuple([OutputReferenceSchema]));
+    hostPolicy,
+  ], Data.Tuple([OutputReferenceSchema, Data.Bytes()]));
   const packetConfigToken = {
     policy_id: packetConfig.hash,
     name: fromText("ibc_packet_config"),
@@ -387,6 +390,7 @@ export const loadDeploymentPlan = async (
     mintPort.hash,
     verifyProof.hash,
     hostPolicy,
+    packetConfig.hash,
   );
   validators.push(...Object.values(referredScripts));
   const spendChannel = registryPolicy

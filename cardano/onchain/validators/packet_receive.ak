@@ -1,6 +1,7 @@
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Transaction}
 use ibc/apps/transfer/packet_batch.{Receive}
+use ibc/apps/transfer/types/coin
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/packet_config
 use ibc/utils/validator_utils
@@ -25,6 +26,12 @@ validator packet_receive(
     expect config.state_policy == lane_policy && config.lane_count == lane_count
     expect Receive { packet, data, proof_height, proof, lane, liquidity_refs } =
       authorized.operation
+    expect
+      coin.receiver_chain_is_source(
+        packet.source_port,
+        packet.source_channel,
+        data.denom,
+      ) || packet_config.active(transaction, config.host_policy)
     let op = Receive { packet, data, proof_height, proof, lane, liquidity_refs }
     packet_batch.validate_receive(
       transaction,

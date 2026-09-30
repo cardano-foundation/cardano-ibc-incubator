@@ -51,7 +51,7 @@ export class PacketStateService {
     if (
       !(datum instanceof Constr) ||
       datum.index !== 0 ||
-      datum.fields.length !== 11 ||
+      datum.fields.length !== 12 ||
       toText(String(datum.fields[0])) !== port ||
       toText(String(datum.fields[1])) !== channel ||
       datum.fields[2] !== BigInt(lane) ||

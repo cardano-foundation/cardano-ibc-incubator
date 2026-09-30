@@ -1,5 +1,6 @@
 use aiken/collection/list
 use aiken/collection/pairs
+use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
@@ -22,6 +23,7 @@ pub type PacketLaneDatum {
   acknowledgements: Pairs<Int, ByteArray>,
   minimum_receive_proof_height: Height,
   maximum_receive_proof_height: Height,
+  balances: Pairs<ByteArray, Int>,
 }
 
 pub const max_entries_per_lane = 64
@@ -65,6 +67,7 @@ pub fn empty(
     acknowledgements: [],
     minimum_receive_proof_height: height_mod.zero_height(),
     maximum_receive_proof_height: height_mod.zero_height(),
+    balances: [],
   }
 }
 
@@ -125,13 +128,7 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
       let commitment = packet_mod.commit_packet(packet)
       PacketLaneDatum {
         ..old,
-        root: tree.apply_update(
-          old.root,
-          commitment_key,
-          "",
-          commitment,
-          siblings,
-        ),
+        root: update_root(old.root, commitment_key, "", commitment, siblings),
         commitments: pairs.insert_by_ascending_key(
           old.commitments,
           sequence,
@@ -153,10 +150,10 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
       expect !pairs.has_key(old.acknowledgements, sequence)
       expect [receipt_siblings, acknowledgement_siblings] = update.siblings
       let receipt_root =
-        tree.apply_update(old.root, receipt_key, "", #"01", receipt_siblings)
+        update_root(old.root, receipt_key, "", #"01", receipt_siblings)
       PacketLaneDatum {
         ..old,
-        root: tree.apply_update(
+        root: update_root(
           receipt_root,
           acknowledgement_key,
           "",
@@ -189,13 +186,7 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
       expect [siblings] = update.siblings
       PacketLaneDatum {
         ..old,
-        root: tree.apply_update(
-          old.root,
-          commitment_key,
-          commitment,
-          "",
-          siblings,
-        ),
+        root: update_root(old.root, commitment_key, commitment, "", siblings),
         commitments: pairs.delete_first(old.commitments, sequence),
       }
     }
@@ -211,10 +202,10 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
         pairs.get_first(old.acknowledgements, sequence)
       expect [receipt_siblings, acknowledgement_siblings] = update.siblings
       let receipt_root =
-        tree.apply_update(old.root, receipt_key, #"01", "", receipt_siblings)
+        update_root(old.root, receipt_key, #"01", "", receipt_siblings)
       PacketLaneDatum {
         ..old,
-        root: tree.apply_update(
+        root: update_root(
           receipt_root,
           acknowledgement_key,
           acknowledgement,
@@ -226,5 +217,27 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
         minimum_receive_proof_height: proof_height,
       }
     }
+  }
+}
+
+// Empty lanes have a unique all-zero witness. Validate it once and compute
+// only the new root. Nonempty lanes retain the general two-root verification.
+fn update_root(
+  old_root: ByteArray,
+  key: ByteArray,
+  old_value: ByteArray,
+  new_value: ByteArray,
+  siblings: List<ByteArray>,
+) -> ByteArray {
+  if old_root == tree.empty_hash {
+    expect old_value == ""
+    expect list.all(siblings, fn(sibling) { sibling == tree.empty_hash })
+    tree.compute_root(
+      key,
+      tree.leaf_hash(crypto.sha2_256(key), tree.value_hash(new_value)),
+      siblings,
+    )
+  } else {
+    tree.apply_update(old_root, key, old_value, new_value, siblings)
   }
 }
