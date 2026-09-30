@@ -19,6 +19,7 @@ import {
 import {
   buildLiquidityRetirement,
   buildPacketAcknowledgement,
+  buildPacketBalanceCompaction,
   buildPacketPrune,
   buildPacketReceive,
   buildPacketRejection,
@@ -29,6 +30,7 @@ import {
   buildTransferIntentCancellation,
   encode,
   record,
+  selectPacketLiquidity,
   sha256,
   variant,
   voucherTokenName,
@@ -280,7 +282,95 @@ Deno.test("authenticated timeout drains liquidity, burns its identity and refund
   );
   await (await signMeasured(wallet, batch.tx, "timeout deposit")).submit();
   f.emulator.awaitBlock();
-  const inputs = await wallet.utxosAt(f.deployment.batchAddress);
+  const genuine = (await wallet.utxosAt(f.deployment.batchAddress))[0];
+  const counterfeit = Data.from(genuine.datum!) as Constr<Data>;
+  f.seed(
+    f.deployment.batchAddress,
+    { lovelace: 10_000_000n },
+    encode(counterfeit),
+  );
+  const underfunded = Data.from(genuine.datum!) as Constr<Data>;
+  underfunded.fields[6] = 100_000_000n;
+  f.seed(
+    f.deployment.batchAddress,
+    { lovelace: 1_000_000n },
+    encode(underfunded),
+  );
+  // Even a candidate claiming the genuine NFT must back its declared principal.
+  assertEquals(
+    selectPacketLiquidity(
+      [
+        { ...genuine, datum: encode(underfunded) },
+        genuine,
+      ],
+      f.deployment,
+      "transfer",
+      "channel-0",
+      fromText("lovelace"),
+      2_000_000n,
+      1n,
+    ),
+    [genuine],
+  );
+  const malformed = Data.from(genuine.datum!) as Constr<Data>;
+  malformed.fields[0] = record(1n);
+  f.seed(
+    f.deployment.batchAddress,
+    { lovelace: 10_000_000n },
+    encode(malformed),
+  );
+  for (
+    const mutate of [
+      (datum: Constr<Data>) => {
+        datum.index = 1;
+      },
+      (datum: Constr<Data>) => {
+        datum.fields[5] = record("ff", -1n);
+      },
+      (datum: Constr<Data>) => {
+        datum.fields[5] = 42n;
+      },
+      (datum: Constr<Data>) => {
+        datum.fields[6] = "10";
+      },
+      (datum: Constr<Data>) => {
+        datum.fields[7] = record(record(1n), variant(1));
+      },
+      (datum: Constr<Data>) => {
+        datum.fields[4] = "ab";
+      },
+    ]
+  ) {
+    const invalid = Data.from(genuine.datum!) as Constr<Data>;
+    mutate(invalid);
+    assertEquals(
+      selectPacketLiquidity(
+        [
+          { ...genuine, datum: encode(invalid) },
+          genuine,
+        ],
+        f.deployment,
+        "transfer",
+        "channel-0",
+        fromText("lovelace"),
+        2_000_000n,
+        1n,
+      ),
+      [genuine],
+    );
+  }
+  const candidates = await wallet.utxosAt(f.deployment.batchAddress);
+  // The untrusted outputs are deliberately ahead of the genuine deposit.
+  const inputs = selectPacketLiquidity(
+    candidates.filter((u) => u.txHash !== genuine.txHash).concat(genuine),
+    f.deployment,
+    "transfer",
+    "channel-0",
+    fromText("lovelace"),
+    2_000_000n,
+    1n,
+  );
+  assertEquals(inputs, [genuine]);
   // Supply an authenticated later remote checkpoint as test pre-state. Client
   // update validation is covered separately, this test executes timeout proof
   // verification and release, not the remote light-client update transaction.
@@ -324,7 +414,7 @@ Deno.test("authenticated timeout drains liquidity, burns its identity and refund
   );
   await signed.submit();
   f.emulator.awaitBlock();
-  assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+  assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 3);
   const token = Object.keys(inputs[0].assets).find((unit) =>
     unit !== "lovelace"
   )!;
@@ -924,4 +1014,224 @@ Deno.test("timeout on close proves closure and receipt absence at the same authe
   await signed.submit();
   f.emulator.awaitBlock();
   assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+});
+
+Deno.test("repeated multi-asset round trips reclaim full accounting maps across different lanes", async () => {
+  const f = await packetLaneFixture(2);
+  const wallet = await f.wallet();
+  const address = await wallet.wallet().address();
+  const receiver = getAddressDetails(address).paymentCredential!.hash;
+  const sizes: number[] = [];
+  for (let index = 0; index < 24; index++) {
+    const unit = "aa".repeat(28) + index.toString(16).padStart(2, "0");
+    f.seed(address, { lovelace: 5_000_000n, [unit]: 10n }, Data.void());
+    const timeout = BigInt(f.emulator.now() + 3_600_000) * 1_000_000n;
+    const admission = await buildTransferIntent(wallet, f.deployment, {
+      assetUnit: unit,
+      amount: 10n,
+      receiver: "cosmos1receiver",
+      timeoutTimestamp: timeout,
+    });
+    const admitted =
+      await (await (await admission.complete()).sign.withWallet().complete())
+        .submit();
+    f.emulator.awaitBlock();
+    const intents = (await wallet.utxosAt(f.deployment.guardAddress)).filter((
+      u,
+    ) => u.txHash === admitted);
+    const send = await buildPacketSendBatch(
+      wallet,
+      f.deployment,
+      intents,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, send.tx, `asset ${index} send`)).submit();
+    f.emulator.awaitBlock();
+    const packet = send.packets[0];
+    const sequence = packet.fields[0] as bigint;
+    const ackProof = await membershipProof(
+      fromText(`acks/ports/transfer/channels/channel-7/sequences/${sequence}`),
+      await sha256(fromText('{"result":"AQ=="}')),
+    );
+    const ackHeight = record(1n, 100n + BigInt(index) * 3n);
+    checkpoint(f, ackHeight, ackProof.root);
+    const ack = await buildPacketAcknowledgement(
+      wallet,
+      f.deployment,
+      packet,
+      ackHeight,
+      ackProof.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, ack.tx, `asset ${index} acknowledgement`))
+      .submit();
+    f.emulator.awaitBlock();
+    const remoteSequence = sequence + 1n;
+    const payload = fromText(
+      JSON.stringify({
+        denom: `transfer/channel-7/${unit}`,
+        amount: "10",
+        sender: "cosmos1sender",
+        receiver,
+        memo: "",
+      }),
+    );
+    const returning = record(
+      remoteSequence,
+      fromText("transfer"),
+      fromText("channel-7"),
+      fromText("transfer"),
+      fromText("channel-0"),
+      payload,
+      record(0n, 0n),
+      timeout,
+    );
+    const proof = await membershipProof(
+      fromText(
+        `commitments/ports/transfer/channels/channel-7/sequences/${remoteSequence}`,
+      ),
+      await sha256(
+        timeout.toString(16).padStart(16, "0") + "00".repeat(16) +
+          await sha256(payload),
+      ),
+    );
+    const receiveHeight = record(1n, 101n + BigInt(index) * 3n);
+    checkpoint(f, receiveHeight, proof.root);
+    const liquidity = selectPacketLiquidity(
+      await wallet.utxosAt(f.deployment.batchAddress),
+      f.deployment,
+      "transfer",
+      "channel-0",
+      unit,
+      10n,
+      remoteSequence,
+    );
+    const receive = await buildPacketReceive(
+      wallet,
+      f.deployment,
+      returning,
+      receiveHeight,
+      proof.proof,
+      liquidity,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, receive.tx, `asset ${index} return`))
+      .submit();
+    f.emulator.awaitBlock();
+    const absent = await absenceProof(
+      fromText(
+        `commitments/ports/transfer/channels/channel-7/sequences/${remoteSequence}`,
+      ),
+    );
+    const pruneHeight = record(1n, 102n + BigInt(index) * 3n);
+    checkpoint(f, pruneHeight, absent.root);
+    const prune = await buildPacketPrune(
+      wallet,
+      f.deployment,
+      remoteSequence,
+      pruneHeight,
+      absent.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, prune.tx, `asset ${index} prune`))
+      .submit();
+    f.emulator.awaitBlock();
+    const returned = await wallet.utxosAt(
+      credentialToAddress("Custom", { type: "Key", hash: receiver }),
+    );
+    assertEquals(
+      returned.reduce((sum, input) => sum + (input.assets[unit] ?? 0n), 0n),
+      10n,
+    );
+    if ((index + 1) % 8 === 0) {
+      const compact = await buildPacketBalanceCompaction(
+        wallet,
+        f.deployment,
+        0,
+        1,
+      );
+      for (const input of compact.inputs) {
+        const old = Data.from(input.datum!) as Constr<Data>;
+        assertEquals((old.fields[11] as Map<Data, Data>).size, 8);
+        assertEquals((old.fields[6] as Map<Data, Data>).size, 0);
+        assertEquals(old.fields[7], []);
+        assertEquals((old.fields[8] as Map<Data, Data>).size, 0);
+      }
+      const signed = await signMeasured(
+        wallet,
+        compact.tx,
+        `full accounting compaction ${index}`,
+      );
+      sizes.push(signed.toCBOR().length / 2);
+      await signed.submit();
+      f.emulator.awaitBlock();
+      for (const datum of compact.datums) {
+        assertEquals((datum.fields[11] as Map<Data, Data>).size, 0);
+      }
+      await assertRejects(() => signed.submit());
+    }
+  }
+  assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+  assert(
+    Math.max(...sizes) - Math.min(...sizes) < 128,
+    "maintenance size must not grow with historical assets",
+  );
+});
+
+Deno.test("full accounting maps can swap assets while preserving pending packets within ledger budgets", async () => {
+  const f = await packetLaneFixture(2);
+  const wallet = await f.wallet();
+  const address = await wallet.wallet().address();
+  const leftDenoms: string[] = [];
+  for (let index = 0; index < 16; index++) {
+    const unit = "bb".repeat(28) + index.toString(16).padStart(2, "0");
+    if (index % 2 === 0) leftDenoms.push(unit);
+    f.seed(address, { lovelace: 5_000_000n, [unit]: 10n }, Data.void());
+    const admission = await buildTransferIntent(wallet, f.deployment, {
+      assetUnit: unit,
+      amount: 10n,
+      receiver: "cosmos1receiver",
+      timeoutTimestamp: BigInt(f.emulator.now() + 3_600_000) * 1_000_000n,
+    });
+    const admitted =
+      await (await (await admission.complete()).sign.withWallet().complete())
+        .submit();
+    f.emulator.awaitBlock();
+    const intents = (await wallet.utxosAt(f.deployment.guardAddress)).filter((
+      u,
+    ) => u.txHash === admitted);
+    const send = await buildPacketSendBatch(
+      wallet,
+      f.deployment,
+      intents,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, send.tx, `full-map send ${index}`))
+      .submit();
+    f.emulator.awaitBlock();
+  }
+  const compact = await buildPacketBalanceCompaction(
+    wallet,
+    f.deployment,
+    0,
+    1,
+    leftDenoms,
+  );
+  const old = compact.inputs.map((input) =>
+    Data.from(input.datum!) as Constr<Data>
+  );
+  for (const [index, datum] of compact.datums.entries()) {
+    assertEquals((datum.fields[11] as Map<Data, Data>).size, 8);
+    assertEquals(datum.fields[11], old[1 - index].fields[11]);
+    assertEquals(datum.fields.slice(5, 11), old[index].fields.slice(5, 11));
+    assertEquals((datum.fields[6] as Map<Data, Data>).size, 8);
+  }
+  await (await signMeasured(wallet, compact.tx, "full-map redistribution"))
+    .submit();
+  f.emulator.awaitBlock();
 });

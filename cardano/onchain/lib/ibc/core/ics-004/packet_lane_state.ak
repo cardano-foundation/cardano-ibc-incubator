@@ -2,6 +2,7 @@ use aiken/collection/list
 use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/auth.{AuthToken}
+use ibc/core/ics_004/packet_balances
 use ibc/core/ics_004/packet_lane_datum.{LaneUpdate, PacketLaneDatum}
 use ibc/core/ics_004/packet_lanes
 use ibc/utils/validator_utils
@@ -59,5 +60,72 @@ pub fn validate_transition_with_balances(
     )
   expect new: PacketLaneDatum = validator_utils.get_inline_datum(output)
   let expected = packet_lane_datum.apply_updates(old, updates)
-  new == PacketLaneDatum { ..expected, balances: update_balances(old) }
+  let balances = update_balances(old)
+  packet_balances.valid(balances) && new == PacketLaneDatum {
+    ..expected,
+    balances,
+  }
+}
+
+/// Both independently authenticated lanes are spent. Their packet state and ADA
+/// reserves are preserved, and each asset's combined obligation is conserved.
+pub fn compact_balances(
+  transaction: Transaction,
+  spent_ref: OutputReference,
+  peer_ref: OutputReference,
+  lane_policy: PolicyId,
+) -> Bool {
+  expect spent_ref != peer_ref
+  let (old, new) = balance_continuation(transaction, spent_ref, lane_policy)
+  let (peer, next_peer) =
+    balance_continuation(transaction, peer_ref, lane_policy)
+  expect old.port_id == peer.port_id && old.channel_id == peer.channel_id
+  expect old.lane_count == peer.lane_count && old.lane != peer.lane
+  packet_balances.conserved(
+    old.balances,
+    peer.balances,
+    new.balances,
+    next_peer.balances,
+  )
+}
+
+fn balance_continuation(
+  transaction: Transaction,
+  ref: OutputReference,
+  lane_policy: PolicyId,
+) -> (PacketLaneDatum, PacketLaneDatum) {
+  expect Some(input) = transaction.find_input(transaction.inputs, ref)
+  expect old: PacketLaneDatum = validator_utils.get_inline_datum(input.output)
+  let token =
+    AuthToken {
+      policy_id: lane_policy,
+      name: packet_lanes.lane_token_name(
+        old.port_id,
+        old.channel_id,
+        old.lane,
+        old.lane_count,
+      ),
+    }
+  expect auth.contain_auth_token(input.output, token)
+  expect [_] =
+    list.filter(
+      transaction.inputs,
+      fn(candidate) { auth.contain_auth_token(candidate.output, token) },
+    )
+  expect assets.quantity_of(transaction.mint, token.policy_id, token.name) == 0
+  let output =
+    validator_utils.find_unique_continuation_output(
+      input.output,
+      transaction.outputs,
+      token,
+    )
+  expect output.value == input.output.value
+  expect new: PacketLaneDatum = validator_utils.get_inline_datum(output)
+  expect
+    new == PacketLaneDatum {
+      ..old,
+      version: old.version + 1,
+      balances: new.balances,
+    }
+  (old, new)
 }

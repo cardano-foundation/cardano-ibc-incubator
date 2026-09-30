@@ -32,6 +32,16 @@ export interface PacketLaneDeployment {
     client: UTxO;
     scripts: UTxO[];
 }
+export declare const MAX_LANE_BALANCES = 8;
+/** Cancel completed cross-lane obligations, or redistribute keys to admit a return.
+ * Only these two lanes are spent. Packet roots, replay state and reserves are preserved.
+ * leftDenoms can place a returning asset in its receive lane even when both maps are full.
+ */
+export declare function buildPacketBalanceCompaction(lucid: LucidEvolution, deployment: PacketLaneDeployment, leftLane: number, rightLane: number, leftDenoms?: string[]): Promise<{
+    tx: import("@lucid-evolution/lucid").TxBuilder;
+    inputs: (import("@lucid-evolution/core-types").OutRef & import("@lucid-evolution/core-types").TxOutput)[];
+    datums: Constr<Data>[];
+}>;
 export interface FundedTransfer {
     amount: bigint;
     receiver: string;
@@ -90,4 +100,6 @@ export declare const buildPacketTimeoutOnClose: (lucid: LucidEvolution, deployme
 }>;
 /** Admission is permissionless, so batch discovery must reject unfunded or malformed datums. */
 export declare function usableTransferIntent(input: UTxO, deployment: PacketLaneDeployment, validTo: number): boolean;
+/** Script addresses accept arbitrary deposits. Authenticate before selecting funds. */
+export declare function selectPacketLiquidity(inputs: UTxO[], deployment: PacketLaneDeployment, port: string, channel: string, denom: string, amount: bigint, sequence: bigint): UTxO[];
 export {};

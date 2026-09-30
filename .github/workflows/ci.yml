@@ -545,8 +545,8 @@ jobs:
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
-    # Channel fuzzing and shutdown checks can take more than 20 minutes.
-    timeout-minutes: 45
+    # Includes signed multi-asset accounting histories as well as channel and shutdown fuzzing.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout

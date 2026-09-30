@@ -214,6 +214,23 @@ export interface BuildPacketBatchResponse {
   intent_tx_hashes: string[];
   included_tx_hash: string;
 }
+/**
+ * @name CompactPacketBalancesRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.CompactPacketBalancesRequest
+ */
+export interface CompactPacketBalancesRequest {
+  signer: string;
+  port_id: string;
+  channel_id: string;
+  left_lane: number;
+  right_lane: number;
+  /**
+   * Optional full denominations to retain on the left. Other keys move right.
+   * When empty, the builder divides the net balances in canonical key order.
+   */
+  left_denoms: string[];
+}
 function createBaseBuildHostStateHeartbeatRequest(): BuildHostStateHeartbeatRequest {
   return {
     signer: "",
@@ -1201,6 +1218,113 @@ export const BuildPacketBatchResponse = {
     }
     message.intent_tx_hashes = object.intent_tx_hashes?.map((e) => e) || [];
     message.included_tx_hash = object.included_tx_hash ?? "";
+    return message;
+  },
+};
+function createBaseCompactPacketBalancesRequest(): CompactPacketBalancesRequest {
+  return {
+    signer: "",
+    port_id: "",
+    channel_id: "",
+    left_lane: 0,
+    right_lane: 0,
+    left_denoms: [],
+  };
+}
+/**
+ * @name CompactPacketBalancesRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.CompactPacketBalancesRequest
+ */
+export const CompactPacketBalancesRequest = {
+  typeUrl: "/ibc.cardano.v1.CompactPacketBalancesRequest",
+  encode(message: CompactPacketBalancesRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.signer !== "") {
+      writer.uint32(10).string(message.signer);
+    }
+    if (message.port_id !== "") {
+      writer.uint32(18).string(message.port_id);
+    }
+    if (message.channel_id !== "") {
+      writer.uint32(26).string(message.channel_id);
+    }
+    if (message.left_lane !== 0) {
+      writer.uint32(32).uint32(message.left_lane);
+    }
+    if (message.right_lane !== 0) {
+      writer.uint32(40).uint32(message.right_lane);
+    }
+    for (const v of message.left_denoms) {
+      writer.uint32(50).string(v!);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): CompactPacketBalancesRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCompactPacketBalancesRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.signer = reader.string();
+          break;
+        case 2:
+          message.port_id = reader.string();
+          break;
+        case 3:
+          message.channel_id = reader.string();
+          break;
+        case 4:
+          message.left_lane = reader.uint32();
+          break;
+        case 5:
+          message.right_lane = reader.uint32();
+          break;
+        case 6:
+          message.left_denoms.push(reader.string());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): CompactPacketBalancesRequest {
+    const obj = createBaseCompactPacketBalancesRequest();
+    if (isSet(object.signer)) obj.signer = String(object.signer);
+    if (isSet(object.port_id)) obj.port_id = String(object.port_id);
+    if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
+    if (isSet(object.left_lane)) obj.left_lane = Number(object.left_lane);
+    if (isSet(object.right_lane)) obj.right_lane = Number(object.right_lane);
+    if (Array.isArray(object?.left_denoms)) obj.left_denoms = object.left_denoms.map((e: any) => String(e));
+    return obj;
+  },
+  toJSON(message: CompactPacketBalancesRequest): unknown {
+    const obj: any = {};
+    message.signer !== undefined && (obj.signer = message.signer);
+    message.port_id !== undefined && (obj.port_id = message.port_id);
+    message.channel_id !== undefined && (obj.channel_id = message.channel_id);
+    message.left_lane !== undefined && (obj.left_lane = Math.round(message.left_lane));
+    message.right_lane !== undefined && (obj.right_lane = Math.round(message.right_lane));
+    if (message.left_denoms) {
+      obj.left_denoms = message.left_denoms.map((e) => e);
+    } else {
+      obj.left_denoms = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<CompactPacketBalancesRequest>, I>>(
+    object: I,
+  ): CompactPacketBalancesRequest {
+    const message = createBaseCompactPacketBalancesRequest();
+    message.signer = object.signer ?? "";
+    message.port_id = object.port_id ?? "";
+    message.channel_id = object.channel_id ?? "";
+    message.left_lane = object.left_lane ?? 0;
+    message.right_lane = object.right_lane ?? 0;
+    message.left_denoms = object.left_denoms?.map((e) => e) || [];
     return message;
   },
 };

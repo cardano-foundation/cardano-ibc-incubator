@@ -18,6 +18,7 @@ pub type GuardAction {
   Sequence
   Lane
   Retire
+  CompactBalances { peer_ref: OutputReference }
 }
 
 validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
@@ -28,6 +29,13 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
     transaction: Transaction,
   ) {
     when action is {
+      CompactBalances { peer_ref } ->
+        packet_lane_state.compact_balances(
+          transaction,
+          ref,
+          peer_ref,
+          lane_policy,
+        )
       Retire -> {
         let input = packet_batch.input_at(transaction, ref)
         expect assets.tokens(input.output.value, lane_policy) != dict.empty

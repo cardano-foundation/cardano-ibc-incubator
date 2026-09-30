@@ -15,9 +15,11 @@ import type { Constr, Data, Network, TxBuilder, UTxO } from '@lucid-evolution/lu
 import {
   buildTransferIntent,
   buildPacketSendBatch,
+  buildPacketBalanceCompaction,
   buildPacketLaneInitialization,
   buildPacketPrune,
   usableTransferIntent,
+  selectPacketLiquidity,
   buildPacketAcknowledgement,
   buildPacketTimeout,
   buildPacketTimeoutOnClose,
@@ -323,6 +325,31 @@ export class PacketLaneService {
     );
   }
 
+  async compactBalances(
+    request: import('@cardano-ibc/proto-types/build/ibc/cardano/v1/tx').CompactPacketBalancesRequest,
+  ) {
+    const leftDenoms = request.left_denoms ?? [];
+    if (request.port_id !== 'transfer' || leftDenoms.length > 8)
+      throw new Error('Invalid packet accounting compaction request');
+    const deployment = await this.deployment(request.channel_id);
+    return {
+      unsigned_tx: await this.complete(
+        request.signer,
+        'compactPacketBalances',
+        async () =>
+          (
+            await buildPacketBalanceCompaction(
+              this.lucid.lucid,
+              deployment,
+              request.left_lane ?? 0,
+              request.right_lane ?? 0,
+              leftDenoms.length ? leftDenoms : undefined,
+            )
+          ).tx,
+      ),
+    };
+  }
+
   private async liquidity(
     deployment: PacketLaneDeployment,
     port: string,
@@ -331,38 +358,15 @@ export class PacketLaneService {
     amount: bigint,
     sequence: bigint,
   ) {
-    const { Data, Constr, toText } = this.lucid.LucidImporter;
-    const candidates = (await this.lucid.lucid.utxosAt(deployment.batchAddress))
-      .filter((input) => {
-        if (!input.datum) return false;
-        let datum: Data;
-        try {
-          datum = Data.from(input.datum);
-        } catch {
-          return false;
-        }
-        return (
-          datum instanceof Constr &&
-          datum.fields.length === 8 &&
-          toText(String(datum.fields[0])) === port &&
-          toText(String(datum.fields[1])) === channel &&
-          toText(String(datum.fields[2])) === denom &&
-          (datum.fields[6] as bigint) > 0n
-        );
-      })
-      .sort((a, b) => a.txHash.localeCompare(b.txHash) || a.outputIndex - b.outputIndex);
-    const selected: UTxO[] = [];
-    let total = 0n;
-    // Different packets start at different deposits in the same included view.
-    // A competing spend still requires a fresh selection after inclusion.
-    const start = candidates.length ? Number((sequence - 1n) % BigInt(candidates.length)) : 0;
-    for (const input of [...candidates.slice(start), ...candidates.slice(0, start)]) {
-      if (total >= amount || selected.length === 5) break;
-      selected.push(input);
-      total += (Data.from(input.datum!) as Constr<Data>).fields[6] as bigint;
-    }
-    if (total < amount) throw new Error('Insufficient liquidity within the transaction input limit');
-    return selected;
+    return selectPacketLiquidity(
+      await this.lucid.lucid.utxosAt(deployment.batchAddress),
+      deployment,
+      port,
+      channel,
+      denom,
+      amount,
+      sequence,
+    );
   }
 
   async prune(request: import('@cardano-ibc/proto-types/build/ibc/cardano/v1/tx').MsgPrunePacketHistory) {

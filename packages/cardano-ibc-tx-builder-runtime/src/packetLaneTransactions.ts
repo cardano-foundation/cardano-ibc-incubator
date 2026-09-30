@@ -1,3 +1,4 @@
+import { sha256 as hash256 } from "@noble/hashes/sha256";
 import { blake2b } from "@noble/hashes/blake2b";
 import {
   Constr,
@@ -74,13 +75,83 @@ const operationNames = [
   "timeout_on_close",
 ];
 
+export const MAX_LANE_BALANCES = 8;
+
+/** Cancel completed cross-lane obligations, or redistribute keys to admit a return.
+ * Only these two lanes are spent. Packet roots, replay state and reserves are preserved.
+ * leftDenoms can place a returning asset in its receive lane even when both maps are full.
+ */
+export async function buildPacketBalanceCompaction(
+  lucid: LucidEvolution,
+  deployment: PacketLaneDeployment,
+  leftLane: number,
+  rightLane: number,
+  leftDenoms?: string[],
+) {
+  if (leftLane === rightLane) {
+    throw new Error("Compaction requires different lanes");
+  }
+  const { port, channelId } = channelIdentity(deployment);
+  const inputs = await Promise.all(
+    [leftLane, rightLane].map((lane) =>
+      lucid.utxoByUnit(
+        deployment.statePolicy +
+          packetLaneTokenName(port, channelId, lane, deployment.laneCount),
+      )
+    ),
+  );
+  const datums = inputs.map((input) => copy(decode(input)));
+  const totals = new Map<string, bigint>();
+  for (const datum of datums) {
+    for (const [key, amount] of datum.fields[11] as Map<string, bigint>) {
+      totals.set(key, (totals.get(key) ?? 0n) + amount);
+    }
+  }
+  const entries = [...totals].filter(([, amount]) => amount !== 0n)
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  const preferred = leftDenoms?.map((denom) =>
+    toHex(hash256(new TextEncoder().encode(denom)))
+  );
+  const leftKeys = new Set(
+    preferred ?? entries.slice(0, MAX_LANE_BALANCES).map(([key]) => key),
+  );
+  for (const [i, datum] of datums.entries()) {
+    const balances = new Map(
+      entries.filter(([key]) => leftKeys.has(key) === (i === 0)),
+    );
+    if (balances.size > MAX_LANE_BALANCES) {
+      throw new Error("Redistribution exceeds lane accounting capacity");
+    }
+    datum.fields[11] = balances;
+    datum.fields[4] = (datum.fields[4] as bigint) + 1n;
+  }
+  let tx = lucid.newTx().readFrom(
+    deployment.scripts.filter((u) => u.scriptRef),
+  );
+  for (const [i, input] of inputs.entries()) {
+    tx = tx.collectFrom([input], encode(variant(5, outRef(inputs[1 - i]))))
+      .pay.ToContract(input.address, {
+        kind: "inline",
+        value: encode(datums[i]),
+      }, input.assets);
+  }
+  return { tx, inputs, datums };
+}
+
 function addLaneBalance(datum: Constr<Data>, denom: string, delta: bigint) {
   const balances = datum.fields[11] as Map<string, bigint>;
-  const key = fromText(denom);
+  const key = toHex(hash256(new TextEncoder().encode(denom)));
   const amount = (balances.get(key) ?? 0n) + delta;
   if (amount === 0n) balances.delete(key);
   else balances.set(key, amount);
-  datum.fields[11] = new Map([...balances].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+  if (balances.size > MAX_LANE_BALANCES) {
+    throw new Error(
+      "Packet lane accounting is full. Compact or redistribute balances before retrying.",
+    );
+  }
+  datum.fields[11] = new Map(
+    [...balances].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
+  );
 }
 
 async function authorizeOperation(
@@ -451,7 +522,12 @@ export async function buildPacketSendBatch(
     lane.tree.set(key, commitment);
     lane.updates.push(record(variant(0, packet), [siblings]));
     (lane.datum.fields[6] as Map<bigint, string>).set(sequence, commitment);
-    addLaneBalance(lane.datum, data.denom, BigInt(data.amount) * (data.denom.startsWith(`${port}/${channelId}/`) ? -1n : 1n));
+    addLaneBalance(
+      lane.datum,
+      data.denom,
+      BigInt(data.amount) *
+        (data.denom.startsWith(`${port}/${channelId}/`) ? -1n : 1n),
+    );
     if (data.denom.startsWith(`${port}/${channelId}/`)) {
       const unit = localAssetUnit(data.denom, deployment);
       mint[unit] = (mint[unit] ?? 0n) - BigInt(data.amount);
@@ -624,7 +700,12 @@ async function buildPacketCompletion(
   };
   if (liquidity) {
     const data = JSON.parse(toText(String(packet.fields[5])));
-    addLaneBalance(datum, data.denom, BigInt(data.amount) * (data.denom.startsWith(`${port}/${channelId}/`) ? 1n : -1n));
+    addLaneBalance(
+      datum,
+      data.denom,
+      BigInt(data.amount) *
+        (data.denom.startsWith(`${port}/${channelId}/`) ? 1n : -1n),
+    );
   }
   let tx = lucid.newTx().readFrom([
     deployment.channel,
@@ -1062,7 +1143,13 @@ export async function buildPacketReceive(
     toText(String(packet.fields[2]))
   }/`;
 
-  addLaneBalance(datum, data.denom.startsWith(prefix) ? data.denom.slice(prefix.length) : `${port}/${channelId}/${data.denom}`, BigInt(data.amount) * (data.denom.startsWith(prefix) ? -1n : 1n));
+  addLaneBalance(
+    datum,
+    data.denom.startsWith(prefix)
+      ? data.denom.slice(prefix.length)
+      : `${port}/${channelId}/${data.denom}`,
+    BigInt(data.amount) * (data.denom.startsWith(prefix) ? -1n : 1n),
+  );
   const fields = record(
     ...[data.denom, data.amount, data.sender, data.receiver, data.memo ?? ""]
       .map(fromText),
@@ -1335,4 +1422,99 @@ export function usableTransferIntent(
   } catch {
     return false;
   }
+}
+
+/** Script addresses accept arbitrary deposits. Authenticate before selecting funds. */
+export function selectPacketLiquidity(
+  inputs: UTxO[],
+  deployment: PacketLaneDeployment,
+  port: string,
+  channel: string,
+  denom: string,
+  amount: bigint,
+  sequence: bigint,
+): UTxO[] {
+  if (amount <= 0n || sequence < 1n) {
+    throw new Error("Invalid liquidity request");
+  }
+  const candidates = inputs.flatMap((input) => {
+    try {
+      if (input.address !== deployment.batchAddress) return [];
+      const datum = decode(input);
+      const [p, c, d, policy, name, deposit, principal, owner] = datum.fields;
+      if (
+        datum.index !== 0 || datum.fields.length !== 8 ||
+        p !== fromText(port) || c !== fromText(channel) ||
+        d !== fromText(denom) ||
+        typeof policy !== "string" || !/^([0-9a-f]{56})?$/.test(policy) ||
+        typeof name !== "string" || !/^([0-9a-f]{2}){0,32}$/.test(name) ||
+        (policy === "" && name !== "") || policy === deployment.batchPolicy ||
+        !(deposit instanceof Constr) || deposit.index !== 0 ||
+        deposit.fields.length !== 2 ||
+        typeof deposit.fields[0] !== "string" ||
+        !/^[0-9a-f]{64}$/.test(deposit.fields[0]) ||
+        typeof deposit.fields[1] !== "bigint" || deposit.fields[1] < 0n ||
+        deposit.fields[1] > 0xffffffffn ||
+        typeof principal !== "bigint" || principal <= 0n ||
+        !(owner instanceof Constr) || owner.index !== 0 ||
+        owner.fields.length !== 2
+      ) return [];
+      // Issuance fixes the reserve owner to the intent's enterprise key address.
+      const [credential, stake] = owner.fields;
+      if (
+        !(credential instanceof Constr) || credential.index !== 0 ||
+        credential.fields.length !== 1 ||
+        typeof credential.fields[0] !== "string" ||
+        !/^[0-9a-f]{56}$/.test(credential.fields[0]) ||
+        !(stake instanceof Constr) || stake.index !== 1 ||
+        stake.fields.length !== 0
+      ) return [];
+      const unit = policy === "" ? "lovelace" : policy + name;
+      if (unit !== localAssetUnit(denom, deployment)) return [];
+      const identity = deployment.batchPolicy + liquidityTokenName(
+        port,
+        channel,
+        denom,
+        deposit.fields[0],
+        Number(deposit.fields[1]),
+      );
+      if (
+        input.assets[identity] !== 1n ||
+        (unit !== "lovelace" && input.assets[unit] !== principal) ||
+        (input.assets.lovelace ?? 0n) <=
+          (unit === "lovelace" ? principal : 0n) ||
+        Object.keys(input.assets).some((asset) =>
+          asset !== "lovelace" && asset !== identity && asset !== unit
+        )
+      ) return [];
+      return [{ input, principal }];
+    } catch {
+      // Decode and interpretation errors are local to this untrusted output.
+      return [];
+    }
+  }).sort((a, b) =>
+    a.input.txHash.localeCompare(b.input.txHash) ||
+    a.input.outputIndex - b.input.outputIndex
+  );
+  const start = candidates.length
+    ? Number((sequence - 1n) % BigInt(candidates.length))
+    : 0;
+  const selected: UTxO[] = [];
+  let total = 0n;
+  for (
+    const { input, principal } of [
+      ...candidates.slice(start),
+      ...candidates.slice(0, start),
+    ]
+  ) {
+    if (total >= amount || selected.length === 5) break;
+    selected.push(input);
+    total += principal;
+  }
+  if (total < amount) {
+    throw new Error(
+      "Insufficient liquidity within the transaction input limit",
+    );
+  }
+  return selected;
 }

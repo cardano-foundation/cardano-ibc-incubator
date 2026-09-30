@@ -1,8 +1,13 @@
 import { PacketLaneService } from '../packet-lane.service';
-import { buildPacketSendBatch, usableTransferIntent } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
+import {
+  buildPacketSendBatch,
+  buildPacketBalanceCompaction,
+  usableTransferIntent,
+} from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 
 jest.mock('@cardano-ibc/tx-builder-runtime/packetLaneTransactions', () => ({
   buildPacketSendBatch: jest.fn(),
+  buildPacketBalanceCompaction: jest.fn(),
   usableTransferIntent: jest.fn(),
 }));
 jest.mock('../../query/services/packet-state.service', () => ({ PacketStateService: class {} }));
@@ -47,6 +52,48 @@ describe('default funded packet batches', () => {
     });
     jest.mocked(usableTransferIntent).mockReturnValue(true);
     jest.mocked(buildPacketSendBatch).mockResolvedValue({ tx: {} } as any);
+  });
+
+  it('builds evaluated accounting maintenance for the requested lane pair', async () => {
+    jest.mocked(buildPacketBalanceCompaction).mockResolvedValue({ tx: {} } as any);
+    const response = await service.compactBalances({
+      signer: 'operator',
+      port_id: 'transfer',
+      channel_id: 'channel-0',
+      left_lane: 1,
+      right_lane: 2,
+      left_denoms: ['asset-to-return'],
+    });
+    expect(response.unsigned_tx.value).toEqual(new Uint8Array([1]));
+    expect(buildPacketBalanceCompaction).toHaveBeenCalledWith(expect.anything(), expect.anything(), 1, 2, [
+      'asset-to-return',
+    ]);
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts omitted protobuf defaults for lane zero and automatic compaction', async () => {
+    jest.mocked(buildPacketBalanceCompaction).mockResolvedValue({ tx: {} } as any);
+    await service.compactBalances({
+      signer: 'operator',
+      port_id: 'transfer',
+      channel_id: 'channel-0',
+      right_lane: 1,
+    } as any);
+    expect(buildPacketBalanceCompaction).toHaveBeenCalledWith(expect.anything(), expect.anything(), 0, 1, undefined);
+  });
+
+  it('rejects maintenance outside the transfer application', async () => {
+    await expect(
+      service.compactBalances({
+        signer: 'operator',
+        port_id: 'other',
+        channel_id: 'channel-0',
+        left_lane: 1,
+        right_lane: 2,
+        left_denoms: [],
+      }),
+    ).rejects.toThrow('Invalid packet accounting');
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it('prioritizes the requested funded input and bounds the batch to two', async () => {

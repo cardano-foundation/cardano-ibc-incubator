@@ -362,7 +362,10 @@ export async function checkShutdownDrain(
       root.set(`commitments/${localPath}/sequences/1`, commitment);
       laneDatum.fields[5] = await root.getRoot();
     }
-    laneDatum.fields[11] = new Map([[fromText(fromText("lovelace")), amount]]);
+    laneDatum.fields[11] = new Map([[
+      await sha256(fromText(fromText("lovelace"))),
+      amount,
+    ]]);
     lane.datum = encode(laneDatum);
     const sequencer = await lucid.utxoByUnit(
       p.state.scriptHash + sendSequencerTokenName("transfer", "channel-0"),

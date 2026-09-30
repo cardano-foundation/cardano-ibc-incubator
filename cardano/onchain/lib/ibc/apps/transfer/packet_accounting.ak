@@ -1,5 +1,6 @@
 use aiken/collection/list
 use aiken/collection/pairs
+use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/transaction.{Transaction}
@@ -16,6 +17,7 @@ fn add(
   denom: ByteArray,
   amount: Int,
 ) -> Pairs<ByteArray, Int> {
+  let denom = crypto.sha2_256(denom)
   let previous =
     when pairs.get_first(balances, denom) is {
       None -> 0

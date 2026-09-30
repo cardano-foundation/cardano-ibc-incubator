@@ -164,3 +164,138 @@ test packet_lane_state_rejects_identity_removed_from_input() fail {
     updates,
   )
 }
+
+const accounting_key =
+  #"abababababababababababababababababababababababababababababababab"
+
+fn compaction() -> (Transaction, OutputReference, OutputReference) {
+  let (left, left_ref, _) = prepared(1)
+  let (right, right_ref, _) = prepared(2)
+  expect [a] = left.inputs
+  expect [b] = right.inputs
+  expect InlineDatum(raw_a) = a.output.datum
+  expect InlineDatum(raw_b) = b.output.datum
+  expect old_a: PacketLaneDatum = raw_a
+  expect old_b: PacketLaneDatum = raw_b
+  (
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [
+        Input {
+          ..a,
+          output: Output {
+            ..a.output,
+            datum: InlineDatum(
+              PacketLaneDatum { ..old_a, balances: [Pair(accounting_key, 10)] },
+            ),
+          },
+        },
+        Input {
+          ..b,
+          output: Output {
+            ..b.output,
+            datum: InlineDatum(
+              PacketLaneDatum { ..old_b, balances: [Pair(accounting_key, -10)] },
+            ),
+          },
+        },
+      ],
+      outputs: [
+        Output {
+          ..a.output,
+          datum: InlineDatum(PacketLaneDatum { ..old_a, version: 1 }),
+        },
+        Output {
+          ..b.output,
+          datum: InlineDatum(PacketLaneDatum { ..old_b, version: 1 }),
+        },
+      ],
+    },
+    left_ref,
+    right_ref,
+  )
+}
+
+test balance_compaction_cancels_cross_lane_round_trip() {
+  let (tx, left, right) = compaction()
+  packet_lane_state.compact_balances(tx, left, right, policy) && packet_lane_state.compact_balances(
+    tx,
+    right,
+    left,
+    policy,
+  )
+}
+
+test balance_compaction_rejects_unbacked_obligation_removal() {
+  let (tx, left, right) = compaction()
+  expect [a, b] = tx.inputs
+  expect InlineDatum(raw) = b.output.datum
+  expect old: PacketLaneDatum = raw
+  let forged =
+    Input {
+      ..b,
+      output: Output {
+        ..b.output,
+        datum: InlineDatum(PacketLaneDatum { ..old, balances: [] }),
+      },
+    }
+  !packet_lane_state.compact_balances(
+    Transaction { ..tx, inputs: [a, forged] },
+    left,
+    right,
+    policy,
+  )
+}
+
+test balance_compaction_rejects_changed_packet_root() fail {
+  let (tx, left, right) = compaction()
+  expect [a, b] = tx.outputs
+  expect InlineDatum(raw) = a.datum
+  expect old: PacketLaneDatum = raw
+  packet_lane_state.compact_balances(
+    Transaction {
+      ..tx,
+      outputs: [
+        Output {
+          ..a,
+          datum: InlineDatum(PacketLaneDatum { ..old, root: accounting_key }),
+        },
+        b,
+      ],
+    },
+    left,
+    right,
+    policy,
+  )
+}
+
+test balance_compaction_rejects_counterfeit_identity() fail {
+  let (tx, left, right) = compaction()
+  expect [a, b] = tx.inputs
+  packet_lane_state.compact_balances(
+    Transaction {
+      ..tx,
+      inputs: [
+        a,
+        Input {
+          ..b,
+          output: Output { ..b.output, value: assets.from_lovelace(2_000_000) },
+        },
+      ],
+    },
+    left,
+    right,
+    policy,
+  )
+}
+
+test balance_compaction_rejects_duplicate_continuation() fail {
+  let (tx, left, right) = compaction()
+  expect [a, b] = tx.outputs
+  packet_lane_state.compact_balances(
+    Transaction { ..tx, outputs: [a, a, b] },
+    left,
+    right,
+    policy,
+  )
+}

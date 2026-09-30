@@ -50,7 +50,11 @@ import { PacketService } from './packet.service';
 import { SubmissionService } from './submission.service';
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
 import { BuildHostStateHeartbeatRequest, BuildHostStateHeartbeatResponse } from './dto/host-state-heartbeat.dto';
-import { MsgPrunePacketHistory, MsgPrunePacketHistoryResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
+import {
+  CompactPacketBalancesRequest,
+  MsgPrunePacketHistory,
+  MsgPrunePacketHistoryResponse,
+} from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import { validateAndFormatPrunePacketHistoryParams } from './helper/packet.validate';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 import { GrpcAuthGuard } from '../security/grpc-auth.guard';
@@ -69,6 +73,11 @@ export class TxController {
     private readonly submissionService: SubmissionService,
     private readonly hostStateHeartbeatService: HostStateHeartbeatService,
   ) {}
+
+  @GrpcMethod('CardanoMsg', 'CompactPacketBalances')
+  async CompactPacketBalances(data: CompactPacketBalancesRequest): Promise<MsgPrunePacketHistoryResponse> {
+    return this.packetLaneService.compactBalances(data);
+  }
 
   @GrpcMethod('Msg', 'CreateClient')
   async CreateClient(data: MsgCreateClient): Promise<MsgCreateClientResponse> {
