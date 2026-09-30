@@ -45,7 +45,7 @@
     "build": "rm -rf ./build && tsc && npm run prepare-publishing"
   },
   "dependencies": {
-    "@grpc/grpc-js": "^1.13.4",
+    "@grpc/grpc-js": "^1.14.5",
     "@grpc/proto-loader": "^0.7.15"
   },
   "devDependencies": {
