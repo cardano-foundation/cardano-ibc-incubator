@@ -52,7 +52,7 @@ export interface FundedTransfer {
     fullDenom?: string;
 }
 /** Admission spends only the user's funding. It has no protocol state inputs. */
-export declare function buildTransferIntent(lucid: LucidEvolution, deployment: PacketLaneDeployment, request: FundedTransfer): Promise<import("@lucid-evolution/lucid").TxBuilder>;
+export declare function buildTransferIntent(lucid: LucidEvolution, deployment: Pick<PacketLaneDeployment, "channel" | "guardAddress">, request: FundedTransfer): Promise<import("@lucid-evolution/lucid").TxBuilder>;
 export declare function laneTree(datum: Constr<Data>): Promise<PacketLaneTree>;
 /** Read current included outputs on every build. Preparing a transaction never
  * publishes speculative roots or sequences, so retries after rollback reload
@@ -89,7 +89,7 @@ export declare const buildPacketRejection: (lucid: LucidEvolution, deployment: P
     input: UTxO;
 }>;
 export declare function voucherTokenName(denom: string): string;
-export declare function localAssetUnit(denom: string, deployment: PacketLaneDeployment): string;
+export declare function localAssetUnit(denom: string, deployment: Pick<PacketLaneDeployment, "voucherPolicy">): string;
 export declare function buildPacketPrune(lucid: LucidEvolution, deployment: PacketLaneDeployment, sequence: bigint, proofHeight: Constr<Data>, proof: Constr<Data>, validFrom: number, validTo: number): Promise<{
     tx: import("@lucid-evolution/lucid").TxBuilder;
     input: UTxO;

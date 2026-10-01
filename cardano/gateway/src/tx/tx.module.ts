@@ -63,6 +63,6 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     },
     Logger,
   ],
-  exports: [IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService, ClientService],
+  exports: [PacketLaneService, IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService, ClientService],
 })
 export class TxModule {}

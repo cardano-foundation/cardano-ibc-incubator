@@ -1,22 +1,15 @@
 import { checkedDeploymentMode, requireMigrationConfig, type MigrationRuntimeConfig } from './migrationRuntime';
 import type { HistoryBootstrap } from './historyBootstrap';
-import crypto from 'crypto';
 import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
-  buildUnsignedSendPacketTx,
-  stringifyLegacyIcs20PacketData,
   type SendPacketOperator,
 } from '@cardano-ibc/tx-builder';
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
 import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
 import { assertExecutionBudget, parseExecutionLimit } from './executionBudget';
-import { IbcTreeStateStore, StaleIbcTreeStateError } from './ibcStateRoot';
 import { createKupoConsensusHistoryReader } from './consensusHistoryKupo';
 import { findUtxosAtAllowEmpty, LucidIbcAdapter } from './lucidIbcAdapter';
-import {
-  findTransferEscrowShard as findTransferEscrowShardFromRegistry,
-} from './transferEscrowShard';
 
 export { AsyncMutex } from './asyncMutex';
 export { transferEscrowShardTokenName } from './transferEscrowShard';
@@ -102,6 +95,7 @@ type DeploymentTraceRegistry = {
 };
 
 type DeploymentConfig = {
+  packetState?: { guardAddress: string };
   deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   deployedAt: string;
@@ -133,6 +127,7 @@ type DeploymentConfig = {
 };
 
 type BridgeManifest = {
+  packet_state?: { format: string; guard: { address: string } };
   deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   schema_version: number;
@@ -306,6 +301,7 @@ type WalletUtxoInput = {
 };
 
 type LocalUnsignedTransferResponse = {
+  intentChannel: string;
   result: number;
   unsignedTx: {
     type_url: string;
@@ -354,9 +350,9 @@ type BuilderRuntimeConfig = {
 };
 
 type BuilderContext = {
+  lucid: LucidEvolution;
   deployment: DeploymentConfig;
   lucidService: LucidIbcAdapter;
-  treeStore: IbcTreeStateStore;
   logger: RuntimeLogger;
   cardanoNetwork: Network;
   ogmiosEndpoint: string;
@@ -368,12 +364,6 @@ type OgmiosPoint = { slot: number; id: string };
 type SlotConfig = { zeroTime: number; zeroSlot: number; slotLength: number };
 type LucidModule = typeof import('@lucid-evolution/lucid');
 const LUCID_NETWORKS = ['Mainnet', 'Preprod', 'Preview', 'Custom'] as const;
-
-type KupoLikeService = {
-  queryAllClientUtxos(): Promise<UTxO[]>;
-  queryAllConnectionUtxos(): Promise<UTxO[]>;
-  queryAllChannelUtxos(): Promise<UTxO[]>;
-};
 
 function defaultLogger(scope: string): RuntimeLogger {
   return {
@@ -489,6 +479,7 @@ export function normalizeBridgeManifest(manifest: BridgeManifest): {
       ics20_packet_codec: ics20PacketCodec,
     },
     deployment: {
+      ...(manifest.packet_state?.format === 'packet-lanes-v1' ? { packetState: { guardAddress: manifest.packet_state.guard.address } } : {}),
       deploymentMode: checkedDeploymentMode(manifest.deploymentMode ?? 'upgradeable', manifest.migration),
       deployedAt: manifest.deployed_at,
       ...(manifest.migration !== undefined ? { migration: requireMigrationConfig(manifest.migration) } : {}),
@@ -729,54 +720,7 @@ function parseWalletUtxos(value: unknown): UTxO[] {
   });
 }
 
-function convertHex2String(value: string): string {
-  if (!value) {
-    return '';
-  }
-  return Buffer.from(value, 'hex').toString();
-}
 
-function parseConnectionSequence(connectionId: string): bigint {
-  const match = /^connection-(\d+)$/.exec(connectionId);
-  if (!match) {
-    throw new Error(`Invalid connection id: ${connectionId}`);
-  }
-  return BigInt(match[1]);
-}
-
-function parseClientSequence(clientId: string): bigint {
-  const match = /^07-tendermint-(\d+)$/.exec(clientId);
-  if (!match) {
-    throw new Error(`Invalid client id: ${clientId}`);
-  }
-  return BigInt(match[1]);
-}
-
-function commitPacket(packet: { timeout_height: { revisionNumber: bigint; revisionHeight: bigint }; timeout_timestamp: bigint; data: string }): string {
-  let buffer = uint64ToBigEndian(packet.timeout_timestamp);
-  buffer = appendBuffer(buffer, uint64ToBigEndian(packet.timeout_height.revisionNumber));
-  buffer = appendBuffer(buffer, uint64ToBigEndian(packet.timeout_height.revisionHeight));
-
-  const dataHash = crypto.createHash('sha256').update(Buffer.from(packet.data, 'hex')).digest('hex');
-  return crypto
-    .createHash('sha256')
-    .update(Buffer.from(`${Buffer.from(buffer).toString('hex')}${dataHash}`, 'hex'))
-    .digest('hex');
-}
-
-function uint64ToBigEndian(value: bigint): Uint8Array {
-  const buffer = new ArrayBuffer(8);
-  const view = new DataView(buffer);
-  view.setBigUint64(0, value);
-  return new Uint8Array(buffer);
-}
-
-function appendBuffer(left: Uint8Array, right: Uint8Array): Uint8Array {
-  const result = new Uint8Array(left.length + right.length);
-  result.set(left, 0);
-  result.set(right, left.length);
-  return result;
-}
 
 export function ogmiosRequest<T>(
   ogmiosUrl: string,
@@ -1412,52 +1356,6 @@ async function createLucidRuntime(
   };
 }
 
-class RuntimeKupoService implements KupoLikeService {
-  private readonly clientTokenPrefix: string;
-  private readonly connectionTokenPrefix: string;
-  private readonly channelTokenPrefix: string;
-  private readonly clientAddress: string;
-  private readonly connectionAddress: string;
-  private readonly channelAddress: string;
-
-  constructor(private readonly lucidService: LucidIbcAdapter, deployment: DeploymentConfig) {
-    this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
-    this.connectionTokenPrefix = deployment.validators.mintConnectionStt.scriptHash;
-    this.channelTokenPrefix = deployment.validators.mintChannelStt.scriptHash;
-    this.clientAddress = deployment.validators.spendClient.address ?? '';
-    this.connectionAddress = deployment.validators.spendConnection.address ?? '';
-    this.channelAddress = deployment.validators.spendChannel.address ?? '';
-  }
-
-  private getMatchingAssetNames(utxo: UTxO, policyId: string): string[] {
-    return Object.keys(utxo.assets)
-      .filter((assetId) => assetId !== 'lovelace')
-      .filter((assetId) => assetId.startsWith(policyId))
-      .map((assetId) => assetId.slice(policyId.length));
-  }
-
-  private async queryUtxosAtAddressByPolicy(address: string, policyId: string): Promise<UTxO[]> {
-    try {
-      const utxos = await this.lucidService.findUtxoAt(address);
-      return utxos.filter((utxo) => this.getMatchingAssetNames(utxo, policyId).length > 0);
-    } catch {
-      return [];
-    }
-  }
-
-  async queryAllClientUtxos(): Promise<UTxO[]> {
-    return this.queryUtxosAtAddressByPolicy(this.clientAddress, this.clientTokenPrefix);
-  }
-
-  async queryAllConnectionUtxos(): Promise<UTxO[]> {
-    return this.queryUtxosAtAddressByPolicy(this.connectionAddress, this.connectionTokenPrefix);
-  }
-
-  async queryAllChannelUtxos(): Promise<UTxO[]> {
-    return this.queryUtxosAtAddressByPolicy(this.channelAddress, this.channelTokenPrefix);
-  }
-}
-
 function dedupeUtxos(utxos: UTxO[]): UTxO[] {
   const seen = new Map<string, UTxO>();
   const orderedKeys: string[] = [];
@@ -1475,112 +1373,6 @@ function dedupeUtxos(utxos: UTxO[]): UTxO[] {
 
 function utxoRef(utxo: Pick<UTxO, 'txHash' | 'outputIndex'>): string {
   return `${utxo.txHash}#${utxo.outputIndex}`;
-}
-
-async function findTransferEscrowShard(
-  context: BuilderContext,
-  channelId: string,
-  packetDenom: string,
-  denomToken: string,
-  requiredAmount?: bigint,
-  balanceDelta?: bigint,
-) {
-  const deployment = context.deployment;
-  return findTransferEscrowShardFromRegistry(
-    {
-      transferModuleAddress: deployment.modules.transfer.address,
-      transferModuleIdentifier: deployment.modules.transfer.identifier,
-      shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
-      findUtxosAt: (address) => context.lucidService.findUtxoAt(address),
-      encodeTransferEscrowDatum: (datum) =>
-        context.lucidService.encode(datum, 'transferEscrow'),
-      decodeTransferEscrowDatum: (encodedDatum) =>
-        context.lucidService.decodeDatum<{
-          channel_id: string;
-          denom: string;
-          escrowed_amount: bigint;
-        }>(encodedDatum, 'transferEscrow'),
-      encodeTransferModuleDatum: (datum) =>
-        context.lucidService.encode(datum, 'transferModule'),
-      decodeTransferModuleDatum: (encodedDatum) =>
-        context.lucidService.decodeDatum<{
-          escrow_shard_registry_root: string;
-          outstanding_voucher_obligation: bigint;
-        }>(encodedDatum, 'transferModule'),
-    },
-    channelId,
-    packetDenom,
-    denomToken,
-    requiredAmount,
-    balanceDelta,
-  );
-}
-
-async function ensureTreeAlignedForRoot(
-  context: BuilderContext,
-  onChainRoot: string,
-  hostStateUtxo: Pick<UTxO, 'txHash' | 'outputIndex'>,
-): Promise<void> {
-  const snapshot = await context.treeStore.getAlignedSnapshot();
-  if (snapshot.root !== onChainRoot ||
-    snapshot.hostState.txHash !== hostStateUtxo.txHash ||
-    snapshot.hostState.outputIndex !== hostStateUtxo.outputIndex) {
-    throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
-  }
-}
-
-async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inputChannelDatum: any, outputChannelDatum: any, channelIdForRoot: string) {
-  const hostStateUtxo = await context.lucidService.findUtxoAtHostStateNFT();
-  if (!hostStateUtxo.datum) {
-    throw new Error('HostState UTXO has no datum');
-  }
-
-  const hostStateDatum = await context.lucidService.decodeDatum<any>(hostStateUtxo.datum, 'host_state');
-
-  await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root, hostStateUtxo);
-
-  const portId = convertHex2String(inputChannelDatum.port);
-  const {
-    newRoot,
-    channelSiblings,
-    nextSequenceSendSiblings,
-    nextSequenceRecvSiblings,
-    nextSequenceAckSiblings,
-    packetCommitmentSiblings,
-    packetReceiptSiblings,
-    packetAcknowledgementSiblings,
-    commit,
-  } = await context.treeStore.computeRootWithHandlePacketUpdate(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
-
-  const updatedHostStateDatum = {
-    ...hostStateDatum,
-    state: {
-      ...hostStateDatum.state,
-      version: hostStateDatum.state.version + 1n,
-      ibc_state_root: newRoot,
-      last_update_time: BigInt(Date.now()),
-    },
-  };
-
-  const hostStateRedeemer = {
-    HandlePacket: {
-      channel_siblings: channelSiblings,
-      next_sequence_send_siblings: nextSequenceSendSiblings,
-      next_sequence_recv_siblings: nextSequenceRecvSiblings,
-      next_sequence_ack_siblings: nextSequenceAckSiblings,
-      packet_commitment_siblings: packetCommitmentSiblings,
-      packet_receipt_siblings: packetReceiptSiblings,
-      packet_acknowledgement_siblings: packetAcknowledgementSiblings,
-    },
-  };
-
-  return {
-    hostStateUtxo,
-    encodedHostStateRedeemer: await context.lucidService.encode(hostStateRedeemer, 'host_state_redeemer'),
-    encodedUpdatedHostStateDatum: await context.lucidService.encode(updatedHostStateDatum, 'host_state'),
-    newRoot,
-    commit,
-  };
 }
 
 async function computeTxValidityWindow(context: BuilderContext) {
@@ -1662,24 +1454,12 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       createKupoConsensusHistoryReader(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader, allowScriptMigration: !!deployment.migration }));
     await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
-    const kupoService = new RuntimeKupoService(lucidService, deployment);
-    const treeStore = new IbcTreeStateStore(
-      {
-        network: cardanoNetwork,
-        hostStateNFT: deployment.hostStateNFT,
-        clientPolicyId: deployment.validators.mintClientStt.scriptHash,
-      },
-      kupoService,
-      lucidService,
-    );
-    await timed(logger, '[context]', 'rebuild IBC state tree', () => treeStore.rebuildTreeFromChain());
-
     logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
 
     return {
+      lucid,
       deployment,
       lucidService,
-      treeStore,
       logger,
       cardanoNetwork,
       ogmiosEndpoint,
@@ -1702,7 +1482,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
   async function buildUnsignedTransfer(
     body: TransferApiRequestBody,
   ): Promise<LocalUnsignedTransferResponse> {
-    // Lucid wallet selection and IBC tree state are shared by the runtime context.
+    // Serialize wallet selection across requests sharing this runtime context.
     const buildId = ++transferBuildCounter;
     const scope = `[transfer:${buildId}]`;
     return transferBuildQueue.runExclusive(() => buildUnsignedTransferUnsafe(body, scope));
@@ -1736,14 +1516,6 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       logger.log(`${scope} wallet UTxO lookup for ${address}: provider=${providerWalletUtxos.length}`);
       return providerWalletUtxos;
     };
-    const findWalletUtxoAtWithUnit = async (address: string, unit: string) => {
-      const liveWalletUtxos = await getWalletUtxos(address, LOOKUP_RETRY_OPTIONS);
-      const liveMatch = liveWalletUtxos.find((utxo) => Object.prototype.hasOwnProperty.call(utxo.assets, unit));
-      if (liveMatch) {
-        return liveMatch;
-      }
-      return context.lucidService.findUtxoAtWithUnit(address, unit);
-    };
     const initialWalletUtxos = await timed(logger, scope, 'load initial wallet UTxOs', () => getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS));
     if (initialWalletUtxos.length === 0) {
       throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`);
@@ -1751,93 +1523,30 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     logger.log(`${scope} initial wallet UTxOs selected=${initialWalletUtxos.length}`);
     context.lucidService.selectWalletFromAddress(sendPacketOperator.signer, initialWalletUtxos);
 
-    const { unsignedTx, walletOverride } = await timed(logger, scope, 'build send_packet tx skeleton', () =>
-      buildUnsignedSendPacketTx(sendPacketOperator, {
-        ...(context.deployment.ics20PacketCodec === 'legacy-cardano-json'
-          ? { stringifyPacketData: stringifyLegacyIcs20PacketData }
-          : {}),
-        loadContext: async (operator) => {
-          const loadContextStartedAt = startTimer();
-          try {
-            const channelSequence = operator.sourceChannel.replace('channel-', '');
-            const [mintChannelPolicyId, channelTokenName] = context.lucidService.getChannelTokenUnit(BigInt(channelSequence));
-            const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-            const channelUtxo = await timed(logger, scope, 'load channel UTxO', () => context.lucidService.findUtxoByUnit(channelTokenUnit));
-            const channelDatum = await timed(logger, scope, 'decode channel datum', () => context.lucidService.decodeDatum<any>(channelUtxo.datum!, 'channel'));
-
-            const [mintConnectionPolicyId, connectionTokenName] = context.lucidService.getConnectionTokenUnit(
-              parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
-            );
-            const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
-            const connectionUtxo = await timed(logger, scope, 'load connection UTxO', () => context.lucidService.findUtxoByUnit(connectionTokenUnit));
-            const connectionDatum = await timed(logger, scope, 'decode connection datum', () => context.lucidService.decodeDatum<any>(connectionUtxo.datum!, 'connection'));
-
-            const clientTokenUnit = context.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString());
-            const clientUtxo = await timed(logger, scope, 'load client UTxO', () => context.lucidService.findUtxoByUnit(clientTokenUnit));
-            const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
-            const transferModuleReferenceUtxo = await timed(logger, scope, 'load transfer module reference UTxO', () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
-            const deployment = context.deployment;
-            const spendChannelAddress = deployment.validators.spendChannel.address;
-            if (!spendChannelAddress) {
-              throw new Error('Spend channel script address is missing from deployment config');
-            }
-
-            return {
-              channelUtxo,
-              channelDatum,
-              connectionUtxo,
-              connectionDatum,
-              clientUtxo,
-              transferModuleReferenceUtxo,
-              channelTokenUnit,
-              channelToken: {
-                policyId: mintChannelPolicyId,
-                name: channelTokenName,
-              },
-              deployment: {
-                sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
-                mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
-                transferEscrowShardPolicyId:
-                  deployment.validators.mintTransferEscrowShard.scriptHash,
-                spendChannelAddress,
-                transferModuleAddress: deployment.modules.transfer.address,
-              },
-            };
-          } finally {
-            logger.log(`${scope} load builder context completed in ${elapsedMs(loadContextStartedAt)}`);
-          }
-        },
-        buildHostStateUpdate: (inputChannelDatum, outputChannelDatum, channelIdForRoot) =>
-          timed(logger, scope, 'build host-state update', () => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot)),
-        resolveIbcDenomHash: async (denomHash) => {
-          const match = await timed(logger, scope, `resolve denom hash ${denomHash}`, () => context.traceRegistryClient.lookupIbcDenomTrace(denomHash));
-          if (!match) {
-            return null;
-          }
-
-          return {
-            path: match.path,
-            baseDenom: match.baseDenom,
-          };
-        },
-        commitPacket: (packet) => commitPacket(packet as any),
-        encode: (value, kind) => context.lucidService.encode(value, kind as never),
-        findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
-        tryFindUtxosAt: getWalletUtxos,
-        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount, balanceDelta) =>
-          timed(logger, scope, 'find transfer escrow shard', () =>
-            findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount, balanceDelta),
-          ),
-        createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
-        createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),
-        invalidArgument: (message) => new Error(message),
-        internalError: (message) => new Error(message),
-      }),
-    );
-
-    if (!walletOverride) {
-      throw new Error('sendPacket failed: wallet override context was not produced');
+    const packetState = context.deployment.packetState;
+    if (!packetState?.guardAddress) throw new Error('A fresh packet-lane deployment is required for funded transfers');
+    if (sendPacketOperator.sourcePort !== 'transfer' || sendPacketOperator.timeoutHeight.revisionHeight !== 0n || sendPacketOperator.timeoutHeight.revisionNumber !== 0n) {
+      throw new Error('Transfer intents require transfer port and timestamp timeout');
     }
+    const [policy, name] = context.lucidService.getChannelTokenUnit(BigInt(sendPacketOperator.sourceChannel.slice(8)));
+    const channel = await context.lucidService.findUtxoByUnit(policy + name);
+    let denom = sendPacketOperator.token.denom;
+    if (denom.startsWith('ibc/')) {
+      const trace = await context.traceRegistryClient.lookupIbcDenomTrace(denom.slice(4));
+      if (!trace) throw new Error('Unknown IBC denomination');
+      denom = trace.path ? `${trace.path}/${trace.baseDenom}` : trace.baseDenom;
+    }
+    if (denom === 'lovelace') denom = Buffer.from(denom).toString('hex');
+    const { buildTransferIntent, localAssetUnit } = await import('./packetLaneTransactions');
+    const unsignedTx = await buildTransferIntent(context.lucid, { channel, guardAddress: packetState.guardAddress }, {
+      assetUnit: localAssetUnit(denom, { voucherPolicy: context.deployment.validators.mintVoucher.scriptHash }),
+      fullDenom: denom,
+      amount: sendPacketOperator.token.amount,
+      receiver: sendPacketOperator.receiver,
+      memo: sendPacketOperator.memo,
+      timeoutTimestamp: sendPacketOperator.timeoutTimestamp,
+    });
+    const walletOverride = { address: sendPacketOperator.signer, utxos: initialWalletUtxos };
 
     const { currentSlot, validFromTime, validToSlot, validToTime } = await timed(logger, scope, 'compute validity window', () => computeTxValidityWindow(context));
     if (currentSlot > validToSlot) {
@@ -1877,6 +1586,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       logger.log(`${scope} prepared unsigned Cardano transfer in ${elapsedMs(buildStartedAt)}`);
 
       return {
+        intentChannel: sendPacketOperator.sourceChannel,
         result: 0,
         unsignedTx: {
           type_url: '',

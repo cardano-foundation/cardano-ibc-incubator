@@ -140,7 +140,7 @@ export class PacketStateService {
     if (![0, 1, 2, 5, 6, 8].includes(operation.index)) return [];
     const packets =
       operation.index === 0 ? (operation.fields[2] as Constr<Data>[]) : [operation.fields[0] as Constr<Data>];
-    return packets.flatMap((packet) => {
+    return packets.flatMap((packet, index) => {
       const height = packet.fields[6] as Constr<Data>;
       const attributes: Record<string, string> = {
         packet_sequence: String(packet.fields[0]),
@@ -155,6 +155,11 @@ export class PacketStateService {
         packet_channel_ordering: 'ORDER_UNORDERED',
         packet_connection: toText(channelDatum.state.channel.connection_hops[0]),
       };
+      if (operation.index === 0) {
+        const intent = (operation.fields[1] as Constr<Data>[])[index];
+        attributes.intent_tx_hash = String(intent.fields[0]);
+        attributes.intent_output_index = String(intent.fields[1]);
+      }
       const make = (type: string, values = attributes) => ({
         type,
         event_attribute: Object.entries(values).map(([key, value]) => ({ key, value, index: true })),

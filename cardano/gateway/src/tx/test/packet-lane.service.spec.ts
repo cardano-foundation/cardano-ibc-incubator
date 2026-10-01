@@ -140,4 +140,63 @@ describe('default funded packet batches', () => {
     history.findIntentSpendingTransaction.mockResolvedValue({ txHash: 'cancellation' });
     await expect(service.batch(request)).rejects.toThrow('cancelled without sending');
   });
+  it('tracks only the packet assigned to the requested funded intent', async () => {
+    const hash = 'ab'.repeat(32);
+    pending = [];
+    history.findIntentSpendingTransaction.mockResolvedValue({ txHash: 'batch' });
+    events.events.mockResolvedValue([
+      {
+        type: 'send_packet',
+        event_attribute: [
+          { key: 'intent_tx_hash', value: 'other' },
+          { key: 'packet_sequence', value: '1' },
+        ],
+      },
+      {
+        type: 'send_packet',
+        event_attribute: [
+          { key: 'intent_tx_hash', value: hash },
+          { key: 'packet_sequence', value: '2' },
+        ],
+      },
+    ]);
+    await expect(service.intentStatus('channel-0', hash)).resolves.toEqual({
+      stage: 'sent',
+      packetTxHash: 'batch',
+      packetSequence: '2',
+    });
+    pending = [{ txHash: hash }];
+    await expect(service.intentStatus('channel-0', hash)).resolves.toEqual({ stage: 'funded' });
+  });
+
+  it('does not call intent funding or cancellation a sent packet', async () => {
+    const hash = 'ab'.repeat(32);
+    pending = [];
+    await expect(service.intentStatus('channel-0', hash)).resolves.toEqual({ stage: 'pending' });
+    pending = [{ txHash: hash }];
+    await expect(service.intentStatus('channel-0', hash)).resolves.toEqual({ stage: 'funded' });
+    pending = [];
+    history.findIntentSpendingTransaction.mockResolvedValue({ txHash: 'cancel' });
+    await expect(service.intentStatus('channel-0', hash)).resolves.toEqual({ stage: 'cancelled' });
+  });
+  it('discovers browser-funded requests without a user signer or intent hint', async () => {
+    const response = await service.batch({ signer: 'relayer-wallet', port_id: 'transfer', channel_id: 'channel-0' });
+    expect(response.intent_tx_hashes).toEqual(['aa', 'bb']);
+    expect(complete).toHaveBeenCalledWith('relayer-wallet', 'packetBatch', expect.any(Function));
+  });
+
+  it('does not initialize idle channels and binds initialization to a funded request', async () => {
+    pending = [];
+    await expect(service.batch({ ...request, intent_tx_hash: undefined })).resolves.toEqual({
+      stage: 'idle',
+      intent_tx_hashes: [],
+    });
+    expect((service as any).initialize).not.toHaveBeenCalled();
+    pending = [{ txHash: 'aa', datum: new Datum() }];
+    jest.mocked((service as any).initialize).mockResolvedValue({ value: new Uint8Array([1]) });
+    await expect(service.batch({ ...request, intent_tx_hash: undefined })).resolves.toMatchObject({
+      stage: 'initialize',
+      intent_tx_hashes: ['aa'],
+    });
+  });
 });

@@ -337,7 +337,7 @@ function decode(utxo: UTxO): Constr<Data> {
   return data;
 }
 
-function channelIdentity(deployment: PacketLaneDeployment) {
+function channelIdentity(deployment: Pick<PacketLaneDeployment, "channel">) {
   const channel = decode(deployment.channel);
   const token = channel.fields[2] as Constr<Data>;
   const channelId = `channel-${toText(String(token.fields[1]).slice(48))}`;
@@ -351,7 +351,7 @@ function channelIdentity(deployment: PacketLaneDeployment) {
 /** Admission spends only the user's funding. It has no protocol state inputs. */
 export async function buildTransferIntent(
   lucid: LucidEvolution,
-  deployment: PacketLaneDeployment,
+  deployment: Pick<PacketLaneDeployment, "channel" | "guardAddress">,
   request: FundedTransfer,
 ) {
   const { port, channelId } = channelIdentity(deployment);
@@ -1262,7 +1262,7 @@ export function voucherTokenName(denom: string) {
 }
 export function localAssetUnit(
   denom: string,
-  deployment: PacketLaneDeployment,
+  deployment: Pick<PacketLaneDeployment, "voucherPolicy">,
 ): string {
   if (denom === fromText("lovelace")) return "lovelace";
   if (/^[0-9a-f]{56,120}$/.test(denom) && denom.length % 2 === 0) return denom;

@@ -175,7 +175,7 @@ export class PacketLaneService {
       denom = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
     }
     if (denom === 'lovelace') denom = this.lucid.LucidImporter.fromText(denom);
-    const unsigned_tx = await this.complete(operator.sender, 'transferIntent', async () =>
+    const unsigned_tx = await this.complete(operator.signer, 'transferIntent', async () =>
       buildTransferIntent(this.lucid.lucid, deployment, {
         amount: operator.token.amount,
         assetUnit: localAssetUnit(denom, deployment),
@@ -216,12 +216,31 @@ export class PacketLaneService {
     return undefined;
   }
 
+  async intentStatus(channelId: string, hash: string) {
+    if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error('Invalid intent transaction hash');
+    const deployment = await this.deployment(channelId);
+    const pending = (await this.lucid.lucid.utxosAt(deployment.guardAddress)).some((u) => u.txHash === hash);
+    if (pending) return { stage: 'funded' as const };
+    const consuming = await this.history.findIntentSpendingTransaction(hash, deployment.guardAddress);
+    if (!consuming) return { stage: 'pending' as const };
+    const events = await this.packetState.events(consuming.txHash);
+    const event = events.find(
+      (event) =>
+        event.type === 'send_packet' &&
+        event.event_attribute.some((attribute) => attribute.key === 'intent_tx_hash' && attribute.value === hash),
+    );
+    if (!event) return { stage: 'cancelled' as const };
+    return {
+      stage: 'sent' as const,
+      packetTxHash: consuming.txHash,
+      packetSequence: event.event_attribute.find((attribute) => attribute.key === 'packet_sequence')!.value,
+    };
+  }
+
   async batch(request: BuildPacketBatchRequest): Promise<BuildPacketBatchResponse> {
     if (request.port_id !== 'transfer') throw new Error('Expected transfer port');
     const deployment = await this.deployment(request.channel_id);
     const { Data, Constr, fromText } = this.lucid.LucidImporter;
-    const initialization = await this.initialize(request);
-    if (initialization) return { stage: 'initialize', intent_tx_hashes: [], unsigned_tx: initialization };
     const pending = (await this.lucid.lucid.utxosAt(deployment.guardAddress))
       .filter((input) => {
         if (!input.datum) return false;
@@ -259,6 +278,9 @@ export class PacketLaneService {
     if (request.intent_tx_hash)
       pending.sort((a, b) => Number(b.txHash === request.intent_tx_hash) - Number(a.txHash === request.intent_tx_hash));
     if (!pending.length) return { stage: 'idle', intent_tx_hashes: [] };
+    const initialization = await this.initialize(request);
+    if (initialization)
+      return { stage: 'initialize', intent_tx_hashes: [pending[0].txHash], unsigned_tx: initialization };
     let intents: UTxO[] = [];
     // Populated lanes or large payloads can make a two-intent transaction exceed
     // ledger limits. Evaluate it, then retry a single funded request if needed.

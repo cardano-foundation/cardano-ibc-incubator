@@ -1,10 +1,12 @@
 import type { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import type { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
+import type { FundedIntent } from './cardanoIntent';
 
 const RESUMABLE_TRANSFER_STORAGE_KEY = 'ibc-swap:resumable-transfer:v1';
 
 export type ResumableTransferRecord = {
   version: 1;
+  intent?: FundedIntent;
   sourceTxHash: string;
   sourceChainId: string;
   destinationChainId: string;

@@ -388,11 +388,8 @@ async function queryCardanoOrderedChannelBlockage(
       const leftSequence = sequenceToBigInt(left);
       const rightSequence = sequenceToBigInt(right);
       if (leftSequence === null || rightSequence === null) return 0;
-      return leftSequence === rightSequence
-        ? 0
-        : leftSequence < rightSequence
-          ? -1
-          : 1;
+      if (leftSequence === rightSequence) return 0;
+      return leftSequence < rightSequence ? -1 : 1;
     });
 
   if (priorSequences.length === 0) return undefined;
@@ -400,13 +397,16 @@ async function queryCardanoOrderedChannelBlockage(
   return {
     channelId: health.channel_id || packet.sourceChannel,
     pendingPacketCommitmentCount:
-      health.pending_packet_commitment_count || priorSequences.length.toString(),
+      health.pending_packet_commitment_count ||
+      priorSequences.length.toString(),
     earliestPendingPacketSequence:
       health.earliest_pending_packet_sequence || priorSequences[0] || null,
     pendingPacketSequencesBeforeCurrent: priorSequences,
     reason:
       health.reason ||
-      `Ordered Cardano channel ${packet.sourcePort}/${packet.sourceChannel} is blocked by earlier pending packet(s) ${priorSequences.join(', ')}.`,
+      `Ordered Cardano channel ${packet.sourcePort}/${
+        packet.sourceChannel
+      } is blocked by earlier pending packet(s) ${priorSequences.join(', ')}.`,
   };
 }
 
@@ -570,6 +570,8 @@ function phaseMessage(
 
 async function buildTransferStatus(params: {
   sourceTxHash: string;
+  packetSequence?: string;
+  sourceChannel?: string;
   sourceChainId: string;
   destinationChainId: string;
 }): Promise<TransferStatusResponse> {
@@ -597,7 +599,14 @@ async function buildTransferStatus(params: {
     };
   }
 
-  const firstSend = findPacketEvent(sourceTxEvents, PACKET_EVENTS.send);
+  const firstSend = params.packetSequence
+    ? sourceTxEvents.find(
+        (event) =>
+          event.type === PACKET_EVENTS.send &&
+          event.packet.sequence === params.packetSequence &&
+          event.packet.sourceChannel === params.sourceChannel,
+      )
+    : findPacketEvent(sourceTxEvents, PACKET_EVENTS.send);
   if (!firstSend) {
     return {
       status: 'failed',
@@ -671,9 +680,13 @@ async function buildTransferStatus(params: {
       );
       if (blockage) {
         hop.blockedByPriorPackets = blockage;
-        statusMessage = `IBC send_packet ${currentPacket.sourceChannel}/${currentPacket.sequence} is indexed, but the ordered Cardano channel is blocked by earlier pending packet(s) ${blockage.pendingPacketSequencesBeforeCurrent.join(
+        statusMessage = `IBC send_packet ${currentPacket.sourceChannel}/${
+          currentPacket.sequence
+        } is indexed, but the ordered Cardano channel is blocked by earlier pending packet(s) ${blockage.pendingPacketSequencesBeforeCurrent.join(
           ', ',
-        )}. The relayer must receive or time out those packet(s) before this packet can reach ${hopDestinationChain.prettyName || hopDestinationChain.id}.`;
+        )}. The relayer must receive or time out those packet(s) before this packet can reach ${
+          hopDestinationChain.prettyName || hopDestinationChain.id
+        }.`;
       }
       packets.push(hop);
       status = 'send_packet_indexed';
@@ -780,6 +793,10 @@ export default async function handler(
   try {
     return res.status(200).json(
       await buildTransferStatus({
+        packetSequence:
+          getSingleQueryValue(req.query.packetSequence).trim() || undefined,
+        sourceChannel:
+          getSingleQueryValue(req.query.sourceChannel).trim() || undefined,
         sourceTxHash,
         sourceChainId,
         destinationChainId,
