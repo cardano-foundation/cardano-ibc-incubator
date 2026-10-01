@@ -444,6 +444,24 @@ jobs:
       - name: Build
         run: npm run --prefix cardano/gateway build
 
+      - name: Setup Deno for Gateway packet integration
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+
+      - name: Setup Aiken for Gateway packet integration
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Build validators for Gateway packet integration
+        working-directory: cardano/onchain
+        run: aiken build --deny --trace-level silent
+
+      - name: Exercise production Gateway backlog and fee reservations
+        working-directory: cardano/offchain
+        run: deno run --allow-env --allow-read --allow-net --allow-run scripts/test-gateway-packet-backlog.ts
+
       - name: Check independent migration rehearsal evidence controls
         run: |
           python3 scripts/ci/aiken-contract-migration/test-migration-evidence.py

@@ -1,3 +1,4 @@
+import { PacketInputsBusyError } from './tx-input-reservations';
 import { consensusHistoryWitnessSchema } from '../shared/types/consensus-state-datum';
 import { HISTORY_SERVICE, type HistoryService } from '../query/services/history.service';
 import { PacketStateService } from '../query/services/packet-state.service';
@@ -9,7 +10,7 @@ import {
   buildVoucherReferenceTokenNameFromFullDenom,
 } from '../shared/helpers/voucher-asset';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Constr, Data, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
@@ -62,6 +63,9 @@ export type BuildPacketBatchResponse = {
 
 @Injectable()
 export class PacketLaneService {
+  private readonly logger = new Logger(PacketLaneService.name);
+  private readonly deferredIntents = new Map<string, number>();
+  private readonly intentCursor = new Map<string, Pick<UTxO, 'txHash' | 'outputIndex'>>();
   constructor(
     private readonly config: ConfigService,
     private readonly lucid: LucidService,
@@ -129,7 +133,11 @@ export class PacketLaneService {
     };
   }
 
-  private async complete(signer: string, name: string, build: (from: number, to: number) => Promise<TxBuilder>) {
+  private async complete(
+    signer: string,
+    name: string,
+    build: (from: number, to: number) => Promise<TxBuilder | { tx: TxBuilder; inputs?: UTxO[]; input?: UTxO }>,
+  ) {
     if (!signer) throw new Error('Signer address required');
     const network = this.config.getOrThrow<Network>('cardanoNetwork');
     const clock = this.lucid.LucidImporter.SLOT_CONFIG_NETWORK[network];
@@ -142,14 +150,20 @@ export class PacketLaneService {
     // never inherit another request's wallet selection.
     const result = await this.runner.runChain({
       operationName: name,
+      ...(name !== 'transferIntent'
+        ? { reservation: { now: window.validFromTime, expiresAt: window.validToTime } }
+        : {}),
       wallet: { mode: 'refresh_from_address', address: signer, context: name },
-      build: async (scope) =>
-        scope.complete({
+      build: async (scope) => {
+        const built = await build(window.validFromTime, window.validToTime);
+        return scope.complete({
           operationName: name,
           requireWalletInput: true,
-          unsignedTx: await build(window.validFromTime, window.validToTime),
+          unsignedTx: 'tx' in built ? built.tx : built,
+          spendingInputs: 'tx' in built ? (built.inputs ?? (built.input ? [built.input] : undefined)) : undefined,
           validity: { apply: (tx) => tx.validFrom(window.validFromTime).validTo(window.validToTime) },
-        }),
+        });
+      },
     });
     return { type_url: '', value: result.value.unsignedTxBytes };
   }
@@ -241,6 +255,9 @@ export class PacketLaneService {
     if (request.port_id !== 'transfer') throw new Error('Expected transfer port');
     const deployment = await this.deployment(request.channel_id);
     const { Data, Constr, fromText } = this.lucid.LucidImporter;
+    const now = Date.now();
+    for (const [ref, until] of this.deferredIntents) if (until <= now) this.deferredIntents.delete(ref);
+    const ref = (input: UTxO) => `${input.txHash}#${input.outputIndex}`;
     const pending = (await this.lucid.lucid.utxosAt(deployment.guardAddress))
       .filter((input) => {
         if (!input.datum) return false;
@@ -258,6 +275,7 @@ export class PacketLaneService {
           datum.fields[1] === fromText(request.channel_id)
         );
       })
+      .filter((input) => usableTransferIntent(input, deployment, 0))
       .sort((a, b) => a.txHash.localeCompare(b.txHash) || a.outputIndex - b.outputIndex);
     if (request.intent_tx_hash && !pending.some((input) => input.txHash === request.intent_tx_hash)) {
       const consuming = await this.history.findIntentSpendingTransaction(
@@ -273,36 +291,75 @@ export class PacketLaneService {
         throw new Error('Funded intent was cancelled without sending a packet');
       return { stage: 'included', intent_tx_hashes: [request.intent_tx_hash], included_tx_hash: consuming.txHash };
     }
+    if (!request.intent_tx_hash) {
+      const cursor = this.intentCursor.get(request.channel_id);
+      if (cursor) {
+        const next = pending.findIndex(
+          (input) =>
+            input.txHash.localeCompare(cursor.txHash) > 0 ||
+            (input.txHash === cursor.txHash && input.outputIndex > cursor.outputIndex),
+        );
+        if (next > 0) pending.push(...pending.splice(0, next));
+      }
+    }
     // Always include the caller's funded request. The signer binds authorization
     // to this input even when another builder selected earlier requests.
     if (request.intent_tx_hash)
       pending.sort((a, b) => Number(b.txHash === request.intent_tx_hash) - Number(a.txHash === request.intent_tx_hash));
-    if (!pending.length) return { stage: 'idle', intent_tx_hashes: [] };
+    if (!pending.length) {
+      this.intentCursor.delete(request.channel_id);
+      return { stage: 'idle', intent_tx_hashes: [] };
+    }
     const initialization = await this.initialize(request);
     if (initialization)
       return { stage: 'initialize', intent_tx_hashes: [pending[0].txHash], unsigned_tx: initialization };
     let intents: UTxO[] = [];
+    let noWork = false;
     // Populated lanes or large payloads can make a two-intent transaction exceed
     // ledger limits. Evaluate it, then retry a single funded request if needed.
     const build = (limit: number) =>
       this.complete(request.signer, 'packetBatch', async (from, to) => {
-        intents = pending.filter((input) => usableTransferIntent(input, deployment, to)).slice(0, limit);
+        intents = pending
+          .filter(
+            (input) =>
+              (request.intent_tx_hash || !this.deferredIntents.has(ref(input))) &&
+              usableTransferIntent(input, deployment, to),
+          )
+          .slice(0, limit);
+        noWork = !intents.length;
         if (
           !intents.length ||
           (request.intent_tx_hash && !intents.some((input) => input.txHash === request.intent_tx_hash))
         ) {
           throw new Error('Requested intent is expired or cannot fund its declared transfer');
         }
-        return (await buildPacketSendBatch(this.lucid.lucid, deployment, intents, from, to)).tx;
+        return await buildPacketSendBatch(this.lucid.lucid, deployment, intents, from, to);
       });
-    let unsigned_tx;
-    try {
-      unsigned_tx = await build(2);
-    } catch (error) {
-      if (intents.length < 2) throw error;
-      unsigned_tx = await build(1);
+    // A well-shaped datum can still be unusable against current lane state.
+    // Bound evaluation work, defer a failing single request, and try the next
+    // candidate so an attacker cannot pin the head of a channel's queue.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        let unsigned_tx;
+        try {
+          unsigned_tx = await build(2);
+        } catch (error) {
+          if (error instanceof PacketInputsBusyError || intents.length < 2) throw error;
+          unsigned_tx = await build(1);
+        }
+        if (!request.intent_tx_hash) this.intentCursor.set(request.channel_id, intents[intents.length - 1]);
+        return { stage: 'send', intent_tx_hashes: intents.map((u) => u.txHash), unsigned_tx };
+      } catch (error) {
+        if (request.intent_tx_hash || error instanceof PacketInputsBusyError) throw error;
+        if (noWork) return { stage: 'idle', intent_tx_hashes: [] };
+        if (!intents.length || !/(script|validator|capacity|exceeds|budget|invalid intent)/i.test(String(error)))
+          throw error;
+        this.intentCursor.set(request.channel_id, intents[0]);
+        this.logger.warn(`Deferring intent ${ref(intents[0])}: ${String(error).slice(0, 300)}`);
+        this.deferredIntents.set(ref(intents[0]), Date.now() + 30_000);
+      }
     }
-    return { stage: 'send', intent_tx_hashes: intents.map((u) => u.txHash), unsigned_tx };
+    return { stage: 'idle', intent_tx_hashes: [] };
   }
 
   private packet(packet: Packet): Constr<Data> {
@@ -359,15 +416,13 @@ export class PacketLaneService {
         request.signer,
         'compactPacketBalances',
         async () =>
-          (
-            await buildPacketBalanceCompaction(
-              this.lucid.lucid,
-              deployment,
-              request.left_lane ?? 0,
-              request.right_lane ?? 0,
-              leftDenoms.length ? leftDenoms : undefined,
-            )
-          ).tx,
+          await buildPacketBalanceCompaction(
+            this.lucid.lucid,
+            deployment,
+            request.left_lane ?? 0,
+            request.right_lane ?? 0,
+            leftDenoms.length ? leftDenoms : undefined,
+          ),
       ),
     };
   }
@@ -414,17 +469,15 @@ export class PacketLaneService {
         request.signer,
         'prunePacketLane',
         async (from, to) =>
-          (
-            await buildPacketPrune(
-              this.lucid.lucid,
-              deployment,
-              request.sequence,
-              record(height.revision_number, height.revision_height),
-              this.proof(request.proof_commitment_absence),
-              from,
-              to,
-            )
-          ).tx,
+          await buildPacketPrune(
+            this.lucid.lucid,
+            deployment,
+            request.sequence,
+            record(height.revision_number, height.revision_height),
+            this.proof(request.proof_commitment_absence),
+            from,
+            to,
+          ),
       ),
     };
   }
@@ -484,43 +537,40 @@ export class PacketLaneService {
         ? await this.liquidity(deployment, port, channel, denom, BigInt(data.amount), p.sequence)
         : [];
     const unsigned_tx = await this.complete(request.signer, `packet${kind}`, async (from, to) => {
-      let tx: TxBuilder;
+      let built: Awaited<ReturnType<typeof buildPacketAcknowledgement>>;
       if (kind === 'receive')
-        tx = (await buildPacketReceive(this.lucid.lucid, deployment, packet, height, proof, liquidity, from, to)).tx;
+        built = await buildPacketReceive(this.lucid.lucid, deployment, packet, height, proof, liquidity, from, to);
       else if (kind === 'timeout' && 'proof_close' in request)
-        tx = (
-          await buildPacketTimeoutOnClose(
-            this.lucid.lucid,
-            deployment,
-            packet,
-            height,
-            proof,
-            this.proof(request.proof_close),
-            liquidity,
-            from,
-            to,
-          )
-        ).tx;
+        built = await buildPacketTimeoutOnClose(
+          this.lucid.lucid,
+          deployment,
+          packet,
+          height,
+          proof,
+          this.proof(request.proof_close),
+          liquidity,
+          from,
+          to,
+        );
       else if (kind === 'timeout')
-        tx = (await buildPacketTimeout(this.lucid.lucid, deployment, packet, height, proof, liquidity, from, to)).tx;
+        built = await buildPacketTimeout(this.lucid.lucid, deployment, packet, height, proof, liquidity, from, to);
       else if (ack?.error)
-        tx = (
-          await buildPacketRejection(
-            this.lucid.lucid,
-            deployment,
-            packet,
-            height,
-            proof,
-            liquidity,
-            ack.error,
-            from,
-            to,
-          )
-        ).tx;
+        built = await buildPacketRejection(
+          this.lucid.lucid,
+          deployment,
+          packet,
+          height,
+          proof,
+          liquidity,
+          ack.error,
+          from,
+          to,
+        );
       else {
         if (ack?.result !== 'AQ==') throw new Error('Unsupported transfer acknowledgement');
-        tx = (await buildPacketAcknowledgement(this.lucid.lucid, deployment, packet, height, proof, from, to)).tx;
+        built = await buildPacketAcknowledgement(this.lucid.lucid, deployment, packet, height, proof, from, to);
       }
+      const tx = built.tx;
       if (voucherDenom) {
         const update = await this.traces.prepareOnChainInsert(
           buildVoucherDenomHashFromFullDenom(voucherDenom),
@@ -546,7 +596,7 @@ export class PacketLaneService {
           );
         }
       }
-      return tx;
+      return { tx, inputs: [built.input, ...liquidity] };
     });
     return { result: 0, unsigned_tx };
   }

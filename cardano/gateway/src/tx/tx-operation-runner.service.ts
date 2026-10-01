@@ -1,3 +1,4 @@
+import { PacketInputsBusyError, TxInputReservations } from './tx-input-reservations';
 import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import { Injectable } from '@nestjs/common';
 import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
@@ -68,6 +69,7 @@ type TxChainLinkPlan = {
   operationName: string;
   /** Hermes requires an ordinary signer input even when script inputs fund the transaction. */
   requireWalletInput?: boolean;
+  spendingInputs?: UTxO[];
   unsignedTx: TxBuilder;
   validity: TxValidityPolicy;
   completeOptions?: TxCompleteOptions;
@@ -85,6 +87,7 @@ type TxChainOperationContext = {
 };
 
 type TxChainOperationPlan<T> = {
+  reservation?: { now: number; expiresAt: number };
   operationName: string;
   wallet: TxWalletInstruction;
   /** Register metadata only for the final dependency-ordered link. */
@@ -101,6 +104,7 @@ type TxChainOperationResult<T> = {
 export class TxOperationRunnerService {
   private readonly transactionMode = new HistoricalReadOnlyGuard();
   private completionChain: Promise<void> = Promise.resolve();
+  private readonly inputReservations = new TxInputReservations();
 
   constructor(
     private readonly lucidService: LucidService,
@@ -126,11 +130,7 @@ export class TxOperationRunnerService {
     }
 
     if (plan.syntheticEvents && plan.syntheticEvents.length > 0) {
-      this.txEventsService.register(
-        unsignedTxHash,
-        plan.syntheticEvents,
-        pendingTreeUpdate?.expectedNewRoot,
-      );
+      this.txEventsService.register(unsignedTxHash, plan.syntheticEvents, pendingTreeUpdate?.expectedNewRoot);
     }
 
     return {
@@ -150,21 +150,33 @@ export class TxOperationRunnerService {
       let walletInputs: UTxO[] | undefined;
 
       try {
+        if (plan.reservation) {
+          await this.inputReservations.refresh(plan.reservation.now, (inputs) =>
+            this.lucidService.lucid.utxosByOutRef(inputs),
+          );
+        }
         await this.applyWalletInstruction(plan.wallet);
         this.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, plan.operationName);
+        if (plan.reservation && plan.wallet.mode === 'refresh_from_address') {
+          const available = this.inputReservations.available(await this.lucidService.lucid.wallet().getUtxos());
+          this.lucidService.selectWalletFromAddress(plan.wallet.address, available);
+        }
 
         const value = await plan.build({
           complete: async (link) => {
+            if (plan.reservation && link.spendingInputs) this.inputReservations.assertAvailable(link.spendingInputs);
             if (walletInputs && plan.wallet.mode === 'refresh_from_address') {
               this.lucidService.selectWalletFromAddress(plan.wallet.address, walletInputs);
             }
             if (link.requireWalletInput) {
-              const available = walletInputs ?? await this.lucidService.lucid.wallet().getUtxos();
+              const available = walletInputs ?? (await this.lucidService.lucid.wallet().getUtxos());
               // Prefer ADA-only inputs to avoid pulling unrelated wallet assets into a stage.
-              const funding = available.find((utxo) => Object.keys(utxo.assets).every((unit) => unit === 'lovelace'))
-                ?? available[0];
+              const funding =
+                available.find((utxo) => Object.keys(utxo.assets).every((unit) => unit === 'lovelace')) ?? available[0];
               if (!funding) {
-                throw new Error(`${link.operationName} requires an ordinary signer wallet input`);
+                throw new PacketInputsBusyError(
+                  `${link.operationName} requires an ordinary signer wallet input that is not reserved`,
+                );
               }
               link.unsignedTx.collectFrom([funding]);
             }
@@ -193,6 +205,28 @@ export class TxOperationRunnerService {
 
         if (plan.finalPendingTreeUpdate && links.length === 0) {
           throw new Error(`${plan.operationName} cannot register a final pending update without a transaction`);
+        }
+        if (plan.reservation) {
+          const { CML } = this.lucidService.LucidImporter;
+          // Packet operations return one transaction. Do not partially reserve a
+          // dependent transaction chain if later construction fails.
+          if (links.length !== 1) throw new Error('Input reservations require one packet transaction');
+          const result = links[0].result;
+          const body = CML.Transaction.from_cbor_hex(result.unsignedTxCbor).body();
+          const refs: Pick<UTxO, 'txHash' | 'outputIndex'>[] = [];
+          for (const inputs of [body.inputs(), body.collateral_inputs()]) {
+            if (!inputs) continue;
+            for (let i = 0; i < inputs.len(); i++) {
+              refs.push({
+                txHash: inputs.get(i).transaction_id().to_hex(),
+                outputIndex: Number(inputs.get(i).index()),
+              });
+            }
+          }
+          const inputs = await this.lucidService.lucid.utxosByOutRef(refs);
+          if (inputs.length !== refs.length)
+            throw new Error('Packet inputs changed during construction. Retry from canonical state');
+          this.inputReservations.reserve(result.unsignedTxHash, inputs, plan.reservation.expiresAt);
         }
         for (const [index, link] of links.entries()) {
           const isFinalLink = index === links.length - 1;
@@ -293,6 +327,15 @@ export class TxOperationRunnerService {
   private async applyWalletInstruction(wallet: TxWalletInstruction): Promise<void> {
     if (wallet.mode === 'refresh_from_address') {
       await this.walletContextService.selectWalletFromAddressWithRetry(wallet.address, wallet.context);
+      if (this.inputReservations.pending) {
+        // Expiry is checked against the ledger clock in runChain. A local
+        // wall clock ahead of the ledger must not release a still-valid spend.
+        await this.inputReservations.refresh(Number.NEGATIVE_INFINITY, (inputs) =>
+          this.lucidService.lucid.utxosByOutRef(inputs),
+        );
+        const available = this.inputReservations.available(await this.lucidService.lucid.wallet().getUtxos());
+        this.lucidService.selectWalletFromAddress(wallet.address, available);
+      }
       return;
     }
 

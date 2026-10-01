@@ -43,8 +43,11 @@ pub type LaneMutation {
 
 pub type LaneUpdate {
   mutation: LaneMutation,
-  /// Sequential sparse-tree witnesses, in the mutation's fixed key order.
-  siblings: List<List<ByteArray>>,
+  /// The spending guard decodes and validates sequential witnesses when it
+  /// applies this mutation. Other policies need only the mutation metadata.
+  /// Keeping the witness opaque here avoids decoding every lane's 64 hashes
+  /// in every policy. Its serialized representation is unchanged.
+  siblings: Data,
 }
 
 pub fn empty(
@@ -100,6 +103,7 @@ pub fn apply_updates(
 }
 
 fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
+  expect witnesses: List<List<ByteArray>> = update.siblings
   let sequence = mutation_sequence(update.mutation)
   expect
     packet_lanes.packet_lane(
@@ -124,7 +128,7 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
       expect packet.source_port == old.port_id
       expect packet.source_channel == old.channel_id
       expect !pairs.has_key(old.commitments, sequence)
-      expect [siblings] = update.siblings
+      expect [siblings] = witnesses
       let commitment = packet_mod.commit_packet(packet)
       PacketLaneDatum {
         ..old,
@@ -148,7 +152,7 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
         height_mod.compare(proof_height, old.minimum_receive_proof_height) != Less
       expect !list.has(old.receipts, sequence)
       expect !pairs.has_key(old.acknowledgements, sequence)
-      expect [receipt_siblings, acknowledgement_siblings] = update.siblings
+      expect [receipt_siblings, acknowledgement_siblings] = witnesses
       let receipt_root =
         update_root(old.root, receipt_key, "", #"01", receipt_siblings)
       PacketLaneDatum {
@@ -183,7 +187,7 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
       expect packet.source_channel == old.channel_id
       expect Some(commitment) = pairs.get_first(old.commitments, sequence)
       expect commitment == packet_mod.commit_packet(packet)
-      expect [siblings] = update.siblings
+      expect [siblings] = witnesses
       PacketLaneDatum {
         ..old,
         root: update_root(old.root, commitment_key, commitment, "", siblings),
@@ -200,7 +204,7 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
       expect list.has(old.receipts, sequence)
       expect Some(acknowledgement) =
         pairs.get_first(old.acknowledgements, sequence)
-      expect [receipt_siblings, acknowledgement_siblings] = update.siblings
+      expect [receipt_siblings, acknowledgement_siblings] = witnesses
       let receipt_root =
         update_root(old.root, receipt_key, #"01", "", receipt_siblings)
       PacketLaneDatum {

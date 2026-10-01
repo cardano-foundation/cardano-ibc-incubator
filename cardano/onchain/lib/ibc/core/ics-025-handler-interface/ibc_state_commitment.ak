@@ -172,8 +172,7 @@ pub fn apply_update(
 
   let old_leaf = leaf_hash(key_hash, value_hash(old_value))
   let new_leaf = leaf_hash(key_hash, value_hash(new_value))
-  let path =
-    builtin.bytearray_to_integer(True, builtin.slice_bytearray(0, 8, key_hash))
+  let path = builtin.slice_bytearray(0, 8, key_hash)
   let (computed_old, computed_new) =
     updated_roots(path, old_leaf, new_leaf, siblings, 0)
   expect computed_old == old_root
@@ -183,7 +182,7 @@ pub fn apply_update(
 // Both roots follow the same path. Validate each sibling and decode each path
 // bit once. Every intermediate node is either a 32-byte constant or SHA-256.
 fn updated_roots(
-  path: Int,
+  path: ByteArray,
   old: ByteArray,
   new: ByteArray,
   siblings: List<ByteArray>,
@@ -195,12 +194,19 @@ fn updated_roots(
   } else {
     expect [sibling, ..rest] = siblings
     expect bytearray.length(sibling) == hash_size_bytes
-    let (next_old, next_new) =
-      if path % 2 == 0 {
-        (inner_hash_validated(old, sibling), inner_hash_validated(new, sibling))
+    let sibling_on_left = builtin.read_bit(path, depth)
+    let next_old =
+      if sibling_on_left {
+        inner_hash_validated(sibling, old)
       } else {
-        (inner_hash_validated(sibling, old), inner_hash_validated(sibling, new))
+        inner_hash_validated(old, sibling)
       }
-    updated_roots(path / 2, next_old, next_new, rest, depth + 1)
+    let next_new =
+      if sibling_on_left {
+        inner_hash_validated(sibling, new)
+      } else {
+        inner_hash_validated(new, sibling)
+      }
+    updated_roots(path, next_old, next_new, rest, depth + 1)
   }
 }

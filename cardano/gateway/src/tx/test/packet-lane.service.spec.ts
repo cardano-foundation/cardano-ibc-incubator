@@ -1,3 +1,4 @@
+import { PacketInputsBusyError } from '../tx-input-reservations';
 import { PacketLaneService } from '../packet-lane.service';
 import {
   buildPacketSendBatch,
@@ -198,5 +199,70 @@ describe('default funded packet batches', () => {
       stage: 'initialize',
       intent_tx_hashes: ['aa'],
     });
+  });
+  it('drains valid backlog behind a request that passes shape checks but fails script evaluation', async () => {
+    jest.mocked(buildPacketSendBatch).mockImplementation(async (_lucid, _deployment, inputs) => {
+      if (inputs.some((input) => input.txHash === 'aa'))
+        throw new Error('script validation failed for unusable intent');
+      return { tx: {} } as any;
+    });
+    const response = await service.batch({ ...request, intent_tx_hash: '' });
+    expect(response.intent_tx_hashes).toEqual(['bb', 'cc']);
+    expect(complete).toHaveBeenCalledTimes(3);
+    pending = pending.filter((input) => !response.intent_tx_hashes.includes(input.txHash));
+    await expect(service.batch({ ...request, intent_tx_hash: '' })).resolves.toMatchObject({ stage: 'idle' });
+  });
+
+  it('reports idle without building when every candidate fails complete datum validation', async () => {
+    jest.mocked(usableTransferIntent).mockReturnValue(false);
+    await expect(service.batch({ ...request, intent_tx_hash: '' })).resolves.toMatchObject({ stage: 'idle' });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('bounds evaluation attempts and leaves unusable requests available for owner cancellation', async () => {
+    pending = Array.from({ length: 12 }, (_, i) => ({
+      txHash: `${i}`.padStart(2, '0'),
+      outputIndex: 0,
+      datum: new Datum(),
+    }));
+    jest.mocked(buildPacketSendBatch).mockRejectedValue(new Error('script validation failed'));
+    await expect(service.batch({ ...request, intent_tx_hash: '' })).resolves.toMatchObject({ stage: 'idle' });
+    expect(complete).toHaveBeenCalledTimes(16);
+    expect(pending).toHaveLength(12);
+  });
+  it('backs off unavailable fee inputs without quarantining otherwise valid requests', async () => {
+    jest.mocked(buildPacketSendBatch).mockRejectedValueOnce(new PacketInputsBusyError('reserved'));
+    await expect(service.batch({ ...request, intent_tx_hash: '' })).rejects.toThrow('reserved');
+    expect(complete).toHaveBeenCalledTimes(1);
+    jest.mocked(buildPacketSendBatch).mockResolvedValue({ tx: {} } as any);
+    expect((await service.batch({ ...request, intent_tx_hash: '' })).intent_tx_hashes).toEqual(['aa', 'bb']);
+  });
+
+  it('propagates infrastructure failures instead of treating healthy requests as unusable', async () => {
+    jest.mocked(buildPacketSendBatch).mockRejectedValue(new Error('node connection refused'));
+    await expect(service.batch({ ...request, intent_tx_hash: '' })).rejects.toThrow('node connection refused');
+  });
+  it('advances past a long unusable prefix even when earlier cooldowns expire', async () => {
+    pending = Array.from({ length: 64 }, (_, i) => ({
+      txHash: `bad-${i.toString().padStart(2, '0')}`,
+      outputIndex: 0,
+      datum: new Datum(),
+    }));
+    pending.push({ txHash: 'valid', outputIndex: 0, datum: new Datum() });
+    jest.mocked(buildPacketSendBatch).mockImplementation(async (_lucid, _deployment, inputs) => {
+      if (inputs.some((input) => input.txHash !== 'valid')) throw new Error('script validation failed');
+      return { tx: {} } as any;
+    });
+    let now = 0;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      for (let pass = 0; pass < 8; pass++) {
+        expect((await service.batch({ ...request, intent_tx_hash: '' })).stage).toBe('idle');
+        now += 6_000;
+      }
+      expect((await service.batch({ ...request, intent_tx_hash: '' })).intent_tx_hashes).toEqual(['valid']);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

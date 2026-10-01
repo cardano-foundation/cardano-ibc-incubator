@@ -145,6 +145,17 @@ for (const scenario of scenarios) {
       packets.push(...built.batch.packets);
       offset += size;
     }
+    if (Deno.env.get("PACKET_LANE_REQUIRE_PAIR_BATCHES") === "1") {
+      assertEquals(
+        fallbacks,
+        0,
+        "two-request batches regressed to single sends",
+      );
+      assert(
+        phases.every((tx) => Number(tx.memory) <= 15_500_000),
+        "send batch lost its execution-memory headroom",
+      );
+    }
     assertEquals(
       packets.map((p) => p.fields[0]),
       Array.from({ length: scenario.requests }, (_, i) => BigInt(i + 1)),

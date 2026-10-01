@@ -268,7 +268,8 @@ async function buildTransferIntent(lucid, deployment, request) {
         throw new Error("Invalid native asset unit");
     const amount = request.amount;
     const reserve = request.reserve ?? 3000000n;
-    if (amount <= 0n || reserve <= 0n || request.timeoutTimestamp <= 0n) {
+    if (amount <= 0n || reserve <= 0n || request.timeoutTimestamp <= 0n ||
+        request.timeoutTimestamp > 0xffffffffffffffffn) {
         throw new Error("Invalid funded intent");
     }
     const data = {
@@ -879,19 +880,26 @@ function usableTransferIntent(input, deployment, validTo) {
             typeof datum.fields[2] !== "string" ||
             !/^[0-9a-f]{56}$/.test(datum.fields[2]) ||
             typeof datum.fields[4] !== "bigint" ||
+            datum.fields[4] > 0xffffffffffffffffn ||
             datum.fields[4] <= BigInt(validTo) * 1000000n)
             return false;
         const fields = datum.fields[3];
         if (!(fields instanceof lucid_1.Constr) || fields.index !== 0 ||
             fields.fields.length !== 5 || !fields.fields.every((v) => typeof v === "string"))
             return false;
-        const [denom, amount, sender, receiver, memo] = fields.fields
-            .map(lucid_1.toText);
+        const decoded = fields.fields.map(lucid_1.toText);
+        // Reject invalid UTF-8 rather than silently replacing bytes before the
+        // on-chain comparison against the funded datum.
+        if (decoded.some((value, index) => (0, lucid_1.fromText)(value) !== fields.fields[index]))
+            return false;
+        const [denom, amount, sender, receiver, memo] = decoded;
         if (!/^[1-9][0-9]*$/.test(amount) || sender !== datum.fields[2]) {
             return false;
         }
         (0, ics20_json_codec_1.stringifyIcs20PacketData)({ denom, amount, sender, receiver, memo });
         const unit = localAssetUnit(denom, deployment);
+        if (unit !== "lovelace" && unit.startsWith(deployment.batchPolicy))
+            return false;
         const value = BigInt(amount);
         return (input.assets[unit] ?? 0n) >= value &&
             (input.assets.lovelace ?? 0n) > (unit === "lovelace" ? value : 0n) &&

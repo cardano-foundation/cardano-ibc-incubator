@@ -194,3 +194,29 @@ test packet_lane_wrong_witness_rejected() fail {
       ],
     )
 }
+
+test packet_lane_opaque_witness_must_be_a_list_of_hash_lists() fail {
+  expect _ =
+    packet_lane_datum.apply_updates(
+      empty(),
+      [
+        LaneUpdate {
+          mutation: CommitPacket { packet: packet(1) },
+          siblings: 42,
+        },
+      ],
+    )
+}
+
+test packet_lane_opaque_witness_rejects_non_bytes_siblings() fail {
+  expect _ =
+    packet_lane_datum.apply_updates(
+      empty(),
+      [
+        LaneUpdate {
+          mutation: CommitPacket { packet: packet(1) },
+          siblings: [list.repeat(0, 64)],
+        },
+      ],
+    )
+}
