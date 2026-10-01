@@ -37,10 +37,29 @@ import {
   sha256,
 } from "../packet-lane-transactions.ts";
 
+function unsignedVarintHex(value: number): string {
+  let result = "";
+  while (value >= 128) {
+    result += ((value % 128) + 128).toString(16).padStart(2, "0");
+    value = Math.floor(value / 128);
+  }
+  return result + value.toString(16).padStart(2, "0");
+}
+
 // Seed only the authenticated pre-state and test-wallet funds. Admission,
 // batching and packet completion are balanced, signed transactions executing
 // the compiled validators with the pinned mainnet protocol parameters.
-export async function packetLaneFixture(laneCount = 16) {
+export async function packetLaneFixture(
+  laneCount = 16,
+  acknowledgementLeaves = 8,
+) {
+  if (
+    !Number.isInteger(acknowledgementLeaves) || acknowledgementLeaves < 1 ||
+    acknowledgementLeaves > 64 ||
+    (acknowledgementLeaves & (acknowledgementLeaves - 1)) !== 0
+  ) {
+    throw new Error("acknowledgementLeaves must be a power of two up to 64");
+  }
   const node = Deno.env.get("PACKET_LANE_NODE_URL");
   let clock: { time: number; slot: number } | undefined;
   if (node) {
@@ -229,11 +248,15 @@ export async function packetLaneFixture(laneCount = 16) {
   const client = Data.from(context.client.datum!) as Constr<Data>;
   const state = client.fields[0] as Constr<Data>;
   const cs = state.fields[0] as Constr<Data>;
-  // A single authenticated remote checkpoint covers all eight acknowledgement
+  // A single authenticated remote checkpoint covers all acknowledgement
   // leaves. Internal IAVL nodes use length-prefixed SHA-256 child hashes.
   const height = record(1n, 18n);
   const entries = [];
-  for (let sequence = 1n; sequence <= 8n; sequence++) {
+  for (
+    let sequence = 1n;
+    sequence <= BigInt(acknowledgementLeaves);
+    sequence++
+  ) {
     const membership = await membershipProof(
       fromText(`acks/ports/transfer/channels/channel-7/sequences/${sequence}`),
       await sha256(fromText('{"result":"AQ=="}')),
@@ -258,8 +281,10 @@ export async function packetLaneFixture(laneCount = 16) {
     const next = [];
     for (let i = 0; i < nodes.length; i += 2) {
       const left = nodes[i], right = nodes[i + 1];
-      const prefix = (level * 2).toString(16).padStart(2, "0") +
-        (2 ** (level + 1)).toString(16).padStart(2, "0") + "02";
+      // IAVL height, subtree size and version are signed protobuf varints.
+      // The zigzag-encoded size first needs two bytes at 64 leaves.
+      const prefix = unsignedVarintHex(level * 2) +
+        unsignedVarintHex(2 ** (level + 1)) + "02";
       for (const entry of left.entries) {
         (entry.existence.fields[3] as Data[]).push(
           record(1n, prefix + "20", "20" + right.hash),
