@@ -456,7 +456,8 @@ jobs:
 
       - name: Build validators for Gateway packet integration
         working-directory: cardano/onchain
-        run: aiken build --deny --trace-level silent
+        # Aiken hides build errors without a terminal. Preserve diagnostics and exit status.
+        run: script --quiet --return --command 'aiken build --deny --trace-level silent' /dev/null
 
       - name: Exercise production Gateway backlog and fee reservations
         working-directory: cardano/offchain
