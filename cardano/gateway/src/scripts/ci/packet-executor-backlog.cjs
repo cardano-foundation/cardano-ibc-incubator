@@ -98,6 +98,20 @@ async function main() {
   service.deployment = async () => fixture.deployment;
   service.initialize = async () => undefined;
   const request = { signer: fixture.signer, port_id: 'transfer', channel_id: 'channel-0', intent_tx_hash: '' };
+  const abandoned = await service.batch(request);
+  assert.equal(abandoned.stage, 'send');
+  const abandonedBody = lib.CML.Transaction.from_cbor_hex(Buffer.from(abandoned.unsigned_tx.value).toString()).body();
+  const clientBefore = fixture.deployment.client;
+  const refs = abandonedBody.reference_inputs();
+  assert(
+    Array.from({ length: refs.len() }, (_, i) => refs.get(i).transaction_id().to_hex()).includes(clientBefore.txHash),
+  );
+  fixture.deployment.client = await rpc('replaceClientReference');
+  // The ordinary inputs are untouched and the two-minute validity window has
+  // not expired. Only disappearance of the reference can release this lease.
+  assert(
+    (await lucid.utxosByOutRef([{ txHash: clientBefore.txHash, outputIndex: clientBefore.outputIndex }])).length === 0,
+  );
   const packets = [];
   const batches = [];
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -195,6 +209,7 @@ async function main() {
       allSentBeforeAcknowledgements: true,
       sharedWalletAcknowledgementsHaveDisjointInputs: true,
       sameLaneDeferredBeforeEvaluation: true,
+      rebuiltAfterReferenceConsumption: true,
     }),
   );
 }

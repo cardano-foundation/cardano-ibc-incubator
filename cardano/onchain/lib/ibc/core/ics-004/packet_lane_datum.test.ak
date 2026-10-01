@@ -133,6 +133,7 @@ test packet_lane_cannot_modify_another_lane() fail {
 }
 
 test packet_lane_cannot_replay_receive() fail {
+  let witnesses: List<List<ByteArray>> = []
   expect _ =
     packet_lane_datum.apply_updates(
       received(),
@@ -143,7 +144,7 @@ test packet_lane_cannot_replay_receive() fail {
             acknowledgement: #"1111111111111111111111111111111111111111111111111111111111111111",
             proof_height: height(11),
           },
-          siblings: [],
+          siblings: witnesses,
         },
       ],
     )
@@ -165,6 +166,7 @@ test packet_lane_prune_cannot_predate_receive() fail {
 }
 
 test packet_lane_old_membership_rejected_after_prune() fail {
+  let witnesses: List<List<ByteArray>> = []
   let old = prune(received(), height(12))
   expect _ =
     packet_lane_datum.apply_updates(
@@ -176,20 +178,21 @@ test packet_lane_old_membership_rejected_after_prune() fail {
             acknowledgement: #"1111111111111111111111111111111111111111111111111111111111111111",
             proof_height: height(10),
           },
-          siblings: [],
+          siblings: witnesses,
         },
       ],
     )
 }
 
 test packet_lane_wrong_witness_rejected() fail {
+  let witnesses: List<List<ByteArray>> = list.repeat([], 1)
   expect _ =
     packet_lane_datum.apply_updates(
       committed(),
       [
         LaneUpdate {
           mutation: CompletePacket { packet: packet(1) },
-          siblings: list.repeat([], 1),
+          siblings: witnesses,
         },
       ],
     )

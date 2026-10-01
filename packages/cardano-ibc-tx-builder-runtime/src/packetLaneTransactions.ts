@@ -143,6 +143,13 @@ export async function buildPacketBalanceCompaction(
   return { tx, inputs, datums };
 }
 
+export class PacketLaneAccountingCapacityError extends Error {
+  constructor() {
+    super("Packet lane accounting is full. Settle outstanding sends, then compact or redistribute balances before retrying.");
+    this.name = "PacketLaneAccountingCapacityError";
+  }
+}
+
 function addLaneBalance(datum: Constr<Data>, denom: string, delta: bigint) {
   const balances = datum.fields[11] as Map<string, bigint>;
   const key = toHex(hash256(new TextEncoder().encode(denom)));
@@ -151,9 +158,7 @@ function addLaneBalance(datum: Constr<Data>, denom: string, delta: bigint) {
     balances.delete(key);
   } else balances.set(key, amount);
   if (balances.size > MAX_LANE_BALANCES) {
-    throw new Error(
-      "Packet lane accounting is full. Settle outstanding sends, then compact or redistribute balances before retrying.",
-    );
+    throw new PacketLaneAccountingCapacityError();
   }
   datum.fields[11] = new Map(
     [...balances].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),

@@ -42,6 +42,9 @@ export declare function buildPacketBalanceCompaction(lucid: LucidEvolution, depl
     inputs: (import("@lucid-evolution/core-types").OutRef & import("@lucid-evolution/core-types").TxOutput)[];
     datums: Constr<Data>[];
 }>;
+export declare class PacketLaneAccountingCapacityError extends Error {
+    constructor();
+}
 export interface FundedTransfer {
     amount: bigint;
     receiver: string;

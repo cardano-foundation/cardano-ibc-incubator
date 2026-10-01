@@ -42,3 +42,13 @@ describe('packet input reservations', () => {
     expect(leases.available([input(1)])).toEqual([]);
   });
 });
+
+it('releases a batch after its referenced client changes without exclusively reserving that client', async () => {
+  const leases = new TxInputReservations();
+  leases.reserve('batch', [input(1), input(2)], 100, [input(9)]);
+  leases.reserve('other-lane', [input(3)], 100, [input(9)]);
+  expect(leases.available([input(9)])).toEqual([input(9)]);
+  await leases.refresh(10, async (inputs) => inputs.filter((utxo) => utxo.txHash !== input(9).txHash));
+  expect(leases.available([input(1), input(2), input(3)])).toHaveLength(3);
+  expect(() => leases.reserve('rebuilt-batch', [input(1), input(2)], 100, [input(10)])).not.toThrow();
+});

@@ -1,12 +1,15 @@
 import { PacketInputsBusyError } from '../tx-input-reservations';
 import { PacketLaneService } from '../packet-lane.service';
 import {
+  PacketLaneAccountingCapacityError,
   buildPacketSendBatch,
   buildPacketBalanceCompaction,
   usableTransferIntent,
 } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 
 jest.mock('@cardano-ibc/tx-builder-runtime/packetLaneTransactions', () => ({
+  PacketLaneAccountingCapacityError: jest.requireActual('@cardano-ibc/tx-builder-runtime/packetLaneTransactions')
+    .PacketLaneAccountingCapacityError,
   buildPacketSendBatch: jest.fn(),
   buildPacketBalanceCompaction: jest.fn(),
   usableTransferIntent: jest.fn(),
@@ -211,6 +214,16 @@ describe('default funded packet batches', () => {
     expect(complete).toHaveBeenCalledTimes(3);
     pending = pending.filter((input) => !response.intent_tx_hashes.includes(input.txHash));
     await expect(service.batch({ ...request, intent_tx_hash: '' })).resolves.toMatchObject({ stage: 'idle' });
+  });
+
+  it('defers a new asset at accounting capacity and sends an already-accounted asset behind it', async () => {
+    jest.mocked(buildPacketSendBatch).mockImplementation(async (_lucid, _deployment, inputs) => {
+      if (inputs.some((input) => input.txHash === 'aa')) throw new PacketLaneAccountingCapacityError();
+      return { tx: {} } as any;
+    });
+    const response = await service.batch({ ...request, intent_tx_hash: '' });
+    expect(response.intent_tx_hashes).toEqual(['bb', 'cc']);
+    expect(complete).toHaveBeenCalledTimes(3);
   });
 
   it('reports idle without building when every candidate fails complete datum validation', async () => {

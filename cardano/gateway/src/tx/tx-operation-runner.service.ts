@@ -226,7 +226,19 @@ export class TxOperationRunnerService {
           const inputs = await this.lucidService.lucid.utxosByOutRef(refs);
           if (inputs.length !== refs.length)
             throw new Error('Packet inputs changed during construction. Retry from canonical state');
-          this.inputReservations.reserve(result.unsignedTxHash, inputs, plan.reservation.expiresAt);
+          const referenceList = body.reference_inputs();
+          const referenceRefs: Pick<UTxO, 'txHash' | 'outputIndex'>[] = [];
+          if (referenceList)
+            for (let i = 0; i < referenceList.len(); i++) {
+              referenceRefs.push({
+                txHash: referenceList.get(i).transaction_id().to_hex(),
+                outputIndex: Number(referenceList.get(i).index()),
+              });
+            }
+          const references = referenceRefs.length ? await this.lucidService.lucid.utxosByOutRef(referenceRefs) : [];
+          if (references.length !== referenceRefs.length)
+            throw new Error('Packet reference inputs changed during construction. Retry from canonical state');
+          this.inputReservations.reserve(result.unsignedTxHash, inputs, plan.reservation.expiresAt, references);
         }
         for (const [index, link] of links.entries()) {
           const isFinalLink = index === links.length - 1;

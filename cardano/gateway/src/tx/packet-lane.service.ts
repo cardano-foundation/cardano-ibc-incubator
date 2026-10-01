@@ -1,3 +1,4 @@
+import { PacketLaneAccountingCapacityError } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 import { PacketInputsBusyError } from './tx-input-reservations';
 import { consensusHistoryWitnessSchema } from '../shared/types/consensus-state-datum';
 import { HISTORY_SERVICE, type HistoryService } from '../query/services/history.service';
@@ -352,7 +353,13 @@ export class PacketLaneService {
       } catch (error) {
         if (request.intent_tx_hash || error instanceof PacketInputsBusyError) throw error;
         if (noWork) return { stage: 'idle', intent_tx_hashes: [] };
-        if (!intents.length || !/(script|validator|capacity|exceeds|budget|invalid intent)/i.test(String(error)))
+        if (
+          !intents.length ||
+          !(
+            error instanceof PacketLaneAccountingCapacityError ||
+            /(script|validator|exceeds|budget|invalid intent)/i.test(String(error))
+          )
+        )
           throw error;
         this.intentCursor.set(request.channel_id, intents[0]);
         this.logger.warn(`Deferring intent ${ref(intents[0])}: ${String(error).slice(0, 300)}`);

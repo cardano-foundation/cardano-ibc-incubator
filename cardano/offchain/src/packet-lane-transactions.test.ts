@@ -29,6 +29,7 @@ import {
   buildTransferIntent,
   buildTransferIntentCancellation,
   encode,
+  PacketLaneAccountingCapacityError,
   record,
   selectPacketLiquidity,
   sha256,
@@ -915,7 +916,7 @@ for (const firstSeen of [false, true]) {
           f.emulator.now(),
           f.emulator.now() + 60_000,
         ),
-      Error,
+      PacketLaneAccountingCapacityError,
       "accounting is full",
     );
     await assertRejects(

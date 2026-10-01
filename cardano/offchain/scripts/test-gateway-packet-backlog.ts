@@ -138,6 +138,18 @@ const server = Deno.serve(
             ) => [sequence.toString(), encode(p.proof)]),
           ),
         };
+      } else if (body.method === "replaceClientReference") {
+        // Model an included client update. The lease test concerns output
+        // liveness, so preserve authenticated state while replacing its outref.
+        const old = fixture.deployment.client;
+        delete fixture.emulator.ledger[old.txHash + old.outputIndex];
+        fixture.deployment.client = fixture.seed(
+          old.address,
+          old.assets,
+          old.datum!,
+        );
+        fixture.emulator.awaitBlock();
+        result = fixture.deployment.client;
       } else if (body.method === "signSubmit") {
         const tx = await relayer.fromTx(body.args[0]).sign.withWallet()
           .complete();

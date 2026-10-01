@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildPacketTimeoutOnClose = exports.buildPacketRejection = exports.buildPacketTimeout = exports.buildPacketAcknowledgement = exports.MAX_LANE_BALANCES = exports.sha256 = exports.outRef = exports.encode = exports.variant = exports.record = void 0;
+exports.buildPacketTimeoutOnClose = exports.buildPacketRejection = exports.buildPacketTimeout = exports.buildPacketAcknowledgement = exports.PacketLaneAccountingCapacityError = exports.MAX_LANE_BALANCES = exports.sha256 = exports.outRef = exports.encode = exports.variant = exports.record = void 0;
 exports.buildPacketBalanceCompaction = buildPacketBalanceCompaction;
 exports.buildTransferIntent = buildTransferIntent;
 exports.laneTree = laneTree;
@@ -98,6 +98,13 @@ async function buildPacketBalanceCompaction(lucid, deployment, leftLane, rightLa
     }
     return { tx, inputs, datums };
 }
+class PacketLaneAccountingCapacityError extends Error {
+    constructor() {
+        super("Packet lane accounting is full. Settle outstanding sends, then compact or redistribute balances before retrying.");
+        this.name = "PacketLaneAccountingCapacityError";
+    }
+}
+exports.PacketLaneAccountingCapacityError = PacketLaneAccountingCapacityError;
 function addLaneBalance(datum, denom, delta) {
     const balances = datum.fields[11];
     const key = (0, lucid_1.toHex)((0, sha256_1.sha256)(new TextEncoder().encode(denom)));
@@ -108,7 +115,7 @@ function addLaneBalance(datum, denom, delta) {
     else
         balances.set(key, amount);
     if (balances.size > exports.MAX_LANE_BALANCES) {
-        throw new Error("Packet lane accounting is full. Settle outstanding sends, then compact or redistribute balances before retrying.");
+        throw new PacketLaneAccountingCapacityError();
     }
     datum.fields[11] = new Map([...balances].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
 }

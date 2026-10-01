@@ -6,7 +6,7 @@ export class PacketInputsBusyError extends Error {}
 
 /** In-process coordination. Canonical spends and ledger validity bounds release leases. */
 export class TxInputReservations {
-  private readonly leases = new Map<string, { inputs: UTxO[]; expiresAt: number }>();
+  private readonly leases = new Map<string, { inputs: UTxO[]; references: UTxO[]; expiresAt: number }>();
 
   get pending() {
     return this.leases.size > 0;
@@ -15,12 +15,12 @@ export class TxInputReservations {
   async refresh(now: number, unspent: (inputs: UTxO[]) => Promise<UTxO[]>) {
     for (const [hash, lease] of this.leases) if (lease.expiresAt <= now) this.leases.delete(hash);
     if (!this.leases.size) return;
-    const inputs = [...this.leases.values()].flatMap((lease) => lease.inputs);
+    const inputs = [...this.leases.values()].flatMap((lease) => [...lease.inputs, ...lease.references]);
     const live = new Set((await unspent(inputs)).map(key));
-    // Once any spending input is consumed, the unsigned transaction cannot be
+    // Once any spending or reference input is consumed, the transaction cannot be
     // submitted again. Release its fee/collateral pool for the next operation.
     for (const [hash, lease] of this.leases) {
-      if (lease.inputs.some((input) => !live.has(key(input)))) this.leases.delete(hash);
+      if ([...lease.inputs, ...lease.references].some((input) => !live.has(key(input)))) this.leases.delete(hash);
     }
   }
 
@@ -37,8 +37,8 @@ export class TxInputReservations {
     }
   }
 
-  reserve(hash: string, inputs: UTxO[], expiresAt: number) {
+  reserve(hash: string, inputs: UTxO[], expiresAt: number, references: UTxO[] = []) {
     this.assertAvailable(inputs);
-    this.leases.set(hash, { inputs, expiresAt });
+    this.leases.set(hash, { inputs, references, expiresAt });
   }
 }
