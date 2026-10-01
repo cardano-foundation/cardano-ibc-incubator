@@ -452,7 +452,7 @@ jobs:
       - name: Setup Aiken for Gateway packet integration
         uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.1.21
+          version: v1.1.24
 
       - name: Build validators for Gateway packet integration
         working-directory: cardano/onchain
