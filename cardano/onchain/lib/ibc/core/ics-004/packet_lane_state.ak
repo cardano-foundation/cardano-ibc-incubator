@@ -1,3 +1,4 @@
+use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
@@ -80,12 +81,20 @@ pub fn compact_balances(
   // Packet policies rely on the Lane action for their exact state updates.
   // Maintenance must never substitute for that action in a packet transaction.
   expect None = pairs.get_first(transaction.redeemers, Mint(operation_policy))
+  // A negative obligation must not be reused by overlapping pairs.
+  expect [_,
+    _] =
+    list.filter(
+      transaction.inputs,
+      fn(input) { assets.tokens(input.output.value, lane_policy) != dict.empty },
+    )
   expect spent_ref != peer_ref
   let (old, new) = balance_continuation(transaction, spent_ref, lane_policy)
   let (peer, next_peer) =
     balance_continuation(transaction, peer_ref, lane_policy)
   expect old.port_id == peer.port_id && old.channel_id == peer.channel_id
   expect old.lane_count == peer.lane_count && old.lane != peer.lane
+  expect old.commitments == [] && peer.commitments == []
   packet_balances.conserved(
     old.balances,
     peer.balances,

@@ -657,7 +657,7 @@ function checkpoint(
 }
 
 for (const firstSeen of [false, true]) {
-  Deno.test(`${firstSeen ? "first-seen" : "existing"} vouchers receive through packet lanes then burn on a funded return batch`, async () => {
+  Deno.test(`${firstSeen ? "first-seen" : "existing"} vouchers reserve full-channel accounting capacity through burn and refund`, async () => {
     const f = await packetLaneFixture();
     const wallet = await f.wallet(true);
     const receiver =
@@ -827,6 +827,29 @@ for (const firstSeen of [false, true]) {
       ),
       1000n,
     );
+    // Authenticated full-channel accounting is test pre-state. The receive,
+    // burn, pruning and refund below execute the compiled validators.
+    let occupiedSlots = 0;
+    for (const { utxo, spent } of Object.values(f.emulator.ledger)) {
+      if (spent || utxo.address !== f.deployment.guardAddress || !utxo.datum) {
+        continue;
+      }
+      const datum = Data.from(utxo.datum) as Constr<Data>;
+      if (datum.fields.length !== 12) continue;
+      const balances = datum.fields[11] as Map<string, bigint>;
+      for (let i = balances.size; i < 8; i++) {
+        balances.set(
+          await sha256(fromText(`other-${datum.fields[2]}-${i}`)),
+          10n,
+        );
+      }
+      datum.fields[11] = new Map(
+        [...balances].sort(([a], [b]) => a < b ? -1 : 1),
+      );
+      utxo.datum = encode(datum);
+      occupiedSlots += balances.size;
+    }
+    assertEquals(occupiedSlots, 128);
     const admission = await buildTransferIntent(wallet, f.deployment, {
       amount: 1000n,
       assetUnit: unit,
@@ -859,6 +882,47 @@ for (const firstSeen of [false, true]) {
       0n,
     );
     assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+    const laneBefore = (await wallet.utxosAt(f.deployment.guardAddress)).find(
+      (u) => {
+        const datum = Data.from(u.datum!) as Constr<Data>;
+        return datum.fields.length === 12 && datum.fields[2] === 1n;
+      },
+    )!;
+    const reserved = (Data.from(laneBefore.datum!) as Constr<Data>)
+      .fields[11] as Map<string, bigint>;
+    assertEquals(reserved.size, 8);
+    assertEquals(reserved.get(await sha256(fromText(fullDenom))), 0n);
+    const newcomer = record(...packet.fields);
+    newcomer.fields[0] = 17n;
+    newcomer.fields[5] = fromText(
+      JSON.stringify({
+        denom: "new-asset",
+        amount: "1",
+        sender: "cosmos1sender",
+        receiver,
+        memo: "",
+      }),
+    );
+    await assertRejects(
+      () =>
+        buildPacketReceive(
+          wallet,
+          f.deployment,
+          newcomer,
+          height,
+          proof.proof,
+          [],
+          f.emulator.now(),
+          f.emulator.now() + 60_000,
+        ),
+      Error,
+      "accounting is full",
+    );
+    await assertRejects(
+      () => buildPacketBalanceCompaction(wallet, f.deployment, 1, 2),
+      Error,
+      "Settle outstanding sends",
+    );
     const absent = await absenceProof(
       fromText("commitments/ports/transfer/channels/channel-7/sequences/1"),
     );
@@ -885,6 +949,80 @@ for (const firstSeen of [false, true]) {
     assertEquals(lane.fields[7], []);
     assertEquals(lane.fields[8], new Map());
     assertEquals(lane.fields[9], pruningHeight);
+    assertEquals(
+      (lane.fields[11] as Map<string, bigint>).get(
+        await sha256(fromText(fullDenom)),
+      ),
+      0n,
+    );
+    const refundHeight = record(1n, 21n);
+    let refund;
+    if (firstSeen) {
+      const err = "receiver rejected transfer";
+      const rejected = await membershipProof(
+        fromText("acks/ports/transfer/channels/channel-7/sequences/1"),
+        await sha256(fromText(JSON.stringify({ error: err }))),
+      );
+      checkpoint(f, refundHeight, rejected.root);
+      refund = await buildPacketRejection(
+        wallet,
+        f.deployment,
+        batch.packets[0],
+        refundHeight,
+        rejected.proof,
+        [],
+        err,
+        f.emulator.now(),
+        f.emulator.now() + 60_000,
+      );
+    } else {
+      f.emulator.awaitBlock(1801);
+      const missing = await absenceProof(
+        fromText("receipts/ports/transfer/channels/channel-7/sequences/1"),
+      );
+      checkpoint(f, refundHeight, missing.root);
+      refund = await buildPacketTimeout(
+        wallet,
+        f.deployment,
+        batch.packets[0],
+        refundHeight,
+        missing.proof,
+        [],
+        f.emulator.now(),
+        f.emulator.now() + 60_000,
+      );
+    }
+    if (registration) {
+      // The Gateway adds the existing CIP-68 mapping when preparing a refund.
+      refund.tx.readFrom([
+        await wallet.utxoByUnit(
+          f.deployment.voucherPolicy! + "000643b0" + token.slice(8),
+        ),
+      ]);
+    }
+    await (await signMeasured(
+      wallet,
+      refund.tx,
+      "full-capacity voucher refund",
+    )).submit();
+    f.emulator.awaitBlock();
+    const refundedLane = Data.from(
+      (await wallet.utxoByUnit(laneUnit)).datum!,
+    ) as Constr<Data>;
+    assertEquals((refundedLane.fields[11] as Map<string, bigint>).size, 8);
+    assertEquals(
+      (refundedLane.fields[11] as Map<string, bigint>).get(
+        await sha256(fromText(fullDenom)),
+      ),
+      1000n,
+    );
+    assertEquals(
+      (await wallet.wallet().getUtxos()).reduce(
+        (sum, u) => sum + (u.assets[unit] ?? 0n),
+        0n,
+      ),
+      1000n,
+    );
   });
 }
 
@@ -1182,11 +1320,12 @@ Deno.test("repeated multi-asset round trips reclaim full accounting maps across 
   );
 });
 
-Deno.test("full accounting maps can swap assets while preserving pending packets within ledger budgets", async () => {
+Deno.test("full accounting maps reserve pending sends then swap assets after settlement within ledger budgets", async () => {
   const f = await packetLaneFixture(2);
   const wallet = await f.wallet();
   const address = await wallet.wallet().address();
   const leftDenoms: string[] = [];
+  const packets: Constr<Data>[] = [];
   for (let index = 0; index < 16; index++) {
     const unit = "bb".repeat(28) + index.toString(16).padStart(2, "0");
     if (index % 2 === 0) leftDenoms.push(unit);
@@ -1211,7 +1350,35 @@ Deno.test("full accounting maps can swap assets while preserving pending packets
       f.emulator.now(),
       f.emulator.now() + 60_000,
     );
+    packets.push(...send.packets);
     await (await signMeasured(wallet, send.tx, `full-map send ${index}`))
+      .submit();
+    f.emulator.awaitBlock();
+  }
+  await assertRejects(
+    () => buildPacketBalanceCompaction(wallet, f.deployment, 0, 1, leftDenoms),
+    Error,
+    "Settle outstanding sends",
+  );
+  for (const packet of packets) {
+    const proof = await membershipProof(
+      fromText(
+        `acks/ports/transfer/channels/channel-7/sequences/${packet.fields[0]}`,
+      ),
+      await sha256(fromText('{"result":"AQ=="}')),
+    );
+    const height = record(1n, 20n + (packet.fields[0] as bigint));
+    checkpoint(f, height, proof.root);
+    const ack = await buildPacketAcknowledgement(
+      wallet,
+      f.deployment,
+      packet,
+      height,
+      proof.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, ack.tx, "full-map acknowledgement"))
       .submit();
     f.emulator.awaitBlock();
   }
@@ -1229,7 +1396,7 @@ Deno.test("full accounting maps can swap assets while preserving pending packets
     assertEquals((datum.fields[11] as Map<Data, Data>).size, 8);
     assertEquals(datum.fields[11], old[1 - index].fields[11]);
     assertEquals(datum.fields.slice(5, 11), old[index].fields.slice(5, 11));
-    assertEquals((datum.fields[6] as Map<Data, Data>).size, 8);
+    assertEquals((datum.fields[6] as Map<Data, Data>).size, 0);
   }
   await (await signMeasured(wallet, compact.tx, "full-map redistribution"))
     .submit();

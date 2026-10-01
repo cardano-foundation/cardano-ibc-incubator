@@ -342,3 +342,76 @@ test packet_update_rejects_a_canonical_but_unearned_balance() {
     updates,
   )
 }
+
+// Each nominated pair sums to zero, but the three inputs sum to +10.
+// The same negative balance must not cancel both positive inputs.
+test balance_compaction_rejects_overlapping_three_lane_pairs() fail {
+  let (tx, left, right) = compaction()
+  let (third, _, _) = prepared(3)
+  expect [input] = third.inputs
+  expect InlineDatum(raw) = input.output.datum
+  expect old: PacketLaneDatum = raw
+  packet_lane_state.compact_balances(
+    operation_policy,
+    Transaction {
+      ..tx,
+      inputs: [
+        Input {
+          ..input,
+          output: Output {
+            ..input.output,
+            datum: InlineDatum(
+              PacketLaneDatum { ..old, balances: [Pair(accounting_key, 10)] },
+            ),
+          },
+        },
+        ..tx.inputs
+      ],
+      outputs: [
+        Output {
+          ..input.output,
+          datum: InlineDatum(PacketLaneDatum { ..old, version: 1 }),
+        },
+        ..tx.outputs
+      ],
+    },
+    left,
+    right,
+    policy,
+  )
+}
+
+test balance_compaction_rejects_pending_refund_reservations() fail {
+  let (tx, left, right) = compaction()
+  expect [a, b] = tx.inputs
+  expect [out_a, out_b] = tx.outputs
+  expect InlineDatum(raw) = a.output.datum
+  expect old: PacketLaneDatum = raw
+  let pending =
+    PacketLaneDatum { ..old, commitments: [Pair(1, accounting_key)] }
+  packet_lane_state.compact_balances(
+    operation_policy,
+    Transaction {
+      ..tx,
+      inputs: [
+        Input {
+          ..a,
+          output: Output { ..a.output, datum: InlineDatum(pending) },
+        },
+        b,
+      ],
+      outputs: [
+        Output {
+          ..out_a,
+          datum: InlineDatum(
+            PacketLaneDatum { ..pending, version: 1, balances: [] },
+          ),
+        },
+        out_b,
+      ],
+    },
+    left,
+    right,
+    policy,
+  )
+}

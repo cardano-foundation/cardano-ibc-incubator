@@ -67,6 +67,9 @@ async function buildPacketBalanceCompaction(lucid, deployment, leftLane, rightLa
     const inputs = await Promise.all([leftLane, rightLane].map((lane) => lucid.utxoByUnit(deployment.statePolicy +
         (0, packet_lanes_1.packetLaneTokenName)(port, channelId, lane, deployment.laneCount))));
     const datums = inputs.map((input) => copy(decode(input)));
+    if (datums.some((datum) => datum.fields[6].size > 0)) {
+        throw new Error("Settle outstanding sends before compacting lane accounting");
+    }
     const totals = new Map();
     for (const datum of datums) {
         for (const [key, amount] of datum.fields[11]) {
@@ -99,12 +102,13 @@ function addLaneBalance(datum, denom, delta) {
     const balances = datum.fields[11];
     const key = (0, lucid_1.toHex)((0, sha256_1.sha256)(new TextEncoder().encode(denom)));
     const amount = (balances.get(key) ?? 0n) + delta;
-    if (amount === 0n)
+    if (amount === 0n && datum.fields[6].size === 0) {
         balances.delete(key);
+    }
     else
         balances.set(key, amount);
     if (balances.size > exports.MAX_LANE_BALANCES) {
-        throw new Error("Packet lane accounting is full. Compact or redistribute balances before retrying.");
+        throw new Error("Packet lane accounting is full. Settle outstanding sends, then compact or redistribute balances before retrying.");
     }
     datum.fields[11] = new Map([...balances].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
 }
@@ -477,6 +481,9 @@ async function buildPacketCompletion(lucid, deployment, packet, proofHeight, pro
         const data = JSON.parse((0, lucid_1.toText)(String(packet.fields[5])));
         addLaneBalance(datum, data.denom, BigInt(data.amount) *
             (data.denom.startsWith(`${port}/${channelId}/`) ? 1n : -1n));
+    }
+    if (datum.fields[6].size === 0) {
+        datum.fields[11] = new Map([...datum.fields[11]].filter(([, amount]) => amount !== 0n));
     }
     let tx = lucid.newTx().readFrom([
         deployment.channel,

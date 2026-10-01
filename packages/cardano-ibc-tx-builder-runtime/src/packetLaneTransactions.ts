@@ -101,6 +101,11 @@ export async function buildPacketBalanceCompaction(
     ),
   );
   const datums = inputs.map((input) => copy(decode(input)));
+  if (datums.some((datum) => (datum.fields[6] as Map<Data, Data>).size > 0)) {
+    throw new Error(
+      "Settle outstanding sends before compacting lane accounting",
+    );
+  }
   const totals = new Map<string, bigint>();
   for (const datum of datums) {
     for (const [key, amount] of datum.fields[11] as Map<string, bigint>) {
@@ -142,11 +147,12 @@ function addLaneBalance(datum: Constr<Data>, denom: string, delta: bigint) {
   const balances = datum.fields[11] as Map<string, bigint>;
   const key = toHex(hash256(new TextEncoder().encode(denom)));
   const amount = (balances.get(key) ?? 0n) + delta;
-  if (amount === 0n) balances.delete(key);
-  else balances.set(key, amount);
+  if (amount === 0n && (datum.fields[6] as Map<Data, Data>).size === 0) {
+    balances.delete(key);
+  } else balances.set(key, amount);
   if (balances.size > MAX_LANE_BALANCES) {
     throw new Error(
-      "Packet lane accounting is full. Compact or redistribute balances before retrying.",
+      "Packet lane accounting is full. Settle outstanding sends, then compact or redistribute balances before retrying.",
     );
   }
   datum.fields[11] = new Map(
@@ -705,6 +711,13 @@ async function buildPacketCompletion(
       data.denom,
       BigInt(data.amount) *
         (data.denom.startsWith(`${port}/${channelId}/`) ? 1n : -1n),
+    );
+  }
+  if ((datum.fields[6] as Map<Data, Data>).size === 0) {
+    datum.fields[11] = new Map(
+      [...datum.fields[11] as Map<string, bigint>].filter(([, amount]) =>
+        amount !== 0n
+      ),
     );
   }
   let tx = lucid.newTx().readFrom([
