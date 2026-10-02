@@ -4,6 +4,8 @@ import {
   assertStateDrained,
   buildReclaimEscrowTx,
   buildReclaimStateTx,
+  buildRetirePacketLanesTx,
+  packetShutdownReferences,
   scanDeploymentState,
 } from "../src/shutdown.ts";
 import {
@@ -787,6 +789,18 @@ function deploymentReferenceOutRefs(
       );
     }
   }
+  if (deployment.packetState) {
+    for (
+      const validator of [
+        deployment.packetState.state,
+        deployment.packetState.batch,
+        deployment.packetState.guard,
+        ...Object.values(deployment.packetState.operations),
+      ]
+    ) {
+      if (validator.refUtxo) refs.push(validator.refUtxo);
+    }
+  }
   return [...new Map(
     refs.map((utxo) => [`${utxo.txHash}#${utxo.outputIndex}`, utxo]),
   ).values()];
@@ -1207,6 +1221,9 @@ async function reclaimState(
       "trace",
       "metadata",
       "transfer",
+      "packet-certificates",
+      "packet-registry",
+      "packet-config",
     ] as const
   ) {
     while (true) {
@@ -1230,6 +1247,25 @@ async function reclaimState(
           utxo.assets[deployment.modules.transfer.identifier] === 1n
         );
       const liveHostUtxo = await getHostStateUtxo(lucid, deployment);
+      if (kind === "channel") {
+        const retirement = await buildRetirePacketLanesTx(
+          lucid,
+          deployment,
+          liveHostUtxo,
+          batch.utxos[0],
+          walletAddress,
+          requireGracePeriodElapsed(graceEnd),
+        );
+        if (retirement) {
+          await submitTx(() => retirement, lucid, "Retire packet lanes");
+          continue;
+        }
+      }
+      const packetReferences = await packetShutdownReferences(
+        lucid,
+        deployment,
+        batch,
+      );
       await submitTx(
         () =>
           buildReclaimStateTx(
@@ -1239,7 +1275,10 @@ async function reclaimState(
             batch,
             walletAddress,
             requireGracePeriodElapsed(graceEnd),
-            transferRoot,
+            ["packet-registry", "packet-certificates"].includes(kind)
+              ? groups.find((entry) => entry.kind === "packet-config")?.utxos[0]
+              : transferRoot,
+            packetReferences,
           ),
         lucid,
         `Reclaim ${kind}`,
