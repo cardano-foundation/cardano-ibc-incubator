@@ -18,17 +18,17 @@ import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '..
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '../../../config/constant.config';
 import { decodeHostStateDatum, encodeHostStateDatum, HostStateDatum } from '../../types/host-state-datum';
 import {
+  GrpcFailedPreconditionException,
   GrpcInternalException,
   GrpcNotFoundException,
-  GrpcFailedPreconditionException,
 } from '~@/exception/grpc_exceptions';
 import { ClientDatum, encodeClientDatum } from '../../types/client-datum';
 import { decodeClientDatum } from '../../types/client-datum';
 import {
   encodeMintClientRedeemer,
   encodeSpendClientRedeemer,
-  SpendClientRedeemer,
   MintClientRedeemer,
+  SpendClientRedeemer,
 } from '../../types/client-redeemer';
 import {
   encodeRecoverClientWithdrawalRedeemer,
@@ -37,8 +37,8 @@ import {
 import { AuthToken, encodeAuthToken } from '../../types/auth-token';
 import { Height } from '../../types/height';
 import {
-  ConsensusStateDatum,
   ConsensusHistoryWitness,
+  ConsensusStateDatum,
   decodeConsensusStateDatum,
   encodeConsensusStateDatum,
 } from '../../types/consensus-state-datum';
@@ -85,8 +85,8 @@ import {
   TransferModuleDatum,
 } from '@shared/types/apps/transfer/transfer-module-datum';
 import {
-  UnsignedAckPacketModuleDto,
   UnsignedAckPacketMintDto,
+  UnsignedAckPacketModuleDto,
   UnsignedAckPacketSucceedDto,
   UnsignedAckPacketUnescrowDto,
   UnsignedChannelCloseConfirmDto,
@@ -98,11 +98,11 @@ import {
   UnsignedConnectionOpenAckDto,
   UnsignedPrunePacketHistoryDto,
   UnsignedRecvPacketDto,
-  UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
+  UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketUnescrowDto,
-  UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
+  UnsignedSendPacketModuleDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
 } from './dtos';
@@ -811,9 +811,9 @@ export class LucidService implements OnModuleInit {
             LucidData.Object({ UpdateChannel: UpdateChannelSchema }),
             LucidData.Object({ HandlePacket: HandlePacketSchema }),
             LucidData.Object({ EnterShutdown: EnterShutdownSchema }),
-            LucidData.Literal("FinalizeShutdown"),
-            LucidData.Literal("Heartbeat"),
-            LucidData.Literal("AuthorizeFinalization"),
+            LucidData.Literal('FinalizeShutdown'),
+            LucidData.Literal('Heartbeat'),
+            LucidData.Literal('AuthorizeFinalization'),
             LucidData.Object({
               RetireState: LucidData.Object({
                 kind: LucidData.Integer(),
@@ -1480,27 +1480,20 @@ export class LucidService implements OnModuleInit {
     return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
   }
 
-  private payVoucherObligationDelta(
-    tx: TxBuilder,
-    moduleUtxo: UTxO,
-    delta: bigint,
-  ): TxBuilder {
+  private payVoucherObligationDelta(tx: TxBuilder, moduleUtxo: UTxO, delta: bigint): TxBuilder {
     if (!moduleUtxo.datum) {
-      throw new GrpcInternalException("Transfer module datum is required");
+      throw new GrpcInternalException('Transfer module datum is required');
     }
     const datum = decodeTransferModuleDatum(moduleUtxo.datum, this.LucidImporter);
     const obligation = datum.outstanding_voucher_obligation + delta;
     if (obligation < 0n) {
-      throw new GrpcInternalException("Voucher obligation cannot be negative");
+      throw new GrpcInternalException('Voucher obligation cannot be negative');
     }
     return this.payModuleUtxo(
       tx,
-      "transfer",
+      'transfer',
       moduleUtxo,
-      encodeTransferModuleDatum(
-        { ...datum, outstanding_voucher_obligation: obligation },
-        this.LucidImporter,
-      ),
+      encodeTransferModuleDatum({ ...datum, outstanding_voucher_obligation: obligation }, this.LucidImporter),
     );
   }
 
@@ -2115,11 +2108,7 @@ export class LucidService implements OnModuleInit {
         dto.encodedVerifyProofRedeemer,
       );
 
-    this.payVoucherObligationDelta(
-      tx,
-      dto.transferModuleUtxo,
-      dto.transferAmount,
-    );
+    this.payVoucherObligationDelta(tx, dto.transferModuleUtxo, dto.transferAmount);
 
     if (isFirstSeenVoucher) {
       if (!dto.voucherMetadataAddress || !dto.encodedVoucherMetadataDatum || !dto.voucherReferenceTokenUnit) {
@@ -2209,13 +2198,9 @@ export class LucidService implements OnModuleInit {
       );
 
     if (dto.voucherObligationDelta !== undefined) {
-      this.payVoucherObligationDelta(
-        tx,
-        dto.transferModuleReferenceUtxo,
-        dto.voucherObligationDelta,
-      );
+      this.payVoucherObligationDelta(tx, dto.transferModuleReferenceUtxo, dto.voucherObligationDelta);
     } else {
-      this.payModuleUtxo(tx, "transfer", dto.transferModuleReferenceUtxo);
+      this.payModuleUtxo(tx, 'transfer', dto.transferModuleReferenceUtxo);
     }
 
     return tx;
@@ -2704,7 +2689,7 @@ export class LucidService implements OnModuleInit {
     return this.configService.get('deployment').validators.mintChannelStt.scriptHash;
   }
 
-  private applyTraceRegistryUpdate(
+  public applyTraceRegistryUpdate(
     tx: TxBuilder,
     dto: {
       traceRegistryUpdate?:
