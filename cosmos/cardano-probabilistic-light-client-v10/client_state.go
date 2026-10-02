@@ -326,10 +326,20 @@ func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("path is not a MerklePath")
 	}
-	if len(mpath.KeyPath) == 0 {
-		return nil, fmt.Errorf("empty MerklePath")
+	// Cardano exposes a single "ibc" namespace, fixed by the on-chain
+	// ics-024-host-requirements/connection_keys.ak default_merkle_prefix.
+	// Its tree commits directly to object keys, so validate the full path
+	// before removing the namespace: exactly ["ibc", <non-empty IBC key>].
+	if len(mpath.KeyPath) != 2 {
+		return nil, fmt.Errorf("expected MerklePath with exactly 2 components, got %d", len(mpath.KeyPath))
 	}
-	key := string(mpath.KeyPath[len(mpath.KeyPath)-1])
+	if string(mpath.KeyPath[0]) != "ibc" {
+		return nil, fmt.Errorf("invalid Cardano commitment prefix: expected %q, got %q", "ibc", mpath.KeyPath[0])
+	}
+	if len(mpath.KeyPath[1]) == 0 {
+		return nil, fmt.Errorf("empty IBC state key")
+	}
+	key := string(mpath.KeyPath[1])
 	return []byte(normalizeConsensusKeyForCardano(key)), nil
 }
 
