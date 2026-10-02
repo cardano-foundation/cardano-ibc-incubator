@@ -1,0 +1,493 @@
+{
+  "mode": "compiled-validator emulator, authenticated fixture pre-state, no live chain submission",
+  "generatedAt": "2026-10-01T16:27:20.423Z",
+  "evaluator": "Ogmios with additional fixture UTxOs",
+  "denoVersion": "2.6.10",
+  "asset": "lovelace",
+  "amount": "2000000",
+  "channel": "same channel within each scenario",
+  "note": "Wall times measure sequential local construction/signing/evaluation, not concurrent Gateway or Hermes throughput. Inclusion rounds are dependency rounds, not real blocks. Acknowledgement proofs are fixtures. Single-lane control is not the legacy implementation. Dedicated relayer fee wallets isolate protocol input contention.",
+  "implementationCommit": "a368771a5b22e2774ac9964ec4c7274d956e728b",
+  "nodeLimits": {
+    "maxBlockBodySize": {
+      "bytes": 90112
+    },
+    "maxTransactionSize": {
+      "bytes": 16384
+    },
+    "maxExecutionUnitsPerTransaction": {
+      "memory": 16500000,
+      "cpu": 10000000000
+    },
+    "maxExecutionUnitsPerBlock": {
+      "memory": 72000000,
+      "cpu": 20000000000
+    }
+  },
+  "scenarios": [
+    {
+      "requests": 5,
+      "lanes": 1,
+      "admission": {
+        "milliseconds": 166.8981249999997,
+        "requests": 5,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 805.3343749999999,
+        "inclusionRounds": 3,
+        "fallbacks": 0,
+        "sentBeforeAnyAcknowledgement": 5,
+        "rejectedPairMemoryRange": null
+      },
+      "acknowledgement": {
+        "milliseconds": 2836.0870419999997,
+        "initiallyIndependent": 1,
+        "staleRejections": 4,
+        "inclusionRounds": 5,
+        "completed": 5
+      },
+      "status": "passed",
+      "totalMilliseconds": 5265.207791,
+      "executorPauseSecondsBetweenBatches": 10,
+      "transactionDistributions": {
+        "acknowledgement": {
+          "attemptCount": 9,
+          "includesStaleAttempts": true,
+          "milliseconds": {
+            "min": 218.5841250000003,
+            "median": 275.07054100000005,
+            "p95": 343.0655420000003,
+            "max": 343.0655420000003
+          },
+          "bytes": {
+            "min": 5153,
+            "median": 5295,
+            "p95": 5295,
+            "max": 5295
+          },
+          "memory": {
+            "min": 7705398,
+            "median": 7771245,
+            "p95": 7804085,
+            "max": 7804085
+          },
+          "cpu": {
+            "min": 2428487317,
+            "median": 2446821309,
+            "p95": 2457151672,
+            "max": 2457151672
+          }
+        },
+        "send": {
+          "attemptCount": 3,
+          "includesStaleAttempts": false,
+          "milliseconds": {
+            "min": 227.40045800000007,
+            "median": 280.1187909999999,
+            "p95": 291.64183300000013,
+            "max": 291.64183300000013
+          },
+          "bytes": {
+            "min": 4862,
+            "median": 7664,
+            "p95": 7801,
+            "max": 7801
+          },
+          "memory": {
+            "min": 9175572,
+            "median": 14385162,
+            "p95": 14636816,
+            "max": 14636816
+          },
+          "cpu": {
+            "min": 2850301377,
+            "median": 4447681967,
+            "p95": 4524189100,
+            "max": 4524189100
+          }
+        }
+      }
+    },
+    {
+      "requests": 5,
+      "lanes": 16,
+      "admission": {
+        "milliseconds": 147.87633300000016,
+        "requests": 5,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 772.0378340000007,
+        "inclusionRounds": 3,
+        "fallbacks": 0,
+        "sentBeforeAnyAcknowledgement": 5,
+        "rejectedPairMemoryRange": null
+      },
+      "sharedFeeWalletProbe": {
+        "distinctLaneInputs": true,
+        "sharedSpendingInputs": 1,
+        "secondTransactionRejected": true
+      },
+      "acknowledgement": {
+        "milliseconds": 1282.258749999999,
+        "initiallyIndependent": 5,
+        "staleRejections": 0,
+        "inclusionRounds": 1,
+        "completed": 5
+      },
+      "status": "passed",
+      "totalMilliseconds": 3792.7969590000002,
+      "executorPauseSecondsBetweenBatches": 10,
+      "transactionDistributions": {
+        "acknowledgement": {
+          "attemptCount": 5,
+          "includesStaleAttempts": true,
+          "milliseconds": {
+            "min": 192.29783300000054,
+            "median": 219.28320800000074,
+            "p95": 262.34375,
+            "max": 262.34375
+          },
+          "bytes": {
+            "min": 5153,
+            "median": 5153,
+            "p95": 5153,
+            "max": 5153
+          },
+          "memory": {
+            "min": 7692816,
+            "median": 7694421,
+            "p95": 7706406,
+            "max": 7706406
+          },
+          "cpu": {
+            "min": 2420610886,
+            "median": 2421110357,
+            "p95": 2428789296,
+            "max": 2428789296
+          }
+        },
+        "send": {
+          "attemptCount": 3,
+          "includesStaleAttempts": false,
+          "milliseconds": {
+            "min": 213.93295800000033,
+            "median": 232.00566700000036,
+            "p95": 320.19083300000057,
+            "max": 320.19083300000057
+          },
+          "bytes": {
+            "min": 4721,
+            "median": 7993,
+            "p95": 8059,
+            "max": 8059
+          },
+          "memory": {
+            "min": 8864176,
+            "median": 16363652,
+            "p95": 16399592,
+            "max": 16399592
+          },
+          "cpu": {
+            "min": 2745581373,
+            "median": 5072183066,
+            "p95": 5091432523,
+            "max": 5091432523
+          }
+        },
+        "shared-fee-wallet-probe": {
+          "attemptCount": 2,
+          "includesStaleAttempts": false,
+          "milliseconds": {
+            "min": 200.95279200000004,
+            "median": 211.87729199999922,
+            "p95": 211.87729199999922,
+            "max": 211.87729199999922
+          },
+          "bytes": {
+            "min": 5153,
+            "median": 5153,
+            "p95": 5153,
+            "max": 5153
+          },
+          "memory": {
+            "min": 7694223,
+            "median": 7694421,
+            "p95": 7694421,
+            "max": 7694421
+          },
+          "cpu": {
+            "min": 2421042436,
+            "median": 2421110357,
+            "p95": 2421110357,
+            "max": 2421110357
+          }
+        }
+      }
+    },
+    {
+      "requests": 16,
+      "lanes": 16,
+      "admission": {
+        "milliseconds": 468.3011660000011,
+        "requests": 16,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 1688.1371659999986,
+        "inclusionRounds": 8,
+        "fallbacks": 0,
+        "sentBeforeAnyAcknowledgement": 16,
+        "rejectedPairMemoryRange": null
+      },
+      "acknowledgement": {
+        "milliseconds": 3361.6219170000004,
+        "initiallyIndependent": 16,
+        "staleRejections": 0,
+        "inclusionRounds": 1,
+        "completed": 16
+      },
+      "status": "passed",
+      "totalMilliseconds": 6494.663500000001,
+      "executorPauseSecondsBetweenBatches": 35,
+      "transactionDistributions": {
+        "acknowledgement": {
+          "attemptCount": 16,
+          "includesStaleAttempts": true,
+          "milliseconds": {
+            "min": 168.49012500000026,
+            "median": 180.74133400000028,
+            "p95": 227.58574999999837,
+            "max": 227.58574999999837
+          },
+          "bytes": {
+            "min": 5243,
+            "median": 5243,
+            "p95": 5246,
+            "max": 5246
+          },
+          "memory": {
+            "min": 7857389,
+            "median": 7869572,
+            "p95": 7885424,
+            "max": 7885424
+          },
+          "cpu": {
+            "min": 2476169811,
+            "median": 2480865442,
+            "p95": 2489105502,
+            "max": 2489105502
+          }
+        },
+        "send": {
+          "attemptCount": 8,
+          "includesStaleAttempts": false,
+          "milliseconds": {
+            "min": 197.36033300000054,
+            "median": 203.11666600000171,
+            "p95": 241.0635000000002,
+            "max": 241.0635000000002
+          },
+          "bytes": {
+            "min": 7993,
+            "median": 8059,
+            "p95": 8059,
+            "max": 8059
+          },
+          "memory": {
+            "min": 16359452,
+            "median": 16402654,
+            "p95": 16421314,
+            "max": 16421314
+          },
+          "cpu": {
+            "min": 5065465753,
+            "median": 5092799225,
+            "p95": 5098588558,
+            "max": 5098588558
+          }
+        }
+      }
+    },
+    {
+      "requests": 32,
+      "lanes": 16,
+      "admission": {
+        "milliseconds": 835.6628330000021,
+        "requests": 32,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 7208.142416999999,
+        "inclusionRounds": 24,
+        "fallbacks": 15,
+        "sentBeforeAnyAcknowledgement": 32,
+        "rejectedPairMemoryRange": {
+          "min": 16797958,
+          "max": 16865779
+        }
+      },
+      "acknowledgement": {
+        "milliseconds": 10689.285667,
+        "initiallyIndependent": 16,
+        "staleRejections": 16,
+        "inclusionRounds": 2,
+        "completed": 32
+      },
+      "status": "passed",
+      "totalMilliseconds": 19656.815666,
+      "executorPauseSecondsBetweenBatches": 115,
+      "transactionDistributions": {
+        "acknowledgement": {
+          "attemptCount": 48,
+          "includesStaleAttempts": true,
+          "milliseconds": {
+            "min": 177.20341599999665,
+            "median": 188.39900000000125,
+            "p95": 237.42370800000208,
+            "max": 245.3847089999981
+          },
+          "bytes": {
+            "min": 5336,
+            "median": 5370,
+            "p95": 5374,
+            "max": 5374
+          },
+          "memory": {
+            "min": 8035000,
+            "median": 8050725,
+            "p95": 8072269,
+            "max": 8074930
+          },
+          "cpu": {
+            "min": 2536054467,
+            "median": 2544164956,
+            "p95": 2552274925,
+            "max": 2554274640
+          }
+        },
+        "send": {
+          "attemptCount": 24,
+          "includesStaleAttempts": false,
+          "milliseconds": {
+            "min": 166.44833300000028,
+            "median": 191.20179100000314,
+            "p95": 221.87545799999862,
+            "max": 296.19666700000016
+          },
+          "bytes": {
+            "min": 4756,
+            "median": 4760,
+            "p95": 8059,
+            "max": 8059
+          },
+          "memory": {
+            "min": 9087809,
+            "median": 9115846,
+            "p95": 16408297,
+            "max": 16409242
+          },
+          "cpu": {
+            "min": 2817102349,
+            "median": 2835001138,
+            "p95": 5096716542,
+            "max": 5096975134
+          }
+        }
+      }
+    },
+    {
+      "requests": 64,
+      "lanes": 16,
+      "admission": {
+        "milliseconds": 1716.4776249999995,
+        "requests": 64,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 17990.211540999997,
+        "inclusionRounds": 56,
+        "fallbacks": 47,
+        "sentBeforeAnyAcknowledgement": 64,
+        "rejectedPairMemoryRange": {
+          "min": 16795286,
+          "max": 16984786
+        }
+      },
+      "acknowledgement": {
+        "milliseconds": 25413.837165999998,
+        "initiallyIndependent": 16,
+        "staleRejections": 48,
+        "inclusionRounds": 4,
+        "completed": 64
+      },
+      "status": "passed",
+      "totalMilliseconds": 46126.381250000006,
+      "executorPauseSecondsBetweenBatches": 275,
+      "transactionDistributions": {
+        "acknowledgement": {
+          "attemptCount": 112,
+          "includesStaleAttempts": true,
+          "milliseconds": {
+            "min": 179.02762500000244,
+            "median": 190.0052080000023,
+            "p95": 235.12774999999965,
+            "max": 307.6767910000053
+          },
+          "bytes": {
+            "min": 5432,
+            "median": 5534,
+            "p95": 5540,
+            "max": 5540
+          },
+          "memory": {
+            "min": 8206412,
+            "median": 8262572,
+            "p95": 8301265,
+            "max": 8306992
+          },
+          "cpu": {
+            "min": 2593666954,
+            "median": 2614876627,
+            "p95": 2628553151,
+            "max": 2632633044
+          }
+        },
+        "send": {
+          "attemptCount": 56,
+          "includesStaleAttempts": false,
+          "milliseconds": {
+            "min": 163.9438749999972,
+            "median": 182.21091700000397,
+            "p95": 209.29454200000328,
+            "max": 234.0066250000018
+          },
+          "bytes": {
+            "min": 4756,
+            "median": 4801,
+            "p95": 8059,
+            "max": 8059
+          },
+          "memory": {
+            "min": 9087793,
+            "median": 9141647,
+            "p95": 16386095,
+            "max": 16425247
+          },
+          "cpu": {
+            "min": 2816979049,
+            "median": 2838841615,
+            "p95": 5077080835,
+            "max": 5099709165
+          }
+        }
+      }
+    }
+  ]
+}

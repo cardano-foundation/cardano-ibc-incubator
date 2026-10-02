@@ -1,0 +1,329 @@
+{
+  "mode": "compiled-validator emulator, authenticated fixture pre-state, no live chain submission",
+  "generatedAt": "2026-10-01T20:31:33.786Z",
+  "evaluator": "Ogmios with additional fixture UTxOs",
+  "denoVersion": "2.6.10",
+  "asset": "lovelace",
+  "amount": "2000000",
+  "channel": "same channel within each scenario",
+  "note": "Wall times measure sequential local construction/signing/evaluation, not concurrent Gateway or Hermes throughput. Inclusion rounds are dependency rounds, not real blocks. Acknowledgement proofs are fixtures. Single-lane control is not the legacy implementation. Dedicated relayer fee wallets isolate protocol input contention.",
+  "baselineCommit": "c70d0aaa",
+  "scope": "Optimized compiled validators. No live two-chain submission and no Hermes wall-clock throughput measurement.",
+  "acceptance": {
+    "singleRequestFallbacks": 0,
+    "maxSendMemory": 15500000,
+    "ledgerMaxMemory": 16500000
+  },
+  "scenarios": [
+    {
+      "requests": 5,
+      "lanes": 1,
+      "admission": {
+        "milliseconds": 161.20612500000016,
+        "requests": 5,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 646.7872080000002,
+        "inclusionRounds": 3,
+        "fallbacks": 0,
+        "rejectedBatches": [],
+        "sentBeforeAnyAcknowledgement": 5
+      },
+      "acknowledgement": {
+        "milliseconds": 2077.63225,
+        "initiallyIndependent": 1,
+        "staleRejections": 4,
+        "inclusionRounds": 5,
+        "completed": 5
+      },
+      "status": "passed",
+      "totalMilliseconds": 4264.165666,
+      "transactionCosts": {
+        "acknowledgement": {
+          "attempts": 9,
+          "bytes": {
+            "min": 5153,
+            "max": 5295
+          },
+          "memory": {
+            "min": 6729903,
+            "max": 6853754
+          },
+          "cpu": {
+            "min": 2145111412,
+            "max": 2189528629
+          }
+        },
+        "send": {
+          "attempts": 3,
+          "bytes": {
+            "min": 4862,
+            "max": 7801
+          },
+          "memory": {
+            "min": 8424075,
+            "max": 13133998
+          },
+          "cpu": {
+            "min": 2636939409,
+            "max": 4097285947
+          }
+        }
+      }
+    },
+    {
+      "requests": 5,
+      "lanes": 16,
+      "admission": {
+        "milliseconds": 138.31708399999934,
+        "requests": 5,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 562.9631250000002,
+        "inclusionRounds": 3,
+        "fallbacks": 0,
+        "rejectedBatches": [],
+        "sentBeforeAnyAcknowledgement": 5
+      },
+      "sharedFeeWalletProbe": {
+        "distinctLaneInputs": true,
+        "sharedSpendingInputs": 1,
+        "secondTransactionRejected": true
+      },
+      "acknowledgement": {
+        "milliseconds": 1024.175166000001,
+        "initiallyIndependent": 5,
+        "staleRejections": 0,
+        "inclusionRounds": 1,
+        "completed": 5
+      },
+      "status": "passed",
+      "totalMilliseconds": 3056.765291999999,
+      "transactionCosts": {
+        "acknowledgement": {
+          "attempts": 5,
+          "bytes": {
+            "min": 5153,
+            "max": 5153
+          },
+          "memory": {
+            "min": 6741495,
+            "max": 6743100
+          },
+          "cpu": {
+            "min": 2158572636,
+            "max": 2159072107
+          }
+        },
+        "send": {
+          "attempts": 3,
+          "bytes": {
+            "min": 4721,
+            "max": 8059
+          },
+          "memory": {
+            "min": 8294168,
+            "max": 14823426
+          },
+          "cpu": {
+            "min": 2608009254,
+            "max": 4684741486
+          }
+        },
+        "shared-fee-wallet-probe": {
+          "attempts": 2,
+          "bytes": {
+            "min": 5153,
+            "max": 5153
+          },
+          "memory": {
+            "min": 6742902,
+            "max": 6743100
+          },
+          "cpu": {
+            "min": 2159004186,
+            "max": 2159072107
+          }
+        }
+      }
+    },
+    {
+      "requests": 16,
+      "lanes": 16,
+      "admission": {
+        "milliseconds": 445.5612919999985,
+        "requests": 16,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 1817.8277909999997,
+        "inclusionRounds": 8,
+        "fallbacks": 0,
+        "rejectedBatches": [],
+        "sentBeforeAnyAcknowledgement": 16
+      },
+      "acknowledgement": {
+        "milliseconds": 3381.9032909999987,
+        "initiallyIndependent": 16,
+        "staleRejections": 0,
+        "inclusionRounds": 1,
+        "completed": 16
+      },
+      "status": "passed",
+      "totalMilliseconds": 6601.555291999999,
+      "transactionCosts": {
+        "acknowledgement": {
+          "attempts": 16,
+          "bytes": {
+            "min": 5243,
+            "max": 5246
+          },
+          "memory": {
+            "min": 6905264,
+            "max": 6934103
+          },
+          "cpu": {
+            "min": 2213884961,
+            "max": 2227067252
+          }
+        },
+        "send": {
+          "attempts": 8,
+          "bytes": {
+            "min": 7993,
+            "max": 8059
+          },
+          "memory": {
+            "min": 14759522,
+            "max": 14814976
+          },
+          "cpu": {
+            "min": 4647885151,
+            "max": 4679390875
+          }
+        }
+      }
+    },
+    {
+      "requests": 32,
+      "lanes": 16,
+      "admission": {
+        "milliseconds": 844.4660409999997,
+        "requests": 32,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 3702.727833000001,
+        "inclusionRounds": 16,
+        "fallbacks": 0,
+        "rejectedBatches": [],
+        "sentBeforeAnyAcknowledgement": 32
+      },
+      "acknowledgement": {
+        "milliseconds": 14511.103915999996,
+        "initiallyIndependent": 16,
+        "staleRejections": 16,
+        "inclusionRounds": 2,
+        "completed": 32
+      },
+      "status": "passed",
+      "totalMilliseconds": 20027.417667,
+      "transactionCosts": {
+        "acknowledgement": {
+          "attempts": 48,
+          "bytes": {
+            "min": 5336,
+            "max": 5374
+          },
+          "memory": {
+            "min": 7083679,
+            "max": 7121152
+          },
+          "cpu": {
+            "min": 2274016217,
+            "max": 2290285783
+          }
+        },
+        "send": {
+          "attempts": 16,
+          "bytes": {
+            "min": 7993,
+            "max": 8136
+          },
+          "memory": {
+            "min": 14776898,
+            "max": 14951055
+          },
+          "cpu": {
+            "min": 4655041186,
+            "max": 4708859031
+          }
+        }
+      }
+    },
+    {
+      "requests": 64,
+      "lanes": 16,
+      "admission": {
+        "milliseconds": 2558.142457999995,
+        "requests": 64,
+        "inclusionRounds": 1,
+        "sharedInputs": 0
+      },
+      "send": {
+        "milliseconds": 15795.829666999998,
+        "inclusionRounds": 32,
+        "fallbacks": 0,
+        "rejectedBatches": [],
+        "sentBeforeAnyAcknowledgement": 64
+      },
+      "acknowledgement": {
+        "milliseconds": 48092.49108299999,
+        "initiallyIndependent": 16,
+        "staleRejections": 48,
+        "inclusionRounds": 4,
+        "completed": 64
+      },
+      "status": "passed",
+      "totalMilliseconds": 68584.689625,
+      "transactionCosts": {
+        "acknowledgement": {
+          "attempts": 112,
+          "bytes": {
+            "min": 5432,
+            "max": 5540
+          },
+          "memory": {
+            "min": 7255088,
+            "max": 7355671
+          },
+          "cpu": {
+            "min": 2331628704,
+            "max": 2370594794
+          }
+        },
+        "send": {
+          "attempts": 32,
+          "bytes": {
+            "min": 7993,
+            "max": 8287
+          },
+          "memory": {
+            "min": 14777560,
+            "max": 15069774
+          },
+          "cpu": {
+            "min": 4658128467,
+            "max": 4750486489
+          }
+        }
+      }
+    }
+  ]
+}

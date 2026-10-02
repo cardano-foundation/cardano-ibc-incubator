@@ -92,6 +92,8 @@ async function checkCase(actions: Action[]) {
       transfer: 1,
       module: 2,
       trace: 17,
+      "packet-registry": 1,
+      "packet-config": 1,
     },
   };
   try {
