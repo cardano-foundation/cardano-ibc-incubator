@@ -3,6 +3,7 @@ import {
   clientRegistryData,
 } from "./client-registry.ts";
 import {
+  Constr,
   Data,
   fromText,
   type LucidEvolution,
@@ -120,6 +121,7 @@ export const buildChannelValidators = (
   mintPortPolicyId: string,
   verifyProofScriptHash: string,
   hostStateNftPolicyId: string,
+  packetConfigPolicy = "",
 ) => {
   const names = CHANNEL_OPERATION_NAMES;
   const load = (title: string, args: Data[]): PlannedValidator => {
@@ -140,6 +142,7 @@ export const buildChannelValidators = (
     referredScripts[name] = load(`spending_channel/${name}.${name}.mint`, args);
   }
   const base = load("spending_channel.spend_channel.spend", [
+    packetConfigPolicy,
     ...CHANNEL_OPERATION_NAMES.map((name) => referredScripts[name].hash),
     hostStateNftPolicyId,
   ]);
@@ -225,6 +228,14 @@ export const loadDeploymentPlan = async (
     inputs.hostStateNonce,
   ], Data.Tuple([OutputReferenceSchema]));
   const hostPolicy = hostNft.hash;
+  const packetConfig = load("packet_config.mint_packet_config.mint", "inline", [
+    inputs.hostStateNonce,
+    hostPolicy,
+  ], Data.Tuple([OutputReferenceSchema, Data.Bytes()]));
+  const packetConfigToken = {
+    policy_id: packetConfig.hash,
+    name: fromText("ibc_packet_config"),
+  };
   const verifyProof = load("verifying_proof.verify_proof.mint", "runtime");
   const mintPort = load(
     "minting_port.mint_port.mint",
@@ -379,6 +390,7 @@ export const loadDeploymentPlan = async (
     mintPort.hash,
     verifyProof.hash,
     hostPolicy,
+    packetConfig.hash,
   );
   validators.push(...Object.values(referredScripts));
   const spendChannel = registryPolicy
@@ -440,6 +452,13 @@ export const loadDeploymentPlan = async (
         backupOperatorKeyHash,
       ),
     );
+  const packetLaneCount = 16;
+  const packetState = load(
+    "minting_packet_lanes.minting_packet_lanes.mint",
+    "runtime",
+    [inputs.hostStateNonce, packetConfigToken, mintChannel.hash],
+    Data.Tuple([OutputReferenceSchema, AuthTokenSchema, Data.Bytes()]),
+  );
   const mintIdentifier = load(
     "minting_identifier.minting_identifier.mint",
     "bootstrap",
@@ -466,6 +485,7 @@ export const loadDeploymentPlan = async (
       voucherMetadata.hash,
       mintChannel.hash,
       hostPolicy,
+      packetConfigToken,
     ],
     Data.Tuple([
       AuthTokenSchema,
@@ -473,7 +493,69 @@ export const loadDeploymentPlan = async (
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
+      AuthTokenSchema,
     ]),
+  );
+  const packetOperations: Record<string, PlannedValidator> = {};
+  for (
+    const name of [
+      "send",
+      "acknowledge",
+      "timeout",
+      "reject",
+      "receive",
+      "prune",
+      "timeout_on_close",
+      "retire",
+    ]
+  ) {
+    const proofs = !["send", "retire"].includes(name);
+    packetOperations[name] = load(
+      `packet_${name}.packet_${name}.mint`,
+      "runtime",
+      [
+        packetConfigToken,
+        mintChannel.hash,
+        packetState.hash,
+        mintClient.hash,
+        mintConnection.hash,
+        BigInt(packetLaneCount),
+        mintVoucher.hash,
+        ...(proofs ? [verifyProof.hash] : []),
+      ],
+      Data.Tuple([
+        AuthTokenSchema,
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Integer(),
+        Data.Bytes(),
+        ...(proofs ? [Data.Bytes()] : []),
+      ]),
+    );
+  }
+  for (const name of ["funds", "send_funds"]) {
+    packetOperations[name] = load(
+      `packet_${name}.packet_${name}.mint`,
+      "runtime",
+      [packetConfigToken, mintVoucher.hash],
+      Data.Tuple([AuthTokenSchema, Data.Bytes()]),
+    );
+  }
+  const packetBatch = load(
+    "packet_lane_batch.packet_lane_batch.mint",
+    "runtime",
+    [
+      mintChannel.hash,
+      new Constr(0, Object.values(packetOperations).map((v) => v.hash)),
+    ],
+    Data.Tuple([Data.Bytes(), Data.Any()]),
+  );
+  const packetGuard = load(
+    "packet_lane_guard.packet_lane_guard.spend",
+    "runtime",
+    bytes(packetBatch.hash, packetState.hash),
   );
   const portId = fromText(TRANSFER_MODULE_PORT);
   const portToken = {
@@ -584,6 +666,13 @@ export const loadDeploymentPlan = async (
       publication === "inline"
     ),
     hostNft,
+    packetConfig,
+    packetConfigToken,
+    packetState,
+    packetBatch,
+    packetGuard,
+    packetOperations,
+    packetLaneCount,
     verifyProof,
     mintPort,
     recoverClient,

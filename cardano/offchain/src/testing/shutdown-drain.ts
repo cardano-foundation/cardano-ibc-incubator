@@ -1,4 +1,22 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import {
+  buildPacketLaneInitialization,
+  buildPacketReceive,
+  buildPacketRejection,
+  buildPacketSendBatch,
+  buildPacketTimeout,
+  buildTransferIntentCancellation,
+  type PacketLaneDeployment,
+} from "../packet-lane-transactions.ts";
+import {
+  liquidityTokenName,
+  packetLaneTokenName,
+  sendSequencerTokenName,
+} from "@cardano-ibc/tx-builder/dist/packet-lanes";
+import {
+  buildRetirePacketLanesTx,
+  packetShutdownReferences,
+} from "../shutdown.ts";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
   Constr,
   credentialToAddress,
@@ -10,29 +28,17 @@ import {
   type UTxO,
   walletFromSeed,
 } from "@lucid-evolution/lucid";
-import { blake2b } from "@noble/hashes/blake2b";
 import {
   HostStateDatum,
-  HostStateRedeemer,
   ModuleRegistrationSchema,
 } from "../../types/plutus/index.ts";
 import { DeploymentIbcTree } from "../deployment.ts";
 import { generateTokenName } from "../utils.ts";
-import {
-  assertStateDrained,
-  buildReclaimEscrowTx,
-  buildReclaimStateTx,
-  escrowDatum,
-  scanDeploymentState,
-} from "../shutdown.ts";
+import { buildReclaimStateTx, scanDeploymentState } from "../shutdown.ts";
 import {
   clientStateWithHistory,
   deploymentScenario,
 } from "./shutdown-model.ts";
-import {
-  buildFinalizeShutdownTx,
-  partitionShutdownReferences,
-} from "../../scripts/shutdown-deployment.ts";
 import { membershipProof } from "./channel-fixture.ts";
 import { absenceProof } from "./packet-budget-fixture.ts";
 
@@ -59,7 +65,7 @@ const packetCommitment = async (packet: Constr<Data>) => {
       await sha256(packet.fields[5] as string),
   );
 };
-export type DrainMode = "timeout" | "error-ack" | "return";
+export type DrainMode = "timeout" | "error-ack" | "return" | "voucher";
 export interface DrainCase {
   mode: DrainMode;
   amount: bigint;
@@ -85,12 +91,15 @@ export async function checkShutdownDrain(
   const f = await deploymentScenario();
   const { lucid, emulator, deployment } = f;
   const v = deployment.validators;
-  const recipientKey = getAddressDetails(
-    walletFromSeed(
-      "legal winner thank year wave sausage worth useful legal winner thank yellow",
-      { network: "Custom" },
-    ).address,
-  ).paymentCredential!.hash;
+  const voucherUserSeed =
+    "letter advice cage absurd amount doctor acoustic avoid letter advice cage above";
+  const voucherUserAddress = walletFromSeed(voucherUserSeed, {
+    network: "Custom",
+    addressType: "Enterprise",
+  }).address;
+  const recipientKey =
+    getAddressDetails(mode === "voucher" ? voucherUserAddress : f.address)
+      .paymentCredential!.hash;
   const recipient = credentialToAddress("Custom", {
     type: "Key",
     hash: recipientKey,
@@ -121,38 +130,40 @@ export async function checkShutdownDrain(
       String(token.fields[0]) + String(token.fields[1]);
     const payloadFields = {
       amount: amount.toString(),
-      denom: mode === "return"
+      denom: mode === "voucher"
+        ? "uatom"
+        : mode === "return"
         ? `transfer/channel-7/${fromText("lovelace")}`
         : fromText("lovelace"),
       memo: "shutdown drain",
-      receiver: mode === "return" ? recipientKey : "cosmos1receiver",
-      sender: mode === "return" ? "cosmos1sender" : recipientKey,
+      receiver: (mode === "return" || mode === "voucher")
+        ? recipientKey
+        : "cosmos1receiver",
+      sender: (mode === "return" || mode === "voucher")
+        ? "cosmos1sender"
+        : recipientKey,
     };
     const payload = fromText(JSON.stringify(payloadFields));
-    const transferData = record(
-      ...[
-        payloadFields.denom,
-        payloadFields.amount,
-        payloadFields.sender,
-        payloadFields.receiver,
-        payloadFields.memo,
-      ].map(fromText),
-    );
-    const timeout = BigInt(emulator.now() + 7 * 86_400_000) * 1_000_000n;
-    const timeoutHeight = mode === "timeout" ? record(1n, 9n) : record(0n, 0n);
+    const timeout =
+      BigInt(emulator.now() + (mode === "timeout" ? -1_000 : 7 * 86_400_000)) *
+      1_000_000n;
+    const timeoutHeight = record(0n, 0n);
     const packet = record(
       1n,
       port,
-      fromText(mode === "return" ? "channel-7" : "channel-0"),
+      fromText(
+        (mode === "return" || mode === "voucher") ? "channel-7" : "channel-0",
+      ),
       port,
-      fromText(mode === "return" ? "channel-0" : "channel-7"),
+      fromText(
+        (mode === "return" || mode === "voucher") ? "channel-0" : "channel-7",
+      ),
       payload,
       timeoutHeight,
       timeout,
     );
     const commitment = await packetCommitment(packet);
     const errorAck = fromText('{"error":"rejected"}');
-    const successAck = fromText('{"result":"AQ=="}');
     const remoteKey = fromText(
       `${
         mode === "timeout"
@@ -187,10 +198,10 @@ export async function checkShutdownDrain(
       record(variant(3), variant(1), record(port, fromText("channel-7")), [
         fromText("connection-0"),
       ], fromText("ics20-1")),
-      2n,
       1n,
       1n,
-      new Map(mode === "return" ? [] : [[1n, commitment]]),
+      1n,
+      new Map(),
       new Map(),
       new Map(),
       record(0n, 0n),
@@ -221,24 +232,6 @@ export async function checkShutdownDrain(
     ) {
       tree.set(`${key}/${localPath}`, encode(channelState.fields[i + 1]));
     }
-    if (mode !== "return") {
-      tree.set(`commitments/${localPath}/sequences/1`, encode(commitment));
-    }
-    const root = await lucid.utxoByUnit(deployment.modules.transfer.identifier);
-    const shardName = toHex(
-      blake2b(
-        fromHex(
-          fromText("cardano-ibc/transfer-escrow-shard/v1") + "00" +
-            (localChannel.length / 2).toString(16).padStart(8, "0") +
-            localChannel + (denom.length / 2).toString(16).padStart(8, "0") +
-            denom,
-        ),
-        { dkLen: 28 },
-      ),
-    );
-    const shardUnit = v.mintTransferEscrowShard.scriptHash + shardName;
-    const registry = new DeploymentIbcTree();
-    registry.set(`escrowShards/${shardName}`, "01");
     let snapshotIndex = 0;
     const snapshot = (
       address: string,
@@ -259,7 +252,8 @@ export async function checkShutdownDrain(
     const funding = (await emulator.getUtxos(f.address)).sort((a, b) =>
       a.assets.lovelace > b.assets.lovelace ? -1 : 1
     )[0];
-    const snapshotAda = 20_000_000n + amount;
+    const snapshotAda = (mode === "voucher" ? 41_000_000n : 21_000_000n) +
+      2n * amount;
     assert(funding.assets.lovelace > snapshotAda + 2_000_000n);
     funding.assets.lovelace -= snapshotAda;
     const clientUtxo = snapshot(v.spendClient.address, {
@@ -270,15 +264,10 @@ export async function checkShutdownDrain(
       lovelace: 5_000_000n,
       [unit(connectionToken)]: 1n,
     }, encode(record(connection, connectionToken)));
-    snapshot(v.spendChannel.address, {
+    const channelUtxo = snapshot(v.spendChannel.address, {
       lovelace: 5_000_000n,
       [unit(channelToken)]: 1n,
     }, encode(channelDatum));
-    snapshot(v.spendTransferModule.address, {
-      lovelace: 5_000_000n + amount,
-      [shardUnit]: 1n,
-    }, encode(record(localChannel, denom, amount)));
-    root.datum = encode(record(await registry.getRoot(), 0n));
     hostInput.datum = Data.to(
       {
         ...hostDatum,
@@ -301,348 +290,285 @@ export async function checkShutdownDrain(
     );
     lucid.overrideUTxOs(await emulator.getUtxos(f.address));
     emulator.awaitSlot(61);
-    assertEquals(escrowDatum(await lucid.utxoByUnit(shardUnit)).amount, amount);
 
-    // Evaluate the same deposit builder on both sides of EnterShutdown. This
-    // prevents an unrelated malformed transaction from satisfying the rejection.
-    const newDeposit = async () => {
-      const host = await f.host();
-      const currentHost = await f.hostDatum();
-      const channel = await lucid.utxoByUnit(unit(channelToken));
-      const shard = await lucid.utxoByUnit(shardUnit);
-      const nextChannel = Data.from(channel.datum!) as Constr<Data>;
-      const state = nextChannel.fields[0] as Constr<Data>;
-      const sequence = state.fields[1] as bigint;
-      const fields = {
-        ...payloadFields,
-        denom: fromText("lovelace"),
-        sender: recipientKey,
-        receiver: "cosmos1receiver",
-      };
-      const data = fromText(JSON.stringify(fields));
-      const packet = record(
-        sequence,
-        port,
-        localChannel,
-        port,
-        fromText("channel-7"),
-        data,
-        record(0n, 0n),
-        BigInt(emulator.now() + 7 * 86_400_000) * 1_000_000n,
-      );
-      const commitment = await packetCommitment(packet);
-      const transfer = record(
-        ...[
-          fields.denom,
-          fields.amount,
-          fields.sender,
-          fields.receiver,
-          fields.memo,
-        ].map(fromText),
-      );
-      const sendKey = `nextSequenceSend/${localPath}`;
-      const commitmentKey = `commitments/${localPath}/sequences/${sequence}`;
-      const sendSiblings = await tree.getSiblings(sendKey);
-      tree.set(sendKey, encode(sequence + 1n));
-      const commitmentSiblings = await tree.getSiblings(commitmentKey);
-      tree.set(commitmentKey, encode(commitment));
-      try {
-        state.fields[1] = sequence + 1n;
-        (state.fields[4] as Map<Data, Data>).set(sequence, commitment);
-        const operation = v.spendChannel.refValidator!.send_packet;
-        return lucid.newTx().readFrom([
-          root,
-          clientUtxo,
-          connectionUtxo,
-          v.hostStateStt.refUtxo,
-          v.spendChannel.refUtxo,
-          operation.refUtxo,
-          v.spendTransferModule.refUtxo,
-        ])
-          .collectFrom(
-            [host],
-            Data.to({
-              HandlePacket: {
-                channel_siblings: [],
-                next_sequence_send_siblings: sendSiblings,
-                next_sequence_recv_siblings: [],
-                next_sequence_ack_siblings: [],
-                packet_commitment_siblings: commitmentSiblings,
-                packet_receipt_siblings: [],
-                packet_acknowledgement_siblings: [],
-              },
-            }, HostStateRedeemer),
-          )
-          .collectFrom([channel], encode(variant(5, packet)))
-          .collectFrom(
-            [shard],
-            encode(
-              record(
-                variant(9, localChannel, data, commitment, record(transfer)),
-              ),
-            ),
-          )
-          .mintAssets({ [operation.scriptHash]: 1n }, encode(channelToken))
-          .pay.ToContract(host.address, {
-            kind: "inline",
-            value: Data.to(
-              {
-                ...currentHost,
-                state: {
-                  ...currentHost.state,
-                  version: currentHost.state.version + 1n,
-                  last_update_time: BigInt(emulator.now()),
-                  ibc_state_root: await tree.getRoot(),
-                },
-              },
-              HostStateDatum,
-              { canonical: true },
-            ),
-          }, host.assets)
-          .pay.ToContract(channel.address, {
-            kind: "inline",
-            value: encode(nextChannel),
-          }, channel.assets)
-          .pay.ToContract(shard.address, {
-            kind: "inline",
-            value: encode(record(localChannel, denom, amount * 2n)),
-          }, { ...shard.assets, lovelace: shard.assets.lovelace + amount })
-          .validFrom(emulator.now()).validTo(emulator.now() + 60_000);
-      } finally {
-        tree.set(sendKey, encode(sequence));
-        tree.set(commitmentKey, "");
-      }
+    const p = deployment.packetState;
+    const configuration = await lucid.utxoByUnit(
+      p.configToken.policyId + p.configToken.name,
+    );
+    const laneDeployment: PacketLaneDeployment = {
+      batchPolicy: p.batch.scriptHash,
+      batchAddress: p.batch.address,
+      guardAddress: p.guard.address,
+      statePolicy: p.state.scriptHash,
+      laneCount: p.laneCount,
+      voucherPolicy: v.mintVoucher.scriptHash,
+      operations: Object.fromEntries(
+        Object.entries(p.operations).map((
+          [name, script],
+        ) => [name, { policy: script.scriptHash, reference: script.refUtxo }]),
+      ),
+      proofVerifier: {
+        policy: v.verifyProof.scriptHash,
+        reference: v.verifyProof.refUtxo,
+      },
+      channel: channelUtxo,
+      connection: connectionUtxo,
+      client: clientUtxo,
+      scripts: [
+        p.batch.refUtxo,
+        p.guard.refUtxo,
+        p.state.refUtxo,
+        v.mintVoucher.refUtxo,
+      ],
     };
-    await (await newDeposit()).complete({ localUPLCEval: true });
-
+    await f.submit(
+      await buildPacketLaneInitialization(
+        lucid,
+        laneDeployment,
+        configuration,
+        p.state.address,
+      ),
+      "initialize packet lanes",
+    );
+    laneDeployment.scripts.push(configuration, await f.host());
+    if (mode === "voucher") {
+      const { checkVoucherDrain } = await import("./shutdown-voucher-drain.ts");
+      snapshot(
+        voucherUserAddress,
+        { lovelace: 23_000_000n + 2n * amount },
+        Data.void(),
+      );
+      await checkVoucherDrain(
+        f,
+        laneDeployment,
+        snapshot,
+        packet,
+        proof.proof,
+        amount,
+        voucherUserSeed,
+        voucherUserAddress,
+      );
+      return;
+    }
+    // Complete the single assumed pre-shutdown history. Principal and reserves
+    // are deducted from the genesis wallet above. All subsequent changes submit.
+    const laneUnit = p.state.scriptHash +
+      packetLaneTokenName("transfer", "channel-0", 1, p.laneCount);
+    const lane = await lucid.utxoByUnit(laneUnit);
+    const laneDatum = Data.from(lane.datum!) as Constr<Data>;
+    if (mode !== "return") {
+      (laneDatum.fields[6] as Map<Data, Data>).set(1n, commitment);
+      const root = new DeploymentIbcTree();
+      root.set(`commitments/${localPath}/sequences/1`, commitment);
+      laneDatum.fields[5] = await root.getRoot();
+    }
+    laneDatum.fields[11] = new Map([[
+      await sha256(fromText(fromText("lovelace"))),
+      amount,
+    ]]);
+    lane.datum = encode(laneDatum);
+    const sequencer = await lucid.utxoByUnit(
+      p.state.scriptHash + sendSequencerTokenName("transfer", "channel-0"),
+    );
+    const sequencerDatum = Data.from(sequencer.datum!) as Constr<Data>;
+    sequencerDatum.fields[3] = 2n;
+    sequencer.datum = encode(sequencerDatum);
+    const deposit = record("ab".repeat(32), 0n);
+    const liquidityName = liquidityTokenName(
+      "transfer",
+      "channel-0",
+      fromText("lovelace"),
+      String(deposit.fields[0]),
+      0,
+    );
+    const liquidity = snapshot(
+      p.batch.address,
+      {
+        lovelace: amount + 3_000_000n,
+        [p.batch.scriptHash + liquidityName]: 1n,
+      },
+      encode(
+        record(
+          port,
+          localChannel,
+          denom,
+          "",
+          "",
+          deposit,
+          amount,
+          Data.from(credentialAddressData(recipientKey)),
+        ),
+      ),
+    );
+    const intent = snapshot(
+      p.guard.address,
+      { lovelace: amount + 3_000_000n },
+      encode(
+        record(
+          port,
+          localChannel,
+          recipientKey,
+          record(
+            fromText(fromText("lovelace")),
+            fromText(amount.toString()),
+            fromText(recipientKey),
+            fromText("cosmos1receiver"),
+            fromText("shutdown"),
+          ),
+          BigInt(emulator.now() + 7 * 86_400_000) * 1_000_000n,
+        ),
+      ),
+    );
+    const newDeposit = () =>
+      buildPacketSendBatch(
+        lucid,
+        laneDeployment,
+        [intent],
+        emulator.now(),
+        emulator.now() + 60_000,
+      );
+    await (await newDeposit()).tx.complete({ localUPLCEval: true });
     await f.enter(graceDays);
+    laneDeployment.scripts[laneDeployment.scripts.length - 1] = await f.host();
     await assertRejects(
       async () =>
-        await (await newDeposit()).complete({ localUPLCEval: true }),
+        (await newDeposit()).tx.complete({ localUPLCEval: true }),
       Error,
       "failed script execution",
     );
-    await f.rejectPrematureCleanup();
-    if (settleNearDeadline) await f.rejectPrematureCleanup(1);
-    assert((await f.hostDatum()).control.shutdown !== "Active");
-    const groups = await scanDeploymentState(lucid, deployment);
-    assertThrows(
-      () => assertStateDrained(groups, deployment),
-      Error,
-      mode === "return" ? "user deposits" : "unsettled packets",
+    await f.submit(
+      await buildTransferIntentCancellation(lucid, laneDeployment, intent),
+      "cancel unbatched intent",
     );
+    await f.rejectPrematureCleanup();
+    if (settleNearDeadline) {
+      await f.rejectPrematureCleanup(1);
+    }
+    if (settleAfterGrace) await f.waitForGrace();
     if (settleAfterGrace) {
-      await f.waitForGrace();
-      const liveReferences = Object.values(emulator.ledger)
-        .filter(({ spent, utxo }) => !spent && utxo.scriptRef)
-        .map(({ utxo }) => utxo);
-      const { terminalReference } = partitionShutdownReferences(
-        deployment,
-        liveReferences,
-      );
-      const shutdownDatum = await f.hostDatum();
-      await assertRejects(
-        async () =>
-          buildFinalizeShutdownTx(
-            lucid,
-            deployment,
-            await f.host(),
-            terminalReference,
-            f.address,
-            shutdownDatum.deployer,
-            emulator.now(),
-          ).complete({ localUPLCEval: true }),
-        Error,
-        "failed script execution",
-      );
-      for (const kind of ["client", "connection"] as const) {
-        const dependency = groups.find((group) => group.kind === kind)!;
-        const reclaim = buildReclaimStateTx(
+      await assertRejects(async () =>
+        buildRetirePacketLanesTx(
           lucid,
           deployment,
           await f.host(),
-          dependency,
+          channelUtxo,
           f.address,
           emulator.now(),
-          await lucid.utxoByUnit(deployment.modules.transfer.identifier),
-        );
+        ), Error);
+      const groups = await scanDeploymentState(lucid, deployment);
+      for (const kind of ["client", "connection", "channel"] as const) {
         await assertRejects(
-          () => reclaim.complete({ localUPLCEval: true }),
+          async () =>
+            buildReclaimStateTx(
+              lucid,
+              deployment,
+              await f.host(),
+              groups.find((g) => g.kind === kind)!,
+              f.address,
+              emulator.now(),
+              await lucid.utxoByUnit(deployment.modules.transfer.identifier),
+              await packetShutdownReferences(
+                lucid,
+                deployment,
+                groups.find((g) => g.kind === kind)!,
+              ),
+            ).complete({ localUPLCEval: true }),
           Error,
           "failed script execution",
         );
       }
     }
-    const host = await f.host();
-    const currentHost = await f.hostDatum();
-    const channel = await lucid.utxoByUnit(unit(channelToken));
-    const shard = await lucid.utxoByUnit(shardUnit);
-    const nextChannel = Data.from(channel.datum!) as Constr<Data>;
-    const state = nextChannel.fields[0] as Constr<Data>;
-    const witnesses = {
-      channel_siblings: [] as string[],
-      next_sequence_send_siblings: [],
-      next_sequence_recv_siblings: [],
-      next_sequence_ack_siblings: [],
-      packet_commitment_siblings: [] as string[],
-      packet_receipt_siblings: [] as string[],
-      packet_acknowledgement_siblings: [] as string[],
-    };
-    if (mode === "return") {
-      const ackCommitment = await sha256(successAck);
-      (state.fields[5] as Map<Data, Data>).set(1n, "");
-      (state.fields[6] as Map<Data, Data>).set(1n, ackCommitment);
-      state.fields[8] = height;
-      witnesses.packet_receipt_siblings = await tree.getSiblings(
-        `receipts/${localPath}/sequences/1`,
-      );
-      tree.set(`receipts/${localPath}/sequences/1`, encode(""));
-      witnesses.packet_acknowledgement_siblings = await tree.getSiblings(
-        `acks/${localPath}/sequences/1`,
-      );
-      tree.set(`acks/${localPath}/sequences/1`, encode(ackCommitment));
-    } else {
-      (state.fields[4] as Map<Data, Data>).delete(1n);
-      witnesses.packet_commitment_siblings = await tree.getSiblings(
-        `commitments/${localPath}/sequences/1`,
-      );
-      tree.set(`commitments/${localPath}/sequences/1`, "");
-    }
-    const operation = v.spendChannel.refValidator![
-      mode === "timeout"
-        ? "timeout_packet"
-        : mode === "error-ack"
-        ? "acknowledge_packet"
-        : "recv_packet"
-    ];
-    const channelRedeemer = mode === "timeout"
-      ? variant(3, packet, proof.proof, height, 1n)
-      : mode === "error-ack"
-      ? variant(4, packet, errorAck, proof.proof, height)
-      : variant(2, packet, proof.proof, height);
-    const callback = mode === "timeout"
-      ? variant(7, localChannel, payload, record(transferData))
-      : variant(
-        mode === "error-ack" ? 8 : 6,
-        localChannel,
-        payload,
-        record(
-          variant(
-            mode === "error-ack" ? 1 : 0,
-            fromText(mode === "error-ack" ? "rejected" : "AQ=="),
-          ),
-        ),
-        record(transferData),
-      );
-    const processed =
-      [...(client.state.fields[2] as Map<Data, Data>).values()][0];
-    const processedHeight =
-      [...(client.state.fields[3] as Map<Data, Data>).values()][0];
-    const verifyFields = [
-      client.client,
-      client.consensus,
-      height,
-      processed,
-      processedHeight,
-      0n,
-      0n,
-      proof.proof,
-      record([fromText("ibc"), remoteKey]),
-    ];
-    const tx = lucid.newTx().readFrom([
-      root,
-      clientUtxo,
-      connectionUtxo,
-      v.hostStateStt.refUtxo,
-      v.spendChannel.refUtxo,
-      operation.refUtxo,
-      v.verifyProof.refUtxo,
-      v.spendTransferModule.refUtxo,
-    ])
-      .collectFrom(
-        [host],
-        Data.to({ HandlePacket: witnesses }, HostStateRedeemer),
-      )
-      .collectFrom([channel], encode(channelRedeemer))
-      .collectFrom([shard], encode(record(callback)))
-      .mintAssets({ [operation.scriptHash]: 1n }, encode(channelToken))
-      .mintAssets(
-        { [v.verifyProof.scriptHash]: 1n },
-        encode(
-          record(
-            mode === "timeout"
-              ? variant(1, ...verifyFields)
-              : record(...verifyFields, proofValue),
-            variant(1),
-          ),
-        ),
-      )
-      .pay.ToContract(host.address, {
-        kind: "inline",
-        value: Data.to(
-          {
-            ...currentHost,
-            state: {
-              ...currentHost.state,
-              version: currentHost.state.version + 1n,
-              last_update_time: BigInt(emulator.now()),
-              ibc_state_root: await tree.getRoot(),
-            },
-          },
-          HostStateDatum,
-          { canonical: true },
-        ),
-      }, host.assets)
-      .pay.ToContract(channel.address, {
-        kind: "inline",
-        value: encode(nextChannel),
-      }, channel.assets)
-      .pay.ToContract(shard.address, {
-        kind: "inline",
-        value: encode(record(localChannel, denom, 0n)),
-      }, { ...shard.assets, lovelace: shard.assets.lovelace - amount })
-      .pay.ToAddress(recipient, { lovelace: amount })
-      .validFrom(emulator.now()).validTo(emulator.now() + 60_000);
-    await f.submit(tx, `shutdown ${mode}`);
-    assertEquals(
-      (await lucid.utxosAt(recipient)).reduce(
-        (sum, u) => sum + u.assets.lovelace,
-        0n,
-      ),
-      amount,
-      "Exact user refund, independently of deployer fees",
-    );
-    assertEquals(escrowDatum(await lucid.utxoByUnit(shardUnit)).amount, 0n);
-    const settledChannel = Data.from(
-      (await lucid.utxoByUnit(unit(channelToken))).datum!,
-    ) as Constr<Data>;
-    assertEquals(
-      ((settledChannel.fields[0] as Constr<Data>).fields[4] as Map<Data, Data>)
-        .size,
-      0,
-    );
-    assertStateDrained(
-      await scanDeploymentState(lucid, deployment),
-      deployment,
-    );
-    await f.waitForGrace();
-    const transfer = (await scanDeploymentState(lucid, deployment)).find((g) =>
-      g.kind === "transfer"
-    )!;
-    await f.submit(
-      await buildReclaimEscrowTx(
+    laneDeployment.scripts[laneDeployment.scripts.length - 1] = await f.host();
+    const now = emulator.now();
+    const settlement = mode === "timeout"
+      ? await buildPacketTimeout(
         lucid,
-        deployment,
-        await f.host(),
-        transfer,
-        await lucid.utxoByUnit(shardUnit),
-        f.address,
-        emulator.now(),
-      ),
-      "reclaim drained escrow",
+        laneDeployment,
+        packet,
+        height,
+        proof.proof,
+        [liquidity],
+        now,
+        now + 60_000,
+      )
+      : mode === "error-ack"
+      ? await buildPacketRejection(
+        lucid,
+        laneDeployment,
+        packet,
+        height,
+        proof.proof,
+        [liquidity],
+        "rejected",
+        now,
+        now + 60_000,
+      )
+      : await buildPacketReceive(
+        lucid,
+        laneDeployment,
+        packet,
+        height,
+        proof.proof,
+        [liquidity],
+        now,
+        now + 60_000,
+      );
+    await f.submit(settlement.tx, `shutdown ${mode}`);
+    assertEquals(
+      (await lucid.utxosAt(p.batch.address)).length,
+      0,
+      "Full drain burns the liquidity identity and refunds its reserve",
     );
+    const settled = Data.from(
+      (await lucid.utxoByUnit(laneUnit)).datum!,
+    ) as Constr<Data>;
+    assertEquals((settled.fields[6] as Map<Data, Data>).size, 0);
+    assertEquals((settled.fields[11] as Map<Data, Data>).size, 0);
+    await f.waitForGrace();
+    if (settleAfterGrace) {
+      const host = await f.host();
+      const build = () =>
+        buildRetirePacketLanesTx(
+          lucid,
+          deployment,
+          host,
+          channelUtxo,
+          f.address,
+          emulator.now(),
+        );
+      await (await build())!.complete({ localUPLCEval: true });
+      const original = lucid.newTx.bind(lucid);
+      lucid.newTx = () => {
+        const tx = original();
+        const pay = tx.pay.ToContract.bind(tx.pay);
+        tx.pay.ToContract = ((address, datum, assets, ...rest) => {
+          if (address === p.state.address) {
+            // A first retirement cannot claim that every lane has been burned.
+            datum = {
+              kind: "inline",
+              value: encode(record(BigInt(p.laneCount))),
+            };
+          }
+          return pay(address, datum, assets, ...rest);
+        }) as typeof tx.pay.ToContract;
+        return tx;
+      };
+      try {
+        await assertRejects(
+          async () => (await build())!.complete({ localUPLCEval: true }),
+          Error,
+          "failed script execution",
+        );
+      } finally {
+        lucid.newTx = original;
+      }
+    }
     await f.finish(recipient);
   } finally {
     f.dispose();
   }
+}
+
+function credentialAddressData(owner: string) {
+  return encode(record(variant(0, owner), variant(1)));
 }
