@@ -45,11 +45,16 @@ import {
 import { ConnectionService } from './connection.service';
 import { ClientService } from './client.service';
 import { ChannelService } from './channel.service';
+import { PacketLaneService, BuildPacketBatchRequest, BuildPacketBatchResponse } from './packet-lane.service';
 import { PacketService } from './packet.service';
 import { SubmissionService } from './submission.service';
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
 import { BuildHostStateHeartbeatRequest, BuildHostStateHeartbeatResponse } from './dto/host-state-heartbeat.dto';
-import { MsgPrunePacketHistory, MsgPrunePacketHistoryResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
+import {
+  CompactPacketBalancesRequest,
+  MsgPrunePacketHistory,
+  MsgPrunePacketHistoryResponse,
+} from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import { validateAndFormatPrunePacketHistoryParams } from './helper/packet.validate';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 import { GrpcAuthGuard } from '../security/grpc-auth.guard';
@@ -64,9 +69,15 @@ export class TxController {
     private readonly connectionService: ConnectionService,
     private readonly channelService: ChannelService,
     private readonly packetService: PacketService,
+    private readonly packetLaneService: PacketLaneService,
     private readonly submissionService: SubmissionService,
     private readonly hostStateHeartbeatService: HostStateHeartbeatService,
   ) {}
+
+  @GrpcMethod('CardanoMsg', 'CompactPacketBalances')
+  async CompactPacketBalances(data: CompactPacketBalancesRequest): Promise<MsgPrunePacketHistoryResponse> {
+    return this.packetLaneService.compactBalances(data);
+  }
 
   @GrpcMethod('Msg', 'CreateClient')
   async CreateClient(data: MsgCreateClient): Promise<MsgCreateClientResponse> {
@@ -128,26 +139,35 @@ export class TxController {
   }
   @GrpcMethod('Msg', 'RecvPacket')
   async RecvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
+    if (data.packet?.destination_port === 'transfer') return this.packetLaneService.settle(data, 'receive');
     const response: MsgRecvPacketResponse = await this.packetService.recvPacket(data);
     return response;
   }
+  @GrpcMethod('CardanoMsg', 'BuildPacketBatch')
+  async BuildPacketBatch(data: BuildPacketBatchRequest): Promise<BuildPacketBatchResponse> {
+    return this.packetLaneService.batch(data);
+  }
+
   @GrpcMethod('Msg', 'Transfer')
   async Transfer(data: MsgTransfer): Promise<MsgTransferResponse> {
-    const response: MsgTransferResponse = await this.packetService.sendPacket(data);
+    const response: MsgTransferResponse = await this.packetLaneService.admit(data);
     return response;
   }
   @GrpcMethod('Msg', 'Acknowledgement')
   async Acknowledgement(data: MsgAcknowledgement): Promise<MsgAcknowledgementResponse> {
+    if (data.packet?.source_port === 'transfer') return this.packetLaneService.settle(data, 'acknowledge');
     const response: MsgAcknowledgementResponse = await this.packetService.acknowledgementPacket(data);
     return response;
   }
   @GrpcMethod('Msg', 'Timeout')
   async Timeout(data: MsgTimeout): Promise<MsgTimeoutResponse> {
+    if (data.packet?.source_port === 'transfer') return this.packetLaneService.settle(data, 'timeout');
     const response: MsgTimeoutResponse = await this.packetService.timeoutPacket(data);
     return response;
   }
   @GrpcMethod('Msg', 'TimeoutOnClose')
   async TimeoutOnClose(data: MsgTimeoutOnClose): Promise<MsgTimeoutOnCloseResponse> {
+    if (data.packet?.source_port === 'transfer') return this.packetLaneService.settle(data, 'timeout');
     const response: MsgTimeoutOnCloseResponse = await this.packetService.timeoutOnClosePacket(data);
     return response;
   }
@@ -188,6 +208,7 @@ export class TxController {
 
   @GrpcMethod('CardanoMsg', 'PrunePacketHistory')
   async PrunePacketHistory(data: MsgPrunePacketHistory): Promise<MsgPrunePacketHistoryResponse> {
+    if (data.port_id === 'transfer') return this.packetLaneService.prune(data);
     return this.packetService.prunePacketHistory(validateAndFormatPrunePacketHistoryParams(data));
   }
 }

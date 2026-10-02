@@ -192,6 +192,45 @@ export interface EventAttribute {
   key: string;
   value: string;
 }
+/**
+ * @name BuildPacketBatchRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BuildPacketBatchRequest
+ */
+export interface BuildPacketBatchRequest {
+  signer: string;
+  port_id: string;
+  channel_id: string;
+  intent_tx_hash: string;
+}
+/**
+ * @name BuildPacketBatchResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BuildPacketBatchResponse
+ */
+export interface BuildPacketBatchResponse {
+  stage: string;
+  unsigned_tx?: Any;
+  intent_tx_hashes: string[];
+  included_tx_hash: string;
+}
+/**
+ * @name CompactPacketBalancesRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.CompactPacketBalancesRequest
+ */
+export interface CompactPacketBalancesRequest {
+  signer: string;
+  port_id: string;
+  channel_id: string;
+  left_lane: number;
+  right_lane: number;
+  /**
+   * Optional full denominations to retain on the left. Other keys move right.
+   * When empty, the builder divides the net balances in canonical key order.
+   */
+  left_denoms: string[];
+}
 function createBaseBuildHostStateHeartbeatRequest(): BuildHostStateHeartbeatRequest {
   return {
     signer: "",
@@ -1007,6 +1046,285 @@ export const EventAttribute = {
     const message = createBaseEventAttribute();
     message.key = object.key ?? "";
     message.value = object.value ?? "";
+    return message;
+  },
+};
+function createBaseBuildPacketBatchRequest(): BuildPacketBatchRequest {
+  return {
+    signer: "",
+    port_id: "",
+    channel_id: "",
+    intent_tx_hash: "",
+  };
+}
+/**
+ * @name BuildPacketBatchRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BuildPacketBatchRequest
+ */
+export const BuildPacketBatchRequest = {
+  typeUrl: "/ibc.cardano.v1.BuildPacketBatchRequest",
+  encode(message: BuildPacketBatchRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.signer !== "") {
+      writer.uint32(10).string(message.signer);
+    }
+    if (message.port_id !== "") {
+      writer.uint32(18).string(message.port_id);
+    }
+    if (message.channel_id !== "") {
+      writer.uint32(26).string(message.channel_id);
+    }
+    if (message.intent_tx_hash !== "") {
+      writer.uint32(34).string(message.intent_tx_hash);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BuildPacketBatchRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBuildPacketBatchRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.signer = reader.string();
+          break;
+        case 2:
+          message.port_id = reader.string();
+          break;
+        case 3:
+          message.channel_id = reader.string();
+          break;
+        case 4:
+          message.intent_tx_hash = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BuildPacketBatchRequest {
+    const obj = createBaseBuildPacketBatchRequest();
+    if (isSet(object.signer)) obj.signer = String(object.signer);
+    if (isSet(object.port_id)) obj.port_id = String(object.port_id);
+    if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
+    if (isSet(object.intent_tx_hash)) obj.intent_tx_hash = String(object.intent_tx_hash);
+    return obj;
+  },
+  toJSON(message: BuildPacketBatchRequest): unknown {
+    const obj: any = {};
+    message.signer !== undefined && (obj.signer = message.signer);
+    message.port_id !== undefined && (obj.port_id = message.port_id);
+    message.channel_id !== undefined && (obj.channel_id = message.channel_id);
+    message.intent_tx_hash !== undefined && (obj.intent_tx_hash = message.intent_tx_hash);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BuildPacketBatchRequest>, I>>(object: I): BuildPacketBatchRequest {
+    const message = createBaseBuildPacketBatchRequest();
+    message.signer = object.signer ?? "";
+    message.port_id = object.port_id ?? "";
+    message.channel_id = object.channel_id ?? "";
+    message.intent_tx_hash = object.intent_tx_hash ?? "";
+    return message;
+  },
+};
+function createBaseBuildPacketBatchResponse(): BuildPacketBatchResponse {
+  return {
+    stage: "",
+    unsigned_tx: undefined,
+    intent_tx_hashes: [],
+    included_tx_hash: "",
+  };
+}
+/**
+ * @name BuildPacketBatchResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BuildPacketBatchResponse
+ */
+export const BuildPacketBatchResponse = {
+  typeUrl: "/ibc.cardano.v1.BuildPacketBatchResponse",
+  encode(message: BuildPacketBatchResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.stage !== "") {
+      writer.uint32(10).string(message.stage);
+    }
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(18).fork()).ldelim();
+    }
+    for (const v of message.intent_tx_hashes) {
+      writer.uint32(26).string(v!);
+    }
+    if (message.included_tx_hash !== "") {
+      writer.uint32(34).string(message.included_tx_hash);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BuildPacketBatchResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBuildPacketBatchResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.stage = reader.string();
+          break;
+        case 2:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
+        case 3:
+          message.intent_tx_hashes.push(reader.string());
+          break;
+        case 4:
+          message.included_tx_hash = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BuildPacketBatchResponse {
+    const obj = createBaseBuildPacketBatchResponse();
+    if (isSet(object.stage)) obj.stage = String(object.stage);
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
+    if (Array.isArray(object?.intent_tx_hashes))
+      obj.intent_tx_hashes = object.intent_tx_hashes.map((e: any) => String(e));
+    if (isSet(object.included_tx_hash)) obj.included_tx_hash = String(object.included_tx_hash);
+    return obj;
+  },
+  toJSON(message: BuildPacketBatchResponse): unknown {
+    const obj: any = {};
+    message.stage !== undefined && (obj.stage = message.stage);
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    if (message.intent_tx_hashes) {
+      obj.intent_tx_hashes = message.intent_tx_hashes.map((e) => e);
+    } else {
+      obj.intent_tx_hashes = [];
+    }
+    message.included_tx_hash !== undefined && (obj.included_tx_hash = message.included_tx_hash);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BuildPacketBatchResponse>, I>>(
+    object: I,
+  ): BuildPacketBatchResponse {
+    const message = createBaseBuildPacketBatchResponse();
+    message.stage = object.stage ?? "";
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
+    message.intent_tx_hashes = object.intent_tx_hashes?.map((e) => e) || [];
+    message.included_tx_hash = object.included_tx_hash ?? "";
+    return message;
+  },
+};
+function createBaseCompactPacketBalancesRequest(): CompactPacketBalancesRequest {
+  return {
+    signer: "",
+    port_id: "",
+    channel_id: "",
+    left_lane: 0,
+    right_lane: 0,
+    left_denoms: [],
+  };
+}
+/**
+ * @name CompactPacketBalancesRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.CompactPacketBalancesRequest
+ */
+export const CompactPacketBalancesRequest = {
+  typeUrl: "/ibc.cardano.v1.CompactPacketBalancesRequest",
+  encode(message: CompactPacketBalancesRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.signer !== "") {
+      writer.uint32(10).string(message.signer);
+    }
+    if (message.port_id !== "") {
+      writer.uint32(18).string(message.port_id);
+    }
+    if (message.channel_id !== "") {
+      writer.uint32(26).string(message.channel_id);
+    }
+    if (message.left_lane !== 0) {
+      writer.uint32(32).uint32(message.left_lane);
+    }
+    if (message.right_lane !== 0) {
+      writer.uint32(40).uint32(message.right_lane);
+    }
+    for (const v of message.left_denoms) {
+      writer.uint32(50).string(v!);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): CompactPacketBalancesRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCompactPacketBalancesRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.signer = reader.string();
+          break;
+        case 2:
+          message.port_id = reader.string();
+          break;
+        case 3:
+          message.channel_id = reader.string();
+          break;
+        case 4:
+          message.left_lane = reader.uint32();
+          break;
+        case 5:
+          message.right_lane = reader.uint32();
+          break;
+        case 6:
+          message.left_denoms.push(reader.string());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): CompactPacketBalancesRequest {
+    const obj = createBaseCompactPacketBalancesRequest();
+    if (isSet(object.signer)) obj.signer = String(object.signer);
+    if (isSet(object.port_id)) obj.port_id = String(object.port_id);
+    if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
+    if (isSet(object.left_lane)) obj.left_lane = Number(object.left_lane);
+    if (isSet(object.right_lane)) obj.right_lane = Number(object.right_lane);
+    if (Array.isArray(object?.left_denoms)) obj.left_denoms = object.left_denoms.map((e: any) => String(e));
+    return obj;
+  },
+  toJSON(message: CompactPacketBalancesRequest): unknown {
+    const obj: any = {};
+    message.signer !== undefined && (obj.signer = message.signer);
+    message.port_id !== undefined && (obj.port_id = message.port_id);
+    message.channel_id !== undefined && (obj.channel_id = message.channel_id);
+    message.left_lane !== undefined && (obj.left_lane = Math.round(message.left_lane));
+    message.right_lane !== undefined && (obj.right_lane = Math.round(message.right_lane));
+    if (message.left_denoms) {
+      obj.left_denoms = message.left_denoms.map((e) => e);
+    } else {
+      obj.left_denoms = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<CompactPacketBalancesRequest>, I>>(
+    object: I,
+  ): CompactPacketBalancesRequest {
+    const message = createBaseCompactPacketBalancesRequest();
+    message.signer = object.signer ?? "";
+    message.port_id = object.port_id ?? "";
+    message.channel_id = object.channel_id ?? "";
+    message.left_lane = object.left_lane ?? 0;
+    message.right_lane = object.right_lane ?? 0;
+    message.left_denoms = object.left_denoms?.map((e) => e) || [];
     return message;
   },
 };
