@@ -140,6 +140,23 @@ registry or consume metadata derived from it. Our dapps and SDKs can do that, bu
 third-party wallets will only show better names if they choose to integrate that
 resolution path.
 
+## Can a counterparty verify that a packet receipt exists?
+
+The Cardano Go light clients support only non-membership proofs for packet
+receipts under the current commitment codec. `VerifyIbcStateMembership` rejects
+`receipts/ports/` keys in the probabilistic v8 and v10 clients and the retired
+Mithril v10 client.
+
+Cardano stores an empty receipt bytestring and commits its CBOR encoding `0x40`.
+ibc-go stores the receipt sentinel `0x01`. Unordered packet timeouts verify
+receipt absence with `VerifyIbcStateNonMembership`. A committed `0x40` receipt
+has a non-empty leaf hash so it cannot satisfy that absence proof.
+
+Custom flows that need receipt membership require a coordinated commitment
+codec change. [Issue #614](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/614)
+tracks codec versioning and historical proof support. Until then the existing
+receipt bytes and roots stay unchanged.
+
 ## Why can finalized packet history be pruned without keeping an off-chain copy?
 
 Pruning removes only finalized destination history: a receipt and
