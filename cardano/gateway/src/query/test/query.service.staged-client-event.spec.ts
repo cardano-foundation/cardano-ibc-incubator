@@ -1,3 +1,4 @@
+import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import crypto from 'crypto';
 
@@ -32,8 +33,8 @@ const SESSION_POLICY = '81'.repeat(28);
 const SESSION_NAME = '82'.repeat(32);
 const SESSION_ADDRESS = 'addr_test1_session';
 const HOST_TOKEN = { policyId: '85'.repeat(28), name: '01' };
-const CLIENT_NAME_PREFIX = hashSha3_256(HOST_TOKEN.policyId + HOST_TOKEN.name).slice(0, 40) +
-  hashSha3_256(CLIENT_PREFIX).slice(0, 8);
+const CLIENT_NAME_PREFIX =
+  hashSha3_256(HOST_TOKEN.policyId + HOST_TOKEN.name).slice(0, 40) + hashSha3_256(CLIENT_PREFIX).slice(0, 8);
 const CLIENT_TOKEN = { policyId: '83'.repeat(28), name: CLIENT_NAME_PREFIX + '30' };
 const SUBSTITUTE_TOKEN = { ...CLIENT_TOKEN, name: CLIENT_NAME_PREFIX + '31' };
 const CLIENT_ADDRESS = 'addr_test1_client';
@@ -156,7 +157,13 @@ async function stagedHistoryFixture(
             type: 'spend',
             index: 0n,
             data: encodeSpendMultitxClientRedeemer(
-              { FinalizeUpdate: { historyWitnesses: [], historySiblings: [], sessionToken: { policyId: SESSION_POLICY, name: 'ff'.repeat(32) } } },
+              {
+                FinalizeUpdate: {
+                  historyWitnesses: [],
+                  historySiblings: [],
+                  sessionToken: { policyId: SESSION_POLICY, name: 'ff'.repeat(32) },
+                },
+              },
               Lucid,
             ),
           },
@@ -169,7 +176,13 @@ async function stagedHistoryFixture(
         options.action === 'recovery'
           ? { RecoverClient: { historySiblings: [], substituteToken: SUBSTITUTE_TOKEN } }
           : options.action === 'evidence'
-            ? { FinalizeMisbehaviour: { historyWitnesses: [], sessionToken1: sessionToken, sessionToken2: secondSessionToken } }
+            ? {
+                FinalizeMisbehaviour: {
+                  historyWitnesses: [],
+                  sessionToken1: sessionToken,
+                  sessionToken2: secondSessionToken,
+                },
+              }
             : { FinalizeUpdate: { historyWitnesses: [], historySiblings: [], sessionToken } },
         Lucid,
       ),
@@ -223,11 +236,15 @@ async function stagedHistoryFixture(
   secondPlan.header.appHash = 'a2'.repeat(32);
   const secondOutputs = [
     {
-      ...sessionOutputs[0], txHash: '77'.repeat(32), assetsName: secondSessionToken.name,
+      ...sessionOutputs[0],
+      txHash: '77'.repeat(32),
+      assetsName: secondSessionToken.name,
       datum: encodeSessionDatum({ ...collectingSession, sessionToken: secondSessionToken, plan: secondPlan }, Lucid),
     },
     {
-      ...sessionOutputs[1], txHash: '99'.repeat(32), assetsName: secondSessionToken.name,
+      ...sessionOutputs[1],
+      txHash: '99'.repeat(32),
+      assetsName: secondSessionToken.name,
       datum: encodeSessionDatum({ ...completeSession, sessionToken: secondSessionToken, plan: secondPlan }, Lucid),
     },
   ];
@@ -245,7 +262,8 @@ async function stagedHistoryFixture(
       {
         // Deliberately supply the client input before the lower-hash lookalike input.
         txBodyCborHex: transactionBodyCbor([
-          { txHash: CLIENT_INPUT_TX_HASH }, { txHash: '11'.repeat(32) },
+          { txHash: CLIENT_INPUT_TX_HASH },
+          { txHash: '11'.repeat(32) },
           ...(options.unspentReceipt ? [] : [{ txHash: COMPLETE_SESSION_TX_HASH }]),
           ...(options.action === 'evidence' ? [{ txHash: '99'.repeat(32) }] : []),
         ]),
@@ -267,10 +285,7 @@ async function stagedHistoryFixture(
         redeemers: advanceRedeemers,
       },
     ],
-    [
-      '77'.repeat(32),
-      { txBodyCborHex: transactionBodyCbor([{ txHash: '55'.repeat(32) }]), redeemers: [] },
-    ],
+    ['77'.repeat(32), { txBodyCborHex: transactionBodyCbor([{ txHash: '55'.repeat(32) }]), redeemers: [] }],
     [
       SESSION_INPUT_TX_HASH,
       {
@@ -308,13 +323,18 @@ async function stagedHistoryFixture(
     {} as DenomTraceService,
     {} as any,
     createTestTreeStore(),
+    createPacketStateMock() as any,
   );
   const outputDatum = clientDatumMockBuilder.withLatestHeight(0n, 9n).build();
   outputDatum.token = CLIENT_TOKEN;
-  if (options.action === 'evidence') outputDatum.state.clientState.frozenHeight = { revisionNumber: 0n, revisionHeight: 1n };
+  if (options.action === 'evidence')
+    outputDatum.state.clientState.frozenHeight = { revisionNumber: 0n, revisionHeight: 1n };
   const clientOutput = {
-    txHash: 'final-tx', blockNo: 20, address: CLIENT_ADDRESS,
-    assetsPolicy: CLIENT_TOKEN.policyId, assetsName: CLIENT_TOKEN.name,
+    txHash: 'final-tx',
+    blockNo: 20,
+    address: CLIENT_ADDRESS,
+    assetsPolicy: CLIENT_TOKEN.policyId,
+    assetsName: CLIENT_TOKEN.name,
     datum: await encodeClientDatum(outputDatum, Lucid),
   };
 
@@ -333,29 +353,35 @@ async function stagedHistoryFixture(
 describe('QueryService staged client event history', () => {
   it('replays staged recovery from the canonical client input rather than a bundled finalization', async () => {
     const { service, historyService, clientOutput } = await stagedHistoryFixture({
-      action: 'recovery', bundledFinalLookalike: true,
+      action: 'recovery',
+      bundledFinalLookalike: true,
     });
     const [result] = await (service as any)._parseEventClient([clientOutput]);
     expect(result.events[0].type).toBe('recover_client');
-    expect(result.events[0].event_attribute).toEqual(expect.arrayContaining([
-      expect.objectContaining({ key: 'subject_client_id', value: '07-tendermint-0' }),
-      expect.objectContaining({ key: 'substitute_client_id', value: '07-tendermint-1' }),
-    ]));
+    expect(result.events[0].event_attribute).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'subject_client_id', value: '07-tendermint-0' }),
+        expect.objectContaining({ key: 'substitute_client_id', value: '07-tendermint-1' }),
+      ]),
+    );
     expect(historyService.findUtxosByPolicyIdAndPrefixTokenName).not.toHaveBeenCalledWith(
-      SESSION_POLICY, expect.anything(),
+      SESSION_POLICY,
+      expect.anything(),
     );
   });
 
   it('reconstructs both staged evidence headers after process memory is gone', async () => {
     const { service, clientOutput, plan, secondPlan } = await stagedHistoryFixture({
-      action: 'evidence', bundledFinalLookalike: true, bundledAdvanceLookalike: true,
+      action: 'evidence',
+      bundledFinalLookalike: true,
+      bundledAdvanceLookalike: true,
     });
     const [result] = await (service as any)._parseEventClient([clientOutput]);
     const event = result.events[0];
     expect(event.type).toBe('client_misbehaviour');
-    expect(event.event_attribute).toEqual(expect.arrayContaining([
-      expect.objectContaining({ key: 'consensus_height', value: '0-1' }),
-    ]));
+    expect(event.event_attribute).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'consensus_height', value: '0-1' })]),
+    );
     const messageAttribute = event.event_attribute.find(({ key }: { key: string }) => key === 'client_message_any_hex');
     const message = Any.decode(Buffer.from(messageAttribute.value, 'hex'));
     expect(message.type_url).toBe('/ibc.lightclients.tendermint.v1.Misbehaviour');
@@ -363,7 +389,8 @@ describe('QueryService staged client event history', () => {
     expect(evidence.client_id).toBe('07-tendermint-0');
     const first = evidence.header1?.signed_header;
     const second = evidence.header2?.signed_header;
-    if (!first?.header || !first.commit || !second?.header || !second.commit) throw new Error('Missing evidence headers');
+    if (!first?.header || !first.commit || !second?.header || !second.commit)
+      throw new Error('Missing evidence headers');
     expect(Buffer.from(first.header.app_hash).toString('hex')).toBe(plan.header.appHash);
     expect(Buffer.from(second.header.app_hash).toString('hex')).toBe(secondPlan.header.appHash);
     expect(first.commit.signatures).toHaveLength(1);
@@ -372,9 +399,9 @@ describe('QueryService staged client event history', () => {
 
   it('rejects an unconsumed completed receipt when reconstructing finalization', async () => {
     const { service, clientOutput, finalRedeemers } = await stagedHistoryFixture({ unspentReceipt: true });
-    await expect((service as any).recoverStagedTendermintHeader(
-      clientOutput, { token: CLIENT_TOKEN }, finalRedeemers,
-    )).rejects.toThrow('expected one completed session output, found 0');
+    await expect(
+      (service as any).recoverStagedTendermintHeader(clientOutput, { token: CLIENT_TOKEN }, finalRedeemers),
+    ).rejects.toThrow('expected one completed session output, found 0');
   });
 
   it('recovers a full header from the finalized session after process memory is gone', async () => {
@@ -466,6 +493,7 @@ describe('QueryService staged client event history', () => {
       {} as DenomTraceService,
       {} as any,
       createTestTreeStore(),
+      createPacketStateMock() as any,
     );
     const parseEventClient = jest.spyOn(service as any, '_parseEventClient').mockResolvedValue([
       {

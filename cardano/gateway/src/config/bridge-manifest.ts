@@ -73,7 +73,41 @@ function requireConsensusHistoryFormat(value: unknown): typeof CONSENSUS_HISTORY
   return value;
 }
 
+const PACKET_OPERATIONS = [
+  'send',
+  'acknowledge',
+  'timeout',
+  'reject',
+  'receive',
+  'prune',
+  'timeout_on_close',
+  'retire',
+  'funds',
+  'send_funds',
+] as const;
+
+type PacketStateDeployment = {
+  operations: Record<string, DeploymentValidator>;
+  format: 'packet-lanes-v1';
+  laneCount: number;
+  configToken: AuthToken;
+  state: DeploymentValidator;
+  batch: DeploymentValidator;
+  guard: DeploymentValidator;
+};
+
+type PacketStateManifest = {
+  operations: Record<string, BridgeManifestValidator>;
+  format: 'packet-lanes-v1';
+  lane_count: number;
+  config_token: BridgeManifestAuthToken;
+  state: BridgeManifestValidator;
+  batch: BridgeManifestValidator;
+  guard: BridgeManifestValidator;
+};
+
 export type DeploymentConfig = {
+  packetState?: PacketStateDeployment;
   deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   deployedAt: string;
@@ -171,6 +205,7 @@ type BridgeManifestTraceRegistry = {
 // external operators. It intentionally uses snake_case and only includes the
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
 export type BridgeManifest = {
+  packet_state?: PacketStateManifest;
   deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   schema_version: number;
@@ -620,6 +655,71 @@ function manifestSpendChannelToDeployment(
   };
 }
 
+function requirePacketState(value: unknown): PacketStateDeployment {
+  const packet = requireObject(value, 'packetState');
+  assert(packet.format === 'packet-lanes-v1', 'A fresh packet-lane deployment is required');
+  const laneCount = requireNonNegativeInteger(packet.laneCount, 'packetState.laneCount');
+  assert(laneCount >= 1 && laneCount <= 64, 'Invalid packet lane count');
+  const validator = (name: string) => {
+    const result = requireDeploymentValidator(packet[name], `packetState.${name}`);
+    assert(!!result.address, `Missing packetState.${name}.address`);
+    return result;
+  };
+  const operations = requireObject(packet.operations, 'packetState.operations');
+  return {
+    operations: Object.fromEntries(
+      PACKET_OPERATIONS.map((name) => [
+        name,
+        requireDeploymentValidator(operations[name], `packetState.operations.${name}`),
+      ]),
+    ),
+    format: 'packet-lanes-v1',
+    laneCount,
+    configToken: requireAuthToken(packet.configToken, 'packetState.configToken'),
+    state: validator('state'),
+    batch: validator('batch'),
+    guard: validator('guard'),
+  };
+}
+
+function packetStateToManifest(packet: PacketStateDeployment): PacketStateManifest {
+  return {
+    operations: Object.fromEntries(
+      PACKET_OPERATIONS.map((name) => [name, deploymentValidatorToManifest(packet.operations[name])]),
+    ),
+    format: packet.format,
+    lane_count: packet.laneCount,
+    config_token: deploymentAuthTokenToManifest(packet.configToken),
+    state: deploymentValidatorToManifest(packet.state),
+    batch: deploymentValidatorToManifest(packet.batch),
+    guard: deploymentValidatorToManifest(packet.guard),
+  };
+}
+
+function packetStateFromManifest(value: unknown): PacketStateDeployment {
+  const packet = requireObject(value, 'packet_state');
+  const operations = requireObject(packet.operations, 'packet_state.operations');
+  return requirePacketState({
+    operations: Object.fromEntries(
+      PACKET_OPERATIONS.map((name) => [
+        name,
+        manifestValidatorToDeployment(requireManifestValidator(operations[name], `packet_state.operations.${name}`)),
+      ]),
+    ),
+    format: packet.format,
+    laneCount: packet.lane_count,
+    configToken: manifestAuthTokenToDeployment(
+      requireManifestAuthToken(packet.config_token, 'packet_state.config_token'),
+    ),
+    ...Object.fromEntries(
+      ['state', 'batch', 'guard'].map((name) => [
+        name,
+        manifestValidatorToDeployment(requireManifestValidator(packet[name], `packet_state.${name}`)),
+      ]),
+    ),
+  });
+}
+
 export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfig {
   const deploymentAny = requireObject(deployment, 'deployment');
   const validators = requireObject(deploymentAny.validators, 'validators');
@@ -638,6 +738,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   );
 
   return {
+    ...(deploymentAny.packetState !== undefined ? { packetState: requirePacketState(deploymentAny.packetState) } : {}),
     deploymentMode: checkedDeploymentMode(deploymentAny.deploymentMode, deploymentAny.migration),
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
     ...(deploymentAny.migration !== undefined ? { migration: requireMigrationConfig(deploymentAny.migration) } : {}),
@@ -729,6 +830,7 @@ export function normalizeHandlerJsonDeploymentConfig(
     deployment: normalizedDeployment,
     bridgeManifest: {
       schema_version: 4,
+      ...(normalizedDeployment.packetState ? { packet_state: packetStateToManifest(normalizedDeployment.packetState) } : {}),
       ...(normalizedDeployment.deploymentMode ? { deploymentMode: normalizedDeployment.deploymentMode } : {}),
       ...(normalizedDeployment.migration ? { migration: normalizedDeployment.migration } : {}),
       consensus_history_format: normalizedDeployment.consensusHistoryFormat,
@@ -819,6 +921,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   // unaware of which bootstrap source was used.
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
+    ...(manifestAny.packet_state !== undefined ? { packet_state: packetStateToManifest(packetStateFromManifest(manifestAny.packet_state)) } : {}),
     deploymentMode: checkedDeploymentMode(manifestAny.deploymentMode, manifestAny.migration),
     ...(manifestAny.migration !== undefined ? { migration: requireMigrationConfig(manifestAny.migration) } : {}),
     consensus_history_format: consensusHistoryFormat,
@@ -904,6 +1007,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   return {
     bridgeManifest,
     deployment: {
+      ...(bridgeManifest.packet_state ? { packetState: packetStateFromManifest(bridgeManifest.packet_state) } : {}),
       deployedAt: bridgeManifest.deployed_at,
       ...(bridgeManifest.deploymentMode ? { deploymentMode: bridgeManifest.deploymentMode } : {}),
       ...(bridgeManifest.migration ? { migration: bridgeManifest.migration } : {}),
@@ -1000,13 +1104,16 @@ export function loadBridgeConfigFromEnv(
   const supportedOperationalProfile = (loaded: LoadedBridgeConfig): LoadedBridgeConfig => {
     const selected = env.IBC_DEPLOYMENT_MODE ?? loaded.deployment.deploymentMode ?? 'upgradeable';
     checkedDeploymentMode(selected, loaded.deployment.migration);
-    if (loaded.deployment.deploymentMode && selected !== loaded.deployment.deploymentMode) throw new Error('Configured deployment mode conflicts with authenticated deployment artifacts');
+    if (loaded.deployment.deploymentMode && selected !== loaded.deployment.deploymentMode)
+      throw new Error('Configured deployment mode conflicts with authenticated deployment artifacts');
     // Publish the validated startup selection, including older unlabelled inputs.
     // Downstream SDKs must receive the same explicit capability decision.
     loaded.deployment.deploymentMode = selected as 'upgradeable' | 'legacy';
     loaded.bridgeManifest.deploymentMode = loaded.deployment.deploymentMode;
     if (loaded.deployment.migration && env.CARDANO_LIGHT_CLIENT_MODE === 'mithril') {
-      throw new Error('Compatible implementation migration currently supports stake-weighted-stability only; exact historical Mithril certification across migration is unsupported. Use the reviewed probabilistic counterparty profile or retain a non-migration deployment.');
+      throw new Error(
+        'Compatible implementation migration currently supports stake-weighted-stability only; exact historical Mithril certification across migration is unsupported. Use the reviewed probabilistic counterparty profile or retain a non-migration deployment.',
+      );
     }
     return loaded;
   };

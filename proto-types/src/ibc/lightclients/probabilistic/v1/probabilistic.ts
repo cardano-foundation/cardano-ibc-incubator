@@ -107,6 +107,10 @@ export interface ClientState {
    */
   latest_checkpoint_slot: bigint;
   latest_checkpoint_timestamp: bigint;
+  /**
+   * Required deployment policy for packet lane identities.
+   */
+  packet_lane_policy_id: Uint8Array;
 }
 /**
  * @name ConsensusState
@@ -121,6 +125,10 @@ export interface ConsensusState {
   unique_pools_count: bigint;
   unique_stake_bps: bigint;
   security_score_bps: bigint;
+  /**
+   * Canonical CBOR snapshot of live host and lane outputs at this height.
+   */
+  packet_state_snapshot: Uint8Array;
 }
 /**
  * @name Misbehaviour
@@ -582,6 +590,7 @@ function createBaseClientState(): ClientState {
     max_clock_drift: Duration.fromPartial({}),
     latest_checkpoint_slot: BigInt(0),
     latest_checkpoint_timestamp: BigInt(0),
+    packet_lane_policy_id: new Uint8Array(),
   };
 }
 /**
@@ -675,6 +684,9 @@ export const ClientState = {
     }
     if (message.latest_checkpoint_timestamp !== BigInt(0)) {
       writer.uint32(232).uint64(message.latest_checkpoint_timestamp);
+    }
+    if (message.packet_lane_policy_id.length !== 0) {
+      writer.uint32(242).bytes(message.packet_lane_policy_id);
     }
     return writer;
   },
@@ -771,6 +783,9 @@ export const ClientState = {
         case 29:
           message.latest_checkpoint_timestamp = reader.uint64();
           break;
+        case 30:
+          message.packet_lane_policy_id = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -833,6 +848,8 @@ export const ClientState = {
       obj.latest_checkpoint_slot = BigInt(object.latest_checkpoint_slot.toString());
     if (isSet(object.latest_checkpoint_timestamp))
       obj.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
+    if (isSet(object.packet_lane_policy_id))
+      obj.packet_lane_policy_id = bytesFromBase64(object.packet_lane_policy_id);
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -926,6 +943,10 @@ export const ClientState = {
       (obj.latest_checkpoint_slot = (message.latest_checkpoint_slot || BigInt(0)).toString());
     message.latest_checkpoint_timestamp !== undefined &&
       (obj.latest_checkpoint_timestamp = (message.latest_checkpoint_timestamp || BigInt(0)).toString());
+    message.packet_lane_policy_id !== undefined &&
+      (obj.packet_lane_policy_id = base64FromBytes(
+        message.packet_lane_policy_id !== undefined ? message.packet_lane_policy_id : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1013,6 +1034,7 @@ export const ClientState = {
     if (object.latest_checkpoint_timestamp !== undefined && object.latest_checkpoint_timestamp !== null) {
       message.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
     }
+    message.packet_lane_policy_id = object.packet_lane_policy_id ?? new Uint8Array();
     return message;
   },
 };
@@ -1025,6 +1047,7 @@ function createBaseConsensusState(): ConsensusState {
     unique_pools_count: BigInt(0),
     unique_stake_bps: BigInt(0),
     security_score_bps: BigInt(0),
+    packet_state_snapshot: new Uint8Array(),
   };
 }
 /**
@@ -1056,6 +1079,9 @@ export const ConsensusState = {
     if (message.security_score_bps !== BigInt(0)) {
       writer.uint32(56).uint64(message.security_score_bps);
     }
+    if (message.packet_state_snapshot.length !== 0) {
+      writer.uint32(66).bytes(message.packet_state_snapshot);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -1086,6 +1112,9 @@ export const ConsensusState = {
         case 7:
           message.security_score_bps = reader.uint64();
           break;
+        case 8:
+          message.packet_state_snapshot = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1104,6 +1133,8 @@ export const ConsensusState = {
     if (isSet(object.unique_stake_bps)) obj.unique_stake_bps = BigInt(object.unique_stake_bps.toString());
     if (isSet(object.security_score_bps))
       obj.security_score_bps = BigInt(object.security_score_bps.toString());
+    if (isSet(object.packet_state_snapshot))
+      obj.packet_state_snapshot = bytesFromBase64(object.packet_state_snapshot);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
@@ -1122,6 +1153,10 @@ export const ConsensusState = {
       (obj.unique_stake_bps = (message.unique_stake_bps || BigInt(0)).toString());
     message.security_score_bps !== undefined &&
       (obj.security_score_bps = (message.security_score_bps || BigInt(0)).toString());
+    message.packet_state_snapshot !== undefined &&
+      (obj.packet_state_snapshot = base64FromBytes(
+        message.packet_state_snapshot !== undefined ? message.packet_state_snapshot : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -1143,6 +1178,7 @@ export const ConsensusState = {
     if (object.security_score_bps !== undefined && object.security_score_bps !== null) {
       message.security_score_bps = BigInt(object.security_score_bps.toString());
     }
+    message.packet_state_snapshot = object.packet_state_snapshot ?? new Uint8Array();
     return message;
   },
 };

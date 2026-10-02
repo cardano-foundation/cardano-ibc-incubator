@@ -137,7 +137,7 @@ func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testin
 	authenticated := newTemporalVerifierAuthenticatedHeader(
 		t,
 		clientState,
-		"trusted-10",
+		testBlockHash("trusted-10"),
 		header.AnchorBlock.Hash,
 		11,
 		1_000,
@@ -158,7 +158,7 @@ func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testin
 	duplicateSlot := newTemporalVerifierAuthenticatedHeader(
 		t,
 		clientState,
-		"trusted-10",
+		testBlockHash("trusted-10"),
 		header.AnchorBlock.Hash,
 		11,
 		1_000,
@@ -204,7 +204,7 @@ func TestNormalUpdateVerifierRejectsTemporalViolationsWithoutStoringConsensus(t 
 			authenticated := newTemporalVerifierAuthenticatedHeader(
 				t,
 				clientState,
-				"trusted-10",
+				testBlockHash("trusted-10"),
 				anchorHash,
 				11,
 				testCase.anchorSlot,
@@ -242,7 +242,7 @@ func TestStoredConsensusTimestampUsesBoundedAuthenticatedAnchorTime(t *testing.T
 	authenticated := newTemporalVerifierAuthenticatedHeader(
 		t,
 		clientState,
-		"trusted-10",
+		testBlockHash("trusted-10"),
 		"accepted-11",
 		11,
 		130,
@@ -286,7 +286,7 @@ func TestMisbehaviourVerifierUsesHistoricalTrustedTime(t *testing.T) {
 	)
 
 	latestHeight := NewHeight(0, 40)
-	latestConsensus := newProbabilisticTestConsensusState("latest-40")
+	latestConsensus := newProbabilisticTestConsensusState(testBlockHash("latest-40"))
 	latestConsensus.Timestamp = mustTestTimestampForSlot(t, clientState, 400)
 	setConsensusState(clientStore, cdc, latestConsensus, latestHeight)
 	clientState.LatestHeight = latestHeight
@@ -297,8 +297,8 @@ func TestMisbehaviourVerifierUsesHistoricalTrustedTime(t *testing.T) {
 	headerA := newTemporalVerifierHeader(t, clientState, "historical-a", 11, 110, 7, true)
 	headerB := newTemporalVerifierHeader(t, clientState, "historical-b", 11, 111, 7, true)
 	authenticatedByHash := map[string]*authenticatedProbabilisticHeader{
-		headerA.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, "trusted-10", headerA.AnchorBlock.Hash, 11, 110, 7),
-		headerB.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, "trusted-10", headerB.AnchorBlock.Hash, 11, 111, 7),
+		headerA.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, testBlockHash("trusted-10"), headerA.AnchorBlock.Hash, 11, 110, 7),
+		headerB.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, testBlockHash("trusted-10"), headerB.AnchorBlock.Hash, 11, 111, 7),
 	}
 	authenticate := temporalVerifierAuthenticator(t, authenticatedByHash)
 
@@ -312,7 +312,7 @@ func TestMisbehaviourVerifierUsesHistoricalTrustedTime(t *testing.T) {
 	authenticatedByHash[regressiveHeader.AnchorBlock.Hash] = newTemporalVerifierAuthenticatedHeader(
 		t,
 		clientState,
-		"trusted-10",
+		testBlockHash("trusted-10"),
 		regressiveHeader.AnchorBlock.Hash,
 		11,
 		100,
@@ -359,7 +359,7 @@ func TestInitializePersistsTemporalCursorAcrossReload(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-temporal-initialize")
 	clientState := newProbabilisticTestClientState()
-	consensusState := newProbabilisticTestConsensusState("initial-block")
+	consensusState := newProbabilisticTestConsensusState(testBlockHash("initial-block"))
 	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, 42)
 
 	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
@@ -475,7 +475,7 @@ func initializeTemporalVerifierClient(
 	ctx, clientStore := newProbabilisticTestClientStore(t, storeName)
 	clientState := newProbabilisticTestClientState()
 	setTemporalVerifierEpochContext(clientState, epochContext)
-	consensusState := newProbabilisticTestConsensusState("trusted-10")
+	consensusState := newProbabilisticTestConsensusState(testBlockHash("trusted-10"))
 	consensusState.AcceptedEpoch = epochContext.Epoch
 	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, trustedSlot)
 	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
@@ -533,11 +533,9 @@ func newTemporalVerifierHeader(
 		Epoch:     epoch,
 		Timestamp: mustTestTimestampForSlot(t, clientState, anchorSlot),
 	}
-	if isCheckpoint {
-		anchor.HeaderCbor = []byte{0x01}
-	} else {
-		anchor.BlockCbor = []byte{0x01}
-	}
+	full := makeTestProbabilisticBlock(t, anchorHeight, anchorSlot, testBlockHash("trusted-10"))
+	anchor.BlockCbor = full.BlockCbor
+	anchor.Hash = full.Hash
 
 	descendants := make([]*ProbabilisticBlock, 0, DefaultThresholdDepth)
 	for index := uint64(0); index < DefaultThresholdDepth; index++ {

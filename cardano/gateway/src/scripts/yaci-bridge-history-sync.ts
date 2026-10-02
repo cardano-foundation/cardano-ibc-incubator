@@ -413,6 +413,9 @@ function deriveBridgeProjectionFilter(bridgeConfig: LoadedBridgeConfig): BridgeP
     .filter((address): address is string => typeof address === 'string' && address.trim().length > 0);
 
   const relevantPolicies = uniqueSorted([
+    deployment.packetState!.state.scriptHash,
+    deployment.packetState!.batch.scriptHash,
+    deployment.packetState!.configToken.policyId,
     deployment.hostStateNFT.policyId,
     deployment.validators.mintClientStt.scriptHash,
     deployment.validators.mintConnectionStt.scriptHash,
@@ -428,7 +431,13 @@ function deriveBridgeProjectionFilter(bridgeConfig: LoadedBridgeConfig): BridgeP
       policyId: deployment.hostStateNFT.policyId.toLowerCase(),
       name: deployment.hostStateNFT.name.toLowerCase(),
     },
-    relevantAddresses: uniqueSorted([...validatorAddresses, ...moduleAddresses]),
+    relevantAddresses: uniqueSorted([
+      ...validatorAddresses,
+      ...moduleAddresses,
+      deployment.packetState!.state.address!,
+      deployment.packetState!.batch.address!,
+      deployment.packetState!.guard.address!,
+    ]),
     relevantPolicies,
   };
 }
@@ -929,10 +938,9 @@ export async function processBlock(
 
   const relevantUtxoRows = await getRelevantUtxoRowsForBlock(client, blockNo, projectionFilter);
   const spentTxHashes = await getRelevantSpentTxHashesForBlock(client, blockNo, projectionFilter);
-  const relevantTxHashes = Array.from(new Set([
-    ...relevantUtxoRows.map((row) => row.tx_hash.toLowerCase()),
-    ...spentTxHashes,
-  ]));
+  const relevantTxHashes = Array.from(
+    new Set([...relevantUtxoRows.map((row) => row.tx_hash.toLowerCase()), ...spentTxHashes]),
+  );
 
   if (relevantTxHashes.length > 0) {
     const txResult = await client.query<YaciTxRow>(
