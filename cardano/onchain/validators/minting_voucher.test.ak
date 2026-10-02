@@ -1,5 +1,7 @@
 use aiken/builtin
+use aiken/collection/dict
 use aiken/collection/list
+use aiken/collection/pairs
 use aiken/crypto
 use aiken/fuzz
 use aiken/primitive/bytearray
@@ -11,8 +13,9 @@ use cardano/transaction.{
   ScriptPurpose, Spend, Transaction,
 }
 use ibc/apps/transfer/mint_voucher_redeemer.{
-  BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
+  BurnVoucher, MintVoucher, MintVoucherRedeemer, PacketBatch, RefundVoucher,
 }
+use ibc/apps/transfer/packet_batch
 use ibc/apps/transfer/trace_registry.{
   Directory, InsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
@@ -27,8 +30,10 @@ use ibc/apps/transfer/voucher_metadata
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, RecvPacket, SendPacket, TimeoutOnClose, TimeoutPacket,
+  AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer,
+  TimeoutOnClose, TimeoutPacket,
 }
+use ibc/core/ics_004/packet_config.{PacketConfig}
 use ibc/core/ics_004/types/acknowledgement
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/packet.{Packet}
@@ -630,12 +635,13 @@ fn run_first_seen_voucher_mint_transition(
   )
     |> fuzz_dsl.with_protocol_validator_check(
         "minting_voucher",
-        minting_voucher.mint_voucher.mint(
+        check_packet_voucher(
           fixture.mock_data.module_token,
           fixture.mock_data.directory_auth_token,
           fixture.mock_data.voucher_metadata_script_hash,
           fixture.mock_data.channel_minting_policy_id,
           fixture.mock_data.host_state_nft_policy_id,
+          fixture.mock_data.module_token,
           fixture.redeemer,
           fixture.mock_data.voucher_minting_policy_id,
           fixture.transaction,
@@ -1210,12 +1216,13 @@ fn mint_voucher_succeeds_with_archive_profile(
       mint,
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1447,12 +1454,13 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
       mint,
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1611,12 +1619,13 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
       mint,
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1721,12 +1730,13 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
       mint,
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1810,12 +1820,13 @@ test test_burn_voucher() {
       ),
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1896,12 +1907,13 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
       ),
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -2033,12 +2045,13 @@ fn check_refund_voucher(use_timeout_on_close: Bool) {
       mint,
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -2170,12 +2183,13 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
       mint: wrong_mint,
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -2295,12 +2309,13 @@ test test_refund_voucher_fails_with_wrong_metadata_mapping() fail {
       mint,
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -2428,14 +2443,227 @@ test test_refund_voucher_fail() fail {
       mint,
     }
 
-  minting_voucher.mint_voucher.mint(
+  check_packet_voucher(
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
     mock_data.channel_minting_policy_id,
     mock_data.host_state_nft_policy_id,
+    mock_data.module_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
+  )
+}
+
+// Reuse the metadata and registry regression fixtures with the canonical
+// packet authorization. Full operation validation is covered by compiled
+// funded-send and receive transactions in the offchain suite.
+fn check_packet_voucher(
+  module_token: AuthToken,
+  directory_token: AuthToken,
+  metadata_hash: ByteArray,
+  channel_policy: PolicyId,
+  host_policy: PolicyId,
+  config_token: AuthToken,
+  requested: MintVoucherRedeemer,
+  voucher_policy: PolicyId,
+  tx: Transaction,
+) -> Bool {
+  let batch_policy = #"abababababababababababababababababababababababababababab"
+  expect Some(channel_input) =
+    list.find(
+      tx.inputs,
+      fn(input) {
+        !dict.is_empty(assets.tokens(input.output.value, channel_policy))
+      },
+    )
+  expect Some(raw) =
+    pairs.get_first(tx.redeemers, Spend(channel_input.output_reference))
+  expect channel_action: SpendChannelRedeemer = raw
+  let packet =
+    when channel_action is {
+      RecvPacket { packet, .. } |
+      SendPacket { packet } |
+      AcknowledgePacket { packet, .. } |
+      TimeoutPacket { packet, .. } |
+      TimeoutOnClose { packet, .. } -> packet
+      _ -> fail
+    }
+  let lane =
+    packet_batch.LaneInputUpdate {
+      input_ref: channel_input.output_reference,
+      updates: [],
+    }
+  let empty_proof = MerkleProof { proofs: [] }
+  let h = Height { revision_number: 1, revision_height: 1 }
+  let (operation, extra_inputs) =
+    when requested is {
+      MintVoucher {
+        data,
+        packet_source_port,
+        packet_source_channel,
+        packet_dest_port,
+        packet_dest_channel,
+      } -> {
+        expect
+          packet.source_port == packet_source_port && packet.source_channel == packet_source_channel
+        expect
+          packet.destination_port == packet_dest_port && packet.destination_channel == packet_dest_channel
+        expect fungible_token_packet_data.matches_bytes(data, packet.data)
+        (
+          packet_batch.Receive {
+            packet,
+            data,
+            proof_height: h,
+            proof: empty_proof,
+            lane,
+            liquidity_refs: [],
+          },
+          [],
+        )
+      }
+      BurnVoucher { data, packet_source_port, packet_source_channel } -> {
+        expect
+          packet.source_port == packet_source_port && packet.source_channel == packet_source_channel
+        expect fungible_token_packet_data.matches_bytes(data, packet.data)
+        let intent =
+          packet_batch.TransferIntent {
+            port_id: packet_source_port,
+            channel_id: packet_source_channel,
+            owner: #"11",
+            data,
+            timeout_timestamp: packet.timeout_timestamp,
+          }
+        let input =
+          Input {
+            output_reference: OutputReference {
+              transaction_id: #"ac",
+              output_index: 0,
+            },
+            output: Output {
+              ..channel_input.output,
+              datum: InlineDatum(intent),
+            },
+          }
+        (
+          packet_batch.SendBatch {
+            sequencer_ref: channel_input.output_reference,
+            intents: [input.output_reference],
+            packets: [packet],
+            lanes: [],
+          },
+          [input],
+        )
+      }
+      RefundVoucher { data, packet_source_port, packet_source_channel, .. } -> {
+        expect
+          packet.source_port == packet_source_port && packet.source_channel == packet_source_channel
+        expect fungible_token_packet_data.matches_bytes(data, packet.data)
+        (
+          packet_batch.Timeout {
+            packet,
+            data,
+            proof_height: h,
+            proof: empty_proof,
+            lane,
+            liquidity_refs: [],
+          },
+          [],
+        )
+      }
+      _ -> fail
+    }
+  let config =
+    PacketConfig {
+      host_policy,
+      state_policy: #"00",
+      batch_policy,
+      guard_hash: #"00",
+      lane_count: 16,
+      trace_registry_hash: "trace registry script hash",
+    }
+  let reference =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"ad",
+        output_index: 0,
+      },
+      output: Output {
+        ..channel_input.output,
+        value: assets.from_asset(config_token.policy_id, config_token.name, 1),
+        datum: InlineDatum(config),
+      },
+    }
+  let authorized: Data =
+    packet_batch.AuthorizedOperation {
+      channel_token: module_token,
+      operation,
+      history_witness: None,
+    }
+  let transaction =
+    Transaction {
+      ..tx,
+      inputs: list.concat(tx.inputs, extra_inputs),
+      reference_inputs: [reference, ..tx.reference_inputs],
+      redeemers: [Pair(Mint(batch_policy), authorized), ..tx.redeemers],
+    }
+  minting_voucher.mint_voucher.mint(
+    module_token,
+    directory_token,
+    metadata_hash,
+    channel_policy,
+    host_policy,
+    config_token,
+    PacketBatch,
+    voucher_policy,
+    transaction,
+  )
+}
+
+test legacy_voucher_actions_are_disabled() {
+  let mock = prepare_mock_data()
+  let data =
+    FungibleTokenPacketData {
+      denom: "transfer/channel-0/test",
+      amount: "1",
+      sender: "a",
+      receiver: "b",
+      memo: "",
+    }
+  list.all(
+    [
+      MintVoucher {
+        packet_source_port: "transfer",
+        packet_source_channel: "channel-1",
+        packet_dest_port: "transfer",
+        packet_dest_channel: "channel-0",
+        data,
+      },
+      BurnVoucher {
+        packet_source_port: "transfer",
+        packet_source_channel: "channel-0",
+        data,
+      },
+      RefundVoucher {
+        packet_source_port: "transfer",
+        packet_source_channel: "channel-0",
+        data,
+        acknowledgement: None,
+      },
+    ],
+    fn(action) {
+      !minting_voucher.mint_voucher.mint(
+        mock.module_token,
+        mock.directory_auth_token,
+        mock.voucher_metadata_script_hash,
+        mock.channel_minting_policy_id,
+        mock.host_state_nft_policy_id,
+        mock.module_token,
+        action,
+        mock.voucher_minting_policy_id,
+        transaction.placeholder,
+      )
+    },
   )
 }

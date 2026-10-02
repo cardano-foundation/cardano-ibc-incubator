@@ -10,7 +10,10 @@ validator voucher_metadata(host_state_nft_policy_id: PolicyId) {
     transaction: Transaction,
   ) {
     and {
-      shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
+      shutdown.voucher_dependencies_drained(
+        transaction,
+        host_state_nft_policy_id,
+      ),
       shutdown.reclaim(
         transaction,
         own_ref,

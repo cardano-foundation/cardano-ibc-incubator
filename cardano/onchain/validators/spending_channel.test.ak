@@ -522,6 +522,7 @@ fn check_prune_spending_channel(
     }
 
   spending_channel.spend_channel.spend(
+    #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -634,6 +635,7 @@ fn run_spending_channel_transition(
     |> fuzz_dsl.with_protocol_validator_check(
         "spending_channel",
         spending_channel.spend_channel.spend(
+          #"",
           mock_data.chan_open_ack_policy_id,
           mock_data.chan_open_confirm_policy_id,
           mock_data.chan_close_init_policy_id,
@@ -1126,6 +1128,7 @@ test chan_open_ack_succeed() {
     }
 
   spending_channel.spend_channel.spend(
+    #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1349,6 +1352,7 @@ test chan_open_confirm_succeed() {
     }
 
   spending_channel.spend_channel.spend(
+    #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1603,6 +1607,7 @@ test recv_packet_succeed() {
     }
 
   spending_channel.spend_channel.spend(
+    #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1731,6 +1736,7 @@ test send_packet_succeed() {
     }
 
   spending_channel.spend_channel.spend(
+    #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -2009,6 +2015,7 @@ test timeout_packet_succeed() {
     }
 
   spending_channel.spend_channel.spend(
+    #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -2270,6 +2277,7 @@ test acknowledge_packet_succeed() {
     }
 
   spending_channel.spend_channel.spend(
+    #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -2365,6 +2373,7 @@ test chan_close_init_succeed() {
   let spend_channel_redeemer = ChanCloseInit
 
   spending_channel.spend_channel.spend(
+    #"",
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
@@ -2438,6 +2447,7 @@ test chan_close_init_fails_without_closed_channel_continuation() fail {
     }
 
   spending_channel.spend_channel.spend(
+    #"",
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
@@ -2508,6 +2518,7 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
   let spend_channel_redeemer = ChanCloseInit
 
   spending_channel.spend_channel.spend(
+    #"",
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
@@ -2595,6 +2606,7 @@ test chan_close_confirm_succeed() {
   let spend_channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
 
   spending_channel.spend_channel.spend(
+    #"",
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
