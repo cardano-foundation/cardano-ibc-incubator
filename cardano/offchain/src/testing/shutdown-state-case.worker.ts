@@ -89,6 +89,11 @@ async function checkCase(sample: ShutdownSnapshotCase) {
       (g) => g.utxos.length,
     );
     if (!groups.length) break;
+    if (groups.some((g) => g.kind === "channel")) {
+      groups = groups.filter((g) =>
+        !["client", "connection", "trace", "metadata"].includes(g.kind)
+      );
+    }
     const dependenciesRemain = groups.some((g) =>
       g.kind === "channel" || g.kind === "client" || g.kind === "connection" ||
       g.kind === "trace" || g.kind === "metadata"
@@ -114,6 +119,7 @@ async function checkCase(sample: ShutdownSnapshotCase) {
         f.account.address,
         f.emulator.now(),
         transferRoot,
+        f.packetReferences,
       ),
     );
     f.lucid.clearUTxOOverride();

@@ -15,6 +15,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./packetLaneTransactions": { "types": "./dist/packetLaneTransactions.d.ts", "default": "./dist/packetLaneTransactions.js" },
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./ics23MerkleTree": { "types": "./dist/ics23MerkleTree.d.ts", "default": "./dist/ics23MerkleTree.js" },
     "./ibcStateRoot": { "types": "./dist/ibcStateRoot.d.ts", "default": "./dist/ibcStateRoot.js" },
@@ -30,6 +31,7 @@
   },
   "typesVersions": {
     "*": {
+      "packetLaneTransactions": ["dist/packetLaneTransactions.d.ts"],
       "ics23MerkleTree": ["dist/ics23MerkleTree.d.ts"],
       "ibcStateRoot": ["dist/ibcStateRoot.d.ts"],
       "consensusHistory": ["dist/consensusHistory.d.ts"],

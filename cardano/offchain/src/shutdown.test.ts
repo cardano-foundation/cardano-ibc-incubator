@@ -78,6 +78,7 @@ for (const clientMode of ["legacy", "staged"] as const) {
           f.account.address,
           f.emulator.now(),
           transferRoot,
+          kind === "channel" ? f.packetReferences : [],
         ),
       ).catch((cause) => {
         throw new Error(`${kind} cleanup failed`, { cause });

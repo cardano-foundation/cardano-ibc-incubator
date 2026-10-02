@@ -15,6 +15,7 @@ import { TRACE_REGISTRY_SHARD_COUNT } from "./constants.ts";
 import {
   assertDisjointTxInputs,
   completeAndSignTx,
+  DEFAULT_MAX_IN_FLIGHT_TX_BYTES,
   generateIdentifierTokenName,
 } from "./utils.ts";
 
@@ -82,9 +83,11 @@ async function batchingFixture() {
  */
 function startBlockProducer(emulator: Emulator) {
   const submittedAt: number[] = [];
+  const submittedBytes: number[] = [];
   const submit = emulator.submitTx.bind(emulator);
   emulator.submitTx = (tx: string) => {
     submittedAt.push(emulator.blockHeight);
+    submittedBytes.push(tx.length / 2);
     return submit(tx);
   };
   let seen = 0;
@@ -92,7 +95,7 @@ function startBlockProducer(emulator: Emulator) {
     if (submittedAt.length === seen) emulator.awaitBlock();
     seen = submittedAt.length;
   }, 50);
-  return { submittedAt, stop: () => clearInterval(timer) };
+  return { submittedAt, submittedBytes, stop: () => clearInterval(timer) };
 }
 
 function reserveWalletUtxos(lucid: LucidEvolution, reserved: UTxO[]) {
@@ -225,7 +228,19 @@ Deno.test("reference scripts are published by one chained funding round", async 
     `${producer.submittedAt.length} reference transactions in ${blocks} block(s)`,
   );
   assert(producer.submittedAt.length > blocks);
-  assert(blocks <= 4, `expected at most 4 blocks, used ${blocks}`);
+  // Packet operation policies increase the total publication size. Keep the
+  // batching assertion proportional to the byte budget rather than the old
+  // validator count, with room for the producer's quiet-tick boundary.
+  const totalBytes = producer.submittedBytes.reduce(
+    (sum, size) => sum + size,
+    0,
+  );
+  const maxBlocks =
+    Math.ceil(totalBytes / (DEFAULT_MAX_IN_FLIGHT_TX_BYTES - MAX_TX_SIZE)) + 1;
+  assert(
+    blocks <= maxBlocks,
+    `expected at most ${maxBlocks} blocks, used ${blocks}`,
+  );
   // Reserved nonces and collateral are untouched.
   const remaining = new Set((await lucid.wallet().getUtxos()).map(refKey));
   for (const utxo of reserved) assert(remaining.has(refKey(utxo)));
