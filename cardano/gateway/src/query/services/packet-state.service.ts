@@ -42,7 +42,7 @@ export class PacketStateService {
   }
 
   async lane(port: string, channel: string, lane: number, height: bigint) {
-    const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState!;
+    const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState;
     const name = packetLaneTokenName(port, channel, lane, config.laneCount);
     const output = await this.history.findUtxoByUnitAtOrBeforeBlockNo(config.state.scriptHash + name, height);
     const { Data, Constr, toText } = this.lucid.LucidImporter;
@@ -72,7 +72,7 @@ export class PacketStateService {
     const height = await this.height(requested);
     const block = await this.history.findBlockByHeight(height);
     if (!block) throw new Error('Proof block missing');
-    const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState!.laneCount;
+    const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState.laneCount;
     const lane = await this.lane(port, channel, packetLane(port, channel, sequence, count), height);
     const key = `${kind}/ports/${port}/channels/${channel}/sequences/${sequence}`;
     const value =
@@ -94,7 +94,7 @@ export class PacketStateService {
 
   async entries(port: string, channel: string, kind: 'commitments' | 'acks' | 'receipts', requested?: bigint) {
     const height = await this.height(requested);
-    const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState!.laneCount;
+    const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState.laneCount;
     const result = new Map<bigint, string>();
     for (let index = 0; index < count; index++) {
       const { datum } = await this.lane(port, channel, index, height);
@@ -118,7 +118,7 @@ export class PacketStateService {
     const policies = CML.TransactionBody.from_cbor_hex(evidence.txBodyCborHex).mint()?.keys();
     if (!policies) return [];
     const names = Array.from({ length: policies.len() }, (_, index) => policies.get(index).to_hex()).sort();
-    const index = names.indexOf(config.packetState!.batch.scriptHash);
+    const index = names.indexOf(config.packetState.batch.scriptHash);
     if (index < 0) return [];
     const redeemer = evidence.redeemers.find((r) => r.type === 'mint' && r.index === index);
     if (!redeemer) throw new Error('Indexed packet transaction lacks its batch redeemer');
@@ -194,7 +194,7 @@ export class PacketStateService {
   }
 
   async snapshot(height: bigint): Promise<Uint8Array> {
-    const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState!;
+    const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState;
     const block = await this.history.findBlockByHeight(height);
     if (!block) throw new Error('Snapshot block missing');
     const host = await this.history.findHostStateUtxoAtOrBeforeBlockNo(height);
