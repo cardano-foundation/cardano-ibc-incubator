@@ -77,8 +77,7 @@ pub fn leaf_hash(key_hash: ByteArray, value_hash: ByteArray) -> ByteArray {
   if value_hash == empty_value_hash {
     empty_hash
   } else {
-    builtin.append_bytearray(#[0], key_hash)
-      |> builtin.append_bytearray(value_hash)
+    builtin.cons_bytearray(0, builtin.append_bytearray(key_hash, value_hash))
       |> builtin.sha2_256()
   }
 }
@@ -101,8 +100,7 @@ fn inner_hash_validated(left: ByteArray, right: ByteArray) -> ByteArray {
   if left == empty_hash && right == empty_hash {
     empty_hash
   } else {
-    builtin.append_bytearray(#[1], left)
-      |> builtin.append_bytearray(right)
+    builtin.cons_bytearray(1, builtin.append_bytearray(left, right))
       |> builtin.sha2_256()
   }
 }
@@ -176,47 +174,39 @@ pub fn apply_update(
   let new_leaf = leaf_hash(key_hash, value_hash(new_value))
   let path = builtin.slice_bytearray(0, 8, key_hash)
   let (computed_old, computed_new) =
-    compute_update_roots(path, old_leaf, new_leaf, siblings, 0)
+    updated_roots(path, old_leaf, new_leaf, siblings, 0)
   expect computed_old == old_root
   computed_new
 }
 
-// Both roots use the same path and sibling witness. Traverse and validate the
-// witness once, retaining exact old-root authentication and the unchanged codec.
-fn compute_update_roots(
+// Both roots follow the same path. Validate each sibling and decode each path
+// bit once. Every intermediate node is either a 32-byte constant or SHA-256.
+fn updated_roots(
   path: ByteArray,
   old: ByteArray,
   new: ByteArray,
   siblings: List<ByteArray>,
   depth: Int,
 ) -> (ByteArray, ByteArray) {
-  when siblings is {
-    [] -> {
-      expect depth == merkle_depth_bits
-      (old, new)
-    }
-    [sibling, ..rest] -> {
-      expect bytearray.length(sibling) == hash_size_bytes
-      // path has exactly 64 bits. read_bit rejects a 65th sibling; reaching
-      // the empty list checks the lower bound. Both enforce the original exact
-      // witness length without testing the depth twice at every valid level.
-      if !builtin.read_bit(path, depth) {
-        compute_update_roots(
-          path,
-          inner_hash_validated(old, sibling),
-          inner_hash_validated(new, sibling),
-          rest,
-          depth + 1,
-        )
+  if depth == merkle_depth_bits {
+    expect siblings == []
+    (old, new)
+  } else {
+    expect [sibling, ..rest] = siblings
+    expect bytearray.length(sibling) == hash_size_bytes
+    let sibling_on_left = builtin.read_bit(path, depth)
+    let next_old =
+      if sibling_on_left {
+        inner_hash_validated(sibling, old)
       } else {
-        compute_update_roots(
-          path,
-          inner_hash_validated(sibling, old),
-          inner_hash_validated(sibling, new),
-          rest,
-          depth + 1,
-        )
+        inner_hash_validated(old, sibling)
       }
-    }
+    let next_new =
+      if sibling_on_left {
+        inner_hash_validated(sibling, new)
+      } else {
+        inner_hash_validated(new, sibling)
+      }
+    updated_roots(path, next_old, next_new, rest, depth + 1)
   }
 }
