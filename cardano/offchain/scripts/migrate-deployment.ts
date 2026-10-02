@@ -1,5 +1,6 @@
+import { HostStateDatum } from "../types/plutus/HostState.ts";
 import { MigrationInventory } from "../src/migration-inventory.ts";
-import { type TxBuilder } from "@lucid-evolution/lucid";
+import { Data, fromText, type TxBuilder } from "@lucid-evolution/lucid";
 import { buildOperationalLucid } from "./shutdown-deployment.ts";
 import {
   authorizeMigration,
@@ -36,6 +37,8 @@ const commands = [
   "cancel",
   "rotate",
   "activate-authority",
+  "nominate-deployer",
+  "graduate-deployer",
   "execute",
   "resume",
   "verify",
@@ -57,6 +60,7 @@ export function parseMigrationArgs(args: string[]) {
     "port-witness",
     "governance",
     "signers",
+    "successor",
     "wallet-address",
     "expires-at",
     "max-steps",
@@ -110,6 +114,8 @@ export function parseMigrationArgs(args: string[]) {
       "cancel",
       "rotate",
       "activate-authority",
+      "nominate-deployer",
+      "graduate-deployer",
       "execute",
       "resume",
       "restrict",
@@ -218,8 +224,13 @@ export async function main(args = Deno.args) {
     lucid.clearUTxOOverride();
   };
   if (command === "inspect") {
+    const host = await lucid.utxoByUnit(
+      observed.registry.host_policy + fromText("ibc_host_state"),
+    );
     console.log(canonicalMigrationJson({
       registry: observed.registry,
+      deployer: Data.from(host.datum!, HostStateDatum).deployer,
+      backupNominee: deployment.backupOperatorKeyHash ?? null,
       outref: {
         txHash: observed.utxo.txHash,
         outputIndex: observed.utxo.outputIndex,
@@ -259,7 +270,7 @@ export async function main(args = Deno.args) {
       (!maskText || !/^[0-9]+$/.test(maskText) || BigInt(maskText) > 15n)
     ) {
       throw new Error(
-        "--mask must be 0–15: traffic/topology=1, clients=2, heartbeat=4, handover=8",
+        "--mask must be 0–15: traffic/topology=1, clients=2, heartbeat=4, code-migration=8",
       );
     }
     const input = flags["emergency-authority"]
@@ -288,6 +299,57 @@ export async function main(args = Deno.args) {
         lucid,
         deployment,
         action,
+        await timing(),
+        signers,
+      )).tx,
+      command,
+    );
+    return;
+  }
+  if (command === "nominate-deployer") {
+    const successor =
+      (flags.successor ?? deployment.backupOperatorKeyHash ?? "").trim()
+        .toLowerCase();
+    if (!/^[0-9a-f]{56}$/.test(successor)) {
+      throw new Error(
+        "nominate-deployer requires --successor payment key hash or a configured backup nominee",
+      );
+    }
+    const host = await lucid.utxoByUnit(
+      observed.registry.host_policy + fromText("ibc_host_state"),
+    );
+    if (Data.from(host.datum!, HostStateDatum).deployer === successor) {
+      throw new Error("The nominated successor is already the deployer");
+    }
+    await emit(
+      (await migrationControl(
+        lucid,
+        deployment,
+        {
+          Propose: {
+            proposal: {
+              NominateDeployer: {
+                nonce: observed.registry.nonce + 1n,
+                source_generation: observed.registry.current.generation,
+                successor,
+              },
+            },
+            expires_at: expiration(),
+          },
+        },
+        await timing(),
+        signers,
+      )).tx,
+      command,
+    );
+    return;
+  }
+  if (command === "graduate-deployer") {
+    await emit(
+      (await migrationControl(
+        lucid,
+        deployment,
+        "GraduateDeployer",
         await timing(),
         signers,
       )).tx,

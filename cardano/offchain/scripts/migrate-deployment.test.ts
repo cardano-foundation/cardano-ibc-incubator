@@ -427,3 +427,34 @@ Deno.test("emergency authority rotation requires an exact authority and cannot r
     "does not accept --mask",
   );
 });
+
+Deno.test("deployer CLI requires an explicit export or submission and retains the chosen successor", () => {
+  for (const command of ["nominate-deployer", "graduate-deployer"]) {
+    assertThrows(() =>
+      parseMigrationArgs([command, "--handler", "deployment.json"])
+    );
+    assertEquals(
+      parseMigrationArgs([
+        command,
+        "--handler",
+        "deployment.json",
+        "--out",
+        "tx.json",
+      ]).command,
+      command,
+    );
+  }
+  const key = "55".repeat(28);
+  assertEquals(
+    parseMigrationArgs([
+      "nominate-deployer",
+      "--handler",
+      "deployment.json",
+      "--successor",
+      key,
+      "--out",
+      "tx.json",
+    ]).flags.successor,
+    key,
+  );
+});

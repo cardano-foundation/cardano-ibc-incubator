@@ -384,9 +384,13 @@ export DEPLOYER_SK=$(cat ~/.caribic/preprod-deployer.sk)   # or your own funded 
 caribic start --network preprod
 ```
 
-Before a new deployment, Caribic prompts for a backup operator's 56-character hexadecimal payment key hash unless `DEPLOYER_BACKUP_PAYMENT_KEY_HASH` is set. This must belong to a different operator than the deployer. The backup operator can claim bridge administration if the deployer is unavailable. This uses the existing single-key backup path and does not require a governance vote.
+Before a new deployment, Caribic prompts for a backup operator's 56-character hexadecimal payment key hash unless `DEPLOYER_BACKUP_PAYMENT_KEY_HASH` is set. This must belong to a different operator than the deployer. For upgradeable deployments this records a nominee for governance to approve. It does not grant the nominee authority. Legacy deployments retain the direct single-key backup path.
 
 Local, preprod and preview deployments can skip the backup with a warning. Unattended runs without the environment variable also continue with a warning. Reusing an existing public deployment does not prompt or change its backup. The shared deployment planner rejects mainnet deployments without a backup operator. Caribic does not yet support a mainnet runtime.
+
+On an upgradeable deployment, use `caribic deployer nominate-deployer --handler <handler.json> --signers <governor-key-hashes> --expires-at <milliseconds> --out <approval.json>` to export a governance approval transaction. The configured backup is the default nominee. Pass `--successor <payment-key-hash>` to propose someone else. The existing governance quorum must sign the exact exported body. Set the operational Ogmios/Kupo environment and use `--wallet-address` for unsigned export, or `MIGRATION_EXECUTOR_SK` with `--submit` for a locally signed transaction. `--submit` does not collect signatures from other governors.
+
+After the on-chain activation delay, run `caribic deployer graduate-deployer --handler <handler.json> --submit` with a funded executor. Neither the deployer nor the governors need to sign this execution. `caribic deployer inspect --handler <handler.json>` shows the approval and its time bounds. Governance can cancel a pending approval with `caribic deployer cancel`. See [deployer graduation](../docs/state-preserving-redeployment.md#deployer-graduation) for authority and compatibility rules.
 
 This starts postgres and the Yaci history services, deploys the IBC validators to preprod (artifacts exported to `manifests/preprod/`), starts the Gateway (gRPC on 5001), Hermes daemon, and IBC Swap dapp, and injects the `injective-888` chain block (public sentry endpoints) into `~/.hermes/config.toml`. Verify with:
 
@@ -396,7 +400,7 @@ caribic health-check
 
 A successful deploy is cached via the artifacts in `manifests/preprod/`; set `CARIBIC_FORCE_PREPROD_DEPLOY=1` to force a redeploy.
 
-The backup hash is baked into the deployed HostState validator. It cannot be
+For legacy deployments only, the backup hash is baked into the deployed HostState validator. It cannot be
 added or changed later. The named backup wallet can take over at any time by
 setting `DEPLOYER_SK` to its signing key and running
 `cardano/offchain/scripts/shutdown-deployment.ts claim-backup` using the

@@ -15,11 +15,11 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/migration/auth as migration
 use ibc/migration/types.{
-  Activate, Begin, Cancel, CancelRestoration, Counts, Emergency, MoveCore,
-  MoveEscrow, MoveTransferRoot, Moving, Propose, ProposeEmergencyRotation,
-  ProposeRestoration, Proposed, Ready, Registry, RegistryRedeemer, Replace,
-  Restoration, Restore, Restrict, Rotate, RotateAuthority, host_role,
-  transfer_role,
+  Activate, Begin, Cancel, CancelRestoration, Counts, Emergency,
+  GraduateDeployer, MoveCore, MoveEscrow, MoveTransferRoot, Moving,
+  NominateDeployer, Propose, ProposeEmergencyRotation, ProposeRestoration,
+  Proposed, Ready, Registry, RegistryRedeemer, Replace, Restoration, Restore,
+  Restrict, Rotate, RotateAuthority, host_role, transfer_role,
 }
 use ibc/utils/text_bytes
 use ibc/utils/validator_utils
@@ -288,6 +288,11 @@ validator implementation_registry {
                   },
                 ),
               }
+            NominateDeployer { nonce, source_generation, successor } -> and {
+                nonce == old.nonce + 1,
+                source_generation == old.current.generation,
+                bytearray.length(successor) == 28,
+              }
             Rotate { nonce, governance } -> and {
                 nonce == old.nonce + 1,
                 migration.valid_governance(governance),
@@ -326,6 +331,42 @@ validator implementation_registry {
           phase: Ready,
           emergency: Emergency { ..old.emergency, restoration: None },
         }
+      }
+      // Like governance rotation, admin recovery cannot be vetoed by emergency
+      // keys. It preserves every restriction and cannot install code.
+      GraduateDeployer -> {
+        expect proposal_ready(transaction, old)
+        expect Proposed {
+          proposal: NominateDeployer { nonce, source_generation, successor },
+          ..
+        } = old.phase
+        expect nonce == old.nonce
+        expect source_generation == old.current.generation
+        let input = host_input(transaction, old)
+        expect object_input(transaction, own_ref) == input
+        expect
+          input.output.address == migration.role_address(old.current, host_role)
+        expect host: HostStateDatum =
+          validator_utils.get_inline_datum(input.output)
+        expect host.nft_policy == old.host_policy
+        expect host.deployer != successor
+        expect bytearray.length(successor) == 28
+        expect
+          host_output_matches(
+            transaction,
+            old,
+            input,
+            HostStateDatum {
+              ..host,
+              deployer: successor,
+              state: host_state.HostState {
+                ..host.state,
+                version: host.state.version + 1,
+              },
+            },
+            input.output.address,
+          )
+        new == Registry { ..old, phase: Ready }
       }
       Begin -> {
         expect proposal_ready(transaction, old)
