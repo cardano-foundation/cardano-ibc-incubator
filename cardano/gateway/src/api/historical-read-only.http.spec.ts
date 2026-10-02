@@ -1,3 +1,4 @@
+import { PacketLaneService } from '../tx/packet-lane.service';
 jest.mock('~@/tx/packet.service', () => ({ PacketService: class PacketService {} }));
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -15,10 +16,19 @@ import { QueryService } from '../query/services/query.service';
 import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 
 const routes = [
-  'transfer', 'packet-history/prune',
-  ...['did-doc', 'did-doc-version', 'did-doc-versions-metadata', 'resource', 'resource-metadata',
-    'latest-resource-version', 'latest-resource-version-metadata'].map((path) => `icq/cheqd/${path}`),
-  'icq/vesseloracle/consolidated-data-report', 'icq/vesseloracle/latest-consolidated-data-report',
+  'transfer',
+  'packet-history/prune',
+  ...[
+    'did-doc',
+    'did-doc-version',
+    'did-doc-versions-metadata',
+    'resource',
+    'resource-metadata',
+    'latest-resource-version',
+    'latest-resource-version-metadata',
+  ].map((path) => `icq/cheqd/${path}`),
+  'icq/vesseloracle/consolidated-data-report',
+  'icq/vesseloracle/latest-consolidated-data-report',
 ];
 
 describe('historical read-only HTTP boundary', () => {
@@ -33,19 +43,39 @@ describe('historical read-only HTTP boundary', () => {
     const decode = jest.fn(() => ({ historical: true }));
     const module = await Test.createTestingModule({
       controllers: [ApiController, VesseloracleIcqController],
-      providers: [HistoricalReadOnlyGuard,
-        ...[ChannelService, DenomTraceService, LocalOsmosisSwapPlannerService, TransferPlannerService,
-          BridgeManifestService, QueryService].map((provide) => ({ provide, useValue: {} })),
+      providers: [
+        HistoricalReadOnlyGuard,
+        ...[
+          ChannelService,
+          DenomTraceService,
+          LocalOsmosisSwapPlannerService,
+          TransferPlannerService,
+          BridgeManifestService,
+          QueryService,
+        ].map((provide) => ({ provide, useValue: {} })),
+        { provide: PacketLaneService, useValue: { admit: build } },
         { provide: PacketService, useValue: { sendPacket: build, prunePacketHistory: build } },
-        { provide: CheqdIcqService, useValue: {
-          buildDidDocQuery: build, buildDidDocVersionQuery: build, buildAllDidDocVersionsMetadataQuery: build,
-          buildResourceQuery: build, buildResourceMetadataQuery: build, buildLatestResourceVersionQuery: build,
-          buildLatestResourceVersionMetadataQuery: build, decodeDidDocAcknowledgement: decode,
-        } },
-        { provide: VesseloracleIcqService, useValue: {
-          buildConsolidatedDataReportQuery: build, buildLatestConsolidatedDataReportQuery: build,
-          decodeConsolidatedDataReportAcknowledgement: decode,
-        } },
+        {
+          provide: CheqdIcqService,
+          useValue: {
+            buildDidDocQuery: build,
+            buildDidDocVersionQuery: build,
+            buildAllDidDocVersionsMetadataQuery: build,
+            buildResourceQuery: build,
+            buildResourceMetadataQuery: build,
+            buildLatestResourceVersionQuery: build,
+            buildLatestResourceVersionMetadataQuery: build,
+            decodeDidDocAcknowledgement: decode,
+          },
+        },
+        {
+          provide: VesseloracleIcqService,
+          useValue: {
+            buildConsolidatedDataReportQuery: build,
+            buildLatestConsolidatedDataReportQuery: build,
+            decodeConsolidatedDataReportAcknowledgement: decode,
+          },
+        },
       ],
     }).compile();
     const app = module.createNestApplication();
@@ -63,16 +93,23 @@ describe('historical read-only HTTP boundary', () => {
       }
       expect(build).not.toHaveBeenCalled();
       for (const route of ['icq/cheqd/did-doc/decode', 'icq/vesseloracle/consolidated-data-report/decode']) {
-        await request(app.getHttpServer()).post(`/api/${route}`).send({ acknowledgement_hex: '00' }).expect(200, { historical: true });
+        await request(app.getHttpServer())
+          .post(`/api/${route}`)
+          .send({ acknowledgement_hex: '00' })
+          .expect(200, { historical: true });
       }
       expect(decode).toHaveBeenCalledTimes(2);
-    } finally { await app.close(); }
+    } finally {
+      await app.close();
+    }
   });
   it('allows the identical transfer route to reach the builder in ordinary mode', async () => {
     const { app, build } = await start(false);
     try {
       await request(app.getHttpServer()).post('/api/transfer').send({}).expect(200);
       expect(build).toHaveBeenCalledTimes(1);
-    } finally { await app.close(); }
+    } finally {
+      await app.close();
+    }
   });
 });

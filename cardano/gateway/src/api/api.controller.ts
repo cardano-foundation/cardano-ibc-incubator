@@ -1,3 +1,4 @@
+import { PacketLaneService } from '../tx/packet-lane.service';
 import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import {
   BadRequestException,
@@ -13,12 +14,7 @@ import {
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
-import {
-  EstimateLocalOsmosisSwapDto,
-  MsgtransferDto,
-  PlanTransferRouteDto,
-  PrunePacketHistoryDto,
-} from './api.dto';
+import { EstimateLocalOsmosisSwapDto, MsgtransferDto, PlanTransferRouteDto, PrunePacketHistoryDto } from './api.dto';
 import {
   CheqdDidDocIcqRequestDto,
   CheqdDidDocVersionIcqRequestDto,
@@ -84,6 +80,7 @@ export class ApiController {
     private readonly bridgeManifestService: BridgeManifestService,
     private readonly queryService: QueryService,
     private readonly cheqdIcqService: CheqdIcqService,
+    private readonly packetLaneService: PacketLaneService,
   ) {}
 
   @Get('channels')
@@ -160,7 +157,7 @@ export class ApiController {
   @HttpCode(200)
   async buildTransferMsg(@Body() msgtransferDto: MsgtransferDto) {
     const request = MsgTransfer.fromJSON(msgtransferDto);
-    const response = await this.packetService.sendPacket(request);
+    const response = await this.packetLaneService.admit(request);
 
     return this.serializeUnsignedTxResponse(response);
   }
@@ -394,10 +391,7 @@ export class ApiController {
   }
 
   @Get('cardano/channels/:channelId/health')
-  async getCardanoChannelHealth(
-    @Param('channelId') channelId: string,
-    @Query('port_id') portId = 'transfer',
-  ) {
+  async getCardanoChannelHealth(@Param('channelId') channelId: string, @Query('port_id') portId = 'transfer') {
     return this.channelService.getChannelHealth(channelId, portId);
   }
 

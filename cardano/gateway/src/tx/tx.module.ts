@@ -7,6 +7,7 @@ import { LIGHT_CLIENT_HANDLERS, type LightClientHandler } from './light-client-h
 import { TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '../shared/types/misbehaviour/misbehaviour';
 import { ChannelService } from './channel.service';
 import { ConnectionService } from './connection.service';
+import { PacketLaneService } from './packet-lane.service';
 import { PacketService } from './packet.service';
 import { AsyncIcqHostService } from './async-icq-host.service';
 import { SubmissionService } from './submission.service';
@@ -45,6 +46,7 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     ConnectionService,
     ChannelService,
     PacketService,
+    PacketLaneService,
     AsyncIcqHostService,
     SubmissionService,
     TxEventsService,
@@ -61,6 +63,6 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     },
     Logger,
   ],
-  exports: [IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService, ClientService],
+  exports: [PacketLaneService, IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService, ClientService],
 })
 export class TxModule {}

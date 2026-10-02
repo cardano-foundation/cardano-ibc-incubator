@@ -1,3 +1,4 @@
+import { PacketIntentController } from './packet-intent.controller';
 import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 import { Logger, Module } from '@nestjs/common';
 import { ApiController } from './api.controller';
@@ -13,7 +14,7 @@ import { PlannerClientService } from './planner-client.service';
 
 @Module({
   imports: [QueryModule, TxModule, LucidModule, HttpModule, MithrilModule],
-  controllers: [ApiController],
+  controllers: [ApiController, PacketIntentController],
   providers: [
     Logger,
     HistoricalReadOnlyGuard,
