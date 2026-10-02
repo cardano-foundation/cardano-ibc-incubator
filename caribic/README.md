@@ -380,9 +380,13 @@ caribic yaci-checkpoint --network preprod --write-env
 
 ```bash
 export DEPLOYER_SK=$(cat ~/.caribic/preprod-deployer.sk)   # or your own funded preprod signing key
-# Optional: set DEPLOYER_BACKUP_PAYMENT_KEY_HASH to a different 56-character payment key hash before first deployment.
+# For unattended deployment, set DEPLOYER_BACKUP_PAYMENT_KEY_HASH to the backup operator's payment key hash.
 caribic start --network preprod
 ```
+
+Before a new deployment, Caribic prompts for a backup operator's 56-character hexadecimal payment key hash unless `DEPLOYER_BACKUP_PAYMENT_KEY_HASH` is set. This must belong to a different operator than the deployer. The backup operator can claim bridge administration if the deployer is unavailable. This uses the existing single-key backup path and does not require a governance vote.
+
+Local, preprod and preview deployments can skip the backup with a warning. Unattended runs without the environment variable also continue with a warning. Reusing an existing public deployment does not prompt or change its backup. The shared deployment planner rejects mainnet deployments without a backup operator. Caribic does not yet support a mainnet runtime.
 
 This starts postgres and the Yaci history services, deploys the IBC validators to preprod (artifacts exported to `manifests/preprod/`), starts the Gateway (gRPC on 5001), Hermes daemon, and IBC Swap dapp, and injects the `injective-888` chain block (public sentry endpoints) into `~/.hermes/config.toml`. Verify with:
 

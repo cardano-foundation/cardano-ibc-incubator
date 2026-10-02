@@ -61,6 +61,71 @@ pub fn prompt_runtime_deployer_sk() -> Result<String, Box<dyn Error>> {
     )
 }
 
+fn parse_backup_operator(value: &str) -> Result<Option<String>, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.len() != 56 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Backup operator must be a 56-character hexadecimal payment key hash".into());
+    }
+    Ok(Some(value.to_ascii_lowercase()))
+}
+
+pub fn prompt_backup_operator() -> Result<Option<String>, Box<dyn Error>> {
+    let configured = std::env::var("DEPLOYER_BACKUP_PAYMENT_KEY_HASH");
+    let backup = match configured {
+        Ok(value) if !value.trim().is_empty() => parse_backup_operator(&value)?,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err("DEPLOYER_BACKUP_PAYMENT_KEY_HASH contains invalid Unicode".into());
+        }
+        _ if io::stdin().is_terminal() && io::stderr().is_terminal() => {
+            eprintln!("A backup operator can claim bridge administration if the deployer is unavailable. Use a different operator's payment key hash.");
+            loop {
+                eprint!("Backup operator payment key hash (Enter to skip on local or testnet): ");
+                io::stderr().flush()?;
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                match parse_backup_operator(&input) {
+                    Ok(backup) => break backup,
+                    Err(error) => eprintln!("{error}"),
+                }
+            }
+        }
+        _ => None,
+    };
+    if backup.is_none() {
+        eprintln!("WARNING: Deploying without a backup operator. If the deployer key is lost, the backup handover path will be unavailable. Set DEPLOYER_BACKUP_PAYMENT_KEY_HASH for unattended deployments.");
+    }
+    Ok(backup)
+}
+
+#[cfg(test)]
+mod backup_operator_tests {
+    use super::parse_backup_operator;
+
+    #[test]
+    fn backup_operator_accepts_optional_input_and_normalizes_hashes() {
+        assert_eq!(parse_backup_operator(" \n").unwrap(), None);
+        assert_eq!(
+            parse_backup_operator(&format!(" {}\n", "AB".repeat(28))).unwrap(),
+            Some("ab".repeat(28))
+        );
+    }
+
+    #[test]
+    fn backup_operator_rejects_addresses_and_malformed_hashes() {
+        for value in [
+            "addr_test1example".to_string(),
+            "aa".repeat(27),
+            "aa".repeat(29),
+            "zz".repeat(28),
+        ] {
+            assert!(parse_backup_operator(&value).is_err());
+        }
+    }
+}
+
 pub struct IndicatorMessage {
     pub message: String,
     pub step: String,
