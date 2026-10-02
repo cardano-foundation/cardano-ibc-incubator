@@ -1,3 +1,4 @@
+import { PacketStateService } from './packet-state.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
@@ -76,7 +77,39 @@ export class PacketService {
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
     private readonly ibcTreeStore: IbcTreeStateStore,
+    private readonly packetState: PacketStateService,
   ) {}
+
+  private async lanePacketList(
+    request: QueryPacketCommitmentsRequest | QueryPacketAcknowledgementsRequest,
+    kind: 'commitments' | 'acks',
+  ) {
+    const { entries, height } = await this.packetState.entries(request.port_id, request.channel_id, kind);
+    const pagination = request.pagination;
+    const offset = pagination?.key?.length
+      ? Number(Buffer.from(pagination.key).toString('utf8'))
+      : Number(pagination?.offset ?? 0);
+    const limit = Number(pagination?.limit || 100n);
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 4096)
+      throw new GrpcInvalidArgumentException('Invalid packet pagination');
+    const all = [...entries];
+    if (pagination?.reverse) all.reverse();
+    const selected = all.slice(offset, offset + limit);
+    return {
+      packets: selected.map(([sequence, value]) => ({
+        port_id: request.port_id,
+        channel_id: request.channel_id,
+        sequence,
+        data: Buffer.from(value, 'hex'),
+      })),
+      height,
+      pagination: {
+        next_key:
+          offset + selected.length < all.length ? Buffer.from(String(offset + selected.length)) : new Uint8Array(),
+        total: pagination?.count_total ? BigInt(all.length) : 0n,
+      },
+    };
+  }
 
   private async getProofContext(requestedHeight?: bigint) {
     const lightClientMode =
@@ -251,6 +284,20 @@ export class PacketService {
     request: QueryPacketAcknowledgementRequest,
     options: ProofQueryOptions = {},
   ): Promise<QueryPacketAcknowledgementResponse> {
+    if (request.port_id === 'transfer') {
+      const { value, ...proof } = await this.packetState.proof(
+        request.port_id,
+        request.channel_id,
+        BigInt(request.sequence),
+        'acks',
+        options.queryHeight,
+      );
+      if (!value) throw new GrpcNotFoundException('Packet acknowledgement not found');
+      if (value !== SUCCESS_ACKNOWLEDGEMENT_COMMITMENT)
+        throw new GrpcInternalException('Acknowledgement preimage unavailable');
+      return { acknowledgement: Buffer.from(SUCCESS_ACKNOWLEDGEMENT_HEX, 'hex'), ...proof };
+    }
+
     const { channel_id: channelId, port_id: portId, sequence } = validQueryPacketAcknowledgementParam(request);
     this.logger.log(`channelId = ${channelId}, portId = ${portId}, sequence=${sequence}`, 'QueryPacketAcknowledgement');
 
@@ -302,6 +349,11 @@ export class PacketService {
   async queryPacketAcknowledgements(
     request: QueryPacketAcknowledgementsRequest,
   ): Promise<QueryPacketAcknowledgementsResponse> {
+    if (request.port_id === 'transfer') {
+      const { packets, ...rest } = await this.lanePacketList(request, 'acks');
+      return { acknowledgements: packets, ...rest };
+    }
+
     const {
       channel_id: channelId,
       port_id: portId,
@@ -367,6 +419,18 @@ export class PacketService {
     request: QueryPacketCommitmentRequest,
     options: ProofQueryOptions = {},
   ): Promise<QueryPacketCommitmentResponse> {
+    if (request.port_id === 'transfer') {
+      const { value, ...proof } = await this.packetState.proof(
+        request.port_id,
+        request.channel_id,
+        BigInt(request.sequence),
+        'commitments',
+        options.queryHeight,
+      );
+      if (!value) throw new GrpcNotFoundException('Packet commitment not found');
+      return { commitment: Buffer.from(value, 'hex'), ...proof };
+    }
+
     const { channel_id: channelId, port_id: portId, sequence } = validQueryPacketCommitmentParam(request);
     this.logger.log(
       `channelId = ${channelId}, portId = ${portId}, sequence=${sequence}`,
@@ -411,6 +475,11 @@ export class PacketService {
   }
 
   async queryPacketCommitments(request: QueryPacketCommitmentsRequest): Promise<QueryPacketCommitmentsResponse> {
+    if (request.port_id === 'transfer') {
+      const { packets, ...rest } = await this.lanePacketList(request, 'commitments');
+      return { commitments: packets, ...rest };
+    }
+
     const {
       channel_id: channelId,
       port_id: portId,
@@ -477,6 +546,17 @@ export class PacketService {
     request: QueryPacketReceiptRequest,
     options: ProofQueryOptions = {},
   ): Promise<QueryPacketReceiptResponse> {
+    if (request.port_id === 'transfer') {
+      const { value, ...proof } = await this.packetState.proof(
+        request.port_id,
+        request.channel_id,
+        BigInt(request.sequence),
+        'receipts',
+        options.queryHeight,
+      );
+      return { received: value !== undefined, ...proof };
+    }
+
     const { channel_id: channelId, port_id: portId, sequence } = validQueryPacketReceiptParam(request);
     this.logger.log(`channelId = ${channelId}, portId = ${portId}, sequence=${sequence}`, 'QueryPacketReceiptRequest');
 
@@ -525,6 +605,11 @@ export class PacketService {
 
   // write logic service function queryUnreceivedPackets
   async queryUnreceivedPackets(request: QueryUnreceivedPacketsRequest): Promise<QueryUnreceivedPacketsResponse> {
+    if (request.port_id === 'transfer') {
+      const { entries, height } = await this.packetState.entries(request.port_id, request.channel_id, 'receipts');
+      return { sequences: request.packet_commitment_sequences.filter((seq) => !entries.has(BigInt(seq))), height };
+    }
+
     const {
       channel_id: channelId,
       port_id: portId,
@@ -556,6 +641,11 @@ export class PacketService {
   }
 
   async queryUnreceivedAcks(request: QueryUnreceivedAcksRequest): Promise<QueryUnreceivedAcksResponse> {
+    if (request.port_id === 'transfer') {
+      const { entries, height } = await this.packetState.entries(request.port_id, request.channel_id, 'commitments');
+      return { sequences: request.packet_ack_sequences.filter((seq) => entries.has(BigInt(seq))), height };
+    }
+
     const {
       channel_id: channelId,
       port_id: portId,
@@ -588,6 +678,18 @@ export class PacketService {
   async queryProofUnreceivedPackets(
     request: QueryProofUnreceivedPacketsRequest,
   ): Promise<QueryProofUnreceivedPacketsResponse> {
+    if (request.port_id === 'transfer') {
+      const { value, ...proof } = await this.packetState.proof(
+        request.port_id,
+        request.channel_id,
+        BigInt(request.sequence),
+        'receipts',
+        BigInt(request.revision_height),
+      );
+      if (value) throw new GrpcInvalidArgumentException('Packet already received');
+      return proof;
+    }
+
     const {
       channel_id: channelId,
       port_id: portId,
@@ -654,10 +756,7 @@ export class PacketService {
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryNextSequenceReceiveRequest');
 
     const proofContext = await this.getProofContext(options.queryHeight);
-    const channelUtxo = await this.getChannelUtxo(
-      channelId,
-      proofContext.proofHeight,
-    );
+    const channelUtxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
     const nextSequenceRecv = channelDatum.state.next_sequence_recv;
 
@@ -697,10 +796,7 @@ export class PacketService {
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryNextSequenceAckRequest');
 
     const proofContext = await this.getProofContext(options.queryHeight);
-    const channelUtxo = await this.getChannelUtxo(
-      channelId,
-      proofContext.proofHeight,
-    );
+    const channelUtxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
     const nextSequenceAck = channelDatum.state.next_sequence_ack;
 

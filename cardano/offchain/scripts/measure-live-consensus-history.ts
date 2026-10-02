@@ -366,7 +366,7 @@ export function assertMeasurementManifest(
   const manifest = object(value, "Pinned bridge manifest");
   const cardano = object(manifest.cardano, "Manifest Cardano identity");
   if (
-    manifest.schema_version !== 4 ||
+    manifest.schema_version !== 5 ||
     manifest.consensus_history_format !== "proof-backed-v1" ||
     cardano.chain_id !== config.hostChainId || cardano.network !== "local" ||
     cardano.network_magic !== 42

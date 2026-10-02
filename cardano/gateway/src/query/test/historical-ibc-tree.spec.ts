@@ -142,6 +142,18 @@ function migrationHandler() {
     'timeout_packet',
   ];
   return {
+    packetState: {
+      format: 'packet-lanes-v1',
+      laneCount: 16,
+      configToken: { policyId: '98'.repeat(28), name: hex('ibc_packet_config') },
+      state: validator(),
+      batch: validator(),
+      guard: validator(),
+      operations: Object.fromEntries(
+        ['send', 'acknowledge', 'timeout', 'reject', 'receive', 'prune', 'timeout_on_close', 'retire', 'funds', 'send_funds']
+          .map((name) => [name, validator()]),
+      ),
+    },
     deployedAt: '2026-04-01T12:34:56.000Z',
     consensusHistoryFormat: 'proof-backed-v1',
     hostStateNFT: hostToken,
