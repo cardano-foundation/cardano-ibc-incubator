@@ -1,5 +1,7 @@
 'use client';
 
+import type { FundedIntent } from '@/utils/cardanoIntent';
+
 import {
   Box,
   Button,
@@ -89,6 +91,7 @@ import {
 } from './index.style';
 
 type EstimateFeeType = {
+  intentChannel?: string;
   display: boolean;
   canEst: boolean;
   msgs: any[];
@@ -362,6 +365,7 @@ const RoutePreview = ({
 
 const Transfer = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [fundedIntent, setFundedIntent] = useState<FundedIntent>();
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
   const [tokenList, setTokenList] = useState<TransferTokenItemProps[]>([]);
   const [validationAddress, setValidationAddress] = useState<string>('');
@@ -392,6 +396,7 @@ const Transfer = () => {
     setEstData(initEstData);
     setLastPrepareFailed(false);
     setLastTxHash('');
+    setFundedIntent(undefined);
     setLastTransferSubmittedAt('');
     clearResumableTransfer();
   };
@@ -463,6 +468,15 @@ const Transfer = () => {
   ): ResumableTransferRecord => ({
     version: 1,
     sourceTxHash,
+    ...(submittedEstData.intentChannel
+      ? {
+          intent: {
+            hash: sourceTxHash,
+            channel: submittedEstData.intentChannel,
+            signer: getSourceWalletAddress() || '',
+          },
+        }
+      : {}),
     sourceChainId: fromNetwork.networkId || '',
     destinationChainId: toNetwork.networkId || '',
     sourceWalletAddress: getSourceWalletAddress(),
@@ -479,6 +493,7 @@ const Transfer = () => {
 
   const restoreResumableTransfer = (record: ResumableTransferRecord) => {
     isRestoringTransferRef.current = true;
+    setFundedIntent(record.intent);
     const restoredFromNetwork = networkItemFromChainId(
       record.sourceChainId,
       record.fromNetwork,
@@ -854,12 +869,14 @@ const Transfer = () => {
         setRoutePreview({
           status: 'ready',
           chainIds: liveRouteChainIds,
-          message: 'Unsigned Cardano transaction ready. You can sign it now.',
+          message:
+            'Ready to fund your request. The relayer will submit the packet without another wallet signature.',
         });
         return {
           display: true,
           canEst: true,
           msgs: [unsignedTx],
+          intentChannel: msg[0].intentChannel,
           estReceiveAmount: baseAmountToDisplayAmount(
             estReceiveAmount.toFixed(0),
             selectedToken.tokenExponent ?? 0,
@@ -929,6 +946,11 @@ const Transfer = () => {
         persistResumableTransfer(
           buildResumableTransferRecord(txHash, preparedEstData, submittedAt),
         );
+        setFundedIntent({
+          hash: txHash,
+          channel: preparedEstData.intentChannel!,
+          signer: cardanoAddress || '',
+        });
         setLastTxHash(txHash);
         setLastTransferSubmittedAt(submittedAt);
         setIsSubmitted(true);
@@ -1399,6 +1421,7 @@ const Transfer = () => {
       estReceiveAmount={estData.estReceiveAmount}
       estFee={estData.estFee}
       estTime={estData.estTime}
+      intent={fundedIntent}
       lastTxHash={lastTxHash}
       submittedAt={lastTransferSubmittedAt}
       resetLastTxData={resetLastTxData}

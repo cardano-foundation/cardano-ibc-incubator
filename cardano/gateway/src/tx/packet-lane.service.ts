@@ -79,7 +79,7 @@ export class PacketLaneService {
   async deployment(channelId: string): Promise<PacketLaneDeployment> {
     if (!/^channel-(0|[1-9][0-9]*)$/.test(channelId)) throw new Error('Invalid channel identifier');
     const manifest = this.config.getOrThrow<DeploymentConfig>('deployment');
-    const config = manifest.packetState!;
+    const config = manifest.packetState;
     const channel = await this.lucid.findUtxoByUnit(
       this.lucid.getChannelTokenUnit(BigInt(channelId.slice(8))).join(''),
     );
@@ -204,7 +204,7 @@ export class PacketLaneService {
   }
 
   private async initialize(request: Pick<BuildPacketBatchRequest, 'signer' | 'channel_id'>) {
-    const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState!;
+    const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState;
     const { Data } = this.lucid.LucidImporter;
     const registry = await this.lucid.findUtxoByUnit(
       config.state.scriptHash + this.lucid.LucidImporter.fromText('ibc_packet_registry'),
@@ -238,7 +238,7 @@ export class PacketLaneService {
     if (pending) return { stage: 'funded' as const };
     const consuming = await this.history.findIntentSpendingTransaction(hash, deployment.guardAddress);
     if (!consuming) return { stage: 'pending' as const };
-    const events = await this.packetState!.events(consuming.txHash);
+    const events = await this.packetState.events(consuming.txHash);
     const event = events.find(
       (event) =>
         event.type === 'send_packet' &&
@@ -287,7 +287,7 @@ export class PacketLaneService {
         throw new Error(
           'Funded intent is not available in canonical indexed state. Retry after inclusion or rollback recovery',
         );
-      const events = await this.packetState!.events(consuming.txHash);
+      const events = await this.packetState.events(consuming.txHash);
       if (!events.some((event) => event.type === 'send_packet'))
         throw new Error('Funded intent was cancelled without sending a packet');
       return { stage: 'included', intent_tx_hashes: [request.intent_tx_hash], included_tx_hash: consuming.txHash };

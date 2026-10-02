@@ -77,7 +77,7 @@ const nextConfig = {
         __dirname,
         '../../../packages/cardano-ibc-trace-registry/src/index.ts',
       ),
-      '@cardano-ibc/tx-builder': path.resolve(
+      '@cardano-ibc/tx-builder$': path.resolve(
         __dirname,
         '../../../packages/cardano-ibc-tx-builder/src/index.ts',
       ),
