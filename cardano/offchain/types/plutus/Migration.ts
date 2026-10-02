@@ -131,6 +131,13 @@ export const ProposalSchema = Data.Enum([
       governance: GovernanceSchema,
     }),
   }),
+  Data.Object({
+    NominateDeployer: Data.Object({
+      nonce: Data.Integer(),
+      source_generation: Data.Integer(),
+      successor: Data.Bytes(),
+    }),
+  }),
 ]);
 export type Proposal = Data.Static<typeof ProposalSchema>;
 export const Proposal = ProposalSchema as unknown as Proposal;
@@ -206,6 +213,7 @@ export const RegistryRedeemerSchema = Data.Enum([
       expires_at: Data.Integer(),
     }),
   }),
+  Data.Literal("GraduateDeployer"),
 ]);
 export type RegistryRedeemer = Data.Static<typeof RegistryRedeemerSchema>;
 export const RegistryRedeemer =
