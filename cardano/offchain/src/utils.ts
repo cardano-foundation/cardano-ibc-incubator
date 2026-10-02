@@ -970,6 +970,49 @@ type Module = "transfer" | "mock" | "icq";
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
+  packetState: {
+    configuration: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo?: UTxO;
+    };
+    operations: Record<
+      string,
+      {
+        title: string;
+        script: string;
+        scriptHash: string;
+        address: string;
+        refUtxo: UTxO;
+      }
+    >;
+    format: "packet-lanes-v1";
+    laneCount: number;
+    configToken: { policyId: string; name: string };
+    state: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    batch: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    guard: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+  };
   deploymentMode?: "upgradeable" | "legacy";
   migration?: {
     profile: "cardano-ibc-compatible-v3";
