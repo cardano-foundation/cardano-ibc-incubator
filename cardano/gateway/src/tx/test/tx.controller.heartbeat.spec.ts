@@ -1,3 +1,4 @@
+import { PacketLaneService } from '../packet-lane.service';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { ChannelService } from '../channel.service';
@@ -20,6 +21,7 @@ describe('TxController - HostState heartbeat', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TxController],
       providers: [
+        { provide: PacketLaneService, useValue: {} },
         { provide: ClientService, useValue: {} },
         { provide: ConnectionService, useValue: {} },
         { provide: ChannelService, useValue: {} },

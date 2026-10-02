@@ -1,3 +1,5 @@
+jest.mock('../tx/packet-lane.service', () => ({ PacketLaneService: class PacketLaneService {} }));
+import { PacketLaneService } from '../tx/packet-lane.service';
 jest.mock('~@/tx/packet.service', () => ({
   PacketService: class PacketService {},
 }));
@@ -90,6 +92,7 @@ describe('ApiController (modern)', () => {
       providers: [
         { provide: ChannelService, useValue: channelServiceMock },
         { provide: PacketService, useValue: packetServiceMock },
+        { provide: PacketLaneService, useValue: { admit: packetServiceMock.sendPacket } },
         { provide: DenomTraceService, useValue: denomTraceServiceMock },
         { provide: LocalOsmosisSwapPlannerService, useValue: swapPlannerServiceMock },
         { provide: CheqdIcqService, useValue: cheqdIcqServiceMock },
@@ -178,7 +181,7 @@ describe('ApiController (modern)', () => {
     expect(channelServiceMock.getChannelHealth).toHaveBeenCalledWith('channel-0', 'transfer');
   });
 
-  it('delegates buildTransferMsg to PacketService and base64-encodes unsigned tx bytes', async () => {
+  it('delegates buildTransferMsg to funded intent admission and base64-encodes unsigned tx bytes', async () => {
     // DTO -> MsgTransfer mapping should preserve transfer semantics while normalizing output bytes.
     packetServiceMock.sendPacket.mockResolvedValue({
       result: 1,
