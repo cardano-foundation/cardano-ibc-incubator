@@ -166,22 +166,53 @@ test packet_lane_prune_cannot_predate_receive() fail {
 }
 
 test packet_lane_old_membership_rejected_after_prune() fail {
-  let witnesses: List<List<ByteArray>> = []
+  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
+  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
   let old = prune(received(), height(12))
-  expect _ =
-    packet_lane_datum.apply_updates(
-      old,
-      [
-        LaneUpdate {
-          mutation: ReceivePacket {
-            packet: packet(1),
-            acknowledgement: #"1111111111111111111111111111111111111111111111111111111111111111",
-            proof_height: height(10),
-          },
-          siblings: witnesses,
+  expect _ = packet_lane_datum.apply_updates(
+    old,
+    [
+      LaneUpdate {
+        mutation: ReceivePacket {
+          packet: packet(1),
+          acknowledgement: #"1111111111111111111111111111111111111111111111111111111111111111",
+          proof_height: height(10),
         },
-      ],
-    )
+        siblings: [
+          sparse_tree.siblings([], receipt),
+          sparse_tree.siblings([Pair(receipt, #"01")], ack),
+        ],
+      },
+    ],
+  )
+}
+
+test packet_lane_current_membership_accepted_after_prune() {
+  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
+  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
+  let old = prune(received(), height(12))
+  let next = packet_lane_datum.apply_updates(
+    old,
+    [
+      LaneUpdate {
+        mutation: ReceivePacket {
+          packet: packet(1),
+          acknowledgement: #"1111111111111111111111111111111111111111111111111111111111111111",
+          proof_height: height(12),
+        },
+        siblings: [
+          sparse_tree.siblings([], receipt),
+          sparse_tree.siblings([Pair(receipt, #"01")], ack),
+        ],
+      },
+    ],
+  )
+  next == PacketLaneDatum {
+    ..received(),
+    version: 3,
+    minimum_receive_proof_height: height(12),
+    maximum_receive_proof_height: height(12),
+  }
 }
 
 test packet_lane_wrong_witness_rejected() fail {
