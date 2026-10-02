@@ -417,6 +417,7 @@ fn check_send_packet_with_data(
       transaction,
     )?,
     spending_channel.spend_channel.spend(
+      #"",
       mock_data.chan_open_ack_policy_id,
       mock_data.chan_open_confirm_policy_id,
       mock_data.chan_close_init_policy_id,

@@ -500,6 +500,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
     )
   let spending_channel_valid =
     spending_channel.spend_channel.spend(
+      #"",
       mock.chan_open_ack_policy_id,
       mock.chan_open_confirm_policy_id,
       mock.chan_close_init_policy_id,

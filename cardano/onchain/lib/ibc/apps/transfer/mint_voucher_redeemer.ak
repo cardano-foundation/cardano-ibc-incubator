@@ -21,4 +21,5 @@ pub type MintVoucherRedeemer {
     acknowledgement: Option<Acknowledgement>,
   }
   ReclaimMetadata
+  PacketBatch
 }
