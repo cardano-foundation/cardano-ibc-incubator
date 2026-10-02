@@ -80,7 +80,7 @@ pub fn prompt_backup_operator() -> Result<Option<String>, Box<dyn Error>> {
             return Err("DEPLOYER_BACKUP_PAYMENT_KEY_HASH contains invalid Unicode".into());
         }
         _ if io::stdin().is_terminal() && io::stderr().is_terminal() => {
-            eprintln!("A backup operator can claim bridge administration if the deployer is unavailable. Use a different operator's payment key hash.");
+            eprintln!("Upgradeable deployments require governance approval and its activation delay before a backup nominee can become admin. Legacy deployments let the backup key claim admin directly. Use a different operator's payment key hash.");
             loop {
                 eprint!("Backup operator payment key hash (Enter to skip on local or testnet): ");
                 io::stderr().flush()?;
@@ -95,7 +95,7 @@ pub fn prompt_backup_operator() -> Result<Option<String>, Box<dyn Error>> {
         _ => None,
     };
     if backup.is_none() {
-        eprintln!("WARNING: Deploying without a backup operator. If the deployer key is lost, the backup handover path will be unavailable. Set DEPLOYER_BACKUP_PAYMENT_KEY_HASH for unattended deployments.");
+        eprintln!("WARNING: Deploying without a backup operator. No successor is preselected. Upgradeable deployments can still nominate one through governance. Legacy deployments will have no backup handover path. Set DEPLOYER_BACKUP_PAYMENT_KEY_HASH for unattended deployments.");
     }
     Ok(backup)
 }
