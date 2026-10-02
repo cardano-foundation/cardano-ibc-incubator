@@ -32,6 +32,8 @@ const sharedSourceFiles = [
   "keys.go",
   "misbehaviour_handle.go",
   "misbehavour.go",
+  "packet_state.go",
+  "packet_state_test.go",
   "payload_size_test.go",
   "probabilistic.pb.go",
   "proposal_handle.go",
@@ -83,6 +85,10 @@ function normalizeCommon(content) {
       "github.com/cosmos/ibc-go/v<IBC_GO_MAJOR>",
     )
     .replaceAll("commitmenttypesv2", "commitmenttypes")
+    .replace(/^\tpathTypes ".*23-commitment\/types\/v2"\n/gm, "")
+    .replaceAll("pathTypes.NewMerklePath", "commitmenttypes.NewMerklePath")
+    .replaceAll("NewMerklePath(string(key))", "NewMerklePath(key)")
+    .replace(/NewMerklePath\(\[\]byte\(("[^"\n]*")\)\)/g, "NewMerklePath($1)")
     .replaceAll(
       "modules/core/23-commitment/types/v2",
       "modules/core/23-commitment/types",
