@@ -1,3 +1,4 @@
+import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as Lucid from '@lucid-evolution/lucid';
@@ -51,10 +52,7 @@ function clientDatum() {
   };
 }
 
-function archiveDatum(
-  height = ARCHIVED_HEIGHT,
-  clientToken = CLIENT_TOKEN,
-): ConsensusStateDatum {
+function archiveDatum(height = ARCHIVED_HEIGHT, clientToken = CLIENT_TOKEN): ConsensusStateDatum {
   return {
     clientToken,
     height,
@@ -67,8 +65,11 @@ function archiveDatum(
 async function makeFixture(archives: ConsensusStateDatum[]) {
   const committedValues = new Map<string, Buffer>();
   const latest: ConsensusStateDatum = {
-    clientToken: CLIENT_TOKEN, height: LATEST_HEIGHT,
-    consensusState: consensusState('33'), processedTime: 3000n, processedHeight: 30n,
+    clientToken: CLIENT_TOKEN,
+    height: LATEST_HEIGHT,
+    consensusState: consensusState('33'),
+    processedTime: 3000n,
+    processedHeight: 30n,
   };
   committedValues.set(
     `clients/07-tendermint-0/consensusStates/${LATEST_HEIGHT.revisionHeight}`,
@@ -86,10 +87,20 @@ async function makeFixture(archives: ConsensusStateDatum[]) {
     get: jest.fn((path: string) => committedValues.get(path)),
     generateProof: jest.fn((path: string) => ({ path })),
   };
-  const historyRecords = await Promise.all([...archives, latest].map(async (datum) => ({
-    datum, consensusValue: await encodeConsensusStateValue(datum.consensusState, Lucid), archived: datum !== latest,
-  })));
-  const liveClient = { txHash: 'cc'.repeat(32), outputIndex: 0, address: 'client', datum: 'live-client', assets: { [CLIENT_UNIT]: 1n } };
+  const historyRecords = await Promise.all(
+    [...archives, latest].map(async (datum) => ({
+      datum,
+      consensusValue: await encodeConsensusStateValue(datum.consensusState, Lucid),
+      archived: datum !== latest,
+    })),
+  );
+  const liveClient = {
+    txHash: 'cc'.repeat(32),
+    outputIndex: 0,
+    address: 'client',
+    datum: 'live-client',
+    assets: { [CLIENT_UNIT]: 1n },
+  };
   const historyService = {
     findUtxoByUnitAtOrBeforeBlockNo: jest.fn(async () => ({ datum: 'client-datum' })),
     findHostStateUtxoAtOrBeforeBlockNo: jest.fn(async () => ({
@@ -122,6 +133,7 @@ async function makeFixture(archives: ConsensusStateDatum[]) {
     {} as DenomTraceService,
     {} as never,
     {} as IbcTreeStateStore,
+    createPacketStateMock() as any,
   );
   jest.spyOn(service as never, 'getProofContext' as never).mockResolvedValue({
     proofHeight: PROOF_HEIGHT,
@@ -184,21 +196,20 @@ describe('QueryService consensus-state history', () => {
 
   it('rejects an archive that does not match the selected snapshot commitment', async () => {
     const fixture = await makeFixture([archiveDatum()]);
-    fixture.committedValues.set(
-      'clients/07-tendermint-0/consensusStates/7',
-      Buffer.from('ff', 'hex'),
-    );
+    fixture.committedValues.set('clients/07-tendermint-0/consensusStates/7', Buffer.from('ff', 'hex'));
 
-    await expect(fixture.service.queryConsensusStateHeights({ client_id: '07-tendermint-0' }))
-      .rejects.toThrow(/does not match the committed IBC state root/);
+    await expect(fixture.service.queryConsensusStateHeights({ client_id: '07-tendermint-0' })).rejects.toThrow(
+      /does not match the committed IBC state root/,
+    );
   });
 
   it('fails closed for duplicate records in the per-client index', async () => {
     const archive = archiveDatum();
     const { service } = await makeFixture([archive, archive]);
 
-    await expect(service.queryConsensusStateHeights({ client_id: '07-tendermint-0' }))
-      .rejects.toThrow(/Duplicate consensus-state history record/);
+    await expect(service.queryConsensusStateHeights({ client_id: '07-tendermint-0' })).rejects.toThrow(
+      /Duplicate consensus-state history record/,
+    );
   });
 
   it('rejects a record for another client from a per-client index', async () => {
@@ -208,8 +219,9 @@ describe('QueryService consensus-state history', () => {
     );
     const { service } = await makeFixture([foreign, archiveDatum()]);
 
-    await expect(service.queryConsensusStateHeights({ client_id: '07-tendermint-0' }))
-      .rejects.toThrow(/failed authentication/);
+    await expect(service.queryConsensusStateHeights({ client_id: '07-tendermint-0' })).rejects.toThrow(
+      /failed authentication/,
+    );
   });
 
   it('never mixes records newer than the historical client tip into the proof snapshot', async () => {
@@ -223,13 +235,23 @@ describe('QueryService consensus-state history', () => {
   it('requires the latest returned state to match the pinned public leaf too', async () => {
     const fixture = await makeFixture([archiveDatum()]);
     fixture.committedValues.set('clients/07-tendermint-0/consensusStates/9', Buffer.from('ff', 'hex'));
-    await expect(fixture.service.queryConsensusState({ client_id: '07-tendermint-0', revision_number: 0n, revision_height: 0n, latest_height: true }))
-      .rejects.toThrow(/does not match the committed IBC state root/);
+    await expect(
+      fixture.service.queryConsensusState({
+        client_id: '07-tendermint-0',
+        revision_number: 0n,
+        revision_height: 0n,
+        latest_height: true,
+      }),
+    ).rejects.toThrow(/does not match the committed IBC state root/);
   });
 
   it('rechecks the historical HostState after loading records for a height list', async () => {
     const fixture = await makeFixture([archiveDatum()]);
-    fixture.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValueOnce({ txHash: 'dd'.repeat(32), outputIndex: 0, datum: 'host-datum' });
+    fixture.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValueOnce({
+      txHash: 'dd'.repeat(32),
+      outputIndex: 0,
+      datum: 'host-datum',
+    });
     await expect(fixture.service.queryConsensusStateHeights({ client_id: '07-tendermint-0' })).rejects.toThrow();
   });
 });

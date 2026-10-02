@@ -4,6 +4,7 @@ import {
   Constr,
   Data,
   fromText,
+  getAddressDetails,
   type LucidEvolution,
   type Script,
   type UTxO,
@@ -16,7 +17,12 @@ import {
   type ConsensusHistoryWitness,
   recordToConstr,
 } from "../src/consensus_history_commitment.ts";
-import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
+import {
+  buildPacketPrune,
+  type PacketLaneDeployment,
+  record,
+} from "../src/packet-lane-transactions.ts";
+import { packetLaneTokenName } from "@cardano-ibc/tx-builder/dist/packet-lanes";
 
 type Seed = (
   address: string,
@@ -65,17 +71,53 @@ export async function historyPacketFixture(
 ) {
   const connectionPolicy = "66".repeat(28);
   const channelPolicy = "55".repeat(28);
-  const dummy = "44".repeat(28);
-  const apply = (title: string, params: string[] = []) =>
-    readValidator(title, lucid, params);
-  const [proofScript, proofPolicy] = apply("verifying_proof.verify_proof.mint");
-  const [pruneScript, prunePolicy] = apply(
-    "spending_channel/prune_packet_history.prune_packet_history.mint",
-    [clientPolicy, connectionPolicy, proofPolicy],
+  const channelHash = "44".repeat(28);
+  const statePolicy = "77".repeat(28);
+  const configPolicy = "88".repeat(28);
+  const configName = fromText("ibc_packet_config");
+  const configToken = record(configPolicy, configName);
+  const [proofScript, proofPolicy] = readValidator(
+    "verifying_proof.verify_proof.mint",
+    lucid,
+    [],
   );
-  const [channelScript, channelHash, channelAddress] = apply(
-    "spending_channel.spend_channel.spend",
-    [...Array(8).fill(dummy), prunePolicy, hostPolicy],
+  const [pruneScript, prunePolicy] = readValidator(
+    "packet_prune.packet_prune.mint",
+    lucid,
+    [
+      configToken,
+      channelPolicy,
+      statePolicy,
+      clientPolicy,
+      connectionPolicy,
+      16n,
+      channelHash,
+      proofPolicy,
+    ],
+  );
+  const [batchScript, batchPolicy, batchAddress] = readValidator(
+    "packet_lane_batch.packet_lane_batch.mint",
+    lucid,
+    [
+      channelPolicy,
+      record(
+        channelHash,
+        channelHash,
+        channelHash,
+        channelHash,
+        channelHash,
+        prunePolicy,
+        channelHash,
+        channelHash,
+        channelHash,
+        channelHash,
+      ),
+    ],
+  );
+  const [guardScript, , guardAddress] = readValidator(
+    "packet_lane_guard.packet_lane_guard.spend",
+    lucid,
+    [batchPolicy, statePolicy],
   );
   const tokenName = (prefix: string) =>
     generateTokenName(
@@ -85,50 +127,68 @@ export async function historyPacketFixture(
     );
   const connectionName = await tokenName("connection");
   const channelName = await tokenName("channel");
-  const channelToken = new Constr(0, [channelPolicy, channelName]);
-  const channelEnd = new Constr(0, [
+  const channelToken = record(channelPolicy, channelName);
+  const channelEnd = record(
     new Constr(3, []),
     new Constr(1, []),
-    new Constr(0, [fromText("transfer"), fromText("channel-0")]),
+    record(fromText("transfer"), fromText("channel-0")),
     [fromText("connection-0")],
     fromText("ics20-1"),
-  ]);
-  const initialChannel = new Constr(0, [
-    new Constr(0, [
+  );
+  const initialChannel = record(
+    record(
       channelEnd,
       1n,
       1n,
       1n,
       new Map(),
-      new Map([[1n, ""]]),
-      new Map([[1n, acknowledgement]]),
-      h(1n),
-      h(1n),
-    ]),
+      new Map(),
+      new Map(),
+      h(0n),
+      h(0n),
+    ),
     fromText("transfer"),
     channelToken,
-  ]);
-  const connection = new Constr(0, [
-    new Constr(0, [
+  );
+  const connection = record(
+    record(
       fromText("07-tendermint-0"),
-      [
-        new Constr(0, [fromText("1"), [
-          fromText("ORDER_ORDERED"),
-          fromText("ORDER_UNORDERED"),
-        ]]),
-      ],
+      [record(fromText("1"), [
+        fromText("ORDER_ORDERED"),
+        fromText("ORDER_UNORDERED"),
+      ])],
       new Constr(3, []),
-      new Constr(0, [
+      record(
         fromText("07-tendermint-1"),
         fromText("connection-0"),
-        new Constr(0, [fromText("ibc")]),
-      ]),
+        record(fromText("ibc")),
+      ),
       0n,
-    ]),
-    new Constr(0, [connectionPolicy, connectionName]),
-  ]);
+    ),
+    record(connectionPolicy, connectionName),
+  );
+  const laneName = packetLaneTokenName("transfer", "channel-0", 1, 16);
+  const laneTree = new DeploymentIbcTree();
+  laneTree.set(receiptKey, "01");
+  laneTree.set(acknowledgementKey, acknowledgement);
+  const initialLane = record(
+    fromText("transfer"),
+    fromText("channel-0"),
+    1n,
+    16n,
+    0n,
+    await laneTree.getRoot(),
+    new Map(),
+    [1n],
+    new Map([[1n, acknowledgement]]),
+    h(1n),
+    h(1n),
+    new Map(),
+  );
   let channel: UTxO;
+  let lane: UTxO;
   let connectionUtxo: UTxO;
+  let configuration: UTxO;
   let references: UTxO[];
   return {
     channelHash,
@@ -136,133 +196,90 @@ export async function historyPacketFixture(
     channelPolicy,
     root: leafHash(fromText("ibc"), subtreeRoot, "00"),
     seed(seed: Seed, address: string) {
-      // Connection and channel setup is seeded. Client creation/update and the
-      // final packet operation below execute the deployed production scripts.
+      // Only connection, channel and retained lane history are assumed. Client
+      // creation, update and pruning execute the production validators.
       channel = seed(
-        channelAddress,
+        address,
         { [channelPolicy + channelName]: 1n },
         encode(initialChannel),
+      );
+      lane = seed(
+        guardAddress,
+        { [statePolicy + laneName]: 1n },
+        encode(initialLane),
       );
       connectionUtxo = seed(address, {
         [connectionPolicy + connectionName]: 1n,
       }, encode(connection));
-      references = [proofScript, pruneScript, channelScript].map((script) =>
-        seed(address, {}, Data.void(), script)
+      configuration = seed(
+        address,
+        { [configPolicy + configName]: 1n },
+        encode(
+          record(
+            statePolicy,
+            batchPolicy,
+            getAddressDetails(guardAddress).paymentCredential!.hash,
+            16n,
+            channelHash,
+            hostPolicy,
+          ),
+        ),
       );
+      references = [proofScript, pruneScript, batchScript, guardScript].map((
+        script,
+      ) => seed(address, {}, Data.void(), script));
     },
-    publicLeaves(tree: DeploymentIbcTree) {
-      const datum = Data.from(channel.datum!) as Constr<Data>;
-      const state = datum.fields[0] as Constr<Data>;
-      const receipts = state.fields[5] as Map<bigint, string>;
-      const acknowledgements = state.fields[6] as Map<bigint, string>;
-      if (receipts.has(1n)) tree.set(receiptKey, encode(receipts.get(1n)!));
-      if (acknowledgements.has(1n)) {
-        tree.set(acknowledgementKey, encode(acknowledgements.get(1n)!));
-      }
+    publicLeaves(_tree: DeploymentIbcTree) {
+      // Packet commitments live in the lane root, outside the HostState tree.
     },
     async assertPruned() {
-      const live = await lucid.utxoByUnit(channelPolicy + channelName);
-      assert(live.txHash !== channel.txHash);
-      const datum = Data.from(live.datum!) as Constr<Data>;
-      const state = datum.fields[0] as Constr<Data>;
-      assertEquals((state.fields[5] as Map<bigint, string>).size, 0);
-      assertEquals((state.fields[6] as Map<bigint, string>).size, 0);
-      assertEquals(state.fields[7], h(2n));
-      assertEquals(state.fields[8], h(1n));
+      const live = await lucid.utxoByUnit(statePolicy + laneName);
+      assert(live.txHash !== lane.txHash);
+      const state = Data.from(live.datum!) as Constr<Data>;
+      assertEquals(state.fields[7], []);
+      assertEquals((state.fields[8] as Map<bigint, string>).size, 0);
+      assertEquals(state.fields[9], h(2n));
+      assertEquals(state.fields[10], h(1n));
+      assertEquals(
+        (await lucid.utxoByUnit(channelPolicy + channelName)).txHash,
+        channel.txHash,
+      );
     },
     async prune(
       client: UTxO,
       host: UTxO,
-      hostReference: UTxO,
-      tree: DeploymentIbcTree,
+      _hostReference: UTxO,
+      _tree: DeploymentIbcTree,
       witness: ConsensusHistoryWitness,
       now: number,
     ) {
-      const hostDatum = Data.from(host.datum!, HostStateDatum);
-      const clientDatum = Data.from(client.datum!) as Constr<Data>;
-      const clientState = (clientDatum.fields[0] as Constr<Data>).fields[0];
-      const record = recordToConstr(witness.record);
-      const proofHeight = record.fields[1];
-      const receiptSiblings = await tree.getSiblings(receiptKey);
-      tree.set(receiptKey, "");
-      const ackSiblings = await tree.getSiblings(acknowledgementKey);
-      tree.set(acknowledgementKey, "");
-      const nextChannel = new Constr(0, [
-        new Constr(0, [
-          channelEnd,
-          1n,
-          1n,
-          1n,
-          new Map(),
-          new Map(),
-          new Map(),
-          proofHeight,
-          h(1n),
-        ]),
-        fromText("transfer"),
-        channelToken,
-      ]);
-      const nextHost: HostStateDatum = {
-        ...hostDatum,
-        state: {
-          ...hostDatum.state,
-          version: hostDatum.state.version + 1n,
-          ibc_state_root: await tree.getRoot(),
+      const historical = recordToConstr(witness.record);
+      const deployment: PacketLaneDeployment = {
+        operations: {
+          prune: { policy: prunePolicy, reference: references[1] },
         },
-      };
-      const proofRedeemer = new Constr(0, [
-        new Constr(1, [
-          clientState,
-          record.fields[2],
-          proofHeight,
-          record.fields[3],
-          record.fields[4],
-          0n,
-          0n,
-          absenceProof,
-          new Constr(0, [[fromText("ibc"), commitmentKey]]),
-        ]),
-        new Constr(0, [new Constr(0, [record, witness.siblings])]),
-      ]);
-      const completed = await lucid.newTx().readFrom([
-        connectionUtxo,
+        proofVerifier: { policy: proofPolicy, reference: references[0] },
+        batchPolicy,
+        batchAddress,
+        guardAddress,
+        statePolicy,
+        laneCount: 16,
+        historyWitness: record(historical, witness.siblings),
+        channel,
+        connection: connectionUtxo,
         client,
-        hostReference,
-        ...references,
-      ])
-        .collectFrom(
-          [channel],
-          encode(new Constr(8, [1n, absenceProof, proofHeight])),
-        )
-        .collectFrom(
-          [host],
-          Data.to(
-            {
-              HandlePacket: {
-                channel_siblings: [],
-                next_sequence_send_siblings: [],
-                next_sequence_recv_siblings: [],
-                next_sequence_ack_siblings: [],
-                packet_commitment_siblings: [],
-                packet_receipt_siblings: receiptSiblings,
-                packet_acknowledgement_siblings: ackSiblings,
-              },
-            },
-            HostStateRedeemer,
-            { canonical: true },
-          ),
-        )
-        .mintAssets({ [prunePolicy]: 1n }, encode(channelToken))
-        .mintAssets({ [proofPolicy]: 1n }, encode(proofRedeemer))
-        .pay.ToContract(channelAddress, {
-          kind: "inline",
-          value: encode(nextChannel),
-        }, channel.assets)
-        .pay.ToContract(host.address, {
-          kind: "inline",
-          value: Data.to(nextHost, HostStateDatum, { canonical: true }),
-        }, host.assets)
-        .validFrom(now).validTo(now + 30_000).complete({ localUPLCEval: true });
+        scripts: [configuration, references[2], references[3]],
+      };
+      const result = await buildPacketPrune(
+        lucid,
+        deployment,
+        1n,
+        historical.fields[1] as Constr<Data>,
+        absenceProof,
+        now,
+        now + 30_000,
+      );
+      const completed = await result.tx.complete({ localUPLCEval: true });
       const signed = await completed.sign.withWallet().complete();
       const units = CML.compute_total_ex_units(
         signed.toTransaction().witness_set().redeemers()!,
@@ -278,8 +295,12 @@ export async function historyPacketFixture(
         `historical packet uses ${units.steps()} steps`,
       );
       assertEquals(await signed.submit(), signed.toHash());
+      assertEquals(
+        (await lucid.utxoByUnit(hostPolicy + hostName)).txHash,
+        host.txHash,
+      );
       return {
-        operation: "packet pruning with recovered old consensus state",
+        operation: "lane pruning with recovered old consensus state",
         bytes,
         memory: Number(units.mem()),
         steps: Number(units.steps()),

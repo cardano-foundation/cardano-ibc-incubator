@@ -1,3 +1,4 @@
+import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -206,6 +207,7 @@ describe('QueryService IBC header strictness regressions', () => {
       {} as DenomTraceService,
       {} as any,
       createTestTreeStore(),
+      createPacketStateMock() as any,
     );
   });
 
