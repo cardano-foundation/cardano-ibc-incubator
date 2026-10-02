@@ -21,3 +21,11 @@ Deno.test("funded shutdown rejects dependency cleanup after grace until settleme
     settleAfterGrace: true,
   });
 });
+
+Deno.test("shutdown keeps voucher returns and refunds available until complete reclamation", async () => {
+  await checkShutdownDrain({
+    mode: "voucher",
+    amount: 7_000_000n,
+    graceDays: 1,
+  });
+});

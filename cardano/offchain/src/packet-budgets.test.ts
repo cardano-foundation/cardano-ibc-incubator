@@ -1,4 +1,4 @@
-import { assert } from "@std/assert";
+import { assert, assertRejects } from "@std/assert";
 import { CML } from "@lucid-evolution/lucid";
 import { sendPacketFixture } from "./testing/send-budget-fixture.ts";
 import {
@@ -8,10 +8,6 @@ import {
 import { channelActions, channelFixture } from "./testing/channel-fixture.ts";
 
 const scenarios = [
-  {
-    name: "First native SendPacket creates escrow at 64 commitments",
-    build: sendPacketFixture,
-  },
   ...[false, true].flatMap((ordered) => [
     {
       name: `PrunePacketHistory ${
@@ -61,3 +57,8 @@ for (const { name, build } of scenarios) {
     emulator.awaitBlock();
   });
 }
+
+Deno.test("transfer channels reject the former singleton SendPacket path", async () => {
+  const { tx } = await sendPacketFixture();
+  await assertRejects(() => tx.complete({ localUPLCEval: true }), Error);
+});

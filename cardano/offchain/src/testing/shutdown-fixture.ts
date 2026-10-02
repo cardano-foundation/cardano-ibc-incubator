@@ -167,6 +167,7 @@ export async function shutdownFixture(
     mintPort.scriptHash,
     hash("55"),
     hostPolicy,
+    hash("ba"),
   );
   const spendChannel = {
     title: "spending_channel.spend_channel.spend",
@@ -211,6 +212,7 @@ export async function shutdownFixture(
     voucherMetadata.scriptHash,
     mintChannelStt.scriptHash,
     hostPolicy,
+    { policy_id: hostPolicy, name: fromText("ibc_packet_config") },
   ]);
   const mintTransferEscrowShard = validator(
     "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint",
@@ -363,12 +365,12 @@ export async function shutdownFixture(
   );
   const channel = seed(
     spendChannel.address,
-    stateValue(mintChannelStt.scriptHash, "10"),
+    stateValue(mintChannelStt.scriptHash, "10".repeat(24) + "30"),
     encode(
       record(
         channelState,
         fromText("transfer"),
-        token(mintChannelStt.scriptHash, "10"),
+        token(mintChannelStt.scriptHash, "10".repeat(24) + "30"),
       ),
     ),
   );
@@ -478,7 +480,24 @@ export async function shutdownFixture(
     return completed.toTransaction().body();
   }
   await submit(lucid.newTx().register.Stake(recoverClient.address));
+  const packetReferences = [
+    seed(
+      referenceAccount.address,
+      {
+        lovelace: 5_000_000n,
+        [hash("ba") + fromText("ibc_packet_config")]: 1n,
+      },
+      encode(
+        record(hash("bb"), hash("bc"), hash("bd"), 16n, hash("be"), hostPolicy),
+      ),
+    ),
+    seed(referenceAccount.address, {
+      lovelace: 5_000_000n,
+      [hash("bb") + fromText("ibc_packet_registry")]: 1n,
+    }, encode(record(0n))),
+  ];
   return {
+    packetReferences,
     lucid,
     emulator,
     account,

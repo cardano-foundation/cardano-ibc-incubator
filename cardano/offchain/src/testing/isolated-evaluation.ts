@@ -26,7 +26,11 @@ const isolated = new WeakSet<Provider>();
 // Repeated rejected evaluations can exhaust the WASM evaluator within a long
 // history. Keep the ledger in the history worker but discard the evaluator's
 // entire runtime after each call, including failures.
-export function isolateEvaluation(lucid: LucidEvolution, emulator: Emulator) {
+export function isolateEvaluation(
+  lucid: LucidEvolution,
+  emulator: Emulator,
+  evaluationCostModels?: Uint8Array,
+) {
   const config = lucid.config();
   if (
     config.provider !== emulator || !config.costModels ||
@@ -83,7 +87,8 @@ export function isolateEvaluation(lucid: LucidEvolution, emulator: Emulator) {
             tx,
             utxos,
             protocolParameters: config.protocolParameters!,
-            costModels: config.costModels!.to_cbor_bytes(),
+            costModels: evaluationCostModels ??
+              config.costModels!.to_cbor_bytes(),
             network: config.network!,
             slotConfig,
           } satisfies EvaluationRequest,
