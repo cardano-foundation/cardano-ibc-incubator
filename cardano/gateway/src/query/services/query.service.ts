@@ -643,7 +643,7 @@ export class QueryService {
       //
       // This is a safety property: even if the transaction body has multiple outputs, the counterparty
       // only accepts the output that carries this NFT.
-      packet_lane_policy_id: Buffer.from(this.configService.get('deployment').packetState!.state.scriptHash, 'hex'),
+      packet_lane_policy_id: Buffer.from(this.configService.get('deployment').packetState.state.scriptHash, 'hex'),
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
     } as unknown as ClientStateMithril;
@@ -754,7 +754,7 @@ export class QueryService {
         nanos: 0,
       },
       upgrade_path: [],
-      packet_lane_policy_id: Buffer.from(this.configService.get('deployment').packetState!.state.scriptHash, 'hex'),
+      packet_lane_policy_id: Buffer.from(this.configService.get('deployment').packetState.state.scriptHash, 'hex'),
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
       // epoch_contexts is the canonical verification source, but the current
@@ -786,7 +786,7 @@ export class QueryService {
     };
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
-      packet_state_snapshot: await this.packetState!.snapshot(stabilityEvidence.anchorHeight),
+      packet_state_snapshot: await this.packetState.snapshot(stabilityEvidence.anchorHeight),
       timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,
       accepted_block_hash: stabilityEvidence.anchorBlock.hash,
@@ -1268,13 +1268,13 @@ export class QueryService {
         const laneTxHashes = [
           ...new Set(
             utxosInBlock
-              .filter((u) => u.assetsPolicy === deploymentConfig.packetState!.state.scriptHash)
+              .filter((u) => u.assetsPolicy === deploymentConfig.packetState.state.scriptHash)
               .map((u) => u.txHash),
           ),
         ];
         const laneEvents = await Promise.all(
           laneTxHashes.map(
-            async (txHash) => ({ code: 0, events: await this.packetState!.events(txHash) }) as ResponseDeliverTx,
+            async (txHash) => ({ code: 0, events: await this.packetState.events(txHash) }) as ResponseDeliverTx,
           ),
         );
         const eventInBlock = [...txsClientResults, ...txsResults, ...laneEvents, ...spoEvents];
@@ -1752,12 +1752,12 @@ export class QueryService {
     context: { hostStateNFT: AuthToken; mintChannelScriptHash: string },
   ): Promise<IndexedPacketEvent[]> {
     const packetEvents: IndexedPacketEvent[] = [];
-    const statePolicy = this.configService.get('deployment').packetState!.state.scriptHash;
+    const statePolicy = this.configService.get('deployment').packetState.state.scriptHash;
     const seen = new Set<string>();
     for (const utxo of utxos) {
       if (utxo.assetsPolicy !== statePolicy || seen.has(utxo.txHash)) continue;
       seen.add(utxo.txHash);
-      for (const event of await this.packetState!.events(utxo.txHash)) {
+      for (const event of await this.packetState.events(utxo.txHash)) {
         const mapped = this.mapPacketEvent(utxo.txHash, utxo.blockNo, event as Event);
         if (mapped) packetEvents.push(mapped);
       }
@@ -1896,7 +1896,7 @@ export class QueryService {
       }
     }
 
-    const packetConfig = this.configService.get('deployment').packetState!;
+    const packetConfig = this.configService.get('deployment').packetState;
     for (const channel of candidateChannelIds) {
       const lane = packetLane('transfer', channel, BigInt(query.sequence), packetConfig.laneCount);
       const rows = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(

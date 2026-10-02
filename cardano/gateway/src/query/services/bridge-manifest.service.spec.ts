@@ -23,7 +23,7 @@ function manifest(): BridgeManifest {
   });
 
   return {
-    schema_version: 4,
+    schema_version: 5,
     packet_state: {
       format: 'packet-lanes-v1',
       lane_count: 16,

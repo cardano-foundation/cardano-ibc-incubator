@@ -51,6 +51,34 @@ class ProfileTests(unittest.TestCase):
             faucet.assert_not_called()
             self.assertEqual(recipient_queries, 2)
 
+    def test_funding_resubmits_the_same_body_after_startup_rollback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            recipient_queries = 0
+
+            def cli(*args):
+                nonlocal recipient_queries
+                if args[:2] == ("address", "build"):
+                    return "source-address"
+                if args[:2] == ("query", "utxo"):
+                    if args[3] == "source-address":
+                        return json.dumps({"source#0": {"value": {"lovelace": 100_000_000}}})
+                    recipient_queries += 1
+                    return json.dumps({"funding-tx#0": {"value": {"lovelace": 10_000_000}}}) if recipient_queries == 4 else "{}"
+                if args[:3] == ("conway", "transaction", "txid"):
+                    return "funding-tx"
+                return ""
+
+            with patch.object(runtime, "compose"), patch.object(runtime, "cli", side_effect=cli) as query, \
+                    patch("profile.time.sleep"):
+                runtime.fund("recipient-address", 10_000_000)
+            calls = [call.args for call in query.call_args_list]
+            submissions = [call for call in calls if call[:3] == ("conway", "transaction", "submit")]
+            self.assertEqual(len(submissions), 3)
+            self.assertTrue(all(call == submissions[0] for call in submissions))
+            self.assertEqual(sum(call[:3] == ("conway", "transaction", "build") for call in calls), 1)
+            self.assertEqual(sum(call[:3] == ("conway", "transaction", "sign") for call in calls), 1)
+
     def test_funding_does_not_submit_without_enough_confirmed_native_funds(self):
         with tempfile.TemporaryDirectory() as folder:
             runtime = Runtime(Path(folder))

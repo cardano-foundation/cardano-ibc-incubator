@@ -1,5 +1,8 @@
 'use client';
 
+import { CardanoIntentProgress } from '@/components/CardanoIntentProgress';
+import type { FundedIntent } from '@/utils/cardanoIntent';
+
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -59,6 +62,7 @@ type EstimateFeeType = {
   display: boolean;
   canEst: boolean;
   msgs: any[];
+  intentChannel?: string;
   estReceiveAmount: string;
   estMinimumReceived: string;
   estTime: string;
@@ -84,6 +88,7 @@ const SwapContainer = () => {
 
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
   const [lastTxHash, setLastTxHash] = useState<string>('');
+  const [fundedIntent, setFundedIntent] = useState<FundedIntent>();
   const [isSubmitSwap, setIsSubmitSwap] = useState<boolean>(false);
   const [errorAddressMsg, setErrorAddressMsg] = useState<string>('');
   const [isEstimating, setIsEstimating] = useState<boolean>(false);
@@ -115,6 +120,8 @@ const SwapContainer = () => {
   const resetLastTxData = () => {
     setEstimateData(initEstData);
     setLastTxHash('');
+    setFundedIntent(undefined);
+    localStorage.removeItem('ibc-swap:funded-swap');
     handleResetData();
   };
 
@@ -166,6 +173,21 @@ const SwapContainer = () => {
     });
   };
 
+  useEffect(() => {
+    try {
+      const intent = JSON.parse(
+        localStorage.getItem('ibc-swap:funded-swap') || 'null',
+      ) as FundedIntent | null;
+      if (intent && intent.signer === cardanoAddress) {
+        setFundedIntent(intent);
+        setLastTxHash(intent.hash);
+        setIsSubmitSwap(true);
+      }
+    } catch {
+      /* Ignore malformed browser state. */
+    }
+  }, [cardanoAddress]);
+
   const handleSwap = async () => {
     if (!estimateMatches || !cardanoWallet?.signTx) {
       return;
@@ -175,6 +197,13 @@ const SwapContainer = () => {
       const signedTx = await cardanoWallet.signTx(estData.msgs[0], true);
       const txHash = await cardanoWallet.submitTx(signedTx);
       if (txHash) {
+        const intent = {
+          hash: txHash,
+          channel: estData.intentChannel!,
+          signer: cardanoAddress!,
+        };
+        localStorage.setItem('ibc-swap:funded-swap', JSON.stringify(intent));
+        setFundedIntent(intent);
         setLastTxHash(txHash);
         setIsSubmitSwap(true);
       }
@@ -280,6 +309,7 @@ const SwapContainer = () => {
           display: true,
           canEst: true,
           msgs: [unsignedTx],
+          intentChannel: msg[0].intentChannel,
           estFee: `${formatPrice(estFee)} lovelace`,
           estTime: '~2 mins',
         };
@@ -348,6 +378,15 @@ const SwapContainer = () => {
           exit={{ opacity: 0, y: -12 }}
           transition={{ duration: 0.2 }}
         >
+          {fundedIntent && (
+            <CardanoIntentProgress
+              intent={fundedIntent}
+              onStatus={(status) => {
+                if (status.stage === 'sent' && status.packetTxHash)
+                  setLastTxHash(status.packetTxHash);
+              }}
+            />
+          )}
           <SwapResult
             setIsSubmitted={setIsSubmitSwap}
             minimumReceived={estData.estMinimumReceived || ''}

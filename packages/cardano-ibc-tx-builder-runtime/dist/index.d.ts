@@ -47,6 +47,9 @@ type DeploymentTraceRegistry = {
     };
 };
 type DeploymentConfig = {
+    packetState?: {
+        guardAddress: string;
+    };
     deploymentMode?: 'upgradeable' | 'legacy';
     migration?: MigrationRuntimeConfig;
     deployedAt: string;
@@ -77,6 +80,12 @@ type DeploymentConfig = {
     traceRegistry?: DeploymentTraceRegistry;
 };
 type BridgeManifest = {
+    packet_state?: {
+        format: string;
+        guard: {
+            address: string;
+        };
+    };
     deploymentMode?: 'upgradeable' | 'legacy';
     migration?: MigrationRuntimeConfig;
     schema_version: number;
@@ -325,6 +334,7 @@ type WalletUtxoInput = {
     scriptRef?: unknown;
 };
 type LocalUnsignedTransferResponse = {
+    intentChannel: string;
     result: number;
     unsignedTx: {
         type_url: string;
