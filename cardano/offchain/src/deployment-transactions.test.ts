@@ -273,6 +273,7 @@ Deno.test("HostState bootstrap evaluates and fits with inline policy, datum and 
   };
   const encodedDatum = Data.to(datum, HostStateDatum, { canonical: true });
   const completed = await buildHostStateBootstrapTx(lucid, {
+    packetPlan: plan,
     nonceUtxo,
     mintingPolicy: plan.hostNft.script,
     hostStateNftUnit,
@@ -286,8 +287,14 @@ Deno.test("HostState bootstrap evaluates and fits with inline policy, datum and 
   assertSignedTransactionFits(signed, "MintHostStateNFT");
   const transaction = signed.toTransaction();
   const scripts = transaction.witness_set().plutus_v3_scripts();
-  assertEquals(scripts?.len(), 1);
-  assertEquals(scripts!.get(0).hash().to_hex(), plan.hostNft.hash);
+  assertEquals(scripts?.len(), 3);
+  assertEquals(
+    Array.from(
+      { length: scripts!.len() },
+      (_, i) => scripts!.get(i).hash().to_hex(),
+    ).sort(),
+    [plan.hostNft.hash, plan.packetConfig.hash, plan.packetState.hash].sort(),
+  );
   assertEquals(transaction.body().reference_inputs()?.len() ?? 0, 0);
   assertEquals(await signed.submit(), signed.toHash());
   emulator.awaitBlock();

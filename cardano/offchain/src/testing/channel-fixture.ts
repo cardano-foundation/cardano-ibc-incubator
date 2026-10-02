@@ -9,6 +9,7 @@ import {
   Lucid,
   PROTOCOL_PARAMETERS_DEFAULT,
   type Script,
+  SLOT_CONFIG_NETWORK,
   toHex,
   type UTxO,
   validatorToRewardAddress,
@@ -232,6 +233,7 @@ export async function channelFixture(
   action: ChannelAction,
   parameters: ChannelParameters = defaultChannelParameters,
   mutation: ChannelMutation = "none",
+  clock?: { time: number; slot: number },
 ) {
   const PORT = parameters.port;
   const CHANNEL = `channel-${parameters.channelSequence}`;
@@ -253,6 +255,17 @@ export async function channelFixture(
   const lucid = await Lucid(emulator, "Custom", {
     evaluator: createCardanoScalusEvaluator(),
   });
+  if (clock) {
+    emulator.time = clock.time;
+    emulator.slot = clock.slot;
+  }
+  if (clock) {
+    SLOT_CONFIG_NETWORK.Custom = {
+      zeroTime: clock.time - clock.slot * 1_000,
+      zeroSlot: 0,
+      slotLength: 1_000,
+    };
+  }
   lucid.selectWallet.fromSeed(account.seedPhrase);
   const now = emulator.now();
   const clientPolicy = hash("11");
