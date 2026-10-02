@@ -99,6 +99,9 @@ func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
 }
 
 func (cs ClientState) Validate() error {
+	if len(cs.PacketLanePolicyId) != 28 {
+		return fmt.Errorf("packet lane policy must be configured for this deployment")
+	}
 	if strings.TrimSpace(cs.ChainId) == "" {
 		return errorsmod.Wrap(ErrInvalidChainID, "chain id cannot be empty string")
 	}
@@ -222,6 +225,9 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	if !ok {
 		return errorsmod.Wrapf(clienttypes.ErrInvalidConsensus, "invalid initial consensus state. expected type: %T, got: %T", &ConsensusState{}, consState)
 	}
+	if err := validateConsensusPacketSnapshot(consensusState, cs.LatestHeight.RevisionHeight); err != nil {
+		return err
+	}
 	if err := cs.initializeCheckpoint(consensusState); err != nil {
 		return err
 	}
@@ -288,6 +294,9 @@ func (cs ClientState) VerifyMembership(
 	if err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
 	}
+	if isPacketStateKey(key) {
+		return verifyPacketMembership(consState, height.GetRevisionHeight(), key, value, proof)
+	}
 	if err := VerifyIbcStateMembership(consState.IbcStateRoot, key, value, proof); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
 	}
@@ -314,6 +323,9 @@ func (cs ClientState) VerifyNonMembership(
 	key, err := ibcStateKeyFromPath(path)
 	if err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
+	}
+	if isPacketStateKey(key) {
+		return verifyPacketNonMembership(consState, height.GetRevisionHeight(), key, proof)
 	}
 	if err := VerifyIbcStateNonMembership(consState.IbcStateRoot, key, proof); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())

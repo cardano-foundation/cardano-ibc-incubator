@@ -57,7 +57,7 @@ func (h ProbabilisticHeader) ValidateBasic() error {
 	if h.AnchorBlock.Hash == "" {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block hash cannot be empty")
 	}
-	if err := validateProbabilisticBlockWitness(h.AnchorBlock, "anchor", !h.IsCheckpoint); err != nil {
+	if err := validateProbabilisticBlockWitness(h.AnchorBlock, "anchor", true); err != nil {
 		return err
 	}
 	if h.TrustedHeight.RevisionHeight >= h.AnchorBlock.Height.RevisionHeight {
@@ -72,8 +72,6 @@ func (h ProbabilisticHeader) ValidateBasic() error {
 		if h.HostStateTxHash != "" || h.HostStateTxOutputIndex != 0 {
 			return errorsmod.Wrap(ErrInvalidHostStateCommitment, "checkpoint header must not contain HostState transaction fields")
 		}
-	} else if h.HostStateTxHash == "" {
-		return errorsmod.Wrap(ErrInvalidHostStateCommitment, "root-bearing header must contain a HostState transaction hash")
 	}
 	if h.NewEpochContext != nil {
 		if err := validateEpochContext(h.NewEpochContext); err != nil {
@@ -84,7 +82,7 @@ func (h ProbabilisticHeader) ValidateBasic() error {
 		if block == nil {
 			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "bridge block cannot be nil")
 		}
-		if err := validateProbabilisticBlockWitness(block, "bridge", false); err != nil {
+		if err := validateProbabilisticBlockWitness(block, "bridge", true); err != nil {
 			return err
 		}
 	}

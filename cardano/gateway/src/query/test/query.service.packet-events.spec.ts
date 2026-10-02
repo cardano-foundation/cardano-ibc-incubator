@@ -1,3 +1,4 @@
+import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -63,6 +64,7 @@ describe('QueryService packet event queries', () => {
         if (key !== 'deployment') return undefined;
         return {
           hostStateNFT,
+          packetState: { state: { scriptHash: 'lane-policy' }, laneCount: 16 },
           validators: {
             mintChannelStt: {
               scriptHash: mintChannelScriptHash,
@@ -75,7 +77,7 @@ describe('QueryService packet event queries', () => {
     historyServiceMock = {
       findTxByHash: jest.fn(),
       findUtxosByBlockNo: jest.fn(),
-      findUtxosByPolicyIdAndPrefixTokenName: jest.fn(),
+      findUtxosByPolicyIdAndPrefixTokenName: jest.fn().mockResolvedValue([]),
     };
 
     lucidServiceMock = {
@@ -93,6 +95,7 @@ describe('QueryService packet event queries', () => {
       {} as DenomTraceService,
       {} as IbcTreeCacheService,
       createTestTreeStore(),
+      createPacketStateMock() as any,
     );
   });
 

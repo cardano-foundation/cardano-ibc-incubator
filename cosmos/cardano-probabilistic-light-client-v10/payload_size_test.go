@@ -36,8 +36,8 @@ func TestProbabilisticHeaderPayloadSizeRegression(t *testing.T) {
 			name:                   "bounded checkpoint",
 			checkpoint:             true,
 			wantBlocks:             57,
-			wantCompactBytes:       54_442,
-			minimumReductionFactor: 15,
+			wantCompactBytes:       618_247,
+			minimumReductionFactor: 1,
 		},
 	}
 
@@ -125,7 +125,7 @@ func newPayloadTestHeader(checkpoint bool, compact bool) *ProbabilisticHeader {
 	if checkpoint {
 		header.BridgeBlocks = make([]*ProbabilisticBlock, 0, payloadTestCheckpointBridgeBlocks)
 		for range payloadTestCheckpointBridgeBlocks {
-			header.BridgeBlocks = append(header.BridgeBlocks, newPayloadTestBlock(nextHeight, compact))
+			header.BridgeBlocks = append(header.BridgeBlocks, newPayloadTestBlock(nextHeight, false))
 			nextHeight++
 		}
 	} else {
@@ -133,9 +133,8 @@ func newPayloadTestHeader(checkpoint bool, compact bool) *ProbabilisticHeader {
 		header.HostStateTxOutputIndex = 1
 	}
 
-	// Root-bearing anchors need their transaction body, while a rootless
-	// checkpoint anchor can be authenticated from its signed header alone.
-	header.AnchorBlock = newPayloadTestBlock(nextHeight, checkpoint && compact)
+	// Every checkpoint carries full bridge and anchor bodies to track lanes.
+	header.AnchorBlock = newPayloadTestBlock(nextHeight, false)
 	nextHeight++
 	header.DescendantBlocks = make([]*ProbabilisticBlock, 0, payloadTestDescendantBlocks)
 	for range payloadTestDescendantBlocks {
@@ -213,7 +212,7 @@ func assertPayloadTestShape(
 	}
 
 	for i, block := range blocks {
-		wantHeader := compact && (checkpoint || block != header.AnchorBlock)
+		wantHeader := compact && i > len(header.BridgeBlocks)
 		if wantHeader {
 			if got := len(block.HeaderCbor); got != payloadTestHeaderCBORBytes {
 				t.Fatalf("block %d header_cbor size = %d, want %d", i, got, payloadTestHeaderCBORBytes)
