@@ -1204,8 +1204,17 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check v8/v10 parity
-        run: node scripts/ci/check-light-client-parity.mjs
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: cosmos/cardano-probabilistic-light-client-core/go.mod
+          cache: false
+
+      - name: Check v8/v10 parity and adapter boundaries
+        run: |
+          node scripts/ci/generate-light-client-models.mjs --check
+          node scripts/ci/check-light-client-parity.mjs
+          node --test scripts/ci/check-light-client-parity.test.mjs
 
   rust:
     name: Rust
