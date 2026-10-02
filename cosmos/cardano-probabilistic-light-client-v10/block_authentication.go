@@ -65,7 +65,7 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 
 	bridgeBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.BridgeBlocks))
 	for _, block := range header.BridgeBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts, counters, false)
+		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts, counters, true)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -77,7 +77,7 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 		"anchor",
 		epochContexts,
 		counters,
-		!header.IsCheckpoint,
+		true,
 	)
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 		descendantBlocks = append(descendantBlocks, authenticatedBlock)
 	}
 
-	if !header.IsCheckpoint {
+	if header.HostStateTxHash != "" {
 		if err := verifyHostStateTxIncludedInAnchorBlock(header); err != nil {
 			return nil, err
 		}

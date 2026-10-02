@@ -4,7 +4,7 @@ package ibc.lightclients.probabilistic.v1;
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/proto-types/ibc/lightclients/probabilistic/v1";
+option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10;probabilistic";
 
 message Height {
   option (gogoproto.goproto_getters) = false;
@@ -88,6 +88,8 @@ message ClientState {
   // consensus state.
   uint64 latest_checkpoint_slot = 28;
   uint64 latest_checkpoint_timestamp = 29;
+  // Required deployment policy for packet lane identities.
+  bytes packet_lane_policy_id = 30;
 }
 
 message ConsensusState {
@@ -100,6 +102,8 @@ message ConsensusState {
   uint64 unique_pools_count = 5;
   uint64 unique_stake_bps = 6;
   uint64 security_score_bps = 7;
+  // Canonical CBOR snapshot of live host and lane outputs at this height.
+  bytes packet_state_snapshot = 8;
 }
 
 message Misbehaviour {

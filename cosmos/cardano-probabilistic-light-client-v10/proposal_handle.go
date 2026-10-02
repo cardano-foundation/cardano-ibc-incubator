@@ -2,6 +2,7 @@ package probabilistic
 
 import (
 	"bytes"
+	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"reflect"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 )
 
 type recoveryInvariantClientState struct {
+	PacketLanePolicyId               []byte
 	UpgradePath                      []string
 	HostStateNftPolicyId             []byte
 	HostStateNftTokenName            []byte
@@ -100,6 +102,18 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 			"substitute checkpoint cursor does not match its latest consensus state",
 		)
 	}
+	if err := validateConsensusPacketSnapshot(consensusState, height.RevisionHeight); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
+	checkpointSnapshot := substituteClientStore.Get(packetSnapshotKey(substituteCheckpointHeight.RevisionHeight))
+	if substituteCheckpointHeight.EQ(height) {
+		checkpointSnapshot = consensusState.PacketStateSnapshot
+	}
+	tracked, err := probabilisticcore.DecodePacketStateSnapshot(checkpointSnapshot)
+	if err != nil || tracked.Height != substituteCheckpointHeight.RevisionHeight ||
+		!strings.EqualFold(tracked.BlockHash, substituteClientState.LatestCheckpointBlockHash) && !substituteCheckpointHeight.EQ(height) {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "substitute packet checkpoint is unavailable or inconsistent")
+	}
 	processedHeight, found := GetProcessedHeight(substituteClientStore, height)
 	if !found {
 		return errorsmod.Wrap(clienttypes.ErrUpdateClientFailed, "unable to retrieve processed height for substitute client latest height")
@@ -116,6 +130,7 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	if err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
 	}
+	subjectClientStore.Set(packetSnapshotKey(substituteCheckpointHeight.RevisionHeight), bytes.Clone(checkpointSnapshot))
 	setConsensusState(subjectClientStore, cdc, consensusState, height)
 	setConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)
 	cs.LatestHeight = substituteClientState.LatestHeight
@@ -236,6 +251,7 @@ func IsMatchingClientState(subject, substitute ClientState) bool {
 
 func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 	return recoveryInvariantClientState{
+		PacketLanePolicyId:               bytes.Clone(cs.PacketLanePolicyId),
 		UpgradePath:                      append([]string(nil), cs.UpgradePath...),
 		HostStateNftPolicyId:             bytes.Clone(cs.HostStateNftPolicyId),
 		HostStateNftTokenName:            bytes.Clone(cs.HostStateNftTokenName),
