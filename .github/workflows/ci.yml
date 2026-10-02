@@ -795,9 +795,9 @@ jobs:
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && ((github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_fuzz_changed == 'true') }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
-    # The expanded suite can spend fourteen minutes collecting on hosted
-    # runners. Leave time for execution while keeping every test in this pass.
-    timeout-minutes: 30
+    # Full collection takes over 23 minutes on hosted runners. Leave time for
+    # execution while keeping every unit and property test in this pass.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: cardano/onchain

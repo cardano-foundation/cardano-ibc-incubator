@@ -416,6 +416,7 @@ test transfer_close_confirm_composed_transaction_succeeds() {
     check_marker(f)?,
     check_proof(f)?,
     spending_channel.spend_channel.spend(
+      #"",
       mock.chan_open_ack_policy_id,
       mock.chan_open_confirm_policy_id,
       mock.chan_close_init_policy_id,

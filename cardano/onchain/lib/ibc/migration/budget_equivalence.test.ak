@@ -51,24 +51,24 @@ test migration_budget_equivalence_metadata_runtime(
       [
         builtin.map_data(
           [
-            Pair(builtin.b_data("name"), builtin.b_data("stake")),
-            Pair(builtin.b_data("ticker"), builtin.b_data("stake")),
             Pair(
               builtin.b_data("description"),
               builtin.b_data("IBC voucher for transfer/channel-0/stake"),
             ),
+            Pair(builtin.b_data("name"), builtin.b_data("stake")),
+            Pair(builtin.b_data("ticker"), builtin.b_data("stake")),
           ],
         ),
         builtin.i_data(1),
         builtin.map_data(
           [
-            Pair(builtin.b_data("path"), builtin.b_data("transfer/channel-0")),
             Pair(builtin.b_data("baseDenom"), builtin.b_data("stake")),
             Pair(builtin.b_data("fullDenom"), builtin.b_data(denom)),
             Pair(
               builtin.b_data("ibcDenomHash"),
               builtin.b_data(hex_reference(builtin.sha2_256(denom))),
             ),
+            Pair(builtin.b_data("path"), builtin.b_data("transfer/channel-0")),
             Pair(builtin.b_data("traceVersion"), builtin.i_data(1)),
             Pair(
               builtin.b_data("voucherPolicyId"),
