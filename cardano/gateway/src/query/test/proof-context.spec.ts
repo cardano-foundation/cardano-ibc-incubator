@@ -1,11 +1,16 @@
+import * as stabilityEvidence from '../services/stability-evidence';
 import { Logger } from '@nestjs/common';
 import { BridgeMigrationInProgressError } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
 import { GrpcFailedPreconditionException } from '../../exception/grpc_exceptions';
 import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { ibcTreeCacheIdForRoot } from '../../shared/services/ibc-tree-cache.service';
 import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from '../services/proof-context';
-import { IbcTreeStateStore, StaleIbcTreeStateError, type IbcTreeStateSnapshot } from '../../shared/helpers/ibc-state-root';
-import * as stabilityEvidence from '../services/stability-evidence';
+import {
+  IbcTreeStateStore,
+  StaleIbcTreeStateError,
+  type IbcTreeStateSnapshot,
+} from '../../shared/helpers/ibc-state-root';
+import * as settledHeight from '../services/settled-proof-height';
 import { createTestTreeContext } from '../../shared/testing/ibc-tree-test-store';
 
 function makeTree(seed: string): ICS23MerkleTree {
@@ -39,7 +44,9 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
   const historyService = {
     findBlockByHeight: jest.fn().mockResolvedValue({ height: 123, hash: 'anchor-123' }),
     rebuildIbcStateTreeAtBlock: jest.fn(async () => ({
-      tree: tree.clone(), root, hostState: { txHash: 'historical-host-state', outputIndex: 0 },
+      tree: tree.clone(),
+      root,
+      hostState: { txHash: 'historical-host-state', outputIndex: 0 },
     })),
     findHostStateUtxoAtOrBeforeBlockNo: jest.fn().mockImplementation(async (height: bigint) => ({
       txHash: height === 200n ? 'live-host-state' : 'historical-host-state',
@@ -58,12 +65,14 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
     load: jest.fn().mockResolvedValue(cached ?? null),
   };
   const ibcTreeStore = {
-    getAlignedSnapshot: jest.fn(async (): Promise<IbcTreeStateSnapshot> => ({
-      version: 1,
-      root,
-      tree: tree.clone(),
-      hostState: { txHash: 'live-host-state', outputIndex: 0 },
-    })),
+    getAlignedSnapshot: jest.fn(
+      async (): Promise<IbcTreeStateSnapshot> => ({
+        version: 1,
+        root,
+        tree: tree.clone(),
+        hostState: { txHash: 'live-host-state', outputIndex: 0 },
+      }),
+    ),
   };
 
   return {
@@ -144,33 +153,48 @@ describe('resolveProofContextForQuery', () => {
   it('reports the current migration pause as an actionable RPC precondition failure', async () => {
     const deps = makeDeps(makeTree('moving'));
     deps.mocks.ibcTreeStore.getAlignedSnapshot.mockRejectedValue(new BridgeMigrationInProgressError());
-    await expect(resolveProofContextForQuery({ ...deps, context: 'packet-list' }))
-      .rejects.toThrow(GrpcFailedPreconditionException);
+    await expect(resolveProofContextForQuery({ ...deps, context: 'packet-list' })).rejects.toThrow(
+      GrpcFailedPreconditionException,
+    );
     expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
   });
-  const historical = (deps: ReturnType<typeof makeDeps>) => resolveProofContextForQuery({
-    ...deps, context: 'test', requestedHeight: 123n, lightClientMode: 'mithril', maxAttempts: 1, delayMs: 0,
-  });
+  const historical = (deps: ReturnType<typeof makeDeps>) =>
+    resolveProofContextForQuery({
+      ...deps,
+      context: 'test',
+      requestedHeight: 123n,
+      lightClientMode: 'mithril',
+      maxAttempts: 1,
+      delayMs: 0,
+    });
 
   it.each(['Bridge migration is in progress', 'Stale implementation manifest', 'Current root is not yet accepted'])(
-    'serves an independently accepted historical anchor while the live path rejects: %s', async (reason) => {
+    'serves an independently accepted historical anchor while the live path rejects: %s',
+    async (reason) => {
       const tree = makeTree('before-migration');
       const deps = makeDeps(tree);
       deps.mocks.lucidService.findUtxoAtHostStateNFT.mockRejectedValue(new Error(reason));
       deps.mocks.ibcTreeStore.getAlignedSnapshot.mockRejectedValue(new Error(reason));
-      const acceptance = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      const acceptance = jest
+        .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
         .mockResolvedValue({ anchorHeight: 123n, anchorBlock: { hash: 'anchor-123' } } as never);
       try {
         const context = await resolveProofContextForQuery({
-          ...deps, context: 'historical-settlement', requestedHeight: 123n,
-          lightClientMode: 'stake-weighted-stability', maxAttempts: 1, delayMs: 0,
+          ...deps,
+          context: 'historical-settlement',
+          requestedHeight: 123n,
+          lightClientMode: 'stake-weighted-stability',
+          maxAttempts: 1,
+          delayMs: 0,
         });
         expect(acceptance).toHaveBeenCalledWith(expect.objectContaining({ height: 123n }));
         expect(context.tree.verifyProof(context.tree.generateProof('clients/before-migration/clientState'))).toBe(true);
         expect(context.proofHeight).toBe(123n);
         expect(deps.mocks.lucidService.findUtxoAtHostStateNFT).not.toHaveBeenCalled();
         expect(deps.mocks.ibcTreeStore.getAlignedSnapshot).not.toHaveBeenCalled();
-      } finally { acceptance.mockRestore(); }
+      } finally {
+        acceptance.mockRestore();
+      }
     },
   );
 
@@ -178,48 +202,78 @@ describe('resolveProofContextForQuery', () => {
     const tree = makeTree('old');
     const deps = makeDeps(tree, { tree, root: tree.getRoot() });
     deps.mocks.lucidService.findUtxoAtHostStateNFT.mockRejectedValue(new Error('Bridge migration is in progress'));
-    const acceptance = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+    const acceptance = jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
       .mockRejectedValue(new Error('stability thresholds not met at requested height'));
     try {
-      await expect(resolveProofContextForQuery({
-        ...deps, context: 'historical-settlement', requestedHeight: 123n,
-        lightClientMode: 'stake-weighted-stability', maxAttempts: 1, delayMs: 0,
-      })).rejects.toThrow('stability thresholds not met');
+      await expect(
+        resolveProofContextForQuery({
+          ...deps,
+          context: 'historical-settlement',
+          requestedHeight: 123n,
+          lightClientMode: 'stake-weighted-stability',
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+      ).rejects.toThrow('stability thresholds not met');
       expect(deps.mocks.ibcTreeCacheService.load).not.toHaveBeenCalled();
       expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
-    } finally { acceptance.mockRestore(); }
+    } finally {
+      acceptance.mockRestore();
+    }
   });
 
-  it('rejects a stable block that has no exact HostState transaction for a root-bearing header', async () => {
+  it('proves an unchanged HostState root at a later stable anchor', async () => {
     const tree = makeTree('old');
     const deps = makeDeps(tree, { tree, root: tree.getRoot() });
     deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
-      txHash: 'older-host', outputIndex: 0, blockNo: 122, datum: 'older-datum',
+      txHash: 'older-host',
+      outputIndex: 0,
+      blockNo: 122,
+      datum: 'older-datum',
     });
-    const acceptance = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+    const acceptance = jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
       .mockResolvedValue({ anchorHeight: 123n, anchorBlock: { hash: 'anchor-123' } } as never);
     try {
-      await expect(resolveProofContextForQuery({
-        ...deps, context: 'historical-settlement', requestedHeight: 123n,
-        lightClientMode: 'stake-weighted-stability', maxAttempts: 1, delayMs: 0,
-      })).rejects.toThrow('not a HostState tx block height');
-      expect(deps.mocks.ibcTreeCacheService.load).not.toHaveBeenCalled();
-    } finally { acceptance.mockRestore(); }
+      await expect(
+        resolveProofContextForQuery({
+          ...deps,
+          context: 'historical-settlement',
+          requestedHeight: 123n,
+          lightClientMode: 'stake-weighted-stability',
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+      ).resolves.toMatchObject({ proofHeight: 123n, anchorBlockHash: 'anchor-123' });
+      expect(deps.mocks.ibcTreeCacheService.load).toHaveBeenCalled();
+    } finally {
+      acceptance.mockRestore();
+    }
   });
 
   it('rejects a warm historical cache when its accepted anchor is rolled back during the query', async () => {
     const tree = makeTree('old');
     const deps = makeDeps(tree, { tree, root: tree.getRoot() });
     deps.mocks.historyService.findBlockByHeight.mockResolvedValue({ height: 123, hash: 'replacement-anchor' });
-    const acceptance = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+    const acceptance = jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
       .mockResolvedValue({ anchorHeight: 123n, anchorBlock: { hash: 'anchor-123' } } as never);
     try {
-      await expect(resolveProofContextForQuery({
-        ...deps, context: 'historical-settlement', requestedHeight: 123n,
-        lightClientMode: 'stake-weighted-stability', maxAttempts: 1, delayMs: 0,
-      })).rejects.toThrow('Canonical anchor changed');
+      await expect(
+        resolveProofContextForQuery({
+          ...deps,
+          context: 'historical-settlement',
+          requestedHeight: 123n,
+          lightClientMode: 'stake-weighted-stability',
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+      ).rejects.toThrow('Canonical anchor changed');
       expect(deps.mocks.historyService.rebuildIbcStateTreeAtBlock).not.toHaveBeenCalled();
-    } finally { acceptance.mockRestore(); }
+    } finally {
+      acceptance.mockRestore();
+    }
   });
 
   it('reconstructs a missing snapshot, serves a valid proof and caches only historical aliases', async () => {
@@ -230,7 +284,8 @@ describe('resolveProofContextForQuery', () => {
     expect(context.root).toBe(tree.getRoot());
     expect(deps.mocks.ibcTreeStore.getAlignedSnapshot).not.toHaveBeenCalled();
     expect(deps.mocks.ibcTreeCacheService.saveAliases).toHaveBeenCalledWith(
-      expect.anything(), [ibcTreeCacheIdForRoot(tree.getRoot()), 'host-state:historical-host-state#0'],
+      expect.anything(),
+      [ibcTreeCacheIdForRoot(tree.getRoot()), 'host-state:historical-host-state#0'],
       { txHash: 'historical-host-state', outputIndex: 0 },
     );
     deps.mocks.ibcTreeCacheService.load.mockResolvedValue({ tree: context.tree, root: context.root });
@@ -249,7 +304,8 @@ describe('resolveProofContextForQuery', () => {
   it('rejects a reconstructed tree whose contents disagree with the claimed root', async () => {
     const deps = makeDeps(makeTree('old'));
     deps.mocks.historyService.rebuildIbcStateTreeAtBlock.mockResolvedValue({
-      root: makeTree('old').getRoot(), tree: makeTree('wrong'),
+      root: makeTree('old').getRoot(),
+      tree: makeTree('wrong'),
       hostState: { txHash: 'historical-host-state', outputIndex: 0 },
     });
     await expect(historical(deps)).rejects.toThrow('Reconstructed IBC tree does not match');
@@ -261,7 +317,9 @@ describe('resolveProofContextForQuery', () => {
     const deps = makeDeps(tree);
     deps.mocks.historyService.rebuildIbcStateTreeAtBlock.mockImplementation(async () => {
       deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
-        txHash: 'replacement', outputIndex: 0, datum: 'same-root',
+        txHash: 'replacement',
+        outputIndex: 0,
+        datum: 'same-root',
       });
       return { root: tree.getRoot(), tree, hostState: { txHash: 'historical-host-state', outputIndex: 0 } };
     });
@@ -311,11 +369,15 @@ describe('resolveProofContextForQuery', () => {
     });
 
     const context = await resolveProofContextForQuery({
-      ...deps, context: 'test', requestedHeight: 123n, lightClientMode: 'mithril', maxAttempts: 1, delayMs: 0,
+      ...deps,
+      context: 'test',
+      requestedHeight: 123n,
+      lightClientMode: 'mithril',
+      maxAttempts: 1,
+      delayMs: 0,
     });
     expect(context.root).toBe(expectedTree.getRoot());
     expect(deps.mocks.historyService.rebuildIbcStateTreeAtBlock).toHaveBeenCalledTimes(1);
-
   });
 
   it('rejects requested proof heights newer than the latest accepted proof height', async () => {
@@ -343,19 +405,29 @@ describe('resolveProofContextForQuery', () => {
     await treeContext.restore(firstTree, firstRef);
     const capture = jest.spyOn(treeContext.store, 'getAlignedSnapshot');
     deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
-      ...firstRef, datum: 'first-datum',
+      ...firstRef,
+      datum: 'first-datum',
     });
     let releaseCertification!: () => void;
     let markWaiting!: () => void;
-    const waiting = new Promise<void>((resolve) => { markWaiting = resolve; });
+    const waiting = new Promise<void>((resolve) => {
+      markWaiting = resolve;
+    });
     deps.mocks.mithrilService.getCardanoTransactionsSetSnapshot.mockImplementationOnce(async () => {
       markWaiting();
-      await new Promise<void>((resolve) => { releaseCertification = resolve; });
+      await new Promise<void>((resolve) => {
+        releaseCertification = resolve;
+      });
       return [{ block_number: '200' }];
     });
 
     const pending = resolveProofContextForQuery({
-      ...deps, ibcTreeStore: treeContext.store, context: 'test', lightClientMode: 'mithril', maxAttempts: 1, delayMs: 0,
+      ...deps,
+      ibcTreeStore: treeContext.store,
+      context: 'test',
+      lightClientMode: 'mithril',
+      maxAttempts: 1,
+      delayMs: 0,
     });
     await waiting;
     await treeContext.restore(laterTree, { txHash: 'bb'.repeat(32), outputIndex: 1 });
@@ -379,36 +451,55 @@ describe('resolveProofContextForQuery', () => {
       .mockResolvedValueOnce({ txHash: 'live-host-state', outputIndex: 0, datum: 'first-datum' })
       .mockResolvedValueOnce({ txHash: 'heartbeat', outputIndex: 1, datum: 'same-root-datum' });
 
-    await expect(resolveProofContextForQuery({
-      ...deps, context: 'test', lightClientMode: 'mithril', maxAttempts: 1, delayMs: 0,
-    })).rejects.toThrow(StaleIbcTreeStateError);
+    await expect(
+      resolveProofContextForQuery({
+        ...deps,
+        context: 'test',
+        lightClientMode: 'mithril',
+        maxAttempts: 1,
+        delayMs: 0,
+      }),
+    ).rejects.toThrow(StaleIbcTreeStateError);
   });
 
-  it('binds stability acceptance to the captured HostState transaction', async () => {
+  it('proves the captured HostState at a later settled height without requiring a new HostState output', async () => {
     const tree = makeTree('first');
     const deps = makeDeps(tree);
     deps.mocks.historyService.findBlockByHeight.mockResolvedValue({ height: 200, hash: 'anchor-200' });
-    const acceptance = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceForTxHash')
+    const evidence = jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
       .mockResolvedValue({ anchorHeight: 200n, anchorBlock: { hash: 'anchor-200' } } as never);
+    const acceptance = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(200n);
     try {
       const context = await resolveProofContextForQuery({
-        ...deps, context: 'test', lightClientMode: 'stake-weighted-stability', maxAttempts: 1, delayMs: 0,
+        ...deps,
+        context: 'test',
+        lightClientMode: 'stake-weighted-stability',
+        maxAttempts: 1,
+        delayMs: 0,
       });
-      expect(acceptance).toHaveBeenCalledWith(expect.objectContaining({ txHash: 'live-host-state' }));
+      expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledWith(200n);
       expect(context.tree.getRoot()).toBe(tree.getRoot());
       expect(context.proofHeight).toBe(200n);
       expect(context.anchorBlockHash).toBe('anchor-200');
       expect(deps.mocks.lucidService.findUtxoAtHostStateNFT).not.toHaveBeenCalled();
     } finally {
       acceptance.mockRestore();
+      evidence.mockRestore();
     }
   });
 
   it('rejects an accepted HostState datum whose root differs from the captured tree', async () => {
     const deps = makeDeps(makeTree('first'));
     deps.mocks.lucidService.decodeDatum.mockResolvedValue({ state: { ibc_state_root: makeTree('other').getRoot() } });
-    await expect(resolveProofContextForQuery({
-      ...deps, context: 'test', lightClientMode: 'mithril', maxAttempts: 1, delayMs: 0,
-    })).rejects.toThrow(/does not match the captured tree/);
+    await expect(
+      resolveProofContextForQuery({
+        ...deps,
+        context: 'test',
+        lightClientMode: 'mithril',
+        maxAttempts: 1,
+        delayMs: 0,
+      }),
+    ).rejects.toThrow(/does not match the captured tree/);
   });
 });

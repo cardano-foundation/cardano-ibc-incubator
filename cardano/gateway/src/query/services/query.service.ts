@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
+import { PacketStateService, latestPacketProofHeight } from './packet-state.service';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   QueryClientStateRequest,
@@ -103,19 +104,13 @@ import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@lucid-evolution/lucid';
-import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
-import {
-  decodeMintChannelRedeemer,
-  decodeSpendChannelRedeemer,
-  SpendChannelRedeemer,
-} from '../../shared/types/channel/channel-redeemer';
+import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import {
   decodeMintConnectionRedeemer,
   decodeSpendConnectionRedeemer,
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
-import { Packet } from '@shared/types/channel/packet';
 import {
   decodeMintClientRedeemer,
   findSpendClientRedeemer,
@@ -136,7 +131,6 @@ import type { GatewayEvent } from '../../tx/tx-events.service';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { getNanoseconds } from '../../shared/helpers/time';
 import { operationalCertificatePoolIdBytes } from '../../shared/helpers/ogmios';
 import { doubleToFraction } from '../../shared/helpers/number';
 import {
@@ -153,10 +147,8 @@ import {
 } from '@cardano-ibc/proto-types/build/ibc/applications/transfer/v1/query';
 import { Denom, Hop } from '@cardano-ibc/proto-types/build/ibc/applications/transfer/v1/token';
 import { DenomTraceService } from './denom-trace.service';
-import { convertHex2String } from '@shared/helpers/hex';
 import { HISTORY_SERVICE, HistoryBlock, HistoryService, HistoryTxEvidence } from './history.service';
 import {
-  resolveCurrentLiveHostStateTxHeight,
   assertProofContextHostState,
   resolveProofContextForQuery,
   resolveProofHeightForCurrentRoot,
@@ -170,13 +162,8 @@ import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.servic
 import { ProofQueryOptions } from '../helpers/query-height';
 import { BoundedCache } from '../../shared/helpers/bounded-cache';
 import { MetricsService } from '../../health/metrics.service';
-import { getHeightMapValue } from '../../shared/helpers/verify';
 import { validPagination } from '../helpers/helper';
-import {
-  decodePaginationKey,
-  generatePaginationKey,
-  getPaginationParams,
-} from '../../shared/helpers/pagination';
+import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 
 type ParsedTxRedeemer = {
@@ -221,15 +208,11 @@ type PacketEventQuery = {
   eventType?: string;
 };
 
-const STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS = 40;
-const STABILITY_LATEST_HEIGHT_DELAY_MS = 2_000;
 const MAX_PROTO_UINT64 = (1n << 64n) - 1n;
 export const TX_REDEEMER_CACHE_MAX_ENTRIES = 1024;
 export const TX_REDEEMER_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const TX_REDEEMER_CACHE_METRIC = 'tx_redeemers';
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const consensusHeightKey = (height: Height): string =>
   `${height.revisionNumber.toString()}/${height.revisionHeight.toString()}`;
@@ -242,24 +225,6 @@ const compareConsensusHeights = (left: Height, right: Height): number => {
   return left.revisionHeight < right.revisionHeight ? -1 : 1;
 };
 
-function getPacketFromSpendChannelRedeemer(redeemer: SpendChannelRedeemer): Packet | undefined {
-  if (typeof redeemer === 'string') return undefined;
-  if ('RecvPacket' in redeemer) return redeemer.RecvPacket.packet;
-  if ('AcknowledgePacket' in redeemer) return redeemer.AcknowledgePacket.packet;
-  if ('TimeoutPacket' in redeemer) return redeemer.TimeoutPacket.packet;
-  if ('TimeoutOnClose' in redeemer) return redeemer.TimeoutOnClose.packet;
-  if ('SendPacket' in redeemer) return redeemer.SendPacket.packet;
-  return undefined;
-}
-
-function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes('Target point is too old') ||
-    message.includes('Failed to acquire requested point') ||
-    message.includes('stake-weighted stability currently supports only current-epoch anchors')
-  );
-}
 @Injectable()
 export class QueryService {
   private readonly txEvidenceCache: BoundedCache<string, Promise<HistoryTxEvidence>>;
@@ -275,6 +240,7 @@ export class QueryService {
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
     private readonly ibcTreeStore: IbcTreeStateStore,
+    private readonly packetState: PacketStateService,
     @Optional() @Inject(MetricsService) metricsService?: MetricsService,
   ) {
     this.txEvidenceCache = new BoundedCache({
@@ -408,12 +374,15 @@ export class QueryService {
     const isStagedAction = (decoded: SpendMultitxClientRedeemer): boolean => {
       if (typeof decoded === 'string') return false;
       if ('RecoverClient' in decoded) {
-        return decoded.RecoverClient.substituteToken.policyId.toLowerCase() ===
-          deploymentConfig.validators.mintClientStt?.scriptHash?.toLowerCase();
+        return (
+          decoded.RecoverClient.substituteToken.policyId.toLowerCase() ===
+          deploymentConfig.validators.mintClientStt?.scriptHash?.toLowerCase()
+        );
       }
-      const tokens = 'FinalizeUpdate' in decoded
-        ? [decoded.FinalizeUpdate.sessionToken]
-        : [decoded.FinalizeMisbehaviour.sessionToken1, decoded.FinalizeMisbehaviour.sessionToken2];
+      const tokens =
+        'FinalizeUpdate' in decoded
+          ? [decoded.FinalizeUpdate.sessionToken]
+          : [decoded.FinalizeMisbehaviour.sessionToken1, decoded.FinalizeMisbehaviour.sessionToken2];
       return tokens.every((token) => token.policyId.toLowerCase() === expectedPolicyId.toLowerCase());
     };
 
@@ -478,7 +447,6 @@ export class QueryService {
     clientDatum: ClientDatum,
     sessionToken: AuthToken,
   ): Promise<TendermintHeader> {
-
     const deploymentConfig = this.configService.get('deployment');
     const sessionAddress = deploymentConfig.validators.spendTendermintUpdateSession?.address;
     if (!sessionAddress) {
@@ -516,7 +484,9 @@ export class QueryService {
     const finalInputs = await this.getCanonicalTransactionInputs(clientUtxo.txHash);
     const completeOutputs = decodedOutputs.filter(
       ({ utxo, datum }) =>
-        finalInputs.some((input) => input.txHash === utxo.txHash.toLowerCase() && input.outputIndex === utxo.outputIndex) &&
+        finalInputs.some(
+          (input) => input.txHash === utxo.txHash.toLowerCase() && input.outputIndex === utxo.outputIndex,
+        ) &&
         'Complete' in datum.phase &&
         datum.plan.clientToken.policyId.toLowerCase() === clientDatum.token.policyId.toLowerCase() &&
         datum.plan.clientToken.name.toLowerCase() === clientDatum.token.name.toLowerCase(),
@@ -673,6 +643,7 @@ export class QueryService {
       //
       // This is a safety property: even if the transaction body has multiple outputs, the counterparty
       // only accepts the output that carries this NFT.
+      packet_lane_policy_id: Buffer.from(this.configService.get('deployment').packetState!.state.scriptHash, 'hex'),
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
     } as unknown as ClientStateMithril;
@@ -745,10 +716,7 @@ export class QueryService {
       logger: this.logger,
     });
 
-    const hostStateUtxo = await this.findExactStabilityAnchorHostStateUtxo(
-      stabilityEvidence.anchorHeight,
-      'new client creation',
-    );
+    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(stabilityEvidence.anchorHeight);
     if (!hostStateUtxo?.datum) {
       throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
     }
@@ -786,6 +754,7 @@ export class QueryService {
         nanos: 0,
       },
       upgrade_path: [],
+      packet_lane_policy_id: Buffer.from(this.configService.get('deployment').packetState!.state.scriptHash, 'hex'),
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
       // epoch_contexts is the canonical verification source, but the current
@@ -817,6 +786,7 @@ export class QueryService {
     };
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
+      packet_state_snapshot: await this.packetState!.snapshot(stabilityEvidence.anchorHeight),
       timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,
       accepted_block_hash: stabilityEvidence.anchorBlock.hash,
@@ -838,7 +808,7 @@ export class QueryService {
     };
   }
 
-  async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
+  async latestHeight(_request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
     if (this.getLightClientMode() === 'stake-weighted-stability') {
       return this.latestCertifiedHeight();
     }
@@ -856,42 +826,7 @@ export class QueryService {
   }
 
   async latestCertifiedHeight(): Promise<QueryLatestHeightResponse> {
-    for (let attempt = 0; attempt < STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS; attempt++) {
-      try {
-        const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
-          lucidService: this.lucidService,
-          historyService: this.historyService,
-        });
-        const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
-        const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
-          historyService: this.historyService,
-          height: BigInt(hostStateUtxo.blockNo),
-          logger: this.logger,
-          missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
-        });
-
-        return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
-      } catch (error) {
-        if (isNonRetryableStabilityLatestHeightError(error)) {
-          const message = error instanceof Error ? error.message : String(error);
-          throw new GrpcInternalException(
-            `Current HostState root is not yet stability-accepted for latest height: ${message}`,
-          );
-        }
-
-        if (attempt + 1 === STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS) {
-          throw error;
-        }
-
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`[latestCertifiedHeight] ${message}; retrying stability latest height query`);
-        await sleep(STABILITY_LATEST_HEIGHT_DELAY_MS);
-      }
-    }
-
-    throw new GrpcInternalException(
-      `Unable to resolve stability latest height after ${STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS} attempts`,
-    );
+    return { height: await latestPacketProofHeight(this.historyService, this.logger) };
   }
 
   private async getHostStateDatum(): Promise<HostStateDatum> {
@@ -956,17 +891,22 @@ export class QueryService {
       if (
         record.clientToken.policyId.toLowerCase() !== expectedClientToken.policyId.toLowerCase() ||
         record.clientToken.name.toLowerCase() !== expectedClientToken.name.toLowerCase() ||
-        record.height.revisionNumber < 0n || record.height.revisionHeight <= 0n ||
-        record.processedTime < 0n || record.processedHeight < 0n
+        record.height.revisionNumber < 0n ||
+        record.height.revisionHeight <= 0n ||
+        record.processedTime < 0n ||
+        record.processedHeight < 0n
       ) {
-        throw new GrpcFailedPreconditionException(`Consensus-state history for client ${clientId} failed authentication`);
+        throw new GrpcFailedPreconditionException(
+          `Consensus-state history for client ${clientId} failed authentication`,
+        );
       }
       // Public paths contain revision height only. Bind the revision to the
       // selected client datum and exclude records newer than that datum.
       if (
         record.height.revisionNumber !== latestHeight.revisionNumber ||
         compareConsensusHeights(record.height, latestHeight) > 0
-      ) continue;
+      )
+        continue;
       const key = consensusHeightKey(record.height);
       if (requestedKey && key !== requestedKey) continue;
       const pathHeight = record.height.revisionHeight.toString();
@@ -977,10 +917,7 @@ export class QueryService {
         // preserves read compatibility with older, already-pruned snapshots.
         continue;
       }
-      if (
-        !/^(?:[0-9a-f]{2})+$/i.test(consensusValue) ||
-        !committedValue.equals(Buffer.from(consensusValue, 'hex'))
-      ) {
+      if (!/^(?:[0-9a-f]{2})+$/i.test(consensusValue) || !committedValue.equals(Buffer.from(consensusValue, 'hex'))) {
         throw new GrpcFailedPreconditionException(
           `Consensus-state history ${clientId}@${key} does not match the committed IBC state root`,
         );
@@ -1024,9 +961,7 @@ export class QueryService {
     const from = Number(offset);
     const pageLimit = Number(limit);
     const to = Math.min(from + pageLimit, ordered.length);
-    const nextKey = to < ordered.length
-      ? generatePaginationKey({ offset: to } as PaginationKeyDto)
-      : new Uint8Array();
+    const nextKey = to < ordered.length ? generatePaginationKey({ offset: to } as PaginationKeyDto) : new Uint8Array();
     return {
       records: ordered.slice(from, to),
       pagination: {
@@ -1114,10 +1049,7 @@ export class QueryService {
 
     const startedAt = Date.now();
     const proofContext = await this.getProofContext('queryClientState', options.queryHeight);
-    const [clientDatum, spendClientUTXO] = await this.getClientDatum(
-      clientId,
-      proofContext.proofHeight,
-    );
+    const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId, proofContext.proofHeight);
     this.logger.debug(
       `[queryClientState] loaded client UTxO ${spendClientUTXO.txHash}#${spendClientUTXO.outputIndex} in ${Date.now() - startedAt}ms`,
     );
@@ -1194,20 +1126,13 @@ export class QueryService {
       proofContext,
       requestedHeight,
     );
-    const selectedHeight =
-      requestedHeight === 'latest' ? clientDatum.state.clientState.latestHeight : requestedHeight;
+    const selectedHeight = requestedHeight === 'latest' ? clientDatum.state.clientState.latestHeight : requestedHeight;
     if (requestedHeight === 'latest') {
-      this.logger.log(
-        `queryConsensusState: Using latest consensus height: ${consensusHeightKey(selectedHeight)}`,
-      );
+      this.logger.log(`queryConsensusState: Using latest consensus height: ${consensusHeightKey(selectedHeight)}`);
     }
-    const record = records.find(
-      ({ height }) => consensusHeightKey(height) === consensusHeightKey(selectedHeight),
-    );
+    const record = records.find(({ height }) => consensusHeightKey(height) === consensusHeightKey(selectedHeight));
     if (!record) {
-      throw new GrpcNotFoundException(
-        `Unable to find Consensus State at height ${consensusHeightKey(selectedHeight)}`,
-      );
+      throw new GrpcNotFoundException(`Unable to find Consensus State at height ${consensusHeightKey(selectedHeight)}`);
     }
     const consensusStateTendermint = normalizeConsensusStateFromDatum(
       new Map([[record.height, record.consensusState]]),
@@ -1307,10 +1232,10 @@ export class QueryService {
     }
     try {
       const deploymentConfig = this.configService.get('deployment');
-      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
 
-      const mintConnScriptHash = deploymentConfig.validators.mintConnectionStt.scriptHash;
+      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
       const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
+      const mintConnScriptHash = deploymentConfig.validators.mintConnectionStt.scriptHash;
 
       const connectionBaseToken = hostStateNFT;
       const channelBaseToken = hostStateNFT;
@@ -1340,7 +1265,19 @@ export class QueryService {
 
         // register/unregister event spo
         const spoEvents = await this._querySpoEvents(BigInt(blockNo));
-        const eventInBlock = [...txsClientResults, ...txsResults, ...spoEvents];
+        const laneTxHashes = [
+          ...new Set(
+            utxosInBlock
+              .filter((u) => u.assetsPolicy === deploymentConfig.packetState!.state.scriptHash)
+              .map((u) => u.txHash),
+          ),
+        ];
+        const laneEvents = await Promise.all(
+          laneTxHashes.map(
+            async (txHash) => ({ code: 0, events: await this.packetState!.events(txHash) }) as ResponseDeliverTx,
+          ),
+        );
+        const eventInBlock = [...txsClientResults, ...txsResults, ...laneEvents, ...spoEvents];
         totalEventResults.push(...eventInBlock);
       }
 
@@ -1472,7 +1409,7 @@ export class QueryService {
   private async _parseEventConnection(
     utxo: UtxoDto,
     tokenBase: AuthToken,
-    mintScriptHash: string,
+    _mintScriptHash: string,
   ): Promise<ResponseDeliverTx | null> {
     let connDatumDecoded: ConnectionDatum;
     try {
@@ -1483,7 +1420,6 @@ export class QueryService {
     const currentConnectionId = getConnectionIdByTokenName(utxo.assetsName, tokenBase, CONNECTION_TOKEN_PREFIX);
     const txsResult = normalizeTxsResultFromConnDatum(connDatumDecoded, currentConnectionId);
 
-    const spendAddress = this.configService.get('deployment').validators.spendConnection.address;
     const redeemers = await this.getTransactionRedeemers(utxo.txHash);
     redeemers
       .filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10)
@@ -1527,7 +1463,7 @@ export class QueryService {
   private async _parseEventChannel(
     utxo: UtxoDto,
     tokenBase: AuthToken,
-    mintScriptHash: string,
+    _mintScriptHash: string,
   ): Promise<ResponseDeliverTx | null> {
     let channelDatumDecoded: ChannelDatum;
     try {
@@ -1541,7 +1477,6 @@ export class QueryService {
 
     const txsResult = normalizeTxsResultFromChannelDatum(channelDatumDecoded, currentConnectionId, currentChannelId);
 
-    const spendAddress = this.configService.get('deployment').validators.spendChannel.address;
     let redeemers = await this.getTransactionRedeemers(utxo.txHash);
 
     redeemers = redeemers.filter((redeemer) => ![REDEEMER_EMPTY_DATA].includes(redeemer.data));
@@ -1572,7 +1507,6 @@ export class QueryService {
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_CONFIRM;
           if (spendRedeemer.hasOwnProperty('RecvPacket') || spendRedeemer.hasOwnProperty('SendPacket')) {
             // find redeemer module recv packet -> get packet ack
-            const spendTransferModuleAddress = this.configService.get('deployment').modules.transfer.address;
             const spendMockModuleAddress = this.configService.get('deployment').modules?.mock?.address;
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
@@ -1682,7 +1616,6 @@ export class QueryService {
   private async _parseEventClient(utxos: UtxoDto[]): Promise<ResponseDeliverTx[]> {
     const deploymentConfig = this.configService.get('deployment');
     const mintClientScriptHash = deploymentConfig.validators.mintClientStt.scriptHash;
-    const spendClientAddress = deploymentConfig.validators.spendClient.address;
     const tokenBase = deploymentConfig.hostStateNFT;
 
     const txsResults = await Promise.all(
@@ -1705,7 +1638,10 @@ export class QueryService {
           if (stagedRedeemer && typeof stagedRedeemer !== 'string') {
             if ('RecoverClient' in stagedRedeemer) {
               spendClientRedeemerData = {
-                RecoverClient: { substitute_token: stagedRedeemer.RecoverClient.substituteToken, history_siblings: stagedRedeemer.RecoverClient.historySiblings },
+                RecoverClient: {
+                  substitute_token: stagedRedeemer.RecoverClient.substituteToken,
+                  history_siblings: stagedRedeemer.RecoverClient.historySiblings,
+                },
               };
             } else if ('FinalizeMisbehaviour' in stagedRedeemer) {
               const { sessionToken1, sessionToken2 } = stagedRedeemer.FinalizeMisbehaviour;
@@ -1714,11 +1650,17 @@ export class QueryService {
                 this.recoverStagedSessionHeader(clientUtxo, clientDatum, sessionToken2),
               ]);
               spendClientRedeemerData = {
-                UpdateClient: { msg: { MisbehaviourCase: [{ client_id: `${CLIENT_ID_PREFIX}-${clientId}`, header1, header2 }] }, history_witnesses: stagedRedeemer.FinalizeMisbehaviour.historyWitnesses, history_siblings: [] },
+                UpdateClient: {
+                  msg: { MisbehaviourCase: [{ client_id: `${CLIENT_ID_PREFIX}-${clientId}`, header1, header2 }] },
+                  history_witnesses: stagedRedeemer.FinalizeMisbehaviour.historyWitnesses,
+                  history_siblings: [],
+                },
               };
             } else {
               stagedHeader = await this.recoverStagedSessionHeader(
-                clientUtxo, clientDatum, stagedRedeemer.FinalizeUpdate.sessionToken,
+                clientUtxo,
+                clientDatum,
+                stagedRedeemer.FinalizeUpdate.sessionToken,
               );
             }
           } else {
@@ -1810,6 +1752,16 @@ export class QueryService {
     context: { hostStateNFT: AuthToken; mintChannelScriptHash: string },
   ): Promise<IndexedPacketEvent[]> {
     const packetEvents: IndexedPacketEvent[] = [];
+    const statePolicy = this.configService.get('deployment').packetState!.state.scriptHash;
+    const seen = new Set<string>();
+    for (const utxo of utxos) {
+      if (utxo.assetsPolicy !== statePolicy || seen.has(utxo.txHash)) continue;
+      seen.add(utxo.txHash);
+      for (const event of await this.packetState!.events(utxo.txHash)) {
+        const mapped = this.mapPacketEvent(utxo.txHash, utxo.blockNo, event as Event);
+        if (mapped) packetEvents.push(mapped);
+      }
+    }
 
     for (const utxo of utxos) {
       if (utxo.assetsPolicy !== context.mintChannelScriptHash) continue;
@@ -1944,6 +1896,15 @@ export class QueryService {
       }
     }
 
+    const packetConfig = this.configService.get('deployment').packetState!;
+    for (const channel of candidateChannelIds) {
+      const lane = packetLane('transfer', channel, BigInt(query.sequence), packetConfig.laneCount);
+      const rows = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(
+        packetConfig.state.scriptHash,
+        packetLaneTokenName('transfer', channel, lane, packetConfig.laneCount),
+      );
+      for (const output of rows) utxosByRef.set(`${output.txHash}#${output.outputIndex}`, output);
+    }
     const packetEvents = await this.parsePacketEventsForChannelUtxos(Array.from(utxosByRef.values()), context);
     const events = packetEvents
       .filter((event) => this.packetEventMatchesQuery(event, query))
@@ -1965,10 +1926,6 @@ export class QueryService {
         limit,
         page,
       } = request;
-      const deploymentConfig = this.configService.get('deployment');
-      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
-      const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
-      const spendAddress = deploymentConfig.validators.spendChannel.address;
       if (!srcChannelId?.startsWith(`${CHANNEL_ID_PREFIX}-`))
         throw new GrpcInvalidArgumentException(
           `Invalid argument: "packet_src_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
@@ -1978,71 +1935,18 @@ export class QueryService {
           `Invalid argument: "packet_dst_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
         );
 
-      // A packet for this path can be emitted from either channel side depending on the
-      // operation type, so load both channel UTxO sets up front.
-      const candidateChannelIds = Array.from(new Set([srcChannelId, dstChannelId]));
-      const channelTokenNames = candidateChannelIds.map((channelId) =>
-        this.lucidService.generateTokenName(
-          hostStateNFT,
-          CHANNEL_TOKEN_PREFIX,
-          BigInt(channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '')),
-        ),
+      const matches = await this.queryPacketEventsByPacket({
+        sourceChannel: srcChannelId,
+        destinationChannel: dstChannelId,
+        sequence: String(packet_sequence),
+      });
+      const blockResults = [...new Set(matches.events.map((event) => event.height))].map(
+        (height) =>
+          ({
+            block_id: 0,
+            block: { height: Number(height) },
+          }) as unknown as ResultBlockSearch,
       );
-
-      // The same tx output can appear while scanning each side, so dedupe by out-ref.
-      const utxosByRef = new Map<string, UtxoDto>();
-      for (const channelTokenName of channelTokenNames) {
-        const utxos = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(
-          mintChannelScriptHash,
-          channelTokenName,
-        );
-        for (const utxo of utxos) {
-          utxosByRef.set(`${utxo.txId.toString()}#${utxo.outputIndex ?? ''}`, utxo);
-        }
-      }
-
-      const utxosOfChannel = Array.from(utxosByRef.values());
-      const blockSearchResults = await Promise.all(
-        utxosOfChannel.map(async (utxo) => {
-          let redeemers = await this.getTransactionRedeemers(utxo.txHash);
-          redeemers = redeemers.filter(
-            (redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10,
-          );
-          let isMatched = false;
-          for (const redeemer of redeemers) {
-            if (redeemer.type !== REDEEMER_TYPE.SPEND) continue;
-            let spendRedeemer;
-            try {
-              spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
-            } catch {
-              continue;
-            }
-            const packet = getPacketFromSpendChannelRedeemer(spendRedeemer);
-            if (!packet) continue;
-            const packetSourceChannel = convertHex2String(packet.source_channel);
-            const packetDestinationChannel = convertHex2String(packet.destination_channel);
-            // Match either orientation because historical channel scanning is channel-centric and can
-            // surface redeemers from sends, receives, acks, or timeouts across both ends.
-            const directChannelMatch =
-              packetSourceChannel === srcChannelId && packetDestinationChannel === dstChannelId;
-            const reverseChannelMatch =
-              packetSourceChannel === dstChannelId && packetDestinationChannel === srcChannelId;
-            if (packet.sequence === BigInt(packet_sequence) && (directChannelMatch || reverseChannelMatch)) {
-              isMatched = true;
-              break;
-            }
-          }
-          if (!isMatched) return null;
-
-          return {
-            block_id: utxo.blockId,
-            block: {
-              height: utxo.blockNo,
-            },
-          } as unknown as ResultBlockSearch;
-        }),
-      );
-      const blockResults = blockSearchResults.filter((result): result is ResultBlockSearch => result !== null);
       const totalCount = blockResults.length;
       let blockResultsResp = blockResults;
       if (blockResults.length > limit) {
@@ -2457,9 +2361,9 @@ export class QueryService {
     stabilityEvidence: StakeWeightedStabilityHeaderEvidence,
     isCheckpoint: boolean,
   ): Promise<ProbabilisticHeader> {
-    const hostStateUtxo = isCheckpoint
-      ? undefined
-      : await this.findExactStabilityAnchorHostStateUtxo(stabilityEvidence.anchorHeight, 'header generation');
+    // Complete bodies authenticate both changed lanes and unchanged roots.
+    // The anchor need not contain a HostState transaction.
+
     const requestedBlocks = [
       ...stabilityEvidence.bridgeBlocks,
       stabilityEvidence.anchorBlock,
@@ -2469,9 +2373,7 @@ export class QueryService {
     const blockWitnessByHeight = new Map<number, Buffer>(
       requestedBlocks.map((block, index) => [block.height, blockWitnesses[index]]),
     );
-    const headerWitnessBlocks = isCheckpoint
-      ? requestedBlocks
-      : [...stabilityEvidence.bridgeBlocks, ...stabilityEvidence.descendantBlocks];
+    const headerWitnessBlocks = stabilityEvidence.descendantBlocks;
     const headerWitnessByHeight = new Map<number, Buffer>(
       headerWitnessBlocks.map((block) => {
         const blockCbor = blockWitnessByHeight.get(block.height);
@@ -2498,17 +2400,16 @@ export class QueryService {
       },
       anchor_block: this.toStabilityBlock(
         stabilityEvidence.anchorBlock,
-        isCheckpoint ? undefined : blockWitnessByHeight.get(stabilityEvidence.anchorBlock.height),
-        isCheckpoint ? headerWitnessByHeight.get(stabilityEvidence.anchorBlock.height) : undefined,
+        blockWitnessByHeight.get(stabilityEvidence.anchorBlock.height),
       ),
       bridge_blocks: stabilityEvidence.bridgeBlocks.map((block) =>
-        this.toStabilityBlock(block, undefined, headerWitnessByHeight.get(block.height)),
+        this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
       ),
       descendant_blocks: stabilityEvidence.descendantBlocks.map((block) =>
         this.toStabilityBlock(block, undefined, headerWitnessByHeight.get(block.height)),
       ),
-      host_state_tx_hash: hostStateUtxo?.txHash ?? '',
-      host_state_tx_output_index: hostStateUtxo?.outputIndex ?? 0,
+      host_state_tx_hash: '',
+      host_state_tx_output_index: 0,
       new_epoch_context: newEpochContext,
       is_checkpoint: isCheckpoint,
     };
@@ -2746,16 +2647,6 @@ export class QueryService {
       throw new GrpcInternalException(`IBC infrastructure error: ${fieldName} is outside protobuf uint64 bounds`);
     }
     return value;
-  }
-
-  private async findExactStabilityAnchorHostStateUtxo(anchorHeight: bigint, context: string): Promise<UtxoDto> {
-    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(anchorHeight);
-    if (BigInt(hostStateUtxo.blockNo) !== anchorHeight) {
-      throw new GrpcNotFoundException(
-        `Not found: requested stability anchor height ${anchorHeight.toString()} is not a HostState tx block height for ${context}`,
-      );
-    }
-    return hostStateUtxo;
   }
 
   private normalizeIbcDenomHashInput(input: string | undefined): string {

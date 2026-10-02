@@ -2,6 +2,7 @@ package probabilistic
 
 import (
 	"fmt"
+	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"math"
 	"math/bits"
 	"strings"
@@ -200,10 +201,8 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return errorsmod.Wrapf(ErrInvalidUniqueStake, "insufficient qualified unique stake bps: got %d, need %d", qualifiedUniqueStakeBps, DefaultThresholdUniqueStakeBps)
 	}
 
-	if !header.IsCheckpoint {
-		if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
-			return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "invalid host state tx body: %v", err)
-		}
+	if _, err := cs.advancePacketSnapshot(clientStore, cdc, header); err != nil {
+		return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "invalid packet state progression: %v", err)
 	}
 
 	return nil
@@ -576,7 +575,21 @@ func (cs *ClientState) UpdateState(
 		panic(fmt.Errorf("missing anchor epoch context for verified ProbabilisticHeader epoch %d", authenticatedHeader.anchorBlock.epoch))
 	}
 
+	snapshot, err := cs.advancePacketSnapshot(clientStore, cdc, header)
+	if err != nil {
+		panic(fmt.Errorf("verified packet state progression failed: %w", err))
+	}
+	snapshotBytes, err := probabilisticcore.EncodePacketStateSnapshot(snapshot)
+	if err != nil {
+		panic(err)
+	}
 	height := NewHeight(0, header.AnchorBlock.Height.RevisionHeight)
+	if old := cs.LatestCheckpointHeight; old != nil && !old.EQ(height) {
+		if _, retained := GetConsensusState(clientStore, cdc, old); !retained {
+			clientStore.Delete(packetSnapshotKey(old.RevisionHeight))
+		}
+	}
+	clientStore.Set(packetSnapshotKey(height.RevisionHeight), snapshotBytes)
 	if header.IsCheckpoint {
 		if err := cs.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader); err != nil {
 			panic(fmt.Errorf("failed to persist verified checkpoint: %w", err))
@@ -586,10 +599,7 @@ func (cs *ClientState) UpdateState(
 
 	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 
-	ibcStateRoot, err := cs.ExtractIbcStateRootFromHostStateTx(header)
-	if err != nil {
-		panic(fmt.Errorf("failed to extract ibc_state_root from verified ProbabilisticHeader: %w", err))
-	}
+	ibcStateRoot := snapshot.HostRoot
 	qualifiedUniquePools, qualifiedUniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, anchorEpochContext)
 	if err != nil {
 		panic(fmt.Errorf("failed to recompute probabilistic metrics from verified ProbabilisticHeader: %w", err))
@@ -604,6 +614,9 @@ func (cs *ClientState) UpdateState(
 		qualifiedUniqueStakeBps,
 		securityScoreBps,
 	)
+	consensus, _ := GetConsensusState(clientStore, cdc, header.GetHeight())
+	consensus.PacketStateSnapshot = snapshotBytes
+	setConsensusState(clientStore, cdc, consensus, header.GetHeight())
 	setConsensusMetadata(ctx, clientStore, header.GetHeight())
 	clientStore.Set(ProbabilisticScoreKey(height.RevisionHeight), sdk.Uint64ToBigEndian(securityScoreBps))
 	clientStore.Set(UniquePoolsKey(height.RevisionHeight), sdk.Uint64ToBigEndian(qualifiedUniquePools))
@@ -674,6 +687,9 @@ func (cs ClientState) pruneOldestConsensusState(ctx sdk.Context, cdc codec.Binar
 	IterateConsensusStateAscending(clientStore, pruneCb)
 	if pruneHeight != nil {
 		deleteConsensusState(clientStore, pruneHeight)
+		if cs.LatestCheckpointHeight == nil || !cs.LatestCheckpointHeight.EQ(pruneHeight) {
+			clientStore.Delete(packetSnapshotKey(pruneHeight.GetRevisionHeight()))
+		}
 		deleteConsensusMetadata(clientStore, pruneHeight)
 	}
 }

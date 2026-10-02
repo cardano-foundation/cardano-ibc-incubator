@@ -128,7 +128,7 @@ event_source = { mode = 'push', url = 'ws://127.0.0.1:26757/websocket' }
 `;
 
 const manifest = () => ({
-  schema_version: 4,
+  schema_version: 5,
   consensus_history_format: "proof-backed-v1",
   cardano: { chain_id: "cardano-devnet", network: "local", network_magic: 42 },
   host_state_nft: { policy_id: "aa".repeat(28), token_name: "bb" },

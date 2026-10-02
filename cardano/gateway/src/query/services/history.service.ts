@@ -82,5 +82,6 @@ export type HistoryService = {
   checkExistPoolUpdateByBlockNo(height: number): Promise<boolean>;
   checkExistPoolRetireByBlockNo(height: number): Promise<boolean>;
   findTxByHash(hash: string): Promise<TxDto | null>;
+  findIntentSpendingTransaction(hash: string, address: string): Promise<HistoryTxEvidence | null>;
   findTransactionEvidenceByHash(hash: string): Promise<HistoryTxEvidence | null>;
 };
