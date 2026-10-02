@@ -33,6 +33,20 @@ pub fn validate(
   expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
   expect Some(datum) = optional_datum
   let spent_output = spent_input.output
+  expect
+    if datum.port_id == "transfer" {
+      when redeemer is {
+        RecvPacket { .. } |
+        SendPacket { .. } |
+        TimeoutPacket { .. } |
+        TimeoutOnClose { .. } |
+        AcknowledgePacket { .. } |
+        PrunePacketHistory { .. } -> False
+        _ -> True
+      }
+    } else {
+      True
+    }
 
   when redeemer is {
     ReclaimChannel -> and {
