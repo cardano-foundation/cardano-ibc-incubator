@@ -107,7 +107,7 @@ type PacketStateManifest = {
 };
 
 export type DeploymentConfig = {
-  packetState?: PacketStateDeployment;
+  packetState: PacketStateDeployment;
   deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   deployedAt: string;
@@ -205,7 +205,7 @@ type BridgeManifestTraceRegistry = {
 // external operators. It intentionally uses snake_case and only includes the
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
 export type BridgeManifest = {
-  packet_state?: PacketStateManifest;
+  packet_state: PacketStateManifest;
   deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   schema_version: number;
@@ -738,7 +738,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   );
 
   return {
-    ...(deploymentAny.packetState !== undefined ? { packetState: requirePacketState(deploymentAny.packetState) } : {}),
+    packetState: requirePacketState(deploymentAny.packetState),
     deploymentMode: checkedDeploymentMode(deploymentAny.deploymentMode, deploymentAny.migration),
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
     ...(deploymentAny.migration !== undefined ? { migration: requireMigrationConfig(deploymentAny.migration) } : {}),
@@ -829,8 +829,8 @@ export function normalizeHandlerJsonDeploymentConfig(
   return {
     deployment: normalizedDeployment,
     bridgeManifest: {
-      schema_version: 4,
-      ...(normalizedDeployment.packetState ? { packet_state: packetStateToManifest(normalizedDeployment.packetState) } : {}),
+      schema_version: 5,
+      packet_state: packetStateToManifest(normalizedDeployment.packetState),
       ...(normalizedDeployment.deploymentMode ? { deploymentMode: normalizedDeployment.deploymentMode } : {}),
       ...(normalizedDeployment.migration ? { migration: normalizedDeployment.migration } : {}),
       consensus_history_format: normalizedDeployment.consensusHistoryFormat,
@@ -921,7 +921,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   // unaware of which bootstrap source was used.
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
-    ...(manifestAny.packet_state !== undefined ? { packet_state: packetStateToManifest(packetStateFromManifest(manifestAny.packet_state)) } : {}),
+    packet_state: packetStateToManifest(packetStateFromManifest(manifestAny.packet_state)),
     deploymentMode: checkedDeploymentMode(manifestAny.deploymentMode, manifestAny.migration),
     ...(manifestAny.migration !== undefined ? { migration: requireMigrationConfig(manifestAny.migration) } : {}),
     consensus_history_format: consensusHistoryFormat,
@@ -1002,12 +1002,12 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       : {}),
   };
 
-  assert(bridgeManifest.schema_version === 4, 'Invalid bridge config: "schema_version" must be 4');
+  assert(bridgeManifest.schema_version === 5, 'Invalid bridge config: "schema_version" must be 5');
 
   return {
     bridgeManifest,
     deployment: {
-      ...(bridgeManifest.packet_state ? { packetState: packetStateFromManifest(bridgeManifest.packet_state) } : {}),
+      packetState: packetStateFromManifest(bridgeManifest.packet_state),
       deployedAt: bridgeManifest.deployed_at,
       ...(bridgeManifest.deploymentMode ? { deploymentMode: bridgeManifest.deploymentMode } : {}),
       ...(bridgeManifest.migration ? { migration: bridgeManifest.migration } : {}),

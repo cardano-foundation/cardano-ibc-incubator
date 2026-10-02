@@ -273,9 +273,23 @@ class Runtime:
             self.cli("conway", "transaction", "submit", "--testnet-magic", "42",
                      "--tx-file", path + "/tx.signed")
             tx_id = self.cli("conway", "transaction", "txid", "--tx-file", path + "/tx.signed", "--output-text")
-            wait_for("funding inclusion", lambda: any(key.startswith(tx_id + "#") for key in
-                     json.loads(self.cli("query", "utxo", "--address", address,
-                                         "--testnet-magic", "42", "--output-json"))))
+            def included():
+                utxos = json.loads(self.cli("query", "utxo", "--address", address,
+                                           "--testnet-magic", "42", "--output-json"))
+                if any(key.startswith(tx_id + "#") for key in utxos):
+                    return True
+                # Startup forks can evict a previously accepted transaction.
+                # Resubmit the same signed body, never build another payment.
+                try:
+                    self.cli("conway", "transaction", "submit", "--testnet-magic", "42",
+                             "--tx-file", path + "/tx.signed")
+                except subprocess.CalledProcessError:
+                    # It may already be in the mempool or have been included
+                    # between the query and submission. Check the ledger again.
+                    pass
+                return False
+
+            wait_for("funding inclusion", included)
         finally:
             self.compose("exec", "-T", "devkit", "rm", "-rf", path)
 

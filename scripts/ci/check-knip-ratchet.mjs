@@ -54,7 +54,6 @@ const allowed = new Set([
   'gateway:src/shared/helpers/voucher-asset.ts:exports:CIP67_REFERENCE_NFT_LABEL_HEX',
   'gateway:src/shared/helpers/voucher-asset.ts:exports:LABELED_VOUCHER_TOKEN_NAME_HEX_LENGTH',
   'gateway:src/shared/helpers/voucher-asset.ts:exports:buildVoucherAssetId',
-  'gateway:src/shared/helpers/voucher-asset.ts:exports:buildVoucherReferenceTokenNameFromFullDenom',
   'gateway:src/shared/helpers/voucher-asset.ts:exports:buildVoucherUserTokenNameFromFullDenom',
   'gateway:src/shared/helpers/voucher-asset.ts:exports:isVoucherAssetName',
   'gateway:src/shared/helpers/voucher-asset.ts:exports:isVoucherReferenceTokenName',
