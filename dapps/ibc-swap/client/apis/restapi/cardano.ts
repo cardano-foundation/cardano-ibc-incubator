@@ -41,6 +41,7 @@ interface UnsignedTx {
 }
 
 interface TransferResponseData {
+  intentChannel: string;
   unsignedTx?: UnsignedTx;
   feeLovelace?: string;
 }

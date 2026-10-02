@@ -22,6 +22,7 @@ interface Token {
 }
 
 type UnsignedTxMessage = {
+  intentChannel?: string;
   typeUrl: string;
   value: any;
   unsignedTxCborHex?: string;
@@ -71,6 +72,14 @@ export function requireUnsignedCardanoTxCborHex(value: unknown): string {
 }
 
 function requireUnsignedTx(data: any): UnsignedTxMessage {
+  if (
+    typeof data?.intentChannel !== 'string' ||
+    !/^channel-(0|[1-9][0-9]*)$/.test(data.intentChannel)
+  ) {
+    throw new Error(
+      'The Cardano builder must support funded transfer intents.',
+    );
+  }
   const unsignedTx = data?.unsignedTx;
   if (!unsignedTx?.unsignedTxCborHex) {
     const responseError = getTransferResponseErrorMessage(data);
@@ -85,6 +94,7 @@ function requireUnsignedTx(data: any): UnsignedTxMessage {
   }
 
   return {
+    intentChannel: data.intentChannel,
     typeUrl: unsignedTx.type_url ?? '',
     value: undefined,
     unsignedTxCborHex: requireUnsignedCardanoTxCborHex(

@@ -12,7 +12,9 @@ const pfmReceiver = 'pfm';
 
 const buildDirectIbcReceiver = (route: string, receiver: string): string => {
   const [, srcChannel] = route.split('/');
-  return `ibc:${srcChannel}/${requirePaymentKeyHashFromCardanoAddress(receiver)}`;
+  return `ibc:${srcChannel}/${requirePaymentKeyHashFromCardanoAddress(
+    receiver,
+  )}`;
 };
 
 const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
@@ -190,7 +192,9 @@ export async function unsignedTxSwapFromCardano({
   transferBackRoutes: string[];
   slippagePercentage: string;
   timeoutTimeOffset: bigint; // nanosec
-}): Promise<{ typeUrl: string; unsignedTxCborHex: string }[]> {
+}): Promise<
+  { typeUrl: string; unsignedTxCborHex: string; intentChannel: string }[]
+> {
   if (!CROSSCHAIN_SWAP_ADDRESS) {
     throw new Error(
       'NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS is required to build swap transactions.',
@@ -226,6 +230,7 @@ export async function unsignedTxSwapFromCardano({
   });
   return [
     {
+      intentChannel: data.intentChannel,
       typeUrl: data?.unsignedTx?.type_url ?? '',
       unsignedTxCborHex: requireUnsignedCardanoTxCborHex(
         data?.unsignedTx?.unsignedTxCborHex,
