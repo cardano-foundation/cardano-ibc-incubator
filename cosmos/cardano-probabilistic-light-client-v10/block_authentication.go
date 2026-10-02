@@ -148,13 +148,13 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 		decodedHeader = rawHeader
 	}
 
-	if !strings.EqualFold(decodedHeader.Hash(), block.Hash) {
+	if !strings.EqualFold(decodedHeader.Hash().String(), block.Hash) {
 		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block hash mismatch: got %s expected %s",
 			label,
 			block.Hash,
-			decodedHeader.Hash(),
+			decodedHeader.Hash().String(),
 		)
 	}
 	var decodedPrevHash string
@@ -260,7 +260,7 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	return &authenticatedProbabilisticBlock{
 		height:                               decodedHeader.BlockNumber(),
 		slot:                                 decodedHeader.SlotNumber(),
-		hash:                                 decodedHeader.Hash(),
+		hash:                                 decodedHeader.Hash().String(),
 		prevHash:                             decodedPrevHash,
 		bodyHash:                             decodedBodyHash,
 		epoch:                                epochContext.Epoch,

@@ -216,13 +216,13 @@ if command -v go >/dev/null 2>&1; then
   (
     cd "${CHAIN_DIR}"
     GOWORK=off go mod edit \
-      -require=github.com/blinklabs-io/gouroboros@v0.89.1 \
+      -require=github.com/blinklabs-io/gouroboros@v0.205.4 \
       -require=github.com/fxamacker/cbor/v2@v2.7.0 \
       -require=github.com/utxorpc/go-codegen@v0.5.1
   )
 else
   if ! grep -q '^[[:space:]]*github.com/blinklabs-io/gouroboros[[:space:]]' "${CHAIN_DIR}/go.mod"; then
-    printf '\nrequire github.com/blinklabs-io/gouroboros v0.89.1\n' >> "${CHAIN_DIR}/go.mod"
+    printf '\nrequire github.com/blinklabs-io/gouroboros v0.205.4\n' >> "${CHAIN_DIR}/go.mod"
   fi
   if ! grep -q '^[[:space:]]*github.com/fxamacker/cbor/v2[[:space:]]' "${CHAIN_DIR}/go.mod"; then
     printf 'require github.com/fxamacker/cbor/v2 v2.7.0\n' >> "${CHAIN_DIR}/go.mod"
