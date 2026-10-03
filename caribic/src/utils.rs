@@ -100,32 +100,6 @@ pub fn prompt_backup_operator() -> Result<Option<String>, Box<dyn Error>> {
     Ok(backup)
 }
 
-#[cfg(test)]
-mod backup_operator_tests {
-    use super::parse_backup_operator;
-
-    #[test]
-    fn backup_operator_accepts_optional_input_and_normalizes_hashes() {
-        assert_eq!(parse_backup_operator(" \n").unwrap(), None);
-        assert_eq!(
-            parse_backup_operator(&format!(" {}\n", "AB".repeat(28))).unwrap(),
-            Some("ab".repeat(28))
-        );
-    }
-
-    #[test]
-    fn backup_operator_rejects_addresses_and_malformed_hashes() {
-        for value in [
-            "addr_test1example".to_string(),
-            "aa".repeat(27),
-            "aa".repeat(29),
-            "zz".repeat(28),
-        ] {
-            assert!(parse_backup_operator(&value).is_err());
-        }
-    }
-}
-
 pub struct IndicatorMessage {
     pub message: String,
     pub step: String,
@@ -514,5 +488,31 @@ pub fn get_user_ids() -> (String, String) {
     {
         // Default UID/GID for other systems (Windows, etc.)
         ("1000".to_string(), "1000".to_string())
+    }
+}
+
+#[cfg(test)]
+mod backup_operator_tests {
+    use super::parse_backup_operator;
+
+    #[test]
+    fn backup_operator_accepts_optional_input_and_normalizes_hashes() {
+        assert_eq!(parse_backup_operator(" \n").unwrap(), None);
+        assert_eq!(
+            parse_backup_operator(&format!(" {}\n", "AB".repeat(28))).unwrap(),
+            Some("ab".repeat(28))
+        );
+    }
+
+    #[test]
+    fn backup_operator_rejects_addresses_and_malformed_hashes() {
+        for value in [
+            "addr_test1example".to_string(),
+            "aa".repeat(27),
+            "aa".repeat(29),
+            "zz".repeat(28),
+        ] {
+            assert!(parse_backup_operator(&value).is_err());
+        }
     }
 }
