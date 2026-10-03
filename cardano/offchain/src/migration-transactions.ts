@@ -298,7 +298,17 @@ export async function buildMigrationTransaction(
         proposal.Rotate.governance,
       );
     }
-    const details = "Replace" in proposal ? proposal.Replace : proposal.Rotate;
+    const details = "Replace" in proposal
+      ? proposal.Replace
+      : "Rotate" in proposal
+      ? proposal.Rotate
+      : proposal.NominateDeployer;
+    if (
+      "NominateDeployer" in proposal && (
+        !/^[0-9a-f]{56}$/.test(proposal.NominateDeployer.successor) ||
+        proposal.NominateDeployer.source_generation !== old.current.generation
+      )
+    ) throw new Error("Invalid successor payment key hash or stale generation");
     if (details.nonce !== old.nonce + 1n) {
       throw new Error("Stale approval nonce");
     }
@@ -337,6 +347,34 @@ export async function buildMigrationTransaction(
     );
     next.governance = proposed.proposal.Rotate.governance;
     next.emergency = { ...old.emergency, restoration: null };
+    next.phase = "Ready";
+  } else if (action === "GraduateDeployer") {
+    const proposed = ready();
+    if (!("NominateDeployer" in proposed.proposal)) {
+      throw new Error("Approval is not a deployer handover");
+    }
+    const approval = proposed.proposal.NominateDeployer;
+    if (
+      approval.nonce !== old.nonce ||
+      approval.source_generation !== old.current.generation
+    ) {
+      throw new Error("Stale deployer handover approval");
+    }
+    const object = requireObject(0, old.host_policy + HOST_NAME);
+    const host = Data.from(object.datum!, HostStateDatum);
+    if (
+      host.nft_policy !== old.host_policy ||
+      host.deployer === approval.successor ||
+      !/^[0-9a-f]{56}$/.test(approval.successor)
+    ) {
+      throw new Error(
+        "Deployer handover requires a distinct approved successor",
+      );
+    }
+    host.deployer = approval.successor;
+    host.state.version++;
+    objectDatum = Data.to(host, HostStateDatum, { canonical: true });
+    destination = object.address;
     next.phase = "Ready";
   } else if (action === "Begin") {
     const proposed = ready();

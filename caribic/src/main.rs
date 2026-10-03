@@ -140,6 +140,14 @@ enum SetupCommand {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Propose or execute a governance-approved bridge admin handover
+    Deployer {
+        #[arg(value_parser = ["nominate-deployer", "graduate-deployer", "inspect", "cancel"])]
+        action: String,
+        /// Operator arguments such as --handler, --signers, --successor and --out
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Inspect or manage the Yaci DevKit local network
     Devkit {
         #[arg(value_enum)]
@@ -404,6 +412,28 @@ async fn main() {
 
     // Dispatch each subcommand to its module-level handler.
     let command_result: Result<(), String> = match args.command {
+        Commands::Deployer { action, args } => {
+            let mut arguments = vec![
+                "run",
+                "--allow-net",
+                "--allow-env",
+                "--allow-read",
+                "--allow-write",
+                "--allow-run",
+                "--allow-ffi",
+                "scripts/migrate-deployment.ts",
+                action.as_str(),
+            ];
+            arguments.extend(args.iter().map(String::as_str));
+            utils::execute_script(
+                &project_root_path.join("cardano/offchain"),
+                "deno",
+                arguments,
+                None,
+            )
+            .map(|output| print!("{output}"))
+            .map_err(|error| error.to_string())
+        }
         Commands::Devkit { action } => commands::devkit::run_devkit(project_root_path, action),
         Commands::Check => commands::run_check().await,
         Commands::Install => commands::run_install(project_root_path),
@@ -497,6 +527,40 @@ async fn main() {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+
+    #[test]
+    fn deployer_command_preserves_operator_arguments() {
+        let parsed = Args::try_parse_from([
+            "caribic",
+            "deployer",
+            "nominate-deployer",
+            "--handler",
+            "deployment.json",
+            "--signers",
+            "key1,key2",
+            "--out",
+            "approval.json",
+        ])
+        .unwrap();
+        match parsed.command {
+            Commands::Deployer { action, args } => {
+                assert_eq!(action, "nominate-deployer");
+                assert_eq!(
+                    args,
+                    [
+                        "--handler",
+                        "deployment.json",
+                        "--signers",
+                        "key1,key2",
+                        "--out",
+                        "approval.json"
+                    ]
+                );
+            }
+            _ => panic!("expected deployer command"),
+        }
+        assert!(Args::try_parse_from(["caribic", "deployer", "force"]).is_err());
+    }
 
     #[test]
     fn local_start_has_one_provisioner() {

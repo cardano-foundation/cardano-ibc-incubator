@@ -33,7 +33,7 @@ pub type Authority {
 }
 
 // Restriction bits: 1 traffic/topology/pruning, 2 client updates, 4 heartbeat,
-// 8 all handover execution (including activation). No bit installs code.
+// 8 code migration execution (including activation). No bit installs code.
 pub type Restoration {
   registry_nonce: Int,
   generation: Int,
@@ -105,6 +105,7 @@ pub type Proposal {
     escrow_inventory: ByteArray,
   }
   Rotate { nonce: Int, governance: Governance }
+  NominateDeployer { nonce: Int, source_generation: Int, successor: ByteArray }
 }
 
 pub type Phase {
@@ -145,4 +146,5 @@ pub type RegistryRedeemer {
   CancelRestoration
   Restore
   ProposeEmergencyRotation { authority: Authority, expires_at: Int }
+  GraduateDeployer
 }
