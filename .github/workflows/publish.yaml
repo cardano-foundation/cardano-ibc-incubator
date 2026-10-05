@@ -28,7 +28,7 @@ jobs:
       workflow: .github/workflows/publish.yaml
 
   select-components:
-    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name == 'pull_request' && (github.base_ref != 'main' || !startsWith(github.head_ref, 'docs/'))) }}
+    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'pull_request' && needs.docs-update.outputs.run_jobs == 'true' && (github.base_ref != 'main' || !startsWith(github.head_ref, 'docs/')))) }}
     needs: docs-update
     name: Select image components
     runs-on: ubuntu-latest
