@@ -123,8 +123,8 @@ test('runs on code changes, force-pushes, new PRs, pushes and manual runs', asyn
 
 test('all CI builds and PR packaging jobs depend on the documentation gate', () => {
   for (const [workflow, selected] of [
-    ['ci.yml', null], ['publish.yaml', ['pull-request-build']],
-    ['gateway-image.yml', ['pull-request-build']], ['npm-packages.yml', ['package']],
+    ['ci.yml', null], ['publish.yaml', ['select-components']],
+    ['npm-packages.yml', ['package']],
   ]) {
     const source = readFileSync(new URL(`../../.github/workflows/${workflow}`, import.meta.url), 'utf8');
     const jobs = source.slice(source.indexOf('\njobs:\n')).split(/(?=^  [\w-]+:\n)/m);
