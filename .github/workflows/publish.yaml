@@ -16,10 +16,20 @@ concurrency:
 # PRs have read-only GitHub tokens and only private registry credentials.
 # Fork and Dependabot PRs build without publishing. Only tags receive release credentials.
 permissions:
+  actions: read
   contents: read
 
 jobs:
+
+  docs-update:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/check-docs-update.yml
+    with:
+      workflow: .github/workflows/publish.yaml
+
   select-components:
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name == 'pull_request' && (github.base_ref != 'main' || !startsWith(github.head_ref, 'docs/'))) }}
+    needs: docs-update
     name: Select image components
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -77,6 +87,7 @@ jobs:
           echo "images=${images}" >> "${GITHUB_OUTPUT}"
 
   pr-images:
+    # The docs-only guard in ci.yml runs only for PRs targeting main.
     name: Build PR ${{ matrix.image.component }}
     needs: select-components
     if: github.event_name == 'pull_request'
