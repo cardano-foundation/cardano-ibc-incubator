@@ -1343,6 +1343,15 @@ pub async fn deploy_contracts(
 
     let local_kupo = crate::local_network::endpoint(project_root_path, "KUPO_URL")?;
     let local_ogmios = crate::local_network::endpoint(project_root_path, "OGMIOS_URL")?;
+    // The offchain deployer requires an explicit IBC_DEPLOYMENT_MODE; resolve
+    // it from the same source the Gateway runtime will validate against.
+    let deployment_vars = resolve_offchain_deployment_vars(&gateway_dir.join(".env"))?;
+    let mut local_env = local_offchain_environment(&local_kupo, &local_ogmios, &network_magic);
+    local_env.extend(
+        deployment_vars
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    );
     let deployment_result = execute_script(
         offchain_dir.as_path(),
         "deno",
@@ -1358,11 +1367,7 @@ pub async fn deploy_contracts(
             "--allow-write",
             "index.ts",
         ]),
-        Some(local_offchain_environment(
-            &local_kupo,
-            &local_ogmios,
-            &network_magic,
-        )),
+        Some(local_env),
     );
 
     if let Err(error) = deployment_result {
@@ -1500,6 +1505,57 @@ fn restore_handler_json(
     }
 
     Ok(())
+}
+
+/// The offchain deployer (cardano/offchain) refuses to run without an
+/// explicit IBC_DEPLOYMENT_MODE, and caribic must not silently choose one
+/// either: legacy is immutable with no recovery capability. Resolve the
+/// choice from the Gateway .env first — the Gateway container validates the
+/// same variable against the deployed artifacts, so deployment and runtime
+/// must read one source — then from the process environment. When neither
+/// sets it, fail and require the user to decide explicitly.
+fn resolve_offchain_deployment_vars(
+    gateway_env_path: &Path,
+) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+    let configured = |key: &str| -> Option<String> {
+        crate::setup::read_gateway_env_value(gateway_env_path, key)
+            .ok()
+            .flatten()
+            .filter(|value| !value.trim().is_empty())
+    };
+    let inherited = |key: &str| -> Option<String> {
+        std::env::var(key)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+    };
+
+    let Some(mode) = configured("IBC_DEPLOYMENT_MODE").or_else(|| inherited("IBC_DEPLOYMENT_MODE"))
+    else {
+        return Err("IBC_DEPLOYMENT_MODE is not set. Deployment requires an explicit choice: set IBC_DEPLOYMENT_MODE=legacy (immutable, no recovery capability) or IBC_DEPLOYMENT_MODE=upgradeable (requires MIGRATION_GOVERNANCE_FILE) in cardano/gateway/.env or the process environment. See docs/state-preserving-redeployment.md.".into());
+    };
+    if mode != "upgradeable" && mode != "legacy" {
+        return Err(
+            format!("Invalid IBC_DEPLOYMENT_MODE '{mode}'; expected 'upgradeable' or 'legacy'")
+                .into(),
+        );
+    }
+
+    let governance_file = configured("MIGRATION_GOVERNANCE_FILE")
+        .or_else(|| inherited("MIGRATION_GOVERNANCE_FILE"));
+    let mut vars = vec![("IBC_DEPLOYMENT_MODE".to_string(), mode)];
+    match (vars[0].1.as_str(), governance_file) {
+        ("upgradeable", Some(path)) => {
+            vars.push(("MIGRATION_GOVERNANCE_FILE".to_string(), path));
+        }
+        ("upgradeable", None) => {
+            return Err("IBC_DEPLOYMENT_MODE=upgradeable requires MIGRATION_GOVERNANCE_FILE (see docs/state-preserving-redeployment.md)".into());
+        }
+        ("legacy", Some(_)) => {
+            return Err("IBC_DEPLOYMENT_MODE=legacy conflicts with MIGRATION_GOVERNANCE_FILE; unset the governance file or select upgradeable".into());
+        }
+        _ => {}
+    }
+    Ok(vars)
 }
 
 fn local_offchain_environment<'a>(
@@ -2016,6 +2072,14 @@ pub async fn deploy_public_cardano_bridge(
     if let Some(kupo_api_key) = kupo_api_key.as_deref() {
         offchain_env.push(("KUPO_API_KEY", kupo_api_key));
     }
+    // The offchain deployer requires an explicit IBC_DEPLOYMENT_MODE; resolve
+    // it from the same source the Gateway runtime will validate against.
+    let deployment_vars = resolve_offchain_deployment_vars(&gateway_env_path)?;
+    offchain_env.extend(
+        deployment_vars
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    );
     let deployment_result = execute_script(
         offchain_dir.as_path(),
         "deno",
@@ -2835,16 +2899,96 @@ fn wait_for_mithril_artifact_readiness(
     ))
 }
 
-fn ensure_gateway_dependencies(
-    gateway_dir: &Path,
+fn path_modified(path: &Path) -> Option<std::time::SystemTime> {
+    fs::metadata(path).ok().and_then(|meta| meta.modified().ok())
+}
+
+/// Newest modification time of any file below `dir`. Dependency and build
+/// output directories are skipped, so the result reflects source inputs only.
+/// Passing a build output directory itself (dist/, build/) still works: only
+/// child directories are name-filtered, never the root.
+fn newest_source_mtime(dir: &Path) -> Option<std::time::SystemTime> {
+    const SKIPPED_DIRS: [&str; 5] = [".git", "node_modules", "dist", "build", "target"];
+    let mut newest = None;
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                if !SKIPPED_DIRS.contains(&entry.file_name().to_string_lossy().as_ref()) {
+                    pending.push(entry.path());
+                }
+            } else if let Ok(modified) = meta.modified() {
+                if newest.is_none_or(|newest| modified > newest) {
+                    newest = Some(modified);
+                }
+            }
+        }
+    }
+    newest
+}
+
+/// True when `output` is missing or older than any input. Directory outputs
+/// are reduced to their newest contained file because tsc rewrites emitted
+/// files in place and the directory's own mtime is unreliable.
+fn output_older_than(output: &Path, inputs: &[PathBuf]) -> bool {
+    let output_time = if output.is_dir() {
+        newest_source_mtime(output)
+    } else {
+        path_modified(output)
+    };
+    let Some(output_time) = output_time else {
+        return true;
+    };
+    inputs.iter().any(|input| {
+        let input_time = if input.is_dir() {
+            newest_source_mtime(input)
+        } else {
+            path_modified(input)
+        };
+        input_time.is_some_and(|time| time > output_time)
+    })
+}
+
+/// `npm ci` when node_modules is missing or the manifest/lockfile changed
+/// after the last install. An existing node_modules says nothing about which
+/// lockfile produced it, so existence alone is not a freshness signal.
+fn ensure_fresh_install(
+    dir: &Path,
     optional_progress_bar: &Option<ProgressBar>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if gateway_dir.join("node_modules/.bin/ts-node").exists() {
+    let install_stamp = dir.join("node_modules/.package-lock.json");
+    let manifest_inputs = vec![dir.join("package.json"), dir.join("package-lock.json")];
+    if dir.join("node_modules").exists() && !output_older_than(&install_stamp, &manifest_inputs) {
         return Ok(());
     }
 
     log_or_show_progress(
-        "Installing gateway npm dependencies (first run only)",
+        &format!("Installing npm dependencies in {}", dir.display()),
+        optional_progress_bar,
+    );
+    execute_script(dir, "npm", vec!["ci"], None)?;
+
+    Ok(())
+}
+
+fn ensure_gateway_dependencies(
+    gateway_dir: &Path,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // .bin/ts-node guards against a partially populated node_modules; the
+    // stamp comparison catches lockfile/manifest changes after the install.
+    if gateway_dir.join("node_modules/.bin/ts-node").exists() {
+        return ensure_fresh_install(gateway_dir, optional_progress_bar);
+    }
+
+    log_or_show_progress(
+        "Installing gateway npm dependencies",
         optional_progress_bar,
     );
 
@@ -2857,30 +3001,29 @@ fn ensure_gateway_built(
     gateway_dir: &Path,
     optional_progress_bar: &Option<ProgressBar>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if gateway_dir.join("dist/main.js").exists() {
-        return Ok(());
-    }
-
     let project_root = gateway_dir
         .parent()
         .and_then(|p| p.parent())
         .ok_or("Failed to derive project root from gateway directory")?;
 
-    log_or_show_progress(
-        "Building gateway and file: dependencies (first run only)",
-        optional_progress_bar,
-    );
-
+    // Rebuild whatever is missing or older than its sources. Mtime checks
+    // cannot catch every stale artifact (e.g. an output overwritten with old
+    // content), but they catch the common cases: source edits, dependency
+    // reinstalls and lockfile bumps after a pull.
     let proto_types_dir = project_root.join("proto-types");
-
-    if proto_types_dir.exists() && !proto_types_dir.join("build").exists() {
-        if !proto_types_dir.join("node_modules").exists() {
-            execute_script(&proto_types_dir, "npm", vec!["ci"], None)?;
+    if proto_types_dir.exists() {
+        ensure_fresh_install(&proto_types_dir, optional_progress_bar)?;
+        let proto_inputs = vec![
+            proto_types_dir.clone(),
+            proto_types_dir.join("node_modules/.package-lock.json"),
+        ];
+        if output_older_than(&proto_types_dir.join("build"), &proto_inputs) {
+            log_or_show_progress("Building proto-types", optional_progress_bar);
+            execute_script(&proto_types_dir, "npm", vec!["run", "build"], None)?;
         }
-
-        execute_script(&proto_types_dir, "npm", vec!["run", "build"], None)?;
     }
 
+    let mut package_dirs = Vec::new();
     for package_name in [
         "cardano-ibc-trace-registry",
         "cardano-ibc-planner",
@@ -2888,25 +3031,46 @@ fn ensure_gateway_built(
         "cardano-ibc-tx-builder-runtime",
     ] {
         let package_dir = project_root.join("packages").join(package_name);
-
-        if !package_dir.exists() {
-            continue;
+        if package_dir.exists() {
+            package_dirs.push(package_dir);
         }
+    }
 
-        if !package_dir.join("node_modules").exists() {
-            execute_script(&package_dir, "npm", vec!["ci"], None)?;
+    for package_dir in &package_dirs {
+        ensure_fresh_install(package_dir, optional_progress_bar)?;
+        // Reinstalling dependencies invalidates the type basis a dist was
+        // compiled against, so the install stamp is a build input too.
+        let package_inputs = vec![
+            package_dir.join("src"),
+            package_dir.join("package.json"),
+            package_dir.join("node_modules/.package-lock.json"),
+        ];
+        if output_older_than(&package_dir.join("dist"), &package_inputs) {
+            let package_label = package_dir
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| package_dir.display().to_string());
+            log_or_show_progress(&format!("Building {package_label}"), optional_progress_bar);
+            execute_script(package_dir, "npm", vec!["run", "build"], None)?;
         }
-
-        // Tracked dist files still need the package's runtime dependencies.
-        if package_dir.join("dist").exists() {
-            continue;
-        }
-
-        execute_script(&package_dir, "npm", vec!["run", "build"], None)?;
     }
 
     ensure_gateway_dependencies(gateway_dir, optional_progress_bar)?;
-    execute_script(gateway_dir, "npm", vec!["run", "build"], None)?;
+
+    // The gateway compiles against the file: dependencies' emitted outputs,
+    // so their rebuilds must propagate into the gateway's own dist.
+    let mut gateway_inputs = vec![
+        gateway_dir.join("src"),
+        gateway_dir.join("package.json"),
+        gateway_dir.join("package-lock.json"),
+        gateway_dir.join("node_modules/.package-lock.json"),
+        proto_types_dir.join("build"),
+    ];
+    gateway_inputs.extend(package_dirs.iter().map(|dir| dir.join("dist")));
+    if output_older_than(&gateway_dir.join("dist/main.js"), &gateway_inputs) {
+        log_or_show_progress("Building gateway", optional_progress_bar);
+        execute_script(gateway_dir, "npm", vec!["run", "build"], None)?;
+    }
 
     Ok(())
 }
