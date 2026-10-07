@@ -1534,14 +1534,14 @@ fn resolve_offchain_deployment_vars(
         return Err("IBC_DEPLOYMENT_MODE is not set. Deployment requires an explicit choice: set IBC_DEPLOYMENT_MODE=legacy (immutable, no recovery capability) or IBC_DEPLOYMENT_MODE=upgradeable (requires MIGRATION_GOVERNANCE_FILE) in cardano/gateway/.env or the process environment. See docs/state-preserving-redeployment.md.".into());
     };
     if mode != "upgradeable" && mode != "legacy" {
-        return Err(
-            format!("Invalid IBC_DEPLOYMENT_MODE '{mode}'; expected 'upgradeable' or 'legacy'")
-                .into(),
-        );
+        return Err(format!(
+            "Invalid IBC_DEPLOYMENT_MODE '{mode}'; expected 'upgradeable' or 'legacy'"
+        )
+        .into());
     }
 
-    let governance_file = configured("MIGRATION_GOVERNANCE_FILE")
-        .or_else(|| inherited("MIGRATION_GOVERNANCE_FILE"));
+    let governance_file =
+        configured("MIGRATION_GOVERNANCE_FILE").or_else(|| inherited("MIGRATION_GOVERNANCE_FILE"));
     let mut vars = vec![("IBC_DEPLOYMENT_MODE".to_string(), mode)];
     match (vars[0].1.as_str(), governance_file) {
         ("upgradeable", Some(path)) => {
@@ -2900,7 +2900,9 @@ fn wait_for_mithril_artifact_readiness(
 }
 
 fn path_modified(path: &Path) -> Option<std::time::SystemTime> {
-    fs::metadata(path).ok().and_then(|meta| meta.modified().ok())
+    fs::metadata(path)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
 }
 
 /// Newest modification time of any file below `dir`. Dependency and build
@@ -2987,10 +2989,7 @@ fn ensure_gateway_dependencies(
         return ensure_fresh_install(gateway_dir, optional_progress_bar);
     }
 
-    log_or_show_progress(
-        "Installing gateway npm dependencies",
-        optional_progress_bar,
-    );
+    log_or_show_progress("Installing gateway npm dependencies", optional_progress_bar);
 
     execute_script(gateway_dir, "npm", vec!["ci"], None)?;
 
