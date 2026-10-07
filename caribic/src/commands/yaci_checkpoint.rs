@@ -36,9 +36,7 @@ pub async fn run_yaci_checkpoint(
             network
         ));
     }
-    let blockfrost_base_url = cardano_network
-        .blockfrost_base_url()
-        .ok_or_else(|| format!("ERROR: Missing Blockfrost endpoint for {}.", network))?;
+    let blockfrost_base_url = resolve_blockfrost_base_url(project_root_path, cardano_network)?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
@@ -125,6 +123,47 @@ fn checkpoint_height(tip_height: u64, depth: u64) -> Result<u64, String> {
             depth, tip_height
         )
     })
+}
+
+fn choose_blockfrost_base_url(
+    process_value: Option<String>,
+    file_value: Option<String>,
+    network_default: Option<&str>,
+) -> Option<String> {
+    process_value
+        .or(file_value)
+        .or_else(|| network_default.map(str::to_string))
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn resolve_blockfrost_base_url(
+    project_root_path: &Path,
+    network: config::CoreCardanoNetwork,
+) -> Result<String, String> {
+    let process_value = ["CARIBIC_BLOCKFROST_ENDPOINT", "CARDANO_BLOCKFROST_ENDPOINT"]
+        .iter()
+        .find_map(|key| std::env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let gateway_env = project_root_path.join("cardano/gateway/.env");
+    let file_value = if gateway_env.exists() {
+        setup::read_gateway_env_value(&gateway_env, "CARDANO_BLOCKFROST_ENDPOINT")
+            .map_err(|error| format!("ERROR: Failed to read {}: {error}", gateway_env.display()))?
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    } else {
+        None
+    };
+
+    choose_blockfrost_base_url(process_value, file_value, network.blockfrost_base_url()).ok_or_else(
+        || {
+            format!(
+                "ERROR: Missing Blockfrost endpoint for {}.",
+                network.as_str()
+            )
+        },
+    )
 }
 
 fn blockfrost_project_id(project_root_path: &Path) -> Result<String, String> {
@@ -262,10 +301,35 @@ fn write_checkpoint_env(
 #[cfg(test)]
 mod tests {
     use super::{
-        checkpoint_height, write_checkpoint_env, BlockfrostBlock, DEFAULT_YACI_CHECKPOINT_DEPTH,
+        checkpoint_height, choose_blockfrost_base_url, write_checkpoint_env, BlockfrostBlock,
+        DEFAULT_YACI_CHECKPOINT_DEPTH,
     };
     use crate::config::CoreCardanoNetwork;
     use std::{fs, time::SystemTime};
+
+    #[test]
+    fn configured_blockfrost_endpoint_precedes_the_network_default() {
+        assert_eq!(
+            choose_blockfrost_base_url(
+                None,
+                Some(" https://blockfrost-proxy.example/api/v0/ ".to_string()),
+                Some("https://cardano-preview.blockfrost.io/api/v0"),
+            ),
+            Some("https://blockfrost-proxy.example/api/v0".to_string())
+        );
+        assert_eq!(
+            choose_blockfrost_base_url(
+                Some("https://one-shot.example/".to_string()),
+                Some("https://persistent.example/".to_string()),
+                Some("https://default.example"),
+            ),
+            Some("https://one-shot.example".to_string())
+        );
+        assert_eq!(
+            choose_blockfrost_base_url(None, None, Some("https://default.example/")),
+            Some("https://default.example".to_string())
+        );
+    }
 
     #[test]
     fn checkpoint_is_one_block_past_the_rollback_window() {
