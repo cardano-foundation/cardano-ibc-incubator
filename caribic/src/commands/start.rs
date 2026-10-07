@@ -409,6 +409,27 @@ pub async fn run_start(
             }
         }
 
+        // Public artifacts are created during deployment, after the initial
+        // Gateway preparation. Refresh the source selection now so Gateway
+        // consumes the newly published manifest instead of a stale fallback.
+        if core_cardano_network.is_public_testnet() {
+            if let Err(error) = crate::setup::refresh_gateway_artifact_selection(
+                project_root_path,
+                core_cardano_network,
+            ) {
+                return fail_and_stop_started_services(
+                    project_root_path,
+                    StopTarget::Bridge,
+                    core_cardano_network,
+                    &format!(
+                        "ERROR: Failed to publish {} bridge artifacts to the Gateway runtime: {}",
+                        core_cardano_network.as_str(),
+                        error
+                    ),
+                );
+            }
+        }
+
         if core_cardano_network == config::CoreCardanoNetwork::Local {
             let balance = query_balance(
                 project_root_path,
