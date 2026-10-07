@@ -145,7 +145,9 @@ export async function buildPacketBalanceCompaction(
 
 export class PacketLaneAccountingCapacityError extends Error {
   constructor() {
-    super("Packet lane accounting is full. Settle outstanding sends, then compact or redistribute balances before retrying.");
+    super(
+      "Packet lane accounting is full. Settle outstanding sends, then compact or redistribute balances before retrying.",
+    );
     this.name = "PacketLaneAccountingCapacityError";
   }
 }
@@ -1529,17 +1531,22 @@ export function selectPacketLiquidity(
   const start = candidates.length
     ? Number((sequence - 1n) % BigInt(candidates.length))
     : 0;
+  const rotated = [...candidates.slice(start), ...candidates.slice(0, start)];
+  // Prefer an independent deposit that covers the payout. Rotation distributes
+  // equal choices across packets without hiding a sufficient input.
+  const sufficient = rotated.find(({ principal }) => principal >= amount);
+  if (sufficient) return [sufficient.input];
+  // The largest five principals cover every feasible bounded selection. Stable
+  // sorting keeps the packet rotation as the tie breaker.
+  rotated.sort((a, b) =>
+    a.principal > b.principal ? -1 : a.principal < b.principal ? 1 : 0
+  );
   const selected: UTxO[] = [];
   let total = 0n;
-  for (
-    const { input, principal } of [
-      ...candidates.slice(start),
-      ...candidates.slice(0, start),
-    ]
-  ) {
-    if (total >= amount || selected.length === 5) break;
+  for (const { input, principal } of rotated.slice(0, 5)) {
     selected.push(input);
     total += principal;
+    if (total >= amount) break;
   }
   if (total < amount) {
     throw new Error(

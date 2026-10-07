@@ -409,6 +409,21 @@ describe('TxOperationRunnerService', () => {
     );
   });
 
+  it('offers unreserved script inputs inside the completion lock', async () => {
+    const { service, lucidService } = makeService();
+    const busy = { txHash: 'busy', outputIndex: 0 } as any;
+    const free = { txHash: 'free', outputIndex: 0 } as any;
+    (service as any).inputReservations.reserve('outstanding', [busy], 1000);
+    lucidService.lucid = { utxosByOutRef: jest.fn(async (inputs) => inputs) } as any;
+    await service.runChain({
+      operationName: 'selection',
+      wallet: { mode: 'custom_before_complete', run: async () => lucidService.selectWalletFromAddress() },
+      build: async ({ availableInputs }) => {
+        expect(availableInputs([busy, free])).toEqual([free]);
+      },
+    });
+  });
+
   it('holds one completion lock while threading wallet inputs through a transaction chain', async () => {
     const {
       service,
