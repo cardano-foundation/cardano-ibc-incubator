@@ -11,11 +11,12 @@ import {
   buildVoucherReferenceTokenNameFromFullDenom,
 } from '../shared/helpers/voucher-asset';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Constr, Data, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
   buildTransferIntent,
+  buildTransferIntentCancellation,
   buildPacketSendBatch,
   buildPacketBalanceCompaction,
   buildPacketLaneInitialization,
@@ -163,7 +164,7 @@ export class PacketLaneService {
         const built = await build(window.validFromTime, window.validToTime, scope.availableInputs);
         return scope.complete({
           operationName: name,
-          requireWalletInput: true,
+          requireWalletInput: name !== 'cancelTransferIntent',
           unsignedTx: 'tx' in built ? built.tx : built,
           spendingInputs: 'tx' in built ? (built.inputs ?? (built.input ? [built.input] : undefined)) : undefined,
           validity: { apply: (tx) => tx.validFrom(window.validFromTime).validTo(window.validToTime) },
@@ -233,6 +234,45 @@ export class PacketLaneService {
       );
     }
     return undefined;
+  }
+
+  async cancelIntent(channelId: string, hash: string, signer: string, outputIndex?: number) {
+    if (!/^[0-9a-f]{64}$/.test(hash)) throw new BadRequestException('Invalid intent transaction hash');
+    if (outputIndex !== undefined && (!Number.isInteger(outputIndex) || outputIndex < 0 || outputIndex > 0xffffffff))
+      throw new BadRequestException('Invalid intent output index');
+    const deployment = await this.deployment(channelId);
+    const unsigned_tx = await this.complete(signer, 'cancelTransferIntent', async () => {
+      const { Data, Constr, fromText } = this.lucid.LucidImporter;
+      const intents = (await this.lucid.lucid.utxosAt(deployment.guardAddress)).filter((input) => {
+        if (input.txHash !== hash || (outputIndex !== undefined && input.outputIndex !== outputIndex) || !input.datum)
+          return false;
+        try {
+          const datum = Data.from(input.datum);
+          return (
+            datum instanceof Constr &&
+            datum.index === 0 &&
+            datum.fields.length === 5 &&
+            datum.fields[0] === fromText('transfer') &&
+            datum.fields[1] === fromText(channelId)
+          );
+        } catch {
+          return false;
+        }
+      });
+      if (!intents.length)
+        throw new ConflictException('Intent is no longer pending. Refresh its status before cancelling');
+      if (intents.length > 1)
+        throw new BadRequestException('Multiple intent outputs found. Specify the intent output index');
+      const intent = intents[0];
+      const tx = await buildTransferIntentCancellation(this.lucid.lucid, deployment, intent);
+      return { tx, inputs: [intent] };
+    }).catch((error) => {
+      if (error instanceof PacketInputsBusyError) throw new ConflictException(error.message);
+      if (error instanceof Error && error.message === 'Only the intent owner can cancel')
+        throw new ForbiddenException(error.message);
+      throw error;
+    });
+    return { unsigned_tx };
   }
 
   async intentStatus(channelId: string, hash: string) {

@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { useContext, useEffect, useState } from 'react';
 import Image from 'next/image';
 
-import { Box, Text } from '@chakra-ui/react';
+import { Box, Button, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
@@ -294,7 +294,9 @@ export const TransferResult = ({
   const [transferStatus, setTransferStatus] =
     useState<TransferStatusResponse | null>(null);
   const [transferStatusError, setTransferStatusError] = useState('');
-  const transferTerminal = isTerminalTransferStatus(transferStatus?.status);
+  const transferTerminal =
+    intentStatus?.stage === 'cancelled' ||
+    isTerminalTransferStatus(transferStatus?.status);
 
   useEffect(() => {
     if (transferTerminal) return undefined;
@@ -424,6 +426,19 @@ export const TransferResult = ({
     handleReset();
     setIsSubmitted(false);
   };
+
+  if (intent && intentStatus?.stage === 'cancelled') {
+    return (
+      <StyledWrapContainer>
+        <Box p={4}>
+          <CardanoIntentProgress intent={intent} onStatus={setIntentStatus} />
+          <Button mt={4} onClick={handleBackToTransfer}>
+            Start another transfer
+          </Button>
+        </Box>
+      </StyledWrapContainer>
+    );
+  }
 
   return (
     <StyledWrapContainer>

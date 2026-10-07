@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import intentHandler from '../pages/api/cardano/intents';
-import { intentRequest } from './cardanoIntent';
+import cancelHandler from '../pages/api/cardano/intents/cancel';
+import { intentRequest, cancelIntent } from './cardanoIntent';
 import { fundsReceived } from './transferReceipt';
 
 const intent = {
@@ -72,4 +73,138 @@ test('the browser intent endpoint rejects transaction-building requests', async 
     response,
   );
   assert.equal(code, 405);
+});
+
+test('owner cancellation builds once then signs and submits the returned transaction', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.match(String(url), /intents\/cancel$/);
+    assert.equal(options?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(options?.body)), {
+      channel_id: intent.channel,
+      intent_tx_hash: intent.hash,
+      signer: intent.signer,
+    });
+    return Response.json({
+      unsigned_tx: { value: Buffer.from('deadbeef').toString('base64') },
+    });
+  };
+  try {
+    const txHash = await cancelIntent(
+      intent,
+      intent.signer,
+      async (unsignedTx) => {
+        assert.equal(unsignedTx, 'deadbeef');
+        return 'cancellation-hash';
+      },
+    );
+    assert.equal(txHash, 'cancellation-hash');
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('another wallet cannot start cancellation or prompt signing', async () => {
+  await assert.rejects(
+    cancelIntent(intent, 'other-wallet', async () => {
+      assert.fail('must not sign');
+    }),
+    /wallet that funded/,
+  );
+});
+
+test('a send racing with cancellation reports the builder error without prompting signing', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({ message: 'Intent is no longer pending' }, { status: 409 });
+  try {
+    await assert.rejects(
+      cancelIntent(intent, intent.signer, async () => {
+        assert.fail('must not sign');
+      }),
+      /no longer pending/,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('a declined wallet signature leaves canonical status and the saved request available for retry', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      unsigned_tx: { value: Buffer.from('deadbeef').toString('base64') },
+    });
+  try {
+    await assert.rejects(
+      cancelIntent(intent, intent.signer, async () => {
+        throw new Error('Signature declined');
+      }),
+      /Signature declined/,
+    );
+    assert.equal(
+      await cancelIntent(intent, intent.signer, async () => 'retry-hash'),
+      'retry-hash',
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('the cancellation proxy forwards only a validated owner build request and returns upstream errors', async () => {
+  const original = globalThis.fetch;
+  let code = 0;
+  let body: any;
+  const response: any = {
+    setHeader() {},
+    status(value: number) {
+      code = value;
+      return this;
+    },
+    json(value: any) {
+      body = value;
+      return this;
+    },
+  };
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls += 1;
+    assert.ok(String(url).endsWith(`/channel-0/${intent.hash}/cancel`));
+    assert.equal(options?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(options?.body)), {
+      signer: intent.signer,
+      output_index: 1,
+    });
+    return Response.json(
+      { message: 'Only the intent owner can cancel' },
+      { status: 400 },
+    );
+  };
+  try {
+    await cancelHandler({ method: 'GET' } as any, response);
+    assert.equal(code, 405);
+    await cancelHandler(
+      { method: 'POST', body: { channel_id: 'invalid' } } as any,
+      response,
+    );
+    assert.equal(code, 400);
+    assert.equal(calls, 0);
+    await cancelHandler(
+      {
+        method: 'POST',
+        body: {
+          channel_id: intent.channel,
+          intent_tx_hash: intent.hash,
+          signer: intent.signer,
+          output_index: 1,
+        },
+      } as any,
+      response,
+    );
+    assert.equal(code, 400);
+    assert.equal(body.message, 'Only the intent owner can cancel');
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
