@@ -86,7 +86,7 @@ try {
       await docker('cp', fixture + ':/tmp/image-smoke-manifest.json', manifest);
       const env = {
         BRIDGE_MANIFEST_PATH: '/tmp/image-smoke-manifest.json',
-        CARDANO_NETWORK_MAGIC: '1', IBC_TREE_CACHE_ENABLED: 'false', PORT: '8000',
+        CARDANO_NETWORK_MAGIC: '42', IBC_TREE_CACHE_ENABLED: 'false', PORT: '8000',
         OGMIOS_ENDPOINT: 'http://fixture:8080', KUPO_ENDPOINT: 'http://fixture:8080',
         YACI_STORE_ENDPOINT: 'http://fixture:8080', MITHRIL_ENDPOINT: 'http://fixture:8080',
         GATEWAY_DB_HOST: 'db', GATEWAY_DB_PORT: '5432', GATEWAY_DB_USERNAME: 'smoke',

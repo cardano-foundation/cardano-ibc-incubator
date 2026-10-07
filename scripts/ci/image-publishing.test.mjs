@@ -87,14 +87,14 @@ test('only tag callers receive release credentials and package writes', () => {
 
 test('release CI runs before login, and smoke tests precede publication of the same image ID', () => {
   assert.ok(build.indexOf('run: node scripts/ci/release-ci.mjs') < build.indexOf('id: baseline'));
-  assert.ok(build.indexOf('name: Smoke test release image') < build.indexOf('name: Publish tested image'));
+  assert.ok(build.indexOf('name: Smoke test image') < build.indexOf('name: Publish tested image'));
   assert.match(build, /image_id=\$\(docker image inspect/);
-  const smoke = build.split('      - name: Smoke test release image')[1].split('      - name:')[0];
+  const smoke = build.split('      - name: Smoke test image')[1].split('      - name:')[0];
   const publish = build.split('      - name: Publish tested image')[1].split('      - name:')[0];
   for (const step of [smoke, publish]) {
     assert.match(step, /IMAGE_ID: \$\{\{ steps.image.outputs.id \}\}/);
   }
-  assert.match(smoke, /if: github.ref_type == 'tag'/);
+  assert.doesNotMatch(smoke, /^\s+if:/m, 'Every built image must be smoke-tested, including build-only PRs');
   assert.match(publish, /docker tag "\$\{IMAGE_ID\}"/);
 });
 
