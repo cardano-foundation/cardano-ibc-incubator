@@ -166,19 +166,21 @@ export class ApiController {
   @UseGuards(HistoricalReadOnlyGuard)
   @HttpCode(200)
   async buildPrunePacketHistory(@Body() dto: PrunePacketHistoryDto) {
-    const response = await this.packetService.prunePacketHistory(
-      validateAndFormatPrunePacketHistoryParams({
-        signer: dto.signer,
-        port_id: dto.port_id,
-        channel_id: dto.channel_id,
-        sequence: BigInt(dto.sequence),
-        proof_commitment_absence: Buffer.from(dto.proof_commitment_absence, 'base64'),
-        proof_height: {
-          revision_number: BigInt(dto.proof_height.revision_number),
-          revision_height: BigInt(dto.proof_height.revision_height),
-        },
-      }),
-    );
+    const request = {
+      signer: dto.signer,
+      port_id: dto.port_id,
+      channel_id: dto.channel_id,
+      sequence: BigInt(dto.sequence),
+      proof_commitment_absence: Buffer.from(dto.proof_commitment_absence, 'base64'),
+      proof_height: {
+        revision_number: BigInt(dto.proof_height.revision_number),
+        revision_height: BigInt(dto.proof_height.revision_height),
+      },
+    };
+    const response =
+      request.port_id === 'transfer'
+        ? await this.packetLaneService.prune(request)
+        : await this.packetService.prunePacketHistory(validateAndFormatPrunePacketHistoryParams(request));
     return this.serializeUnsignedTxResponse(response);
   }
 

@@ -159,6 +159,8 @@ which means a fresh Gateway can reconstruct the current proof tree from chain
 state alone without relying on a unique Gateway database, relayer, or historical
 off-chain copy.
 
+Operators must keep pruning while packet lanes are in use. See [Operating packet lane pruning](packet-lane-maintenance.md) for lane occupancy monitoring and the authenticated Hermes command.
+
 ## Why was Mithril removed from the maintained path?
 
 The retired Mithril client used periodic transaction-snapshot certificates as a
