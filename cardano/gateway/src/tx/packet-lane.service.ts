@@ -137,7 +137,11 @@ export class PacketLaneService {
   private async complete(
     signer: string,
     name: string,
-    build: (from: number, to: number) => Promise<TxBuilder | { tx: TxBuilder; inputs?: UTxO[]; input?: UTxO }>,
+    build: (
+      from: number,
+      to: number,
+      availableInputs: (inputs: UTxO[]) => UTxO[],
+    ) => Promise<TxBuilder | { tx: TxBuilder; inputs?: UTxO[]; input?: UTxO }>,
   ) {
     if (!signer) throw new Error('Signer address required');
     const network = this.config.getOrThrow<Network>('cardanoNetwork');
@@ -156,7 +160,7 @@ export class PacketLaneService {
         : {}),
       wallet: { mode: 'refresh_from_address', address: signer, context: name },
       build: async (scope) => {
-        const built = await build(window.validFromTime, window.validToTime);
+        const built = await build(window.validFromTime, window.validToTime, scope.availableInputs);
         return scope.complete({
           operationName: name,
           requireWalletInput: true,
@@ -441,9 +445,10 @@ export class PacketLaneService {
     denom: string,
     amount: bigint,
     sequence: bigint,
+    availableInputs: (inputs: UTxO[]) => UTxO[],
   ) {
     return selectPacketLiquidity(
-      await this.lucid.lucid.utxosAt(deployment.batchAddress),
+      availableInputs(await this.lucid.lucid.utxosAt(deployment.batchAddress)),
       deployment,
       port,
       channel,
@@ -539,11 +544,11 @@ export class PacketLaneService {
         : !incoming && (kind === 'timeout' || ack?.error) && data.denom.startsWith(`${port}/${channel}/`)
           ? data.denom
           : undefined;
-    const liquidity =
-      !voucherDenom && (kind !== 'acknowledge' || ack?.error)
-        ? await this.liquidity(deployment, port, channel, denom, BigInt(data.amount), p.sequence)
-        : [];
-    const unsigned_tx = await this.complete(request.signer, `packet${kind}`, async (from, to) => {
+    const unsigned_tx = await this.complete(request.signer, `packet${kind}`, async (from, to, availableInputs) => {
+      const liquidity =
+        !voucherDenom && (kind !== 'acknowledge' || ack?.error)
+          ? await this.liquidity(deployment, port, channel, denom, BigInt(data.amount), p.sequence, availableInputs)
+          : [];
       let built: Awaited<ReturnType<typeof buildPacketAcknowledgement>>;
       if (kind === 'receive')
         built = await buildPacketReceive(this.lucid.lucid, deployment, packet, height, proof, liquidity, from, to);

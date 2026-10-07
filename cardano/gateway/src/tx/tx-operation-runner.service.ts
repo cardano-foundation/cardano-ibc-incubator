@@ -83,6 +83,7 @@ type TxChainLinkResult = TxOperationRunnerResult & {
 };
 
 type TxChainOperationContext = {
+  availableInputs(inputs: UTxO[]): UTxO[];
   complete(link: TxChainLinkPlan): Promise<TxChainLinkResult>;
 };
 
@@ -163,6 +164,7 @@ export class TxOperationRunnerService {
         }
 
         const value = await plan.build({
+          availableInputs: (inputs) => this.inputReservations.available(inputs),
           complete: async (link) => {
             if (plan.reservation && link.spendingInputs) this.inputReservations.assertAvailable(link.spendingInputs);
             if (walletInputs && plan.wallet.mode === 'refresh_from_address') {
