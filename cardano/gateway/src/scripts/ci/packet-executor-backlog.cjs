@@ -100,6 +100,26 @@ async function main() {
   const request = { signer: fixture.signer, port_id: 'transfer', channel_id: 'channel-0', intent_tx_hash: '' };
   const abandoned = await service.batch(request);
   assert.equal(abandoned.stage, 'send');
+  if (process.env.GATEWAY_BATCH_RESPONSE_FIXTURE_PATH) {
+    const { writeFileSync } = require('node:fs');
+    const { BuildPacketBatchResponse } = require('@cardano-ibc/proto-types/build/ibc/cardano/v1/tx');
+    const cbor = Buffer.from(abandoned.unsigned_tx.value).toString('utf8');
+    const tx = lib.CML.Transaction.from_cbor_hex(cbor);
+    writeFileSync(
+      process.env.GATEWAY_BATCH_RESPONSE_FIXTURE_PATH,
+      JSON.stringify(
+        {
+          response_hex: Buffer.from(
+            BuildPacketBatchResponse.encode(BuildPacketBatchResponse.fromPartial(abandoned)).finish(),
+          ).toString('hex'),
+          transaction_hex: cbor,
+          body_hash: lib.CML.hash_transaction(tx.body()).to_hex(),
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+  }
   const abandonedBody = lib.CML.Transaction.from_cbor_hex(Buffer.from(abandoned.unsigned_tx.value).toString()).body();
   const clientBefore = fixture.deployment.client;
   const refs = abandonedBody.reference_inputs();
