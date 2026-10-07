@@ -130,8 +130,7 @@ jobs:
           image_id=$(docker image inspect "cardano-ibc-${COMPONENT}:latest" --format '{{.Id}}')
           echo "id=${image_id}" >> "${GITHUB_OUTPUT}"
 
-      - name: Smoke test release image
-        if: github.ref_type == 'tag'
+      - name: Smoke test image
         shell: bash
         env:
           COMPONENT: ${{ inputs.component }}
@@ -197,7 +196,8 @@ jobs:
               exit 1
             fi
             printf "\nThe image includes tracked bridge manifests at \`/usr/src/app/manifests\`.\n"
-            printf "\nFor preprod, set \`BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json\`.\n"
+            printf "\nFor Preview, set \`BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preview/cardano-preview-bridge-manifest.json\`.\n"
+            printf "\nPreprod requires an operator-supplied compatible manifest or a fresh deployment.\n"
             printf "\nThe tracked manifests are also attached as \`%s\`.\n" "${archive}"
           } > "${release_dir}/notes.md"
 

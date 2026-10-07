@@ -11,7 +11,8 @@ import { smokeManifest, protocolParameters, fixtureHandler } from './image-smoke
 test('fixture serves only expected startup reads and records unexpected requests', async () => {
   const manifest = smokeManifest();
   const parameters = protocolParameters({ PlutusV1: [1], PlutusV2: [2], PlutusV3: [3] });
-  const server = createServer(fixtureHandler(manifest, 'd87980', parameters));
+  const handler = fixtureHandler(manifest, 'd87980', parameters);
+  const server = createServer(handler);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const origin = 'http://127.0.0.1:' + server.address().port;
@@ -25,6 +26,17 @@ test('fixture serves only expected startup reads and records unexpected requests
       jsonrpc: '2.0', id: 'request-1', method: 'queryLedgerState/protocolParameters',
     }) });
     assert.deepEqual(await rpc.json(), { jsonrpc: '2.0', id: 'request-1', result: parameters });
+    const startTime = await fetch(origin + '/', { method: 'POST', body: JSON.stringify({
+      jsonrpc: '2.0', id: 'start-time', method: 'queryNetwork/startTime',
+    }) });
+    assert.deepEqual(await startTime.json(), { jsonrpc: '2.0', id: 'start-time', result: manifest.deployed_at });
+    assert.deepEqual(handler.websocketMessage(Buffer.from(JSON.stringify({
+      jsonrpc: '2.0', id: 'genesis', method: 'queryNetwork/genesisConfiguration', params: { era: 'shelley' },
+    }))), { jsonrpc: '2.0', id: 'genesis', result: { slotLength: { milliseconds: 1000 } } });
+    for (const message of ['not-json', '{"method":"submitTransaction"}',
+      '{"method":"queryNetwork/genesisConfiguration","params":{"era":"conway"}}']) {
+      assert.equal(handler.websocketMessage(Buffer.from(message)), undefined);
+    }
     const nft = manifest.host_state_nft;
     const byUnit = await get('/matches/' + nft.policy_id + '.' + nft.token_name + '?unspent');
     const byAddress = await get('/matches/' + manifest.validators.host_state_stt.address + '?unspent');
@@ -48,7 +60,7 @@ test('fixture serves only expected startup reads and records unexpected requests
     }
     const observed = await get('/__smoke/status');
     assert.deepEqual({ ...observed, unexpected: observed.unexpected.length },
-      { protocol: 1, references: 1, host: 2, datum: 1, entities: 3, unexpected: 5 });
+      { protocol: 1, timing: 2, references: 1, host: 2, datum: 1, entities: 3, unexpected: 8 });
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -57,14 +69,15 @@ test('fixture serves only expected startup reads and records unexpected requests
 test('synthetic deployment contains mandatory startup identities without changing public manifests', () => {
   const manifest = smokeManifest();
   assert.equal(manifest.schema_version, 4);
-  assert.equal(manifest.cardano.network_magic, 1);
+  assert.equal(manifest.cardano.network_magic, 42);
+  assert.equal(manifest.consensus_history_format, 'proof-backed-v1');
   assert.ok(manifest.validators.spend_channel.ref_validator.prune_packet_history);
   assert.match(manifest.host_state_nft.policy_id, /^[0-9a-f]{56}$/);
   assert.equal(new Set(['host_state_stt', 'spend_client', 'spend_connection', 'spend_channel']
     .map(name => manifest.validators[name].address)).size, 4);
 });
 
-// Docker is mocked here. The release workflow invokes the same CLI with real Docker.
+// Docker is mocked here. The image workflow invokes the same CLI with real Docker.
 for (const component of ['gateway', 'hermes', 'swap-client']) {
   for (const fail of [false, true]) {
     test(component + ' orchestrator pins image ID, isolates networking and cleans up' + (fail ? ' after probe failure' : ''), async () => {

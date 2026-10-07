@@ -24,7 +24,7 @@ if (component === 'gateway') {
   const fixture = await fetch('http://fixture:8080/__smoke/status', { signal: AbortSignal.timeout(5000) });
   const observed = await fixture.json();
   assert.deepEqual(observed.unexpected, []);
-  for (const kind of ['protocol', 'references', 'host', 'datum', 'entities']) {
+  for (const kind of ['protocol', 'timing', 'references', 'host', 'datum', 'entities']) {
     assert.ok(observed[kind] > 0, 'Startup did not exercise ' + kind);
   }
 } else if (component === 'swap-client') {
