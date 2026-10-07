@@ -110,6 +110,36 @@ export class PacketStateService {
     };
   }
 
+  async occupancy(port: string, channel: string) {
+    const height = await this.height();
+    const block = await this.history.findBlockByHeight(height);
+    if (!block) throw new Error('Occupancy block missing');
+    const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState.laneCount;
+    const lanes = [];
+    for (let index = 0; index < count; index++) {
+      const { datum } = await this.lane(port, channel, index, height);
+      const commitments = (datum.fields[6] as Map<bigint, string>).size;
+      const receipts = datum.fields[7] as bigint[];
+      const acknowledgements = datum.fields[8] as Map<bigint, string>;
+      const entries = commitments + receipts.length + acknowledgements.size;
+      lanes.push({
+        lane: index,
+        commitments,
+        receipts: receipts.length,
+        acknowledgements: acknowledgements.size,
+        entries,
+        capacity: 64,
+        remaining_receive_slots: Math.max(0, Math.floor((64 - entries) / 2)),
+        maintenance_required: entries >= 48,
+        // These still need authenticated source commitment absence before pruning.
+        prune_candidates: receipts.filter((sequence) => acknowledgements.has(sequence)).map(String),
+      });
+    }
+    if ((await this.history.findBlockByHeight(height))?.hash !== block.hash)
+      throw new Error('Packet state rolled back during occupancy query');
+    return { port_id: port, channel_id: channel, height: height.toString(), lanes };
+  }
+
   async events(txHash: string) {
     const config = this.config.getOrThrow<DeploymentConfig>('deployment');
     const evidence = await this.history.findTransactionEvidenceByHash(txHash);

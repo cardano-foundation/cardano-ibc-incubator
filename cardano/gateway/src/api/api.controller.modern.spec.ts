@@ -18,6 +18,7 @@ import { QueryService } from '~@/query/services/query.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
+  const lanePrune = jest.fn();
   let channelServiceMock: {
     queryChannels: jest.Mock;
     listCurrentChannelEnds: jest.Mock;
@@ -52,6 +53,7 @@ describe('ApiController (modern)', () => {
   };
 
   beforeEach(async () => {
+    lanePrune.mockReset();
     // API controller tests assert request/response shaping only.
     // Channel/packet services are mocked so external IBC logic is out of scope here.
     channelServiceMock = {
@@ -92,7 +94,7 @@ describe('ApiController (modern)', () => {
       providers: [
         { provide: ChannelService, useValue: channelServiceMock },
         { provide: PacketService, useValue: packetServiceMock },
-        { provide: PacketLaneService, useValue: { admit: packetServiceMock.sendPacket } },
+        { provide: PacketLaneService, useValue: { admit: packetServiceMock.sendPacket, prune: lanePrune } },
         { provide: DenomTraceService, useValue: denomTraceServiceMock },
         { provide: LocalOsmosisSwapPlannerService, useValue: swapPlannerServiceMock },
         { provide: CheqdIcqService, useValue: cheqdIcqServiceMock },
@@ -218,8 +220,8 @@ describe('ApiController (modern)', () => {
     });
   });
 
-  it('builds a permissionless prune request and preserves unsigned transaction bytes', async () => {
-    packetServiceMock.prunePacketHistory.mockResolvedValue({
+  it('routes transfer pruning to packet lanes and preserves unsigned transaction bytes', async () => {
+    lanePrune.mockResolvedValue({
       unsigned_tx: { type_url: '', value: Buffer.from('deadbeef', 'utf8') },
     });
 
@@ -233,13 +235,13 @@ describe('ApiController (modern)', () => {
       proof_height: { revision_number: '0', revision_height: '55' },
     });
 
-    expect(packetServiceMock.prunePacketHistory).toHaveBeenCalledWith(
+    expect(lanePrune).toHaveBeenCalledWith(
       expect.objectContaining({
         signer: 'addr_test1signer',
-        portId: 'transfer',
-        channelId: 'channel-7',
+        port_id: 'transfer',
+        channel_id: 'channel-7',
         sequence: 9n,
-        proofHeight: { revisionNumber: 0n, revisionHeight: 55n },
+        proof_height: { revision_number: 0n, revision_height: 55n },
       }),
     );
     expect(response).toEqual({
@@ -249,6 +251,20 @@ describe('ApiController (modern)', () => {
         value: Buffer.from('deadbeef', 'utf8').toString('base64'),
       },
     });
+  });
+
+  it('keeps non-transfer pruning on the packet service path', async () => {
+    packetServiceMock.prunePacketHistory.mockResolvedValue({ unsigned_tx: { value: new Uint8Array([1]) } });
+    await controller.buildPrunePacketHistory({
+      signer: 'addr_test1signer',
+      port_id: 'port-99',
+      channel_id: 'channel-7',
+      sequence: '9',
+      proof_commitment_absence: Buffer.from([0x0a, 0x02, 0x1a, 0x00]).toString('base64'),
+      proof_height: { revision_number: '0', revision_height: '55' },
+    });
+    expect(packetServiceMock.prunePacketHistory).toHaveBeenCalledWith(expect.objectContaining({ portId: 'port-99' }));
+    expect(lanePrune).not.toHaveBeenCalled();
   });
 
   it('delegates cheqd DidDoc ICQ tx building to CheqdIcqService', async () => {
