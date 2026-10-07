@@ -135,8 +135,42 @@ describe('default funded packet batches', () => {
   it('reports the consuming batch so competing builders can recover its events', async () => {
     pending = [];
     history.findIntentSpendingTransaction.mockResolvedValue({ txHash: 'consuming' });
-    events.events.mockResolvedValue([{ type: 'send_packet' }]);
+    events.events.mockResolvedValue([
+      {
+        type: 'send_packet',
+        event_attribute: [
+          { key: 'intent_tx_hash', value: request.intent_tx_hash },
+          { key: 'packet_src_port', value: 'transfer' },
+          { key: 'packet_src_channel', value: 'channel-0' },
+          { key: 'packet_sequence', value: '1' },
+        ],
+      },
+    ]);
     await expect(service.batch(request)).resolves.toMatchObject({ stage: 'included', included_tx_hash: 'consuming' });
+  });
+
+  it.each([
+    ['intent_tx_hash', 'other'],
+    ['packet_src_channel', 'channel-1'],
+    ['packet_src_port', 'other'],
+    ['packet_sequence', ''],
+  ])('rejects unrelated or incomplete send evidence for %s in both recovery paths', async (key, value) => {
+    const hash = 'ab'.repeat(32);
+    pending = [];
+    history.findIntentSpendingTransaction.mockResolvedValue({ txHash: 'consuming' });
+    const attributes = {
+      intent_tx_hash: hash,
+      packet_src_port: 'transfer',
+      packet_src_channel: 'channel-0',
+      packet_sequence: '1',
+      [key]: value,
+    };
+    events.events.mockResolvedValue([
+      { type: 'send_packet', event_attribute: Object.entries(attributes).map(([key, value]) => ({ key, value })) },
+    ]);
+    await expect(service.batch({ ...request, intent_tx_hash: hash })).rejects.toThrow('cancelled without sending');
+    await expect(service.intentStatus('channel-0', hash)).resolves.toEqual({ stage: 'cancelled' });
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it('does not confuse cancellation with a completed transfer', async () => {
@@ -160,6 +194,8 @@ describe('default funded packet batches', () => {
         type: 'send_packet',
         event_attribute: [
           { key: 'intent_tx_hash', value: hash },
+          { key: 'packet_src_port', value: 'transfer' },
+          { key: 'packet_src_channel', value: 'channel-0' },
           { key: 'packet_sequence', value: '2' },
         ],
       },
