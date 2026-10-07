@@ -236,14 +236,23 @@ export class PacketLaneService {
     const deployment = await this.deployment(channelId);
     const pending = (await this.lucid.lucid.utxosAt(deployment.guardAddress)).some((u) => u.txHash === hash);
     if (pending) return { stage: 'funded' as const };
+    return this.resolveConsumedIntent(deployment, channelId, hash);
+  }
+
+  private async resolveConsumedIntent(deployment: PacketLaneDeployment, channel: string, hash: string) {
     const consuming = await this.history.findIntentSpendingTransaction(hash, deployment.guardAddress);
     if (!consuming) return { stage: 'pending' as const };
     const events = await this.packetState.events(consuming.txHash);
-    const event = events.find(
-      (event) =>
+    const event = events.find((event) => {
+      const attribute = (key: string) => event.event_attribute?.find((attribute) => attribute.key === key)?.value;
+      return (
         event.type === 'send_packet' &&
-        event.event_attribute.some((attribute) => attribute.key === 'intent_tx_hash' && attribute.value === hash),
-    );
+        attribute('intent_tx_hash') === hash &&
+        attribute('packet_src_port') === 'transfer' &&
+        attribute('packet_src_channel') === channel &&
+        /^[1-9][0-9]*$/.test(attribute('packet_sequence') ?? '')
+      );
+    });
     if (!event) return { stage: 'cancelled' as const };
     return {
       stage: 'sent' as const,
@@ -279,18 +288,13 @@ export class PacketLaneService {
       .filter((input) => usableTransferIntent(input, deployment, 0))
       .sort((a, b) => a.txHash.localeCompare(b.txHash) || a.outputIndex - b.outputIndex);
     if (request.intent_tx_hash && !pending.some((input) => input.txHash === request.intent_tx_hash)) {
-      const consuming = await this.history.findIntentSpendingTransaction(
-        request.intent_tx_hash,
-        deployment.guardAddress,
-      );
-      if (!consuming)
+      const resolved = await this.resolveConsumedIntent(deployment, request.channel_id, request.intent_tx_hash);
+      if (resolved.stage === 'pending')
         throw new Error(
           'Funded intent is not available in canonical indexed state. Retry after inclusion or rollback recovery',
         );
-      const events = await this.packetState.events(consuming.txHash);
-      if (!events.some((event) => event.type === 'send_packet'))
-        throw new Error('Funded intent was cancelled without sending a packet');
-      return { stage: 'included', intent_tx_hashes: [request.intent_tx_hash], included_tx_hash: consuming.txHash };
+      if (resolved.stage === 'cancelled') throw new Error('Funded intent was cancelled without sending a packet');
+      return { stage: 'included', intent_tx_hashes: [request.intent_tx_hash], included_tx_hash: resolved.packetTxHash };
     }
     if (!request.intent_tx_hash) {
       const cursor = this.intentCursor.get(request.channel_id);
