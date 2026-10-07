@@ -159,7 +159,20 @@ which means a fresh Gateway can reconstruct the current proof tree from chain
 state alone without relying on a unique Gateway database, relayer, or historical
 off-chain copy.
 
-Operators must keep pruning while packet lanes are in use. See [Operating packet lane pruning](packet-lane-maintenance.md) for lane occupancy monitoring and the authenticated Hermes command.
+Funded intent execution does not schedule pruning. Operators must monitor each active transfer channel with `GET /api/packet-history/channel-0/occupancy`. The response reports occupancy at one settled Cardano height. Alert on failed queries and any lane with `maintenance_required: true`. The flag starts at 48 of 64 entries. Each receive uses two entries. Poll often enough that traffic and indexing delay cannot consume the remaining receive slots before maintenance runs.
+
+`prune_candidates` lists stored receipt and acknowledgement pairs. A candidate still needs authenticated source commitment absence. Relay its acknowledgement to the source first. Then use the source channel paired with this Cardano channel:
+
+```sh
+hermes --config "$HERMES_CONFIG" tx packet-prune \
+  --dst-chain "$CARDANO_CHAIN_ID" \
+  --src-chain "$SOURCE_CHAIN_ID" \
+  --src-port transfer \
+  --src-channel "$SOURCE_CHANNEL_ID" \
+  --sequence "$SEQUENCE"
+```
+
+Hermes obtains the proof and signs and submits the pruning transaction. With a connection delay use `--proof-height REVISION-HEIGHT` for a matured authenticated height that meets the receive high-water mark and pruning floor. Submit maintenance serially for a lane. Wait for inclusion and indexing before polling again. Continue until the alert clears. If there are no history pairs to prune the lane may need outgoing acknowledgements or timeouts instead. Reduce incoming traffic if maintenance cannot keep pace.
 
 ## Why was Mithril removed from the maintained path?
 
