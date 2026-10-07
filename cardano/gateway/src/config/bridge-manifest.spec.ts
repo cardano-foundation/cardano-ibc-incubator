@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   DEFAULT_HANDLER_JSON_PATH,
   CONSENSUS_HISTORY_FORMAT,
@@ -126,6 +129,28 @@ function buildStagedHandlerJsonDeployment() {
 }
 
 describe('bridge manifest normalization', () => {
+  it('accepts the deployment used by the Gateway image smoke test', () => {
+    const fixtureUrl = pathToFileURL(resolve(__dirname, '../../../../scripts/ci/image-smoke-fixture.mjs')).href;
+    const manifest = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `import { smokeManifest } from ${JSON.stringify(fixtureUrl)}
+console.log(JSON.stringify(smokeManifest()))`,
+        ],
+        { encoding: 'utf8' },
+      ),
+    );
+    const normalized = normalizeBridgeManifestConfig(manifest);
+    expect(normalized.deployment.packetState.laneCount).toBe(16);
+    expect(normalized.deployment.packetState.operations.prune.refUtxo).toEqual({
+      txHash: manifest.packet_state.operations.prune.ref_utxo.tx_hash,
+      outputIndex: manifest.packet_state.operations.prune.ref_utxo.output_index,
+    });
+  });
+
   it.each([undefined, null, '', 'archive-nft-v1', 'proof-backed-v2'])(
     'rejects missing or unsupported history format %s before accepting old contracts',
     (format) => {

@@ -47,8 +47,13 @@ test('fixture serves only expected startup reads and records unexpected requests
       assert.deepEqual(await get('/matches/' + manifest.validators[name].address + '?unspent'), []);
     }
     const references = await get('/matches/*@' + manifest.validators.host_state_stt.ref_utxo.tx_hash + '?unspent');
-    assert.equal(references.length, 22);
-    assert.equal(new Set(references.map(ref => ref.output_index)).size, 22);
+    assert.equal(references.length, 35);
+    assert.equal(new Set(references.map(ref => ref.output_index)).size, 35);
+    for (const validator of [manifest.packet_state.state, manifest.packet_state.batch,
+      manifest.packet_state.guard, ...Object.values(manifest.packet_state.operations)]) {
+      assert.ok(references.some(ref => ref.transaction_id === validator.ref_utxo.tx_hash &&
+        ref.output_index === validator.ref_utxo.output_index));
+    }
     for (const [path, method, body] of [
       ['/matches/*@unknown?unspent', 'GET'],
       ['/matches/unknown?unspent', 'GET'],
@@ -68,7 +73,7 @@ test('fixture serves only expected startup reads and records unexpected requests
 
 test('synthetic deployment contains mandatory startup identities without changing public manifests', () => {
   const manifest = smokeManifest();
-  assert.equal(manifest.schema_version, 4);
+  assert.equal(manifest.schema_version, 5);
   assert.equal(manifest.cardano.network_magic, 42);
   assert.equal(manifest.consensus_history_format, 'proof-backed-v1');
   assert.ok(manifest.validators.spend_channel.ref_validator.prune_packet_history);

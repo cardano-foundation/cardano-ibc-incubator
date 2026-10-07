@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, UseGuards } from '@nestjs
 import { IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { HistoricalReadOnlyGuard } from '../security/historical-read-only.guard';
 
-export class CancelIntentDto {
+class CancelIntentDto {
   @IsString()
   @IsNotEmpty()
   signer: string;

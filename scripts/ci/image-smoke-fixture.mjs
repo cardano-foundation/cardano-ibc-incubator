@@ -26,15 +26,24 @@ export function smokeManifest() {
     'acknowledge_packet', 'chan_close_confirm', 'chan_close_init', 'chan_open_ack',
     'chan_open_confirm', 'recv_packet', 'prune_packet_history', 'send_packet', 'timeout_packet',
   ].map(name => [name, validator()]));
+  const packet_state = {
+    format: 'packet-lanes-v1', lane_count: 16,
+    config_token: { policy_id: '77'.repeat(28), token_name: '6962635f7061636b65745f636f6e666967' },
+    state: validator(), batch: validator(), guard: validator(),
+    operations: Object.fromEntries([
+      'send', 'acknowledge', 'timeout', 'reject', 'receive', 'prune',
+      'timeout_on_close', 'retire', 'funds', 'send_funds',
+    ].map(name => [name, validator()])),
+  };
   const host_state_nft = { policy_id: '22'.repeat(28), token_name: '6962635f686f73745f7374617465' };
   return {
-    schema_version: 4,
+    schema_version: 5,
     consensus_history_format: 'proof-backed-v1',
     deploymentMode: 'legacy',
     deployment_id: 'cardano-devnet:' + host_state_nft.policy_id + '.' + host_state_nft.token_name,
     deployed_at: '2026-01-01T00:00:00.000Z',
     cardano: { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
-    host_state_nft, validators,
+    host_state_nft, validators, packet_state,
     modules: { transfer: { identifier: '33'.repeat(28), address } },
   };
 }
@@ -86,6 +95,7 @@ export function fixtureHandler(manifest, datum, parameters) {
     for (const child of Object.values(value)) collect(child);
   }
   collect(manifest.validators);
+  collect(manifest.packet_state);
   const nft = manifest.host_state_nft;
   const host = {
     transaction_id: '55'.repeat(32), output_index: 0, address,
