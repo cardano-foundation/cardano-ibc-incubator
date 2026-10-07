@@ -1281,6 +1281,36 @@ fn restore_gateway_defaults_after_local_network(
     remove_env_var(gateway_env, "CARDANO_LOCAL_NETWORK_ID")
 }
 
+fn write_gateway_artifact_selection(
+    project_root: &Path,
+    gateway_env: &Path,
+    profile: &config::CardanoNetworkProfile,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let manifest_container_path = profile
+        .bridge_manifest_path
+        .as_deref()
+        .filter(|path| Path::new(path).is_file())
+        .map(|path| prepare_gateway_manifest(project_root, Path::new(path)))
+        .transpose()?;
+    let handler_container_path =
+        gateway_container_artifact_path(project_root, profile.handler_json_path.as_str())
+            .ok_or("Failed to derive deployment artifact container path")?;
+
+    if let Some(manifest_path) = manifest_container_path {
+        set_or_append_env_var(gateway_env, "BRIDGE_MANIFEST_PATH", manifest_path.as_str())?;
+        set_or_append_env_var(gateway_env, "HANDLER_JSON_PATH", "")?;
+    } else {
+        set_or_append_env_var(
+            gateway_env,
+            "HANDLER_JSON_PATH",
+            handler_container_path.as_str(),
+        )?;
+        set_or_append_env_var(gateway_env, "BRIDGE_MANIFEST_PATH", "")?;
+    }
+
+    Ok(())
+}
+
 fn write_gateway_env_for_network(
     cardano_dir: &Path,
     clean: bool,
@@ -1535,27 +1565,7 @@ fn write_gateway_env_for_network(
         }
     }
 
-    let manifest_container_path = profile
-        .bridge_manifest_path
-        .as_deref()
-        .filter(|path| Path::new(path).is_file())
-        .map(|path| prepare_gateway_manifest(project_root.as_path(), Path::new(path)))
-        .transpose()?;
-    let handler_container_path =
-        gateway_container_artifact_path(project_root.as_path(), profile.handler_json_path.as_str())
-            .ok_or("Failed to derive deployment artifact container path")?;
-
-    if let Some(manifest_path) = manifest_container_path {
-        set_or_append_env_var(&gateway_env, "BRIDGE_MANIFEST_PATH", manifest_path.as_str())?;
-        set_or_append_env_var(&gateway_env, "HANDLER_JSON_PATH", "")?;
-    } else {
-        set_or_append_env_var(
-            &gateway_env,
-            "HANDLER_JSON_PATH",
-            handler_container_path.as_str(),
-        )?;
-        set_or_append_env_var(&gateway_env, "BRIDGE_MANIFEST_PATH", "")?;
-    }
+    write_gateway_artifact_selection(project_root.as_path(), &gateway_env, &profile)?;
 
     secure_env_file_permissions(&gateway_env)?;
 
@@ -1750,6 +1760,21 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
+/// Refresh the Gateway's bridge artifact source after deployment has published
+/// a public manifest. Initial setup can run before that file exists and choose
+/// a handler fallback; without this second selection the container starts with
+/// the stale pre-deployment path even though manifests/ is mounted read-only.
+pub fn refresh_gateway_artifact_selection(
+    project_root: &Path,
+    network: config::CoreCardanoNetwork,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let gateway_env = project_root.join("cardano/gateway/.env");
+    let profile = config::cardano_network_profile(network);
+    write_gateway_artifact_selection(project_root, &gateway_env, &profile)?;
+    secure_env_file_permissions(&gateway_env)?;
+    Ok(())
+}
+
 pub fn prepare_gateway(
     cardano_dir: &Path,
     clean: bool,
@@ -1792,6 +1817,74 @@ mod tests {
             .exists());
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn deployment_refresh_replaces_the_pre_manifest_handler_fallback() {
+        let root = std::env::temp_dir().join(format!(
+            "caribic-deployment-refresh-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config_dir = root.join("caribic/config");
+        let gateway_env = root.join("cardano/gateway/.env");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(gateway_env.parent().unwrap()).unwrap();
+        std::fs::write(&gateway_env, "").unwrap();
+
+        // Keep lexical `..` components to reproduce config path resolution
+        // before these artifacts exist and can be canonicalized.
+        let handler = config_dir.join("../../manifests/preview/cardano-preview-handler.json");
+        let manifest =
+            config_dir.join("../../manifests/preview/cardano-preview-bridge-manifest.json");
+        let profile = crate::config::CardanoNetworkProfile {
+            chain_id: "cardano-preview".to_string(),
+            network_magic: 2,
+            mithril_aggregator_url: String::new(),
+            mithril_genesis_verification_key: String::new(),
+            handler_json_path: handler.to_string_lossy().into_owned(),
+            bridge_manifest_path: Some(manifest.to_string_lossy().into_owned()),
+        };
+
+        super::write_gateway_artifact_selection(&root, &gateway_env, &profile).unwrap();
+        let initial = super::parse_env_file(&gateway_env).unwrap();
+        assert_eq!(
+            initial.get("HANDLER_JSON_PATH").map(String::as_str),
+            Some("/usr/src/app/cardano/offchain/deployments/cardano-preview-handler.json")
+        );
+        assert_eq!(
+            initial.get("BRIDGE_MANIFEST_PATH").map(String::as_str),
+            Some("")
+        );
+
+        std::fs::create_dir_all(root.join("manifests/preview")).unwrap();
+        std::fs::write(
+            root.join("manifests/preview/cardano-preview-handler.json"),
+            "{}",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("manifests/preview/cardano-preview-bridge-manifest.json"),
+            "{}",
+        )
+        .unwrap();
+
+        super::write_gateway_artifact_selection(&root, &gateway_env, &profile).unwrap();
+        let refreshed = super::parse_env_file(&gateway_env).unwrap();
+        assert_eq!(
+            refreshed.get("HANDLER_JSON_PATH").map(String::as_str),
+            Some("")
+        );
+        assert_eq!(
+            refreshed.get("BRIDGE_MANIFEST_PATH").map(String::as_str),
+            Some("/usr/src/app/manifests/preview/cardano-preview-bridge-manifest.json")
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     use super::{
         cardano_runtime_state_paths, parse_env_file, remove_env_var,
         resolve_public_testnet_history_relay, restore_gateway_defaults_after_local_network,
