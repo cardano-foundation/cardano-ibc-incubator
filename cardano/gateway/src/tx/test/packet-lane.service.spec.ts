@@ -3,6 +3,7 @@ import { PacketLaneService } from '../packet-lane.service';
 import {
   PacketLaneAccountingCapacityError,
   buildPacketSendBatch,
+  buildTransferIntentCancellation,
   buildPacketBalanceCompaction,
   usableTransferIntent,
 } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
@@ -11,6 +12,7 @@ jest.mock('@cardano-ibc/tx-builder-runtime/packetLaneTransactions', () => ({
   PacketLaneAccountingCapacityError: jest.requireActual('@cardano-ibc/tx-builder-runtime/packetLaneTransactions')
     .PacketLaneAccountingCapacityError,
   buildPacketSendBatch: jest.fn(),
+  buildTransferIntentCancellation: jest.fn(),
   buildPacketBalanceCompaction: jest.fn(),
   usableTransferIntent: jest.fn(),
 }));
@@ -56,6 +58,45 @@ describe('default funded packet batches', () => {
     });
     jest.mocked(usableTransferIntent).mockReturnValue(true);
     jest.mocked(buildPacketSendBatch).mockResolvedValue({ tx: {} } as any);
+  });
+
+  it('cancels an expired funded request without trying to send it', async () => {
+    const hash = 'ab'.repeat(32);
+    pending = [{ txHash: hash, outputIndex: 0, datum: new Datum() }];
+    jest.mocked(usableTransferIntent).mockReturnValue(false);
+    const tx = {} as any;
+    jest.mocked(buildTransferIntentCancellation).mockResolvedValue(tx);
+    await expect(service.cancelIntent('channel-0', hash, 'owner')).resolves.toEqual({
+      unsigned_tx: { type_url: '', value: new Uint8Array([1]) },
+    });
+    expect(buildTransferIntentCancellation).toHaveBeenCalledWith(expect.anything(), expect.anything(), pending[0]);
+    expect(buildPacketSendBatch).not.toHaveBeenCalled();
+  });
+
+  it('propagates owner authorization failure and does not build a send', async () => {
+    const hash = 'ab'.repeat(32);
+    pending = [{ txHash: hash, outputIndex: 0, datum: new Datum() }];
+    jest.mocked(buildTransferIntentCancellation).mockRejectedValueOnce(new Error('Only the intent owner can cancel'));
+    await expect(service.cancelIntent('channel-0', hash, 'stranger')).rejects.toThrow('Only the intent owner');
+    expect(buildPacketSendBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a disappeared request and a request on another channel', async () => {
+    const hash = 'ab'.repeat(32);
+    pending = [];
+    await expect(service.cancelIntent('channel-0', hash, 'owner')).rejects.toThrow('no longer pending');
+    pending = [{ txHash: hash, outputIndex: 0, datum: new Datum('transfer', 'channel-1') }];
+    await expect(service.cancelIntent('channel-0', hash, 'owner')).rejects.toThrow('no longer pending');
+    expect(buildTransferIntentCancellation).not.toHaveBeenCalled();
+  });
+
+  it('requires a full output reference when one transaction funded several requests', async () => {
+    const hash = 'ab'.repeat(32);
+    pending = [0, 1].map((outputIndex) => ({ txHash: hash, outputIndex, datum: new Datum() }));
+    await expect(service.cancelIntent('channel-0', hash, 'owner')).rejects.toThrow('Specify the intent output index');
+    jest.mocked(buildTransferIntentCancellation).mockResolvedValue({} as any);
+    await service.cancelIntent('channel-0', hash, 'owner', 1);
+    expect(buildTransferIntentCancellation).toHaveBeenCalledWith(expect.anything(), expect.anything(), pending[1]);
   });
 
   it('builds evaluated accounting maintenance for the requested lane pair', async () => {

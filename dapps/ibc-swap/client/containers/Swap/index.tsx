@@ -1,12 +1,13 @@
 'use client';
 
 import { CardanoIntentProgress } from '@/components/CardanoIntentProgress';
-import type { FundedIntent } from '@/utils/cardanoIntent';
+import type { FundedIntent, IntentStatus } from '@/utils/cardanoIntent';
 
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Box,
+  Button,
   Checkbox,
   Heading,
   Image,
@@ -89,6 +90,7 @@ const SwapContainer = () => {
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
   const [lastTxHash, setLastTxHash] = useState<string>('');
   const [fundedIntent, setFundedIntent] = useState<FundedIntent>();
+  const [intentStatus, setIntentStatus] = useState<IntentStatus>();
   const [isSubmitSwap, setIsSubmitSwap] = useState<boolean>(false);
   const [errorAddressMsg, setErrorAddressMsg] = useState<string>('');
   const [isEstimating, setIsEstimating] = useState<boolean>(false);
@@ -121,6 +123,7 @@ const SwapContainer = () => {
     setEstimateData(initEstData);
     setLastTxHash('');
     setFundedIntent(undefined);
+    setIntentStatus(undefined);
     localStorage.removeItem('ibc-swap:funded-swap');
     handleResetData();
   };
@@ -382,18 +385,32 @@ const SwapContainer = () => {
             <CardanoIntentProgress
               intent={fundedIntent}
               onStatus={(status) => {
+                setIntentStatus(status);
                 if (status.stage === 'sent' && status.packetTxHash)
                   setLastTxHash(status.packetTxHash);
               }}
             />
           )}
-          <SwapResult
-            setIsSubmitted={setIsSubmitSwap}
-            minimumReceived={estData.estMinimumReceived || ''}
-            estFee={estData.estFee}
-            resetLastTxData={resetLastTxData}
-            lastTxHash={lastTxHash}
-          />
+          {intentStatus?.stage === 'cancelled' && (
+            <Button
+              mt={4}
+              onClick={() => {
+                resetLastTxData();
+                setIsSubmitSwap(false);
+              }}
+            >
+              Start another swap
+            </Button>
+          )}
+          {(!fundedIntent || intentStatus?.stage === 'sent') && (
+            <SwapResult
+              setIsSubmitted={setIsSubmitSwap}
+              minimumReceived={estData.estMinimumReceived || ''}
+              estFee={estData.estFee}
+              resetLastTxData={resetLastTxData}
+              lastTxHash={lastTxHash}
+            />
+          )}
         </motion.div>
       ) : (
         <motion.div
