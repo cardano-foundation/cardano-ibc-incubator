@@ -67,6 +67,7 @@ def main():
         selected.chmod(0o600)
         log_path = directory / (label + '-hermes.log')
         with log_path.open('w') as log:
+            wall_start = time.time()
             start = time.monotonic()
             process = subprocess.Popen(['faketime', '-f', f'{offset:+d}s', str(args.hermes.resolve()),
                 '--config', str(selected), 'start'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
@@ -80,6 +81,9 @@ def main():
                     packets = sum(int(re.search(r'intents=(\d+)', line)[1]) for line in sends)
                     if packets == receipt['packets']:
                         elapsed = time.monotonic() - start
+                        wall_elapsed = time.time() - wall_start
+                        if abs(wall_elapsed - elapsed) > max(5, elapsed * 0.02):
+                            raise RuntimeError('Wall and monotonic elapsed times disagree. Retain evidence and check for host suspension')
                         break
                     if packets > receipt['packets']:
                         raise RuntimeError('Executor processed an unexpected backlog. Retain evidence and reconcile')
@@ -124,6 +128,8 @@ def main():
                             raise RuntimeError('An admitted intent remains unspent after recorded inclusion')
                 result = {
                     'concurrency': width, 'secondsFromHermesStart': elapsed,
+                    'secondsWallClock': wall_elapsed,
+                    'startedAtUtc': datetime.datetime.fromtimestamp(wall_start, datetime.timezone.utc).isoformat(),
                     'packets': packets, 'packetsPerSecond': packets / elapsed,
                     'transactions': transactions,
                     'initializations': len(included) - len(sends),
