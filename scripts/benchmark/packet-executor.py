@@ -102,11 +102,11 @@ def main():
                 # Outside the timer, authenticate canonical block bytes and
                 # check that the exact funded outputs are transaction inputs.
                 consumption = {}
-                for tx in transactions:
+                for tx in sorted(transactions, key=lambda t: int(t['height'].split('-')[-1]), reverse=True):
                     canonical_path = directory / (tx['hash'] + '-canonical.json')
                     with (directory / (tx['hash'] + '-verification.log')).open('w') as verification:
                         subprocess.run(['node', str(ROOT / 'scripts/ci/aiken-contract-migration/measure-migration-transaction.cjs'),
-                                        str(runtime), tx['hash'], str(canonical_path)], cwd=ROOT,
+                                        str(runtime), tx['hash'], str(canonical_path), '24'], cwd=ROOT,
                                        stdout=verification, stderr=subprocess.STDOUT, env=env, check=True)
                     canonical = json.loads(canonical_path.read_text())
                     tx['canonicalReport'] = str(canonical_path)
@@ -131,6 +131,7 @@ def main():
                     'backlogReceipt': str(receipt_path), 'hermesLog': str(log_path),
                     'canonicalIntentConsumptionChecked': True,
                     'canonicalBlockBodiesAuthenticated': True,
+                    'confirmationDepthCheckedOutsideTimer': 24,
                 }
                 runs.append(result)
                 (directory / (label + '-result.json')).write_text(json.dumps(result, indent=2) + '\n')

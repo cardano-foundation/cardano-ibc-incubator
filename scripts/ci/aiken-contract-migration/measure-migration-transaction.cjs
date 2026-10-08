@@ -13,9 +13,12 @@ const CML = req('@dcspark/cardano-multiplatform-lib-nodejs');
 const { MiniProtocalsService } = req('./dist/shared/modules/mini-protocals/mini-protocals.service.js');
 
 async function main() {
-  const [runtimeArg, txHash, outputArg] = process.argv.slice(2);
+  const [runtimeArg, txHash, outputArg, depthArg = '0'] = process.argv.slice(2);
+  const requiredDepth = Number(depthArg);
+  if (!Number.isInteger(requiredDepth) || requiredDepth < 0 || requiredDepth > 2160)
+    throw new Error('Confirmation depth must be an integer from 0 to 2160');
   if (!runtimeArg || !/^[0-9a-f]{64}$/.test(txHash || '') || !outputArg) {
-    throw new Error('Usage: node scripts/ci/aiken-contract-migration/measure-migration-transaction.cjs OWNED_RUNTIME TX_HASH NEW_REPORT_JSON');
+    throw new Error('Usage: node scripts/ci/aiken-contract-migration/measure-migration-transaction.cjs OWNED_RUNTIME TX_HASH NEW_REPORT_JSON [DESCENDANT_DEPTH]');
   }
   const runtime = fs.realpathSync(runtimeArg);
   const output = path.resolve(outputArg);
@@ -52,6 +55,18 @@ async function main() {
     const rows = (await db.query(query, [txHash])).rows;
     if (rows.length !== 1) throw new Error('Transaction has no unique canonical valid inclusion');
     const inclusion = rows[0];
+    const deadline = Date.now() + 1_200_000;
+    let descendantDepth;
+    while (true) {
+      const latest = (await db.query(query, [txHash])).rows;
+      if (latest.length !== 1 || JSON.stringify(latest[0]) !== JSON.stringify(inclusion))
+        throw new Error('Canonical inclusion changed while waiting for confirmation');
+      const tip = (await db.query('SELECT MAX(number) AS height FROM block')).rows[0].height;
+      descendantDepth = Number(tip) - Number(inclusion.block);
+      if (descendantDepth >= requiredDepth) break;
+      if (Date.now() >= deadline) throw new Error('Confirmation depth did not advance before timeout');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
     const witnessConfig = {
       yaciStoreEndpoint: `http://127.0.0.1:${historyPort}`,
       cardanoChainHost: '127.0.0.1', cardanoChainPort: nodePort, cardanoChainNetworkMagic: 42,
@@ -144,6 +159,7 @@ async function main() {
       bootstrapWitnessCount: witnesses.bootstrap_witnesses()?.len() ?? 0,
       inputs, collateralInputs, outputs,
       transaction: txHash, inclusion, memory: memory.toString(), steps: steps.toString(),
+      descendantDepth,
       feeLovelace: body.fee().toString(), reconstructedTransactionBytes: tx.to_cbor_bytes().length,
       reconstructionNote: 'Body, witnesses, validity and auxiliary data reconstructed from the canonical block; this is not a claim about the original submitted transaction encoding.',
       limits: { memory: limits.maxTxExecutionUnits.memory, steps: limits.maxTxExecutionUnits.steps, bytes: limits.maxTxSize }, executions,
