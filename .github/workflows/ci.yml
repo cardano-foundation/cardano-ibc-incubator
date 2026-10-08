@@ -56,7 +56,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -351,7 +351,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -370,7 +370,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -413,7 +413,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -510,7 +510,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -534,7 +534,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -588,7 +588,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -657,7 +657,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -703,7 +703,7 @@ jobs:
 
       - name: Upload migration guard evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: migration-guard-controls
           path: |
@@ -720,7 +720,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -736,7 +736,7 @@ jobs:
 
       - name: Upload migration packet model evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: migration-packet-model
           path: |
@@ -760,7 +760,7 @@ jobs:
           - suite: voucher
             filter: compiled voucher
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
@@ -780,7 +780,7 @@ jobs:
         run: deno test --allow-env --allow-read --filter "${{ matrix.filter }}" src/funds-lifecycle.fuzz.test.ts > ../../funds-fuzz.log 2>&1
       - name: Preserve compiled funds counterexamples
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: funds-fuzz-${{ matrix.suite }}
           path: funds-fuzz.log
@@ -797,7 +797,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       # Keep the existing source format while upgrading the compiler.
       - name: Setup Aiken formatter
@@ -846,7 +846,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -860,7 +860,7 @@ jobs:
 
       - name: Upload smoke report
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: aiken-smoke
           path: aiken-smoke.json
@@ -882,7 +882,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -902,7 +902,7 @@ jobs:
 
       - name: Upload property report
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: aiken-fuzz-${{ matrix.suite }}
           path: |
@@ -916,7 +916,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -930,7 +930,7 @@ jobs:
         run: node scripts/ci/check-aiken-mutations.mjs
       - name: Preserve mutation reports and counterexamples
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: aiken-mutations
           path: aiken-mutations.json*
@@ -1009,7 +1009,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' || needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
         if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' || needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
@@ -1019,7 +1019,7 @@ jobs:
 
       - name: Download fuzz reports
         if: ${{ needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.1
         with:
           pattern: aiken-fuzz-*
           path: aiken-fuzz-reports
@@ -1027,7 +1027,7 @@ jobs:
 
       - name: Download smoke inventory
         if: ${{ needs.aiken-changes.outputs.aiken_fuzz_changed == 'true' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: aiken-smoke
 
@@ -1052,7 +1052,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -1129,7 +1129,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -1208,7 +1208,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -1239,7 +1239,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -1258,7 +1258,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Rust
         # Keep compiler upgrades separate from Dependabot action updates.
@@ -1313,7 +1313,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
 

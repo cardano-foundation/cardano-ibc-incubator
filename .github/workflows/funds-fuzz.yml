@@ -30,7 +30,7 @@ jobs:
           - suite: voucher
             filter: compiled voucher
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
@@ -53,7 +53,7 @@ jobs:
           deno test --allow-env --allow-read --filter "${{ matrix.filter }}" src/funds-lifecycle.fuzz.test.ts >> ../../funds-fuzz.log 2>&1
       - name: Retain seeds and counterexamples
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: funds-deep-${{ matrix.suite }}-${{ matrix.shard }}
           path: funds-fuzz.log
