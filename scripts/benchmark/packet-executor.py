@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--widths', nargs='+', type=int, default=[1, 2, 4, 4, 2, 1])
     parser.add_argument('--timeout', type=int, default=1200)
     parser.add_argument('--warmup', action='store_true')
+    parser.add_argument('--warmup-top-up-lovelace', type=int,
+                        help='Explicit signer top-up allowance for untimed lane initialization only')
     args = parser.parse_args()
     runtime = args.runtime.resolve()
     if not runtime.is_relative_to(ROOT / '.deployment-smoke') or not (runtime / 'compose.json').is_file():
@@ -35,6 +37,8 @@ def main():
         parser.error('Concurrency must be positive and each channel needs 1 to 16 requests')
     if any(not re.fullmatch('channel-[0-9]+', c) for c in args.channels):
         parser.error('Supply actual authenticated channel IDs')
+    if args.warmup_top_up_lovelace is not None and (not args.warmup or args.warmup_top_up_lovelace <= 0):
+        parser.error('A positive initialization allowance is supported only for warmup')
     ports = json.loads((runtime / 'benchmark-ports.json').read_text())
     offset = json.loads((runtime / 'benchmark-offset.json').read_text())['offset']
     config = (runtime / 'hermes.toml').read_text()
@@ -46,6 +50,11 @@ def main():
     prefix = re.sub(r'(\[mode\.[^]]+\]\s*\n(?:#[^\n]*\n)*enabled = )true', r'\1false', prefix)
     cardano = re.sub(r'^packet_executor_concurrency = .+\n', '', cardano, flags=re.M)
     template = prefix + '[[chains]]' + cardano.replace("type = 'Cardano'", "type = 'Cardano'\npacket_executor_concurrency = __WIDTH__")
+    if args.warmup_top_up_lovelace is not None:
+        template, replacements = re.subn(r'^max_wallet_lovelace_top_up = .+$',
+            f'max_wallet_lovelace_top_up = {args.warmup_top_up_lovelace}', template, flags=re.M)
+        if replacements != 1:
+            parser.error('The pinned config must declare exactly one signer top-up allowance')
     env = dict(os.environ, FAKETIME_DONT_FAKE_MONOTONIC='1', NO_COLOR='1')
     identifier = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     directory = runtime / ('benchmark-' + identifier)
@@ -159,6 +168,7 @@ def main():
     report = {
         'scope': 'Actual Hermes binary with production Gateway signing policy, trusted Ogmios evaluation/submission and real node inclusion. Source packet execution only. Admission and channel setup are outside the timer. No acknowledgements, pruning or rollback exercise.',
         'warmup': args.warmup, 'channels': args.channels, 'perChannel': args.per_channel,
+        'warmupTopUpLovelace': args.warmup_top_up_lovelace,
         'genesisSha256': hashlib.sha256(genesis_bytes).hexdigest(),
         'hermesBinarySha256': hashlib.sha256(args.hermes.read_bytes()).hexdigest(),
         'incubatorCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
