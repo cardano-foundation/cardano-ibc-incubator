@@ -159,7 +159,7 @@ which means a fresh Gateway can reconstruct the current proof tree from chain
 state alone without relying on a unique Gateway database, relayer, or historical
 off-chain copy.
 
-Hermes uses `packet_executor_concurrency = 2` by default to execute funded batches across independent channels while each channel has at most one batch in flight. Set it to `1` for serial execution. Increasing it needs separate signer inputs for fees and collateral. Shared initialization inputs and busy wallet inputs still cause retries. The send builder still includes at most two intents in each transaction. Measure drain time on the intended network before claiming a throughput gain.
+Hermes uses `packet_executor_concurrency = 4` by default to execute funded batches across independent channels while each channel has at most one batch in flight. Set it to `1` for serial execution. Increasing it needs separate signer inputs for fees and collateral. Shared initialization inputs and busy wallet inputs still cause retries. The send builder still includes at most two intents in each transaction. Measure drain time on the intended network before claiming a throughput gain.
 
 Funded intent execution does not schedule pruning. Operators must monitor each active transfer channel with `GET /api/packet-history/channel-0/occupancy`. The response reports occupancy at one settled Cardano height. Alert on failed queries and any lane with `maintenance_required: true`. The flag starts at 48 of 64 entries. Each receive uses two entries. Poll often enough that traffic and indexing delay cannot consume the remaining receive slots before maintenance runs.
 

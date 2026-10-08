@@ -67,7 +67,7 @@ gateway_url = 'http://localhost:5001'
 
 # Funded batches can await inclusion on independent channels at the same time.
 # Use 1 for serial execution. Each channel still has one batch in flight.
-packet_executor_concurrency = 2
+packet_executor_concurrency = 4
 # Keep enough separate ADA inputs for fees and collateral. Busy inputs back off.
 # This worker does not schedule packet-history pruning.
 # Plaintext is accepted only for localhost/loopback endpoints. Remote Gateways
