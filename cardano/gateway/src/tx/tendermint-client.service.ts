@@ -1854,10 +1854,6 @@ export class TendermintClientService {
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
-      control: {
-        ...hostStateDatum.control,
-        live_clients: hostStateDatum.control.live_clients + 1n,
-      },
     };
 
     const hostStateRedeemer = {
@@ -2322,6 +2318,10 @@ export class TendermintClientService {
         next_client_sequence: hostStateDatum.state.next_client_sequence + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
+      },
+      control: {
+        ...hostStateDatum.control,
+        live_clients: hostStateDatum.control.live_clients + 1n,
       },
     };
     const mintClientScriptHash = this.configService.get('deployment').validators.mintClientStt.scriptHash;

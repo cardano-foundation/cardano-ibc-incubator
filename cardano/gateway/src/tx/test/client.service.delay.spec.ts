@@ -12,7 +12,7 @@ import {
   encodeConsensusStateValue,
 } from '../../shared/types/client-datum';
 import { initializeHeader } from '../../shared/types/header';
-import { HostStateDatum } from '../../shared/types/host-state-datum';
+import { decodeHostStateDatum, HostStateDatum } from '../../shared/types/host-state-datum';
 import {
   decodeMintSessionRedeemer,
   decodeSpendMultitxClientRedeemer,
@@ -74,7 +74,7 @@ async function context(input?: ClientDatum) {
   const hostDatum: HostStateDatum = {
     nft_policy: '22'.repeat(28),
     deployer: '33'.repeat(28),
-    control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
+    control: { port_registry: new Map(), shutdown: 'Active', live_clients: input ? 1n : 0n, live_connections: 0n, live_channels: 0n },
     state: {
       version: 1n,
       ibc_state_root: tree.getRoot(),
@@ -177,6 +177,10 @@ describe('ClientService connection-delay processing metadata', () => {
     expect([...output.state.processedTimes.values()]).toEqual([validToNs]);
     expect([...output.state.processedHeights.values()]).toEqual([validToNs / 4_000_000_000n]);
     expect([...output.state.consensusStates.values()][0].timestamp).toBe(validFromNs);
+    const hostOutput = await decodeHostStateDatum(lucid.createUnsignedCreateClientTransaction.mock.calls[0][4], Lucid);
+    const hostInput = await lucid.decodeDatum();
+    expect(hostOutput.control).toEqual({ ...hostInput.control, live_clients: 1n });
+    expect(hostOutput.state.next_client_sequence).toBe(1n);
   });
 
   it('passes the creation transaction upper bound into datum construction', async () => {
@@ -227,6 +231,9 @@ describe('ClientService connection-delay processing metadata', () => {
     expect([...output.state.processedTimes.values()]).toEqual([validToNs]);
     expect([...output.state.processedHeights.values()]).toEqual([validToNs / 4_000_000_000n]);
     expect(output.history_root).toBe('66'.repeat(32));
+    const hostOutput = await decodeHostStateDatum(lucid.createUnsignedUpdateClientTransaction.mock.calls[0][4], Lucid);
+    const hostInput = await lucid.decodeDatum();
+    expect(hostOutput.control).toEqual(hostInput.control);
   });
 
   it.each([1, 2])(
@@ -260,6 +267,9 @@ describe('ClientService connection-delay processing metadata', () => {
       );
       const args = lucid.createUnsignedFinalizeTendermintSessionTransaction.mock.calls[0];
       const output = await decodeClientDatum(args[8], Lucid);
+      const hostOutput = await decodeHostStateDatum(args[7], Lucid);
+      const hostInput = await lucid.decodeDatum();
+      expect(hostOutput.control).toEqual(hostInput.control);
       expect(output).toEqual({
         ...input,
         state: { ...input.state, clientState: { ...input.state.clientState, frozenHeight: height(1n) } },
