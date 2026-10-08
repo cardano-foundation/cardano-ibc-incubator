@@ -1,765 +1,777 @@
 {
-  "generatedAt": "2026-10-06T10:44:43.955Z",
-  "updatedAt": "2026-10-06T10:50:46.135Z",
+  "generatedAt": "2026-10-08T10:26:48.766Z",
+  "updatedAt": "2026-10-08T10:43:43.098Z",
   "mode": "kupmios",
   "networkMagic": "2",
-  "deployerAddress": "addr_test1vz2fs3h7fsj93pmfg9mxjnqq7tsssxg3jvg058sgf0mvgmcnavax6",
-  "txCount": 66,
-  "totalFeesLovelace": "42347563",
-  "totalOutputLovelace": "37065936549",
+  "deployerAddress": "addr_test1vza0aa3q0emltv7sjs4jkg3rlx4kaga4y7qfxtumanq292cms3sqs",
+  "txCount": 67,
+  "totalFeesLovelace": "42362959",
+  "totalOutputLovelace": "47310091645",
   "totalNonWalletOutputLovelace": "2096414170",
   "totalReferenceScriptOutputLovelace": "2054671820",
   "transactions": [
     {
-      "txName": "RegisterRecoverClient",
-      "txHash": "674e4f227a477dae809a5b3bd5052f67818c152e532c8a95c71605c492db6fe8",
-      "feeLovelace": "173817",
-      "unsignedSizeBytes": 313,
-      "signedSizeBytes": 419,
-      "outputCount": 1,
-      "totalOutputLovelace": "7376235084",
+      "txName": "SplitNonceUtxos",
+      "txHash": "085c9d97acd1137e07e84901eb7d96dc999428339282abbe2e1c4f46df0a1ec0",
+      "feeLovelace": "224681",
+      "unsignedSizeBytes": 1465,
+      "signedSizeBytes": 1571,
+      "outputCount": 38,
+      "totalOutputLovelace": "9999775319",
       "nonWalletOutputLovelace": "0",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:44:59.483Z"
+      "observedAt": "2026-10-08T10:27:34.335Z"
+    },
+    {
+      "txName": "RegisterRecoverClient",
+      "txHash": "200bbcb29e7c8c72be99376aef0b94e72a8e1dabc12efd20974dd69d1cc78ef1",
+      "feeLovelace": "166161",
+      "unsignedSizeBytes": 135,
+      "signedSizeBytes": 241,
+      "outputCount": 1,
+      "totalOutputLovelace": "9257609158",
+      "nonWalletOutputLovelace": "0",
+      "referenceScriptOutputLovelace": "0",
+      "observedAt": "2026-10-08T10:28:02.638Z"
     },
     {
       "txName": "MintHostStateNFT",
-      "txHash": "5a4635fe30061b1db9c80b8b4b3cff0585f111b7b97ce1d13e3ef091a1c1b638",
-      "feeLovelace": "830480",
-      "unsignedSizeBytes": 14481,
-      "signedSizeBytes": 14587,
+      "txHash": "bf7f0ade8239facb2442d3b446e12f2a9b69a25cc1a6d5870adbcc8d5224854b",
+      "feeLovelace": "811304",
+      "unsignedSizeBytes": 14083,
+      "signedSizeBytes": 14189,
       "outputCount": 4,
-      "totalOutputLovelace": "7377166427",
+      "totalOutputLovelace": "19188696",
       "nonWalletOutputLovelace": "4551360",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:45:12.127Z"
+      "observedAt": "2026-10-08T10:29:16.691Z"
     },
     {
       "txName": "Prepare reference funding 1-3",
-      "txHash": "44d1052caec0b9846c94a27570de9dc59b948fa12c449e9cf89a7eb5d357e4aa",
-      "feeLovelace": "176985",
-      "unsignedSizeBytes": 385,
-      "signedSizeBytes": 491,
+      "txHash": "3850edff0d2860c151caefd52d1ba2f7168943f9ce5f0d0a120f2f6afaba5599",
+      "feeLovelace": "169285",
+      "unsignedSizeBytes": 206,
+      "signedSizeBytes": 312,
       "outputCount": 4,
-      "totalOutputLovelace": "7372438082",
+      "totalOutputLovelace": "9257439873",
       "nonWalletOutputLovelace": "0",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:45:29.415Z"
+      "observedAt": "2026-10-08T10:29:47.619Z"
     },
     {
       "txName": "Reference validators 1-1",
-      "txHash": "8cc7ab56be14deecb1ef92786e95d0cca8b64b39313577f8421566594514ee34",
+      "txHash": "623d6735a4d6fe0bdbc921d52068bca98b12e952f95c6829f3f8c85fb40b5339",
       "feeLovelace": "405433",
       "signedSizeBytes": 5679,
       "outputCount": 2,
       "totalOutputLovelace": "26911587",
       "nonWalletOutputLovelace": "24317020",
       "referenceScriptOutputLovelace": "24317020",
-      "observedAt": "2026-10-06T10:45:29.516Z"
+      "observedAt": "2026-10-08T10:29:47.727Z"
     },
     {
       "txName": "Reference validators 2-2",
-      "txHash": "8c02b3117d970645736686b8fdda114d268906089c5cad2f386abeab1e3e0585",
+      "txHash": "3658cd8613997a5b12ee501cc556ddf321db8873a44ad998d377ba1183100e91",
       "feeLovelace": "1500000",
       "signedSizeBytes": 16221,
       "outputCount": 1,
       "totalOutputLovelace": "69912510",
       "nonWalletOutputLovelace": "69912510",
       "referenceScriptOutputLovelace": "69912510",
-      "observedAt": "2026-10-06T10:45:29.613Z"
+      "observedAt": "2026-10-08T10:29:47.827Z"
     },
     {
       "txName": "Reference validators 3-3",
-      "txHash": "3b0beb47bbcc01b0238a5c4e28b8b1fcff1d0aef01687b20b6e159036701fbc8",
+      "txHash": "96e540c725481bd4d406f8be1b12d21bc0dee46947b8e52864d2ec7375109433",
       "feeLovelace": "188029",
       "signedSizeBytes": 738,
       "outputCount": 2,
       "totalOutputLovelace": "5833281",
       "nonWalletOutputLovelace": "3021310",
       "referenceScriptOutputLovelace": "3021310",
-      "observedAt": "2026-10-06T10:45:29.708Z"
+      "observedAt": "2026-10-08T10:29:47.936Z"
     },
     {
       "txName": "Mint Transfer Module",
-      "txHash": "f020da6149ef0f1e5356c1fcd3e7d9da9fdc4773fc197bfdaa368cae19bb299e",
-      "feeLovelace": "818967",
-      "unsignedSizeBytes": 3810,
-      "signedSizeBytes": 3916,
+      "txHash": "8133592cb9ea128ab69abe813544b51f2ce63789b3eb8bb89c2890ccb23464e1",
+      "feeLovelace": "813167",
+      "unsignedSizeBytes": 3631,
+      "signedSizeBytes": 3737,
       "outputCount": 3,
-      "totalOutputLovelace": "15259153",
+      "totalOutputLovelace": "20820323",
       "nonWalletOutputLovelace": "4025540",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:45:45.990Z"
+      "observedAt": "2026-10-08T10:30:08.186Z"
     },
     {
       "txName": "Mint Trace Registry Shard 0",
-      "txHash": "bda0816185582208911347ac25bb4c5c792dde94811c081dac6bf10fd18083a0",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "875d1c929a4be36d91fe4043bf8efdc793eb495b15776760ccc0a09a9c167212",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "14229947",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:09.318Z"
+      "observedAt": "2026-10-08T10:30:25.434Z"
     },
     {
       "txName": "Mint Trace Registry Shard 1",
-      "txHash": "0521977c60c178d14143381ec7ac7aec5576fd058a540d02cf9b7b0a45d9e1bf",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "76e76380ecb303bb0eaed6fe4ebab3a4d1b8deb252c691ba76dc10e4835776c4",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16008782",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:09.422Z"
+      "observedAt": "2026-10-08T10:30:25.541Z"
     },
     {
       "txName": "Mint Trace Registry Shard 2",
-      "txHash": "f6bf0ca1c52af4e49933f512953c05e8d6d2dfd658e4eefa7b931336c8002ab6",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "24ae30756f9091300cbd5c84b2ef3a23ee548ee65648e3f581f71d0b06e9f909",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16008822",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:09.524Z"
+      "observedAt": "2026-10-08T10:30:25.649Z"
     },
     {
       "txName": "Mint Trace Registry Shard 3",
-      "txHash": "b34a2e82b3d4b733fb49a3f28aed951b4621e989b2fe4c38b223a79b2de7071f",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "51680c5ed5f1c635b064b4140be6f3f571b8c935a0e751ed0e344aa57acfd97a",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16012516",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:09.634Z"
+      "observedAt": "2026-10-08T10:30:25.753Z"
     },
     {
       "txName": "Mint Trace Registry Shard 4",
-      "txHash": "3df74d48a7ba49662d31d354e8386de8664a6c06ffc2a305b6812d2fdd1dbf6e",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "a3eef7f61e4de9d0c9f401e373447b4a77da02084ce4207de70485e2cb214aa7",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16016149",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:09.740Z"
+      "observedAt": "2026-10-08T10:30:25.857Z"
     },
     {
       "txName": "Mint Trace Registry Shard 5",
-      "txHash": "4bd9468bf10a8a663289515c0e497ab9049431aa155f8d2401da51b1d36c7a5a",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "41a13627cb534bb878baeb361de327f8f2c149043bf8c72dd61dff676791c1d5",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16018150",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:09.847Z"
+      "observedAt": "2026-10-08T10:30:25.961Z"
     },
     {
       "txName": "Mint Trace Registry Shard 6",
-      "txHash": "7859ae8877711d560fa3e133835c744bf3de16d70d4978183e4c7c601311baa4",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "8114e4b86fff5566b403ef80e6d898423ade06120c1921c63436857d7e4ce43c",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16553389",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:09.954Z"
+      "observedAt": "2026-10-08T10:30:26.064Z"
     },
     {
       "txName": "Mint Trace Registry Shard 7",
-      "txHash": "e90f2246a6a8a3fa0b5e1cf12c2d623753879d1106bef65670a96a9658e341b0",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "2c6ec00386d5b1048db1a05b9856b2faf7cebbe186eed43fd46e0f6a31f12cf6",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.064Z"
+      "observedAt": "2026-10-08T10:30:26.174Z"
     },
     {
       "txName": "Mint Trace Registry Shard 8",
-      "txHash": "bbaae5a55ff0ec8e0dab702bc47c00a031ead99711e52c6006da9b6e00b881ed",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "0a2513b7511ab06d90e1d1126c8fa76c230246a9286bf3223c94f62b0d9ad38b",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.174Z"
+      "observedAt": "2026-10-08T10:30:26.279Z"
     },
     {
       "txName": "Mint Trace Registry Shard 9",
-      "txHash": "659727eb5f784b82b3540461ec4882fab6309112ed5979875538d0308ece9070",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "5625009b86a1ba6e1f6fdc71e4bea8f8ba7cf2fcc84862107efee77cf76e06ce",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.282Z"
+      "observedAt": "2026-10-08T10:30:56.045Z"
     },
     {
       "txName": "Mint Trace Registry Shard 10",
-      "txHash": "bb6c42520e54a9977f7d2b70d65ea0f546187469cdfe7bb969000f44882bc32f",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "9d15418b18bc0b19efe2b331bc3723055ac997d45343a5cda1b71de653892690",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.389Z"
+      "observedAt": "2026-10-08T10:30:56.156Z"
     },
     {
       "txName": "Mint Trace Registry Shard 11",
-      "txHash": "24f41652e6d3231be9c2131a08bb703872e885971ea518ae22c0af2d51b76ce8",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "ca26ada6fb7fdc3fa7ae5bb30f426a6c2257e8b7da34b890d1186c55e214e019",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.490Z"
+      "observedAt": "2026-10-08T10:30:56.264Z"
     },
     {
       "txName": "Mint Trace Registry Shard 12",
-      "txHash": "96fa2c4ce227f1c73cb8ac5037614a259e14a8d921fedc3316fc9f9354b5b5d5",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "09df0d4c1ca477990d27a6bf077afbfb7cdca24e3fb9d295476b55bc7d00a998",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.595Z"
+      "observedAt": "2026-10-08T10:30:56.373Z"
     },
     {
       "txName": "Mint Trace Registry Shard 13",
-      "txHash": "8135245d43a8badcda6665254d9cb43d57d3ecb7c887e9e1dbdcc3ddebd36b99",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "cae9f56f4f4b33a95076c805fb41b4928d26631390ff09b374eec208a2c8b90a",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.697Z"
+      "observedAt": "2026-10-08T10:30:56.483Z"
     },
     {
       "txName": "Mint Trace Registry Shard 14",
-      "txHash": "fb6e500c4a977f0ac26d7a0a98a45a8dca17a1a31b0e175d780027bf8ddb5b5a",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "3d7eeec410fa52c11ecb0bbb0ae06d8984c96071ec289ef273f7ae55d0c1fa72",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.805Z"
+      "observedAt": "2026-10-08T10:30:56.586Z"
     },
     {
       "txName": "Mint Trace Registry Shard 15",
-      "txHash": "baa76139636c382b9534d9bac40b6d64aefbbec2f0968a4c3bcddf449d68cbaf",
-      "feeLovelace": "214683",
-      "unsignedSizeBytes": 1126,
-      "signedSizeBytes": 1232,
+      "txHash": "290f1aa2d83de9ec5b1f968ee74bda63fa492d5e620d39a4e6b4c35f199c8aac",
+      "feeLovelace": "206807",
+      "unsignedSizeBytes": 947,
+      "signedSizeBytes": 1053,
       "outputCount": 2,
-      "totalOutputLovelace": "16951109",
+      "totalOutputLovelace": "19793193",
       "nonWalletOutputLovelace": "1211110",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:10.911Z"
+      "observedAt": "2026-10-08T10:30:56.689Z"
     },
     {
       "txName": "Mint Trace Registry Directory",
-      "txHash": "2d2682fd3c1e958f2fe2289b8e150a051e1aba1be48314afe65819e7953f969c",
-      "feeLovelace": "242183",
-      "unsignedSizeBytes": 1751,
-      "signedSizeBytes": 1857,
+      "txHash": "2d060ef32812ed182c8eb23eb91dcb5bc6729497fdf5b1fafb9820b988796e89",
+      "feeLovelace": "234307",
+      "unsignedSizeBytes": 1572,
+      "signedSizeBytes": 1678,
       "outputCount": 2,
-      "totalOutputLovelace": "16923609",
+      "totalOutputLovelace": "19765693",
       "nonWalletOutputLovelace": "3904860",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:11.016Z"
+      "observedAt": "2026-10-08T10:30:56.793Z"
     },
     {
       "txName": "Mint mock Module",
-      "txHash": "7dbb3234a4a74742122254153c8a27a7c47366d46ecae5b2e84e96164b428549",
-      "feeLovelace": "827614",
-      "unsignedSizeBytes": 3927,
-      "signedSizeBytes": 4033,
+      "txHash": "ea791d29f508dad5d0d4472875ce5917ecd046c666866a3352359df39ee9a30c",
+      "feeLovelace": "819738",
+      "unsignedSizeBytes": 3748,
+      "signedSizeBytes": 3854,
       "outputCount": 3,
-      "totalOutputLovelace": "18734538",
+      "totalOutputLovelace": "21576622",
       "nonWalletOutputLovelace": "4564290",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:30.203Z"
+      "observedAt": "2026-10-08T10:31:44.958Z"
     },
     {
       "txName": "Mint icqhost Module",
-      "txHash": "8536ac06f5417ead86fb2071e983632fa9bbaad974e01b4ba08a1bd6b53a6531",
-      "feeLovelace": "840577",
-      "unsignedSizeBytes": 4108,
-      "signedSizeBytes": 4214,
+      "txHash": "ce8e64ceb5b9e037499f68a87a3e97cb6ea52871d0f41812babbd67c6b494a61",
+      "feeLovelace": "834776",
+      "unsignedSizeBytes": 3929,
+      "signedSizeBytes": 4035,
       "outputCount": 3,
-      "totalOutputLovelace": "20882617",
+      "totalOutputLovelace": "22302904",
       "nonWalletOutputLovelace": "5318540",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:34.603Z"
+      "observedAt": "2026-10-08T10:32:46.787Z"
     },
     {
       "txName": "Prepare reference funding 1-38",
-      "txHash": "fa9e705beca84bf87e2908a9f3e906aa730f20226333b784b67bbea16d6659af",
-      "feeLovelace": "234009",
-      "unsignedSizeBytes": 1681,
-      "signedSizeBytes": 1787,
+      "txHash": "e916c5e33b91988f0e30a8ec718f44221856b731029c266f42a4955ceb181e08",
+      "feeLovelace": "226309",
+      "unsignedSizeBytes": 1502,
+      "signedSizeBytes": 1608,
       "outputCount": 39,
-      "totalOutputLovelace": "7267453233",
+      "totalOutputLovelace": "9152462724",
       "nonWalletOutputLovelace": "0",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:47:54.093Z"
+      "observedAt": "2026-10-08T10:34:11.618Z"
     },
     {
       "txName": "Reference validators 1-1",
-      "txHash": "86321020942bb89a0f12f68915687305bf87e07fb9147cf6c4871ba15064ebfb",
+      "txHash": "9b69d3cfcbd5445eaabeb7575142468fc98868092872e1aa180129de2060eb29",
       "feeLovelace": "588385",
       "signedSizeBytes": 9837,
       "outputCount": 2,
       "totalOutputLovelace": "44649615",
       "nonWalletOutputLovelace": "42238000",
       "referenceScriptOutputLovelace": "42238000",
-      "observedAt": "2026-10-06T10:47:54.195Z"
+      "observedAt": "2026-10-08T10:34:11.758Z"
     },
     {
       "txName": "Reference validators 2-2",
-      "txHash": "e6a8d1bc460070b2bbe3964a353237910e75b2bae94a4134139ad425a7e3df41",
+      "txHash": "9fb675dba1602bf8accb94fffe6588b80918f76a0e50ffcf1102efd6917ec3c8",
       "feeLovelace": "699397",
       "signedSizeBytes": 12360,
       "outputCount": 2,
       "totalOutputLovelace": "55412733",
       "nonWalletOutputLovelace": "53112130",
       "referenceScriptOutputLovelace": "53112130",
-      "observedAt": "2026-10-06T10:47:54.300Z"
+      "observedAt": "2026-10-08T10:34:11.868Z"
     },
     {
       "txName": "Reference validators 3-3",
-      "txHash": "4b0ae86b0d5978b4d89d60f2995e2212ebced9e73062f50eeda5aa78b3972e8c",
+      "txHash": "ae616090966e78dad6d036ac4f0fe2423ff90393c83398aeb4b1aace54ae30ef",
       "feeLovelace": "787089",
       "signedSizeBytes": 14353,
       "outputCount": 2,
       "totalOutputLovelace": "63914871",
       "nonWalletOutputLovelace": "61701960",
       "referenceScriptOutputLovelace": "61701960",
-      "observedAt": "2026-10-06T10:47:54.406Z"
+      "observedAt": "2026-10-08T10:34:11.973Z"
     },
     {
       "txName": "Reference validators 4-4",
-      "txHash": "118f2739941b6997071fde5c60e377d4fc557cabdf79ca5a0e35c035dcb4afc3",
+      "txHash": "8d1ce31931af9bc986695b04d79810eb3313c3488dd24c81bd653133ca6ea017",
       "feeLovelace": "500253",
       "signedSizeBytes": 7834,
       "outputCount": 2,
       "totalOutputLovelace": "36104817",
       "nonWalletOutputLovelace": "33605070",
       "referenceScriptOutputLovelace": "33605070",
-      "observedAt": "2026-10-06T10:47:54.510Z"
+      "observedAt": "2026-10-08T10:34:12.083Z"
     },
     {
       "txName": "Reference validators 5-5",
-      "txHash": "24ccec3dc1dca81c7919a67667e5460398547cc8fc12968bd613ccdb29728a2d",
+      "txHash": "a909b813e8accb741d2cb765e33a30ad667a996db06fc376845741553f4a6678",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15760,
       "outputCount": 1,
       "totalOutputLovelace": "67925600",
       "nonWalletOutputLovelace": "67925600",
       "referenceScriptOutputLovelace": "67925600",
-      "observedAt": "2026-10-06T10:47:54.612Z"
+      "observedAt": "2026-10-08T10:35:45.994Z"
     },
     {
       "txName": "Reference validators 6-6",
-      "txHash": "339a1689058c66e2504c4145e4da3783e7403b8a9ef7a9dbca785740359c9831",
+      "txHash": "7d7767e4260f7c47175fccfc2217bea6cd62ecd34c946fe159e8010faff34920",
       "feeLovelace": "613641",
       "signedSizeBytes": 10411,
       "outputCount": 2,
       "totalOutputLovelace": "47098299",
       "nonWalletOutputLovelace": "44711940",
       "referenceScriptOutputLovelace": "44711940",
-      "observedAt": "2026-10-06T10:47:54.721Z"
+      "observedAt": "2026-10-08T10:35:46.100Z"
     },
     {
       "txName": "Reference validators 7-7",
-      "txHash": "db53daea97da5cfb4a52d317d9ff3eefcf45138f6cc20b5a6d11f8a420908be5",
+      "txHash": "7051577803b31f8f6750a2b4fcf97b092734d476499eb05802b4c5007cf56c14",
       "feeLovelace": "718713",
       "signedSizeBytes": 12799,
       "outputCount": 2,
       "totalOutputLovelace": "57285507",
       "nonWalletOutputLovelace": "55004220",
       "referenceScriptOutputLovelace": "55004220",
-      "observedAt": "2026-10-06T10:48:09.550Z"
+      "observedAt": "2026-10-08T10:36:45.641Z"
     },
     {
       "txName": "Reference validators 8-8",
-      "txHash": "3d7d6892a2d6a38b2918d8384e496efe3d13ea4c9bf3f2497553f2310ed9db34",
+      "txHash": "0f5788385c9afa259865719f8bfb71732fa0a6ccd45585b1998540be6c3de114",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15601,
       "outputCount": 1,
       "totalOutputLovelace": "67240310",
       "nonWalletOutputLovelace": "67240310",
       "referenceScriptOutputLovelace": "67240310",
-      "observedAt": "2026-10-06T10:48:09.652Z"
+      "observedAt": "2026-10-08T10:37:11.815Z"
     },
     {
       "txName": "Reference validators 9-9",
-      "txHash": "fec2e4c865a7c616cd01d8bd63e91504fe7650a7e27e8e1ee69cef3be3624327",
+      "txHash": "6bc25bac31313a562adbbc65cd0e5103d7fe8d18e51e61e29bf6f493e8104b7a",
       "feeLovelace": "726941",
       "signedSizeBytes": 12986,
       "outputCount": 2,
       "totalOutputLovelace": "58083249",
       "nonWalletOutputLovelace": "55810190",
       "referenceScriptOutputLovelace": "55810190",
-      "observedAt": "2026-10-06T10:48:09.758Z"
+      "observedAt": "2026-10-08T10:37:11.930Z"
     },
     {
       "txName": "Reference validators 10-10",
-      "txHash": "81dc5658f103c65702fe7748c5a5fbec08283f5353c4b0b9ed4c28a56135b782",
+      "txHash": "4c8c2237be41792f21765b6c627d09460ae24cf6d19bc52748058ede478f7b46",
       "feeLovelace": "708593",
       "signedSizeBytes": 12569,
       "outputCount": 2,
       "totalOutputLovelace": "56304327",
       "nonWalletOutputLovelace": "54012920",
       "referenceScriptOutputLovelace": "54012920",
-      "observedAt": "2026-10-06T10:48:09.862Z"
+      "observedAt": "2026-10-08T10:37:12.043Z"
     },
     {
       "txName": "Reference validators 11-11",
-      "txHash": "50095066156a8287e480d810004324e75c70c7da2b5f1d6b67b1eb3dd062cd7f",
+      "txHash": "2b2afd35aa7678b1e30ea29cfce3198afe749e7fde249c238beb7f6b7e41c9a9",
       "feeLovelace": "601057",
       "signedSizeBytes": 10125,
       "outputCount": 2,
       "totalOutputLovelace": "45878223",
       "nonWalletOutputLovelace": "43479280",
       "referenceScriptOutputLovelace": "43479280",
-      "observedAt": "2026-10-06T10:48:09.968Z"
+      "observedAt": "2026-10-08T10:37:12.151Z"
     },
     {
       "txName": "Reference validators 12-12",
-      "txHash": "6616369bbc2967dc2632a063d89df2ea3d41e50c10f301f224f922aed4a57818",
+      "txHash": "c3eadb0f44a12383b30d04f90e59d6223286dca56f43c8af033a9680504f7176",
       "feeLovelace": "700761",
       "signedSizeBytes": 12391,
       "outputCount": 2,
       "totalOutputLovelace": "55544979",
       "nonWalletOutputLovelace": "53245740",
       "referenceScriptOutputLovelace": "53245740",
-      "observedAt": "2026-10-06T10:48:10.069Z"
+      "observedAt": "2026-10-08T10:37:12.260Z"
     },
     {
       "txName": "Reference validators 13-13",
-      "txHash": "c32d613413e08cc20eb303afdf31faf13b013a9d7988428fba1a86efefd23998",
+      "txHash": "13f2af1e1bf988c542ab2790dc5e6463a5c850173077248c1e12f2dc97e7e764",
       "feeLovelace": "755233",
       "signedSizeBytes": 13629,
       "outputCount": 2,
       "totalOutputLovelace": "60826287",
       "nonWalletOutputLovelace": "58581520",
       "referenceScriptOutputLovelace": "58581520",
-      "observedAt": "2026-10-06T10:48:18.660Z"
+      "observedAt": "2026-10-08T10:37:38.107Z"
     },
     {
       "txName": "Reference validators 14-14",
-      "txHash": "810d0edf478770a10d356fd2473eb90e7d1d72c3dcdaf56e57c52ed4eaca2ac2",
+      "txHash": "dd9c4bd3f703e0a0c778d4a5f851e2b249fa2c1016b7cd2166849e54dc529423",
       "feeLovelace": "676033",
       "signedSizeBytes": 11829,
       "outputCount": 2,
       "totalOutputLovelace": "53147487",
       "nonWalletOutputLovelace": "50823520",
       "referenceScriptOutputLovelace": "50823520",
-      "observedAt": "2026-10-06T10:48:18.769Z"
+      "observedAt": "2026-10-08T10:37:38.211Z"
     },
     {
       "txName": "Reference validators 15-15",
-      "txHash": "f8a117a04a10e302308445bf69529defaf377f76787cc258b956d77c2ef16f1e",
+      "txHash": "141e200550063957ea4d7ad9949f0e9a86705d3905c79b4583eb99c8f980f705",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15236,
       "outputCount": 1,
       "totalOutputLovelace": "65667160",
       "nonWalletOutputLovelace": "65667160",
       "referenceScriptOutputLovelace": "65667160",
-      "observedAt": "2026-10-06T10:48:18.875Z"
+      "observedAt": "2026-10-08T10:37:45.752Z"
     },
     {
       "txName": "Reference validators 16-16",
-      "txHash": "2872b4861cbaf5c4903689d614ea2f7c011e25a69d26cce960fc0b2698486294",
+      "txHash": "eb72279df0438f9c2fbc48da5e2084f15c19a2c9b6b7b882d5a7d4d7274d8da7",
       "feeLovelace": "706393",
       "signedSizeBytes": 12519,
       "outputCount": 2,
       "totalOutputLovelace": "56091027",
       "nonWalletOutputLovelace": "53797420",
       "referenceScriptOutputLovelace": "53797420",
-      "observedAt": "2026-10-06T10:48:18.978Z"
+      "observedAt": "2026-10-08T10:37:45.860Z"
     },
     {
       "txName": "Reference validators 17-17",
-      "txHash": "87efc0a81e12cda0894dd4ba8d28ca9bdc5512244a0356013324bb47d4f09d6d",
+      "txHash": "546229ba6431bf76c60a98204513db1214c2c52a735d2cdfdb6e35c1b65cdde1",
       "feeLovelace": "581873",
       "signedSizeBytes": 9689,
       "outputCount": 2,
       "totalOutputLovelace": "44018247",
       "nonWalletOutputLovelace": "41600120",
       "referenceScriptOutputLovelace": "41600120",
-      "observedAt": "2026-10-06T10:48:19.085Z"
+      "observedAt": "2026-10-08T10:37:45.972Z"
     },
     {
       "txName": "Reference validators 18-18",
-      "txHash": "845f7fe625d61d0f75f9ccffb886ad2f3ba5581b9ec69fd3bfc0594e598a4286",
+      "txHash": "cc3e3d9da125a42d548faa3a1ec8059185c36e2d8ebfebd72dc12e08a9347031",
       "feeLovelace": "480101",
       "signedSizeBytes": 7376,
       "outputCount": 2,
       "totalOutputLovelace": "34150989",
       "nonWalletOutputLovelace": "31631090",
       "referenceScriptOutputLovelace": "31631090",
-      "observedAt": "2026-10-06T10:48:19.191Z"
+      "observedAt": "2026-10-08T10:37:46.082Z"
     },
     {
       "txName": "Reference validators 19-19",
-      "txHash": "551ea0581c6fa72283557d964a0dfe433ff73857d84a35b9df0dd0552d6f7ad8",
+      "txHash": "4b53f5a291388a40d7c5d72ecf3a15cf5292eb75e051fc2bc3d94404ab95526b",
       "feeLovelace": "1500000",
       "signedSizeBytes": 16118,
       "outputCount": 1,
       "totalOutputLovelace": "69468580",
       "nonWalletOutputLovelace": "69468580",
       "referenceScriptOutputLovelace": "69468580",
-      "observedAt": "2026-10-06T10:49:18.248Z"
+      "observedAt": "2026-10-08T10:39:01.224Z"
     },
     {
       "txName": "Reference validators 20-20",
-      "txHash": "e07d1f5c32b8e08f83089c034117c80b2e877bfc7b6da595d2d36608495492f5",
+      "txHash": "655589bc5b04a3bd1ea5b29863088c993eb5d1c20b125fb78973e7a432f4e5e1",
       "feeLovelace": "532329",
       "signedSizeBytes": 8563,
       "outputCount": 2,
       "totalOutputLovelace": "39214731",
       "nonWalletOutputLovelace": "36747060",
       "referenceScriptOutputLovelace": "36747060",
-      "observedAt": "2026-10-06T10:49:18.354Z"
+      "observedAt": "2026-10-08T10:39:01.326Z"
     },
     {
       "txName": "Reference validators 21-21",
-      "txHash": "63bffd7d2c39485ebd7f4083bb196c18a92b274f1a3ec2f6b28a9e54ecb8671d",
+      "txHash": "214d06caa5d757945a56e07663482d8a0689d74b2c23c00999a26b3dbf5989a3",
       "feeLovelace": "300053",
       "signedSizeBytes": 3284,
       "outputCount": 2,
       "totalOutputLovelace": "16694517",
       "nonWalletOutputLovelace": "13994570",
       "referenceScriptOutputLovelace": "13994570",
-      "observedAt": "2026-10-06T10:49:18.456Z"
+      "observedAt": "2026-10-08T10:39:01.431Z"
     },
     {
       "txName": "Reference validators 22-22",
-      "txHash": "81480fba1278c3279e97300872aac4f018509802da8636d513a6b3c5be740ba7",
+      "txHash": "2277c6e87580d9eeb1b158b4045402b697e802d9025c3b7da6bcf5fdd3012324",
       "feeLovelace": "624025",
       "signedSizeBytes": 10647,
       "outputCount": 2,
       "totalOutputLovelace": "48105075",
       "nonWalletOutputLovelace": "45729100",
       "referenceScriptOutputLovelace": "45729100",
-      "observedAt": "2026-10-06T10:49:18.557Z"
+      "observedAt": "2026-10-08T10:39:01.532Z"
     },
     {
       "txName": "Reference validators 23-23",
-      "txHash": "e80182ac46574555aaff48d47b3e6e33dc8cbd35ce24bd14610ff9541c36ea1a",
+      "txHash": "59879d5373992e07330845ab8ebcc13e60cd0deaf54aba3dae91e8d0281b650c",
       "feeLovelace": "796021",
       "signedSizeBytes": 14556,
       "outputCount": 2,
       "totalOutputLovelace": "64780869",
       "nonWalletOutputLovelace": "62576890",
       "referenceScriptOutputLovelace": "62576890",
-      "observedAt": "2026-10-06T10:49:18.660Z"
+      "observedAt": "2026-10-08T10:39:01.636Z"
     },
     {
       "txName": "Reference validators 24-24",
-      "txHash": "c2413414f315b40d130ae4b107b03af359521cea4417f39f44be9f172cfc895c",
+      "txHash": "9c5621458b997c744bd807187f17f3bff9f3a3a84e2c7aac3b35f05cd3fbaeb5",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15823,
       "outputCount": 1,
       "totalOutputLovelace": "68197130",
       "nonWalletOutputLovelace": "68197130",
       "referenceScriptOutputLovelace": "68197130",
-      "observedAt": "2026-10-06T10:49:18.762Z"
+      "observedAt": "2026-10-08T10:39:06.688Z"
     },
     {
       "txName": "Reference validators 25-25",
-      "txHash": "05918936fd3fac5dc527ad8d938adbc3e06c4e02d1e750f1edbd3ea36511113f",
+      "txHash": "b62fa31a3df2a0fe9d7ff3f3bbdded48379bd806d7b052c6e5476c9b3a851f5d",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15849,
       "outputCount": 1,
       "totalOutputLovelace": "68304880",
       "nonWalletOutputLovelace": "68304880",
       "referenceScriptOutputLovelace": "68304880",
-      "observedAt": "2026-10-06T10:49:56.602Z"
+      "observedAt": "2026-10-08T10:39:24.881Z"
     },
     {
       "txName": "Reference validators 26-26",
-      "txHash": "43482afdbaddb7ebc23015233944db1fc88f1e04c82b1222b7329022eb08a311",
+      "txHash": "9bd0f24d7cfb31e1e41b842d7f60fc65fe248fe35e96ab112ad9642eaa49c71e",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15867,
       "outputCount": 1,
       "totalOutputLovelace": "68382460",
       "nonWalletOutputLovelace": "68382460",
       "referenceScriptOutputLovelace": "68382460",
-      "observedAt": "2026-10-06T10:49:56.705Z"
+      "observedAt": "2026-10-08T10:39:24.983Z"
     },
     {
       "txName": "Reference validators 27-27",
-      "txHash": "08caaf8bf69c43b896222580e2df831ca8ca18fe42daeec70286d01975572feb",
+      "txHash": "52c53fcf7b844fddba752c7ebb42b916e63405667c743afe1bb22cae0b17f9ec",
       "feeLovelace": "753693",
       "signedSizeBytes": 13594,
       "outputCount": 2,
       "totalOutputLovelace": "60672667",
       "nonWalletOutputLovelace": "58426360",
       "referenceScriptOutputLovelace": "58426360",
-      "observedAt": "2026-10-06T10:49:56.809Z"
+      "observedAt": "2026-10-08T10:39:26.321Z"
     },
     {
       "txName": "Reference validators 28-28",
-      "txHash": "a06c295ba636f3dcc890a574e860ffc49c66abbdfacd7c800debfcf95f186ca7",
+      "txHash": "9d95cf14fee4364cce25ce2fe9700220550ba4ba6d51d73174c53e8ca55ffcf3",
       "feeLovelace": "710969",
       "signedSizeBytes": 12623,
       "outputCount": 2,
       "totalOutputLovelace": "56530381",
       "nonWalletOutputLovelace": "54241350",
       "referenceScriptOutputLovelace": "54241350",
-      "observedAt": "2026-10-06T10:49:56.910Z"
+      "observedAt": "2026-10-08T10:39:26.424Z"
     },
     {
       "txName": "Reference validators 29-29",
-      "txHash": "1f9d35342d1d0c3c41167426f023ab51ee06a4836d6f189e792ea93e1cb9319b",
+      "txHash": "108a76f06b0e09e7a5bd228061671566de99d2ab2d5375188b74c2f6f0910795",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15867,
       "outputCount": 1,
       "totalOutputLovelace": "68382460",
       "nonWalletOutputLovelace": "68382460",
       "referenceScriptOutputLovelace": "68382460",
-      "observedAt": "2026-10-06T10:49:57.014Z"
+      "observedAt": "2026-10-08T10:39:26.522Z"
     },
     {
       "txName": "Reference validators 30-30",
-      "txHash": "922f64b45dddd93218a736240224f9279eb68c71b1738fb275340da697fc8344",
+      "txHash": "be33e7cd3350ae584098c5bd31ca2918cdcc8e57f78e48df221f1e2782ed29bb",
       "feeLovelace": "690949",
       "signedSizeBytes": 12168,
       "outputCount": 2,
       "totalOutputLovelace": "54589351",
       "nonWalletOutputLovelace": "52280300",
       "referenceScriptOutputLovelace": "52280300",
-      "observedAt": "2026-10-06T10:50:08.076Z"
+      "observedAt": "2026-10-08T10:39:53.619Z"
     },
     {
       "txName": "Reference validators 31-31",
-      "txHash": "e1c890a137e501619f30395d86260d782c2d7cac6af9a7a97c9a85595f7a8a6e",
+      "txHash": "2ef441b225800b65fdc88892dd02cf030dc1b77e26212a561e2467b188b252a9",
       "feeLovelace": "809749",
       "signedSizeBytes": 14868,
       "outputCount": 2,
       "totalOutputLovelace": "66107551",
       "nonWalletOutputLovelace": "63917300",
       "referenceScriptOutputLovelace": "63917300",
-      "observedAt": "2026-10-06T10:50:08.177Z"
+      "observedAt": "2026-10-08T10:39:53.727Z"
     },
     {
       "txName": "Reference validators 32-32",
-      "txHash": "94d5a18f53f6180a01d1221db69b2f6211065ee13a2fa61490c358c2ca98bb52",
+      "txHash": "ce5da6ef69a4008ca1d7d272afff70817ab06a93891661b9f41008d7a0646e1b",
       "feeLovelace": "645717",
       "signedSizeBytes": 11140,
       "outputCount": 2,
       "totalOutputLovelace": "50203903",
       "nonWalletOutputLovelace": "47849620",
       "referenceScriptOutputLovelace": "47849620",
-      "observedAt": "2026-10-06T10:50:08.279Z"
+      "observedAt": "2026-10-08T10:39:53.839Z"
     },
     {
       "txName": "Reference validators 33-33",
-      "txHash": "7b6d28e1d9cfeea9deb4d6e52509cc1933300990b511992de6c1ef903cdfad8a",
+      "txHash": "74e244f35fbaca4bbd7d6e01ccafed2041f99202b362260191ddb41c37a5dd4c",
       "feeLovelace": "349949",
       "signedSizeBytes": 4418,
       "outputCount": 2,
       "totalOutputLovelace": "21527851",
       "nonWalletOutputLovelace": "18877800",
       "referenceScriptOutputLovelace": "18877800",
-      "observedAt": "2026-10-06T10:50:08.382Z"
+      "observedAt": "2026-10-08T10:39:53.945Z"
     },
     {
       "txName": "Reference validators 34-34",
-      "txHash": "41921e5ae7746862ae378b6b4445ed1f3f52a53ca215c75687d7cd8037d06fa1",
+      "txHash": "3e9b51bc3dca72d38d67fec7253906cf14968a7458f1a126ae93d9ce8e5277e8",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15447,
       "outputCount": 1,
       "totalOutputLovelace": "66572260",
       "nonWalletOutputLovelace": "66572260",
       "referenceScriptOutputLovelace": "66572260",
-      "observedAt": "2026-10-06T10:50:08.488Z"
+      "observedAt": "2026-10-08T10:39:54.053Z"
     },
     {
       "txName": "Reference validators 35-35",
-      "txHash": "fe417cf2d9f67df8b7743027724320bf85198ab3e619bb2422f66d7690562def",
+      "txHash": "0101f6c463c1757a4a26c560f1af39b760d531efa5d68e51d917d13180c10f96",
       "feeLovelace": "516841",
       "signedSizeBytes": 8211,
       "outputCount": 2,
       "totalOutputLovelace": "37708789",
       "nonWalletOutputLovelace": "35225630",
       "referenceScriptOutputLovelace": "35225630",
-      "observedAt": "2026-10-06T10:50:08.594Z"
+      "observedAt": "2026-10-08T10:39:54.161Z"
     },
     {
       "txName": "Reference validators 36-36",
-      "txHash": "4c9d92c1d6dad8259c7d8c68f39d5792238addce33058aa020e5b7b488f7e664",
+      "txHash": "1f5b8a7b79bd6e2b7862a714c2b46d098d4b7ae998b17c1e3fe93657bd10d8d4",
       "feeLovelace": "1500000",
       "signedSizeBytes": 15406,
       "outputCount": 1,
       "totalOutputLovelace": "66395550",
       "nonWalletOutputLovelace": "66395550",
       "referenceScriptOutputLovelace": "66395550",
-      "observedAt": "2026-10-06T10:50:22.738Z"
+      "observedAt": "2026-10-08T10:41:35.808Z"
     },
     {
       "txName": "Reference validators 37-37",
-      "txHash": "9834a19009477758470f3958385fc5882b05f319c60448598b060ce50dc7ce2d",
+      "txHash": "e7f77747c7708de3cbd62085e25ec79aca6ea4d42f9df485cb24c7b4aafb55f3",
       "feeLovelace": "559829",
       "signedSizeBytes": 9188,
       "outputCount": 2,
       "totalOutputLovelace": "41876671",
       "nonWalletOutputLovelace": "39436500",
       "referenceScriptOutputLovelace": "39436500",
-      "observedAt": "2026-10-06T10:50:22.836Z"
+      "observedAt": "2026-10-08T10:41:35.913Z"
     },
     {
       "txName": "Reference validators 38-38",
-      "txHash": "bda1708478efbd49f1b49b972c48b2a1c2d29bb9cd87ff924248c5c393eca065",
+      "txHash": "b40206f161f6f2b1a4f117d51206da0c6631e41d739892af8917c340b5ed80ac",
       "feeLovelace": "343305",
       "signedSizeBytes": 4267,
       "outputCount": 2,
       "totalOutputLovelace": "20883685",
       "nonWalletOutputLovelace": "18226990",
       "referenceScriptOutputLovelace": "18226990",
-      "observedAt": "2026-10-06T10:50:22.937Z"
+      "observedAt": "2026-10-08T10:41:36.018Z"
     },
     {
       "txName": "Mint mock token",
-      "txHash": "fcd98bf1768bc519ffbe6cefda93a2004acf4448b17d52a67bb395829810a4d7",
-      "feeLovelace": "196649",
-      "unsignedSizeBytes": 816,
-      "signedSizeBytes": 922,
+      "txHash": "aef19041585e8cf60f55a760f18b2a5d90db18d6630add60f01b079aad9b16aa",
+      "feeLovelace": "182965",
+      "unsignedSizeBytes": 505,
+      "signedSizeBytes": 611,
       "outputCount": 2,
-      "totalOutputLovelace": "5210835604",
+      "totalOutputLovelace": "7095858779",
       "nonWalletOutputLovelace": "0",
       "referenceScriptOutputLovelace": "0",
-      "observedAt": "2026-10-06T10:50:46.135Z"
+      "observedAt": "2026-10-08T10:43:43.098Z"
     }
   ]
 }
