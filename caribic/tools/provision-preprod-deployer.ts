@@ -53,6 +53,7 @@ Environment:
   CARDANO_<NETWORK>_FAUCET_API_KEY  Network-specific faucet API key, e.g. CARDANO_PREVIEW_FAUCET_API_KEY
   CARDANO_FAUCET_API_KEY            Fallback faucet API key used when the network-specific key is unset
   CARDANO_BLOCKFROST_PROJECT_ID     Blockfrost project id for the selected network
+  CARDANO_BLOCKFROST_ENDPOINT       Blockfrost URL
 `;
 }
 
