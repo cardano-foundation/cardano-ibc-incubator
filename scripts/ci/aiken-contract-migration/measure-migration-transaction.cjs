@@ -31,13 +31,14 @@ async function main() {
   const ports = fs.existsSync(portsFile) ? JSON.parse(fs.readFileSync(portsFile)) : {};
   const historyDbPort = ports.DEVKIT_HISTORY_DB_PORT ?? 27432;
   const historyPort = ports.DEVKIT_HISTORY_PORT ?? 29083;
+  const nodePort = ports.DEVKIT_NODE_PORT ?? 23001;
   if (result.networkRuntime !== runtime || !/^cardano-deployment-test-[a-z0-9]+$/.test(result.project))
     throw new Error('Runtime/project provenance differs from deployment result');
   const compose = ['compose', '-p', result.project, '-f', path.join(runtime, 'compose.json')];
   const docker = args => execFileSync('docker', [...compose, ...args]);
   if (!docker(['exec', '-T', 'devkit', 'cat', '/clusters/nodes/default/node/genesis/shelley-genesis.json']).equals(rawGenesis))
     throw new Error('Actual provider genesis differs from selected fixture');
-  for (const [service, internal, external] of [['history-db', '5432', historyDbPort], ['history', '8080', historyPort]]) {
+  for (const [service, internal, external] of [['history-db', '5432', historyDbPort], ['history', '8080', historyPort], ['devkit', '3001', nodePort]]) {
     if (docker(['port', service, internal]).toString().trim() !== `127.0.0.1:${external}`)
       throw new Error('History endpoint is not owned by selected runtime');
   }
@@ -51,7 +52,11 @@ async function main() {
     const rows = (await db.query(query, [txHash])).rows;
     if (rows.length !== 1) throw new Error('Transaction has no unique canonical valid inclusion');
     const inclusion = rows[0];
-    const fetcher = new MiniProtocalsService({}, { get: key => key === 'yaciStoreEndpoint' ? `http://127.0.0.1:${historyPort}` : undefined }, console);
+    const witnessConfig = {
+      yaciStoreEndpoint: `http://127.0.0.1:${historyPort}`,
+      cardanoChainHost: '127.0.0.1', cardanoChainPort: nodePort, cardanoChainNetworkMagic: 42,
+    };
+    const fetcher = new MiniProtocalsService({}, { get: key => witnessConfig[key] }, console);
     const bytes = await fetcher.fetchBlockCbor({ hash: inclusion.block_hash, slotNo: BigInt(inclusion.slot) });
     const block = authenticateBlock(bytes, inclusion.block_hash);
     const index = Number(inclusion.tx_index);
