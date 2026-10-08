@@ -19,6 +19,8 @@ python3 scripts/benchmark/packet-executor.py \
   --per-channel 1 --warmup
 ```
 
+Lane initialization must fund all of the new state outputs. If the pinned signer top-up allowance is too small, explicitly supply `--warmup-top-up-lovelace` with the required setup budget. This option is allowed only for warmup. Timed send runs retain the allowance from the pinned config.
+
 Compare a 16-intent backlog at widths one, two and four in opposite orders:
 
 ```sh
