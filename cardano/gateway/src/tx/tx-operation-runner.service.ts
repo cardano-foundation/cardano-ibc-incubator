@@ -225,8 +225,11 @@ export class TxOperationRunnerService {
               });
             }
           }
-          const inputs = await this.lucidService.lucid.utxosByOutRef(refs);
-          if (inputs.length !== refs.length)
+          // One output can fund a valid transaction and also supply its collateral.
+          // Kupo returns that output once, so compare and reserve the unique union.
+          const uniqueRefs = [...new Map(refs.map((ref) => [`${ref.txHash}#${ref.outputIndex}`, ref])).values()];
+          const inputs = await this.lucidService.lucid.utxosByOutRef(uniqueRefs);
+          if (inputs.length !== uniqueRefs.length)
             throw new Error('Packet inputs changed during construction. Retry from canonical state');
           const referenceList = body.reference_inputs();
           const referenceRefs: Pick<UTxO, 'txHash' | 'outputIndex'>[] = [];

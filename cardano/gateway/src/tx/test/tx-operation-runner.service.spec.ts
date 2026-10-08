@@ -1,5 +1,6 @@
 import { TRANSACTION_SET_COLLATERAL } from '../../config/constant.config';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
+import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
 
 describe('TxOperationRunnerService', () => {
   const makeService = () => {
@@ -422,6 +423,43 @@ describe('TxOperationRunnerService', () => {
         expect(availableInputs([busy, free])).toEqual([free]);
       },
     });
+  });
+
+  it.each([true, false])('checks a shared spending and collateral output once, unspent=%s', async (unspent) => {
+    const { service, lucidService } = makeService();
+    const hash = '11'.repeat(32);
+    // Decode both input roles with the native Cardano library. Kupo returns a
+    // unique output even when the request contains the same reference twice.
+    const cbor = `84a40081825820${hash}000180021a000f42400d81825820${hash}00a0f5f6`;
+    const transaction = CML.Transaction.from_cbor_hex(cbor);
+    const funding = { txHash: hash, outputIndex: 0, address: 'signer', assets: { lovelace: 30_000_000n } };
+    const lookup = jest.fn().mockResolvedValue(unspent ? [funding] : []);
+    lucidService.LucidImporter = { CML };
+    lucidService.lucid = { utxosByOutRef: lookup };
+    const builder = {
+      chain: jest.fn().mockResolvedValue([[], [], {
+        toCBOR: () => cbor,
+        toHash: () => CML.hash_transaction(transaction.body()).to_hex(),
+      }]),
+    } as any;
+    const plan: Parameters<TxOperationRunnerService['runChain']>[0] = {
+      operationName: 'packetBatch',
+      wallet: { mode: 'custom_before_complete' as const, run: async () => lucidService.selectWalletFromAddress() },
+      reservation: { now: 100, expiresAt: 1000 },
+      build: ({ complete }) => complete({
+        operationName: 'packetBatch', unsignedTx: builder, spendingInputs: [funding],
+        validity: { apply: (tx) => tx },
+      }),
+    };
+    if (unspent) {
+      await expect(service.runChain(plan)).resolves.toBeDefined();
+      expect(lookup).toHaveBeenCalledWith([{ txHash: hash, outputIndex: 0 }]);
+      await expect(service.runChain({ ...plan, reservation: { now: 200, expiresAt: 1000 } }))
+        .rejects.toThrow('Packet inputs are reserved');
+      expect(builder.chain).toHaveBeenCalledTimes(1);
+    } else {
+      await expect(service.runChain(plan)).rejects.toThrow('Packet inputs changed during construction');
+    }
   });
 
   it('holds one completion lock while threading wallet inputs through a transaction chain', async () => {
