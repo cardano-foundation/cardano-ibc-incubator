@@ -12,7 +12,7 @@ import {
   encodeConsensusStateValue,
 } from '../../shared/types/client-datum';
 import { initializeHeader } from '../../shared/types/header';
-import { HostStateDatum } from '../../shared/types/host-state-datum';
+import { decodeHostStateDatum, HostStateDatum } from '../../shared/types/host-state-datum';
 import {
   decodeMintSessionRedeemer,
   decodeSpendMultitxClientRedeemer,
@@ -177,6 +177,22 @@ describe('ClientService connection-delay processing metadata', () => {
     expect([...output.state.processedTimes.values()]).toEqual([validToNs]);
     expect([...output.state.processedHeights.values()]).toEqual([validToNs / 4_000_000_000n]);
     expect([...output.state.consensusStates.values()][0].timestamp).toBe(validFromNs);
+  });
+
+  it('increments the live client count in the HostState output on CreateClient', async () => {
+    const { service, lucid } = await context();
+    const input = initialDatum();
+    const consensus = [...input.state.consensusStates.values()][0];
+
+    await service.buildUnsignedCreateClientTx(input.state.clientState, consensus, 'addr_test1signer', validToNs);
+
+    const encodedHostState = lucid.createUnsignedCreateClientTransaction.mock.calls[0][4];
+    const updatedHostState = await decodeHostStateDatum(encodedHostState, Lucid);
+    expect(updatedHostState.state.version).toBe(2n);
+    expect(updatedHostState.state.next_client_sequence).toBe(1n);
+    expect(updatedHostState.control.live_clients).toBe(1n);
+    expect(updatedHostState.control.live_connections).toBe(0n);
+    expect(updatedHostState.control.live_channels).toBe(0n);
   });
 
   it('passes the creation transaction upper bound into datum construction', async () => {
