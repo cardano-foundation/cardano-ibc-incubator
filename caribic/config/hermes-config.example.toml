@@ -64,6 +64,12 @@ id = 'cardano-devnet'
 # Gateway gRPC endpoint - this is your NestJS Gateway
 # Note: Gateway gRPC listens on port 5001; its HTTP/REST server defaults to 8000.
 gateway_url = 'http://localhost:5001'
+
+# Funded batches can await inclusion on independent channels at the same time.
+# Use 1 for serial execution. Each channel still has one batch in flight.
+packet_executor_concurrency = 2
+# Keep enough separate ADA inputs for fees and collateral. Busy inputs back off.
+# This worker does not schedule packet-history pruning.
 # Plaintext is accepted only for localhost/loopback endpoints. Remote Gateways
 # must use an https:// URL. Public certificate authorities use native trust roots;
 # set this only when the Gateway certificate is issued by a private CA.
