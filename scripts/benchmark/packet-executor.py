@@ -62,6 +62,11 @@ def main():
             subprocess.run(deno + [','.join(args.channels), str(args.per_channel), str(receipt_path)],
                            cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
         receipt = json.loads(receipt_path.read_text())
+        admission_canonical_path = directory / (label + '-admission-canonical.json')
+        with (directory / (label + '-admission-verification.log')).open('w') as verification:
+            subprocess.run(['node', str(ROOT / 'scripts/ci/aiken-contract-migration/measure-migration-transaction.cjs'),
+                            str(runtime), receipt['transaction'], str(admission_canonical_path), '24'], cwd=ROOT,
+                           stdout=verification, stderr=subprocess.STDOUT, env=env, check=True)
         selected = directory / (label + '.toml')
         selected.write_text(template.replace('__WIDTH__', str(width)))
         selected.chmod(0o600)
@@ -135,6 +140,7 @@ def main():
                     'initializations': len(included) - len(sends),
                     'retries': text.count('Funded request batch will retry'),
                     'backlogReceipt': str(receipt_path), 'hermesLog': str(log_path),
+                    'backlogCanonicalReport': str(admission_canonical_path),
                     'canonicalIntentConsumptionChecked': True,
                     'canonicalBlockBodiesAuthenticated': True,
                     'confirmationDepthCheckedOutsideTimer': 24,
