@@ -27,18 +27,22 @@ async function main() {
   const genesis = JSON.parse(rawGenesis);
   if (genesis.networkMagic !== 42) throw new Error('Only owned magic-42 rehearsal data is supported');
   const result = JSON.parse(fs.readFileSync(path.join(runtime, 'result.json')));
+  const portsFile = path.join(runtime, 'benchmark-ports.json');
+  const ports = fs.existsSync(portsFile) ? JSON.parse(fs.readFileSync(portsFile)) : {};
+  const historyDbPort = ports.DEVKIT_HISTORY_DB_PORT ?? 27432;
+  const historyPort = ports.DEVKIT_HISTORY_PORT ?? 29083;
   if (result.networkRuntime !== runtime || !/^cardano-deployment-test-[a-z0-9]+$/.test(result.project))
     throw new Error('Runtime/project provenance differs from deployment result');
   const compose = ['compose', '-p', result.project, '-f', path.join(runtime, 'compose.json')];
   const docker = args => execFileSync('docker', [...compose, ...args]);
   if (!docker(['exec', '-T', 'devkit', 'cat', '/clusters/nodes/default/node/genesis/shelley-genesis.json']).equals(rawGenesis))
     throw new Error('Actual provider genesis differs from selected fixture');
-  for (const [service, internal, external] of [['history-db', '5432', '27432'], ['history', '8080', '29083']]) {
+  for (const [service, internal, external] of [['history-db', '5432', historyDbPort], ['history', '8080', historyPort]]) {
     if (docker(['port', service, internal]).toString().trim() !== `127.0.0.1:${external}`)
       throw new Error('History endpoint is not owned by selected runtime');
   }
   const limits = JSON.parse(fs.readFileSync(path.join(runtime, 'protocol-parameters.json')));
-  const db = new Client({ host: '127.0.0.1', port: 27432, database: 'yaci_store', user: 'yaci', password: 'devkit' });
+  const db = new Client({ host: '127.0.0.1', port: historyDbPort, database: 'yaci_store', user: 'yaci', password: 'devkit' });
   await db.connect();
   try {
     const query = `SELECT t.tx_index, t.block, t.block_hash, b.slot
@@ -47,7 +51,7 @@ async function main() {
     const rows = (await db.query(query, [txHash])).rows;
     if (rows.length !== 1) throw new Error('Transaction has no unique canonical valid inclusion');
     const inclusion = rows[0];
-    const fetcher = new MiniProtocalsService({}, { get: key => key === 'yaciStoreEndpoint' ? 'http://127.0.0.1:29083' : undefined }, console);
+    const fetcher = new MiniProtocalsService({}, { get: key => key === 'yaciStoreEndpoint' ? `http://127.0.0.1:${historyPort}` : undefined }, console);
     const bytes = await fetcher.fetchBlockCbor({ hash: inclusion.block_hash, slotNo: BigInt(inclusion.slot) });
     const block = authenticateBlock(bytes, inclusion.block_hash);
     const index = Number(inclusion.tx_index);
@@ -73,6 +77,12 @@ async function main() {
       inputs.push({ txHash: input.transaction_id().to_hex(), outputIndex: Number(input.index()) });
     }
     const outputs = [];
+    const collateralInputs = [];
+    const collateral = body.collateral_inputs();
+    for (let i = 0; collateral && i < collateral.len(); i++) {
+      const input = collateral.get(i);
+      collateralInputs.push({ txHash: input.transaction_id().to_hex(), outputIndex: Number(input.index()) });
+    }
     for (let i = 0; i < body.outputs().len(); i++) {
       const output = body.outputs().get(i), value = output.amount(), multi = value.multi_asset();
       const assets = { lovelace: value.coin().toString() }, policies = multi.keys();
@@ -127,7 +137,7 @@ async function main() {
       minted,
       signingKeyHashes,
       bootstrapWitnessCount: witnesses.bootstrap_witnesses()?.len() ?? 0,
-      inputs, outputs,
+      inputs, collateralInputs, outputs,
       transaction: txHash, inclusion, memory: memory.toString(), steps: steps.toString(),
       feeLovelace: body.fee().toString(), reconstructedTransactionBytes: tx.to_cbor_bytes().length,
       reconstructionNote: 'Body, witnesses, validity and auxiliary data reconstructed from the canonical block; this is not a claim about the original submitted transaction encoding.',

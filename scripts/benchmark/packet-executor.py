@@ -99,6 +99,23 @@ def main():
                     })
                 if len({tx['hash'] for tx in transactions}) != len(transactions):
                     raise RuntimeError('Duplicate inclusion receipt')
+                # Outside the timer, authenticate canonical block bytes and
+                # check that the exact funded outputs are transaction inputs.
+                consumption = {}
+                for tx in transactions:
+                    canonical_path = directory / (tx['hash'] + '-canonical.json')
+                    with (directory / (tx['hash'] + '-verification.log')).open('w') as verification:
+                        subprocess.run(['node', str(ROOT / 'scripts/ci/aiken-contract-migration/measure-migration-transaction.cjs'),
+                                        str(runtime), tx['hash'], str(canonical_path)], cwd=ROOT,
+                                       stdout=verification, stderr=subprocess.STDOUT, env=env, check=True)
+                    canonical = json.loads(canonical_path.read_text())
+                    tx['canonicalReport'] = str(canonical_path)
+                    for spent in canonical['inputs']:
+                        ref = (spent['txHash'], spent['outputIndex'])
+                        consumption[ref] = consumption.get(ref, 0) + 1
+                for intent in receipt['intents']:
+                    if consumption.get((intent['txHash'], intent['outputIndex'])) != 1:
+                        raise RuntimeError('A funded intent has no unique authenticated canonical spend')
                 # Check canonical Kupo consumption for every admitted output.
                 for intent in receipt['intents']:
                     url = f"http://127.0.0.1:{ports['DEVKIT_KUPO_PORT']}/matches/{intent['outputIndex']}@{intent['txHash']}?unspent"
@@ -113,6 +130,7 @@ def main():
                     'retries': text.count('Funded request batch will retry'),
                     'backlogReceipt': str(receipt_path), 'hermesLog': str(log_path),
                     'canonicalIntentConsumptionChecked': True,
+                    'canonicalBlockBodiesAuthenticated': True,
                 }
                 runs.append(result)
                 (directory / (label + '-result.json')).write_text(json.dumps(result, indent=2) + '\n')
@@ -131,6 +149,7 @@ def main():
         'genesisSha256': hashlib.sha256(genesis_bytes).hexdigest(),
         'hermesBinarySha256': hashlib.sha256(args.hermes.read_bytes()).hexdigest(),
         'incubatorCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+        'devnetVm': json.loads((runtime / 'benchmark-vm.json').read_text()) if (runtime / 'benchmark-vm.json').exists() else None,
         'runs': runs,
     }
     (directory / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
