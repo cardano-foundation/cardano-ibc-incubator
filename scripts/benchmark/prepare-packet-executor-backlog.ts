@@ -50,7 +50,7 @@ if (Deno.args[1] === "wallets") {
   const signer = await lucid.wallet().address();
   const timing = await migrationTiming(lucid, Deno.env.get("OGMIOS_URL")!);
   let tx = lucid.newTx().validFrom(timing.validFrom).validTo(timing.validTo)
-    .pay.ToAddress(user, { lovelace: 400_000_000n });
+    .pay.ToAddress(user, { lovelace: 1_000_000_000n });
   for (let i = 0; i < 32; i++) {
     tx = tx.pay.ToAddress(signer, { lovelace: 30_000_000n });
   }
