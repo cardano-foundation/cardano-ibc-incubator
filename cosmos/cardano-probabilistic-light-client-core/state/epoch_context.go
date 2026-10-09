@@ -176,14 +176,31 @@ func (cs ClientState) validateEpochContextParameters(contexts []*EpochContext) e
 	if cs.SlotsPerKesPeriod == 0 {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "client slots per KES period must be greater than zero")
 	}
+	if _, err := cs.epochLength(); err != nil {
+		return err
+	}
 	for _, ctx := range contexts {
-		if ctx != nil && ctx.SlotsPerKesPeriod != cs.SlotsPerKesPeriod {
+		if ctx == nil {
+			continue
+		}
+		if ctx.SlotsPerKesPeriod != cs.SlotsPerKesPeriod {
 			return errorsmod.Wrapf(
 				ErrInvalidCurrentEpoch,
 				"epoch %d slots per KES period %d must match immutable client value %d",
 				ctx.Epoch,
 				ctx.SlotsPerKesPeriod,
 				cs.SlotsPerKesPeriod,
+			)
+		}
+		start, end, err := cs.epochSlotBounds(ctx.Epoch)
+		if err != nil {
+			return err
+		}
+		if ctx.EpochStartSlot != start || ctx.EpochEndSlotExclusive != end {
+			return errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"epoch %d slot bounds [%d, %d) must match stored schedule [%d, %d)",
+				ctx.Epoch, ctx.EpochStartSlot, ctx.EpochEndSlotExclusive, start, end,
 			)
 		}
 	}
@@ -223,16 +240,6 @@ func epochContextByEpoch(contexts []*EpochContext, epoch uint64) *EpochContext {
 		}
 	}
 	return nil
-}
-
-func epochContextForSlot(contexts []*EpochContext, slot uint64) *EpochContext {
-	var match *EpochContext
-	for _, ctx := range contexts {
-		if ctx != nil && slot >= ctx.EpochStartSlot && slot < ctx.EpochEndSlotExclusive {
-			match = ctx
-		}
-	}
-	return match
 }
 
 func epochContextsEqual(left, right *EpochContext) bool {
@@ -281,13 +288,17 @@ func syncCurrentEpochFields(cs *ClientState, contexts []*EpochContext, currentEp
 	if err := cs.validateEpochContextParameters(contexts); err != nil {
 		return err
 	}
+	start, end, err := cs.epochSlotBounds(currentEpoch)
+	if err != nil {
+		return err
+	}
 
 	cs.CurrentEpoch = currentEpoch
 	cs.EpochContexts = cloneEpochContexts(contexts)
 	cs.EpochStakeDistribution = cloneStakeDistributionEntries(currentCtx.StakeDistribution)
 	cs.EpochNonce = bytes.Clone(currentCtx.EpochNonce)
-	cs.CurrentEpochStartSlot = currentCtx.EpochStartSlot
-	cs.CurrentEpochEndSlotExclusive = currentCtx.EpochEndSlotExclusive
+	cs.CurrentEpochStartSlot = start
+	cs.CurrentEpochEndSlotExclusive = end
 	return nil
 }
 

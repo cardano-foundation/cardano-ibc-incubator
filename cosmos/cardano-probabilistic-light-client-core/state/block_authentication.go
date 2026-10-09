@@ -204,23 +204,29 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 			expectedTimestamp,
 		)
 	}
-	epochContext := epochContextForSlot(epochContexts, decodedHeader.SlotNumber())
-	if epochContext == nil {
-		return nil, errorsmod.Wrapf(
-			ErrInvalidCurrentEpoch,
-			"%s block slot %d outside available epoch context bounds",
-			label,
-			decodedHeader.SlotNumber(),
-		)
+	epoch, err := cs.epochForSlot(decodedHeader.SlotNumber())
+	if err != nil {
+		return nil, err
 	}
-	if block.Epoch != epochContext.Epoch {
+	if block.Epoch != epoch {
 		return nil, errorsmod.Wrapf(
 			ErrInvalidCurrentEpoch,
 			"%s block epoch mismatch: got %d expected %d",
 			label,
 			block.Epoch,
-			epochContext.Epoch,
+			epoch,
 		)
+	}
+	epochContext := epochContextByEpoch(epochContexts, epoch)
+	if epochContext == nil {
+		return nil, errorsmod.Wrapf(
+			ErrInvalidCurrentEpoch,
+			"%s block slot %d outside available epoch context bounds for derived epoch %d",
+			label, decodedHeader.SlotNumber(), epoch,
+		)
+	}
+	if err := cs.validateEpochContextParameters([]*EpochContext{epochContext}); err != nil {
+		return nil, err
 	}
 	if err := verifySlotWithinEpochContext(decodedHeader.SlotNumber(), epochContext, label); err != nil {
 		return nil, err
@@ -263,7 +269,7 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 		hash:                                 decodedHeader.Hash().String(),
 		prevHash:                             decodedPrevHash,
 		bodyHash:                             decodedBodyHash,
-		epoch:                                epochContext.Epoch,
+		epoch:                                epoch,
 		timestamp:                            expectedTimestamp,
 		slotLeader:                           decodedPoolID,
 		operationalCertificateSequenceNumber: sequenceNumber,
