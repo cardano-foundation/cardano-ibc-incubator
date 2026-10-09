@@ -9,7 +9,7 @@ use crate::setup::{
 };
 use crate::utils::{
     execute_script, execute_script_with_progress, get_cardano_state, get_user_ids,
-    replace_text_in_file, wait_for_health_check, CardanoQuery,
+    prompt_backup_operator, replace_text_in_file, wait_for_health_check, CardanoQuery,
 };
 use crate::{
     chains, config,
@@ -1261,6 +1261,7 @@ pub async fn deploy_contracts(
     _clean: bool,
     validators_already_built: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let backup_operator = prompt_backup_operator()?;
     let profile = config::cardano_network_profile(config::CoreCardanoNetwork::Local);
     let handler_json_path = PathBuf::from(profile.handler_json_path.clone());
     let bridge_manifest_path = profile
@@ -1343,6 +1344,11 @@ pub async fn deploy_contracts(
 
     let local_kupo = crate::local_network::endpoint(project_root_path, "KUPO_URL")?;
     let local_ogmios = crate::local_network::endpoint(project_root_path, "OGMIOS_URL")?;
+    let mut offchain_env = local_offchain_environment(&local_kupo, &local_ogmios, &network_magic);
+    offchain_env.push((
+        "DEPLOYER_BACKUP_PAYMENT_KEY_HASH",
+        backup_operator.as_deref().unwrap_or(""),
+    ));
     let deployment_result = execute_script(
         offchain_dir.as_path(),
         "deno",
@@ -1358,11 +1364,7 @@ pub async fn deploy_contracts(
             "--allow-write",
             "index.ts",
         ]),
-        Some(local_offchain_environment(
-            &local_kupo,
-            &local_ogmios,
-            &network_magic,
-        )),
+        Some(offchain_env),
     );
 
     if let Err(error) = deployment_result {
@@ -1881,6 +1883,12 @@ pub async fn deploy_public_cardano_bridge(
         }
     }
 
+    let backup_operator = if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.suspend(prompt_backup_operator)?
+    } else {
+        prompt_backup_operator()?
+    };
+
     if validators_already_built {
         log_or_show_progress(
             &format!(
@@ -1981,6 +1989,10 @@ pub async fn deploy_public_cardano_bridge(
             history_checkpoint.block_hash.as_str(),
         ),
         ("YACI_SYNC_START_BLOCK_NO", history_block_no),
+        (
+            "DEPLOYER_BACKUP_PAYMENT_KEY_HASH",
+            backup_operator.as_deref().unwrap_or(""),
+        ),
         ("DEPLOYER_SK", deployer_sk),
         ("KUPO_URL", kupo_url.as_str()),
         (
