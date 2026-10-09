@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
+  CML,
   getAddressDetails,
   Lucid,
   type LucidEvolution,
@@ -10,8 +11,16 @@ import {
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
 import { loadDeploymentPlan } from "./deployment-plan.ts";
-import { createReferenceUtxos, deployTraceRegistry } from "./deployment.ts";
-import { TRACE_REGISTRY_SHARD_COUNT } from "./constants.ts";
+import {
+  createDeployment,
+  createReferenceUtxos,
+  deployTraceRegistry,
+} from "./deployment.ts";
+import { customEmulatorSlotConfig } from "./scalus-evaluator.ts";
+import {
+  RESERVED_DEPLOYMENT_NONCE_COUNT,
+  TRACE_REGISTRY_SHARD_COUNT,
+} from "./constants.ts";
 import {
   assertDisjointTxInputs,
   completeAndSignTx,
@@ -35,7 +44,7 @@ Deno.env.delete("KUPO_URL");
 
 const refKey = (utxo: UTxO) => `${utxo.txHash}#${utxo.outputIndex}`;
 
-async function batchingFixture() {
+async function batchingFixture(extraWalletOutputs = 0) {
   const address = walletFromSeed(TEST_SEED, {
     addressType: "Base",
     accountIndex: 0,
@@ -46,6 +55,7 @@ async function batchingFixture() {
       50_000_000_000n,
       5_000_000n,
       ...Array(1 + TRACE_REGISTRY_SHARD_COUNT).fill(NONCE_LOVELACE),
+      ...Array(extraWalletOutputs).fill(2_800_000n),
     ].map((lovelace) => ({
       seedPhrase: TEST_SEED,
       privateKey: "",
@@ -131,9 +141,13 @@ Deno.test("batched transactions may not spend the same input", async () => {
 });
 
 Deno.test("trace registry shards and directory are adopted in one block", async () => {
-  const { lucid, emulator, walletUtxos, plan } = await batchingFixture();
+  const { lucid, emulator, walletUtxos, plan } = await batchingFixture(49);
+  assertEquals(walletUtxos.length, 68);
   const nonceUtxos = [
-    ...walletUtxos.slice(DIRECTORY_NONCE_INDEX + 1),
+    ...walletUtxos.slice(
+      DIRECTORY_NONCE_INDEX + 1,
+      DIRECTORY_NONCE_INDEX + 1 + TRACE_REGISTRY_SHARD_COUNT,
+    ),
     walletUtxos[DIRECTORY_NONCE_INDEX],
   ];
   assertEquals(nonceUtxos.length, TRACE_REGISTRY_SHARD_COUNT + 1);
@@ -183,6 +197,86 @@ Deno.test("trace registry shards and directory are adopted in one block", async 
   assert(remaining.has(refKey(walletUtxos[COLLATERAL_INDEX])));
   for (const nonce of nonceUtxos) assert(!remaining.has(refKey(nonce)));
 });
+
+for (const splitRequired of [true, false]) {
+  Deno.test(`fresh deployment ${splitRequired ? "prepares funded nonces" : "reuses funded nonces"} with a fragmented wallet`, async () => {
+    // Match issue #859's nonce balance and enterprise address shape. A large
+    // funding output is available alongside small change outputs.
+    const address = walletFromSeed(TEST_SEED, {
+      network: "Custom",
+      addressType: "Enterprise",
+    }).address;
+    const fundedNonceCount = splitRequired
+      ? 0
+      : RESERVED_DEPLOYMENT_NONCE_COUNT;
+    const balances = [
+      50_000_000_000n,
+      5_000_000n,
+      ...Array(fundedNonceCount).fill(NONCE_LOVELACE),
+      ...Array(66 - fundedNonceCount).fill(2_483_159n),
+    ];
+    assert(balances.length >= RESERVED_DEPLOYMENT_NONCE_COUNT + 16);
+    const emulator = new Emulator(
+      balances.map((lovelace) => ({
+        address,
+        seedPhrase: TEST_SEED,
+        privateKey: "",
+        assets: { lovelace },
+      })),
+      { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: MAX_TX_SIZE },
+    );
+    emulator.time = Math.floor(Date.now() / 1000) * 1000;
+    const lucid = await Lucid(emulator, "Custom", {
+      slotConfig: customEmulatorSlotConfig(emulator),
+    });
+    lucid.selectWallet.fromSeed(TEST_SEED, { addressType: "Enterprise" });
+    assertEquals((await lucid.wallet().getUtxos()).length, 68);
+    const submissions: CML.Transaction[] = [];
+    const submit = emulator.submitTx.bind(emulator);
+    emulator.submitTx = async (cbor) => {
+      submissions.push(CML.Transaction.from_cbor_hex(cbor));
+      const hash = await submit(cbor);
+      emulator.awaitBlock();
+      return hash;
+    };
+    const networkMagic = Deno.env.get("CARDANO_NETWORK_MAGIC");
+    Deno.env.set("CARDANO_NETWORK_MAGIC", "42");
+    try {
+      const deployment = await createDeployment(lucid, undefined, {
+        deploymentMode: "legacy",
+      });
+      const traceRegistry = deployment.traceRegistry;
+      assert(traceRegistry);
+      const threads = await lucid.utxosAt(traceRegistry.address);
+      assertEquals(threads.length, TRACE_REGISTRY_SHARD_COUNT + 1);
+      assert(
+        threads.some((utxo) =>
+          utxo.assets[
+            traceRegistry.directory.policyId + traceRegistry.directory.name
+          ] === 1n
+        ),
+      );
+    } finally {
+      if (networkMagic === undefined) Deno.env.delete("CARDANO_NETWORK_MAGIC");
+      else Deno.env.set("CARDANO_NETWORK_MAGIC", networkMagic);
+    }
+    const firstBody = submissions[0].body();
+    if (splitRequired) {
+      assertEquals(firstBody.certs()?.len() ?? 0, 0);
+      const outputs = firstBody.outputs();
+      let fundedOutputs = 0;
+      for (let index = 0; index < outputs.len(); index++) {
+        if (outputs.get(index).amount().coin() === NONCE_LOVELACE) {
+          fundedOutputs++;
+        }
+      }
+      assertEquals(fundedOutputs, RESERVED_DEPLOYMENT_NONCE_COUNT + 16);
+    } else {
+      // Recovery registration comes first when the original nonces are funded.
+      assertEquals(firstBody.certs()?.len(), 1);
+    }
+  });
+}
 
 Deno.test("reference scripts are published by one chained funding round", async () => {
   const { lucid, emulator, walletUtxos, plan } = await batchingFixture();

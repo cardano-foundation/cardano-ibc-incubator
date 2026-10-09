@@ -127,17 +127,6 @@ const sortUtxosByLovelaceAsc = (utxos: UTxO[]): UTxO[] =>
     return aLovelace < bLovelace ? -1 : 1;
   });
 
-const sortNonceCandidateUtxos = (utxos: UTxO[]): UTxO[] =>
-  [...utxos].sort((a, b) => {
-    const aAdaOnly = isAdaOnlyUtxo(a);
-    const bAdaOnly = isAdaOnlyUtxo(b);
-    if (aAdaOnly !== bAdaOnly) return aAdaOnly ? -1 : 1;
-    const aLovelace = utxoLovelace(a);
-    const bLovelace = utxoLovelace(b);
-    if (aLovelace === bLovelace) return 0;
-    return aLovelace < bLovelace ? -1 : 1;
-  });
-
 const encodeRawDatum = (value: unknown): string =>
   // Lucid's generic `Data.to` typings are schema-oriented, so manually
   // constructed nested `Constr` values need a small cast even though the
@@ -449,7 +438,7 @@ export const createDeployment = async (
     );
     if (nonces.length < nonceCount) {
       throw new Error(
-        `Not enough distinct wallet UTxOs to deploy (need at least ${nonceCount}).`,
+        `Not enough funded ADA-only nonce UTxOs to deploy (need ${nonceCount} with at least ${DEPLOYMENT_NONCE_SPLIT_AMOUNT} lovelace each).`,
       );
     }
     const plan = await loadDeploymentPlan(lucid, {
@@ -498,7 +487,18 @@ export const createDeployment = async (
   // between sequential mints is fragile on local devnets because the indexer can
   // momentarily lag behind the just-submitted transaction set.
   const deploymentSplitOutputCount = nonceCount + 16;
-  if (signerUtxos.length < deploymentSplitOutputCount) {
+  const initialCollateralRefs = new Set(
+    selectDeploymentCollateralHoldback(signerUtxos).map(utxoRefKey),
+  );
+  const fundedNonceUtxos = selectDeploymentNonceUtxos(
+    signerUtxos,
+    nonceCount,
+    initialCollateralRefs,
+  );
+  if (
+    signerUtxos.length < deploymentSplitOutputCount ||
+    fundedNonceUtxos.length < nonceCount
+  ) {
     const address = await lucid.wallet().address();
     await submitTx(
       () => {
@@ -558,8 +558,8 @@ export const createDeployment = async (
   });
 
   // Keep collateral-sized UTxOs available for Lucid's Plutus collateral
-  // selection. Nonce inputs only need unique output references, so prefer
-  // smaller ADA-only UTxOs and let fee coin selection use non-reserved inputs.
+  // selection. Registry nonces must also cover their own output and fee without
+  // coin selection, so prefer the smallest sufficiently funded ADA-only UTxOs.
   const initialCollateralHoldbackUtxos = selectDeploymentCollateralHoldback(
     signerUtxos,
   );
@@ -1192,8 +1192,12 @@ const selectDeploymentNonceUtxos = (
   count: number,
   collateralHoldbackRefs = new Set<string>(),
 ): UTxO[] => {
-  const nonceCandidates = sortNonceCandidateUtxos(
-    utxos.filter((utxo) => !collateralHoldbackRefs.has(utxoRefKey(utxo))),
+  const nonceCandidates = sortUtxosByLovelaceAsc(
+    utxos.filter((utxo) =>
+      !collateralHoldbackRefs.has(utxoRefKey(utxo)) &&
+      isAdaOnlyUtxo(utxo) &&
+      utxoLovelace(utxo) >= DEPLOYMENT_NONCE_SPLIT_AMOUNT
+    ),
   );
 
   return nonceCandidates.slice(0, count);
