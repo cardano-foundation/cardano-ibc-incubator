@@ -42,9 +42,11 @@ func TestOrderedTimeoutWithCardanoNextSequenceRecv(t *testing.T) {
 			clients.AddRoute(ModuleName, NewLightClientModule(cdc, clients.GetStoreProvider()))
 			clientID := ModuleName + "-0"
 			client := newProbabilisticTestClientState()
-			consensus := newProbabilisticTestConsensusState("authenticated-cardano-block")
+			consensus := newProbabilisticTestConsensusState(testBlockHash("authenticated-cardano-block"))
 			consensus.IbcStateRoot = nextSequenceRecvHex(t, vector.Root)
+			setTestPacketSnapshot(t, consensus, 10)
 			require.NoError(t, client.Initialize(ctx, cdc, clients.ClientStore(ctx, clientID), consensus))
+			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(EpochContextChallengePeriod))
 
 			connections := connectionkeeper.NewKeeper(cdc, storeService, nil, clients)
 			connections.SetParams(ctx, connectiontypes.DefaultParams())

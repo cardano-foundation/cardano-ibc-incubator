@@ -33,7 +33,7 @@ github.com/cosmos/ibc-go/v8 v8.7.0
 
 For `ibc-go/v10` chains, use the sibling module at `cosmos/cardano-probabilistic-light-client-v10`.
 
-Shared Cardano block, HostState, and commitment-proof logic lives in `cosmos/cardano-probabilistic-light-client-core`; this module only carries the `ibc-go/v8` adapter surface around that shared implementation.
+The state machine lives in `cosmos/cardano-probabilistic-light-client-core/state`. This module keeps the `ibc-go/v8` interfaces, registered protobufs, codecs, proof-value conversions, and events. Put changes to verification, checkpoints, time rules, or recovery in the shared core. See the [core README](../cardano-probabilistic-light-client-core/README.md) for regeneration and testing instructions.
 
 ## Integration
 

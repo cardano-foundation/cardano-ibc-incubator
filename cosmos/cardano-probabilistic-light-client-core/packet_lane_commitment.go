@@ -2,6 +2,7 @@ package probabilisticcore
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/blinklabs-io/gouroboros/ledger"
@@ -54,13 +55,13 @@ func ExtractPacketLaneRootFromAnchorBlock(
 	}
 	transactions := block.Transactions()
 	for index, tx := range transactions {
-		if !strings.EqualFold(tx.Hash(), txHash) {
+		if !strings.EqualFold(tx.Hash().String(), txHash) {
 			continue
 		}
 		if transactionIndexIsInvalid(block, uint(index)) || !tx.IsValid() {
 			return PacketLaneRoot{}, fmt.Errorf("packet lane transaction is phase-2 invalid")
 		}
-		outputs := tx.Produced()
+		outputs := utxoOutputs(tx.Produced())
 		if uint64(outputIndex) >= uint64(len(outputs)) {
 			return PacketLaneRoot{}, fmt.Errorf("packet lane output index out of range")
 		}
@@ -73,7 +74,7 @@ func ExtractPacketLaneRootFromAnchorBlock(
 		}
 		output := outputs[outputIndex]
 		assets := output.Assets()
-		if assets == nil || assets.Asset(ledger.NewBlake2b224(lanePolicy), name) != 1 {
+		if assets == nil || !assetQuantityEquals(assets.Asset(ledger.NewBlake2b224(lanePolicy), name), 1) {
 			return PacketLaneRoot{}, fmt.Errorf("packet lane output lacks expected identity token")
 		}
 		if output.Datum() == nil {
@@ -106,4 +107,11 @@ func decodePacketLaneRoot(raw []byte, height uint64, port, channel string, lane,
 		Port: port, Channel: channel, Lane: lane, LaneCount: laneCount,
 		Version: datum.Version, Height: height, Root: datum.Root,
 	}, nil
+}
+
+func assetQuantityEquals(amount *big.Int, expected int64) bool {
+	if amount == nil {
+		return expected == 0
+	}
+	return amount.Cmp(big.NewInt(expected)) == 0
 }

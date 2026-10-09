@@ -92,7 +92,7 @@ pub fn validate(
   session_mint_policy_id: PolicyId,
   recover_client_credential: Credential,
   datum: Option<ClientDatum>,
-  redeemer: SpendMultitxClientRedeemer, UpgradeClient,
+  redeemer: SpendMultitxClientRedeemer,
   spent_output_ref: OutputReference,
   transaction: Transaction,
 ) -> Bool {

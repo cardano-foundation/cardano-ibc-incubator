@@ -19,7 +19,7 @@ func TestIbcStateKeyFromPath(t *testing.T) {
 		"connections/connection-0",
 		"channelEnds/ports/transfer/channels/channel-0",
 		"commitments/ports/transfer/channels/channel-0/sequences/1",
-		"acks/ports/transfer/channels/channel-0/sequences/1",
+		"acks/ports/mock/channels/channel-0/sequences/1",
 		"receipts/ports/transfer/channels/channel-0/sequences/1",
 		"nextSequenceRecv/ports/transfer/channels/channel-0",
 	} {
@@ -38,10 +38,10 @@ func TestIbcStateKeyFromPath(t *testing.T) {
 		})
 	}
 
-	t.Run("consensus height translation", func(t *testing.T) {
+	t.Run("consensus revision preserved", func(t *testing.T) {
 		key, err := ibcStateKeyFromPath(proofTestPath("ibc", "clients/07-tendermint-0/consensusStates/0-42"))
 		require.NoError(t, err)
-		require.Equal(t, []byte("clients/07-tendermint-0/consensusStates/42"), key)
+		require.Equal(t, []byte("clients/07-tendermint-0/consensusStates/0-42"), key)
 	})
 
 	for name, path := range invalidProofTestPaths("connections/connection-0") {
@@ -54,7 +54,7 @@ func TestIbcStateKeyFromPath(t *testing.T) {
 }
 
 func TestClientStateProofPathNamespace(t *testing.T) {
-	key := []byte("receipts/ports/transfer/channels/channel-0/sequences/1")
+	key := []byte("acks/ports/mock/channels/channel-0/sequences/1")
 	for _, membership := range []bool{true, false} {
 		name := "non-membership"
 		if membership {
@@ -68,7 +68,7 @@ func TestClientStateProofPathNamespace(t *testing.T) {
 			height := clienttypes.NewHeight(0, 10)
 			setConsensusState(clientStore, cdc, &ConsensusState{IbcStateRoot: root}, height)
 			setConsensusMetadata(ctx, clientStore, height)
-			cs := ClientState{}
+			cs := ClientState{EpochContextChallenges: []*EpochContextChallenge{{Epoch: 0, UsableAfterUnixNs: 1}}}
 			verify := func(path exported.Path) error {
 				if membership {
 					return cs.VerifyMembership(ctx, clientStore, cdc, height, 0, 0, proof, path, []byte{0x01})
@@ -122,7 +122,7 @@ func proofTestReceipt(t *testing.T, key []byte, membership bool) ([]byte, []byte
 	t.Helper()
 	var value []byte
 	if membership {
-		value = []byte{0x41, 0x01} // CBOR bytestring encoding of a packet receipt.
+		value = []byte{0x41, 0x01} // CBOR encoding of the acknowledgement value.
 	}
 	keyHash := sha256.Sum256(key)
 	index := binary.BigEndian.Uint64(keyHash[:8])

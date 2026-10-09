@@ -2,17 +2,10 @@ package probabilistic
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"strings"
 
-	// Import the existing Cardano CBOR datum decoders/comparators so we can
-	// semantically compare Cardano-committed values (CBOR / PlutusData) with the
-	// protobuf-encoded values produced by ibc-go.
-	//
-	// The Cardano commitment scheme commits to `aiken/cbor.serialise(...)` bytes,
-	// not to protobuf bytes. The light client is responsible for bridging that
-	// encoding difference during verification.
+	// Compare Cardano CBOR datum bytes with the protobuf values supplied by ibc-go.
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	cardanodatum "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10/internal/cardanodatum"
 	proto "github.com/cosmos/gogoproto/proto"
@@ -138,22 +131,7 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		return nil
 
 	case strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
-		// Cardano commits the Plutus integer, while ibc-go expects eight
-		// big-endian bytes. Compare the numbers without changing the leaf bytes.
-		if len(expectedValue) != 8 {
-			return fmt.Errorf("invalid expected nextSequenceRecv length: %d (want 8)", len(expectedValue))
-		}
-		if len(committedValue) == 0 || committedValue[0]>>5 != 0 {
-			return fmt.Errorf("committed nextSequenceRecv must be a CBOR unsigned integer")
-		}
-		var committedSequence uint64
-		if err := cbor.Unmarshal(committedValue, &committedSequence); err != nil {
-			return fmt.Errorf("failed to decode committed nextSequenceRecv CBOR: %w", err)
-		}
-		if committedSequence != binary.BigEndian.Uint64(expectedValue) {
-			return fmt.Errorf("existence proof value mismatch")
-		}
-		return nil
+		return probabilisticcore.VerifyNextSequenceRecvValue(committedValue, expectedValue)
 
 	case strings.HasPrefix(keyStr, "commitments/ports/"),
 		strings.HasPrefix(keyStr, "acks/ports/"):

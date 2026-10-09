@@ -22,7 +22,7 @@ func laneDatumFixture(t *testing.T) []byte {
 		Version: 1, Root: bytes.Repeat([]byte{0xab}, 32),
 		Commitments: cbor.RawMessage{0xa0}, Receipts: cbor.RawMessage{0x80},
 		Acknowledgements: cbor.RawMessage{0xa0}, MinimumReceiveProofHeight: height,
-		MaximumReceiveProofHeight: height,
+		MaximumReceiveProofHeight: height, Balances: cbor.RawMessage{0xa0},
 	}
 	raw, err := cbor.Marshal(cbor.Tag{Number: 121, Content: datum})
 	if err != nil {
@@ -78,7 +78,7 @@ func laneBlockFixture(t *testing.T, invalid []uint, spentLater bool) ([]byte, st
 	bodies := []cbor.RawMessage{bodyRaw}
 	witnesses := []map[uint64]any{{}}
 	if spentLater {
-		hash, _ := hex.DecodeString(body.Hash())
+		hash, _ := hex.DecodeString(body.Id().String())
 		laterRaw, marshalErr := cbor.Marshal(map[uint64]any{
 			0: []any{[]any{hash, uint64(0)}}, 1: []any{}, 2: uint64(2), 22: uint64(1),
 		})
@@ -98,7 +98,7 @@ func laneBlockFixture(t *testing.T, invalid []uint, spentLater bool) ([]byte, st
 	if err != nil {
 		t.Fatal(err)
 	}
-	return block, body.Hash(), policy
+	return block, body.Id().String(), policy
 }
 
 func TestPacketLaneExtractsRootFromActualAnchorHeight(t *testing.T) {

@@ -1799,7 +1799,7 @@ export class TendermintClientService {
       'recoverClientWithdrawalRedeemer',
     );
     await this.refreshWalletContext(data.signer, 'upgradeClientBuilder');
-    const unsignedTx = this.lucidService.createUnsignedUpgradeClientTransaction(
+    const unsignedTx = await this.lucidService.createUnsignedUpgradeClientTransaction(
       hostUtxo,
       await this.lucidService.encode(
         {

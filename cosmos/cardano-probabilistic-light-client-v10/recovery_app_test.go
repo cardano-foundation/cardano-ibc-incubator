@@ -76,11 +76,11 @@ func TestAppRecoverClient(t *testing.T) {
 			} {
 				state := entry.state
 				slot := state.LatestHeight.RevisionHeight
-				setTestCheckpoint(t, state, state.LatestHeight, "checkpoint-"+entry.id, 7, slot)
+				setTestCheckpoint(t, state, state.LatestHeight, testBlockHash("checkpoint-"+entry.id), 7, slot)
 				state.OperationalCertificateCounterHistoryStartHeight = state.LatestHeight
 				store := clientStore(entry.id)
 				setClientState(store, cdc, state)
-				consensus := newProbabilisticTestConsensusState(state.LatestCheckpointBlockHash)
+				consensus := newProbabilisticTestConsensusState(state.LatestCheckpointBlockHash, slot)
 				consensus.Timestamp = state.LatestCheckpointTimestamp
 				setConsensusState(store, cdc, consensus, state.LatestHeight)
 				setConsensusMetadataWithValues(store, state.LatestHeight, clienttypes.NewHeight(1, 99), uint64(ctx.BlockTime().UnixNano()))

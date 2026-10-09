@@ -3,27 +3,10 @@ package probabilistic
 import (
 	"time"
 
-	errorsmod "cosmossdk.io/errors"
-
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
 var _ exported.ClientMessage = (*ProbabilisticHeader)(nil)
-
-func (h ProbabilisticHeader) ConsensusState() *ConsensusState {
-	// This is only an interface placeholder. The verified consensus state for
-	// probabilistic updates is derived inside the authenticated update path, not from
-	// these untrusted relayed header fields.
-	return &ConsensusState{
-		Timestamp:         h.GetTimestamp(),
-		IbcStateRoot:      make([]byte, 32),
-		AcceptedBlockHash: h.AnchorBlock.Hash,
-		AcceptedEpoch:     h.AnchorBlock.Epoch,
-		UniquePoolsCount:  0,
-		UniqueStakeBps:    0,
-		SecurityScoreBps:  0,
-	}
-}
 
 func (ProbabilisticHeader) ClientType() string {
 	return ModuleName
@@ -41,77 +24,10 @@ func (h ProbabilisticHeader) GetTime() time.Time {
 	return time.Unix(int64(h.GetTimestamp()/uint64(time.Second)), int64(h.GetTimestamp()%uint64(time.Second)))
 }
 
-func (h ProbabilisticHeader) ValidateBasic() error {
-	if h.TrustedHeight == nil {
-		return errorsmod.Wrap(ErrInvalidHeader, "trusted height must be present")
-	}
-	if h.TrustedHeight.RevisionHeight == 0 {
-		return errorsmod.Wrap(ErrInvalidHeaderHeight, "trusted height cannot be zero")
-	}
-	if h.AnchorBlock == nil || h.AnchorBlock.Height == nil {
-		return errorsmod.Wrap(ErrInvalidHeader, "anchor block must be present")
-	}
-	if h.AnchorBlock.Height.RevisionHeight == 0 {
-		return errorsmod.Wrap(ErrInvalidHeaderHeight, "anchor block height cannot be zero")
-	}
-	if h.AnchorBlock.Hash == "" {
-		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block hash cannot be empty")
-	}
-	if err := validateProbabilisticBlockWitness(h.AnchorBlock, "anchor", true); err != nil {
-		return err
-	}
-	if h.TrustedHeight.RevisionHeight >= h.AnchorBlock.Height.RevisionHeight {
-		return errorsmod.Wrapf(
-			ErrInvalidHeaderHeight,
-			"trusted height %d must be less than anchor height %d",
-			h.TrustedHeight.RevisionHeight,
-			h.AnchorBlock.Height.RevisionHeight,
-		)
-	}
-	if h.IsCheckpoint {
-		if h.HostStateTxHash != "" || h.HostStateTxOutputIndex != 0 {
-			return errorsmod.Wrap(ErrInvalidHostStateCommitment, "checkpoint header must not contain HostState transaction fields")
-		}
-	}
-	if h.NewEpochContext != nil {
-		if err := validateEpochContext(h.NewEpochContext); err != nil {
-			return err
-		}
-	}
-	for _, block := range h.BridgeBlocks {
-		if block == nil {
-			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "bridge block cannot be nil")
-		}
-		if err := validateProbabilisticBlockWitness(block, "bridge", true); err != nil {
-			return err
-		}
-	}
-	for _, block := range h.DescendantBlocks {
-		if block == nil {
-			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "descendant block cannot be nil")
-		}
-		if err := validateProbabilisticBlockWitness(block, "descendant", false); err != nil {
-			return err
-		}
-	}
-	return nil
+func (h ProbabilisticHeader) ConsensusState() *ConsensusState {
+	return fromCoreConsensusState(toCoreProbabilisticHeader(&h).ConsensusState())
 }
 
-func validateProbabilisticBlockWitness(block *ProbabilisticBlock, label string, requireFullBlock bool) error {
-	hasFullBlock := len(block.BlockCbor) > 0
-	hasHeader := len(block.HeaderCbor) > 0
-	if hasFullBlock && hasHeader {
-		return errorsmod.Wrapf(
-			ErrInvalidAcceptedBlock,
-			"%s block cannot contain both block_cbor and header_cbor",
-			label,
-		)
-	}
-	if requireFullBlock && !hasFullBlock {
-		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block requires full block_cbor", label)
-	}
-	if !hasFullBlock && !hasHeader {
-		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block must contain block_cbor or header_cbor", label)
-	}
-	return nil
+func (h ProbabilisticHeader) ValidateBasic() error {
+	return adapterError(toCoreProbabilisticHeader(&h).ValidateBasic())
 }

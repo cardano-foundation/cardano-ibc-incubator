@@ -1,11 +1,10 @@
 package probabilistic
 
 import (
-	"bytes"
 	"fmt"
-	"math"
-	"strings"
 	"time"
+
+	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
@@ -13,16 +12,12 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	cmttypes "github.com/cometbft/cometbft/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
-	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
 var _ exported.ClientState = (*ClientState)(nil)
-
-const maxSupportedKesEvolutions = uint64(1 << 6)
 
 func NewClientState(
 	chainID string,
@@ -45,228 +40,8 @@ func NewClientState(
 }
 
 func (cs ClientState) GetChainID() string { return cs.ChainId }
-func (ClientState) ClientType() string    { return ModuleName }
 
-func (ClientState) GetTimestampAtHeight(
-	ctx sdk.Context,
-	clientStore storetypes.KVStore,
-	cdc codec.BinaryCodec,
-	height exported.Height,
-) (uint64, error) {
-	consState, found := GetConsensusState(clientStore, cdc, height)
-	if !found {
-		return 0, errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height)
-	}
-	return consState.GetTimestamp(), nil
-}
-
-func (cs ClientState) Status(ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec) exported.Status {
-	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
-		return exported.Frozen
-	}
-	if cs.MaxClockDrift <= 0 {
-		return exported.Expired
-	}
-	if err := cs.validateCheckpointFields(); err != nil {
-		return exported.Expired
-	}
-	effectiveCheckpointHeight := cs.effectiveCheckpointHeight()
-	if cs.MaxKesEvolutions == 0 ||
-		cs.MaxKesEvolutions > maxSupportedKesEvolutions ||
-		cs.OperationalCertificateCounterHistoryStartHeight == nil ||
-		cs.OperationalCertificateCounterHistoryStartHeight.IsZero() ||
-		effectiveCheckpointHeight == nil ||
-		effectiveCheckpointHeight.IsZero() ||
-		cs.OperationalCertificateCounterHistoryStartHeight.GT(effectiveCheckpointHeight) {
-		return exported.Expired
-	}
-	if cs.LatestHeight == nil {
-		return exported.Expired
-	}
-	consState, found := GetConsensusState(clientStore, cdc, cs.LatestHeight)
-	if !found {
-		return exported.Expired
-	}
-	if cs.IsExpired(consState.Timestamp, ctx.BlockTime()) {
-		return exported.Expired
-	}
-	return exported.Active
-}
-
-func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
-	expirationTime := time.Unix(0, int64(latestTimestamp)).Add(cs.TrustingPeriod)
-	return !expirationTime.After(now)
-}
-
-func (cs ClientState) Validate() error {
-	if len(cs.PacketLanePolicyId) != 28 {
-		return fmt.Errorf("packet lane policy must be configured for this deployment")
-	}
-	if strings.TrimSpace(cs.ChainId) == "" {
-		return errorsmod.Wrap(ErrInvalidChainID, "chain id cannot be empty string")
-	}
-	if len(cs.ChainId) > cmttypes.MaxChainIDLen {
-		return errorsmod.Wrapf(ErrInvalidChainID, "chainID is too long; got: %d, max: %d", len(cs.ChainId), cmttypes.MaxChainIDLen)
-	}
-	if cs.LatestHeight == nil || cs.LatestHeight.RevisionHeight == 0 {
-		return errorsmod.Wrapf(ErrInvalidHeaderHeight, "probabilistic client's latest height revision height cannot be zero")
-	}
-	if cs.TrustingPeriod <= 0 {
-		return errorsmod.Wrap(ErrInvalidTrustingPeriod, "trusting period must be greater than zero")
-	}
-	if cs.MaxClockDrift <= 0 {
-		return errorsmod.Wrap(ErrInvalidMaxClockDrift, "max clock drift must be greater than zero")
-	}
-	if len(cs.HostStateNftPolicyId) != 28 {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "host_state_nft_policy_id must be 28 bytes")
-	}
-	if len(cs.HostStateNftTokenName) == 0 {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "host_state_nft_token_name must not be empty")
-	}
-	if cs.SystemStartUnixNs == 0 {
-		return errorsmod.Wrapf(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
-	}
-	if cs.SlotLengthNs == 0 {
-		return errorsmod.Wrapf(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
-	}
-	if cs.SlotsPerKesPeriod == 0 {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "slots_per_kes_period must be greater than zero")
-	}
-	if cs.MaxKesEvolutions == 0 || cs.MaxKesEvolutions > maxSupportedKesEvolutions {
-		return errorsmod.Wrapf(
-			clienttypes.ErrInvalidClient,
-			"max_kes_evolutions must be between 1 and %d",
-			maxSupportedKesEvolutions,
-		)
-	}
-	if cs.ActiveSlotCoefficientNumerator == 0 {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "active_slot_coefficient_numerator must be greater than zero")
-	}
-	if cs.ActiveSlotCoefficientDenominator == 0 {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "active_slot_coefficient_denominator must be greater than zero")
-	}
-	if cs.ActiveSlotCoefficientNumerator > cs.ActiveSlotCoefficientDenominator {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "active slot coefficient must not exceed one")
-	}
-	if err := cs.validateCheckpointFields(); err != nil {
-		return err
-	}
-
-	contexts, err := cs.normalizedEpochContexts()
-	if err != nil {
-		return err
-	}
-	if len(contexts) == 0 {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "at least one epoch context must be present")
-	}
-	if epochContextByEpoch(contexts, cs.CurrentEpoch) == nil {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "missing epoch context for current epoch %d", cs.CurrentEpoch)
-	}
-	return nil
-}
-
-func (cs ClientState) ZeroCustomFields() exported.ClientState {
-	return &ClientState{
-		ChainId:                          cs.ChainId,
-		LatestHeight:                     cs.LatestHeight,
-		UpgradePath:                      append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:             append([]byte(nil), cs.HostStateNftPolicyId...),
-		HostStateNftTokenName:            append([]byte(nil), cs.HostStateNftTokenName...),
-		SystemStartUnixNs:                cs.SystemStartUnixNs,
-		SlotLengthNs:                     cs.SlotLengthNs,
-		SlotsPerKesPeriod:                cs.SlotsPerKesPeriod,
-		MaxKesEvolutions:                 cs.MaxKesEvolutions,
-		ActiveSlotCoefficientNumerator:   cs.ActiveSlotCoefficientNumerator,
-		ActiveSlotCoefficientDenominator: cs.ActiveSlotCoefficientDenominator,
-	}
-}
-
-func (cs ClientState) DeriveTimestampFromSlot(slot uint64) (uint64, error) {
-	if cs.SystemStartUnixNs == 0 {
-		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
-	}
-	if cs.SlotLengthNs == 0 {
-		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
-	}
-	if slot > (math.MaxUint64-cs.SystemStartUnixNs)/cs.SlotLengthNs {
-		return 0, errorsmod.Wrapf(ErrInvalidTimestamp, "slot-derived timestamp overflows uint64 for slot %d", slot)
-	}
-	return cs.SystemStartUnixNs + slot*cs.SlotLengthNs, nil
-}
-
-func (cs ClientState) DeriveSlotFromTimestamp(timestamp uint64) (uint64, error) {
-	if cs.SystemStartUnixNs == 0 {
-		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
-	}
-	if cs.SlotLengthNs == 0 {
-		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
-	}
-	if timestamp < cs.SystemStartUnixNs {
-		return 0, errorsmod.Wrapf(
-			ErrInvalidTimestamp,
-			"timestamp %d is before system start %d",
-			timestamp,
-			cs.SystemStartUnixNs,
-		)
-	}
-	delta := timestamp - cs.SystemStartUnixNs
-	if delta%cs.SlotLengthNs != 0 {
-		return 0, errorsmod.Wrapf(
-			ErrInvalidTimestamp,
-			"timestamp %d does not fall on a Cardano slot boundary",
-			timestamp,
-		)
-	}
-	return delta / cs.SlotLengthNs, nil
-}
-
-func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, consState exported.ConsensusState) error {
-	consensusState, ok := consState.(*ConsensusState)
-	if !ok {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidConsensus, "invalid initial consensus state. expected type: %T, got: %T", &ConsensusState{}, consState)
-	}
-	if err := validateConsensusPacketSnapshot(consensusState, cs.LatestHeight.RevisionHeight); err != nil {
-		return err
-	}
-	if err := cs.initializeCheckpoint(consensusState); err != nil {
-		return err
-	}
-	if err := cs.resetEpochChallenges(ctx); err != nil {
-		return err
-	}
-	setClientState(clientStore, cdc, &cs)
-	setConsensusState(clientStore, cdc, consensusState, cs.LatestHeight)
-	setConsensusMetadata(ctx, clientStore, cs.LatestHeight)
-	clientStore.Set(ProbabilisticScoreKey(cs.LatestHeight.RevisionHeight), sdk.Uint64ToBigEndian(consensusState.SecurityScoreBps))
-	clientStore.Set(UniquePoolsKey(cs.LatestHeight.RevisionHeight), sdk.Uint64ToBigEndian(consensusState.UniquePoolsCount))
-	clientStore.Set(UniqueStakeKey(cs.LatestHeight.RevisionHeight), sdk.Uint64ToBigEndian(consensusState.UniqueStakeBps))
-	clientStore.Set(AcceptedBlockHashKey(cs.LatestHeight.RevisionHeight), []byte(consensusState.AcceptedBlockHash))
-	return nil
-}
-
-func (ClientState) ExportMetadata(store storetypes.KVStore) []exported.GenesisMetadata {
-	iterator := store.Iterator(nil, nil)
-	defer iterator.Close()
-
-	consensusStatePrefix := append([]byte(host.KeyConsensusStatePrefix), '/')
-	metadata := make([]exported.GenesisMetadata, 0)
-	for ; iterator.Valid(); iterator.Next() {
-		key := iterator.Key()
-		if bytes.Equal(key, host.ClientStateKey()) ||
-			(bytes.HasPrefix(key, consensusStatePrefix) &&
-				!bytes.Contains(key[len(consensusStatePrefix):], []byte{'/'})) {
-			continue
-		}
-		metadata = append(metadata, clienttypes.NewGenesisMetadata(
-			bytes.Clone(key),
-			bytes.Clone(iterator.Value()),
-		))
-	}
-	if len(metadata) == 0 {
-		return nil
-	}
-	return metadata
-}
+func (ClientState) ClientType() string { return ModuleName }
 
 func (cs ClientState) GetLatestHeight() exported.Height {
 	if cs.LatestHeight == nil {
@@ -347,39 +122,48 @@ func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("path is not a MerklePath")
 	}
-	// Cardano exposes a single "ibc" namespace, fixed by the on-chain
-	// ics-024-host-requirements/connection_keys.ak default_merkle_prefix.
-	// Its tree commits directly to object keys, so validate the full path
-	// before removing the namespace: exactly ["ibc", <non-empty IBC key>].
-	if len(mpath.KeyPath) != 2 {
-		return nil, fmt.Errorf("expected MerklePath with exactly 2 components, got %d", len(mpath.KeyPath))
-	}
-	if string(mpath.KeyPath[0]) != "ibc" {
-		return nil, fmt.Errorf("invalid Cardano commitment prefix: expected %q, got %q", "ibc", mpath.KeyPath[0])
-	}
-	if len(mpath.KeyPath[1]) == 0 {
-		return nil, fmt.Errorf("empty IBC state key")
-	}
-	key := string(mpath.KeyPath[1])
-	return []byte(key), nil
+	return state.IbcStateKeyFromPath(mpath.KeyPath)
 }
 
-func verifyDelayPeriodPassed(ctx sdk.Context, clientStore storetypes.KVStore, height exported.Height, delayTimePeriod, delayBlockPeriod uint64) error {
-	processedTime, found := GetProcessedTime(clientStore, height)
-	if !found {
-		return ErrProcessedTimeNotFound
+func (cs ClientState) GetTimestampAtHeight(ctx sdk.Context, store storetypes.KVStore, cdc codec.BinaryCodec, height exported.Height) (uint64, error) {
+	value, err := toCoreClientState(&cs).GetTimestampAtHeight(coreContext(ctx), store, coreCodec{cdc}, height)
+	return value, adapterError(err)
+}
+
+func (cs ClientState) Status(ctx sdk.Context, store storetypes.KVStore, cdc codec.BinaryCodec) exported.Status {
+	return exported.Status(toCoreClientState(&cs).Status(coreContext(ctx), store, coreCodec{cdc}))
+}
+
+func (cs ClientState) Validate() error { return adapterError(toCoreClientState(&cs).Validate()) }
+
+func (cs ClientState) IsExpired(timestamp uint64, now time.Time) bool {
+	return toCoreClientState(&cs).IsExpired(timestamp, now)
+}
+
+func (cs ClientState) ZeroCustomFields() exported.ClientState {
+	return fromCoreClientState(toCoreClientState(&cs).ZeroCustomFields())
+}
+
+func (cs ClientState) DeriveTimestampFromSlot(slot uint64) (uint64, error) {
+	return toCoreClientState(&cs).DeriveTimestampFromSlot(slot)
+}
+
+func (cs ClientState) DeriveSlotFromTimestamp(timestamp uint64) (uint64, error) {
+	return toCoreClientState(&cs).DeriveSlotFromTimestamp(timestamp)
+}
+
+func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, store storetypes.KVStore, consState exported.ConsensusState) error {
+	consensus, ok := consState.(*ConsensusState)
+	if !ok {
+		return errorsmod.Wrapf(clienttypes.ErrInvalidConsensus, "invalid initial consensus state. expected type: %T, got: %T", &ConsensusState{}, consState)
 	}
-	currentTime := uint64(ctx.BlockTime().UnixNano())
-	if currentTime < processedTime+delayTimePeriod {
-		return ErrDelayPeriodNotPassed
-	}
-	processedHeight, found := GetProcessedHeight(clientStore, height)
-	if !found {
-		return ErrProcessedHeightNotFound
-	}
-	currentHeight := uint64(ctx.BlockHeight())
-	if currentHeight < processedHeight.GetRevisionHeight()+delayBlockPeriod {
-		return ErrDelayPeriodNotPassed
-	}
-	return nil
+	return adapterError(toCoreClientState(&cs).Initialize(coreContext(ctx), coreCodec{cdc}, store, toCoreConsensusState(consensus)))
+}
+
+func (cs ClientState) ExportMetadata(store storetypes.KVStore) []exported.GenesisMetadata {
+	return mapCoreSlice(toCoreClientState(&cs).ExportMetadata(store), func(m state.Metadata) exported.GenesisMetadata { return clienttypes.NewGenesisMetadata(m.Key, m.Value) })
+}
+
+func verifyDelayPeriodPassed(ctx sdk.Context, store storetypes.KVStore, height exported.Height, timeDelay, blockDelay uint64) error {
+	return state.VerifyDelayPeriodPassed(coreContext(ctx), store, height, timeDelay, blockDelay)
 }
