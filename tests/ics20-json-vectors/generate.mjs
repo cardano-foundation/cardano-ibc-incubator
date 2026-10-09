@@ -178,7 +178,7 @@ function runGoGenerator(configuration) {
       encoding: "utf8",
       env: {
         ...process.env,
-        GOTOOLCHAIN: "go1.25.13",
+        GOTOOLCHAIN: "go1.26.5",
         GOWORK: "off",
       },
       maxBuffer: 10 * 1024 * 1024,
