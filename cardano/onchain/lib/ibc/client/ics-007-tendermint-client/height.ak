@@ -77,3 +77,11 @@ pub fn zero_height() -> Height {
 pub fn is_zero(height: Height) -> Bool {
   height.revision_number == 0 && height.revision_height == 0
 }
+
+/// IBC paths include both revision and height, including revision zero.
+pub fn to_string(value: Height) -> ByteArray {
+  bytearray.concat(
+    string.int_to_string(value.revision_number),
+    bytearray.concat("-", string.int_to_string(value.revision_height)),
+  )
+}

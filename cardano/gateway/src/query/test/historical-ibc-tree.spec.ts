@@ -206,7 +206,7 @@ async function expectedTree(n: number) {
   tree.set('clients/07-tendermint-0/clientState', Buffer.from(current.clientValue, 'hex'));
   for (let h = 1; h <= n; h++) {
     tree.set(
-      `clients/07-tendermint-0/consensusStates/${h}`,
+      `clients/07-tendermint-0/consensusStates/0-${h}`,
       Buffer.from(publicClientCommitmentValues(await encodeClientDatum(client(h), Lucid)).consensusValue, 'hex'),
     );
   }
@@ -350,8 +350,8 @@ async function expectedTree(n: number) {
           result.tree.generateProof(`acks/ports/transfer/channels/channel-0/sequences/${height}`),
         ),
       ).toBe(true);
-      expect(result.tree.get(`clients/07-tendermint-0/consensusStates/${height + 1}`)).toBeUndefined();
-      expect(result.tree.get('clients/07-tendermint-0/consensusStates/1')).toBeDefined();
+      expect(result.tree.get(`clients/07-tendermint-0/consensusStates/0-${height + 1}`)).toBeUndefined();
+      expect(result.tree.get('clients/07-tendermint-0/consensusStates/0-1')).toBeDefined();
     }
     const old = await rebuild();
     expect(old.tree.get('acks/ports/transfer/channels/channel-0/sequences/1')).toBeUndefined();

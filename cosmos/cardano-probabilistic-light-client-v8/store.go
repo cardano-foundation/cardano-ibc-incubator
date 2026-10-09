@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"strings"
 
 	"cosmossdk.io/store/prefix"
 	storetypes "cosmossdk.io/store/types"
@@ -206,19 +205,4 @@ func deleteConsensusMetadata(clientStore storetypes.KVStore, height exported.Hei
 	deleteProcessedTime(clientStore, height)
 	deleteProcessedHeight(clientStore, height)
 	deleteIterationKey(clientStore, height)
-}
-
-func normalizeConsensusKeyForCardano(path string) string {
-	if !strings.Contains(path, "/consensusStates/") {
-		return path
-	}
-	parts := strings.SplitN(path, "/consensusStates/", 2)
-	if len(parts) != 2 {
-		return path
-	}
-	revisionParts := strings.SplitN(parts[1], "-", 2)
-	if len(revisionParts) != 2 || revisionParts[0] == "" || revisionParts[1] == "" {
-		return path
-	}
-	return parts[0] + "/consensusStates/" + revisionParts[1]
 }

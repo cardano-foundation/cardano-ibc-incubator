@@ -124,7 +124,7 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
 function makeHistoricalTree() {
   const tree = {
     get: jest.fn((path: string) =>
-      path === 'clients/07-tendermint-0/consensusStates/77' ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
+      path === 'clients/07-tendermint-0/consensusStates/0-77' ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
     ),
     generateProof: jest.fn((path: string) => ({ path })),
     generateNonExistenceProof: jest.fn((path: string) => ({ path })),
@@ -634,7 +634,7 @@ describe('proof-bearing services with captured query heights', () => {
     );
 
     expect(normalizeConsensusStateFromDatum).toHaveBeenCalledWith(expect.any(Map), 77n);
-    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/77');
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/0-77');
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
@@ -689,7 +689,7 @@ describe('proof-bearing services with captured query heights', () => {
         },
       ]);
       deps.historicalTree.get.mockImplementation((path) =>
-        path === `clients/07-tendermint-0/consensusStates/${height}` ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
+        path === `clients/07-tendermint-0/consensusStates/1-${height}` ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
       );
       const service = new QueryService(
         deps.logger,
@@ -707,7 +707,7 @@ describe('proof-bearing services with captured query heights', () => {
       const response = await service.queryConsensusState(request, { queryHeight: HISTORICAL_HEIGHT });
       expect(ConsensusState.decode(response.consensus_state!.value).timestamp).toEqual({ seconds: 1n, nanos: 1 });
       expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
-        `clients/07-tendermint-0/consensusStates/${height}`,
+        `clients/07-tendermint-0/consensusStates/1-${height}`,
       );
       expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
     },
@@ -784,7 +784,7 @@ describe('proof-bearing services with captured query heights', () => {
     {
       name: 'consensus state',
       unit: CLIENT_TOKEN_UNIT,
-      path: 'clients/07-tendermint-0/consensusStates/77',
+      path: 'clients/07-tendermint-0/consensusStates/0-77',
       run: (deps: ReturnType<typeof makeDeps>) =>
         new QueryService(
           deps.logger,

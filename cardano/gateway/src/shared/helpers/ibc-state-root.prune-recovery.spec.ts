@@ -109,7 +109,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
       Buffer.from(await encodeClientStateValue(clientDatum.state.clientState, Lucid), 'hex'),
     );
     liveTree.set(
-      'clients/07-tendermint-0/consensusStates/81',
+      'clients/07-tendermint-0/consensusStates/0-81',
       Buffer.from(
         await encodeConsensusStateValue(clientDatum.state.consensusStates.get(consensusHeight), Lucid),
         'hex',
@@ -133,8 +133,8 @@ describe('IBC state root recovery after packet-history pruning', () => {
     liveTree.set('commitments/ports/transfer/channels/channel-0/sequences/2', packetValue('aabb'));
     liveTree.set('receipts/ports/transfer/channels/channel-0/sequences/6', packetValue(''));
     liveTree.set('acks/ports/transfer/channels/channel-0/sequences/6', packetValue('ccdd'));
-    // Captured with the Gateway value encoders before moving them into the runtime.
-    expect(liveTree.getRoot()).toBe('7970bb6d5ee49769bfe5207dd02e1c6697b3f521ab5d4920fa36a0b63a317bd3');
+    // Captured with the full revision-height consensus key and unchanged value encoding.
+    expect(liveTree.getRoot()).toBe('3a0d80aa4ff79b5ee3299841bad6a1449bf883d348e220a54911b228796b5ab7');
 
     const prunedReceiptPath = 'receipts/ports/transfer/channels/channel-0/sequences/7';
     const prunedAcknowledgementPath = 'acks/ports/transfer/channels/channel-0/sequences/7';

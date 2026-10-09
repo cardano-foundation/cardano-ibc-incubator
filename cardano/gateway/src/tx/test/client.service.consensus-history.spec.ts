@@ -23,8 +23,8 @@ async function context() {
   const clientUtxo = { txHash: '11'.repeat(32), outputIndex: 0, datum: 'client', address: 'client', assets: { [token.policyId + token.name]: 1n } };
   const tree = new ICS23MerkleTree();
   tree.set('clients/07-tendermint-0/clientState', Buffer.from('client'));
-  tree.set('clients/07-tendermint-0/consensusStates/1', Buffer.from(await encodeConsensusStateValue(oldConsensus, Lucid), 'hex'));
-  tree.set('clients/07-tendermint-0/consensusStates/2', Buffer.from(await encodeConsensusStateValue(tipConsensus, Lucid), 'hex'));
+  tree.set('clients/07-tendermint-0/consensusStates/0-1', Buffer.from(await encodeConsensusStateValue(oldConsensus, Lucid), 'hex'));
+  tree.set('clients/07-tendermint-0/consensusStates/0-2', Buffer.from(await encodeConsensusStateValue(tipConsensus, Lucid), 'hex'));
   const hostStateUtxo = { txHash: '33'.repeat(32), outputIndex: 0, datum: 'host', address: 'host', assets: {} };
   const hostState = { state: { version: 1n, ibc_state_root: tree.getRoot() } };
   const treeContext = createTestTreeContext();
@@ -62,7 +62,7 @@ describe('ClientService consensus history transitions', () => {
     const host = lucid.encode.mock.calls.find(([, type]) => type === 'host_state_redeemer')![0] as any;
     expect(Object.keys(host.UpdateClient).sort()).toEqual(['client_state_siblings', 'consensus_state_siblings']);
     expect(lucid.encode).toHaveBeenCalledWith({ CheckClientHistory: { subject_token: token } }, 'recoverClientWithdrawalRedeemer');
-    expect(tree.get('clients/07-tendermint-0/consensusStates/1')).toBeDefined();
+    expect(tree.get('clients/07-tendermint-0/consensusStates/0-1')).toBeDefined();
   });
 
 });
