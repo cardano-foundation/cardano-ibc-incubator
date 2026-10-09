@@ -63,6 +63,7 @@ function gate() {
 
 function sampleClientState(latestHeight: bigint) {
   return {
+    upgradePath: [],
     chainId: Buffer.from('chain-1').toString('hex'),
     trustLevel: { numerator: 1n, denominator: 3n },
     trustingPeriod: 1_000n,

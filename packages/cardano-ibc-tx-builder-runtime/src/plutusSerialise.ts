@@ -205,7 +205,7 @@ export function publicClientCommitmentValues(
   const data = parseData(datumCbor);
   const [clientDatum] = fields(data, 3, "client datum");
   const [clientState, consensus] = fields(clientDatum, 4, "client state datum");
-  fields(clientState, 8, "client state");
+  fields(clientState, 9, "client state");
   if (!(consensus instanceof CborMap) || consensus.map.length !== 1) {
     throw new Error(
       "consensus states must contain exactly the latest checkpoint",

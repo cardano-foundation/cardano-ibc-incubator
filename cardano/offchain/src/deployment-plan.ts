@@ -245,7 +245,7 @@ export const loadDeploymentPlan = async (
   const recoverClient = load(
     "recover_client.recover_client.withdraw",
     "runtime",
-    bytes(hostPolicy),
+    bytes(hostPolicy, verifyProof.hash),
   );
   const implementationRegistry = inputs.migration
     ? load("implementation_registry.implementation_registry.spend", "runtime")

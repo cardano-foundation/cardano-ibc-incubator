@@ -96,6 +96,7 @@ type ClientStateDatum struct {
 	FrozenHeight    HeightDatum
 	LatestHeight    HeightDatum
 	ProofSpecs      []ProofSpecsDatum
+	UpgradePath     [][]byte
 }
 
 type TokenDatum struct {

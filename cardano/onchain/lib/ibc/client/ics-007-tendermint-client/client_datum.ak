@@ -135,6 +135,7 @@ pub fn recovery_parameters_match(
     subject.unbonding_period == substitute.unbonding_period,
     subject.max_clock_drift == substitute.max_clock_drift,
     subject.proof_specs == substitute.proof_specs,
+    subject.upgrade_path == substitute.upgrade_path,
   }
 }
 

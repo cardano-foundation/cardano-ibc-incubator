@@ -160,7 +160,7 @@ export function normalizeTxsResultFromClientDatum(
   const latestHeight = ClientDatum.state.clientState.latestHeight;
   let header = '';
   let clientMessageAnyHex = '';
-  let eventType = clientEvent;
+  let eventType = spendClientRedeemer === 'UpgradeClient' ? 'upgrade_client' : clientEvent;
   let consensusHeight = latestHeight;
 
   if (spendClientRedeemer !== null && typeof spendClientRedeemer === 'object' && 'RecoverClient' in spendClientRedeemer) {

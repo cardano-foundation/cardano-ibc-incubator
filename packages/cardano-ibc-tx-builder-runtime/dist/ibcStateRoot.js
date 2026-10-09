@@ -62,6 +62,7 @@ async function encodeClientStateValue(clientState, Lucid) {
         frozenHeight: HeightSchema,
         latestHeight: HeightSchema,
         proofSpecs: Data.Array(ProofSpecSchema),
+        upgradePath: Data.Array(Data.Bytes()),
     });
     // Match Aiken cbor.serialise, including indefinite-length arrays.
     // Canonical CBOR would change the committed value bytes.

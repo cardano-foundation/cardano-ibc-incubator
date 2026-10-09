@@ -1,6 +1,7 @@
 const clientDatumMock = {
   state: {
     clientState: {
+      upgradePath: [],
       chainId: '73696465636861696e',
       trustLevel: {
         numerator: 1n,

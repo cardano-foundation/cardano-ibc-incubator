@@ -117,6 +117,7 @@ export async function shutdownFixture(
   }
   const recoverClient = validator("recover_client.recover_client.withdraw", [
     hostPolicy,
+    "00".repeat(28),
   ]);
   recoverClient.address = validatorToRewardAddress("Custom", {
     type: "PlutusV3",

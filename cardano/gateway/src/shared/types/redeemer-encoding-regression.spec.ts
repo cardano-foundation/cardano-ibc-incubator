@@ -152,11 +152,12 @@ describe('Redeemer encoding regression', () => {
     expect(encoded).toBe('d87980');
   });
 
-  it('wraps the unchanged VerifyProof payload with an absent history witness', () => {
+  it('wraps the client state including upgrade path with an absent history witness', () => {
     const encoded = encodeVerifyProofRedeemer(
       {
         VerifyMembership: {
           cs: {
+            upgradePath: [],
             chainId: '656e747279706f696e74',
             trustLevel: { numerator: 1n, denominator: 3n },
             trustingPeriod: 120n,
@@ -185,7 +186,7 @@ describe('Redeemer encoding regression', () => {
     );
 
     expect(encoded).toBe(
-      'd87982d8798ad879884a656e747279706f696e74d879820103187818f00ad879820000d8798200183280d87983187b41aad8798141bbd87982000b00000000d8798180d879818243696263447061746847636f6e74656e74d87a80',
+      'd87982d8798ad879894a656e747279706f696e74d879820103187818f00ad879820000d879820018328080d87983187b41aad8798141bbd87982000b00000000d8798180d879818243696263447061746847636f6e74656e74d87a80',
     );
   });
 

@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "wireSchemaVersion": 3,
+  "wireSchemaVersion": 4,
   "source": "cardano/onchain/plutus.json",
-  "schemaFingerprint": "sha256:91ca26722f066faa7f035a97f2ca3359def9d64db8896db27f218db10cadbbaa",
+  "schemaFingerprint": "sha256:84fd2449b0b1c153317a4c43d53c7cc65bd35f6a492b3aa8d42899c66d1cac36",
   "roots": [
     "ibc/core/ics_025_handler_interface/host_state/HostStateDatum",
     "ibc/client/ics_007_tendermint_client/client_state/ClientState",
@@ -150,6 +150,12 @@
               "name": "proof_specs",
               "type": {
                 "ref": "List<ibc/core/ics_023_vector_commitments/ics23/proofs/ProofSpec>"
+              }
+            },
+            {
+              "name": "upgrade_path",
+              "type": {
+                "ref": "List<ByteArray>"
               }
             }
           ]

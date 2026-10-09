@@ -118,7 +118,7 @@ Deno.test("legacy client validator pins the recovery withdrawal validator", () =
 
   assertEquals(
     recoveryValidator?.parameters?.map(({ title }) => title) ?? [],
-    ["host_state_nft_policy_id"],
+    ["host_state_nft_policy_id", "upgrade_proof_policy"],
   );
   assertEquals(
     spendClientValidator?.parameters?.map(({ title }) => title) ?? [],
@@ -154,8 +154,8 @@ Deno.test("applied legacy client validator fits a mainnet reference-script trans
   const [recoveryValidator, recoveryScriptHash] = readValidator(
     "recover_client.recover_client.withdraw",
     lucid,
-    [hostPolicy],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
+    [hostPolicy, "22".repeat(28)],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
   );
   const [spendClientValidator, spendClientScriptHash] = readValidator(
     "spending_client.spend_client.spend",
