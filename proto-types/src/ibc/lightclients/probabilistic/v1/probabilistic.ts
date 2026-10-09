@@ -30,19 +30,41 @@ export interface StakeDistributionEntry {
   relative_stake_denominator: bigint;
 }
 /**
+ * During updates only stake_distribution supplies new pool and stake data.
+ * Every other field is compared with values derived from accepted state or
+ * stored network configuration. A mismatch rejects the update. The starting
+ * state and network configuration require authenticated or explicitly trusted
+ * bootstrap.
  * @name EpochContext
  * @package ibc.lightclients.probabilistic.v1
  * @see proto type: ibc.lightclients.probabilistic.v1.EpochContext
  */
 export interface EpochContext {
+  /**
+   * Must equal the epoch derived from the signed header slot and stored schedule.
+   */
   epoch: bigint;
+  /**
+   * Supplied pool and stake table under the challenge model. Header and nonce
+   * verification do not establish whether it matches Cardano's ledger.
+   */
   stake_distribution: StakeDistributionEntry[];
   /**
-   * Compatibility value. Must equal the nonce derived from checkpoint history.
+   * Must equal the nonce derived from checkpoint history. Header verification
+   * uses that locally derived nonce.
    */
   epoch_nonce: Uint8Array;
+  /**
+   * Must equal ClientState.slots_per_kes_period, fixed at bootstrap.
+   */
   slots_per_kes_period: bigint;
+  /**
+   * Must equal the start slot calculated from the client's stored epoch schedule.
+   */
   epoch_start_slot: bigint;
+  /**
+   * Must equal the exclusive end calculated from that same stored schedule.
+   */
   epoch_end_slot_exclusive: bigint;
 }
 /**
@@ -429,6 +451,11 @@ function createBaseEpochContext(): EpochContext {
   };
 }
 /**
+ * During updates only stake_distribution supplies new pool and stake data.
+ * Every other field is compared with values derived from accepted state or
+ * stored network configuration. A mismatch rejects the update. The starting
+ * state and network configuration require authenticated or explicitly trusted
+ * bootstrap.
  * @name EpochContext
  * @package ibc.lightclients.probabilistic.v1
  * @see proto type: ibc.lightclients.probabilistic.v1.EpochContext
