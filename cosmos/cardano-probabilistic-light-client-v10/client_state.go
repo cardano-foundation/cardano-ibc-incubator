@@ -231,6 +231,9 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	if err := cs.initializeCheckpoint(consensusState); err != nil {
 		return err
 	}
+	if err := cs.resetEpochChallenges(ctx); err != nil {
+		return err
+	}
 	setClientState(clientStore, cdc, &cs)
 	setConsensusState(clientStore, cdc, consensusState, cs.LatestHeight)
 	setConsensusMetadata(ctx, clientStore, cs.LatestHeight)
@@ -290,6 +293,9 @@ func (cs ClientState) VerifyMembership(
 	if !found {
 		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height)
 	}
+	if err := cs.verifyEpochUsable(ctx, consState.AcceptedEpoch); err != nil {
+		return err
+	}
 	key, err := ibcStateKeyFromPath(path)
 	if err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
@@ -319,6 +325,9 @@ func (cs ClientState) VerifyNonMembership(
 	consState, found := GetConsensusState(clientStore, cdc, height)
 	if !found {
 		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height)
+	}
+	if err := cs.verifyEpochUsable(ctx, consState.AcceptedEpoch); err != nil {
+		return err
 	}
 	key, err := ibcStateKeyFromPath(path)
 	if err != nil {

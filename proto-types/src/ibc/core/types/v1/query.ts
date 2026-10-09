@@ -86,6 +86,10 @@ export interface QueryTransactionByHashResponse {
 export interface QueryIBCHeaderRequest {
   trusted_height: bigint;
   height: bigint;
+  /**
+   * Exact rootless evidence for independent probabilistic misbehaviour checks.
+   */
+  checkpoint_only: boolean;
 }
 /**
  * @name QueryIBCHeaderResponse
@@ -541,6 +545,7 @@ function createBaseQueryIBCHeaderRequest(): QueryIBCHeaderRequest {
   return {
     trusted_height: BigInt(0),
     height: BigInt(0),
+    checkpoint_only: false,
   };
 }
 /**
@@ -557,6 +562,9 @@ export const QueryIBCHeaderRequest = {
     if (message.height !== BigInt(0)) {
       writer.uint32(16).uint64(message.height);
     }
+    if (message.checkpoint_only === true) {
+      writer.uint32(24).bool(message.checkpoint_only);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): QueryIBCHeaderRequest {
@@ -572,6 +580,9 @@ export const QueryIBCHeaderRequest = {
         case 2:
           message.height = reader.uint64();
           break;
+        case 3:
+          message.checkpoint_only = reader.bool();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -583,6 +594,7 @@ export const QueryIBCHeaderRequest = {
     const obj = createBaseQueryIBCHeaderRequest();
     if (isSet(object.trusted_height)) obj.trusted_height = BigInt(object.trusted_height.toString());
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
+    if (isSet(object.checkpoint_only)) obj.checkpoint_only = Boolean(object.checkpoint_only);
     return obj;
   },
   toJSON(message: QueryIBCHeaderRequest): unknown {
@@ -590,6 +602,7 @@ export const QueryIBCHeaderRequest = {
     message.trusted_height !== undefined &&
       (obj.trusted_height = (message.trusted_height || BigInt(0)).toString());
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
+    message.checkpoint_only !== undefined && (obj.checkpoint_only = message.checkpoint_only);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryIBCHeaderRequest>, I>>(object: I): QueryIBCHeaderRequest {
@@ -600,6 +613,7 @@ export const QueryIBCHeaderRequest = {
     if (object.height !== undefined && object.height !== null) {
       message.height = BigInt(object.height.toString());
     }
+    message.checkpoint_only = object.checkpoint_only ?? false;
     return message;
   },
 };

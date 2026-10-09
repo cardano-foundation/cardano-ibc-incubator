@@ -18,6 +18,8 @@ const sharedSourceFiles = [
   "client_state_path_test.go",
   "codec.go",
   "consensus_state.go",
+  "epoch_challenge.go",
+  "epoch_challenge_test.go",
   "epoch_context.go",
   "epoch_context_test.go",
   "errors.go",
@@ -101,8 +103,21 @@ function normalizeCommon(content) {
 }
 
 function normalizeGo(filePath) {
-  // v10 represents Merkle path components as bytes instead of strings.
-  return normalizeCommon(read(filePath)).replaceAll(
+  let content = read(filePath);
+  if (path.basename(filePath) === "epoch_challenge_test.go") {
+    // v10 uses byte-valued v2 paths while both adapters serialize the same
+    // v1 MerkleProof. Normalize only those test API/import differences.
+    content = content
+      .replace(
+        '\tcommitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"\n',
+        "",
+      )
+      .replace(
+        'commitmenttypesv2.NewMerklePath([]byte("ibc"), key)',
+        'commitmenttypes.NewMerklePath("ibc", string(key))',
+      );
+  }
+  return normalizeCommon(content).replaceAll(
     'commitmenttypes.NewMerklePath([]byte("ibc"), []byte(path))',
     'commitmenttypes.NewMerklePath("ibc", path)',
   ).replace(
