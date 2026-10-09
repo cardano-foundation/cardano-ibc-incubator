@@ -256,7 +256,9 @@ pub fn validate(
           // policy therefore exclude any additional mint or burn.
           expect [_,
             _] =
-            mint |> assets.tokens(session_mint_policy_id) |> dict.to_pairs()
+            mint
+              |> assets.tokens(session_mint_policy_id)
+              |> dict.to_pairs()
           and {
             session.validate_misbehaviour_finalization(
               first,
