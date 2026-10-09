@@ -58,7 +58,7 @@ func newProbabilisticTestClientState() *ClientState {
 			PoolId:                   "pool-a",
 			Stake:                    10_000,
 			VrfKeyHash:               bytes.Repeat([]byte{0x02}, 32),
-			FirstRegistrationSlot:    1,
+			FirstRegistrationSlot:    0,
 			RelativeStakeNumerator:   1,
 			RelativeStakeDenominator: 1,
 		},
@@ -75,6 +75,7 @@ func newProbabilisticTestClientState() *ClientState {
 		HostStateNftTokenName:              []byte("host-state"),
 		EpochStakeDistribution:             cloneStakeDistributionEntries(epochStakeDistribution),
 		EpochNonce:                         bytes.Clone(epochNonce),
+		LatestCheckpointPoolRegistry:       testAdapterPoolRegistry(7, epochStakeDistribution),
 		LatestCheckpointNonceState:         &PraosNonceState{EpochNonce: bytes.Clone(epochNonce), EvolvingNonce: bytes.Repeat([]byte{0x41}, 32), CandidateNonce: bytes.Repeat([]byte{0x42}, 32), LastAppliedBlockNonce: bytes.Repeat([]byte{0x43}, 32), LastEpochBlockNonce: bytes.Repeat([]byte{0x44}, 32)},
 		RandomnessStabilisationWindowSlots: 10,
 		SlotsPerKesPeriod:                  129600,
@@ -112,6 +113,7 @@ func newProbabilisticTestConsensusState(acceptedBlockHash string, heights ...uin
 	return &ConsensusState{
 		PacketStateSnapshot: snapshot,
 		NonceState:          newProbabilisticTestClientState().LatestCheckpointNonceState,
+		PoolRegistry:        newProbabilisticTestClientState().LatestCheckpointPoolRegistry,
 		Timestamp:           uint64(time.Unix(1_700_000_000, 0).UnixNano()),
 		IbcStateRoot:        bytes.Repeat([]byte{0x11}, 32),
 		AcceptedBlockHash:   acceptedBlockHash,
@@ -243,7 +245,7 @@ func TestInitialStateWithFourThousandPoolsStaysBelowOneMegabyte(t *testing.T) {
 			PoolId:                   hex.EncodeToString(poolID),
 			Stake:                    1,
 			VrfKeyHash:               vrfKeyHash,
-			FirstRegistrationSlot:    1,
+			FirstRegistrationSlot:    0,
 			RelativeStakeNumerator:   1,
 			RelativeStakeDenominator: 4_000,
 		})
@@ -318,4 +320,16 @@ func setTestPacketSnapshot(t testing.TB, consensus *ConsensusState, height uint6
 	})
 	require.NoError(t, err)
 	consensus.PacketStateSnapshot = raw
+}
+
+// This only seeds synthetic test fixtures. Production bootstrap uses an independent checkpoint.
+func testAdapterPoolRegistry(epoch uint64, entries []*StakeDistributionEntry) *PoolRegistryState {
+	result := &PoolRegistryState{Epoch: epoch}
+	for _, entry := range entries {
+		binding := &PoolRegistrationBinding{PoolId: entry.PoolId, VrfKeyHash: bytes.Clone(entry.VrfKeyHash), FirstRegistrationSlot: entry.FirstRegistrationSlot}
+		result.Pools = append(result.Pools, &PoolRegistrationRecord{Registration: binding, Registered: true})
+		result.Mark = append(result.Mark, binding)
+		result.Effective = append(result.Effective, binding)
+	}
+	return result
 }

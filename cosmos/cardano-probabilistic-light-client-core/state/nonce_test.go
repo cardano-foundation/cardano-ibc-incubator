@@ -116,7 +116,7 @@ func testHeaderTrustedNonceState(t testing.TB, header *ProbabilisticHeader, cont
 		prevHash = core.HeaderPrevHash(decoded)
 	}
 	return &trustedBlockState{height: NewHeight(0, block.Height.RevisionHeight-1), slot: block.Slot - 1,
-		epoch: block.Epoch, blockHash: prevHash, nonceState: testNonceState(contexts[0].EpochNonce)}
+		epoch: block.Epoch, blockHash: prevHash, nonceState: testNonceState(contexts[0].EpochNonce), poolRegistry: testPoolRegistry(block.Epoch, contexts[0].StakeDistribution)}
 }
 
 func testNonceTracker(t testing.TB, block *ProbabilisticBlock, contexts []*EpochContext) *nonceTracker {

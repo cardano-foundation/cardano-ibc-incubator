@@ -97,6 +97,7 @@ func TestEpochScheduleSurvivesRolloverAndRetainedContexts(t *testing.T) {
 	next.EpochStartSlot = 1_000_000
 	next.EpochEndSlotExclusive = 2_000_000
 	require.NoError(t, syncCurrentEpochFields(cs, []*EpochContext{previous, next}, next.Epoch))
+	cs.LatestCheckpointPoolRegistry = testPoolRegistryAtEpoch(t, cs.LatestCheckpointPoolRegistry, next.Epoch)
 	require.NoError(t, cs.Validate())
 	start, end, err := cs.epochSlotBounds(previous.Epoch)
 	require.NoError(t, err)
@@ -161,10 +162,10 @@ func TestSignedBlockRejectsSuppliedEpochScheduleChanges(t *testing.T) {
 					block.HeaderCbor = fixture.headerCbor
 				}
 				// Establish that the untouched signature and VRF evidence is valid.
-				_, err := fixture.clientState.authenticateProbabilisticBlock(block, "bridge", []*EpochContext{fixture.epochContext}, map[string]uint64{}, false, testNonceTracker(t, block, []*EpochContext{fixture.epochContext}))
+				_, err := fixture.clientState.authenticateProbabilisticBlock(block, "bridge", []*EpochContext{fixture.epochContext}, map[string]uint64{}, false, testNonceTracker(t, block, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, block, []*EpochContext{fixture.epochContext}))
 				require.NoError(t, err)
 				tc.mutate(block, fixture.epochContext)
-				_, err = fixture.clientState.authenticateProbabilisticBlock(block, "bridge", []*EpochContext{fixture.epochContext}, map[string]uint64{}, false, testNonceTracker(t, block, []*EpochContext{fixture.epochContext}))
+				_, err = fixture.clientState.authenticateProbabilisticBlock(block, "bridge", []*EpochContext{fixture.epochContext}, map[string]uint64{}, false, testNonceTracker(t, block, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, block, []*EpochContext{fixture.epochContext}))
 				require.ErrorContains(t, err, tc.want)
 			})
 		}

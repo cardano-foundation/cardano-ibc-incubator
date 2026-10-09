@@ -177,6 +177,7 @@ type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   requireThresholds?: boolean;
   requireFullEpochVerificationContext?: boolean;
   missingAnchorBlockMessage?: string;
+  resolvePoolBindings?: (block: HistoryBlock, entries: HistoryStakeDistributionEntry[]) => HistoryStakeDistributionEntry[];
 };
 
 type LoadStakeWeightedStabilityEvidenceForTxHashParams = {
@@ -238,7 +239,7 @@ async function hydrateDescendantProducerRegistrationSlots(
             return false;
           }
           const entry = entriesByPoolId.get(poolId);
-          return Boolean(entry && (!entry.firstRegistrationSlot || entry.firstRegistrationSlot <= 0n));
+          return Boolean(entry && (entry.firstRegistrationSlot == null || entry.firstRegistrationSlot < 0n));
         }),
     ),
   );
@@ -277,6 +278,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   requireThresholds = true,
   requireFullEpochVerificationContext = true,
   missingAnchorBlockMessage,
+  resolvePoolBindings,
 }: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<StakeWeightedStabilityEvidence> {
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
@@ -293,8 +295,10 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       `Epoch context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
     );
   }
-  const { stakeDistribution: epochStakeDistribution, verificationContext: epochVerificationContext } =
-    anchorEpochContext;
+  const { verificationContext: epochVerificationContext } = anchorEpochContext;
+  const epochStakeDistribution = resolvePoolBindings
+    ? resolvePoolBindings(anchorBlock, anchorEpochContext.stakeDistribution)
+    : anchorEpochContext.stakeDistribution;
   assertEpochStakeDistributionAvailable(
     epochStakeDistribution,
     `anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,

@@ -179,6 +179,7 @@ func TestStakeAggregationRejectsTotalOverflowBeforeItCanFailOpen(t *testing.T) {
 			},
 		},
 	}
+	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	_, _, _, err = cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 	require.ErrorContains(t, err, "stake distribution total overflows uint64")
 }
@@ -195,11 +196,13 @@ func TestComputeHeaderSecurityMetricsHandlesIssue647StakeRatio(t *testing.T) {
 		StakeDistribution: []*StakeDistributionEntry{
 			{
 				PoolId:                "qualified-pool",
+				VrfKeyHash:            make([]byte, 32),
 				Stake:                 qualifiedStake,
 				FirstRegistrationSlot: 1,
 			},
 			{
 				PoolId:                "other-pool",
+				VrfKeyHash:            make([]byte, 32),
 				Stake:                 totalStake - qualifiedStake,
 				FirstRegistrationSlot: 1,
 			},
@@ -222,6 +225,7 @@ func TestComputeHeaderSecurityMetricsHandlesIssue647StakeRatio(t *testing.T) {
 		},
 	}
 
+	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	qualifiedPools, qualifiedStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.NoError(t, err)

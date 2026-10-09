@@ -20,6 +20,9 @@ export interface Height {
 export interface StakeDistributionEntry {
   pool_id: string;
   stake: bigint;
+  /**
+   * Compatibility fields. Must match the independent effective registry.
+   */
   vrf_key_hash: Uint8Array;
   first_registration_slot: bigint;
   /**
@@ -30,7 +33,7 @@ export interface StakeDistributionEntry {
   relative_stake_denominator: bigint;
 }
 /**
- * During updates only stake_distribution supplies new pool and stake data.
+ * During updates only stake allocation supplies independently claimed data.
  * Every other field is compared with values derived from accepted state or
  * stored network configuration. A mismatch rejects the update. The starting
  * state and network configuration require authenticated or explicitly trusted
@@ -45,8 +48,8 @@ export interface EpochContext {
    */
   epoch: bigint;
   /**
-   * Supplied pool and stake table under the challenge model. Header and nonce
-   * verification do not establish whether it matches Cardano's ledger.
+   * Identities, VRF hashes and ages must match the independently tracked
+   * registry for this epoch. Stake amounts remain under the challenge model.
    */
   stake_distribution: StakeDistributionEntry[];
   /**
@@ -149,6 +152,53 @@ export interface ClientState {
    * Established network parameter. Updates cannot redefine this window.
    */
   randomness_stabilisation_window_slots: bigint;
+  /**
+   * Independently authenticated registration state at the checkpoint.
+   */
+  latest_checkpoint_pool_registry?: PoolRegistryState;
+}
+/**
+ * Pool identity and VRF binding from the trusted bootstrap or authenticated
+ * certificate history. Slot zero is valid for a genesis registration.
+ * @name PoolRegistrationBinding
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistrationBinding
+ */
+export interface PoolRegistrationBinding {
+  pool_id: string;
+  vrf_key_hash: Uint8Array;
+  first_registration_slot: bigint;
+}
+/**
+ * The current registration state, separate from frozen election snapshots.
+ * Retired records retain their authenticated registration age.
+ * @name PoolRegistrationRecord
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistrationRecord
+ */
+export interface PoolRegistrationRecord {
+  registration?: PoolRegistrationBinding;
+  registered: boolean;
+  pending_vrf_key_hash: Uint8Array;
+  pending_effective_epoch: bigint;
+  /**
+   * Zero means no scheduled retirement.
+   */
+  retirement_epoch: bigint;
+}
+/**
+ * Registration projection of Cardano's current pool state and mark/set
+ * snapshots at the associated checkpoint. This contains no stake amounts.
+ * Bootstrap must establish all three views independently of the epoch table.
+ * @name PoolRegistryState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistryState
+ */
+export interface PoolRegistryState {
+  epoch: bigint;
+  pools: PoolRegistrationRecord[];
+  mark: PoolRegistrationBinding[];
+  effective: PoolRegistrationBinding[];
 }
 /**
  * Babbage/Conway Praos state after applying the checkpoint header.
@@ -200,6 +250,10 @@ export interface ConsensusState {
    * Running nonce values at this accepted block, excluding descendants.
    */
   nonce_state?: PraosNonceState;
+  /**
+   * Registration state at this historical accepted block.
+   */
+  pool_registry?: PoolRegistryState;
 }
 /**
  * @name Misbehaviour
@@ -451,7 +505,7 @@ function createBaseEpochContext(): EpochContext {
   };
 }
 /**
- * During updates only stake_distribution supplies new pool and stake data.
+ * During updates only stake allocation supplies independently claimed data.
  * Every other field is compared with values derived from accepted state or
  * stored network configuration. A mismatch rejects the update. The starting
  * state and network configuration require authenticated or explicitly trusted
@@ -670,6 +724,7 @@ function createBaseClientState(): ClientState {
     epoch_context_challenges: [],
     latest_checkpoint_nonce_state: undefined,
     randomness_stabilisation_window_slots: BigInt(0),
+    latest_checkpoint_pool_registry: undefined,
   };
 }
 /**
@@ -775,6 +830,9 @@ export const ClientState = {
     }
     if (message.randomness_stabilisation_window_slots !== BigInt(0)) {
       writer.uint32(264).uint64(message.randomness_stabilisation_window_slots);
+    }
+    if (message.latest_checkpoint_pool_registry !== undefined) {
+      PoolRegistryState.encode(message.latest_checkpoint_pool_registry, writer.uint32(274).fork()).ldelim();
     }
     return writer;
   },
@@ -883,6 +941,9 @@ export const ClientState = {
         case 33:
           message.randomness_stabilisation_window_slots = reader.uint64();
           break;
+        case 34:
+          message.latest_checkpoint_pool_registry = PoolRegistryState.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -956,6 +1017,10 @@ export const ClientState = {
     if (isSet(object.randomness_stabilisation_window_slots))
       obj.randomness_stabilisation_window_slots = BigInt(
         object.randomness_stabilisation_window_slots.toString(),
+      );
+    if (isSet(object.latest_checkpoint_pool_registry))
+      obj.latest_checkpoint_pool_registry = PoolRegistryState.fromJSON(
+        object.latest_checkpoint_pool_registry,
       );
     return obj;
   },
@@ -1069,6 +1134,10 @@ export const ClientState = {
       (obj.randomness_stabilisation_window_slots = (
         message.randomness_stabilisation_window_slots || BigInt(0)
       ).toString());
+    message.latest_checkpoint_pool_registry !== undefined &&
+      (obj.latest_checkpoint_pool_registry = message.latest_checkpoint_pool_registry
+        ? PoolRegistryState.toJSON(message.latest_checkpoint_pool_registry)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1172,6 +1241,304 @@ export const ClientState = {
         object.randomness_stabilisation_window_slots.toString(),
       );
     }
+    if (
+      object.latest_checkpoint_pool_registry !== undefined &&
+      object.latest_checkpoint_pool_registry !== null
+    ) {
+      message.latest_checkpoint_pool_registry = PoolRegistryState.fromPartial(
+        object.latest_checkpoint_pool_registry,
+      );
+    }
+    return message;
+  },
+};
+function createBasePoolRegistrationBinding(): PoolRegistrationBinding {
+  return {
+    pool_id: "",
+    vrf_key_hash: new Uint8Array(),
+    first_registration_slot: BigInt(0),
+  };
+}
+/**
+ * Pool identity and VRF binding from the trusted bootstrap or authenticated
+ * certificate history. Slot zero is valid for a genesis registration.
+ * @name PoolRegistrationBinding
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistrationBinding
+ */
+export const PoolRegistrationBinding = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolRegistrationBinding",
+  encode(message: PoolRegistrationBinding, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.pool_id !== "") {
+      writer.uint32(10).string(message.pool_id);
+    }
+    if (message.vrf_key_hash.length !== 0) {
+      writer.uint32(18).bytes(message.vrf_key_hash);
+    }
+    if (message.first_registration_slot !== BigInt(0)) {
+      writer.uint32(24).uint64(message.first_registration_slot);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolRegistrationBinding {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolRegistrationBinding();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.pool_id = reader.string();
+          break;
+        case 2:
+          message.vrf_key_hash = reader.bytes();
+          break;
+        case 3:
+          message.first_registration_slot = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolRegistrationBinding {
+    const obj = createBasePoolRegistrationBinding();
+    if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
+    if (isSet(object.vrf_key_hash)) obj.vrf_key_hash = bytesFromBase64(object.vrf_key_hash);
+    if (isSet(object.first_registration_slot))
+      obj.first_registration_slot = BigInt(object.first_registration_slot.toString());
+    return obj;
+  },
+  toJSON(message: PoolRegistrationBinding): unknown {
+    const obj: any = {};
+    message.pool_id !== undefined && (obj.pool_id = message.pool_id);
+    message.vrf_key_hash !== undefined &&
+      (obj.vrf_key_hash = base64FromBytes(
+        message.vrf_key_hash !== undefined ? message.vrf_key_hash : new Uint8Array(),
+      ));
+    message.first_registration_slot !== undefined &&
+      (obj.first_registration_slot = (message.first_registration_slot || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolRegistrationBinding>, I>>(object: I): PoolRegistrationBinding {
+    const message = createBasePoolRegistrationBinding();
+    message.pool_id = object.pool_id ?? "";
+    message.vrf_key_hash = object.vrf_key_hash ?? new Uint8Array();
+    if (object.first_registration_slot !== undefined && object.first_registration_slot !== null) {
+      message.first_registration_slot = BigInt(object.first_registration_slot.toString());
+    }
+    return message;
+  },
+};
+function createBasePoolRegistrationRecord(): PoolRegistrationRecord {
+  return {
+    registration: undefined,
+    registered: false,
+    pending_vrf_key_hash: new Uint8Array(),
+    pending_effective_epoch: BigInt(0),
+    retirement_epoch: BigInt(0),
+  };
+}
+/**
+ * The current registration state, separate from frozen election snapshots.
+ * Retired records retain their authenticated registration age.
+ * @name PoolRegistrationRecord
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistrationRecord
+ */
+export const PoolRegistrationRecord = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolRegistrationRecord",
+  encode(message: PoolRegistrationRecord, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.registration !== undefined) {
+      PoolRegistrationBinding.encode(message.registration, writer.uint32(10).fork()).ldelim();
+    }
+    if (message.registered === true) {
+      writer.uint32(16).bool(message.registered);
+    }
+    if (message.pending_vrf_key_hash.length !== 0) {
+      writer.uint32(26).bytes(message.pending_vrf_key_hash);
+    }
+    if (message.pending_effective_epoch !== BigInt(0)) {
+      writer.uint32(32).uint64(message.pending_effective_epoch);
+    }
+    if (message.retirement_epoch !== BigInt(0)) {
+      writer.uint32(40).uint64(message.retirement_epoch);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolRegistrationRecord {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolRegistrationRecord();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.registration = PoolRegistrationBinding.decode(reader, reader.uint32());
+          break;
+        case 2:
+          message.registered = reader.bool();
+          break;
+        case 3:
+          message.pending_vrf_key_hash = reader.bytes();
+          break;
+        case 4:
+          message.pending_effective_epoch = reader.uint64();
+          break;
+        case 5:
+          message.retirement_epoch = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolRegistrationRecord {
+    const obj = createBasePoolRegistrationRecord();
+    if (isSet(object.registration)) obj.registration = PoolRegistrationBinding.fromJSON(object.registration);
+    if (isSet(object.registered)) obj.registered = Boolean(object.registered);
+    if (isSet(object.pending_vrf_key_hash))
+      obj.pending_vrf_key_hash = bytesFromBase64(object.pending_vrf_key_hash);
+    if (isSet(object.pending_effective_epoch))
+      obj.pending_effective_epoch = BigInt(object.pending_effective_epoch.toString());
+    if (isSet(object.retirement_epoch)) obj.retirement_epoch = BigInt(object.retirement_epoch.toString());
+    return obj;
+  },
+  toJSON(message: PoolRegistrationRecord): unknown {
+    const obj: any = {};
+    message.registration !== undefined &&
+      (obj.registration = message.registration
+        ? PoolRegistrationBinding.toJSON(message.registration)
+        : undefined);
+    message.registered !== undefined && (obj.registered = message.registered);
+    message.pending_vrf_key_hash !== undefined &&
+      (obj.pending_vrf_key_hash = base64FromBytes(
+        message.pending_vrf_key_hash !== undefined ? message.pending_vrf_key_hash : new Uint8Array(),
+      ));
+    message.pending_effective_epoch !== undefined &&
+      (obj.pending_effective_epoch = (message.pending_effective_epoch || BigInt(0)).toString());
+    message.retirement_epoch !== undefined &&
+      (obj.retirement_epoch = (message.retirement_epoch || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolRegistrationRecord>, I>>(object: I): PoolRegistrationRecord {
+    const message = createBasePoolRegistrationRecord();
+    if (object.registration !== undefined && object.registration !== null) {
+      message.registration = PoolRegistrationBinding.fromPartial(object.registration);
+    }
+    message.registered = object.registered ?? false;
+    message.pending_vrf_key_hash = object.pending_vrf_key_hash ?? new Uint8Array();
+    if (object.pending_effective_epoch !== undefined && object.pending_effective_epoch !== null) {
+      message.pending_effective_epoch = BigInt(object.pending_effective_epoch.toString());
+    }
+    if (object.retirement_epoch !== undefined && object.retirement_epoch !== null) {
+      message.retirement_epoch = BigInt(object.retirement_epoch.toString());
+    }
+    return message;
+  },
+};
+function createBasePoolRegistryState(): PoolRegistryState {
+  return {
+    epoch: BigInt(0),
+    pools: [],
+    mark: [],
+    effective: [],
+  };
+}
+/**
+ * Registration projection of Cardano's current pool state and mark/set
+ * snapshots at the associated checkpoint. This contains no stake amounts.
+ * Bootstrap must establish all three views independently of the epoch table.
+ * @name PoolRegistryState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistryState
+ */
+export const PoolRegistryState = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolRegistryState",
+  encode(message: PoolRegistryState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    for (const v of message.pools) {
+      PoolRegistrationRecord.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    for (const v of message.mark) {
+      PoolRegistrationBinding.encode(v!, writer.uint32(26).fork()).ldelim();
+    }
+    for (const v of message.effective) {
+      PoolRegistrationBinding.encode(v!, writer.uint32(34).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolRegistryState {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolRegistryState();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.pools.push(PoolRegistrationRecord.decode(reader, reader.uint32()));
+          break;
+        case 3:
+          message.mark.push(PoolRegistrationBinding.decode(reader, reader.uint32()));
+          break;
+        case 4:
+          message.effective.push(PoolRegistrationBinding.decode(reader, reader.uint32()));
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolRegistryState {
+    const obj = createBasePoolRegistryState();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (Array.isArray(object?.pools))
+      obj.pools = object.pools.map((e: any) => PoolRegistrationRecord.fromJSON(e));
+    if (Array.isArray(object?.mark))
+      obj.mark = object.mark.map((e: any) => PoolRegistrationBinding.fromJSON(e));
+    if (Array.isArray(object?.effective))
+      obj.effective = object.effective.map((e: any) => PoolRegistrationBinding.fromJSON(e));
+    return obj;
+  },
+  toJSON(message: PoolRegistryState): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    if (message.pools) {
+      obj.pools = message.pools.map((e) => (e ? PoolRegistrationRecord.toJSON(e) : undefined));
+    } else {
+      obj.pools = [];
+    }
+    if (message.mark) {
+      obj.mark = message.mark.map((e) => (e ? PoolRegistrationBinding.toJSON(e) : undefined));
+    } else {
+      obj.mark = [];
+    }
+    if (message.effective) {
+      obj.effective = message.effective.map((e) => (e ? PoolRegistrationBinding.toJSON(e) : undefined));
+    } else {
+      obj.effective = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolRegistryState>, I>>(object: I): PoolRegistryState {
+    const message = createBasePoolRegistryState();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    message.pools = object.pools?.map((e) => PoolRegistrationRecord.fromPartial(e)) || [];
+    message.mark = object.mark?.map((e) => PoolRegistrationBinding.fromPartial(e)) || [];
+    message.effective = object.effective?.map((e) => PoolRegistrationBinding.fromPartial(e)) || [];
     return message;
   },
 };
@@ -1365,6 +1732,7 @@ function createBaseConsensusState(): ConsensusState {
     security_score_bps: BigInt(0),
     packet_state_snapshot: new Uint8Array(),
     nonce_state: undefined,
+    pool_registry: undefined,
   };
 }
 /**
@@ -1402,6 +1770,9 @@ export const ConsensusState = {
     if (message.nonce_state !== undefined) {
       PraosNonceState.encode(message.nonce_state, writer.uint32(74).fork()).ldelim();
     }
+    if (message.pool_registry !== undefined) {
+      PoolRegistryState.encode(message.pool_registry, writer.uint32(82).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -1438,6 +1809,9 @@ export const ConsensusState = {
         case 9:
           message.nonce_state = PraosNonceState.decode(reader, reader.uint32());
           break;
+        case 10:
+          message.pool_registry = PoolRegistryState.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1459,6 +1833,7 @@ export const ConsensusState = {
     if (isSet(object.packet_state_snapshot))
       obj.packet_state_snapshot = bytesFromBase64(object.packet_state_snapshot);
     if (isSet(object.nonce_state)) obj.nonce_state = PraosNonceState.fromJSON(object.nonce_state);
+    if (isSet(object.pool_registry)) obj.pool_registry = PoolRegistryState.fromJSON(object.pool_registry);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
@@ -1483,6 +1858,10 @@ export const ConsensusState = {
       ));
     message.nonce_state !== undefined &&
       (obj.nonce_state = message.nonce_state ? PraosNonceState.toJSON(message.nonce_state) : undefined);
+    message.pool_registry !== undefined &&
+      (obj.pool_registry = message.pool_registry
+        ? PoolRegistryState.toJSON(message.pool_registry)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -1507,6 +1886,9 @@ export const ConsensusState = {
     message.packet_state_snapshot = object.packet_state_snapshot ?? new Uint8Array();
     if (object.nonce_state !== undefined && object.nonce_state !== null) {
       message.nonce_state = PraosNonceState.fromPartial(object.nonce_state);
+    }
+    if (object.pool_registry !== undefined && object.pool_registry !== null) {
+      message.pool_registry = PoolRegistryState.fromPartial(object.pool_registry);
     }
     return message;
   },

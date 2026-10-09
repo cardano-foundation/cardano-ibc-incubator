@@ -1,4 +1,9 @@
 import { Cbor, CborArray, CborBytes, CborUInt, CborSimple } from '@harmoniclabs/cbor';
+import { loadTrustedPoolRegistryCheckpoint } from '../services/pool-registry-checkpoint';
+jest.mock('../services/pool-registry-checkpoint', () => ({
+  ...jest.requireActual('../services/pool-registry-checkpoint'),
+  loadTrustedPoolRegistryCheckpoint: jest.fn(),
+}));
 import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 jest.mock('../../shared/helpers/ogmios', () => ({
   ...jest.requireActual('../../shared/helpers/ogmios'),
@@ -12,6 +17,7 @@ import {
   ClientState as ClientStateProbabilistic,
   ConsensusState as ConsensusStateProbabilistic,
   ProbabilisticHeader,
+  PoolRegistrationBinding,
 } from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
@@ -87,6 +93,7 @@ describe('QueryService stability anchor contract', () => {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'cardanoLightClientMode') return 'stake-weighted-stability';
         if (key === 'ogmiosEndpoint') return 'ws://bootstrap-node';
+        if (key === 'cardanoPoolRegistryCheckpointFile') return '/trusted/pool-registry.json';
         if (key === 'cardanoRandomnessStabilisationWindowSlots') return '100';
         if (key === 'cardanoChainId') return 'cardano-devnet';
         if (key === 'cardanoNetwork') return 'Preview';
@@ -244,6 +251,15 @@ describe('QueryService stability anchor contract', () => {
         },
       },
     };
+    (loadTrustedPoolRegistryCheckpoint as jest.Mock).mockImplementation((_file, point) => {
+      const bindings = ['aa', 'bb', 'cc', 'dd', 'ee'].map((hash, index) => ({
+        pool_id: `pool-${String.fromCharCode(97 + index)}`, vrf_key_hash: Buffer.from(hash.repeat(32), 'hex'),
+        first_registration_slot: 1n,
+      }));
+      return { epoch: point.epoch, pools: bindings.map((registration) => ({ registration, registered: true,
+        pending_vrf_key_hash: new Uint8Array(), pending_effective_epoch: 0n, retirement_epoch: 0n })),
+        mark: bindings, effective: bindings };
+    });
     (queryPraosNoncesAtPoint as jest.Mock).mockResolvedValue({
       epoch_nonce: Buffer.from('11'.repeat(32), 'hex'),
       evolving_nonce: Buffer.from('02'.repeat(32), 'hex'),
@@ -288,6 +304,23 @@ describe('QueryService stability anchor contract', () => {
     const consensus = ConsensusStateProbabilistic.decode(response.consensus_state!.value);
     expect(client.latest_height?.revision_height).toBe(100n);
     expect(consensus.packet_state_snapshot.length).toBeGreaterThan(0);
+  });
+
+  it('uses independently supplied genesis ages even when the epoch table has no ages', async () => {
+    const table = await historyServiceMock.findEpochContextAtBlock();
+    table.stakeDistribution.forEach((entry: { firstRegistrationSlot: bigint | null }) => { entry.firstRegistrationSlot = null; });
+    historyServiceMock.findEpochContextAtBlock.mockResolvedValue(table);
+    (loadTrustedPoolRegistryCheckpoint as jest.Mock).mockImplementationOnce((_file, point) => {
+      const bindings: PoolRegistrationBinding[] = table.stakeDistribution.map((entry: { poolId: string; vrfKeyHash: string }) => ({ pool_id: entry.poolId,
+        vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'), first_registration_slot: 0n }));
+      return { epoch: point.epoch, pools: bindings.map((registration) => ({ registration, registered: true,
+        pending_vrf_key_hash: new Uint8Array(), pending_effective_epoch: 0n, retirement_epoch: 0n })),
+        mark: bindings, effective: bindings };
+    });
+    const response = await service.queryNewClient({ height: 100n } as any);
+    const state = ClientStateProbabilistic.decode(response.client_state!.value);
+    expect(state.epoch_stake_distribution.every((entry) => entry.first_registration_slot === 0n)).toBe(true);
+    expect(state.latest_checkpoint_pool_registry?.effective).toHaveLength(5);
   });
 
   it('rejects a bootstrap node nonce that disagrees with the initial epoch context', async () => {
@@ -345,6 +378,10 @@ describe('QueryService stability anchor contract', () => {
     expect(queryPraosNoncesAtPoint).toHaveBeenCalledWith('ws://bootstrap-node', { slot: 1000n, hash: 'anchor-hash' });
     expect(clientState.latest_checkpoint_nonce_state?.last_applied_block_nonce).toEqual(Buffer.alloc(32, 5));
     expect(clientState.latest_checkpoint_nonce_state).toEqual(consensusState.nonce_state);
+    expect(clientState.latest_checkpoint_pool_registry).toEqual(consensusState.pool_registry);
+    expect(loadTrustedPoolRegistryCheckpoint).toHaveBeenCalledWith('/trusted/pool-registry.json', {
+      chainId: 'cardano-devnet', height: 100n, slot: 1000n, hash: 'anchor-hash', epoch: 7n,
+    });
     expect(clientState.randomness_stabilisation_window_slots).toBe(100n);
     expect(clientState.epoch_contexts).toHaveLength(1);
     expect(clientState.epoch_nonce).toHaveLength(32);

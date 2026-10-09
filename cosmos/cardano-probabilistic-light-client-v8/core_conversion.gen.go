@@ -91,6 +91,43 @@ func toCoreClientState(value *ClientState) *state.ClientState {
 		EpochContextChallenges:                          mapCoreSlice(value.EpochContextChallenges, toCoreEpochContextChallenge),
 		LatestCheckpointNonceState:                      toCorePraosNonceState(value.LatestCheckpointNonceState),
 		RandomnessStabilisationWindowSlots:              value.RandomnessStabilisationWindowSlots,
+		LatestCheckpointPoolRegistry:                    toCorePoolRegistryState(value.LatestCheckpointPoolRegistry),
+	}
+}
+
+func toCorePoolRegistrationBinding(value *PoolRegistrationBinding) *state.PoolRegistrationBinding {
+	if value == nil {
+		return nil
+	}
+	return &state.PoolRegistrationBinding{
+		PoolId:                value.PoolId,
+		VrfKeyHash:            bytes.Clone(value.VrfKeyHash),
+		FirstRegistrationSlot: value.FirstRegistrationSlot,
+	}
+}
+
+func toCorePoolRegistrationRecord(value *PoolRegistrationRecord) *state.PoolRegistrationRecord {
+	if value == nil {
+		return nil
+	}
+	return &state.PoolRegistrationRecord{
+		Registration:          toCorePoolRegistrationBinding(value.Registration),
+		Registered:            value.Registered,
+		PendingVrfKeyHash:     bytes.Clone(value.PendingVrfKeyHash),
+		PendingEffectiveEpoch: value.PendingEffectiveEpoch,
+		RetirementEpoch:       value.RetirementEpoch,
+	}
+}
+
+func toCorePoolRegistryState(value *PoolRegistryState) *state.PoolRegistryState {
+	if value == nil {
+		return nil
+	}
+	return &state.PoolRegistryState{
+		Epoch:     value.Epoch,
+		Pools:     mapCoreSlice(value.Pools, toCorePoolRegistrationRecord),
+		Mark:      mapCoreSlice(value.Mark, toCorePoolRegistrationBinding),
+		Effective: mapCoreSlice(value.Effective, toCorePoolRegistrationBinding),
 	}
 }
 
@@ -131,6 +168,7 @@ func toCoreConsensusState(value *ConsensusState) *state.ConsensusState {
 		SecurityScoreBps:    value.SecurityScoreBps,
 		PacketStateSnapshot: bytes.Clone(value.PacketStateSnapshot),
 		NonceState:          toCorePraosNonceState(value.NonceState),
+		PoolRegistry:        toCorePoolRegistryState(value.PoolRegistry),
 	}
 }
 
@@ -260,6 +298,43 @@ func fromCoreClientState(value *state.ClientState) *ClientState {
 		EpochContextChallenges:                          mapCoreSlice(value.EpochContextChallenges, fromCoreEpochContextChallenge),
 		LatestCheckpointNonceState:                      fromCorePraosNonceState(value.LatestCheckpointNonceState),
 		RandomnessStabilisationWindowSlots:              value.RandomnessStabilisationWindowSlots,
+		LatestCheckpointPoolRegistry:                    fromCorePoolRegistryState(value.LatestCheckpointPoolRegistry),
+	}
+}
+
+func fromCorePoolRegistrationBinding(value *state.PoolRegistrationBinding) *PoolRegistrationBinding {
+	if value == nil {
+		return nil
+	}
+	return &PoolRegistrationBinding{
+		PoolId:                value.PoolId,
+		VrfKeyHash:            bytes.Clone(value.VrfKeyHash),
+		FirstRegistrationSlot: value.FirstRegistrationSlot,
+	}
+}
+
+func fromCorePoolRegistrationRecord(value *state.PoolRegistrationRecord) *PoolRegistrationRecord {
+	if value == nil {
+		return nil
+	}
+	return &PoolRegistrationRecord{
+		Registration:          fromCorePoolRegistrationBinding(value.Registration),
+		Registered:            value.Registered,
+		PendingVrfKeyHash:     bytes.Clone(value.PendingVrfKeyHash),
+		PendingEffectiveEpoch: value.PendingEffectiveEpoch,
+		RetirementEpoch:       value.RetirementEpoch,
+	}
+}
+
+func fromCorePoolRegistryState(value *state.PoolRegistryState) *PoolRegistryState {
+	if value == nil {
+		return nil
+	}
+	return &PoolRegistryState{
+		Epoch:     value.Epoch,
+		Pools:     mapCoreSlice(value.Pools, fromCorePoolRegistrationRecord),
+		Mark:      mapCoreSlice(value.Mark, fromCorePoolRegistrationBinding),
+		Effective: mapCoreSlice(value.Effective, fromCorePoolRegistrationBinding),
 	}
 }
 
@@ -300,6 +375,7 @@ func fromCoreConsensusState(value *state.ConsensusState) *ConsensusState {
 		SecurityScoreBps:    value.SecurityScoreBps,
 		PacketStateSnapshot: bytes.Clone(value.PacketStateSnapshot),
 		NonceState:          fromCorePraosNonceState(value.NonceState),
+		PoolRegistry:        fromCorePoolRegistryState(value.PoolRegistry),
 	}
 }
 

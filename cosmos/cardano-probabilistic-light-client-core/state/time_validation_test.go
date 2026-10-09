@@ -145,9 +145,10 @@ func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testin
 	authenticate := func(
 		_ *ProbabilisticHeader,
 		epochContexts []*EpochContext,
-		_ map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
+		_ map[string]uint64, trusted *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 		require.NotNil(t, epochContextByEpoch(epochContexts, 7))
 		require.NotNil(t, epochContextByEpoch(epochContexts, 8))
+		authenticated.anchorPoolRegistry = testPoolRegistryAtEpoch(t, trusted.poolRegistry, 8)
 		return authenticated, nil
 	}
 	require.NoError(t, clientState.verifyHeaderWithAuthenticator(ctx, clientStore, cdc, header, authenticate))
@@ -457,6 +458,7 @@ func initializeTemporalVerifierClient(
 	setTemporalVerifierEpochContext(clientState, epochContext)
 	consensusState := newProbabilisticTestConsensusState(testBlockHash("trusted-10"))
 	consensusState.NonceState = clonePraosNonceState(clientState.LatestCheckpointNonceState)
+	consensusState.PoolRegistry = clonePoolRegistry(clientState.LatestCheckpointPoolRegistry)
 	consensusState.AcceptedEpoch = epochContext.Epoch
 	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, trustedSlot)
 	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
@@ -472,6 +474,7 @@ func setTemporalVerifierEpochContext(clientState *ClientState, epochContext *Epo
 	clientState.EpochStakeDistribution = cloneStakeDistributionEntries(epochContext.StakeDistribution)
 	clientState.EpochNonce = bytes.Clone(epochContext.EpochNonce)
 	clientState.LatestCheckpointNonceState = testNonceState(epochContext.EpochNonce)
+	clientState.LatestCheckpointPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	clientState.CurrentEpochStartSlot = epochContext.EpochStartSlot
 	clientState.CurrentEpochEndSlotExclusive = epochContext.EpochEndSlotExclusive
 }
@@ -482,7 +485,7 @@ func newTemporalVerifierEpochContext(epoch, startSlot, endSlot uint64, seed byte
 		stakeDistribution = append(stakeDistribution, &StakeDistributionEntry{
 			PoolId:                   fmt.Sprintf("pool-%c", 'a'+rune(index)),
 			Stake:                    1_000,
-			VrfKeyHash:               bytes.Repeat([]byte{seed + byte(index) + 1}, 32),
+			VrfKeyHash:               bytes.Repeat([]byte{8 + byte(index)}, 32),
 			FirstRegistrationSlot:    1,
 			RelativeStakeNumerator:   1,
 			RelativeStakeDenominator: DefaultThresholdUniquePools,
@@ -592,10 +595,11 @@ func temporalVerifierAuthenticator(
 	return func(
 		header *ProbabilisticHeader,
 		contexts []*EpochContext,
-		_ map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
+		_ map[string]uint64, trusted *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 		authenticated, found := authenticatedByHash[header.AnchorBlock.Hash]
 		require.True(t, found, "missing authenticated fixture for %s", header.AnchorBlock.Hash)
 		authenticated.anchorNonceState = testNonceState(epochContextByEpoch(contexts, authenticated.anchorBlock.epoch).EpochNonce)
+		authenticated.anchorPoolRegistry = testPoolRegistryAtEpoch(t, trusted.poolRegistry, authenticated.anchorBlock.epoch)
 		return authenticated, nil
 	}
 }

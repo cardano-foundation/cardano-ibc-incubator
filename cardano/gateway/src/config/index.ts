@@ -137,6 +137,7 @@ interface Config {
   cardanoClientTrustingPeriodSeconds: number;
   cardanoClientMaxClockDriftSeconds: number;
   cardanoRandomnessStabilisationWindowSlots?: string;
+  cardanoPoolRegistryCheckpointFile?: string;
   cardanoStabilityCheckpointMaxBridgeBlocks: number;
   cardanoStabilityCheckpointMaxHeaderBytes: number;
   cardanoEpochParamsEndpoint?: string;
@@ -186,6 +187,7 @@ export default (): Partial<Config> => {
       process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
     ),
     cardanoRandomnessStabilisationWindowSlots: process.env.CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS,
+    cardanoPoolRegistryCheckpointFile: process.env.CARDANO_POOL_REGISTRY_CHECKPOINT_FILE,
     cardanoClientTrustingPeriodSeconds: Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400),
     cardanoClientMaxClockDriftSeconds: positiveGoDurationSecondsEnv(
       'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS',
