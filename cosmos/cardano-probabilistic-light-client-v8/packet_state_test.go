@@ -42,6 +42,7 @@ func TestDefaultPacketProofsUseAuthenticatedLaneSnapshot(t *testing.T) {
 	consensus.IbcStateRoot = snapshot.HostRoot
 	consensus.PacketStateSnapshot = raw
 	client := newProbabilisticTestClientState()
+	client.EpochContextChallenges = []*EpochContextChallenge{{Epoch: 7, UsableAfterUnixNs: 1}}
 	ctx, store := newProbabilisticTestClientStore(t, "packet-lane-proofs")
 	cdc := newProbabilisticTestCodec()
 	height := NewHeight(0, 42)
@@ -52,7 +53,7 @@ func TestDefaultPacketProofsUseAuthenticatedLaneSnapshot(t *testing.T) {
 	absence := commitmenttypes.MerkleProof{Proofs: []*ics23.CommitmentProof{{Proof: &ics23.CommitmentProof_Nonexist{Nonexist: &ics23.NonExistenceProof{Key: key, Left: empty}}}}}
 	proof, err := absence.Marshal()
 	require.NoError(t, err)
-	require.NoError(t, client.VerifyNonMembership(ctx, store, cdc, height, 0, 0, proof, commitmenttypes.NewMerklePath(string(key))))
+	require.NoError(t, client.VerifyNonMembership(ctx, store, cdc, height, 0, 0, proof, commitmenttypes.NewMerklePath("ibc", string(key))))
 	require.Error(t, verifyPacketNonMembership(consensus, 43, key, proof))
 
 	key = []byte("commitments/ports/transfer/channels/channel-0/sequences/2")
@@ -70,8 +71,8 @@ func TestDefaultPacketProofsUseAuthenticatedLaneSnapshot(t *testing.T) {
 	membership := commitmenttypes.MerkleProof{Proofs: []*ics23.CommitmentProof{{Proof: &ics23.CommitmentProof_Exist{Exist: existence}}}}
 	proof, err = membership.Marshal()
 	require.NoError(t, err)
-	require.NoError(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, commitmenttypes.NewMerklePath(string(key)), value))
-	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, commitmenttypes.NewMerklePath(string(key)), []byte{1}))
-	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, commitmenttypes.NewMerklePath("commitments/ports/transfer/channels/channel-1/sequences/2"), value))
+	require.NoError(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, commitmenttypes.NewMerklePath("ibc", string(key)), value))
+	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, commitmenttypes.NewMerklePath("ibc", string(key)), []byte{1}))
+	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, commitmenttypes.NewMerklePath("ibc", "commitments/ports/transfer/channels/channel-1/sequences/2"), value))
 	require.False(t, isPacketStateKey([]byte("commitments/ports/mock/channels/channel-0/sequences/2")))
 }

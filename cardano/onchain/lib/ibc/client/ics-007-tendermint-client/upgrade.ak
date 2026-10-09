@@ -10,7 +10,7 @@ use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_023_vector_commitments/merkle.{
   MerklePath, MerkleProof, MerkleRoot,
 }
-use ibc/utils/string
+use ibc/utils/text_bytes
 
 pub type Upgrade {
   client_state: ClientState,
@@ -34,7 +34,7 @@ pub fn path(
           bytearray.concat(
             "/",
             bytearray.concat(
-              string.int_to_string(old_height),
+              text_bytes.int_to_decimal_bytes(old_height),
               bytearray.concat("/", key),
             ),
           ),

@@ -376,8 +376,8 @@ describe('QueryService stability anchor contract', () => {
     const header = ProbabilisticHeader.decode(response.header!.value);
     expect(header.is_checkpoint).toBe(true);
     expect(header.anchor_block?.height?.revision_height).toBe(100n);
-    expect(header.anchor_block?.block_cbor).toHaveLength(0);
-    expect(header.anchor_block?.header_cbor).toHaveLength(860);
+    expect(header.anchor_block?.block_cbor).toEqual(Buffer.from([1]));
+    expect(header.anchor_block?.header_cbor).toHaveLength(0);
     expect(header.host_state_tx_hash).toBe('');
     expect(header.new_epoch_context?.epoch).toBe(7n);
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
