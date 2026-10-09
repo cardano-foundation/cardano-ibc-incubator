@@ -111,6 +111,21 @@ export interface ClientState {
    * Required deployment policy for packet lane identities.
    */
   packet_lane_policy_id: Uint8Array;
+  /**
+   * Pending epoch roots cannot verify IBC proofs before their deadline.
+   * Initialize replaces any caller-supplied values with host-assigned times.
+   */
+  epoch_context_challenges: EpochContextChallenge[];
+}
+/**
+ * Host-chain timestamps assigned by the verifier, never by an update header.
+ * @name EpochContextChallenge
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.EpochContextChallenge
+ */
+export interface EpochContextChallenge {
+  epoch: bigint;
+  usable_after_unix_ns: bigint;
 }
 /**
  * @name ConsensusState
@@ -591,6 +606,7 @@ function createBaseClientState(): ClientState {
     latest_checkpoint_slot: BigInt(0),
     latest_checkpoint_timestamp: BigInt(0),
     packet_lane_policy_id: new Uint8Array(),
+    epoch_context_challenges: [],
   };
 }
 /**
@@ -687,6 +703,9 @@ export const ClientState = {
     }
     if (message.packet_lane_policy_id.length !== 0) {
       writer.uint32(242).bytes(message.packet_lane_policy_id);
+    }
+    for (const v of message.epoch_context_challenges) {
+      EpochContextChallenge.encode(v!, writer.uint32(250).fork()).ldelim();
     }
     return writer;
   },
@@ -786,6 +805,9 @@ export const ClientState = {
         case 30:
           message.packet_lane_policy_id = reader.bytes();
           break;
+        case 31:
+          message.epoch_context_challenges.push(EpochContextChallenge.decode(reader, reader.uint32()));
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -850,6 +872,10 @@ export const ClientState = {
       obj.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
     if (isSet(object.packet_lane_policy_id))
       obj.packet_lane_policy_id = bytesFromBase64(object.packet_lane_policy_id);
+    if (Array.isArray(object?.epoch_context_challenges))
+      obj.epoch_context_challenges = object.epoch_context_challenges.map((e: any) =>
+        EpochContextChallenge.fromJSON(e),
+      );
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -947,6 +973,13 @@ export const ClientState = {
       (obj.packet_lane_policy_id = base64FromBytes(
         message.packet_lane_policy_id !== undefined ? message.packet_lane_policy_id : new Uint8Array(),
       ));
+    if (message.epoch_context_challenges) {
+      obj.epoch_context_challenges = message.epoch_context_challenges.map((e) =>
+        e ? EpochContextChallenge.toJSON(e) : undefined,
+      );
+    } else {
+      obj.epoch_context_challenges = [];
+    }
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1035,6 +1068,76 @@ export const ClientState = {
       message.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
     }
     message.packet_lane_policy_id = object.packet_lane_policy_id ?? new Uint8Array();
+    message.epoch_context_challenges =
+      object.epoch_context_challenges?.map((e) => EpochContextChallenge.fromPartial(e)) || [];
+    return message;
+  },
+};
+function createBaseEpochContextChallenge(): EpochContextChallenge {
+  return {
+    epoch: BigInt(0),
+    usable_after_unix_ns: BigInt(0),
+  };
+}
+/**
+ * Host-chain timestamps assigned by the verifier, never by an update header.
+ * @name EpochContextChallenge
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.EpochContextChallenge
+ */
+export const EpochContextChallenge = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.EpochContextChallenge",
+  encode(message: EpochContextChallenge, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    if (message.usable_after_unix_ns !== BigInt(0)) {
+      writer.uint32(16).uint64(message.usable_after_unix_ns);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): EpochContextChallenge {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseEpochContextChallenge();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.usable_after_unix_ns = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): EpochContextChallenge {
+    const obj = createBaseEpochContextChallenge();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (isSet(object.usable_after_unix_ns))
+      obj.usable_after_unix_ns = BigInt(object.usable_after_unix_ns.toString());
+    return obj;
+  },
+  toJSON(message: EpochContextChallenge): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    message.usable_after_unix_ns !== undefined &&
+      (obj.usable_after_unix_ns = (message.usable_after_unix_ns || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<EpochContextChallenge>, I>>(object: I): EpochContextChallenge {
+    const message = createBaseEpochContextChallenge();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    if (object.usable_after_unix_ns !== undefined && object.usable_after_unix_ns !== null) {
+      message.usable_after_unix_ns = BigInt(object.usable_after_unix_ns.toString());
+    }
     return message;
   },
 };

@@ -1,0 +1,42 @@
+name: Probabilistic software-upgrade compatibility
+
+on:
+  pull_request:
+    paths:
+      - 'tests/probabilistic-upgrade/**'
+      - 'chains/cosmos/scripts/run_light_client_*.sh'
+      - '.github/workflows/probabilistic-upgrade.yml'
+  workflow_dispatch:
+
+jobs:
+  published-store:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        major: ['8', '10']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.13'
+          cache: false
+      - name: Retain published-module client stores across host replacement
+        run: >-
+          python3 tests/probabilistic-upgrade/run_store_compatibility.py
+          --major ${{ matrix.major }} --output "$RUNNER_TEMP/upgrade-evidence"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: published-store-v${{ matrix.major }}
+          path: ${{ runner.temp }}/upgrade-evidence
+  orchestration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test upgrade assertions
+        run: python3 -m unittest discover -s tests/probabilistic-upgrade -p 'test_*.py' -v
+      - name: Check recovery scenario after helper reuse
+        run: bash chains/cosmos/scripts/test_run_light_client_recovery.sh

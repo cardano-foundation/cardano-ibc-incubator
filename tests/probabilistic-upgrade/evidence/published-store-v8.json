@@ -1,0 +1,92 @@
+{
+  "scope": "published-module store restart and proof verification; no live packet relay",
+  "ibc_go_major": "8",
+  "origins": [
+    {
+      "Path": "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8",
+      "Version": "v0.1.7",
+      "Sum": "h1:qJb/nJTR0uxpqALTR1cmjShepmfsh41RHrHtsClmqQo=",
+      "GoModSum": "h1:C1C7oqycUNMx4q6GPdf84HO4vxsl6lQTQsBzY9qhMe4=",
+      "Origin": {
+        "VCS": "git",
+        "URL": "https://github.com/cardano-foundation/cardano-ibc-incubator",
+        "Subdir": "cosmos/cardano-probabilistic-light-client-v8",
+        "Hash": "e232bfd422084aed79a0a88ae876e863b1190cff",
+        "Ref": "refs/tags/cosmos/cardano-probabilistic-light-client-v8/v0.1.7"
+      }
+    },
+    {
+      "Path": "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core",
+      "Version": "v0.1.5",
+      "Sum": "h1:8HP3VsdD3eRvPxFlUwl5XgRWsVmFRkY9D0L6AQ7Bwns=",
+      "GoModSum": "h1:QcjRz+sQWpLqaCMrSj5GVIjYvegZhFvIekFninWRQtA=",
+      "Origin": {
+        "VCS": "git",
+        "URL": "https://github.com/cardano-foundation/cardano-ibc-incubator",
+        "Subdir": "cosmos/cardano-probabilistic-light-client-core",
+        "Hash": "e232bfd422084aed79a0a88ae876e863b1190cff",
+        "Ref": "refs/tags/cosmos/cardano-probabilistic-light-client-core/v0.1.5"
+      }
+    }
+  ],
+  "host_binary_sha256": {
+    "before": "e4c5391c3fb3c1c046281d96169e2f26866e90e806b34d739b40616523d46c88",
+    "after": "929d161f8bf1687fb976e885c35616b75724ea33191f85c71a64057d04881493"
+  },
+  "checks": [
+    {
+      "client_ids": [
+        "08-cardano-probabilistic-0",
+        "08-cardano-probabilistic-1"
+      ],
+      "host_revision": "before",
+      "ibc_store_sha256": "f6e3057b398602ecd0d97599e3b3ff3f604b0143876f18b3d8f3535274a01114",
+      "mode": "initialize"
+    },
+    {
+      "client_ids": [
+        "08-cardano-probabilistic-0",
+        "08-cardano-probabilistic-1"
+      ],
+      "host_revision": "after",
+      "ibc_store_sha256": "f6e3057b398602ecd0d97599e3b3ff3f604b0143876f18b3d8f3535274a01114",
+      "mode": "verify"
+    },
+    {
+      "client_ids": [
+        "08-cardano-probabilistic-0",
+        "08-cardano-probabilistic-1"
+      ],
+      "host_revision": "after",
+      "ibc_store_sha256": "f6e3057b398602ecd0d97599e3b3ff3f604b0143876f18b3d8f3535274a01114",
+      "mode": "negative-schema"
+    },
+    {
+      "client_ids": [
+        "08-cardano-probabilistic-0",
+        "08-cardano-probabilistic-1"
+      ],
+      "host_revision": "after",
+      "ibc_store_sha256": "f6e3057b398602ecd0d97599e3b3ff3f604b0143876f18b3d8f3535274a01114",
+      "mode": "negative-metadata"
+    },
+    {
+      "client_ids": [
+        "08-cardano-probabilistic-0",
+        "08-cardano-probabilistic-1"
+      ],
+      "host_revision": "after",
+      "ibc_store_sha256": "f6e3057b398602ecd0d97599e3b3ff3f604b0143876f18b3d8f3535274a01114",
+      "mode": "negative-parameters"
+    },
+    {
+      "client_ids": [
+        "08-cardano-probabilistic-0",
+        "08-cardano-probabilistic-1"
+      ],
+      "host_revision": "after",
+      "ibc_store_sha256": "f6e3057b398602ecd0d97599e3b3ff3f604b0143876f18b3d8f3535274a01114",
+      "mode": "verify"
+    }
+  ]
+}
