@@ -75,6 +75,12 @@ caribic test --light-client --chain cosmos --network v10-classic
 through their version-specific APIs. `v10-v2` is rejected because the Cardano
 and Hermes IBC v2 route adapter is deferred.
 
+The scenario also uses Deno to read the transfer-escrow shard directly from
+Kupo. `KUPO_URL` and `OGMIOS_URL` default to the local endpoints on ports `1442`
+and `1337`. Set them explicitly when using different host ports. The reader
+uses the transfer address and shard policy from `HANDLER_JSON`, which defaults
+to `cardano/offchain/deployments/handler.json`.
+
 The test owns packet delivery while it runs. It stops the Hermes daemon if the
 daemon was already running and restarts it afterward. It also temporarily
 changes the Gateway's client trusting period and recreates the Gateway, then
@@ -106,20 +112,29 @@ The scenario must fail unless all of these observations hold:
    on both chains, and the exact Cosmos sender and channel-escrow balances.
 5. It leaves the subject untouched until ibc-go reports it as `Expired`. The
    test must not write a frozen height or submit fabricated misbehaviour to make
-   an active client recoverable.
+   an active client recoverable. It then reads the Cardano escrow shard for
+   the route's channel and native token. Its snapshot includes the output
+   reference, shard token, datum and every locked asset balance. Missing or
+   duplicate holders and inconsistent datums fail the test.
 6. It submits `MsgRecoverClient` through the simapp's real IBC governance
    proposal command, deposits and votes, waits for the proposal to pass, and
    checks the proposal execution result.
 7. It queries the original subject ID and requires it to be active. It also
    requires the original connection and channel IDs to remain open and all
    pre-recovery packet, escrow, and Cosmos voucher snapshots to remain unchanged.
+   The Cardano escrow must still be the exact same output with the same datum
+   and assets.
 8. It sends a Cardano-to-Cosmos packet and uses that packet's proof height to
    submit the first ordinary root-bearing probabilistic header to the recovered
-   subject ID before relaying its membership proof.
+   subject ID before relaying its membership proof. The transfer must replace
+   the Cardano escrow output while keeping its shard token. Its recorded deposit
+   and native-token balance must increase by the transfer amount. Its other
+   asset balances must stay unchanged.
 9. It relays the pending packet's Cardano non-receipt proof back to Cosmos after
    its timeout. This exercises non-membership verification through the recovered
    subject and requires the Cosmos sender and channel escrow to return to their
-   exact pre-packet balances.
+   exact pre-packet balances. The Cardano escrow snapshot must stay unchanged
+   because this packet never reached Cardano.
 
 Natural expiry is part of the assertion, not merely a delay. The subject must
 remain active while its route is created and the pre-recovery packet is
@@ -128,20 +143,27 @@ after updates stop. The trusting period must account for any difference between
 the local Cardano and Cosmos clocks and leave enough time for connection and
 channel setup.
 
-The focused command covers the live positive path. The repository's v8 and v10
-Go tests assert the store-state copy and reconstruction rules described above,
-all ten invariant mismatches, an insufficient checkpoint, missing consensus
-metadata, and operational-certificate regression. The active-subject,
-inactive-substitute, concrete-type, and unauthorized-signer gates are enforced
-by the ibc-go keeper/authority layer; dedicated app-level fixtures for those
-negative paths remain follow-up coverage rather than claims made by this local
-command.
+The repository's v8 and v10 Go tests also assert the state copy and
+reconstruction rules, all ten invariant mismatches, an insufficient checkpoint,
+missing consensus metadata and operational-certificate regression.
+`TestAppRecoverClient` invokes each version's registered app message handler
+with an existing open route and pending packet state. It checks successful
+recovery and rejects an active subject, an expired or frozen substitute, a
+Tendermint substitute and an unauthorized signer. Each rejected call must leave
+the complete IBC store unchanged, including both clients and the route.
 
-The timeout leg directly checks its Cosmos-side channel escrow. The local
-command does not independently locate and compare the Cardano escrow UTxO for
-the Cardano-to-Cosmos transfers. Its unchanged route and packet snapshots
-provide protocol continuity, but an operator must inventory Cardano escrow
-explicitly as part of the production preflight below.
+The wrong-type error differs between versions. v8 reaches the client's
+concrete-type check. v10 asks the subject module for the substitute's status
+first. The probabilistic module reports `Unknown` for a foreign client ID so
+the keeper rejects it without attempting to decode it as a probabilistic client.
+
+Run the app fixtures with `go test -run TestAppRecoverClient ./...` from each of
+`cosmos/cardano-probabilistic-light-client-v8` and
+`cosmos/cardano-probabilistic-light-client-v10`. Run the escrow reader tests with
+`deno task test:recovery-escrow` from `cardano/offchain`. The shell orchestration
+test uses fake command responses and does not replace running both live Classic
+profiles. The live command prints the Cardano snapshots before recovery and
+after the subsequent transfer for inspection.
 
 ## Injective operator runbook
 

@@ -81,7 +81,7 @@ pub fn is_zero(height: Height) -> Bool {
 /// IBC paths include both revision and height, including revision zero.
 pub fn to_string(value: Height) -> ByteArray {
   bytearray.concat(
-    string.int_to_string(value.revision_number),
-    bytearray.concat("-", string.int_to_string(value.revision_height)),
+    text_bytes.int_to_decimal_bytes(value.revision_number),
+    bytearray.concat("-", text_bytes.int_to_decimal_bytes(value.revision_height)),
   )
 }
