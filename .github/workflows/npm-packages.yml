@@ -2,7 +2,7 @@ name: Cardano IBC npm Packages
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'release/probabilistic-light-client-*']
     paths:
       - ".github/workflows/npm-packages.yml"
       - "scripts/ci/cardano-ibc-npm-packages.sh"
