@@ -31,6 +31,7 @@ message EpochContext {
 
   uint64 epoch = 1;
   repeated StakeDistributionEntry stake_distribution = 2;
+  // Compatibility value. Must equal the nonce derived from checkpoint history.
   bytes epoch_nonce = 3;
   uint64 slots_per_kes_period = 4;
   uint64 epoch_start_slot = 5;
@@ -93,6 +94,25 @@ message ClientState {
   // Pending epoch roots cannot verify IBC proofs before their deadline.
   // Initialize replaces any caller-supplied values with host-assigned times.
   repeated EpochContextChallenge epoch_context_challenges = 31;
+  // Required authenticated running state at latest_checkpoint_height.
+  PraosNonceState latest_checkpoint_nonce_state = 32;
+  // Established network parameter. Updates cannot redefine this window.
+  uint64 randomness_stabilisation_window_slots = 33;
+}
+
+// Babbage/Conway Praos state after applying the checkpoint header.
+// Empty running nonce bytes represent Cardano's NeutralNonce identity. A
+// missing message is unavailable state and must never be filled with defaults.
+message PraosNonceState {
+  option (gogoproto.goproto_getters) = false;
+
+  bytes epoch_nonce = 1;
+  bytes evolving_nonce = 2;
+  bytes candidate_nonce = 3;
+  // Derived from the previous-block hash in the last applied header,
+  // not from that header's own hash.
+  bytes last_applied_block_nonce = 4;
+  bytes last_epoch_block_nonce = 5;
 }
 
 // Host-chain timestamps assigned by the verifier, never by an update header.
@@ -115,6 +135,8 @@ message ConsensusState {
   uint64 security_score_bps = 7;
   // Canonical CBOR snapshot of live host and lane outputs at this height.
   bytes packet_state_snapshot = 8;
+  // Running nonce values at this accepted block, excluding descendants.
+  PraosNonceState nonce_state = 9;
 }
 
 message Misbehaviour {

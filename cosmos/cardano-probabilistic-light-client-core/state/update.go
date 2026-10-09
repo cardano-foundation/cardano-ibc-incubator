@@ -39,6 +39,7 @@ type headerAuthenticator func(
 	header *ProbabilisticHeader,
 	epochContexts []*EpochContext,
 	trustedCounters map[string]uint64,
+	trusted *trustedBlockState,
 ) (*authenticatedProbabilisticHeader, error)
 
 func (cs *ClientState) verifyHeader(
@@ -167,6 +168,7 @@ func (cs *ClientState) verifyHeaderWithMode(
 		header,
 		epochContexts,
 		trustedBlock.operationalCertificateCounters,
+		trustedBlock,
 	)
 	if err != nil {
 		return err
@@ -589,6 +591,7 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 		header,
 		epochContexts,
 		trustedBlock.operationalCertificateCounters,
+		trustedBlock,
 	)
 	if err != nil {
 		panic(fmt.Errorf("failed to authenticate verified ProbabilisticHeader blocks: %w", err))
@@ -668,6 +671,7 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 	); err != nil {
 		panic(fmt.Errorf("failed to persist operational certificate counter state: %w", err))
 	}
+	cs.LatestCheckpointNonceState = clonePraosNonceState(authenticatedHeader.anchorNonceState)
 	cs.setLatestCheckpoint(
 		height,
 		authenticatedHeader.anchorBlock.hash,
@@ -694,6 +698,7 @@ func setAuthenticatedConsensusState(
 ) {
 	SetConsensusState(clientStore, cdc, &ConsensusState{
 		Timestamp:         authenticatedHeader.anchorBlock.timestamp,
+		NonceState:        clonePraosNonceState(authenticatedHeader.anchorNonceState),
 		IbcStateRoot:      ibcStateRoot,
 		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
 		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,

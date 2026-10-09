@@ -12,17 +12,18 @@ import (
 )
 
 type recoveryInvariantClientState struct {
-	PacketLanePolicyId               []byte
-	UpgradePath                      []string
-	HostStateNftPolicyId             []byte
-	HostStateNftTokenName            []byte
-	SystemStartUnixNs                uint64
-	SlotLengthNs                     uint64
-	SlotsPerKesPeriod                uint64
-	MaxKesEvolutions                 uint64
-	ActiveSlotCoefficientNumerator   uint64
-	ActiveSlotCoefficientDenominator uint64
-	MaxClockDrift                    time.Duration
+	RandomnessStabilisationWindowSlots uint64
+	PacketLanePolicyId                 []byte
+	UpgradePath                        []string
+	HostStateNftPolicyId               []byte
+	HostStateNftTokenName              []byte
+	SystemStartUnixNs                  uint64
+	SlotLengthNs                       uint64
+	SlotsPerKesPeriod                  uint64
+	MaxKesEvolutions                   uint64
+	ActiveSlotCoefficientNumerator     uint64
+	ActiveSlotCoefficientDenominator   uint64
+	MaxClockDrift                      time.Duration
 }
 
 func (cs ClientState) CheckSubstituteAndUpdateState(
@@ -85,6 +86,10 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	}
 	if err := consensusState.ValidateBasic(); err != nil {
 		return errorsmod.Wrap(ErrIBCInvalidSubstitute, err.Error())
+	}
+	if substituteCheckpointHeight.EQ(height) &&
+		!praosNonceStatesEqual(substituteClientState.LatestCheckpointNonceState, consensusState.NonceState) {
+		return errorsmod.Wrap(ErrIBCInvalidSubstitute, "substitute checkpoint nonce state does not match its latest consensus state")
 	}
 	if substituteClientState.LatestCheckpointHeight != nil &&
 		substituteClientState.LatestCheckpointHeight.EQ(height) &&
@@ -152,6 +157,7 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 			consensusState.Timestamp,
 		)
 	}
+	cs.LatestCheckpointNonceState = clonePraosNonceState(substituteClientState.LatestCheckpointNonceState)
 	cs.LatestCheckpointOperationalCertificateCounters = cloneOperationalCertificateCounters(
 		substituteClientState.LatestCheckpointOperationalCertificateCounters,
 	)
@@ -260,16 +266,17 @@ func IsMatchingClientState(subject, substitute ClientState) bool {
 
 func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 	return recoveryInvariantClientState{
-		PacketLanePolicyId:               bytes.Clone(cs.PacketLanePolicyId),
-		UpgradePath:                      append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:             bytes.Clone(cs.HostStateNftPolicyId),
-		HostStateNftTokenName:            bytes.Clone(cs.HostStateNftTokenName),
-		SystemStartUnixNs:                cs.SystemStartUnixNs,
-		SlotLengthNs:                     cs.SlotLengthNs,
-		SlotsPerKesPeriod:                cs.SlotsPerKesPeriod,
-		MaxKesEvolutions:                 cs.MaxKesEvolutions,
-		ActiveSlotCoefficientNumerator:   cs.ActiveSlotCoefficientNumerator,
-		ActiveSlotCoefficientDenominator: cs.ActiveSlotCoefficientDenominator,
-		MaxClockDrift:                    cs.MaxClockDrift,
+		PacketLanePolicyId:                 bytes.Clone(cs.PacketLanePolicyId),
+		RandomnessStabilisationWindowSlots: cs.RandomnessStabilisationWindowSlots,
+		UpgradePath:                        append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:               bytes.Clone(cs.HostStateNftPolicyId),
+		HostStateNftTokenName:              bytes.Clone(cs.HostStateNftTokenName),
+		SystemStartUnixNs:                  cs.SystemStartUnixNs,
+		SlotLengthNs:                       cs.SlotLengthNs,
+		SlotsPerKesPeriod:                  cs.SlotsPerKesPeriod,
+		MaxKesEvolutions:                   cs.MaxKesEvolutions,
+		ActiveSlotCoefficientNumerator:     cs.ActiveSlotCoefficientNumerator,
+		ActiveSlotCoefficientDenominator:   cs.ActiveSlotCoefficientDenominator,
+		MaxClockDrift:                      cs.MaxClockDrift,
 	}
 }

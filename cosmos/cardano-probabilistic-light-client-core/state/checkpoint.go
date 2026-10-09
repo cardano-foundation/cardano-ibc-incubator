@@ -19,6 +19,7 @@ var operationalCertificateCounterHistoryPrefix = []byte("operationalCertificateC
 // continuity. It is deliberately separate from an IBC consensus state: a
 // checkpoint has no HostState commitment root and cannot verify IBC proofs.
 type trustedBlockState struct {
+	nonceState                     *PraosNonceState
 	height                         *Height
 	blockHash                      string
 	epoch                          uint64
@@ -495,6 +496,7 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 			slot:                           checkpointSlot,
 			timestamp:                      checkpointTimestamp,
 			operationalCertificateCounters: counters,
+			nonceState:                     clonePraosNonceState(cs.LatestCheckpointNonceState),
 		}
 		if cs.LatestHeight != nil && height.EQ(cs.LatestHeight) {
 			consensusState, found := GetConsensusState(clientStore, cdc, height)
@@ -503,7 +505,8 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 			}
 			if !strings.EqualFold(state.blockHash, consensusState.AcceptedBlockHash) ||
 				state.epoch != consensusState.AcceptedEpoch ||
-				state.timestamp != consensusState.Timestamp {
+				state.timestamp != consensusState.Timestamp ||
+				!praosNonceStatesEqual(state.nonceState, consensusState.NonceState) {
 				return nil, errorsmod.Wrap(
 					ErrInvalidAcceptedBlock,
 					"checkpoint cursor at latest consensus height does not match the stored consensus state",
@@ -536,6 +539,7 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 		slot:                           slot,
 		timestamp:                      consensusState.Timestamp,
 		operationalCertificateCounters: counters,
+		nonceState:                     clonePraosNonceState(consensusState.NonceState),
 	}, nil
 }
 
@@ -612,6 +616,9 @@ func (cs *ClientState) persistCheckpoint(
 	if authenticatedHeader == nil || authenticatedHeader.anchorBlock == nil {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated checkpoint anchor is missing")
 	}
+	if err := validatePraosNonceState(authenticatedHeader.anchorNonceState); err != nil {
+		return err
+	}
 
 	anchor := authenticatedHeader.anchorBlock
 	keepEpochs := collectReferencedConsensusEpochs(clientStore, cdc)
@@ -628,6 +635,7 @@ func (cs *ClientState) persistCheckpoint(
 	); err != nil {
 		return err
 	}
+	cs.LatestCheckpointNonceState = clonePraosNonceState(authenticatedHeader.anchorNonceState)
 	cs.setLatestCheckpoint(anchorHeight, anchor.hash, anchor.epoch, anchor.slot, anchor.timestamp)
 	cs.pruneEpochChallenges(clientStore)
 	SetClientState(clientStore, cdc, cs)

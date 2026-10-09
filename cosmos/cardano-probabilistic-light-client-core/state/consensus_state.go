@@ -22,6 +22,9 @@ func (cs ConsensusState) GetTime() time.Time {
 }
 
 func (cs ConsensusState) ValidateBasic() error {
+	if err := validatePraosNonceState(cs.NonceState); err != nil {
+		return errorsmod.Wrap(ErrIBCInvalidConsensus, err.Error())
+	}
 	if cs.Timestamp == 0 {
 		return errorsmod.Wrap(ErrIBCInvalidConsensus, "timestamp must be a positive Unix time")
 	}

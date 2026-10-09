@@ -207,11 +207,36 @@ The initial epoch boundaries remain part of the trusted bootstrap configuration.
 An era that changes the epoch schedule needs an authenticated schedule transition
 before this verifier can support it.
 
-An accepted epoch context is canonical for that epoch. Later headers may repeat
-the same context. Different stake or nonce data for an already-known epoch is
-treated as misbehaviour and freezes the client after the evidence passes
-verification. Incorrect epoch boundaries or KES configuration fail verification.
-These checks do not authenticate the first supplied stake distribution or nonce.
+The client also derives each next epoch nonce from verified headers. Its
+checkpoint stores the evolving nonce, candidate nonce, previous-block hash nonce
+and saved epoch block nonce together with the current epoch nonce. At rollover it
+combines the old candidate and saved epoch block nonce before verifying the first
+header. It then advances the saved epoch block nonce. Every verified VRF output
+updates the evolving nonce using Cardano's nonce hashing rules. The candidate
+copies it only when the header slot plus the configured randomness window is
+strictly before the next epoch start.
+
+Bridge blocks and the anchor advance the stored nonce state. Settlement
+descendants advance a temporary copy so the next update can process them again
+from the anchor. Retained consensus states and challenge checkpoints keep their
+own nonce state. The compatibility field `new_epoch_context.epoch_nonce` must
+match the locally derived value. An incorrect nonce rejects an update. It does
+not by itself count as misbehaviour or become accepted after the challenge delay.
+
+Bootstrap requires an explicitly trusted starting checkpoint with all these
+running values. Gateway queries Ogmios nonces at that exact point and reads the
+last applied block nonce from the signed header's previous-block hash. Operators
+must set `CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS` from the network's
+protocol rules. The supported Praos rules use `3*k/f` for Babbage and `4*k/f` for
+Conway. A transition that changes this rule requires an authenticated client
+configuration change before synchronization can continue. Existing clients
+without running nonce state need an explicit authenticated migration or a new
+bootstrap. The current epoch nonce alone cannot fill in the missing values.
+
+An accepted stake context remains canonical for its epoch. Different stake data
+for an already-known epoch can freeze the client after the evidence passes
+verification. The first supplied stake distribution still uses the challenge
+model described below.
 
 The static local Caribic devnet explicitly sets
 `CARDANO_STABILITY_ASSUME_STATIC_STAKE=1`. With that opt-in, Gateway normalizes
@@ -244,7 +269,7 @@ The usual proof, trusting-period and connection-delay requirements still apply.
 root; they alone are not evidence that a packet proof is usable.
 
 Before advancing into a new epoch, the verifier saves the previous checkpoint,
-its epoch context and operational-certificate counters in private client-store
+its epoch context, nonce state and operational-certificate counters in private client-store
 metadata (`epochChallengeCheckpoint/<8-byte big-endian epoch>`). Misbehaviour
 verification can use that snapshot even after ordinary updates move beyond a
 rootless checkpoint. Competing histories need not cross the epoch boundary at

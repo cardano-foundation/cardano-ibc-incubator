@@ -1,3 +1,5 @@
+import { Cbor, CborArray, CborBytes, CborSimple } from '@harmoniclabs/cbor';
+import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { PacketStateService, latestPacketProofHeight } from './packet-state.service';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -32,6 +34,7 @@ import {
   ConsensusState as ConsensusStateProbabilistic,
   EpochContext as ProbabilisticEpochContext,
   OperationalCertificateCounter,
+  PraosNonceState,
   ProbabilisticBlock,
   ProbabilisticHeader,
   StakeDistributionEntry,
@@ -734,6 +737,36 @@ export class QueryService {
       stabilityEvidence.epochVerificationContext,
     );
 
+    const window = this.configService.get<string>('cardanoRandomnessStabilisationWindowSlots');
+    if (!window || !/^[1-9][0-9]*$/.test(window) || BigInt(window) > (1n << 64n) - 1n) {
+      throw new GrpcFailedPreconditionException(
+        'Configure CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS from the network protocol rules',
+      );
+    }
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!ogmiosEndpoint) throw new GrpcFailedPreconditionException('Ogmios endpoint is required for Praos bootstrap');
+    const nodeNonces = await queryPraosNoncesAtPoint(ogmiosEndpoint, {
+      slot: stabilityEvidence.anchorBlock.slotNo,
+      hash: stabilityEvidence.anchorBlock.hash,
+    });
+    const rawBlock = await this.miniProtocalsService.fetchBlockCbor(stabilityEvidence.anchorBlock);
+    const header = Cbor.parse(
+      this.miniProtocalsService.extractBlockHeaderCbor(rawBlock, stabilityEvidence.anchorBlock.hash),
+    );
+    const previousHash =
+      header instanceof CborArray && header.array[0] instanceof CborArray ? header.array[0].array[2] : undefined;
+    const genesisParent = previousHash instanceof CborSimple && previousHash.simple === null;
+    if (!genesisParent && (!(previousHash instanceof CborBytes) || previousHash.buffer.length !== 32)) {
+      throw new GrpcFailedPreconditionException('Bootstrap header previous-block hash is unavailable');
+    }
+    const nonceState = PraosNonceState.fromPartial({
+      ...nodeNonces,
+      last_applied_block_nonce: previousHash instanceof CborBytes ? previousHash.buffer : new Uint8Array(),
+    });
+    if (!Buffer.from(nonceState.epoch_nonce).equals(Buffer.from(currentEpochContext.epoch_nonce))) {
+      throw new GrpcFailedPreconditionException('Bootstrap node nonce disagrees with epoch context');
+    }
+
     const clientStateProbabilistic: ClientStateProbabilistic = {
       chain_id: cardanoChainId,
       latest_height: {
@@ -767,6 +800,8 @@ export class QueryService {
       system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
       epoch_contexts: [currentEpochContext],
+      latest_checkpoint_nonce_state: nonceState,
+      randomness_stabilisation_window_slots: BigInt(window),
       epoch_context_challenges: [], // Assigned by the Cosmos host during Initialize.
       active_slot_coefficient_numerator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientNumerator,
       active_slot_coefficient_denominator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientDenominator,
@@ -787,6 +822,7 @@ export class QueryService {
     };
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
+      nonce_state: nonceState,
       packet_state_snapshot: await this.packetState.snapshot(stabilityEvidence.anchorHeight),
       timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,

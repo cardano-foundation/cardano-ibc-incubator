@@ -46,7 +46,12 @@ func TestStateMachineStoreCompatibility(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, "Active", string(recovered.Status(ctx, subjectStore, cdc)))
 	require.Equal(t, "Expired", string(recovered.Status(ctx.WithBlockTime(ctx.BlockTime().Add(48*time.Hour)), subjectStore, cdc)))
-	// Captured from the combined release at 4549cfb7 before extracting the state machine.
+	// Both adapters must encode identical retained state, including nonce snapshots.
+	if os.Getenv("UPDATE_LIGHT_CLIENT_STORE_FIXTURE") == "1" {
+		encoded, err := json.MarshalIndent(snapshots, "", "  ")
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile("../cardano-probabilistic-light-client-core/testdata/state_machine_store.json", append(encoded, '\n'), 0644))
+	}
 	data, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/state_machine_store.json")
 	require.NoError(t, err)
 	var expected map[string]map[string]string

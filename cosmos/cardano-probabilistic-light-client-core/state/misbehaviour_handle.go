@@ -80,7 +80,7 @@ func headersEpochContextConflict(header1, header2 *ProbabilisticHeader) bool {
 	if header1.NewEpochContext.Epoch != header2.NewEpochContext.Epoch {
 		return false
 	}
-	return !epochContextsEqual(header1.NewEpochContext, header2.NewEpochContext)
+	return !epochContextTrustInputsEqual(header1.NewEpochContext, header2.NewEpochContext)
 }
 
 func (cs ClientState) headerEpochContextConflictsWithStored(header *ProbabilisticHeader) bool {
@@ -93,7 +93,18 @@ func (cs ClientState) headerEpochContextConflictsWithStored(header *Probabilisti
 		return false
 	}
 	stored := epochContextByEpoch(contexts, header.NewEpochContext.Epoch)
-	return stored != nil && !epochContextsEqual(stored, header.NewEpochContext)
+	return stored != nil && !epochContextTrustInputsEqual(stored, header.NewEpochContext)
+}
+
+// Nonce and schedule mismatches invalidate an update. They are not evidence of
+// conflicting stake information, and cannot by themselves freeze the client.
+func epochContextTrustInputsEqual(a, b *EpochContext) bool {
+	a, b = cloneEpochContext(a), cloneEpochContext(b)
+	a.EpochNonce, b.EpochNonce = nil, nil
+	a.EpochStartSlot, b.EpochStartSlot = 0, 0
+	a.EpochEndSlotExclusive, b.EpochEndSlotExclusive = 0, 0
+	a.SlotsPerKesPeriod, b.SlotsPerKesPeriod = 0, 0
+	return epochContextsEqual(a, b)
 }
 
 func collectHeaderBlocksByHeight(header *ProbabilisticHeader) map[uint64]string {
