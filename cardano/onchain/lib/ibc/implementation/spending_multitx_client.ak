@@ -115,10 +115,11 @@ pub fn validate(
           host_state_nft_policy_id,
           validator_utils.ExpectUpdateClient,
         )
+      let valid_to = validator_utils.get_tx_valid_to(validity_range)
       let tx_time =
         TxTime {
           valid_from: validator_utils.get_tx_valid_from(validity_range) * 1_000_000,
-          valid_to: validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
+          valid_to: valid_to * 1_000_000,
         }
       let withdrawal =
         pairs.get_first(redeemers, Withdraw(recover_client_credential))
@@ -182,7 +183,7 @@ pub fn validate(
               client_datum,
               updated_datum,
               header,
-              tx_time.valid_to / 1_000_000,
+              valid_to,
             )
           }
         }
