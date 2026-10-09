@@ -3,9 +3,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use cardano/address.{Credential}
 use cardano/assets.{PolicyId}
-use cardano/transaction.{
-  OutputReference, Redeemer, ScriptPurpose, Spend, Transaction, Withdraw,
-}
+use cardano/transaction.{OutputReference, Spend, Transaction, Withdraw}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum} as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
@@ -72,17 +70,6 @@ fn finalized_session(
   datum
 }
 
-fn expect_history_withdrawal(
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  credential: Credential,
-  token: AuthToken,
-) -> Bool {
-  expect Some(raw) = pairs.get_first(redeemers, Withdraw(credential))
-  let expected: Data = CheckStagedClientHistory { subject_token: token }
-  expect raw == expected
-  True
-}
-
 /// Completed sessions authenticate normal headers and conflicting-header
 /// evidence. Every client update, including administrative recovery, updates the
 /// canonical client and HostState together.
@@ -133,31 +120,26 @@ pub fn validate(
           valid_from: validator_utils.get_tx_valid_from(validity_range) * 1_000_000,
           valid_to: validator_utils.get_tx_valid_to(validity_range) * 1_000_000,
         }
+      let withdrawal =
+        pairs.get_first(redeemers, Withdraw(recover_client_credential))
+      let expected_history: Data =
+        CheckStagedClientHistory { subject_token: client_token }
       when redeemer is {
         UpgradeClient -> {
-          expect Some(raw) =
-            pairs.get_first(redeemers, Withdraw(recover_client_credential))
           let expected: Data =
             UpgradeClientWithdrawal { subject_token: client_token }
-          raw == expected
+          withdrawal == Some(expected)
         }
         RecoverClient { substitute_token, .. } -> {
-          expect Some(withdrawal_redeemer) =
-            pairs.get_first(redeemers, Withdraw(recover_client_credential))
           let expected: Data =
             RecoverClientWithdrawal {
               subject_token: client_token,
               substitute_token,
             }
-          withdrawal_redeemer == expected
+          withdrawal == Some(expected)
         }
         FinalizeUpdate { session_token, history_witnesses, .. } -> {
-          expect
-            expect_history_withdrawal(
-              redeemers,
-              recover_client_credential,
-              client_token,
-            )
+          expect withdrawal == Some(expected_history)
           let receipt =
             finalized_session(
               session_token,
@@ -209,12 +191,7 @@ pub fn validate(
           session_token_2,
           history_witnesses,
         } -> {
-          expect
-            expect_history_withdrawal(
-              redeemers,
-              recover_client_credential,
-              client_token,
-            )
+          expect withdrawal == Some(expected_history)
           expect session_token_1 != session_token_2
           let first =
             finalized_session(
@@ -270,17 +247,7 @@ pub fn validate(
               proof_client,
               tx_time,
             ),
-            misbehaviour_handle.check_for_misbehaviour(
-              MisbehaviourCase(
-                Misbehaviour {
-                  // Client identity is bound by both authenticated plans.
-                  client_id: #"",
-                  header1: header_from_plan(first.plan),
-                  header2: header_from_plan(second.plan),
-                },
-              ),
-              proof_states,
-            ),
+            misbehaviour_handle.check_for_misbehaviour(msg, proof_states),
             client_datum_mod.update_state_on_misbehaviour(
               client_datum,
               updated_datum,

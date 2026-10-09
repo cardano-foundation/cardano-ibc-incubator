@@ -406,7 +406,7 @@ async function expectedTree(n: number) {
         outputIndex: 3,
       });
       expect(snapshot.root).toBe(roots[height - 1]);
-      expect(snapshot.tree.get('clients/07-tendermint-0/consensusStates/1')).toBeDefined();
+      expect(snapshot.tree.get('clients/07-tendermint-0/consensusStates/0-1')).toBeDefined();
     }
     await expect(rebuild()).rejects.toThrow();
     await db.query('DELETE FROM block WHERE number=3');
