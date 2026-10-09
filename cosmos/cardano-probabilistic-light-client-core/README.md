@@ -13,7 +13,9 @@ The core does not import `ibc-go` or `cosmos-sdk` or register protobuf types. Th
 
 The existing adapter protobufs remain the wire contract. Run `node scripts/ci/generate-light-client-models.mjs` from the repository root after regenerating them. This generates the core data structs and explicit copying conversions. CI checks these outputs and limits handwritten adapter growth. New validation and transition rules belong in `state`, not in an adapter or the conversion generator.
 
-Run `go test ./...` and `go vet ./...` in the core and both adapter modules. State-machine regressions live in `state`. Each adapter tests its protobuf conversions, IBC error identity, and stored bytes. `testdata/state_machine_store.json` was captured from the v8 implementation on main at `96ace927` for initialization, freezing, and recovery. Both adapters must reproduce those bytes, including the host revision in processed metadata. This extraction needs no state migration.
+Run `go test ./...` and `go vet ./...` in the core and both adapter modules. State-machine regressions live in `state`. Each adapter tests its protobuf conversions, IBC error identity, and stored bytes. `testdata/state_machine_store.json` was captured from the v8 implementation on main at `96ace927` for initialization, freezing, and recovery. The fixture now includes nonce and pool registration checkpoints. Both adapters must reproduce those bytes, including the host revision in processed metadata. Clients without the required running state need an explicitly trusted new starting checkpoint.
+
+Pool identities, VRF bindings and registration ages come from the independent registry described in [POOL_REGISTRY.md](POOL_REGISTRY.md). That document also specifies the required bootstrap file and the remaining ledger-validity assumption. Stake amounts still use the challenge model.
 
 The repository builds against the local core through `replace` directives. Before publishing new adapter versions, publish a core version containing `state` and update both adapters to require that version. The existing `v0.1.5` release does not contain the new package.
 

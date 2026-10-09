@@ -96,14 +96,22 @@ func (cs ClientState) headerEpochContextConflictsWithStored(header *Probabilisti
 	return stored != nil && !epochContextTrustInputsEqual(stored, header.NewEpochContext)
 }
 
-// Nonce and schedule mismatches invalidate an update. They are not evidence of
-// conflicting stake information, and cannot by themselves freeze the client.
+// Nonce, schedule and registration mismatches invalidate an update. Only
+// conflicting stake allocation can establish an epoch-table conflict.
 func epochContextTrustInputsEqual(a, b *EpochContext) bool {
 	a, b = cloneEpochContext(a), cloneEpochContext(b)
 	a.EpochNonce, b.EpochNonce = nil, nil
 	a.EpochStartSlot, b.EpochStartSlot = 0, 0
 	a.EpochEndSlotExclusive, b.EpochEndSlotExclusive = 0, 0
 	a.SlotsPerKesPeriod, b.SlotsPerKesPeriod = 0, 0
+	for _, context := range []*EpochContext{a, b} {
+		for _, entry := range context.StakeDistribution {
+			if entry != nil {
+				entry.VrfKeyHash, entry.FirstRegistrationSlot = nil, 0
+				entry.RelativeStakeNumerator, entry.RelativeStakeDenominator = 0, 0
+			}
+		}
+	}
 	return epochContextsEqual(a, b)
 }
 

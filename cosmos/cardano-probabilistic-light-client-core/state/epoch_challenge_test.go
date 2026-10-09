@@ -1,7 +1,6 @@
 package state
 
 import (
-	"bytes"
 	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
@@ -21,6 +20,7 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 		authenticated := newTemporalVerifierAuthenticatedHeader(t, cs, cs.LatestCheckpointBlockHash, hash, height, slot, epoch)
 		return header, func(_ *ProbabilisticHeader, contexts []*EpochContext, _ map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 			authenticated.anchorNonceState = testNonceState(epochContextByEpoch(contexts, epoch).EpochNonce)
+			authenticated.anchorPoolRegistry = testPoolRegistryAtEpoch(t, cs.LatestCheckpointPoolRegistry, epoch)
 			return authenticated, nil
 		}
 	}
@@ -68,7 +68,10 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	// remain verifiable against the pre-proposal checkpoint after advancement.
 	honest := *proposal
 	honest.NewEpochContext = cloneEpochContext(proposal.NewEpochContext)
-	honest.NewEpochContext.StakeDistribution[0].VrfKeyHash = bytes.Repeat([]byte{0x99}, 32)
+	honest.NewEpochContext.StakeDistribution[0].Stake++
+	for _, entry := range honest.NewEpochContext.StakeDistribution {
+		entry.RelativeStakeNumerator, entry.RelativeStakeDenominator = entry.Stake, 5_001
+	}
 	evidence := &Misbehaviour{ProbabilisticHeader1: proposal, ProbabilisticHeader2: &honest}
 	require.NoError(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, evidence, authenticateProposal))
 	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, store, evidence))
@@ -84,6 +87,7 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	require.NoError(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, mixedEvidence,
 		func(header *ProbabilisticHeader, contexts []*EpochContext, counters map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 			if header == oldEpochWitness {
+				oldAuthenticated.anchorPoolRegistry = testPoolRegistry(7, base.StakeDistribution)
 				return oldAuthenticated, nil
 			}
 			return authenticateProposal(header, contexts, counters, nil)

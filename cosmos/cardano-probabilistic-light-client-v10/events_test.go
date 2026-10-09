@@ -64,7 +64,7 @@ func TestLightClientModuleUpdateStateOnMisbehaviourEmitsFrozenEvent(t *testing.T
 	setClientState(clientStore, cdc, clientState)
 	header := newVerifiedTestHeader(t)
 	header.NewEpochContext = fromCoreEpochContext(toCoreEpochContext(clientState.EpochContexts[0]))
-	header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot++
+	header.NewEpochContext.StakeDistribution[0].Stake++
 	require.True(t, module.CheckForMisbehaviour(ctx, clientID, header))
 
 	module.UpdateStateOnMisbehaviour(ctx, clientID, header)

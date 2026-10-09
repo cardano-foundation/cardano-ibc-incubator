@@ -89,11 +89,12 @@ func loadNonceReference(t *testing.T) (*nonceReference, *ClientState, []*EpochCo
 			SlotsPerKesPeriod: ref.KesPeriod, EpochNonce: referenceNonceState(t, block.State).EpochNonce,
 			StakeDistribution: []*StakeDistributionEntry{{PoolId: header.IssuerVkey().PoolId(), VrfKeyHash: vrfHash[:], Stake: 1, RelativeStakeNumerator: 1, RelativeStakeDenominator: 1}}})
 	}
+	cs.LatestCheckpointPoolRegistry = testPoolRegistry(epoch, contexts[0].StakeDistribution)
 	cs.EpochContexts = contexts
 	cs.EpochNonce = bytes.Clone(contexts[0].EpochNonce)
 	cs.LatestCheckpointNonceState = referenceNonceState(t, first.State)
 	trusted := &trustedBlockState{height: NewHeight(0, first.Height), slot: first.Slot, epoch: epoch, blockHash: first.Hash,
-		timestamp: cs.SystemStartUnixNs + first.Slot*cs.SlotLengthNs, nonceState: clonePraosNonceState(cs.LatestCheckpointNonceState), operationalCertificateCounters: map[string]uint64{}}
+		timestamp: cs.SystemStartUnixNs + first.Slot*cs.SlotLengthNs, nonceState: clonePraosNonceState(cs.LatestCheckpointNonceState), poolRegistry: clonePoolRegistry(cs.LatestCheckpointPoolRegistry), operationalCertificateCounters: map[string]uint64{}}
 	cs.LatestHeight = trusted.height
 	cs.OperationalCertificateCounterHistoryStartHeight = trusted.height
 	cs.setLatestCheckpoint(trusted.height, trusted.blockHash, trusted.epoch, trusted.slot, trusted.timestamp)
@@ -121,9 +122,11 @@ func TestPraosNonceMatchesReferenceNode(t *testing.T) {
 			ref, cs, contexts, trusted := loadNonceReference(t)
 			tracker, err := newNonceTracker(trusted)
 			require.NoError(t, err)
+			registry, err := newPoolRegistryTracker(trusted.poolRegistry, trusted.epoch, trusted.slot)
+			require.NoError(t, err)
 			for i := 1; i < len(ref.Blocks); i++ {
 				block := referenceProbabilisticBlock(t, ref, cs, i, compact)
-				_, err := cs.authenticateProbabilisticBlock(block, "reference", contexts, map[string]uint64{}, false, tracker)
+				_, err := cs.authenticateProbabilisticBlock(block, "reference", contexts, map[string]uint64{}, false, tracker, registry)
 				require.NoError(t, err, "slot %d", block.Slot)
 				if ref.Blocks[i].State != nil {
 					require.Equal(t, referenceNonceState(t, ref.Blocks[i].State), tracker.state, "node state at slot %d", block.Slot)
@@ -141,7 +144,7 @@ func TestNonceBatchSizesSettlementAndRollbackMatchNode(t *testing.T) {
 			cdc := newProbabilisticTestCodec()
 			baseline := clonePraosNonceState(trusted.nonceState)
 			SetConsensusState(store, cdc, &ConsensusState{Timestamp: trusted.timestamp, AcceptedBlockHash: trusted.blockHash,
-				AcceptedEpoch: trusted.epoch, NonceState: baseline}, trusted.height)
+				AcceptedEpoch: trusted.epoch, NonceState: baseline, PoolRegistry: clonePoolRegistry(trusted.poolRegistry)}, trusted.height)
 			for start := 1; start < len(ref.Blocks); {
 				anchor := minInt(start+batchSize-1, len(ref.Blocks)-1)
 				// Every stored anchor is compared with a node observation.
@@ -162,6 +165,7 @@ func TestNonceBatchSizesSettlementAndRollbackMatchNode(t *testing.T) {
 				require.Equal(t, referenceNonceState(t, ref.Blocks[anchor].State), auth.anchorNonceState)
 				require.NoError(t, cs.persistCheckpoint(store, cdc, contexts, auth))
 				require.Equal(t, auth.anchorNonceState, cs.LatestCheckpointNonceState)
+				require.True(t, poolRegistriesEqual(auth.anchorPoolRegistry, cs.LatestCheckpointPoolRegistry))
 				trusted, err = cs.trustedBlockStateAtHeight(store, cdc, cs.LatestCheckpointHeight)
 				require.NoError(t, err)
 				start = anchor + 1
@@ -174,11 +178,14 @@ func TestNonceBatchSizesSettlementAndRollbackMatchNode(t *testing.T) {
 			require.Equal(t, baseline, rollback.nonceState)
 			tracker, err := newNonceTracker(rollback)
 			require.NoError(t, err)
+			registry, err := newPoolRegistryTracker(rollback.poolRegistry, rollback.epoch, rollback.slot)
+			require.NoError(t, err)
 			for i := 1; i < len(ref.Blocks); i++ {
-				_, err := cs.authenticateProbabilisticBlock(referenceProbabilisticBlock(t, ref, cs, i, true), "rollback", contexts, map[string]uint64{}, false, tracker)
+				_, err := cs.authenticateProbabilisticBlock(referenceProbabilisticBlock(t, ref, cs, i, true), "rollback", contexts, map[string]uint64{}, false, tracker, registry)
 				require.NoError(t, err)
 			}
 			require.Equal(t, finalState, tracker.state)
+			require.True(t, poolRegistriesEqual(registry.state, cs.LatestCheckpointPoolRegistry))
 		})
 	}
 }

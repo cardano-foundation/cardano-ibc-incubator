@@ -61,6 +61,9 @@ func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc St
 	if err := cs.validateNonceConfiguration(); err != nil {
 		return Expired
 	}
+	if err := validatePoolRegistry(cs.LatestCheckpointPoolRegistry, cs.CurrentEpoch, math.MaxUint64); err != nil {
+		return Expired
+	}
 	if err := cs.validateCheckpointFields(); err != nil {
 		return Expired
 	}
@@ -94,6 +97,9 @@ func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
 
 func (cs ClientState) Validate() error {
 	if err := cs.validateNonceConfiguration(); err != nil {
+		return err
+	}
+	if err := validatePoolRegistry(cs.LatestCheckpointPoolRegistry, cs.CurrentEpoch, math.MaxUint64); err != nil {
 		return err
 	}
 	if len(cs.PacketLanePolicyId) != 28 {
@@ -158,6 +164,9 @@ func (cs ClientState) Validate() error {
 	}
 	if epochContextByEpoch(contexts, cs.CurrentEpoch) == nil {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "missing epoch context for current epoch %d", cs.CurrentEpoch)
+	}
+	if err := verifyStakeTablePoolBindings(epochContextByEpoch(contexts, cs.CurrentEpoch), cs.LatestCheckpointPoolRegistry); err != nil {
+		return err
 	}
 	return nil
 }
@@ -230,6 +239,10 @@ func (cs ClientState) Initialize(ctx Context, cdc StateCodec, clientStore storet
 		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial consensus nonce state disagrees with client checkpoint")
 	}
 	consensusState.NonceState = clonePraosNonceState(cs.LatestCheckpointNonceState)
+	if consensusState.PoolRegistry != nil && !poolRegistriesEqual(consensusState.PoolRegistry, cs.LatestCheckpointPoolRegistry) {
+		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial consensus pool registry disagrees with client checkpoint")
+	}
+	consensusState.PoolRegistry = clonePoolRegistry(cs.LatestCheckpointPoolRegistry)
 	if _, err := cs.normalizedEpochContexts(); err != nil {
 		return err
 	}

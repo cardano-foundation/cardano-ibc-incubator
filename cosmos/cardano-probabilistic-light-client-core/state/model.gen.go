@@ -64,6 +64,28 @@ type ClientState struct {
 	EpochContextChallenges                          []*EpochContextChallenge         `protobuf:"bytes,31,rep,name=epoch_context_challenges,json=epochContextChallenges,proto3" json:"epoch_context_challenges,omitempty"`
 	LatestCheckpointNonceState                      *PraosNonceState                 `protobuf:"bytes,32,opt,name=latest_checkpoint_nonce_state,json=latestCheckpointNonceState,proto3" json:"latest_checkpoint_nonce_state,omitempty"`
 	RandomnessStabilisationWindowSlots              uint64                           `protobuf:"varint,33,opt,name=randomness_stabilisation_window_slots,json=randomnessStabilisationWindowSlots,proto3" json:"randomness_stabilisation_window_slots,omitempty"`
+	LatestCheckpointPoolRegistry                    *PoolRegistryState               `protobuf:"bytes,34,opt,name=latest_checkpoint_pool_registry,json=latestCheckpointPoolRegistry,proto3" json:"latest_checkpoint_pool_registry,omitempty"`
+}
+
+type PoolRegistrationBinding struct {
+	PoolId                string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	VrfKeyHash            []byte `protobuf:"bytes,2,opt,name=vrf_key_hash,json=vrfKeyHash,proto3" json:"vrf_key_hash,omitempty"`
+	FirstRegistrationSlot uint64 `protobuf:"varint,3,opt,name=first_registration_slot,json=firstRegistrationSlot,proto3" json:"first_registration_slot,omitempty"`
+}
+
+type PoolRegistrationRecord struct {
+	Registration          *PoolRegistrationBinding `protobuf:"bytes,1,opt,name=registration,proto3" json:"registration,omitempty"`
+	Registered            bool                     `protobuf:"varint,2,opt,name=registered,proto3" json:"registered,omitempty"`
+	PendingVrfKeyHash     []byte                   `protobuf:"bytes,3,opt,name=pending_vrf_key_hash,json=pendingVrfKeyHash,proto3" json:"pending_vrf_key_hash,omitempty"`
+	PendingEffectiveEpoch uint64                   `protobuf:"varint,4,opt,name=pending_effective_epoch,json=pendingEffectiveEpoch,proto3" json:"pending_effective_epoch,omitempty"`
+	RetirementEpoch       uint64                   `protobuf:"varint,5,opt,name=retirement_epoch,json=retirementEpoch,proto3" json:"retirement_epoch,omitempty"`
+}
+
+type PoolRegistryState struct {
+	Epoch     uint64                     `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	Pools     []*PoolRegistrationRecord  `protobuf:"bytes,2,rep,name=pools,proto3" json:"pools,omitempty"`
+	Mark      []*PoolRegistrationBinding `protobuf:"bytes,3,rep,name=mark,proto3" json:"mark,omitempty"`
+	Effective []*PoolRegistrationBinding `protobuf:"bytes,4,rep,name=effective,proto3" json:"effective,omitempty"`
 }
 
 type PraosNonceState struct {
@@ -80,15 +102,16 @@ type EpochContextChallenge struct {
 }
 
 type ConsensusState struct {
-	Timestamp           uint64           `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	IbcStateRoot        []byte           `protobuf:"bytes,2,opt,name=ibc_state_root,json=ibcStateRoot,proto3" json:"ibc_state_root,omitempty"`
-	AcceptedBlockHash   string           `protobuf:"bytes,3,opt,name=accepted_block_hash,json=acceptedBlockHash,proto3" json:"accepted_block_hash,omitempty"`
-	AcceptedEpoch       uint64           `protobuf:"varint,4,opt,name=accepted_epoch,json=acceptedEpoch,proto3" json:"accepted_epoch,omitempty"`
-	UniquePoolsCount    uint64           `protobuf:"varint,5,opt,name=unique_pools_count,json=uniquePoolsCount,proto3" json:"unique_pools_count,omitempty"`
-	UniqueStakeBps      uint64           `protobuf:"varint,6,opt,name=unique_stake_bps,json=uniqueStakeBps,proto3" json:"unique_stake_bps,omitempty"`
-	SecurityScoreBps    uint64           `protobuf:"varint,7,opt,name=security_score_bps,json=securityScoreBps,proto3" json:"security_score_bps,omitempty"`
-	PacketStateSnapshot []byte           `protobuf:"bytes,8,opt,name=packet_state_snapshot,json=packetStateSnapshot,proto3" json:"packet_state_snapshot,omitempty"`
-	NonceState          *PraosNonceState `protobuf:"bytes,9,opt,name=nonce_state,json=nonceState,proto3" json:"nonce_state,omitempty"`
+	Timestamp           uint64             `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	IbcStateRoot        []byte             `protobuf:"bytes,2,opt,name=ibc_state_root,json=ibcStateRoot,proto3" json:"ibc_state_root,omitempty"`
+	AcceptedBlockHash   string             `protobuf:"bytes,3,opt,name=accepted_block_hash,json=acceptedBlockHash,proto3" json:"accepted_block_hash,omitempty"`
+	AcceptedEpoch       uint64             `protobuf:"varint,4,opt,name=accepted_epoch,json=acceptedEpoch,proto3" json:"accepted_epoch,omitempty"`
+	UniquePoolsCount    uint64             `protobuf:"varint,5,opt,name=unique_pools_count,json=uniquePoolsCount,proto3" json:"unique_pools_count,omitempty"`
+	UniqueStakeBps      uint64             `protobuf:"varint,6,opt,name=unique_stake_bps,json=uniqueStakeBps,proto3" json:"unique_stake_bps,omitempty"`
+	SecurityScoreBps    uint64             `protobuf:"varint,7,opt,name=security_score_bps,json=securityScoreBps,proto3" json:"security_score_bps,omitempty"`
+	PacketStateSnapshot []byte             `protobuf:"bytes,8,opt,name=packet_state_snapshot,json=packetStateSnapshot,proto3" json:"packet_state_snapshot,omitempty"`
+	NonceState          *PraosNonceState   `protobuf:"bytes,9,opt,name=nonce_state,json=nonceState,proto3" json:"nonce_state,omitempty"`
+	PoolRegistry        *PoolRegistryState `protobuf:"bytes,10,opt,name=pool_registry,json=poolRegistry,proto3" json:"pool_registry,omitempty"`
 }
 
 type Misbehaviour struct {

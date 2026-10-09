@@ -30,6 +30,7 @@ type authenticatedProbabilisticHeader struct {
 	descendantBlocks                     []*authenticatedProbabilisticBlock
 	anchorOperationalCertificateCounters []*OperationalCertificateCounter
 	anchorNonceState                     *PraosNonceState
+	anchorPoolRegistry                   *PoolRegistryState
 }
 
 func (cs *ClientState) authenticateHeaderBlocks(header *ProbabilisticHeader) (*authenticatedProbabilisticHeader, error) {
@@ -45,7 +46,7 @@ func (cs *ClientState) authenticateHeaderBlocks(header *ProbabilisticHeader) (*a
 	if err != nil {
 		return nil, err
 	}
-	return cs.authenticateHeaderBlocksWithContexts(header, epochContexts, trustedCounters, &trustedBlockState{height: cs.LatestCheckpointHeight, blockHash: cs.LatestCheckpointBlockHash, slot: cs.LatestCheckpointSlot, epoch: cs.LatestCheckpointEpoch, nonceState: cs.LatestCheckpointNonceState})
+	return cs.authenticateHeaderBlocksWithContexts(header, epochContexts, trustedCounters, &trustedBlockState{height: cs.LatestCheckpointHeight, blockHash: cs.LatestCheckpointBlockHash, slot: cs.LatestCheckpointSlot, epoch: cs.LatestCheckpointEpoch, nonceState: cs.LatestCheckpointNonceState, poolRegistry: cs.LatestCheckpointPoolRegistry})
 }
 
 func (cs *ClientState) authenticateHeaderBlocksWithContexts(
@@ -67,6 +68,10 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 	if err != nil {
 		return nil, err
 	}
+	registry, err := newPoolRegistryTracker(trusted.poolRegistry, trusted.epoch, trusted.slot)
+	if err != nil {
+		return nil, err
+	}
 	counters := make(map[string]uint64, len(trustedCounters))
 	for poolID, sequenceNumber := range trustedCounters {
 		counters[strings.ToLower(poolID)] = sequenceNumber
@@ -74,7 +79,7 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 
 	bridgeBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.BridgeBlocks))
 	for _, block := range header.BridgeBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts, counters, true, tracker)
+		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts, counters, true, tracker, registry)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -88,16 +93,18 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 		counters,
 		true,
 		tracker,
+		registry,
 	)
 	if err != nil {
 		return nil, err
 	}
 	anchorCounters := operationalCertificateCountersFromMap(counters)
 	anchorNonceState := clonePraosNonceState(tracker.state)
+	anchorPoolRegistry := clonePoolRegistry(registry.state)
 
 	descendantBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.DescendantBlocks))
 	for _, block := range header.DescendantBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "descendant", epochContexts, counters, false, tracker)
+		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "descendant", epochContexts, counters, false, tracker, registry)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -116,6 +123,7 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 		descendantBlocks:                     descendantBlocks,
 		anchorOperationalCertificateCounters: anchorCounters,
 		anchorNonceState:                     anchorNonceState,
+		anchorPoolRegistry:                   anchorPoolRegistry,
 	}, nil
 }
 
@@ -126,6 +134,7 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	operationalCertificateCounters map[string]uint64,
 	requireFullBlock bool,
 	tracker *nonceTracker,
+	registry *poolRegistryTracker,
 ) (*authenticatedProbabilisticBlock, error) {
 	if block == nil || block.Height == nil {
 		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing height", label)
@@ -244,6 +253,15 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	if err := verifySlotWithinEpochContext(decodedHeader.SlotNumber(), epochContext, label); err != nil {
 		return nil, err
 	}
+	if registry == nil {
+		return nil, errorsmod.Wrap(ErrIBCInvalidClient, "pool registration tracker is missing")
+	}
+	if err := registry.tick(epoch); err != nil {
+		return nil, err
+	}
+	if err := verifyStakeTablePoolBindings(epochContext, registry.state); err != nil {
+		return nil, err
+	}
 
 	if tracker == nil {
 		return nil, errorsmod.Wrap(ErrIBCInvalidClient, "nonce tracker is missing")
@@ -272,6 +290,15 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	if err != nil {
 		return nil, err
 	}
+	// The frozen registry determines the registered key. The table was only
+	// checked against it above and cannot supply a replacement binding.
+	registered, err := poolBindingMap(registry.state.Effective)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(registered[decodedPoolID].VrfKeyHash, decodedVrfKeyHash) {
+		return nil, errorsmod.Wrap(ErrInvalidAcceptedBlock, "header VRF key disagrees with authenticated pool registration")
+	}
 	if !bytes.Equal(stakeEntry.VrfKeyHash, decodedVrfKeyHash) {
 		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
@@ -279,6 +306,15 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 			label,
 			decodedPoolID,
 		)
+	}
+	if requireFullBlock {
+		certificates, err := probabilisticcore.AuthenticatedPoolCertificates(decodedBlock)
+		if err != nil {
+			return nil, errorsmod.Wrap(ErrInvalidAcceptedBlock, err.Error())
+		}
+		if err := registry.apply(decodedHeader.SlotNumber(), certificates); err != nil {
+			return nil, err
+		}
 	}
 	if err := advanceOperationalCertificateCounter(
 		operationalCertificateCounters,

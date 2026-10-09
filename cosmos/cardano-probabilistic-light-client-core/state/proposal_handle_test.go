@@ -189,6 +189,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	}
 	require.NoError(t, syncCurrentEpochFields(substitute, substitute.EpochContexts, 9))
 	substitute.LatestCheckpointNonceState = testNonceState(substitute.EpochNonce)
+	substitute.LatestCheckpointPoolRegistry = testPoolRegistry(9, substitute.EpochStakeDistribution)
 	substitute.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
 		{PoolId: bytes.Repeat([]byte{0x29}, 28), SequenceNumber: 6},
 	}
@@ -197,6 +198,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	consensusState := newProbabilisticTestConsensusState(testBlockHash("hash-20"), 20)
 	consensusState.AcceptedEpoch = 9
 	consensusState.NonceState = clonePraosNonceState(substitute.LatestCheckpointNonceState)
+	consensusState.PoolRegistry = clonePoolRegistry(substitute.LatestCheckpointPoolRegistry)
 	consensusTimestamp, timestampErr := substitute.DeriveTimestampFromSlot(220)
 	require.NoError(t, timestampErr)
 	consensusState.Timestamp = consensusTimestamp

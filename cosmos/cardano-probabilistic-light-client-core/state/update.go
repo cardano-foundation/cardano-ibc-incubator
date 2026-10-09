@@ -201,6 +201,12 @@ func (cs *ClientState) verifyHeaderWithMode(
 			authenticatedHeader.anchorBlock.epoch,
 		)
 	}
+	if err := validatePoolRegistry(authenticatedHeader.anchorPoolRegistry, authenticatedHeader.anchorBlock.epoch, authenticatedHeader.anchorBlock.slot); err != nil {
+		return err
+	}
+	if err := verifyStakeTablePoolBindings(anchorEpochContext, authenticatedHeader.anchorPoolRegistry); err != nil {
+		return err
+	}
 
 	depth := uint64(len(authenticatedHeader.descendantBlocks))
 	if depth < DefaultThresholdDepth {
@@ -388,6 +394,16 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 	qualifiedUniqueStake := uint64(0)
 	totalActiveStake := uint64(0)
 	stakeByPool := make(map[string]*StakeDistributionEntry)
+	if header == nil || header.anchorPoolRegistry == nil {
+		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "authenticated anchor pool registry is missing")
+	}
+	registeredPools, err := poolBindingMap(header.anchorPoolRegistry.Effective)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if err := verifyStakeTablePoolBindings(epochContext, header.anchorPoolRegistry); err != nil {
+		return 0, 0, 0, err
+	}
 
 	if epochContext == nil {
 		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "anchor epoch context must be present")
@@ -452,7 +468,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 			if _, exists := seenPools[poolID]; !exists {
 				seenPools[poolID] = struct{}{}
 				entry := stakeByPool[poolID]
-				eligible, err := poolRegisteredBeforeCutoff(poolRegistrationCutoffSlot, entry)
+				eligible, err := poolRegisteredBeforeCutoff(poolRegistrationCutoffSlot, registeredPools[poolID])
 				if err != nil {
 					return 0, 0, 0, err
 				}
@@ -506,16 +522,9 @@ func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
 	return (delta + cs.SlotLengthNs - 1) / cs.SlotLengthNs, nil
 }
 
-func poolRegisteredBeforeCutoff(cutoffSlotExclusive uint64, entry *StakeDistributionEntry) (bool, error) {
+func poolRegisteredBeforeCutoff(cutoffSlotExclusive uint64, entry *PoolRegistrationBinding) (bool, error) {
 	if entry == nil {
 		return false, errorsmod.Wrap(ErrInvalidCurrentEpoch, "descendant slot leader missing from epoch stake distribution")
-	}
-	if entry.FirstRegistrationSlot == 0 {
-		return false, errorsmod.Wrapf(
-			ErrInvalidCurrentEpoch,
-			"first registration slot missing for pool %s",
-			entry.PoolId,
-		)
 	}
 	return entry.FirstRegistrationSlot < cutoffSlotExclusive, nil
 }
@@ -672,6 +681,7 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 		panic(fmt.Errorf("failed to persist operational certificate counter state: %w", err))
 	}
 	cs.LatestCheckpointNonceState = clonePraosNonceState(authenticatedHeader.anchorNonceState)
+	cs.LatestCheckpointPoolRegistry = clonePoolRegistry(authenticatedHeader.anchorPoolRegistry)
 	cs.setLatestCheckpoint(
 		height,
 		authenticatedHeader.anchorBlock.hash,
@@ -699,6 +709,7 @@ func setAuthenticatedConsensusState(
 	SetConsensusState(clientStore, cdc, &ConsensusState{
 		Timestamp:         authenticatedHeader.anchorBlock.timestamp,
 		NonceState:        clonePraosNonceState(authenticatedHeader.anchorNonceState),
+		PoolRegistry:      clonePoolRegistry(authenticatedHeader.anchorPoolRegistry),
 		IbcStateRoot:      ibcStateRoot,
 		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
 		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,

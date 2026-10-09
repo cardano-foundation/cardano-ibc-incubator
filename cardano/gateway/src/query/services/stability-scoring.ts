@@ -207,7 +207,7 @@ function poolRegisteredBeforeCutoff(
   if (!entry) {
     throw new Error('Descendant slot leader missing from epoch stake distribution');
   }
-  if (!entry.firstRegistrationSlot || entry.firstRegistrationSlot <= 0n) {
+  if (entry.firstRegistrationSlot == null || entry.firstRegistrationSlot < 0n) {
     throw new Error(`First registration slot missing for pool ${entry.poolId}`);
   }
   return entry.firstRegistrationSlot < poolRegistrationCutoffSlot;

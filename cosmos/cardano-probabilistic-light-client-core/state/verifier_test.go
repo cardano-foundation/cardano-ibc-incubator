@@ -158,7 +158,7 @@ func TestAuthenticateRealBabbageBlockEnforcesOperationalCertificateCounter(t *te
 		[]*EpochContext{epochContext},
 		map[string]uint64{poolKey: 9},
 		true,
-		testNonceTracker(t, block, []*EpochContext{epochContext}))
+		testNonceTracker(t, block, []*EpochContext{epochContext}), testPoolRegistryTracker(t, block, []*EpochContext{epochContext}))
 	require.ErrorContains(t, err, "older than authenticated counter 9")
 
 	counters := map[string]uint64{poolKey: 8}
@@ -168,7 +168,7 @@ func TestAuthenticateRealBabbageBlockEnforcesOperationalCertificateCounter(t *te
 		[]*EpochContext{epochContext},
 		counters,
 		true,
-		testNonceTracker(t, block, []*EpochContext{epochContext}))
+		testNonceTracker(t, block, []*EpochContext{epochContext}), testPoolRegistryTracker(t, block, []*EpochContext{epochContext}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(8), authenticated.operationalCertificateSequenceNumber)
 	require.Equal(t, uint64(8), counters[poolKey])
@@ -217,7 +217,7 @@ func TestAuthenticateProbabilisticBlockRejectsMismatchedClaims(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			block := cloneTestProbabilisticBlock(valid)
 			tc.mutate(block)
-			_, err := cs.authenticateProbabilisticBlock(block, "anchor", mustTestEpochContexts(t, cs), map[string]uint64{}, true, testNonceTracker(t, block, mustTestEpochContexts(t, cs)))
+			_, err := cs.authenticateProbabilisticBlock(block, "anchor", mustTestEpochContexts(t, cs), map[string]uint64{}, true, testNonceTracker(t, block, mustTestEpochContexts(t, cs)), testPoolRegistryTracker(t, block, mustTestEpochContexts(t, cs)))
 			require.ErrorContains(t, err, tc.want)
 		})
 	}
@@ -229,7 +229,7 @@ func TestAuthenticateProbabilisticBlockDoesNotMutateInput(t *testing.T) {
 	block.Hash = "deadbeef"
 	clone := cloneTestProbabilisticBlock(block)
 
-	_, err := cs.authenticateProbabilisticBlock(block, "anchor", mustTestEpochContexts(t, cs), map[string]uint64{}, true, testNonceTracker(t, block, mustTestEpochContexts(t, cs)))
+	_, err := cs.authenticateProbabilisticBlock(block, "anchor", mustTestEpochContexts(t, cs), map[string]uint64{}, true, testNonceTracker(t, block, mustTestEpochContexts(t, cs)), testPoolRegistryTracker(t, block, mustTestEpochContexts(t, cs)))
 	require.Error(t, err)
 	require.Equal(t, clone, block)
 }
@@ -272,7 +272,7 @@ func TestAuthenticateBabbageHeaderWitnessMatchesLegacyFullBlock(t *testing.T) {
 		[]*EpochContext{fixture.epochContext},
 		fullCounters,
 		false,
-		testNonceTracker(t, fixture.block, []*EpochContext{fixture.epochContext}))
+		testNonceTracker(t, fixture.block, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, fixture.block, []*EpochContext{fixture.epochContext}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(8), full.operationalCertificateSequenceNumber)
 	require.Equal(t, uint64(8), fullCounters[poolKey])
@@ -287,7 +287,7 @@ func TestAuthenticateBabbageHeaderWitnessMatchesLegacyFullBlock(t *testing.T) {
 		[]*EpochContext{fixture.epochContext},
 		compactCounters,
 		false,
-		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
+		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
 	require.NoError(t, err)
 	require.Equal(t, full, compact)
 	require.Equal(t, probabilisticcore.HeaderBodyHash(fixture.decodedHeader), compact.bodyHash)
@@ -300,7 +300,7 @@ func TestAuthenticateBabbageHeaderWitnessMatchesLegacyFullBlock(t *testing.T) {
 		[]*EpochContext{fixture.epochContext},
 		map[string]uint64{poolKey: 9},
 		false,
-		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
+		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
 	require.ErrorContains(t, err, "older than authenticated counter 9")
 
 	_, err = fixture.clientState.authenticateProbabilisticBlock(
@@ -309,7 +309,7 @@ func TestAuthenticateBabbageHeaderWitnessMatchesLegacyFullBlock(t *testing.T) {
 		[]*EpochContext{fixture.epochContext},
 		map[string]uint64{},
 		true,
-		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
+		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
 	require.ErrorContains(t, err, "requires full block_cbor")
 }
 
@@ -327,7 +327,7 @@ func TestAuthenticateBabbageHeaderWitnessRejectsMutations(t *testing.T) {
 		[]*EpochContext{fixture.epochContext},
 		map[string]uint64{},
 		false,
-		testNonceTracker(t, wrongSlot, []*EpochContext{fixture.epochContext}))
+		testNonceTracker(t, wrongSlot, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, wrongSlot, []*EpochContext{fixture.epochContext}))
 	require.ErrorContains(t, err, "block slot mismatch")
 
 	mutatedHeader := bytes.Clone(fixture.headerCbor)
@@ -344,7 +344,7 @@ func TestAuthenticateBabbageHeaderWitnessRejectsMutations(t *testing.T) {
 		[]*EpochContext{fixture.epochContext},
 		map[string]uint64{},
 		false,
-		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
+		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
 	require.ErrorContains(t, err, "header failed native Cardano verification")
 
 	mutatedCertificate := bytes.Clone(fixture.headerCbor)
@@ -363,7 +363,7 @@ func TestAuthenticateBabbageHeaderWitnessRejectsMutations(t *testing.T) {
 		[]*EpochContext{fixture.epochContext},
 		map[string]uint64{},
 		false,
-		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
+		testNonceTracker(t, compactBlock, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(t, compactBlock, []*EpochContext{fixture.epochContext}))
 	require.ErrorContains(t, err, "operational certificate cold-key signature is invalid")
 }
 
@@ -395,7 +395,7 @@ func BenchmarkAuthenticateBabbageWitness(b *testing.B) {
 					[]*EpochContext{fixture.epochContext},
 					counters,
 					false,
-					testNonceTracker(b, benchmark.block, []*EpochContext{fixture.epochContext}))
+					testNonceTracker(b, benchmark.block, []*EpochContext{fixture.epochContext}), testPoolRegistryTracker(b, benchmark.block, []*EpochContext{fixture.epochContext}))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -538,7 +538,7 @@ func TestHostStateExtractionRejectsPhase2InvalidTransaction(t *testing.T) {
 		[]*EpochContext{epochContext},
 		map[string]uint64{},
 		true,
-		testNonceTracker(t, anchorBlock, []*EpochContext{epochContext}))
+		testNonceTracker(t, anchorBlock, []*EpochContext{epochContext}), testPoolRegistryTracker(t, anchorBlock, []*EpochContext{epochContext}))
 	require.NoError(t, err)
 
 	testCases := []struct {
@@ -667,6 +667,7 @@ func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testi
 		},
 	}
 
+	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 	require.ErrorContains(t, err, "stake distribution must not be empty")
 }
@@ -709,6 +710,7 @@ func TestComputeHeaderSecurityMetricsExcludesPoolsRegisteredAfterCutoff(t *testi
 		},
 	}
 
+	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.NoError(t, err)
@@ -747,6 +749,7 @@ func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing
 		},
 	}
 
+	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.NoError(t, err)
@@ -754,7 +757,7 @@ func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing
 	require.Equal(t, uint64(10000), qualifiedUniqueStakeBps)
 }
 
-func TestComputeHeaderSecurityMetricsFailsClosedWhenPoolAgeIsMissing(t *testing.T) {
+func TestComputeHeaderSecurityMetricsFailsClosedWhenRegistrationIsMissing(t *testing.T) {
 	cs := newProbabilisticTestClientState()
 	epochContext := &EpochContext{
 		Epoch:                 cs.CurrentEpoch,
@@ -782,9 +785,10 @@ func TestComputeHeaderSecurityMetricsFailsClosedWhenPoolAgeIsMissing(t *testing.
 		},
 	}
 
+	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, nil)
 	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
-	require.ErrorContains(t, err, "first registration slot missing")
+	require.ErrorContains(t, err, "no authenticated effective registration")
 }
 
 func TestVerifyHeaderEpochTransitionAcceptsAdjacentEpochRollover(t *testing.T) {
@@ -897,7 +901,7 @@ func TestCheckForMisbehaviourDetectsConflictingEpochContext(t *testing.T) {
 	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
 }
 
-func TestFirstRegistrationSlotConflictFreezesClient(t *testing.T) {
+func TestFirstRegistrationSlotConflictDoesNotFreezeClient(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-misbehaviour-registration-slot")
 
@@ -910,13 +914,11 @@ func TestFirstRegistrationSlotConflictFreezesClient(t *testing.T) {
 	require.Greater(t, cutoffSlot, header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot)
 	header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot = cutoffSlot
 
-	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
-	cs.UpdateStateOnMisbehaviour(ctx, cdc, clientStore, header)
-
-	frozen, found := GetClientState(clientStore, cdc)
+	require.False(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
+	require.Error(t, verifyStakeTablePoolBindings(header.NewEpochContext, cs.LatestCheckpointPoolRegistry))
+	stored, found := GetClientState(clientStore, cdc)
 	require.True(t, found)
-	require.True(t, frozen.FrozenHeight.EQ(FrozenHeight))
-	require.Equal(t, Frozen, frozen.Status(ctx, clientStore, cdc))
+	require.True(t, stored.FrozenHeight.IsZero())
 }
 
 func TestCheckForMisbehaviourIgnoresMatchingEpochContext(t *testing.T) {
@@ -966,7 +968,9 @@ func TestCheckForMisbehaviourDetectsConflictingEpochContextsInMisbehaviourMessag
 	require.True(t, cs.CheckForMisbehaviour(Context{}, nil, nil, msg))
 }
 
-func TestCheckForMisbehaviourDetectsFirstRegistrationSlotConflictBetweenHeaders(t *testing.T) {
+func TestCheckForMisbehaviourIgnoresInvalidFirstRegistrationSlotBetweenHeaders(t *testing.T) {
+	ctx, store := newProbabilisticTestClientStore(t, "invalid-registration-age")
+	cdc := newProbabilisticTestCodec()
 	cs := newProbabilisticTestClientState()
 	header1 := newVerifiedTestHeader(t)
 	header2 := newVerifiedTestHeader(t)
@@ -975,7 +979,7 @@ func TestCheckForMisbehaviourDetectsFirstRegistrationSlotConflictBetweenHeaders(
 	header2.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot++
 
 	msg := NewMisbehaviour("08-cardano-probabilistic-0", header1, header2)
-	require.True(t, cs.CheckForMisbehaviour(Context{}, nil, nil, msg))
+	require.False(t, cs.CheckForMisbehaviour(ctx, cdc, store, msg))
 }
 
 func TestVerifyMisbehaviourDoesNotRequireStoredTargetHeights(t *testing.T) {
@@ -1435,6 +1439,7 @@ func TestPersistCheckpointAdvancesCursorWithoutAdvancingIbcRoot(t *testing.T) {
 		},
 	}
 	authenticatedHeader.anchorNonceState = testNonceState(epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch).EpochNonce)
+	authenticatedHeader.anchorPoolRegistry = testPoolRegistryAtEpoch(t, clientState.LatestCheckpointPoolRegistry, authenticatedHeader.anchorBlock.epoch)
 	require.NoError(t, clientState.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader))
 
 	stored, found := GetClientState(clientStore, cdc)
@@ -1491,12 +1496,14 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 	clientState.LatestHeight = NewHeight(0, 100)
 	clientState.OperationalCertificateCounterHistoryStartHeight = NewHeight(0, 100)
 	clientState.EpochContexts = []*EpochContext{epoch303}
+	clientState.LatestCheckpointPoolRegistry = testPoolRegistry(303, epoch303.StakeDistribution)
 	clientState.CurrentEpoch = 303
 	clientState.CurrentEpochEndSlotExclusive = 1_000
 	require.NoError(t, syncCurrentEpochFields(clientState, clientState.EpochContexts, 303))
 
 	initialConsensus := newProbabilisticTestConsensusState(testBlockHash("host-state-epoch-303"), 100)
 	initialConsensus.AcceptedEpoch = 303
+	initialConsensus.PoolRegistry = clonePoolRegistry(clientState.LatestCheckpointPoolRegistry)
 	initialConsensus.IbcStateRoot = bytes.Repeat([]byte{0x33}, 32)
 	setTestPacketSnapshot(t, initialConsensus, 100)
 	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, initialConsensus))
@@ -1546,6 +1553,7 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 		epochContexts, err := mergeEpochContexts(clientState.EpochContexts, checkpoint.newEpochContext)
 		require.NoError(t, err)
 		authenticatedHeader.anchorNonceState = testNonceState(epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch).EpochNonce)
+		authenticatedHeader.anchorPoolRegistry = testPoolRegistryAtEpoch(t, clientState.LatestCheckpointPoolRegistry, authenticatedHeader.anchorBlock.epoch)
 		require.NoError(t, clientState.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader))
 
 		stored, found := GetClientState(clientStore, cdc)
@@ -1653,7 +1661,7 @@ func newProbabilisticTestClientState() *ClientState {
 			PoolId:                   "pool-a",
 			Stake:                    10_000,
 			VrfKeyHash:               bytes.Repeat([]byte{0x02}, 32),
-			FirstRegistrationSlot:    1,
+			FirstRegistrationSlot:    0,
 			RelativeStakeNumerator:   1,
 			RelativeStakeDenominator: 1,
 		},
@@ -1671,6 +1679,7 @@ func newProbabilisticTestClientState() *ClientState {
 		EpochStakeDistribution:             cloneStakeDistributionEntries(epochStakeDistribution),
 		EpochNonce:                         bytes.Clone(epochNonce),
 		LatestCheckpointNonceState:         testNonceState(epochNonce),
+		LatestCheckpointPoolRegistry:       testPoolRegistry(7, epochStakeDistribution),
 		RandomnessStabilisationWindowSlots: 10,
 		SlotsPerKesPeriod:                  129600,
 		MaxKesEvolutions:                   62,
@@ -1736,6 +1745,7 @@ func newProbabilisticTestConsensusState(acceptedBlockHash string, heights ...uin
 	return &ConsensusState{
 		PacketStateSnapshot: snapshot,
 		NonceState:          testNonceState(bytes.Repeat([]byte{0x03}, 32)),
+		PoolRegistry:        clonePoolRegistry(newProbabilisticTestClientState().LatestCheckpointPoolRegistry),
 		Timestamp:           uint64(time.Unix(1_700_000_000, 0).UnixNano()),
 		IbcStateRoot:        bytes.Repeat([]byte{0x11}, 32),
 		AcceptedBlockHash:   acceptedBlockHash,

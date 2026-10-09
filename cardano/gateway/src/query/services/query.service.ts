@@ -1,4 +1,5 @@
 import { Cbor, CborArray, CborBytes, CborSimple } from '@harmoniclabs/cbor';
+import { loadTrustedPoolRegistryCheckpoint, withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
 import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { PacketStateService, latestPacketProofHeight } from './packet-state.service';
@@ -35,6 +36,7 @@ import {
   EpochContext as ProbabilisticEpochContext,
   OperationalCertificateCounter,
   PraosNonceState,
+  PoolRegistryState,
   ProbabilisticBlock,
   ProbabilisticHeader,
   StakeDistributionEntry,
@@ -713,11 +715,45 @@ export class QueryService {
       throw new GrpcInternalException('Cardano chain ID is not configured');
     }
 
+    const registryFile = this.configService.get<string>('cardanoPoolRegistryCheckpointFile');
+    let poolRegistry: PoolRegistryState | undefined;
     const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
       historyService: this.historyService,
       height: BigInt(height),
       logger: this.logger,
+      resolvePoolBindings: (block, entries) => {
+        if (!registryFile) {
+          throw new GrpcFailedPreconditionException(
+            'Configure CARDANO_POOL_REGISTRY_CHECKPOINT_FILE from authenticated history or an explicitly trusted checkpoint',
+          );
+        }
+        try {
+          poolRegistry = loadTrustedPoolRegistryCheckpoint(registryFile, {
+            chainId: cardanoChainId,
+            height: BigInt(block.height),
+            slot: block.slotNo,
+            hash: block.hash,
+            epoch: BigInt(block.epochNo),
+          });
+          const bindings = new Map(poolRegistry.effective.map((binding) => [binding.pool_id, binding]));
+          return entries.map((entry) => {
+            const binding = bindings.get(entry.poolId);
+            if (!binding) throw new Error(`Pool ${entry.poolId} has no authenticated effective registration`);
+            return {
+              ...entry,
+              vrfKeyHash: Buffer.from(binding.vrf_key_hash).toString('hex'),
+              firstRegistrationSlot: binding.first_registration_slot,
+            };
+          });
+        } catch (error) {
+          throw new GrpcFailedPreconditionException(`Pool registry bootstrap failed: ${error.message}`);
+        }
+      },
     });
+
+    if (!poolRegistry) {
+      throw new GrpcFailedPreconditionException('Authenticated bootstrap pool registry is unavailable');
+    }
 
     const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(stabilityEvidence.anchorHeight);
     if (!hostStateUtxo?.datum) {
@@ -731,10 +767,13 @@ export class QueryService {
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const hostStateRootBytes = Buffer.from(hostStateDatum.state.ibc_state_root, 'hex');
     const stabilitySlotTiming = this.getStabilitySlotTiming(stabilityEvidence.anchorBlock);
-    const currentEpochContext = this.toStabilityEpochContext(
-      Number(stabilityEvidence.anchorEpoch),
-      stabilityEvidence.epochStakeDistribution,
-      stabilityEvidence.epochVerificationContext,
+    const currentEpochContext = withAuthenticatedPoolBindings(
+      this.toStabilityEpochContext(
+        Number(stabilityEvidence.anchorEpoch),
+        stabilityEvidence.epochStakeDistribution,
+        stabilityEvidence.epochVerificationContext,
+      ),
+      poolRegistry,
     );
 
     const window = this.configService.get<string>('cardanoRandomnessStabilisationWindowSlots');
@@ -801,6 +840,7 @@ export class QueryService {
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
       epoch_contexts: [currentEpochContext],
       latest_checkpoint_nonce_state: nonceState,
+      latest_checkpoint_pool_registry: poolRegistry,
       randomness_stabilisation_window_slots: BigInt(window),
       epoch_context_challenges: [], // Assigned by the Cosmos host during Initialize.
       active_slot_coefficient_numerator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientNumerator,
@@ -823,6 +863,7 @@ export class QueryService {
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
       nonce_state: nonceState,
+      pool_registry: poolRegistry,
       packet_state_snapshot: await this.packetState.snapshot(stabilityEvidence.anchorHeight),
       timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,

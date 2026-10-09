@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
+	"math"
 	"time"
 
 	errorsmod "cosmossdk.io/errors"
@@ -22,6 +23,9 @@ func (cs ConsensusState) GetTime() time.Time {
 }
 
 func (cs ConsensusState) ValidateBasic() error {
+	if err := validatePoolRegistry(cs.PoolRegistry, cs.AcceptedEpoch, math.MaxUint64); err != nil {
+		return errorsmod.Wrap(ErrIBCInvalidConsensus, err.Error())
+	}
 	if err := validatePraosNonceState(cs.NonceState); err != nil {
 		return errorsmod.Wrap(ErrIBCInvalidConsensus, err.Error())
 	}

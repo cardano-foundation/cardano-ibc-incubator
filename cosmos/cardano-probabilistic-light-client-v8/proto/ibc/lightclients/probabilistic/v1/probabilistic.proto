@@ -18,6 +18,7 @@ message StakeDistributionEntry {
 
   string pool_id = 1;
   uint64 stake = 2;
+  // Compatibility fields. Must match the independent effective registry.
   bytes vrf_key_hash = 3;
   uint64 first_registration_slot = 4;
   // Exact relative active stake used for Praos leader eligibility. The
@@ -26,7 +27,7 @@ message StakeDistributionEntry {
   uint64 relative_stake_denominator = 6;
 }
 
-// During updates only stake_distribution supplies new pool and stake data.
+// During updates only stake allocation supplies independently claimed data.
 // Every other field is compared with values derived from accepted state or
 // stored network configuration. A mismatch rejects the update. The starting
 // state and network configuration require authenticated or explicitly trusted
@@ -36,8 +37,8 @@ message EpochContext {
 
   // Must equal the epoch derived from the signed header slot and stored schedule.
   uint64 epoch = 1;
-  // Supplied pool and stake table under the challenge model. Header and nonce
-  // verification do not establish whether it matches Cardano's ledger.
+  // Identities, VRF hashes and ages must match the independently tracked
+  // registry for this epoch. Stake amounts remain under the challenge model.
   repeated StakeDistributionEntry stake_distribution = 2;
   // Must equal the nonce derived from checkpoint history. Header verification
   // uses that locally derived nonce.
@@ -110,6 +111,43 @@ message ClientState {
   PraosNonceState latest_checkpoint_nonce_state = 32;
   // Established network parameter. Updates cannot redefine this window.
   uint64 randomness_stabilisation_window_slots = 33;
+  // Independently authenticated registration state at the checkpoint.
+  PoolRegistryState latest_checkpoint_pool_registry = 34;
+}
+
+// Pool identity and VRF binding from the trusted bootstrap or authenticated
+// certificate history. Slot zero is valid for a genesis registration.
+message PoolRegistrationBinding {
+  option (gogoproto.goproto_getters) = false;
+
+  string pool_id = 1;
+  bytes vrf_key_hash = 2;
+  uint64 first_registration_slot = 3;
+}
+
+// The current registration state, separate from frozen election snapshots.
+// Retired records retain their authenticated registration age.
+message PoolRegistrationRecord {
+  option (gogoproto.goproto_getters) = false;
+
+  PoolRegistrationBinding registration = 1;
+  bool registered = 2;
+  bytes pending_vrf_key_hash = 3;
+  uint64 pending_effective_epoch = 4;
+  // Zero means no scheduled retirement.
+  uint64 retirement_epoch = 5;
+}
+
+// Registration projection of Cardano's current pool state and mark/set
+// snapshots at the associated checkpoint. This contains no stake amounts.
+// Bootstrap must establish all three views independently of the epoch table.
+message PoolRegistryState {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  repeated PoolRegistrationRecord pools = 2;
+  repeated PoolRegistrationBinding mark = 3;
+  repeated PoolRegistrationBinding effective = 4;
 }
 
 // Babbage/Conway Praos state after applying the checkpoint header.
@@ -149,6 +187,8 @@ message ConsensusState {
   bytes packet_state_snapshot = 8;
   // Running nonce values at this accepted block, excluding descendants.
   PraosNonceState nonce_state = 9;
+  // Registration state at this historical accepted block.
+  PoolRegistryState pool_registry = 10;
 }
 
 message Misbehaviour {
