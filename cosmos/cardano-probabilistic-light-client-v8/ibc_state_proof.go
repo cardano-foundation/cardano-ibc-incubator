@@ -2,6 +2,7 @@ package probabilistic
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"strings"
 
@@ -129,10 +130,27 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		}
 		return nil
 
+	case strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
+		// Cardano commits the Plutus integer, while ibc-go expects eight
+		// big-endian bytes. Compare the numbers without changing the leaf bytes.
+		if len(expectedValue) != 8 {
+			return fmt.Errorf("invalid expected nextSequenceRecv length: %d (want 8)", len(expectedValue))
+		}
+		if len(committedValue) == 0 || committedValue[0]>>5 != 0 {
+			return fmt.Errorf("committed nextSequenceRecv must be a CBOR unsigned integer")
+		}
+		var committedSequence uint64
+		if err := cbor.Unmarshal(committedValue, &committedSequence); err != nil {
+			return fmt.Errorf("failed to decode committed nextSequenceRecv CBOR: %w", err)
+		}
+		if committedSequence != binary.BigEndian.Uint64(expectedValue) {
+			return fmt.Errorf("existence proof value mismatch")
+		}
+		return nil
+
 	case strings.HasPrefix(keyStr, "commitments/ports/"),
 		strings.HasPrefix(keyStr, "acks/ports/"),
-		strings.HasPrefix(keyStr, "receipts/ports/"),
-		strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
+		strings.HasPrefix(keyStr, "receipts/ports/"):
 		// Packet commitments / acknowledgements / receipts are stored on Cosmos chains
 		// as raw bytes (not protobuf-encoded). Cardano commits to the CBOR-serialised
 		// Plutus `ByteArray` for these values, so we need to unwrap the committed

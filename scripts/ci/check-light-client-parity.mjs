@@ -27,6 +27,7 @@ const sharedSourceFiles = [
   "host_state_commitment.go",
   "host_state_datum.go",
   "ibc_state_proof.go",
+  "ibc_state_proof_test.go",
   "internal/cardanodatum/tm_helper.go",
   "internal/cardanodatum/tm_upgrade_test.go",
   "internal/cardanodatum/types.go",
@@ -238,6 +239,7 @@ function assertFileInventory() {
   const expectedV10 = [
     ...sharedSourceFiles,
     "events_test.go",
+    "ordered_timeout_test.go",
     "light_client_module.go",
     "module.go",
     protoFile,
