@@ -28,7 +28,9 @@ fn valid_number_of_ports(
   port_minting_policy_id: PolicyId,
 ) -> Bool {
   let number_of_ports =
-    module_output.value |> assets.tokens(port_minting_policy_id) |> dict.size()
+    module_output.value
+      |> assets.tokens(port_minting_policy_id)
+      |> dict.size()
   number_of_ports <= max_bound_ports
 }
 

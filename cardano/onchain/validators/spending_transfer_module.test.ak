@@ -3175,7 +3175,8 @@ test on_recv_packet_source_accepts_net_receipt_across_stake_credentials() {
   let enterprise = source_recv_receiver_address(receiver)
   let base = enterprise |> with_delegation_key("ssssssssssssssssssssssssssss")
   let other_base =
-    enterprise |> with_delegation_key("tttttttttttttttttttttttttttt")
+    enterprise
+      |> with_delegation_key("tttttttttttttttttttttttttttt")
   validate_source_recv_payout(
     receiver,
     [source_recv_payout(enterprise, 20), source_recv_payout(base, 30)],

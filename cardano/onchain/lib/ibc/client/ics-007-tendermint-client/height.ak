@@ -82,6 +82,9 @@ pub fn is_zero(height: Height) -> Bool {
 pub fn to_string(value: Height) -> ByteArray {
   bytearray.concat(
     text_bytes.int_to_decimal_bytes(value.revision_number),
-    bytearray.concat("-", text_bytes.int_to_decimal_bytes(value.revision_height)),
+    bytearray.concat(
+      "-",
+      text_bytes.int_to_decimal_bytes(value.revision_height),
+    ),
   )
 }
