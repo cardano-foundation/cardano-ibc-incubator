@@ -231,6 +231,20 @@ describe('shared IBC state root updates', () => {
     assert.equal(store.getCurrentRoot(), update.newRoot);
   });
 
+  it('keeps both revisions when an upgrade resets the height', async () => {
+    const created = store.computeRootWithCreateClientUpdate(
+      emptyRoot, '07-tendermint-0', Buffer.from('01', 'hex'), Buffer.from('02', 'hex'), '0-1',
+    );
+    await commitLive(store, readers, created);
+    const upgraded = store.computeRootWithUpdateClientUpdate(
+      created.newRoot, '07-tendermint-0', Buffer.from('03', 'hex'), [],
+      { height: '1-1', value: Buffer.from('04', 'hex') },
+    );
+    await commitLive(store, readers, upgraded, 2);
+    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/0-1')?.toString('hex'), '02');
+    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/1-1')?.toString('hex'), '04');
+  });
+
   it('does not change confirmed state when pruning missing packet history fails', () => {
     assert.throws(() => store.computeRootWithPrunePacketHistoryUpdate(
       emptyRoot, 'transfer', 'channel-0', 7n, 'Unordered',
@@ -240,12 +254,12 @@ describe('shared IBC state root updates', () => {
 });
 
 describe('deployment-bound tree stores', () => {
-  async function historyFixture() {
+  async function historyFixture(resetHeight = false) {
     const policyId = '11'.repeat(28);
     const clientToken = { policyId, name: `${'aa'.repeat(24)}30` };
-    const latestHeight = { revisionNumber: 0n, revisionHeight: 8n };
+    const latestHeight = { revisionNumber: resetHeight ? 1n : 0n, revisionHeight: resetHeight ? 7n : 8n };
     const olderHeight = { revisionNumber: 0n, revisionHeight: 7n };
-    const clientState = sampleClientState(8n);
+    const clientState = { ...sampleClientState(latestHeight.revisionHeight), latestHeight };
     const latest = { clientToken, height: latestHeight, consensusState: sampleConsensusState('22'), processedTime: 2000n, processedHeight: 20n };
     const older = { ...latest, height: olderHeight, consensusState: sampleConsensusState('33'), processedTime: 1900n, processedHeight: 19n };
     const records = await Promise.all([older, latest].map(async (datum) => ({
@@ -256,7 +270,7 @@ describe('deployment-bound tree stores', () => {
       state: { clientState, consensusStates: new Map([[latestHeight, latest.consensusState]]) },
     };
     const clientValue = await encodeClientStateValue(clientState, Lucid);
-    const h = new Lucid.Constr(0, [0n, 8n]);
+    const h = new Lucid.Constr(0, [latestHeight.revisionNumber, latestHeight.revisionHeight]);
     const encodedClient = Lucid.Data.to(new Lucid.Constr(0, [
       new Lucid.Constr(0, [
         Lucid.Data.from(clientValue), new Map([[h, Lucid.Data.from(records[1].consensusValue)]]),
@@ -267,7 +281,7 @@ describe('deployment-bound tree stores', () => {
     const clientUtxo = { ...hostRef(10), address: 'addr_test1_client', datum: encodedClient, assets: { [policyId + clientToken.name]: 1n } };
     const expected = new ICS23MerkleTree();
     expected.set('clients/07-tendermint-0/clientState', clientValue);
-    for (const entry of records) expected.set(`clients/07-tendermint-0/consensusStates/${entry.datum.height.revisionHeight}`, entry.consensusValue);
+    for (const entry of records) expected.set(`clients/07-tendermint-0/consensusStates/${entry.datum.height.revisionNumber}-${entry.datum.height.revisionHeight}`, entry.consensusValue);
     const readers = emptyReaders();
     readers.kupo.queryAllClientUtxos = async () => [clientUtxo];
     readers.lucid.consensusHistoryRecords = async (client) => {
@@ -290,8 +304,19 @@ describe('deployment-bound tree stores', () => {
     const fixture = await historyFixture();
     const rebuilt = await fixture.makeStore().rebuildTreeFromChain();
     assert.equal(rebuilt.root, fixture.expected.getRoot());
-    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/7')?.toString('hex'), fixture.records[0].consensusValue);
-    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/8')?.toString('hex'), fixture.records[1].consensusValue);
+    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/0-7')?.toString('hex'), fixture.records[0].consensusValue);
+    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/0-8')?.toString('hex'), fixture.records[1].consensusValue);
+  });
+
+  it('rebuilds distinct leaves for the same height in different revisions', async () => {
+    const fixture = await historyFixture(true);
+    const rebuilt = await fixture.makeStore().rebuildTreeFromChain();
+    assert.equal(rebuilt.root, fixture.expected.getRoot());
+    for (const [index, revision] of [0, 1].entries()) {
+      const key = `clients/07-tendermint-0/consensusStates/${revision}-7`;
+      assert.equal(rebuilt.tree.get(key)?.toString('hex'), fixture.records[index].consensusValue);
+      assert.equal(rebuilt.tree.verifyProof(rebuilt.tree.generateProof(key)), true);
+    }
   });
 
   it('rejects foreign-client, duplicate, missing and corrupted recovered records', async () => {
