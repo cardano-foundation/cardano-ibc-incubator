@@ -109,16 +109,25 @@ func (m *StakeDistributionEntry) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_StakeDistributionEntry proto.InternalMessageInfo
 
+// During updates only stake_distribution supplies new pool and stake data.
+// Every other field is compared with values derived from accepted state or
+// stored network configuration. A mismatch rejects the update. The starting
+// state and network configuration require authenticated or explicitly trusted
+// bootstrap.
 type EpochContext struct {
-	// Derived from the signed block slot and the client's stored epoch schedule.
-	Epoch             uint64                    `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// Must equal the epoch derived from the signed header slot and stored schedule.
+	Epoch uint64 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// Supplied pool and stake table under the challenge model. Header and nonce
+	// verification do not establish whether it matches Cardano's ledger.
 	StakeDistribution []*StakeDistributionEntry `protobuf:"bytes,2,rep,name=stake_distribution,json=stakeDistribution,proto3" json:"stake_distribution,omitempty"`
-	// Compatibility value. Must equal the nonce derived from checkpoint history.
+	// Must equal the nonce derived from checkpoint history. Header verification
+	// uses that locally derived nonce.
 	EpochNonce []byte `protobuf:"bytes,3,opt,name=epoch_nonce,json=epochNonce,proto3" json:"epoch_nonce,omitempty"`
-	// Must match the immutable client parameter.
+	// Must equal ClientState.slots_per_kes_period, fixed at bootstrap.
 	SlotsPerKesPeriod uint64 `protobuf:"varint,4,opt,name=slots_per_kes_period,json=slotsPerKesPeriod,proto3" json:"slots_per_kes_period,omitempty"`
-	// Both bounds must match the client's stored epoch schedule.
-	EpochStartSlot        uint64 `protobuf:"varint,5,opt,name=epoch_start_slot,json=epochStartSlot,proto3" json:"epoch_start_slot,omitempty"`
+	// Must equal the start slot calculated from the client's stored epoch schedule.
+	EpochStartSlot uint64 `protobuf:"varint,5,opt,name=epoch_start_slot,json=epochStartSlot,proto3" json:"epoch_start_slot,omitempty"`
+	// Must equal the exclusive end calculated from that same stored schedule.
 	EpochEndSlotExclusive uint64 `protobuf:"varint,6,opt,name=epoch_end_slot_exclusive,json=epochEndSlotExclusive,proto3" json:"epoch_end_slot_exclusive,omitempty"`
 }
 

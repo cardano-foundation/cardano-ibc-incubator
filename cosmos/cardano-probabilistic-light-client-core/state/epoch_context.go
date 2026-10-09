@@ -172,6 +172,10 @@ func (cs ClientState) normalizedEpochContexts() ([]*EpochContext, error) {
 	return contexts, nil
 }
 
+// validateEpochContextParameters compares supplied bounds and KES periods with
+// the client's established configuration. It does not authenticate the stake
+// table. The supplied epoch is checked against the signed header slot and the
+// supplied nonce against running checkpoint state in authenticateProbabilisticBlock.
 func (cs ClientState) validateEpochContextParameters(contexts []*EpochContext) error {
 	if cs.SlotsPerKesPeriod == 0 {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "client slots per KES period must be greater than zero")
@@ -219,9 +223,10 @@ func mergeEpochContexts(base []*EpochContext, candidate *EpochContext) ([]*Epoch
 		return nil, err
 	}
 
-	// Verification must be able to authenticate a same-epoch header using the
-	// context it carries. CheckForMisbehaviour later freezes if that context
-	// disagrees with the one already stored for the epoch.
+	// Verification uses the supplied stake table so competing same-epoch stake
+	// claims can be checked as challenge evidence. CheckForMisbehaviour can
+	// freeze on conflicting stake data after the headers pass verification.
+	// Nonce, schedule and KES mismatches reject the update before that step.
 	for i, ctx := range contexts {
 		if ctx != nil && ctx.Epoch == candidate.Epoch {
 			contexts[i] = cloneEpochContext(candidate)

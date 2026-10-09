@@ -26,15 +26,27 @@ message StakeDistributionEntry {
   uint64 relative_stake_denominator = 6;
 }
 
+// During updates only stake_distribution supplies new pool and stake data.
+// Every other field is compared with values derived from accepted state or
+// stored network configuration. A mismatch rejects the update. The starting
+// state and network configuration require authenticated or explicitly trusted
+// bootstrap.
 message EpochContext {
   option (gogoproto.goproto_getters) = false;
 
+  // Must equal the epoch derived from the signed header slot and stored schedule.
   uint64 epoch = 1;
+  // Supplied pool and stake table under the challenge model. Header and nonce
+  // verification do not establish whether it matches Cardano's ledger.
   repeated StakeDistributionEntry stake_distribution = 2;
-  // Compatibility value. Must equal the nonce derived from checkpoint history.
+  // Must equal the nonce derived from checkpoint history. Header verification
+  // uses that locally derived nonce.
   bytes epoch_nonce = 3;
+  // Must equal ClientState.slots_per_kes_period, fixed at bootstrap.
   uint64 slots_per_kes_period = 4;
+  // Must equal the start slot calculated from the client's stored epoch schedule.
   uint64 epoch_start_slot = 5;
+  // Must equal the exclusive end calculated from that same stored schedule.
   uint64 epoch_end_slot_exclusive = 6;
 }
 

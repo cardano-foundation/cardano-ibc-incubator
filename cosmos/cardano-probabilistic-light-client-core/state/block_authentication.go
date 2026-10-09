@@ -248,6 +248,8 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	if tracker == nil {
 		return nil, errorsmod.Wrap(ErrIBCInvalidClient, "nonce tracker is missing")
 	}
+	// The checkpoint continuation determines the nonce used for verification.
+	// The supplied epoch-context nonce is only compared with that local value.
 	if err := tracker.tick(cs, decodedHeader.BlockNumber(), decodedHeader.SlotNumber(), epoch, decodedPrevHash); err != nil {
 		return nil, err
 	}
