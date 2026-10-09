@@ -19,7 +19,7 @@ func TestIbcStateKeyFromPath(t *testing.T) {
 		"connections/connection-0",
 		"channelEnds/ports/transfer/channels/channel-0",
 		"commitments/ports/transfer/channels/channel-0/sequences/1",
-		"acks/ports/mock/channels/channel-0/sequences/1",
+		"receipts/ports/transfer/channels/channel-0/sequences/1",
 		"receipts/ports/transfer/channels/channel-0/sequences/1",
 		"nextSequenceRecv/ports/transfer/channels/channel-0",
 	} {
@@ -62,7 +62,7 @@ func TestClientStateProofPathNamespace(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			// Construct a valid Cardano proof and reuse it for every path alias.
-			root, proof := proofTestReceipt(t, key, membership)
+			root, proof := proofTestBytes(t, key, membership)
 			ctx, clientStore := newProbabilisticTestClientStore(t, "proof-path")
 			cdc := newProbabilisticTestCodec()
 			height := clienttypes.NewHeight(0, 10)
@@ -118,7 +118,7 @@ func proofTestPathKeys[T ~string | ~[]byte](path []T, keys ...string) []T {
 	return path
 }
 
-func proofTestReceipt(t *testing.T, key []byte, membership bool) ([]byte, []byte) {
+func proofTestBytes(t *testing.T, key []byte, membership bool) ([]byte, []byte) {
 	t.Helper()
 	var value []byte
 	if membership {

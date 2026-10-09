@@ -53,7 +53,7 @@ func TestIbcStateKeyFromPath(t *testing.T) {
 }
 
 func TestClientStateProofPathNamespace(t *testing.T) {
-	key := []byte("receipts/ports/transfer/channels/channel-0/sequences/1")
+	key := []byte("acks/ports/mock/channels/channel-0/sequences/1")
 	for _, membership := range []bool{true, false} {
 		name := "non-membership"
 		if membership {
@@ -61,7 +61,7 @@ func TestClientStateProofPathNamespace(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			// Construct a valid Cardano proof and reuse it for every path alias.
-			root, proof := proofTestReceipt(t, key, membership)
+			root, proof := proofTestBytes(t, key, membership)
 			ctx, clientStore := newTestClientStore(t, "proof-path")
 			cdc := newTestCodec()
 			height := clienttypes.NewHeight(0, 10)
@@ -117,11 +117,11 @@ func proofTestPathKeys[T ~string | ~[]byte](path []T, keys ...string) []T {
 	return path
 }
 
-func proofTestReceipt(t *testing.T, key []byte, membership bool) ([]byte, []byte) {
+func proofTestBytes(t *testing.T, key []byte, membership bool) ([]byte, []byte) {
 	t.Helper()
 	var value []byte
 	if membership {
-		value = []byte{0x41, 0x01} // CBOR bytestring encoding of a packet receipt.
+		value = []byte{0x41, 0x01} // CBOR encoding of the acknowledgement value.
 	}
 	keyHash := sha256.Sum256(key)
 	index := binary.BigEndian.Uint64(keyHash[:8])
