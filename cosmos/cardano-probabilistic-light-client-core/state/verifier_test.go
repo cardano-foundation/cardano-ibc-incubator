@@ -126,6 +126,8 @@ func TestAuthenticateRealBabbageBlockEnforcesOperationalCertificateCounter(t *te
 	clientState := newProbabilisticTestClientState()
 	clientState.SystemStartUnixNs = 1
 	clientState.SlotLengthNs = 1
+	clientState.CurrentEpochStartSlot = decodedBlock.SlotNumber()
+	clientState.CurrentEpochEndSlotExclusive = decodedBlock.SlotNumber() + 1
 	epochContext := &EpochContext{
 		Epoch:                 7,
 		EpochNonce:            epochNonce,
@@ -439,6 +441,8 @@ func loadBabbageWitnessFixture(t testing.TB) babbageWitnessFixture {
 	clientState := newProbabilisticTestClientState()
 	clientState.SystemStartUnixNs = 1
 	clientState.SlotLengthNs = 1
+	clientState.CurrentEpochStartSlot = decodedBlock.SlotNumber()
+	clientState.CurrentEpochEndSlotExclusive = decodedBlock.SlotNumber() + 1
 	epochContext := &EpochContext{
 		Epoch:                 7,
 		EpochNonce:            epochNonce,
@@ -499,6 +503,8 @@ func TestHostStateExtractionRejectsPhase2InvalidTransaction(t *testing.T) {
 	clientState := newProbabilisticTestClientState()
 	clientState.SystemStartUnixNs = 1
 	clientState.SlotLengthNs = 1
+	clientState.CurrentEpochStartSlot = decodedBlock.SlotNumber()
+	clientState.CurrentEpochEndSlotExclusive = decodedBlock.SlotNumber() + 1
 	clientState.SlotsPerKesPeriod = 100
 	clientState.ActiveSlotCoefficientNumerator = 1
 	clientState.ActiveSlotCoefficientDenominator = 1
@@ -626,7 +632,7 @@ func TestVerifyHeaderRejectsCrossEpochBlock(t *testing.T) {
 	header.AnchorBlock = makeTestProbabilisticBlock(t, 12, cs.CurrentEpochEndSlotExclusive, anchorPrevHash)
 
 	err := cs.verifyHeader(Context{}, clientStore, cdc, header)
-	require.ErrorContains(t, err, "outside available epoch context bounds")
+	require.ErrorContains(t, err, "block epoch mismatch: got 7 expected 8")
 }
 
 func TestVerifyHeaderRejectsTrustedHeightOlderThanLatestHeight(t *testing.T) {
@@ -988,7 +994,7 @@ func TestVerifyMisbehaviourDoesNotRequireStoredTargetHeights(t *testing.T) {
 	err := cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "could not get consensus state from clientStore")
-	require.Contains(t, err.Error(), "outside available epoch context bounds")
+	require.Contains(t, err.Error(), "block epoch mismatch: got 7 expected 8")
 }
 
 func TestVerifyMisbehaviourDoesNotRejectStoredHeadersAsStale(t *testing.T) {
@@ -1008,7 +1014,7 @@ func TestVerifyMisbehaviourDoesNotRejectStoredHeadersAsStale(t *testing.T) {
 	err := cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "expected newer header height")
-	require.Contains(t, err.Error(), "outside available epoch context bounds")
+	require.Contains(t, err.Error(), "block epoch mismatch: got 7 expected 8")
 }
 
 func TestHeadersConflictRejectsNonConflictingHeaders(t *testing.T) {
@@ -1484,6 +1490,8 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 	clientState.LatestHeight = NewHeight(0, 100)
 	clientState.OperationalCertificateCounterHistoryStartHeight = NewHeight(0, 100)
 	clientState.EpochContexts = []*EpochContext{epoch303}
+	clientState.CurrentEpoch = 303
+	clientState.CurrentEpochEndSlotExclusive = 1_000
 	require.NoError(t, syncCurrentEpochFields(clientState, clientState.EpochContexts, 303))
 
 	initialConsensus := newProbabilisticTestConsensusState(testBlockHash("host-state-epoch-303"), 100)

@@ -573,6 +573,13 @@ func (cs *ClientState) initializeCheckpoint(consensusState *ConsensusState) erro
 	if err != nil {
 		return errorsmod.Wrap(err, "initial consensus timestamp is not a valid Cardano slot time")
 	}
+	initialEpoch, err := cs.epochForSlot(initialSlot)
+	if err != nil {
+		return err
+	}
+	if consensusState.AcceptedEpoch != initialEpoch || cs.CurrentEpoch != initialEpoch {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "initial consensus epoch %d and current epoch %d must match slot %d derived epoch %d", consensusState.AcceptedEpoch, cs.CurrentEpoch, initialSlot, initialEpoch)
+	}
 	if cs.LatestCheckpointHeight == nil || cs.LatestCheckpointHeight.IsZero() {
 		cs.setLatestCheckpoint(
 			cs.LatestHeight,

@@ -29,10 +29,13 @@ message StakeDistributionEntry {
 message EpochContext {
   option (gogoproto.goproto_getters) = false;
 
+  // Derived from the signed block slot and the client's stored epoch schedule.
   uint64 epoch = 1;
   repeated StakeDistributionEntry stake_distribution = 2;
   bytes epoch_nonce = 3;
+  // Must match the immutable client parameter.
   uint64 slots_per_kes_period = 4;
+  // Both bounds must match the client's stored epoch schedule.
   uint64 epoch_start_slot = 5;
   uint64 epoch_end_slot_exclusive = 6;
 }

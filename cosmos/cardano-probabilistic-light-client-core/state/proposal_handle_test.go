@@ -14,6 +14,7 @@ func TestIsMatchingClientStateIgnoresEpochVerificationState(t *testing.T) {
 	subject.LatestHeight = NewHeight(0, 10)
 	subject.FrozenHeight = NewHeight(0, 9)
 	subject.CurrentEpoch = 7
+	subject.CurrentEpochEndSlotExclusive = 100
 	subject.TrustingPeriod = 24 * time.Hour
 	subject.ChainId = "cardano-old"
 	subject.EpochContexts = []*EpochContext{
@@ -130,6 +131,7 @@ func TestIsMatchingClientStateRejectsStaticParameterMismatch(t *testing.T) {
 
 func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
 	clientState := newProbabilisticTestClientState()
+	clientState.CurrentEpochEndSlotExclusive = 100
 	clientState.EpochContexts = []*EpochContext{
 		makeRecoveryEpochContext(7, 0, 100, 0x07),
 		makeRecoveryEpochContext(8, 100, 200, 0x08),
@@ -162,6 +164,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	subject := newProbabilisticTestClientState()
 	subject.LatestHeight = NewHeight(0, 10)
 	subject.CurrentEpoch = 7
+	subject.CurrentEpochEndSlotExclusive = 100
 	subject.TrustingPeriod = 24 * time.Hour
 	subject.ChainId = "cardano-old"
 	subject.EpochContexts = []*EpochContext{
@@ -175,6 +178,8 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	substitute := newProbabilisticTestClientState()
 	substitute.LatestHeight = NewHeight(0, 20)
 	substitute.CurrentEpoch = 9
+	substitute.CurrentEpochStartSlot = 200
+	substitute.CurrentEpochEndSlotExclusive = 300
 	substitute.TrustingPeriod = 48 * time.Hour
 	substitute.ChainId = "cardano-new"
 	substitute.EpochContexts = []*EpochContext{
@@ -189,7 +194,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 
 	consensusState := newProbabilisticTestConsensusState(testBlockHash("hash-20"), 20)
 	consensusState.AcceptedEpoch = 9
-	consensusTimestamp, timestampErr := substitute.DeriveTimestampFromSlot(20)
+	consensusTimestamp, timestampErr := substitute.DeriveTimestampFromSlot(220)
 	require.NoError(t, timestampErr)
 	consensusState.Timestamp = consensusTimestamp
 	SetConsensusState(substituteStore, cdc, consensusState, substitute.LatestHeight)

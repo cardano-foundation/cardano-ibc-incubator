@@ -216,6 +216,9 @@ func (cs ClientState) Initialize(ctx Context, cdc StateCodec, clientStore storet
 	if !ok {
 		return errorsmod.Wrapf(ErrIBCInvalidConsensus, "invalid initial consensus state. expected type: %T, got: %T", &ConsensusState{}, consState)
 	}
+	if _, err := cs.normalizedEpochContexts(); err != nil {
+		return err
+	}
 	if err := validateConsensusPacketSnapshot(consensusState, cs.LatestHeight.RevisionHeight); err != nil {
 		return err
 	}

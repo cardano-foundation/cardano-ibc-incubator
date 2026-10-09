@@ -196,7 +196,22 @@ The Gateway:
 
 Client creation still starts from one epoch context, but updates are no longer single-epoch-only. Gateway now supports ordinary `epoch N -> epoch N+1` rollover updates on the same client ID by attaching `new_epoch_context` to the header when the anchor moves into the next epoch. The scored descendant window still remains single-epoch: bridge continuity may span the boundary, but the anchor and scored descendants must all live in the same anchor epoch.
 
-An accepted epoch context is canonical for that epoch. Later headers may repeat the same epoch context, but a different context for an already-known epoch is treated as misbehaviour and freezes the client. This does not make the first accepted epoch context cryptographically authenticated; it changes the failure mode so that contradictory observer views cannot silently replace or coexist with the stored stake context.
+The client derives a block's epoch from its signed slot and the stored current
+epoch boundaries. Those boundaries provide the network's epoch length and slot
+offset for the supported Babbage and Conway eras. At rollover the client computes
+the next boundaries from that stored schedule. The protobuf still carries
+`epoch`, `epoch_start_slot`, `epoch_end_slot_exclusive`, and
+`slots_per_kes_period`, but their values must exactly match the client's schedule
+and KES configuration. A relayer cannot change those values through an update.
+The initial epoch boundaries remain part of the trusted bootstrap configuration.
+An era that changes the epoch schedule needs an authenticated schedule transition
+before this verifier can support it.
+
+An accepted epoch context is canonical for that epoch. Later headers may repeat
+the same context. Different stake or nonce data for an already-known epoch is
+treated as misbehaviour and freezes the client after the evidence passes
+verification. Incorrect epoch boundaries or KES configuration fail verification.
+These checks do not authenticate the first supplied stake distribution or nonce.
 
 The static local Caribic devnet explicitly sets
 `CARDANO_STABILITY_ASSUME_STATIC_STAKE=1`. With that opt-in, Gateway normalizes
@@ -320,7 +335,7 @@ escrow, and voucher denominations therefore remain unchanged.
 The concrete protobuf client type must match. The subject and substitute must
 also have the same upgrade path, HostState NFT policy ID and token name, Cardano
 system start, slot length, slots per KES period, maximum KES evolutions,
-active-slot coefficient, and maximum clock drift. The
+active-slot coefficient, maximum clock drift, and epoch schedule. The
 substitute checkpoint must be strictly newer, its latest consensus and delay
 metadata must be present, and its operational-certificate counters may not
 regress. Recovery cannot be used to cross client types or move a route to a

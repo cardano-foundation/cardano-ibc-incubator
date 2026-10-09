@@ -248,6 +248,10 @@ func (cs ClientState) recoveryCheckpointTemporalCursor(
 }
 
 func IsMatchingClientState(subject, substitute ClientState) bool {
+	start, end, err := subject.epochSlotBounds(substitute.CurrentEpoch)
+	if err != nil || start != substitute.CurrentEpochStartSlot || end != substitute.CurrentEpochEndSlotExclusive {
+		return false
+	}
 	return reflect.DeepEqual(
 		recoveryInvariantProjection(subject),
 		recoveryInvariantProjection(substitute),

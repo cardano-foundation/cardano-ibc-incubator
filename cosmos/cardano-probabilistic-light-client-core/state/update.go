@@ -155,6 +155,9 @@ func (cs *ClientState) verifyHeaderWithMode(
 	if err != nil {
 		return err
 	}
+	if err := cs.validateEpochContextParameters(epochContexts); err != nil {
+		return err
+	}
 
 	authenticateHeader := mode.authenticateHeader
 	if authenticateHeader == nil {
@@ -571,6 +574,9 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 	epochContexts, err := mergeEpochContexts(currentEpochContexts, header.NewEpochContext)
 	if err != nil {
 		panic(fmt.Errorf("failed to merge epoch contexts for verified ProbabilisticHeader: %w", err))
+	}
+	if err := cs.validateEpochContextParameters(epochContexts); err != nil {
+		panic(fmt.Errorf("verified ProbabilisticHeader changed epoch schedule: %w", err))
 	}
 	trustedBlock, err := cs.trustedBlockStateAtHeight(clientStore, cdc, header.TrustedHeight)
 	if err != nil {
