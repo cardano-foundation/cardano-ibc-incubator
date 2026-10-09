@@ -124,7 +124,7 @@ describe('Ogmios stability verification parsing', () => {
     });
   });
 
-  it('keeps exact relative stake separately from the rounded scoring weight', () => {
+  it('keeps exact relative stake and an integer weight without rounding', () => {
     const [entry] = parseStakeDistributionRows(
       {},
       {
@@ -137,7 +137,7 @@ describe('Ogmios stability verification parsing', () => {
 
     expect(entry.relativeStakeNumerator).toBe(4_178_103_721_131n);
     expect(entry.relativeStakeDenominator).toBe(5_019_556_879_197_493n);
-    expect(entry.stake).toBe(832_365_052n);
+    expect(entry.stake).toBe(4_178_103_721_131n);
   });
 
   it('normalizes positive-stake pools over delegated stake for Praos leader verification', () => {
@@ -160,13 +160,11 @@ describe('Ogmios stability verification parsing', () => {
       [9n, 46n],
       [9n, 46n],
     ]);
-    expect(entries.map((entry) => entry.stake)).toEqual([
-      195_652_173_913n,
-      195_652_173_913n,
-      217_391_304_348n,
-      195_652_173_913n,
-      195_652_173_913n,
-    ]);
+    expect(entries.map((entry) => entry.stake)).toEqual([9n, 9n, 10n, 9n, 9n]);
+    const totalStake = entries.reduce((total, entry) => total + entry.stake, 0n);
+    for (const entry of entries) {
+      expect(entry.relativeStakeNumerator * totalStake).toBe(entry.stake * entry.relativeStakeDenominator);
+    }
   });
 
   it('does not add an unassigned entry when exact pool fractions already sum to one', () => {
@@ -184,6 +182,50 @@ describe('Ogmios stability verification parsing', () => {
       [1n, 2n],
       [1n, 2n],
     ]);
+  });
+
+  it('uses the same weights for equivalent fraction representations', () => {
+    const entries = parseStakeDistributionRows(
+      {},
+      {
+        pool1alpha: { stake: '2/4', vrf: 'a1'.repeat(32) },
+        pool1beta: { stake: '3/6', vrf: 'b2'.repeat(32) },
+      },
+      true,
+    );
+
+    expect(entries.map((entry) => entry.stake)).toEqual([1n, 1n]);
+  });
+
+  it('preserves a tiny pool share when total stake reaches the uint64 limit', () => {
+    const totalStake = (1n << 64n) - 1n;
+    const entries = parseStakeDistributionRows(
+      {},
+      {
+        pool1alpha: { stake: `1/${totalStake}`, vrf: 'a1'.repeat(32) },
+        pool1beta: { stake: `${totalStake - 1n}/${totalStake}`, vrf: 'b2'.repeat(32) },
+      },
+      true,
+    );
+
+    expect(entries.map((entry) => entry.stake)).toEqual([1n, totalStake - 1n]);
+  });
+
+  it('rejects fractions that cannot share exact uint64 weights', () => {
+    const first = 4_294_967_291n;
+    const second = 4_294_967_279n;
+    expect(() =>
+      parseStakeDistributionRows(
+        {},
+        {
+          pool1alpha: { stake: `1/${2n * first}`, vrf: 'a1'.repeat(32) },
+          pool1beta: { stake: `${first - 1n}/${2n * first}`, vrf: 'b2'.repeat(32) },
+          pool1gamma: { stake: `1/${2n * second}`, vrf: 'c3'.repeat(32) },
+          pool1delta: { stake: `${second - 1n}/${2n * second}`, vrf: 'd4'.repeat(32) },
+        },
+        true,
+      ),
+    ).toThrow('exact stake weights exceed protobuf uint64 bounds');
   });
 
   it('does not turn an all-zero pool map into synthetic stake', () => {

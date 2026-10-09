@@ -45,6 +45,67 @@ func TestValidateEpochContextRejectsInvalidRelativeStake(t *testing.T) {
 	}
 }
 
+func TestValidateEpochContextRelativeStakeMatchesAmounts(t *testing.T) {
+	maxStake := ^uint64(0)
+	testCases := []struct {
+		name         string
+		stakes       [2]uint64
+		numerators   [2]uint64
+		denominators [2]uint64
+		wantError    bool
+	}{
+		{
+			name:   "fractions sum to one but disagree with amounts",
+			stakes: [2]uint64{90, 10}, numerators: [2]uint64{1, 1}, denominators: [2]uint64{2, 2},
+			wantError: true,
+		},
+		{
+			name:   "matching reduced fractions",
+			stakes: [2]uint64{90, 10}, numerators: [2]uint64{9, 1}, denominators: [2]uint64{10, 10},
+		},
+		{
+			name:   "matching fractions with different denominators",
+			stakes: [2]uint64{90, 10}, numerators: [2]uint64{18, 1}, denominators: [2]uint64{20, 10},
+		},
+		{
+			name:   "zero amount with positive fraction",
+			stakes: [2]uint64{0, 100}, numerators: [2]uint64{1, 1}, denominators: [2]uint64{2, 2},
+			wantError: true,
+		},
+		{
+			name:   "matching fractions at uint64 total limit",
+			stakes: [2]uint64{maxStake - 1, 1}, numerators: [2]uint64{maxStake - 1, 1}, denominators: [2]uint64{maxStake, maxStake},
+		},
+		{
+			name:   "mismatch whose cross products agree after uint64 overflow",
+			stakes: [2]uint64{1, (1 << 63) - 1}, numerators: [2]uint64{3, (1 << 63) - 3}, denominators: [2]uint64{1 << 63, 1 << 63},
+			wantError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := cloneEpochContext(mustCurrentTestEpochContext(t, newProbabilisticTestClientState()))
+			first := ctx.StakeDistribution[0]
+			second := *first
+			second.PoolId = "pool-b"
+			ctx.StakeDistribution = []*StakeDistributionEntry{first, &second}
+			for i, entry := range ctx.StakeDistribution {
+				entry.Stake = testCase.stakes[i]
+				entry.RelativeStakeNumerator = testCase.numerators[i]
+				entry.RelativeStakeDenominator = testCase.denominators[i]
+			}
+
+			err := validateEpochContext(ctx)
+			if testCase.wantError {
+				require.ErrorContains(t, err, "must match stake divided by total stake")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestValidateEpochContextRejectsStakeWeightOverflow(t *testing.T) {
 	clientState := newProbabilisticTestClientState()
 	ctx := cloneEpochContext(mustCurrentTestEpochContext(t, clientState))

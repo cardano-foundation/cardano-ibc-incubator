@@ -129,6 +129,20 @@ func validateEpochContext(ctx *EpochContext) error {
 	if totalRelativeStake.Cmp(big.NewRat(1, 1)) != 0 {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d relative stake fractions must sum to one", ctx.Epoch)
 	}
+	// The amounts and fractions must describe the same distribution. This
+	// checks consistency of supplied data, not its agreement with Cardano's ledger.
+	// Exact rational comparison avoids rounding and uint64 multiplication overflow.
+	totalStakeInt := new(big.Int).SetUint64(totalStake)
+	for _, entry := range ctx.StakeDistribution {
+		suppliedFraction := new(big.Rat).SetFrac(
+			new(big.Int).SetUint64(entry.RelativeStakeNumerator),
+			new(big.Int).SetUint64(entry.RelativeStakeDenominator),
+		)
+		expectedFraction := new(big.Rat).SetFrac(new(big.Int).SetUint64(entry.Stake), totalStakeInt)
+		if suppliedFraction.Cmp(expectedFraction) != 0 {
+			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d relative stake for pool %s must match stake divided by total stake", ctx.Epoch, entry.PoolId)
+		}
+	}
 
 	return nil
 }
