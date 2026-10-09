@@ -89,6 +89,21 @@ func toCoreClientState(value *ClientState) *state.ClientState {
 		LatestCheckpointTimestamp:                       value.LatestCheckpointTimestamp,
 		PacketLanePolicyId:                              bytes.Clone(value.PacketLanePolicyId),
 		EpochContextChallenges:                          mapCoreSlice(value.EpochContextChallenges, toCoreEpochContextChallenge),
+		LatestCheckpointNonceState:                      toCorePraosNonceState(value.LatestCheckpointNonceState),
+		RandomnessStabilisationWindowSlots:              value.RandomnessStabilisationWindowSlots,
+	}
+}
+
+func toCorePraosNonceState(value *PraosNonceState) *state.PraosNonceState {
+	if value == nil {
+		return nil
+	}
+	return &state.PraosNonceState{
+		EpochNonce:            bytes.Clone(value.EpochNonce),
+		EvolvingNonce:         bytes.Clone(value.EvolvingNonce),
+		CandidateNonce:        bytes.Clone(value.CandidateNonce),
+		LastAppliedBlockNonce: bytes.Clone(value.LastAppliedBlockNonce),
+		LastEpochBlockNonce:   bytes.Clone(value.LastEpochBlockNonce),
 	}
 }
 
@@ -115,6 +130,7 @@ func toCoreConsensusState(value *ConsensusState) *state.ConsensusState {
 		UniqueStakeBps:      value.UniqueStakeBps,
 		SecurityScoreBps:    value.SecurityScoreBps,
 		PacketStateSnapshot: bytes.Clone(value.PacketStateSnapshot),
+		NonceState:          toCorePraosNonceState(value.NonceState),
 	}
 }
 
@@ -242,6 +258,21 @@ func fromCoreClientState(value *state.ClientState) *ClientState {
 		LatestCheckpointTimestamp:                       value.LatestCheckpointTimestamp,
 		PacketLanePolicyId:                              bytes.Clone(value.PacketLanePolicyId),
 		EpochContextChallenges:                          mapCoreSlice(value.EpochContextChallenges, fromCoreEpochContextChallenge),
+		LatestCheckpointNonceState:                      fromCorePraosNonceState(value.LatestCheckpointNonceState),
+		RandomnessStabilisationWindowSlots:              value.RandomnessStabilisationWindowSlots,
+	}
+}
+
+func fromCorePraosNonceState(value *state.PraosNonceState) *PraosNonceState {
+	if value == nil {
+		return nil
+	}
+	return &PraosNonceState{
+		EpochNonce:            bytes.Clone(value.EpochNonce),
+		EvolvingNonce:         bytes.Clone(value.EvolvingNonce),
+		CandidateNonce:        bytes.Clone(value.CandidateNonce),
+		LastAppliedBlockNonce: bytes.Clone(value.LastAppliedBlockNonce),
+		LastEpochBlockNonce:   bytes.Clone(value.LastEpochBlockNonce),
 	}
 }
 
@@ -268,6 +299,7 @@ func fromCoreConsensusState(value *state.ConsensusState) *ConsensusState {
 		UniqueStakeBps:      value.UniqueStakeBps,
 		SecurityScoreBps:    value.SecurityScoreBps,
 		PacketStateSnapshot: bytes.Clone(value.PacketStateSnapshot),
+		NonceState:          fromCorePraosNonceState(value.NonceState),
 	}
 }
 

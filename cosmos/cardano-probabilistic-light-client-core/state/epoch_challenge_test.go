@@ -19,7 +19,8 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 		header.AnchorBlock.Hash = full.Hash
 		hash = full.Hash
 		authenticated := newTemporalVerifierAuthenticatedHeader(t, cs, cs.LatestCheckpointBlockHash, hash, height, slot, epoch)
-		return header, func(*ProbabilisticHeader, []*EpochContext, map[string]uint64) (*authenticatedProbabilisticHeader, error) {
+		return header, func(_ *ProbabilisticHeader, contexts []*EpochContext, _ map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
+			authenticated.anchorNonceState = testNonceState(epochContextByEpoch(contexts, epoch).EpochNonce)
 			return authenticated, nil
 		}
 	}
@@ -61,12 +62,13 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, checkpoint.AnchorBlock.Hash, trusted.blockHash)
 	require.Equal(t, uint64(7), contexts[0].Epoch)
+	require.Equal(t, testNonceState(base.EpochNonce), trusted.nonceState)
 
 	// A second self-consistent context is evidence of disagreement. It must
 	// remain verifiable against the pre-proposal checkpoint after advancement.
 	honest := *proposal
 	honest.NewEpochContext = cloneEpochContext(proposal.NewEpochContext)
-	honest.NewEpochContext.EpochNonce = bytes.Repeat([]byte{0x99}, 32)
+	honest.NewEpochContext.StakeDistribution[0].VrfKeyHash = bytes.Repeat([]byte{0x99}, 32)
 	evidence := &Misbehaviour{ProbabilisticHeader1: proposal, ProbabilisticHeader2: &honest}
 	require.NoError(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, evidence, authenticateProposal))
 	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, store, evidence))
@@ -80,11 +82,11 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	oldAuthenticated := newTemporalVerifierAuthenticatedHeader(t, cs, checkpoint.AnchorBlock.Hash, oldBlock.Hash, 12, 971, 7)
 	mixedEvidence := &Misbehaviour{ProbabilisticHeader1: proposal, ProbabilisticHeader2: oldEpochWitness}
 	require.NoError(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, mixedEvidence,
-		func(header *ProbabilisticHeader, contexts []*EpochContext, counters map[string]uint64) (*authenticatedProbabilisticHeader, error) {
+		func(header *ProbabilisticHeader, contexts []*EpochContext, counters map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 			if header == oldEpochWitness {
 				return oldAuthenticated, nil
 			}
-			return authenticateProposal(header, contexts, counters)
+			return authenticateProposal(header, contexts, counters, nil)
 		}))
 	cs.UpdateStateOnMisbehaviour(ctx, cdc, store, evidence)
 	frozen, _ := GetClientState(store, cdc)
@@ -104,7 +106,7 @@ func TestPendingEpochCannotRollAgainToDiscardChallengeHistory(t *testing.T) {
 	header := newTemporalVerifierHeader(t, cs, "rollover", 11, 1_000, 8, true)
 	header.NewEpochContext = newTemporalVerifierEpochContext(8, 1_000, 2_000, 8)
 	authenticated := newTemporalVerifierAuthenticatedHeader(t, cs, "trusted-10", "rollover", 11, 1_000, 8)
-	err := cs.verifyHeaderWithAuthenticator(ctx, store, cdc, header, func(*ProbabilisticHeader, []*EpochContext, map[string]uint64) (*authenticatedProbabilisticHeader, error) {
+	err := cs.verifyHeaderWithAuthenticator(ctx, store, cdc, header, func(*ProbabilisticHeader, []*EpochContext, map[string]uint64, *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 		return authenticated, nil
 	})
 	require.ErrorIs(t, err, ErrEpochContextPending)

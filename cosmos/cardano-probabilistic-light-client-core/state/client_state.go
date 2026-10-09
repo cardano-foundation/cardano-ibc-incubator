@@ -58,6 +58,9 @@ func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc St
 	if cs.MaxClockDrift <= 0 {
 		return Expired
 	}
+	if err := cs.validateNonceConfiguration(); err != nil {
+		return Expired
+	}
 	if err := cs.validateCheckpointFields(); err != nil {
 		return Expired
 	}
@@ -90,6 +93,9 @@ func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
 }
 
 func (cs ClientState) Validate() error {
+	if err := cs.validateNonceConfiguration(); err != nil {
+		return err
+	}
 	if len(cs.PacketLanePolicyId) != 28 {
 		return fmt.Errorf("packet lane policy must be configured for this deployment")
 	}
@@ -158,17 +164,18 @@ func (cs ClientState) Validate() error {
 
 func (cs ClientState) ZeroCustomFields() *ClientState {
 	return &ClientState{
-		ChainId:                          cs.ChainId,
-		LatestHeight:                     cs.LatestHeight,
-		UpgradePath:                      append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:             append([]byte(nil), cs.HostStateNftPolicyId...),
-		HostStateNftTokenName:            append([]byte(nil), cs.HostStateNftTokenName...),
-		SystemStartUnixNs:                cs.SystemStartUnixNs,
-		SlotLengthNs:                     cs.SlotLengthNs,
-		SlotsPerKesPeriod:                cs.SlotsPerKesPeriod,
-		MaxKesEvolutions:                 cs.MaxKesEvolutions,
-		ActiveSlotCoefficientNumerator:   cs.ActiveSlotCoefficientNumerator,
-		ActiveSlotCoefficientDenominator: cs.ActiveSlotCoefficientDenominator,
+		ChainId:                            cs.ChainId,
+		LatestHeight:                       cs.LatestHeight,
+		UpgradePath:                        append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:               append([]byte(nil), cs.HostStateNftPolicyId...),
+		HostStateNftTokenName:              append([]byte(nil), cs.HostStateNftTokenName...),
+		SystemStartUnixNs:                  cs.SystemStartUnixNs,
+		SlotLengthNs:                       cs.SlotLengthNs,
+		SlotsPerKesPeriod:                  cs.SlotsPerKesPeriod,
+		RandomnessStabilisationWindowSlots: cs.RandomnessStabilisationWindowSlots,
+		MaxKesEvolutions:                   cs.MaxKesEvolutions,
+		ActiveSlotCoefficientNumerator:     cs.ActiveSlotCoefficientNumerator,
+		ActiveSlotCoefficientDenominator:   cs.ActiveSlotCoefficientDenominator,
 	}
 }
 
@@ -216,6 +223,13 @@ func (cs ClientState) Initialize(ctx Context, cdc StateCodec, clientStore storet
 	if !ok {
 		return errorsmod.Wrapf(ErrIBCInvalidConsensus, "invalid initial consensus state. expected type: %T, got: %T", &ConsensusState{}, consState)
 	}
+	if err := cs.validateNonceConfiguration(); err != nil {
+		return err
+	}
+	if consensusState.NonceState != nil && !praosNonceStatesEqual(consensusState.NonceState, cs.LatestCheckpointNonceState) {
+		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial consensus nonce state disagrees with client checkpoint")
+	}
+	consensusState.NonceState = clonePraosNonceState(cs.LatestCheckpointNonceState)
 	if _, err := cs.normalizedEpochContexts(); err != nil {
 		return err
 	}

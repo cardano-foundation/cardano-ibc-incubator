@@ -145,8 +145,7 @@ func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testin
 	authenticate := func(
 		_ *ProbabilisticHeader,
 		epochContexts []*EpochContext,
-		_ map[string]uint64,
-	) (*authenticatedProbabilisticHeader, error) {
+		_ map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 		require.NotNil(t, epochContextByEpoch(epochContexts, 7))
 		require.NotNil(t, epochContextByEpoch(epochContexts, 8))
 		return authenticated, nil
@@ -169,7 +168,7 @@ func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testin
 		clientStore,
 		cdc,
 		header,
-		func(*ProbabilisticHeader, []*EpochContext, map[string]uint64) (*authenticatedProbabilisticHeader, error) {
+		func(*ProbabilisticHeader, []*EpochContext, map[string]uint64, *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 			return duplicateSlot, nil
 		},
 	)
@@ -214,7 +213,7 @@ func TestNormalUpdateVerifierRejectsTemporalViolationsWithoutStoringConsensus(t 
 				clientStore,
 				cdc,
 				header,
-				func(*ProbabilisticHeader, []*EpochContext, map[string]uint64) (*authenticatedProbabilisticHeader, error) {
+				func(*ProbabilisticHeader, []*EpochContext, map[string]uint64, *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 					return authenticated, nil
 				},
 			)
@@ -457,6 +456,7 @@ func initializeTemporalVerifierClient(
 	clientState := newProbabilisticTestClientState()
 	setTemporalVerifierEpochContext(clientState, epochContext)
 	consensusState := newProbabilisticTestConsensusState(testBlockHash("trusted-10"))
+	consensusState.NonceState = clonePraosNonceState(clientState.LatestCheckpointNonceState)
 	consensusState.AcceptedEpoch = epochContext.Epoch
 	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, trustedSlot)
 	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
@@ -471,6 +471,7 @@ func setTemporalVerifierEpochContext(clientState *ClientState, epochContext *Epo
 	clientState.EpochContexts = []*EpochContext{cloneEpochContext(epochContext)}
 	clientState.EpochStakeDistribution = cloneStakeDistributionEntries(epochContext.StakeDistribution)
 	clientState.EpochNonce = bytes.Clone(epochContext.EpochNonce)
+	clientState.LatestCheckpointNonceState = testNonceState(epochContext.EpochNonce)
 	clientState.CurrentEpochStartSlot = epochContext.EpochStartSlot
 	clientState.CurrentEpochEndSlotExclusive = epochContext.EpochEndSlotExclusive
 }
@@ -590,11 +591,11 @@ func temporalVerifierAuthenticator(
 	t.Helper()
 	return func(
 		header *ProbabilisticHeader,
-		_ []*EpochContext,
-		_ map[string]uint64,
-	) (*authenticatedProbabilisticHeader, error) {
+		contexts []*EpochContext,
+		_ map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 		authenticated, found := authenticatedByHash[header.AnchorBlock.Hash]
 		require.True(t, found, "missing authenticated fixture for %s", header.AnchorBlock.Hash)
+		authenticated.anchorNonceState = testNonceState(epochContextByEpoch(contexts, authenticated.anchorBlock.epoch).EpochNonce)
 		return authenticated, nil
 	}
 }

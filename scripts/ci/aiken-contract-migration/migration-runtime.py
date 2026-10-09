@@ -6,8 +6,10 @@ test-only Cosmos clock image. Never connects to a live bridge or uses host keys.
 """
 import argparse
 import datetime
+from fractions import Fraction
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -137,6 +139,7 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
         'CARDANO_CHAIN_NETWORK_MAGIC': '42', 'CARDANO_CHAIN_ID': 'cardano-devnet', 'CARDANO_LIGHT_CLIENT_MODE': 'stake-weighted-stability',
         'CARDANO_EPOCH_LENGTH': str(genesis['epochLength']), 'CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS': '604800',
         'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS': '10',
+        'CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS': str(math.ceil(4 * genesis['securityParam'] / Fraction(str(genesis['activeSlotsCoeff'])))),
         'CARDANO_LOCAL_EPOCH_SNAPSHOT_DIR': str(runtime / 'epoch-stake'),
         'CARDANO_EPOCH_NONCE_GENESIS': hashlib.blake2b((runtime / 'runtime/genesis-shelley.json').read_bytes(), digest_size=32).hexdigest(),
         'OGMIOS_ENDPOINT': 'http://127.0.0.1:2637', 'KUPO_ENDPOINT': 'http://127.0.0.1:2742', 'YACI_STORE_ENDPOINT': 'http://127.0.0.1:29083',

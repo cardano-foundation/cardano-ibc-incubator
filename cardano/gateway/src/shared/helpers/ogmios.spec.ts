@@ -57,6 +57,7 @@ import {
   parseShelleyGenesisConfig,
   parseStakeDistributionRows,
   queryOperationalCertificateCountersAtPoint,
+  queryPraosNoncesAtPoint,
 } from './ogmios';
 
 describe('Ogmios stability verification parsing', () => {
@@ -65,6 +66,46 @@ describe('Ogmios stability verification parsing', () => {
     for (const key of Object.keys(mockOgmiosResponses)) {
       delete mockOgmiosResponses[key];
     }
+  });
+
+  it('loads bootstrap nonces at the exact acquired checkpoint and preserves neutral values', async () => {
+    mockOgmiosResponses['queryLedgerState/tip'] = { slot: 123, id: 'ab'.repeat(32) };
+    mockOgmiosResponses['queryLedgerState/nonces'] = {
+      epochNonce: '11'.repeat(32),
+      evolvingNonce: '22'.repeat(32),
+      candidateNonce: '33'.repeat(32),
+      lastEpochLastAncestor: null,
+    };
+    const state = await queryPraosNoncesAtPoint('ws://localhost:1337', { slot: 123n, hash: 'ab'.repeat(32) });
+    expect(Buffer.from(state.epoch_nonce).toString('hex')).toBe('11'.repeat(32));
+    expect(Buffer.from(state.evolving_nonce).toString('hex')).toBe('22'.repeat(32));
+    expect(Buffer.from(state.candidate_nonce).toString('hex')).toBe('33'.repeat(32));
+    expect(state.last_epoch_block_nonce).toHaveLength(0);
+    expect(mockOgmiosSockets[0].sent[0]).toMatchObject({
+      method: 'acquireLedgerState',
+      params: { point: { slot: 123, id: 'ab'.repeat(32) } },
+    });
+  });
+
+  it('rejects nonce queries at a different checkpoint', async () => {
+    mockOgmiosResponses['queryLedgerState/tip'] = { slot: 124, id: 'ab'.repeat(32) };
+    await expect(queryPraosNoncesAtPoint('ws://localhost:1337', { slot: 123n, hash: 'ab'.repeat(32) })).rejects.toThrow(
+      'did not acquire',
+    );
+    expect(mockOgmiosSockets[0].sent.some((request) => request.method === 'queryLedgerState/nonces')).toBe(false);
+  });
+
+  it.each([undefined, '', '01', 'z'.repeat(64)])('rejects missing or malformed nonce data: %s', async (value) => {
+    mockOgmiosResponses['queryLedgerState/tip'] = { slot: 123, id: 'ab'.repeat(32) };
+    mockOgmiosResponses['queryLedgerState/nonces'] = {
+      epochNonce: '11'.repeat(32),
+      evolvingNonce: value,
+      candidateNonce: '33'.repeat(32),
+      lastEpochLastAncestor: null,
+    };
+    await expect(queryPraosNoncesAtPoint('ws://localhost:1337', { slot: 123n, hash: 'ab'.repeat(32) })).rejects.toThrow(
+      'evolvingNonce is missing or invalid',
+    );
   });
 
   it('parses both KES parameters from the Shelley genesis response', () => {

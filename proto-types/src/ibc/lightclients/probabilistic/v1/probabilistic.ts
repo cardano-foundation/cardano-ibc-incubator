@@ -37,6 +37,9 @@ export interface StakeDistributionEntry {
 export interface EpochContext {
   epoch: bigint;
   stake_distribution: StakeDistributionEntry[];
+  /**
+   * Compatibility value. Must equal the nonce derived from checkpoint history.
+   */
   epoch_nonce: Uint8Array;
   slots_per_kes_period: bigint;
   epoch_start_slot: bigint;
@@ -116,6 +119,33 @@ export interface ClientState {
    * Initialize replaces any caller-supplied values with host-assigned times.
    */
   epoch_context_challenges: EpochContextChallenge[];
+  /**
+   * Required authenticated running state at latest_checkpoint_height.
+   */
+  latest_checkpoint_nonce_state?: PraosNonceState;
+  /**
+   * Established network parameter. Updates cannot redefine this window.
+   */
+  randomness_stabilisation_window_slots: bigint;
+}
+/**
+ * Babbage/Conway Praos state after applying the checkpoint header.
+ * Empty running nonce bytes represent Cardano's NeutralNonce identity. A
+ * missing message is unavailable state and must never be filled with defaults.
+ * @name PraosNonceState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PraosNonceState
+ */
+export interface PraosNonceState {
+  epoch_nonce: Uint8Array;
+  evolving_nonce: Uint8Array;
+  candidate_nonce: Uint8Array;
+  /**
+   * Derived from the previous-block hash in the last applied header,
+   * not from that header's own hash.
+   */
+  last_applied_block_nonce: Uint8Array;
+  last_epoch_block_nonce: Uint8Array;
 }
 /**
  * Host-chain timestamps assigned by the verifier, never by an update header.
@@ -144,6 +174,10 @@ export interface ConsensusState {
    * Canonical CBOR snapshot of live host and lane outputs at this height.
    */
   packet_state_snapshot: Uint8Array;
+  /**
+   * Running nonce values at this accepted block, excluding descendants.
+   */
+  nonce_state?: PraosNonceState;
 }
 /**
  * @name Misbehaviour
@@ -607,6 +641,8 @@ function createBaseClientState(): ClientState {
     latest_checkpoint_timestamp: BigInt(0),
     packet_lane_policy_id: new Uint8Array(),
     epoch_context_challenges: [],
+    latest_checkpoint_nonce_state: undefined,
+    randomness_stabilisation_window_slots: BigInt(0),
   };
 }
 /**
@@ -706,6 +742,12 @@ export const ClientState = {
     }
     for (const v of message.epoch_context_challenges) {
       EpochContextChallenge.encode(v!, writer.uint32(250).fork()).ldelim();
+    }
+    if (message.latest_checkpoint_nonce_state !== undefined) {
+      PraosNonceState.encode(message.latest_checkpoint_nonce_state, writer.uint32(258).fork()).ldelim();
+    }
+    if (message.randomness_stabilisation_window_slots !== BigInt(0)) {
+      writer.uint32(264).uint64(message.randomness_stabilisation_window_slots);
     }
     return writer;
   },
@@ -808,6 +850,12 @@ export const ClientState = {
         case 31:
           message.epoch_context_challenges.push(EpochContextChallenge.decode(reader, reader.uint32()));
           break;
+        case 32:
+          message.latest_checkpoint_nonce_state = PraosNonceState.decode(reader, reader.uint32());
+          break;
+        case 33:
+          message.randomness_stabilisation_window_slots = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -875,6 +923,12 @@ export const ClientState = {
     if (Array.isArray(object?.epoch_context_challenges))
       obj.epoch_context_challenges = object.epoch_context_challenges.map((e: any) =>
         EpochContextChallenge.fromJSON(e),
+      );
+    if (isSet(object.latest_checkpoint_nonce_state))
+      obj.latest_checkpoint_nonce_state = PraosNonceState.fromJSON(object.latest_checkpoint_nonce_state);
+    if (isSet(object.randomness_stabilisation_window_slots))
+      obj.randomness_stabilisation_window_slots = BigInt(
+        object.randomness_stabilisation_window_slots.toString(),
       );
     return obj;
   },
@@ -980,6 +1034,14 @@ export const ClientState = {
     } else {
       obj.epoch_context_challenges = [];
     }
+    message.latest_checkpoint_nonce_state !== undefined &&
+      (obj.latest_checkpoint_nonce_state = message.latest_checkpoint_nonce_state
+        ? PraosNonceState.toJSON(message.latest_checkpoint_nonce_state)
+        : undefined);
+    message.randomness_stabilisation_window_slots !== undefined &&
+      (obj.randomness_stabilisation_window_slots = (
+        message.randomness_stabilisation_window_slots || BigInt(0)
+      ).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1070,6 +1132,130 @@ export const ClientState = {
     message.packet_lane_policy_id = object.packet_lane_policy_id ?? new Uint8Array();
     message.epoch_context_challenges =
       object.epoch_context_challenges?.map((e) => EpochContextChallenge.fromPartial(e)) || [];
+    if (object.latest_checkpoint_nonce_state !== undefined && object.latest_checkpoint_nonce_state !== null) {
+      message.latest_checkpoint_nonce_state = PraosNonceState.fromPartial(
+        object.latest_checkpoint_nonce_state,
+      );
+    }
+    if (
+      object.randomness_stabilisation_window_slots !== undefined &&
+      object.randomness_stabilisation_window_slots !== null
+    ) {
+      message.randomness_stabilisation_window_slots = BigInt(
+        object.randomness_stabilisation_window_slots.toString(),
+      );
+    }
+    return message;
+  },
+};
+function createBasePraosNonceState(): PraosNonceState {
+  return {
+    epoch_nonce: new Uint8Array(),
+    evolving_nonce: new Uint8Array(),
+    candidate_nonce: new Uint8Array(),
+    last_applied_block_nonce: new Uint8Array(),
+    last_epoch_block_nonce: new Uint8Array(),
+  };
+}
+/**
+ * Babbage/Conway Praos state after applying the checkpoint header.
+ * Empty running nonce bytes represent Cardano's NeutralNonce identity. A
+ * missing message is unavailable state and must never be filled with defaults.
+ * @name PraosNonceState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PraosNonceState
+ */
+export const PraosNonceState = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PraosNonceState",
+  encode(message: PraosNonceState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch_nonce.length !== 0) {
+      writer.uint32(10).bytes(message.epoch_nonce);
+    }
+    if (message.evolving_nonce.length !== 0) {
+      writer.uint32(18).bytes(message.evolving_nonce);
+    }
+    if (message.candidate_nonce.length !== 0) {
+      writer.uint32(26).bytes(message.candidate_nonce);
+    }
+    if (message.last_applied_block_nonce.length !== 0) {
+      writer.uint32(34).bytes(message.last_applied_block_nonce);
+    }
+    if (message.last_epoch_block_nonce.length !== 0) {
+      writer.uint32(42).bytes(message.last_epoch_block_nonce);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PraosNonceState {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePraosNonceState();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch_nonce = reader.bytes();
+          break;
+        case 2:
+          message.evolving_nonce = reader.bytes();
+          break;
+        case 3:
+          message.candidate_nonce = reader.bytes();
+          break;
+        case 4:
+          message.last_applied_block_nonce = reader.bytes();
+          break;
+        case 5:
+          message.last_epoch_block_nonce = reader.bytes();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PraosNonceState {
+    const obj = createBasePraosNonceState();
+    if (isSet(object.epoch_nonce)) obj.epoch_nonce = bytesFromBase64(object.epoch_nonce);
+    if (isSet(object.evolving_nonce)) obj.evolving_nonce = bytesFromBase64(object.evolving_nonce);
+    if (isSet(object.candidate_nonce)) obj.candidate_nonce = bytesFromBase64(object.candidate_nonce);
+    if (isSet(object.last_applied_block_nonce))
+      obj.last_applied_block_nonce = bytesFromBase64(object.last_applied_block_nonce);
+    if (isSet(object.last_epoch_block_nonce))
+      obj.last_epoch_block_nonce = bytesFromBase64(object.last_epoch_block_nonce);
+    return obj;
+  },
+  toJSON(message: PraosNonceState): unknown {
+    const obj: any = {};
+    message.epoch_nonce !== undefined &&
+      (obj.epoch_nonce = base64FromBytes(
+        message.epoch_nonce !== undefined ? message.epoch_nonce : new Uint8Array(),
+      ));
+    message.evolving_nonce !== undefined &&
+      (obj.evolving_nonce = base64FromBytes(
+        message.evolving_nonce !== undefined ? message.evolving_nonce : new Uint8Array(),
+      ));
+    message.candidate_nonce !== undefined &&
+      (obj.candidate_nonce = base64FromBytes(
+        message.candidate_nonce !== undefined ? message.candidate_nonce : new Uint8Array(),
+      ));
+    message.last_applied_block_nonce !== undefined &&
+      (obj.last_applied_block_nonce = base64FromBytes(
+        message.last_applied_block_nonce !== undefined ? message.last_applied_block_nonce : new Uint8Array(),
+      ));
+    message.last_epoch_block_nonce !== undefined &&
+      (obj.last_epoch_block_nonce = base64FromBytes(
+        message.last_epoch_block_nonce !== undefined ? message.last_epoch_block_nonce : new Uint8Array(),
+      ));
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PraosNonceState>, I>>(object: I): PraosNonceState {
+    const message = createBasePraosNonceState();
+    message.epoch_nonce = object.epoch_nonce ?? new Uint8Array();
+    message.evolving_nonce = object.evolving_nonce ?? new Uint8Array();
+    message.candidate_nonce = object.candidate_nonce ?? new Uint8Array();
+    message.last_applied_block_nonce = object.last_applied_block_nonce ?? new Uint8Array();
+    message.last_epoch_block_nonce = object.last_epoch_block_nonce ?? new Uint8Array();
     return message;
   },
 };
@@ -1151,6 +1337,7 @@ function createBaseConsensusState(): ConsensusState {
     unique_stake_bps: BigInt(0),
     security_score_bps: BigInt(0),
     packet_state_snapshot: new Uint8Array(),
+    nonce_state: undefined,
   };
 }
 /**
@@ -1185,6 +1372,9 @@ export const ConsensusState = {
     if (message.packet_state_snapshot.length !== 0) {
       writer.uint32(66).bytes(message.packet_state_snapshot);
     }
+    if (message.nonce_state !== undefined) {
+      PraosNonceState.encode(message.nonce_state, writer.uint32(74).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -1218,6 +1408,9 @@ export const ConsensusState = {
         case 8:
           message.packet_state_snapshot = reader.bytes();
           break;
+        case 9:
+          message.nonce_state = PraosNonceState.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1238,6 +1431,7 @@ export const ConsensusState = {
       obj.security_score_bps = BigInt(object.security_score_bps.toString());
     if (isSet(object.packet_state_snapshot))
       obj.packet_state_snapshot = bytesFromBase64(object.packet_state_snapshot);
+    if (isSet(object.nonce_state)) obj.nonce_state = PraosNonceState.fromJSON(object.nonce_state);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
@@ -1260,6 +1454,8 @@ export const ConsensusState = {
       (obj.packet_state_snapshot = base64FromBytes(
         message.packet_state_snapshot !== undefined ? message.packet_state_snapshot : new Uint8Array(),
       ));
+    message.nonce_state !== undefined &&
+      (obj.nonce_state = message.nonce_state ? PraosNonceState.toJSON(message.nonce_state) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -1282,6 +1478,9 @@ export const ConsensusState = {
       message.security_score_bps = BigInt(object.security_score_bps.toString());
     }
     message.packet_state_snapshot = object.packet_state_snapshot ?? new Uint8Array();
+    if (object.nonce_state !== undefined && object.nonce_state !== null) {
+      message.nonce_state = PraosNonceState.fromPartial(object.nonce_state);
+    }
     return message;
   },
 };

@@ -161,10 +161,10 @@ func TestSignedBlockRejectsSuppliedEpochScheduleChanges(t *testing.T) {
 					block.HeaderCbor = fixture.headerCbor
 				}
 				// Establish that the untouched signature and VRF evidence is valid.
-				_, err := fixture.clientState.authenticateProbabilisticBlock(block, "bridge", []*EpochContext{fixture.epochContext}, map[string]uint64{}, false)
+				_, err := fixture.clientState.authenticateProbabilisticBlock(block, "bridge", []*EpochContext{fixture.epochContext}, map[string]uint64{}, false, testNonceTracker(t, block, []*EpochContext{fixture.epochContext}))
 				require.NoError(t, err)
 				tc.mutate(block, fixture.epochContext)
-				_, err = fixture.clientState.authenticateProbabilisticBlock(block, "bridge", []*EpochContext{fixture.epochContext}, map[string]uint64{}, false)
+				_, err = fixture.clientState.authenticateProbabilisticBlock(block, "bridge", []*EpochContext{fixture.epochContext}, map[string]uint64{}, false, testNonceTracker(t, block, []*EpochContext{fixture.epochContext}))
 				require.ErrorContains(t, err, tc.want)
 			})
 		}
@@ -189,7 +189,7 @@ func TestVerifyHeaderRejectsRedefinedScheduleBeforeAuthentication(t *testing.T) 
 				candidate.EpochEndSlotExclusive++
 				header := newTemporalVerifierHeader(t, cs, "untrusted-schedule", 11, slot, candidate.Epoch, checkpoint)
 				header.NewEpochContext = candidate
-				err := cs.verifyHeaderWithAuthenticator(ctx, store, cdc, header, func(*ProbabilisticHeader, []*EpochContext, map[string]uint64) (*authenticatedProbabilisticHeader, error) {
+				err := cs.verifyHeaderWithAuthenticator(ctx, store, cdc, header, func(*ProbabilisticHeader, []*EpochContext, map[string]uint64, *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
 					t.Fatal("invalid epoch schedule reached header authentication")
 					return nil, nil
 				})

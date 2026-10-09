@@ -19,6 +19,7 @@ import (
 const maxSupportedKesEvolutions = uint64(1 << 6)
 
 type NativeBlockVerificationResult struct {
+	VerifiedVrfOutput                    []byte
 	VrfKey                               []byte
 	OperationalCertificateSequenceNumber uint64
 }
@@ -362,6 +363,7 @@ func verifyNativeHeader(
 
 	return isKesValid, NativeBlockVerificationResult{
 		VrfKey:                               vrfKeyBytes,
+		VerifiedVrfOutput:                    bytes.Clone(vrfOutputBytes),
 		OperationalCertificateSequenceNumber: opCertSequenceNumber,
 	}, nil
 }

@@ -1,3 +1,9 @@
+import { Cbor, CborArray, CborBytes, CborUInt, CborSimple } from '@harmoniclabs/cbor';
+import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
+jest.mock('../../shared/helpers/ogmios', () => ({
+  ...jest.requireActual('../../shared/helpers/ogmios'),
+  queryPraosNoncesAtPoint: jest.fn(),
+}));
 import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
@@ -64,6 +70,7 @@ describe('QueryService stability anchor contract', () => {
     findTransactionEvidenceByHash: jest.Mock;
   };
   let miniProtocalsServiceMock: {
+    fetchBlockCbor: jest.Mock;
     fetchBlocksCbor: jest.Mock;
     extractBlockHeaderCbor: jest.Mock;
   };
@@ -79,6 +86,8 @@ describe('QueryService stability anchor contract', () => {
     const configServiceMock = {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'cardanoLightClientMode') return 'stake-weighted-stability';
+        if (key === 'ogmiosEndpoint') return 'ws://bootstrap-node';
+        if (key === 'cardanoRandomnessStabilisationWindowSlots') return '100';
         if (key === 'cardanoChainId') return 'cardano-devnet';
         if (key === 'cardanoNetwork') return 'Preview';
         if (key === 'cardanoClientMaxClockDriftSeconds') return 17;
@@ -235,9 +244,27 @@ describe('QueryService stability anchor contract', () => {
         },
       },
     };
+    (queryPraosNoncesAtPoint as jest.Mock).mockResolvedValue({
+      epoch_nonce: Buffer.from('11'.repeat(32), 'hex'),
+      evolving_nonce: Buffer.from('02'.repeat(32), 'hex'),
+      candidate_nonce: Buffer.from('03'.repeat(32), 'hex'),
+      last_epoch_block_nonce: Buffer.from('04'.repeat(32), 'hex'),
+    });
     miniProtocalsServiceMock = {
+      fetchBlockCbor: jest.fn().mockResolvedValue(Buffer.from([0])),
       fetchBlocksCbor: jest.fn().mockImplementation(async (blocks: unknown[]) => blocks.map(() => Buffer.from([1]))),
-      extractBlockHeaderCbor: jest.fn((blockCbor: Buffer) => Buffer.alloc(860, blockCbor[0] ?? 0)),
+      extractBlockHeaderCbor: jest.fn((blockCbor: Buffer) =>
+        blockCbor[0] === 0
+          ? Buffer.from(
+              Cbor.encode(
+                new CborArray([
+                  new CborArray([new CborUInt(100), new CborUInt(1000), new CborBytes(Buffer.alloc(32, 5))]),
+                  new CborBytes(new Uint8Array()),
+                ]),
+              ).toBuffer(),
+            )
+          : Buffer.alloc(860, blockCbor[0] ?? 0),
+      ),
     };
 
     service = new QueryService(
@@ -261,6 +288,34 @@ describe('QueryService stability anchor contract', () => {
     const consensus = ConsensusStateProbabilistic.decode(response.consensus_state!.value);
     expect(client.latest_height?.revision_height).toBe(100n);
     expect(consensus.packet_state_snapshot.length).toBeGreaterThan(0);
+  });
+
+  it('rejects a bootstrap node nonce that disagrees with the initial epoch context', async () => {
+    (queryPraosNoncesAtPoint as jest.Mock).mockResolvedValueOnce({
+      epoch_nonce: Buffer.alloc(32, 99),
+      evolving_nonce: Buffer.alloc(32, 2),
+      candidate_nonce: Buffer.alloc(32, 3),
+      last_epoch_block_nonce: Buffer.alloc(32, 4),
+    });
+    await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow('Bootstrap node nonce disagrees');
+  });
+
+  it('represents an authenticated genesis parent as NeutralNonce', async () => {
+    miniProtocalsServiceMock.extractBlockHeaderCbor.mockReturnValueOnce(
+      Buffer.from(
+        Cbor.encode(
+          new CborArray([
+            new CborArray([new CborUInt(100), new CborUInt(1000), CborSimple.null]),
+            new CborBytes(new Uint8Array()),
+          ]),
+        ).toBuffer(),
+      ),
+    );
+    const response = await service.queryNewClient({ height: 100n } as any);
+    expect(
+      ClientStateProbabilistic.decode(response.client_state!.value).latest_checkpoint_nonce_state
+        ?.last_applied_block_nonce,
+    ).toHaveLength(0);
   });
 
   it('populates flattened epoch verifier fields in the initial probabilistic client payload', async () => {
@@ -287,6 +342,10 @@ describe('QueryService stability anchor contract', () => {
     const clientState = ClientStateProbabilistic.decode(response.client_state!.value);
     const consensusState = ConsensusStateProbabilistic.decode(response.consensus_state!.value);
 
+    expect(queryPraosNoncesAtPoint).toHaveBeenCalledWith('ws://bootstrap-node', { slot: 1000n, hash: 'anchor-hash' });
+    expect(clientState.latest_checkpoint_nonce_state?.last_applied_block_nonce).toEqual(Buffer.alloc(32, 5));
+    expect(clientState.latest_checkpoint_nonce_state).toEqual(consensusState.nonce_state);
+    expect(clientState.randomness_stabilisation_window_slots).toBe(100n);
     expect(clientState.epoch_contexts).toHaveLength(1);
     expect(clientState.epoch_nonce).toHaveLength(32);
     expect(clientState.epoch_nonce).toEqual(clientState.epoch_contexts[0].epoch_nonce);

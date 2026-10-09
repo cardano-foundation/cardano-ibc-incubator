@@ -62,6 +62,16 @@ type ClientState struct {
 	LatestCheckpointTimestamp                       uint64                           `protobuf:"varint,29,opt,name=latest_checkpoint_timestamp,json=latestCheckpointTimestamp,proto3" json:"latest_checkpoint_timestamp,omitempty"`
 	PacketLanePolicyId                              []byte                           `protobuf:"bytes,30,opt,name=packet_lane_policy_id,json=packetLanePolicyId,proto3" json:"packet_lane_policy_id,omitempty"`
 	EpochContextChallenges                          []*EpochContextChallenge         `protobuf:"bytes,31,rep,name=epoch_context_challenges,json=epochContextChallenges,proto3" json:"epoch_context_challenges,omitempty"`
+	LatestCheckpointNonceState                      *PraosNonceState                 `protobuf:"bytes,32,opt,name=latest_checkpoint_nonce_state,json=latestCheckpointNonceState,proto3" json:"latest_checkpoint_nonce_state,omitempty"`
+	RandomnessStabilisationWindowSlots              uint64                           `protobuf:"varint,33,opt,name=randomness_stabilisation_window_slots,json=randomnessStabilisationWindowSlots,proto3" json:"randomness_stabilisation_window_slots,omitempty"`
+}
+
+type PraosNonceState struct {
+	EpochNonce            []byte `protobuf:"bytes,1,opt,name=epoch_nonce,json=epochNonce,proto3" json:"epoch_nonce,omitempty"`
+	EvolvingNonce         []byte `protobuf:"bytes,2,opt,name=evolving_nonce,json=evolvingNonce,proto3" json:"evolving_nonce,omitempty"`
+	CandidateNonce        []byte `protobuf:"bytes,3,opt,name=candidate_nonce,json=candidateNonce,proto3" json:"candidate_nonce,omitempty"`
+	LastAppliedBlockNonce []byte `protobuf:"bytes,4,opt,name=last_applied_block_nonce,json=lastAppliedBlockNonce,proto3" json:"last_applied_block_nonce,omitempty"`
+	LastEpochBlockNonce   []byte `protobuf:"bytes,5,opt,name=last_epoch_block_nonce,json=lastEpochBlockNonce,proto3" json:"last_epoch_block_nonce,omitempty"`
 }
 
 type EpochContextChallenge struct {
@@ -70,14 +80,15 @@ type EpochContextChallenge struct {
 }
 
 type ConsensusState struct {
-	Timestamp           uint64 `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	IbcStateRoot        []byte `protobuf:"bytes,2,opt,name=ibc_state_root,json=ibcStateRoot,proto3" json:"ibc_state_root,omitempty"`
-	AcceptedBlockHash   string `protobuf:"bytes,3,opt,name=accepted_block_hash,json=acceptedBlockHash,proto3" json:"accepted_block_hash,omitempty"`
-	AcceptedEpoch       uint64 `protobuf:"varint,4,opt,name=accepted_epoch,json=acceptedEpoch,proto3" json:"accepted_epoch,omitempty"`
-	UniquePoolsCount    uint64 `protobuf:"varint,5,opt,name=unique_pools_count,json=uniquePoolsCount,proto3" json:"unique_pools_count,omitempty"`
-	UniqueStakeBps      uint64 `protobuf:"varint,6,opt,name=unique_stake_bps,json=uniqueStakeBps,proto3" json:"unique_stake_bps,omitempty"`
-	SecurityScoreBps    uint64 `protobuf:"varint,7,opt,name=security_score_bps,json=securityScoreBps,proto3" json:"security_score_bps,omitempty"`
-	PacketStateSnapshot []byte `protobuf:"bytes,8,opt,name=packet_state_snapshot,json=packetStateSnapshot,proto3" json:"packet_state_snapshot,omitempty"`
+	Timestamp           uint64           `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	IbcStateRoot        []byte           `protobuf:"bytes,2,opt,name=ibc_state_root,json=ibcStateRoot,proto3" json:"ibc_state_root,omitempty"`
+	AcceptedBlockHash   string           `protobuf:"bytes,3,opt,name=accepted_block_hash,json=acceptedBlockHash,proto3" json:"accepted_block_hash,omitempty"`
+	AcceptedEpoch       uint64           `protobuf:"varint,4,opt,name=accepted_epoch,json=acceptedEpoch,proto3" json:"accepted_epoch,omitempty"`
+	UniquePoolsCount    uint64           `protobuf:"varint,5,opt,name=unique_pools_count,json=uniquePoolsCount,proto3" json:"unique_pools_count,omitempty"`
+	UniqueStakeBps      uint64           `protobuf:"varint,6,opt,name=unique_stake_bps,json=uniqueStakeBps,proto3" json:"unique_stake_bps,omitempty"`
+	SecurityScoreBps    uint64           `protobuf:"varint,7,opt,name=security_score_bps,json=securityScoreBps,proto3" json:"security_score_bps,omitempty"`
+	PacketStateSnapshot []byte           `protobuf:"bytes,8,opt,name=packet_state_snapshot,json=packetStateSnapshot,proto3" json:"packet_state_snapshot,omitempty"`
+	NonceState          *PraosNonceState `protobuf:"bytes,9,opt,name=nonce_state,json=nonceState,proto3" json:"nonce_state,omitempty"`
 }
 
 type Misbehaviour struct {

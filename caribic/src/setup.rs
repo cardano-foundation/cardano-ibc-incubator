@@ -1373,6 +1373,7 @@ fn write_gateway_env_for_network(
                 "CARDANO_CHAIN_HOST",
                 "CARDANO_CHAIN_PORT",
                 "CARDANO_EPOCH_LENGTH",
+                "CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS",
                 "CARDANO_EPOCH_PARAMS_ENDPOINT",
                 "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT",
                 "CARDANO_DOCKER_NETWORK",
@@ -1421,6 +1422,13 @@ fn write_gateway_env_for_network(
             remove_env_var(&gateway_env, "CARDANO_STABILITY_ASSUME_STATIC_STAKE")?;
             remove_env_var(&gateway_env, "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE")?;
             let epoch_length = network.epoch_length().to_string();
+            // Public testnets currently use Conway's 4*k/f window. These
+            // values follow their Shelley genesis security parameter and f.
+            let randomness_window = if network == config::CoreCardanoNetwork::Preview {
+                "34560"
+            } else {
+                "172800"
+            };
             let preprod_kupo_mode = resolve_preprod_kupo_mode(&gateway_env)?;
             set_or_append_env_var(
                 &gateway_env,
@@ -1444,6 +1452,10 @@ fn write_gateway_env_for_network(
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
                 ("CARDANO_EPOCH_LENGTH", epoch_length.as_str()),
+                (
+                    "CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS",
+                    randomness_window,
+                ),
             ];
             for (key, value) in public_testnet_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;

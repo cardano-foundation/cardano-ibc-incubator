@@ -632,6 +632,32 @@ const queryEpochContextAtPoint = async (
   });
 };
 
+// Bootstrap only. These node answers become part of an explicitly trusted
+// starting checkpoint. Subsequent epochs are derived by the Cosmos client.
+const queryPraosNoncesAtPoint = async (ogmiosUrl: string, point: OgmiosLedgerPoint) => {
+  return withAcquiredLedgerState(ogmiosUrl, point, async (session) => {
+    const tip = await session.request<{ slot: number | string; id: string }>('queryLedgerState/tip', {});
+    if (!tip || BigInt(tip.slot) !== BigInt(point.slot) || tip.id?.toLowerCase() !== point.hash.toLowerCase()) {
+      throw new Error('Praos bootstrap query did not acquire the requested checkpoint');
+    }
+    const nonces = await session.request<Record<string, unknown>>('queryLedgerState/nonces', {});
+    const parse = (field: string, allowNeutral = true): Uint8Array => {
+      const value = nonces?.[field];
+      if (allowNeutral && value === null) return new Uint8Array();
+      if (typeof value !== 'string' || !/^[0-9a-fA-F]{64}$/.test(value)) {
+        throw new Error(`Praos bootstrap ${field} is missing or invalid`);
+      }
+      return Buffer.from(value, 'hex');
+    };
+    return {
+      epoch_nonce: parse('epochNonce', false),
+      evolving_nonce: parse('evolvingNonce'),
+      candidate_nonce: parse('candidateNonce'),
+      last_epoch_block_nonce: parse('lastEpochLastAncestor'),
+    };
+  });
+};
+
 const queryOperationalCertificateCountersAtPoint = async (
   ogmiosUrl: string,
   point: OgmiosLedgerPoint,
@@ -684,6 +710,7 @@ export {
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
   queryOperationalCertificateCountersAtPoint,
+  queryPraosNoncesAtPoint,
   type OgmiosCurrentEpochStakeDistributionEntry,
   type OgmiosCurrentEpochVerificationData,
   type OgmiosEpochContextAtPoint,
