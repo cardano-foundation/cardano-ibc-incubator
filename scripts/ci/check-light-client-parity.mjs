@@ -252,13 +252,21 @@ function listFiles(dir, predicate, base = dir) {
 function assertFileInventory() {
   const relevant = (filePath) =>
     filePath.endsWith(".go") || filePath.endsWith(".proto");
-  const expectedV8 = [...sharedSourceFiles, "module.go", protoFile].sort();
+  // Recovery app fixtures use version-specific keeper and module APIs.
+  // Require both files without treating their adapter wiring as shared source.
+  const expectedV8 = [
+    ...sharedSourceFiles,
+    "module.go",
+    "recovery_app_test.go",
+    protoFile,
+  ].sort();
   const expectedV10 = [
     ...sharedSourceFiles,
     "events_test.go",
     "ordered_timeout_test.go",
     "light_client_module.go",
     "module.go",
+    "recovery_app_test.go",
     protoFile,
   ].sort();
 

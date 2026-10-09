@@ -1,69 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TRANSFER_ESCROW_SHARD_REGISTERED_VALUE = void 0;
-exports.transferEscrowShardTokenName = transferEscrowShardTokenName;
-exports.transferEscrowShardRegistryKey = transferEscrowShardRegistryKey;
-exports.escrowDenomTokenFromPacketDenom = escrowDenomTokenFromPacketDenom;
+exports.TRANSFER_ESCROW_SHARD_REGISTERED_VALUE = exports.transferEscrowShardTokenName = exports.transferEscrowShardRegistryKey = exports.escrowDenomTokenFromPacketDenom = void 0;
 exports.getTransferModuleRootFromAddressScan = getTransferModuleRootFromAddressScan;
 exports.findTransferEscrowShard = findTransferEscrowShard;
-const blake2b_1 = require("@noble/hashes/blake2b");
 const ics23MerkleTree_1 = require("./ics23MerkleTree");
-const TRANSFER_ESCROW_SHARD_NAME_DOMAIN = Buffer.from('cardano-ibc/transfer-escrow-shard/v1', 'utf8');
+const transferEscrowIdentity_1 = require("./transferEscrowIdentity");
+var transferEscrowIdentity_2 = require("./transferEscrowIdentity");
+Object.defineProperty(exports, "escrowDenomTokenFromPacketDenom", { enumerable: true, get: function () { return transferEscrowIdentity_2.escrowDenomTokenFromPacketDenom; } });
+Object.defineProperty(exports, "transferEscrowShardRegistryKey", { enumerable: true, get: function () { return transferEscrowIdentity_2.transferEscrowShardRegistryKey; } });
+Object.defineProperty(exports, "transferEscrowShardTokenName", { enumerable: true, get: function () { return transferEscrowIdentity_2.transferEscrowShardTokenName; } });
 exports.TRANSFER_ESCROW_SHARD_REGISTERED_VALUE = Buffer.from([1]);
 const EMPTY_REGISTRY_ROOT = '00'.repeat(32);
-const UINT32_MAX = 0xffff_ffff;
 const defaultError = (message) => new Error(message);
 function utxoRef(utxo) {
     return `${utxo.txHash}#${utxo.outputIndex}`;
-}
-function decodeHexBytes(value, label) {
-    if (value.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(value)) {
-        throw new Error(`${label} must be an even-length hexadecimal string`);
-    }
-    return Buffer.from(value, 'hex');
-}
-function uint32BigEndian(value) {
-    if (!Number.isSafeInteger(value) || value < 0 || value > UINT32_MAX) {
-        throw new Error(`Escrow shard framing length ${value} exceeds uint32`);
-    }
-    const encoded = Buffer.alloc(4);
-    encoded.writeUInt32BE(value);
-    return encoded;
-}
-function transferEscrowShardTokenName(channelId, packetDenom) {
-    const channelBytes = decodeHexBytes(channelId, 'channelId');
-    const denomBytes = decodeHexBytes(packetDenom, 'packetDenom');
-    return Buffer.from((0, blake2b_1.blake2b)(Buffer.concat([
-        TRANSFER_ESCROW_SHARD_NAME_DOMAIN,
-        Buffer.from([0]),
-        uint32BigEndian(channelBytes.length),
-        channelBytes,
-        uint32BigEndian(denomBytes.length),
-        denomBytes,
-    ]), { dkLen: 28 })).toString('hex');
-}
-function transferEscrowShardRegistryKey(tokenName) {
-    if (!/^[0-9a-fA-F]{56}$/.test(tokenName)) {
-        throw new Error('Escrow shard token name must be a 28-byte hexadecimal string');
-    }
-    return `escrowShards/${tokenName.toLowerCase()}`;
-}
-function escrowDenomTokenFromPacketDenom(encodedDenom) {
-    const packetDenomBytes = decodeHexBytes(encodedDenom, 'transfer escrow shard datum denom');
-    const packetDenom = packetDenomBytes.toString('utf8');
-    if (!Buffer.from(packetDenom, 'utf8').equals(packetDenomBytes)) {
-        throw new Error('Transfer escrow shard datum denom is not canonical UTF-8');
-    }
-    if (packetDenom.toLowerCase() === Buffer.from('lovelace').toString('hex')) {
-        return 'lovelace';
-    }
-    if (!/^(?:[0-9a-fA-F]{2})+$/.test(packetDenom)) {
-        throw new Error('Transfer escrow shard datum contains a non-hex denomination');
-    }
-    if (packetDenom.length < 56 || packetDenom.length > 120) {
-        throw new Error('Transfer escrow shard datum contains an invalid Cardano asset unit');
-    }
-    return packetDenom.toLowerCase();
 }
 function getTransferModuleRootFromAddressScan(utxos, transferModuleIdentifier, failedPrecondition = defaultError) {
     const holders = utxos.filter((utxo) => Object.prototype.hasOwnProperty.call(utxo.assets ?? {}, transferModuleIdentifier));
@@ -96,7 +46,7 @@ async function findTransferEscrowShard(dependencies, channelId, packetDenom, den
     if (!/^[0-9a-f]{56}$/.test(shardPolicyId)) {
         throw failedPrecondition('Transfer escrow shard policy id must be 28 lowercase hexadecimal bytes');
     }
-    const canonicalRequestedDenom = escrowDenomTokenFromPacketDenom(packetDenom);
+    const canonicalRequestedDenom = (0, transferEscrowIdentity_1.escrowDenomTokenFromPacketDenom)(packetDenom);
     if (denomToken.trim().toLowerCase() !== canonicalRequestedDenom) {
         throw invalidArgument(`Requested asset ${denomToken} does not match escrow shard denom ${canonicalRequestedDenom}`);
     }
@@ -105,7 +55,7 @@ async function findTransferEscrowShard(dependencies, channelId, packetDenom, den
         denom: packetDenom,
         escrowed_amount: balanceDelta,
     });
-    const shardTokenName = transferEscrowShardTokenName(channelId, packetDenom);
+    const shardTokenName = (0, transferEscrowIdentity_1.transferEscrowShardTokenName)(channelId, packetDenom);
     const shardTokenUnit = shardPolicyId + shardTokenName;
     // One plural provider query gives the root and every shard from the same view.
     const moduleUtxos = await dependencies.findUtxosAt(transferModuleAddress);
@@ -154,8 +104,8 @@ async function findTransferEscrowShard(dependencies, channelId, packetDenom, den
         let canonicalDatum;
         try {
             shardDatum = await dependencies.decodeTransferEscrowDatum(candidate.datum);
-            canonicalDenomToken = escrowDenomTokenFromPacketDenom(shardDatum.denom);
-            tokenName = transferEscrowShardTokenName(shardDatum.channel_id, shardDatum.denom);
+            canonicalDenomToken = (0, transferEscrowIdentity_1.escrowDenomTokenFromPacketDenom)(shardDatum.denom);
+            tokenName = (0, transferEscrowIdentity_1.transferEscrowShardTokenName)(shardDatum.channel_id, shardDatum.denom);
             if (typeof shardDatum.escrowed_amount !== 'bigint' || shardDatum.escrowed_amount < 0n ||
                 (candidate.assets[canonicalDenomToken] ?? 0n) < shardDatum.escrowed_amount) {
                 throw new Error('Escrow deposit balance is missing, negative, or exceeds its funds');
@@ -177,13 +127,13 @@ async function findTransferEscrowShard(dependencies, channelId, packetDenom, den
             throw failedPrecondition(`Duplicate escrow shard holders found for ${unit}`);
         }
         canonicalShards.set(unit, candidate);
-        tree.set(transferEscrowShardRegistryKey(tokenName), exports.TRANSFER_ESCROW_SHARD_REGISTERED_VALUE);
+        tree.set((0, transferEscrowIdentity_1.transferEscrowShardRegistryKey)(tokenName), exports.TRANSFER_ESCROW_SHARD_REGISTERED_VALUE);
     }
     const reconstructedRoot = registryRoot(tree, failedPrecondition);
     if (reconstructedRoot !== onChainRoot) {
         throw failedPrecondition(`Transfer escrow shard registry root mismatch: datum=${onChainRoot}, reconstructed=${reconstructedRoot}`);
     }
-    const registryKey = transferEscrowShardRegistryKey(shardTokenName);
+    const registryKey = (0, transferEscrowIdentity_1.transferEscrowShardRegistryKey)(shardTokenName);
     const siblings = registrySiblings(tree, registryKey, failedPrecondition);
     const matchingUtxo = canonicalShards.get(shardTokenUnit);
     if (matchingUtxo) {
