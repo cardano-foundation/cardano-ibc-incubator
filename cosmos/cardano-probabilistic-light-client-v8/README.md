@@ -59,6 +59,19 @@ Exact wiring varies by chain, but the app must register the concrete client type
 
 The chain's IBC client params must allow `08-cardano-probabilistic`. If the params are restricted to only `06-solomachine` and `07-tendermint`, `MsgCreateClient` will still fail even if the Go code is compiled into the binary.
 
+## Commitment Paths
+
+Membership and non-membership verification accept only a two-component
+Merkle path: `["ibc", "<IBC object key>"]`, with a nonempty object key.
+The `ibc` namespace matches Cardano's on-chain `default_merkle_prefix` in
+`ics-024-host-requirements/connection_keys.ak`; it is not configurable.
+Paths with missing, different, or extra prefix components are rejected.
+
+After validating the full path, the adapter removes the namespace because
+`ibc_state_root` commits directly to object keys. Consensus-state keys retain
+the existing translation from `consensusStates/<revisionNumber>-<revisionHeight>`
+to Cardano's `consensusStates/<revisionHeight>` format.
+
 ## Release Tags
 
 Because this is a nested Go module, release tags must be prefixed with the module directory:
