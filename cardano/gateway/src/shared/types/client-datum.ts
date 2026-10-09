@@ -68,6 +68,7 @@ export async function encodeClientDatum(
       height(value.frozenHeight),
       height(value.latestHeight),
       list(value.proofSpecs.map(proofSpec)),
+      list(value.upgradePath.map(bytes)),
     ]);
   const consensusState = (value: any) =>
     constr(0, [int(value.timestamp), bytes(value.next_validators_hash), constr(0, [bytes(value.root.hash)])]);
@@ -133,6 +134,7 @@ export async function decodeClientDatum(
     frozenHeight: HeightSchema,
     latestHeight: HeightSchema,
     proofSpecs: Data.Array(ProofSpecSchema),
+    upgradePath: Data.Array(Data.Bytes()),
   });
 
   const MerkleRootSchema = Data.Object({

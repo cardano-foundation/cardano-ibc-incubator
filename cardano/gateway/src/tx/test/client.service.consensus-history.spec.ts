@@ -14,7 +14,8 @@ async function context() {
     history_root: '00'.repeat(32),
     token,
     state: {
-      clientState: { chainId: 'aa', trustLevel: { numerator: 1n, denominator: 3n }, trustingPeriod: 100n, unbondingPeriod: 200n, maxClockDrift: 10n, frozenHeight: height(0n), latestHeight: height(2n), proofSpecs: [] },
+      clientState: {
+    upgradePath: [], chainId: 'aa', trustLevel: { numerator: 1n, denominator: 3n }, trustingPeriod: 100n, unbondingPeriod: 200n, maxClockDrift: 10n, frozenHeight: height(0n), latestHeight: height(2n), proofSpecs: [] },
       consensusStates: new Map([[height(2n), tipConsensus]]),
       processedTimes: new Map([[height(2n), 320n]]),
       processedHeights: new Map([[height(2n), 30n]]),

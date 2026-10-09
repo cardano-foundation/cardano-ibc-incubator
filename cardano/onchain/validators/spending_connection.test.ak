@@ -145,6 +145,7 @@ fn setup() -> MockData {
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain1-1",
       trust_level: unchecked_rational.from_int(1),
       trusting_period: 1209600000000000,

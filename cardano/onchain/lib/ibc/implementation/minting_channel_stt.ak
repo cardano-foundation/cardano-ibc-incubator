@@ -213,9 +213,7 @@ pub fn validate_create(
   let valid_feature =
     order.string(channel_output_datum.state.channel.ordering)
       |> version.verify_supported_feature(connection_version, _)
-  let channel_id =
-    text_bytes.int_to_decimal_bytes(channel_id_sequence)
-      |> channel_keys.format_channel_identifier()
+  let channel_id = channel_keys.format_channel_identifier(id_str)
   let ibc_module_redeemer =
     validator_utils.extract_module_redeemer(
       inputs,

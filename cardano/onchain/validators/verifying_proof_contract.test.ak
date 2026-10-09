@@ -83,6 +83,7 @@ fn proof_specs() -> List<ProofSpec> {
 
 fn client_state() -> ClientState {
   ClientState {
+    upgrade_path: [],
     chain_id: "testchain1-1",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
     trusting_period: 1209600000000000,

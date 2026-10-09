@@ -5,7 +5,7 @@ use aiken/primitive/bytearray
 use cardano/address.{Credential, Script}
 use cardano/assets.{PolicyId}
 use cardano/certificate.{Certificate, UnregisterCredential}
-use cardano/transaction.{Spend, Transaction}
+use cardano/transaction.{Mint, Spend, Transaction}
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/shutdown as transfer_shutdown
 use ibc/apps/transfer/types/transfer_module_datum.{
@@ -18,12 +18,16 @@ use ibc/client/ics_007_tendermint_client/client_redeemer.{
   CheckClientHistory, CheckStagedClientHistory, ReclaimStateWithdrawal,
   ReclaimTransferWithdrawal, RecoverClient, RecoverClientWithdrawal,
   RecoverClientWithdrawalRedeemer, SpendClientRedeemer, UpdateClient,
+  UpgradeClient, UpgradeClientWithdrawal,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/height
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer as staged_client
+use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+  VerifyClientUpgrade, VerifyProofEnvelope,
+}
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostStateDatum, host_state_token_name,
@@ -31,7 +35,10 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/utils/shutdown
 use ibc/utils/validator_utils
 
-validator recover_client(host_state_nft_policy_id: PolicyId) {
+validator recover_client(
+  host_state_nft_policy_id: PolicyId,
+  upgrade_proof_policy: PolicyId,
+) {
   withdraw(
     redeemer: RecoverClientWithdrawalRedeemer,
     _credential: Credential,
@@ -109,6 +116,7 @@ validator recover_client(host_state_nft_policy_id: PolicyId) {
         let subject_token =
           when redeemer is {
             RecoverClientWithdrawal { subject_token, .. } -> subject_token
+            UpgradeClientWithdrawal { subject_token } |
             CheckClientHistory { subject_token } |
             CheckStagedClientHistory { subject_token } -> subject_token
             _ -> fail
@@ -138,6 +146,28 @@ validator recover_client(host_state_nft_policy_id: PolicyId) {
 
         when redeemer is {
           ReclaimStateWithdrawal | ReclaimTransferWithdrawal { .. } -> fail
+          UpgradeClientWithdrawal { .. } -> {
+            if builtin.fst_pair(builtin.un_constr_data(raw_spend_redeemer)) == 3 {
+              expect UpgradeClient: SpendClientRedeemer = raw_spend_redeemer
+            } else {
+              expect staged_client.UpgradeClient: staged_client.SpendMultitxClientRedeemer =
+                raw_spend_redeemer
+            }
+            expect Some(raw_proof) =
+              pairs.get_first(redeemers, Mint(upgrade_proof_policy))
+            expect envelope: VerifyProofEnvelope = raw_proof
+            expect VerifyClientUpgrade { input, output, .. } = envelope.proof
+            and {
+              input == subject_datum,
+              output == recovered_datum,
+              validator_utils.require_exact_marker_mint(
+                transaction.mint,
+                upgrade_proof_policy,
+                "",
+                1,
+              ),
+            }
+          }
           CheckStagedClientHistory { .. } -> {
             expect spend: staged_client.SpendMultitxClientRedeemer =
               raw_spend_redeemer

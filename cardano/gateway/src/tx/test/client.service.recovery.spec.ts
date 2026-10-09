@@ -29,6 +29,7 @@ function clientDatum(
     token: { policyId: '11'.repeat(28), name: Buffer.from(latestHeight.toString()).toString('hex') },
     state: {
       clientState: {
+        upgradePath: [],
         chainId: options.chainId ?? Buffer.from('chain-0').toString('hex'),
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 100n,

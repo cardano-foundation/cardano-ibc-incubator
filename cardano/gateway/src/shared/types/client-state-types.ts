@@ -13,4 +13,5 @@ export type ClientState = {
   frozenHeight: Height;
   latestHeight: Height;
   proofSpecs: ProofSpec[];
+  upgradePath: string[];
 };

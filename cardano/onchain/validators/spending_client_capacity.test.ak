@@ -160,6 +160,7 @@ fn prepare_update_client_capacity(
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "injective-1",
       trust_level: unchecked_rational.new(1, 3),
       trusting_period: 1_209_600_000_000_000,
@@ -319,6 +320,7 @@ fn check_capacity_component(
     fn() {
       recover_client.recover_client.withdraw(
         fixture.host_state_nft_policy_id,
+        #"",
         support,
         credential,
         supported,
@@ -491,6 +493,7 @@ test support_rejects_another_clients_spend_redeemer() fail {
   let credential = Script("mock recover client script hash")
   recover_client.recover_client.withdraw(
     fixture.host_state_nft_policy_id,
+    #"",
     CheckClientHistory {
       subject_token: AuthToken { ..client.token, name: #"ff" },
     },
@@ -564,6 +567,7 @@ fn check_historical_support(tamper_metadata: Bool, tamper_root: Bool) -> Bool {
     }
   recover_client.recover_client.withdraw(
     fixture.host_state_nft_policy_id,
+    #"",
     CheckClientHistory { subject_token: old.token },
     Script("mock recover client script hash"),
     transaction,

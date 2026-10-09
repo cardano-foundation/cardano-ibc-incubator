@@ -91,6 +91,7 @@ function client(n: number): ClientDatum {
     history_root: hash(n - 1),
     state: {
       clientState: {
+        upgradePath: [],
         chainId: hex('chain-0'),
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 100n,
