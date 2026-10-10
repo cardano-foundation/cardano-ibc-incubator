@@ -505,7 +505,8 @@ test regression_model_packet_send_ack_valid_sequence() {
   // final model must have no outstanding commitment for that packet sequence.
   let packet = base_packet(11)
   let initial_model =
-    base_datum(Unordered, packet.sequence) |> model_from_channel
+    base_datum(Unordered, packet.sequence)
+      |> model_from_channel
   let sent_model = model_send_packet(initial_model, packet)
   let acked_model = model_ack_packet(sent_model, packet)
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -544,7 +545,8 @@ test regression_model_packet_send_recv_ack_sequence() {
       destination_channel: "channel-0",
     }
   let initial_model =
-    base_datum(Unordered, outbound_packet.sequence) |> model_from_channel
+    base_datum(Unordered, outbound_packet.sequence)
+      |> model_from_channel
   let sent_model = model_send_packet(initial_model, outbound_packet)
   let recv_ack = "recv-ack-commitment"
   let received_model = model_recv_packet(sent_model, inbound_packet, recv_ack)
@@ -594,7 +596,8 @@ test regression_model_packet_send_timeout_sequence() {
   // stays open, but the packet commitment must be removed.
   let packet = base_packet(11)
   let initial_model =
-    base_datum(Unordered, packet.sequence) |> model_from_channel
+    base_datum(Unordered, packet.sequence)
+      |> model_from_channel
   let sent_model = model_send_packet(initial_model, packet)
   let timed_out_model = model_timeout_packet(sent_model, packet)
 

@@ -33,7 +33,7 @@ github.com/cosmos/ibc-go/v10 v10.2.0
 
 For chains that still use `ibc-go/v8.7`, use the sibling module at `cosmos/cardano-probabilistic-light-client-v8`.
 
-Shared Cardano block, HostState, and commitment-proof logic lives in `cosmos/cardano-probabilistic-light-client-core`; this module only carries the `ibc-go/v10` adapter surface around that shared implementation.
+The state machine lives in `cosmos/cardano-probabilistic-light-client-core/state`. This module keeps the `ibc-go/v10` interfaces, registered protobufs, codecs, proof-value conversions, and events. Put changes to verification, checkpoints, time rules, or recovery in the shared core. See the [core README](../cardano-probabilistic-light-client-core/README.md) for regeneration and testing instructions.
 
 ## Integration
 
@@ -56,6 +56,19 @@ The app must also register the concrete client types in its interface registry. 
 
 The chain's IBC client params must allow `08-cardano-probabilistic`. If the params are restricted to only `06-solomachine` and `07-tendermint`, `MsgCreateClient` will still fail even if the Go code is compiled into the binary.
 
+## Commitment Paths
+
+Membership and non-membership verification accept only a two-component
+Merkle path: `["ibc", "<IBC object key>"]`, with a nonempty object key.
+The `ibc` namespace matches Cardano's on-chain `default_merkle_prefix` in
+`ics-024-host-requirements/connection_keys.ak`; it is not configurable.
+Paths with missing, different, or extra prefix components are rejected.
+
+After validating the full path, the adapter removes the namespace because
+`ibc_state_root` commits directly to object keys. Consensus-state keys retain
+the existing translation from `consensusStates/<revisionNumber>-<revisionHeight>`
+to Cardano's `consensusStates/<revisionHeight>` format.
+
 ## Release Tags
 
 Because this is a nested Go module, release tags must be prefixed with the module directory:
@@ -70,3 +83,12 @@ Consumers can then require it with:
 ```sh
 go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10@v0.1.4
 ```
+
+## Epoch challenge deployment
+
+New epoch roots are quarantined for three minutes of Cosmos host time, including
+bootstrap and recovery. Updates can advance while pending, but IBC proof use is
+blocked. This requires the companion Gateway/Hermes changes to commit proposals
+separately and wait on host-assigned deadlines. Legacy states without deadlines
+fail closed for proof use. See [operation, migration and remaining trust
+assumptions](../../docs/probabilistic-light-client.md#epoch-context-challenge-window).

@@ -1,0 +1,23 @@
+{
+  "repository": "cardano-foundation/cardano-ibc-incubator",
+  "commit": "6b2dc8c9a59bd405f26497a9470e3bba004c6f42",
+  "pr": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/873",
+  "minimum_descendants": 24,
+  "minimum_distinct_qualifying_pool_identities": 5,
+  "minimum_unique_stake_basis_points": 511,
+  "pool_first_registration_before_utc": "2026-01-01T00:00:00Z",
+  "counts_anchor_issuer": false,
+  "allows_descendants_to_cross_epoch": false,
+  "files": [
+    {
+      "path": "cosmos/cardano-probabilistic-light-client-core/state/update.go",
+      "sha256": "1949e3a3351bf6a2fe99a95d8926c5d392ccb4936e5fc6d505691ecb6209148f",
+      "url": "https://github.com/cardano-foundation/cardano-ibc-incubator/blob/6b2dc8c9a59bd405f26497a9470e3bba004c6f42/cosmos/cardano-probabilistic-light-client-core/state/update.go"
+    },
+    {
+      "path": "cosmos/cardano-probabilistic-light-client-core/state/heuristic_policy.go",
+      "sha256": "661c21bbb89a6ef3eb215afa448641aa47e5fe3293b1c42c20bdffbfeb44c147",
+      "url": "https://github.com/cardano-foundation/cardano-ibc-incubator/blob/6b2dc8c9a59bd405f26497a9470e3bba004c6f42/cosmos/cardano-probabilistic-light-client-core/state/heuristic_policy.go"
+    }
+  ]
+}

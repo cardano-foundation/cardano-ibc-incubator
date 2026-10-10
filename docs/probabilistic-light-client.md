@@ -113,6 +113,20 @@ These defaults are not special from a consensus perspective, but they are consen
 
 Pool age eligibility is not a tuning parameter. A descendant block producer only counts toward qualified unique pools and qualified unique stake if its first registration slot is before `2026-01-01T00:00:00Z`, meaning the pool started in 2025 or earlier. Total active stake is still the denominator for qualified unique-stake scoring, and missing first-registration data fails closed because the verifier cannot distinguish an old pool from an unknown one.
 
+For settlement in epoch `e` the producer must also have produced at least one verified block in one of the five completed epochs `e-5` through `e-1`. Both the qualified-pool count and its stake credit require this history. A block produced in the current epoch cannot qualify its producer for that epoch. Native header validity continues to use the registered identity and submitted election stake regardless of this settlement qualification.
+
+The client stores five completed-epoch bits and a separate current-epoch flag for each recently observed producer. Bit `0` represents `e-1` and bit `4` represents `e-5`. Only authenticated bridge blocks and anchors incorporated into a committed checkpoint set these observations. Production is recorded even for a producer that does not qualify for settlement. Repeated observations set the same flag once. At rollover the current flag moves into the completed window and older bits expire. Settlement descendants do not change saved history. A later committed anchor records those blocks when they become part of the accepted prefix. The completed window stays fixed throughout the epoch being evaluated.
+
+Ordinary consensus states, rootless checkpoints and historical challenge checkpoints retain the history at their own block. Recovery copies the substitute checkpoint's history. Bootstrap requires authenticated observations or explicitly trusted production data at the initial chain point. Gateway loads this from the `production` section of `CARDANO_POOL_REGISTRY_CHECKPOINT_FILE`. Missing history grants no qualification. Existing clients without the field need an authenticated migration or a trusted new bootstrap.
+
+Settlement counts each qualifying producer once using `q_i = min(p_i, r_i + c)`. Here `p_i` is the pool's submitted current stake divided by submitted total active stake. The retained share `r_i` starts from the explicitly trusted bootstrap distribution. The additional allowance `c` is currently an experimental `50` basis points, or `0.5` percentage points. A pool with a reference share of `0.02%` that claims `20%` therefore contributes `0.52%` toward settlement. Decreases reduce credit immediately. Discounts are never normalized back to `100%`. Exact fractions are added before converting the combined credit to basis points.
+
+At each adjacent epoch transition the client sets the next reference to the previous epoch's capped credits for all pools. It does not copy the submitted shares or grant another allowance on each update. Pools without a retained reference start at zero. The reference is stored with each checkpoint and retained consensus state so historical challenge verification uses the reference from that point in history. A missing reference requires an explicitly authenticated migration or a trusted new bootstrap. Recovery through an explicitly trusted substitute also installs that substitute's reference.
+
+The existing `24` descendant, `5` qualifying pool and `511` basis point requirements still apply. Header leader checks still use the submitted native stake shares. A large increase changes settlement credit rather than invalidating the producer's block or automatically rejecting its epoch. The Gateway uses the destination client's reference to look for enough descendants. Insufficient evidence leaves the update pending. This rule limits inflation per pool in one epoch. It deliberately allows gradual inflation as the reference advances and an attacker can also spread credit across more eligible identities. It does not authenticate the submitted stake amounts.
+
+Client-specific Gateway queries use the destination's saved production history and credit reference. They apply bridge and anchor observations for evidence selection and request more descendants when necessary. Standalone proof-height discovery uses indexed block observations as an estimate. Those observations cannot initialize or replace the client's production history. The Go verifier always derives history from its own checkpoint and authenticated blocks.
+
 ### 24-Block Unique-Stake Diagnostics
 
 A mainnet study over epochs `629` and `630` measured how much unique stake appears in a 24-descendant-block range.  The table below shows the active stake represented by unique descendant-producing pools before applying the pool-registration cutoff rule.
@@ -146,6 +160,8 @@ This is a useful sanity check for parameter selection: in the observed mainnet s
 It's clear from these diagnostics that Preprod has far fewer active/producing pools, and stake is much more concentrated among the pools that produce blocks. So a short 24-block window samples pools that represent a much larger fraction of total active stake. We can see that in preprod, in approximately 90% of cases, we would reach 5000 bps unique stake well before the 24-block window is over, whereas on mainnet we would be lucky to get **500** unique stake bps in a 24 block window. The observed median was 511 bps. This means if we configure our unique stake threshold to around 511 bps, then about 50% of the time we will reach heuristic settlement ("finality") in 24 blocks ( it will actually be less than 50% of the time as we then need to qualify the unique stake which will increase the timeline further).
 
 Also note that this conversation takes place before our **qualified** unique stake application, i.e, we actually only sum unique stake from pools created prior to 2026.
+
+The [mainnet stake distribution study from October 9, 2026](../studies/cardano_probabilistic_finality/mainnet-stake-2026-10-09/README.md) examines 100 epoch transitions and replays recent-production qualifications against the current 24-descendant, five-pool and 511-basis-point policy. It measures how limits on stake changes could restrict fabricated allocations and how production qualifications affect settlement time. These restrictions do not authenticate stake amounts.
 
 ### Header
 
@@ -196,7 +212,47 @@ The Gateway:
 
 Client creation still starts from one epoch context, but updates are no longer single-epoch-only. Gateway now supports ordinary `epoch N -> epoch N+1` rollover updates on the same client ID by attaching `new_epoch_context` to the header when the anchor moves into the next epoch. The scored descendant window still remains single-epoch: bridge continuity may span the boundary, but the anchor and scored descendants must all live in the same anchor epoch.
 
-An accepted epoch context is canonical for that epoch. Later headers may repeat the same epoch context, but a different context for an already-known epoch is treated as misbehaviour and freezes the client. This does not make the first accepted epoch context cryptographically authenticated; it changes the failure mode so that contradictory observer views cannot silently replace or coexist with the stored stake context.
+The client derives a block's epoch from its signed slot and the stored current
+epoch boundaries. Those boundaries provide the network's epoch length and slot
+offset for the supported Babbage and Conway eras. At rollover the client computes
+the next boundaries from that stored schedule. The protobuf still carries
+`epoch`, `epoch_start_slot`, `epoch_end_slot_exclusive`, and
+`slots_per_kes_period`, but their values must exactly match the client's schedule
+and KES configuration. A relayer cannot change those values through an update.
+The initial epoch boundaries remain part of the trusted bootstrap configuration.
+An era that changes the epoch schedule needs an authenticated schedule transition
+before this verifier can support it.
+
+The client also derives each next epoch nonce from verified headers. Its
+checkpoint stores the evolving nonce, candidate nonce, previous-block hash nonce
+and saved epoch block nonce together with the current epoch nonce. At rollover it
+combines the old candidate and saved epoch block nonce before verifying the first
+header. It then advances the saved epoch block nonce. Every verified VRF output
+updates the evolving nonce using Cardano's nonce hashing rules. The candidate
+copies it only when the header slot plus the configured randomness window is
+strictly before the next epoch start.
+
+Bridge blocks and the anchor advance the stored nonce state. Settlement
+descendants advance a temporary copy so the next update can process them again
+from the anchor. Retained consensus states and challenge checkpoints keep their
+own nonce state. The compatibility field `new_epoch_context.epoch_nonce` must
+match the locally derived value. An incorrect nonce rejects an update. It does
+not by itself count as misbehaviour or become accepted after the challenge delay.
+
+Bootstrap requires an explicitly trusted starting checkpoint with all these
+running values. Gateway queries Ogmios nonces at that exact point and reads the
+last applied block nonce from the signed header's previous-block hash. Operators
+must set `CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS` from the network's
+protocol rules. The supported Praos rules use `3*k/f` for Babbage and `4*k/f` for
+Conway. A transition that changes this rule requires an authenticated client
+configuration change before synchronization can continue. Existing clients
+without running nonce state need an explicit authenticated migration or a new
+bootstrap. The current epoch nonce alone cannot fill in the missing values.
+
+An accepted stake context remains canonical for its epoch. Different stake data
+for an already-known epoch can freeze the client after the evidence passes
+verification. The first supplied stake distribution still uses the challenge
+model described below.
 
 The static local Caribic devnet explicitly sets
 `CARDANO_STABILITY_ASSUME_STATIC_STAKE=1`. With that opt-in, Gateway normalizes
@@ -209,6 +265,113 @@ network. Public deployments use the configured current-epoch and historical
 stake snapshot sources and must not enable this fallback when delegations can
 change.
 
+## Epoch Context Challenge Window
+
+The v8 and v10 adapters enforce a compiled `3 * time.Minute` delay before an
+epoch's roots can verify IBC membership or non-membership proofs. It is measured
+using Cosmos host block timestamps, independently of Cardano slots, relayer
+clocks, packet connection delays, or the number of host blocks.
+
+When the first verified update introducing an epoch commits, the client records
+`epoch_context_challenges = [{epoch, usable_after_unix_ns}, ...]` in its client
+state. The deadline is the inclusion block's Unix-nanosecond timestamp plus
+180 seconds. Subsequent updates in that epoch can advance the checkpoint and
+store consensus roots, but those roots remain unusable for IBC until the
+original deadline. Matching resubmissions do not reset it. Older epochs with
+elapsed deadlines remain usable. At the deadline, an unfrozen client's roots
+become eligible for proof verification without a separate activation transaction.
+The usual proof, trusting-period and connection-delay requirements still apply.
+`LatestHeight` and consensus-state queries can therefore expose a **pending**
+root; they alone are not evidence that a packet proof is usable.
+
+Before advancing into a new epoch, the verifier saves the previous checkpoint,
+its epoch context, nonce state and operational-certificate counters in private client-store
+metadata (`epochChallengeCheckpoint/<8-byte big-endian epoch>`). Misbehaviour
+verification can use that snapshot even after ordinary updates move beyond a
+rootless checkpoint. Competing histories need not cross the epoch boundary at
+the same block height. The snapshot is exported with IBC client metadata and
+retained while its proposed epoch context is retained. Another epoch rollover
+is prohibited while the previous epoch is pending.
+
+### Relayers and independent challengers
+
+Hermes commits epoch proposals as standalone updates before preparing packet
+transactions. Otherwise a packet rejected during the window would roll back the
+proposal and its deadline in the same Cosmos transaction. Hermes queries the
+stored deadlines and waits for the destination chain's committed timestamp;
+local wall-clock passage never releases a pending proof. It checks client status
+while waiting so a challenge freeze stops packet preparation. Proposals can be
+submitted ahead of packet activity with ordinary client-update operations when
+the required history is available; this change does not add an epoch scheduler.
+
+An independent, continuously running witness must monitor client updates,
+construct a conflicting qualifying header, and submit `Misbehaviour` through
+`MsgUpdateClient`. Configure Hermes' `misbehaviour_witness_gateway_url` to an
+independent Gateway/node and enable `require_update_event_headers_for_misbehaviour`.
+The primary Gateway fallback does not provide independent observation.
+
+For probabilistic challenges, Hermes requests `QueryIBCHeader` with
+`checkpoint_only = true` and the production history and settlement credit saved
+at the header's trusted height. Hermes reads the destination client's private
+pre-proposal snapshot first. This also works when that checkpoint has no IBC
+root. Otherwise it uses the matching current checkpoint or a retained consensus
+state. It never substitutes the latest post-proposal history. Missing checkpoint
+history stops evidence construction instead of using observer estimates.
+Gateway requires this context for challenge queries and applies the same credit
+cap and recent-production rule as Cosmos. Gateway returns exact-height rootless
+evidence and its epoch context, even if the actual block at the disputed height has no
+HostState transaction. It does not truncate that request to a different catch-up
+height. Block/epoch conflicts count as evidence; omission of HostState fields
+in an otherwise matching rootless witness does not.
+
+This is an operational mitigation, **not epoch authentication**. An honest
+observer must have qualifying evidence and obtain transaction inclusion before
+fraudulent proof use. Three minutes may be shorter than evidence production:
+the existing challenge path still enforces 24 descendants, five qualifying
+pools, and 511 basis points of stake. Outages, host-chain halts, censorship and
+transaction congestion can consume the response window. No challenge within
+180 seconds is not proof that the context is genuine. An attacker can also
+submit internally consistent conflicting evidence against an honest proposal
+and freeze the bridge. A freeze cannot unwind earlier IBC operations.
+
+### Bootstrap, recovery and deployment
+
+`Initialize` discards caller-supplied challenge deadlines and assigns fresh
+host-clock deadlines to the initial contexts. This prevents immediate use of
+bootstrap roots, but the bootstrap checkpoint and context still require an
+independent trust decision: there is no earlier trusted checkpoint from which
+the verifier can prove that a fabricated initial checkpoint is wrong.
+Authority-controlled substitute recovery likewise starts new windows on the
+subject client and clears its previous challenge checkpoints. It cannot copy
+an elapsed substitute deadline to make imported roots immediately usable.
+
+Deploy the new Cosmos binary, Gateway/protobuf bindings and companion Hermes
+change together. Existing protobuf states still decode, but roots with no
+host-assigned deadline fail closed. An existing active client can establish a
+window with a verified update in its current checkpoint epoch before rolling
+onward; if such an update is unavailable, use an audited host app-state
+migration or authority-controlled recovery/recreation. Do not populate elapsed
+deadlines from untrusted relayer input. Genesis export/import must preserve
+both `epoch_context_challenges` and the private checkpoint metadata.
+
+This change mitigates #715's operational race and intentionally leaves its
+native epoch-authentication requirement open.
+
+## Host-Chain Software Upgrades
+
+A Cosmos binary replacement runs the selected verifier against existing
+`08-cardano-probabilistic-N` stores. A compatible update preserves the client,
+connection and channel IDs; it requires neither a new Cardano `CreateClient`
+nor an Aiken redeployment or replacement voucher denomination. Creating a new
+client does not retarget an existing connection.
+
+See the [software-upgrade contract](./probabilistic-client-software-upgrades.md)
+for stable type URLs, historical-state decoding, private store keys, verifier
+activation, app migrations and the exact-artifact acceptance gate for #603.
+The [external fixtures](../tests/probabilistic-upgrade/README.md) test published
+modules without changing their runtime code. This software-upgrade path is
+separate from substitute recovery and the unsupported IBC `MsgUpgradeClient`.
+
 ## Substitute-Client Recovery
 
 An expired or frozen probabilistic client can be recovered from a compatible,
@@ -220,7 +383,7 @@ escrow, and voucher denominations therefore remain unchanged.
 The concrete protobuf client type must match. The subject and substitute must
 also have the same upgrade path, HostState NFT policy ID and token name, Cardano
 system start, slot length, slots per KES period, maximum KES evolutions,
-active-slot coefficient, and maximum clock drift. The
+active-slot coefficient, maximum clock drift, and epoch schedule. The
 substitute checkpoint must be strictly newer, its latest consensus and delay
 metadata must be present, and its operational-certificate counters may not
 regress. Recovery cannot be used to cross client types or move a route to a

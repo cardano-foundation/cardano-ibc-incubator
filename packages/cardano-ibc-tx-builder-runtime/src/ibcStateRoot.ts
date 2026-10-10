@@ -201,6 +201,7 @@ export async function encodeClientStateValue(
     frozenHeight: HeightSchema,
     latestHeight: HeightSchema,
     proofSpecs: Data.Array(ProofSpecSchema),
+    upgradePath: Data.Array(Data.Bytes()),
   });
 
   // Match Aiken cbor.serialise, including indefinite-length arrays.
@@ -682,7 +683,7 @@ export class IbcTreeStateStore {
             !/^(?:[0-9a-f]{2})+$/.test(consensusValue)) {
             throw new Error(`Invalid recovered consensus record for '${clientId}'`);
           }
-          const path = `clients/${clientId}/consensusStates/${record.height.revisionHeight}`;
+          const path = `clients/${clientId}/consensusStates/${record.height.revisionNumber}-${record.height.revisionHeight}`;
           if (consensusPaths.has(path)) throw new Error(`Duplicate consensus state path '${path}' during tree rebuild`);
           tree.set(path, Buffer.from(consensusValue, 'hex'));
           consensusPaths.add(path);
@@ -697,7 +698,7 @@ export class IbcTreeStateStore {
 
       for (const [heightKey, consensusState] of entries) {
         const heightStr = typeof heightKey === 'object' && heightKey !== null
-          ? `${(heightKey as { revisionHeight?: bigint | number }).revisionHeight || 0}`
+          ? `${(heightKey as { revisionNumber?: bigint | number }).revisionNumber || 0}-${(heightKey as { revisionHeight?: bigint | number }).revisionHeight || 0}`
           : String(heightKey);
         const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
         if (consensusPaths.has(consensusPath)) {

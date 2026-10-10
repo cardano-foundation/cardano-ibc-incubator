@@ -91,6 +91,7 @@ function client(n: number): ClientDatum {
     history_root: hash(n - 1),
     state: {
       clientState: {
+        upgradePath: [],
         chainId: hex('chain-0'),
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 100n,
@@ -206,7 +207,7 @@ async function expectedTree(n: number) {
   tree.set('clients/07-tendermint-0/clientState', Buffer.from(current.clientValue, 'hex'));
   for (let h = 1; h <= n; h++) {
     tree.set(
-      `clients/07-tendermint-0/consensusStates/${h}`,
+      `clients/07-tendermint-0/consensusStates/0-${h}`,
       Buffer.from(publicClientCommitmentValues(await encodeClientDatum(client(h), Lucid)).consensusValue, 'hex'),
     );
   }
@@ -350,8 +351,8 @@ async function expectedTree(n: number) {
           result.tree.generateProof(`acks/ports/transfer/channels/channel-0/sequences/${height}`),
         ),
       ).toBe(true);
-      expect(result.tree.get(`clients/07-tendermint-0/consensusStates/${height + 1}`)).toBeUndefined();
-      expect(result.tree.get('clients/07-tendermint-0/consensusStates/1')).toBeDefined();
+      expect(result.tree.get(`clients/07-tendermint-0/consensusStates/0-${height + 1}`)).toBeUndefined();
+      expect(result.tree.get('clients/07-tendermint-0/consensusStates/0-1')).toBeDefined();
     }
     const old = await rebuild();
     expect(old.tree.get('acks/ports/transfer/channels/channel-0/sequences/1')).toBeUndefined();
@@ -405,7 +406,7 @@ async function expectedTree(n: number) {
         outputIndex: 3,
       });
       expect(snapshot.root).toBe(roots[height - 1]);
-      expect(snapshot.tree.get('clients/07-tendermint-0/consensusStates/1')).toBeDefined();
+      expect(snapshot.tree.get('clients/07-tendermint-0/consensusStates/0-1')).toBeDefined();
     }
     await expect(rebuild()).rejects.toThrow();
     await db.query('DELETE FROM block WHERE number=3');

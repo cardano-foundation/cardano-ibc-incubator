@@ -11,6 +11,7 @@ import (
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -245,7 +246,7 @@ func TestVerifyOperationalCertificateRejectsInvalidParametersAndShapes(t *testin
 func TestVerifyNativeBlockAndHeaderCheckOperationalCertificateBeforeKes(t *testing.T) {
 	header, _ := signedOperationalCertificateHeader(t, 7, 10, 1_000)
 	header.Body.OpCert.Signature[0] ^= 0xff
-	block := &ledger.BabbageBlock{Header: header}
+	block := &ledger.BabbageBlock{BlockHeader: header}
 
 	_, _, err := VerifyNativeHeader(header, make([]byte, 32), 100, 4, fullStakePraosParameters())
 	if err == nil || !strings.Contains(err.Error(), "cold-key signature is invalid") {
@@ -261,10 +262,10 @@ func TestVerifyNativeBlockAndHeaderCheckOperationalCertificateBeforeKes(t *testi
 func TestVerifyNativeBlockReturnsErrorForMalformedKesSignature(t *testing.T) {
 	header, _ := signedOperationalCertificateHeader(t, 7, 10, 1_000)
 	header.Signature = []byte{0x01}
-	block := &ledger.BabbageBlock{Header: header}
+	block := &ledger.BabbageBlock{BlockHeader: header}
 
 	valid, result, err := VerifyNativeBlock(block, make([]byte, 32), 100, 4, fullStakePraosParameters())
-	if err == nil || !strings.Contains(err.Error(), "native block verification panicked") {
+	if err == nil || !strings.Contains(err.Error(), "KES invalid") {
 		t.Fatalf("expected recovered malformed KES signature error, got %v", err)
 	}
 	if valid {
@@ -447,10 +448,10 @@ func TestAuthenticatedHostStateFixtureRejectsPhase2InvalidTarget(t *testing.T) {
 	if !transactions[1].IsValid() {
 		t.Fatal("expected transaction one to be valid")
 	}
-	if got, want := transactions[0].Hash(), "3e9ffe7e260c65730f2b1f9795faa55d18b104f432781806b85f19bc299eca8b"; got != want {
+	if got, want := transactions[0].Hash().String(), "3e9ffe7e260c65730f2b1f9795faa55d18b104f432781806b85f19bc299eca8b"; got != want {
 		t.Fatalf("invalid transaction hash: got %s want %s", got, want)
 	}
-	if got, want := transactions[1].Hash(), "fa257a312429d9d354114f1a5932f137445acd48aac6045e66ffd3c4d6328207"; got != want {
+	if got, want := transactions[1].Hash().String(), "fa257a312429d9d354114f1a5932f137445acd48aac6045e66ffd3c4d6328207"; got != want {
 		t.Fatalf("valid transaction hash: got %s want %s", got, want)
 	}
 
@@ -460,23 +461,23 @@ func TestAuthenticatedHostStateFixtureRejectsPhase2InvalidTarget(t *testing.T) {
 	if len(produced) != 1 {
 		t.Fatalf("invalid transaction produced output count: got %d want 1 collateral return", len(produced))
 	}
-	collateralRoot, err := extractIbcStateRootFromOutputs(produced, 0, policyID, tokenName)
+	collateralRoot, err := extractIbcStateRootFromOutputs(utxoOutputs(produced), 0, policyID, tokenName)
 	if err != nil {
 		t.Fatalf("extract collateral-return root: %v", err)
 	}
 	if want := bytes.Repeat([]byte{0x99}, 32); !bytes.Equal(collateralRoot, want) {
 		t.Fatalf("collateral-return root: got %x want %x", collateralRoot, want)
 	}
-	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, transactions[0].Hash()); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
+	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, transactions[0].Hash().String()); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
 		t.Fatalf("expected invalid transaction body rejection, got %v", err)
 	}
-	if _, err := ExtractIbcStateRootFromAnchorBlock(blockCbor, transactions[0].Hash(), 0, policyID, tokenName); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
+	if _, err := ExtractIbcStateRootFromAnchorBlock(blockCbor, transactions[0].Hash().String(), 0, policyID, tokenName); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
 		t.Fatalf("expected invalid transaction root rejection, got %v", err)
 	}
-	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, transactions[1].Hash()); err != nil {
+	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, transactions[1].Hash().String()); err != nil {
 		t.Fatalf("extract valid transaction body: %v", err)
 	}
-	root, err := ExtractIbcStateRootFromAnchorBlock(blockCbor, transactions[1].Hash(), 0, policyID, tokenName)
+	root, err := ExtractIbcStateRootFromAnchorBlock(blockCbor, transactions[1].Hash().String(), 0, policyID, tokenName)
 	if err != nil {
 		t.Fatalf("extract valid transaction root: %v", err)
 	}
@@ -490,10 +491,10 @@ func TestConwayHostStateTargetRespectsInvalidTransactionIndex(t *testing.T) {
 	body.TxFee = 1
 	encodeBlock := func(invalidTransactions []uint) []byte {
 		blockCbor, err := cbor.Encode(&ledger.ConwayBlock{
-			Header:                 &ledger.ConwayBlockHeader{},
+			BlockHeader:            &ledger.ConwayBlockHeader{},
 			TransactionBodies:      []ledger.ConwayTransactionBody{body},
-			TransactionWitnessSets: []ledger.BabbageTransactionWitnessSet{{}},
-			TransactionMetadataSet: map[uint]*cbor.LazyValue{},
+			TransactionWitnessSets: []ledger.ConwayTransactionWitnessSet{{}},
+			TransactionMetadataSet: common.TransactionMetadataSet{},
 			InvalidTransactions:    invalidTransactions,
 		})
 		if err != nil {
@@ -515,7 +516,7 @@ func TestConwayHostStateTargetRespectsInvalidTransactionIndex(t *testing.T) {
 		t.Fatal("Conway fixture has no transactions")
 	}
 	targetHash := transactions[0].Hash()
-	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, targetHash); err != nil {
+	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(blockCbor, targetHash.String()); err != nil {
 		t.Fatalf("extract valid Conway transaction body: %v", err)
 	}
 
@@ -530,7 +531,7 @@ func TestConwayHostStateTargetRespectsInvalidTransactionIndex(t *testing.T) {
 	if invalidBlock.Transactions()[0].IsValid() {
 		t.Fatal("expected Conway transaction zero to be phase-2 invalid")
 	}
-	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(invalidBlockCbor, targetHash); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
+	if _, err := ExtractHostStateTxBodyCborFromAnchorBlock(invalidBlockCbor, targetHash.String()); err == nil || !strings.Contains(err.Error(), "phase-2 invalid") {
 		t.Fatalf("expected invalid Conway transaction rejection, got %v", err)
 	}
 }
@@ -687,8 +688,8 @@ func signedOperationalCertificateHeader(
 	copy(header.Body.IssuerVkey[:], publicKey)
 	header.Body.Slot = slot
 	header.Body.OpCert.HotVkey = bytes.Repeat([]byte{0x24}, ed25519.PublicKeySize)
-	header.Body.OpCert.SequenceNumber = sequenceNumber
-	header.Body.OpCert.KesPeriod = startKesPeriod
+	header.Body.OpCert.SequenceNumber = uint64(sequenceNumber)
+	header.Body.OpCert.KesPeriod = uint64(startKesPeriod)
 	header.Body.OpCert.Signature = ed25519.Sign(
 		privateKey,
 		operationalCertificateSignableBytes(

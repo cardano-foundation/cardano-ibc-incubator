@@ -3,9 +3,11 @@
 
 import argparse
 from datetime import datetime, timezone
+from fractions import Fraction
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -200,6 +202,9 @@ class Runtime:
             "HISTORY_DB_HOST": host, "HISTORY_DB_PORT": self.settings["DEVKIT_HISTORY_DB_PORT"],
             "HISTORY_DB_NAME": "yaci_store", "HISTORY_DB_USERNAME": "yaci",
             "HISTORY_DB_PASSWORD": "devkit", "CARDANO_EPOCH_LENGTH": str(genesis["shelley"]["epochLength"]),
+            # This managed network starts in Conway. Its native window is 4*k/f.
+            "CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS": str(math.ceil(
+                4 * genesis["shelley"]["securityParam"] / Fraction(str(genesis["shelley"]["activeSlotsCoeff"])))),
             "GATEWAY_DB_HOST": host, "GATEWAY_DB_PORT": self.settings["DEVKIT_GATEWAY_DB_PORT"],
             "GATEWAY_DB_NAME": "gateway_app", "GATEWAY_DB_USERNAME": "postgres",
             "GATEWAY_DB_PASSWORD": "postgres",

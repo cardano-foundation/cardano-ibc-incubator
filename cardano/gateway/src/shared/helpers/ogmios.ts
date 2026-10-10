@@ -62,7 +62,6 @@ type OgmiosShelleyGenesisVerificationConfig = {
 
 type OgmiosOperationalCertificateCounters = Map<string, bigint>;
 
-const STAKE_DISTRIBUTION_WEIGHT_SCALE = 1_000_000_000_000n;
 const MAX_UINT64 = (1n << 64n) - 1n;
 const MAX_SUPPORTED_KES_EVOLUTIONS = 64;
 const OGMIOS_OPEN_TIMEOUT_MS = readPositiveIntegerEnv('OGMIOS_OPEN_TIMEOUT_MS', 10_000);
@@ -331,14 +330,6 @@ const parseUnitIntervalFraction = (
 const parseStakeFraction = (value: unknown): { numerator: bigint; denominator: bigint } =>
   parseUnitIntervalFraction(value, 'live stake fraction', true);
 
-const stakeFractionToWeight = (numerator: bigint, denominator: bigint): bigint => {
-  if (numerator === 0n) {
-    return 0n;
-  }
-  const rounded = (numerator * STAKE_DISTRIBUTION_WEIGHT_SCALE + denominator / 2n) / denominator;
-  return rounded > 0n ? rounded : 1n;
-};
-
 const greatestCommonDivisor = (left: bigint, right: bigint): bigint => {
   let a = left < 0n ? -left : left;
   let b = right < 0n ? -right : right;
@@ -406,16 +397,6 @@ const parseStakeDistributionRows = (
     return [];
   }
 
-  if (!normalizeToActiveStake) {
-    return positiveStakeRows.map((row) => ({
-      poolId: row.poolId,
-      stake: stakeFractionToWeight(row.numerator, row.denominator),
-      vrfKeyHash: row.vrfKeyHash,
-      relativeStakeNumerator: row.numerator,
-      relativeStakeDenominator: row.denominator,
-    }));
-  }
-
   const totalRelativeStake = positiveStakeRows.reduce((total, row) => addFractions(total, row), {
     numerator: 0n,
     denominator: 1n,
@@ -427,13 +408,12 @@ const parseStakeDistributionRows = (
   // Ogmios 6.12 reports each pool's live stake against all ledger stake, which
   // can include undelegated stake. Praos leader eligibility instead uses the
   // pool's share of the active, delegated stake. Normalize the exact rational
-  // values as a group; renormalizing each rounded scoring weight would lose
-  // the precision required by native header verification. This converts the
-  // explicitly opted-in static-devnet fallback only; a live distribution is
-  // not an epoch-frozen one and must not be used this way on dynamic networks.
-  return positiveStakeRows.map((row) => {
-    const numerator = row.numerator * totalRelativeStake.denominator;
-    const denominator = row.denominator * totalRelativeStake.numerator;
+  // values as a group for the explicitly opted-in static-devnet fallback.
+  // A live distribution is not epoch-frozen and must not be used this way
+  // on dynamic networks.
+  const relativeStakeRows = positiveStakeRows.map((row) => {
+    const numerator = normalizeToActiveStake ? row.numerator * totalRelativeStake.denominator : row.numerator;
+    const denominator = normalizeToActiveStake ? row.denominator * totalRelativeStake.numerator : row.denominator;
     const fractionGcd = greatestCommonDivisor(numerator, denominator);
     const relativeStakeNumerator = numerator / fractionGcd;
     const relativeStakeDenominator = denominator / fractionGcd;
@@ -443,12 +423,26 @@ const parseStakeDistributionRows = (
 
     return {
       poolId: row.poolId,
-      stake: stakeFractionToWeight(relativeStakeNumerator, relativeStakeDenominator),
       vrfKeyHash: row.vrfKeyHash,
       relativeStakeNumerator,
       relativeStakeDenominator,
     };
   });
+
+  // A common denominator gives exact integer weights. Rounding each fraction
+  // separately would make settlement weights disagree with leader eligibility.
+  const commonDenominator = relativeStakeRows.reduce(
+    (common, row) =>
+      (common / greatestCommonDivisor(common, row.relativeStakeDenominator)) * row.relativeStakeDenominator,
+    1n,
+  );
+  if (commonDenominator > MAX_UINT64) {
+    throw new Error('Ogmios exact stake weights exceed protobuf uint64 bounds');
+  }
+  return relativeStakeRows.map((row) => ({
+    ...row,
+    stake: row.relativeStakeNumerator * (commonDenominator / row.relativeStakeDenominator),
+  }));
 };
 
 const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSocket; session: OgmiosSession }> => {
@@ -632,6 +626,32 @@ const queryEpochContextAtPoint = async (
   });
 };
 
+// Bootstrap only. These node answers become part of an explicitly trusted
+// starting checkpoint. Subsequent epochs are derived by the Cosmos client.
+const queryPraosNoncesAtPoint = async (ogmiosUrl: string, point: OgmiosLedgerPoint) => {
+  return withAcquiredLedgerState(ogmiosUrl, point, async (session) => {
+    const tip = await session.request<{ slot: number | string; id: string }>('queryLedgerState/tip', {});
+    if (!tip || BigInt(tip.slot) !== BigInt(point.slot) || tip.id?.toLowerCase() !== point.hash.toLowerCase()) {
+      throw new Error('Praos bootstrap query did not acquire the requested checkpoint');
+    }
+    const nonces = await session.request<Record<string, unknown>>('queryLedgerState/nonces', {});
+    const parse = (field: string, allowNeutral = true): Uint8Array => {
+      const value = nonces?.[field];
+      if (allowNeutral && value === null) return new Uint8Array();
+      if (typeof value !== 'string' || !/^[0-9a-fA-F]{64}$/.test(value)) {
+        throw new Error(`Praos bootstrap ${field} is missing or invalid`);
+      }
+      return Buffer.from(value, 'hex');
+    };
+    return {
+      epoch_nonce: parse('epochNonce', false),
+      evolving_nonce: parse('evolvingNonce'),
+      candidate_nonce: parse('candidateNonce'),
+      last_epoch_block_nonce: parse('lastEpochLastAncestor'),
+    };
+  });
+};
+
 const queryOperationalCertificateCountersAtPoint = async (
   ogmiosUrl: string,
   point: OgmiosLedgerPoint,
@@ -684,6 +704,7 @@ export {
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
   queryOperationalCertificateCountersAtPoint,
+  queryPraosNoncesAtPoint,
   type OgmiosCurrentEpochStakeDistributionEntry,
   type OgmiosCurrentEpochVerificationData,
   type OgmiosEpochContextAtPoint,

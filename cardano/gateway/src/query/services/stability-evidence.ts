@@ -1,5 +1,11 @@
 import { Logger } from '@nestjs/common';
 import {
+  ClientState as ProbabilisticClientState,
+  PoolProductionHistory,
+} from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
+import { settlementReferenceForEpoch } from './settlement-credit';
+import { productionAtAnchor } from './pool-production';
+import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
   GrpcFailedPreconditionException,
@@ -177,6 +183,12 @@ type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   requireThresholds?: boolean;
   requireFullEpochVerificationContext?: boolean;
   missingAnchorBlockMessage?: string;
+  settlementCreditClient?: ProbabilisticClientState;
+  resolveProductionHistory?: (block: HistoryBlock) => PoolProductionHistory;
+  resolvePoolBindings?: (
+    block: HistoryBlock,
+    entries: HistoryStakeDistributionEntry[],
+  ) => HistoryStakeDistributionEntry[];
 };
 
 type LoadStakeWeightedStabilityEvidenceForTxHashParams = {
@@ -238,7 +250,7 @@ async function hydrateDescendantProducerRegistrationSlots(
             return false;
           }
           const entry = entriesByPoolId.get(poolId);
-          return Boolean(entry && (!entry.firstRegistrationSlot || entry.firstRegistrationSlot <= 0n));
+          return Boolean(entry && (entry.firstRegistrationSlot == null || entry.firstRegistrationSlot < 0n));
         }),
     ),
   );
@@ -277,6 +289,9 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   requireThresholds = true,
   requireFullEpochVerificationContext = true,
   missingAnchorBlockMessage,
+  resolvePoolBindings,
+  resolveProductionHistory,
+  settlementCreditClient,
 }: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<StakeWeightedStabilityEvidence> {
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
@@ -293,8 +308,10 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       `Epoch context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
     );
   }
-  const { stakeDistribution: epochStakeDistribution, verificationContext: epochVerificationContext } =
-    anchorEpochContext;
+  const { verificationContext: epochVerificationContext } = anchorEpochContext;
+  const epochStakeDistribution = resolvePoolBindings
+    ? resolvePoolBindings(anchorBlock, anchorEpochContext.stakeDistribution)
+    : anchorEpochContext.stakeDistribution;
   assertEpochStakeDistributionAvailable(
     epochStakeDistribution,
     `anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
@@ -338,10 +355,36 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     anchorBlock,
   );
 
+  const checkpoint = settlementCreditClient?.latest_checkpoint_height ?? settlementCreditClient?.latest_height;
+  let productionBridge: HistoryBlock[] = [];
+  if (settlementCreditClient) {
+    const anchorHeight = BigInt(anchorBlock.height);
+    if (!checkpoint || checkpoint.revision_height <= 0n || checkpoint.revision_height >= anchorHeight) {
+      throw new GrpcInvalidArgumentException('Production history requires a checkpoint preceding the anchor');
+    }
+    productionBridge = await historyService.findBridgeBlocks(checkpoint.revision_height, anchorHeight);
+    if (
+      BigInt(productionBridge.length) !== anchorHeight - checkpoint.revision_height - 1n ||
+      productionBridge.some((block, index) => BigInt(block.height) !== checkpoint.revision_height + BigInt(index) + 1n)
+    ) {
+      throw historyNotReady('Incomplete or non-contiguous bridge segment for production history');
+    }
+  }
+  const poolProduction = settlementCreditClient
+    ? productionAtAnchor(settlementCreditClient, productionBridge, anchorBlock)
+    : resolveProductionHistory
+      ? resolveProductionHistory(anchorBlock)
+      : await historyService.findObservedPoolProductionAtBlock?.(anchorBlock);
+
   let acceptedDescendantBlocks = eligibleDescendantBlocks;
   const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const settlementCreditReference = settlementCreditClient
+    ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
+    : undefined;
   let metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedEpochStakeDistribution, stabilityPolicy, {
     poolRegistrationCutoffSlot,
+    settlementCreditReference,
+    poolProduction,
   });
 
   const thresholdDepth = Number(stabilityPolicy.threshold_depth || 0n);
@@ -356,7 +399,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
         candidateDescendantBlocks,
         hydratedEpochStakeDistribution,
         stabilityPolicy,
-        { poolRegistrationCutoffSlot },
+        { poolRegistrationCutoffSlot, settlementCreditReference, poolProduction },
       );
 
       if (
@@ -464,6 +507,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   stabilityPolicy = getStabilityPolicy(),
   requireThresholds = true,
   missingAnchorBlockMessage,
+  settlementCreditClient,
 }: LoadStakeWeightedStabilityHeaderEvidenceParams): Promise<StakeWeightedStabilityHeaderEvidence> {
   if (trustedHeight <= 0n) {
     throw invalidTrustedHeight(
@@ -590,10 +634,19 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     anchorBlock,
   );
 
+  const poolProduction = settlementCreditClient
+    ? productionAtAnchor(settlementCreditClient, bridgeBlocks, anchorBlock)
+    : await historyService.findObservedPoolProductionAtBlock?.(anchorBlock);
+
   const acceptedDescendantBlocks = eligibleDescendantBlocks;
   const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const settlementCreditReference = settlementCreditClient
+    ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
+    : undefined;
   const metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedAnchorStakeDistribution, stabilityPolicy, {
     poolRegistrationCutoffSlot,
+    settlementCreditReference,
+    poolProduction,
   });
 
   if (requireThresholds) {

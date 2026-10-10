@@ -57,6 +57,7 @@ import {
   parseShelleyGenesisConfig,
   parseStakeDistributionRows,
   queryOperationalCertificateCountersAtPoint,
+  queryPraosNoncesAtPoint,
 } from './ogmios';
 
 describe('Ogmios stability verification parsing', () => {
@@ -65,6 +66,46 @@ describe('Ogmios stability verification parsing', () => {
     for (const key of Object.keys(mockOgmiosResponses)) {
       delete mockOgmiosResponses[key];
     }
+  });
+
+  it('loads bootstrap nonces at the exact acquired checkpoint and preserves neutral values', async () => {
+    mockOgmiosResponses['queryLedgerState/tip'] = { slot: 123, id: 'ab'.repeat(32) };
+    mockOgmiosResponses['queryLedgerState/nonces'] = {
+      epochNonce: '11'.repeat(32),
+      evolvingNonce: '22'.repeat(32),
+      candidateNonce: '33'.repeat(32),
+      lastEpochLastAncestor: null,
+    };
+    const state = await queryPraosNoncesAtPoint('ws://localhost:1337', { slot: 123n, hash: 'ab'.repeat(32) });
+    expect(Buffer.from(state.epoch_nonce).toString('hex')).toBe('11'.repeat(32));
+    expect(Buffer.from(state.evolving_nonce).toString('hex')).toBe('22'.repeat(32));
+    expect(Buffer.from(state.candidate_nonce).toString('hex')).toBe('33'.repeat(32));
+    expect(state.last_epoch_block_nonce).toHaveLength(0);
+    expect(mockOgmiosSockets[0].sent[0]).toMatchObject({
+      method: 'acquireLedgerState',
+      params: { point: { slot: 123, id: 'ab'.repeat(32) } },
+    });
+  });
+
+  it('rejects nonce queries at a different checkpoint', async () => {
+    mockOgmiosResponses['queryLedgerState/tip'] = { slot: 124, id: 'ab'.repeat(32) };
+    await expect(queryPraosNoncesAtPoint('ws://localhost:1337', { slot: 123n, hash: 'ab'.repeat(32) })).rejects.toThrow(
+      'did not acquire',
+    );
+    expect(mockOgmiosSockets[0].sent.some((request) => request.method === 'queryLedgerState/nonces')).toBe(false);
+  });
+
+  it.each([undefined, '', '01', 'z'.repeat(64)])('rejects missing or malformed nonce data: %s', async (value) => {
+    mockOgmiosResponses['queryLedgerState/tip'] = { slot: 123, id: 'ab'.repeat(32) };
+    mockOgmiosResponses['queryLedgerState/nonces'] = {
+      epochNonce: '11'.repeat(32),
+      evolvingNonce: value,
+      candidateNonce: '33'.repeat(32),
+      lastEpochLastAncestor: null,
+    };
+    await expect(queryPraosNoncesAtPoint('ws://localhost:1337', { slot: 123n, hash: 'ab'.repeat(32) })).rejects.toThrow(
+      'evolvingNonce is missing or invalid',
+    );
   });
 
   it('parses both KES parameters from the Shelley genesis response', () => {
@@ -83,7 +124,7 @@ describe('Ogmios stability verification parsing', () => {
     });
   });
 
-  it('keeps exact relative stake separately from the rounded scoring weight', () => {
+  it('keeps exact relative stake and an integer weight without rounding', () => {
     const [entry] = parseStakeDistributionRows(
       {},
       {
@@ -96,7 +137,7 @@ describe('Ogmios stability verification parsing', () => {
 
     expect(entry.relativeStakeNumerator).toBe(4_178_103_721_131n);
     expect(entry.relativeStakeDenominator).toBe(5_019_556_879_197_493n);
-    expect(entry.stake).toBe(832_365_052n);
+    expect(entry.stake).toBe(4_178_103_721_131n);
   });
 
   it('normalizes positive-stake pools over delegated stake for Praos leader verification', () => {
@@ -119,13 +160,11 @@ describe('Ogmios stability verification parsing', () => {
       [9n, 46n],
       [9n, 46n],
     ]);
-    expect(entries.map((entry) => entry.stake)).toEqual([
-      195_652_173_913n,
-      195_652_173_913n,
-      217_391_304_348n,
-      195_652_173_913n,
-      195_652_173_913n,
-    ]);
+    expect(entries.map((entry) => entry.stake)).toEqual([9n, 9n, 10n, 9n, 9n]);
+    const totalStake = entries.reduce((total, entry) => total + entry.stake, 0n);
+    for (const entry of entries) {
+      expect(entry.relativeStakeNumerator * totalStake).toBe(entry.stake * entry.relativeStakeDenominator);
+    }
   });
 
   it('does not add an unassigned entry when exact pool fractions already sum to one', () => {
@@ -143,6 +182,50 @@ describe('Ogmios stability verification parsing', () => {
       [1n, 2n],
       [1n, 2n],
     ]);
+  });
+
+  it('uses the same weights for equivalent fraction representations', () => {
+    const entries = parseStakeDistributionRows(
+      {},
+      {
+        pool1alpha: { stake: '2/4', vrf: 'a1'.repeat(32) },
+        pool1beta: { stake: '3/6', vrf: 'b2'.repeat(32) },
+      },
+      true,
+    );
+
+    expect(entries.map((entry) => entry.stake)).toEqual([1n, 1n]);
+  });
+
+  it('preserves a tiny pool share when total stake reaches the uint64 limit', () => {
+    const totalStake = (1n << 64n) - 1n;
+    const entries = parseStakeDistributionRows(
+      {},
+      {
+        pool1alpha: { stake: `1/${totalStake}`, vrf: 'a1'.repeat(32) },
+        pool1beta: { stake: `${totalStake - 1n}/${totalStake}`, vrf: 'b2'.repeat(32) },
+      },
+      true,
+    );
+
+    expect(entries.map((entry) => entry.stake)).toEqual([1n, totalStake - 1n]);
+  });
+
+  it('rejects fractions that cannot share exact uint64 weights', () => {
+    const first = 4_294_967_291n;
+    const second = 4_294_967_279n;
+    expect(() =>
+      parseStakeDistributionRows(
+        {},
+        {
+          pool1alpha: { stake: `1/${2n * first}`, vrf: 'a1'.repeat(32) },
+          pool1beta: { stake: `${first - 1n}/${2n * first}`, vrf: 'b2'.repeat(32) },
+          pool1gamma: { stake: `1/${2n * second}`, vrf: 'c3'.repeat(32) },
+          pool1delta: { stake: `${second - 1n}/${2n * second}`, vrf: 'd4'.repeat(32) },
+        },
+        true,
+      ),
+    ).toThrow('exact stake weights exceed protobuf uint64 bounds');
   });
 
   it('does not turn an all-zero pool map into synthetic stake', () => {

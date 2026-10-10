@@ -66,8 +66,6 @@ const proofSpecs = [[33n, 4n, 12n], [32n, 1n, 1n]].map(([size, min, max]) =>
 );
 const consensus = (time: bigint) =>
   new Constr(0, [time, "22".repeat(32), new Constr(0, ["33".repeat(32)])]);
-const consensusKey = (n: bigint) =>
-  `clients/07-tendermint-0/consensusStates/${n}`;
 
 async function fixture(
   historyCount: number,
@@ -96,6 +94,8 @@ async function fixture(
   if (normalUpdate) {
     emulator.time = adjacentFixture.recommended_emulator_time_ms;
   }
+  const consensusKey = (n: bigint, revision = normalUpdate ? 1n : 0n) =>
+    `clients/07-tendermint-0/consensusStates/${revision}-${n}`;
   const height = (n: bigint) => new Constr(0, [normalUpdate ? 1n : 0n, n]);
   Object.assign(emulator.protocolParameters, {
     maxTxSize: MAX_BYTES,
@@ -126,7 +126,7 @@ async function fixture(
     );
   const [recoveryScript, recoveryHash] = applyBytes(
     "recover_client.recover_client.withdraw",
-    [HOST_POLICY],
+    [HOST_POLICY, "00".repeat(28)],
   );
   const staged = stagedMode
     ? loadStagedTendermintValidators(lucid, HOST_POLICY, recoveryHash)
@@ -209,6 +209,7 @@ async function fixture(
     new Constr(0, [0n, 0n]),
     height(latestHeight),
     proofSpecs,
+    [],
   ]);
   const clientDatum = new Constr<Data>(0, [
     new Constr(0, [
@@ -500,6 +501,7 @@ async function fixture(
       ...clientState.fields.slice(0, 6),
       height(substituteHeight),
       proofSpecs,
+      [],
     ]);
     const substituteConsensus = consensus(nowNs - 1_000_000_000n);
     const nextClientState = new Constr(0, [
@@ -522,7 +524,7 @@ async function fixture(
       encodePublic(substituteState),
     );
     tree.set(
-      `clients/07-tendermint-1/consensusStates/${substituteHeight}`,
+      `clients/07-tendermint-1/consensusStates/0-${substituteHeight}`,
       encodePublic(substituteConsensus),
     );
     hostDatum = {
@@ -693,6 +695,7 @@ async function fixture(
       ...clientState.fields.slice(0, 6),
       height(newHeight),
       proofSpecs,
+      [],
     ]);
     const nextClient = new Constr<Data>(0, [
       new Constr(0, [
@@ -1048,7 +1051,10 @@ async function fixture(
         );
         for await (const entry of recovered.records()) {
           rebuilt.set(
-            consensusKey(entry.record.height.revisionHeight),
+            consensusKey(
+              entry.record.height.revisionHeight,
+              entry.record.height.revisionNumber,
+            ),
             entry.consensusValue,
           );
         }
@@ -1128,7 +1134,10 @@ async function fixture(
         );
         for await (const entry of recovered.records()) {
           tree.set(
-            consensusKey(entry.record.height.revisionHeight),
+            consensusKey(
+              entry.record.height.revisionHeight,
+              entry.record.height.revisionNumber,
+            ),
             entry.consensusValue,
           );
         }

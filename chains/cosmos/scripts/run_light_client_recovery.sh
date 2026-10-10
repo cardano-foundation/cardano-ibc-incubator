@@ -934,6 +934,48 @@ run_forward_token_transfer() {
     bash "$DIRECT_TOKEN_SWAP_SCRIPT"
 }
 
+escrow_reader() {
+  run_with_timeout "$QUERY_TIMEOUT_SECONDS" "$DENO_BIN" run --quiet \
+    --config "$repo_root/cardano/offchain/deno.json" \
+    --allow-read --allow-env --allow-net "$ESCROW_READER_SCRIPT" "$@"
+}
+
+query_cardano_escrow() {
+  local snapshot
+  snapshot="$(escrow_reader snapshot "$HANDLER_JSON" "$CARDANO_COSMOS_CHANNEL_ID" "$CARDANO_SEND_DENOM")" || return $?
+  jq -Sce '
+    if type == "object"
+      and (.output | type == "string" and length > 0)
+      and (.shardToken | type == "string" and length > 0)
+      and (.escrowedAmount | type == "string" and test("^[0-9]+$"))
+      and (.assets | type == "object" and length > 0)
+    then . else error("Malformed Cardano escrow snapshot") end
+  ' <<<"$snapshot"
+}
+
+wait_for_cardano_escrow_replacement() {
+  local previous_output="$1"
+  local deadline=$(( $(date +%s) + PACKET_TIMEOUT_SECONDS ))
+  while true; do
+    local snapshot
+    snapshot="$(query_cardano_escrow)" || return $?
+    if [[ "$(jq -r '.output' <<<"$snapshot")" != "$previous_output" ]]; then
+      printf '%s\n' "$snapshot"
+      return 0
+    fi
+    if (( $(date +%s) >= deadline )); then
+      echo "Timed out waiting for the post-transfer Cardano escrow output." >&2
+      return 1
+    fi
+    sleep "$POLL_INTERVAL_SECONDS"
+  done
+}
+# The software-upgrade scenario reuses the same query and transfer assertions.
+# Sourcing defines helpers only; executing still runs the recovery scenario.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="${CARIBIC_PROJECT_ROOT:-$(cd "$script_dir/../../.." && pwd -P)}"
 HERMES_BIN="${HERMES_BIN:-$repo_root/relayer/target/release/hermes}"
@@ -941,6 +983,8 @@ DOCKER_BIN="${DOCKER_BIN:-docker}"
 COSMOS_COMPOSE_FILE="${COSMOS_COMPOSE_FILE:-$repo_root/chains/cosmos/docker-compose.yml}"
 DIRECT_TOKEN_SWAP_SCRIPT="${DIRECT_TOKEN_SWAP_SCRIPT:-$script_dir/run_direct_token_swap.sh}"
 HANDLER_JSON="${HANDLER_JSON:-$repo_root/cardano/offchain/deployments/handler.json}"
+DENO_BIN="${DENO_BIN:-deno}"
+ESCROW_READER_SCRIPT="${ESCROW_READER_SCRIPT:-$repo_root/cardano/offchain/scripts/recovery-escrow.ts}"
 
 COSMOS_PROFILE="${COSMOS_PROFILE:-v8-classic}"
 CARDANO_CHAIN_ID="${CARDANO_CHAIN_ID:-cardano-devnet}"
@@ -980,8 +1024,10 @@ require_positive_integer "$PACKET_TIMEOUT_SECONDS" "RECOVERY_PACKET_TIMEOUT_SECO
 
 [[ -x "$HERMES_BIN" ]] || fail "Local Hermes binary not found at $HERMES_BIN."
 [[ -f "$DIRECT_TOKEN_SWAP_SCRIPT" ]] || fail "Direct token-swap script not found at $DIRECT_TOKEN_SWAP_SCRIPT."
+command -v "$DENO_BIN" >/dev/null 2>&1 || fail "Deno executable '$DENO_BIN' was not found."
+[[ -f "$ESCROW_READER_SCRIPT" ]] || fail "Escrow reader not found at $ESCROW_READER_SCRIPT."
+[[ -f "$HANDLER_JSON" ]] || fail "Cardano handler deployment not found at $HANDLER_JSON."
 if [[ -z "$CARDANO_SEND_DENOM" ]]; then
-  [[ -f "$HANDLER_JSON" ]] || fail "Cardano handler deployment not found at $HANDLER_JSON."
   CARDANO_SEND_DENOM="$(jq -er '.tokens.mock | select(type == "string" and length > 0)' "$HANDLER_JSON")" ||
     fail "Could not resolve the Cardano mock token denomination from $HANDLER_JSON."
 fi
@@ -1095,6 +1141,11 @@ echo "Waiting for the on-chain subject status to become Expired..."
 wait_for_subject_expiry
 echo "Subject ${SUBJECT_CLIENT_ID} is genuinely Expired; substitute ${SUBSTITUTE_CLIENT_ID} remains Active."
 
+cardano_escrow_before="$(query_cardano_escrow)"
+[[ "$(jq -r '.escrowedAmount' <<<"$cardano_escrow_before")" == "$RECOVERY_TRANSFER_AMOUNT" ]] ||
+  fail "Fresh Cardano escrow deposit does not match the pre-recovery transfer."
+echo "Cardano escrow before recovery: $cardano_escrow_before"
+
 echo "Submitting recovery through the ibc-go governance authority path..."
 proposal_id="$(submit_recovery_proposal)"
 vote_for_recovery "$proposal_id"
@@ -1127,9 +1178,14 @@ jq -e '
   fail "Recovery changed the pending packet sender balance."
 [[ "$(query_bank_balance "$ESCROW_ADDRESS" utest)" == "$timeout_escrow_balance_escrowed" ]] ||
   fail "Recovery changed the pending packet escrow balance."
+[[ "$(query_cardano_escrow)" == "$cardano_escrow_before" ]] ||
+  fail "Recovery changed the Cardano escrow output, datum or assets."
 
 echo "Sending the post-recovery packet; its later Cardano root drives the first normal subject update..."
 run_forward_token_transfer
+cardano_escrow_after="$(wait_for_cardano_escrow_replacement "$(jq -r '.output' <<<"$cardano_escrow_before")")"
+escrow_reader assert-increase "$cardano_escrow_before" "$cardano_escrow_after" "$RECOVERY_TRANSFER_AMOUNT"
+echo "Cardano escrow after transfer: $cardano_escrow_after"
 updated_state="$(query_client_state "$SUBJECT_CLIENT_ID")"
 updated_latest="$(client_latest_height "$updated_state")"
 updated_checkpoint="$(client_checkpoint_height "$updated_state")"
@@ -1156,6 +1212,8 @@ wait_for_commitment_baseline "$baseline_sequences"
   fail "Timeout did not restore the sender's exact utest balance."
 [[ "$(query_bank_balance "$ESCROW_ADDRESS" utest)" == "$timeout_escrow_balance_before" ]] ||
   fail "Timeout did not restore the channel's exact utest escrow balance."
+[[ "$(query_cardano_escrow)" == "$cardano_escrow_after" ]] ||
+  fail "The unreceived Cosmos packet timeout changed Cardano escrow."
 [[ "$(client_status "$SUBJECT_CLIENT_ID")" == "Active" ]] ||
   fail "Recovered subject is not Active after verifying the timeout non-membership proof."
 

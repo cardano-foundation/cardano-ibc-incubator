@@ -29,6 +29,7 @@ function clientDatum(
     token: { policyId: '11'.repeat(28), name: Buffer.from(latestHeight.toString()).toString('hex') },
     state: {
       clientState: {
+        upgradePath: [],
         chainId: options.chainId ?? Buffer.from('chain-0').toString('hex'),
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 100n,
@@ -242,7 +243,7 @@ describe('ClientService recovery transaction', () => {
     const tree = new ICS23MerkleTree();
     tree.set('clients/07-tendermint-1/clientState', Buffer.from('old-client'));
     for (let value = 300n; value >= 1n; value--) {
-      tree.set(`clients/07-tendermint-1/consensusStates/${value}`, Buffer.from([Number(value % 255n)]));
+      tree.set(`clients/07-tendermint-1/consensusStates/0-${value}`, Buffer.from([Number(value % 255n)]));
     }
     const hostStateUtxo = { txHash: 'aa'.repeat(32), outputIndex: 0, address: 'host', assets: {} };
     await treeContext.restore(tree, hostStateUtxo);
@@ -273,7 +274,7 @@ describe('ClientService recovery transaction', () => {
       Buffer.from(await encodeClientStateValue(recovered.state.clientState, Lucid), 'hex'),
     );
     expectedTree.set(
-      'clients/07-tendermint-1/consensusStates/301',
+      'clients/07-tendermint-1/consensusStates/0-301',
       Buffer.from(await encodeConsensusStateValue(Array.from(recovered.state.consensusStates.values())[0], Lucid), 'hex'),
     );
     expect(result.pendingTreeUpdate.expectedNewRoot).toBe(expectedTree.getRoot());

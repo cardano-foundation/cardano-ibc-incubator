@@ -1,7 +1,6 @@
 package probabilistic
 
 import (
-	"math/big"
 	"strconv"
 
 	errorsmod "cosmossdk.io/errors"
@@ -33,17 +32,18 @@ func (h Height) GetRevisionHeight() uint64 {
 }
 
 func (h Height) Compare(other exported.Height) int64 {
-	var a, b big.Int
-	a.SetUint64(h.RevisionHeight)
-	b.SetUint64(other.GetRevisionHeight())
-	return int64(a.Cmp(&b))
+	return toCoreHeight(&h).Compare(other)
 }
 
-func (h Height) LT(other exported.Height) bool  { return h.Compare(other) == -1 }
+func (h Height) LT(other exported.Height) bool { return h.Compare(other) == -1 }
+
 func (h Height) LTE(other exported.Height) bool { return h.Compare(other) <= 0 }
-func (h Height) GT(other exported.Height) bool  { return h.Compare(other) == 1 }
+
+func (h Height) GT(other exported.Height) bool { return h.Compare(other) == 1 }
+
 func (h Height) GTE(other exported.Height) bool { return h.Compare(other) >= 0 }
-func (h Height) EQ(other exported.Height) bool  { return h.Compare(other) == 0 }
+
+func (h Height) EQ(other exported.Height) bool { return h.Compare(other) == 0 }
 
 func (h Height) Decrement() (exported.Height, bool) {
 	if h.RevisionHeight == 0 {

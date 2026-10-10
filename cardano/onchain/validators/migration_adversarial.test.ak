@@ -16,8 +16,17 @@ use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/client_datum.{
+  ClientDatum, ClientDatumState,
+}
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
   ReclaimTransferWithdrawal,
+}
+use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
+use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{ReclaimClient} as staged_client_redeemer
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
+  UncheckedRational,
 }
 use ibc/core/ics_005/types/ibc_module_redeemer.{ReclaimModule}
 use ibc/core/ics_025_handler_interface/host_state.{
@@ -26,6 +35,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{EnterShutdown}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
+use ibc/implementation/spending_multitx_client as client_dispatch
 use ibc/implementation/spending_transfer_module as transfer_dispatch
 use ibc/migration/auth as migration
 use ibc/migration/types.{
@@ -39,6 +49,7 @@ use ibc/migration/types.{
 use ibc/utils/text_bytes
 use implementation_registry
 use minting_implementation_registry
+use upgradeable/client as client_wrapper
 use upgradeable/host_state as host_wrapper
 use upgradeable/transfer as transfer_wrapper
 
@@ -2199,4 +2210,69 @@ test migration_budget_gate_short_registry_rejected() fail {
 
 test migration_budget_gate_extra_registry_field_rejected() fail {
   malformed_gate(True)
+}
+
+test emergency_client_retirement_stays_disabled_after_size_optimization() {
+  let token = AuthToken { policy_id: hash(3), name: "client" }
+  let zero = Height { revision_number: 0, revision_height: 0 }
+  let datum =
+    ClientDatum {
+      token,
+      history_root: #"",
+      state: ClientDatumState {
+        client_state: ClientState {
+          chain_id: "chain-0",
+          trust_level: UncheckedRational { numerator: 1, denominator: 3 },
+          trusting_period: 1,
+          unbonding_period: 2,
+          max_clock_drift: 1,
+          frozen_height: zero,
+          latest_height: zero,
+          proof_specs: [],
+          upgrade_path: [],
+        },
+        consensus_states: [],
+        processed_times: [],
+        processed_heights: [],
+      },
+    }
+  let output =
+    Output {
+      address: from_script(hash(102)),
+      value: assets.from_asset(token.policy_id, token.name, 1),
+      datum: InlineDatum(datum),
+      reference_script: None,
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [input(2, output)],
+      reference_inputs: [input(9, registry_output(initial()))],
+      mint: assets.from_asset(token.policy_id, token.name, -1),
+    }
+  // The retirement witness is valid when dispatch explicitly enables it.
+  expect
+    client_dispatch.validate(
+      True,
+      hash(2),
+      hash(8),
+      Script(hash(900)),
+      Some(datum),
+      ReclaimClient,
+      ref(2),
+      tx,
+    )
+  expect migration.operation_allowed(tx, hash(1), 1, 2)
+  let raw: Data = ReclaimClient
+  !client_wrapper.client.spend(
+    hash(1),
+    1,
+    hash(2),
+    hash(8),
+    Script(hash(900)),
+    Some(datum),
+    raw,
+    ref(2),
+    tx,
+  )
 }

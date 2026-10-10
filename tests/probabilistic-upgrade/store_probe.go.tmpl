@@ -1,0 +1,242 @@
+// This external host fixture imports published modules without modifying them.
+// Rendered for one ibc-go major at a time by run_store_compatibility.py.
+package main
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"time"
+
+	"cosmossdk.io/log"
+	"cosmossdk.io/store"
+	"cosmossdk.io/store/metrics"
+	"cosmossdk.io/store/prefix"
+	storetypes "cosmossdk.io/store/types"
+	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
+	lc "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v@MAJOR@"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/gogoproto/proto"
+	clienttypes "github.com/cosmos/ibc-go/v@MAJOR@/modules/core/02-client/types"
+	commitmenttypes "github.com/cosmos/ibc-go/v@MAJOR@/modules/core/23-commitment/types"
+	@PATH_IMPORT@
+	host "github.com/cosmos/ibc-go/v@MAJOR@/modules/core/24-host"
+	"github.com/cosmos/ibc-go/v@MAJOR@/modules/core/exported"
+	ics23 "github.com/cosmos/ics23/go"
+)
+
+var hostRevision = "unset"
+var baseTime = time.Unix(1_700_000_000, 0)
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+func check(ok bool, message string) {
+	if !ok {
+		panic(message)
+	}
+}
+
+func proof(membership bool) (root, encoded, key, value []byte) {
+	key, value = []byte("commitments/ports/transfer/channels/channel-0/sequences/1"), []byte("packet-commitment")
+	if !membership {
+		value = nil
+	}
+	hash := sha256.Sum256(key)
+	index := binary.BigEndian.Uint64(hash[:8])
+	path := make([]*ics23.InnerOp, 64)
+	for depth := range path {
+		if (index>>uint(depth))&1 == 0 {
+			path[depth] = &ics23.InnerOp{Prefix: []byte{1}, Suffix: make([]byte, 32)}
+		} else {
+			path[depth] = &ics23.InnerOp{Prefix: append([]byte{1}, make([]byte, 32)...)}
+		}
+	}
+	var err error
+	root, err = core.ComputeRootFromProofPath(key, value, path)
+	must(err)
+	existence := &ics23.ExistenceProof{Key: key, Value: value, Path: path}
+	p := &ics23.CommitmentProof{Proof: &ics23.CommitmentProof_Exist{Exist: existence}}
+	if !membership {
+		p.Proof = &ics23.CommitmentProof_Nonexist{Nonexist: &ics23.NonExistenceProof{Key: key, Left: existence}}
+	}
+	encoded, err = (&commitmenttypes.MerkleProof{Proofs: []*ics23.CommitmentProof{p}}).Marshal()
+	must(err)
+	return
+}
+
+func initialClient() *lc.ClientState {
+	stake := []*lc.StakeDistributionEntry{{PoolId: "pool-a", Stake: 10_000, VrfKeyHash: bytes.Repeat([]byte{2}, 32), FirstRegistrationSlot: 1, RelativeStakeNumerator: 1, RelativeStakeDenominator: 1}}
+	nonce := bytes.Repeat([]byte{3}, 32)
+	return &lc.ClientState{
+		ChainId: "cardano-fixture", LatestHeight: lc.NewHeight(0, 10), FrozenHeight: lc.ZeroHeight(),
+		CurrentEpoch: 7, TrustingPeriod: 24 * time.Hour, MaxClockDrift: time.Minute,
+		HostStateNftPolicyId: bytes.Repeat([]byte{1}, 28), HostStateNftTokenName: []byte("host-state"),
+		EpochStakeDistribution: stake, EpochNonce: nonce, SlotsPerKesPeriod: 129600, MaxKesEvolutions: 62,
+		ActiveSlotCoefficientNumerator: 1, ActiveSlotCoefficientDenominator: 20,
+		OperationalCertificateCounterHistoryStartHeight: lc.NewHeight(0, 10),
+		CurrentEpochEndSlotExclusive:                    1_000_000, SystemStartUnixNs: uint64(baseTime.UnixNano()), SlotLengthNs: uint64(time.Second),
+		EpochContexts: []*lc.EpochContext{{Epoch: 7, StakeDistribution: stake, EpochNonce: nonce, SlotsPerKesPeriod: 129600, EpochEndSlotExclusive: 1_000_000}},
+	}
+}
+
+// Persist representative message bytes in a separate host store. They are
+// decoding fixtures, not authenticated Cardano headers or accepted updates.
+func messages() []proto.Message {
+	header := &lc.ProbabilisticHeader{
+		TrustedHeight: lc.NewHeight(0, 10), IsCheckpoint: true,
+		AnchorBlock: &lc.ProbabilisticBlock{Height: lc.NewHeight(0, 11), Slot: 1, Hash: "anchor", Epoch: 7, Timestamp: uint64(baseTime.Add(time.Second).UnixNano()), HeaderCbor: []byte{0x80}},
+	}
+	return []proto.Message{header, &lc.Misbehaviour{ProbabilisticHeader1: header, ProbabilisticHeader2: header}, lc.NewHeight(0, 10)}
+}
+
+func digest(s storetypes.KVStore) string {
+	h := sha256.New()
+	it := s.Iterator(nil, nil)
+	defer it.Close()
+	for ; it.Valid(); it.Next() {
+		for _, b := range [][]byte{it.Key(), it.Value()} {
+			must(binary.Write(h, binary.BigEndian, uint64(len(b))))
+			_, err := h.Write(b)
+			must(err)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func verify(ctx sdk.Context, cdc codec.BinaryCodec, s storetypes.KVStore, membership bool) error {
+	state, err := clienttypes.UnmarshalClientState(cdc, s.Get(host.ClientStateKey()))
+	if err != nil {
+		return fmt.Errorf("client decoding: %w", err)
+	}
+	cs, ok := state.(*lc.ClientState)
+	if !ok {
+		return fmt.Errorf("unexpected client type %T", state)
+	}
+	if err := cs.Validate(); err != nil {
+		return fmt.Errorf("client validation: %w", err)
+	}
+	if status := cs.Status(ctx, s, cdc); status != exported.Active {
+		return fmt.Errorf("client status: %s", status)
+	}
+	// Require the registered public identities, including the Any envelope.
+	check(cs.ClientType() == "08-cardano-probabilistic", "client type changed")
+	check(bytes.Equal(clienttypes.MustMarshalClientState(cdc, cs), s.Get(host.ClientStateKey())), "client state did not round-trip")
+	cons, found := lc.GetConsensusState(s, cdc, cs.LatestHeight)
+	check(found, "consensus missing")
+	must(cons.ValidateBasic())
+	check(bytes.Equal(clienttypes.MustMarshalConsensusState(cdc, cons), s.Get([]byte("consensusStates/0-10"))), "consensus state did not round-trip")
+	root, encoded, key, value := proof(membership)
+	check(bytes.Equal(cons.IbcStateRoot, root), "persisted IBC root changed")
+	path := @PATH_EXPRESSION@
+	// Nonzero delays force both processed-time and processed-height reads.
+	if membership {
+		return cs.VerifyMembership(ctx, s, cdc, cs.LatestHeight, uint64(time.Second), 1, encoded, path, value)
+	}
+	return cs.VerifyNonMembership(ctx, s, cdc, cs.LatestHeight, uint64(time.Second), 1, encoded, path)
+}
+
+func main() {
+	check(len(os.Args) == 3, "usage: store-probe initialize|verify|negative-schema|negative-metadata|negative-parameters <db-directory>")
+	mode, dir := os.Args[1], os.Args[2]
+	registry := codectypes.NewInterfaceRegistry()
+	lc.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	db, err := dbm.NewDB("upgrade", dbm.GoLevelDBBackend, dir)
+	must(err)
+	defer db.Close()
+	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
+	key := storetypes.NewKVStoreKey("ibc")
+	fixtureKey := storetypes.NewKVStoreKey("fixture")
+	ms.MountStoreWithDB(key, storetypes.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(fixtureKey, storetypes.StoreTypeIAVL, nil)
+	must(ms.LoadLatestVersion())
+	ctx := sdk.NewContext(ms, cmtproto.Header{ChainID: "cosmos-fixture-1", Height: 100, Time: baseTime}, false, log.NewNopLogger())
+	ibc, fixture := ms.GetKVStore(key), ms.GetKVStore(fixtureKey)
+	if mode == "initialize" {
+		check(ms.LastCommitID().Version == 0, "refusing to initialize an existing database")
+	} else {
+		check(ms.LastCommitID().Version > 0, "existing committed database required")
+	}
+	expectedTypes := []string{"ClientState", "ConsensusState", "ProbabilisticHeader", "Misbehaviour", "Height"}
+	typedMessages := []proto.Message{&lc.ClientState{}, &lc.ConsensusState{}, &lc.ProbabilisticHeader{}, &lc.Misbehaviour{}, &lc.Height{}}
+	for i, msg := range typedMessages {
+		any, err := codectypes.NewAnyWithValue(msg)
+		must(err)
+		check(any.TypeUrl == "/ibc.lightclients.probabilistic.v1."+expectedTypes[i], "protobuf type URL changed")
+	}
+	for i, msg := range messages() {
+		k := []byte(fmt.Sprintf("message/%d", i))
+		if mode == "initialize" {
+			any, err := codectypes.NewAnyWithValue(msg)
+			must(err)
+			fixture.Set(k, cdc.MustMarshal(any))
+		}
+		var any codectypes.Any
+		must(cdc.Unmarshal(fixture.Get(k), &any))
+		decoded, err := registry.Resolve(any.TypeUrl)
+		must(err)
+		must(proto.Unmarshal(any.Value, decoded))
+		check(proto.Equal(msg, decoded), "persisted message changed during decoding")
+	}
+	before := digest(ibc)
+	for i, membership := range []bool{true, false} {
+		id := fmt.Sprintf("08-cardano-probabilistic-%d", i)
+		s := prefix.NewStore(ibc, []byte("clients/"+id+"/"))
+		if mode == "initialize" {
+			root, _, _, _ := proof(membership)
+			cs := initialClient()
+			must(cs.Validate())
+			cons := &lc.ConsensusState{Timestamp: uint64(baseTime.UnixNano()), IbcStateRoot: root, AcceptedBlockHash: hex.EncodeToString(bytes.Repeat([]byte{0x11}, 32)), AcceptedEpoch: 7, UniquePoolsCount: 1, UniqueStakeBps: 10_000, SecurityScoreBps: 10_000}
+			must(cons.ValidateBasic())
+			must(cs.Initialize(ctx, cdc, s, cons))
+		}
+		// Negative checks use a discarded cache: a failed candidate must not
+		// rewrite the database or make the following positive check pass by repair.
+		candidate := s.CacheWrap().(storetypes.KVStore)
+		switch mode {
+		case "initialize", "verify":
+			must(verify(ctx.WithBlockTime(baseTime.Add(5*time.Minute)).WithBlockHeight(101), cdc, candidate, membership))
+		case "negative-schema":
+			var any codectypes.Any
+			must(cdc.Unmarshal(candidate.Get(host.ClientStateKey()), &any))
+			any.TypeUrl = "/ibc.lightclients.probabilistic.v2.ClientState"
+			candidate.Set(host.ClientStateKey(), cdc.MustMarshal(&any))
+			err := verify(ctx, cdc, candidate, membership)
+			check(err != nil && bytes.Contains([]byte(err.Error()), []byte("client decoding:")), "incompatible type URL did not fail decoding")
+		case "negative-metadata":
+			old := lc.ProcessedTimeKey(lc.NewHeight(0, 10))
+			candidate.Set(append([]byte("renamed/"), old...), candidate.Get(old))
+			candidate.Delete(old)
+			err := verify(ctx.WithBlockTime(baseTime.Add(5*time.Minute)).WithBlockHeight(101), cdc, candidate, membership)
+			check(err != nil && bytes.Contains([]byte(err.Error()), []byte("processed time")), "missing processed-time migration was not rejected")
+		case "negative-parameters":
+			state, err := clienttypes.UnmarshalClientState(cdc, candidate.Get(host.ClientStateKey()))
+			must(err)
+			cs := state.(*lc.ClientState)
+			cs.MaxClockDrift = 0 // A decodable legacy default is not safe operational state.
+			candidate.Set(host.ClientStateKey(), clienttypes.MustMarshalClientState(cdc, cs))
+			err = verify(ctx, cdc, candidate, membership)
+			check(err != nil && bytes.Contains([]byte(err.Error()), []byte("client validation:")), "missing mandatory parameter did not fail validation")
+		default:
+			panic("unknown mode")
+		}
+	}
+	after := digest(ibc)
+	if mode == "initialize" {
+		ms.Commit()
+	} else {
+		check(before == after, "verification modified persisted client state")
+	}
+	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"host_revision": hostRevision, "mode": mode, "ibc_store_sha256": after, "client_ids": []string{"08-cardano-probabilistic-0", "08-cardano-probabilistic-1"}}))
+}

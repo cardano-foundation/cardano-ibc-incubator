@@ -49,7 +49,7 @@ function state(datum, deployment) {
     const decoded = lucid_1.Data.from(datum);
     const [clientDatum, token, root] = fields(decoded, 3, "client datum");
     const [clientState, consensus, times, heights] = fields(clientDatum, 4, "client state datum");
-    const clientFields = fields(clientState, 8, "client state");
+    const clientFields = fields(clientState, 9, "client state");
     const [height, value] = single(consensus, "consensus states");
     const [timeHeight, time] = single(times, "processing times");
     const [processedHeightKey, processedHeight] = single(heights, "processing heights");

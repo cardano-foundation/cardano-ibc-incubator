@@ -74,6 +74,7 @@ fn check_client_update(
     ),
     recover_client.recover_client.withdraw(
       policy,
+      #"",
       support,
       credential,
       supported,
@@ -390,6 +391,7 @@ fn check_update_client_misbehaviour_conflict_header(
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain2-1",
       trust_level,
       trusting_period: 1209600000000000,
@@ -675,6 +677,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain2-1",
       trust_level,
       trusting_period: 1209600000000000,
@@ -918,6 +921,7 @@ fn check_update_client_verify_adjacent(
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain2-1",
       trust_level,
       trusting_period: 1209600000000000,
@@ -1217,6 +1221,7 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain2-1",
       trust_level,
       trusting_period: 1209600000000000,
@@ -1492,6 +1497,7 @@ test update_client_verify_non_adjacent_succeed() {
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain2-1",
       trust_level,
       trusting_period: 1209600000000000,

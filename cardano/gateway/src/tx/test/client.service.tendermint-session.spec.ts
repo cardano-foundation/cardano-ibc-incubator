@@ -119,6 +119,7 @@ const CLIENT_DATUM = {
   token: PLAN.clientToken,
   state: {
     clientState: {
+      upgradePath: [],
       chainId: PLAN.header.chainId,
       trustLevel: PLAN.trustLevel,
       trustingPeriod: 3_600_000_000_000n,

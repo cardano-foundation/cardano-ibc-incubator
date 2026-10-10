@@ -3,9 +3,11 @@ package probabilisticcore
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/fxamacker/cbor/v2"
 )
 
@@ -88,7 +90,7 @@ func extractIbcStateRootFromTransaction(
 	if txHash == "" {
 		return nil, fmt.Errorf("missing HostState transaction hash in header")
 	}
-	if !strings.EqualFold(tx.Hash(), txHash) {
+	if !strings.EqualFold(tx.Hash().String(), txHash) {
 		return nil, fmt.Errorf("HostState transaction hash mismatch")
 	}
 	if !tx.IsValid() {
@@ -96,7 +98,7 @@ func extractIbcStateRootFromTransaction(
 	}
 
 	return extractIbcStateRootFromOutputs(
-		tx.Produced(),
+		utxoOutputs(tx.Produced()),
 		outputIndex,
 		hostStateNftPolicyId,
 		hostStateNftTokenName,
@@ -126,7 +128,7 @@ func ExtractIbcStateRootFromTransactionBody(
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode HostState tx body: %w", err)
 	}
-	if strings.ToLower(txBody.Hash()) != strings.ToLower(txHash) {
+	if strings.ToLower(txBody.Id().String()) != strings.ToLower(txHash) {
 		return nil, fmt.Errorf("HostState tx body hash mismatch")
 	}
 
@@ -156,7 +158,8 @@ func extractIbcStateRootFromOutputs(
 			return nil, fmt.Errorf("HostState output has no multi-assets")
 		}
 		policy := ledger.NewBlake2b224(hostStateNftPolicyId)
-		if assets.Asset(policy, hostStateNftTokenName) != 1 {
+		amount := assets.Asset(policy, hostStateNftTokenName)
+		if amount == nil || amount.Cmp(big.NewInt(1)) != 0 {
 			return nil, fmt.Errorf("HostState output does not contain the expected HostState NFT")
 		}
 	}
@@ -166,6 +169,14 @@ func extractIbcStateRootFromOutputs(
 		return nil, fmt.Errorf("HostState output has no inline datum")
 	}
 	return ExtractIbcStateRootFromHostStateDatum(datum.Cbor(), hostStateNftPolicyId)
+}
+
+func utxoOutputs(utxos []common.Utxo) []common.TransactionOutput {
+	outputs := make([]common.TransactionOutput, 0, len(utxos))
+	for _, utxo := range utxos {
+		outputs = append(outputs, utxo.Output)
+	}
+	return outputs
 }
 
 func DecodeTransactionBody(data []byte) (ledger.TransactionBody, error) {

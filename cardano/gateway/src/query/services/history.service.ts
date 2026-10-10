@@ -1,6 +1,7 @@
 import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
 import type { IbcTreeHostStateRef, IbcTreeSnapshot } from '../../shared/helpers/ibc-state-root';
+import type { PoolProductionHistory } from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
 
 export const HISTORY_SERVICE = Symbol('HISTORY_SERVICE');
 
@@ -63,6 +64,8 @@ export type HistoryEpochContextAtBlock = {
 };
 
 export type HistoryService = {
+  // Observational estimates only. This cannot initialize the client's trusted history.
+  findObservedPoolProductionAtBlock(block: HistoryBlock): Promise<PoolProductionHistory>;
   rebuildIbcStateTreeAtBlock(height: bigint, hostState: IbcTreeHostStateRef): Promise<IbcTreeSnapshot>;
   findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]>;
   findUtxosByBlockNo(height: number): Promise<UtxoDto[]>;

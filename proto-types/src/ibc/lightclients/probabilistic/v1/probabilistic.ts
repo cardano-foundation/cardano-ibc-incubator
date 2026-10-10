@@ -20,26 +20,54 @@ export interface Height {
 export interface StakeDistributionEntry {
   pool_id: string;
   stake: bigint;
+  /**
+   * Compatibility fields. Must match the independent effective registry.
+   */
   vrf_key_hash: Uint8Array;
   first_registration_slot: bigint;
   /**
    * Exact relative active stake used for Praos leader eligibility. The
-   * existing stake field remains the weight used by settlement scoring.
+   * existing stake field supplies the current share before settlement discounting.
    */
   relative_stake_numerator: bigint;
   relative_stake_denominator: bigint;
 }
 /**
+ * During updates only stake allocation supplies independently claimed data.
+ * Every other field is compared with values derived from accepted state or
+ * stored network configuration. A mismatch rejects the update. The starting
+ * state and network configuration require authenticated or explicitly trusted
+ * bootstrap.
  * @name EpochContext
  * @package ibc.lightclients.probabilistic.v1
  * @see proto type: ibc.lightclients.probabilistic.v1.EpochContext
  */
 export interface EpochContext {
+  /**
+   * Must equal the epoch derived from the signed header slot and stored schedule.
+   */
   epoch: bigint;
+  /**
+   * Identities, VRF hashes and ages must match the independently tracked
+   * registry for this epoch. Stake amounts remain under the challenge model.
+   */
   stake_distribution: StakeDistributionEntry[];
+  /**
+   * Must equal the nonce derived from checkpoint history. Header verification
+   * uses that locally derived nonce.
+   */
   epoch_nonce: Uint8Array;
+  /**
+   * Must equal ClientState.slots_per_kes_period, fixed at bootstrap.
+   */
   slots_per_kes_period: bigint;
+  /**
+   * Must equal the start slot calculated from the client's stored epoch schedule.
+   */
   epoch_start_slot: bigint;
+  /**
+   * Must equal the exclusive end calculated from that same stored schedule.
+   */
   epoch_end_slot_exclusive: bigint;
 }
 /**
@@ -111,6 +139,149 @@ export interface ClientState {
    * Required deployment policy for packet lane identities.
    */
   packet_lane_policy_id: Uint8Array;
+  /**
+   * Pending epoch roots cannot verify IBC proofs before their deadline.
+   * Initialize replaces any caller-supplied values with host-assigned times.
+   */
+  epoch_context_challenges: EpochContextChallenge[];
+  /**
+   * Required authenticated running state at latest_checkpoint_height.
+   */
+  latest_checkpoint_nonce_state?: PraosNonceState;
+  /**
+   * Established network parameter. Updates cannot redefine this window.
+   */
+  randomness_stabilisation_window_slots: bigint;
+  /**
+   * Independently authenticated registration state at the checkpoint.
+   */
+  latest_checkpoint_pool_registry?: PoolRegistryState;
+  /**
+   * Epoch reference derived from capped credit, never raw accepted claims.
+   */
+  latest_checkpoint_settlement_credit?: SettlementCreditState;
+  /**
+   * Verified production history positioned at this committed checkpoint.
+   */
+  latest_checkpoint_pool_production?: PoolProductionHistory;
+}
+/**
+ * Production observed through the checkpoint. Bit 0 represents epoch-1 and
+ * bit 4 represents epoch-5. Current-epoch observations never qualify that epoch.
+ * Bootstrap authenticates this state. Missing pool records grant no qualification.
+ * @name PoolProductionHistory
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolProductionHistory
+ */
+export interface PoolProductionHistory {
+  epoch: bigint;
+  pools: PoolProductionRecord[];
+}
+/**
+ * @name PoolProductionRecord
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolProductionRecord
+ */
+export interface PoolProductionRecord {
+  pool_id: string;
+  completed_epochs_bitmap: number;
+  produced_current_epoch: boolean;
+}
+/**
+ * Exact settlement reference shares for this epoch. At an adjacent rollover
+ * the client advances these using the preceding epoch's capped credit once.
+ * Values are never normalized after discounting. Bootstrap authenticates them.
+ * @name SettlementCreditState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.SettlementCreditState
+ */
+export interface SettlementCreditState {
+  epoch: bigint;
+  reference: PoolSettlementCredit[];
+}
+/**
+ * Reduced unsigned fraction in canonical big-endian form. Each integer is at
+ * most 16 bytes. Zero shares are omitted. This keeps fractional credit exact.
+ * @name PoolSettlementCredit
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolSettlementCredit
+ */
+export interface PoolSettlementCredit {
+  pool_id: string;
+  numerator: Uint8Array;
+  denominator: Uint8Array;
+}
+/**
+ * Pool identity and VRF binding from the trusted bootstrap or authenticated
+ * certificate history. Slot zero is valid for a genesis registration.
+ * @name PoolRegistrationBinding
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistrationBinding
+ */
+export interface PoolRegistrationBinding {
+  pool_id: string;
+  vrf_key_hash: Uint8Array;
+  first_registration_slot: bigint;
+}
+/**
+ * The current registration state, separate from frozen election snapshots.
+ * Retired records retain their authenticated registration age.
+ * @name PoolRegistrationRecord
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistrationRecord
+ */
+export interface PoolRegistrationRecord {
+  registration?: PoolRegistrationBinding;
+  registered: boolean;
+  pending_vrf_key_hash: Uint8Array;
+  pending_effective_epoch: bigint;
+  /**
+   * Zero means no scheduled retirement.
+   */
+  retirement_epoch: bigint;
+}
+/**
+ * Registration projection of Cardano's current pool state and mark/set
+ * snapshots at the associated checkpoint. This contains no stake amounts.
+ * Bootstrap must establish all three views independently of the epoch table.
+ * @name PoolRegistryState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistryState
+ */
+export interface PoolRegistryState {
+  epoch: bigint;
+  pools: PoolRegistrationRecord[];
+  mark: PoolRegistrationBinding[];
+  effective: PoolRegistrationBinding[];
+}
+/**
+ * Babbage/Conway Praos state after applying the checkpoint header.
+ * Empty running nonce bytes represent Cardano's NeutralNonce identity. A
+ * missing message is unavailable state and must never be filled with defaults.
+ * @name PraosNonceState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PraosNonceState
+ */
+export interface PraosNonceState {
+  epoch_nonce: Uint8Array;
+  evolving_nonce: Uint8Array;
+  candidate_nonce: Uint8Array;
+  /**
+   * Derived from the previous-block hash in the last applied header,
+   * not from that header's own hash.
+   */
+  last_applied_block_nonce: Uint8Array;
+  last_epoch_block_nonce: Uint8Array;
+}
+/**
+ * Host-chain timestamps assigned by the verifier, never by an update header.
+ * @name EpochContextChallenge
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.EpochContextChallenge
+ */
+export interface EpochContextChallenge {
+  epoch: bigint;
+  usable_after_unix_ns: bigint;
 }
 /**
  * @name ConsensusState
@@ -129,6 +300,22 @@ export interface ConsensusState {
    * Canonical CBOR snapshot of live host and lane outputs at this height.
    */
   packet_state_snapshot: Uint8Array;
+  /**
+   * Running nonce values at this accepted block, excluding descendants.
+   */
+  nonce_state?: PraosNonceState;
+  /**
+   * Registration state at this historical accepted block.
+   */
+  pool_registry?: PoolRegistryState;
+  /**
+   * Reference at this accepted block for historical settlement verification.
+   */
+  settlement_credit?: SettlementCreditState;
+  /**
+   * History at this accepted block, excluding temporary settlement descendants.
+   */
+  pool_production?: PoolProductionHistory;
 }
 /**
  * @name Misbehaviour
@@ -380,6 +567,11 @@ function createBaseEpochContext(): EpochContext {
   };
 }
 /**
+ * During updates only stake allocation supplies independently claimed data.
+ * Every other field is compared with values derived from accepted state or
+ * stored network configuration. A mismatch rejects the update. The starting
+ * state and network configuration require authenticated or explicitly trusted
+ * bootstrap.
  * @name EpochContext
  * @package ibc.lightclients.probabilistic.v1
  * @see proto type: ibc.lightclients.probabilistic.v1.EpochContext
@@ -591,6 +783,12 @@ function createBaseClientState(): ClientState {
     latest_checkpoint_slot: BigInt(0),
     latest_checkpoint_timestamp: BigInt(0),
     packet_lane_policy_id: new Uint8Array(),
+    epoch_context_challenges: [],
+    latest_checkpoint_nonce_state: undefined,
+    randomness_stabilisation_window_slots: BigInt(0),
+    latest_checkpoint_pool_registry: undefined,
+    latest_checkpoint_settlement_credit: undefined,
+    latest_checkpoint_pool_production: undefined,
   };
 }
 /**
@@ -687,6 +885,30 @@ export const ClientState = {
     }
     if (message.packet_lane_policy_id.length !== 0) {
       writer.uint32(242).bytes(message.packet_lane_policy_id);
+    }
+    for (const v of message.epoch_context_challenges) {
+      EpochContextChallenge.encode(v!, writer.uint32(250).fork()).ldelim();
+    }
+    if (message.latest_checkpoint_nonce_state !== undefined) {
+      PraosNonceState.encode(message.latest_checkpoint_nonce_state, writer.uint32(258).fork()).ldelim();
+    }
+    if (message.randomness_stabilisation_window_slots !== BigInt(0)) {
+      writer.uint32(264).uint64(message.randomness_stabilisation_window_slots);
+    }
+    if (message.latest_checkpoint_pool_registry !== undefined) {
+      PoolRegistryState.encode(message.latest_checkpoint_pool_registry, writer.uint32(274).fork()).ldelim();
+    }
+    if (message.latest_checkpoint_settlement_credit !== undefined) {
+      SettlementCreditState.encode(
+        message.latest_checkpoint_settlement_credit,
+        writer.uint32(282).fork(),
+      ).ldelim();
+    }
+    if (message.latest_checkpoint_pool_production !== undefined) {
+      PoolProductionHistory.encode(
+        message.latest_checkpoint_pool_production,
+        writer.uint32(290).fork(),
+      ).ldelim();
     }
     return writer;
   },
@@ -786,6 +1008,24 @@ export const ClientState = {
         case 30:
           message.packet_lane_policy_id = reader.bytes();
           break;
+        case 31:
+          message.epoch_context_challenges.push(EpochContextChallenge.decode(reader, reader.uint32()));
+          break;
+        case 32:
+          message.latest_checkpoint_nonce_state = PraosNonceState.decode(reader, reader.uint32());
+          break;
+        case 33:
+          message.randomness_stabilisation_window_slots = reader.uint64();
+          break;
+        case 34:
+          message.latest_checkpoint_pool_registry = PoolRegistryState.decode(reader, reader.uint32());
+          break;
+        case 35:
+          message.latest_checkpoint_settlement_credit = SettlementCreditState.decode(reader, reader.uint32());
+          break;
+        case 36:
+          message.latest_checkpoint_pool_production = PoolProductionHistory.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -850,6 +1090,28 @@ export const ClientState = {
       obj.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
     if (isSet(object.packet_lane_policy_id))
       obj.packet_lane_policy_id = bytesFromBase64(object.packet_lane_policy_id);
+    if (Array.isArray(object?.epoch_context_challenges))
+      obj.epoch_context_challenges = object.epoch_context_challenges.map((e: any) =>
+        EpochContextChallenge.fromJSON(e),
+      );
+    if (isSet(object.latest_checkpoint_nonce_state))
+      obj.latest_checkpoint_nonce_state = PraosNonceState.fromJSON(object.latest_checkpoint_nonce_state);
+    if (isSet(object.randomness_stabilisation_window_slots))
+      obj.randomness_stabilisation_window_slots = BigInt(
+        object.randomness_stabilisation_window_slots.toString(),
+      );
+    if (isSet(object.latest_checkpoint_pool_registry))
+      obj.latest_checkpoint_pool_registry = PoolRegistryState.fromJSON(
+        object.latest_checkpoint_pool_registry,
+      );
+    if (isSet(object.latest_checkpoint_settlement_credit))
+      obj.latest_checkpoint_settlement_credit = SettlementCreditState.fromJSON(
+        object.latest_checkpoint_settlement_credit,
+      );
+    if (isSet(object.latest_checkpoint_pool_production))
+      obj.latest_checkpoint_pool_production = PoolProductionHistory.fromJSON(
+        object.latest_checkpoint_pool_production,
+      );
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -947,6 +1209,33 @@ export const ClientState = {
       (obj.packet_lane_policy_id = base64FromBytes(
         message.packet_lane_policy_id !== undefined ? message.packet_lane_policy_id : new Uint8Array(),
       ));
+    if (message.epoch_context_challenges) {
+      obj.epoch_context_challenges = message.epoch_context_challenges.map((e) =>
+        e ? EpochContextChallenge.toJSON(e) : undefined,
+      );
+    } else {
+      obj.epoch_context_challenges = [];
+    }
+    message.latest_checkpoint_nonce_state !== undefined &&
+      (obj.latest_checkpoint_nonce_state = message.latest_checkpoint_nonce_state
+        ? PraosNonceState.toJSON(message.latest_checkpoint_nonce_state)
+        : undefined);
+    message.randomness_stabilisation_window_slots !== undefined &&
+      (obj.randomness_stabilisation_window_slots = (
+        message.randomness_stabilisation_window_slots || BigInt(0)
+      ).toString());
+    message.latest_checkpoint_pool_registry !== undefined &&
+      (obj.latest_checkpoint_pool_registry = message.latest_checkpoint_pool_registry
+        ? PoolRegistryState.toJSON(message.latest_checkpoint_pool_registry)
+        : undefined);
+    message.latest_checkpoint_settlement_credit !== undefined &&
+      (obj.latest_checkpoint_settlement_credit = message.latest_checkpoint_settlement_credit
+        ? SettlementCreditState.toJSON(message.latest_checkpoint_settlement_credit)
+        : undefined);
+    message.latest_checkpoint_pool_production !== undefined &&
+      (obj.latest_checkpoint_pool_production = message.latest_checkpoint_pool_production
+        ? PoolProductionHistory.toJSON(message.latest_checkpoint_pool_production)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1035,6 +1324,810 @@ export const ClientState = {
       message.latest_checkpoint_timestamp = BigInt(object.latest_checkpoint_timestamp.toString());
     }
     message.packet_lane_policy_id = object.packet_lane_policy_id ?? new Uint8Array();
+    message.epoch_context_challenges =
+      object.epoch_context_challenges?.map((e) => EpochContextChallenge.fromPartial(e)) || [];
+    if (object.latest_checkpoint_nonce_state !== undefined && object.latest_checkpoint_nonce_state !== null) {
+      message.latest_checkpoint_nonce_state = PraosNonceState.fromPartial(
+        object.latest_checkpoint_nonce_state,
+      );
+    }
+    if (
+      object.randomness_stabilisation_window_slots !== undefined &&
+      object.randomness_stabilisation_window_slots !== null
+    ) {
+      message.randomness_stabilisation_window_slots = BigInt(
+        object.randomness_stabilisation_window_slots.toString(),
+      );
+    }
+    if (
+      object.latest_checkpoint_pool_registry !== undefined &&
+      object.latest_checkpoint_pool_registry !== null
+    ) {
+      message.latest_checkpoint_pool_registry = PoolRegistryState.fromPartial(
+        object.latest_checkpoint_pool_registry,
+      );
+    }
+    if (
+      object.latest_checkpoint_settlement_credit !== undefined &&
+      object.latest_checkpoint_settlement_credit !== null
+    ) {
+      message.latest_checkpoint_settlement_credit = SettlementCreditState.fromPartial(
+        object.latest_checkpoint_settlement_credit,
+      );
+    }
+    if (
+      object.latest_checkpoint_pool_production !== undefined &&
+      object.latest_checkpoint_pool_production !== null
+    ) {
+      message.latest_checkpoint_pool_production = PoolProductionHistory.fromPartial(
+        object.latest_checkpoint_pool_production,
+      );
+    }
+    return message;
+  },
+};
+function createBasePoolProductionHistory(): PoolProductionHistory {
+  return {
+    epoch: BigInt(0),
+    pools: [],
+  };
+}
+/**
+ * Production observed through the checkpoint. Bit 0 represents epoch-1 and
+ * bit 4 represents epoch-5. Current-epoch observations never qualify that epoch.
+ * Bootstrap authenticates this state. Missing pool records grant no qualification.
+ * @name PoolProductionHistory
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolProductionHistory
+ */
+export const PoolProductionHistory = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolProductionHistory",
+  encode(message: PoolProductionHistory, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    for (const v of message.pools) {
+      PoolProductionRecord.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolProductionHistory {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolProductionHistory();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.pools.push(PoolProductionRecord.decode(reader, reader.uint32()));
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolProductionHistory {
+    const obj = createBasePoolProductionHistory();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (Array.isArray(object?.pools))
+      obj.pools = object.pools.map((e: any) => PoolProductionRecord.fromJSON(e));
+    return obj;
+  },
+  toJSON(message: PoolProductionHistory): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    if (message.pools) {
+      obj.pools = message.pools.map((e) => (e ? PoolProductionRecord.toJSON(e) : undefined));
+    } else {
+      obj.pools = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolProductionHistory>, I>>(object: I): PoolProductionHistory {
+    const message = createBasePoolProductionHistory();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    message.pools = object.pools?.map((e) => PoolProductionRecord.fromPartial(e)) || [];
+    return message;
+  },
+};
+function createBasePoolProductionRecord(): PoolProductionRecord {
+  return {
+    pool_id: "",
+    completed_epochs_bitmap: 0,
+    produced_current_epoch: false,
+  };
+}
+/**
+ * @name PoolProductionRecord
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolProductionRecord
+ */
+export const PoolProductionRecord = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolProductionRecord",
+  encode(message: PoolProductionRecord, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.pool_id !== "") {
+      writer.uint32(10).string(message.pool_id);
+    }
+    if (message.completed_epochs_bitmap !== 0) {
+      writer.uint32(16).uint32(message.completed_epochs_bitmap);
+    }
+    if (message.produced_current_epoch === true) {
+      writer.uint32(24).bool(message.produced_current_epoch);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolProductionRecord {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolProductionRecord();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.pool_id = reader.string();
+          break;
+        case 2:
+          message.completed_epochs_bitmap = reader.uint32();
+          break;
+        case 3:
+          message.produced_current_epoch = reader.bool();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolProductionRecord {
+    const obj = createBasePoolProductionRecord();
+    if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
+    if (isSet(object.completed_epochs_bitmap))
+      obj.completed_epochs_bitmap = Number(object.completed_epochs_bitmap);
+    if (isSet(object.produced_current_epoch))
+      obj.produced_current_epoch = Boolean(object.produced_current_epoch);
+    return obj;
+  },
+  toJSON(message: PoolProductionRecord): unknown {
+    const obj: any = {};
+    message.pool_id !== undefined && (obj.pool_id = message.pool_id);
+    message.completed_epochs_bitmap !== undefined &&
+      (obj.completed_epochs_bitmap = Math.round(message.completed_epochs_bitmap));
+    message.produced_current_epoch !== undefined &&
+      (obj.produced_current_epoch = message.produced_current_epoch);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolProductionRecord>, I>>(object: I): PoolProductionRecord {
+    const message = createBasePoolProductionRecord();
+    message.pool_id = object.pool_id ?? "";
+    message.completed_epochs_bitmap = object.completed_epochs_bitmap ?? 0;
+    message.produced_current_epoch = object.produced_current_epoch ?? false;
+    return message;
+  },
+};
+function createBaseSettlementCreditState(): SettlementCreditState {
+  return {
+    epoch: BigInt(0),
+    reference: [],
+  };
+}
+/**
+ * Exact settlement reference shares for this epoch. At an adjacent rollover
+ * the client advances these using the preceding epoch's capped credit once.
+ * Values are never normalized after discounting. Bootstrap authenticates them.
+ * @name SettlementCreditState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.SettlementCreditState
+ */
+export const SettlementCreditState = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.SettlementCreditState",
+  encode(message: SettlementCreditState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    for (const v of message.reference) {
+      PoolSettlementCredit.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): SettlementCreditState {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSettlementCreditState();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.reference.push(PoolSettlementCredit.decode(reader, reader.uint32()));
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): SettlementCreditState {
+    const obj = createBaseSettlementCreditState();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (Array.isArray(object?.reference))
+      obj.reference = object.reference.map((e: any) => PoolSettlementCredit.fromJSON(e));
+    return obj;
+  },
+  toJSON(message: SettlementCreditState): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    if (message.reference) {
+      obj.reference = message.reference.map((e) => (e ? PoolSettlementCredit.toJSON(e) : undefined));
+    } else {
+      obj.reference = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<SettlementCreditState>, I>>(object: I): SettlementCreditState {
+    const message = createBaseSettlementCreditState();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    message.reference = object.reference?.map((e) => PoolSettlementCredit.fromPartial(e)) || [];
+    return message;
+  },
+};
+function createBasePoolSettlementCredit(): PoolSettlementCredit {
+  return {
+    pool_id: "",
+    numerator: new Uint8Array(),
+    denominator: new Uint8Array(),
+  };
+}
+/**
+ * Reduced unsigned fraction in canonical big-endian form. Each integer is at
+ * most 16 bytes. Zero shares are omitted. This keeps fractional credit exact.
+ * @name PoolSettlementCredit
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolSettlementCredit
+ */
+export const PoolSettlementCredit = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolSettlementCredit",
+  encode(message: PoolSettlementCredit, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.pool_id !== "") {
+      writer.uint32(10).string(message.pool_id);
+    }
+    if (message.numerator.length !== 0) {
+      writer.uint32(18).bytes(message.numerator);
+    }
+    if (message.denominator.length !== 0) {
+      writer.uint32(26).bytes(message.denominator);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolSettlementCredit {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolSettlementCredit();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.pool_id = reader.string();
+          break;
+        case 2:
+          message.numerator = reader.bytes();
+          break;
+        case 3:
+          message.denominator = reader.bytes();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolSettlementCredit {
+    const obj = createBasePoolSettlementCredit();
+    if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
+    if (isSet(object.numerator)) obj.numerator = bytesFromBase64(object.numerator);
+    if (isSet(object.denominator)) obj.denominator = bytesFromBase64(object.denominator);
+    return obj;
+  },
+  toJSON(message: PoolSettlementCredit): unknown {
+    const obj: any = {};
+    message.pool_id !== undefined && (obj.pool_id = message.pool_id);
+    message.numerator !== undefined &&
+      (obj.numerator = base64FromBytes(
+        message.numerator !== undefined ? message.numerator : new Uint8Array(),
+      ));
+    message.denominator !== undefined &&
+      (obj.denominator = base64FromBytes(
+        message.denominator !== undefined ? message.denominator : new Uint8Array(),
+      ));
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolSettlementCredit>, I>>(object: I): PoolSettlementCredit {
+    const message = createBasePoolSettlementCredit();
+    message.pool_id = object.pool_id ?? "";
+    message.numerator = object.numerator ?? new Uint8Array();
+    message.denominator = object.denominator ?? new Uint8Array();
+    return message;
+  },
+};
+function createBasePoolRegistrationBinding(): PoolRegistrationBinding {
+  return {
+    pool_id: "",
+    vrf_key_hash: new Uint8Array(),
+    first_registration_slot: BigInt(0),
+  };
+}
+/**
+ * Pool identity and VRF binding from the trusted bootstrap or authenticated
+ * certificate history. Slot zero is valid for a genesis registration.
+ * @name PoolRegistrationBinding
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistrationBinding
+ */
+export const PoolRegistrationBinding = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolRegistrationBinding",
+  encode(message: PoolRegistrationBinding, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.pool_id !== "") {
+      writer.uint32(10).string(message.pool_id);
+    }
+    if (message.vrf_key_hash.length !== 0) {
+      writer.uint32(18).bytes(message.vrf_key_hash);
+    }
+    if (message.first_registration_slot !== BigInt(0)) {
+      writer.uint32(24).uint64(message.first_registration_slot);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolRegistrationBinding {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolRegistrationBinding();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.pool_id = reader.string();
+          break;
+        case 2:
+          message.vrf_key_hash = reader.bytes();
+          break;
+        case 3:
+          message.first_registration_slot = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolRegistrationBinding {
+    const obj = createBasePoolRegistrationBinding();
+    if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
+    if (isSet(object.vrf_key_hash)) obj.vrf_key_hash = bytesFromBase64(object.vrf_key_hash);
+    if (isSet(object.first_registration_slot))
+      obj.first_registration_slot = BigInt(object.first_registration_slot.toString());
+    return obj;
+  },
+  toJSON(message: PoolRegistrationBinding): unknown {
+    const obj: any = {};
+    message.pool_id !== undefined && (obj.pool_id = message.pool_id);
+    message.vrf_key_hash !== undefined &&
+      (obj.vrf_key_hash = base64FromBytes(
+        message.vrf_key_hash !== undefined ? message.vrf_key_hash : new Uint8Array(),
+      ));
+    message.first_registration_slot !== undefined &&
+      (obj.first_registration_slot = (message.first_registration_slot || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolRegistrationBinding>, I>>(object: I): PoolRegistrationBinding {
+    const message = createBasePoolRegistrationBinding();
+    message.pool_id = object.pool_id ?? "";
+    message.vrf_key_hash = object.vrf_key_hash ?? new Uint8Array();
+    if (object.first_registration_slot !== undefined && object.first_registration_slot !== null) {
+      message.first_registration_slot = BigInt(object.first_registration_slot.toString());
+    }
+    return message;
+  },
+};
+function createBasePoolRegistrationRecord(): PoolRegistrationRecord {
+  return {
+    registration: undefined,
+    registered: false,
+    pending_vrf_key_hash: new Uint8Array(),
+    pending_effective_epoch: BigInt(0),
+    retirement_epoch: BigInt(0),
+  };
+}
+/**
+ * The current registration state, separate from frozen election snapshots.
+ * Retired records retain their authenticated registration age.
+ * @name PoolRegistrationRecord
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistrationRecord
+ */
+export const PoolRegistrationRecord = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolRegistrationRecord",
+  encode(message: PoolRegistrationRecord, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.registration !== undefined) {
+      PoolRegistrationBinding.encode(message.registration, writer.uint32(10).fork()).ldelim();
+    }
+    if (message.registered === true) {
+      writer.uint32(16).bool(message.registered);
+    }
+    if (message.pending_vrf_key_hash.length !== 0) {
+      writer.uint32(26).bytes(message.pending_vrf_key_hash);
+    }
+    if (message.pending_effective_epoch !== BigInt(0)) {
+      writer.uint32(32).uint64(message.pending_effective_epoch);
+    }
+    if (message.retirement_epoch !== BigInt(0)) {
+      writer.uint32(40).uint64(message.retirement_epoch);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolRegistrationRecord {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolRegistrationRecord();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.registration = PoolRegistrationBinding.decode(reader, reader.uint32());
+          break;
+        case 2:
+          message.registered = reader.bool();
+          break;
+        case 3:
+          message.pending_vrf_key_hash = reader.bytes();
+          break;
+        case 4:
+          message.pending_effective_epoch = reader.uint64();
+          break;
+        case 5:
+          message.retirement_epoch = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolRegistrationRecord {
+    const obj = createBasePoolRegistrationRecord();
+    if (isSet(object.registration)) obj.registration = PoolRegistrationBinding.fromJSON(object.registration);
+    if (isSet(object.registered)) obj.registered = Boolean(object.registered);
+    if (isSet(object.pending_vrf_key_hash))
+      obj.pending_vrf_key_hash = bytesFromBase64(object.pending_vrf_key_hash);
+    if (isSet(object.pending_effective_epoch))
+      obj.pending_effective_epoch = BigInt(object.pending_effective_epoch.toString());
+    if (isSet(object.retirement_epoch)) obj.retirement_epoch = BigInt(object.retirement_epoch.toString());
+    return obj;
+  },
+  toJSON(message: PoolRegistrationRecord): unknown {
+    const obj: any = {};
+    message.registration !== undefined &&
+      (obj.registration = message.registration
+        ? PoolRegistrationBinding.toJSON(message.registration)
+        : undefined);
+    message.registered !== undefined && (obj.registered = message.registered);
+    message.pending_vrf_key_hash !== undefined &&
+      (obj.pending_vrf_key_hash = base64FromBytes(
+        message.pending_vrf_key_hash !== undefined ? message.pending_vrf_key_hash : new Uint8Array(),
+      ));
+    message.pending_effective_epoch !== undefined &&
+      (obj.pending_effective_epoch = (message.pending_effective_epoch || BigInt(0)).toString());
+    message.retirement_epoch !== undefined &&
+      (obj.retirement_epoch = (message.retirement_epoch || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolRegistrationRecord>, I>>(object: I): PoolRegistrationRecord {
+    const message = createBasePoolRegistrationRecord();
+    if (object.registration !== undefined && object.registration !== null) {
+      message.registration = PoolRegistrationBinding.fromPartial(object.registration);
+    }
+    message.registered = object.registered ?? false;
+    message.pending_vrf_key_hash = object.pending_vrf_key_hash ?? new Uint8Array();
+    if (object.pending_effective_epoch !== undefined && object.pending_effective_epoch !== null) {
+      message.pending_effective_epoch = BigInt(object.pending_effective_epoch.toString());
+    }
+    if (object.retirement_epoch !== undefined && object.retirement_epoch !== null) {
+      message.retirement_epoch = BigInt(object.retirement_epoch.toString());
+    }
+    return message;
+  },
+};
+function createBasePoolRegistryState(): PoolRegistryState {
+  return {
+    epoch: BigInt(0),
+    pools: [],
+    mark: [],
+    effective: [],
+  };
+}
+/**
+ * Registration projection of Cardano's current pool state and mark/set
+ * snapshots at the associated checkpoint. This contains no stake amounts.
+ * Bootstrap must establish all three views independently of the epoch table.
+ * @name PoolRegistryState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolRegistryState
+ */
+export const PoolRegistryState = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolRegistryState",
+  encode(message: PoolRegistryState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    for (const v of message.pools) {
+      PoolRegistrationRecord.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    for (const v of message.mark) {
+      PoolRegistrationBinding.encode(v!, writer.uint32(26).fork()).ldelim();
+    }
+    for (const v of message.effective) {
+      PoolRegistrationBinding.encode(v!, writer.uint32(34).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolRegistryState {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolRegistryState();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.pools.push(PoolRegistrationRecord.decode(reader, reader.uint32()));
+          break;
+        case 3:
+          message.mark.push(PoolRegistrationBinding.decode(reader, reader.uint32()));
+          break;
+        case 4:
+          message.effective.push(PoolRegistrationBinding.decode(reader, reader.uint32()));
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolRegistryState {
+    const obj = createBasePoolRegistryState();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (Array.isArray(object?.pools))
+      obj.pools = object.pools.map((e: any) => PoolRegistrationRecord.fromJSON(e));
+    if (Array.isArray(object?.mark))
+      obj.mark = object.mark.map((e: any) => PoolRegistrationBinding.fromJSON(e));
+    if (Array.isArray(object?.effective))
+      obj.effective = object.effective.map((e: any) => PoolRegistrationBinding.fromJSON(e));
+    return obj;
+  },
+  toJSON(message: PoolRegistryState): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    if (message.pools) {
+      obj.pools = message.pools.map((e) => (e ? PoolRegistrationRecord.toJSON(e) : undefined));
+    } else {
+      obj.pools = [];
+    }
+    if (message.mark) {
+      obj.mark = message.mark.map((e) => (e ? PoolRegistrationBinding.toJSON(e) : undefined));
+    } else {
+      obj.mark = [];
+    }
+    if (message.effective) {
+      obj.effective = message.effective.map((e) => (e ? PoolRegistrationBinding.toJSON(e) : undefined));
+    } else {
+      obj.effective = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolRegistryState>, I>>(object: I): PoolRegistryState {
+    const message = createBasePoolRegistryState();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    message.pools = object.pools?.map((e) => PoolRegistrationRecord.fromPartial(e)) || [];
+    message.mark = object.mark?.map((e) => PoolRegistrationBinding.fromPartial(e)) || [];
+    message.effective = object.effective?.map((e) => PoolRegistrationBinding.fromPartial(e)) || [];
+    return message;
+  },
+};
+function createBasePraosNonceState(): PraosNonceState {
+  return {
+    epoch_nonce: new Uint8Array(),
+    evolving_nonce: new Uint8Array(),
+    candidate_nonce: new Uint8Array(),
+    last_applied_block_nonce: new Uint8Array(),
+    last_epoch_block_nonce: new Uint8Array(),
+  };
+}
+/**
+ * Babbage/Conway Praos state after applying the checkpoint header.
+ * Empty running nonce bytes represent Cardano's NeutralNonce identity. A
+ * missing message is unavailable state and must never be filled with defaults.
+ * @name PraosNonceState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PraosNonceState
+ */
+export const PraosNonceState = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PraosNonceState",
+  encode(message: PraosNonceState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch_nonce.length !== 0) {
+      writer.uint32(10).bytes(message.epoch_nonce);
+    }
+    if (message.evolving_nonce.length !== 0) {
+      writer.uint32(18).bytes(message.evolving_nonce);
+    }
+    if (message.candidate_nonce.length !== 0) {
+      writer.uint32(26).bytes(message.candidate_nonce);
+    }
+    if (message.last_applied_block_nonce.length !== 0) {
+      writer.uint32(34).bytes(message.last_applied_block_nonce);
+    }
+    if (message.last_epoch_block_nonce.length !== 0) {
+      writer.uint32(42).bytes(message.last_epoch_block_nonce);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PraosNonceState {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePraosNonceState();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch_nonce = reader.bytes();
+          break;
+        case 2:
+          message.evolving_nonce = reader.bytes();
+          break;
+        case 3:
+          message.candidate_nonce = reader.bytes();
+          break;
+        case 4:
+          message.last_applied_block_nonce = reader.bytes();
+          break;
+        case 5:
+          message.last_epoch_block_nonce = reader.bytes();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PraosNonceState {
+    const obj = createBasePraosNonceState();
+    if (isSet(object.epoch_nonce)) obj.epoch_nonce = bytesFromBase64(object.epoch_nonce);
+    if (isSet(object.evolving_nonce)) obj.evolving_nonce = bytesFromBase64(object.evolving_nonce);
+    if (isSet(object.candidate_nonce)) obj.candidate_nonce = bytesFromBase64(object.candidate_nonce);
+    if (isSet(object.last_applied_block_nonce))
+      obj.last_applied_block_nonce = bytesFromBase64(object.last_applied_block_nonce);
+    if (isSet(object.last_epoch_block_nonce))
+      obj.last_epoch_block_nonce = bytesFromBase64(object.last_epoch_block_nonce);
+    return obj;
+  },
+  toJSON(message: PraosNonceState): unknown {
+    const obj: any = {};
+    message.epoch_nonce !== undefined &&
+      (obj.epoch_nonce = base64FromBytes(
+        message.epoch_nonce !== undefined ? message.epoch_nonce : new Uint8Array(),
+      ));
+    message.evolving_nonce !== undefined &&
+      (obj.evolving_nonce = base64FromBytes(
+        message.evolving_nonce !== undefined ? message.evolving_nonce : new Uint8Array(),
+      ));
+    message.candidate_nonce !== undefined &&
+      (obj.candidate_nonce = base64FromBytes(
+        message.candidate_nonce !== undefined ? message.candidate_nonce : new Uint8Array(),
+      ));
+    message.last_applied_block_nonce !== undefined &&
+      (obj.last_applied_block_nonce = base64FromBytes(
+        message.last_applied_block_nonce !== undefined ? message.last_applied_block_nonce : new Uint8Array(),
+      ));
+    message.last_epoch_block_nonce !== undefined &&
+      (obj.last_epoch_block_nonce = base64FromBytes(
+        message.last_epoch_block_nonce !== undefined ? message.last_epoch_block_nonce : new Uint8Array(),
+      ));
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PraosNonceState>, I>>(object: I): PraosNonceState {
+    const message = createBasePraosNonceState();
+    message.epoch_nonce = object.epoch_nonce ?? new Uint8Array();
+    message.evolving_nonce = object.evolving_nonce ?? new Uint8Array();
+    message.candidate_nonce = object.candidate_nonce ?? new Uint8Array();
+    message.last_applied_block_nonce = object.last_applied_block_nonce ?? new Uint8Array();
+    message.last_epoch_block_nonce = object.last_epoch_block_nonce ?? new Uint8Array();
+    return message;
+  },
+};
+function createBaseEpochContextChallenge(): EpochContextChallenge {
+  return {
+    epoch: BigInt(0),
+    usable_after_unix_ns: BigInt(0),
+  };
+}
+/**
+ * Host-chain timestamps assigned by the verifier, never by an update header.
+ * @name EpochContextChallenge
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.EpochContextChallenge
+ */
+export const EpochContextChallenge = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.EpochContextChallenge",
+  encode(message: EpochContextChallenge, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    if (message.usable_after_unix_ns !== BigInt(0)) {
+      writer.uint32(16).uint64(message.usable_after_unix_ns);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): EpochContextChallenge {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseEpochContextChallenge();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.usable_after_unix_ns = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): EpochContextChallenge {
+    const obj = createBaseEpochContextChallenge();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (isSet(object.usable_after_unix_ns))
+      obj.usable_after_unix_ns = BigInt(object.usable_after_unix_ns.toString());
+    return obj;
+  },
+  toJSON(message: EpochContextChallenge): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    message.usable_after_unix_ns !== undefined &&
+      (obj.usable_after_unix_ns = (message.usable_after_unix_ns || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<EpochContextChallenge>, I>>(object: I): EpochContextChallenge {
+    const message = createBaseEpochContextChallenge();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    if (object.usable_after_unix_ns !== undefined && object.usable_after_unix_ns !== null) {
+      message.usable_after_unix_ns = BigInt(object.usable_after_unix_ns.toString());
+    }
     return message;
   },
 };
@@ -1048,6 +2141,10 @@ function createBaseConsensusState(): ConsensusState {
     unique_stake_bps: BigInt(0),
     security_score_bps: BigInt(0),
     packet_state_snapshot: new Uint8Array(),
+    nonce_state: undefined,
+    pool_registry: undefined,
+    settlement_credit: undefined,
+    pool_production: undefined,
   };
 }
 /**
@@ -1082,6 +2179,18 @@ export const ConsensusState = {
     if (message.packet_state_snapshot.length !== 0) {
       writer.uint32(66).bytes(message.packet_state_snapshot);
     }
+    if (message.nonce_state !== undefined) {
+      PraosNonceState.encode(message.nonce_state, writer.uint32(74).fork()).ldelim();
+    }
+    if (message.pool_registry !== undefined) {
+      PoolRegistryState.encode(message.pool_registry, writer.uint32(82).fork()).ldelim();
+    }
+    if (message.settlement_credit !== undefined) {
+      SettlementCreditState.encode(message.settlement_credit, writer.uint32(90).fork()).ldelim();
+    }
+    if (message.pool_production !== undefined) {
+      PoolProductionHistory.encode(message.pool_production, writer.uint32(98).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -1115,6 +2224,18 @@ export const ConsensusState = {
         case 8:
           message.packet_state_snapshot = reader.bytes();
           break;
+        case 9:
+          message.nonce_state = PraosNonceState.decode(reader, reader.uint32());
+          break;
+        case 10:
+          message.pool_registry = PoolRegistryState.decode(reader, reader.uint32());
+          break;
+        case 11:
+          message.settlement_credit = SettlementCreditState.decode(reader, reader.uint32());
+          break;
+        case 12:
+          message.pool_production = PoolProductionHistory.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1135,6 +2256,12 @@ export const ConsensusState = {
       obj.security_score_bps = BigInt(object.security_score_bps.toString());
     if (isSet(object.packet_state_snapshot))
       obj.packet_state_snapshot = bytesFromBase64(object.packet_state_snapshot);
+    if (isSet(object.nonce_state)) obj.nonce_state = PraosNonceState.fromJSON(object.nonce_state);
+    if (isSet(object.pool_registry)) obj.pool_registry = PoolRegistryState.fromJSON(object.pool_registry);
+    if (isSet(object.settlement_credit))
+      obj.settlement_credit = SettlementCreditState.fromJSON(object.settlement_credit);
+    if (isSet(object.pool_production))
+      obj.pool_production = PoolProductionHistory.fromJSON(object.pool_production);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
@@ -1157,6 +2284,20 @@ export const ConsensusState = {
       (obj.packet_state_snapshot = base64FromBytes(
         message.packet_state_snapshot !== undefined ? message.packet_state_snapshot : new Uint8Array(),
       ));
+    message.nonce_state !== undefined &&
+      (obj.nonce_state = message.nonce_state ? PraosNonceState.toJSON(message.nonce_state) : undefined);
+    message.pool_registry !== undefined &&
+      (obj.pool_registry = message.pool_registry
+        ? PoolRegistryState.toJSON(message.pool_registry)
+        : undefined);
+    message.settlement_credit !== undefined &&
+      (obj.settlement_credit = message.settlement_credit
+        ? SettlementCreditState.toJSON(message.settlement_credit)
+        : undefined);
+    message.pool_production !== undefined &&
+      (obj.pool_production = message.pool_production
+        ? PoolProductionHistory.toJSON(message.pool_production)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -1179,6 +2320,18 @@ export const ConsensusState = {
       message.security_score_bps = BigInt(object.security_score_bps.toString());
     }
     message.packet_state_snapshot = object.packet_state_snapshot ?? new Uint8Array();
+    if (object.nonce_state !== undefined && object.nonce_state !== null) {
+      message.nonce_state = PraosNonceState.fromPartial(object.nonce_state);
+    }
+    if (object.pool_registry !== undefined && object.pool_registry !== null) {
+      message.pool_registry = PoolRegistryState.fromPartial(object.pool_registry);
+    }
+    if (object.settlement_credit !== undefined && object.settlement_credit !== null) {
+      message.settlement_credit = SettlementCreditState.fromPartial(object.settlement_credit);
+    }
+    if (object.pool_production !== undefined && object.pool_production !== null) {
+      message.pool_production = PoolProductionHistory.fromPartial(object.pool_production);
+    }
     return message;
   },
 };

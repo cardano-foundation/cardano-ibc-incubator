@@ -70,9 +70,8 @@ func (l LightClientModule) UpdateStateOnMisbehaviour(ctx sdk.Context, clientID s
 	if !found {
 		panic(errorsmod.Wrap(clienttypes.ErrClientNotFound, clientID))
 	}
+	clientState.UpdateStateOnMisbehaviour(ctx, l.cdc, clientStore, nil)
 	frozenHeight := FrozenHeight
-	clientState.FrozenHeight = frozenHeight
-	setClientState(clientStore, l.cdc, clientState)
 	emitProbabilisticClientFrozenEvent(ctx, clientID, frozenHeight)
 }
 
@@ -118,6 +117,12 @@ func (l LightClientModule) VerifyNonMembership(ctx sdk.Context, clientID string,
 }
 
 func (l LightClientModule) Status(ctx sdk.Context, clientID string) exported.Status {
+	// The v10 recovery keeper asks the subject module for the substitute's
+	// status before invoking RecoverClient, including for other client types.
+	clientType, _, err := clienttypes.ParseClientIdentifier(clientID)
+	if err != nil || clientType != ModuleName {
+		return exported.Unknown
+	}
 	clientStore := l.storeProvider.ClientStore(ctx, clientID)
 	clientState, found := getClientState(clientStore, l.cdc)
 	if !found {

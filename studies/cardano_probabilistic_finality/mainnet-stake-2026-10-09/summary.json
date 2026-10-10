@@ -1,0 +1,774 @@
+{
+  "network": "mainnet",
+  "analysis_epochs": [
+    558,
+    658
+  ],
+  "snapshots": 101,
+  "transitions": 100,
+  "lookback_epochs": [
+    538,
+    557
+  ],
+  "pool_epoch_rows": 330851,
+  "identities_with_stake_during_analysis": 2990,
+  "currently_retired_identities_with_stake_during_analysis": 287,
+  "exact_total_reconciliation_epochs": 121,
+  "pool_block_total_reconciliation_epochs": 121,
+  "adjacent_tv_percentage_points": {
+    "n": 100,
+    "min": 0.30631456957332115,
+    "median": 0.730796832497633,
+    "p90": 1.233227331504749,
+    "p95": 1.5953357578077192,
+    "p99": 2.6709751467853358,
+    "max": 5.410811207547779
+  },
+  "horizon_tv_percentage_points": {
+    "1": {
+      "n": 100,
+      "min": 0.30631456957332115,
+      "median": 0.730796832497633,
+      "p90": 1.233227331504749,
+      "p95": 1.5953357578077192,
+      "p99": 2.6709751467853358,
+      "max": 5.410811207547779
+    },
+    "5": {
+      "n": 96,
+      "min": 1.6402569534942826,
+      "median": 2.6613576925065896,
+      "p90": 4.304402744703846,
+      "p95": 6.40920163747758,
+      "p99": 7.811293617041346,
+      "max": 7.889102646297612
+    },
+    "10": {
+      "n": 91,
+      "min": 3.2119787307425747,
+      "median": 4.676794264012658,
+      "p90": 8.51453565155711,
+      "p95": 9.265505329488576,
+      "p99": 9.456565507076125,
+      "max": 9.505524129431338
+    },
+    "20": {
+      "n": 81,
+      "min": 6.53164419212434,
+      "median": 8.976295648904218,
+      "p90": 11.927312691542863,
+      "p95": 12.244624632336555,
+      "p99": 12.473821333597192,
+      "max": 12.584761305463172
+    }
+  },
+  "worst_transition": {
+    "from_epoch": 638,
+    "to_epoch": 639,
+    "tv_share": 0.05410811207547779,
+    "exact_tv_numerator": "2531877460900937199816443718791",
+    "exact_tv_denominator": "46792936655581519842112710087777",
+    "tv_percentage_points": 5.410811207547779,
+    "largest_increase_pp": 0.35474941902044627,
+    "largest_increase_pool": "pool16pfjyderm8gvzfpcrlk9xunhjetcp4w20g73gzzrvsgncte60e4",
+    "largest_decrease_pp": -0.35297880129985026,
+    "largest_decrease_pool": "pool1uy07qyf0gzzua2glqspyvyevwpe8tamajnqj6c7mjzy4v3m4kne",
+    "total_active_stake_change_pct": 0.16102323063655888,
+    "new_positive_stake_pools": 18,
+    "lost_positive_stake_pools": 3
+  },
+  "peak_transition_details": {
+    "from_epoch": 638,
+    "to_epoch": 639,
+    "new_positive_stake_pools": 18,
+    "their_destination_share_pct": 4.776767744834338,
+    "lost_positive_stake_pools": 3,
+    "their_previous_share_pct": 0.004449278928146086,
+    "total_stake_change_pct": 0.16102323063655888
+  },
+  "largest_pool_increase": {
+    "from_epoch": 609,
+    "to_epoch": 610,
+    "pool_id": "pool1k3nkfa5ugavrpd9nwd3s6yyx454qxnquxwmux4rzfunl7q0z38t",
+    "current_ticker": "KILN9",
+    "current_pool_status": "registered",
+    "previous_stake_lovelace": 146566919525,
+    "stake_lovelace": 87452171628627,
+    "previous_share_pct": 0.0006812622252758613,
+    "share_pct": 0.4054167392931275,
+    "delta_percentage_points": 0.4047354770678516,
+    "relative_share_growth_pct": 59409.64610271227,
+    "previous_delegators": 6,
+    "delegators": 6,
+    "blocks": 87,
+    "first_registration_utc": "2025-08-07T08:58:09+00:00",
+    "observed_vrf_hash_changes_all_history": 0
+  },
+  "largest_pool_decrease": {
+    "from_epoch": 599,
+    "to_epoch": 600,
+    "pool_id": "pool1c2wf97p3j9gfvfjshj99ufxerpy3aznm8tzr2fd0ua465s26th4",
+    "current_ticker": "P2P",
+    "current_pool_status": "registered",
+    "previous_stake_lovelace": 88897840495224,
+    "stake_lovelace": 2637795834614,
+    "previous_share_pct": 0.4138546918672273,
+    "share_pct": 0.012327043581406037,
+    "delta_percentage_points": -0.40152764828582127,
+    "relative_share_growth_pct": -97.02140779755595,
+    "previous_delegators": 170,
+    "delegators": 169,
+    "blocks": 0,
+    "first_registration_utc": "2020-12-04T14:13:16+00:00",
+    "observed_vrf_hash_changes_all_history": 0
+  },
+  "train_epochs_to": [
+    559,
+    628
+  ],
+  "holdout_epochs_to": [
+    629,
+    658
+  ],
+  "training_max_threshold_pp": 2.6433000350604483,
+  "training_max_holdout_rejected": 1,
+  "0_5pp_rule_rejected_transitions": 85,
+  "tv_policy_backtest": [
+    {
+      "max_tv_percentage_points": 0.1,
+      "chosen_on_training_max": false,
+      "training_rejected": 70,
+      "training_transitions": 70,
+      "holdout_rejected": 30,
+      "holdout_transitions": 30,
+      "all_rejected": 100,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 0.1000000038630482,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 52
+    },
+    {
+      "max_tv_percentage_points": 0.25,
+      "chosen_on_training_max": false,
+      "training_rejected": 70,
+      "training_transitions": 70,
+      "holdout_rejected": 30,
+      "holdout_transitions": 30,
+      "all_rejected": 100,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 0.2500000038630482,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 21
+    },
+    {
+      "max_tv_percentage_points": 0.5,
+      "chosen_on_training_max": false,
+      "training_rejected": 60,
+      "training_transitions": 70,
+      "holdout_rejected": 25,
+      "holdout_transitions": 30,
+      "all_rejected": 85,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 0.5000000038630482,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 11
+    },
+    {
+      "max_tv_percentage_points": 0.75,
+      "chosen_on_training_max": false,
+      "training_rejected": 35,
+      "training_transitions": 70,
+      "holdout_rejected": 12,
+      "holdout_transitions": 30,
+      "all_rejected": 47,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 0.7500000038630481,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 7
+    },
+    {
+      "max_tv_percentage_points": 1.0,
+      "chosen_on_training_max": false,
+      "training_rejected": 15,
+      "training_transitions": 70,
+      "holdout_rejected": 5,
+      "holdout_transitions": 30,
+      "all_rejected": 20,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 1.0000000038630483,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 6
+    },
+    {
+      "max_tv_percentage_points": 1.5,
+      "chosen_on_training_max": false,
+      "training_rejected": 7,
+      "training_transitions": 70,
+      "holdout_rejected": 1,
+      "holdout_transitions": 30,
+      "all_rejected": 8,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 1.500000003863048,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 4
+    },
+    {
+      "max_tv_percentage_points": 2.0,
+      "chosen_on_training_max": false,
+      "training_rejected": 1,
+      "training_transitions": 70,
+      "holdout_rejected": 1,
+      "holdout_transitions": 30,
+      "all_rejected": 2,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 2.000000003863048,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 3
+    },
+    {
+      "max_tv_percentage_points": 2.5,
+      "chosen_on_training_max": false,
+      "training_rejected": 1,
+      "training_transitions": 70,
+      "holdout_rejected": 1,
+      "holdout_transitions": 30,
+      "all_rejected": 2,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 2.500000003863048,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 3
+    },
+    {
+      "max_tv_percentage_points": 2.6433000350604483,
+      "chosen_on_training_max": true,
+      "training_rejected": 0,
+      "training_transitions": 70,
+      "holdout_rejected": 1,
+      "holdout_transitions": 30,
+      "all_rejected": 1,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 2.6433000389234964,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 2
+    },
+    {
+      "max_tv_percentage_points": 5.0,
+      "chosen_on_training_max": false,
+      "training_rejected": 0,
+      "training_transitions": 70,
+      "holdout_rejected": 1,
+      "holdout_transitions": 30,
+      "all_rejected": 1,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 5.0000000038630485,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 2
+    },
+    {
+      "max_tv_percentage_points": 10.0,
+      "chosen_on_training_max": false,
+      "training_rejected": 0,
+      "training_transitions": 70,
+      "holdout_rejected": 0,
+      "holdout_transitions": 30,
+      "all_rejected": 0,
+      "five_tiny_old_pools_start_share_pct": 3.863048202207835e-09,
+      "max_claimed_combined_share_after_one_step_pct": 10.000000003863049,
+      "minimum_reanchored_steps_to_511bp_upper_bound": 1
+    }
+  ],
+  "per_pool_cap_backtest": [
+    {
+      "max_per_pool_increase_pp": 0.005,
+      "training_rejected": 70,
+      "holdout_rejected": 30,
+      "max_combined_increase_for_five_identities_pp": 0.025,
+      "max_combined_increase_for_fifty_identities_pp": 0.25
+    },
+    {
+      "max_per_pool_increase_pp": 0.01,
+      "training_rejected": 70,
+      "holdout_rejected": 30,
+      "max_combined_increase_for_five_identities_pp": 0.05,
+      "max_combined_increase_for_fifty_identities_pp": 0.5
+    },
+    {
+      "max_per_pool_increase_pp": 0.025,
+      "training_rejected": 69,
+      "holdout_rejected": 30,
+      "max_combined_increase_for_five_identities_pp": 0.125,
+      "max_combined_increase_for_fifty_identities_pp": 1.25
+    },
+    {
+      "max_per_pool_increase_pp": 0.05,
+      "training_rejected": 62,
+      "holdout_rejected": 25,
+      "max_combined_increase_for_five_identities_pp": 0.25,
+      "max_combined_increase_for_fifty_identities_pp": 2.5
+    },
+    {
+      "max_per_pool_increase_pp": 0.1,
+      "training_rejected": 41,
+      "holdout_rejected": 18,
+      "max_combined_increase_for_five_identities_pp": 0.5,
+      "max_combined_increase_for_fifty_identities_pp": 5.0
+    },
+    {
+      "max_per_pool_increase_pp": 0.25,
+      "training_rejected": 19,
+      "holdout_rejected": 5,
+      "max_combined_increase_for_five_identities_pp": 1.25,
+      "max_combined_increase_for_fifty_identities_pp": 12.5
+    },
+    {
+      "max_per_pool_increase_pp": 0.5,
+      "training_rejected": 0,
+      "holdout_rejected": 0,
+      "max_combined_increase_for_five_identities_pp": 2.5,
+      "max_combined_increase_for_fifty_identities_pp": 25.0
+    },
+    {
+      "max_per_pool_increase_pp": 1.0,
+      "training_rejected": 0,
+      "holdout_rejected": 0,
+      "max_combined_increase_for_five_identities_pp": 5.0,
+      "max_combined_increase_for_fifty_identities_pp": 50.0
+    }
+  ],
+  "sampled_block_epochs": [
+    559,
+    569,
+    579,
+    589,
+    599,
+    609,
+    619,
+    629,
+    639,
+    649,
+    658
+  ],
+  "ordered_blocks": 233711,
+  "settlement_replay": [
+    {
+      "policy": "current",
+      "anchors": 233711,
+      "settled_in_same_epoch": 233438,
+      "unsettled_before_epoch_end": 273,
+      "new_unsettled_vs_current": 0,
+      "descendants_p50": 25.0,
+      "descendants_p95": 31.0,
+      "seconds_p50": 523.0,
+      "seconds_p95": 728.0,
+      "added_seconds_p50_on_common_anchors": 0.0,
+      "added_seconds_p95_on_common_anchors": 0.0,
+      "added_seconds_max_on_common_anchors": 0,
+      "fraction_of_common_anchors_delayed": 0.0
+    },
+    {
+      "policy": "one_of_five",
+      "anchors": 233711,
+      "settled_in_same_epoch": 233438,
+      "unsettled_before_epoch_end": 273,
+      "new_unsettled_vs_current": 0,
+      "descendants_p50": 25.0,
+      "descendants_p95": 31.0,
+      "seconds_p50": 523.0,
+      "seconds_p95": 728.0,
+      "added_seconds_p50_on_common_anchors": 0.0,
+      "added_seconds_p95_on_common_anchors": 0.0,
+      "added_seconds_max_on_common_anchors": 228,
+      "fraction_of_common_anchors_delayed": 0.014701976541951182
+    },
+    {
+      "policy": "three_of_five",
+      "anchors": 233711,
+      "settled_in_same_epoch": 233438,
+      "unsettled_before_epoch_end": 273,
+      "new_unsettled_vs_current": 0,
+      "descendants_p50": 26.0,
+      "descendants_p95": 31.0,
+      "seconds_p50": 524.0,
+      "seconds_p95": 729.0,
+      "added_seconds_p50_on_common_anchors": 0.0,
+      "added_seconds_p95_on_common_anchors": 0.0,
+      "added_seconds_max_on_common_anchors": 228,
+      "fraction_of_common_anchors_delayed": 0.04064890891799964
+    },
+    {
+      "policy": "five_of_five",
+      "anchors": 233711,
+      "settled_in_same_epoch": 233438,
+      "unsettled_before_epoch_end": 273,
+      "new_unsettled_vs_current": 0,
+      "descendants_p50": 26.0,
+      "descendants_p95": 31.0,
+      "seconds_p50": 527.0,
+      "seconds_p95": 734.0,
+      "added_seconds_p50_on_common_anchors": 0.0,
+      "added_seconds_p95_on_common_anchors": 30.0,
+      "added_seconds_max_on_common_anchors": 264,
+      "fraction_of_common_anchors_delayed": 0.12795688791028026
+    },
+    {
+      "policy": "eight_of_ten",
+      "anchors": 233711,
+      "settled_in_same_epoch": 233436,
+      "unsettled_before_epoch_end": 275,
+      "new_unsettled_vs_current": 2,
+      "descendants_p50": 26.0,
+      "descendants_p95": 31.0,
+      "seconds_p50": 528.0,
+      "seconds_p95": 736.0,
+      "added_seconds_p50_on_common_anchors": 0.0,
+      "added_seconds_p95_on_common_anchors": 41.0,
+      "added_seconds_max_on_common_anchors": 317,
+      "fraction_of_common_anchors_delayed": 0.15742216281978785
+    },
+    {
+      "policy": "fifteen_of_twenty",
+      "anchors": 233711,
+      "settled_in_same_epoch": 233435,
+      "unsettled_before_epoch_end": 276,
+      "new_unsettled_vs_current": 3,
+      "descendants_p50": 26.0,
+      "descendants_p95": 32.0,
+      "seconds_p50": 532.0,
+      "seconds_p95": 741.0,
+      "added_seconds_p50_on_common_anchors": 0.0,
+      "added_seconds_p95_on_common_anchors": 60.0,
+      "added_seconds_max_on_common_anchors": 317,
+      "fraction_of_common_anchors_delayed": 0.23271146143466062
+    }
+  ],
+  "registration_event_rows": 40679,
+  "observed_vrf_hash_changes": 182,
+  "ambiguous_same_time_registration_event_rows": 10,
+  "adversarial_examples": {
+    "five_old_tiny_pool_ids": [
+      "pool12rruj0mjqzaf8ryg7ny0x77y80lpdxd7zh4kgg5zyy0r2rzue0q",
+      "pool1yydna77k2j8yq4fw08d202z664g3fvavfvqjg5g4lxmwzsa9k9u",
+      "pool15l8p8v8yzdjvl3vml6qafx0wgy4k6t938jl0qy24wslgw7xlhc2",
+      "pool1jp3wtdhgpeu6qf53upw5rupaqwtl7pzvcuuyyn0f8u3xgx5755y",
+      "pool190vx20f4ptv93u8em69pl74y6kux0mgl6kpzwmq6xvx8qvza429"
+    ],
+    "their_start_share_pct": 3.863048202207835e-09,
+    "five_claim_entire_distribution_tv_pp": 99.99999999613695,
+    "claim_entire_distribution_rejected_at_0_5pp": true,
+    "denominator_attack_omitted_pools": 157,
+    "denominator_attack_original_omitted_share_pct": 50.01432723121335,
+    "denominator_attack_tv_pp": 50.01432723121337,
+    "denominator_attack_rejected_at_0_5pp": true,
+    "fifty_identity_increase_under_per_pool_cap_0_01pp_without_global_cap_pp": 0.5,
+    "five_hundred_identity_increase_under_per_pool_cap_0_01pp_without_global_cap_pp": 5,
+    "one_step_combined_share_bound_at_0_5pp_pct": 0.5000000038630482,
+    "constructed_first_step_to_511bp": 11,
+    "interpretation": "The construction moves 0.5 percentage points per epoch into five fixed old identities. It demonstrates drift through self-reanchoring. It does not assert they can produce the required signed chain or prove a complete bridge takeover."
+  },
+  "older_archive_alignment": {
+    "archive_url": "https://raw.githubusercontent.com/CardanoSolutions/stake-dataset/5a4f216608716b24ea9fc1ed585a1447166d8c5b/data/mainnet/489.json",
+    "archive_file_epoch": 489,
+    "comparisons": [
+      {
+        "pool": "pool10rdglgh4pzvkf936p2m669qzarr9dusrhmmz9nultm3uvq4eh5k",
+        "archive_stake": 78890928697169,
+        "matching_koios_epochs": [
+          490
+        ],
+        "koios_rows_nearby": [
+          {
+            "epoch_no": 491,
+            "active_stake": "77495629847818"
+          },
+          {
+            "epoch_no": 490,
+            "active_stake": "78890928697169"
+          },
+          {
+            "epoch_no": 489,
+            "active_stake": "78306210637113"
+          },
+          {
+            "epoch_no": 488,
+            "active_stake": "79892248520994"
+          },
+          {
+            "epoch_no": 487,
+            "active_stake": "79310642290768"
+          },
+          {
+            "epoch_no": 486,
+            "active_stake": "79106689291192"
+          }
+        ]
+      },
+      {
+        "pool": "pool15yyxtkhz64p7a8cnax9l7u82s9t9hdhyxsa3tdm977qhgpnsuhq",
+        "archive_stake": 78614969377841,
+        "matching_koios_epochs": [
+          490
+        ],
+        "koios_rows_nearby": [
+          {
+            "epoch_no": 491,
+            "active_stake": "77970230344235"
+          },
+          {
+            "epoch_no": 490,
+            "active_stake": "78614969377841"
+          },
+          {
+            "epoch_no": 489,
+            "active_stake": "78772958535660"
+          },
+          {
+            "epoch_no": 488,
+            "active_stake": "78822777377074"
+          },
+          {
+            "epoch_no": 487,
+            "active_stake": "79202537562891"
+          },
+          {
+            "epoch_no": 486,
+            "active_stake": "80401315575144"
+          }
+        ]
+      },
+      {
+        "pool": "pool1fcp4d2pxh0e7q5ju63sjqcdpxpr3pvxg6ykl23t6c97d7dnvjvw",
+        "archive_stake": 75237912527931,
+        "matching_koios_epochs": [
+          490
+        ],
+        "koios_rows_nearby": [
+          {
+            "epoch_no": 491,
+            "active_stake": "75266078445744"
+          },
+          {
+            "epoch_no": 490,
+            "active_stake": "75237912527931"
+          },
+          {
+            "epoch_no": 489,
+            "active_stake": "75219502805910"
+          },
+          {
+            "epoch_no": 488,
+            "active_stake": "75189271796427"
+          },
+          {
+            "epoch_no": 487,
+            "active_stake": "75158186671580"
+          },
+          {
+            "epoch_no": 486,
+            "active_stake": "75127536919990"
+          }
+        ]
+      }
+    ],
+    "total_matches": [],
+    "archive_reported_active_stake": "22734070007512024",
+    "koios_epoch_490_active_stake": "22734331818384852",
+    "epoch_490_total_difference_lovelace": "261810872828",
+    "finding": "The three largest archived pools match effective epoch 490 rather than file label 489. The full totals differ by 261,810.872828 ADA. Do not merge this rewards-provenance archive into the election-stake dataset without full reconciliation."
+  },
+  "concentration_examples": [
+    {
+      "pool_id": "pool1k3nkfa5ugavrpd9nwd3s6yyx454qxnquxwmux4rzfunl7q0z38t",
+      "from_epoch": 609,
+      "to_epoch": 610,
+      "delta_share_pp": 0.40473547706785173,
+      "status": "complete, exact pool totals and delegator counts reconcile",
+      "snapshots": [
+        {
+          "epoch": 609,
+          "delegators": 6,
+          "stake_lovelace": "146566919525",
+          "largest_account_share_pct": 57.71970789804999,
+          "largest_five_accounts_share_pct": 99.96800161581345,
+          "largest_ten_accounts_share_pct": 100.0
+        },
+        {
+          "epoch": 610,
+          "delegators": 6,
+          "stake_lovelace": "87452171628627",
+          "largest_account_share_pct": 99.92877863449006,
+          "largest_five_accounts_share_pct": 99.99994637177656,
+          "largest_ten_accounts_share_pct": 100.0
+        }
+      ],
+      "new_account_stake_lovelace": "0",
+      "departed_account_stake_lovelace": "0",
+      "largest_account_changes": [
+        {
+          "stake_address": "stake1uy444uvcpywt7272tadnw5yzku255es8nu7upz7t03grh9csfj2c5",
+          "delta_lovelace": "87305289000000"
+        },
+        {
+          "stake_address": "stake1u9amtxnpnmuq2mp5u2vhklqfu3t4ympralsgvv40fmrynjqhrt24w",
+          "delta_lovelace": "315709102"
+        },
+        {
+          "stake_address": "stake1u96gdyldx28z2mdlet4n3m54044nzq9039xsg3rf0ay96gq57pl42",
+          "delta_lovelace": "0"
+        },
+        {
+          "stake_address": "stake1uxgeh303vqz6sw2fw48h32upsccc40q20707nq4x2wmc3yg0qgcw7",
+          "delta_lovelace": "0"
+        },
+        {
+          "stake_address": "stake1uya36ekypdt0z7nasekgfz33gzej7m6rlvawmwwp8hrm7ws6yvu8h",
+          "delta_lovelace": "0"
+        },
+        {
+          "stake_address": "stake1uyd9eq5zclz0ls5fvtw6x33r5n8qhltqyyq3zhnvtpkenzsxktam6",
+          "delta_lovelace": "0"
+        }
+      ],
+      "interpretation": "Account-level amount changes can reflect delegation changes, balance changes or rewards. Multiple accounts can have the same controller. This does not identify the reason for a movement."
+    },
+    {
+      "pool_id": "pool1c2wf97p3j9gfvfjshj99ufxerpy3aznm8tzr2fd0ua465s26th4",
+      "from_epoch": 599,
+      "to_epoch": 600,
+      "delta_share_pp": -0.40152764828582127,
+      "status": "complete, exact pool totals and delegator counts reconcile",
+      "snapshots": [
+        {
+          "epoch": 599,
+          "delegators": 170,
+          "stake_lovelace": "88897840495224",
+          "largest_account_share_pct": 97.08152772027192,
+          "largest_five_accounts_share_pct": 99.58615617766017,
+          "largest_ten_accounts_share_pct": 99.77424770130071
+        },
+        {
+          "epoch": 600,
+          "delegators": 169,
+          "stake_lovelace": "2637795834614",
+          "largest_account_share_pct": 61.74209779212592,
+          "largest_five_accounts_share_pct": 86.3942598864359,
+          "largest_ten_accounts_share_pct": 92.35899646480811
+        }
+      ],
+      "new_account_stake_lovelace": "0",
+      "departed_account_stake_lovelace": "4219682",
+      "largest_account_changes": [
+        {
+          "stake_address": "stake1uy9eaqnmwjflxpsc8a2w8ezauxfqa9zske2xfsnyua2ld4s4q83dy",
+          "delta_lovelace": "-86261537750612"
+        },
+        {
+          "stake_address": "stake1uxxedl46rfutp097sysfuqpq0n3avp0eldgukmcayqc36eqj43ks0",
+          "delta_lovelace": "820099285"
+        },
+        {
+          "stake_address": "stake1u9h0u4yzc7mnpk66d609anfz3z34mdkgenhkd6tvu0dzrjq6tsr2v",
+          "delta_lovelace": "427111479"
+        },
+        {
+          "stake_address": "stake1uygw2ere3xyd7z2gweck8gxenfcvyppx86u9tvmf9r9vh7qcmu6qd",
+          "delta_lovelace": "79181607"
+        },
+        {
+          "stake_address": "stake1uyt3f67mgmsqhcnkaxkulyg6hjelp53maj7zuhhgvqcgruqfg2unp",
+          "delta_lovelace": "52772791"
+        },
+        {
+          "stake_address": "stake1ux4z2q25jhtup7f3dmueqzujnp0frkhq8h9mlrezwvaaj9g6w6j3m",
+          "delta_lovelace": "25007102"
+        },
+        {
+          "stake_address": "stake1uywlt9uh9uu4gkv0s4xuj5xjarhz3he4p8f69edpx2cs4xc7mue04",
+          "delta_lovelace": "13574029"
+        },
+        {
+          "stake_address": "stake1u8gvmucdlcln3lrv4rajrc35xevc54t72h975hg0ymzxj8s6hesuz",
+          "delta_lovelace": "12145295"
+        },
+        {
+          "stake_address": "stake1uxs3wyxqn2g2k6tatezdr0ajud9yem8m6tjf33mp6x07xqghlz7um",
+          "delta_lovelace": "6685386"
+        },
+        {
+          "stake_address": "stake1uxtc0yuy86kjfq6kqvkeanaeyrzrsc5eqj72tec4jh2kcjse0tvuc",
+          "delta_lovelace": "6251646"
+        }
+      ],
+      "interpretation": "Account-level amount changes can reflect delegation changes, balance changes or rewards. Multiple accounts can have the same controller. This does not identify the reason for a movement."
+    },
+    {
+      "pool_id": "pool12m7z9p7jqymxrvvp6z7vmfdu6j6u6y43p0m6y4xalz43sc8s4t9",
+      "from_epoch": 620,
+      "to_epoch": 621,
+      "delta_share_pp": -0.3863210079341024,
+      "status": "complete, exact pool totals and delegator counts reconcile",
+      "snapshots": [
+        {
+          "epoch": 620,
+          "delegators": 25,
+          "stake_lovelace": "117459713945601",
+          "largest_account_share_pct": 83.65474085464685,
+          "largest_five_accounts_share_pct": 98.84725889702995,
+          "largest_ten_accounts_share_pct": 99.85884209786447
+        },
+        {
+          "epoch": 621,
+          "delegators": 28,
+          "stake_lovelace": "32916482030492",
+          "largest_account_share_pct": 23.879822860898575,
+          "largest_five_accounts_share_pct": 80.92775984221372,
+          "largest_ten_accounts_share_pct": 98.84254938171378
+        }
+      ],
+      "new_account_stake_lovelace": "13713744484084",
+      "departed_account_stake_lovelace": "98260619309802",
+      "largest_account_changes": [
+        {
+          "stake_address": "stake1u83j9rztsrzxave2z5s5ufqawfyal0quwux5awglthgr0pg6jvvg5",
+          "delta_lovelace": "-98260619309802"
+        },
+        {
+          "stake_address": "stake1u9cekjgha9afnlrxqumt0msdesdcqluj7c0rwd5f4qmeu8sapf5my",
+          "delta_lovelace": "7860397600921"
+        },
+        {
+          "stake_address": "stake1uyj2cdap0d60ze27wkjq0c6azqn6mljuvenr6wfrnvx57qsdxfcqx",
+          "delta_lovelace": "2887122647515"
+        },
+        {
+          "stake_address": "stake1u9uh7qetxr6vq2h25u0megue4yyu5q6qgylh5md2nex6apqm7rtgr",
+          "delta_lovelace": "1967518711164"
+        },
+        {
+          "stake_address": "stake1u8tlc2wptafza4lf6ujtwp74t94m0fcvmly4r6uhr6n3jpg2cjvne",
+          "delta_lovelace": "998705524484"
+        },
+        {
+          "stake_address": "stake1uy3ptlpa8gv6nn966zdhwh9kz5jtv5ey80p0tq5pkrh0f3sfxxnrw",
+          "delta_lovelace": "1287154374"
+        },
+        {
+          "stake_address": "stake1u9mlllv2mh73fkdvxkdcxx4lsqrkemt0g3vgt85gg4ul56qx7uln9",
+          "delta_lovelace": "881856323"
+        },
+        {
+          "stake_address": "stake1uxvjgzj35ay633v32u9lv2pt8an0x2d7nuunrj9g4eaxk7ct55hrq",
+          "delta_lovelace": "840425930"
+        },
+        {
+          "stake_address": "stake1u8su4frz599gpp8l2psfw3cphwghlq8qgnah823gmta4ntgqsvymy",
+          "delta_lovelace": "370598435"
+        },
+        {
+          "stake_address": "stake1u8770cqac39h9faun4ha9288ehu343fg5wht9jetlgqn3js2yjc0x",
+          "delta_lovelace": "113237100"
+        }
+      ],
+      "interpretation": "Account-level amount changes can reflect delegation changes, balance changes or rewards. Multiple accounts can have the same controller. This does not identify the reason for a movement."
+    }
+  ],
+  "limitations": [
+    "Provider-reported data, without a separate historical mainnet node comparison.",
+    "Exact stake reconciliation shares the provider's underlying database and is not independent validation.",
+    "Ordered-block replay covers eleven preselected epochs, not all 101.",
+    "API registration events lack certificate order and cancel/activation reconstruction. VRF change counts describe observed announcements, not effective key changes.",
+    "Pool identities do not identify independent operators.",
+    "Delegator counts do not establish delegation concentration or explain the cause of movements.",
+    "Training and holdout epochs are serially correlated. Empirical zero failures are not an availability guarantee.",
+    "No statistics or smoothness bound authenticates stake. Repeatedly replacing the reference allows fabricated authority to accumulate."
+  ]
+}

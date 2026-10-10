@@ -2,7 +2,7 @@
 import { ResultBlockResults, ResultBlockSearch, Event } from "./block";
 import { Any } from "../../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
-import { isSet, DeepPartial, Exact, Rpc } from "../../../../helpers";
+import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes, Rpc } from "../../../../helpers";
 export const protobufPackage = "ibc.core.types.v1";
 /**
  * QueryBlockResultsRequest is the request type for the Query/BlockResults RPC method.
@@ -86,6 +86,15 @@ export interface QueryTransactionByHashResponse {
 export interface QueryIBCHeaderRequest {
   trusted_height: bigint;
   height: bigint;
+  /**
+   * Exact rootless evidence for independent probabilistic misbehaviour checks.
+   */
+  checkpoint_only: boolean;
+  /**
+   * Destination client state for capped settlement credit and descendant selection.
+   * This is a query hint. The light client derives credit from its own saved state.
+   */
+  probabilistic_client_state: Uint8Array;
 }
 /**
  * @name QueryIBCHeaderResponse
@@ -541,6 +550,8 @@ function createBaseQueryIBCHeaderRequest(): QueryIBCHeaderRequest {
   return {
     trusted_height: BigInt(0),
     height: BigInt(0),
+    checkpoint_only: false,
+    probabilistic_client_state: new Uint8Array(),
   };
 }
 /**
@@ -557,6 +568,12 @@ export const QueryIBCHeaderRequest = {
     if (message.height !== BigInt(0)) {
       writer.uint32(16).uint64(message.height);
     }
+    if (message.checkpoint_only === true) {
+      writer.uint32(24).bool(message.checkpoint_only);
+    }
+    if (message.probabilistic_client_state.length !== 0) {
+      writer.uint32(34).bytes(message.probabilistic_client_state);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): QueryIBCHeaderRequest {
@@ -572,6 +589,12 @@ export const QueryIBCHeaderRequest = {
         case 2:
           message.height = reader.uint64();
           break;
+        case 3:
+          message.checkpoint_only = reader.bool();
+          break;
+        case 4:
+          message.probabilistic_client_state = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -583,6 +606,9 @@ export const QueryIBCHeaderRequest = {
     const obj = createBaseQueryIBCHeaderRequest();
     if (isSet(object.trusted_height)) obj.trusted_height = BigInt(object.trusted_height.toString());
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
+    if (isSet(object.checkpoint_only)) obj.checkpoint_only = Boolean(object.checkpoint_only);
+    if (isSet(object.probabilistic_client_state))
+      obj.probabilistic_client_state = bytesFromBase64(object.probabilistic_client_state);
     return obj;
   },
   toJSON(message: QueryIBCHeaderRequest): unknown {
@@ -590,6 +616,13 @@ export const QueryIBCHeaderRequest = {
     message.trusted_height !== undefined &&
       (obj.trusted_height = (message.trusted_height || BigInt(0)).toString());
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
+    message.checkpoint_only !== undefined && (obj.checkpoint_only = message.checkpoint_only);
+    message.probabilistic_client_state !== undefined &&
+      (obj.probabilistic_client_state = base64FromBytes(
+        message.probabilistic_client_state !== undefined
+          ? message.probabilistic_client_state
+          : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryIBCHeaderRequest>, I>>(object: I): QueryIBCHeaderRequest {
@@ -600,6 +633,8 @@ export const QueryIBCHeaderRequest = {
     if (object.height !== undefined && object.height !== null) {
       message.height = BigInt(object.height.toString());
     }
+    message.checkpoint_only = object.checkpoint_only ?? false;
+    message.probabilistic_client_state = object.probabilistic_client_state ?? new Uint8Array();
     return message;
   },
 };

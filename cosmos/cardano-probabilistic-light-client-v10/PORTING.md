@@ -23,7 +23,23 @@ This document assumes the target chain uses `ibc-go/v10`. The exact port still d
 3. Keep the protobuf package and type URLs aligned with `/ibc.lightclients.probabilistic.v1.*`.
 4. Wire the app by registering the concrete types with the interface registry and adding the probabilistic light client app module in the target chain's module list, following the local light-client module shape used by that chain.
 5. Ensure the IBC client params allow `08-cardano-probabilistic`; on restricted networks this requires governance or genesis/config changes in addition to the binary change.
-6. Re-run client creation after a binary with this module is deployed. Without that chain upgrade, nodes will continue rejecting `/ibc.lightclients.probabilistic.v1.ClientState` as an unresolved type URL.
+6. For first installation, create clients after the registered module is deployed. Before installation, nodes reject `/ibc.lightclients.probabilistic.v1.ClientState` as an unresolved type URL. For an ordinary compatible software update, retain the original client IDs and stores; do not re-run client creation as an upgrade procedure.
+
+## Existing-Client Software Upgrades
+
+Follow the [software-upgrade compatibility contract](../../docs/probabilistic-client-software-upgrades.md)
+and [external upgrade fixtures](../../tests/probabilistic-upgrade/README.md).
+A compatible host binary replacement uses the original client stores and keeps
+connections, channels, escrow and voucher identities. This requires stable
+client/type identities, safe historical-state decoding and defined verifier-rule
+activation. Test the exact old/new artifacts and apply any required host app
+migration before normal operation.
+
+First installation, compatible software upgrades, substitute-client recovery,
+standard IBC `MsgUpgradeClient`, and incompatible client/state migrations are
+separate operations. Standard IBC upgrade verification remains unsupported;
+that does not prevent compatible host software upgrades. Compatibility policy
+and external tests alone do not require publishing a new light-client module.
 
 ## Temporal State Compatibility
 
