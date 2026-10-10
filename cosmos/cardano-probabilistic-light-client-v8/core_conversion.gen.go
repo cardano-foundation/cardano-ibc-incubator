@@ -93,6 +93,28 @@ func toCoreClientState(value *ClientState) *state.ClientState {
 		RandomnessStabilisationWindowSlots:              value.RandomnessStabilisationWindowSlots,
 		LatestCheckpointPoolRegistry:                    toCorePoolRegistryState(value.LatestCheckpointPoolRegistry),
 		LatestCheckpointSettlementCredit:                toCoreSettlementCreditState(value.LatestCheckpointSettlementCredit),
+		LatestCheckpointPoolProduction:                  toCorePoolProductionHistory(value.LatestCheckpointPoolProduction),
+	}
+}
+
+func toCorePoolProductionHistory(value *PoolProductionHistory) *state.PoolProductionHistory {
+	if value == nil {
+		return nil
+	}
+	return &state.PoolProductionHistory{
+		Epoch: value.Epoch,
+		Pools: mapCoreSlice(value.Pools, toCorePoolProductionRecord),
+	}
+}
+
+func toCorePoolProductionRecord(value *PoolProductionRecord) *state.PoolProductionRecord {
+	if value == nil {
+		return nil
+	}
+	return &state.PoolProductionRecord{
+		PoolId:                value.PoolId,
+		CompletedEpochsBitmap: value.CompletedEpochsBitmap,
+		ProducedCurrentEpoch:  value.ProducedCurrentEpoch,
 	}
 }
 
@@ -192,6 +214,7 @@ func toCoreConsensusState(value *ConsensusState) *state.ConsensusState {
 		NonceState:          toCorePraosNonceState(value.NonceState),
 		PoolRegistry:        toCorePoolRegistryState(value.PoolRegistry),
 		SettlementCredit:    toCoreSettlementCreditState(value.SettlementCredit),
+		PoolProduction:      toCorePoolProductionHistory(value.PoolProduction),
 	}
 }
 
@@ -323,6 +346,28 @@ func fromCoreClientState(value *state.ClientState) *ClientState {
 		RandomnessStabilisationWindowSlots:              value.RandomnessStabilisationWindowSlots,
 		LatestCheckpointPoolRegistry:                    fromCorePoolRegistryState(value.LatestCheckpointPoolRegistry),
 		LatestCheckpointSettlementCredit:                fromCoreSettlementCreditState(value.LatestCheckpointSettlementCredit),
+		LatestCheckpointPoolProduction:                  fromCorePoolProductionHistory(value.LatestCheckpointPoolProduction),
+	}
+}
+
+func fromCorePoolProductionHistory(value *state.PoolProductionHistory) *PoolProductionHistory {
+	if value == nil {
+		return nil
+	}
+	return &PoolProductionHistory{
+		Epoch: value.Epoch,
+		Pools: mapCoreSlice(value.Pools, fromCorePoolProductionRecord),
+	}
+}
+
+func fromCorePoolProductionRecord(value *state.PoolProductionRecord) *PoolProductionRecord {
+	if value == nil {
+		return nil
+	}
+	return &PoolProductionRecord{
+		PoolId:                value.PoolId,
+		CompletedEpochsBitmap: value.CompletedEpochsBitmap,
+		ProducedCurrentEpoch:  value.ProducedCurrentEpoch,
 	}
 }
 
@@ -422,6 +467,7 @@ func fromCoreConsensusState(value *state.ConsensusState) *ConsensusState {
 		NonceState:          fromCorePraosNonceState(value.NonceState),
 		PoolRegistry:        fromCorePoolRegistryState(value.PoolRegistry),
 		SettlementCredit:    fromCoreSettlementCreditState(value.SettlementCredit),
+		PoolProduction:      fromCorePoolProductionHistory(value.PoolProduction),
 	}
 }
 

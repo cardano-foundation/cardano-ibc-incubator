@@ -22,6 +22,7 @@ type trustedBlockState struct {
 	nonceState                     *PraosNonceState
 	poolRegistry                   *PoolRegistryState
 	settlementCredit               *SettlementCreditState
+	poolProduction                 *PoolProductionHistory
 	height                         *Height
 	blockHash                      string
 	epoch                          uint64
@@ -501,6 +502,7 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 			nonceState:                     clonePraosNonceState(cs.LatestCheckpointNonceState),
 			poolRegistry:                   clonePoolRegistry(cs.LatestCheckpointPoolRegistry),
 			settlementCredit:               cloneSettlementCredit(cs.LatestCheckpointSettlementCredit),
+			poolProduction:                 clonePoolProduction(cs.LatestCheckpointPoolProduction),
 		}
 		if cs.LatestHeight != nil && height.EQ(cs.LatestHeight) {
 			consensusState, found := GetConsensusState(clientStore, cdc, height)
@@ -512,7 +514,8 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 				state.timestamp != consensusState.Timestamp ||
 				!praosNonceStatesEqual(state.nonceState, consensusState.NonceState) ||
 				!poolRegistriesEqual(state.poolRegistry, consensusState.PoolRegistry) ||
-				!settlementCreditsEqual(state.settlementCredit, consensusState.SettlementCredit) {
+				!settlementCreditsEqual(state.settlementCredit, consensusState.SettlementCredit) ||
+				!poolProductionsEqual(state.poolProduction, consensusState.PoolProduction) {
 				return nil, errorsmod.Wrap(
 					ErrInvalidAcceptedBlock,
 					"checkpoint cursor at latest consensus height does not match the stored consensus state",
@@ -548,6 +551,7 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 		nonceState:                     clonePraosNonceState(consensusState.NonceState),
 		poolRegistry:                   clonePoolRegistry(consensusState.PoolRegistry),
 		settlementCredit:               cloneSettlementCredit(consensusState.SettlementCredit),
+		poolProduction:                 clonePoolProduction(consensusState.PoolProduction),
 	}, nil
 }
 
@@ -640,6 +644,9 @@ func (cs *ClientState) persistCheckpoint(
 		return err
 	}
 
+	if _, err := productionRecordMap(authenticatedHeader.anchorPoolProduction, authenticatedHeader.anchorBlock.epoch); err != nil {
+		return err
+	}
 	anchor := authenticatedHeader.anchorBlock
 	keepEpochs := collectReferencedConsensusEpochs(clientStore, cdc)
 	keepEpochs[anchor.epoch] = struct{}{}
@@ -658,6 +665,7 @@ func (cs *ClientState) persistCheckpoint(
 	cs.LatestCheckpointNonceState = clonePraosNonceState(authenticatedHeader.anchorNonceState)
 	cs.LatestCheckpointPoolRegistry = clonePoolRegistry(authenticatedHeader.anchorPoolRegistry)
 	cs.LatestCheckpointSettlementCredit = cloneSettlementCredit(authenticatedHeader.anchorSettlementCredit)
+	cs.LatestCheckpointPoolProduction = clonePoolProduction(authenticatedHeader.anchorPoolProduction)
 	cs.setLatestCheckpoint(anchorHeight, anchor.hash, anchor.epoch, anchor.slot, anchor.timestamp)
 	cs.pruneEpochChallenges(clientStore)
 	SetClientState(clientStore, cdc, cs)

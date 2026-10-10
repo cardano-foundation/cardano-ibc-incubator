@@ -85,6 +85,7 @@ func TestSettlementCreditCountsDistinctEligibleProducersWithoutRenormalizing(t *
 				anchorBlock:            &authenticatedProbabilisticBlock{height: 10, hash: "anchor", epoch: 7},
 				anchorPoolRegistry:     testPoolRegistry(7, context.StakeDistribution),
 				anchorSettlementCredit: &SettlementCreditState{Epoch: 7},
+				anchorPoolProduction:   testPoolProduction(context),
 			}
 			previous := "anchor"
 			for i := range 24 {
@@ -154,9 +155,17 @@ func TestSettlementCreditSurvivesCheckpointUpdatesAndKeepsHistoricalReference(t 
 	historical, err := cs.trustedBlockStateAtHeight(store, cdc, NewHeight(0, 10))
 	require.NoError(t, err)
 	require.True(t, settlementCreditsEqual(initial, historical.settlementCredit))
+	history, err := productionRecordMap(historical.poolProduction, 7)
+	require.NoError(t, err)
+	require.False(t, history["pool-a"].ProducedCurrentEpoch)
+	require.Equal(t, uint32(1), history["pool-a"].CompletedEpochsBitmap)
 	latest, err := cs.latestTrustedBlockState(store, cdc)
 	require.NoError(t, err)
 	require.True(t, settlementCreditsEqual(cs.LatestCheckpointSettlementCredit, latest.settlementCredit))
+	latestHistory, err := productionRecordMap(latest.poolProduction, 9)
+	require.NoError(t, err)
+	require.True(t, latestHistory["pool-a"].ProducedCurrentEpoch)
+	require.Equal(t, uint32(5), latestHistory["pool-a"].CompletedEpochsBitmap)
 }
 
 func TestSettlementCreditRejectsMissingOrMalformedReference(t *testing.T) {

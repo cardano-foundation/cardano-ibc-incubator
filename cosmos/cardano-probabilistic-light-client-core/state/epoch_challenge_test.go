@@ -65,6 +65,12 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	require.Equal(t, testNonceState(base.EpochNonce), trusted.nonceState)
 	require.True(t, settlementCreditsEqual(mustTestSettlementCredit(base), trusted.settlementCredit))
 	require.Equal(t, uint64(8), cs.LatestCheckpointSettlementCredit.Epoch)
+	require.Equal(t, uint64(7), trusted.poolProduction.Epoch)
+	oldProduction, err := productionRecordMap(trusted.poolProduction, 7)
+	require.NoError(t, err)
+	require.True(t, oldProduction["pool-a"].ProducedCurrentEpoch)
+	require.Equal(t, uint32(1), oldProduction["pool-a"].CompletedEpochsBitmap)
+	require.Equal(t, uint64(8), cs.LatestCheckpointPoolProduction.Epoch)
 
 	// A second self-consistent context is evidence of disagreement. It must
 	// remain verifiable against the pre-proposal checkpoint after advancement.

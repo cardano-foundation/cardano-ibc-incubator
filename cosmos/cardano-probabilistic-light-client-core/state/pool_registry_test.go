@@ -164,7 +164,8 @@ func TestPoolRegistryCheckpointRestoresPendingChangesAtHistoricalHeight(t *testi
 	header := &authenticatedProbabilisticHeader{anchorBlock: &authenticatedProbabilisticBlock{
 		height: 11, slot: 1, epoch: 7, hash: testBlockHash("registry-checkpoint"), timestamp: client.SystemStartUnixNs + client.SlotLengthNs},
 		anchorNonceState: clonePraosNonceState(client.LatestCheckpointNonceState), anchorPoolRegistry: clonePoolRegistry(tracker.state),
-		anchorSettlementCredit: cloneSettlementCredit(client.LatestCheckpointSettlementCredit)}
+		anchorSettlementCredit: cloneSettlementCredit(client.LatestCheckpointSettlementCredit),
+		anchorPoolProduction:   clonePoolProduction(client.LatestCheckpointPoolProduction)}
 	require.NoError(t, client.persistCheckpoint(store, cdc, client.EpochContexts, header))
 	stored, _ := GetClientState(store, cdc)
 	latest, err := stored.trustedBlockStateAtHeight(store, cdc, NewHeight(0, 11))

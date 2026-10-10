@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EpochContext } from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
-import { loadTrustedPoolRegistryCheckpoint, withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
+import { loadTrustedPoolRegistryCheckpoint, loadTrustedPoolProductionCheckpoint, withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
 
 describe('trusted pool registration checkpoint', () => {
   let directory: string;
@@ -67,6 +67,29 @@ describe('trusted pool registration checkpoint', () => {
     ]) {
       expect(() => load(manifest(), { ...point, ...change })).toThrow(/does not match/);
     }
+  });
+
+  it('requires explicit trusted production history at the same bootstrap point', () => {
+    const document = { ...manifest(), production: { epoch: '7', pools: [
+      { pool_id: 'pool-a', completed_epochs_bitmap: '17', produced_current_epoch: true },
+    ] } };
+    const file = join(directory, 'production.json');
+    const loadProduction = (value: unknown, reference = point) => {
+      writeFileSync(file, JSON.stringify(value));
+      return loadTrustedPoolProductionCheckpoint(file, reference);
+    };
+    expect(loadProduction(document).pools[0]).toEqual({ pool_id: 'pool-a', completed_epochs_bitmap: 17, produced_current_epoch: true });
+    expect(() => loadProduction(manifest())).toThrow();
+    expect(() => loadProduction(document, { ...point, height: 13n })).toThrow('does not match');
+    document.production.epoch = '8';
+    expect(() => loadProduction(document)).toThrow('unavailable');
+    document.production.epoch = '7';
+    document.production.pools[0].completed_epochs_bitmap = '32';
+    expect(() => loadProduction(document)).toThrow('bitmap');
+    expect(() => loadProduction({ ...document, production: { epoch: '7', pools: [
+      { pool_id: 'pool-a', completed_epochs_bitmap: '1', produced_current_epoch: false },
+      { pool_id: 'pool-a', completed_epochs_bitmap: '1', produced_current_epoch: false },
+    ] } })).toThrow('duplicate');
   });
   it('rejects absent history, duplicate pools and incorrectly timed pending keys', () => {
     const absent = manifest();

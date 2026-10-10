@@ -55,6 +55,9 @@ func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc St
 	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return Frozen
 	}
+	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {
+		return Expired
+	}
 	if cs.MaxClockDrift <= 0 {
 		return Expired
 	}
@@ -99,6 +102,9 @@ func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
 }
 
 func (cs ClientState) Validate() error {
+	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {
+		return err
+	}
 	if err := validateSettlementCredit(cs.LatestCheckpointSettlementCredit, cs.CurrentEpoch); err != nil {
 		return err
 	}
@@ -256,6 +262,13 @@ func (cs ClientState) Initialize(ctx Context, cdc StateCodec, clientStore storet
 		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial settlement credit disagrees with client checkpoint")
 	}
 	consensusState.SettlementCredit = cloneSettlementCredit(cs.LatestCheckpointSettlementCredit)
+	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {
+		return err
+	}
+	if consensusState.PoolProduction != nil && !poolProductionsEqual(consensusState.PoolProduction, cs.LatestCheckpointPoolProduction) {
+		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial pool production history disagrees with client checkpoint")
+	}
+	consensusState.PoolProduction = clonePoolProduction(cs.LatestCheckpointPoolProduction)
 	if _, err := cs.normalizedEpochContexts(); err != nil {
 		return err
 	}

@@ -32,6 +32,7 @@ type authenticatedProbabilisticHeader struct {
 	anchorNonceState                     *PraosNonceState
 	anchorPoolRegistry                   *PoolRegistryState
 	anchorSettlementCredit               *SettlementCreditState
+	anchorPoolProduction                 *PoolProductionHistory
 }
 
 func (cs *ClientState) authenticateHeaderBlocks(header *ProbabilisticHeader) (*authenticatedProbabilisticHeader, error) {

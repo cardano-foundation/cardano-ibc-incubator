@@ -227,6 +227,7 @@ func TestComputeHeaderSecurityMetricsHandlesIssue647StakeRatio(t *testing.T) {
 
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	authenticatedHeader.anchorSettlementCredit = mustTestSettlementCredit(epochContext)
+	authenticatedHeader.anchorPoolProduction = testPoolProduction(epochContext)
 	qualifiedPools, qualifiedStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.NoError(t, err)

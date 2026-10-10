@@ -77,6 +77,20 @@ describe('YaciHistoryService', () => {
     slotLeader: 'pool1anchorpool',
   };
 
+  it('uses block observations for standalone estimates and expires older epochs', async () => {
+    entityManagerMock.query.mockResolvedValue([
+      { epoch: 2, slot_leader: 'pool-a' }, { epoch: 6, slot_leader: 'pool-a' },
+      { epoch: 7, slot_leader: 'pool-a' }, { epoch: 7, slot_leader: 'pool-b' },
+      { epoch: 1, slot_leader: 'expired' }, { epoch: 7, slot_leader: null },
+    ]);
+    const history = await service.findObservedPoolProductionAtBlock(block);
+    expect(entityManagerMock.query).toHaveBeenCalledWith(expect.stringContaining('SELECT DISTINCT epoch, slot_leader'), [2, 7, 100, block.hash]);
+    expect(history.pools).toEqual([
+      { pool_id: 'pool-a', completed_epochs_bitmap: 17, produced_current_epoch: true },
+      { pool_id: 'pool-b', completed_epochs_bitmap: 0, produced_current_epoch: true },
+    ]);
+  });
+
   beforeEach(() => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

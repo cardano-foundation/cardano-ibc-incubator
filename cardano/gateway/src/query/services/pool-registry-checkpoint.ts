@@ -3,7 +3,9 @@ import {
   EpochContext,
   PoolRegistrationBinding,
   PoolRegistryState,
+  PoolProductionHistory,
 } from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
+import { productionRecords } from './pool-production';
 
 const MAX_UINT64 = (1n << 64n) - 1n;
 const object = (value: unknown): Record<string, unknown> => {
@@ -117,4 +119,37 @@ export function withAuthenticatedPoolBindings(context: EpochContext, registry: P
       return { ...entry, vrf_key_hash: binding.vrf_key_hash, first_registration_slot: binding.first_registration_slot };
     }),
   };
+}
+
+// This shares the explicitly trusted registry file and exact bootstrap chain point.
+// It must describe accepted production history, never an epoch-table claim or count.
+export function loadTrustedPoolProductionCheckpoint(
+  file: string,
+  point: PoolRegistryCheckpointPoint,
+): PoolProductionHistory {
+  const document = object(JSON.parse(readFileSync(file, 'utf8')));
+  if (
+    document.version !== 1 ||
+    document.chain_id !== point.chainId ||
+    integer(document.height) !== point.height ||
+    integer(document.slot) !== point.slot ||
+    !Buffer.from(hash(document.block_hash)).equals(Buffer.from(hash(point.hash)))
+  )
+    throw new Error('Trusted production checkpoint does not match the bootstrap chain point');
+  const source = object(document.production);
+  const history: PoolProductionHistory = {
+    epoch: integer(source.epoch),
+    pools: array(source.pools).map((value) => {
+      const record = object(value);
+      if (typeof record.pool_id !== 'string' || typeof record.produced_current_epoch !== 'boolean')
+        throw new Error('Production identity and current-epoch observation must be explicit');
+      return {
+        pool_id: record.pool_id,
+        completed_epochs_bitmap: Number(integer(record.completed_epochs_bitmap)),
+        produced_current_epoch: record.produced_current_epoch,
+      };
+    }),
+  };
+  productionRecords(history, point.epoch);
+  return history;
 }

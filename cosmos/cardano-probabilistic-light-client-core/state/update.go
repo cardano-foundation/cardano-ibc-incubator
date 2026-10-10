@@ -198,6 +198,10 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return err
 	}
 
+	if err := attachPoolProduction(authenticatedHeader, trustedBlock); err != nil {
+		return err
+	}
+
 	anchorEpochContext := epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch)
 	if anchorEpochContext == nil {
 		return errorsmod.Wrapf(
@@ -448,6 +452,11 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		return 0, 0, 0, err
 	}
 
+	production, err := productionRecordMap(header.anchorPoolProduction, epochContext.Epoch)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
 	anchorEpoch := header.anchorBlock.epoch
 	prevHash := header.anchorBlock.hash
 	prevHeight := header.anchorBlock.height
@@ -479,7 +488,8 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 				if err != nil {
 					return 0, 0, 0, err
 				}
-				if eligible {
+				observed := production[poolID]
+				if eligible && observed != nil && observed.CompletedEpochsBitmap != 0 {
 					qualifiedUniquePools++
 					credit := credits[poolID]
 					if credit == nil {
@@ -617,6 +627,10 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 		panic(fmt.Errorf("failed to derive verified settlement credit: %w", err))
 	}
 
+	if err := attachPoolProduction(authenticatedHeader, trustedBlock); err != nil {
+		panic(fmt.Errorf("failed to derive verified production history: %w", err))
+	}
+
 	anchorEpochContext := epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch)
 	if anchorEpochContext == nil {
 		panic(fmt.Errorf("missing anchor epoch context for verified ProbabilisticHeader epoch %d", authenticatedHeader.anchorBlock.epoch))
@@ -691,6 +705,7 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 	cs.LatestCheckpointNonceState = clonePraosNonceState(authenticatedHeader.anchorNonceState)
 	cs.LatestCheckpointPoolRegistry = clonePoolRegistry(authenticatedHeader.anchorPoolRegistry)
 	cs.LatestCheckpointSettlementCredit = cloneSettlementCredit(authenticatedHeader.anchorSettlementCredit)
+	cs.LatestCheckpointPoolProduction = clonePoolProduction(authenticatedHeader.anchorPoolProduction)
 	cs.setLatestCheckpoint(
 		height,
 		authenticatedHeader.anchorBlock.hash,
@@ -720,6 +735,7 @@ func setAuthenticatedConsensusState(
 		NonceState:        clonePraosNonceState(authenticatedHeader.anchorNonceState),
 		PoolRegistry:      clonePoolRegistry(authenticatedHeader.anchorPoolRegistry),
 		SettlementCredit:  cloneSettlementCredit(authenticatedHeader.anchorSettlementCredit),
+		PoolProduction:    clonePoolProduction(authenticatedHeader.anchorPoolProduction),
 		IbcStateRoot:      ibcStateRoot,
 		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
 		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,

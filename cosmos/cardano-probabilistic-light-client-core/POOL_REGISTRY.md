@@ -10,6 +10,8 @@ Each retained consensus state stores its own `pool_registry`. Rootless checkpoin
 
 Bootstrap requires an authenticated or explicitly trusted registry at the initial block. Gateway requires `CARDANO_POOL_REGISTRY_CHECKPOINT_FILE`. This JSON file must identify the exact chain, settled block height, slot, hash and epoch used for client creation. Build its current records and frozen snapshots from native ledger state at that point. Establish first registration slots from authenticated certificate history or an explicitly trusted source. Use slot `0` only for a known genesis registration. A current pool table cannot reconstruct pending changes, frozen snapshots or registration history. Gateway does not infer this file from the candidate table.
 
+The same file must now contain `production` at that exact chain point. Each pool record has `completed_epochs_bitmap` and `produced_current_epoch`. Bit `0` records production in the immediately preceding completed epoch and bit `4` records production five epochs ago. The current flag records production through the checkpoint's anchor. Build these from authenticated block history or an explicitly trusted source. Do not infer them from registration age, epoch table rows or relayer-supplied production counts. Omitted pools grant no recent-production qualification. Omit a record when both its bitmap and current flag are empty.
+
 The file uses version `1`. All unsigned integers except `version` are decimal strings. Hashes are lowercase hex. Each binding has `pool_id`, `vrf_key_hash` and `first_registration_slot`. Each pool record includes `registration`, `registered`, `pending_vrf_key_hash`, `pending_effective_epoch` and `retirement_epoch`. An empty pending hash and epoch `"0"` mean no pending change. Retirement epoch `"0"` means none. `mark` and `effective` are arrays of bindings. For example this is the shape of an explicitly trusted genesis-pool checkpoint. Replace the example identifiers and hashes with independently established values.
 
 ```json
@@ -41,6 +43,14 @@ The file uses version `1`. All unsigned integers except `version` are decimal st
       "pool_id": "pool1...",
       "vrf_key_hash": "1111111111111111111111111111111111111111111111111111111111111111",
       "first_registration_slot": "0"
+    }]
+  },
+  "production": {
+    "epoch": "7",
+    "pools": [{
+      "pool_id": "pool1...",
+      "completed_epochs_bitmap": "1",
+      "produced_current_epoch": true
     }]
   }
 }

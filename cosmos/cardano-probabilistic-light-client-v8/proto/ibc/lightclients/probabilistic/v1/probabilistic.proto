@@ -115,6 +115,26 @@ message ClientState {
   PoolRegistryState latest_checkpoint_pool_registry = 34;
   // Epoch reference derived from capped credit, never raw accepted claims.
   SettlementCreditState latest_checkpoint_settlement_credit = 35;
+  // Verified production history positioned at this committed checkpoint.
+  PoolProductionHistory latest_checkpoint_pool_production = 36;
+}
+
+// Production observed through the checkpoint. Bit 0 represents epoch-1 and
+// bit 4 represents epoch-5. Current-epoch observations never qualify that epoch.
+// Bootstrap authenticates this state. Missing pool records grant no qualification.
+message PoolProductionHistory {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  repeated PoolProductionRecord pools = 2;
+}
+
+message PoolProductionRecord {
+  option (gogoproto.goproto_getters) = false;
+
+  string pool_id = 1;
+  uint32 completed_epochs_bitmap = 2;
+  bool produced_current_epoch = 3;
 }
 
 // Exact settlement reference shares for this epoch. At an adjacent rollover
@@ -213,6 +233,8 @@ message ConsensusState {
   PoolRegistryState pool_registry = 10;
   // Reference at this accepted block for historical settlement verification.
   SettlementCreditState settlement_credit = 11;
+  // History at this accepted block, excluding temporary settlement descendants.
+  PoolProductionHistory pool_production = 12;
 }
 
 message Misbehaviour {

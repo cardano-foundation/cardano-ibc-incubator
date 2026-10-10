@@ -1,6 +1,6 @@
 import { bootstrapSettlementCredit } from './settlement-credit';
 import { Cbor, CborArray, CborBytes, CborSimple } from '@harmoniclabs/cbor';
-import { loadTrustedPoolRegistryCheckpoint, withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
+import { loadTrustedPoolRegistryCheckpoint, loadTrustedPoolProductionCheckpoint, withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
 import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { PacketStateService, latestPacketProofHeight } from './packet-state.service';
@@ -38,6 +38,7 @@ import {
   OperationalCertificateCounter,
   PraosNonceState,
   PoolRegistryState,
+  PoolProductionHistory,
   ProbabilisticBlock,
   ProbabilisticHeader,
   StakeDistributionEntry,
@@ -718,10 +719,23 @@ export class QueryService {
 
     const registryFile = this.configService.get<string>('cardanoPoolRegistryCheckpointFile');
     let poolRegistry: PoolRegistryState | undefined;
+    let poolProduction: PoolProductionHistory | undefined;
     const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
       historyService: this.historyService,
       height: BigInt(height),
       logger: this.logger,
+      resolveProductionHistory: (block) => {
+        if (!registryFile) throw new GrpcFailedPreconditionException('Trusted production bootstrap is unavailable');
+        try {
+          poolProduction = loadTrustedPoolProductionCheckpoint(registryFile, {
+            chainId: cardanoChainId, height: BigInt(block.height), slot: block.slotNo,
+            hash: block.hash, epoch: BigInt(block.epochNo),
+          });
+          return poolProduction;
+        } catch (error) {
+          throw new GrpcFailedPreconditionException(`Production bootstrap failed: ${error.message}`);
+        }
+      },
       resolvePoolBindings: (block, entries) => {
         if (!registryFile) {
           throw new GrpcFailedPreconditionException(
@@ -842,6 +856,7 @@ export class QueryService {
       epoch_contexts: [currentEpochContext],
       latest_checkpoint_nonce_state: nonceState,
       latest_checkpoint_pool_registry: poolRegistry,
+      latest_checkpoint_pool_production: poolProduction,
       latest_checkpoint_settlement_credit: bootstrapSettlementCredit(
         BigInt(stabilityEvidence.anchorEpoch),
         stabilityEvidence.epochStakeDistribution,
@@ -869,6 +884,7 @@ export class QueryService {
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
       nonce_state: nonceState,
       pool_registry: poolRegistry,
+      pool_production: poolProduction,
       settlement_credit: clientStateProbabilistic.latest_checkpoint_settlement_credit,
       packet_state_snapshot: await this.packetState.snapshot(stabilityEvidence.anchorHeight),
       timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
@@ -2362,7 +2378,8 @@ export class QueryService {
         if (
           !checkpoint ||
           checkpoint.revision_height !== effectiveTrustedHeight ||
-          !settlementCreditClient.latest_checkpoint_settlement_credit
+          !settlementCreditClient.latest_checkpoint_settlement_credit ||
+          !settlementCreditClient.latest_checkpoint_pool_production
         ) {
           throw new Error('Destination client checkpoint does not match trusted_height');
         }
