@@ -141,6 +141,7 @@ describe('stability-evidence', () => {
   };
 
   const historyServiceMock = {
+    findObservedPoolProductionAtBlock: jest.fn().mockImplementation(async (point) => ({ epoch: BigInt(point.epochNo), pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) })),
     findLatestBlock: jest.fn().mockResolvedValue({
       height: 105,
       hash: 'latest-hash',

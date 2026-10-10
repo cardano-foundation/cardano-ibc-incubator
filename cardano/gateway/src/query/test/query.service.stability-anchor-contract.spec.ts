@@ -1,8 +1,9 @@
 import { Cbor, CborArray, CborBytes, CborUInt, CborSimple } from '@harmoniclabs/cbor';
-import { loadTrustedPoolRegistryCheckpoint } from '../services/pool-registry-checkpoint';
+import { loadTrustedPoolRegistryCheckpoint, loadTrustedPoolProductionCheckpoint } from '../services/pool-registry-checkpoint';
 jest.mock('../services/pool-registry-checkpoint', () => ({
   ...jest.requireActual('../services/pool-registry-checkpoint'),
   loadTrustedPoolRegistryCheckpoint: jest.fn(),
+  loadTrustedPoolProductionCheckpoint: jest.fn(),
 }));
 import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 jest.mock('../../shared/helpers/ogmios', () => ({
@@ -69,6 +70,7 @@ describe('QueryService stability anchor contract', () => {
     findLatestBlock: jest.Mock;
     findBlockByHeight: jest.Mock;
     findDescendantBlocks: jest.Mock;
+    findObservedPoolProductionAtBlock: jest.Mock;
     findEpochContextAtBlock: jest.Mock;
     findOperationalCertificateCountersAtBlock: jest.Mock;
     findBridgeBlocks: jest.Mock;
@@ -112,6 +114,7 @@ describe('QueryService stability anchor contract', () => {
     } as unknown as ConfigService;
 
     historyServiceMock = {
+      findObservedPoolProductionAtBlock: jest.fn().mockImplementation(async (point) => ({ epoch: BigInt(point.epochNo), pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) })),
       findLatestBlock: jest.fn().mockResolvedValue({
         height: 105,
         hash: 'latest-hash',
@@ -260,6 +263,7 @@ describe('QueryService stability anchor contract', () => {
         pending_vrf_key_hash: new Uint8Array(), pending_effective_epoch: 0n, retirement_epoch: 0n })),
         mark: bindings, effective: bindings };
     });
+    (loadTrustedPoolProductionCheckpoint as jest.Mock).mockImplementation((_file, point) => ({ epoch: point.epoch, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) }));
     (queryPraosNoncesAtPoint as jest.Mock).mockResolvedValue({
       epoch_nonce: Buffer.from('11'.repeat(32), 'hex'),
       evolving_nonce: Buffer.from('02'.repeat(32), 'hex'),
@@ -307,6 +311,8 @@ describe('QueryService stability anchor contract', () => {
     expect(client.latest_checkpoint_settlement_credit?.epoch).toBe(7n);
     expect(client.latest_checkpoint_settlement_credit?.reference).toHaveLength(5);
     expect(consensus.settlement_credit).toEqual(client.latest_checkpoint_settlement_credit);
+    expect(consensus.pool_production).toEqual(client.latest_checkpoint_pool_production);
+    expect(client.latest_checkpoint_pool_production?.pools).toHaveLength(5);
   });
 
   it('uses independently supplied genesis ages even when the epoch table has no ages', async () => {
@@ -488,6 +494,7 @@ describe('QueryService stability anchor contract', () => {
       current_epoch: 7n,
       latest_checkpoint_height: { revision_height: 99n },
       latest_checkpoint_settlement_credit: { epoch: 7n, reference: [] },
+      latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
     });
     // These five producers have enough submitted stake, but only 250 basis
     // points of settlement credit against this destination reference.

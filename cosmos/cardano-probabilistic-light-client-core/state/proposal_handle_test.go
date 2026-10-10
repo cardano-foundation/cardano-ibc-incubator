@@ -191,6 +191,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	substitute.LatestCheckpointNonceState = testNonceState(substitute.EpochNonce)
 	substitute.LatestCheckpointPoolRegistry = testPoolRegistry(9, substitute.EpochStakeDistribution)
 	substitute.LatestCheckpointSettlementCredit = mustTestSettlementCredit(&EpochContext{Epoch: 9, StakeDistribution: substitute.EpochStakeDistribution})
+	substitute.LatestCheckpointPoolProduction = testPoolProduction(&EpochContext{Epoch: 9, StakeDistribution: substitute.EpochStakeDistribution})
 	substitute.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
 		{PoolId: bytes.Repeat([]byte{0x29}, 28), SequenceNumber: 6},
 	}
@@ -201,6 +202,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	consensusState.NonceState = clonePraosNonceState(substitute.LatestCheckpointNonceState)
 	consensusState.PoolRegistry = clonePoolRegistry(substitute.LatestCheckpointPoolRegistry)
 	consensusState.SettlementCredit = cloneSettlementCredit(substitute.LatestCheckpointSettlementCredit)
+	consensusState.PoolProduction = clonePoolProduction(substitute.LatestCheckpointPoolProduction)
 	consensusTimestamp, timestampErr := substitute.DeriveTimestampFromSlot(220)
 	require.NoError(t, timestampErr)
 	consensusState.Timestamp = consensusTimestamp
@@ -235,6 +237,8 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	require.EqualValues(t, 9, recoveredConsensus.AcceptedEpoch)
 	require.Equal(t, substitute.LatestCheckpointNonceState, recoveredClient.LatestCheckpointNonceState)
 	require.Equal(t, substitute.LatestCheckpointNonceState, recoveredConsensus.NonceState)
+	require.True(t, poolProductionsEqual(substitute.LatestCheckpointPoolProduction, recoveredClient.LatestCheckpointPoolProduction))
+	require.True(t, poolProductionsEqual(substitute.LatestCheckpointPoolProduction, recoveredConsensus.PoolProduction))
 	require.Len(t, recoveredClient.EpochContextChallenges, 2)
 	for _, challenge := range recoveredClient.EpochContextChallenges {
 		require.Equal(t, uint64(ctx.BlockTime().Add(3*time.Minute).UnixNano()), challenge.UsableAfterUnixNs)

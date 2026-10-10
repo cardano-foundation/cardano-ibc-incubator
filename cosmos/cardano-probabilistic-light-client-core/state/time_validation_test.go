@@ -460,6 +460,7 @@ func initializeTemporalVerifierClient(
 	consensusState.NonceState = clonePraosNonceState(clientState.LatestCheckpointNonceState)
 	consensusState.PoolRegistry = clonePoolRegistry(clientState.LatestCheckpointPoolRegistry)
 	consensusState.SettlementCredit = cloneSettlementCredit(clientState.LatestCheckpointSettlementCredit)
+	consensusState.PoolProduction = clonePoolProduction(clientState.LatestCheckpointPoolProduction)
 	consensusState.AcceptedEpoch = epochContext.Epoch
 	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, trustedSlot)
 	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
@@ -477,6 +478,7 @@ func setTemporalVerifierEpochContext(clientState *ClientState, epochContext *Epo
 	clientState.LatestCheckpointNonceState = testNonceState(epochContext.EpochNonce)
 	clientState.LatestCheckpointPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	clientState.LatestCheckpointSettlementCredit = mustTestSettlementCredit(epochContext)
+	clientState.LatestCheckpointPoolProduction = testPoolProduction(epochContext)
 	clientState.CurrentEpochStartSlot = epochContext.EpochStartSlot
 	clientState.CurrentEpochEndSlotExclusive = epochContext.EpochEndSlotExclusive
 }
@@ -560,12 +562,13 @@ func newTemporalVerifierAuthenticatedHeader(
 ) *authenticatedProbabilisticHeader {
 	t.Helper()
 	anchor := &authenticatedProbabilisticBlock{
-		height:    anchorHeight,
-		slot:      anchorSlot,
-		hash:      anchorHash,
-		prevHash:  trustedHash,
-		epoch:     epoch,
-		timestamp: mustTestTimestampForSlot(t, clientState, anchorSlot),
+		slotLeader: "pool-a",
+		height:     anchorHeight,
+		slot:       anchorSlot,
+		hash:       anchorHash,
+		prevHash:   trustedHash,
+		epoch:      epoch,
+		timestamp:  mustTestTimestampForSlot(t, clientState, anchorSlot),
 	}
 	descendants := make([]*authenticatedProbabilisticBlock, 0, DefaultThresholdDepth)
 	previousHash := anchorHash

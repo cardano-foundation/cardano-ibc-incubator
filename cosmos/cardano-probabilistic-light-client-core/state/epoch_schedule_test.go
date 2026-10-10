@@ -99,6 +99,7 @@ func TestEpochScheduleSurvivesRolloverAndRetainedContexts(t *testing.T) {
 	require.NoError(t, syncCurrentEpochFields(cs, []*EpochContext{previous, next}, next.Epoch))
 	cs.LatestCheckpointPoolRegistry = testPoolRegistryAtEpoch(t, cs.LatestCheckpointPoolRegistry, next.Epoch)
 	cs.LatestCheckpointSettlementCredit = mustTestSettlementCredit(next)
+	cs.LatestCheckpointPoolProduction = testPoolProduction(next)
 	require.NoError(t, cs.Validate())
 	start, end, err := cs.epochSlotBounds(previous.Epoch)
 	require.NoError(t, err)

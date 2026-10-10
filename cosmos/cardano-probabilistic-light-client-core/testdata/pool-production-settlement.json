@@ -1,0 +1,345 @@
+[
+  {
+    "name": "production exactly five epochs ago",
+    "saved_epoch": 10,
+    "pools": [
+      {
+        "pool_id": "pool-a",
+        "completed_epochs_bitmap": 16,
+        "produced_current_epoch": false
+      }
+    ],
+    "bridge": [],
+    "anchor": {
+      "epoch": 10,
+      "pool": "other"
+    },
+    "descendants": [
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 52
+  },
+  {
+    "name": "production expires at six epochs",
+    "saved_epoch": 10,
+    "pools": [
+      {
+        "pool_id": "pool-a",
+        "completed_epochs_bitmap": 16,
+        "produced_current_epoch": false
+      }
+    ],
+    "bridge": [],
+    "anchor": {
+      "epoch": 11,
+      "pool": "other"
+    },
+    "descendants": [
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a"
+    ],
+    "expected_pools": 0,
+    "expected_credit_bps": 0
+  },
+  {
+    "name": "production remains eligible at five epochs after rollover",
+    "saved_epoch": 10,
+    "pools": [
+      {
+        "pool_id": "pool-a",
+        "completed_epochs_bitmap": 8,
+        "produced_current_epoch": false
+      }
+    ],
+    "bridge": [],
+    "anchor": {
+      "epoch": 11,
+      "pool": "other"
+    },
+    "descendants": [
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 52
+  },
+  {
+    "name": "current epoch alone never qualifies",
+    "saved_epoch": 10,
+    "pools": [
+      {
+        "pool_id": "pool-a",
+        "completed_epochs_bitmap": 0,
+        "produced_current_epoch": true
+      }
+    ],
+    "bridge": [],
+    "anchor": {
+      "epoch": 10,
+      "pool": "other"
+    },
+    "descendants": [
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a"
+    ],
+    "expected_pools": 0,
+    "expected_credit_bps": 0
+  },
+  {
+    "name": "current observation qualifies after rollover",
+    "saved_epoch": 10,
+    "pools": [
+      {
+        "pool_id": "pool-a",
+        "completed_epochs_bitmap": 0,
+        "produced_current_epoch": true
+      }
+    ],
+    "bridge": [],
+    "anchor": {
+      "epoch": 11,
+      "pool": "other"
+    },
+    "descendants": [
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 52
+  },
+  {
+    "name": "missing pool record grants no credit",
+    "saved_epoch": 10,
+    "pools": [],
+    "bridge": [],
+    "anchor": {
+      "epoch": 10,
+      "pool": "other"
+    },
+    "descendants": [
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a"
+    ],
+    "expected_pools": 0,
+    "expected_credit_bps": 0
+  },
+  {
+    "name": "repeated descendants never populate history",
+    "saved_epoch": 10,
+    "pools": [],
+    "bridge": [],
+    "anchor": {
+      "epoch": 10,
+      "pool": "other"
+    },
+    "descendants": [
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a"
+    ],
+    "expected_pools": 0,
+    "expected_credit_bps": 0
+  },
+  {
+    "name": "committed previous epoch bridge qualifies",
+    "saved_epoch": 10,
+    "pools": [],
+    "bridge": [
+      {
+        "epoch": 10,
+        "pool": "pool-a"
+      },
+      {
+        "epoch": 10,
+        "pool": "pool-a"
+      }
+    ],
+    "anchor": {
+      "epoch": 11,
+      "pool": "other"
+    },
+    "descendants": [
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a",
+      "pool-a"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 52
+  }
+]

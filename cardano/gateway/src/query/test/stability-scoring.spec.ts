@@ -74,6 +74,7 @@ describe('stability-scoring', () => {
 
     const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, stabilityPolicy, {
       poolRegistrationCutoffSlot,
+      poolProduction: { epoch: 1n, pools: epochStakeDistribution.map((entry) => ({ pool_id: entry.poolId, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
     });
 
     expect(metrics.qualifiedUniquePoolsCount).toBe(3);
@@ -123,6 +124,7 @@ describe('stability-scoring', () => {
 
     const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, stabilityPolicy, {
       poolRegistrationCutoffSlot,
+      poolProduction: { epoch: 1n, pools: epochStakeDistribution.map((entry) => ({ pool_id: entry.poolId, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
     });
 
     expect(metrics.qualifiedUniquePoolsCount).toBe(2);
@@ -173,6 +175,7 @@ describe('stability-scoring', () => {
 
     const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, stabilityPolicy, {
       poolRegistrationCutoffSlot,
+      poolProduction: { epoch: 1n, pools: epochStakeDistribution.map((entry) => ({ pool_id: entry.poolId, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
     });
 
     expect(metrics.qualifiedUniquePoolsCount).toBe(3);
@@ -227,6 +230,7 @@ describe('stability-scoring', () => {
 
     const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, stabilityPolicy, {
       poolRegistrationCutoffSlot,
+      poolProduction: { epoch: 1n, pools: epochStakeDistribution.map((entry) => ({ pool_id: entry.poolId, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
     });
 
     expect(metrics.qualifiedUniquePoolsCount).toBe(1);
@@ -252,7 +256,7 @@ describe('stability-scoring', () => {
     ];
 
     expect(() =>
-      computeStabilityMetrics(descendants, epochStakeDistribution, stabilityPolicy, { poolRegistrationCutoffSlot }),
+      computeStabilityMetrics(descendants, epochStakeDistribution, stabilityPolicy, { poolRegistrationCutoffSlot, poolProduction: { epoch: 1n, pools: epochStakeDistribution.map((entry) => ({ pool_id: entry.poolId, completed_epochs_bitmap: 1, produced_current_epoch: false })) } }),
     ).toThrow('First registration slot missing');
   });
 });
