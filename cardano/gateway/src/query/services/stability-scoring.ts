@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { PoolSettlementCredit } from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
+import { addCredit, computeSettlementCredits, creditBasisPoints, CreditFraction } from './settlement-credit';
 import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
@@ -32,6 +34,7 @@ const LIGHT_CLIENT_STABILITY_POLICY: StabilityPolicy = {
 
 type StabilityScoringOptions = {
   poolRegistrationCutoffSlot?: bigint;
+  settlementCreditReference?: PoolSettlementCredit[];
 };
 
 const STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS = 1_767_225_600_000_000_000n; // 2026-01-01T00:00:00Z
@@ -116,9 +119,9 @@ export function computeStabilityMetrics(
   const qualifiedUniquePools = new Set<string>();
   const seenSlotLeaders = new Set<string>();
   const stakeEntryByPool = new Map(epochStakeDistribution.map((entry) => [entry.poolId, entry]));
-  const totalActiveStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
+  const credits = computeSettlementCredits(epochStakeDistribution, options.settlementCreditReference);
 
-  let qualifiedUniqueStake = 0n;
+  let qualifiedUniqueStake: CreditFraction = { numerator: 0n, denominator: 1n };
 
   for (const descendant of descendants) {
     if (!descendant.slotLeader || seenSlotLeaders.has(descendant.slotLeader)) {
@@ -132,11 +135,10 @@ export function computeStabilityMetrics(
     }
 
     qualifiedUniquePools.add(descendant.slotLeader);
-    qualifiedUniqueStake += entry.stake;
+    qualifiedUniqueStake = addCredit(qualifiedUniqueStake, credits.get(entry.poolId.toLowerCase())!);
   }
 
-  const qualifiedUniqueStakeBps =
-    qualifiedUniqueStake >= totalActiveStake ? 10_000n : (qualifiedUniqueStake * 10_000n) / totalActiveStake;
+  const qualifiedUniqueStakeBps = creditBasisPoints(qualifiedUniqueStake);
 
   const depthScore = minBps(BigInt(descendants.length), policy.threshold_depth);
   const poolsScore = minBps(BigInt(qualifiedUniquePools.size), policy.threshold_unique_pools);

@@ -459,6 +459,7 @@ func initializeTemporalVerifierClient(
 	consensusState := newProbabilisticTestConsensusState(testBlockHash("trusted-10"))
 	consensusState.NonceState = clonePraosNonceState(clientState.LatestCheckpointNonceState)
 	consensusState.PoolRegistry = clonePoolRegistry(clientState.LatestCheckpointPoolRegistry)
+	consensusState.SettlementCredit = cloneSettlementCredit(clientState.LatestCheckpointSettlementCredit)
 	consensusState.AcceptedEpoch = epochContext.Epoch
 	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, trustedSlot)
 	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
@@ -475,6 +476,7 @@ func setTemporalVerifierEpochContext(clientState *ClientState, epochContext *Epo
 	clientState.EpochNonce = bytes.Clone(epochContext.EpochNonce)
 	clientState.LatestCheckpointNonceState = testNonceState(epochContext.EpochNonce)
 	clientState.LatestCheckpointPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
+	clientState.LatestCheckpointSettlementCredit = mustTestSettlementCredit(epochContext)
 	clientState.CurrentEpochStartSlot = epochContext.EpochStartSlot
 	clientState.CurrentEpochEndSlotExclusive = epochContext.EpochEndSlotExclusive
 }
