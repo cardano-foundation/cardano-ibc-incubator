@@ -4,6 +4,7 @@ import (
 	"fmt"
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"math"
+	"math/big"
 	"math/bits"
 	"strings"
 
@@ -190,6 +191,10 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return err
 	}
 	if err := cs.verifyHeaderTemporalContinuity(ctx, authenticatedHeader, trustedBlock); err != nil {
+		return err
+	}
+
+	if err := attachSettlementCredit(authenticatedHeader, trustedBlock, epochContexts); err != nil {
 		return err
 	}
 
@@ -391,9 +396,8 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 ) (uint64, uint64, uint64, error) {
 	seenPools := make(map[string]struct{})
 	qualifiedUniquePools := uint64(0)
-	qualifiedUniqueStake := uint64(0)
+	qualifiedUniqueStake := new(big.Rat)
 	totalActiveStake := uint64(0)
-	stakeByPool := make(map[string]*StakeDistributionEntry)
 	if header == nil || header.anchorPoolRegistry == nil {
 		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "authenticated anchor pool registry is missing")
 	}
@@ -417,7 +421,6 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		if entry == nil {
 			continue
 		}
-		stakeByPool[strings.ToLower(entry.PoolId)] = entry
 		nextTotalActiveStake, ok := checkedAddStake(totalActiveStake, entry.Stake)
 		if !ok {
 			return 0, 0, 0, errorsmod.Wrapf(
@@ -436,6 +439,11 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
 	}
 	poolRegistrationCutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	credits, err := currentSettlementCredits(header.anchorSettlementCredit, epochContext)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -467,21 +475,17 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		if poolID != "" {
 			if _, exists := seenPools[poolID]; !exists {
 				seenPools[poolID] = struct{}{}
-				entry := stakeByPool[poolID]
 				eligible, err := poolRegisteredBeforeCutoff(poolRegistrationCutoffSlot, registeredPools[poolID])
 				if err != nil {
 					return 0, 0, 0, err
 				}
 				if eligible {
 					qualifiedUniquePools++
-					nextQualifiedUniqueStake, ok := checkedAddStake(qualifiedUniqueStake, entry.Stake)
-					if !ok {
-						return 0, 0, 0, errorsmod.Wrap(
-							ErrInvalidUniqueStake,
-							"qualified unique stake total overflows uint64",
-						)
+					credit := credits[poolID]
+					if credit == nil {
+						return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "qualified producer missing from stake table")
 					}
-					qualifiedUniqueStake = nextQualifiedUniqueStake
+					qualifiedUniqueStake.Add(qualifiedUniqueStake, credit)
 				}
 			}
 		}
@@ -490,7 +494,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		prevHeight = block.height
 	}
 
-	qualifiedUniqueStakeBps := minBps(qualifiedUniqueStake, totalActiveStake)
+	qualifiedUniqueStakeBps := settlementCreditBps(qualifiedUniqueStake)
 
 	score := cs.computeSecurityScore(uint64(len(header.descendantBlocks)), qualifiedUniquePools, qualifiedUniqueStakeBps)
 	return qualifiedUniquePools, qualifiedUniqueStakeBps, score, nil
@@ -609,6 +613,10 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 		panic(fmt.Errorf("verified ProbabilisticHeader violated epoch transition rules: %w", err))
 	}
 
+	if err := attachSettlementCredit(authenticatedHeader, trustedBlock, epochContexts); err != nil {
+		panic(fmt.Errorf("failed to derive verified settlement credit: %w", err))
+	}
+
 	anchorEpochContext := epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch)
 	if anchorEpochContext == nil {
 		panic(fmt.Errorf("missing anchor epoch context for verified ProbabilisticHeader epoch %d", authenticatedHeader.anchorBlock.epoch))
@@ -682,6 +690,7 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 	}
 	cs.LatestCheckpointNonceState = clonePraosNonceState(authenticatedHeader.anchorNonceState)
 	cs.LatestCheckpointPoolRegistry = clonePoolRegistry(authenticatedHeader.anchorPoolRegistry)
+	cs.LatestCheckpointSettlementCredit = cloneSettlementCredit(authenticatedHeader.anchorSettlementCredit)
 	cs.setLatestCheckpoint(
 		height,
 		authenticatedHeader.anchorBlock.hash,
@@ -710,6 +719,7 @@ func setAuthenticatedConsensusState(
 		Timestamp:         authenticatedHeader.anchorBlock.timestamp,
 		NonceState:        clonePraosNonceState(authenticatedHeader.anchorNonceState),
 		PoolRegistry:      clonePoolRegistry(authenticatedHeader.anchorPoolRegistry),
+		SettlementCredit:  cloneSettlementCredit(authenticatedHeader.anchorSettlementCredit),
 		IbcStateRoot:      ibcStateRoot,
 		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
 		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,

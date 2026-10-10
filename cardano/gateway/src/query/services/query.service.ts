@@ -1,3 +1,4 @@
+import { bootstrapSettlementCredit } from './settlement-credit';
 import { Cbor, CborArray, CborBytes, CborSimple } from '@harmoniclabs/cbor';
 import { loadTrustedPoolRegistryCheckpoint, withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
 import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
@@ -841,6 +842,10 @@ export class QueryService {
       epoch_contexts: [currentEpochContext],
       latest_checkpoint_nonce_state: nonceState,
       latest_checkpoint_pool_registry: poolRegistry,
+      latest_checkpoint_settlement_credit: bootstrapSettlementCredit(
+        BigInt(stabilityEvidence.anchorEpoch),
+        stabilityEvidence.epochStakeDistribution,
+      ),
       randomness_stabilisation_window_slots: BigInt(window),
       epoch_context_challenges: [], // Assigned by the Cosmos host during Initialize.
       active_slot_coefficient_numerator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientNumerator,
@@ -864,6 +869,7 @@ export class QueryService {
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
       nonce_state: nonceState,
       pool_registry: poolRegistry,
+      settlement_credit: clientStateProbabilistic.latest_checkpoint_settlement_credit,
       packet_state_snapshot: await this.packetState.snapshot(stabilityEvidence.anchorHeight),
       timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,
@@ -2348,6 +2354,22 @@ export class QueryService {
       throw new GrpcInvalidArgumentException('Invalid argument: "trusted_height" must be provided');
     }
     const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(BigInt(trustedHeight), BigInt(height));
+    let settlementCreditClient: ClientStateProbabilistic | undefined;
+    if (request.probabilistic_client_state?.length) {
+      try {
+        settlementCreditClient = ClientStateProbabilistic.decode(request.probabilistic_client_state);
+        const checkpoint = settlementCreditClient.latest_checkpoint_height ?? settlementCreditClient.latest_height;
+        if (
+          !checkpoint ||
+          checkpoint.revision_height !== effectiveTrustedHeight ||
+          !settlementCreditClient.latest_checkpoint_settlement_credit
+        ) {
+          throw new Error('Destination client checkpoint does not match trusted_height');
+        }
+      } catch (error) {
+        throw new GrpcInvalidArgumentException(`Invalid settlement credit query context: ${error.message}`);
+      }
+    }
 
     // A challenger must be able to authenticate the actual block at a claimed
     // height even when that block contains no HostState transaction.
@@ -2357,6 +2379,7 @@ export class QueryService {
         historyService: this.historyService,
         height: BigInt(height),
         trustedHeight: effectiveTrustedHeight,
+        settlementCreditClient,
         logger: this.logger,
       });
       stabilityHeader = await this.buildStabilityHeader(evidence, true);
@@ -2369,7 +2392,11 @@ export class QueryService {
         throw new GrpcFailedPreconditionException('Exact challenge header exceeds the configured header-size limit');
       }
     } else {
-      stabilityHeader = await this.buildBoundedStabilityHeader(effectiveTrustedHeight, BigInt(height));
+      stabilityHeader = await this.buildBoundedStabilityHeader(
+        effectiveTrustedHeight,
+        BigInt(height),
+        settlementCreditClient,
+      );
     }
 
     return {
@@ -2380,7 +2407,11 @@ export class QueryService {
     };
   }
 
-  private async buildBoundedStabilityHeader(trustedHeight: bigint, targetHeight: bigint): Promise<ProbabilisticHeader> {
+  private async buildBoundedStabilityHeader(
+    trustedHeight: bigint,
+    targetHeight: bigint,
+    settlementCreditClient?: ClientStateProbabilistic,
+  ): Promise<ProbabilisticHeader> {
     const targetDistance = targetHeight - trustedHeight;
     if (targetDistance <= 0n) {
       throw new GrpcInvalidArgumentException(
@@ -2403,6 +2434,7 @@ export class QueryService {
           historyService: this.historyService,
           height: candidateHeight,
           trustedHeight,
+          settlementCreditClient,
           logger: this.logger,
         });
       } catch (error) {

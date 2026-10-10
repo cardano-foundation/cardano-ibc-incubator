@@ -72,6 +72,9 @@ message QueryIBCHeaderRequest {
   uint64 height = 2;
   // Exact rootless evidence for independent probabilistic misbehaviour checks.
   bool checkpoint_only = 3;
+  // Destination client state for capped settlement credit and descendant selection.
+  // This is a query hint. The light client derives credit from its own saved state.
+  bytes probabilistic_client_state = 4;
 }
 
 message QueryIBCHeaderResponse {

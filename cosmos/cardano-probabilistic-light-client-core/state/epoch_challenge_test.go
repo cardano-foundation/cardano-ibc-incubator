@@ -63,6 +63,8 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	require.Equal(t, checkpoint.AnchorBlock.Hash, trusted.blockHash)
 	require.Equal(t, uint64(7), contexts[0].Epoch)
 	require.Equal(t, testNonceState(base.EpochNonce), trusted.nonceState)
+	require.True(t, settlementCreditsEqual(mustTestSettlementCredit(base), trusted.settlementCredit))
+	require.Equal(t, uint64(8), cs.LatestCheckpointSettlementCredit.Epoch)
 
 	// A second self-consistent context is evidence of disagreement. It must
 	// remain verifiable against the pre-proposal checkpoint after advancement.

@@ -92,6 +92,28 @@ func toCoreClientState(value *ClientState) *state.ClientState {
 		LatestCheckpointNonceState:                      toCorePraosNonceState(value.LatestCheckpointNonceState),
 		RandomnessStabilisationWindowSlots:              value.RandomnessStabilisationWindowSlots,
 		LatestCheckpointPoolRegistry:                    toCorePoolRegistryState(value.LatestCheckpointPoolRegistry),
+		LatestCheckpointSettlementCredit:                toCoreSettlementCreditState(value.LatestCheckpointSettlementCredit),
+	}
+}
+
+func toCoreSettlementCreditState(value *SettlementCreditState) *state.SettlementCreditState {
+	if value == nil {
+		return nil
+	}
+	return &state.SettlementCreditState{
+		Epoch:     value.Epoch,
+		Reference: mapCoreSlice(value.Reference, toCorePoolSettlementCredit),
+	}
+}
+
+func toCorePoolSettlementCredit(value *PoolSettlementCredit) *state.PoolSettlementCredit {
+	if value == nil {
+		return nil
+	}
+	return &state.PoolSettlementCredit{
+		PoolId:      value.PoolId,
+		Numerator:   bytes.Clone(value.Numerator),
+		Denominator: bytes.Clone(value.Denominator),
 	}
 }
 
@@ -169,6 +191,7 @@ func toCoreConsensusState(value *ConsensusState) *state.ConsensusState {
 		PacketStateSnapshot: bytes.Clone(value.PacketStateSnapshot),
 		NonceState:          toCorePraosNonceState(value.NonceState),
 		PoolRegistry:        toCorePoolRegistryState(value.PoolRegistry),
+		SettlementCredit:    toCoreSettlementCreditState(value.SettlementCredit),
 	}
 }
 
@@ -299,6 +322,28 @@ func fromCoreClientState(value *state.ClientState) *ClientState {
 		LatestCheckpointNonceState:                      fromCorePraosNonceState(value.LatestCheckpointNonceState),
 		RandomnessStabilisationWindowSlots:              value.RandomnessStabilisationWindowSlots,
 		LatestCheckpointPoolRegistry:                    fromCorePoolRegistryState(value.LatestCheckpointPoolRegistry),
+		LatestCheckpointSettlementCredit:                fromCoreSettlementCreditState(value.LatestCheckpointSettlementCredit),
+	}
+}
+
+func fromCoreSettlementCreditState(value *state.SettlementCreditState) *SettlementCreditState {
+	if value == nil {
+		return nil
+	}
+	return &SettlementCreditState{
+		Epoch:     value.Epoch,
+		Reference: mapCoreSlice(value.Reference, fromCorePoolSettlementCredit),
+	}
+}
+
+func fromCorePoolSettlementCredit(value *state.PoolSettlementCredit) *PoolSettlementCredit {
+	if value == nil {
+		return nil
+	}
+	return &PoolSettlementCredit{
+		PoolId:      value.PoolId,
+		Numerator:   bytes.Clone(value.Numerator),
+		Denominator: bytes.Clone(value.Denominator),
 	}
 }
 
@@ -376,6 +421,7 @@ func fromCoreConsensusState(value *state.ConsensusState) *ConsensusState {
 		PacketStateSnapshot: bytes.Clone(value.PacketStateSnapshot),
 		NonceState:          fromCorePraosNonceState(value.NonceState),
 		PoolRegistry:        fromCorePoolRegistryState(value.PoolRegistry),
+		SettlementCredit:    fromCoreSettlementCreditState(value.SettlementCredit),
 	}
 }
 

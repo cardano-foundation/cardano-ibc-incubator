@@ -190,6 +190,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	require.NoError(t, syncCurrentEpochFields(substitute, substitute.EpochContexts, 9))
 	substitute.LatestCheckpointNonceState = testNonceState(substitute.EpochNonce)
 	substitute.LatestCheckpointPoolRegistry = testPoolRegistry(9, substitute.EpochStakeDistribution)
+	substitute.LatestCheckpointSettlementCredit = mustTestSettlementCredit(&EpochContext{Epoch: 9, StakeDistribution: substitute.EpochStakeDistribution})
 	substitute.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
 		{PoolId: bytes.Repeat([]byte{0x29}, 28), SequenceNumber: 6},
 	}
@@ -199,6 +200,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	consensusState.AcceptedEpoch = 9
 	consensusState.NonceState = clonePraosNonceState(substitute.LatestCheckpointNonceState)
 	consensusState.PoolRegistry = clonePoolRegistry(substitute.LatestCheckpointPoolRegistry)
+	consensusState.SettlementCredit = cloneSettlementCredit(substitute.LatestCheckpointSettlementCredit)
 	consensusTimestamp, timestampErr := substitute.DeriveTimestampFromSlot(220)
 	require.NoError(t, timestampErr)
 	consensusState.Timestamp = consensusTimestamp

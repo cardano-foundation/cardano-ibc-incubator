@@ -22,7 +22,7 @@ message StakeDistributionEntry {
   bytes vrf_key_hash = 3;
   uint64 first_registration_slot = 4;
   // Exact relative active stake used for Praos leader eligibility. The
-  // existing stake field remains the weight used by settlement scoring.
+  // existing stake field supplies the current share before settlement discounting.
   uint64 relative_stake_numerator = 5;
   uint64 relative_stake_denominator = 6;
 }
@@ -113,6 +113,28 @@ message ClientState {
   uint64 randomness_stabilisation_window_slots = 33;
   // Independently authenticated registration state at the checkpoint.
   PoolRegistryState latest_checkpoint_pool_registry = 34;
+  // Epoch reference derived from capped credit, never raw accepted claims.
+  SettlementCreditState latest_checkpoint_settlement_credit = 35;
+}
+
+// Exact settlement reference shares for this epoch. At an adjacent rollover
+// the client advances these using the preceding epoch's capped credit once.
+// Values are never normalized after discounting. Bootstrap authenticates them.
+message SettlementCreditState {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  repeated PoolSettlementCredit reference = 2;
+}
+
+// Reduced unsigned fraction in canonical big-endian form. Each integer is at
+// most 16 bytes. Zero shares are omitted. This keeps fractional credit exact.
+message PoolSettlementCredit {
+  option (gogoproto.goproto_getters) = false;
+
+  string pool_id = 1;
+  bytes numerator = 2;
+  bytes denominator = 3;
 }
 
 // Pool identity and VRF binding from the trusted bootstrap or authenticated
@@ -189,6 +211,8 @@ message ConsensusState {
   PraosNonceState nonce_state = 9;
   // Registration state at this historical accepted block.
   PoolRegistryState pool_registry = 10;
+  // Reference at this accepted block for historical settlement verification.
+  SettlementCreditState settlement_credit = 11;
 }
 
 message Misbehaviour {

@@ -90,11 +90,13 @@ func loadNonceReference(t *testing.T) (*nonceReference, *ClientState, []*EpochCo
 			StakeDistribution: []*StakeDistributionEntry{{PoolId: header.IssuerVkey().PoolId(), VrfKeyHash: vrfHash[:], Stake: 1, RelativeStakeNumerator: 1, RelativeStakeDenominator: 1}}})
 	}
 	cs.LatestCheckpointPoolRegistry = testPoolRegistry(epoch, contexts[0].StakeDistribution)
+	cs.LatestCheckpointSettlementCredit = mustTestSettlementCredit(contexts[0])
 	cs.EpochContexts = contexts
 	cs.EpochNonce = bytes.Clone(contexts[0].EpochNonce)
 	cs.LatestCheckpointNonceState = referenceNonceState(t, first.State)
 	trusted := &trustedBlockState{height: NewHeight(0, first.Height), slot: first.Slot, epoch: epoch, blockHash: first.Hash,
-		timestamp: cs.SystemStartUnixNs + first.Slot*cs.SlotLengthNs, nonceState: clonePraosNonceState(cs.LatestCheckpointNonceState), poolRegistry: clonePoolRegistry(cs.LatestCheckpointPoolRegistry), operationalCertificateCounters: map[string]uint64{}}
+		timestamp: cs.SystemStartUnixNs + first.Slot*cs.SlotLengthNs, nonceState: clonePraosNonceState(cs.LatestCheckpointNonceState), poolRegistry: clonePoolRegistry(cs.LatestCheckpointPoolRegistry),
+		settlementCredit: cloneSettlementCredit(cs.LatestCheckpointSettlementCredit), operationalCertificateCounters: map[string]uint64{}}
 	cs.LatestHeight = trusted.height
 	cs.OperationalCertificateCounterHistoryStartHeight = trusted.height
 	cs.setLatestCheckpoint(trusted.height, trusted.blockHash, trusted.epoch, trusted.slot, trusted.timestamp)
@@ -144,7 +146,8 @@ func TestNonceBatchSizesSettlementAndRollbackMatchNode(t *testing.T) {
 			cdc := newProbabilisticTestCodec()
 			baseline := clonePraosNonceState(trusted.nonceState)
 			SetConsensusState(store, cdc, &ConsensusState{Timestamp: trusted.timestamp, AcceptedBlockHash: trusted.blockHash,
-				AcceptedEpoch: trusted.epoch, NonceState: baseline, PoolRegistry: clonePoolRegistry(trusted.poolRegistry)}, trusted.height)
+				AcceptedEpoch: trusted.epoch, NonceState: baseline, PoolRegistry: clonePoolRegistry(trusted.poolRegistry),
+				SettlementCredit: cloneSettlementCredit(trusted.settlementCredit)}, trusted.height)
 			for start := 1; start < len(ref.Blocks); {
 				anchor := minInt(start+batchSize-1, len(ref.Blocks)-1)
 				// Every stored anchor is compared with a node observation.
@@ -163,6 +166,9 @@ func TestNonceBatchSizesSettlementAndRollbackMatchNode(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, before, trusted.nonceState)
 				require.Equal(t, referenceNonceState(t, ref.Blocks[anchor].State), auth.anchorNonceState)
+				// The node fixture has one pool with constant stake. These batches
+				// test nonce evolution and can cross several epochs at once.
+				auth.anchorSettlementCredit = mustTestSettlementCredit(epochContextByEpoch(contexts, auth.anchorBlock.epoch))
 				require.NoError(t, cs.persistCheckpoint(store, cdc, contexts, auth))
 				require.Equal(t, auth.anchorNonceState, cs.LatestCheckpointNonceState)
 				require.True(t, poolRegistriesEqual(auth.anchorPoolRegistry, cs.LatestCheckpointPoolRegistry))
