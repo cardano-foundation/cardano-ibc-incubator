@@ -46,262 +46,262 @@ const stabilityDescendantBlocks = Array.from({ length: 24 }, (_, index) => {
   };
 });
 
-describe('QueryService stability anchor contract', () => {
-  let service: QueryService;
-  let loggerMock: {
-    log: jest.Mock;
-    warn: jest.Mock;
-    error: jest.Mock;
-    debug: jest.Mock;
-  };
-  let lucidServiceMock: {
-    decodeDatum: jest.Mock;
-    findUtxoAtHostStateNFT: jest.Mock;
-    LucidImporter: {
-      SLOT_CONFIG_NETWORK: {
-        Preview: {
-          zeroTime: number;
-          slotLength: number;
-        };
+let service: QueryService;
+let loggerMock: {
+  log: jest.Mock;
+  warn: jest.Mock;
+  error: jest.Mock;
+  debug: jest.Mock;
+};
+let lucidServiceMock: {
+  decodeDatum: jest.Mock;
+  findUtxoAtHostStateNFT: jest.Mock;
+  LucidImporter: {
+    SLOT_CONFIG_NETWORK: {
+      Preview: {
+        zeroTime: number;
+        slotLength: number;
       };
     };
   };
-  let historyServiceMock: {
-    findLatestBlock: jest.Mock;
-    findBlockByHeight: jest.Mock;
-    findDescendantBlocks: jest.Mock;
-    findObservedPoolProductionAtBlock: jest.Mock;
-    findEpochContextAtBlock: jest.Mock;
-    findOperationalCertificateCountersAtBlock: jest.Mock;
-    findBridgeBlocks: jest.Mock;
-    findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
-    findTransactionEvidenceByHash: jest.Mock;
+};
+let historyServiceMock: {
+  findLatestBlock: jest.Mock;
+  findBlockByHeight: jest.Mock;
+  findDescendantBlocks: jest.Mock;
+  findObservedPoolProductionAtBlock: jest.Mock;
+  findEpochContextAtBlock: jest.Mock;
+  findOperationalCertificateCountersAtBlock: jest.Mock;
+  findBridgeBlocks: jest.Mock;
+  findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
+  findTransactionEvidenceByHash: jest.Mock;
+};
+let miniProtocalsServiceMock: {
+  fetchBlockCbor: jest.Mock;
+  fetchBlocksCbor: jest.Mock;
+  extractBlockHeaderCbor: jest.Mock;
+};
+
+beforeEach(() => {
+  loggerMock = {
+    log: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
   };
-  let miniProtocalsServiceMock: {
-    fetchBlockCbor: jest.Mock;
-    fetchBlocksCbor: jest.Mock;
-    extractBlockHeaderCbor: jest.Mock;
-  };
 
-  beforeEach(() => {
-    loggerMock = {
-      log: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
-    };
-
-    const configServiceMock = {
-      get: jest.fn().mockImplementation((key: string) => {
-        if (key === 'cardanoLightClientMode') return 'stake-weighted-stability';
-        if (key === 'ogmiosEndpoint') return 'ws://bootstrap-node';
-        if (key === 'cardanoPoolRegistryCheckpointFile') return '/trusted/pool-registry.json';
-        if (key === 'cardanoRandomnessStabilisationWindowSlots') return '100';
-        if (key === 'cardanoChainId') return 'cardano-devnet';
-        if (key === 'cardanoNetwork') return 'Preview';
-        if (key === 'cardanoClientMaxClockDriftSeconds') return 17;
-        if (key === 'deployment') {
-          return {
-            packetState: { state: { scriptHash: 'cc'.repeat(28) }, laneCount: 16 },
-            hostStateNFT: {
-              policyId: 'a'.repeat(56),
-              name: 'b'.repeat(64),
-            },
-          };
-        }
-        return undefined;
-      }),
-    } as unknown as ConfigService;
-
-    historyServiceMock = {
-      findObservedPoolProductionAtBlock: jest.fn().mockImplementation(async (point) => ({ epoch: BigInt(point.epochNo), pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) })),
-      findLatestBlock: jest.fn().mockResolvedValue({
-        height: 105,
-        hash: 'latest-hash',
-        prevHash: 'hash-104',
-        slotNo: 1050n,
-        epochNo: 7,
-        timestampUnixNs: timestampForSlot(1050n),
-        slotLeader: 'pool-e',
-      }),
-      findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
-        if (height === 98n) {
-          return {
-            height: 98,
-            hash: 'hash-98',
-            prevHash: 'hash-97',
-            slotNo: 980n,
-            epochNo: 7,
-            timestampUnixNs: timestampForSlot(980n),
-            slotLeader: 'pool-z',
-          };
-        }
+  const configServiceMock = {
+    get: jest.fn().mockImplementation((key: string) => {
+      if (key === 'cardanoLightClientMode') return 'stake-weighted-stability';
+      if (key === 'ogmiosEndpoint') return 'ws://bootstrap-node';
+      if (key === 'cardanoPoolRegistryCheckpointFile') return '/trusted/pool-registry.json';
+      if (key === 'cardanoRandomnessStabilisationWindowSlots') return '100';
+      if (key === 'cardanoChainId') return 'cardano-devnet';
+      if (key === 'cardanoNetwork') return 'Preview';
+      if (key === 'cardanoClientMaxClockDriftSeconds') return 17;
+      if (key === 'deployment') {
         return {
-          height: 100,
-          hash: 'anchor-hash',
-          prevHash: 'prev-hash',
-          slotNo: 1000n,
-          epochNo: 7,
-          timestampUnixNs: timestampForSlot(1000n),
-          slotLeader: 'pool-a',
+          packetState: { state: { scriptHash: 'cc'.repeat(28) }, laneCount: 16 },
+          hostStateNFT: {
+            policyId: 'a'.repeat(56),
+            name: 'b'.repeat(64),
+          },
         };
-      }),
-      findDescendantBlocks: jest.fn().mockResolvedValue(stabilityDescendantBlocks),
-      findEpochContextAtBlock: jest.fn().mockResolvedValue({
-        epoch: 7,
-        stakeDistribution: [
-          {
-            poolId: 'pool-a',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'aa'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-          {
-            poolId: 'pool-b',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'bb'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-          {
-            poolId: 'pool-c',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'cc'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-          {
-            poolId: 'pool-d',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'dd'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-          {
-            poolId: 'pool-e',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'ee'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-        ],
-        verificationContext: {
-          epochNonce: '11'.repeat(32),
-          slotsPerKesPeriod: 129600,
-          activeSlotCoefficientNumerator: 1n,
-          activeSlotCoefficientDenominator: 20n,
-          maxKesEvolutions: 62,
-          currentEpochStartSlot: 900n,
-          currentEpochEndSlotExclusive: 3000n,
-        },
-      }),
-      findOperationalCertificateCountersAtBlock: jest.fn().mockResolvedValue(
-        new Map([
-          [operationalCertificatePoolId(0xff), 9n],
-          [operationalCertificatePoolId(0), 3n],
-          [operationalCertificatePoolId(0x11), 0n],
-        ]),
-      ),
-      findBridgeBlocks: jest.fn().mockResolvedValue([
-        {
-          height: 99,
-          hash: 'hash-99',
-          prevHash: 'hash-98',
-          slotNo: 990n,
-          epochNo: 7,
-          timestampUnixNs: timestampForSlot(990n),
-          slotLeader: 'pool-z',
-        },
-      ]),
-      findHostStateUtxoAtOrBeforeBlockNo: jest.fn().mockResolvedValue({
-        txHash: 'host-state-tx',
-        txId: 1,
-        outputIndex: 0,
-        address: 'addr_test1...',
-        assetsPolicy: 'a'.repeat(56),
-        assetsName: 'b'.repeat(64),
-        datumHash: 'cd'.repeat(32),
-        datum: 'datum-cbor',
-        blockNo: 99,
-        blockId: 99,
-        index: 0,
-      }),
-      findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
-        txHash: 'host-state-tx',
-        blockNo: 99,
-        txIndex: 0,
-        txCborHex: '01',
-        txBodyCborHex: '02',
-        redeemers: [],
-      }),
-    };
+      }
+      return undefined;
+    }),
+  } as unknown as ConfigService;
 
-    lucidServiceMock = {
-      decodeDatum: jest.fn().mockResolvedValue({ state: { ibc_state_root: 'ab'.repeat(32) } }),
-      findUtxoAtHostStateNFT: jest.fn(),
-      LucidImporter: {
-        SLOT_CONFIG_NETWORK: {
-          Preview: {
-            zeroTime: 1_700_000_000_000,
-            slotLength: 1_000,
-          },
+  historyServiceMock = {
+    findObservedPoolProductionAtBlock: jest.fn().mockImplementation(async (point) => ({ epoch: BigInt(point.epochNo), pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) })),
+    findLatestBlock: jest.fn().mockResolvedValue({
+      height: 105,
+      hash: 'latest-hash',
+      prevHash: 'hash-104',
+      slotNo: 1050n,
+      epochNo: 7,
+      timestampUnixNs: timestampForSlot(1050n),
+      slotLeader: 'pool-e',
+    }),
+    findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
+      if (height === 98n) {
+        return {
+          height: 98,
+          hash: 'hash-98',
+          prevHash: 'hash-97',
+          slotNo: 980n,
+          epochNo: 7,
+          timestampUnixNs: timestampForSlot(980n),
+          slotLeader: 'pool-z',
+        };
+      }
+      return {
+        height: 100,
+        hash: 'anchor-hash',
+        prevHash: 'prev-hash',
+        slotNo: 1000n,
+        epochNo: 7,
+        timestampUnixNs: timestampForSlot(1000n),
+        slotLeader: 'pool-a',
+      };
+    }),
+    findDescendantBlocks: jest.fn().mockResolvedValue(stabilityDescendantBlocks),
+    findEpochContextAtBlock: jest.fn().mockResolvedValue({
+      epoch: 7,
+      stakeDistribution: [
+        {
+          poolId: 'pool-a',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'aa'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+        {
+          poolId: 'pool-b',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'bb'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+        {
+          poolId: 'pool-c',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'cc'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+        {
+          poolId: 'pool-d',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'dd'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+        {
+          poolId: 'pool-e',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'ee'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+      ],
+      verificationContext: {
+        epochNonce: '11'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        activeSlotCoefficientNumerator: 1n,
+        activeSlotCoefficientDenominator: 20n,
+        maxKesEvolutions: 62,
+        currentEpochStartSlot: 900n,
+        currentEpochEndSlotExclusive: 3000n,
+      },
+    }),
+    findOperationalCertificateCountersAtBlock: jest.fn().mockResolvedValue(
+      new Map([
+        [operationalCertificatePoolId(0xff), 9n],
+        [operationalCertificatePoolId(0), 3n],
+        [operationalCertificatePoolId(0x11), 0n],
+      ]),
+    ),
+    findBridgeBlocks: jest.fn().mockResolvedValue([
+      {
+        height: 99,
+        hash: 'hash-99',
+        prevHash: 'hash-98',
+        slotNo: 990n,
+        epochNo: 7,
+        timestampUnixNs: timestampForSlot(990n),
+        slotLeader: 'pool-z',
+      },
+    ]),
+    findHostStateUtxoAtOrBeforeBlockNo: jest.fn().mockResolvedValue({
+      txHash: 'host-state-tx',
+      txId: 1,
+      outputIndex: 0,
+      address: 'addr_test1...',
+      assetsPolicy: 'a'.repeat(56),
+      assetsName: 'b'.repeat(64),
+      datumHash: 'cd'.repeat(32),
+      datum: 'datum-cbor',
+      blockNo: 99,
+      blockId: 99,
+      index: 0,
+    }),
+    findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
+      txHash: 'host-state-tx',
+      blockNo: 99,
+      txIndex: 0,
+      txCborHex: '01',
+      txBodyCborHex: '02',
+      redeemers: [],
+    }),
+  };
+
+  lucidServiceMock = {
+    decodeDatum: jest.fn().mockResolvedValue({ state: { ibc_state_root: 'ab'.repeat(32) } }),
+    findUtxoAtHostStateNFT: jest.fn(),
+    LucidImporter: {
+      SLOT_CONFIG_NETWORK: {
+        Preview: {
+          zeroTime: 1_700_000_000_000,
+          slotLength: 1_000,
         },
       },
-    };
-    (loadTrustedPoolRegistryCheckpoint as jest.Mock).mockImplementation((_file, point) => {
-      const bindings = ['aa', 'bb', 'cc', 'dd', 'ee'].map((hash, index) => ({
-        pool_id: `pool-${String.fromCharCode(97 + index)}`, vrf_key_hash: Buffer.from(hash.repeat(32), 'hex'),
-        first_registration_slot: 1n,
-      }));
-      return { epoch: point.epoch, pools: bindings.map((registration) => ({ registration, registered: true,
-        pending_vrf_key_hash: new Uint8Array(), pending_effective_epoch: 0n, retirement_epoch: 0n })),
-        mark: bindings, effective: bindings };
-    });
-    (loadTrustedPoolProductionCheckpoint as jest.Mock).mockImplementation((_file, point) => ({ epoch: point.epoch, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) }));
-    (queryPraosNoncesAtPoint as jest.Mock).mockResolvedValue({
-      epoch_nonce: Buffer.from('11'.repeat(32), 'hex'),
-      evolving_nonce: Buffer.from('02'.repeat(32), 'hex'),
-      candidate_nonce: Buffer.from('03'.repeat(32), 'hex'),
-      last_epoch_block_nonce: Buffer.from('04'.repeat(32), 'hex'),
-    });
-    miniProtocalsServiceMock = {
-      fetchBlockCbor: jest.fn().mockResolvedValue(Buffer.from([0])),
-      fetchBlocksCbor: jest.fn().mockImplementation(async (blocks: unknown[]) => blocks.map(() => Buffer.from([1]))),
-      extractBlockHeaderCbor: jest.fn((blockCbor: Buffer) =>
-        blockCbor[0] === 0
-          ? Buffer.from(
-              Cbor.encode(
-                new CborArray([
-                  new CborArray([new CborUInt(100), new CborUInt(1000), new CborBytes(Buffer.alloc(32, 5))]),
-                  new CborBytes(new Uint8Array()),
-                ]),
-              ).toBuffer(),
-            )
-          : Buffer.alloc(860, blockCbor[0] ?? 0),
-      ),
-    };
-
-    service = new QueryService(
-      loggerMock as unknown as Logger,
-      configServiceMock,
-      lucidServiceMock as unknown as LucidService,
-      {} as KupoService,
-      historyServiceMock as unknown as HistoryService,
-      miniProtocalsServiceMock as unknown as MiniProtocalsService,
-      {} as MithrilService,
-      {} as DenomTraceService,
-      {} as any,
-      createTestTreeStore(),
-      createPacketStateMock() as any,
-    );
+    },
+  };
+  (loadTrustedPoolRegistryCheckpoint as jest.Mock).mockImplementation((_file, point) => {
+    const bindings = ['aa', 'bb', 'cc', 'dd', 'ee'].map((hash, index) => ({
+      pool_id: `pool-${String.fromCharCode(97 + index)}`, vrf_key_hash: Buffer.from(hash.repeat(32), 'hex'),
+      first_registration_slot: 1n,
+    }));
+    return { epoch: point.epoch, pools: bindings.map((registration) => ({ registration, registered: true,
+      pending_vrf_key_hash: new Uint8Array(), pending_effective_epoch: 0n, retirement_epoch: 0n })),
+      mark: bindings, effective: bindings };
   });
+  (loadTrustedPoolProductionCheckpoint as jest.Mock).mockImplementation((_file, point) => ({ epoch: point.epoch, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) }));
+  (queryPraosNoncesAtPoint as jest.Mock).mockResolvedValue({
+    epoch_nonce: Buffer.from('11'.repeat(32), 'hex'),
+    evolving_nonce: Buffer.from('02'.repeat(32), 'hex'),
+    candidate_nonce: Buffer.from('03'.repeat(32), 'hex'),
+    last_epoch_block_nonce: Buffer.from('04'.repeat(32), 'hex'),
+  });
+  miniProtocalsServiceMock = {
+    fetchBlockCbor: jest.fn().mockResolvedValue(Buffer.from([0])),
+    fetchBlocksCbor: jest.fn().mockImplementation(async (blocks: unknown[]) => blocks.map(() => Buffer.from([1]))),
+    extractBlockHeaderCbor: jest.fn((blockCbor: Buffer) =>
+      blockCbor[0] === 0
+        ? Buffer.from(
+            Cbor.encode(
+              new CborArray([
+                new CborArray([new CborUInt(100), new CborUInt(1000), new CborBytes(Buffer.alloc(32, 5))]),
+                new CborBytes(new Uint8Array()),
+              ]),
+            ).toBuffer(),
+          )
+        : Buffer.alloc(860, blockCbor[0] ?? 0),
+    ),
+  };
 
+  service = new QueryService(
+    loggerMock as unknown as Logger,
+    configServiceMock,
+    lucidServiceMock as unknown as LucidService,
+    {} as KupoService,
+    historyServiceMock as unknown as HistoryService,
+    miniProtocalsServiceMock as unknown as MiniProtocalsService,
+    {} as MithrilService,
+    {} as DenomTraceService,
+    {} as any,
+    createTestTreeStore(),
+    createPacketStateMock() as any,
+  );
+});
+
+describe('QueryService stability anchor contract', () => {
   it('bootstraps unchanged HostState and packet roots at a later settled height', async () => {
     const response = await service.queryNewClient({ height: 100n } as any);
     const client = ClientStateProbabilistic.decode(response.client_state!.value);
