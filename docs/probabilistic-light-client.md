@@ -147,6 +147,8 @@ It's clear from these diagnostics that Preprod has far fewer active/producing po
 
 Also note that this conversation takes place before our **qualified** unique stake application, i.e, we actually only sum unique stake from pools created prior to 2026.
 
+The [mainnet stake distribution study from October 9, 2026](../studies/cardano_probabilistic_finality/mainnet-stake-2026-10-09/README.md) examines 100 epoch transitions and replays recent-production qualifications against the current 24-descendant, five-pool and 511-basis-point policy. It measures how limits on stake changes could restrict fabricated allocations and how production qualifications affect settlement time. These restrictions do not authenticate stake amounts.
+
 ### Header
 
 The `ProbabilisticHeader` carries:

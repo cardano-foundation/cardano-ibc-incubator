@@ -2,6 +2,8 @@
 
 This directory contains a reproducible Blockfrost-backed study for measuring how long the `08-cardano-probabilistic` light-client unique-stake heuristic takes to cross configured thresholds on Cardano mainnet.
 
+The [mainnet stake distribution findings from October 9, 2026](mainnet-stake-2026-10-09/README.md) cover 100 epoch transitions and replay recent-production qualifications against the current 24-descendant, five-pool and 5.11% unique-stake policy. They examine which restrictions could limit fabricated stake allocations and what those restrictions would cost in settlement time. The Blockfrost timing study described below separately measures crossing a 50% unique-stake threshold.
+
 The primary question is:
 
 > For each candidate anchor block, how many same-epoch descendant blocks and how much wall-clock time are needed before unique eligible descendant-producing pools represent at least 50% of that anchor epoch's active stake?

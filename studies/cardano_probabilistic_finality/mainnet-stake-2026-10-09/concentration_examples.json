@@ -1,0 +1,196 @@
+[
+  {
+    "pool_id": "pool1k3nkfa5ugavrpd9nwd3s6yyx454qxnquxwmux4rzfunl7q0z38t",
+    "from_epoch": 609,
+    "to_epoch": 610,
+    "delta_share_pp": 0.40473547706785173,
+    "status": "complete, exact pool totals and delegator counts reconcile",
+    "snapshots": [
+      {
+        "epoch": 609,
+        "delegators": 6,
+        "stake_lovelace": "146566919525",
+        "largest_account_share_pct": 57.71970789804999,
+        "largest_five_accounts_share_pct": 99.96800161581345,
+        "largest_ten_accounts_share_pct": 100.0
+      },
+      {
+        "epoch": 610,
+        "delegators": 6,
+        "stake_lovelace": "87452171628627",
+        "largest_account_share_pct": 99.92877863449006,
+        "largest_five_accounts_share_pct": 99.99994637177656,
+        "largest_ten_accounts_share_pct": 100.0
+      }
+    ],
+    "new_account_stake_lovelace": "0",
+    "departed_account_stake_lovelace": "0",
+    "largest_account_changes": [
+      {
+        "stake_address": "stake1uy444uvcpywt7272tadnw5yzku255es8nu7upz7t03grh9csfj2c5",
+        "delta_lovelace": "87305289000000"
+      },
+      {
+        "stake_address": "stake1u9amtxnpnmuq2mp5u2vhklqfu3t4ympralsgvv40fmrynjqhrt24w",
+        "delta_lovelace": "315709102"
+      },
+      {
+        "stake_address": "stake1u96gdyldx28z2mdlet4n3m54044nzq9039xsg3rf0ay96gq57pl42",
+        "delta_lovelace": "0"
+      },
+      {
+        "stake_address": "stake1uxgeh303vqz6sw2fw48h32upsccc40q20707nq4x2wmc3yg0qgcw7",
+        "delta_lovelace": "0"
+      },
+      {
+        "stake_address": "stake1uya36ekypdt0z7nasekgfz33gzej7m6rlvawmwwp8hrm7ws6yvu8h",
+        "delta_lovelace": "0"
+      },
+      {
+        "stake_address": "stake1uyd9eq5zclz0ls5fvtw6x33r5n8qhltqyyq3zhnvtpkenzsxktam6",
+        "delta_lovelace": "0"
+      }
+    ],
+    "interpretation": "Account-level amount changes can reflect delegation changes, balance changes or rewards. Multiple accounts can have the same controller. This does not identify the reason for a movement."
+  },
+  {
+    "pool_id": "pool1c2wf97p3j9gfvfjshj99ufxerpy3aznm8tzr2fd0ua465s26th4",
+    "from_epoch": 599,
+    "to_epoch": 600,
+    "delta_share_pp": -0.40152764828582127,
+    "status": "complete, exact pool totals and delegator counts reconcile",
+    "snapshots": [
+      {
+        "epoch": 599,
+        "delegators": 170,
+        "stake_lovelace": "88897840495224",
+        "largest_account_share_pct": 97.08152772027192,
+        "largest_five_accounts_share_pct": 99.58615617766017,
+        "largest_ten_accounts_share_pct": 99.77424770130071
+      },
+      {
+        "epoch": 600,
+        "delegators": 169,
+        "stake_lovelace": "2637795834614",
+        "largest_account_share_pct": 61.74209779212592,
+        "largest_five_accounts_share_pct": 86.3942598864359,
+        "largest_ten_accounts_share_pct": 92.35899646480811
+      }
+    ],
+    "new_account_stake_lovelace": "0",
+    "departed_account_stake_lovelace": "4219682",
+    "largest_account_changes": [
+      {
+        "stake_address": "stake1uy9eaqnmwjflxpsc8a2w8ezauxfqa9zske2xfsnyua2ld4s4q83dy",
+        "delta_lovelace": "-86261537750612"
+      },
+      {
+        "stake_address": "stake1uxxedl46rfutp097sysfuqpq0n3avp0eldgukmcayqc36eqj43ks0",
+        "delta_lovelace": "820099285"
+      },
+      {
+        "stake_address": "stake1u9h0u4yzc7mnpk66d609anfz3z34mdkgenhkd6tvu0dzrjq6tsr2v",
+        "delta_lovelace": "427111479"
+      },
+      {
+        "stake_address": "stake1uygw2ere3xyd7z2gweck8gxenfcvyppx86u9tvmf9r9vh7qcmu6qd",
+        "delta_lovelace": "79181607"
+      },
+      {
+        "stake_address": "stake1uyt3f67mgmsqhcnkaxkulyg6hjelp53maj7zuhhgvqcgruqfg2unp",
+        "delta_lovelace": "52772791"
+      },
+      {
+        "stake_address": "stake1ux4z2q25jhtup7f3dmueqzujnp0frkhq8h9mlrezwvaaj9g6w6j3m",
+        "delta_lovelace": "25007102"
+      },
+      {
+        "stake_address": "stake1uywlt9uh9uu4gkv0s4xuj5xjarhz3he4p8f69edpx2cs4xc7mue04",
+        "delta_lovelace": "13574029"
+      },
+      {
+        "stake_address": "stake1u8gvmucdlcln3lrv4rajrc35xevc54t72h975hg0ymzxj8s6hesuz",
+        "delta_lovelace": "12145295"
+      },
+      {
+        "stake_address": "stake1uxs3wyxqn2g2k6tatezdr0ajud9yem8m6tjf33mp6x07xqghlz7um",
+        "delta_lovelace": "6685386"
+      },
+      {
+        "stake_address": "stake1uxtc0yuy86kjfq6kqvkeanaeyrzrsc5eqj72tec4jh2kcjse0tvuc",
+        "delta_lovelace": "6251646"
+      }
+    ],
+    "interpretation": "Account-level amount changes can reflect delegation changes, balance changes or rewards. Multiple accounts can have the same controller. This does not identify the reason for a movement."
+  },
+  {
+    "pool_id": "pool12m7z9p7jqymxrvvp6z7vmfdu6j6u6y43p0m6y4xalz43sc8s4t9",
+    "from_epoch": 620,
+    "to_epoch": 621,
+    "delta_share_pp": -0.3863210079341024,
+    "status": "complete, exact pool totals and delegator counts reconcile",
+    "snapshots": [
+      {
+        "epoch": 620,
+        "delegators": 25,
+        "stake_lovelace": "117459713945601",
+        "largest_account_share_pct": 83.65474085464685,
+        "largest_five_accounts_share_pct": 98.84725889702995,
+        "largest_ten_accounts_share_pct": 99.85884209786447
+      },
+      {
+        "epoch": 621,
+        "delegators": 28,
+        "stake_lovelace": "32916482030492",
+        "largest_account_share_pct": 23.879822860898575,
+        "largest_five_accounts_share_pct": 80.92775984221372,
+        "largest_ten_accounts_share_pct": 98.84254938171378
+      }
+    ],
+    "new_account_stake_lovelace": "13713744484084",
+    "departed_account_stake_lovelace": "98260619309802",
+    "largest_account_changes": [
+      {
+        "stake_address": "stake1u83j9rztsrzxave2z5s5ufqawfyal0quwux5awglthgr0pg6jvvg5",
+        "delta_lovelace": "-98260619309802"
+      },
+      {
+        "stake_address": "stake1u9cekjgha9afnlrxqumt0msdesdcqluj7c0rwd5f4qmeu8sapf5my",
+        "delta_lovelace": "7860397600921"
+      },
+      {
+        "stake_address": "stake1uyj2cdap0d60ze27wkjq0c6azqn6mljuvenr6wfrnvx57qsdxfcqx",
+        "delta_lovelace": "2887122647515"
+      },
+      {
+        "stake_address": "stake1u9uh7qetxr6vq2h25u0megue4yyu5q6qgylh5md2nex6apqm7rtgr",
+        "delta_lovelace": "1967518711164"
+      },
+      {
+        "stake_address": "stake1u8tlc2wptafza4lf6ujtwp74t94m0fcvmly4r6uhr6n3jpg2cjvne",
+        "delta_lovelace": "998705524484"
+      },
+      {
+        "stake_address": "stake1uy3ptlpa8gv6nn966zdhwh9kz5jtv5ey80p0tq5pkrh0f3sfxxnrw",
+        "delta_lovelace": "1287154374"
+      },
+      {
+        "stake_address": "stake1u9mlllv2mh73fkdvxkdcxx4lsqrkemt0g3vgt85gg4ul56qx7uln9",
+        "delta_lovelace": "881856323"
+      },
+      {
+        "stake_address": "stake1uxvjgzj35ay633v32u9lv2pt8an0x2d7nuunrj9g4eaxk7ct55hrq",
+        "delta_lovelace": "840425930"
+      },
+      {
+        "stake_address": "stake1u8su4frz599gpp8l2psfw3cphwghlq8qgnah823gmta4ntgqsvymy",
+        "delta_lovelace": "370598435"
+      },
+      {
+        "stake_address": "stake1u8770cqac39h9faun4ha9288ehu343fg5wht9jetlgqn3js2yjc0x",
+        "delta_lovelace": "113237100"
+      }
+    ],
+    "interpretation": "Account-level amount changes can reflect delegation changes, balance changes or rewards. Multiple accounts can have the same controller. This does not identify the reason for a movement."
+  }
+]
