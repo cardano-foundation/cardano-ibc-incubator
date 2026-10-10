@@ -31,6 +31,7 @@ type authenticatedProbabilisticHeader struct {
 	anchorOperationalCertificateCounters []*OperationalCertificateCounter
 	anchorNonceState                     *PraosNonceState
 	anchorPoolRegistry                   *PoolRegistryState
+	anchorSettlementCredit               *SettlementCreditState
 }
 
 func (cs *ClientState) authenticateHeaderBlocks(header *ProbabilisticHeader) (*authenticatedProbabilisticHeader, error) {

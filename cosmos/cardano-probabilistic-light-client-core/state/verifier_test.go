@@ -668,6 +668,7 @@ func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testi
 	}
 
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
+	authenticatedHeader.anchorSettlementCredit = &SettlementCreditState{Epoch: epochContext.Epoch}
 	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 	require.ErrorContains(t, err, "stake distribution must not be empty")
 }
@@ -711,6 +712,7 @@ func TestComputeHeaderSecurityMetricsExcludesPoolsRegisteredAfterCutoff(t *testi
 	}
 
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
+	authenticatedHeader.anchorSettlementCredit = mustTestSettlementCredit(epochContext)
 	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.NoError(t, err)
@@ -750,6 +752,7 @@ func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing
 	}
 
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
+	authenticatedHeader.anchorSettlementCredit = mustTestSettlementCredit(epochContext)
 	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.NoError(t, err)
@@ -1440,6 +1443,7 @@ func TestPersistCheckpointAdvancesCursorWithoutAdvancingIbcRoot(t *testing.T) {
 	}
 	authenticatedHeader.anchorNonceState = testNonceState(epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch).EpochNonce)
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistryAtEpoch(t, clientState.LatestCheckpointPoolRegistry, authenticatedHeader.anchorBlock.epoch)
+	authenticatedHeader.anchorSettlementCredit = cloneSettlementCredit(clientState.LatestCheckpointSettlementCredit)
 	require.NoError(t, clientState.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader))
 
 	stored, found := GetClientState(clientStore, cdc)
@@ -1497,6 +1501,7 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 	clientState.OperationalCertificateCounterHistoryStartHeight = NewHeight(0, 100)
 	clientState.EpochContexts = []*EpochContext{epoch303}
 	clientState.LatestCheckpointPoolRegistry = testPoolRegistry(303, epoch303.StakeDistribution)
+	clientState.LatestCheckpointSettlementCredit = mustTestSettlementCredit(epoch303)
 	clientState.CurrentEpoch = 303
 	clientState.CurrentEpochEndSlotExclusive = 1_000
 	require.NoError(t, syncCurrentEpochFields(clientState, clientState.EpochContexts, 303))
@@ -1504,6 +1509,7 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 	initialConsensus := newProbabilisticTestConsensusState(testBlockHash("host-state-epoch-303"), 100)
 	initialConsensus.AcceptedEpoch = 303
 	initialConsensus.PoolRegistry = clonePoolRegistry(clientState.LatestCheckpointPoolRegistry)
+	initialConsensus.SettlementCredit = cloneSettlementCredit(clientState.LatestCheckpointSettlementCredit)
 	initialConsensus.IbcStateRoot = bytes.Repeat([]byte{0x33}, 32)
 	setTestPacketSnapshot(t, initialConsensus, 100)
 	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, initialConsensus))
@@ -1554,6 +1560,7 @@ func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTr
 		require.NoError(t, err)
 		authenticatedHeader.anchorNonceState = testNonceState(epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch).EpochNonce)
 		authenticatedHeader.anchorPoolRegistry = testPoolRegistryAtEpoch(t, clientState.LatestCheckpointPoolRegistry, authenticatedHeader.anchorBlock.epoch)
+		require.NoError(t, attachSettlementCredit(authenticatedHeader, trustedBlock, epochContexts))
 		require.NoError(t, clientState.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader))
 
 		stored, found := GetClientState(clientStore, cdc)
@@ -1680,6 +1687,7 @@ func newProbabilisticTestClientState() *ClientState {
 		EpochNonce:                         bytes.Clone(epochNonce),
 		LatestCheckpointNonceState:         testNonceState(epochNonce),
 		LatestCheckpointPoolRegistry:       testPoolRegistry(7, epochStakeDistribution),
+		LatestCheckpointSettlementCredit:   mustTestSettlementCredit(&EpochContext{Epoch: 7, StakeDistribution: epochStakeDistribution}),
 		RandomnessStabilisationWindowSlots: 10,
 		SlotsPerKesPeriod:                  129600,
 		MaxKesEvolutions:                   62,
@@ -1746,6 +1754,7 @@ func newProbabilisticTestConsensusState(acceptedBlockHash string, heights ...uin
 		PacketStateSnapshot: snapshot,
 		NonceState:          testNonceState(bytes.Repeat([]byte{0x03}, 32)),
 		PoolRegistry:        clonePoolRegistry(newProbabilisticTestClientState().LatestCheckpointPoolRegistry),
+		SettlementCredit:    cloneSettlementCredit(newProbabilisticTestClientState().LatestCheckpointSettlementCredit),
 		Timestamp:           uint64(time.Unix(1_700_000_000, 0).UnixNano()),
 		IbcStateRoot:        bytes.Repeat([]byte{0x11}, 32),
 		AcceptedBlockHash:   acceptedBlockHash,

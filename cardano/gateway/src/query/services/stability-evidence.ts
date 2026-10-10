@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { ClientState as ProbabilisticClientState } from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
+import { settlementReferenceForEpoch } from './settlement-credit';
 import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
@@ -177,7 +179,11 @@ type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   requireThresholds?: boolean;
   requireFullEpochVerificationContext?: boolean;
   missingAnchorBlockMessage?: string;
-  resolvePoolBindings?: (block: HistoryBlock, entries: HistoryStakeDistributionEntry[]) => HistoryStakeDistributionEntry[];
+  settlementCreditClient?: ProbabilisticClientState;
+  resolvePoolBindings?: (
+    block: HistoryBlock,
+    entries: HistoryStakeDistributionEntry[],
+  ) => HistoryStakeDistributionEntry[];
 };
 
 type LoadStakeWeightedStabilityEvidenceForTxHashParams = {
@@ -279,6 +285,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   requireFullEpochVerificationContext = true,
   missingAnchorBlockMessage,
   resolvePoolBindings,
+  settlementCreditClient,
 }: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<StakeWeightedStabilityEvidence> {
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
@@ -344,8 +351,12 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
 
   let acceptedDescendantBlocks = eligibleDescendantBlocks;
   const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const settlementCreditReference = settlementCreditClient
+    ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
+    : undefined;
   let metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedEpochStakeDistribution, stabilityPolicy, {
     poolRegistrationCutoffSlot,
+    settlementCreditReference,
   });
 
   const thresholdDepth = Number(stabilityPolicy.threshold_depth || 0n);
@@ -360,7 +371,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
         candidateDescendantBlocks,
         hydratedEpochStakeDistribution,
         stabilityPolicy,
-        { poolRegistrationCutoffSlot },
+        { poolRegistrationCutoffSlot, settlementCreditReference },
       );
 
       if (
@@ -468,6 +479,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   stabilityPolicy = getStabilityPolicy(),
   requireThresholds = true,
   missingAnchorBlockMessage,
+  settlementCreditClient,
 }: LoadStakeWeightedStabilityHeaderEvidenceParams): Promise<StakeWeightedStabilityHeaderEvidence> {
   if (trustedHeight <= 0n) {
     throw invalidTrustedHeight(
@@ -596,8 +608,12 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
 
   const acceptedDescendantBlocks = eligibleDescendantBlocks;
   const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const settlementCreditReference = settlementCreditClient
+    ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
+    : undefined;
   const metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedAnchorStakeDistribution, stabilityPolicy, {
     poolRegistrationCutoffSlot,
+    settlementCreditReference,
   });
 
   if (requireThresholds) {

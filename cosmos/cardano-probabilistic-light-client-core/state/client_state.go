@@ -58,6 +58,9 @@ func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc St
 	if cs.MaxClockDrift <= 0 {
 		return Expired
 	}
+	if err := validateSettlementCredit(cs.LatestCheckpointSettlementCredit, cs.CurrentEpoch); err != nil {
+		return Expired
+	}
 	if err := cs.validateNonceConfiguration(); err != nil {
 		return Expired
 	}
@@ -96,6 +99,9 @@ func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
 }
 
 func (cs ClientState) Validate() error {
+	if err := validateSettlementCredit(cs.LatestCheckpointSettlementCredit, cs.CurrentEpoch); err != nil {
+		return err
+	}
 	if err := cs.validateNonceConfiguration(); err != nil {
 		return err
 	}
@@ -243,6 +249,13 @@ func (cs ClientState) Initialize(ctx Context, cdc StateCodec, clientStore storet
 		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial consensus pool registry disagrees with client checkpoint")
 	}
 	consensusState.PoolRegistry = clonePoolRegistry(cs.LatestCheckpointPoolRegistry)
+	if err := validateSettlementCredit(cs.LatestCheckpointSettlementCredit, cs.CurrentEpoch); err != nil {
+		return err
+	}
+	if consensusState.SettlementCredit != nil && !settlementCreditsEqual(consensusState.SettlementCredit, cs.LatestCheckpointSettlementCredit) {
+		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial settlement credit disagrees with client checkpoint")
+	}
+	consensusState.SettlementCredit = cloneSettlementCredit(cs.LatestCheckpointSettlementCredit)
 	if _, err := cs.normalizedEpochContexts(); err != nil {
 		return err
 	}

@@ -23,6 +23,9 @@ func (cs ConsensusState) GetTime() time.Time {
 }
 
 func (cs ConsensusState) ValidateBasic() error {
+	if err := validateSettlementCredit(cs.SettlementCredit, cs.AcceptedEpoch); err != nil {
+		return errorsmod.Wrap(ErrIBCInvalidConsensus, err.Error())
+	}
 	if err := validatePoolRegistry(cs.PoolRegistry, cs.AcceptedEpoch, math.MaxUint64); err != nil {
 		return errorsmod.Wrap(ErrIBCInvalidConsensus, err.Error())
 	}

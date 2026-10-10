@@ -21,6 +21,7 @@ var operationalCertificateCounterHistoryPrefix = []byte("operationalCertificateC
 type trustedBlockState struct {
 	nonceState                     *PraosNonceState
 	poolRegistry                   *PoolRegistryState
+	settlementCredit               *SettlementCreditState
 	height                         *Height
 	blockHash                      string
 	epoch                          uint64
@@ -499,6 +500,7 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 			operationalCertificateCounters: counters,
 			nonceState:                     clonePraosNonceState(cs.LatestCheckpointNonceState),
 			poolRegistry:                   clonePoolRegistry(cs.LatestCheckpointPoolRegistry),
+			settlementCredit:               cloneSettlementCredit(cs.LatestCheckpointSettlementCredit),
 		}
 		if cs.LatestHeight != nil && height.EQ(cs.LatestHeight) {
 			consensusState, found := GetConsensusState(clientStore, cdc, height)
@@ -509,7 +511,8 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 				state.epoch != consensusState.AcceptedEpoch ||
 				state.timestamp != consensusState.Timestamp ||
 				!praosNonceStatesEqual(state.nonceState, consensusState.NonceState) ||
-				!poolRegistriesEqual(state.poolRegistry, consensusState.PoolRegistry) {
+				!poolRegistriesEqual(state.poolRegistry, consensusState.PoolRegistry) ||
+				!settlementCreditsEqual(state.settlementCredit, consensusState.SettlementCredit) {
 				return nil, errorsmod.Wrap(
 					ErrInvalidAcceptedBlock,
 					"checkpoint cursor at latest consensus height does not match the stored consensus state",
@@ -544,6 +547,7 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 		operationalCertificateCounters: counters,
 		nonceState:                     clonePraosNonceState(consensusState.NonceState),
 		poolRegistry:                   clonePoolRegistry(consensusState.PoolRegistry),
+		settlementCredit:               cloneSettlementCredit(consensusState.SettlementCredit),
 	}, nil
 }
 
@@ -632,6 +636,9 @@ func (cs *ClientState) persistCheckpoint(
 	if err := validatePoolRegistry(authenticatedHeader.anchorPoolRegistry, authenticatedHeader.anchorBlock.epoch, authenticatedHeader.anchorBlock.slot); err != nil {
 		return err
 	}
+	if err := validateSettlementCredit(authenticatedHeader.anchorSettlementCredit, authenticatedHeader.anchorBlock.epoch); err != nil {
+		return err
+	}
 
 	anchor := authenticatedHeader.anchorBlock
 	keepEpochs := collectReferencedConsensusEpochs(clientStore, cdc)
@@ -650,6 +657,7 @@ func (cs *ClientState) persistCheckpoint(
 	}
 	cs.LatestCheckpointNonceState = clonePraosNonceState(authenticatedHeader.anchorNonceState)
 	cs.LatestCheckpointPoolRegistry = clonePoolRegistry(authenticatedHeader.anchorPoolRegistry)
+	cs.LatestCheckpointSettlementCredit = cloneSettlementCredit(authenticatedHeader.anchorSettlementCredit)
 	cs.setLatestCheckpoint(anchorHeight, anchor.hash, anchor.epoch, anchor.slot, anchor.timestamp)
 	cs.pruneEpochChallenges(clientStore)
 	SetClientState(clientStore, cdc, cs)

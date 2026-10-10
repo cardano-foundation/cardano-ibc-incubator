@@ -102,6 +102,7 @@ func (cs *ClientState) beginEpochChallenge(ctx Context, cdc StateCodec, clientSt
 		LatestCheckpointHeight:                         trusted.height,
 		LatestCheckpointNonceState:                     clonePraosNonceState(trusted.nonceState),
 		LatestCheckpointPoolRegistry:                   clonePoolRegistry(trusted.poolRegistry),
+		LatestCheckpointSettlementCredit:               cloneSettlementCredit(trusted.settlementCredit),
 		LatestCheckpointBlockHash:                      trusted.blockHash,
 		LatestCheckpointEpoch:                          trusted.epoch,
 		LatestCheckpointSlot:                           trusted.slot,
@@ -176,6 +177,7 @@ func (cs ClientState) challengeTrustedBlock(clientStore storetypes.KVStore, cdc 
 		operationalCertificateCounters: counters,
 		nonceState:                     clonePraosNonceState(snapshot.LatestCheckpointNonceState),
 		poolRegistry:                   clonePoolRegistry(snapshot.LatestCheckpointPoolRegistry),
+		settlementCredit:               cloneSettlementCredit(snapshot.LatestCheckpointSettlementCredit),
 	}, snapshot.EpochContexts, nil
 }
 

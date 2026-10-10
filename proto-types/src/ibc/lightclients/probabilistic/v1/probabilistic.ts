@@ -27,7 +27,7 @@ export interface StakeDistributionEntry {
   first_registration_slot: bigint;
   /**
    * Exact relative active stake used for Praos leader eligibility. The
-   * existing stake field remains the weight used by settlement scoring.
+   * existing stake field supplies the current share before settlement discounting.
    */
   relative_stake_numerator: bigint;
   relative_stake_denominator: bigint;
@@ -156,6 +156,34 @@ export interface ClientState {
    * Independently authenticated registration state at the checkpoint.
    */
   latest_checkpoint_pool_registry?: PoolRegistryState;
+  /**
+   * Epoch reference derived from capped credit, never raw accepted claims.
+   */
+  latest_checkpoint_settlement_credit?: SettlementCreditState;
+}
+/**
+ * Exact settlement reference shares for this epoch. At an adjacent rollover
+ * the client advances these using the preceding epoch's capped credit once.
+ * Values are never normalized after discounting. Bootstrap authenticates them.
+ * @name SettlementCreditState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.SettlementCreditState
+ */
+export interface SettlementCreditState {
+  epoch: bigint;
+  reference: PoolSettlementCredit[];
+}
+/**
+ * Reduced unsigned fraction in canonical big-endian form. Each integer is at
+ * most 16 bytes. Zero shares are omitted. This keeps fractional credit exact.
+ * @name PoolSettlementCredit
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolSettlementCredit
+ */
+export interface PoolSettlementCredit {
+  pool_id: string;
+  numerator: Uint8Array;
+  denominator: Uint8Array;
 }
 /**
  * Pool identity and VRF binding from the trusted bootstrap or authenticated
@@ -254,6 +282,10 @@ export interface ConsensusState {
    * Registration state at this historical accepted block.
    */
   pool_registry?: PoolRegistryState;
+  /**
+   * Reference at this accepted block for historical settlement verification.
+   */
+  settlement_credit?: SettlementCreditState;
 }
 /**
  * @name Misbehaviour
@@ -725,6 +757,7 @@ function createBaseClientState(): ClientState {
     latest_checkpoint_nonce_state: undefined,
     randomness_stabilisation_window_slots: BigInt(0),
     latest_checkpoint_pool_registry: undefined,
+    latest_checkpoint_settlement_credit: undefined,
   };
 }
 /**
@@ -833,6 +866,12 @@ export const ClientState = {
     }
     if (message.latest_checkpoint_pool_registry !== undefined) {
       PoolRegistryState.encode(message.latest_checkpoint_pool_registry, writer.uint32(274).fork()).ldelim();
+    }
+    if (message.latest_checkpoint_settlement_credit !== undefined) {
+      SettlementCreditState.encode(
+        message.latest_checkpoint_settlement_credit,
+        writer.uint32(282).fork(),
+      ).ldelim();
     }
     return writer;
   },
@@ -944,6 +983,9 @@ export const ClientState = {
         case 34:
           message.latest_checkpoint_pool_registry = PoolRegistryState.decode(reader, reader.uint32());
           break;
+        case 35:
+          message.latest_checkpoint_settlement_credit = SettlementCreditState.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1021,6 +1063,10 @@ export const ClientState = {
     if (isSet(object.latest_checkpoint_pool_registry))
       obj.latest_checkpoint_pool_registry = PoolRegistryState.fromJSON(
         object.latest_checkpoint_pool_registry,
+      );
+    if (isSet(object.latest_checkpoint_settlement_credit))
+      obj.latest_checkpoint_settlement_credit = SettlementCreditState.fromJSON(
+        object.latest_checkpoint_settlement_credit,
       );
     return obj;
   },
@@ -1138,6 +1184,10 @@ export const ClientState = {
       (obj.latest_checkpoint_pool_registry = message.latest_checkpoint_pool_registry
         ? PoolRegistryState.toJSON(message.latest_checkpoint_pool_registry)
         : undefined);
+    message.latest_checkpoint_settlement_credit !== undefined &&
+      (obj.latest_checkpoint_settlement_credit = message.latest_checkpoint_settlement_credit
+        ? SettlementCreditState.toJSON(message.latest_checkpoint_settlement_credit)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1249,6 +1299,164 @@ export const ClientState = {
         object.latest_checkpoint_pool_registry,
       );
     }
+    if (
+      object.latest_checkpoint_settlement_credit !== undefined &&
+      object.latest_checkpoint_settlement_credit !== null
+    ) {
+      message.latest_checkpoint_settlement_credit = SettlementCreditState.fromPartial(
+        object.latest_checkpoint_settlement_credit,
+      );
+    }
+    return message;
+  },
+};
+function createBaseSettlementCreditState(): SettlementCreditState {
+  return {
+    epoch: BigInt(0),
+    reference: [],
+  };
+}
+/**
+ * Exact settlement reference shares for this epoch. At an adjacent rollover
+ * the client advances these using the preceding epoch's capped credit once.
+ * Values are never normalized after discounting. Bootstrap authenticates them.
+ * @name SettlementCreditState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.SettlementCreditState
+ */
+export const SettlementCreditState = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.SettlementCreditState",
+  encode(message: SettlementCreditState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    for (const v of message.reference) {
+      PoolSettlementCredit.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): SettlementCreditState {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSettlementCreditState();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.reference.push(PoolSettlementCredit.decode(reader, reader.uint32()));
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): SettlementCreditState {
+    const obj = createBaseSettlementCreditState();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (Array.isArray(object?.reference))
+      obj.reference = object.reference.map((e: any) => PoolSettlementCredit.fromJSON(e));
+    return obj;
+  },
+  toJSON(message: SettlementCreditState): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    if (message.reference) {
+      obj.reference = message.reference.map((e) => (e ? PoolSettlementCredit.toJSON(e) : undefined));
+    } else {
+      obj.reference = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<SettlementCreditState>, I>>(object: I): SettlementCreditState {
+    const message = createBaseSettlementCreditState();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    message.reference = object.reference?.map((e) => PoolSettlementCredit.fromPartial(e)) || [];
+    return message;
+  },
+};
+function createBasePoolSettlementCredit(): PoolSettlementCredit {
+  return {
+    pool_id: "",
+    numerator: new Uint8Array(),
+    denominator: new Uint8Array(),
+  };
+}
+/**
+ * Reduced unsigned fraction in canonical big-endian form. Each integer is at
+ * most 16 bytes. Zero shares are omitted. This keeps fractional credit exact.
+ * @name PoolSettlementCredit
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolSettlementCredit
+ */
+export const PoolSettlementCredit = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolSettlementCredit",
+  encode(message: PoolSettlementCredit, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.pool_id !== "") {
+      writer.uint32(10).string(message.pool_id);
+    }
+    if (message.numerator.length !== 0) {
+      writer.uint32(18).bytes(message.numerator);
+    }
+    if (message.denominator.length !== 0) {
+      writer.uint32(26).bytes(message.denominator);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolSettlementCredit {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolSettlementCredit();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.pool_id = reader.string();
+          break;
+        case 2:
+          message.numerator = reader.bytes();
+          break;
+        case 3:
+          message.denominator = reader.bytes();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolSettlementCredit {
+    const obj = createBasePoolSettlementCredit();
+    if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
+    if (isSet(object.numerator)) obj.numerator = bytesFromBase64(object.numerator);
+    if (isSet(object.denominator)) obj.denominator = bytesFromBase64(object.denominator);
+    return obj;
+  },
+  toJSON(message: PoolSettlementCredit): unknown {
+    const obj: any = {};
+    message.pool_id !== undefined && (obj.pool_id = message.pool_id);
+    message.numerator !== undefined &&
+      (obj.numerator = base64FromBytes(
+        message.numerator !== undefined ? message.numerator : new Uint8Array(),
+      ));
+    message.denominator !== undefined &&
+      (obj.denominator = base64FromBytes(
+        message.denominator !== undefined ? message.denominator : new Uint8Array(),
+      ));
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolSettlementCredit>, I>>(object: I): PoolSettlementCredit {
+    const message = createBasePoolSettlementCredit();
+    message.pool_id = object.pool_id ?? "";
+    message.numerator = object.numerator ?? new Uint8Array();
+    message.denominator = object.denominator ?? new Uint8Array();
     return message;
   },
 };
@@ -1733,6 +1941,7 @@ function createBaseConsensusState(): ConsensusState {
     packet_state_snapshot: new Uint8Array(),
     nonce_state: undefined,
     pool_registry: undefined,
+    settlement_credit: undefined,
   };
 }
 /**
@@ -1773,6 +1982,9 @@ export const ConsensusState = {
     if (message.pool_registry !== undefined) {
       PoolRegistryState.encode(message.pool_registry, writer.uint32(82).fork()).ldelim();
     }
+    if (message.settlement_credit !== undefined) {
+      SettlementCreditState.encode(message.settlement_credit, writer.uint32(90).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -1812,6 +2024,9 @@ export const ConsensusState = {
         case 10:
           message.pool_registry = PoolRegistryState.decode(reader, reader.uint32());
           break;
+        case 11:
+          message.settlement_credit = SettlementCreditState.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1834,6 +2049,8 @@ export const ConsensusState = {
       obj.packet_state_snapshot = bytesFromBase64(object.packet_state_snapshot);
     if (isSet(object.nonce_state)) obj.nonce_state = PraosNonceState.fromJSON(object.nonce_state);
     if (isSet(object.pool_registry)) obj.pool_registry = PoolRegistryState.fromJSON(object.pool_registry);
+    if (isSet(object.settlement_credit))
+      obj.settlement_credit = SettlementCreditState.fromJSON(object.settlement_credit);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
@@ -1862,6 +2079,10 @@ export const ConsensusState = {
       (obj.pool_registry = message.pool_registry
         ? PoolRegistryState.toJSON(message.pool_registry)
         : undefined);
+    message.settlement_credit !== undefined &&
+      (obj.settlement_credit = message.settlement_credit
+        ? SettlementCreditState.toJSON(message.settlement_credit)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -1889,6 +2110,9 @@ export const ConsensusState = {
     }
     if (object.pool_registry !== undefined && object.pool_registry !== null) {
       message.pool_registry = PoolRegistryState.fromPartial(object.pool_registry);
+    }
+    if (object.settlement_credit !== undefined && object.settlement_credit !== null) {
+      message.settlement_credit = SettlementCreditState.fromPartial(object.settlement_credit);
     }
     return message;
   },

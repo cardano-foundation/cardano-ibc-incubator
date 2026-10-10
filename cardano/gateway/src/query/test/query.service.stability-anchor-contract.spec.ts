@@ -304,6 +304,9 @@ describe('QueryService stability anchor contract', () => {
     const consensus = ConsensusStateProbabilistic.decode(response.consensus_state!.value);
     expect(client.latest_height?.revision_height).toBe(100n);
     expect(consensus.packet_state_snapshot.length).toBeGreaterThan(0);
+    expect(client.latest_checkpoint_settlement_credit?.epoch).toBe(7n);
+    expect(client.latest_checkpoint_settlement_credit?.reference).toHaveLength(5);
+    expect(consensus.settlement_credit).toEqual(client.latest_checkpoint_settlement_credit);
   });
 
   it('uses independently supplied genesis ages even when the epoch table has no ages', async () => {
@@ -468,7 +471,7 @@ describe('QueryService stability anchor contract', () => {
     miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue(
       Array.from({ length: 25 }, (_, index) => Buffer.from([index + 1])),
     );
-    const response = await service.queryIBCHeader({ height: 100n, trusted_height: 99n, checkpoint_only: true });
+    const response = await service.queryIBCHeader({ height: 100n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: new Uint8Array() });
     const header = ProbabilisticHeader.decode(response.header!.value);
     expect(header.is_checkpoint).toBe(true);
     expect(header.anchor_block?.height?.revision_height).toBe(100n);
@@ -477,6 +480,34 @@ describe('QueryService stability anchor contract', () => {
     expect(header.host_state_tx_hash).toBe('');
     expect(header.new_epoch_context?.epoch).toBe(7n);
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
+  });
+
+  it('uses the destination credit reference when deciding whether an update can settle', async () => {
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    const client = ClientStateProbabilistic.fromPartial({
+      current_epoch: 7n,
+      latest_checkpoint_height: { revision_height: 99n },
+      latest_checkpoint_settlement_credit: { epoch: 7n, reference: [] },
+    });
+    // These five producers have enough submitted stake, but only 250 basis
+    // points of settlement credit against this destination reference.
+    await expect(
+      service.queryIBCHeader({
+        height: 100n,
+        trusted_height: 99n,
+        checkpoint_only: true,
+        probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+      }),
+    ).rejects.toThrow('qualified unique stake');
+    client.latest_checkpoint_height!.revision_height = 98n;
+    await expect(
+      service.queryIBCHeader({
+        height: 100n,
+        trusted_height: 99n,
+        checkpoint_only: true,
+        probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+      }),
+    ).rejects.toThrow('does not match trusted_height');
   });
 
   it('fits a minimum root update by keeping full CBOR only on its HostState anchor', async () => {

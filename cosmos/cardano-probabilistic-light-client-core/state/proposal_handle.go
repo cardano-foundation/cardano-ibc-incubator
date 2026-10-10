@@ -91,6 +91,9 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 		!praosNonceStatesEqual(substituteClientState.LatestCheckpointNonceState, consensusState.NonceState) {
 		return errorsmod.Wrap(ErrIBCInvalidSubstitute, "substitute checkpoint nonce state does not match its latest consensus state")
 	}
+	if substituteCheckpointHeight.EQ(height) && !settlementCreditsEqual(substituteClientState.LatestCheckpointSettlementCredit, consensusState.SettlementCredit) {
+		return errorsmod.Wrap(ErrIBCInvalidSubstitute, "substitute settlement credit does not match its latest consensus state")
+	}
 	if substituteCheckpointHeight.EQ(height) && !poolRegistriesEqual(substituteClientState.LatestCheckpointPoolRegistry, consensusState.PoolRegistry) {
 		return errorsmod.Wrap(ErrIBCInvalidSubstitute, "substitute checkpoint pool registry does not match its latest consensus state")
 	}
@@ -162,6 +165,7 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	}
 	cs.LatestCheckpointNonceState = clonePraosNonceState(substituteClientState.LatestCheckpointNonceState)
 	cs.LatestCheckpointPoolRegistry = clonePoolRegistry(substituteClientState.LatestCheckpointPoolRegistry)
+	cs.LatestCheckpointSettlementCredit = cloneSettlementCredit(substituteClientState.LatestCheckpointSettlementCredit)
 	cs.LatestCheckpointOperationalCertificateCounters = cloneOperationalCertificateCounters(
 		substituteClientState.LatestCheckpointOperationalCertificateCounters,
 	)
