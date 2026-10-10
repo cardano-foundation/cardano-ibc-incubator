@@ -1,6 +1,10 @@
 import { Logger } from '@nestjs/common';
-import { PoolSettlementCredit } from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
+import {
+  PoolSettlementCredit,
+  PoolProductionHistory,
+} from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
 import { addCredit, computeSettlementCredits, creditBasisPoints, CreditFraction } from './settlement-credit';
+import { productionRecords } from './pool-production';
 import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
@@ -35,6 +39,7 @@ const LIGHT_CLIENT_STABILITY_POLICY: StabilityPolicy = {
 type StabilityScoringOptions = {
   poolRegistrationCutoffSlot?: bigint;
   settlementCreditReference?: PoolSettlementCredit[];
+  poolProduction?: PoolProductionHistory;
 };
 
 const STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS = 1_767_225_600_000_000_000n; // 2026-01-01T00:00:00Z
@@ -120,6 +125,9 @@ export function computeStabilityMetrics(
   const seenSlotLeaders = new Set<string>();
   const stakeEntryByPool = new Map(epochStakeDistribution.map((entry) => [entry.poolId, entry]));
   const credits = computeSettlementCredits(epochStakeDistribution, options.settlementCreditReference);
+  const production = options.poolProduction
+    ? productionRecords(options.poolProduction, options.poolProduction.epoch)
+    : new Map();
 
   let qualifiedUniqueStake: CreditFraction = { numerator: 0n, denominator: 1n };
 
@@ -133,6 +141,12 @@ export function computeStabilityMetrics(
     if (!poolRegisteredBeforeCutoff(entry, options.poolRegistrationCutoffSlot)) {
       continue;
     }
+
+    if (
+      options.poolProduction?.epoch !== BigInt(descendant.epochNo) ||
+      !production.get(descendant.slotLeader.toLowerCase())?.completed_epochs_bitmap
+    )
+      continue;
 
     qualifiedUniquePools.add(descendant.slotLeader);
     qualifiedUniqueStake = addCredit(qualifiedUniqueStake, credits.get(entry.poolId.toLowerCase())!);

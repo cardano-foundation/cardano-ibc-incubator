@@ -160,6 +160,32 @@ export interface ClientState {
    * Epoch reference derived from capped credit, never raw accepted claims.
    */
   latest_checkpoint_settlement_credit?: SettlementCreditState;
+  /**
+   * Verified production history positioned at this committed checkpoint.
+   */
+  latest_checkpoint_pool_production?: PoolProductionHistory;
+}
+/**
+ * Production observed through the checkpoint. Bit 0 represents epoch-1 and
+ * bit 4 represents epoch-5. Current-epoch observations never qualify that epoch.
+ * Bootstrap authenticates this state. Missing pool records grant no qualification.
+ * @name PoolProductionHistory
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolProductionHistory
+ */
+export interface PoolProductionHistory {
+  epoch: bigint;
+  pools: PoolProductionRecord[];
+}
+/**
+ * @name PoolProductionRecord
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolProductionRecord
+ */
+export interface PoolProductionRecord {
+  pool_id: string;
+  completed_epochs_bitmap: number;
+  produced_current_epoch: boolean;
 }
 /**
  * Exact settlement reference shares for this epoch. At an adjacent rollover
@@ -286,6 +312,10 @@ export interface ConsensusState {
    * Reference at this accepted block for historical settlement verification.
    */
   settlement_credit?: SettlementCreditState;
+  /**
+   * History at this accepted block, excluding temporary settlement descendants.
+   */
+  pool_production?: PoolProductionHistory;
 }
 /**
  * @name Misbehaviour
@@ -758,6 +788,7 @@ function createBaseClientState(): ClientState {
     randomness_stabilisation_window_slots: BigInt(0),
     latest_checkpoint_pool_registry: undefined,
     latest_checkpoint_settlement_credit: undefined,
+    latest_checkpoint_pool_production: undefined,
   };
 }
 /**
@@ -873,6 +904,12 @@ export const ClientState = {
         writer.uint32(282).fork(),
       ).ldelim();
     }
+    if (message.latest_checkpoint_pool_production !== undefined) {
+      PoolProductionHistory.encode(
+        message.latest_checkpoint_pool_production,
+        writer.uint32(290).fork(),
+      ).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ClientState {
@@ -986,6 +1023,9 @@ export const ClientState = {
         case 35:
           message.latest_checkpoint_settlement_credit = SettlementCreditState.decode(reader, reader.uint32());
           break;
+        case 36:
+          message.latest_checkpoint_pool_production = PoolProductionHistory.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1067,6 +1107,10 @@ export const ClientState = {
     if (isSet(object.latest_checkpoint_settlement_credit))
       obj.latest_checkpoint_settlement_credit = SettlementCreditState.fromJSON(
         object.latest_checkpoint_settlement_credit,
+      );
+    if (isSet(object.latest_checkpoint_pool_production))
+      obj.latest_checkpoint_pool_production = PoolProductionHistory.fromJSON(
+        object.latest_checkpoint_pool_production,
       );
     return obj;
   },
@@ -1188,6 +1232,10 @@ export const ClientState = {
       (obj.latest_checkpoint_settlement_credit = message.latest_checkpoint_settlement_credit
         ? SettlementCreditState.toJSON(message.latest_checkpoint_settlement_credit)
         : undefined);
+    message.latest_checkpoint_pool_production !== undefined &&
+      (obj.latest_checkpoint_pool_production = message.latest_checkpoint_pool_production
+        ? PoolProductionHistory.toJSON(message.latest_checkpoint_pool_production)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1307,6 +1355,160 @@ export const ClientState = {
         object.latest_checkpoint_settlement_credit,
       );
     }
+    if (
+      object.latest_checkpoint_pool_production !== undefined &&
+      object.latest_checkpoint_pool_production !== null
+    ) {
+      message.latest_checkpoint_pool_production = PoolProductionHistory.fromPartial(
+        object.latest_checkpoint_pool_production,
+      );
+    }
+    return message;
+  },
+};
+function createBasePoolProductionHistory(): PoolProductionHistory {
+  return {
+    epoch: BigInt(0),
+    pools: [],
+  };
+}
+/**
+ * Production observed through the checkpoint. Bit 0 represents epoch-1 and
+ * bit 4 represents epoch-5. Current-epoch observations never qualify that epoch.
+ * Bootstrap authenticates this state. Missing pool records grant no qualification.
+ * @name PoolProductionHistory
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolProductionHistory
+ */
+export const PoolProductionHistory = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolProductionHistory",
+  encode(message: PoolProductionHistory, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    for (const v of message.pools) {
+      PoolProductionRecord.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolProductionHistory {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolProductionHistory();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.pools.push(PoolProductionRecord.decode(reader, reader.uint32()));
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolProductionHistory {
+    const obj = createBasePoolProductionHistory();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (Array.isArray(object?.pools))
+      obj.pools = object.pools.map((e: any) => PoolProductionRecord.fromJSON(e));
+    return obj;
+  },
+  toJSON(message: PoolProductionHistory): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    if (message.pools) {
+      obj.pools = message.pools.map((e) => (e ? PoolProductionRecord.toJSON(e) : undefined));
+    } else {
+      obj.pools = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolProductionHistory>, I>>(object: I): PoolProductionHistory {
+    const message = createBasePoolProductionHistory();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    message.pools = object.pools?.map((e) => PoolProductionRecord.fromPartial(e)) || [];
+    return message;
+  },
+};
+function createBasePoolProductionRecord(): PoolProductionRecord {
+  return {
+    pool_id: "",
+    completed_epochs_bitmap: 0,
+    produced_current_epoch: false,
+  };
+}
+/**
+ * @name PoolProductionRecord
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.PoolProductionRecord
+ */
+export const PoolProductionRecord = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.PoolProductionRecord",
+  encode(message: PoolProductionRecord, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.pool_id !== "") {
+      writer.uint32(10).string(message.pool_id);
+    }
+    if (message.completed_epochs_bitmap !== 0) {
+      writer.uint32(16).uint32(message.completed_epochs_bitmap);
+    }
+    if (message.produced_current_epoch === true) {
+      writer.uint32(24).bool(message.produced_current_epoch);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): PoolProductionRecord {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePoolProductionRecord();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.pool_id = reader.string();
+          break;
+        case 2:
+          message.completed_epochs_bitmap = reader.uint32();
+          break;
+        case 3:
+          message.produced_current_epoch = reader.bool();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): PoolProductionRecord {
+    const obj = createBasePoolProductionRecord();
+    if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
+    if (isSet(object.completed_epochs_bitmap))
+      obj.completed_epochs_bitmap = Number(object.completed_epochs_bitmap);
+    if (isSet(object.produced_current_epoch))
+      obj.produced_current_epoch = Boolean(object.produced_current_epoch);
+    return obj;
+  },
+  toJSON(message: PoolProductionRecord): unknown {
+    const obj: any = {};
+    message.pool_id !== undefined && (obj.pool_id = message.pool_id);
+    message.completed_epochs_bitmap !== undefined &&
+      (obj.completed_epochs_bitmap = Math.round(message.completed_epochs_bitmap));
+    message.produced_current_epoch !== undefined &&
+      (obj.produced_current_epoch = message.produced_current_epoch);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<PoolProductionRecord>, I>>(object: I): PoolProductionRecord {
+    const message = createBasePoolProductionRecord();
+    message.pool_id = object.pool_id ?? "";
+    message.completed_epochs_bitmap = object.completed_epochs_bitmap ?? 0;
+    message.produced_current_epoch = object.produced_current_epoch ?? false;
     return message;
   },
 };
@@ -1942,6 +2144,7 @@ function createBaseConsensusState(): ConsensusState {
     nonce_state: undefined,
     pool_registry: undefined,
     settlement_credit: undefined,
+    pool_production: undefined,
   };
 }
 /**
@@ -1985,6 +2188,9 @@ export const ConsensusState = {
     if (message.settlement_credit !== undefined) {
       SettlementCreditState.encode(message.settlement_credit, writer.uint32(90).fork()).ldelim();
     }
+    if (message.pool_production !== undefined) {
+      PoolProductionHistory.encode(message.pool_production, writer.uint32(98).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -2027,6 +2233,9 @@ export const ConsensusState = {
         case 11:
           message.settlement_credit = SettlementCreditState.decode(reader, reader.uint32());
           break;
+        case 12:
+          message.pool_production = PoolProductionHistory.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -2051,6 +2260,8 @@ export const ConsensusState = {
     if (isSet(object.pool_registry)) obj.pool_registry = PoolRegistryState.fromJSON(object.pool_registry);
     if (isSet(object.settlement_credit))
       obj.settlement_credit = SettlementCreditState.fromJSON(object.settlement_credit);
+    if (isSet(object.pool_production))
+      obj.pool_production = PoolProductionHistory.fromJSON(object.pool_production);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
@@ -2083,6 +2294,10 @@ export const ConsensusState = {
       (obj.settlement_credit = message.settlement_credit
         ? SettlementCreditState.toJSON(message.settlement_credit)
         : undefined);
+    message.pool_production !== undefined &&
+      (obj.pool_production = message.pool_production
+        ? PoolProductionHistory.toJSON(message.pool_production)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -2113,6 +2328,9 @@ export const ConsensusState = {
     }
     if (object.settlement_credit !== undefined && object.settlement_credit !== null) {
       message.settlement_credit = SettlementCreditState.fromPartial(object.settlement_credit);
+    }
+    if (object.pool_production !== undefined && object.pool_production !== null) {
+      message.pool_production = PoolProductionHistory.fromPartial(object.pool_production);
     }
     return message;
   },

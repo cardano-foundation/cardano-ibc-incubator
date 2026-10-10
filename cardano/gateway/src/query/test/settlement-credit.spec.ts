@@ -101,6 +101,8 @@ describe('settlement credit', () => {
     const history = {
       findBlockByHeight: jest.fn().mockResolvedValue(anchor),
       findDescendantBlocks: jest.fn().mockResolvedValue(descendants),
+      findBridgeBlocks: jest.fn().mockResolvedValue([]),
+      findObservedPoolProductionAtBlock: jest.fn().mockResolvedValue({ epoch: 7n, pools: entries.map((entry) => ({ pool_id: entry.poolId, completed_epochs_bitmap: 1, produced_current_epoch: false })) }),
       findEpochContextAtBlock: jest.fn().mockResolvedValue({
         stakeDistribution: entries,
         verificationContext: {
@@ -116,6 +118,8 @@ describe('settlement credit', () => {
     } as unknown as HistoryService;
     const client = ClientState.fromPartial({
       current_epoch: 7n,
+      latest_checkpoint_pool_production: { epoch: 7n, pools: entries.map((entry) => ({ pool_id: entry.poolId, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
+      latest_checkpoint_height: { revision_height: 99n },
       latest_checkpoint_settlement_credit: bootstrapSettlementCredit(7n, [{ poolId: 'other', stake: 1n }]),
     });
     const uncapped = await loadStakeWeightedStabilityEvidenceByHeight({

@@ -481,6 +481,27 @@ export class YaciHistoryService implements HistoryService {
     return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
   }
 
+  // These indexed observations guide standalone proof-height discovery. They are
+  // never supplied as client history, bootstrap requires an explicit trusted file.
+  async findObservedPoolProductionAtBlock(block: HistoryBlock) {
+    const rows = await this.entityManager.query(`
+      SELECT DISTINCT epoch, slot_leader FROM block
+      WHERE epoch >= $1 AND epoch <= $2 AND number <= $3
+        AND EXISTS (SELECT 1 FROM block anchor WHERE anchor.number = $3 AND anchor.hash = $4)
+    `, [Math.max(0, block.epochNo - 5), block.epochNo, block.height, block.hash]);
+    const pools = new Map<string, { pool_id: string; completed_epochs_bitmap: number; produced_current_epoch: boolean }>();
+    for (const row of rows) {
+      if (!row.slot_leader) continue;
+      const pool = normalizePoolId(row.slot_leader);
+      const record = pools.get(pool) ?? { pool_id: pool, completed_epochs_bitmap: 0, produced_current_epoch: false };
+      const distance = block.epochNo - Number(row.epoch);
+      if (distance === 0) record.produced_current_epoch = true;
+      else if (distance >= 1 && distance <= 5) record.completed_epochs_bitmap |= 1 << (distance - 1);
+      if (record.completed_epochs_bitmap || record.produced_current_epoch) pools.set(pool, record);
+    }
+    return { epoch: BigInt(block.epochNo), pools: [...pools.values()].sort((a, b) => a.pool_id.localeCompare(b.pool_id)) };
+  }
+
   async findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null> {
     validatePublicNetworkStabilityConfig(
       this.configService.get<string>('cardanoNetwork'),

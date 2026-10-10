@@ -66,6 +66,18 @@ type ClientState struct {
 	RandomnessStabilisationWindowSlots              uint64                           `protobuf:"varint,33,opt,name=randomness_stabilisation_window_slots,json=randomnessStabilisationWindowSlots,proto3" json:"randomness_stabilisation_window_slots,omitempty"`
 	LatestCheckpointPoolRegistry                    *PoolRegistryState               `protobuf:"bytes,34,opt,name=latest_checkpoint_pool_registry,json=latestCheckpointPoolRegistry,proto3" json:"latest_checkpoint_pool_registry,omitempty"`
 	LatestCheckpointSettlementCredit                *SettlementCreditState           `protobuf:"bytes,35,opt,name=latest_checkpoint_settlement_credit,json=latestCheckpointSettlementCredit,proto3" json:"latest_checkpoint_settlement_credit,omitempty"`
+	LatestCheckpointPoolProduction                  *PoolProductionHistory           `protobuf:"bytes,36,opt,name=latest_checkpoint_pool_production,json=latestCheckpointPoolProduction,proto3" json:"latest_checkpoint_pool_production,omitempty"`
+}
+
+type PoolProductionHistory struct {
+	Epoch uint64                  `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	Pools []*PoolProductionRecord `protobuf:"bytes,2,rep,name=pools,proto3" json:"pools,omitempty"`
+}
+
+type PoolProductionRecord struct {
+	PoolId                string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	CompletedEpochsBitmap uint32 `protobuf:"varint,2,opt,name=completed_epochs_bitmap,json=completedEpochsBitmap,proto3" json:"completed_epochs_bitmap,omitempty"`
+	ProducedCurrentEpoch  bool   `protobuf:"varint,3,opt,name=produced_current_epoch,json=producedCurrentEpoch,proto3" json:"produced_current_epoch,omitempty"`
 }
 
 type SettlementCreditState struct {
@@ -125,6 +137,7 @@ type ConsensusState struct {
 	NonceState          *PraosNonceState       `protobuf:"bytes,9,opt,name=nonce_state,json=nonceState,proto3" json:"nonce_state,omitempty"`
 	PoolRegistry        *PoolRegistryState     `protobuf:"bytes,10,opt,name=pool_registry,json=poolRegistry,proto3" json:"pool_registry,omitempty"`
 	SettlementCredit    *SettlementCreditState `protobuf:"bytes,11,opt,name=settlement_credit,json=settlementCredit,proto3" json:"settlement_credit,omitempty"`
+	PoolProduction      *PoolProductionHistory `protobuf:"bytes,12,opt,name=pool_production,json=poolProduction,proto3" json:"pool_production,omitempty"`
 }
 
 type Misbehaviour struct {
