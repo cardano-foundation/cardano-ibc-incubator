@@ -2388,6 +2388,10 @@ export class QueryService {
       }
     }
 
+    if (request.checkpoint_only && !settlementCreditClient) {
+      throw new GrpcInvalidArgumentException('Historical destination client context is required for challenge evidence');
+    }
+
     // A challenger must be able to authenticate the actual block at a claimed
     // height even when that block contains no HostState transaction.
     let stabilityHeader: ProbabilisticHeader;

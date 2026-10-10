@@ -311,8 +311,15 @@ independent Gateway/node and enable `require_update_event_headers_for_misbehavio
 The primary Gateway fallback does not provide independent observation.
 
 For probabilistic challenges, Hermes requests `QueryIBCHeader` with
-`checkpoint_only = true`. Gateway returns exact-height rootless evidence and
-its epoch context, even if the actual block at the disputed height has no
+`checkpoint_only = true` and the production history and settlement credit saved
+at the header's trusted height. Hermes reads the destination client's private
+pre-proposal snapshot first. This also works when that checkpoint has no IBC
+root. Otherwise it uses the matching current checkpoint or a retained consensus
+state. It never substitutes the latest post-proposal history. Missing checkpoint
+history stops evidence construction instead of using observer estimates.
+Gateway requires this context for challenge queries and applies the same credit
+cap and recent-production rule as Cosmos. Gateway returns exact-height rootless
+evidence and its epoch context, even if the actual block at the disputed height has no
 HostState transaction. It does not truncate that request to a different catch-up
 height. Block/epoch conflicts count as evidence; omission of HostState fields
 in an otherwise matching rootless witness does not.
