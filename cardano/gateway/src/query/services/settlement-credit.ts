@@ -4,7 +4,7 @@ import {
   SettlementCreditState,
 } from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
 
-export const ADDITIONAL_SETTLEMENT_CREDIT_BPS = 50n;
+const ADDITIONAL_SETTLEMENT_CREDIT_BPS = 50n;
 export type CreditFraction = { numerator: bigint; denominator: bigint };
 type StakeEntry = { poolId: string; stake: bigint };
 

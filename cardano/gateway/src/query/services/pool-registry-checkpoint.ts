@@ -30,7 +30,7 @@ const array = (value: unknown): unknown[] => {
   return value;
 };
 
-export type PoolRegistryCheckpointPoint = {
+type PoolRegistryCheckpointPoint = {
   chainId: string;
   height: bigint;
   slot: bigint;
