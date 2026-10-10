@@ -1,6 +1,9 @@
 package probabilistic
 
 import (
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"reflect"
 	"testing"
 
@@ -96,4 +99,28 @@ func TestCoreErrorsKeepIBCIdentityCodesAndText(t *testing.T) {
 	require.ErrorIs(t, client.Validate(), clienttypes.ErrInvalidClient)
 	require.ErrorIs(t, adapterError(state.ErrInvalidTimestamp), ErrInvalidTimestamp)
 	require.Nil(t, adapterError(nil))
+}
+
+func TestHistoricalChallengeSnapshotCodecMatchesHermesFixture(t *testing.T) {
+	data, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/challenge-settlement.json")
+	require.NoError(t, err)
+	var fixture struct {
+		SnapshotHex string `json:"snapshot_hex"`
+	}
+	require.NoError(t, json.Unmarshal(data, &fixture))
+	encoded, err := hex.DecodeString(fixture.SnapshotHex)
+	require.NoError(t, err)
+	// beginEpochChallenge stores a bare, partial ClientState. The IBC client
+	// Any decoder is deliberately not used for this private checkpoint.
+	cdc := coreCodec{newProbabilisticTestCodec()}
+	checkpoint, err := cdc.DecodeClientSnapshot(encoded)
+	require.NoError(t, err)
+	require.Zero(t, checkpoint.CurrentEpoch)
+	require.Equal(t, uint64(7), checkpoint.LatestCheckpointEpoch)
+	require.Equal(t, uint64(99), checkpoint.LatestCheckpointHeight.RevisionHeight)
+	require.Equal(t, uint64(7), checkpoint.LatestCheckpointSettlementCredit.Epoch)
+	require.Empty(t, checkpoint.LatestCheckpointSettlementCredit.Reference)
+	require.Equal(t, uint64(7), checkpoint.LatestCheckpointPoolProduction.Epoch)
+	require.Len(t, checkpoint.LatestCheckpointPoolProduction.Pools, 11)
+	require.Equal(t, encoded, cdc.EncodeClientSnapshot(checkpoint))
 }

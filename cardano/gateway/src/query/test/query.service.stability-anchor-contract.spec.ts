@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { QueryIBCHeaderRequest } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
 import { Cbor, CborArray, CborBytes, CborUInt, CborSimple } from '@harmoniclabs/cbor';
 import { loadTrustedPoolRegistryCheckpoint, loadTrustedPoolProductionCheckpoint } from '../services/pool-registry-checkpoint';
 jest.mock('../services/pool-registry-checkpoint', () => ({
@@ -477,7 +480,13 @@ describe('QueryService stability anchor contract', () => {
     miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue(
       Array.from({ length: 25 }, (_, index) => Buffer.from([index + 1])),
     );
-    const response = await service.queryIBCHeader({ height: 100n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: new Uint8Array() });
+    const context = ClientStateProbabilistic.fromPartial({
+      current_epoch: 7n,
+      latest_checkpoint_height: { revision_height: 99n },
+      latest_checkpoint_settlement_credit: { epoch: 7n, reference: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, numerator: Uint8Array.of(1), denominator: Uint8Array.of(5) })) },
+      latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
+    });
+    const response = await service.queryIBCHeader({ height: 100n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() });
     const header = ProbabilisticHeader.decode(response.header!.value);
     expect(header.is_checkpoint).toBe(true);
     expect(header.anchor_block?.height?.revision_height).toBe(100n);
@@ -857,5 +866,82 @@ describe('QueryService stability anchor contract', () => {
     expect(header.bridge_blocks.every((block) => block.block_cbor.length === 1)).toBe(true);
     expect(header.host_state_tx_hash).toBe('');
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
+  });
+});
+
+describe('historical Hermes challenge request', () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      resolve(
+        __dirname,
+        '../../../../../cosmos/cardano-probabilistic-light-client-core/testdata/challenge-settlement.json',
+      ),
+      'utf8',
+    ),
+  );
+
+  it('requires saved context instead of falling back to observer estimates', async () => {
+    await expect(
+      service.queryIBCHeader({
+        height: 100n,
+        trusted_height: 99n,
+        checkpoint_only: true,
+        probabilistic_client_state: new Uint8Array(),
+      }),
+    ).rejects.toThrow('Historical destination client context is required');
+    expect(historyServiceMock.findObservedPoolProductionAtBlock).not.toHaveBeenCalled();
+  });
+
+  it('serves enough descendants under the historical production and capped credit rules', async () => {
+    // This is the exact protobuf request sent by the Hermes challenge test.
+    // Its current_epoch is restored from a bare pre-proposal rootless snapshot.
+    const request = QueryIBCHeaderRequest.decode(Buffer.from(fixture.request_hex, 'hex'));
+    const context = ClientStateProbabilistic.decode(request.probabilistic_client_state);
+    expect(context.current_epoch).toBe(7n);
+    expect(context.latest_checkpoint_height?.revision_height).toBe(99n);
+    expect(context.latest_checkpoint_settlement_credit?.reference).toEqual([]);
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    historyServiceMock.findEpochContextAtBlock.mockResolvedValue({
+      epoch: 7,
+      stakeDistribution: context.epoch_contexts[0].stake_distribution.map((row) => ({
+        poolId: row.pool_id,
+        stake: row.stake,
+        relativeStakeNumerator: row.relative_stake_numerator,
+        relativeStakeDenominator: row.relative_stake_denominator,
+        vrfKeyHash: Buffer.from(row.vrf_key_hash).toString('hex'),
+        firstRegistrationSlot: row.first_registration_slot,
+      })),
+      verificationContext: {
+        epochNonce: '11'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        activeSlotCoefficientNumerator: 1n,
+        activeSlotCoefficientDenominator: 20n,
+        maxKesEvolutions: 62,
+        currentEpochStartSlot: 900n,
+        currentEpochEndSlotExclusive: 3000n,
+      },
+    });
+    const descendants = (producers: string[]) =>
+      producers.map((slotLeader, index) => ({
+        ...stabilityDescendantBlocks[index % 24],
+        height: 101 + index,
+        hash: `hash-${101 + index}`,
+        prevHash: index === 0 ? 'anchor-hash' : `hash-${100 + index}`,
+        slotNo: 1010n + BigInt(index) * 10n,
+        timestampUnixNs: timestampForSlot(1010n + BigInt(index) * 10n),
+        slotLeader,
+      }));
+    historyServiceMock.findDescendantBlocks.mockResolvedValue(descendants(fixture.short_descendants));
+    await expect(service.queryIBCHeader(request)).rejects.toThrow('qualified unique stake');
+    historyServiceMock.findDescendantBlocks.mockResolvedValue(descendants(fixture.long_descendants));
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
+      blocks.map((_, index) => Buffer.from([index + 1])),
+    );
+    const response = await service.queryIBCHeader(request);
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.is_checkpoint).toBe(true);
+    expect(header.anchor_block?.height?.revision_height).toBe(100n);
+    expect(header.descendant_blocks).toHaveLength(fixture.long_descendants.length);
+    expect(historyServiceMock.findObservedPoolProductionAtBlock).not.toHaveBeenCalled();
   });
 });
