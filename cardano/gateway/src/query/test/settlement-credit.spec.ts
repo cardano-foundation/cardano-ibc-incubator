@@ -71,13 +71,14 @@ describe('settlement credit', () => {
   });
 
   it('waits for another producer when a 24-block prefix has insufficient capped credit', async () => {
+    const maturePoolSlot = 20_000_000n;
     const anchor = {
       height: 100,
       hash: 'anchor',
       prevHash: 'parent',
-      slotNo: 1000n,
+      slotNo: maturePoolSlot + 1000n,
       epochNo: 7,
-      timestampUnixNs: 1_700_000_000_000_000_000n,
+      timestampUnixNs: 1_700_000_000_000_000_000n + (maturePoolSlot + 1000n) * 1_000_000_000n,
       slotLeader: 'other',
     };
     const entries = [
@@ -95,7 +96,7 @@ describe('settlement credit', () => {
       height: 101 + i,
       hash: `block-${i}`,
       prevHash: i ? `block-${i - 1}` : 'anchor',
-      slotNo: 1001n + BigInt(i),
+      slotNo: maturePoolSlot + 1001n + BigInt(i),
       slotLeader: i === 24 ? 'other' : `pool-${i % 5}`,
     }));
     const history = {
@@ -111,12 +112,13 @@ describe('settlement credit', () => {
           maxKesEvolutions: 62,
           activeSlotCoefficientNumerator: 1n,
           activeSlotCoefficientDenominator: 20n,
-          currentEpochStartSlot: 900n,
-          currentEpochEndSlotExclusive: 5000n,
+          currentEpochStartSlot: maturePoolSlot + 900n,
+          currentEpochEndSlotExclusive: maturePoolSlot + 5000n,
         },
       }),
     } as unknown as HistoryService;
     const client = ClientState.fromPartial({
+      slot_length_ns: 1_000_000_000n,
       current_epoch: 7n,
       latest_checkpoint_pool_production: { epoch: 7n, pools: entries.map((entry) => ({ pool_id: entry.poolId, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
       latest_checkpoint_height: { revision_height: 99n },

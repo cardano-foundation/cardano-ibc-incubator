@@ -79,14 +79,14 @@ For those descendants, the client computes:
 - descendant depth
 - number of distinct slot leaders / stake pools that produced descendants
 - qualified unique stake weight of those pools, using a trusted epoch stake snapshot
-- whether those producing pools were first registered before the protocol cutoff
+- whether those producing pools were first registered more than six calendar months before the anchor
 
 The block at `H` is accepted only if all configured thresholds are met:
 
 - threshold depth
 - threshold qualified unique pools
 - threshold qualified unique stake basis points
-- pool first-registration cutoff
+- rolling pool first-registration cutoff
 
 Separately, the client computes a score in basis points for observability and policy:
 
@@ -111,7 +111,9 @@ In the current implementation, the finality thresholds are embedded in the light
 
 These defaults are not special from a consensus perspective, but they are consensus-critical for this light client implementation. They are not supplied by the Gateway and are not serialized into `ClientState`.
 
-Pool age eligibility is not a tuning parameter. A descendant block producer only counts toward qualified unique pools and qualified unique stake if its first registration slot is before `2026-01-01T00:00:00Z`, meaning the pool started in 2025 or earlier. Total active stake is still the denominator for qualified unique-stake scoring, and missing first-registration data fails closed because the verifier cannot distinguish an old pool from an unknown one.
+Pool age eligibility uses a rolling six-calendar-month minimum. A descendant producer counts toward qualified unique pools and qualified unique stake only if its authenticated first registration is strictly before the verified anchor's time minus six calendar months. The subtraction uses UTC and preserves the time of day. If the target month lacks the anchor's day, it uses that month's last day. For example, an anchor on August 31, 2026 uses February 28, 2026 as the cutoff. A registration exactly at the cutoff does not qualify. The cutoff stays fixed for all descendants of that anchor. Replay and historical challenges use that historical anchor rather than the host clock or the latest checkpoint.
+
+Gateway and the shared Go core calculate the same cutoff from the anchor and network timing. This allows newer pools to become eligible after waiting six months. It also allows an attacker to register identities in advance and wait out the age requirement. The rule does not authenticate claimed stake amounts. Total active stake remains the denominator for settlement credit. Missing authenticated registration data grants no qualification. The age requirement changes settlement credit rather than native block validity.
 
 For settlement in epoch `e` the producer must also have produced at least one verified block in one of the five completed epochs `e-5` through `e-1`. Both the qualified-pool count and its stake credit require this history. A block produced in the current epoch cannot qualify its producer for that epoch. Native header validity continues to use the registered identity and submitted election stake regardless of this settlement qualification.
 
@@ -162,6 +164,8 @@ It's clear from these diagnostics that Preprod has far fewer active/producing po
 Also note that this conversation takes place before our **qualified** unique stake application, i.e, we actually only sum unique stake from pools created prior to 2026.
 
 The [mainnet stake distribution study from October 9, 2026](../studies/cardano_probabilistic_finality/mainnet-stake-2026-10-09/README.md) examines 100 epoch transitions and replays recent-production qualifications against the current 24-descendant, five-pool and 511-basis-point policy. It measures how limits on stake changes could restrict fabricated allocations and how production qualifications affect settlement time. These restrictions do not authenticate stake amounts.
+
+That study used the earlier fixed January 2026 registration cutoff. It does not measure the availability impact of the rolling six-month requirement.
 
 ### Header
 
