@@ -1,6 +1,5 @@
 use aiken/cbor
 use aiken/collection/list
-use aiken/crypto
 use aiken/primitive/bytearray
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -137,14 +136,7 @@ pub fn authenticate(
     record.client_token.policy_id == expected_client.policy_id,
     record.client_token.name == expected_client.name,
     height.equal(record.height, expected_height),
-    tree.compute_root(
-      record_key,
-      tree.leaf_hash(
-        crypto.sha2_256(record_key),
-        tree.value_hash(value(record)),
-      ),
-      siblings,
-    ) == root,
+    tree.compute_value_root(record_key, value(record), siblings) == root,
   }
 }
 

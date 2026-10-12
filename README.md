@@ -88,6 +88,10 @@ Chain history comes from Yaci Store on every network. Yaci Store is an indexer r
 
 All of the bridge's IBC state lives in one Merkle tree whose root sits in the HostState datum. Cardano validators check every update to that root, the light client carries it to Cosmos in an authenticated header, and each record is then proven against it with an ICS-23 membership proof. No step relies on trusting the Gateway or Hermes.
 
+The tree still uses a 64-bit route from `sha256(key)`. Distinct keys with the same route share a collision bucket containing their full key hashes and value hashes in sorted order. An update proves the complete old bucket and changes only its own record. Membership and absence proofs carry the same bucket. Empty positions and positions with one record retain their previous hashes and ordinary 64-step proofs.
+
+A bucket witness adds `1 + 64m` bytes for `m` records before the usual 64 siblings. There is no fixed record-count limit in the bucket format. Cardano transaction and execution limits still bound an individual update. Route collisions no longer prevent records from coexisting. For `n` uniformly hashed keys the expected number of colliding route pairs is `n(n-1) / 2^65`. That is about `2.7e-8` at one million keys and `0.027` at one billion keys. These route collisions are handled by buckets. Distinguishing keys still assumes that SHA-256 full key hashes do not collide. Collision witnesses require both the Cardano validators and the Cosmos proof verifiers to support this format before they are used.
+
 ![A root update enforced by the HostState validator, authenticated by the light client, and used to prove a single record](docs/assets/mechanics/ibc-state-root.gif)
 
 Additional architecture diagrams:

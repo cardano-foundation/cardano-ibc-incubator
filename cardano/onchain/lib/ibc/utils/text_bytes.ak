@@ -3,7 +3,6 @@
 
 use aiken/builtin
 use aiken/primitive/bytearray
-use aiken/primitive/string
 
 /// ASCII byte value of `/`.
 pub const ascii_slash = 47
@@ -79,9 +78,22 @@ fn do_split(
   }
 }
 
-/// Encode an integer as decimal text bytes using the standard library.
+/// Encode decimal bytes directly without constructing an intermediate String.
 pub fn int_to_decimal_bytes(n: Int) -> ByteArray {
-  string.from_int(n) |> string.to_bytearray()
+  if n < 0 {
+    builtin.cons_bytearray(45, decimal_digits(-n, #""))
+  } else {
+    decimal_digits(n, #"")
+  }
+}
+
+fn decimal_digits(n: Int, suffix: ByteArray) -> ByteArray {
+  let next = builtin.cons_bytearray(48 + n % 10, suffix)
+  if n < 10 {
+    next
+  } else {
+    decimal_digits(n / 10, next)
+  }
 }
 
 /// Accept `0` or a nonempty sequence of ASCII digits without leading zeros.
