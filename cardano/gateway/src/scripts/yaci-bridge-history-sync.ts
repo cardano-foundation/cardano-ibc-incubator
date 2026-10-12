@@ -6,6 +6,8 @@ import { bech32 } from 'bech32';
 import { REDEEMER_TYPE } from '../constant';
 import { LoadedBridgeConfig, loadBridgeConfigFromEnv } from '../config/bridge-manifest';
 import { decodeHostStateDatum } from '../shared/types/host-state-datum';
+import { YaciRestClient } from '../shared/helpers/yaci-rest';
+import { ensureRestHistoryTables, syncRestHistory } from './rest-history-import';
 
 type YaciTxRow = {
   tx_hash: string;
@@ -94,10 +96,10 @@ type BlockRow = {
 
 const pollIntervalMs = Number(process.env.BRIDGE_HISTORY_SYNC_INTERVAL_MS || 2000);
 const historyPool = new Pool({
-  host: process.env.HISTORY_DB_HOST || 'yaci-postgres',
+  host: process.env.HISTORY_DB_HOST || 'bridge-history-postgres',
   port: Number(process.env.HISTORY_DB_PORT || 5432),
-  database: process.env.HISTORY_DB_NAME || 'yaci_store',
-  user: process.env.HISTORY_DB_USERNAME || 'yaci',
+  database: process.env.HISTORY_DB_NAME || 'bridge_history',
+  user: process.env.HISTORY_DB_USERNAME || 'bridge',
   password: process.env.HISTORY_DB_PASSWORD || 'dbpass',
 });
 
@@ -1078,8 +1080,10 @@ export async function processBlock(
 export async function processNextBlock(
   database: Pick<Pool, 'connect'> = historyPool,
   projectionFilter = tryResolveBridgeProjectionFilter(),
+  rest?: YaciRestClient,
+  start?: { height: number; hash?: string },
 ): Promise<boolean> {
-  if (!projectionFilter) {
+  if (!projectionFilter && !rest) {
     return false;
   }
 
@@ -1087,18 +1091,24 @@ export async function processNextBlock(
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
     await client.query('SELECT pg_advisory_xact_lock(462, 2)');
+    const imported = rest ? await syncRestHistory(client, rest, start ?? replayStart()) : false;
     const syncState = await reconcileCursor(client);
+
+    if (!projectionFilter) {
+      await client.query('COMMIT');
+      return imported;
+    }
 
     const nextBlock = await getNextRelevantBlock(client, syncState.lastBlock);
     if (nextBlock === null) {
       await client.query('COMMIT');
-      return false;
+      return imported;
     }
 
     const processed = await processBlock(client, projectionFilter, nextBlock);
     if (!processed) {
       await client.query('COMMIT');
-      return false;
+      return imported;
     }
 
     await client.query('COMMIT');
@@ -1111,13 +1121,34 @@ export async function processNextBlock(
   }
 }
 
+function replayStart(): { height: number; hash?: string } {
+  const configPath = process.env.BRIDGE_MANIFEST_PATH || process.env.HANDLER_JSON_PATH;
+  if (configPath && fs.existsSync(configPath)) {
+    const config = loadBridgeConfigFromEnv(process.env, bridgeConfigFileReader);
+    const start = config.bridgeManifest.history?.start;
+    if (start && start !== 'origin') return { height: start.block_height, hash: start.block_hash };
+    // Genesis funding can occupy block zero. Manifest deployment outputs must be after it.
+    if (start === 'origin') return { height: 1 };
+  }
+  const configured = process.env.BRIDGE_HISTORY_START_BLOCK || process.env.YACI_SYNC_START_BLOCK_NO;
+  if (configured !== undefined) {
+    if (!/^(0|[1-9][0-9]*)$/.test(configured) || !Number.isSafeInteger(Number(configured)))
+      throw new Error('BRIDGE_HISTORY_START_BLOCK must be a nonnegative safe integer');
+    return { height: Number(configured), hash: process.env.YACI_SYNC_START_BLOCKHASH || undefined };
+  }
+  if (Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42) === 42) return { height: 1 };
+  throw new Error('Configure a bridge manifest history checkpoint or BRIDGE_HISTORY_START_BLOCK before importing public-network history');
+}
+
 async function main() {
+  const rest = new YaciRestClient(process.env.YACI_STORE_ENDPOINT);
+  await ensureRestHistoryTables(historyPool);
   await ensureBridgeHistoryTables();
-  process.stdout.write('bridge-history-sync started\n');
+  process.stdout.write('bridge-history-sync started with Yaci REST and Gateway-owned history storage\n');
 
   while (true) {
     try {
-      const processed = await processNextBlock();
+      const processed = await processNextBlock(historyPool, tryResolveBridgeProjectionFilter(), rest);
       if (!processed) {
         await sleep(pollIntervalMs);
       }

@@ -9,6 +9,7 @@ import { IbcTreeStateStore } from '../helpers/ibc-state-root';
 import { CURRENT_IBC_TREE_CACHE_ID, IbcTreeCacheService, ibcTreeCacheIdForRoot } from './ibc-tree-cache.service';
 import { HostStateDatum } from '../types/host-state-datum';
 import { historicalReadOnly } from '../../security/historical-read-only.guard';
+import { assertRestHistoryCanonical, YaciRestClient } from '../helpers/yaci-rest';
 
 /**
  * TreeInitService - Initializes the IBC state tree on Gateway startup
@@ -45,6 +46,7 @@ export class TreeInitService implements OnModuleInit {
         await manager.query('SET TRANSACTION READ ONLY');
         await manager.query('SET LOCAL statement_timeout = 30000');
         await verifyHistoryCoverage(manager, manifest);
+        await assertRestHistoryCanonical(manager, new YaciRestClient(this.config?.get<string>('yaciStoreEndpoint')));
       });
       await this.ibcTreeCacheService.ensureSchema();
       this.logger.log('Historical read-only startup: bootstrap authenticated; each query must verify its canonical historical root. Transaction RPCs are disabled.');
@@ -75,6 +77,7 @@ export class TreeInitService implements OnModuleInit {
           await manager.query('SET TRANSACTION READ ONLY');
           await manager.query('SET LOCAL statement_timeout = 30000');
           await verifyHistoryCoverage(manager, manifest, liveHost);
+          await assertRestHistoryCanonical(manager, new YaciRestClient(this.config?.get<string>('yaciStoreEndpoint')));
         });
       }
       const cacheEnabled = process.env.IBC_TREE_CACHE_ENABLED !== 'false';

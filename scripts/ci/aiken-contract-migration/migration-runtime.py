@@ -31,7 +31,7 @@ def main():
     p.add_argument('--handler', type=Path)
     p.add_argument('--out', type=Path, help='New activation witness file; only valid with witness')
     p.add_argument('--gateway-database', default='migration_gateway')
-    p.add_argument('--history-schema', help='Existing private bridge-projection schema sharing the canonical Yaci source tables')
+    p.add_argument('--history-schema', help='Existing private schema containing our REST-imported chain history and bridge projections')
     args = p.parse_args()
     import re
     if not re.fullmatch(r'migration_[a-z0-9_]+', args.gateway_database):
@@ -86,9 +86,8 @@ def main():
     if args.command == 'init-history':
         if not args.history_schema:
             p.error('init-history requires an explicit private --history-schema')
-        # A fresh bridge gets separate projections of the same canonical source
-        # transactions. Restrict search_path during DDL: including public here
-        # would make IF NOT EXISTS silently reuse another bridge\'s tables.
+        # Each bridge retains its own REST import. Keep its schema and database
+        # separate from the provider's yaci_store database.
         exists = subprocess.check_output(compose + ['exec', '-T', 'history-db', 'psql', '-U', 'yaci', '-d', 'postgres', '-Atc',
             f"SELECT 1 FROM pg_database WHERE datname='{args.gateway_database}'"], text=True).strip()
         if not exists:
@@ -97,13 +96,14 @@ def main():
 const fs = require('fs');
 const { Client } = require('pg');
 const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-history-sync.js');
+const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.js');
 (async () => {
-  const [schema, handlerPath] = process.argv.slice(2);
+  const [schema, handlerPath, databaseName] = process.argv.slice(2);
   if (!/^migration_[a-z0-9_]+$/.test(schema)) throw new Error('Invalid private schema');
   const handler = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
   const identity = handler.hostStateNFT.policyId + handler.hostStateNFT.name;
   if (!/^[0-9a-f]+$/.test(identity) || !handler.migration?.registryUnit) throw new Error('Expected upgrade-capable baseline');
-  const db = new Client({ host: '127.0.0.1', port: 27432, database: 'yaci_store', user: 'yaci', password: 'devkit' });
+  const db = new Client({ host: '127.0.0.1', port: 27432, database: databaseName, user: 'yaci', password: 'devkit' });
   await db.connect();
   try {
     await db.query('BEGIN');
@@ -115,6 +115,7 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
     if (rows.length !== 1 || rows[0].host_state_unit !== identity || rows[0].registry_unit !== handler.migration.registryUnit) {
       throw new Error('Projection schema belongs to another bridge; select a fresh private schema');
     }
+    await ensureRestHistoryTables(db, 42);
     await ensureBridgeHistoryTables(db);
     await db.query('COMMIT');
     console.log(JSON.stringify({ schema, hostStateUnit: identity, initialized: true }));
@@ -124,10 +125,15 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
   } finally { await db.end(); }
 })().catch(error => { console.error(error.message); process.exitCode = 1; });
 '''
-        subprocess.run(['node', '-', args.history_schema, str(handler)], input=initialization,
+        subprocess.run(['node', '-', args.history_schema, str(handler), args.gateway_database], input=initialization,
             text=True, cwd=ROOT / 'cardano/gateway', check=True)
         return
     genesis = json.loads((runtime / 'runtime/genesis-shelley.json').read_text())
+    nonce_ports = [port for port in config['services']['nonce']['ports'] if isinstance(port, dict)
+                   and port.get('host_ip') == '127.0.0.1' and int(port.get('target', 0)) == 8080]
+    if len(nonce_ports) != 1:
+        raise ValueError('Expected the owned local HTTP epoch provider on loopback')
+    nonce_port = int(nonce_ports[0]['published'])
     env = dict(os.environ)
     # Explicit local values; never load operator .env or Hermes home keys.
     for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'HISTORY_DB_URL', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
@@ -139,8 +145,9 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
         'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS': '10',
         'CARDANO_LOCAL_EPOCH_SNAPSHOT_DIR': str(runtime / 'epoch-stake'),
         'CARDANO_EPOCH_NONCE_GENESIS': hashlib.blake2b((runtime / 'runtime/genesis-shelley.json').read_bytes(), digest_size=32).hexdigest(),
+        'CARDANO_EPOCH_PARAMS_ENDPOINT': f'http://127.0.0.1:{nonce_port}',
         'OGMIOS_ENDPOINT': 'http://127.0.0.1:2637', 'KUPO_ENDPOINT': 'http://127.0.0.1:2742', 'YACI_STORE_ENDPOINT': 'http://127.0.0.1:29083',
-        'HISTORY_DB_HOST': '127.0.0.1', 'HISTORY_DB_PORT': '27432', 'HISTORY_DB_NAME': 'yaci_store', 'HISTORY_DB_USERNAME': 'yaci', 'HISTORY_DB_PASSWORD': 'devkit',
+        'HISTORY_DB_HOST': '127.0.0.1', 'HISTORY_DB_PORT': '27432', 'HISTORY_DB_NAME': args.gateway_database, 'HISTORY_DB_USERNAME': 'yaci', 'HISTORY_DB_PASSWORD': 'devkit',
         'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': '27432', 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'yaci', 'GATEWAY_DB_PASSWORD': 'devkit', 'GATEWAY_DB_SYNCHRONIZE': 'true',
         'HANDLER_JSON_PATH': str(handler), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
         'FAKETIME_DONT_FAKE_MONOTONIC': '1'})

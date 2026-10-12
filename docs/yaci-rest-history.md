@@ -1,0 +1,32 @@
+# Yaci REST history
+
+A provider that exposes Yaci Store REST without exposing PostgreSQL can supply the Gateway's chain history. The Gateway and its history worker use `/api/v1/blocks/latest`, `/api/v1/blocks/{height}` and `/api/v1/blocks/{hash}/cbor`. They never need access to the provider's database. Hermes still connects to Gateway gRPC, Kupo and Ogmios.
+
+The history worker imports blocks into a PostgreSQL database owned by the Gateway operator. It retains the original transaction bodies and derives normal outputs and spends only for transactions accepted by the raw block's validity list. It creates our `bridge_*` tables in that database. Keeping the existing SQL query shapes lets historical proof reconstruction continue to use a consistent local snapshot. Those tables now contain our own REST import rather than rows shared with Yaci Store.
+
+The following mapping covers the database dependencies in the Gateway. Several historical queries need to replay multiple blocks rather than call a single REST endpoint.
+
+| Current query or caller | Standard REST replacement |
+| --- | --- |
+| Block tip, block by height, descendant ranges and epoch boundaries | Fetch block metadata by height and retain it locally |
+| Transaction evidence, original bodies and validity | Decode raw block CBOR and retain body bytes and the block's invalid transaction indexes |
+| State NFT at a past height and spent outputs | Replay accepted outputs and inputs from raw blocks into our own history tables |
+| Public IBC tree reconstruction and private consensus history recovery | Read a local SQL snapshot of that retained history and recheck its captured tip against REST before returning a result |
+| Bridge projection and transaction inclusion tracking | Derive `bridge_*` rows in our database from the REST import |
+| Pool registration and retirement events | Decode certificates in accepted transaction bodies. Existing public Blockfrost lookups supply registrations before our replay checkpoint |
+| Manifest startup, export and upgrade | Verify the original deployment outputs against our retained history |
+| Local devnet epoch nonce SQL query | Use the existing HTTP epoch provider. Public epoch and stake providers are unchanged |
+
+This contract was checked against upstream Yaci Store `v2.0.2.1` and `v2.0.3`. The [block controller](https://github.com/bloxbean/yaci-store/blob/v2.0.3/stores-api/blocks-api/src/main/java/com/bloxbean/cardano/yaci/store/api/blocks/controller/BlockController.java) implements these standard paths. Block metadata includes the hash, parent hash, height, slot, epoch and transaction count. The importer verifies the raw header hash and checks its height, slot and parent against that metadata. It preserves the original transaction-body encoding because changing CBOR encoding can change a transaction hash.
+
+Raw block retention is the provider requirement that needs explicit agreement. [Yaci's block settings](https://github.com/bloxbean/yaci-store/blob/v2.0.3/stores/blocks/src/main/java/com/bloxbean/cardano/yaci/store/blocks/BlocksStoreProperties.java) disable CBOR saving by default. Enable `store.blocks.save-cbor=true` and `store.cardano.return-block-cbor=true`. The [block processor](https://github.com/bloxbean/yaci-store/blob/v2.0.3/stores/blocks/src/main/java/com/bloxbean/cardano/yaci/store/blocks/processor/BlockProcessor.java) needs the raw bytes returned by chain sync before it can save them. Retain raw blocks from the deployment's manifest checkpoint. A cold replay cannot recover data that the provider has already pruned. Our importer stops when a required block is unavailable. It does not select a newer checkpoint or fetch blocks from a Cardano node as a fallback.
+
+The standard transaction-detail response in these releases does not reliably populate its validity field. [Its service implementation](https://github.com/bloxbean/yaci-store/blob/v2.0.3/stores-api/transaction-api/src/main/java/com/bloxbean/cardano/yaci/store/api/transaction/service/TransactionService.java) builds the response without copying that field from the indexed transaction. The importer therefore gets validity from the raw block rather than trusting a missing or default transaction flag. Current unspent-output endpoints also cannot replace historical replay by themselves.
+
+REST has no shared SQL transaction snapshot. The worker checks parent links while importing and rechecks each imported block by height before committing. When the provider replaces an indexed block it removes local outputs, spends and bodies on that fork and rewinds the bridge projection in the same transaction. A provider behind our local tip does not cause a rewind. Historical public and private proof reads pin the local snapshot tip and recheck that exact block through REST. A mismatch or unavailable remote block prevents the result from being returned.
+
+Set `YACI_STORE_ENDPOINT` to the provider's base URL. Set `HISTORY_DB_*` to a fresh database under our control. Compose creates `bridge-history-postgres` on a private network and persists it in the `bridge-history` volume. The optional loopback port `BRIDGE_HISTORY_POSTGRES_PORT` defaults to `15434` for local export and recovery tools. Network-specific volumes prevent a public-network switch from mixing chain histories. Keep a backup of this database if the provider will eventually prune older blocks.
+
+For a standalone Gateway using remotely hosted services set `CARDANO_DOCKER_NETWORK_EXTERNAL=false`. Compose then creates the network used for outgoing REST requests without requiring a local Cardano service stack. Configure `GATEWAY_DB_*` for our application storage too. A fresh standalone installation can use the same owned database with `GATEWAY_DB_HOST=bridge-history-postgres`, `GATEWAY_DB_NAME=bridge_history` and `GATEWAY_DB_USERNAME=bridge`. Set its password to the same value as `HISTORY_DB_PASSWORD` and its port to `5432`. Set the Kupo, Ogmios and epoch-provider endpoints to the hosted services. The default network setting is `true` for Caribic's existing local network.
+
+This implementation targets Yaci's native API. A Blockfrost-compatible service has different paths and response shapes. Confirm the provider's software version, complete base URL and raw-block support before connecting the Gateway. An arbitrary Blockfrost-compatible endpoint cannot be assumed to serve Yaci's native raw-block route.

@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectEntityManager } from '@nestjs/typeorm';
+import { assertRestHistoryCanonical, YaciRestClient } from '../../helpers/yaci-rest';
 import { EntityManager } from 'typeorm';
 import type { UTxO } from '@lucid-evolution/lucid';
 import type {
@@ -158,12 +159,19 @@ export class ConsensusHistoryService implements OnModuleDestroy {
           clearTimeout(timer);
         }
       };
+      const rest = new YaciRestClient(this.config.get<string>('yaciStoreEndpoint'));
+      const snapshotTips: Array<{ number: string; hash: string }> = [];
       const sql = {
         query: async (text: string, values?: unknown[]) => {
           try {
             const rows = await wait(() => runner.query(text, values), 'SQL query');
-            if (text.startsWith('BEGIN '))
+            if (text.startsWith('BEGIN ')) {
               await wait(() => runner.query(`SET LOCAL statement_timeout = ${timeout}`), 'SQL timeout setup');
+              snapshotTips.push(await wait(
+                () => assertRestHistoryCanonical({ query: (query, parameters) => runner.query(query, parameters) }, rest),
+                'REST history canonicality',
+              ));
+            }
             return { rows };
           } catch (error) {
             if (/^\s*(?:COMMIT|ROLLBACK)\b/i.test(text)) {
@@ -246,6 +254,8 @@ export class ConsensusHistoryService implements OnModuleDestroy {
           );
         }
         result = await operation(index);
+        for (const tip of snapshotTips)
+          await wait(() => assertRestHistoryCanonical({ query: () => Promise.resolve([]) }, rest, tip), 'REST history canonical recheck');
         if (failure) throw failure;
       } finally {
         if (connection) {

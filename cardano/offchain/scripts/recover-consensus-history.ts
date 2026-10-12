@@ -11,14 +11,14 @@ Recovery supports the production client datum with its private history root.
 The optional height prints a regenerated historical witness after root validation.
 
 Required environment (no default credentials):
-  HISTORY_DB_URL  PostgreSQL connection URL for a history-retaining Yaci Store
+  HISTORY_DB_URL  PostgreSQL connection URL for the Gateway-owned REST history database
   KUPO_URL       Kupo endpoint for independently reading the live state NFT
   OGMIOS_URL     Ogmios endpoint used to configure the Kupmios provider
 
 Optional environment:
   HISTORY_DB_QUERY_TIMEOUT_MS  Query timeout, default 30000, maximum 600000
 
-Yaci must retain spent address_utxo rows, transaction CBOR and canonical validity
+The Gateway history database must retain spent address_utxo rows, transaction bodies and canonical validity
 flags from bootstrap. Both complete transactions and Yaci's body CBOR are supported.
 This only writes the specified local SQLite index. It never signs, submits, or
 publishes a transaction; it does not activate Gateway integration or watch blocks.

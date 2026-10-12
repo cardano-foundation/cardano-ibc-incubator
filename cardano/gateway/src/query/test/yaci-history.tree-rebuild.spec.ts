@@ -4,6 +4,7 @@ import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { StaleIbcTreeStateError } from '../../shared/helpers/ibc-state-root';
 import { reconstructHistoricalIbcTree } from '../services/historical-ibc-tree';
 import { YaciHistoryService } from '../services/yaci-history.service';
+import { YaciRestClient } from '../../shared/helpers/yaci-rest';
 
 jest.mock('../services/historical-ibc-tree', () => ({ reconstructHistoricalIbcTree: jest.fn() }));
 
@@ -13,33 +14,36 @@ function fixture() {
   const tree = new ICS23MerkleTree();
   tree.set('clients/client-0/clientState', Buffer.from('old'));
   const snapshot = { root: tree.getRoot(), tree, hostState: host, blockHash };
-  const query = jest.fn(async () => []);
+  const query = jest.fn(async (sql: string) => sql.startsWith('SELECT') ? [{ number: '100', hash: blockHash }] : []);
+  const remote = jest.spyOn(YaciRestClient.prototype, 'block').mockResolvedValue({ hash: blockHash } as never);
   const database = {
     transaction: jest.fn(async (_isolation, read) => read({ query })),
     query: jest.fn(async () => [{ hash: blockHash }]),
   };
-  const config = { getOrThrow: jest.fn((name) => name === 'cardanoNetwork' ? 'Custom' : {}) };
+  const config = { get: () => 'https://yaci.example', getOrThrow: jest.fn((name) => name === 'cardanoNetwork' ? 'Custom' : {}) };
   const service = new YaciHistoryService(config as unknown as ConfigService, {} as never, database as unknown as EntityManager);
   (reconstructHistoricalIbcTree as jest.Mock).mockResolvedValue(snapshot);
-  return { service, database, query, snapshot };
+  return { service, database, query, snapshot, remote };
 }
 
 describe('Yaci historical tree snapshot lifecycle', () => {
   beforeEach(() => jest.resetAllMocks());
+  afterEach(() => jest.restoreAllMocks());
 
   it('uses a read-only repeatable snapshot and checks canonicality again after committing it', async () => {
     const { service, database, query, snapshot } = fixture();
     const result = await service.rebuildIbcStateTreeAtBlock(100n, host);
     expect(database.transaction).toHaveBeenCalledWith('REPEATABLE READ', expect.any(Function));
-    expect(query.mock.calls).toEqual([['SET TRANSACTION READ ONLY'], ['SET LOCAL statement_timeout = 30000']]);
-    expect(database.query).toHaveBeenCalledWith('SELECT hash FROM block WHERE number = $1', ['100']);
+    expect(query.mock.calls.slice(0, 2)).toEqual([['SET TRANSACTION READ ONLY'], ['SET LOCAL statement_timeout = 30000']]);
+    expect(YaciRestClient.prototype.block).toHaveBeenCalledWith(100n);
+    expect(database.query).not.toHaveBeenCalled();
     expect(result.root).toBe(snapshot.root);
     expect(result.tree).not.toBe(snapshot.tree);
   });
 
   it('rejects a block rolled back while rebuilding and allows a later retry', async () => {
-    const { service, database, snapshot } = fixture();
-    database.query.mockResolvedValueOnce([{ hash: 'ff'.repeat(32) }]);
+    const { service, database, snapshot, remote } = fixture();
+    remote.mockResolvedValueOnce({ hash: blockHash } as never).mockResolvedValueOnce({ hash: blockHash } as never).mockResolvedValueOnce({ hash: 'ff'.repeat(32) } as never);
     await expect(service.rebuildIbcStateTreeAtBlock(100n, host)).rejects.toThrow(StaleIbcTreeStateError);
     await expect(service.rebuildIbcStateTreeAtBlock(100n, host)).resolves.toMatchObject({ root: snapshot.root });
     expect(database.transaction).toHaveBeenCalledTimes(2);

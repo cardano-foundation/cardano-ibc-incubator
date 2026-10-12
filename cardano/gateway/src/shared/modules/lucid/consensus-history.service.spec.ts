@@ -6,6 +6,7 @@ import { ConsensusHistoryRecovery } from '@cardano-ibc/tx-builder-runtime/consen
 import { createYaciHistorySource, discoverYaciHistoryBootstrap } from '@cardano-ibc/tx-builder-runtime/consensusHistoryYaci';
 import { ConsensusHistoryService } from './consensus-history.service';
 import { ClientDatum } from '../../types/client-datum';
+import { YaciRestClient } from '../../helpers/yaci-rest';
 
 jest.mock('node:fs/promises', () => ({ mkdir: jest.fn(async () => undefined) }));
 jest.mock('@cardano-ibc/tx-builder-runtime/consensusHistoryRecovery', () => ({ ConsensusHistoryRecovery: jest.fn() }));
@@ -35,7 +36,7 @@ function fixture(sequence = 0) {
 function context(settings: Record<string, unknown> = {}) {
   const config: Record<string, unknown> = {
     deployment: { hostStateNFT: { policyId: '55'.repeat(28), name: '01' } },
-    cardanoNetwork: 'Preview', CONSENSUS_HISTORY_CACHE_DIR: '/unused-test-history-cache', ...settings,
+    yaciStoreEndpoint: 'https://yaci.example', cardanoNetwork: 'Preview', CONSENSUS_HISTORY_CACHE_DIR: '/unused-test-history-cache', ...settings,
   };
   const runners: any[] = [];
   const indexes: any[] = [];
@@ -45,7 +46,7 @@ function context(settings: Record<string, unknown> = {}) {
     const runner = {
       connection,
       connect: jest.fn(async () => connection),
-      query: jest.fn(async (_query: string) => []),
+      query: jest.fn(async (sql: string) => sql.startsWith('SELECT number::text') ? [{ number: '100', hash: '22'.repeat(32) }] : []),
       release: jest.fn(async () => undefined),
       releasePostgresConnection: jest.fn(async (_error: Error) => undefined),
     };
@@ -83,8 +84,11 @@ function context(settings: Record<string, unknown> = {}) {
 }
 
 describe('ConsensusHistoryService bounded authenticated cache lifecycle', () => {
-  beforeEach(() => jest.clearAllMocks());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(YaciRestClient.prototype, 'block').mockResolvedValue({ hash: '22'.repeat(32) } as never);
+  });
+  afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); });
 
   it('reuses a warm client cache but rechecks creation and the supplied live outref/root', async () => {
     const ctx = context();
