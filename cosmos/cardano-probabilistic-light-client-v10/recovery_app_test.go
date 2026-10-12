@@ -267,6 +267,9 @@ func TestAppWatcherChallenge(t *testing.T) {
 			require.JSONEq(t, string(saved), string(encoded))
 			// These bytes are constructed by ForeignClient from the recovered event
 			// and independent fork witness. The destination verifies them natively.
+			if os.Getenv("UPDATE_WATCHER_FIXTURES") == "1" {
+				return
+			}
 			challengeBytes, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/watcher-challenge-" + name + ".hex")
 			if os.Getenv("UPDATE_WATCHER_FIXTURES") == "1" && os.IsNotExist(err) {
 				return
