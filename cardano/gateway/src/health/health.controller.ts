@@ -1,12 +1,15 @@
 import { Controller, Get, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import {
   HealthCheck,
   HealthCheckService,
   TypeOrmHealthIndicator,
+  HealthIndicatorService,
 } from '@nestjs/terminus';
 import { MetricsService } from './metrics.service';
+import { YaciRestClient } from '../shared/helpers/yaci-rest';
 
 @Controller('health')
 export class HealthController {
@@ -18,12 +21,12 @@ export class HealthController {
     private metricsService: MetricsService,
     @InjectDataSource('gateway')
     private gatewayDataSource: DataSource,
-    @InjectDataSource('history')
-    private historyDataSource: DataSource,
+    private config: ConfigService,
+    private indicators: HealthIndicatorService,
   ) {}
 
   /**
-   * Health check endpoint for all databases
+   * Health check endpoint for the application database and Yaci REST
    * GET /health
    */
   @Get()
@@ -31,7 +34,10 @@ export class HealthController {
   async check() {
     const result = await this.health.check([
       () => this.db.pingCheck('gateway_db', { connection: this.gatewayDataSource }),
-      () => this.db.pingCheck('history_backend', { connection: this.historyDataSource }),
+      async () => {
+        const indicator = this.indicators.check('history_backend');
+        return (await this.historyConnected()) ? indicator.up() : indicator.down();
+      },
     ]);
 
     // Update Prometheus metrics based on health check results
@@ -45,14 +51,14 @@ export class HealthController {
   }
 
   /**
-   * Detailed database status endpoint
+   * Detailed database and history backend status endpoint
    * GET /health/db
    */
   @Get('db')
   async databaseHealth() {
     try {
       const gatewayConnected = this.gatewayDataSource.isInitialized;
-      const historyConnected = this.historyDataSource.isInitialized;
+      const historyConnected = await this.historyConnected();
 
       return {
         timestamp: new Date().toISOString(),
@@ -80,6 +86,18 @@ export class HealthController {
         },
       };
     }
+  }
+
+  private async historyConnected(): Promise<boolean> {
+    let connected = false;
+    try {
+      const client = new YaciRestClient(this.config.get<string>('yaciStoreEndpoint'), AbortSignal.timeout(5_000));
+      connected = (await client.block('latest')) !== null;
+    } catch {
+      // Health responses must not expose provider URLs or credentials.
+    }
+    this.metricsService.historyBackendConnectionStatus.set(connected ? 1 : 0);
+    return connected;
   }
 
   /**
