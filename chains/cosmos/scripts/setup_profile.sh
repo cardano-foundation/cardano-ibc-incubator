@@ -14,18 +14,18 @@ GENESIS_ACCOUNT_BALANCE="${COSMOS_GENESIS_ACCOUNT_BALANCE:-100000000000stake,100
 GENTX_AMOUNT="${COSMOS_GENTX_AMOUNT:-500000000stake}"
 MINIMUM_GAS_PRICES="${COSMOS_MINIMUM_GAS_PRICES:-0.0025stake}"
 GENESIS_TIME="${COSMOS_GENESIS_TIME:-2025-12-31T23:59:00Z}"
-MAX_TX_BYTES=1048576
+MAX_TX_BYTES=12582912
 GOV_VOTING_PERIOD="${COSMOS_GOV_VOTING_PERIOD:-30s}"
 GOV_EXPEDITED_VOTING_PERIOD="${COSMOS_GOV_EXPEDITED_VOTING_PERIOD:-10s}"
 GOV_MAX_DEPOSIT_PERIOD="${COSMOS_GOV_MAX_DEPOSIT_PERIOD:-60s}"
 
-# The generic ibc-go v8/v10 profiles model Injective's current public capacity
-# envelope. These are fixed snapshots so dependency defaults cannot silently
-# turn the compatibility profiles into unrealistically permissive chains.
-# Stock simd has no Injective txfees ante handler, so the 75M per-transaction
-# gas ceiling is enforced by the generated Hermes profile rather than genesis.
-BLOCK_MAX_BYTES=4194304
-BLOCK_MAX_GAS=150000000
+# These local profiles support the probabilistic client's 10 MiB header budget.
+# Production destinations need a matching transaction and block limit upgrade.
+# These byte limits do not model an unchanged public network.
+# Stock simd has no Injective txfees ante handler. Hermes enforces the
+# 600M per-transaction gas budget in these local profiles.
+BLOCK_MAX_BYTES=16777216
+BLOCK_MAX_GAS=600000000
 EVIDENCE_MAX_AGE_NUM_BLOCKS=100000
 EVIDENCE_MAX_AGE_DURATION=172800000000000
 EVIDENCE_MAX_BYTES=1048576
@@ -33,7 +33,7 @@ STAKING_UNBONDING_TIME=1814400s
 STAKING_MAX_VALIDATORS=45
 STAKING_MAX_ENTRIES=7
 STAKING_HISTORICAL_ENTRIES=10000
-RPC_MAX_BODY_BYTES=4000000
+RPC_MAX_BODY_BYTES=20000000
 
 GENESIS_FILE="${SIMD_HOME}/config/genesis.json"
 CONFIG_FILE="${SIMD_HOME}/config/config.toml"
@@ -180,6 +180,13 @@ grep -q "^max_tx_bytes = ${MAX_TX_BYTES}$" "${CONFIG_FILE}" || {
 sed -i "s/^max_body_bytes = .*/max_body_bytes = ${RPC_MAX_BODY_BYTES}/" "${CONFIG_FILE}"
 grep -q "^max_body_bytes = ${RPC_MAX_BODY_BYTES}$" "${CONFIG_FILE}" || {
   echo "[${PROFILE}] Could not configure max_body_bytes in ${CONFIG_FILE}." >&2
+  exit 1
+}
+
+# Leave room for the transaction envelope above the 10 MiB header budget.
+sed -i 's/^max-recv-msg-size = .*/max-recv-msg-size = 16777216/' "${SIMD_HOME}/config/app.toml"
+grep -q '^max-recv-msg-size = 16777216$' "${SIMD_HOME}/config/app.toml" || {
+  echo "[${PROFILE}] Could not configure the gRPC receive limit." >&2
   exit 1
 }
 

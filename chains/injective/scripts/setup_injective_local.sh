@@ -12,11 +12,11 @@ GENTX_AMOUNT="${INJECTIVE_LOCAL_GENTX_AMOUNT:-50000000000000000000stake}"
 MIN_GAS_PRICES="${INJECTIVE_LOCAL_MIN_GAS_PRICES:-0.025inj}"
 LOCAL_GENESIS_TIME="${INJECTIVE_LOCAL_GENESIS_TIME:-2025-12-31T23:59:00Z}"
 
-# Injective mainnet capacity snapshot, observed 2026-08-27. Local fee prices
+# Capacity for local probabilistic-client updates. Local fee prices
 # remain synthetic, but consensus, staking and per-transaction ceilings match
 # the public chain.
-BLOCK_MAX_BYTES=4194304
-BLOCK_MAX_GAS=150000000
+BLOCK_MAX_BYTES=16777216
+BLOCK_MAX_GAS=600000000
 EVIDENCE_MAX_AGE_NUM_BLOCKS=100000
 EVIDENCE_MAX_AGE_DURATION=172800000000000
 EVIDENCE_MAX_BYTES=1048576
@@ -24,9 +24,9 @@ STAKING_UNBONDING_TIME=1814400s
 STAKING_MAX_VALIDATORS=45
 STAKING_MAX_ENTRIES=7
 STAKING_HISTORICAL_ENTRIES=10000
-MAX_GAS_WANTED_PER_TX=75000000
-MEMPOOL_MAX_TX_BYTES=1048576
-RPC_MAX_BODY_BYTES=4000000
+MAX_GAS_WANTED_PER_TX=600000000
+MEMPOOL_MAX_TX_BYTES=12582912
+RPC_MAX_BODY_BYTES=20000000
 
 GENESIS_FILE="${INJECTIVE_HOME}/config/genesis.json"
 APP_TOML_FILE="${INJECTIVE_HOME}/config/app.toml"
@@ -89,14 +89,14 @@ if [ ! -f "${GENESIS_FILE}" ]; then
       | .genesis_time = $genesis_time' \
     "${GENESIS_FILE}" > "${tmp_genesis}"
   mv "${tmp_genesis}" "${GENESIS_FILE}"
-  echo "[injective-local] Applied the Injective mainnet capacity snapshot."
+  echo "[injective-local] Applied the probabilistic-client capacity profile."
   echo "[injective-local] Set genesis_time to ${LOCAL_GENESIS_TIME}."
   injectived genesis validate --home "${INJECTIVE_HOME}"
 else
   echo "[injective-local] Reusing existing chain home at ${INJECTIVE_HOME}."
 fi
 
-# Assert the full snapshot on every start. This also fails closed if init wrote
+# Assert the configured capacity on every start. This also fails closed if init wrote
 # a default genesis before a prior patch attempt failed and Docker restarted
 # the container, or if an operator reuses state created with older limits.
 jq -e \
@@ -121,7 +121,7 @@ jq -e \
     and .app_state.staking.params.historical_entries == $staking_historical_entries
     and .app_state.txfees.params.max_gas_wanted_per_tx == $max_gas_wanted_per_tx' \
   "${GENESIS_FILE}" >/dev/null || {
-  echo "[injective-local] Preserved genesis does not match the pinned Injective mainnet capacity snapshot; remove the local chain state and regenerate it." >&2
+  echo "[injective-local] Preserved genesis does not match the probabilistic-client capacity profile; remove the local chain state and regenerate it." >&2
   exit 1
 }
 
@@ -155,6 +155,12 @@ else
   printf '\nminimum-gas-prices = "%s"\n' "${MIN_GAS_PRICES}" >> "${APP_TOML_FILE}"
 fi
 echo "[injective-local] Set app minimum-gas-prices to ${MIN_GAS_PRICES}."
+
+sed -i 's/^max-recv-msg-size = .*/max-recv-msg-size = 16777216/' "${APP_TOML_FILE}"
+grep -q '^max-recv-msg-size = 16777216$' "${APP_TOML_FILE}" || {
+  echo "[injective-local] Could not configure the gRPC receive limit." >&2
+  exit 1
+}
 
 exec injectived start \
   --home "${INJECTIVE_HOME}" \

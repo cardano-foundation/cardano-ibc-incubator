@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { resolve } from 'node:path';
 import { QueryIBCHeaderRequest } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
 import { Cbor, CborArray, CborBytes, CborUInt, CborSimple } from '@harmoniclabs/cbor';
@@ -600,8 +601,8 @@ describe('QueryService stability anchor contract', () => {
 
     expect(header.is_checkpoint).toBe(true);
     expect(header.trusted_height?.revision_height).toBe(100n);
-    expect(header.anchor_block?.height?.revision_height).toBe(133n);
-    expect(header.bridge_blocks).toHaveLength(32);
+    expect(header.anchor_block?.height?.revision_height).toBe(197n);
+    expect(header.bridge_blocks).toHaveLength(96);
     expect(header.anchor_block?.block_cbor).toHaveLength(1);
     expect(header.anchor_block?.header_cbor).toHaveLength(0);
     expect(header.bridge_blocks.every((block) => block.block_cbor.length === 1)).toBe(true);
@@ -735,7 +736,7 @@ describe('QueryService stability anchor contract', () => {
       expect(anchorHeight).toBeGreaterThan(trustedHeight);
       expect(anchorHeight).toBeLessThanOrEqual(targetHeight);
       expect(header.bridge_blocks).toHaveLength(Number(anchorHeight - trustedHeight - 1n));
-      expect(header.bridge_blocks.length).toBeLessThanOrEqual(32);
+      expect(header.bridge_blocks.length).toBeLessThanOrEqual(96);
       expect(response.header!.value.length).toBeLessThanOrEqual(768 * 1024);
       expect(anchorEpoch - trustedEpoch).toBeLessThanOrEqual(1);
       if (anchorEpoch !== trustedEpoch) {
@@ -758,7 +759,7 @@ describe('QueryService stability anchor contract', () => {
     }
 
     expect(trustedHeight).toBe(targetHeight);
-    expect(headers.map((header) => header.anchor_block!.height!.revision_height)).toEqual([109n, 142n, 175n, 200n]);
+    expect(headers.map((header) => header.anchor_block!.height!.revision_height)).toEqual([175n, 200n]);
     expect(
       headers.some(
         (header) =>
@@ -770,6 +771,9 @@ describe('QueryService stability anchor contract', () => {
   });
 
   it('reduces checkpoint distance to fit authenticated full blocks within the payload limit', async () => {
+ const get = (service as any).configService.get as jest.Mock;
+ const implementation = get.getMockImplementation()!;
+ get.mockImplementation((key) => key === 'cardanoStabilityCheckpointMaxHeaderBytes' ? 768 * 1024 : implementation(key));
     const blockAt = (height: number) => {
       const slot = 1000n + BigInt(height - 100) * 10n;
       return {
@@ -944,4 +948,68 @@ describe('historical Hermes challenge request', () => {
     expect(header.descendant_blocks).toHaveLength(fixture.long_descendants.length);
     expect(historyServiceMock.findObservedPoolProductionAtBlock).not.toHaveBeenCalled();
   });
+});
+
+// These witnesses also run through native verification and both SDK keepers.
+describe('native epoch-boundary catch-up', () => {
+  for (const name of ['size', 'count', 'control']) {
+    it(`advances the ${name} case within the supported encoded budget`, async () => {
+      const path = resolve(process.cwd(), '../../cosmos/cardano-probabilistic-light-client-core/testdata');
+      const fixture = JSON.parse(gunzipSync(readFileSync(`${path}/native-boundary-${name}.json.gz`)).toString());
+      const original = ProbabilisticHeader.fromJSON(fixture.header);
+      const client = ClientStateProbabilistic.fromJSON(fixture.size_client ?? fixture.client);
+      const trustedHeight = client.latest_checkpoint_height!.revision_height;
+      const fullBlocks = [...original.bridge_blocks, original.anchor_block!, ...original.descendant_blocks];
+      const records = fullBlocks.map((block) => ({
+        height: Number(block.height!.revision_height), hash: block.hash,
+        prevHash: '', slotNo: block.slot, epochNo: Number(block.epoch), timestampUnixNs: block.timestamp,
+        slotLeader: client.epoch_stake_distribution[name === 'count' && block.epoch === 7n
+          ? (block.height!.revision_height < 977n ? Number(block.height!.revision_height - 966n) : 0)
+          : Number((block.height!.revision_height - 967n) % 11n)].pool_id,
+      }));
+      const trusted = { height: Number(trustedHeight), hash: client.latest_checkpoint_block_hash,
+        slotNo: client.latest_checkpoint_slot, epochNo: 7, timestampUnixNs: client.latest_checkpoint_timestamp,
+        slotLeader: client.epoch_stake_distribution[0].pool_id, prevHash: '' };
+      historyServiceMock.findBlockByHeight.mockImplementation(async (height) => records.find((block) => BigInt(block.height) === height) ?? (height === trustedHeight ? trusted : null));
+      historyServiceMock.findBridgeBlocks.mockImplementation(async (from, to) => records.filter((block) => BigInt(block.height) > from && BigInt(block.height) < to));
+      historyServiceMock.findDescendantBlocks.mockImplementation(async (height, limit) => records.filter((block) => BigInt(block.height) > height).slice(0, limit));
+      historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block) => {
+        const context = (block.epochNo === 8 ? original.new_epoch_context : client.epoch_contexts[0])!;
+        return {
+          epoch: block.epochNo,
+          stakeDistribution: context.stake_distribution.map((entry) => ({
+            poolId: entry.pool_id, stake: entry.stake, relativeStakeNumerator: entry.relative_stake_numerator,
+            relativeStakeDenominator: entry.relative_stake_denominator, vrfKeyHash: Buffer.from(entry.vrf_key_hash).toString('hex'), firstRegistrationSlot: entry.first_registration_slot,
+          })),
+          verificationContext: {
+            epochNonce: Buffer.from(context.epoch_nonce).toString('hex'), slotsPerKesPeriod: Number(context.slots_per_kes_period),
+            activeSlotCoefficientNumerator: 1n, activeSlotCoefficientDenominator: 20n, maxKesEvolutions: 62,
+            currentEpochStartSlot: context.epoch_start_slot, currentEpochEndSlotExclusive: context.epoch_end_slot_exclusive,
+          },
+        };
+      });
+      miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: Array<{ hash: string }>) => blocks.map((block) => Buffer.from(fullBlocks.find((witness) => witness.hash === block.hash)!.block_cbor)));
+      miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) => MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash));
+      const response = await service.queryStabilityIBCHeader({
+        height: 1031n, trusted_height: trustedHeight, checkpoint_only: false,
+        probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+      });
+      const header = ProbabilisticHeader.decode(response.header!.value);
+      expect(header.anchor_block!.epoch).toBe(8n);
+      expect(header.is_checkpoint).toBe(true);
+      expect(header.descendant_blocks.length).toBeGreaterThanOrEqual(24);
+      expect(response.header!.value.length).toBeLessThanOrEqual(10 * 1024 * 1024);
+      if (name === 'control') expect(response.header!.value.length).toBeLessThan(768 * 1024);
+      else expect(response.header!.value.length).toBeGreaterThan(768 * 1024);
+      if (name === 'count') expect(header.bridge_blocks.length).toBeGreaterThan(32);
+      if (process.env.UPDATE_NATIVE_BOUNDARY_FIXTURE === '1') writeFileSync(`${path}/gateway-boundary-${name}.pb.gz`, gzipSync(response.header!.value));
+      expect(Buffer.from(response.header!.value)).toEqual(gunzipSync(readFileSync(`${path}/gateway-boundary-${name}.pb.gz`)));
+ const get = (service as any).configService.get as jest.Mock;
+ const implementation = get.getMockImplementation()!;
+ get.mockImplementation((key) => key === 'cardanoStabilityCheckpointMaxBridgeBlocks' ? 32 : key === 'cardanoStabilityCheckpointMaxHeaderBytes' ? 768 * 1024 : implementation(key));
+ const oldAttempt=service.queryStabilityIBCHeader({height:1031n,trusted_height:trustedHeight,checkpoint_only:false,probabilistic_client_state:ClientStateProbabilistic.encode(client).finish()});
+ if (name==='control') expect(ProbabilisticHeader.decode((await oldAttempt).header!.value).anchor_block!.epoch).toBe(8n);
+ else await expect(oldAttempt).rejects.toThrow();
+    });
+  }
 });
