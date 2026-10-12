@@ -1000,13 +1000,9 @@ export class QueryService {
           `Consensus-state history for client ${clientId} failed authentication`,
         );
       }
-      // Public paths contain revision height only. Bind the revision to the
-      // selected client datum and exclude records newer than that datum.
-      if (
-        record.height.revisionNumber !== latestHeight.revisionNumber ||
-        compareConsensusHeights(record.height, latestHeight) > 0
-      )
-        continue;
+      // Public paths carry the full revision height, so records archived before
+      // a revision upgrade stay queryable. Exclude records newer than the datum.
+      if (compareConsensusHeights(record.height, latestHeight) > 0) continue;
       const key = consensusHeightKey(record.height);
       if (requestedKey && key !== requestedKey) continue;
       const pathHeight = `${record.height.revisionNumber}-${record.height.revisionHeight}`;
