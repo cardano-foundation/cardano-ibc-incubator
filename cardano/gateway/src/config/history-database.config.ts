@@ -1,17 +1,10 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import * as dotenv from 'dotenv';
+import { GatewayDatabaseConfig } from './gateway-database.config';
 
-dotenv.config();
-
-// Gateway-owned REST import and bridge projection. Never point this at Yaci Store PostgreSQL.
+// A separate pool for history snapshots in the same Gateway application database.
 export const HistoryDatabaseConfig: TypeOrmModuleOptions = {
+  ...GatewayDatabaseConfig,
   name: 'history',
-  type: 'postgres',
-  host: process.env.HISTORY_DB_HOST,
-  port: +(process.env.HISTORY_DB_PORT || 5432),
-  username: process.env.HISTORY_DB_USERNAME,
-  password: process.env.HISTORY_DB_PASSWORD,
-  database: process.env.HISTORY_DB_NAME,
   entities: [],
   synchronize: false,
   extra: { connectionTimeoutMillis: 30_000 },

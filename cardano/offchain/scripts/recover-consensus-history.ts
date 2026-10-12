@@ -11,7 +11,7 @@ Recovery supports the production client datum with its private history root.
 The optional height prints a regenerated historical witness after root validation.
 
 Required environment (no default credentials):
-  HISTORY_DB_URL  PostgreSQL connection URL for the Gateway-owned REST history database
+  HISTORY_DB_URL  PostgreSQL connection URL for the Gateway application database containing REST history
   KUPO_URL       Kupo endpoint for independently reading the live state NFT
   OGMIOS_URL     Ogmios endpoint used to configure the Kupmios provider
 

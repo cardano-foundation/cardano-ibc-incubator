@@ -84,7 +84,7 @@ The repository is organized around these main areas:
 
 Chain history comes from Yaci Store through its standard REST API. Yaci follows a Cardano node and keeps its own database private. Our history worker fetches block metadata and raw blocks over REST. It retains outputs, spends and transaction bodies in a separate Gateway-owned PostgreSQL database and builds the `bridge_*` tables there. The Gateway checks imported blocks against Yaci REST before returning historical proofs. On public networks Blockfrost supplies older epoch and pool history. See the [REST history contract](docs/yaci-rest-history.md) for provider requirements and the database migration.
 
-![Yaci Store exposing REST while its database stays private, with a separate history database owned by the Gateway](docs/assets/mechanics/yaci-store.gif)
+![Yaci Store exposing REST while its database stays private, with history retained in the Gateway's existing database](docs/assets/mechanics/yaci-store.gif)
 
 All of the bridge's IBC state lives in one Merkle tree whose root sits in the HostState datum. Cardano validators check every update to that root, the light client carries it to Cosmos in an authenticated header, and each record is then proven against it with an ICS-23 membership proof. No step relies on trusting the Gateway or Hermes.
 

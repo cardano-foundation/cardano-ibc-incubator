@@ -8,6 +8,7 @@ import { LoadedBridgeConfig, loadBridgeConfigFromEnv } from '../config/bridge-ma
 import { decodeHostStateDatum } from '../shared/types/host-state-datum';
 import { YaciRestClient } from '../shared/helpers/yaci-rest';
 import { ensureRestHistoryTables, syncRestHistory } from './rest-history-import';
+import { gatewayPostgresConfig } from '../config/gateway-postgres.config';
 
 type YaciTxRow = {
   tx_hash: string;
@@ -95,13 +96,7 @@ type BlockRow = {
 };
 
 const pollIntervalMs = Number(process.env.BRIDGE_HISTORY_SYNC_INTERVAL_MS || 2000);
-const historyPool = new Pool({
-  host: process.env.HISTORY_DB_HOST || 'bridge-history-postgres',
-  port: Number(process.env.HISTORY_DB_PORT || 5432),
-  database: process.env.HISTORY_DB_NAME || 'bridge_history',
-  user: process.env.HISTORY_DB_USERNAME || 'bridge',
-  password: process.env.HISTORY_DB_PASSWORD || 'dbpass',
-});
+const historyPool = new Pool(gatewayPostgresConfig());
 
 let cachedBridgeProjectionFilter: BridgeProjectionFilter | null = null;
 let loggedMissingBridgeConfig = false;

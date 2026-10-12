@@ -1364,9 +1364,6 @@ fn write_gateway_env_for_network(
                 "OGMIOS_ENDPOINT",
                 "KUPO_ENDPOINT",
                 "YACI_STORE_ENDPOINT",
-                "HISTORY_DB_HOST",
-                "HISTORY_DB_PORT",
-                "HISTORY_DB_PASSWORD",
                 "GATEWAY_DB_HOST",
                 "GATEWAY_DB_PORT",
                 "GATEWAY_DB_PASSWORD",
@@ -1386,6 +1383,7 @@ fn write_gateway_env_for_network(
                 set_or_append_env_var(&gateway_env, &key, &value)?;
             }
             for key in [
+                "GATEWAY_DB_URL",
                 "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE",
                 "CARDANO_EPOCH_NONCE_GENESIS",
                 "CARDANO_STABILITY_ASSUME_STATIC_STAKE",
@@ -1437,11 +1435,6 @@ fn write_gateway_env_for_network(
 
             let public_testnet_gateway_defaults = [
                 ("CARDANO_DOCKER_NETWORK_EXTERNAL", "true"),
-                ("HISTORY_DB_HOST", "bridge-history-postgres"),
-                ("HISTORY_DB_PORT", "5432"),
-                ("HISTORY_DB_NAME", "bridge_history"),
-                ("HISTORY_DB_USERNAME", "bridge"),
-                ("HISTORY_DB_PASSWORD", "dbpass"),
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
                 ("CARDANO_EPOCH_LENGTH", epoch_length.as_str()),

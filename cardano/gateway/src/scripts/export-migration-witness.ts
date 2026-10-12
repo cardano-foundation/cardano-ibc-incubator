@@ -1,3 +1,4 @@
+import { gatewayPostgresConfig } from '../config/gateway-postgres.config';
 import * as fs from 'fs';
 import { Client } from 'pg';
 import * as Lucid from '@lucid-evolution/lucid';
@@ -100,12 +101,7 @@ async function main() {
   if (!handlerPath || !outputPath || process.argv.length !== 4)
     throw new Error('Usage: export-migration-witness <handler.json> <new-witness.json>');
   const db = new Client({
-    connectionString: process.env.HISTORY_DB_URL,
-    host: process.env.HISTORY_DB_HOST,
-    port: Number(process.env.HISTORY_DB_PORT || 5432),
-    database: process.env.HISTORY_DB_NAME,
-    user: process.env.HISTORY_DB_USERNAME,
-    password: process.env.HISTORY_DB_PASSWORD,
+    ...gatewayPostgresConfig(),
     connectionTimeoutMillis: 30000,
     statement_timeout: 60000,
   });

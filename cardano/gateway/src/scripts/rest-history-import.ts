@@ -10,7 +10,7 @@ export async function ensureRestHistoryTables(database: Pick<PoolClient, 'query'
     "SELECT to_regclass('block')::text AS raw, to_regclass('bridge_rest_history_identity')::text AS imported",
   )).rows;
   if (existing?.raw && !existing.imported)
-    throw new Error('HISTORY_DB must be a fresh Gateway-owned database. Do not point it at Yaci Store PostgreSQL');
+    throw new Error('Gateway database contains block tables not created by the REST importer. Do not point it at Yaci Store PostgreSQL');
   await database.query(`
     CREATE TABLE IF NOT EXISTS bridge_rest_history_identity (
       id integer PRIMARY KEY CHECK (id = 1), network_magic bigint NOT NULL
@@ -49,7 +49,7 @@ export async function ensureRestHistoryTables(database: Pick<PoolClient, 'query'
   await database.query('INSERT INTO bridge_rest_history_identity VALUES (1, $1) ON CONFLICT DO NOTHING', [networkMagic]);
   const [identity] = (await database.query<{ network_magic: string }>('SELECT network_magic::text AS network_magic FROM bridge_rest_history_identity WHERE id = 1')).rows;
   if (!identity || identity.network_magic !== String(networkMagic))
-    throw new Error('Gateway-owned history belongs to another Cardano network. Use a separate history database');
+    throw new Error('Gateway database contains history for another Cardano network. Select the Gateway database for this network');
 }
 
 function outputAmounts(output: CML.TransactionOutput) {

@@ -52,6 +52,11 @@ def main():
     if len([name for name in config['services'] if name == 'devkit' or name.startswith('producer-')]) != 5:
         p.error('Counterparty rehearsal requires the actual five-pool network')
     compose = ['docker', 'compose', '-p', args.project, '-f', str(compose_file)]
+    gateway_ports = [port for port in config['services']['gateway-db']['ports'] if isinstance(port, dict)
+                     and port.get('host_ip') == '127.0.0.1' and int(port.get('target', 0)) == 5432]
+    if len(gateway_ports) != 1:
+        raise ValueError('Expected the owned Gateway application database on loopback')
+    gateway_port = int(gateway_ports[0]['published'])
     if args.command == 'services':
         require_migration_witness(config['services']['devkit'])
         base = json.loads(subprocess.check_output(['docker', 'compose', '-f', str(ROOT / 'chains/cosmos/docker-compose.yml'), '--profile', 'v8-classic', 'config', '--format', 'json']))['services']['v8-classic']
@@ -76,9 +81,10 @@ def main():
             config['volumes']['cosmos-data'] = {'driver': 'local', 'driver_opts': {
                 'type': 'none', 'o': 'bind', 'device': str(directory)}}
         compose_file.write_text(json.dumps(config, indent=2) + '\n')
-        for database in ['yaci_store', 'migration_gateway']:
-            exists = subprocess.check_output(compose + ['exec', '-T', 'history-db', 'psql', '-U', 'yaci', '-d', 'postgres', '-Atc', f"SELECT 1 FROM pg_database WHERE datname='{database}'"], text=True).strip()
-            if not exists: subprocess.run(compose + ['exec', '-T', 'history-db', 'createdb', '-U', 'yaci', database], check=True)
+        exists = subprocess.check_output(compose + ['exec', '-T', 'gateway-db', 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc',
+            f"SELECT 1 FROM pg_database WHERE datname='{args.gateway_database}'"], text=True).strip()
+        if not exists:
+            subprocess.run(compose + ['exec', '-T', 'gateway-db', 'createdb', '-U', 'postgres', args.gateway_database], check=True)
         subprocess.run(compose + ['up', '-d', 'cosmos'], check=True)
         return
     handler = args.handler.resolve() if args.handler else runtime / 'handler.json'
@@ -88,22 +94,22 @@ def main():
             p.error('init-history requires an explicit private --history-schema')
         # Each bridge retains its own REST import. Keep its schema and database
         # separate from the provider's yaci_store database.
-        exists = subprocess.check_output(compose + ['exec', '-T', 'history-db', 'psql', '-U', 'yaci', '-d', 'postgres', '-Atc',
+        exists = subprocess.check_output(compose + ['exec', '-T', 'gateway-db', 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc',
             f"SELECT 1 FROM pg_database WHERE datname='{args.gateway_database}'"], text=True).strip()
         if not exists:
-            subprocess.run(compose + ['exec', '-T', 'history-db', 'createdb', '-U', 'yaci', args.gateway_database], check=True)
+            subprocess.run(compose + ['exec', '-T', 'gateway-db', 'createdb', '-U', 'postgres', args.gateway_database], check=True)
         initialization = r'''
 const fs = require('fs');
 const { Client } = require('pg');
 const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-history-sync.js');
 const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.js');
 (async () => {
-  const [schema, handlerPath, databaseName] = process.argv.slice(2);
+  const [schema, handlerPath, databaseName, databasePort] = process.argv.slice(2);
   if (!/^migration_[a-z0-9_]+$/.test(schema)) throw new Error('Invalid private schema');
   const handler = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
   const identity = handler.hostStateNFT.policyId + handler.hostStateNFT.name;
   if (!/^[0-9a-f]+$/.test(identity) || !handler.migration?.registryUnit) throw new Error('Expected upgrade-capable baseline');
-  const db = new Client({ host: '127.0.0.1', port: 27432, database: databaseName, user: 'yaci', password: 'devkit' });
+  const db = new Client({ host: '127.0.0.1', port: Number(databasePort), database: databaseName, user: 'postgres', password: 'postgres' });
   await db.connect();
   try {
     await db.query('BEGIN');
@@ -125,7 +131,7 @@ const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.
   } finally { await db.end(); }
 })().catch(error => { console.error(error.message); process.exitCode = 1; });
 '''
-        subprocess.run(['node', '-', args.history_schema, str(handler), args.gateway_database], input=initialization,
+        subprocess.run(['node', '-', args.history_schema, str(handler), args.gateway_database, str(gateway_port)], input=initialization,
             text=True, cwd=ROOT / 'cardano/gateway', check=True)
         return
     genesis = json.loads((runtime / 'runtime/genesis-shelley.json').read_text())
@@ -136,7 +142,7 @@ const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.
     nonce_port = int(nonce_ports[0]['published'])
     env = dict(os.environ)
     # Explicit local values; never load operator .env or Hermes home keys.
-    for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'HISTORY_DB_URL', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
+    for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'GATEWAY_DB_URL', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
         env.pop(key, None)
     env.update({'PORT': '8800', 'GRPC_HOST': '127.0.0.1', 'GRPC_PORT': '5501', 'CARDANO_NETWORK_MAGIC': '42',
         'CARDANO_CHAIN_HOST': '127.0.0.1', 'CARDANO_CHAIN_PORT': '23001',
@@ -147,8 +153,7 @@ const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.
         'CARDANO_EPOCH_NONCE_GENESIS': hashlib.blake2b((runtime / 'runtime/genesis-shelley.json').read_bytes(), digest_size=32).hexdigest(),
         'CARDANO_EPOCH_PARAMS_ENDPOINT': f'http://127.0.0.1:{nonce_port}',
         'OGMIOS_ENDPOINT': 'http://127.0.0.1:2637', 'KUPO_ENDPOINT': 'http://127.0.0.1:2742', 'YACI_STORE_ENDPOINT': 'http://127.0.0.1:29083',
-        'HISTORY_DB_HOST': '127.0.0.1', 'HISTORY_DB_PORT': '27432', 'HISTORY_DB_NAME': args.gateway_database, 'HISTORY_DB_USERNAME': 'yaci', 'HISTORY_DB_PASSWORD': 'devkit',
-        'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': '27432', 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'yaci', 'GATEWAY_DB_PASSWORD': 'devkit', 'GATEWAY_DB_SYNCHRONIZE': 'true',
+        'GATEWAY_DB_URL': '', 'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': str(gateway_port), 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'postgres', 'GATEWAY_DB_PASSWORD': 'postgres', 'GATEWAY_DB_SYNCHRONIZE': 'true',
         'HANDLER_JSON_PATH': str(handler), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
         'FAKETIME_DONT_FAKE_MONOTONIC': '1'})
     if args.command == 'gateway':

@@ -60,6 +60,13 @@ integration('REST history imports into Gateway-owned PostgreSQL', () => {
   });
 
   it('rewinds raw outputs and spends after a fork and imports the replacement', async () => {
+    // The application cache already exists before history is imported.
+    await client.query(`CREATE TABLE ibc_state_tree_cache (
+      id text PRIMARY KEY, root text NOT NULL, leaves_gzip bytea NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    await client.query("INSERT INTO ibc_state_tree_cache (id, root, leaves_gzip) VALUES ('current', 'app-root', $1)", [Buffer.from('app-cache')]);
+    await ensureRestHistoryTables(client, 42);
     const first = restBlockFixture(100);
     const second = restBlockFixture(101, first.metadata.hash, [1], 3);
     const replacement = restBlockFixture(101, first.metadata.hash, [1], 5);
@@ -74,6 +81,9 @@ integration('REST history imports into Gateway-owned PostgreSQL', () => {
     expect((await client.query('SELECT 1 FROM transaction WHERE tx_hash = ANY($1)', [second.hashes])).rows).toEqual([]);
     expect((await client.query('SELECT 1 FROM tx_input WHERE spent_tx_hash = ANY($1)', [second.hashes])).rows).toEqual([]);
     expect((await client.query('SELECT 1 FROM address_utxo WHERE tx_hash = ANY($1)', [second.hashes])).rows).toEqual([]);
+    expect((await client.query('SELECT id, root, leaves_gzip FROM ibc_state_tree_cache')).rows).toEqual([
+      { id: 'current', root: 'app-root', leaves_gzip: Buffer.from('app-cache') },
+    ]);
   });
 
   it('waits for an observer behind the local tip without treating lag as a fork', async () => {

@@ -1,17 +1,18 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import * as dotenv from 'dotenv';
+import { gatewayPostgresConfig } from './gateway-postgres.config';
 
-dotenv.config();
+const postgres = gatewayPostgresConfig();
 
 // Gateway application database (read/write)
 export const GatewayDatabaseConfig: TypeOrmModuleOptions = {
   name: 'gateway',
   type: 'postgres',
-  host: process.env.GATEWAY_DB_HOST,
-  port: process.env.GATEWAY_DB_PORT ? Number(process.env.GATEWAY_DB_PORT) : undefined,
-  username: process.env.GATEWAY_DB_USERNAME,
-  password: process.env.GATEWAY_DB_PASSWORD,
-  database: process.env.GATEWAY_DB_NAME,
+  url: postgres.connectionString,
+  host: postgres.host,
+  port: postgres.port,
+  username: postgres.user,
+  password: postgres.password,
+  database: postgres.database,
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   synchronize: process.env.GATEWAY_DB_SYNCHRONIZE === 'true',
 };
