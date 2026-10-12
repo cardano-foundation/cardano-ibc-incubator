@@ -2,6 +2,8 @@ package probabilistic
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -175,4 +177,71 @@ func recoveryStoreSnapshot(t *testing.T, store storetypes.KVStore) map[string][]
 		snapshot[string(iterator.Key())] = bytes.Clone(iterator.Value())
 	}
 	return snapshot
+}
+
+// Run both unsigned-table attacks through the actual keeper. The unchanged
+// signed blocks pass native verification in the historical evidence path.
+func TestAppUnsignedStakeDisagreementDoesNotFreeze(t *testing.T) {
+	for _, mutation := range []string{"scaled amounts", "unobserved allocation"} {
+		t.Run(mutation, func(t *testing.T) {
+			data, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/native-settlement.json")
+			require.NoError(t, err)
+			var fixture struct {
+				Client       *ClientState
+				Consensus    *ConsensusState
+				Header, Fork *ProbabilisticHeader
+			}
+			require.NoError(t, json.Unmarshal(data, &fixture))
+			clientID := ModuleName + "-0"
+
+			app := simapp.Setup(t, false)
+			t.Cleanup(func() { require.NoError(t, app.Close()) })
+			RegisterInterfaces(app.InterfaceRegistry())
+			ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: "challenge-test-1", Height: 100, Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp))})
+			cdc := app.AppCodec()
+			store := app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID)
+
+			params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
+			params.AllowedClients = append(params.AllowedClients, ModuleName)
+			app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
+			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
+			original := fixture.Header
+			changed := fromCoreProbabilisticHeader(toCoreProbabilisticHeader(original))
+			changed.NewEpochContext = fromCoreEpochContext(toCoreEpochContext(fixture.Client.EpochContexts[0]))
+			if mutation == "scaled amounts" {
+				for _, entry := range changed.NewEpochContext.StakeDistribution {
+					entry.Stake *= 2
+					entry.RelativeStakeNumerator *= 2
+					entry.RelativeStakeDenominator *= 2
+				}
+			} else {
+				changed.NewEpochContext.StakeDistribution[11].Stake += 100
+				changed.NewEpochContext.StakeDistribution[11].RelativeStakeNumerator += 100
+				changed.NewEpochContext.StakeDistribution[12].Stake -= 100
+				changed.NewEpochContext.StakeDistribution[12].RelativeStakeNumerator -= 100
+			}
+			signer := sdk.AccAddress(bytes.Repeat([]byte{9}, 20)).String()
+			update, err := clienttypes.NewMsgUpdateClient(clientID, changed, signer)
+			require.NoError(t, err)
+			_, err = app.MsgServiceRouter().Handler(update)(ctx, update)
+			require.ErrorContains(t, err, "cannot replace an installed epoch context")
+			evidence := NewMisbehaviour(clientID, original, changed)
+			challenge, err := clienttypes.NewMsgSubmitMisbehaviour(clientID, evidence, signer)
+			require.NoError(t, err)
+			_, err = app.MsgServiceRouter().Handler(challenge)(ctx, challenge)
+			require.ErrorContains(t, err, "probabilistic headers do not conflict")
+			healthy, found := getClientState(store, cdc)
+			require.True(t, found)
+			require.Equal(t, exported.Active, healthy.Status(ctx, store, cdc))
+			require.Equal(t, uint64(200), healthy.EpochContexts[0].StakeDistribution[0].Stake)
+			// Genuine incompatible signed histories still freeze through the same handler.
+			challenge, err = clienttypes.NewMsgSubmitMisbehaviour(clientID, NewMisbehaviour(clientID, original, fixture.Fork), signer)
+			require.NoError(t, err)
+			_, err = app.MsgServiceRouter().Handler(challenge)(ctx, challenge)
+			require.NoError(t, err)
+			frozen, found := getClientState(store, cdc)
+			require.True(t, found)
+			require.Equal(t, exported.Frozen, frozen.Status(ctx, store, cdc))
+		})
+	}
 }

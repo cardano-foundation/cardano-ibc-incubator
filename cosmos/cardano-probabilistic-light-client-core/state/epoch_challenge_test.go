@@ -72,7 +72,7 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	require.Equal(t, uint32(1), oldProduction["pool-a"].CompletedEpochsBitmap)
 	require.Equal(t, uint64(8), cs.LatestCheckpointPoolProduction.Epoch)
 
-	// A second self-consistent context is evidence of disagreement. It must
+	// An alternative table alone is not evidence of a conflicting chain. It must
 	// remain verifiable against the pre-proposal checkpoint after advancement.
 	honest := *proposal
 	honest.NewEpochContext = cloneEpochContext(proposal.NewEpochContext)
@@ -81,8 +81,8 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 		entry.RelativeStakeNumerator, entry.RelativeStakeDenominator = entry.Stake, 5_001
 	}
 	evidence := &Misbehaviour{ProbabilisticHeader1: proposal, ProbabilisticHeader2: &honest}
-	require.NoError(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, evidence, authenticateProposal))
-	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, store, evidence))
+	require.ErrorIs(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, evidence, authenticateProposal), ErrIBCInvalidMisbehaviour)
+	require.False(t, cs.CheckForMisbehaviour(ctx, cdc, store, evidence))
 	// The honest fork may still be in the previous epoch at the disputed
 	// height; it must find the same saved cursor without claiming epoch 8.
 	oldEpochWitness := newTemporalVerifierHeader(t, cs, "honest-old-epoch", 12, 971, 7, true)
@@ -100,7 +100,8 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 			}
 			return authenticateProposal(header, contexts, counters, nil)
 		}))
-	cs.UpdateStateOnMisbehaviour(ctx, cdc, store, evidence)
+	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, store, mixedEvidence))
+	cs.UpdateStateOnMisbehaviour(ctx, cdc, store, mixedEvidence)
 	frozen, _ := GetClientState(store, cdc)
 	require.Equal(t, Frozen, frozen.Status(ctx, store, cdc))
 	require.ErrorIs(t, frozen.verifyEpochUsable(ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour)), 8), ErrIBCClientFrozen)

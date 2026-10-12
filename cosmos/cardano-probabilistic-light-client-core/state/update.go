@@ -217,6 +217,15 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return err
 	}
 
+	// A table is an unsigned claim. Only historical challenge verification may
+	// use an alternative claim to authenticate a competing block history.
+	if mode.enforceForwardUpdate && header.NewEpochContext != nil {
+		stored := epochContextByEpoch(currentEpochContexts, header.NewEpochContext.Epoch)
+		if stored != nil && !epochContextsEqual(stored, header.NewEpochContext) {
+			return errorsmod.Wrap(ErrInvalidCurrentEpoch, "cannot replace an installed epoch context in a forward update")
+		}
+	}
+
 	depth := uint64(len(authenticatedHeader.descendantBlocks))
 	if depth < DefaultThresholdDepth {
 		return errorsmod.Wrapf(ErrInvalidProbabilisticScore, "insufficient descendant depth: got %d, need %d", depth, DefaultThresholdDepth)
