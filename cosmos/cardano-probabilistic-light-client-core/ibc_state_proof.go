@@ -26,6 +26,9 @@ func VerifyIbcStateMembershipWithExistenceProof(
 	if exist == nil {
 		return fmt.Errorf("expected existence proof")
 	}
+	if len(value) == 0 {
+		return fmt.Errorf("membership requires a non-empty value")
+	}
 	if len(exist.Key) > 0 && !bytes.Equal(exist.Key, key) {
 		return fmt.Errorf("existence proof key mismatch")
 	}
@@ -65,6 +68,12 @@ func VerifyIbcStateNonMembershipWithNonExistenceProof(root []byte, key []byte, n
 	}
 	if nonexist.Left == nil {
 		return fmt.Errorf("non-existence proof missing left existence proof")
+	}
+	if len(nonexist.Left.Key) > 0 && !bytes.Equal(nonexist.Left.Key, key) {
+		return fmt.Errorf("non-existence proof left key mismatch")
+	}
+	if nonexist.Right != nil {
+		return fmt.Errorf("sparse non-existence proof must not have a right existence proof")
 	}
 	if len(nonexist.Left.Value) != 0 {
 		return fmt.Errorf("non-existence proof left value must be empty")
@@ -111,6 +120,14 @@ func ComputeRootFromProofPath(key []byte, value []byte, path []*ics23.InnerOp) (
 }
 
 func childOrderingFromInnerOp(direction uint64, op *ics23.InnerOp) (left []byte, right []byte, err error) {
+	if op == nil {
+		return nil, nil, fmt.Errorf("missing inner operation")
+	}
+	// Older compact proofs omit the hash field. Explicit operations must use
+	// SHA-256, which is fixed by Cardano's commitment scheme.
+	if op.Hash != ics23.HashOp_NO_HASH && op.Hash != ics23.HashOp_SHA256 {
+		return nil, nil, fmt.Errorf("unsupported inner hash operation")
+	}
 	if direction == 0 {
 		if len(op.Prefix) != 1 || op.Prefix[0] != 0x01 {
 			return nil, nil, fmt.Errorf("invalid inner op prefix for left child")
@@ -164,7 +181,7 @@ func DecodeJSONExistenceProof(proofBytes []byte) (*ics23.ExistenceProof, error) 
 	if err := json.Unmarshal(proofBytes, &jp); err != nil {
 		return nil, fmt.Errorf("unable to decode merkle proof bytes")
 	}
-	if len(jp.Proofs) == 0 || jp.Proofs[0].Exist == nil {
+	if len(jp.Proofs) != 1 || jp.Proofs[0].Exist == nil || jp.Proofs[0].Nonexist != nil {
 		return nil, fmt.Errorf("expected existence proof")
 	}
 	return jp.Proofs[0].Exist.toExistenceProof()
@@ -175,7 +192,7 @@ func DecodeJSONNonExistenceProof(proofBytes []byte) (*ics23.NonExistenceProof, e
 	if err := json.Unmarshal(proofBytes, &jp); err != nil {
 		return nil, fmt.Errorf("unable to decode merkle proof bytes")
 	}
-	if len(jp.Proofs) == 0 || jp.Proofs[0].Nonexist == nil {
+	if len(jp.Proofs) != 1 || jp.Proofs[0].Nonexist == nil || jp.Proofs[0].Exist != nil {
 		return nil, fmt.Errorf("expected non-existence proof")
 	}
 	return jp.Proofs[0].Nonexist.toNonExistenceProof()
@@ -192,6 +209,7 @@ type jsonExistenceProof struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 	Path  []struct {
+		Hash   *int32 `json:"hash,omitempty"`
 		Prefix string `json:"prefix"`
 		Suffix string `json:"suffix"`
 	} `json:"path"`
@@ -217,8 +235,12 @@ func (p *jsonExistenceProof) toExistenceProof() (*ics23.ExistenceProof, error) {
 		if err != nil {
 			return nil, err
 		}
+		hash := ics23.HashOp_SHA256
+		if op.Hash != nil {
+			hash = ics23.HashOp(*op.Hash)
+		}
 		proofPath = append(proofPath, &ics23.InnerOp{
-			Hash:   ics23.HashOp_SHA256,
+			Hash:   hash,
 			Prefix: prefix,
 			Suffix: suffix,
 		})
