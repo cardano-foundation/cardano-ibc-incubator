@@ -1,3 +1,4 @@
+import { gatewayPostgresConfig } from '../config/gateway-postgres.config';
 import { Client } from 'pg';
 import { HistoryConfigurationError, verifyHistoryCoverage } from '../config/history-coverage';
 import * as fs from 'fs';
@@ -30,12 +31,7 @@ async function exportManifest() {
   if (!loadedBridgeConfig.bridgeManifest.history)
     throw new Error('Handler has no history bootstrap; upgrade it from retained chain data before exporting');
   const database = new Client({
-    connectionString: process.env.HISTORY_DB_URL,
-    host: process.env.HISTORY_DB_HOST || 'localhost',
-    port: Number(process.env.HISTORY_DB_PORT || process.env.BRIDGE_HISTORY_POSTGRES_PORT || 15434),
-    database: process.env.HISTORY_DB_NAME || 'bridge_history',
-    user: process.env.HISTORY_DB_USERNAME || 'bridge',
-    password: process.env.HISTORY_DB_PASSWORD || 'dbpass',
+    ...gatewayPostgresConfig(),
     connectionTimeoutMillis: 30000,
     statement_timeout: 30000,
   });

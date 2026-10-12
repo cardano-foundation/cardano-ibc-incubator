@@ -179,6 +179,11 @@ class ProfileTests(unittest.TestCase):
                 self.assertEqual(values["CARDANO_LOCAL_CLOCK_OFFSET"], "-123s")
                 self.assertEqual(values["CARDANO_SYSTEM_START"], genesis["shelley"]["systemStart"])
                 self.assertEqual(values["CARDANO_EPOCH_LENGTH"], "5000")
+                self.assertEqual(values["GATEWAY_DB_PORT"], runtime.settings["DEVKIT_GATEWAY_DB_PORT"])
+                self.assertEqual(values["GATEWAY_DB_NAME"], "gateway_app")
+                self.assertFalse(any(key.startswith("HISTORY_DB_") for key in values))
+                containers = dict(line.split("=", 1) for line in (runtime.state / "container-endpoints.env").read_text().splitlines())
+                self.assertEqual(containers["GATEWAY_DB_HOST"], "gateway-db")
                 return values["CARDANO_LOCAL_NETWORK_ID"]
             first = export_id()
             self.assertEqual(export_id(), first)

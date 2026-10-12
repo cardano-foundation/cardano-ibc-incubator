@@ -260,7 +260,7 @@ def along(path, u):
 
 SERVICES = {
     # key: (title, what it holds, colour, row)
-    "yaci_sql": ("Gateway history · Postgres", "our retained REST import", TEAL, 0),
+    "yaci_sql": ("Gateway DB · Postgres", "app state and REST history", TEAL, 0),
     "yaci_rest": ("Yaci Store · REST", "raw block bytes", TEAL, 1),
     "blockfrost": ("Blockfrost", "epoch and pool history", AMBER, 2),
     "ogmios": ("Ogmios", "live ledger, evaluate, submit", BLUE, 3),
@@ -503,7 +503,7 @@ YACI_STORE_DURATION = 23.0
 
 def scene_yaci_store(t: float) -> Image.Image:
     c = Canvas()
-    header(c, t, "Yaci REST and our own history storage",
+    header(c, t, "Yaci REST and the existing Gateway database",
            "CF exposes its API. Its PostgreSQL database stays private.")
     a = prog(t, 0.2, 1.0)
     c.rrect(30, 100, 500, 430, fill=fade(PANEL, a), outline=fade(TEAL, a), width=2, r=14)
@@ -518,7 +518,7 @@ def scene_yaci_store(t: float) -> Image.Image:
     c.rrect(590, 100, 580, 430, fill=fade(PANEL, a), outline=fade(BLUE, a), width=2, r=14)
     c.text(608, 114, "Our Gateway server", 18, fade(BLUE, a, PANEL), "bold")
     box(c, 620, 158, 230, 88, "History worker", "checks raw blocks and imports", AMBER, a, 16, 12)
-    box(c, 620, 332, 230, 110, "Our PostgreSQL", "retained outputs and spends\nbridge_* tables", AMBER, a, 16, 12)
+    box(c, 620, 332, 230, 110, "Existing Gateway DB", "app state and REST history\nbridge_* tables", AMBER, a, 16, 12)
     box(c, 918, 290, 220, 90, "Gateway", "queries, proofs and tx building", BLUE, a, 16, 12)
 
     api = prog(t, 2.0, 3.0)
@@ -531,8 +531,8 @@ def scene_yaci_store(t: float) -> Image.Image:
     c.text(747, 293, "original body bytes", 11, fade(AMBER, write))
     read = prog(t, 10.0, 11.0)
     c.arrow((918, 342), (850, 386), fade(BLUE, read), 2.5)
-    c.text(908, 403, "SQL to our own", 11, fade(BLUE, read))
-    c.text(908, 421, "history storage", 11, fade(BLUE, read))
+    c.text(908, 403, "SQL to existing", 11, fade(BLUE, read))
+    c.text(908, 421, "Gateway database", 11, fade(BLUE, read))
     check = prog(t, 14.0, 15.0)
     c.text(620, 473, "REST checks pin the snapshot to a canonical block.", 12, fade(GREEN, check))
     c.text(310, 459, "No external DB", 13, fade(TEAL, a), "bold")
@@ -540,8 +540,8 @@ def scene_yaci_store(t: float) -> Image.Image:
     caption(c, t, [
         (0.6, "Yaci Store follows Cardano and indexes blocks in its own PostgreSQL database. CF keeps that database private."),
         (2.0, "Our history worker fetches standard Yaci block metadata and raw block bytes through REST."),
-        (6.0, "It checks the header hash and imports accepted transaction bodies, outputs and spends into our database."),
-        (10.0, "The Gateway rebuilds historical bridge state with SQL snapshots in storage we own."),
+        (6.0, "It checks the header hash and imports transaction bodies, outputs and spends into the existing Gateway database."),
+        (10.0, "Application state and imported history share one Gateway database. Historical queries use consistent SQL snapshots."),
         (14.0, "Before returning historical proofs it rechecks the captured block through REST, so a local cache cannot hide a rollback."),
         (18.0, "CF must retain raw blocks from the manifest checkpoint. No provider PostgreSQL access or Cardano node fallback is needed."),
     ])
@@ -1007,7 +1007,7 @@ def draw_architecture() -> Image.Image:
     for i, (title, sub, color) in enumerate([
         ("Ogmios", "ledger queries, evaluate, submit", BLUE),
         ("Kupo", "live UTxOs and datums", BLUE),
-        ("Yaci REST + our history", "private Gateway history storage", TEAL),
+        ("Yaci REST + Gateway DB", "app state and imported history", TEAL),
         ("Blockfrost", "epoch and pool history, public nets", AMBER),
     ]):
         r, col = divmod(i, 2)

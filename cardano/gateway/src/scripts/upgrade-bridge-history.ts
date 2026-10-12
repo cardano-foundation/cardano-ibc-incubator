@@ -4,6 +4,7 @@
 import { Client } from 'pg';
 import { readFileSync, writeFileSync } from 'fs';
 import { upgradeHistoryArtifact } from '../config/history-upgrade';
+import { gatewayPostgresConfig } from '../config/gateway-postgres.config';
 
 async function main() {
   const [input, output] = process.argv.slice(2);
@@ -11,12 +12,7 @@ async function main() {
     throw new Error('Usage: upgrade-bridge-history <existing-artifact> <new-artifact>; use a separate output file');
   const artifact = JSON.parse(readFileSync(input, 'utf8'));
   const db = new Client({
-    connectionString: process.env.HISTORY_DB_URL,
-    host: process.env.HISTORY_DB_HOST || 'localhost',
-    port: Number(process.env.HISTORY_DB_PORT || process.env.BRIDGE_HISTORY_POSTGRES_PORT || 15434),
-    database: process.env.HISTORY_DB_NAME || 'bridge_history',
-    user: process.env.HISTORY_DB_USERNAME || 'bridge',
-    password: process.env.HISTORY_DB_PASSWORD || 'dbpass',
+    ...gatewayPostgresConfig(),
     connectionTimeoutMillis: 30000,
     statement_timeout: 30000,
   });
