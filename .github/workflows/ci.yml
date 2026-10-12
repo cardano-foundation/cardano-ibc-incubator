@@ -1103,6 +1103,12 @@ jobs:
 
       - name: Install gateway and runtime dependencies
         run: |
+          npm ci --prefix packages/cardano-ibc-tx-builder
+          npm run --prefix packages/cardano-ibc-tx-builder build
+          npm ci --prefix packages/cardano-ibc-trace-registry
+          npm run --prefix packages/cardano-ibc-trace-registry build
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
+          npm run --prefix packages/cardano-ibc-tx-builder-runtime build
           npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev
           npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev
           npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev
