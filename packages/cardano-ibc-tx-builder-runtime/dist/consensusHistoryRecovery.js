@@ -39,6 +39,16 @@ function natural(value, label) {
     }
     return value;
 }
+// Matches the contracts' height.compare. Upgrades and recoveries can move the
+// tip to a later revision, whose heights may restart below the old tip's.
+function compareHeights(left, right) {
+    if (left.revisionNumber !== right.revisionNumber) {
+        return left.revisionNumber < right.revisionNumber ? -1 : 1;
+    }
+    if (left.revisionHeight === right.revisionHeight)
+        return 0;
+    return left.revisionHeight < right.revisionHeight ? -1 : 1;
+}
 function single(data, label) {
     if (!(data instanceof Map) || data.size !== 1) {
         throw new Error(`${label} must contain exactly the latest checkpoint`);
@@ -683,12 +693,11 @@ class ConsensusHistoryRecovery {
                 throw new Error("history is missing a predecessor or crosses a fork");
             }
             const old = state(previous.datum, this.#deployment);
-            if (old.root !== this.#tree.getRoot() ||
-                next.record.height.revisionNumber !==
-                    old.record.height.revisionNumber ||
-                next.record.height.revisionHeight < old.record.height.revisionHeight)
+            const order = compareHeights(next.record.height, old.record.height);
+            if (old.root !== this.#tree.getRoot() || order < 0) {
                 throw new Error("unsupported checkpoint transition");
-            if (next.record.height.revisionHeight === old.record.height.revisionHeight) {
+            }
+            if (order === 0) {
                 if ((0, consensusHistory_ts_1.encodeConsensusHistoryRecord)(next.record) !==
                     (0, consensusHistory_ts_1.encodeConsensusHistoryRecord)(old.record)) {
                     throw new Error("same-height transition changed immutable history metadata");
