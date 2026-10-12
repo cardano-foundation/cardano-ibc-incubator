@@ -79,17 +79,39 @@ export async function recoverHistoryCommand(args: string[]): Promise<void> {
   const recovery = new ConsensusHistoryRecovery(args[1], deployment);
   let result: unknown;
   try {
-    const [{ Kupmios }, { YaciRestClient }, { YaciRestHistory }, { createRestHistorySource }] = await Promise.all([
+    const [
+      { Kupmios },
+      { YaciRestClient },
+      { YaciRestHistory },
+      { createRestHistorySource },
+    ] = await Promise.all([
       import("@lucid-evolution/lucid"),
-      import("../../../packages/cardano-ibc-tx-builder-runtime/src/yaciRest.ts"),
-      import("../../../packages/cardano-ibc-tx-builder-runtime/src/yaciRestHistory.ts"),
-      import("../../../packages/cardano-ibc-tx-builder-runtime/src/consensusHistoryRest.ts"),
+      import(
+        "../../../packages/cardano-ibc-tx-builder-runtime/src/yaciRest.ts"
+      ),
+      import(
+        "../../../packages/cardano-ibc-tx-builder-runtime/src/yaciRestHistory.ts"
+      ),
+      import(
+        "../../../packages/cardano-ibc-tx-builder-runtime/src/consensusHistoryRest.ts"
+      ),
     ]);
     const provider = new Kupmios(kupo, ogmios);
-    const source = createRestHistorySource(new YaciRestHistory(new YaciRestClient(endpoint)), deployment,
-      () => provider.getUtxoByUnit(deployment.clientToken.policyId + deployment.clientToken.name));
+    const source = createRestHistorySource(
+      new YaciRestHistory(new YaciRestClient(endpoint)),
+      deployment,
+      () =>
+        provider.getUtxoByUnit(
+          deployment.clientToken.policyId + deployment.clientToken.name,
+        ),
+    );
     const recovered = await recovery.recover(source);
-    result = { ...recovered, ...(height ? { witness: recovery.witness(deployment.clientToken, height) } : {}) };
+    result = {
+      ...recovered,
+      ...(height
+        ? { witness: recovery.witness(deployment.clientToken, height) }
+        : {}),
+    };
   } finally {
     recovery.close();
   }
