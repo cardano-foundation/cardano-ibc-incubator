@@ -1,6 +1,5 @@
 use aiken/collection/list
 use aiken/collection/pairs
-use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
@@ -236,11 +235,7 @@ fn update_root(
   if old_root == tree.empty_hash {
     expect old_value == ""
     expect list.all(siblings, fn(sibling) { sibling == tree.empty_hash })
-    tree.compute_root(
-      key,
-      tree.leaf_hash(crypto.sha2_256(key), tree.value_hash(new_value)),
-      siblings,
-    )
+    tree.compute_value_root(key, new_value, siblings)
   } else {
     tree.apply_update(old_root, key, old_value, new_value, siblings)
   }

@@ -44,7 +44,7 @@ var (
 //   - Non-empty leaves commit to both sha256(key) and sha256(value).
 //   - The key also determines the path:
 //     we derive a 64-bit path selector from the first 8 bytes of sha256(key).
-//   - The proof path is always 64 steps (fixed-depth binary tree).
+//   - The path has 64 tree steps and an optional initial collision bucket descriptor.
 //
 // Proof encoding:
 //   - Preferred: standard protobuf `MerkleProof` bytes (IBC / ICS-23).
@@ -231,6 +231,13 @@ func VerifyIbcStateNonMembership(root []byte, key []byte, proofBytes []byte) err
 		return fmt.Errorf("non-existence proof missing left existence proof")
 	}
 
+	if len(nonexist.Left.Key) > 0 && !bytes.Equal(nonexist.Left.Key, key) {
+		return fmt.Errorf("non-existence proof left key mismatch")
+	}
+	if nonexist.Right != nil {
+		return fmt.Errorf("sparse non-existence proof must not have a right existence proof")
+	}
+
 	// The Gateway models absence as membership of an empty value.
 	if len(nonexist.Left.Value) != 0 {
 		return fmt.Errorf("non-existence proof left value must be empty")
@@ -249,11 +256,22 @@ func VerifyIbcStateNonMembership(root []byte, key []byte, proofBytes []byte) err
 }
 
 func computeRootFromProofPath(key []byte, value []byte, path []*ics23.InnerOp) ([]byte, error) {
+	current := leafHash(key, value)
+	if len(path) == 65 {
+		descriptor := path[0]
+		if descriptor == nil || descriptor.Hash != ics23.HashOp_SHA256 || len(descriptor.Suffix) != 0 {
+			return nil, fmt.Errorf("invalid collision bucket operation")
+		}
+		var err error
+		current, err = collisionBucketLeaf(key, value, descriptor.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		path = path[1:]
+	}
 	if len(path) != 64 {
 		return nil, fmt.Errorf("unexpected proof path length: %d", len(path))
 	}
-
-	current := leafHash(key, value)
 
 	keyHash := sha256.Sum256(key)
 	index := binary.BigEndian.Uint64(keyHash[0:8])
@@ -280,7 +298,54 @@ func computeRootFromProofPath(key []byte, value []byte, path []*ics23.InnerOp) (
 	return current, nil
 }
 
+// Collision bucket descriptors precede the 64 ordinary sparse-tree operations.
+// Every entry is a full SHA-256 key digest followed by a nonempty value digest.
+// The old singleton commitment is retained when a bucket shrinks to one entry.
+func collisionBucketLeaf(key, value, encoded []byte) ([]byte, error) {
+	if len(encoded) < 65 || encoded[0] != 0x02 || (len(encoded)-1)%64 != 0 {
+		return nil, fmt.Errorf("invalid collision bucket encoding")
+	}
+	requested := sha256.Sum256(key)
+	valueDigest := sha256.Sum256(value)
+	found := false
+	var previous []byte
+	for offset := 1; offset < len(encoded); offset += 64 {
+		entryKey := encoded[offset : offset+32]
+		entryValue := encoded[offset+32 : offset+64]
+		if !bytes.Equal(entryKey[:8], requested[:8]) {
+			return nil, fmt.Errorf("collision bucket entry belongs to a different path")
+		}
+		if previous != nil && bytes.Compare(previous, entryKey) >= 0 {
+			return nil, fmt.Errorf("collision bucket keys must be strictly ordered")
+		}
+		if bytes.Equal(entryValue, emptyValueHash[:]) {
+			return nil, fmt.Errorf("collision bucket contains an empty value")
+		}
+		if bytes.Equal(entryKey, requested[:]) {
+			found = true
+			if len(value) == 0 || !bytes.Equal(entryValue, valueDigest[:]) {
+				return nil, fmt.Errorf("collision bucket value mismatch")
+			}
+		}
+		previous = entryKey
+	}
+	if len(value) > 0 && !found {
+		return nil, fmt.Errorf("collision bucket is missing the requested key")
+	}
+	if len(encoded) == 65 {
+		preimage := append([]byte{0}, encoded[1:]...)
+		digest := sha256.Sum256(preimage)
+		return digest[:], nil
+	}
+	digest := sha256.Sum256(encoded)
+	return digest[:], nil
+}
+
 func childOrderingFromInnerOp(direction uint64, op *ics23.InnerOp) (left []byte, right []byte, err error) {
+	if op == nil || (op.Hash != ics23.HashOp_NO_HASH && op.Hash != ics23.HashOp_SHA256) {
+		return nil, nil, fmt.Errorf("invalid inner hash operation")
+	}
+
 	// Expected encoding:
 	// - left child:  sha256(0x01 || current || sibling) => prefix=0x01, suffix=sibling
 	// - right child: sha256(0x01 || sibling || current) => prefix=0x01||sibling, suffix=""
