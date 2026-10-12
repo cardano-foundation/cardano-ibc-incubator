@@ -112,6 +112,8 @@ Adding another counterparty requires compatible host wiring, allowed query paths
 
 The Aiken Tendermint client hosted on Cardano now has a proof-backed upgrade path for both client deployments. It requires a fresh deployment and further live-chain testing and security review.
 
+Hermes submits the upgrade with `hermes upgrade client` once the counterparty has halted at the upgrade height. After an upgrade that changes the chain ID, Hermes needs a chain entry and keys for the new chain ID to keep relaying.
+
 An upgrade requires an active client. If the client expires before the upgrade is submitted, the fallback is authority-controlled recovery. As in ibc-go, the substitute may track a renamed chain and use its own trusting period, and the recovered client adopts both. Every other client parameter must match. Requiring the same chain ID would not limit the authority, because anyone can create a substitute client that claims any chain ID.
 
 Standard IBC client-state upgrades through `MsgUpgradeClient` are not currently supported for the Cardano light client: both the [v8](cosmos/cardano-probabilistic-light-client-v8/upgrade.go) and [v10](cosmos/cardano-probabilistic-light-client-v10/upgrade.go) adapters reject `VerifyUpgradeAndUpdateState`.
