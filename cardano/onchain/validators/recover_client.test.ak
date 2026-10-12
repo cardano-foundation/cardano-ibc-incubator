@@ -32,7 +32,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
 }
 use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
-use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer as staged_client
 use ibc/client/ics_007_tendermint_client/multitx/types.{
   BurnSessions, CommitCore, Complete, Finalize, SessionDatum, UpdatePlan,
@@ -225,6 +225,29 @@ fn active_substitute() -> ClientDatum {
   datum(substitute_token(), height(20), active_timestamp, zero_height())
 }
 
+// The counterparty upgraded from chain-1 to chain-2 and restarted its heights,
+// so (2, 5) is later than the subject's (1, 10) despite the smaller height.
+fn renamed_substitute() -> ClientDatum {
+  let substitute =
+    datum(
+      substitute_token(),
+      Height { revision_number: 2, revision_height: 5 },
+      active_timestamp,
+      zero_height(),
+    )
+  ClientDatum {
+    ..substitute,
+    state: ClientDatumState {
+      ..substitute.state,
+      client_state: ClientState {
+        ..substitute.state.client_state,
+        chain_id: "chain-2",
+        trusting_period: trusting_period + 500_000_000,
+      },
+    },
+  }
+}
+
 fn expected_recovered(
   subject: ClientDatum,
   substitute: ClientDatum,
@@ -247,6 +270,8 @@ fn expected_recovered(
     state: ClientDatumState {
       client_state: ClientState {
         ..subject.state.client_state,
+        chain_id: substitute.state.client_state.chain_id,
+        trusting_period: substitute.state.client_state.trusting_period,
         frozen_height: zero_height(),
         latest_height: substitute_height,
       },
@@ -529,8 +554,26 @@ fn run_atomic_recovery_with_validation(
   staged: Bool,
   verify_validators: Bool,
 ) -> Bool {
-  let original_subject = frozen_subject()
-  let original_substitute = active_substitute()
+  run_atomic_recovery_between(
+    frozen_subject(),
+    active_substitute(),
+    correct_output_root,
+    actual_client_policy,
+    verify_host_state,
+    staged,
+    verify_validators,
+  )
+}
+
+fn run_atomic_recovery_between(
+  original_subject: ClientDatum,
+  original_substitute: ClientDatum,
+  correct_output_root: Bool,
+  actual_client_policy: ByteArray,
+  verify_host_state: Bool,
+  staged: Bool,
+  verify_validators: Bool,
+) -> Bool {
   let subject =
     ClientDatum {
       ..original_subject,
@@ -548,21 +591,32 @@ fn run_atomic_recovery_with_validation(
       },
     }
   let recovered = expected_recovered(subject, substitute)
+  let subject_height = subject.state.client_state.latest_height
+  let substitute_height = substitute.state.client_state.latest_height
   let subject_client_key = client_keys.full_client_state_path("07-tendermint-0")
   let subject_old_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "1-10")
+    client_keys.full_client_consensus_state_path(
+      "07-tendermint-0",
+      height_mod.to_string(subject_height),
+    )
   let subject_new_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "1-20")
+    client_keys.full_client_consensus_state_path(
+      "07-tendermint-0",
+      height_mod.to_string(substitute_height),
+    )
   let substitute_client_key =
     client_keys.full_client_state_path("07-tendermint-1")
   let substitute_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-1", "1-20")
+    client_keys.full_client_consensus_state_path(
+      "07-tendermint-1",
+      height_mod.to_string(substitute_height),
+    )
   expect Some(subject_old_consensus) =
-    pairs.get_first(subject.state.consensus_states, height(10))
+    pairs.get_first(subject.state.consensus_states, subject_height)
   expect Some(subject_new_consensus) =
-    pairs.get_first(substitute.state.consensus_states, height(20))
+    pairs.get_first(substitute.state.consensus_states, substitute_height)
   expect Some(substitute_consensus) =
-    pairs.get_first(substitute.state.consensus_states, height(20))
+    pairs.get_first(substitute.state.consensus_states, substitute_height)
   let old_entries: Pairs<ByteArray, ByteArray> =
     [
       Pair(subject_client_key, cbor.serialise(subject.state.client_state)),
@@ -727,6 +781,30 @@ test staged_atomic_recovery_all_validators_accept_real_root_transition() {
 
 test staged_atomic_recovery_fixture_setup_baseline() {
   run_atomic_recovery_with_validation(True, client_policy, True, True, False)
+}
+
+test atomic_recovery_follows_renamed_chain_across_height_reset() {
+  run_atomic_recovery_between(
+    frozen_subject(),
+    renamed_substitute(),
+    True,
+    client_policy,
+    True,
+    False,
+    True,
+  )
+}
+
+test staged_atomic_recovery_follows_renamed_chain_across_height_reset() {
+  run_atomic_recovery_between(
+    expired_subject(),
+    renamed_substitute(),
+    True,
+    client_policy,
+    True,
+    True,
+    True,
+  )
 }
 
 const evidence_session_policy =
@@ -1180,7 +1258,7 @@ test staged_recovery_rejects_changed_immutable_parameters() fail {
         ..original_substitute.state,
         client_state: ClientState {
           ..original_substitute.state.client_state,
-          chain_id: "other-1",
+          unbonding_period: original_substitute.state.client_state.unbonding_period + 1,
         },
       },
     }
@@ -1335,42 +1413,74 @@ test recovery_keeps_one_tip_after_300_updates() {
   }
 }
 
-test recovery_parameters_reject_chain_id_change() fail {
+test recovery_adopts_substitute_chain_id_and_trusting_period() {
   let subject = expired_subject()
-  let substitute = active_substitute()
-  let incompatible_substitute =
-    ClientDatum {
-      ..substitute,
-      state: ClientDatumState {
-        ..substitute.state,
-        client_state: ClientState {
-          ..substitute.state.client_state,
-          chain_id: "another-chain-1",
-        },
-      },
-    }
+  let substitute = renamed_substitute()
+  let recovered = expected_recovered(subject, substitute)
+  and {
+    client_datum_mod.recover_state(subject, substitute, recovered),
+    recovered.state.client_state.chain_id == "chain-2",
+    recovered.state.client_state.trusting_period == substitute.state.client_state.trusting_period,
+  }
+}
+
+test recovery_rejects_output_keeping_subject_chain_id() fail {
+  let subject = expired_subject()
+  let substitute = renamed_substitute()
+  let recovered = expected_recovered(subject, substitute)
   client_datum_mod.recover_state(
     subject,
-    incompatible_substitute,
-    expected_recovered(subject, incompatible_substitute),
+    substitute,
+    ClientDatum {
+      ..recovered,
+      state: ClientDatumState {
+        ..recovered.state,
+        client_state: ClientState {
+          ..recovered.state.client_state,
+          chain_id: subject.state.client_state.chain_id,
+        },
+      },
+    },
   )
 }
 
-test recovery_parameters_require_exact_immutable_fields() {
+test recovery_rejects_output_keeping_subject_trusting_period() fail {
+  let subject = expired_subject()
+  let substitute = renamed_substitute()
+  let recovered = expected_recovered(subject, substitute)
+  client_datum_mod.recover_state(
+    subject,
+    substitute,
+    ClientDatum {
+      ..recovered,
+      state: ClientDatumState {
+        ..recovered.state,
+        client_state: ClientState {
+          ..recovered.state.client_state,
+          trusting_period: subject.state.client_state.trusting_period,
+        },
+      },
+    },
+  )
+}
+
+test recovery_parameters_ignore_chain_id_and_trusting_period_only() {
   let subject = expired_subject().state.client_state
 
   and {
-    !client_datum_mod.recovery_parameters_match(
+    client_datum_mod.recovery_parameters_match(
       subject,
-      ClientState { ..subject, chain_id: "another-chain-1" },
+      ClientState {
+        ..subject,
+        chain_id: "another-chain-2",
+        trusting_period: trusting_period + 1,
+        frozen_height: height(1),
+        latest_height: height(20),
+      },
     ),
     !client_datum_mod.recovery_parameters_match(
       subject,
       ClientState { ..subject, trust_level: unchecked_rational.new(2, 3) },
-    ),
-    !client_datum_mod.recovery_parameters_match(
-      subject,
-      ClientState { ..subject, trusting_period: trusting_period + 1 },
     ),
     !client_datum_mod.recovery_parameters_match(
       subject,
@@ -1384,7 +1494,30 @@ test recovery_parameters_require_exact_immutable_fields() {
       subject,
       ClientState { ..subject, proof_specs: merkle.get_sdk_specs() },
     ),
-    client_datum_mod.recovery_parameters_match(
+    !client_datum_mod.recovery_parameters_match(
+      subject,
+      ClientState { ..subject, upgrade_path: ["upgrade", "upgradedIBCState"] },
+    ),
+  }
+}
+
+test immutable_parameters_also_fix_chain_id_and_trusting_period() {
+  let subject = expired_subject().state.client_state
+
+  and {
+    !client_datum_mod.immutable_parameters_match(
+      subject,
+      ClientState { ..subject, chain_id: "another-chain-1" },
+    ),
+    !client_datum_mod.immutable_parameters_match(
+      subject,
+      ClientState { ..subject, trusting_period: trusting_period + 1 },
+    ),
+    !client_datum_mod.immutable_parameters_match(
+      subject,
+      ClientState { ..subject, unbonding_period: subject.unbonding_period + 1 },
+    ),
+    client_datum_mod.immutable_parameters_match(
       subject,
       ClientState {
         ..subject,

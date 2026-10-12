@@ -259,12 +259,12 @@ export class TendermintClientService {
     return left.revisionNumber === right.revisionNumber && left.revisionHeight === right.revisionHeight;
   }
 
+  // Mirrors ibc-go's IsMatchingClientState and the on-chain recovery check: the
+  // substitute may track a renamed chain and carry its own trusting period.
   private recoveryParametersMatch(subject: ClientState, substitute: ClientState): boolean {
     return (
-      subject.chainId === substitute.chainId &&
       subject.trustLevel.numerator === substitute.trustLevel.numerator &&
       subject.trustLevel.denominator === substitute.trustLevel.denominator &&
-      subject.trustingPeriod === substitute.trustingPeriod &&
       subject.unbondingPeriod === substitute.unbondingPeriod &&
       subject.maxClockDrift === substitute.maxClockDrift &&
       isDeepStrictEqual(subject.proofSpecs, substitute.proofSpecs) &&
@@ -2293,8 +2293,11 @@ export class TendermintClientService {
 
     const insertion = await this.lucidService.prepareConsensusHistoryUpdate(operator.subjectClientUtxo);
     const retainedHistory = [recoveryState];
+    const substituteState = operator.substituteClientDatum.state.clientState;
     const newClientState: ClientState = {
       ...operator.subjectClientDatum.state.clientState,
+      chainId: substituteState.chainId,
+      trustingPeriod: substituteState.trustingPeriod,
       frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
       latestHeight: recoveryState.height,
     };
