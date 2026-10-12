@@ -1,7 +1,31 @@
 use aiken/collection/list
+use aiken/primitive/string
 use ibc/utils/text_bytes.{
-  ascii_slash, is_canonical_unsigned_decimal, is_empty_or_ascii_spaces,
-  split_on_ascii_byte, trim_ascii_spaces,
+  ascii_slash, int_to_decimal_bytes, is_canonical_unsigned_decimal,
+  is_empty_or_ascii_spaces, split_on_ascii_byte, trim_ascii_spaces,
+}
+
+test decimal_bytes_preserve_standard_integer_encoding() {
+  list.all(
+    [
+      0,
+      1,
+      9,
+      10,
+      99,
+      100,
+      -1,
+      -9,
+      -10,
+      -99,
+      -100,
+      18446744073709551615,
+      -18446744073709551615,
+      340282366920938463463374607431768211455,
+      -340282366920938463463374607431768211455,
+    ],
+    fn(n) { int_to_decimal_bytes(n) == string.to_bytearray(string.from_int(n)) },
+  )
 }
 
 test test_trim_ascii_spaces() {

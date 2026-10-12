@@ -20,7 +20,8 @@ export declare function verifyIbcTreeWitness(key: string, valueHex: string, sibl
  */
 export declare class IncrementalIbcTree {
     private readonly db;
-    private readonly leafAtPath;
+    private readonly leavesAtPath;
+    private readonly leafByKey;
     private readonly nodeAtPath;
     private readonly upsertLeaf;
     private readonly deleteLeaf;
@@ -42,7 +43,8 @@ export declare class IncrementalIbcTree {
     getSiblings(key: string): string[];
     /** Empty hex deletes a leaf. Each mutation recomputes only its 64 ancestors. */
     set(key: string, valueHex: string): void;
-    private valueAtPath;
+    private bucketAtPath;
+    private migrateLeafPaths;
     private checkIntegrity;
     private nodeHash;
     private storeNode;
