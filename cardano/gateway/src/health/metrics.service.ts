@@ -34,7 +34,7 @@ export class MetricsService {
 
     this.historyBackendConnectionStatus = new Gauge({
       name: 'gateway_history_backend_connection_status',
-      help: 'Historical backend database connection status (1 = connected, 0 = disconnected)',
+      help: 'Yaci REST backend availability (1 = available, 0 = unavailable)',
     });
 
     this.cacheEntries = new Gauge({

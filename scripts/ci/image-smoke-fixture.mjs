@@ -66,7 +66,7 @@ export function protocolParameters(costModels) {
 }
 
 export function fixtureHandler(manifest, datum, parameters) {
-  const requests = { protocol: 0, timing: 0, references: 0, host: 0, datum: 0, entities: 0, unexpected: [] };
+  const requests = { protocol: 0, timing: 0, references: 0, host: 0, datum: 0, entities: 0, history: 0, unexpected: [] };
   function rpcResponse(rpc) {
     let result;
     if (rpc?.method === 'queryLedgerState/protocolParameters') {
@@ -107,6 +107,12 @@ export function fixtureHandler(manifest, datum, parameters) {
     let value;
     if (request.method === 'GET' && url.pathname === '/__smoke/status') {
       value = requests;
+    } else if (request.method === 'GET' && url.pathname === '/api/v1/blocks/latest') {
+      requests.history++;
+      value = {
+        number: 1, hash: '88'.repeat(32), previous_block: '00'.repeat(32),
+        slot: 1, epoch: 0, time: 1767225601, slot_leader: 'pool1smoke', tx_count: 0,
+      };
     } else if (request.method === 'POST' && url.pathname === '/') {
       let body = '';
       for await (const chunk of request) {
