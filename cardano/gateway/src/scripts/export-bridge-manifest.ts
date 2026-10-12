@@ -1,5 +1,7 @@
-import { gatewayPostgresConfig } from '../config/gateway-postgres.config';
-import { Client } from 'pg';
+import { YaciRestClient } from '../shared/helpers/yaci-rest';
+import { YaciRestHistory } from '../shared/helpers/yaci-rest-history';
+import * as dotenv from 'dotenv';
+dotenv.config();
 import { HistoryConfigurationError, verifyHistoryCoverage } from '../config/history-coverage';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -30,35 +32,22 @@ const loadedBridgeConfig = normalizeHandlerJsonDeploymentConfig(handlerJson, {
 async function exportManifest() {
   if (!loadedBridgeConfig.bridgeManifest.history)
     throw new Error('Handler has no history bootstrap; upgrade it from retained chain data before exporting');
-  const database = new Client({
-    ...gatewayPostgresConfig(),
-    connectionTimeoutMillis: 30000,
-    statement_timeout: 30000,
-  });
-  await database.connect();
-  try {
-    const timeout = Number(process.env.BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS || 7200);
-    if (!Number.isSafeInteger(timeout) || timeout <= 0 || timeout > 86400)
-      throw new Error('Invalid BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS');
-    const deadline = Date.now() + timeout * 1000;
-    for (;;) {
-      await database.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-      try {
-        await verifyHistoryCoverage(
-          { query: async (text, values) => (await database.query(text, values)).rows },
-          loadedBridgeConfig.bridgeManifest,
-        );
-        await database.query('COMMIT');
-        break;
-      } catch (error) {
-        await database.query('ROLLBACK');
-        if (error instanceof HistoryConfigurationError || Date.now() >= deadline) throw error;
-        console.warn(`Waiting to verify deployment history before publishing manifest: ${error.message}`);
-        await new Promise((resolve) => setTimeout(resolve, Math.min(10000, deadline - Date.now())));
-      }
+  const seconds = Number(process.env.BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS || 7200);
+  if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 86400)
+    throw new Error('Invalid BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS');
+  const deadline = Date.now() + seconds * 1000;
+  for (;;) {
+    try {
+      await verifyHistoryCoverage(
+        new YaciRestHistory(new YaciRestClient(process.env.YACI_STORE_ENDPOINT)),
+        loadedBridgeConfig.bridgeManifest,
+      );
+      break;
+    } catch (error) {
+      if (error instanceof HistoryConfigurationError || Date.now() >= deadline) throw error;
+      console.warn(`Waiting for Yaci REST deployment history before publishing manifest: ${error.message}`);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(10000, deadline - Date.now())));
     }
-  } finally {
-    await database.end();
   }
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(loadedBridgeConfig.bridgeManifest, null, 2)}\n`, 'utf8');

@@ -2,7 +2,6 @@ import { Logger, Module } from '@nestjs/common';
 import * as fs from 'fs';
 import { TxModule } from './tx/tx.module';
 import { QueryModule } from './query/query.module';
-import { HistoryDatabaseConfig } from './config/history-database.config';
 import { GatewayDatabaseConfig } from './config/gateway-database.config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
@@ -25,7 +24,6 @@ const bridgeConfigFileReader = {
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot(HistoryDatabaseConfig),
     TypeOrmModule.forRoot(GatewayDatabaseConfig),
     ConfigModule.forRoot({
       load: [

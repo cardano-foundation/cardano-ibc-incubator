@@ -17,29 +17,10 @@ services:
       CONSENSUS_HISTORY_CACHE_DIR: /var/lib/cardano-ibc/consensus-history
     networks:
       - cardano_network
-    depends_on:
-      bridge-history-sync:
-        condition: service_started
     volumes:
       - consensus-history:/var/lib/cardano-ibc/consensus-history
       - ./dist:/usr/src/app/dist
       - ../../chains/mithrils/data/aggregator/stores:/usr/chains/mithrils/data/aggregator/stores
-      - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments:ro
-      - ../../manifests:/usr/src/app/manifests:ro
-    env_file:
-      - .env
-
-  bridge-history-sync:
-    container_name: ${GATEWAY_HISTORY_CONTAINER_NAME:-gateway-bridge-history-sync}
-    build:
-      context: ../..
-      dockerfile: cardano/gateway/Dockerfile
-    command: ["node", "dist/scripts/yaci-bridge-history-sync.js"]
-    restart: on-failure
-    networks:
-      - cardano_network
-    volumes:
-      - ./dist:/usr/src/app/dist
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments:ro
       - ../../manifests:/usr/src/app/manifests:ro
     env_file:

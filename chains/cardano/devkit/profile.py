@@ -217,7 +217,6 @@ class Runtime:
                      "CARDANO_DOCKER_NETWORK": self.project + "_default",
                      "GATEWAY_COMPOSE_PROJECT": self.project + "-gateway",
                      "GATEWAY_CONTAINER_NAME": self.project + "-gateway-app",
-                     "GATEWAY_HISTORY_CONTAINER_NAME": self.project + "-bridge-history-sync",
                      "DAPP_COMPOSE_PROJECT": self.project + "-dapps",
                      # All five producers are seeded in genesis.
                      "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT": "1"}

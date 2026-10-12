@@ -238,7 +238,6 @@ def main():
 
     def history(handler):
         run('init-history', runtime_command('init-history', handler))
-        start('history', runtime_command('history-sync', handler))
 
     def gateway(handler, historical=False):
         stop('gateway')
