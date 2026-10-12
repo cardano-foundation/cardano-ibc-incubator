@@ -13,9 +13,9 @@ async function main() {
   const db = new Client({
     connectionString: process.env.HISTORY_DB_URL,
     host: process.env.HISTORY_DB_HOST || 'localhost',
-    port: Number(process.env.HISTORY_DB_PORT || process.env.YACI_STORE_POSTGRES_PORT || 15432),
-    database: process.env.HISTORY_DB_NAME || 'yaci_store',
-    user: process.env.HISTORY_DB_USERNAME || 'yaci',
+    port: Number(process.env.HISTORY_DB_PORT || process.env.BRIDGE_HISTORY_POSTGRES_PORT || 15434),
+    database: process.env.HISTORY_DB_NAME || 'bridge_history',
+    user: process.env.HISTORY_DB_USERNAME || 'bridge',
     password: process.env.HISTORY_DB_PASSWORD || 'dbpass',
     connectionTimeoutMillis: 30000,
     statement_timeout: 30000,

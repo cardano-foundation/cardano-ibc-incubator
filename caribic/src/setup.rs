@@ -1436,10 +1436,11 @@ fn write_gateway_env_for_network(
             }
 
             let public_testnet_gateway_defaults = [
-                ("HISTORY_DB_HOST", "yaci-store-postgres"),
+                ("CARDANO_DOCKER_NETWORK_EXTERNAL", "true"),
+                ("HISTORY_DB_HOST", "bridge-history-postgres"),
                 ("HISTORY_DB_PORT", "5432"),
-                ("HISTORY_DB_NAME", "yaci_store"),
-                ("HISTORY_DB_USERNAME", "yaci"),
+                ("HISTORY_DB_NAME", "bridge_history"),
+                ("HISTORY_DB_USERNAME", "bridge"),
                 ("HISTORY_DB_PASSWORD", "dbpass"),
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),

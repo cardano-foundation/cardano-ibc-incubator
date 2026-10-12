@@ -3,6 +3,7 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+// Gateway-owned REST import and bridge projection. Never point this at Yaci Store PostgreSQL.
 export const HistoryDatabaseConfig: TypeOrmModuleOptions = {
   name: 'history',
   type: 'postgres',

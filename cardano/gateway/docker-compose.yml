@@ -17,6 +17,12 @@ services:
       CONSENSUS_HISTORY_CACHE_DIR: /var/lib/cardano-ibc/consensus-history
     networks:
       - cardano_network
+      - history_network
+    depends_on:
+      bridge-history-postgres:
+        condition: service_healthy
+      bridge-history-sync:
+        condition: service_started
     volumes:
       - consensus-history:/var/lib/cardano-ibc/consensus-history
       - ./dist:/usr/src/app/dist
@@ -35,6 +41,10 @@ services:
     restart: on-failure
     networks:
       - cardano_network
+      - history_network
+    depends_on:
+      bridge-history-postgres:
+        condition: service_healthy
     volumes:
       - ./dist:/usr/src/app/dist
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments:ro
@@ -42,10 +52,34 @@ services:
     env_file:
       - .env
 
+  # This database belongs to the Gateway. Yaci Store is accessed only through REST.
+  bridge-history-postgres:
+    image: postgres:15@sha256:9b1d34adbce1dd07ee6e94b4a2cf698884b89bd44a6c9c12f5da8f3acbfe4957
+    restart: on-failure
+    environment:
+      POSTGRES_DB: ${HISTORY_DB_NAME:-bridge_history}
+      POSTGRES_USER: ${HISTORY_DB_USERNAME:-bridge}
+      POSTGRES_PASSWORD: ${HISTORY_DB_PASSWORD:-dbpass}
+    ports:
+      - "127.0.0.1:${BRIDGE_HISTORY_POSTGRES_PORT:-15434}:5432"
+    volumes:
+      - bridge-history:/var/lib/postgresql/data
+    networks:
+      - history_network
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
 volumes:
   consensus-history:
+  bridge-history:
+    name: ${GATEWAY_HISTORY_VOLUME:-${GATEWAY_COMPOSE_PROJECT:-gateway}_bridge_history_${CARDANO_CHAIN_NETWORK_MAGIC:-42}}
 
 networks:
+  history_network:
+    internal: true
   cardano_network:
-    external: true
+    external: ${CARDANO_DOCKER_NETWORK_EXTERNAL:-true}
     name: ${CARDANO_DOCKER_NETWORK:-cardano_ibc_net}

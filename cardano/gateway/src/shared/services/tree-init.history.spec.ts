@@ -2,6 +2,7 @@ import { HistoryConfigurationError } from '../../config/history-coverage';
 import { ConfigService } from '@nestjs/config';
 import { TreeInitService } from './tree-init.service';
 import * as historyCoverage from '../../config/history-coverage';
+import { YaciRestClient } from '../helpers/yaci-rest';
 
 describe('cold manifest startup readiness', () => {
   const originalRecoveryMode = process.env.GATEWAY_HISTORICAL_READ_ONLY;
@@ -15,13 +16,14 @@ describe('cold manifest startup readiness', () => {
     process.env.GATEWAY_HISTORICAL_READ_ONLY = 'true';
     const verify = jest.spyOn(historyCoverage, 'verifyHistoryCoverage').mockResolvedValue(undefined);
     const manifest = { history: { format: 'cardano-history-v1' } };
-    const manager = { query: jest.fn() };
+    const manager = { query: jest.fn(async () => [{ number: '100', hash: '22'.repeat(32) }]) };
+    jest.spyOn(YaciRestClient.prototype, 'block').mockResolvedValue({ hash: '22'.repeat(32) } as never);
     const database = { transaction: async (_: string, action: any) => action(manager) };
     const live = jest.fn().mockRejectedValue(new Error('Bridge migration is in progress'));
     const cache = { ensureSchema: jest.fn() };
     const store = { rebuildTreeFromChain: jest.fn() };
     const service = new TreeInitService({ findUtxoAtHostStateNFT: live } as never, cache as never,
-      store as never, { get: () => manifest } as never, database as never);
+      store as never, { get: (key: string) => key === 'yaciStoreEndpoint' ? 'https://yaci.example' : manifest } as never, database as never);
     await service.onModuleInit();
     expect(verify).toHaveBeenCalledWith(manager, manifest);
     expect(live).not.toHaveBeenCalled();

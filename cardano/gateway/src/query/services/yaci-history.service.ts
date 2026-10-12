@@ -29,6 +29,7 @@ import {
 
 import { reconstructHistoricalIbcTree } from './historical-ibc-tree';
 import { readLocalEpochStake } from './local-epoch-stake';
+import { assertRestHistoryCanonical, YaciRestClient } from '../../shared/helpers/yaci-rest';
 import {
   StaleIbcTreeStateError,
   type IbcTreeHostStateRef,
@@ -214,9 +215,12 @@ export class YaciHistoryService implements HistoryService {
         throw new Error('Historical IBC tree rebuild capacity reached; retry later');
       }
       pending = (async () => {
+        const rest = new YaciRestClient(this.configService.get<string>('yaciStoreEndpoint'));
+        let tip: { number: string; hash: string };
         const snapshot = await this.entityManager.transaction('REPEATABLE READ', async (manager) => {
           await manager.query('SET TRANSACTION READ ONLY');
           await manager.query('SET LOCAL statement_timeout = 30000');
+          tip = await assertRestHistoryCanonical(manager, rest);
           return reconstructHistoricalIbcTree(
             manager,
             this.configService.getOrThrow('deployment'),
@@ -227,10 +231,9 @@ export class YaciHistoryService implements HistoryService {
           );
         });
         // A rollback during the read snapshot must not publish an orphaned tree.
-        const canonical = await this.entityManager.query('SELECT hash FROM block WHERE number = $1', [
-          height.toString(),
-        ]);
-        if (canonical.length !== 1 || canonical[0].hash !== snapshot.blockHash) {
+        await assertRestHistoryCanonical(this.entityManager, rest, tip!);
+        const canonical = await rest.block(height);
+        if (!canonical || canonical.hash !== snapshot.blockHash) {
           throw new StaleIbcTreeStateError('Requested historical block changed during IBC tree reconstruction');
         }
         return {
@@ -422,6 +425,7 @@ export class YaciHistoryService implements HistoryService {
       LIMIT 1
     `;
     const rows = await this.entityManager.query(query);
+    if (rows[0]) await this.checkRemoteBlock(rows[0].number, rows[0].hash);
     return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
   }
 
@@ -440,7 +444,15 @@ export class YaciHistoryService implements HistoryService {
       LIMIT 1
     `;
     const rows = await this.entityManager.query(query, [height.toString()]);
+    if (rows[0]) await this.checkRemoteBlock(rows[0].number, rows[0].hash);
     return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
+  }
+
+  private async checkRemoteBlock(height: string | number, hash: string): Promise<void> {
+    const rest = new YaciRestClient(this.configService.get<string>('yaciStoreEndpoint'));
+    const block = await rest.block(BigInt(height));
+    if (!block || block.hash !== hash)
+      throw new StaleIbcTreeStateError('Imported Cardano block is no longer canonical in Yaci REST. Wait for history sync and retry');
   }
 
   async findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]> {
@@ -1439,7 +1451,7 @@ export class YaciHistoryService implements HistoryService {
     const endpoint = this.configService.get<string>('cardanoEpochParamsEndpoint')?.replace(/\/+$/, '');
     if (!endpoint) {
       if (this.isExplicitLocalDevnet()) {
-        return this.fetchLocalEpochNonce(epoch);
+        throw new Error('Local epoch nonces require CARDANO_EPOCH_PARAMS_ENDPOINT. Direct Yaci database nonce reads are no longer supported');
       }
       const localEpochNonceOverride = normalizeHex(process.env.CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE);
       if (
@@ -1494,84 +1506,6 @@ export class YaciHistoryService implements HistoryService {
       this.configService.get<number>('cardanoChainNetworkMagic') === 42 &&
       this.configService.get<string>('cardanoNetwork') === 'Custom'
     );
-  }
-
-  private async fetchLocalEpochNonce(epoch: number): Promise<string> {
-    if (!Number.isSafeInteger(epoch) || epoch < 0) {
-      throw new Error('Local Cardano epoch must be a non-negative safe integer');
-    }
-    const genesisNonce = normalizeHex(process.env.CARDANO_EPOCH_NONCE_GENESIS);
-    if (!/^[0-9a-f]{64}$/.test(genesisNonce)) {
-      throw new Error('Local Cardano genesis nonce must be configured from the actual node genesis hash');
-    }
-
-    // The optional Yaci epoch-nonce module reconstructs these values from the
-    // retained chain and removes them on rollback. Do not cache by epoch here:
-    // a rollback across an epoch boundary can replace the corresponding nonce.
-    const rows = await this.entityManager.query(
-      `
-        SELECT n.epoch, n.nonce, b.hash AS block_hash, b.epoch AS block_epoch,
-               genesis.nonce AS genesis_nonce, gb.hash AS genesis_block_hash,
-               gb.epoch AS genesis_block_epoch,
-               (
-                 SELECT COUNT(DISTINCT history.epoch)::text
-                 FROM epoch_nonce history
-                 JOIN block history_block
-                   ON history_block.number = history.block
-                  AND history_block.slot = history.slot
-                  AND history_block.epoch = history.epoch
-                 WHERE history.epoch BETWEEN 0 AND $1
-                   AND history.nonce ~* '^[0-9a-f]{64}$'
-                   AND history_block.hash ~* '^[0-9a-f]{64}$'
-               ) AS canonical_epoch_count
-        FROM epoch_nonce n
-        LEFT JOIN block b ON b.number = n.block AND b.slot = n.slot
-        LEFT JOIN epoch_nonce genesis ON genesis.epoch = 0
-        LEFT JOIN block gb ON gb.number = genesis.block AND gb.slot = genesis.slot
-        WHERE n.epoch = $1
-      `,
-      [epoch],
-    );
-    if (rows.length === 0) {
-      // Only epoch zero may use its actual genesis hash before replay reaches
-      // the first block. The legacy unscoped override is never a later nonce.
-      if (epoch === 0) return genesisNonce;
-      throw new Error(
-        `Local Cardano nonce for epoch ${epoch} is not indexed; enable store.epoch-nonce.enabled and replay Yaci from genesis`,
-      );
-    }
-    const row = rows[0];
-    const nonce = normalizeHex(row.nonce);
-    if (
-      rows.length !== 1 ||
-      parseNonNegativeBigInt(row.epoch) !== BigInt(epoch) ||
-      parseNonNegativeBigInt(row.block_epoch) !== BigInt(epoch) ||
-      !/^[0-9a-f]{64}$/.test(normalizeHex(row.block_hash)) ||
-      !/^[0-9a-f]{64}$/.test(nonce) ||
-      parseNonNegativeBigInt(row.genesis_block_epoch) !== 0n ||
-      !/^[0-9a-f]{64}$/.test(normalizeHex(row.genesis_block_hash)) ||
-      normalizeHex(row.genesis_nonce) !== genesisNonce ||
-      (epoch === 0 && nonce !== genesisNonce)
-    ) {
-      throw new Error(
-        `Local Cardano nonce evidence for epoch ${epoch} is invalid or belongs to another genesis; rebuild the disposable Yaci index from the exact node genesis files`,
-      );
-    }
-    // Yaci can lose a transition row on a boundary rollback without recreating
-    // it on replacement blocks. A later row must not conceal that missing
-    // prerequisite. Epoch is the nonce primary key; distinct canonical epochs
-    // in [0, epoch] must cover the entire interval, without loading rows into JS.
-    const canonicalEpochCount = row.canonical_epoch_count;
-    if (
-      typeof canonicalEpochCount !== 'string' ||
-      !/^(0|[1-9][0-9]*)$/.test(canonicalEpochCount) ||
-      BigInt(canonicalEpochCount) !== BigInt(epoch) + 1n
-    ) {
-      throw new Error(
-        `Local Cardano nonce history through epoch ${epoch} is incomplete or non-canonical; rebuild the disposable Yaci index from the exact node genesis files`,
-      );
-    }
-    return nonce;
   }
 
   private epochNonceCacheKey(epoch: number): string {
@@ -1756,11 +1690,6 @@ export class YaciHistoryService implements HistoryService {
         WHERE event_type = 'register'
           AND lower(pool_id) = ANY($1::text[])
           AND slot_no IS NOT NULL
-        UNION ALL
-        SELECT lower(pool_id) AS pool_id, registration_slot::bigint AS first_registration_slot
-        FROM pool
-        WHERE lower(pool_id) = ANY($1::text[])
-          AND registration_slot IS NOT NULL
       )
       SELECT pool_id, MIN(first_registration_slot)::text AS first_registration_slot
       FROM registration_slots
@@ -1947,6 +1876,8 @@ export class YaciHistoryService implements HistoryService {
       return null;
     }
 
+    if (!rows[0].block_hash) throw new Error('Imported transaction is missing canonical block evidence');
+    await this.checkRemoteBlock(rows[0].block_no, rows[0].block_hash);
     return this.mapTxRow(rows[0]);
   }
 
@@ -1990,6 +1921,10 @@ export class YaciHistoryService implements HistoryService {
       LIMIT 1
     `;
     const rows = await this.entityManager.query(query, [hash.toLowerCase()]);
+    if (rows[0]) {
+      if (!rows[0].block_hash) throw new Error('Imported transaction is missing canonical block evidence');
+      await this.checkRemoteBlock(rows[0].block_no, rows[0].block_hash);
+    }
     return rows[0] ? this.mapTxEvidenceRow(rows[0]) : null;
   }
 

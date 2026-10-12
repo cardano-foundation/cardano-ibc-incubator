@@ -2,6 +2,7 @@ import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
 import { encode } from 'cbor';
 import { Pool, PoolClient } from 'pg';
 import { YaciHistoryService } from '../query/services/yaci-history.service';
+import { YaciRestClient } from '../shared/helpers/yaci-rest';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 import { SubmissionService } from '../tx/submission.service';
 import {
@@ -128,6 +129,7 @@ postgresDescribe('bridge history cancellation SQL and ObserveTx', () => {
       [cancellationHash, 'addr_test_wallet_change']);
   });
   afterEach(async () => {
+    jest.restoreAllMocks();
     if (client) {
       await client.query('ROLLBACK');
       await client.query('DROP SCHEMA IF EXISTS bridge_history_cancellation_test CASCADE');
@@ -142,7 +144,8 @@ postgresDescribe('bridge history cancellation SQL and ObserveTx', () => {
     if (match === 'same-block output') await client.query('UPDATE address_utxo SET block = 2 WHERE block = 1');
     await expect(getNextRelevantBlock(client, 1)).resolves.toBe(2);
     await processBlock(client, filter, 2);
-    const history = new YaciHistoryService({} as any, {} as any, {
+    jest.spyOn(YaciRestClient.prototype, 'block').mockResolvedValue({ hash: blockHash } as never);
+    const history = new YaciHistoryService({ get: () => 'https://yaci.example' } as any, {} as any, {
       query: async (sql: string, parameters: unknown[]) => (await client.query(sql, parameters)).rows,
     } as any);
     const evidence = await history.findTransactionEvidenceByHash(cancellationHash);
