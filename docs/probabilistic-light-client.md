@@ -161,7 +161,7 @@ It's clear from these diagnostics that Preprod has far fewer active/producing po
 
 Also note that this conversation takes place before our **qualified** unique stake application, i.e, we actually only sum unique stake from pools created prior to 2026.
 
-The [mainnet stake distribution study from October 9, 2026](../studies/cardano_probabilistic_finality/mainnet-stake-2026-10-09/README.md) examines 100 epoch transitions and replays recent-production qualifications against the current 24-descendant, five-pool and 511-basis-point policy. It measures how limits on stake changes could restrict fabricated allocations and how production qualifications affect settlement time. These restrictions do not authenticate stake amounts.
+The [mainnet stake distribution study from October 9, 2026](../studies/cardano_probabilistic_finality/mainnet-stake-2026-10-09/) examines 100 epoch transitions and replays recent-production qualifications against the current 24-descendant, five-pool and 511-basis-point policy. It measures how limits on stake changes could restrict fabricated allocations and how production qualifications affect settlement time. These restrictions do not authenticate stake amounts.
 
 ### Header
 
@@ -365,10 +365,11 @@ connection and channel IDs; it requires neither a new Cardano `CreateClient`
 nor an Aiken redeployment or replacement voucher denomination. Creating a new
 client does not retarget an existing connection.
 
-See the [software-upgrade contract](./probabilistic-client-software-upgrades.md)
-for stable type URLs, historical-state decoding, private store keys, verifier
-activation, app migrations and the exact-artifact acceptance gate for #603.
-The [external fixtures](../tests/probabilistic-upgrade/README.md) test published
+Software upgrades require stable type URLs, safe historical-state decoding,
+compatible private store keys and defined verifier activation. Test the exact
+old and new artifacts and apply any required host app migration before normal
+operation.
+The [external fixtures](../tests/probabilistic-upgrade/) test published
 modules without changing their runtime code. This software-upgrade path is
 separate from substitute recovery and the unsupported IBC `MsgUpgradeClient`.
 

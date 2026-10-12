@@ -15,7 +15,7 @@ The existing adapter protobufs remain the wire contract. Run `node scripts/ci/ge
 
 Run `go test ./...` and `go vet ./...` in the core and both adapter modules. State-machine regressions live in `state`. Each adapter tests its protobuf conversions, IBC error identity, and stored bytes. `testdata/state_machine_store.json` was captured from the v8 implementation on main at `96ace927` for initialization, freezing, and recovery. The fixture now includes nonce and pool registration checkpoints, settlement credit references and production history. Both adapters must reproduce those bytes, including the host revision in processed metadata. Clients without the required running state need an explicitly trusted new starting checkpoint.
 
-Pool identities, VRF bindings and registration ages come from the independent registry described in [POOL_REGISTRY.md](POOL_REGISTRY.md). That document also specifies the required bootstrap file and the remaining ledger-validity assumption. Stake amounts still use the challenge model.
+Pool identities, VRF bindings and registration ages come from the independent registry. Stake amounts still use the challenge model.
 
 The repository builds against the local core through `replace` directives. Before publishing new adapter versions, publish a core version containing `state` and update both adapters to require that version. The existing `v0.1.5` release does not contain the new package.
 
