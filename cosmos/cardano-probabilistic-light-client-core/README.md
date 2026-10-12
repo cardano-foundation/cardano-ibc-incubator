@@ -24,3 +24,7 @@ Release tags for this nested module use the module directory prefix, for example
 ```text
 cosmos/cardano-probabilistic-light-client-core/v0.1.5
 ```
+
+Hermes recovers submitted probabilistic headers from successful destination transactions. It matches the client and message position before reading the header. Rootless updates use the submitted anchor height for challenge monitoring even though they create no consensus root. Startup checks also find the first current-epoch proposal in transaction history. Both adapters return standard IBC heights to the SDK so update events use the expected `revision-height` format.
+
+The `native-challenge.json` and `watcher-*` fixtures connect real v8/v10 keeper execution to Hermes event recovery and challenge submission. Both SDK tests then decode and verify the challenge bytes produced by Hermes. These are signed synthetic Praos blocks rather than a live mainnet challenge.

@@ -34,7 +34,7 @@ func (cs *ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, store
 	heights := shared.UpdateState(coreContext(ctx), coreCodec{cdc}, store, coreMessage(msg))
 	*cs = *fromCoreClientState(shared)
 	return mapCoreSlice(heights, func(h state.HeightValue) exported.Height {
-		return NewHeight(h.GetRevisionNumber(), h.GetRevisionHeight())
+		return clienttypes.NewHeight(h.GetRevisionNumber(), h.GetRevisionHeight())
 	})
 }
 

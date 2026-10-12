@@ -1,6 +1,7 @@
 package probabilistic
 
 import (
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"time"
 
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
@@ -13,7 +14,7 @@ func (ProbabilisticHeader) ClientType() string {
 }
 
 func (h ProbabilisticHeader) GetHeight() exported.Height {
-	return NewHeight(0, h.AnchorBlock.Height.RevisionHeight)
+	return clienttypes.NewHeight(0, h.AnchorBlock.Height.RevisionHeight)
 }
 
 func (h ProbabilisticHeader) GetTimestamp() uint64 {
