@@ -13,6 +13,7 @@ import (
 	connectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
+	pathTypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types/v2"
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
 	ibcerrors "github.com/cosmos/ibc-go/v10/modules/core/errors"
 	"github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -29,6 +30,7 @@ func TestAppRecoverClient(t *testing.T) {
 		wantErr error
 	}{
 		{"success", nil},
+		{"frozen pending subject", nil},
 		{"active subject", clienttypes.ErrInvalidRecoveryClient},
 		{"expired substitute", clienttypes.ErrClientNotActive},
 		{"frozen substitute", clienttypes.ErrClientNotActive},
@@ -57,6 +59,10 @@ func TestAppRecoverClient(t *testing.T) {
 			substituteID := ModuleName + "-1"
 			subject := newProbabilisticTestClientState()
 			subject.TrustingPeriod = time.Second
+			vector := loadStateProofVectors(t)[5]
+			proof := vectorProofProto(t, vector)
+			value := expectedProofValue(t, vector)
+			path := pathTypes.NewMerklePath([]byte("ibc"), []byte(vector.Key))
 			substitute := newProbabilisticTestClientState()
 			substitute.LatestHeight = NewHeight(0, 20)
 			if tc.name == "active subject" {
@@ -82,6 +88,8 @@ func TestAppRecoverClient(t *testing.T) {
 				setClientState(store, cdc, state)
 				consensus := newProbabilisticTestConsensusState(state.LatestCheckpointBlockHash, slot)
 				consensus.Timestamp = state.LatestCheckpointTimestamp
+				consensus.IbcStateRoot = nextSequenceRecvHex(t, vector.Root)
+				setTestPacketSnapshot(t, consensus, state.LatestHeight.RevisionHeight)
 				setConsensusState(store, cdc, consensus, state.LatestHeight)
 				setConsensusMetadataWithValues(store, state.LatestHeight, clienttypes.NewHeight(1, 99), uint64(ctx.BlockTime().UnixNano()))
 				require.NoError(t, state.Validate())
@@ -89,6 +97,15 @@ func TestAppRecoverClient(t *testing.T) {
 			expectedSubjectStatus := exported.Expired
 			if tc.name == "active subject" {
 				expectedSubjectStatus = exported.Active
+			}
+			if tc.name == "frozen pending subject" {
+				subject.TrustingPeriod = 24 * time.Hour
+				subject.EpochContextChallenges = []*EpochContextChallenge{{Epoch: 7, UsableAfterUnixNs: uint64(ctx.BlockTime().Add(3 * time.Minute).UnixNano())}}
+				setClientState(clientStore(subjectID), cdc, subject)
+				require.ErrorIs(t, subject.VerifyMembership(ctx, clientStore(subjectID), cdc, subject.LatestHeight, 0, 0, proof, path, value), ErrEpochContextPending)
+				subject.UpdateStateOnMisbehaviour(ctx, cdc, clientStore(subjectID), nil)
+				subject, _ = getClientState(clientStore(subjectID), cdc)
+				expectedSubjectStatus = exported.Frozen
 			}
 			require.Equal(t, expectedSubjectStatus, subject.Status(ctx, clientStore(subjectID), cdc))
 			expectedSubstituteStatus := exported.Active
@@ -156,6 +173,17 @@ func TestAppRecoverClient(t *testing.T) {
 			require.True(t, found)
 			require.Equal(t, exported.Active, recovered.Status(ctx, clientStore(subjectID), cdc))
 			require.Equal(t, substitute.LatestHeight, recovered.LatestHeight)
+			// An elapsed replacement window releases only the replacement root.
+			_, oldRootFound := GetConsensusState(clientStore(subjectID), cdc, subject.LatestHeight)
+			require.False(t, oldRootFound)
+			_, oldTimeFound := GetProcessedTime(clientStore(subjectID), subject.LatestHeight)
+			require.False(t, oldTimeFound)
+			_, oldHeightFound := GetProcessedHeight(clientStore(subjectID), subject.LatestHeight)
+			require.False(t, oldHeightFound)
+			require.Nil(t, clientStore(subjectID).Get(IterationKey(subject.LatestHeight)))
+			proofCtx := ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+			require.Error(t, recovered.VerifyMembership(proofCtx, clientStore(subjectID), cdc, subject.LatestHeight, 0, 0, proof, path, value))
+			require.NoError(t, recovered.VerifyMembership(proofCtx, clientStore(subjectID), cdc, substitute.LatestHeight, 0, 0, proof, path, value))
 			require.Equal(t, substituteBefore, recoveryStoreSnapshot(t, clientStore(substituteID)))
 			after := recoveryStoreSnapshot(t, ibcStore)
 			for key, value := range before {
