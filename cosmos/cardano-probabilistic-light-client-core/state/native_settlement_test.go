@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -37,6 +38,13 @@ type nativeProducer struct {
 func makeNativeSettlementFixture(t *testing.T) nativeSettlementFixture {
 	t.Helper()
 	cs := newProbabilisticTestClientState()
+	// Start more than six months after registration. The signing certificate
+	// begins in this KES period so its relative signing period remains zero.
+	slotOffset := uint64(160 * 129600)
+	cs.CurrentEpochStartSlot = slotOffset
+	cs.CurrentEpochEndSlotExclusive += slotOffset
+	cs.EpochContexts[0].EpochStartSlot = slotOffset
+	cs.EpochContexts[0].EpochEndSlotExclusive += slotOffset
 	producers := make([]nativeProducer, 13)
 	entries := make([]*StakeDistributionEntry, 13)
 	for i := range producers {
@@ -64,7 +72,7 @@ func makeNativeSettlementFixture(t *testing.T) nativeSettlementFixture {
 		cs.LatestCheckpointPoolProduction.Pools = append(cs.LatestCheckpointPoolProduction.Pools, &PoolProductionRecord{PoolId: entry.PoolId, CompletedEpochsBitmap: 1})
 	}
 	hash := testBlockHash("native-bootstrap")
-	setTestCheckpoint(t, cs, cs.LatestHeight, hash, 7, 10)
+	setTestCheckpoint(t, cs, cs.LatestHeight, hash, 7, slotOffset+10)
 	consensus := newProbabilisticTestConsensusState(hash)
 	consensus.Timestamp = cs.LatestCheckpointTimestamp
 	consensus.PoolRegistry = clonePoolRegistry(cs.LatestCheckpointPoolRegistry)
@@ -88,7 +96,7 @@ func makeNativeSettlementFixture(t *testing.T) nativeSettlementFixture {
 				}
 				slot++
 			}
-			require.Less(t, slot, cs.SlotsPerKesPeriod)
+			require.Less(t, slot, slotOffset+cs.SlotsPerKesPeriod)
 			block := ledger.BabbageBlock{BlockHeader: &ledger.BabbageBlockHeader{}}
 			bh := block.BlockHeader
 			bh.Body.BlockNumber, bh.Body.Slot = n, slot
@@ -99,7 +107,9 @@ func makeNativeSettlementFixture(t *testing.T) nativeSettlementFixture {
 			bh.Body.VrfKey = p.vrfPublic
 			bh.Body.VrfResult.Proof, bh.Body.VrfResult.Output = proof, output
 			bh.Body.OpCert.HotVkey = p.kesPublic
+			bh.Body.OpCert.KesPeriod = slotOffset / cs.SlotsPerKesPeriod
 			signable := append(bytes.Clone(p.kesPublic), make([]byte, 16)...)
+			binary.BigEndian.PutUint64(signable[40:], bh.Body.OpCert.KesPeriod)
 			bh.Body.OpCert.Signature = ed25519.Sign(p.cold, signable)
 			encoded, err := cbor.Encode(block)
 			require.NoError(t, err)
@@ -134,7 +144,7 @@ func makeNativeSettlementFixture(t *testing.T) nativeSettlementFixture {
 		}
 		return h
 	}
-	header := makeHeader(11)
+	header := makeHeader(slotOffset + 11)
 	fork := makeHeader(header.AnchorBlock.Slot + 1)
 	return nativeSettlementFixture{cs, consensus, header, fork}
 }

@@ -218,11 +218,11 @@ func (cs *ClientState) verifyHeaderWithMode(
 	}
 
 	// A table is an unsigned claim. Only historical challenge verification may
-	// use an alternative claim to authenticate a competing block history.
-	if mode.enforceForwardUpdate && header.NewEpochContext != nil {
+	// use an alternative claim for an epoch later than the trusted checkpoint.
+	if header.NewEpochContext != nil && (mode.enforceForwardUpdate || header.NewEpochContext.Epoch <= trustedBlock.epoch) {
 		stored := epochContextByEpoch(currentEpochContexts, header.NewEpochContext.Epoch)
-		if stored != nil && !epochContextsEqual(stored, header.NewEpochContext) {
-			return errorsmod.Wrap(ErrInvalidCurrentEpoch, "cannot replace an installed epoch context in a forward update")
+		if stored != nil && !epochStakeAllocationsEqual(stored, header.NewEpochContext) {
+			return errorsmod.Wrap(ErrInvalidCurrentEpoch, "cannot replace an installed epoch context")
 		}
 	}
 

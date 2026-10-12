@@ -348,3 +348,28 @@ func retainEpochContexts(contexts []*EpochContext, keep map[uint64]struct{}) []*
 	}
 	return retained
 }
+
+// Fractions are validated separately against the amounts. Their reduced or
+// unreduced representation does not change an established stake allocation.
+func epochStakeAllocationsEqual(a, b *EpochContext) bool {
+	if a == nil || b == nil || a.Epoch != b.Epoch || len(a.StakeDistribution) != len(b.StakeDistribution) {
+		return false
+	}
+	amounts := make(map[string]uint64, len(a.StakeDistribution))
+	for _, entry := range a.StakeDistribution {
+		if entry == nil {
+			return false
+		}
+		amounts[strings.ToLower(entry.PoolId)] = entry.Stake
+	}
+	for _, entry := range b.StakeDistribution {
+		if entry == nil {
+			return false
+		}
+		amount, found := amounts[strings.ToLower(entry.PoolId)]
+		if !found || amount != entry.Stake {
+			return false
+		}
+	}
+	return true
+}

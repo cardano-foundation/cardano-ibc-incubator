@@ -229,11 +229,18 @@ func TestAppUnsignedStakeDisagreementDoesNotFreeze(t *testing.T) {
 			challenge, err := clienttypes.NewMsgSubmitMisbehaviour(clientID, evidence, signer)
 			require.NoError(t, err)
 			_, err = app.MsgServiceRouter().Handler(challenge)(ctx, challenge)
-			require.ErrorContains(t, err, "probabilistic headers do not conflict")
+			require.ErrorContains(t, err, "cannot replace an installed epoch context")
 			healthy, found := getClientState(store, cdc)
 			require.True(t, found)
 			require.Equal(t, exported.Active, healthy.Status(ctx, store, cdc))
 			require.Equal(t, uint64(200), healthy.EpochContexts[0].StakeDistribution[0].Stake)
+			// An altered old table is not allowed to authenticate a signed fork either.
+			forkClaim := fromCoreProbabilisticHeader(toCoreProbabilisticHeader(fixture.Fork))
+			forkClaim.NewEpochContext = changed.NewEpochContext
+			challenge, err = clienttypes.NewMsgSubmitMisbehaviour(clientID, NewMisbehaviour(clientID, original, forkClaim), signer)
+			require.NoError(t, err)
+			_, err = app.MsgServiceRouter().Handler(challenge)(ctx, challenge)
+			require.ErrorContains(t, err, "cannot replace an installed epoch context")
 			// Genuine incompatible signed histories still freeze through the same handler.
 			challenge, err = clienttypes.NewMsgSubmitMisbehaviour(clientID, NewMisbehaviour(clientID, original, fixture.Fork), signer)
 			require.NoError(t, err)
