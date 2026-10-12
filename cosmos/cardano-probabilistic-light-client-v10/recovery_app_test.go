@@ -2,6 +2,10 @@ package probabilistic
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -180,4 +184,103 @@ func recoveryStoreSnapshot(t *testing.T, store storetypes.KVStore) map[string][]
 		snapshot[string(iterator.Key())] = bytes.Clone(iterator.Value())
 	}
 	return snapshot
+}
+
+// Export actual SDK keeper events and transaction bytes for the Hermes watcher
+// regression. Consume its serialized challenge through the real SDK handler.
+func TestAppWatcherChallenge(t *testing.T) {
+	for _, rootless := range []bool{false, true} {
+		name := "root-bearing"
+		if rootless {
+			name = "rootless"
+		}
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/native-challenge.json")
+			require.NoError(t, err)
+			var fixture struct {
+				Client       *ClientState
+				Consensus    *ConsensusState
+				Header, Fork *ProbabilisticHeader
+			}
+			require.NoError(t, json.Unmarshal(data, &fixture))
+			clientID := ModuleName + "-0"
+			fixture.Client.TrustingPeriod = 48 * time.Hour
+
+			app := simapp.Setup(t, false)
+			t.Cleanup(func() { require.NoError(t, app.Close()) })
+			RegisterInterfaces(app.InterfaceRegistry())
+			ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: "watcher-test-1", Height: 100, Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp))})
+			cdc := app.AppCodec()
+			provider := clienttypes.NewStoreProvider(runtime.NewKVStoreService(app.GetKey(exported.StoreKey)))
+			module := NewLightClientModule(cdc, provider)
+			app.IBCKeeper.ClientKeeper.AddRoute(ModuleName, &module)
+			store := provider.ClientStore(ctx, clientID)
+
+			params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
+			params.AllowedClients = append(params.AllowedClients, ModuleName)
+			app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
+			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
+			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+			fixture.Header.IsCheckpoint = rootless
+			signer := sdk.AccAddress(bytes.Repeat([]byte{9}, 20)).String()
+			msg, err := clienttypes.NewMsgUpdateClient(clientID, fixture.Header, signer)
+			require.NoError(t, err)
+			result, err := app.MsgServiceRouter().Handler(msg)(ctx, msg)
+			require.NoError(t, err)
+			builder := app.TxConfig().NewTxBuilder()
+			require.NoError(t, builder.SetMsgs(msg))
+			tx, err := app.TxConfig().TxEncoder()(builder.GetTx())
+			require.NoError(t, err)
+			captured := struct {
+				Tx      string           `json:"tx"`
+				Events  []map[string]any `json:"events"`
+				Context string           `json:"context"`
+				Client  string           `json:"client"`
+				Witness string           `json:"witness"`
+			}{Tx: hex.EncodeToString(tx)}
+			key := append([]byte("epochChallengeCheckpoint/"), make([]byte, 8)...)
+			binary.BigEndian.PutUint64(key[len(key)-8:], 8)
+			captured.Context = hex.EncodeToString(store.Get(key))
+			latest, found := getClientState(store, cdc)
+			require.True(t, found)
+			clientBytes, err := latest.Marshal()
+			require.NoError(t, err)
+			captured.Client = hex.EncodeToString(clientBytes)
+			witnessBytes, err := fixture.Fork.Marshal()
+			require.NoError(t, err)
+			captured.Witness = hex.EncodeToString(witnessBytes)
+			for _, event := range result.Events {
+				attrs := []map[string]any{}
+				for _, attr := range event.Attributes {
+					attrs = append(attrs, map[string]any{"key": attr.Key, "value": attr.Value, "index": attr.Index})
+				}
+				captured.Events = append(captured.Events, map[string]any{"type": event.Type, "attributes": attrs})
+			}
+			encoded, err := json.MarshalIndent(captured, "", "  ")
+			require.NoError(t, err)
+			file := "../cardano-probabilistic-light-client-core/testdata/watcher-v10-" + name + ".json"
+			if os.Getenv("UPDATE_WATCHER_FIXTURES") == "1" {
+				require.NoError(t, os.WriteFile(file, append(encoded, '\n'), 0644))
+			}
+			saved, err := os.ReadFile(file)
+			require.NoError(t, err)
+			require.JSONEq(t, string(saved), string(encoded))
+			// These bytes are constructed by ForeignClient from the recovered event
+			// and independent fork witness. The destination verifies them natively.
+			challengeBytes, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/watcher-challenge-" + name + ".hex")
+			if os.Getenv("UPDATE_WATCHER_FIXTURES") == "1" && os.IsNotExist(err) {
+				return
+			}
+			require.NoError(t, err)
+			wire, err := hex.DecodeString(string(bytes.TrimSpace(challengeBytes)))
+			require.NoError(t, err)
+			challenge := &clienttypes.MsgUpdateClient{}
+			require.NoError(t, cdc.Unmarshal(wire, challenge))
+			_, err = app.MsgServiceRouter().Handler(challenge)(ctx, challenge)
+			require.NoError(t, err)
+			frozen, found := getClientState(store, cdc)
+			require.True(t, found)
+			require.Equal(t, exported.Frozen, frozen.Status(ctx, store, cdc))
+		})
+	}
 }
