@@ -4,19 +4,25 @@ import { blake2b } from '@noble/hashes/blake2b';
 import type { YaciRestBlock } from '../shared/helpers/yaci-rest';
 
 /** Structural block fixture. These bytes are not a ledger-valid signed block. */
-export function restBlockFixture(height = 100, previousHash = '11'.repeat(32), invalid = [1], marker = 1) {
+export function restBlockFixture(height = 100, previousHash = '11'.repeat(32), invalid = [1], marker = 1, spend?: string, burn = false, mint = false, quantity = 1n) {
   const address = CML.Address.from_raw_bytes(Buffer.from('60' + '22'.repeat(28), 'hex'));
   const policy = CML.ScriptHash.from_hex('33'.repeat(28));
   const assetName = CML.AssetName.from_hex('01');
   const bodies = [0, 1].map((index) => {
     const inputs = CML.TransactionInputList.new();
-    inputs.add(CML.TransactionInput.new(CML.TransactionHash.from_hex((index ? '55' : '44').repeat(32)), 0n));
+    inputs.add(CML.TransactionInput.new(CML.TransactionHash.from_hex(!index && spend ? spend : (index ? '55' : '44').repeat(32)), 0n));
     const multi = CML.MultiAsset.new();
-    multi.set(policy, assetName, 1n);
+    multi.set(policy, assetName, quantity);
     const output = CML.TransactionOutput.new(address, CML.Value.new(100n, multi), CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex('00')));
     const outputs = CML.TransactionOutputList.new();
-    outputs.add(output);
-    return CML.TransactionBody.new(inputs, outputs, BigInt(marker + index));
+    if (!burn) outputs.add(output);
+    const body = CML.TransactionBody.new(inputs, outputs, BigInt(marker + index));
+    if (!index && mint) {
+      const minted = CML.Mint.new();
+      minted.set(policy, assetName, 1n);
+      body.set_mint(minted);
+    }
+    return body;
   });
   const slot = height * 10;
   const headerBody = [height, slot, Buffer.from(previousHash, 'hex'),

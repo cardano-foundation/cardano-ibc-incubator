@@ -260,7 +260,7 @@ def along(path, u):
 
 SERVICES = {
     # key: (title, what it holds, colour, row)
-    "yaci_sql": ("Gateway DB · Postgres", "app state and REST history", TEAL, 0),
+    "yaci_history": ("Yaci Store · REST", "indexed chain history", TEAL, 0),
     "yaci_rest": ("Yaci Store · REST", "raw block bytes", TEAL, 1),
     "blockfrost": ("Blockfrost", "epoch and pool history", AMBER, 2),
     "ogmios": ("Ogmios", "live ledger, evaluate, submit", BLUE, 3),
@@ -275,17 +275,17 @@ LANE_Y = 556
 # Act 1: the Gateway builds a light-client header. Each step names the service,
 # the call, and the header field it fills.
 HEADER_STEPS = [
-    ("yaci_sql", "SELECT … FROM block WHERE number > …", "Block list", "heights, hashes, slots",
-     "Our REST-imported block table lists every block from the trusted height to the anchor, plus 24+ on top."),
+    ("yaci_history", "GET /api/v1/blocks/{height}", "Block list", "heights, hashes, slots",
+     "Gateway requests block metadata through Yaci REST from the trusted height to the anchor, plus 24+ on top."),
     ("yaci_rest", "GET /blocks/{hash}/cbor", "Raw block and header bytes", "signed witnesses",
      "The light client re-checks every signature, so it needs the raw bytes served by Yaci REST."),
-    ("yaci_sql", "bridge_utxo_history · HostState NFT", "HostState tx in the anchor", "carries the new root",
+    ("yaci_history", "GET /assets/{unit}/transactions", "HostState tx in the anchor", "carries the new root",
      "The anchor block must contain the HostState transaction that carries the new IBC state root."),
     ("blockfrost", "GET /epochs/{n}/parameters", "Epoch nonce", "for VRF checks",
      "VRF proofs are checked against the epoch nonce. On public networks it comes from Blockfrost."),
     ("ogmios", "stakePools · liveStakeDistribution", "Stake and VRF key per pool", "for leader checks",
      "Leader checks need every pool's stake and VRF key: the live ledger from Ogmios, epoch totals from Blockfrost."),
-    ("yaci_sql", "bridge_spo_event_history", "Pool registration slots", "fresh pools don't count",
+    ("yaci_history", "GET /pools/registrations", "Pool registration slots", "fresh pools don't count",
      "Pools must be registered early enough to count, so the Gateway looks up when each one registered."),
     ("ogmios", "queryNetwork/genesisConfiguration", "KES and slot parameters", "from genesis",
      "KES and slot-leader maths need the network's genesis parameters, which Ogmios reads from the node."),
@@ -457,7 +457,7 @@ def scene_gateway_calls(t: float) -> Image.Image:
             h_rows.append((start, title, call if key else "then signs", SERVICES[key][2] if key
                            else PURPLE))
         draw_lane_message(c, t, A2_OBSERVE, "ObserveTx(tx_hash)", PURPLE, True)
-        draw_call(c, t, A2_CONFIRM, "yaci_sql", "bridge_tx_evidence WHERE tx_hash", GATEWAY_X,
+        draw_call(c, t, A2_CONFIRM, "yaci_history", "GET /txs/{hash} + block CBOR", GATEWAY_X,
                   active)
         g_rows.append((A2_CONFIRM, "Included, root matches", "commits its IBC tree", TEAL))
         draw_rows(c, GATEWAY_X + 18, PANEL_Y + 74, g_rows, t, rows_under)
@@ -490,7 +490,7 @@ def scene_gateway_calls(t: float) -> Image.Image:
         (A2_REPLY, "The Gateway returns an unsigned transaction. It never holds a signing key."),
         *[(A2_H_FIRST + i * STEP, s[3]) for i, s in enumerate(TX_HERMES_STEPS)],
         (A2_OBSERVE, "Hermes tells the Gateway only the transaction hash."),
-        (A2_CONFIRM, "The Gateway waits for the REST history import, checks the new root, and "
+        (A2_CONFIRM, "The Gateway reads transaction evidence through REST, checks the new root, and "
                      "commits its IBC tree."),
     ])
     return c.finish()
@@ -503,47 +503,42 @@ YACI_STORE_DURATION = 23.0
 
 def scene_yaci_store(t: float) -> Image.Image:
     c = Canvas()
-    header(c, t, "Yaci REST and the existing Gateway database",
-           "CF exposes its API. Its PostgreSQL database stays private.")
+    header(c, t, "Gateway reads Yaci history through REST",
+           "CF keeps PostgreSQL private. Gateway does not copy chain tables.")
     a = prog(t, 0.2, 1.0)
     c.rrect(30, 100, 500, 430, fill=fade(PANEL, a), outline=fade(TEAL, a), width=2, r=14)
     c.text(48, 114, "CF's services server", 18, fade(TEAL, a, PANEL), "bold")
     box(c, 60, 158, 220, 68, "Cardano node", "Yaci follows the chain", GREEN, a, 16, 12)
-    box(c, 60, 278, 220, 88, "Yaci Store REST", "block metadata and raw CBOR", TEAL, a, 16, 12)
+    box(c, 60, 278, 220, 88, "Yaci Store REST", "indexed history + raw CBOR", TEAL, a, 16, 12)
     box(c, 60, 424, 220, 68, "Yaci PostgreSQL", "private to CF", TEAL, a, 16, 12)
     c.arrow((170, 226), (170, 278), fade(GREEN, a), 2)
     c.arrow((170, 366), (170, 424), fade(TEAL, a), 2)
     c.text(182, 387, "internal SQL", 11, fade(MUTED, a))
-
     c.rrect(590, 100, 580, 430, fill=fade(PANEL, a), outline=fade(BLUE, a), width=2, r=14)
     c.text(608, 114, "Our Gateway server", 18, fade(BLUE, a, PANEL), "bold")
-    box(c, 620, 158, 230, 88, "History worker", "checks raw blocks and imports", AMBER, a, 16, 12)
-    box(c, 620, 332, 230, 110, "Existing Gateway DB", "app state and REST history\nbridge_* tables", AMBER, a, 16, 12)
-    box(c, 918, 290, 220, 90, "Gateway", "queries, proofs and tx building", BLUE, a, 16, 12)
-
+    box(c, 620, 158, 230, 88, "Gateway queries", "read indexed history on demand", BLUE, a, 16, 12)
+    box(c, 620, 332, 230, 110, "Existing Gateway DB", "application state and caches", AMBER, a, 16, 12)
+    box(c, 918, 290, 220, 90, "Proof reconstruction", "checks bodies, validity and roots", BLUE, a, 16, 12)
     api = prog(t, 2.0, 3.0)
     c.arrow((620, 215), (280, 316), fade(TEAL, api), 2.5, dashed=True, offset=-t * 25)
-    c.text(312, 249, "GET /blocks/{height}", 12, fade(TEAL, api), "mono")
-    c.text(312, 271, "GET /blocks/{hash}/cbor", 12, fade(TEAL, api), "mono")
-    write = prog(t, 6.0, 7.0)
-    c.arrow((735, 246), (735, 332), fade(AMBER, write), 2.5)
-    c.text(747, 275, "accepted transactions", 11, fade(AMBER, write))
-    c.text(747, 293, "original body bytes", 11, fade(AMBER, write))
-    read = prog(t, 10.0, 11.0)
-    c.arrow((918, 342), (850, 386), fade(BLUE, read), 2.5)
-    c.text(908, 403, "SQL to existing", 11, fade(BLUE, read))
-    c.text(908, 421, "Gateway database", 11, fade(BLUE, read))
-    check = prog(t, 14.0, 15.0)
-    c.text(620, 473, "REST checks pin the snapshot to a canonical block.", 12, fade(GREEN, check))
+    c.text(302, 249, "blocks, txs, assets, addresses", 12, fade(TEAL, api))
+    c.text(302, 271, "GET native /api/v1 endpoints", 12, fade(TEAL, api), "mono")
+    proof = prog(t, 6.0, 7.0)
+    c.arrow((850, 210), (1025, 290), fade(BLUE, proof), 2.5)
+    c.text(922, 219, "REST evidence", 11, fade(BLUE, proof))
+    cache = prog(t, 10.0, 11.0)
+    c.arrow((735, 246), (735, 332), fade(AMBER, cache), 2.5)
+    c.text(747, 275, "derived state only", 11, fade(AMBER, cache))
     c.text(310, 459, "No external DB", 13, fade(TEAL, a), "bold")
     c.text(310, 480, "credentials required", 13, fade(TEAL, a))
+    c.text(620, 473, "Recheck the REST anchor before returning a proof.", 12, fade(GREEN, prog(t, 14.0, 15.0)))
     caption(c, t, [
-        (0.6, "Yaci Store follows Cardano and indexes blocks in its own PostgreSQL database. CF keeps that database private."),
-        (2.0, "Our history worker fetches standard Yaci block metadata and raw block bytes through REST."),
-        (6.0, "It checks the header hash and imports transaction bodies, outputs and spends into the existing Gateway database."),
-        (10.0, "Application state and imported history share one Gateway database. Historical queries use consistent SQL snapshots."),
-        (14.0, "Before returning historical proofs it rechecks the captured block through REST, so a local cache cannot hide a rollback."),
-        (18.0, "CF must retain raw blocks from the manifest checkpoint. No provider PostgreSQL access or Cardano node fallback is needed."),
+        (0.6, "Yaci indexes Cardano in its private PostgreSQL database. CF exposes the REST API."),
+        (2.0, "Gateway calls native block, transaction, asset and address endpoints directly."),
+        (6.0, "Asset history finds outputs. Address history also finds consumers, including burns. Raw blocks supply validity."),
+        (10.0, "Gateway retains application and proof caches. It does not mirror Yaci chain tables or run an import worker."),
+        (14.0, "Historical roots must match their on-chain commitments. Gateway rechecks the REST anchor before returning a proof."),
+        (18.0, "CF must retain the required history and raw blocks. Missing history fails the request without a database fallback."),
     ])
     return c.finish()
 
@@ -1007,7 +1002,7 @@ def draw_architecture() -> Image.Image:
     for i, (title, sub, color) in enumerate([
         ("Ogmios", "ledger queries, evaluate, submit", BLUE),
         ("Kupo", "live UTxOs and datums", BLUE),
-        ("Yaci REST + Gateway DB", "app state and imported history", TEAL),
+        ("Yaci Store REST", "indexed history and raw blocks", TEAL),
         ("Blockfrost", "epoch and pool history, public nets", AMBER),
     ]):
         r, col = divmod(i, 2)

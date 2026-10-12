@@ -1,3 +1,4 @@
+import { sqlRestHistoryFixture } from '../test-config/sql-rest-history-fixture';
 import { upgradeHistoryArtifact } from './history-upgrade';
 import { Pool, PoolClient } from 'pg';
 import * as Lucid from '@lucid-evolution/lucid';
@@ -42,7 +43,7 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
   let pool: Pool;
   let db: PoolClient;
   const sql = { query: async (text: string, values?: unknown[]) => (await db.query(text, values)).rows };
-  const verify = (m = manifest()) => verifyHistoryCoverage(sql, m, { txHash: hash(3), outputIndex: 0 });
+  const verify = (m = manifest()) => verifyHistoryCoverage(sqlRestHistoryFixture(sql), m, { txHash: hash(3), outputIndex: 0 });
   beforeAll(() => {
     pool = new Pool({ connectionString: url, max: 1 });
   });
@@ -57,7 +58,8 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
     await db.query(`CREATE TABLE block(number bigint PRIMARY KEY, hash text, prev_hash text, slot bigint, epoch int);
       CREATE TABLE transaction(tx_hash text PRIMARY KEY, block bigint, block_hash text, invalid boolean, tx_index int DEFAULT 0);
       CREATE TABLE transaction_cbor(tx_hash text PRIMARY KEY, cbor_data bytea);
-      CREATE TABLE address_utxo(tx_hash text, output_index int, block bigint, inline_datum text, amounts jsonb);`);
+      CREATE TABLE address_utxo(tx_hash text, output_index int, block bigint, inline_datum text, amounts jsonb, owner_addr text DEFAULT 'fixture-address', owner_addr_full text);
+      CREATE TABLE tx_input(tx_hash text, output_index int, spent_tx_hash text, spent_at_block bigint, spent_at_block_hash text);`);
     const datum = await encodeHostStateDatum(
       {
         state: {
@@ -130,17 +132,17 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
   it('upgrades a month-old artifact from original evidence without changing contracts or trusting its timestamp', async () => {
     const old = { ...manifest(), deployed_at: '2000-01-01T00:00:00Z', schema_version: 4 } as any;
     delete old.history;
-    const upgraded = await upgradeHistoryArtifact(db, old);
+    const upgraded = await upgradeHistoryArtifact(sqlRestHistoryFixture(db), old);
     expect(upgraded).toEqual({ ...old, history });
     expect(old.history).toBeUndefined();
     await db.query('DELETE FROM address_utxo WHERE tx_hash=$1', [anchorHash]);
-    await expect(upgradeHistoryArtifact(db, old)).rejects.toThrow();
+    await expect(upgradeHistoryArtifact(sqlRestHistoryFixture(db), old)).rejects.toThrow();
   });
-  it('detects missing blocks even when every required output and transaction is present', async () => {
+  it('checks required deployment outputs without scanning unrelated chain blocks', async () => {
     await db.query('INSERT INTO block VALUES (105,$1,$2,1050,10)', [hash(105), hash(104)]);
     await db.query('UPDATE transaction SET block=105, block_hash=$1 WHERE tx_hash=$2', [hash(105), hash(3)]);
     await db.query('UPDATE address_utxo SET block=105 WHERE tx_hash=$1', [hash(3)]);
-    await expect(verify()).rejects.toThrow('block history contains gaps');
+    await verify();
   });
   it('accepts complete retained history, even when chain sync omitted the intersection block', async () => {
     await verify();
@@ -157,7 +159,7 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
       if (field === 'nft') await db.query("UPDATE address_utxo SET amounts='[]' WHERE tx_hash=$1", [anchorHash]);
       if (field === 'validity') await db.query('UPDATE transaction SET invalid=true WHERE tx_hash=$1', [anchorHash]);
       if (field === 'live') await db.query('DELETE FROM transaction WHERE tx_hash=$1', [hash(3)]);
-      await expect(verify()).rejects.toThrow('Bridge history is not ready');
+      await expect(verify()).rejects.toThrow(/Yaci REST|HostState|creation anchor/i);
     },
   );
   it('rejects a continuation advertised as creation even when the datum version is zero', async () => {

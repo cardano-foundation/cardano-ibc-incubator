@@ -78,19 +78,19 @@ The strict ICS-20 Classic JSON codec also changes the transfer-module and vouche
 
 ## Historical Backend
 
-The Gateway's historical Cardano reads use history tables in its existing application PostgreSQL database. The history worker populates these tables through the standard Yaci REST API. The Gateway and its history worker never need Yaci Store PostgreSQL credentials.
+The Gateway reads historical Cardano data directly through Yaci REST. Historical proof reconstruction uses indexed asset and address transaction history and raw block CBOR on demand. It does not copy chain tables into PostgreSQL or run a history import worker. Gateway's existing database continues to hold application state and derived caches.
 
-`YACI_STORE_ENDPOINT` selects the provider's REST base URL. The Gateway and history worker both use `GATEWAY_DB_*` for application state and imported history. `GATEWAY_DB_URL` can supply a connection URL instead. No additional PostgreSQL service or database is created. Existing application tables stay in place. The importer refuses block tables that were not created by it. Existing deployments replay from their manifest checkpoint. Before a new public-network deployment set `BRIDGE_HISTORY_START_BLOCK` or `YACI_SYNC_START_BLOCK_NO` to a retained pre-deployment checkpoint. [Provider requirements and query mapping](../../docs/yaci-rest-history.md) describe the REST contract.
+`YACI_STORE_ENDPOINT` selects the native REST base URL. `GATEWAY_DB_*` configures application storage. The provider must retain the manifest checkpoint and subsequent historical outputs, spends and raw blocks. [Provider requirements and query mapping](../../docs/yaci-rest-history.md) describe the API contract.
 
-Proof-backed consensus history requires Node.js 22.13 or newer and retained REST-imported transaction bodies and validity data. `CONSENSUS_HISTORY_CACHE_DIR` selects the writable, disposable per-client SQLite cache directory (default `.consensus-history`); deleting it triggers authenticated chain replay, not loss of on-chain history. `CONSENSUS_HISTORY_MAX_OPEN_INDEXES` bounds open caches (default `64`), and `CONSENSUS_HISTORY_TIMEOUT_MS` bounds each SQL, connection-acquisition, and live-provider wait (default `30000`).
+Proof-backed consensus history requires Node.js 22.13 or newer and retained Yaci REST history and raw block CBOR. `CONSENSUS_HISTORY_CACHE_DIR` selects the writable, disposable per-client SQLite cache directory (default `.consensus-history`); deleting it triggers authenticated chain replay, not loss of on-chain history. `CONSENSUS_HISTORY_MAX_OPEN_INDEXES` bounds open caches (default `64`), and `CONSENSUS_HISTORY_TIMEOUT_MS` bounds bootstrap discovery and live-provider waits (default `30000`).
 
-The Docker image sets `CONSENSUS_HISTORY_CACHE_DIR` to `/var/lib/cardano-ibc/consensus-history` and creates that directory for the unprivileged `node` user. Docker Compose mounts the `consensus-history` named volume there, so the SQLite indexes survive Gateway container replacement. SQLite runs inside the Gateway; it does not need a separate service. The bridge-history-sync container does not use this volume.
+The Docker image sets `CONSENSUS_HISTORY_CACHE_DIR` to `/var/lib/cardano-ibc/consensus-history` and creates that directory for the unprivileged `node` user. Docker Compose mounts the `consensus-history` named volume there, so the SQLite indexes survive Gateway container replacement. SQLite runs inside the Gateway; it does not need a separate service.
 
-For deployments outside this Compose file, mount a persistent volume at the same path. A new Docker named volume inherits the directory's ownership from the image. An existing volume or host bind mount must be writable by the image's `node` user (UID/GID `1000:1000`). Removing the volume, including with `docker compose down --volumes`, discards the caches and requires replay from retained REST-imported history.
+For deployments outside this Compose file, mount a persistent volume at the same path. A new Docker named volume inherits the directory's ownership from the image. An existing volume or host bind mount must be writable by the image's `node` user (UID/GID `1000:1000`). Removing the volume, including with `docker compose down --volumes`, discards the caches and requires replay from retained Yaci REST history.
 
 The public IBC tree has a separate cache: in-memory trees and compressed snapshots in the Gateway PostgreSQL table `ibc_state_tree_cache`. If a proof query requests a past height whose snapshot is missing or invalid, the Gateway reconstructs the tree from retained Yaci outputs and spends at that block. It includes historical client consensus leaves, connections, channels, packet state and port registrations, then verifies the result against the historical HostState root before serving the proof. The verified snapshot is cached by root and HostState output reference; rebuilding it does not replace the live transaction-building tree. This uses the existing databases and needs no additional container or volume.
 
-Historical public-tree reconstruction uses our imported `address_utxo` rows (including spent outputs, assets and inline datums), canonical `transaction` and `block` rows, and `tx_input` spend history from this deployment's creation through the requested block. The bridge projection or a current UTxO snapshot alone is insufficient. Reconstruction reads one consistent, read-only database snapshot, excludes failed/orphaned transactions and future outputs/spends, and checks for a rollback before returning. Incomplete history or a root mismatch stops the proof request; restore our history database or replay retained REST blocks before retrying. Concurrent requests for the same height and HostState share a rebuild, with at most four different rebuilds in progress and a 30-second timeout per SQL statement. The first request after cache loss takes longer as history grows.
+Historical public-tree reconstruction discovers NFT outputs and their consumers through indexed Yaci REST queries from deployment creation through the requested block. The bridge projection or a current UTxO snapshot alone is insufficient. Reconstruction pins and rechecks a REST block anchor, excludes failed/orphaned transactions and future outputs/spends, and checks for a rollback before returning. Incomplete history or a root mismatch stops the proof request; restore the provider's retained history before retrying. Concurrent requests for the same height and HostState share a rebuild, with at most four different rebuilds in progress and a 30-second timeout per REST request. The first request after cache loss takes longer as history grows.
 
 Public manifests and public handler startup require `history.format: "cardano-history-v1"`, an explicit replay checkpoint and the original HostState creation output. Startup verifies retained deployment history before restoring/rebuilding the tree, and waits for providers and verified tree state before serving requests.
 
@@ -99,17 +99,9 @@ Public manifests and public handler startup require `history.format: "cardano-hi
 The Gateway now uses two Cardano data planes with different responsibilities:
 
 - Live data plane: `Ogmios + Kupo + Mithril`
-- Historical data plane: `Yaci REST + Gateway-owned history and bridge projection`
+- Historical data plane: `Yaci REST`
 
-The Yaci-backed projection stores bridge-specific evidence for routine historical queries. Cache reconstruction also reads retained REST-imported history: transaction bodies for private consensus witnesses, and historical outputs/spends for public IBC trees.
-
-Current bridge history tables include:
-
-- `bridge_tx_history`: light tx summary by block/slot
-- `bridge_tx_evidence`: tx CBOR, tx body CBOR, decoded redeemers, HostState evidence
-- `bridge_utxo_history`: historical bridge-relevant UTxOs by asset and block
-- `bridge_spo_event_history`: historical SPO register/unregister markers
-- `bridge_pool_registration_cache`: first-registration slots for stake pools used by stability scoring
+Historical queries use Yaci's native block, transaction, asset and address endpoints. Raw blocks authenticate transaction bodies and validity. Historical public roots and private consensus roots must match their on-chain commitments before a proof is returned. PostgreSQL holds application state and the external pool-registration cache. No chain table mirror or bridge projection is required.
 
 So the runtime split is:
 
@@ -119,7 +111,7 @@ So the runtime split is:
 - use `Yaci` for historical bridge state and tx evidence
 
 Stake-weighted stability also needs a pool-age lookup because active pools can have registered long before a bridge
-deployment checkpoint. The Gateway first uses `bridge_pool_registration_cache`, then registration events derived from imported raw blocks, then
+deployment checkpoint. The Gateway first uses `gateway_pool_registration_cache`, then Yaci REST pool registration history checked against raw block certificates, then
 Blockfrost pool updates for cache misses. Public-network epoch nonces, stake snapshots and historical pool registrations
 also come from Blockfrost. Set `CARDANO_BLOCKFROST_PROJECT_ID` for the hosted API. The local devnet instead uses its
 own Ogmios data and the HTTP epoch provider configured by `CARDANO_EPOCH_PARAMS_ENDPOINT`. Direct nonce reads from Yaci PostgreSQL are no longer supported.

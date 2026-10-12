@@ -1383,7 +1383,6 @@ fn write_gateway_env_for_network(
                 set_or_append_env_var(&gateway_env, &key, &value)?;
             }
             for key in [
-                "GATEWAY_DB_URL",
                 "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE",
                 "CARDANO_EPOCH_NONCE_GENESIS",
                 "CARDANO_STABILITY_ASSUME_STATIC_STAKE",

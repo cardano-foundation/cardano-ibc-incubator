@@ -47,6 +47,9 @@ describe('Local epoch Set snapshots', () => {
       { get: (key: string) => configuration[key] } as ConfigService,
       {} as any, entityManager as unknown as EntityManager,
     );
+    jest.spyOn(service as any, 'findLocalPoolRegistrationSlots').mockResolvedValue(new Map());
+    jest.spyOn(service as any, 'findLatestBlockInEpoch').mockResolvedValue(null);
+    jest.spyOn(service as any, 'findEpochSlotBounds').mockResolvedValue({ currentEpochStartSlot: 1000n, currentEpochEndSlotExclusive: 1600n });
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       currentEpoch: 7, epochNonce: '11'.repeat(32), slotsPerKesPeriod: 129600,
       maxKesEvolutions: 62, activeSlotCoefficientNumerator: 1n, activeSlotCoefficientDenominator: 4n,
@@ -60,6 +63,7 @@ describe('Local epoch Set snapshots', () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.resetAllMocks();
     delete process.env.CARDANO_STABILITY_ASSUME_STATIC_STAKE;
     delete process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;

@@ -1,5 +1,4 @@
 import type { HistoryDeployment } from "../src/consensus_history_recovery.ts";
-import type { YaciHistorySqlClient } from "../src/consensus_history_yaci.ts";
 
 const HELP = `Usage:
   recover-consensus-history.ts <deployment.json> <history.sqlite> [<revisionNumber> <revisionHeight>]
@@ -11,15 +10,12 @@ Recovery supports the production client datum with its private history root.
 The optional height prints a regenerated historical witness after root validation.
 
 Required environment (no default credentials):
-  HISTORY_DB_URL  PostgreSQL connection URL for the Gateway application database containing REST history
+  YACI_STORE_ENDPOINT  Base URL for the native Yaci REST API
   KUPO_URL       Kupo endpoint for independently reading the live state NFT
   OGMIOS_URL     Ogmios endpoint used to configure the Kupmios provider
 
-Optional environment:
-  HISTORY_DB_QUERY_TIMEOUT_MS  Query timeout, default 30000, maximum 600000
-
-The Gateway history database must retain spent address_utxo rows, transaction bodies and canonical validity
-flags from bootstrap. Both complete transactions and Yaci's body CBOR are supported.
+Yaci REST must retain asset and address transaction history and raw block CBOR
+from bootstrap. Transaction validity comes from the raw block validity list.
 This only writes the specified local SQLite index. It never signs, submits, or
 publishes a transaction; it does not activate Gateway integration or watch blocks.
 The production index follows one client, not the shared public HostState tree.
@@ -56,89 +52,6 @@ function natural(value: string, label: string): bigint {
   return BigInt(value);
 }
 
-interface HistoryDatabaseClient extends YaciHistorySqlClient {
-  connect(): Promise<void>;
-  end(): Promise<void>;
-  on(event: "error", listener: (error: Error) => void): unknown;
-}
-
-export function historyQueryTimeout(value: string | undefined): number {
-  if (value === undefined) return 30_000;
-  if (!/^[1-9][0-9]*$/.test(value) || Number(value) > 600_000) {
-    throw new Error("HISTORY_DB_QUERY_TIMEOUT_MS must be between 1 and 600000");
-  }
-  return Number(value);
-}
-
-type WaitForDatabase = <T>(operation: () => Promise<T>) => Promise<T>;
-
-/** Own one connection, including errors emitted between SQL queries. */
-export async function withHistoryDatabase<T>(
-  client: HistoryDatabaseClient,
-  operation: (
-    sql: YaciHistorySqlClient,
-    wait: WaitForDatabase,
-  ) => Promise<T>,
-): Promise<T> {
-  const failed = new AbortController();
-  // Keep this listener through shutdown, including errors emitted after end().
-  // The closed one-shot client is discarded, never returned to a pool.
-  client.on("error", (error) => {
-    if (!failed.signal.aborted) {
-      failed.abort(new Error("PostgreSQL connection failed", { cause: error }));
-    }
-  });
-  const wait: WaitForDatabase = <V>(
-    operation: () => Promise<V>,
-  ): Promise<V> => {
-    return new Promise<V>((resolve, reject) => {
-      const abort = () => reject(failed.signal.reason);
-      if (failed.signal.aborted) return abort();
-      failed.signal.addEventListener("abort", abort, { once: true });
-      const cleanup = () => failed.signal.removeEventListener("abort", abort);
-      Promise.resolve().then(() => {
-        failed.signal.throwIfAborted();
-        return operation();
-      }).then((value) => {
-        cleanup();
-        if (failed.signal.aborted) abort();
-        else resolve(value);
-      }, (error) => {
-        cleanup();
-        reject(error);
-      });
-    });
-  };
-  let result: T | undefined;
-  const errors: unknown[] = [];
-  try {
-    await wait(() => client.connect());
-    result = await operation({
-      query: (sql, values) => wait(() => client.query(sql, values)),
-    }, wait);
-  } catch (error) {
-    errors.push(error);
-  }
-  try {
-    // Let recovery unwind first. Racing its entire promise could close SQLite
-    // while it was still replaying or attempting to roll back a transaction.
-    await client.end();
-  } catch (error) {
-    errors.push(error);
-  }
-  if (failed.signal.aborted && !errors.includes(failed.signal.reason)) {
-    errors.unshift(failed.signal.reason);
-  }
-  if (errors.length === 1) throw errors[0];
-  if (errors.length > 1) {
-    throw new AggregateError(
-      errors,
-      "History database recovery or cleanup failed",
-    );
-  }
-  return result as T;
-}
-
 export async function recoverHistoryCommand(args: string[]): Promise<void> {
   if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
     console.log(HELP);
@@ -153,15 +66,9 @@ export async function recoverHistoryCommand(args: string[]): Promise<void> {
       revisionHeight: natural(args[3], "revisionHeight"),
     }
     : undefined;
-  const connectionString = environment("HISTORY_DB_URL", [
-    "postgres:",
-    "postgresql:",
-  ]);
+  const endpoint = environment("YACI_STORE_ENDPOINT", ["http:", "https:"]);
   const kupo = environment("KUPO_URL", ["http:", "https:"]);
   const ogmios = environment("OGMIOS_URL", ["http:", "https:", "ws:", "wss:"]);
-  const queryTimeout = historyQueryTimeout(
-    Deno.env.get("HISTORY_DB_QUERY_TIMEOUT_MS"),
-  );
   const deployment: HistoryDeployment = JSON.parse(
     await Deno.readTextFile(args[0]),
   );
@@ -172,38 +79,17 @@ export async function recoverHistoryCommand(args: string[]): Promise<void> {
   const recovery = new ConsensusHistoryRecovery(args[1], deployment);
   let result: unknown;
   try {
-    // Match cardano/gateway/package-lock.json. Load only on the recovery path,
-    // so --help neither reads connection configuration nor opens a connection.
-    const { default: pg } = await import("pg");
-    const client = new pg.Client({
-      connectionString,
-      connectionTimeoutMillis: 15_000,
-      query_timeout: queryTimeout,
-      statement_timeout: queryTimeout,
-    });
-    result = await withHistoryDatabase(client, async (sql, wait) => {
-      const [{ Kupmios }, { createYaciHistorySource }] = await wait(() =>
-        Promise.all([
-          import("@lucid-evolution/lucid"),
-          import("../src/consensus_history_yaci.ts"),
-        ])
-      );
-      const provider = new Kupmios(kupo, ogmios);
-      const unit = deployment.clientToken.policyId +
-        deployment.clientToken.name;
-      const source = createYaciHistorySource(
-        sql,
-        deployment,
-        () => wait(() => provider.getUtxoByUnit(unit)),
-      );
-      const recovered = await recovery.recover(source);
-      return {
-        ...recovered,
-        ...(height
-          ? { witness: recovery.witness(deployment.clientToken, height) }
-          : {}),
-      };
-    });
+    const [{ Kupmios }, { YaciRestClient }, { YaciRestHistory }, { createRestHistorySource }] = await Promise.all([
+      import("@lucid-evolution/lucid"),
+      import("../../../packages/cardano-ibc-tx-builder-runtime/src/yaciRest.ts"),
+      import("../../../packages/cardano-ibc-tx-builder-runtime/src/yaciRestHistory.ts"),
+      import("../../../packages/cardano-ibc-tx-builder-runtime/src/consensusHistoryRest.ts"),
+    ]);
+    const provider = new Kupmios(kupo, ogmios);
+    const source = createRestHistorySource(new YaciRestHistory(new YaciRestClient(endpoint)), deployment,
+      () => provider.getUtxoByUnit(deployment.clientToken.policyId + deployment.clientToken.name));
+    const recovered = await recovery.recover(source);
+    result = { ...recovered, ...(height ? { witness: recovery.witness(deployment.clientToken, height) } : {}) };
   } finally {
     recovery.close();
   }

@@ -1,4 +1,4 @@
-import { assertRestHistoryCanonical, YaciRestClient } from './yaci-rest';
+import { YaciRestClient } from './yaci-rest';
 import { restBlockFixture } from '../../test-config/rest-block';
 
 describe('standard Yaci REST history', () => {
@@ -46,15 +46,6 @@ describe('standard Yaci REST history', () => {
     await jest.advanceTimersByTimeAsync(1000);
     await result;
     expect(request).toHaveBeenCalledTimes(3);
-  });
-
-  it('rechecks the captured snapshot tip even when local history advances or rewinds', async () => {
-    const database = { query: jest.fn(async () => [{ number: '100', hash: fixture.metadata.hash }]) };
-    const request = jest.spyOn(rest, 'block').mockResolvedValue(fixture.metadata);
-    const captured = await assertRestHistoryCanonical(database, rest);
-    request.mockResolvedValue({ ...fixture.metadata, hash: 'ff'.repeat(32) });
-    await expect(assertRestHistoryCanonical(database, rest, captured)).rejects.toThrow('rolled back');
-    expect(database.query).toHaveBeenCalledTimes(1);
   });
 
   it('requires a REST endpoint even when node or database endpoints are available', () => {

@@ -24,14 +24,14 @@ def require_migration_witness(node):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=['services', 'init-history', 'gateway', 'history-sync', 'export', 'witness'])
+    p.add_argument('command', choices=['services', 'init-history', 'gateway', 'export', 'witness'])
     p.add_argument('--runtime', type=Path, required=True)
     p.add_argument('--project', required=True)
     p.add_argument('--clock-offset-seconds', type=int, required=True)
     p.add_argument('--handler', type=Path)
     p.add_argument('--out', type=Path, help='New activation witness file; only valid with witness')
     p.add_argument('--gateway-database', default='migration_gateway')
-    p.add_argument('--history-schema', help='Existing private schema containing our REST-imported chain history and bridge projections')
+    p.add_argument('--history-schema', help='Private schema for the rehearsal Gateway application cache')
     args = p.parse_args()
     import re
     if not re.fullmatch(r'migration_[a-z0-9_]+', args.gateway_database):
@@ -92,8 +92,7 @@ def main():
     if args.command == 'init-history':
         if not args.history_schema:
             p.error('init-history requires an explicit private --history-schema')
-        # Each bridge retains its own REST import. Keep its schema and database
-        # separate from the provider's yaci_store database.
+        # Keep the rehearsal application cache separate from provider storage.
         exists = subprocess.check_output(compose + ['exec', '-T', 'gateway-db', 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc',
             f"SELECT 1 FROM pg_database WHERE datname='{args.gateway_database}'"], text=True).strip()
         if not exists:
@@ -101,8 +100,6 @@ def main():
         initialization = r'''
 const fs = require('fs');
 const { Client } = require('pg');
-const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-history-sync.js');
-const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.js');
 (async () => {
   const [schema, handlerPath, databaseName, databasePort] = process.argv.slice(2);
   if (!/^migration_[a-z0-9_]+$/.test(schema)) throw new Error('Invalid private schema');
@@ -121,8 +118,6 @@ const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.
     if (rows.length !== 1 || rows[0].host_state_unit !== identity || rows[0].registry_unit !== handler.migration.registryUnit) {
       throw new Error('Projection schema belongs to another bridge; select a fresh private schema');
     }
-    await ensureRestHistoryTables(db, 42);
-    await ensureBridgeHistoryTables(db);
     await db.query('COMMIT');
     console.log(JSON.stringify({ schema, hostStateUnit: identity, initialized: true }));
   } catch (error) {
@@ -142,7 +137,7 @@ const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.
     nonce_port = int(nonce_ports[0]['published'])
     env = dict(os.environ)
     # Explicit local values; never load operator .env or Hermes home keys.
-    for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'GATEWAY_DB_URL', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
+    for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
         env.pop(key, None)
     env.update({'PORT': '8800', 'GRPC_HOST': '127.0.0.1', 'GRPC_PORT': '5501', 'CARDANO_NETWORK_MAGIC': '42',
         'CARDANO_CHAIN_HOST': '127.0.0.1', 'CARDANO_CHAIN_PORT': '23001',
@@ -153,7 +148,7 @@ const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.
         'CARDANO_EPOCH_NONCE_GENESIS': hashlib.blake2b((runtime / 'runtime/genesis-shelley.json').read_bytes(), digest_size=32).hexdigest(),
         'CARDANO_EPOCH_PARAMS_ENDPOINT': f'http://127.0.0.1:{nonce_port}',
         'OGMIOS_ENDPOINT': 'http://127.0.0.1:2637', 'KUPO_ENDPOINT': 'http://127.0.0.1:2742', 'YACI_STORE_ENDPOINT': 'http://127.0.0.1:29083',
-        'GATEWAY_DB_URL': '', 'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': str(gateway_port), 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'postgres', 'GATEWAY_DB_PASSWORD': 'postgres', 'GATEWAY_DB_SYNCHRONIZE': 'true',
+        'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': str(gateway_port), 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'postgres', 'GATEWAY_DB_PASSWORD': 'postgres', 'GATEWAY_DB_SYNCHRONIZE': 'true',
         'HANDLER_JSON_PATH': str(handler), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
         'FAKETIME_DONT_FAKE_MONOTONIC': '1'})
     if args.command == 'gateway':
@@ -165,7 +160,7 @@ const { ensureRestHistoryTables } = require('./dist/scripts/rest-history-import.
         env['PGOPTIONS'] = f'-c search_path={args.history_schema},public'
     else:
         env.pop('PGOPTIONS', None)
-    script = {'gateway': 'dist/main.js', 'history-sync': 'dist/scripts/yaci-bridge-history-sync.js', 'export': 'dist/scripts/export-bridge-manifest.js', 'witness': 'dist/scripts/export-migration-witness.js'}[args.command]
+    script = {'gateway': 'dist/main.js', 'export': 'dist/scripts/export-bridge-manifest.js', 'witness': 'dist/scripts/export-migration-witness.js'}[args.command]
     command = ['faketime', '-f', f'{args.clock_offset_seconds:+d}s', 'node', script]
     if args.command == 'export': command += [str(handler), str(handler.parent / f'bridge-manifest-{json.loads(handler.read_text())["migration"]["generation"]}.json')]
     if args.command == 'witness': command += [str(handler), str(args.out.resolve())]

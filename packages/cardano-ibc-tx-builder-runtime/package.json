@@ -15,6 +15,9 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./yaciRest": { "types": "./dist/yaciRest.d.ts", "default": "./dist/yaciRest.js" },
+    "./yaciRestHistory": { "types": "./dist/yaciRestHistory.d.ts", "default": "./dist/yaciRestHistory.js" },
+    "./consensusHistoryRest": { "types": "./dist/consensusHistoryRest.d.ts", "default": "./dist/consensusHistoryRest.js" },
     "./packetLaneTransactions": { "types": "./dist/packetLaneTransactions.d.ts", "default": "./dist/packetLaneTransactions.js" },
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./ics23MerkleTree": { "types": "./dist/ics23MerkleTree.d.ts", "default": "./dist/ics23MerkleTree.js" },
@@ -31,6 +34,9 @@
   },
   "typesVersions": {
     "*": {
+      "yaciRest": ["dist/yaciRest.d.ts"],
+      "yaciRestHistory": ["dist/yaciRestHistory.d.ts"],
+      "consensusHistoryRest": ["dist/consensusHistoryRest.d.ts"],
       "packetLaneTransactions": ["dist/packetLaneTransactions.d.ts"],
       "ics23MerkleTree": ["dist/ics23MerkleTree.d.ts"],
       "ibcStateRoot": ["dist/ibcStateRoot.d.ts"],
