@@ -285,6 +285,9 @@ original deadline. Matching resubmissions do not reset it. Older epochs with
 elapsed deadlines remain usable. At the deadline, an unfrozen client's roots
 become eligible for proof verification without a separate activation transaction.
 The usual proof, trusting-period and connection-delay requirements still apply.
+Connection delay checks reject time or block deadlines that exceed the stored
+integer range. An overflowing deadline cannot make a proof usable. A delay is
+satisfied exactly at a representable deadline.
 `LatestHeight` and consensus-state queries can therefore expose a **pending**
 root; they alone are not evidence that a packet proof is usable.
 
