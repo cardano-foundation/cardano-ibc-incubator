@@ -203,6 +203,22 @@ func TestAppRecoverClient(t *testing.T) {
 	}
 }
 
+func newBoundaryTestApp(t *testing.T, now time.Time) (*simapp.SimApp, sdk.Context, storetypes.KVStore) {
+	t.Helper()
+	app := simapp.Setup(t, false)
+	t.Cleanup(func() { require.NoError(t, app.Close()) })
+	RegisterInterfaces(app.InterfaceRegistry())
+	ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: "boundary-test-1", Height: 100, Time: now})
+	provider := clienttypes.NewStoreProvider(runtime.NewKVStoreService(app.GetKey(exported.StoreKey)))
+	module := NewLightClientModule(app.AppCodec(), provider)
+	app.IBCKeeper.ClientKeeper.AddRoute(ModuleName, &module)
+	store := provider.ClientStore(ctx, ModuleName+"-0")
+	params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
+	params.AllowedClients = append(params.AllowedClients, ModuleName)
+	app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
+	return app, ctx, store
+}
+
 func recoveryStoreSnapshot(t *testing.T, store storetypes.KVStore) map[string][]byte {
 	t.Helper()
 	snapshot := map[string][]byte{}
