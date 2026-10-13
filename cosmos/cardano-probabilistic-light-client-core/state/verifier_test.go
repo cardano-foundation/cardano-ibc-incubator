@@ -676,7 +676,7 @@ func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testi
 
 func TestComputeHeaderSecurityMetricsExcludesPoolsRegisteredAfterCutoff(t *testing.T) {
 	cs := newProbabilisticTestClientState()
-	cutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive()
+	cutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive(testMaturePoolSlot)
 	require.NoError(t, err)
 	epochContext := &EpochContext{
 		Epoch:                 cs.CurrentEpoch,
@@ -703,7 +703,7 @@ func TestComputeHeaderSecurityMetricsExcludesPoolsRegisteredAfterCutoff(t *testi
 		anchorBlock: &authenticatedProbabilisticBlock{
 			height: 12,
 			hash:   "anchor-12",
-			slot:   120,
+			slot:   testMaturePoolSlot,
 			epoch:  cs.CurrentEpoch,
 		},
 		descendantBlocks: []*authenticatedProbabilisticBlock{
@@ -745,7 +745,7 @@ func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing
 		anchorBlock: &authenticatedProbabilisticBlock{
 			height: 12,
 			hash:   "anchor-12",
-			slot:   120,
+			slot:   testMaturePoolSlot,
 			epoch:  cs.CurrentEpoch,
 		},
 		descendantBlocks: []*authenticatedProbabilisticBlock{
@@ -915,10 +915,7 @@ func TestFirstRegistrationSlotConflictDoesNotFreezeClient(t *testing.T) {
 	SetClientState(clientStore, cdc, cs)
 	header := newVerifiedTestHeader(t)
 	header.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, cs))
-	cutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive()
-	require.NoError(t, err)
-	require.Greater(t, cutoffSlot, header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot)
-	header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot = cutoffSlot
+	header.NewEpochContext.StakeDistribution[0].FirstRegistrationSlot++
 
 	require.False(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
 	require.Error(t, verifyStakeTablePoolBindings(header.NewEpochContext, cs.LatestCheckpointPoolRegistry))

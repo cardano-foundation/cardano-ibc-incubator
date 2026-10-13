@@ -11,13 +11,14 @@ import { computeStabilityMetrics, getStabilityPolicy } from '../services/stabili
 import { HistoryBlock, HistoryService } from '../services/history.service';
 import { loadStakeWeightedStabilityEvidenceByHeight } from '../services/stability-evidence';
 
+const MATURE_POOL_SLOT = 20_000_000n;
 const block = (epoch: number, pool: string, height = 10): HistoryBlock => ({
   height,
   hash: `block-${height}`,
   prevHash: `block-${height - 1}`,
-  slotNo: BigInt(height),
+  slotNo: MATURE_POOL_SLOT + BigInt(height),
   epochNo: epoch,
-  timestampUnixNs: 1_700_000_000_000_000_000n,
+  timestampUnixNs: 1_700_000_000_000_000_000n + (MATURE_POOL_SLOT + BigInt(height)) * 1_000_000_000n,
   slotLeader: pool,
 });
 const history = (epoch: bigint, pools: string[], bitmap = 1): PoolProductionHistory => ({
@@ -46,6 +47,7 @@ describe('pool production history', () => {
   );
   it.each(cases)('matches the shared Go fixture: $name', (fixture) => {
     const client = ClientState.fromPartial({
+      slot_length_ns: 1_000_000_000n,
       current_epoch: BigInt(fixture.saved_epoch),
       latest_checkpoint_pool_production: { epoch: BigInt(fixture.saved_epoch), pools: fixture.pools },
     });
@@ -101,7 +103,8 @@ describe('pool production history', () => {
     });
     expect(metrics.qualifiedUniquePoolsCount).toBe(0);
     expect(metrics.qualifiedUniqueStakeBps).toBe(0);
-    expect(() => productionAtAnchor(ClientState.fromPartial({ current_epoch: 10n }), [], block(10, 'pool-a'))).toThrow(
+    expect(() => productionAtAnchor(ClientState.fromPartial({
+      slot_length_ns: 1_000_000_000n, current_epoch: 10n }), [], block(10, 'pool-a'))).toThrow(
       'unavailable',
     );
     expect(() =>
@@ -115,12 +118,13 @@ describe('pool production history', () => {
   it('collects more descendants when a producer has only current-epoch production', async () => {
     const pools = ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e', 'pool-f'];
     const anchor = block(10, 'pool-f', 100);
-    anchor.slotNo = 1000n;
+    anchor.slotNo = MATURE_POOL_SLOT + 1000n;
+    anchor.timestampUnixNs = 1_700_000_000_000_000_000n + anchor.slotNo * 1_000_000_000n;
     const descendants = Array.from({ length: 25 }, (_, i) => ({
       ...block(10, i === 24 ? 'pool-f' : pools[i % 5], 101 + i),
       hash: `descendant-${i}`,
       prevHash: i ? `descendant-${i - 1}` : anchor.hash,
-      slotNo: 1001n + BigInt(i),
+      slotNo: MATURE_POOL_SLOT + 1001n + BigInt(i),
     }));
     const entries = pools.map((poolId) => ({
       poolId,
@@ -131,6 +135,7 @@ describe('pool production history', () => {
       vrfKeyHash: '11'.repeat(32),
     }));
     const client = ClientState.fromPartial({
+      slot_length_ns: 1_000_000_000n,
       current_epoch: 10n,
       latest_checkpoint_height: { revision_height: 99n },
       latest_checkpoint_pool_production: history(
@@ -159,8 +164,8 @@ describe('pool production history', () => {
           maxKesEvolutions: 62,
           activeSlotCoefficientNumerator: 1n,
           activeSlotCoefficientDenominator: 20n,
-          currentEpochStartSlot: 900n,
-          currentEpochEndSlotExclusive: 5000n,
+          currentEpochStartSlot: MATURE_POOL_SLOT + 900n,
+          currentEpochEndSlotExclusive: MATURE_POOL_SLOT + 5000n,
         },
       }),
     } as unknown as HistoryService;
