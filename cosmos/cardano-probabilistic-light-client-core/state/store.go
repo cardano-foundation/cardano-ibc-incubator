@@ -196,3 +196,22 @@ func deleteConsensusMetadata(clientStore storetypes.KVStore, height HeightValue)
 	deleteProcessedHeight(clientStore, height)
 	deleteIterationKey(clientStore, height)
 }
+
+// Recovery deliberately discards all subject proof history. This also removes
+// metadata without an iteration entry and packet snapshots at rootless heights.
+func clearRecoveryProofHistory(store storetypes.KVStore) error {
+	var keys [][]byte
+	for _, keyPrefix := range []string{"consensusStates/", KeyIterateConsensusStatePrefix, "packetState/"} {
+		iterator := storetypes.KVStorePrefixIterator(store, []byte(keyPrefix))
+		for ; iterator.Valid(); iterator.Next() {
+			keys = append(keys, bytes.Clone(iterator.Key()))
+		}
+		if err := iterator.Close(); err != nil {
+			return fmt.Errorf("closing recovery proof history iterator: %w", err)
+		}
+	}
+	for _, key := range keys {
+		store.Delete(key)
+	}
+	return nil
+}

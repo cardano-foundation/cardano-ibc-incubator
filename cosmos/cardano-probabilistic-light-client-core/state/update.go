@@ -3,7 +3,6 @@ package state
 import (
 	"fmt"
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
-	"math"
 	"math/big"
 	"math/bits"
 	"strings"
@@ -11,8 +10,6 @@ import (
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
 )
-
-const poolRegistrationCutoffUnixNs uint64 = 1_767_225_600_000_000_000 // 2026-01-01T00:00:00Z
 
 func (cs *ClientState) VerifyClientMessage(
 	ctx Context, cdc StateCodec, clientStore storetypes.KVStore,
@@ -215,6 +212,15 @@ func (cs *ClientState) verifyHeaderWithMode(
 	}
 	if err := verifyStakeTablePoolBindings(anchorEpochContext, authenticatedHeader.anchorPoolRegistry); err != nil {
 		return err
+	}
+
+	// A table is an unsigned claim. Only historical challenge verification may
+	// use an alternative claim for an epoch later than the trusted checkpoint.
+	if header.NewEpochContext != nil && (mode.enforceForwardUpdate || header.NewEpochContext.Epoch <= trustedBlock.epoch) {
+		stored := epochContextByEpoch(currentEpochContexts, header.NewEpochContext.Epoch)
+		if stored != nil && !epochStakeAllocationsEqual(stored, header.NewEpochContext) {
+			return errorsmod.Wrap(ErrInvalidCurrentEpoch, "cannot replace an installed epoch context")
+		}
 	}
 
 	depth := uint64(len(authenticatedHeader.descendantBlocks))
@@ -442,7 +448,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 	if header == nil || header.anchorBlock == nil {
 		return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
 	}
-	poolRegistrationCutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive()
+	poolRegistrationCutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive(header.anchorBlock.slot)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -513,27 +519,6 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 func checkedAddStake(current, addition uint64) (uint64, bool) {
 	sum, carry := bits.Add64(current, addition, 0)
 	return sum, carry == 0
-}
-
-func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
-	if cs == nil {
-		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "client state missing")
-	}
-	if cs.SystemStartUnixNs == 0 {
-		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
-	}
-	if cs.SlotLengthNs == 0 {
-		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
-	}
-	if poolRegistrationCutoffUnixNs <= cs.SystemStartUnixNs {
-		return 0, nil
-	}
-
-	delta := poolRegistrationCutoffUnixNs - cs.SystemStartUnixNs
-	if delta > math.MaxUint64-(cs.SlotLengthNs-1) {
-		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "pool registration cutoff slot overflows uint64")
-	}
-	return (delta + cs.SlotLengthNs - 1) / cs.SlotLengthNs, nil
 }
 
 func poolRegisteredBeforeCutoff(cutoffSlotExclusive uint64, entry *PoolRegistrationBinding) (bool, error) {

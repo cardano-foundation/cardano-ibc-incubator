@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -375,6 +376,66 @@ func TestPublicProofRejectsMalformedWire(t *testing.T) {
 			duplicate, err = json.Marshal(legacy)
 			require.NoError(t, err)
 			require.Error(t, verify(key, value, duplicate, membership))
+		})
+	}
+}
+
+func TestIbcProofDelaysRejectOverflow(t *testing.T) {
+	for _, vector := range loadStateProofVectors(t) {
+		if vector.Name != "client" && vector.Name != "absent_consensus" {
+			continue
+		}
+		t.Run(vector.Name, func(t *testing.T) {
+			ctx, store := newProbabilisticTestClientStore(t, "proof-delay-boundaries")
+			cdc := newProbabilisticTestCodec()
+			cs := newProbabilisticTestClientState()
+			consensus := newProbabilisticTestConsensusState(testBlockHash("delay-anchor"))
+			consensus.IbcStateRoot = nextSequenceRecvHex(t, vector.Root)
+			setTestPacketSnapshot(t, consensus, cs.LatestHeight.RevisionHeight)
+			require.NoError(t, cs.Initialize(ctx, cdc, store, consensus))
+			cs, _ = getClientState(store, cdc)
+			// Finish the independent epoch challenge window before isolating
+			// the connection's time and block delays at a new processed point.
+			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute)).WithBlockHeight(200)
+			processedTime := uint64(ctx.BlockTime().UnixNano())
+			processedHeight := uint64(ctx.BlockHeight())
+			SetProcessedTime(store, cs.LatestHeight, processedTime)
+			SetProcessedHeight(store, cs.LatestHeight, clienttypes.NewHeight(0, processedHeight))
+			key, value, proof := []byte(vector.Key), expectedProofValue(t, vector), vectorProofProto(t, vector)
+			path := commitmenttypes.NewMerklePath("ibc", string(key))
+			for _, tc := range []struct {
+				name                  string
+				timeDelay, blockDelay uint64
+				elapsedTime           time.Duration
+				elapsedBlocks         int64
+				pending               bool
+			}{
+				{name: "zero delays"},
+				{name: "before time deadline", timeDelay: 10, blockDelay: 2, elapsedTime: 9, elapsedBlocks: 2, pending: true},
+				{name: "before block deadline", timeDelay: 10, blockDelay: 2, elapsedTime: 10, elapsedBlocks: 1, pending: true},
+				{name: "exact deadlines", timeDelay: 10, blockDelay: 2, elapsedTime: 10, elapsedBlocks: 2},
+				{name: "after deadlines", timeDelay: 10, blockDelay: 2, elapsedTime: 11, elapsedBlocks: 3},
+				{name: "time wraps to zero", timeDelay: math.MaxUint64 - processedTime + 1, pending: true},
+				{name: "blocks wrap to zero", blockDelay: math.MaxUint64 - processedHeight + 1, pending: true},
+				{name: "maximum time delay", timeDelay: math.MaxUint64, pending: true},
+				{name: "maximum block delay", blockDelay: math.MaxUint64, pending: true},
+				{name: "both delays overflow", timeDelay: math.MaxUint64, blockDelay: math.MaxUint64, pending: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					host := ctx.WithBlockTime(ctx.BlockTime().Add(tc.elapsedTime)).WithBlockHeight(ctx.BlockHeight() + tc.elapsedBlocks)
+					var err error
+					if vector.Committed != "" {
+						err = cs.VerifyMembership(host, store, cdc, cs.LatestHeight, tc.timeDelay, tc.blockDelay, proof, path, value)
+					} else {
+						err = cs.VerifyNonMembership(host, store, cdc, cs.LatestHeight, tc.timeDelay, tc.blockDelay, proof, path)
+					}
+					if tc.pending {
+						require.ErrorIs(t, err, ErrDelayPeriodNotPassed)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
 		})
 	}
 }

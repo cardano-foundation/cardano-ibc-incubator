@@ -12,9 +12,8 @@ GENTX_AMOUNT="${INJECTIVE_LOCAL_GENTX_AMOUNT:-50000000000000000000stake}"
 MIN_GAS_PRICES="${INJECTIVE_LOCAL_MIN_GAS_PRICES:-0.025inj}"
 LOCAL_GENESIS_TIME="${INJECTIVE_LOCAL_GENESIS_TIME:-2025-12-31T23:59:00Z}"
 
-# Capacity for local probabilistic-client updates. Local fee prices
-# remain synthetic, but consensus, staking and per-transaction ceilings match
-# the public chain.
+# Capacity for local probabilistic-client updates. Production destinations
+# need matching approved limits before using these larger batches.
 BLOCK_MAX_BYTES=16777216
 BLOCK_MAX_GAS=600000000
 EVIDENCE_MAX_AGE_NUM_BLOCKS=100000

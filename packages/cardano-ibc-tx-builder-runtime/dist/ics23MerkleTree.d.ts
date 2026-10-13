@@ -7,6 +7,7 @@ import { Buffer } from 'node:buffer';
  * bytes for Hermes/Cosmos verification.
  *
  * Convention:
+ * - An optional first operation has `prefix = 0x02 || bucket entries` and an empty suffix.
  * - If `suffix` is non-empty, the current node is the LEFT child and `suffix` is the sibling hash.
  * - If `suffix` is empty, the current node is the RIGHT child and `prefix` contains `0x01 || leftSiblingHash`.
  */
@@ -38,6 +39,7 @@ export interface ICS23NonExistenceProof {
  */
 export declare class ICS23MerkleTree {
     private leaves;
+    private buckets;
     private root;
     private dirty;
     private nodesByHeight;
@@ -51,6 +53,7 @@ export declare class ICS23MerkleTree {
     /**
      * Return the per-level sibling hashes for this key, even if the key is not present.
      *
+     * An occupied collision position prepends its complete bucket descriptor.
      * This is the exact structure we use as an on-chain update witness.
      */
     getSiblings(key: string): Buffer[];
@@ -61,8 +64,8 @@ export declare class ICS23MerkleTree {
     /**
      * Generate a non-membership proof for a missing key.
      *
-     * For this fixed-depth tree, we model "missing" as "present with an empty value".
-     * The leaf hash for an empty value is the all-zero hash.
+     * An empty value claims absence of this full key. At an occupied collision
+     * position the proof includes the bucket to show that its other keys remain.
      */
     generateNonExistenceProof(key: string): ICS23NonExistenceProof;
     /**
@@ -71,6 +74,7 @@ export declare class ICS23MerkleTree {
      * This is primarily used by unit tests to sanity-check the proof generator.
      */
     verifyProof(proof: ICS23ExistenceProof): boolean;
+    private proofPath;
     toJSON(): {
         leaves: Record<string, string>;
         root: string;

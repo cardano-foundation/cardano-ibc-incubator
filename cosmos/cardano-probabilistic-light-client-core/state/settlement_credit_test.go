@@ -82,7 +82,7 @@ func TestSettlementCreditCountsDistinctEligibleProducersWithoutRenormalizing(t *
 				context.StakeDistribution = append(context.StakeDistribution, &StakeDistributionEntry{PoolId: fmt.Sprintf("pool-%d", i), Stake: 1000, VrfKeyHash: bytes.Repeat([]byte{1}, 32)})
 			}
 			header := &authenticatedProbabilisticHeader{
-				anchorBlock:            &authenticatedProbabilisticBlock{height: 10, hash: "anchor", epoch: 7},
+				anchorBlock:            &authenticatedProbabilisticBlock{height: 10, hash: "anchor", epoch: 7, slot: testMaturePoolSlot},
 				anchorPoolRegistry:     testPoolRegistry(7, context.StakeDistribution),
 				anchorSettlementCredit: &SettlementCreditState{Epoch: 7},
 				anchorPoolProduction:   testPoolProduction(context),
@@ -116,15 +116,15 @@ func TestSettlementCreditRoundsOnlyTheAggregate(t *testing.T) {
 }
 
 func TestSettlementCreditSurvivesCheckpointUpdatesAndKeepsHistoricalReference(t *testing.T) {
-	base := newTemporalVerifierEpochContext(7, 0, 1_000, 7)
+	base := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1_000, 7)
 	for i, stake := range []uint64{2, 2499, 2499, 2500, 2500} {
 		entry := base.StakeDistribution[i]
 		entry.Stake = stake
 		entry.RelativeStakeNumerator, entry.RelativeStakeDenominator = stake, 10_000
 	}
-	ctx, cdc, store, cs := initializeTemporalVerifierClient(t, "settlement-credit-checkpoints", 999, base)
+	ctx, cdc, store, cs := initializeTemporalVerifierClient(t, "settlement-credit-checkpoints", testMaturePoolSlot+999, base)
 	initial := cloneSettlementCredit(cs.LatestCheckpointSettlementCredit)
-	for i, point := range []struct{ epoch, slot uint64 }{{8, 1000}, {8, 1001}, {9, 2000}} {
+	for i, point := range []struct{ epoch, slot uint64 }{{8, testMaturePoolSlot + 1000}, {8, testMaturePoolSlot + 1001}, {9, testMaturePoolSlot + 2000}} {
 		height := uint64(11 + i)
 		ctx = ctx.WithBlockTime(time.Unix(0, int64(mustTestTimestampForSlot(t, cs, point.slot+24))))
 		header := newTemporalVerifierHeader(t, cs, "checkpoint", height, point.slot, point.epoch, true)
@@ -132,7 +132,7 @@ func TestSettlementCreditSurvivesCheckpointUpdatesAndKeepsHistoricalReference(t 
 		full := makeTestProbabilisticBlock(t, height, point.slot, cs.LatestCheckpointBlockHash)
 		header.AnchorBlock.BlockCbor, header.AnchorBlock.Hash = full.BlockCbor, full.Hash
 		if point.epoch != cs.CurrentEpoch {
-			header.NewEpochContext = newTemporalVerifierEpochContext(point.epoch, (point.epoch-7)*1000, (point.epoch-6)*1000, byte(point.epoch))
+			header.NewEpochContext = newTemporalVerifierEpochContext(point.epoch, testMaturePoolSlot+(point.epoch-7)*1000, testMaturePoolSlot+(point.epoch-6)*1000, byte(point.epoch))
 		}
 		authenticated := newTemporalVerifierAuthenticatedHeader(t, cs, cs.LatestCheckpointBlockHash, full.Hash, height, point.slot, point.epoch)
 		authenticate := temporalVerifierAuthenticator(t, map[string]*authenticatedProbabilisticHeader{full.Hash: authenticated})

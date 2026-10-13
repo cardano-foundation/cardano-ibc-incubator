@@ -50,7 +50,7 @@ func TestHistoricalChallengeCreditMatchesHermesGatewayRequest(t *testing.T) {
 			// selects in its wire-request test. Header cryptography is exercised
 			// separately. Here the core repeats qualification and exact credit.
 			header := &authenticatedProbabilisticHeader{
-				anchorBlock:            &authenticatedProbabilisticBlock{height: 100, hash: "anchor", epoch: fixture.Epoch, slot: 1000, slotLeader: "pool-a"},
+				anchorBlock:            &authenticatedProbabilisticBlock{height: 100, hash: "anchor", epoch: fixture.Epoch, slot: testMaturePoolSlot + 1000, slotLeader: "pool-a"},
 				anchorPoolRegistry:     testPoolRegistry(fixture.Epoch, context.StakeDistribution),
 				anchorSettlementCredit: &SettlementCreditState{Epoch: fixture.Epoch},
 			}
@@ -58,7 +58,7 @@ func TestHistoricalChallengeCreditMatchesHermesGatewayRequest(t *testing.T) {
 			for i, pool := range test.producers {
 				hash := fmt.Sprintf("block-%d", i)
 				header.descendantBlocks = append(header.descendantBlocks, &authenticatedProbabilisticBlock{
-					height: uint64(101 + i), hash: hash, prevHash: previous, epoch: fixture.Epoch, slot: uint64(1010 + 10*i), slotLeader: pool,
+					height: uint64(101 + i), hash: hash, prevHash: previous, epoch: fixture.Epoch, slot: testMaturePoolSlot + uint64(1010+10*i), slotLeader: pool,
 				})
 				previous = hash
 			}

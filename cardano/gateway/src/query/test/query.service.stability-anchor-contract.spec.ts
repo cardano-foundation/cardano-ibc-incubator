@@ -33,8 +33,10 @@ import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
 import { bech32 } from 'bech32';
 
+// Settlement fixtures begin after more than six months of registration history.
+const MATURE_POOL_SLOT = 20_000_000n;
 const STABILITY_SLOT_ORIGIN_NS = 1_700_000_000_000_000_000n;
-const timestampForSlot = (slot: bigint) => STABILITY_SLOT_ORIGIN_NS + slot * 1_000_000_000n;
+const timestampForSlot = (slot: bigint) => STABILITY_SLOT_ORIGIN_NS + (MATURE_POOL_SLOT + slot) * 1_000_000_000n;
 const operationalCertificatePoolId = (byte: number) => bech32.encode('pool', bech32.toWords(Buffer.alloc(28, byte)));
 const stabilityDescendantBlocks = Array.from({ length: 24 }, (_, index) => {
   const height = 101 + index;
@@ -43,7 +45,7 @@ const stabilityDescendantBlocks = Array.from({ length: 24 }, (_, index) => {
     height,
     hash: `hash-${height}`,
     prevHash: index === 0 ? 'anchor-hash' : `hash-${height - 1}`,
-    slotNo: slot,
+    slotNo: MATURE_POOL_SLOT + slot,
     epochNo: 7,
     timestampUnixNs: timestampForSlot(slot),
     slotLeader: `pool-${String.fromCharCode(97 + (index % 5))}`,
@@ -122,7 +124,7 @@ beforeEach(() => {
       height: 105,
       hash: 'latest-hash',
       prevHash: 'hash-104',
-      slotNo: 1050n,
+      slotNo: MATURE_POOL_SLOT + 1050n,
       epochNo: 7,
       timestampUnixNs: timestampForSlot(1050n),
       slotLeader: 'pool-e',
@@ -133,7 +135,7 @@ beforeEach(() => {
           height: 98,
           hash: 'hash-98',
           prevHash: 'hash-97',
-          slotNo: 980n,
+          slotNo: MATURE_POOL_SLOT + 980n,
           epochNo: 7,
           timestampUnixNs: timestampForSlot(980n),
           slotLeader: 'pool-z',
@@ -143,7 +145,7 @@ beforeEach(() => {
         height: 100,
         hash: 'anchor-hash',
         prevHash: 'prev-hash',
-        slotNo: 1000n,
+        slotNo: MATURE_POOL_SLOT + 1000n,
         epochNo: 7,
         timestampUnixNs: timestampForSlot(1000n),
         slotLeader: 'pool-a',
@@ -200,8 +202,8 @@ beforeEach(() => {
         activeSlotCoefficientNumerator: 1n,
         activeSlotCoefficientDenominator: 20n,
         maxKesEvolutions: 62,
-        currentEpochStartSlot: 900n,
-        currentEpochEndSlotExclusive: 3000n,
+        currentEpochStartSlot: MATURE_POOL_SLOT + 900n,
+        currentEpochEndSlotExclusive: MATURE_POOL_SLOT + 3000n,
       },
     }),
     findOperationalCertificateCountersAtBlock: jest.fn().mockResolvedValue(
@@ -216,7 +218,7 @@ beforeEach(() => {
         height: 99,
         hash: 'hash-99',
         prevHash: 'hash-98',
-        slotNo: 990n,
+        slotNo: MATURE_POOL_SLOT + 990n,
         epochNo: 7,
         timestampUnixNs: timestampForSlot(990n),
         slotLeader: 'pool-z',
@@ -281,7 +283,7 @@ beforeEach(() => {
         ? Buffer.from(
             Cbor.encode(
               new CborArray([
-                new CborArray([new CborUInt(100), new CborUInt(1000), new CborBytes(Buffer.alloc(32, 5))]),
+                new CborArray([new CborUInt(100), new CborUInt(MATURE_POOL_SLOT + 1000n), new CborBytes(Buffer.alloc(32, 5))]),
                 new CborBytes(new Uint8Array()),
               ]),
             ).toBuffer(),
@@ -351,7 +353,7 @@ describe('QueryService stability anchor contract', () => {
       Buffer.from(
         Cbor.encode(
           new CborArray([
-            new CborArray([new CborUInt(100), new CborUInt(1000), CborSimple.null]),
+            new CborArray([new CborUInt(100), new CborUInt(MATURE_POOL_SLOT + 1000n), CborSimple.null]),
             new CborBytes(new Uint8Array()),
           ]),
         ).toBuffer(),
@@ -388,12 +390,12 @@ describe('QueryService stability anchor contract', () => {
     const clientState = ClientStateProbabilistic.decode(response.client_state!.value);
     const consensusState = ConsensusStateProbabilistic.decode(response.consensus_state!.value);
 
-    expect(queryPraosNoncesAtPoint).toHaveBeenCalledWith('ws://bootstrap-node', { slot: 1000n, hash: 'anchor-hash' });
+    expect(queryPraosNoncesAtPoint).toHaveBeenCalledWith('ws://bootstrap-node', { slot: MATURE_POOL_SLOT + 1000n, hash: 'anchor-hash' });
     expect(clientState.latest_checkpoint_nonce_state?.last_applied_block_nonce).toEqual(Buffer.alloc(32, 5));
     expect(clientState.latest_checkpoint_nonce_state).toEqual(consensusState.nonce_state);
     expect(clientState.latest_checkpoint_pool_registry).toEqual(consensusState.pool_registry);
     expect(loadTrustedPoolRegistryCheckpoint).toHaveBeenCalledWith('/trusted/pool-registry.json', {
-      chainId: 'cardano-devnet', height: 100n, slot: 1000n, hash: 'anchor-hash', epoch: 7n,
+      chainId: 'cardano-devnet', height: 100n, slot: MATURE_POOL_SLOT + 1000n, hash: 'anchor-hash', epoch: 7n,
     });
     expect(clientState.randomness_stabilisation_window_slots).toBe(100n);
     expect(clientState.epoch_contexts).toHaveLength(1);
@@ -405,14 +407,14 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.active_slot_coefficient_denominator).toBe(20n);
     expect(clientState.epoch_contexts[0].stake_distribution[0].relative_stake_numerator).toBe(1n);
     expect(clientState.epoch_contexts[0].stake_distribution[0].relative_stake_denominator).toBe(5n);
-    expect(clientState.current_epoch_start_slot).toBe(900n);
-    expect(clientState.current_epoch_end_slot_exclusive).toBe(3000n);
+    expect(clientState.current_epoch_start_slot).toBe(MATURE_POOL_SLOT + 900n);
+    expect(clientState.current_epoch_end_slot_exclusive).toBe(MATURE_POOL_SLOT + 3000n);
     expect(clientState.system_start_unix_ns).toBe(STABILITY_SLOT_ORIGIN_NS);
     expect(clientState.slot_length_ns).toBe(1_000_000_000n);
     expect(clientState.latest_checkpoint_height).toEqual(clientState.latest_height);
     expect(clientState.latest_checkpoint_block_hash).toBe('anchor-hash');
     expect(clientState.latest_checkpoint_epoch).toBe(7n);
-    expect(clientState.latest_checkpoint_slot).toBe(1000n);
+    expect(clientState.latest_checkpoint_slot).toBe(MATURE_POOL_SLOT + 1000n);
     expect(clientState.latest_checkpoint_timestamp).toBe(timestampForSlot(1000n));
     expect(clientState.max_clock_drift).toEqual({ seconds: 17n, nanos: 0 });
     expect(clientState.max_kes_evolutions).toBe(62n);
@@ -482,6 +484,7 @@ describe('QueryService stability anchor contract', () => {
       Array.from({ length: 25 }, (_, index) => Buffer.from([index + 1])),
     );
     const context = ClientStateProbabilistic.fromPartial({
+      slot_length_ns: 1_000_000_000n,
       current_epoch: 7n,
       latest_checkpoint_height: { revision_height: 99n },
       latest_checkpoint_settlement_credit: { epoch: 7n, reference: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, numerator: Uint8Array.of(1), denominator: Uint8Array.of(5) })) },
@@ -501,6 +504,7 @@ describe('QueryService stability anchor contract', () => {
   it('uses the destination credit reference when deciding whether an update can settle', async () => {
     historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
     const client = ClientStateProbabilistic.fromPartial({
+      slot_length_ns: 1_000_000_000n,
       current_epoch: 7n,
       latest_checkpoint_height: { revision_height: 99n },
       latest_checkpoint_settlement_credit: { epoch: 7n, reference: [] },
@@ -576,7 +580,7 @@ describe('QueryService stability anchor contract', () => {
         height,
         hash: `hash-${height}`,
         prevHash: `hash-${height - 1}`,
-        slotNo: slot,
+        slotNo: MATURE_POOL_SLOT + slot,
         epochNo: 7,
         timestampUnixNs: timestampForSlot(slot),
         slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
@@ -627,7 +631,7 @@ describe('QueryService stability anchor contract', () => {
         height,
         hash: `hash-${height}`,
         prevHash: `hash-${height - 1}`,
-        slotNo: slot,
+        slotNo: MATURE_POOL_SLOT + slot,
         epochNo: epochForHeight(height),
         timestampUnixNs: timestampForSlot(slot),
         slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
@@ -686,8 +690,8 @@ describe('QueryService stability anchor contract', () => {
           activeSlotCoefficientNumerator: 1n,
           activeSlotCoefficientDenominator: 20n,
           maxKesEvolutions: 62,
-          currentEpochStartSlot,
-          currentEpochEndSlotExclusive,
+          currentEpochStartSlot: MATURE_POOL_SLOT + currentEpochStartSlot,
+          currentEpochEndSlotExclusive: MATURE_POOL_SLOT + currentEpochEndSlotExclusive,
         },
       };
     };
@@ -771,16 +775,16 @@ describe('QueryService stability anchor contract', () => {
   });
 
   it('reduces checkpoint distance to fit authenticated full blocks within the payload limit', async () => {
- const get = (service as any).configService.get as jest.Mock;
- const implementation = get.getMockImplementation()!;
- get.mockImplementation((key) => key === 'cardanoStabilityCheckpointMaxHeaderBytes' ? 768 * 1024 : implementation(key));
+    const get = (service as any).configService.get as jest.Mock;
+    const implementation = get.getMockImplementation()!;
+    get.mockImplementation((key) => key === 'cardanoStabilityCheckpointMaxHeaderBytes' ? 768 * 1024 : implementation(key));
     const blockAt = (height: number) => {
       const slot = 1000n + BigInt(height - 100) * 10n;
       return {
         height,
         hash: `hash-${height}`,
         prevHash: `hash-${height - 1}`,
-        slotNo: slot,
+        slotNo: MATURE_POOL_SLOT + slot,
         epochNo: 7,
         timestampUnixNs: timestampForSlot(slot),
         slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
@@ -850,7 +854,7 @@ describe('QueryService stability anchor contract', () => {
       height: 1136,
       hash: 'hash-1136',
       prevHash: 'hash-1135',
-      slotNo: 4452n,
+      slotNo: MATURE_POOL_SLOT + 4452n,
       epochNo: 0,
       timestampUnixNs: timestampForSlot(4452n),
       slotLeader: 'pool-a',
@@ -897,10 +901,16 @@ describe('historical Hermes challenge request', () => {
   });
 
   it('serves enough descendants under the historical production and capped credit rules', async () => {
-    // This is the exact protobuf request sent by the Hermes challenge test.
-    // Its current_epoch is restored from a bare pre-proposal rootless snapshot.
+    // Start with the protobuf request from the Hermes challenge test. Its
+    // epoch is restored from the pre-proposal rootless snapshot. Advance the
+    // fixture chain point so its producers also meet the rolling age rule.
     const request = QueryIBCHeaderRequest.decode(Buffer.from(fixture.request_hex, 'hex'));
     const context = ClientStateProbabilistic.decode(request.probabilistic_client_state);
+    context.latest_checkpoint_slot += MATURE_POOL_SLOT;
+    context.latest_checkpoint_timestamp = timestampForSlot(990n);
+    context.epoch_contexts[0].epoch_start_slot += MATURE_POOL_SLOT;
+    context.epoch_contexts[0].epoch_end_slot_exclusive += MATURE_POOL_SLOT;
+    request.probabilistic_client_state = ClientStateProbabilistic.encode(context).finish();
     expect(context.current_epoch).toBe(7n);
     expect(context.latest_checkpoint_height?.revision_height).toBe(99n);
     expect(context.latest_checkpoint_settlement_credit?.reference).toEqual([]);
@@ -921,8 +931,8 @@ describe('historical Hermes challenge request', () => {
         activeSlotCoefficientNumerator: 1n,
         activeSlotCoefficientDenominator: 20n,
         maxKesEvolutions: 62,
-        currentEpochStartSlot: 900n,
-        currentEpochEndSlotExclusive: 3000n,
+        currentEpochStartSlot: MATURE_POOL_SLOT + 900n,
+        currentEpochEndSlotExclusive: MATURE_POOL_SLOT + 3000n,
       },
     });
     const descendants = (producers: string[]) =>
@@ -931,7 +941,7 @@ describe('historical Hermes challenge request', () => {
         height: 101 + index,
         hash: `hash-${101 + index}`,
         prevHash: index === 0 ? 'anchor-hash' : `hash-${100 + index}`,
-        slotNo: 1010n + BigInt(index) * 10n,
+        slotNo: MATURE_POOL_SLOT + 1010n + BigInt(index) * 10n,
         timestampUnixNs: timestampForSlot(1010n + BigInt(index) * 10n),
         slotLeader,
       }));

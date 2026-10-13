@@ -377,7 +377,8 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       : await historyService.findObservedPoolProductionAtBlock?.(anchorBlock);
 
   let acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  // Historical checkpoint hints may omit immutable network parameters.
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock, settlementCreditClient?.slot_length_ns || undefined);
   const settlementCreditReference = settlementCreditClient
     ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
     : undefined;
@@ -639,7 +640,8 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     : await historyService.findObservedPoolProductionAtBlock?.(anchorBlock);
 
   const acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  // Historical checkpoint hints may omit immutable network parameters.
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock, settlementCreditClient?.slot_length_ns || undefined);
   const settlementCreditReference = settlementCreditClient
     ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
     : undefined;

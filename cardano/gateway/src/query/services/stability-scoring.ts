@@ -42,7 +42,6 @@ type StabilityScoringOptions = {
   poolProduction?: PoolProductionHistory;
 };
 
-const STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS = 1_767_225_600_000_000_000n; // 2026-01-01T00:00:00Z
 const DEFAULT_CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
 
 export function assertEpochStakeDistributionAvailable(
@@ -80,11 +79,28 @@ export function computePoolRegistrationCutoffSlot(
   if (slotLengthNs <= 0n) {
     throw new Error('Cardano slot length must be greater than zero');
   }
+  if (anchorBlock.slotNo < 0n || anchorBlock.timestampUnixNs < 0n || anchorBlock.timestampUnixNs > 18_446_744_073_709_551_615n) {
+    throw new Error('Cardano anchor slot and timestamp must be within the supported range');
+  }
+  // Match the Go verifier: subtract six calendar months in UTC, clamping to
+  // the target month's last day while preserving time of day and nanoseconds.
+  // This depends on the anchor being settled, never the machine's clock.
+  const anchorDate = new Date(Number(anchorBlock.timestampUnixNs / 1_000_000n));
+  const monthStart = new Date(anchorDate.getTime());
+  monthStart.setUTCDate(1);
+  monthStart.setUTCMonth(monthStart.getUTCMonth() - 6);
+  const monthEnd = new Date(monthStart.getTime());
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0);
+  monthStart.setUTCDate(Math.min(anchorDate.getUTCDate(), monthEnd.getUTCDate()));
+  const cutoffUnixNs = BigInt(monthStart.getTime()) * 1_000_000n + anchorBlock.timestampUnixNs % 1_000_000n;
   const systemStartUnixNs = anchorBlock.timestampUnixNs - anchorBlock.slotNo * slotLengthNs;
-  if (STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS <= systemStartUnixNs) {
+  if (systemStartUnixNs <= 0n) {
+    throw new Error('Cardano system start must be greater than zero');
+  }
+  if (cutoffUnixNs <= systemStartUnixNs) {
     return 0n;
   }
-  const delta = STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS - systemStartUnixNs;
+  const delta = cutoffUnixNs - systemStartUnixNs;
   return (delta + slotLengthNs - 1n) / slotLengthNs;
 }
 
