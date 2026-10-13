@@ -211,6 +211,7 @@ func TestComputeHeaderSecurityMetricsHandlesIssue647StakeRatio(t *testing.T) {
 	authenticatedHeader := &authenticatedProbabilisticHeader{
 		anchorBlock: &authenticatedProbabilisticBlock{
 			height: 12,
+			slot:   testMaturePoolSlot,
 			hash:   "anchor-12",
 			epoch:  cs.CurrentEpoch,
 		},

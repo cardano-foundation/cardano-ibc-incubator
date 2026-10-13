@@ -64,7 +64,7 @@ func TestProductionSettlementMatchesGatewayFixture(t *testing.T) {
 			saved := &PoolProductionHistory{Epoch: fixture.SavedEpoch, Pools: fixture.Pools}
 			trusted := &trustedBlockState{epoch: fixture.SavedEpoch, poolProduction: saved}
 			header := &authenticatedProbabilisticHeader{
-				anchorBlock:            &authenticatedProbabilisticBlock{height: 10, hash: "anchor", epoch: fixture.Anchor.Epoch, slotLeader: fixture.Anchor.Pool},
+				anchorBlock:            &authenticatedProbabilisticBlock{height: 10, hash: "anchor", slot: testMaturePoolSlot, epoch: fixture.Anchor.Epoch, slotLeader: fixture.Anchor.Pool},
 				anchorSettlementCredit: &SettlementCreditState{Epoch: fixture.Anchor.Epoch, Reference: []*PoolSettlementCredit{testCredit("pool-a", 1, 5000), testCredit("other", 4999, 5000)}},
 			}
 			for _, block := range fixture.Bridge {
@@ -134,11 +134,11 @@ func TestProductionRecordsCommittedBlocksAndIsolatesDescendants(t *testing.T) {
 func TestProductionPersistsAtOrdinaryAndRootlessAnchors(t *testing.T) {
 	for _, checkpoint := range []bool{false, true} {
 		t.Run(fmt.Sprint(checkpoint), func(t *testing.T) {
-			context := newTemporalVerifierEpochContext(7, 0, 1000, 7)
-			ctx, cdc, store, client := initializeTemporalVerifierClient(t, "production-checkpoint", 100, context)
-			ctx = ctx.WithBlockTime(time.Unix(0, int64(mustTestTimestampForSlot(t, client, 150))))
-			header := newTemporalVerifierHeader(t, client, "production-anchor", 11, 101, 7, checkpoint)
-			authenticated := newTemporalVerifierAuthenticatedHeader(t, client, client.LatestCheckpointBlockHash, header.AnchorBlock.Hash, 11, 101, 7)
+			context := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1000, 7)
+			ctx, cdc, store, client := initializeTemporalVerifierClient(t, "production-checkpoint", testMaturePoolSlot+100, context)
+			ctx = ctx.WithBlockTime(time.Unix(0, int64(mustTestTimestampForSlot(t, client, testMaturePoolSlot+150))))
+			header := newTemporalVerifierHeader(t, client, "production-anchor", 11, testMaturePoolSlot+101, 7, checkpoint)
+			authenticated := newTemporalVerifierAuthenticatedHeader(t, client, client.LatestCheckpointBlockHash, header.AnchorBlock.Hash, 11, testMaturePoolSlot+101, 7)
 			authenticate := temporalVerifierAuthenticator(t, map[string]*authenticatedProbabilisticHeader{header.AnchorBlock.Hash: authenticated})
 			require.NoError(t, client.verifyHeaderWithAuthenticator(ctx, store, cdc, header, authenticate))
 			heights := client.updateStateWithAuthenticator(ctx, cdc, store, header, authenticate)
