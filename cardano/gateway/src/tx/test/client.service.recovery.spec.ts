@@ -19,11 +19,14 @@ function clientDatum(
   options: {
     frozen?: boolean;
     chainId?: string;
+    revisionNumber?: bigint;
+    trustingPeriod?: bigint;
+    unbondingPeriod?: bigint;
     processedTime?: bigint;
     processedHeight?: bigint;
   } = {},
 ): ClientDatum {
-  const latest = height(latestHeight);
+  const latest = { revisionNumber: options.revisionNumber ?? 0n, revisionHeight: latestHeight };
   return {
     history_root: '00'.repeat(32),
     token: { policyId: '11'.repeat(28), name: Buffer.from(latestHeight.toString()).toString('hex') },
@@ -32,8 +35,8 @@ function clientDatum(
         upgradePath: [],
         chainId: options.chainId ?? Buffer.from('chain-0').toString('hex'),
         trustLevel: { numerator: 1n, denominator: 3n },
-        trustingPeriod: 100n,
-        unbondingPeriod: 200n,
+        trustingPeriod: options.trustingPeriod ?? 100n,
+        unbondingPeriod: options.unbondingPeriod ?? 200n,
         maxClockDrift: 10n,
         frozenHeight: options.frozen ? height(1n) : height(0n),
         latestHeight: latest,
@@ -44,6 +47,15 @@ function clientDatum(
       processedHeights: new Map([[latest, options.processedHeight ?? latestHeight]]),
     },
   };
+}
+
+// The counterparty upgraded from chain-0 to chain-1 and restarted its heights.
+function renamedSubstitute(latestHeight: bigint, timestamp: bigint): ClientDatum {
+  return clientDatum(latestHeight, timestamp, {
+    chainId: Buffer.from('chain-1').toString('hex'),
+    revisionNumber: 1n,
+    trustingPeriod: 150n,
+  });
 }
 
 function validationService(): any {
@@ -75,10 +87,16 @@ describe('ClientService recovery validation', () => {
     expect(() =>
       validationService().validateRecoveryState(
         clientDatum(1n, 0n),
-        clientDatum(2n, 150n, { chainId: Buffer.from('other-0').toString('hex') }),
+        clientDatum(2n, 150n, { unbondingPeriod: 300n }),
         validTo,
       ),
     ).toThrow('parameters do not match');
+  });
+
+  it('accepts a substitute tracking a renamed chain with its own trusting period', () => {
+    expect(
+      validationService().validateRecoveryState(clientDatum(9n, 0n), renamedSubstitute(1n, 150n), validTo),
+    ).toMatchObject({ height: { revisionNumber: 1n, revisionHeight: 1n } });
   });
 
   it('rejects a substitute that is not newer', () => {
@@ -287,6 +305,49 @@ describe('ClientService recovery transaction', () => {
     treeContext.setLiveRoot(result.pendingTreeUpdate.expectedNewRoot, confirmedHostState);
     await expect(result.pendingTreeUpdate.commit(confirmedHostState)).resolves.toMatchObject({ published: true });
     expect(treeContext.store.getCurrentRoot()).toBe(expectedTree.getRoot());
+  });
+
+  it('adopts the chain ID and trusting period of a substitute across a height reset', async () => {
+    const { service, lucid, treeContext } = serviceContext();
+    const subject = clientDatum(300n, 0n, { frozen: true });
+    const substitute = renamedSubstitute(1n, 150n);
+    const tree = new ICS23MerkleTree();
+    tree.set('clients/07-tendermint-1/clientState', Buffer.from('old-client'));
+    tree.set('clients/07-tendermint-1/consensusStates/0-1', Buffer.from('revision-0'));
+    tree.set('clients/07-tendermint-1/consensusStates/0-300', Buffer.from('subject-tip'));
+    const hostStateUtxo = { txHash: 'aa'.repeat(32), outputIndex: 0, address: 'host', assets: {} };
+    await treeContext.restore(tree, hostStateUtxo);
+    const recoveredDatums: ClientDatum[] = [];
+    lucid.encode.mockImplementation((data: unknown, type: string) => {
+      if (type === 'client') recoveredDatums.push(data as ClientDatum);
+      return Promise.resolve(`encoded-${type}`);
+    });
+
+    const result = await service.buildUnsignedRecoverClientTx(
+      recoveryOperator(tree, hostStateUtxo, subject, substitute),
+    );
+
+    const recovered = recoveredDatums[0].state.clientState;
+    expect(recovered).toEqual({
+      ...subject.state.clientState,
+      chainId: substitute.state.clientState.chainId,
+      trustingPeriod: 150n,
+      frozenHeight: height(0n),
+      latestHeight: { revisionNumber: 1n, revisionHeight: 1n },
+    });
+    const expectedTree = tree.clone();
+    expectedTree.set(
+      'clients/07-tendermint-1/clientState',
+      Buffer.from(await encodeClientStateValue(recovered, Lucid), 'hex'),
+    );
+    expectedTree.set(
+      'clients/07-tendermint-1/consensusStates/1-1',
+      Buffer.from(
+        await encodeConsensusStateValue(Array.from(substitute.state.consensusStates.values())[0], Lucid),
+        'hex',
+      ),
+    );
+    expect(result.pendingTreeUpdate.expectedNewRoot).toBe(expectedTree.getRoot());
   });
 
   it('rejects recovery when a heartbeat replaces the HostState input without changing its root', async () => {

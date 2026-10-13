@@ -92,7 +92,7 @@ pub fn update_state(
     expect [Pair(_, output_height)] = output_datum.state.processed_heights
     and {
       tokens_match(input_datum.token, output_datum.token),
-      recovery_parameters_match(input_state, output_state),
+      immutable_parameters_match(input_state, output_state),
       heights_match(input_state.frozen_height, output_state.frozen_height),
       heights_match(output_state.latest_height, header_height),
       height.compare(header_height, input_state.latest_height) == Greater,
@@ -114,7 +114,7 @@ pub fn update_state_on_misbehaviour(
   let output_state = output_datum.state.client_state
   and {
     tokens_match(input_datum.token, output_datum.token),
-    recovery_parameters_match(input_state, output_state),
+    immutable_parameters_match(input_state, output_state),
     heights_match(input_state.latest_height, output_state.latest_height),
     output_state.frozen_height.revision_number == 0,
     output_state.frozen_height.revision_height == 1,
@@ -123,15 +123,27 @@ pub fn update_state_on_misbehaviour(
   }
 }
 
-pub fn recovery_parameters_match(
+/// Header updates and freezes never change these parameters.
+pub fn immutable_parameters_match(
   subject: ClientState,
   substitute: ClientState,
 ) -> Bool {
   and {
     subject.chain_id == substitute.chain_id,
+    subject.trusting_period == substitute.trusting_period,
+    recovery_parameters_match(subject, substitute),
+  }
+}
+
+/// ibc-go's IsMatchingClientState: a substitute may track a renamed chain and
+/// carry its own trusting period, but every other parameter must match.
+pub fn recovery_parameters_match(
+  subject: ClientState,
+  substitute: ClientState,
+) -> Bool {
+  and {
     subject.trust_level.numerator == substitute.trust_level.numerator,
     subject.trust_level.denominator == substitute.trust_level.denominator,
-    subject.trusting_period == substitute.trusting_period,
     subject.unbonding_period == substitute.unbonding_period,
     subject.max_clock_drift == substitute.max_clock_drift,
     subject.proof_specs == substitute.proof_specs,
@@ -140,7 +152,10 @@ pub fn recovery_parameters_match(
 }
 
 /// Recovery replaces the tip and archives the old subject checkpoint under the
-/// subject's identity. Substitute processing metadata is preserved exactly.
+/// subject's identity. As in ibc-go, the subject adopts the substitute's chain
+/// ID, trusting period and latest height, so it can follow a chain that crossed
+/// a revision upgrade while the subject was expired. Substitute processing
+/// metadata is preserved exactly.
 pub fn recover_state(
   subject: ClientDatum,
   substitute: ClientDatum,
@@ -148,25 +163,19 @@ pub fn recover_state(
 ) -> Bool {
   expect has_singleton_history(subject)
   expect has_singleton_history(substitute)
+  let subject_state = subject.state.client_state
+  let substitute_state = substitute.state.client_state
   and {
-    recovery_parameters_match(
-      subject.state.client_state,
-      substitute.state.client_state,
-    ),
-    height.compare(
-      substitute.state.client_state.latest_height,
-      subject.state.client_state.latest_height,
-    ) == Greater,
+    recovery_parameters_match(subject_state, substitute_state),
+    height.compare(substitute_state.latest_height, subject_state.latest_height) == Greater,
     tokens_match(output.token, subject.token),
-    recovery_parameters_match(
-      subject.state.client_state,
-      output.state.client_state,
-    ),
-    heights_match(
-      output.state.client_state.latest_height,
-      substitute.state.client_state.latest_height,
-    ),
-    height.is_zero(output.state.client_state.frozen_height),
+    output.state.client_state == ClientState {
+      ..subject_state,
+      chain_id: substitute_state.chain_id,
+      trusting_period: substitute_state.trusting_period,
+      frozen_height: height.zero_height(),
+      latest_height: substitute_state.latest_height,
+    },
     same_history(output.state, substitute.state),
   }
 }
