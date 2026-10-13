@@ -90,7 +90,7 @@ const malformed = {
   changed_peer_value: Buffer.from(descriptor),
 }
 malformed.wrong_path[1] ^= 1
-commitment.EMPTY_VALUE_HASH.copy(malformed.empty_peer_value, 33)
+commitment.hash(Buffer.alloc(0)).copy(malformed.empty_peer_value, 33)
 malformed.changed_peer_value[33] ^= 1
 for (const [name, bytes] of Object.entries(malformed)) {
   aiken.push(`test collision_rejects_${name}() fail {`, ...witnessLines([bytes.toString('hex'), ...populated.siblings.slice(1)]), '  expect _ =', '    commitment.apply_update(', `      #"${populated.root}",`, `      "${key}",`, `      #"${populated.committed}",`, '      #"aabbcc",', '      witness,', '    )', '}', '')

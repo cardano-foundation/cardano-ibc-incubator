@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 
 export const MERKLE_DEPTH_BITS = 64;
 export const EMPTY_HASH = Buffer.alloc(32);
-export const EMPTY_VALUE_HASH = hash(Buffer.alloc(0));
+const EMPTY_VALUE_HASH = hash(Buffer.alloc(0));
 
 export interface BucketEntry {
   keyHash: Buffer;
@@ -20,7 +20,7 @@ export function keyHash(key: string): Buffer {
   return hash(bytes);
 }
 
-export function leafHash(keyDigest: Buffer, valueDigest: Buffer): Buffer {
+function leafHash(keyDigest: Buffer, valueDigest: Buffer): Buffer {
   if (valueDigest.equals(EMPTY_VALUE_HASH)) return EMPTY_HASH;
   return hash(Buffer.concat([Buffer.from([0]), keyDigest, valueDigest]));
 }
@@ -50,7 +50,7 @@ export function sortBucket(entries: BucketEntry[]): BucketEntry[] {
   return entries;
 }
 
-export function decodeBucket(encoded: Buffer, requestedKeyHash: Buffer): BucketEntry[] {
+function decodeBucket(encoded: Buffer, requestedKeyHash: Buffer): BucketEntry[] {
   if (encoded[0] !== 2 || encoded.length < 65 || (encoded.length - 1) % 64 !== 0) {
     throw new Error('Invalid collision bucket encoding');
   }
@@ -69,7 +69,7 @@ export function decodeBucket(encoded: Buffer, requestedKeyHash: Buffer): BucketE
   return entries;
 }
 
-export function requireBucketValue(entries: readonly BucketEntry[], requestedKeyHash: Buffer, value: Buffer): void {
+function requireBucketValue(entries: readonly BucketEntry[], requestedKeyHash: Buffer, value: Buffer): void {
   const entry = entries.find((candidate) => candidate.keyHash.equals(requestedKeyHash));
   if (value.length === 0 ? entry !== undefined : !entry?.valueHash.equals(hash(value))) {
     throw new Error('Collision bucket does not contain the claimed key and value');
