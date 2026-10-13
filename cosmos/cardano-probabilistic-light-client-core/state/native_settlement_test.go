@@ -24,6 +24,7 @@ type nativeSettlementFixture struct {
 	Consensus *ConsensusState      `json:"consensus"`
 	Header    *ProbabilisticHeader `json:"header"`
 	Fork      *ProbabilisticHeader `json:"fork"`
+	TailFork  *ProbabilisticHeader `json:"tail_fork"`
 }
 
 type nativeProducer struct {
@@ -146,7 +147,7 @@ func makeNativeSettlementFixture(t *testing.T) nativeSettlementFixture {
 	}
 	header := makeHeader(slotOffset + 11)
 	fork := makeHeader(header.AnchorBlock.Slot + 1)
-	return nativeSettlementFixture{cs, consensus, header, fork}
+	return nativeSettlementFixture{cs, consensus, header, fork, makeNativeTailFork(t, header, fork)}
 }
 
 func TestNativeSettlementFixture(t *testing.T) {
@@ -156,7 +157,7 @@ func TestNativeSettlementFixture(t *testing.T) {
 	ctx.Time = time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp))
 	require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
 	fixture.Client, _ = GetClientState(store, cdc)
-	for _, header := range []*ProbabilisticHeader{fixture.Header, fixture.Fork} {
+	for _, header := range []*ProbabilisticHeader{fixture.Header, fixture.Fork, fixture.TailFork} {
 		require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, header))
 	}
 	evidence := &Misbehaviour{ProbabilisticHeader1: fixture.Header, ProbabilisticHeader2: fixture.Fork}
