@@ -1,22 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EMPTY_VALUE_HASH = exports.EMPTY_HASH = exports.MERKLE_DEPTH_BITS = void 0;
+exports.EMPTY_HASH = exports.MERKLE_DEPTH_BITS = void 0;
 exports.hash = hash;
 exports.keyHash = keyHash;
-exports.leafHash = leafHash;
 exports.innerHash = innerHash;
 exports.bucketHash = bucketHash;
 exports.encodeBucket = encodeBucket;
 exports.sortBucket = sortBucket;
-exports.decodeBucket = decodeBucket;
-exports.requireBucketValue = requireBucketValue;
 exports.needsBucketWitness = needsBucketWitness;
 exports.witnessLeaf = witnessLeaf;
 const node_buffer_1 = require("node:buffer");
 const node_crypto_1 = require("node:crypto");
 exports.MERKLE_DEPTH_BITS = 64;
 exports.EMPTY_HASH = node_buffer_1.Buffer.alloc(32);
-exports.EMPTY_VALUE_HASH = hash(node_buffer_1.Buffer.alloc(0));
+const EMPTY_VALUE_HASH = hash(node_buffer_1.Buffer.alloc(0));
 function hash(bytes) {
     return (0, node_crypto_1.createHash)('sha256').update(bytes).digest();
 }
@@ -27,7 +24,7 @@ function keyHash(key) {
     return hash(bytes);
 }
 function leafHash(keyDigest, valueDigest) {
-    if (valueDigest.equals(exports.EMPTY_VALUE_HASH))
+    if (valueDigest.equals(EMPTY_VALUE_HASH))
         return exports.EMPTY_HASH;
     return hash(node_buffer_1.Buffer.concat([node_buffer_1.Buffer.from([0]), keyDigest, valueDigest]));
 }
@@ -66,7 +63,7 @@ function decodeBucket(encoded, requestedKeyHash) {
         if (!entry.keyHash.subarray(0, 8).equals(requestedKeyHash.subarray(0, 8))) {
             throw new Error('Collision bucket entry belongs to a different path');
         }
-        if (entry.valueHash.equals(exports.EMPTY_VALUE_HASH))
+        if (entry.valueHash.equals(EMPTY_VALUE_HASH))
             throw new Error('Collision bucket contains an empty value');
         if (entries.length && node_buffer_1.Buffer.compare(entries[entries.length - 1].keyHash, entry.keyHash) >= 0) {
             throw new Error('Collision bucket keys must be strictly ordered');
