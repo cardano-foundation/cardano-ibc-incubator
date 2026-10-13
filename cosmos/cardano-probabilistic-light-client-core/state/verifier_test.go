@@ -895,7 +895,7 @@ func TestCheckForMisbehaviourDetectsConflictingHeaderAtSameHeight(t *testing.T) 
 	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
 }
 
-func TestCheckForMisbehaviourDetectsConflictingEpochContext(t *testing.T) {
+func TestCheckForMisbehaviourIgnoresUnsignedEpochContextDisagreement(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-misbehaviour-epoch-context")
 
@@ -904,7 +904,7 @@ func TestCheckForMisbehaviourDetectsConflictingEpochContext(t *testing.T) {
 	header.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, cs))
 	header.NewEpochContext.StakeDistribution[0].Stake++
 
-	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
+	require.False(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
 }
 
 func TestFirstRegistrationSlotConflictDoesNotFreezeClient(t *testing.T) {
@@ -959,7 +959,8 @@ func TestCheckForMisbehaviourDetectsConflictingMisbehaviourMessage(t *testing.T)
 	require.True(t, cs.CheckForMisbehaviour(Context{}, nil, nil, msg))
 }
 
-func TestCheckForMisbehaviourDetectsConflictingEpochContextsInMisbehaviourMessage(t *testing.T) {
+func TestCheckForMisbehaviourIgnoresUnsignedTablesInMisbehaviourMessage(t *testing.T) {
+	ctx, store := newProbabilisticTestClientStore(t, "unsigned-tables")
 	cs := newProbabilisticTestClientState()
 	header1 := newVerifiedTestHeader(t)
 	header2 := newVerifiedTestHeader(t)
@@ -968,7 +969,7 @@ func TestCheckForMisbehaviourDetectsConflictingEpochContextsInMisbehaviourMessag
 	header2.NewEpochContext.StakeDistribution[0].Stake++
 
 	msg := NewMisbehaviour("08-cardano-probabilistic-0", header1, header2)
-	require.True(t, cs.CheckForMisbehaviour(Context{}, nil, nil, msg))
+	require.False(t, cs.CheckForMisbehaviour(ctx, newProbabilisticTestCodec(), store, msg))
 }
 
 func TestCheckForMisbehaviourIgnoresInvalidFirstRegistrationSlotBetweenHeaders(t *testing.T) {
