@@ -107,6 +107,9 @@ func validatePoolRegistry(registry *PoolRegistryState, epoch, slot uint64) error
 	if registry == nil {
 		return errorsmod.Wrap(ErrIBCInvalidClient, "pool registry is missing and requires authenticated or explicitly trusted bootstrap")
 	}
+	if len(registry.Pools) > MaxStakeEntries || len(registry.Mark) > MaxStakeEntries || len(registry.Effective) > MaxStakeEntries {
+		return errorsmod.Wrap(ErrIBCInvalidClient, "pool registry exceeds the challenge capacity bound")
+	}
 	if registry.Epoch != epoch {
 		return errorsmod.Wrap(ErrIBCInvalidClient, "pool registry epoch differs from its checkpoint")
 	}

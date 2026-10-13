@@ -3,6 +3,9 @@ package probabilistic
 import (
 	"bytes"
 	"fmt"
+	corestate "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
+	"github.com/stretchr/testify/require"
+	"strings"
 	"testing"
 )
 
@@ -229,4 +232,35 @@ func assertPayloadTestShape(
 			t.Fatalf("block %d unexpectedly contains header_cbor in full-witness payload", i)
 		}
 	}
+}
+
+// Reserve both full headers before admitting either one. This checks the
+// inclusive protobuf byte bound and both nested challenge fields.
+func TestChallengeCapacityAdmission(t *testing.T) {
+	h := newPayloadTestHeader(true, true)
+	for _, b := range h.BridgeBlocks {
+		b.BlockCbor = bytes.Repeat([]byte{0x82}, 77*1024)
+	}
+	h.AnchorBlock.BlockCbor = bytes.Repeat([]byte{0x82}, 77*1024)
+	for h.Size() != corestate.MaxHeaderBytes {
+		delta := corestate.MaxHeaderBytes - h.Size()
+		h.AnchorBlock.BlockCbor = bytes.Repeat([]byte{0x82}, len(h.AnchorBlock.BlockCbor)+delta)
+	}
+	require.NoError(t, h.ValidateBasic())
+	fork := fromCoreProbabilisticHeader(toCoreProbabilisticHeader(h))
+	fork.AnchorBlock.Hash = strings.Repeat("f", 64)
+	evidence := NewMisbehaviour(ModuleName+"-0", h, fork)
+	require.NoError(t, evidence.ValidateBasic())
+	require.Less(t, evidence.Size()+64*1024, 12*1024*1024)
+	for _, oversize := range []*ProbabilisticHeader{h, fork} {
+		oversize.AnchorBlock.BlockCbor = append(oversize.AnchorBlock.BlockCbor, 0x82)
+		require.ErrorContains(t, oversize.ValidateBasic(), "challenge capacity")
+		require.ErrorContains(t, evidence.ValidateBasic(), "challenge capacity")
+		oversize.AnchorBlock.BlockCbor = oversize.AnchorBlock.BlockCbor[:len(oversize.AnchorBlock.BlockCbor)-1]
+	}
+	h = newPayloadTestHeader(true, true)
+	for len(h.BridgeBlocks) < corestate.MaxBridgeBlocks+1 {
+		h.BridgeBlocks = append(h.BridgeBlocks, h.BridgeBlocks[0])
+	}
+	require.ErrorContains(t, h.ValidateBasic(), "block count")
 }

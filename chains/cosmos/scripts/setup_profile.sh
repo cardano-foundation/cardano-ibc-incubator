@@ -19,7 +19,7 @@ GOV_VOTING_PERIOD="${COSMOS_GOV_VOTING_PERIOD:-30s}"
 GOV_EXPEDITED_VOTING_PERIOD="${COSMOS_GOV_EXPEDITED_VOTING_PERIOD:-10s}"
 GOV_MAX_DEPOSIT_PERIOD="${COSMOS_GOV_MAX_DEPOSIT_PERIOD:-60s}"
 
-# These local profiles support the probabilistic client's 10 MiB header budget.
+# These local profiles budget for two admitted 2.5 MiB challenge headers.
 # Production destinations need a matching transaction and block limit upgrade.
 # These byte limits do not model an unchanged public network.
 # Stock simd has no Injective txfees ante handler. Hermes enforces the
@@ -171,7 +171,7 @@ jq -e \
 }
 
 # Keep the local node and the generated Hermes profile on one explicit limit.
-# Hermes uses 1,000,000 bytes, leaving room below this CometBFT ceiling.
+# Hermes permits 8 MiB, leaving room below this CometBFT ceiling.
 sed -i "s/^max_tx_bytes = .*/max_tx_bytes = ${MAX_TX_BYTES}/" "${CONFIG_FILE}"
 grep -q "^max_tx_bytes = ${MAX_TX_BYTES}$" "${CONFIG_FILE}" || {
   echo "[${PROFILE}] Could not configure max_tx_bytes in ${CONFIG_FILE}." >&2
@@ -183,7 +183,7 @@ grep -q "^max_body_bytes = ${RPC_MAX_BODY_BYTES}$" "${CONFIG_FILE}" || {
   exit 1
 }
 
-# Leave room for the transaction envelope above the 10 MiB header budget.
+# Support the complete two-header challenge and its transaction envelope.
 sed -i 's/^max-recv-msg-size = .*/max-recv-msg-size = 16777216/' "${SIMD_HOME}/config/app.toml"
 grep -q '^max-recv-msg-size = 16777216$' "${SIMD_HOME}/config/app.toml" || {
   echo "[${PROFILE}] Could not configure the gRPC receive limit." >&2

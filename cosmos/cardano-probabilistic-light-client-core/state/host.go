@@ -11,10 +11,12 @@ import (
 // Context contains only the host values used by the state machine. SelfHeight
 // retains the host chain revision for processed metadata.
 type Context struct {
-	Time       time.Time
-	Height     int64
-	SelfHeight HostHeight
-	EmitEvent  func(string, ...EventAttribute)
+	Time        time.Time
+	Height      int64
+	SelfHeight  HostHeight
+	EmitEvent   func(string, ...EventAttribute)
+	ConsumeGas  func(uint64, string)
+	GasConsumed func() uint64
 }
 
 func (c Context) BlockTime() time.Time              { return c.Time }

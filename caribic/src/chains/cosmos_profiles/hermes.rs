@@ -170,7 +170,7 @@ mod tests {
             let profile = hermes_profile(*test_profile.config(), false);
             assert_eq!(profile.max_tx_size, LOCAL_MAX_TX_SIZE);
             assert_eq!(profile.max_gas, LOCAL_MAX_TX_GAS);
-            assert!(profile.max_tx_size > 10 * 1_048_576);
+            assert!(profile.max_tx_size > 5 * 1_048_576);
             assert!(profile.max_tx_size <= LOCAL_SIMD_MAX_TX_BYTES);
         }
     }

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG GO_IMAGE=golang:1.23.8-alpine
+ARG GO_IMAGE=golang:1.26.5-alpine
 ARG RUNTIME_IMAGE=alpine:3.22.2
 
 FROM ${GO_IMAGE} AS builder
@@ -32,7 +32,8 @@ COPY cosmos/cardano-probabilistic-light-client-v8 /cardano-ibc/cosmos/cardano-pr
 COPY cosmos/cardano-probabilistic-light-client-v10 /cardano-ibc/cosmos/cardano-probabilistic-light-client-v10
 COPY chains/cosmos/patch_cardano_probabilistic_light_client.sh /usr/local/bin/patch-cardano-light-client
 
-RUN /usr/local/bin/patch-cardano-light-client /src/ibc-go /cardano-ibc \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    /usr/local/bin/patch-cardano-light-client /src/ibc-go /cardano-ibc \
     && cd /src/ibc-go \
     && go mod tidy \
     && if [ "${IBC_GO_MAJOR}" = "10" ]; then \

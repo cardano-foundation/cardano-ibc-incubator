@@ -9,8 +9,9 @@
 /// A conservative relayer transaction-size cap below the public nodes' limits.
 pub(crate) const HERMES_CONSERVATIVE_MAX_TX_SIZE: u64 = 1_000_000;
 
-/// Local nodes accept 12 MiB transactions containing up to 10 MiB of headers.
-pub(crate) const LOCAL_MAX_TX_SIZE: u64 = 12 * 1_048_576;
+/// Hermes accepts at most 8 MiB per transaction. Local nodes allow 12 MiB.
+/// Two admitted probabilistic headers fit below the smaller relayer cap.
+pub(crate) const LOCAL_MAX_TX_SIZE: u64 = 8 * 1_048_576;
 
 /// Match the larger block and transaction gas budgets in the local profiles.
 pub(crate) const LOCAL_MAX_TX_GAS: u64 = 600_000_000;

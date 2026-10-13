@@ -197,7 +197,7 @@ export default (): Partial<Config> => {
       process.env.CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS || 96,
     ),
     cardanoStabilityCheckpointMaxHeaderBytes: Number(
-      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 10 * 1024 * 1024,
+      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 5 * 1024 * 1024 / 2,
     ),
     cardanoEpochParamsEndpoint,
     cardanoLocalEpochContextEndpoint: cardanoNetwork === 'Custom'
