@@ -7,9 +7,9 @@ import (
 )
 
 func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
-	base := newTemporalVerifierEpochContext(7, 0, 1_000, 7)
-	ctx, cdc, store, cs := initializeTemporalVerifierClient(t, "challenge-rollover", 969, base)
-	ctx = ctx.WithBlockTime(time.Unix(0, int64(mustTestTimestampForSlot(t, cs, 1_024))))
+	base := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1_000, 7)
+	ctx, cdc, store, cs := initializeTemporalVerifierClient(t, "challenge-rollover", testMaturePoolSlot+969, base)
+	ctx = ctx.WithBlockTime(time.Unix(0, int64(mustTestTimestampForSlot(t, cs, testMaturePoolSlot+1_024))))
 	makeHeader := func(hash string, height, slot, epoch uint64) (*ProbabilisticHeader, headerAuthenticator) {
 		header := newTemporalVerifierHeader(t, cs, hash, height, slot, epoch, true)
 		header.TrustedHeight = cs.LatestCheckpointHeight
@@ -25,14 +25,14 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 		}
 	}
 	// First advance to a rootless checkpoint in the old, already usable epoch.
-	checkpoint, authenticate := makeHeader("rootless-11", 11, 970, 7)
+	checkpoint, authenticate := makeHeader("rootless-11", 11, testMaturePoolSlot+970, 7)
 	oldDeadline := cs.epochChallenge(7).UsableAfterUnixNs
 	require.NoError(t, cs.verifyHeaderWithAuthenticator(ctx, store, cdc, checkpoint, authenticate))
 	require.Empty(t, cs.updateStateWithAuthenticator(ctx, cdc, store, checkpoint, authenticate))
 	require.Equal(t, oldDeadline, cs.epochChallenge(7).UsableAfterUnixNs)
 
-	proposal, authenticateProposal := makeHeader("proposal-12", 12, 1_000, 8)
-	proposal.NewEpochContext = newTemporalVerifierEpochContext(8, 1_000, 2_000, 8)
+	proposal, authenticateProposal := makeHeader("proposal-12", 12, testMaturePoolSlot+1_000, 8)
+	proposal.NewEpochContext = newTemporalVerifierEpochContext(8, testMaturePoolSlot+1_000, testMaturePoolSlot+2_000, 8)
 	// This seam supplies authenticated blocks, just as the pre-fix verifier
 	// accepts blocks signed under a fabricated but structurally valid context.
 	require.NoError(t, cs.verifyHeaderWithAuthenticator(ctx, store, cdc, proposal, authenticateProposal))
@@ -44,7 +44,7 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	_, found := GetConsensusState(store, cdc, NewHeight(0, 12))
 	require.False(t, found) // Rootless proposal still has no IBC root.
 
-	next, authenticateNext := makeHeader("next-13", 13, 1_001, 8)
+	next, authenticateNext := makeHeader("next-13", 13, testMaturePoolSlot+1_001, 8)
 	next.NewEpochContext = cloneEpochContext(proposal.NewEpochContext)
 	require.NoError(t, cs.verifyHeaderWithAuthenticator(ctx, store, cdc, next, authenticateNext))
 	require.Empty(t, cs.updateStateWithAuthenticator(ctx.WithBlockTime(ctx.BlockTime().Add(time.Second)), cdc, store, next, authenticateNext))
@@ -72,7 +72,7 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 	require.Equal(t, uint32(1), oldProduction["pool-a"].CompletedEpochsBitmap)
 	require.Equal(t, uint64(8), cs.LatestCheckpointPoolProduction.Epoch)
 
-	// A second self-consistent context is evidence of disagreement. It must
+	// An alternative table alone is not evidence of a conflicting chain. It must
 	// remain verifiable against the pre-proposal checkpoint after advancement.
 	honest := *proposal
 	honest.NewEpochContext = cloneEpochContext(proposal.NewEpochContext)
@@ -81,16 +81,16 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 		entry.RelativeStakeNumerator, entry.RelativeStakeDenominator = entry.Stake, 5_001
 	}
 	evidence := &Misbehaviour{ProbabilisticHeader1: proposal, ProbabilisticHeader2: &honest}
-	require.NoError(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, evidence, authenticateProposal))
-	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, store, evidence))
+	require.ErrorIs(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, evidence, authenticateProposal), ErrIBCInvalidMisbehaviour)
+	require.False(t, cs.CheckForMisbehaviour(ctx, cdc, store, evidence))
 	// The honest fork may still be in the previous epoch at the disputed
 	// height; it must find the same saved cursor without claiming epoch 8.
-	oldEpochWitness := newTemporalVerifierHeader(t, cs, "honest-old-epoch", 12, 971, 7, true)
+	oldEpochWitness := newTemporalVerifierHeader(t, cs, "honest-old-epoch", 12, testMaturePoolSlot+971, 7, true)
 	oldEpochWitness.TrustedHeight = proposal.TrustedHeight
-	oldBlock := makeTestProbabilisticBlock(t, 12, 971, checkpoint.AnchorBlock.Hash)
+	oldBlock := makeTestProbabilisticBlock(t, 12, testMaturePoolSlot+971, checkpoint.AnchorBlock.Hash)
 	oldEpochWitness.AnchorBlock.BlockCbor = oldBlock.BlockCbor
 	oldEpochWitness.AnchorBlock.Hash = oldBlock.Hash
-	oldAuthenticated := newTemporalVerifierAuthenticatedHeader(t, cs, checkpoint.AnchorBlock.Hash, oldBlock.Hash, 12, 971, 7)
+	oldAuthenticated := newTemporalVerifierAuthenticatedHeader(t, cs, checkpoint.AnchorBlock.Hash, oldBlock.Hash, 12, testMaturePoolSlot+971, 7)
 	mixedEvidence := &Misbehaviour{ProbabilisticHeader1: proposal, ProbabilisticHeader2: oldEpochWitness}
 	require.NoError(t, cs.verifyMisbehaviourWithAuthenticator(ctx, store, cdc, mixedEvidence,
 		func(header *ProbabilisticHeader, contexts []*EpochContext, counters map[string]uint64, _ *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
@@ -100,7 +100,8 @@ func TestRolloverChallengeRetainsRootlessTrustAndDoesNotReset(t *testing.T) {
 			}
 			return authenticateProposal(header, contexts, counters, nil)
 		}))
-	cs.UpdateStateOnMisbehaviour(ctx, cdc, store, evidence)
+	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, store, mixedEvidence))
+	cs.UpdateStateOnMisbehaviour(ctx, cdc, store, mixedEvidence)
 	frozen, _ := GetClientState(store, cdc)
 	require.Equal(t, Frozen, frozen.Status(ctx, store, cdc))
 	require.ErrorIs(t, frozen.verifyEpochUsable(ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour)), 8), ErrIBCClientFrozen)

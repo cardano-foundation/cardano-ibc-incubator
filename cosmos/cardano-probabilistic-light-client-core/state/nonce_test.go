@@ -78,7 +78,7 @@ func TestWrongNonceDoesNotQualifyAsMisbehaviour(t *testing.T) {
 	require.False(t, cs.CheckForMisbehaviour(ctx, newProbabilisticTestCodec(), store, header))
 	other := newVerifiedTestHeader(t)
 	other.NewEpochContext = cloneEpochContext(cs.EpochContexts[0])
-	require.False(t, headersEpochContextConflict(header, other))
+	require.False(t, headersConflict(header, other))
 	require.True(t, cs.FrozenHeight.IsZero())
 }
 

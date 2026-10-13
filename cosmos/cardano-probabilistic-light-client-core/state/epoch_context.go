@@ -238,8 +238,8 @@ func mergeEpochContexts(base []*EpochContext, candidate *EpochContext) ([]*Epoch
 	}
 
 	// Verification uses the supplied stake table so competing same-epoch stake
-	// claims can be checked as challenge evidence. CheckForMisbehaviour can
-	// freeze on conflicting stake data after the headers pass verification.
+	// claims can authenticate competing block histories during a challenge.
+	// A table disagreement alone is not evidence of consensus misbehaviour.
 	// Nonce, schedule and KES mismatches reject the update before that step.
 	for i, ctx := range contexts {
 		if ctx != nil && ctx.Epoch == candidate.Epoch {
@@ -347,4 +347,29 @@ func retainEpochContexts(contexts []*EpochContext, keep map[uint64]struct{}) []*
 		}
 	}
 	return retained
+}
+
+// Fractions are validated separately against the amounts. Their reduced or
+// unreduced representation does not change an established stake allocation.
+func epochStakeAllocationsEqual(a, b *EpochContext) bool {
+	if a == nil || b == nil || a.Epoch != b.Epoch || len(a.StakeDistribution) != len(b.StakeDistribution) {
+		return false
+	}
+	amounts := make(map[string]uint64, len(a.StakeDistribution))
+	for _, entry := range a.StakeDistribution {
+		if entry == nil {
+			return false
+		}
+		amounts[strings.ToLower(entry.PoolId)] = entry.Stake
+	}
+	for _, entry := range b.StakeDistribution {
+		if entry == nil {
+			return false
+		}
+		amount, found := amounts[strings.ToLower(entry.PoolId)]
+		if !found || amount != entry.Stake {
+			return false
+		}
+	}
+	return true
 }
