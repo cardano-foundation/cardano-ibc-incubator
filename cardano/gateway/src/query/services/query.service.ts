@@ -2455,7 +2455,7 @@ export class QueryService {
           logger: this.logger,
         });
       } catch (error) {
-        if (isCheckpoint && candidateDistance > 1n && this.isRecoverableCheckpointCandidateError(error)) {
+        if (candidateDistance > 1n && this.isRecoverableCheckpointCandidateError(error)) {
           candidateDistance -= 1n;
           continue;
         }
@@ -2580,7 +2580,7 @@ export class QueryService {
   }
 
   private getStabilityCheckpointMaxBridgeBlocks(): number {
-    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxBridgeBlocks') ?? 32;
+    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxBridgeBlocks') ?? 96;
     if (!Number.isSafeInteger(value) || value < 0) {
       throw new GrpcInternalException('Invalid Cardano stability checkpoint bridge-block limit');
     }
@@ -2588,7 +2588,7 @@ export class QueryService {
   }
 
   private getStabilityCheckpointMaxHeaderBytes(): number {
-    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? 768 * 1024;
+    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? 10 * 1024 * 1024;
     if (!Number.isSafeInteger(value) || value <= 0) {
       throw new GrpcInternalException('Invalid Cardano stability checkpoint header-size limit');
     }

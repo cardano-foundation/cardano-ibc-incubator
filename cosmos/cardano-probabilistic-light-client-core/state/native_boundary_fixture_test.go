@@ -1,0 +1,242 @@
+package state
+
+import (
+	"bytes"
+	"compress/gzip"
+	"crypto/ed25519"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/blinklabs-io/gouroboros/cbor"
+	"github.com/blinklabs-io/gouroboros/kes"
+	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/vrf"
+	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/blake2b"
+)
+
+type nativeBoundaryFixture struct {
+	Client     *ClientState         `json:"client"`
+	Consensus  *ConsensusState      `json:"consensus"`
+	Header     *ProbabilisticHeader `json:"header"`
+	Fork       *ProbabilisticHeader `json:"fork"`
+	SizeClient *ClientState         `json:"size_client,omitempty"`
+}
+
+type nativeBoundaryProducer struct {
+	cold                 ed25519.PrivateKey
+	vrfSecret, vrfPublic []byte
+	kesSecret            *kes.SecretKey
+	kesPublic            []byte
+}
+
+// Fully signed synthetic Praos evidence exercises native cryptography and
+// complete body authentication. Deterministic keys exist only for this test.
+func makeNativeBoundaryFixture(t *testing.T, countStall bool, paddingBytes int) nativeBoundaryFixture {
+	t.Helper()
+	cs := newProbabilisticTestClientState()
+	// Start more than six months after registration. The signing certificate
+	// begins in this KES period so its relative signing period remains zero.
+	slotOffset := uint64(160 * 129600)
+	cs.CurrentEpochStartSlot = slotOffset
+	cs.CurrentEpochEndSlotExclusive += slotOffset
+	cs.EpochContexts[0].EpochStartSlot = slotOffset
+	cs.EpochContexts[0].EpochEndSlotExclusive += slotOffset
+	cs.LatestHeight = NewHeight(0, 966)
+	cs.OperationalCertificateCounterHistoryStartHeight = cs.LatestHeight
+	cs.TrustingPeriod = 48 * time.Hour
+	cs.CurrentEpochEndSlotExclusive = slotOffset + 60000
+	cs.EpochContexts[0].EpochEndSlotExclusive = slotOffset + 60000
+	cs.LatestCheckpointNonceState.LastEpochBlockNonce = nil
+	cs.LatestCheckpointNonceState.CandidateNonce = bytes.Clone(cs.EpochNonce)
+	producers := make([]nativeBoundaryProducer, 13)
+	entries := make([]*StakeDistributionEntry, 13)
+	for i := range producers {
+		p := &producers[i]
+		p.cold = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{byte(i + 1)}, 32))
+		var err error
+		p.vrfPublic, p.vrfSecret, err = vrf.KeyGen(bytes.Repeat([]byte{byte(i + 21)}, 32))
+		require.NoError(t, err)
+		p.kesSecret, p.kesPublic, err = kes.KeyGen(6, bytes.Repeat([]byte{byte(i + 41)}, 32))
+		require.NoError(t, err)
+		poolHash := ledger.IssuerVkey(p.cold.Public().(ed25519.PublicKey)).Hash()
+		vrfHash := blake2b.Sum256(p.vrfPublic)
+		stake := uint64(200)
+		if i >= 11 {
+			stake = 3900
+		}
+		entries[i] = &StakeDistributionEntry{PoolId: poolHash.Bech32("pool"), Stake: stake, RelativeStakeNumerator: stake, RelativeStakeDenominator: 10000, VrfKeyHash: vrfHash[:], FirstRegistrationSlot: 1}
+	}
+	cs.EpochStakeDistribution = entries
+	cs.EpochContexts[0].StakeDistribution = entries
+	cs.LatestCheckpointPoolRegistry = testPoolRegistry(7, entries)
+	cs.LatestCheckpointSettlementCredit = &SettlementCreditState{Epoch: 7}
+	cs.LatestCheckpointPoolProduction = &PoolProductionHistory{Epoch: 7}
+	for _, entry := range entries {
+		cs.LatestCheckpointPoolProduction.Pools = append(cs.LatestCheckpointPoolProduction.Pools, &PoolProductionRecord{PoolId: entry.PoolId, CompletedEpochsBitmap: 1})
+	}
+	hash := testBlockHash("native-bootstrap")
+	setTestCheckpoint(t, cs, cs.LatestHeight, hash, 7, slotOffset+10)
+	consensus := newProbabilisticTestConsensusState(hash, 966)
+	consensus.Timestamp = cs.LatestCheckpointTimestamp
+	consensus.NonceState = clonePraosNonceState(cs.LatestCheckpointNonceState)
+	consensus.PoolRegistry = clonePoolRegistry(cs.LatestCheckpointPoolRegistry)
+	consensus.SettlementCredit = cloneSettlementCredit(cs.LatestCheckpointSettlementCredit)
+	consensus.PoolProduction = clonePoolProduction(cs.LatestCheckpointPoolProduction)
+	makeHeader := func(firstSlot uint64) *ProbabilisticHeader {
+		h := &ProbabilisticHeader{TrustedHeight: cs.LatestHeight, IsCheckpoint: true}
+		h.NewEpochContext = cloneEpochContext(cs.EpochContexts[0])
+		h.NewEpochContext.Epoch = 8
+		h.NewEpochContext.EpochStartSlot, h.NewEpochContext.EpochEndSlotExclusive = slotOffset+60000, slotOffset+120000
+		previous, slot := hash, firstSlot
+		tracker, err := newNonceTracker(&trustedBlockState{height: cs.LatestHeight, blockHash: hash, slot: slotOffset + 10, epoch: 7, nonceState: cs.LatestCheckpointNonceState})
+		require.NoError(t, err)
+		for n := uint64(967); n <= 1031; n++ {
+			producerIndex := int((n - 967) % 11)
+			if countStall && n <= 1000 {
+				if n < 977 {
+					producerIndex = int(n - 966)
+				} else {
+					producerIndex = 0
+				}
+			}
+			p := &producers[producerIndex]
+			epoch := uint64(7)
+			if n >= 1001 {
+				epoch = 8
+				if slot < slotOffset+60000 {
+					slot = slotOffset + 60000
+				}
+			}
+			require.NoError(t, tracker.tick(cs, n, slot, epoch, previous))
+			if n == 1001 {
+				h.NewEpochContext.EpochNonce = bytes.Clone(tracker.state.EpochNonce)
+			}
+			var proof, output []byte
+			for {
+				seed, err := vrf.MkInputVrf(int64(slot), tracker.state.EpochNonce)
+				require.NoError(t, err)
+				proof, output, err = vrf.Prove(p.vrfSecret, seed)
+				require.NoError(t, err)
+				eligible, err := core.IsPraosLeaderEligible(output, 200, 10000, 1, 20)
+				require.NoError(t, err)
+				if eligible {
+					break
+				}
+				slot++
+			}
+			require.Less(t, slot, slotOffset+cs.SlotsPerKesPeriod)
+			block := ledger.BabbageBlock{BlockHeader: &ledger.BabbageBlockHeader{}}
+			bh := block.BlockHeader
+			bh.Body.BlockNumber, bh.Body.Slot = n, slot
+			prev, err := hex.DecodeString(previous)
+			require.NoError(t, err)
+			bh.Body.PrevHash = ledger.NewBlake2b256(prev)
+			copy(bh.Body.IssuerVkey[:], p.cold.Public().(ed25519.PublicKey))
+			bh.Body.VrfKey = p.vrfPublic
+			bh.Body.VrfResult.Proof, bh.Body.VrfResult.Output = proof, output
+			bh.Body.OpCert.HotVkey = p.kesPublic
+			bh.Body.OpCert.KesPeriod = slotOffset / cs.SlotsPerKesPeriod
+			signable := append(bytes.Clone(p.kesPublic), make([]byte, 16)...)
+			binary.BigEndian.PutUint64(signable[40:], bh.Body.OpCert.KesPeriod)
+			bh.Body.OpCert.Signature = ed25519.Sign(p.cold, signable)
+			encoded, err := cbor.Encode(block)
+			require.NoError(t, err)
+			var fields []cbor.RawMessage
+			_, err = cbor.Decode(encoded, &fields)
+			require.NoError(t, err)
+			padding, err := cbor.Encode(map[uint64]any{0: map[uint64]any{1: bytes.Repeat([]byte{0x5a}, paddingBytes)}})
+			require.NoError(t, err)
+			fields[3] = padding
+			bodyHashes := []byte{}
+			for _, field := range fields[1:] {
+				sum := blake2b.Sum256(field)
+				bodyHashes = append(bodyHashes, sum[:]...)
+			}
+			bodyHash := blake2b.Sum256(bodyHashes)
+			bh.Body.BlockBodyHash = ledger.NewBlake2b256(bodyHash[:])
+			body, err := cbor.Encode(bh.Body)
+			require.NoError(t, err)
+			bh.Signature, err = kes.Sign(p.kesSecret, 0, body)
+			require.NoError(t, err)
+			fields[0], err = cbor.Encode(bh)
+			require.NoError(t, err)
+			encoded, err = cbor.Encode(fields)
+			require.NoError(t, err)
+			_, err = cbor.Decode(encoded, &block)
+			timestamp, err := cs.DeriveTimestampFromSlot(slot)
+			require.NoError(t, err)
+			b := &ProbabilisticBlock{Height: NewHeight(0, n), Hash: block.Hash().String(), Slot: slot, Epoch: epoch, Timestamp: timestamp}
+			b.BlockCbor = encoded
+			if n < 1001 {
+				h.BridgeBlocks = append(h.BridgeBlocks, b)
+			} else if n == 1001 {
+				h.AnchorBlock = b
+			} else {
+				h.DescendantBlocks = append(h.DescendantBlocks, b)
+			}
+			require.NoError(t, tracker.apply(cs, &authenticatedProbabilisticBlock{height: n, slot: slot, epoch: epoch, prevHash: previous, hash: b.Hash}, output))
+			previous, slot = b.Hash, slot+1
+		}
+		return h
+	}
+	header := makeHeader(slotOffset + 11)
+	fork := header
+	return nativeBoundaryFixture{Client: cs, Consensus: consensus, Header: header, Fork: fork}
+}
+
+func TestNativeBoundaryFixture(t *testing.T) {
+	for _, name := range []string{"size", "count", "control"} {
+		countStall := name == "count"
+		paddingBytes := 40 * 1024
+		if name == "control" {
+			paddingBytes = 1024
+		}
+		t.Run(name, func(t *testing.T) {
+			fixture := makeNativeBoundaryFixture(t, countStall, paddingBytes)
+			ctx, store := newProbabilisticTestClientStore(t, "native-boundary")
+			cdc := newProbabilisticTestCodec()
+			ctx.Time = time.Unix(0, int64(fixture.Header.DescendantBlocks[29].Timestamp))
+			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
+			fixture.Client, _ = GetClientState(store, cdc)
+			ctx.Time = ctx.Time.Add(3 * time.Minute)
+			require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, fixture.Header))
+			if !countStall {
+				intermediate := &ProbabilisticHeader{TrustedHeight: NewHeight(0, 966), BridgeBlocks: fixture.Header.BridgeBlocks[:9], AnchorBlock: fixture.Header.BridgeBlocks[9], DescendantBlocks: fixture.Header.BridgeBlocks[10:], IsCheckpoint: true}
+				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, intermediate))
+				working, _ := GetClientState(store, cdc)
+				require.Empty(t, working.UpdateState(ctx, cdc, store, intermediate))
+				fixture.SizeClient, _ = GetClientState(store, cdc)
+			}
+			encoded, err := json.MarshalIndent(fixture, "", "  ")
+			require.NoError(t, err)
+			encoded = append(encoded, '\n')
+			if os.Getenv("UPDATE_NATIVE_BOUNDARY_FIXTURE") == "1" {
+				file, err := os.Create("../testdata/native-boundary-" + name + ".json.gz")
+				require.NoError(t, err)
+				writer := gzip.NewWriter(file)
+				_, err = writer.Write(encoded)
+				require.NoError(t, err)
+				require.NoError(t, writer.Close())
+				require.NoError(t, file.Close())
+			}
+			file, err := os.Open("../testdata/native-boundary-" + name + ".json.gz")
+			require.NoError(t, err)
+			reader, err := gzip.NewReader(file)
+			require.NoError(t, err)
+			saved, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			require.NoError(t, reader.Close())
+			require.NoError(t, file.Close())
+			require.JSONEq(t, string(saved), string(encoded))
+			fmt.Printf("%s boundary: %d full bridge blocks and %d-byte anchor\n", name, len(fixture.Header.BridgeBlocks), len(fixture.Header.AnchorBlock.BlockCbor))
+		})
+	}
+}
