@@ -11,6 +11,17 @@ import {
   type UTxO,
 } from "@lucid-evolution/lucid";
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
+import { Buffer } from "node:buffer";
+import collisionFixture from "../../../tests/ibc-state-commitment/collision-buckets.json" with {
+  type: "json",
+};
+import {
+  type BucketEntry,
+  bucketHash,
+  hash,
+  keyHash,
+  sortBucket,
+} from "../../../packages/cardano-ibc-tx-builder-runtime/src/ibcStateCommitment.ts";
 
 import {
   buildReferenceValidatorBatches,
@@ -514,4 +525,46 @@ Deno.test("collateral holdback keeps the main deployment funding output spendabl
     assets: { lovelace },
   } as UTxO));
   assertEquals(selectDeploymentCollateralHoldback(utxos), [utxos[1]]);
+});
+
+Deno.test("deployment collision witnesses and incremental removal preserve the other key", async () => {
+  const populated = collisionFixture.vectors.find((v) =>
+    v.name === "insert_collision"
+  )!;
+  const missing = collisionFixture.vectors.find((v) =>
+    v.name === "missing_in_singleton"
+  )!;
+  const tree = new DeploymentIbcTree();
+  tree.set("ports/transfer", "d8799f01ff");
+  tree.set(populated.key, populated.committed);
+  await tree.getRoot();
+
+  // Simulate a peer digest sharing the route. All hashing and the requested
+  // key remain native, as in the Gateway/Go/Aiken collision vectors.
+  const digest = keyHash(populated.key);
+  const index = digest.readBigUInt64BE();
+  const cache = tree as unknown as {
+    leaves: Map<string, string>;
+    buckets: Map<bigint, BucketEntry[]>;
+    nodesByHeight: Array<Map<bigint, string>>;
+    root: string;
+  };
+  cache.leaves.set("synthetic-collision-peer-0", "aabb");
+  const entries = sortBucket([
+    {
+      keyHash: digest,
+      valueHash: hash(Buffer.from(populated.committed, "hex")),
+    },
+    {
+      keyHash: Buffer.from(collisionFixture.syntheticPeerDigests[0], "hex"),
+      valueHash: hash(Buffer.from("aabb", "hex")),
+    },
+  ]);
+  cache.buckets.set(index, entries);
+  cache.nodesByHeight[0].set(index, bucketHash(entries).toString("hex"));
+  cache.root = populated.root;
+  assertEquals(await tree.getSiblings(populated.key), populated.siblings);
+  await tree.remove(populated.key);
+  assertEquals(await tree.getRoot(), missing.root);
+  assertEquals(await tree.getSiblings(populated.key), missing.siblings);
 });

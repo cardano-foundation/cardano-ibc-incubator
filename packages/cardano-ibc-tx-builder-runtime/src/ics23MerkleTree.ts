@@ -11,42 +11,14 @@
 //
 // This matches the on-chain `ibc_state_commitment.ak` logic used by `host_state_stt`.
 
-import { sha256 } from 'js-sha256';
 import { Buffer } from 'node:buffer';
-
-const MERKLE_DEPTH_BITS = 64;
-const HASH_SIZE_BYTES = 32;
-const EMPTY_HASH = Buffer.alloc(HASH_SIZE_BYTES, 0);
-
-function sha256Bytes(data: Buffer): Buffer {
-  return Buffer.from(sha256.array(data));
-}
-
-function keyHash(key: string): Buffer {
-  return sha256Bytes(Buffer.from(key, 'utf8'));
-}
-
-function leafHash(key: string, value: Buffer): Buffer {
-  // On-chain we treat the empty value as "absent" and map it to the all-zero hash.
-  if (value.length === 0) return EMPTY_HASH;
-
-  // leaf = sha256(0x00 || sha256(key) || sha256(value))
-  const valueHash = sha256Bytes(value);
-  return sha256Bytes(Buffer.concat([Buffer.from([0x00]), keyHash(key), valueHash]));
-}
-
-function innerHash(left: Buffer, right: Buffer): Buffer {
-  // Empty subtree compression: if both children are empty, parent is empty.
-  if (left.equals(EMPTY_HASH) && right.equals(EMPTY_HASH)) return EMPTY_HASH;
-  // inner = sha256(0x01 || left || right)
-  return sha256Bytes(Buffer.concat([Buffer.from([0x01]), left, right]));
-}
+import {
+  type BucketEntry, MERKLE_DEPTH_BITS, EMPTY_HASH, keyHash, hash,
+  innerHash, bucketHash, sortBucket, encodeBucket, needsBucketWitness, witnessLeaf,
+} from './ibcStateCommitment.ts';
 
 function keyIndex64(key: string): bigint {
-  // The on-chain code uses the first 64 bits of `sha256(key)` to define the path.
-  // We interpret those 8 bytes as a big-endian unsigned integer.
-  const first8 = keyHash(key).subarray(0, 8);
-  return BigInt(`0x${first8.toString('hex')}`);
+  return keyHash(key).readBigUInt64BE();
 }
 
 /**
@@ -57,6 +29,7 @@ function keyIndex64(key: string): bigint {
  * bytes for Hermes/Cosmos verification.
  *
  * Convention:
+ * - An optional first operation has `prefix = 0x02 || bucket entries` and an empty suffix.
  * - If `suffix` is non-empty, the current node is the LEFT child and `suffix` is the sibling hash.
  * - If `suffix` is empty, the current node is the RIGHT child and `prefix` contains `0x01 || leftSiblingHash`.
  */
@@ -93,6 +66,7 @@ export interface ICS23NonExistenceProof {
 export class ICS23MerkleTree {
   private leaves: Map<string, Buffer> = new Map();
 
+  private buckets = new Map<bigint, BucketEntry[]>();
   private root: Buffer = EMPTY_HASH;
   private dirty = true;
   private nodesByHeight: Array<Map<bigint, Buffer>> | null = null;
@@ -143,13 +117,16 @@ export class ICS23MerkleTree {
   /**
    * Return the per-level sibling hashes for this key, even if the key is not present.
    *
+   * An occupied collision position prepends its complete bucket descriptor.
    * This is the exact structure we use as an on-chain update witness.
    */
   getSiblings(key: string): Buffer[] {
     this.ensureRebuilt();
 
-    const siblings: Buffer[] = [];
-    let index = keyIndex64(key);
+    const digest = keyHash(key);
+    let index = digest.readBigUInt64BE();
+    const bucket = this.buckets.get(index) ?? [];
+    const siblings: Buffer[] = needsBucketWitness(bucket, digest) ? [encodeBucket(bucket)] : [];
 
     for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
       const siblingIndex = index ^ 1n;
@@ -174,29 +151,7 @@ export class ICS23MerkleTree {
       throw new Error(`Cannot generate proof: key '${key}' not found in tree`);
     }
 
-    const siblings = this.getSiblings(key);
-    const path: ICS23InnerOp[] = [];
-
-    let index = keyIndex64(key);
-    for (const siblingHash of siblings) {
-      const isLeftChild = (index & 1n) === 0n;
-
-      if (isLeftChild) {
-        path.push({
-          hash: 1, // SHA-256
-          prefix: Buffer.from([0x01]),
-          suffix: siblingHash,
-        });
-      } else {
-        path.push({
-          hash: 1, // SHA-256
-          prefix: Buffer.concat([Buffer.from([0x01]), siblingHash]),
-          suffix: Buffer.alloc(0),
-        });
-      }
-
-      index >>= 1n;
-    }
+    const path = this.proofPath(key);
 
     return {
       key: Buffer.from(key, 'utf8'),
@@ -217,8 +172,8 @@ export class ICS23MerkleTree {
   /**
    * Generate a non-membership proof for a missing key.
    *
-   * For this fixed-depth tree, we model "missing" as "present with an empty value".
-   * The leaf hash for an empty value is the all-zero hash.
+   * An empty value claims absence of this full key. At an occupied collision
+   * position the proof includes the bucket to show that its other keys remain.
    */
   generateNonExistenceProof(key: string): ICS23NonExistenceProof {
     if (this.leaves.has(key)) {
@@ -229,29 +184,7 @@ export class ICS23MerkleTree {
       throw new Error(`Cannot generate non-existence proof: tree is empty`);
     }
 
-    const siblings = this.getSiblings(key);
-    const path: ICS23InnerOp[] = [];
-
-    let index = keyIndex64(key);
-    for (const siblingHash of siblings) {
-      const isLeftChild = (index & 1n) === 0n;
-
-      if (isLeftChild) {
-        path.push({
-          hash: 1,
-          prefix: Buffer.from([0x01]),
-          suffix: siblingHash,
-        });
-      } else {
-        path.push({
-          hash: 1,
-          prefix: Buffer.concat([Buffer.from([0x01]), siblingHash]),
-          suffix: Buffer.alloc(0),
-        });
-      }
-
-      index >>= 1n;
-    }
+    const path = this.proofPath(key);
 
     const emptyValueProof: ICS23ExistenceProof = {
       key: Buffer.from(key, 'utf8'),
@@ -281,24 +214,56 @@ export class ICS23MerkleTree {
   verifyProof(proof: ICS23ExistenceProof): boolean {
     this.ensureRebuilt();
 
-    const proofKey = proof.key.toString('utf8');
-    let currentHash = leafHash(proofKey, proof.value);
-
-    for (const op of proof.path) {
-      if (op.suffix.length > 0) {
-        const left = currentHash;
-        const right = op.suffix;
-        currentHash = innerHash(left, right);
-      } else {
-        // prefix format: 0x01 || leftSiblingHash
-        const leftSibling = op.prefix.subarray(1);
-        const left = leftSibling;
-        const right = currentHash;
-        currentHash = innerHash(left, right);
+    try {
+      const key = proof.key.toString('utf8');
+      if (!Buffer.from(key, 'utf8').equals(proof.key)) return false;
+      const hasBucket = proof.path.length === MERKLE_DEPTH_BITS + 1;
+      const operations = hasBucket ? proof.path.slice(1) : proof.path;
+      const witness: Buffer[] = [];
+      if (hasBucket) {
+        const descriptor = proof.path[0];
+        if (!descriptor || descriptor.hash !== 1 || descriptor.suffix.length !== 0) return false;
+        witness.push(descriptor.prefix);
       }
+      if (operations.length !== MERKLE_DEPTH_BITS) return false;
+      let index = keyIndex64(key);
+      for (const op of operations) {
+        if (!op || op.hash !== 1) return false;
+        if ((index & 1n) === 0n) {
+          if (!op.prefix.equals(Buffer.from([1])) || op.suffix.length !== 32) return false;
+          witness.push(op.suffix);
+        } else {
+          if (op.suffix.length !== 0 || op.prefix.length !== 33 || op.prefix[0] !== 1) return false;
+          witness.push(op.prefix.subarray(1));
+        }
+        index >>= 1n;
+      }
+      const { leaf, siblings } = witnessLeaf(keyHash(key), proof.value, witness);
+      let current = leaf;
+      index = keyIndex64(key);
+      for (const sibling of siblings) {
+        current = (index & 1n) === 0n ? innerHash(current, sibling) : innerHash(sibling, current);
+        index >>= 1n;
+      }
+      return current.equals(this.root);
+    } catch {
+      return false;
     }
+  }
 
-    return currentHash.equals(this.root);
+  private proofPath(key: string): ICS23InnerOp[] {
+    const witness = this.getSiblings(key);
+    const hasBucket = witness.length === MERKLE_DEPTH_BITS + 1;
+    const siblings = hasBucket ? witness.slice(1) : witness;
+    const path: ICS23InnerOp[] = hasBucket ? [{ hash: 1, prefix: witness[0], suffix: Buffer.alloc(0) }] : [];
+    let index = keyIndex64(key);
+    for (const sibling of siblings) {
+      path.push((index & 1n) === 0n
+        ? { hash: 1, prefix: Buffer.from([1]), suffix: sibling }
+        : { hash: 1, prefix: Buffer.concat([Buffer.from([1]), sibling]), suffix: Buffer.alloc(0) });
+      index >>= 1n;
+    }
+    return path;
   }
 
   toJSON(): { leaves: Record<string, string>; root: string } {
@@ -325,18 +290,16 @@ export class ICS23MerkleTree {
       () => new Map<bigint, Buffer>(),
     );
 
-    const indexToKey = new Map<bigint, string>();
+    const buckets = new Map<bigint, BucketEntry[]>();
     for (const [key, value] of this.leaves) {
-      const index = keyIndex64(key);
-
-      const previousKey = indexToKey.get(index);
-      if (previousKey && previousKey !== key) {
-        throw new Error(`Merkle key collision at index ${index.toString()}: '${previousKey}' and '${key}'`);
-      }
-      indexToKey.set(index, key);
-
-      const h = leafHash(key, value);
-      if (!h.equals(EMPTY_HASH)) nodesByHeight[0].set(index, h);
+      const digest = keyHash(key);
+      const index = digest.readBigUInt64BE();
+      const bucket = buckets.get(index) ?? [];
+      bucket.push({ keyHash: digest, valueHash: hash(value) });
+      buckets.set(index, bucket);
+    }
+    for (const [index, bucket] of buckets) {
+      nodesByHeight[0].set(index, bucketHash(sortBucket(bucket)));
     }
 
     for (let height = 1; height <= MERKLE_DEPTH_BITS; height++) {
@@ -360,6 +323,7 @@ export class ICS23MerkleTree {
       }
     }
 
+    this.buckets = buckets;
     this.nodesByHeight = nodesByHeight;
     this.root = nodesByHeight[MERKLE_DEPTH_BITS].get(0n) ?? EMPTY_HASH;
     this.dirty = false;
