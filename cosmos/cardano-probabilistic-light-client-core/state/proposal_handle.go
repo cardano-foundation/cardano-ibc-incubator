@@ -138,6 +138,11 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	if err != nil {
 		return errorsmod.Wrap(ErrIBCInvalidSubstitute, err.Error())
 	}
+	// The substitute authenticates its own checkpoint, not the subject's old
+	// roots. Remove those roots before restarting their epoch deadlines.
+	if err := clearRecoveryProofHistory(subjectClientStore); err != nil {
+		return err
+	}
 	subjectClientStore.Set(packetSnapshotKey(substituteCheckpointHeight.RevisionHeight), bytes.Clone(checkpointSnapshot))
 	SetConsensusState(subjectClientStore, cdc, consensusState, height)
 	SetConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)

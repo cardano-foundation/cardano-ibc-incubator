@@ -16,6 +16,7 @@ const sharedSourceFiles = [
   "client_state.go",
   "client_state_path_test.go",
   "codec.go",
+  "collision_buckets_test.go",
   "consensus_state.go",
   "core_bridge.go",
   "core_bridge_test.go",

@@ -4,25 +4,11 @@ exports.IncrementalIbcTree = void 0;
 exports.computeIbcTreeWitnessRoot = computeIbcTreeWitnessRoot;
 exports.verifyIbcTreeWitness = verifyIbcTreeWitness;
 const node_buffer_1 = require("node:buffer");
-const node_crypto_1 = require("node:crypto");
+const ibcStateCommitment_ts_1 = require("./ibcStateCommitment.js");
 const DEPTH = 64;
 const EMPTY_HASH = "00".repeat(32);
 const ROOT_PATH = "0000000000000000";
-const hash = (...parts) => {
-    const digest = (0, node_crypto_1.createHash)("sha256");
-    for (const part of parts)
-        digest.update(part);
-    return digest.digest();
-};
 const pathHex = (index) => index.toString(16).padStart(16, "0");
-function keyDigest(key) {
-    // SQLite and SHA-256 must see exactly the same UTF-8 key, including when a
-    // caller accidentally supplies an unpaired UTF-16 surrogate.
-    if (typeof key !== "string" || node_buffer_1.Buffer.from(key, "utf8").toString("utf8") !== key) {
-        throw new Error("IBC tree key must be a well-formed UTF-8 string");
-    }
-    return hash(node_buffer_1.Buffer.from(key, "utf8"));
-}
 function normalizeValue(valueHex) {
     if (typeof valueHex !== "string" || valueHex.length % 2 !== 0 ||
         /[^0-9a-fA-F]/.test(valueHex)) {
@@ -33,24 +19,20 @@ function normalizeValue(valueHex) {
 function innerHash(left, right) {
     if (left === EMPTY_HASH && right === EMPTY_HASH)
         return EMPTY_HASH;
-    return hash(node_buffer_1.Buffer.from([1]), node_buffer_1.Buffer.from(left, "hex"), node_buffer_1.Buffer.from(right, "hex")).toString("hex");
-}
-function leafHash(digest, value) {
-    return value === ""
-        ? EMPTY_HASH
-        : hash(node_buffer_1.Buffer.from([0]), digest, hash(node_buffer_1.Buffer.from(value, "hex")))
-            .toString("hex");
+    return (0, ibcStateCommitment_ts_1.hash)(node_buffer_1.Buffer.concat([node_buffer_1.Buffer.from([1]), node_buffer_1.Buffer.from(left, "hex"), node_buffer_1.Buffer.from(right, "hex")])).toString("hex");
 }
 /** Pure membership/exclusion check; malformed inputs throw, mismatch is false. */
 function computeIbcTreeWitnessRoot(key, valueHex, siblings) {
-    const digest = keyDigest(key);
+    const digest = (0, ibcStateCommitment_ts_1.keyHash)(key);
     const value = normalizeValue(valueHex);
-    if (!Array.isArray(siblings) || siblings.length !== DEPTH) {
-        throw new Error("IBC tree witness must have exactly 64 siblings");
-    }
+    if (!Array.isArray(siblings))
+        throw new Error("IBC tree witness must be an array");
+    const witness = siblings.map((encoded) => node_buffer_1.Buffer.from(normalizeValue(encoded), "hex"));
+    const { leaf, siblings: path } = (0, ibcStateCommitment_ts_1.witnessLeaf)(digest, node_buffer_1.Buffer.from(value, "hex"), witness);
     let index = digest.readBigUInt64BE();
-    let current = leafHash(digest, value);
-    for (const encoded of siblings) {
+    let current = leaf.toString("hex");
+    for (const bytes of path) {
+        const encoded = bytes.toString("hex");
         const sibling = normalizeValue(encoded);
         if (sibling.length !== 64) {
             throw new Error("IBC tree sibling must be 32-byte hex");
@@ -86,7 +68,8 @@ function verifyIbcTreeWitness(key, valueHex, siblings, expectedRoot) {
  */
 class IncrementalIbcTree {
     db;
-    leafAtPath;
+    leavesAtPath;
+    leafByKey;
     nodeAtPath;
     upsertLeaf;
     deleteLeaf;
@@ -98,7 +81,7 @@ class IncrementalIbcTree {
         db.exec(`
       CREATE TABLE IF NOT EXISTS ibc_tree_leaves (
         key BLOB PRIMARY KEY,
-        path TEXT NOT NULL UNIQUE CHECK (
+        path TEXT NOT NULL CHECK (
           length(path) = 16 AND path NOT GLOB '*[^0-9a-f]*'
         ),
         value TEXT NOT NULL CHECK (
@@ -118,7 +101,10 @@ class IncrementalIbcTree {
         PRIMARY KEY (height, path)
       ) STRICT;
     `);
-        this.leafAtPath = db.prepare("SELECT key, value FROM ibc_tree_leaves WHERE path = ?");
+        this.migrateLeafPaths();
+        db.exec("CREATE INDEX IF NOT EXISTS ibc_tree_leaf_paths ON ibc_tree_leaves(path)");
+        this.leavesAtPath = db.prepare("SELECT key, value FROM ibc_tree_leaves WHERE path = ?");
+        this.leafByKey = db.prepare("SELECT value FROM ibc_tree_leaves WHERE key = ?");
         this.nodeAtPath = db.prepare("SELECT hash FROM ibc_tree_nodes WHERE height = ? AND path = ?");
         this.upsertLeaf = db.prepare("INSERT INTO ibc_tree_leaves (key, path, value) VALUES (?, ?, ?) " +
             "ON CONFLICT (key) DO UPDATE SET value = excluded.value");
@@ -132,7 +118,8 @@ class IncrementalIbcTree {
         return this.nodeAtPath.get(DEPTH, ROOT_PATH)?.hash ?? EMPTY_HASH;
     }
     get(key) {
-        return this.valueAtPath(key, keyDigest(key).readBigUInt64BE());
+        this.bucketAtPath((0, ibcStateCommitment_ts_1.keyHash)(key).readBigUInt64BE());
+        return this.leafByKey.get(node_buffer_1.Buffer.from(key, "utf8"))?.value;
     }
     entries() {
         return this.allLeaves.all().map((row) => [
@@ -160,10 +147,10 @@ class IncrementalIbcTree {
     }
     /** Leaf-to-root siblings, including a valid exclusion witness for absent keys. */
     getSiblings(key) {
-        let index = keyDigest(key).readBigUInt64BE();
-        // An occupied truncated path cannot prove absence for a different full key.
-        this.valueAtPath(key, index);
-        const siblings = [];
+        const digest = (0, ibcStateCommitment_ts_1.keyHash)(key);
+        let index = digest.readBigUInt64BE();
+        const bucket = this.bucketAtPath(index);
+        const siblings = (0, ibcStateCommitment_ts_1.needsBucketWitness)(bucket, digest) ? [(0, ibcStateCommitment_ts_1.encodeBucket)(bucket).toString("hex")] : [];
         for (let height = 0; height < DEPTH; height++) {
             siblings.push(this.nodeHash(height, index ^ 1n));
             index >>= 1n;
@@ -172,19 +159,19 @@ class IncrementalIbcTree {
     }
     /** Empty hex deletes a leaf. Each mutation recomputes only its 64 ancestors. */
     set(key, valueHex) {
-        const digest = keyDigest(key);
+        const digest = (0, ibcStateCommitment_ts_1.keyHash)(key);
         const value = normalizeValue(valueHex);
         let index = digest.readBigUInt64BE();
         this.db.exec("SAVEPOINT ibc_tree_set");
         try {
-            const previous = this.valueAtPath(key, index);
+            const previous = this.get(key);
             if ((previous ?? "") !== value) {
                 if (value === "")
                     this.deleteLeaf.run(node_buffer_1.Buffer.from(key, "utf8"));
                 else {
                     this.upsertLeaf.run(node_buffer_1.Buffer.from(key, "utf8"), pathHex(index), value);
                 }
-                let current = leafHash(digest, value);
+                let current = (0, ibcStateCommitment_ts_1.bucketHash)(this.bucketAtPath(index)).toString("hex");
                 this.storeNode(0, index, current);
                 for (let height = 0; height < DEPTH; height++) {
                     const sibling = this.nodeHash(height, index ^ 1n);
@@ -202,12 +189,45 @@ class IncrementalIbcTree {
             throw error;
         }
     }
-    valueAtPath(key, index) {
-        const row = this.leafAtPath.get(pathHex(index));
-        if (row && node_buffer_1.Buffer.from(row.key).toString("utf8") !== key) {
-            throw new Error("IBC tree 64-bit path collision");
+    bucketAtPath(index) {
+        const entries = this.leavesAtPath.all(pathHex(index)).map((row) => ({
+            keyHash: (0, ibcStateCommitment_ts_1.keyHash)(node_buffer_1.Buffer.from(row.key).toString("utf8")),
+            valueHash: (0, ibcStateCommitment_ts_1.hash)(node_buffer_1.Buffer.from(row.value, "hex")),
+        }));
+        if (entries.some((entry) => entry.keyHash.readBigUInt64BE() !== index)) {
+            throw new Error("IBC tree leaf path does not match its key hash");
         }
-        return row?.value;
+        return (0, ibcStateCommitment_ts_1.sortBucket)(entries);
+    }
+    // Earlier disposable caches made the truncated path UNIQUE. Remove only that
+    // constraint, preserving all leaves and nodes inside a nested transaction.
+    migrateLeafPaths() {
+        const hasUniquePath = this.db.prepare("PRAGMA index_list(ibc_tree_leaves)").all().some((row) => {
+            if (!row.unique)
+                return false;
+            const columns = this.db.prepare(`PRAGMA index_info("${String(row.name).replaceAll('"', '""')}")`).all();
+            return columns.length === 1 && columns[0].name === "path";
+        });
+        if (!hasUniquePath)
+            return;
+        this.db.exec("SAVEPOINT ibc_tree_bucket_schema");
+        try {
+            this.db.exec(`
+        CREATE TABLE ibc_tree_leaves_buckets (
+          key BLOB PRIMARY KEY,
+          path TEXT NOT NULL CHECK (length(path) = 16 AND path NOT GLOB '*[^0-9a-f]*'),
+          value TEXT NOT NULL CHECK (length(value) > 0 AND length(value) % 2 = 0 AND value NOT GLOB '*[^0-9a-f]*')
+        ) STRICT;
+        INSERT INTO ibc_tree_leaves_buckets SELECT key, path, value FROM ibc_tree_leaves;
+        DROP TABLE ibc_tree_leaves;
+        ALTER TABLE ibc_tree_leaves_buckets RENAME TO ibc_tree_leaves;
+      `);
+            this.db.exec("RELEASE ibc_tree_bucket_schema");
+        }
+        catch (error) {
+            this.db.exec("ROLLBACK TO ibc_tree_bucket_schema; RELEASE ibc_tree_bucket_schema");
+            throw error;
+        }
     }
     checkIntegrity() {
         // Comparing the complete ordered node sequence, rather than only checking
@@ -222,6 +242,8 @@ class IncrementalIbcTree {
                 }
                 next = nodes.next();
             };
+            let bucketPath;
+            let bucket = [];
             for (const leaf of this.db.prepare("SELECT key, path, value FROM ibc_tree_leaves ORDER BY path").iterate()) {
                 if (!(leaf.key instanceof Uint8Array)) {
                     throw new Error("Invalid tree leaf key encoding");
@@ -231,7 +253,7 @@ class IncrementalIbcTree {
                 if (!node_buffer_1.Buffer.from(key, "utf8").equals(rawKey)) {
                     throw new Error("Invalid tree leaf UTF-8");
                 }
-                const digest = keyDigest(key);
+                const digest = (0, ibcStateCommitment_ts_1.keyHash)(key);
                 const path = pathHex(digest.readBigUInt64BE());
                 if (leaf.path !== path) {
                     throw new Error("Malformed or colliding tree leaf path");
@@ -240,8 +262,16 @@ class IncrementalIbcTree {
                 if (value === "" || value !== leaf.value) {
                     throw new Error("Invalid tree leaf value encoding");
                 }
-                expectNode(0, path, leafHash(digest, value));
+                if (path !== bucketPath) {
+                    if (bucketPath !== undefined)
+                        expectNode(0, bucketPath, (0, ibcStateCommitment_ts_1.bucketHash)((0, ibcStateCommitment_ts_1.sortBucket)(bucket)).toString("hex"));
+                    bucketPath = path;
+                    bucket = [];
+                }
+                bucket.push({ keyHash: digest, valueHash: (0, ibcStateCommitment_ts_1.hash)(node_buffer_1.Buffer.from(value, "hex")) });
             }
+            if (bucketPath !== undefined)
+                expectNode(0, bucketPath, (0, ibcStateCommitment_ts_1.bucketHash)((0, ibcStateCommitment_ts_1.sortBucket)(bucket)).toString("hex"));
             const children = this.db.prepare("SELECT path, hash FROM ibc_tree_nodes WHERE height = ? ORDER BY path");
             for (let height = 1; height <= DEPTH; height++) {
                 let parent;

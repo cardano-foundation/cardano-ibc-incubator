@@ -90,11 +90,22 @@ func VerifyIbcStateNonMembershipWithNonExistenceProof(root []byte, key []byte, n
 }
 
 func ComputeRootFromProofPath(key []byte, value []byte, path []*ics23.InnerOp) ([]byte, error) {
+	current := leafHash(key, value)
+	if len(path) == 65 {
+		descriptor := path[0]
+		if descriptor == nil || descriptor.Hash != ics23.HashOp_SHA256 || len(descriptor.Suffix) != 0 {
+			return nil, fmt.Errorf("invalid collision bucket operation")
+		}
+		var err error
+		current, err = collisionBucketLeaf(key, value, descriptor.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		path = path[1:]
+	}
 	if len(path) != 64 {
 		return nil, fmt.Errorf("unexpected proof path length: %d", len(path))
 	}
-
-	current := leafHash(key, value)
 
 	keyHash := sha256.Sum256(key)
 	index := binary.BigEndian.Uint64(keyHash[0:8])
@@ -117,6 +128,49 @@ func ComputeRootFromProofPath(key []byte, value []byte, path []*ics23.InnerOp) (
 	}
 
 	return current, nil
+}
+
+// Collision bucket descriptors precede the 64 ordinary sparse-tree operations.
+// Every entry is a full SHA-256 key digest followed by a nonempty value digest.
+// The old singleton commitment is retained when a bucket shrinks to one entry.
+func collisionBucketLeaf(key, value, encoded []byte) ([]byte, error) {
+	if len(encoded) < 65 || encoded[0] != 0x02 || (len(encoded)-1)%64 != 0 {
+		return nil, fmt.Errorf("invalid collision bucket encoding")
+	}
+	requested := sha256.Sum256(key)
+	valueDigest := sha256.Sum256(value)
+	found := false
+	var previous []byte
+	for offset := 1; offset < len(encoded); offset += 64 {
+		entryKey := encoded[offset : offset+32]
+		entryValue := encoded[offset+32 : offset+64]
+		if !bytes.Equal(entryKey[:8], requested[:8]) {
+			return nil, fmt.Errorf("collision bucket entry belongs to a different path")
+		}
+		if previous != nil && bytes.Compare(previous, entryKey) >= 0 {
+			return nil, fmt.Errorf("collision bucket keys must be strictly ordered")
+		}
+		if bytes.Equal(entryValue, emptyValueHash[:]) {
+			return nil, fmt.Errorf("collision bucket contains an empty value")
+		}
+		if bytes.Equal(entryKey, requested[:]) {
+			found = true
+			if len(value) == 0 || !bytes.Equal(entryValue, valueDigest[:]) {
+				return nil, fmt.Errorf("collision bucket value mismatch")
+			}
+		}
+		previous = entryKey
+	}
+	if len(value) > 0 && !found {
+		return nil, fmt.Errorf("collision bucket is missing the requested key")
+	}
+	if len(encoded) == 65 {
+		preimage := append([]byte{0}, encoded[1:]...)
+		digest := sha256.Sum256(preimage)
+		return digest[:], nil
+	}
+	digest := sha256.Sum256(encoded)
+	return digest[:], nil
 }
 
 func childOrderingFromInnerOp(direction uint64, op *ics23.InnerOp) (left []byte, right []byte, err error) {
