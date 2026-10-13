@@ -120,17 +120,17 @@ func TestVerifyHeaderTemporalContinuityEnforcesHostTimeForEveryBlockRole(t *test
 }
 
 func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testing.T) {
-	baseEpoch := newTemporalVerifierEpochContext(7, 0, 1_000, 0x07)
+	baseEpoch := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1_000, 0x07)
 	ctx, cdc, clientStore, clientState := initializeTemporalVerifierClient(
 		t,
 		"probabilistic-temporal-rollover",
-		999,
+		testMaturePoolSlot+999,
 		baseEpoch,
 	)
-	ctx = temporalTestContext(t, clientState, 1_024)
+	ctx = temporalTestContext(t, clientState, testMaturePoolSlot+1_024)
 
-	nextEpoch := newTemporalVerifierEpochContext(8, 1_000, 2_000, 0x08)
-	header := newTemporalVerifierHeader(t, clientState, "rollover-anchor", 11, 1_000, 8, true)
+	nextEpoch := newTemporalVerifierEpochContext(8, testMaturePoolSlot+1_000, testMaturePoolSlot+2_000, 0x08)
+	header := newTemporalVerifierHeader(t, clientState, "rollover-anchor", 11, testMaturePoolSlot+1_000, 8, true)
 	header.NewEpochContext = cloneEpochContext(nextEpoch)
 	authenticated := newTemporalVerifierAuthenticatedHeader(
 		t,
@@ -138,7 +138,7 @@ func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testin
 		testBlockHash("trusted-10"),
 		header.AnchorBlock.Hash,
 		11,
-		1_000,
+		testMaturePoolSlot+1_000,
 		8,
 	)
 
@@ -159,7 +159,7 @@ func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testin
 		testBlockHash("trusted-10"),
 		header.AnchorBlock.Hash,
 		11,
-		1_000,
+		testMaturePoolSlot+1_000,
 		8,
 	)
 	duplicateSlot.descendantBlocks[0].slot = duplicateSlot.anchorBlock.slot
@@ -275,28 +275,28 @@ func TestStoredConsensusTimestampUsesBoundedAuthenticatedAnchorTime(t *testing.T
 }
 
 func TestMisbehaviourVerifierUsesHistoricalTrustedTime(t *testing.T) {
-	epochContext := newTemporalVerifierEpochContext(7, 0, 1_000_000, 0x07)
+	epochContext := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1_000_000, 0x07)
 	ctx, cdc, clientStore, clientState := initializeTemporalVerifierClient(
 		t,
 		"probabilistic-temporal-historical-misbehaviour",
-		100,
+		testMaturePoolSlot+100,
 		epochContext,
 	)
 
 	latestHeight := NewHeight(0, 40)
 	latestConsensus := newProbabilisticTestConsensusState(testBlockHash("latest-40"))
-	latestConsensus.Timestamp = mustTestTimestampForSlot(t, clientState, 400)
+	latestConsensus.Timestamp = mustTestTimestampForSlot(t, clientState, testMaturePoolSlot+400)
 	SetConsensusState(clientStore, cdc, latestConsensus, latestHeight)
 	clientState.LatestHeight = latestHeight
-	setTestCheckpoint(t, clientState, latestHeight, latestConsensus.AcceptedBlockHash, 7, 400)
+	setTestCheckpoint(t, clientState, latestHeight, latestConsensus.AcceptedBlockHash, 7, testMaturePoolSlot+400)
 	SetClientState(clientStore, cdc, clientState)
-	ctx = temporalTestContext(t, clientState, 500)
+	ctx = temporalTestContext(t, clientState, testMaturePoolSlot+500)
 
-	headerA := newTemporalVerifierHeader(t, clientState, "historical-a", 11, 110, 7, true)
-	headerB := newTemporalVerifierHeader(t, clientState, "historical-b", 11, 111, 7, true)
+	headerA := newTemporalVerifierHeader(t, clientState, "historical-a", 11, testMaturePoolSlot+110, 7, true)
+	headerB := newTemporalVerifierHeader(t, clientState, "historical-b", 11, testMaturePoolSlot+111, 7, true)
 	authenticatedByHash := map[string]*authenticatedProbabilisticHeader{
-		headerA.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, testBlockHash("trusted-10"), headerA.AnchorBlock.Hash, 11, 110, 7),
-		headerB.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, testBlockHash("trusted-10"), headerB.AnchorBlock.Hash, 11, 111, 7),
+		headerA.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, testBlockHash("trusted-10"), headerA.AnchorBlock.Hash, 11, testMaturePoolSlot+110, 7),
+		headerB.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, testBlockHash("trusted-10"), headerB.AnchorBlock.Hash, 11, testMaturePoolSlot+111, 7),
 	}
 	authenticate := temporalVerifierAuthenticator(t, authenticatedByHash)
 
@@ -306,14 +306,14 @@ func TestMisbehaviourVerifierUsesHistoricalTrustedTime(t *testing.T) {
 	}
 	require.NoError(t, clientState.verifyMisbehaviourWithAuthenticator(ctx, clientStore, cdc, misbehaviour, authenticate))
 
-	regressiveHeader := newTemporalVerifierHeader(t, clientState, "historical-regressive", 11, 100, 7, true)
+	regressiveHeader := newTemporalVerifierHeader(t, clientState, "historical-regressive", 11, testMaturePoolSlot+100, 7, true)
 	authenticatedByHash[regressiveHeader.AnchorBlock.Hash] = newTemporalVerifierAuthenticatedHeader(
 		t,
 		clientState,
 		testBlockHash("trusted-10"),
 		regressiveHeader.AnchorBlock.Hash,
 		11,
-		100,
+		testMaturePoolSlot+100,
 		7,
 	)
 	misbehaviour.ProbabilisticHeader1 = regressiveHeader
