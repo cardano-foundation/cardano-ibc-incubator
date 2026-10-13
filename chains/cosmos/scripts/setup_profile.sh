@@ -166,7 +166,7 @@ jq -e \
     and .app_state.staking.params.max_entries == $staking_max_entries
     and .app_state.staking.params.historical_entries == $staking_historical_entries' \
   "${GENESIS_FILE}" >/dev/null || {
-  echo "[${PROFILE}] Preserved genesis does not match the pinned Injective capacity snapshot; remove the profile state and regenerate it." >&2
+  echo "[${PROFILE}] Preserved genesis does not match the probabilistic-client capacity profile; remove the profile state and regenerate it." >&2
   exit 1
 }
 
