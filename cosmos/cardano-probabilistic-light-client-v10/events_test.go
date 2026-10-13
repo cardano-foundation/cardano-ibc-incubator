@@ -63,8 +63,7 @@ func TestLightClientModuleUpdateStateOnMisbehaviourEmitsFrozenEvent(t *testing.T
 	clientState := newProbabilisticTestClientState()
 	setClientState(clientStore, cdc, clientState)
 	header := newVerifiedTestHeader(t)
-	header.NewEpochContext = fromCoreEpochContext(toCoreEpochContext(clientState.EpochContexts[0]))
-	header.NewEpochContext.StakeDistribution[0].Stake++
+	setConsensusState(clientStore, cdc, newProbabilisticTestConsensusState(testBlockHash("other-anchor"), header.GetHeight().GetRevisionHeight()), header.GetHeight())
 	require.True(t, module.CheckForMisbehaviour(ctx, clientID, header))
 
 	module.UpdateStateOnMisbehaviour(ctx, clientID, header)
