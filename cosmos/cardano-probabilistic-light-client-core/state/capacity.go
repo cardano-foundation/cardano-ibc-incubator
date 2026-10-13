@@ -6,12 +6,15 @@ import errorsmod "cosmossdk.io/errors"
 // profiles. Two full headers must fit, including their repeated epoch tables.
 // Raising a bound requires rerunning the complete challenge capacity test.
 const (
-	MaxHeaderBytes             = 5 * 1024 * 1024 / 2
-	MaxHeaderBlocks            = 128
-	MaxBridgeBlocks            = 96
-	MaxStakeEntries            = 4000
-	MaxClientStateBytes        = 3 * 1024 * 1024
-	MaxBlockCBORBytes          = 96 * 1024
+	MaxHeaderBytes      = 5 * 1024 * 1024 / 2
+	MaxHeaderBlocks     = 128
+	MaxBridgeBlocks     = 96
+	MaxStakeEntries     = 4000
+	MaxClientStateBytes = 3 * 1024 * 1024
+	MaxBlockCBORBytes   = 96 * 1024
+	// Leave room for an honest alternative's complete table even when a
+	// proposal omits most pools. This bounds body bytes, not individual blocks.
+	MaxCrossEpochBodyBytes     = 1536 * 1024
 	MaxHeaderCBORBytes         = 1100
 	NativeBlockVerificationGas = uint64(200_000)
 	MaxHeaderVerificationGas   = uint64(65_000_000)

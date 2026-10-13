@@ -176,3 +176,111 @@ func TestAppEpochBoundaryCatchUp(t *testing.T) {
 		})
 	}
 }
+
+// Reuse signed contiguous history while moving the anchor and retaining only
+// compact headers in the temporary suffix.
+func boundaryCheckpointAt(t *testing.T, original *ProbabilisticHeader, trusted, anchor uint64) *ProbabilisticHeader {
+	t.Helper()
+	header := fromCoreProbabilisticHeader(toCoreProbabilisticHeader(original))
+	blocks := append(header.BridgeBlocks, header.AnchorBlock)
+	blocks = append(blocks, header.DescendantBlocks...)
+	header.TrustedHeight = NewHeight(0, trusted)
+	header.BridgeBlocks, header.DescendantBlocks = nil, nil
+	for _, block := range blocks {
+		height := block.Height.RevisionHeight
+		if height <= trusted {
+			continue
+		}
+		if height < anchor {
+			header.BridgeBlocks = append(header.BridgeBlocks, block)
+		} else if height == anchor {
+			header.AnchorBlock = block
+		} else {
+			if len(block.BlockCbor) > 0 {
+				var fields []cbor.RawMessage
+				_, err := cbor.Decode(block.BlockCbor, &fields)
+				require.NoError(t, err)
+				block.HeaderCbor, block.BlockCbor = bytes.Clone(fields[0]), nil
+			}
+			header.DescendantBlocks = append(header.DescendantBlocks, block)
+		}
+	}
+	return header
+}
+
+func TestAppCombinedBoundaryProgress(t *testing.T) {
+	for _, checkpoint := range []bool{true, false} {
+		t.Run(fmt.Sprint("checkpoint=", checkpoint), func(t *testing.T) { testAppCombinedBoundaryProgress(t, checkpoint) })
+	}
+}
+
+func testAppCombinedBoundaryProgress(t *testing.T, checkpoint bool) {
+	fixture := capacityEvidence(t, "combined")
+	latest := fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp
+	app, ctx, store := newBoundaryTestApp(t, time.Unix(0, int64(latest)))
+	cdc := app.AppCodec()
+	require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+	submit := func(header *ProbabilisticHeader) error {
+		msg, err := clienttypes.NewMsgUpdateClient(ModuleName+"-0", header, sdk.AccAddress(bytes.Repeat([]byte{9}, 20)).String())
+		require.NoError(t, err)
+		_, err = app.MsgServiceRouter().Handler(msg)(ctx, msg)
+		return err
+	}
+	// This is the exact bounded header produced by Gateway, with the full
+	// table used by the destination capacity fixture.
+	header := &ProbabilisticHeader{}
+	require.NoError(t, header.Unmarshal(readBoundaryGzip(t, "gateway-boundary-combined.pb.gz")))
+	header.IsCheckpoint = checkpoint
+	// capacityEvidence aligns the synthetic chain's timestamps with this host.
+	shift := int64(fixture.Header.AnchorBlock.Timestamp) - int64(header.AnchorBlock.Timestamp)
+	for _, block := range append(append([]*ProbabilisticBlock{}, header.BridgeBlocks...), header.AnchorBlock) {
+		block.Timestamp = uint64(int64(block.Timestamp) + shift)
+	}
+	for _, block := range header.DescendantBlocks {
+		block.Timestamp = uint64(int64(block.Timestamp) + shift)
+	}
+	header.NewEpochContext.StakeDistribution = fixture.Client.EpochStakeDistribution
+	require.NoError(t, submit(header))
+	proposed, found := getClientState(store, cdc)
+	require.True(t, found)
+	require.Equal(t, uint64(966), proposed.LatestCheckpointHeight.RevisionHeight)
+	_, rootPresent := GetConsensusState(store, cdc, header.GetHeight())
+	require.False(t, rootPresent)
+	require.Equal(t, fixture.Client.LatestCheckpointNonceState, proposed.LatestCheckpointNonceState)
+	require.Equal(t, fixture.Client.LatestCheckpointPoolProduction, proposed.LatestCheckpointPoolProduction)
+	require.ErrorIs(t, submit(header), ErrEpochContextPending)
+	var deadline uint64
+	for _, challenge := range proposed.EpochContextChallenges {
+		if challenge.Epoch == 8 {
+			deadline = challenge.UsableAfterUnixNs
+		}
+	}
+	require.NotZero(t, deadline)
+	ctx = ctx.WithBlockTime(time.Unix(0, int64(deadline)))
+	require.NoError(t, submit(header))
+	accepted, _ := getClientState(store, cdc)
+	require.Equal(t, uint64(984), accepted.LatestCheckpointHeight.RevisionHeight)
+	_, rootPresent = GetConsensusState(store, cdc, header.GetHeight())
+	require.Equal(t, !checkpoint, rootPresent)
+	require.Equal(t, uint64(7), accepted.LatestCheckpointPoolProduction.Epoch)
+	// First new-epoch anchor now needs only the remaining 17 complete bodies.
+	var complete struct{ Header *ProbabilisticHeader }
+	require.NoError(t, json.Unmarshal(readBoundaryGzip(t, "native-boundary-combined.json.gz"), &complete))
+	for _, block := range append(append(complete.Header.BridgeBlocks, complete.Header.AnchorBlock), complete.Header.DescendantBlocks...) {
+		block.Timestamp = uint64(int64(block.Timestamp) + shift)
+	}
+	next := boundaryCheckpointAt(t, complete.Header, 984, 1001)
+	next.NewEpochContext.StakeDistribution = fixture.Client.EpochStakeDistribution
+	require.NoError(t, submit(next))
+	accepted, _ = getClientState(store, cdc)
+	require.Equal(t, uint64(1001), accepted.LatestCheckpointHeight.RevisionHeight)
+	require.Equal(t, uint64(8), accepted.LatestCheckpointPoolProduction.Epoch)
+	currentProducers := 0
+	for _, record := range accepted.LatestCheckpointPoolProduction.Pools {
+		if record.ProducedCurrentEpoch {
+			currentProducers++
+		}
+	}
+	require.Equal(t, 1, currentProducers)
+}

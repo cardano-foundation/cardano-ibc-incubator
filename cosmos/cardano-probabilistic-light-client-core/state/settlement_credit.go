@@ -215,6 +215,27 @@ func attachSettlementCredit(header *authenticatedProbabilisticHeader, trusted *t
 		return err
 	}
 	header.anchorSettlementCredit = credit
+	if settlementEvidenceEpoch(header) > header.anchorBlock.epoch {
+		context := epochContextByEpoch(contexts, settlementEvidenceEpoch(header))
+		if context == nil {
+			return errorsmod.Wrap(ErrInvalidCurrentEpoch, "next epoch settlement context is missing")
+		}
+		var total uint64
+		for _, entry := range context.StakeDistribution {
+			var ok bool
+			total, ok = checkedAddStake(total, entry.Stake)
+			if !ok {
+				return errorsmod.Wrap(ErrInvalidCurrentEpoch, "next epoch stake total overflows uint64")
+			}
+		}
+		if total == 0 {
+			return errorsmod.Wrap(ErrInvalidCurrentEpoch, "next epoch stake total is zero")
+		}
+		header.settlementStakeLimits = make(map[string]*big.Rat, len(context.StakeDistribution))
+		for _, entry := range context.StakeDistribution {
+			header.settlementStakeLimits[strings.ToLower(entry.PoolId)] = new(big.Rat).SetFrac(new(big.Int).SetUint64(entry.Stake), new(big.Int).SetUint64(total))
+		}
+	}
 	return nil
 }
 

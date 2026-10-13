@@ -103,7 +103,15 @@ func capacityEvidence(t *testing.T, name string) capacityFixture {
 			b.HeaderCbor = bytes.Clone(fields[0])
 			b.BlockCbor = nil
 		}
-		require.NoError(t, h.ValidateBasic())
+		if name != "combined" {
+			require.NoError(t, h.ValidateBasic())
+		}
+	}
+	if name == "combined" {
+		f.Header = boundaryCheckpointAt(t, f.Header, 966, 984)
+		f.Fork = boundaryCheckpointAt(t, f.Fork, 966, 984)
+		require.NoError(t, f.Header.ValidateBasic())
+		require.NoError(t, f.Fork.ValidateBasic())
 	}
 	return f
 }
@@ -129,9 +137,21 @@ func spareAddress(t *testing.T) string {
 // Run actual signed challenge transactions through a CometBFT validator and
 // the SDK gRPC service. The limits come from the destination setup script.
 func TestDestinationChallengeCapacity(t *testing.T) {
-	for _, name := range []string{"size", "count", "control", "limit"} {
+	for _, name := range []string{"size", "count", "control", "limit", "combined"} {
 		t.Run(name, func(t *testing.T) {
 			f := capacityEvidence(t, name)
+			if name == "combined" {
+				// Simulate an omitted future pool set. The independently
+				// authenticated challenger carries the complete 4,000 rows.
+				f.Header.NewEpochContext.StakeDistribution = fromCoreEpochContext(toCoreEpochContext(f.Header.NewEpochContext)).StakeDistribution[:13]
+				var total uint64
+				for _, entry := range f.Header.NewEpochContext.StakeDistribution {
+					total += entry.Stake
+				}
+				for _, entry := range f.Header.NewEpochContext.StakeDistribution {
+					entry.RelativeStakeNumerator, entry.RelativeStakeDenominator = entry.Stake, total
+				}
+			}
 			profile, err := os.ReadFile("../../chains/cosmos/scripts/setup_profile.sh")
 			require.NoError(t, err)
 			maxTx := profileInteger(t, string(profile), "MAX_TX_BYTES")
@@ -328,6 +348,15 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 			update, err := clienttypes.NewMsgUpdateClient(ModuleName+"-0", f.Header, account.GetAddress().String())
 			require.NoError(t, err)
 			_, _, _ = submit(update, false)
+			if name == "combined" {
+				response, err := query.ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: ModuleName + "-0"})
+				require.NoError(t, err)
+				proposed := &ClientState{}
+				require.NoError(t, proposed.Unmarshal(response.ClientState.Value))
+				require.Equal(t, uint64(966), proposed.LatestCheckpointHeight.RevisionHeight)
+				require.Len(t, proposed.EpochContextChallenges, 2)
+				require.Equal(t, uint64(8), proposed.EpochContextChallenges[1].Epoch)
+			}
 			evidence := NewMisbehaviour(ModuleName+"-0", f.Header, f.Fork)
 			challenge, err := clienttypes.NewMsgUpdateClient(ModuleName+"-0", evidence, account.GetAddress().String())
 			require.NoError(t, err)

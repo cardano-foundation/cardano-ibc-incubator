@@ -40,6 +40,8 @@ type StabilityScoringOptions = {
   poolRegistrationCutoffSlot?: bigint;
   settlementCreditReference?: PoolSettlementCredit[];
   poolProduction?: PoolProductionHistory;
+  qualificationEpoch?: bigint;
+  nextEpochStakeDistribution?: HistoryStakeDistributionEntry[];
 };
 
 const DEFAULT_CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
@@ -79,7 +81,11 @@ export function computePoolRegistrationCutoffSlot(
   if (slotLengthNs <= 0n) {
     throw new Error('Cardano slot length must be greater than zero');
   }
-  if (anchorBlock.slotNo < 0n || anchorBlock.timestampUnixNs < 0n || anchorBlock.timestampUnixNs > 18_446_744_073_709_551_615n) {
+  if (
+    anchorBlock.slotNo < 0n ||
+    anchorBlock.timestampUnixNs < 0n ||
+    anchorBlock.timestampUnixNs > 18_446_744_073_709_551_615n
+  ) {
     throw new Error('Cardano anchor slot and timestamp must be within the supported range');
   }
   // Match the Go verifier: subtract six calendar months in UTC, clamping to
@@ -92,7 +98,7 @@ export function computePoolRegistrationCutoffSlot(
   const monthEnd = new Date(monthStart.getTime());
   monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0);
   monthStart.setUTCDate(Math.min(anchorDate.getUTCDate(), monthEnd.getUTCDate()));
-  const cutoffUnixNs = BigInt(monthStart.getTime()) * 1_000_000n + anchorBlock.timestampUnixNs % 1_000_000n;
+  const cutoffUnixNs = BigInt(monthStart.getTime()) * 1_000_000n + (anchorBlock.timestampUnixNs % 1_000_000n);
   const systemStartUnixNs = anchorBlock.timestampUnixNs - anchorBlock.slotNo * slotLengthNs;
   if (systemStartUnixNs <= 0n) {
     throw new Error('Cardano system start must be greater than zero');
@@ -106,7 +112,8 @@ export function computePoolRegistrationCutoffSlot(
 
 export function getStabilityLookaheadDepth(policy: StabilityPolicy, env: NodeJS.ProcessEnv = process.env): number {
   const configured = env.CARDANO_STABILITY_MAX_LOOKAHEAD_DEPTH;
-  const fallback = policy.threshold_depth > 0n ? policy.threshold_depth * 4n : 96n;
+  const fallback =
+    policy.threshold_depth === 24n ? 127n : policy.threshold_depth > 0n ? policy.threshold_depth * 4n : 96n;
   const lookahead = configured ? BigInt(configured) : fallback;
   const minimum = policy.threshold_depth > 0n ? policy.threshold_depth : 1n;
   const normalized = lookahead >= minimum ? lookahead : minimum;
@@ -115,7 +122,7 @@ export function getStabilityLookaheadDepth(policy: StabilityPolicy, env: NodeJS.
     throw new Error(`CARDANO_STABILITY_MAX_LOOKAHEAD_DEPTH is too large: ${normalized.toString()}`);
   }
 
-  return Number(normalized);
+  return Number(normalized > 127n ? 127n : normalized);
 }
 
 export function scoreDescendantBlocks(
@@ -141,6 +148,13 @@ export function computeStabilityMetrics(
   const seenSlotLeaders = new Set<string>();
   const stakeEntryByPool = new Map(epochStakeDistribution.map((entry) => [entry.poolId, entry]));
   const credits = computeSettlementCredits(epochStakeDistribution, options.settlementCreditReference);
+  if (options.nextEpochStakeDistribution) {
+    const nextShares = computeSettlementCredits(options.nextEpochStakeDistribution);
+    for (const [pool, credit] of credits) {
+      const limit = nextShares.get(pool) ?? { numerator: 0n, denominator: 1n };
+      if (credit.numerator * limit.denominator > limit.numerator * credit.denominator) credits.set(pool, limit);
+    }
+  }
   const production = options.poolProduction
     ? productionRecords(options.poolProduction, options.poolProduction.epoch)
     : new Map();
@@ -154,12 +168,14 @@ export function computeStabilityMetrics(
 
     seenSlotLeaders.add(descendant.slotLeader);
     const entry = stakeEntryByPool.get(descendant.slotLeader);
+    if (!entry && options.qualificationEpoch !== undefined && BigInt(descendant.epochNo) > options.qualificationEpoch)
+      continue;
     if (!poolRegisteredBeforeCutoff(entry, options.poolRegistrationCutoffSlot)) {
       continue;
     }
 
     if (
-      options.poolProduction?.epoch !== BigInt(descendant.epochNo) ||
+      options.poolProduction?.epoch !== (options.qualificationEpoch ?? BigInt(descendant.epochNo)) ||
       !production.get(descendant.slotLeader.toLowerCase())?.completed_epochs_bitmap
     )
       continue;

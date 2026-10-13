@@ -650,6 +650,7 @@ func (cs *ClientState) persistCheckpoint(
 	anchor := authenticatedHeader.anchorBlock
 	keepEpochs := collectReferencedConsensusEpochs(clientStore, cdc)
 	keepEpochs[anchor.epoch] = struct{}{}
+	cs.retainProposedEpochs(epochContexts, keepEpochs)
 	retainedEpochContexts := retainEpochContexts(epochContexts, keepEpochs)
 	if err := syncCurrentEpochFields(cs, retainedEpochContexts, anchor.epoch); err != nil {
 		return err

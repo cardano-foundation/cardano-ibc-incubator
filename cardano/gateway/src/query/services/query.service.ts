@@ -728,8 +728,11 @@ export class QueryService {
         if (!registryFile) throw new GrpcFailedPreconditionException('Trusted production bootstrap is unavailable');
         try {
           poolProduction = loadTrustedPoolProductionCheckpoint(registryFile, {
-            chainId: cardanoChainId, height: BigInt(block.height), slot: block.slotNo,
-            hash: block.hash, epoch: BigInt(block.epochNo),
+            chainId: cardanoChainId,
+            height: BigInt(block.height),
+            slot: block.slotNo,
+            hash: block.hash,
+            epoch: BigInt(block.epochNo),
           });
           return poolProduction;
         } catch (error) {
@@ -2385,33 +2388,21 @@ export class QueryService {
     }
 
     if (request.checkpoint_only && !settlementCreditClient) {
-      throw new GrpcInvalidArgumentException('Historical destination client context is required for challenge evidence');
+      throw new GrpcInvalidArgumentException(
+        'Historical destination client context is required for challenge evidence',
+      );
     }
 
     // A challenger must be able to authenticate the actual block at a claimed
     // height even when that block contains no HostState transaction.
     let stabilityHeader: ProbabilisticHeader;
     if (request.checkpoint_only) {
-      const evidence = await loadStakeWeightedStabilityHeaderEvidence({
-        historyService: this.historyService,
-        height: BigInt(height),
-        trustedHeight: effectiveTrustedHeight,
+      stabilityHeader = await this.buildBoundedStabilityHeader(
+        effectiveTrustedHeight,
+        BigInt(height),
         settlementCreditClient,
-        logger: this.logger,
-      });
-      stabilityHeader = await this.buildStabilityHeader(evidence, true);
-      stabilityHeader.new_epoch_context = this.toStabilityEpochContext(
-        Number(evidence.anchorEpoch),
-        evidence.epochStakeDistribution,
-        evidence.epochVerificationContext,
+        true,
       );
-      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader);
-      if (capacityError) {
-        throw new GrpcFailedPreconditionException(`Exact challenge header exceeds the destination capacity: ${capacityError}`);
-      }
-      if (ProbabilisticHeader.encode(stabilityHeader).finish().length > this.getStabilityCheckpointMaxHeaderBytes()) {
-        throw new GrpcFailedPreconditionException('Exact challenge header exceeds the configured header-size limit');
-      }
     } else {
       stabilityHeader = await this.buildBoundedStabilityHeader(
         effectiveTrustedHeight,
@@ -2432,6 +2423,7 @@ export class QueryService {
     trustedHeight: bigint,
     targetHeight: bigint,
     settlementCreditClient?: ClientStateProbabilistic,
+    challenge = false,
   ): Promise<ProbabilisticHeader> {
     const targetDistance = targetHeight - trustedHeight;
     if (targetDistance <= 0n) {
@@ -2447,7 +2439,7 @@ export class QueryService {
 
     while (candidateDistance >= 1n) {
       const candidateHeight = trustedHeight + candidateDistance;
-      const isCheckpoint = candidateHeight < targetHeight;
+      const isCheckpoint = challenge || candidateHeight < targetHeight;
 
       let stabilityEvidence: StakeWeightedStabilityHeaderEvidence;
       try {
@@ -2467,8 +2459,15 @@ export class QueryService {
       }
 
       const stabilityHeader = await this.buildStabilityHeader(stabilityEvidence, isCheckpoint);
+      if (challenge && !stabilityEvidence.nextEpochContext) {
+        stabilityHeader.new_epoch_context = this.toStabilityEpochContext(
+          Number(stabilityEvidence.anchorEpoch),
+          stabilityEvidence.epochStakeDistribution,
+          stabilityEvidence.epochVerificationContext,
+        );
+      }
       const encodedHeaderBytes = ProbabilisticHeader.encode(stabilityHeader).finish().length;
-      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader);
+      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader, !challenge);
       if (encodedHeaderBytes <= maxHeaderBytes && !capacityError) {
         if (isCheckpoint) {
           this.logger.log(
@@ -2497,12 +2496,17 @@ export class QueryService {
         );
       }
 
+      const fullBodyBytes = [
+        stabilityHeader.anchor_block!,
+        ...stabilityHeader.bridge_blocks,
+        ...stabilityHeader.descendant_blocks,
+      ].reduce((sum, block) => sum + block.block_cbor.length, 0);
+      const byteRatio = capacityError?.startsWith('cross-epoch body bytes')
+        ? (1536 * 1024) / fullBodyBytes
+        : maxHeaderBytes / encodedHeaderBytes;
       const proportionalDistance = Math.max(
         1,
-        Math.min(
-          Math.floor((Number(candidateDistance) * maxHeaderBytes) / encodedHeaderBytes),
-          128 - stabilityHeader.descendant_blocks.length,
-        ),
+        Math.min(Math.floor(Number(candidateDistance) * byteRatio), 128 - stabilityHeader.descendant_blocks.length),
       );
       candidateDistance = BigInt(Math.min(Number(candidateDistance - 1n), proportionalDistance));
     }
@@ -2542,8 +2546,13 @@ export class QueryService {
       }),
     );
 
-    const newEpochContext =
-      stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
+    const newEpochContext = stabilityEvidence.nextEpochContext
+      ? this.toStabilityEpochContext(
+          Number(stabilityEvidence.anchorEpoch) + 1,
+          stabilityEvidence.nextEpochContext.stakeDistribution,
+          stabilityEvidence.nextEpochContext.verificationContext,
+        )
+      : stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
         ? this.toStabilityEpochContext(
             Number(stabilityEvidence.anchorEpoch),
             stabilityEvidence.epochStakeDistribution,
@@ -2596,14 +2605,14 @@ export class QueryService {
   }
 
   private getStabilityCheckpointMaxHeaderBytes(): number {
-    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? 5 * 1024 * 1024 / 2;
+    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? (5 * 1024 * 1024) / 2;
     if (!Number.isSafeInteger(value) || value <= 0) {
       throw new GrpcInternalException('Invalid Cardano stability checkpoint header-size limit');
     }
-    return Math.min(value, 5 * 1024 * 1024 / 2);
+    return Math.min(value, (5 * 1024 * 1024) / 2);
   }
 
-  private stabilityHeaderCapacityError(header: ProbabilisticHeader): string | undefined {
+  private stabilityHeaderCapacityError(header: ProbabilisticHeader, forward = true): string | undefined {
     if (header.bridge_blocks.length > 96 || 1 + header.bridge_blocks.length + header.descendant_blocks.length > 128) {
       return 'block count exceeds the challenge capacity bound';
     }
@@ -2611,6 +2620,14 @@ export class QueryService {
       return 'stake table exceeds the challenge capacity bound';
     }
     const blocks = [...header.bridge_blocks, header.anchor_block!, ...header.descendant_blocks];
+    if (
+      forward &&
+      header.new_epoch_context &&
+      header.new_epoch_context.epoch > header.anchor_block!.epoch &&
+      blocks.reduce((sum, block) => sum + block.block_cbor.length, 0) > 1536 * 1024
+    ) {
+      return 'cross-epoch body bytes exceed the reserved challenge capacity';
+    }
     if (blocks.some((block) => block.block_cbor.length > 96 * 1024 || block.header_cbor.length > 1100)) {
       return 'block witness exceeds the challenge capacity bound';
     }

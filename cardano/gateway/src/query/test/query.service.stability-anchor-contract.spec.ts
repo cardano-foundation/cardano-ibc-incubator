@@ -746,7 +746,7 @@ describe('QueryService stability anchor contract', () => {
       if (anchorEpoch !== trustedEpoch) {
         expect(header.new_epoch_context?.epoch).toBe(BigInt(anchorEpoch));
       } else {
-        expect(header.new_epoch_context).toBeUndefined();
+        if (header.new_epoch_context) { expect(header.new_epoch_context.epoch).toBe(BigInt(anchorEpoch + 1)); expect(header.descendant_blocks.some((block) => block.epoch === BigInt(anchorEpoch + 1))).toBe(true); }
       }
 
       if (anchorHeight < targetHeight) {
@@ -965,7 +965,7 @@ describe('historical Hermes challenge request', () => {
 
 // These witnesses also run through native verification and both SDK keepers.
 describe('native epoch-boundary catch-up', () => {
-  for (const name of ['size', 'count', 'control']) {
+  for (const name of ['size', 'count', 'control', 'combined']) {
     it(`advances the ${name} case within the supported encoded budget`, async () => {
       const path = resolve(process.cwd(), '../../cosmos/cardano-probabilistic-light-client-core/testdata');
       const fixture = JSON.parse(gunzipSync(readFileSync(`${path}/native-boundary-${name}.json.gz`)).toString());
@@ -976,7 +976,7 @@ describe('native epoch-boundary catch-up', () => {
       const records = fullBlocks.map((block) => ({
         height: Number(block.height!.revision_height), hash: block.hash,
         prevHash: '', slotNo: block.slot, epochNo: Number(block.epoch), timestampUnixNs: block.timestamp,
-        slotLeader: client.epoch_stake_distribution[name === 'count' && block.epoch === 7n
+        slotLeader: client.epoch_stake_distribution[(name === 'count' || name === 'combined') && block.epoch === 7n
           ? (block.height!.revision_height < 977n ? Number(block.height!.revision_height - 966n) : 0)
           : Number((block.height!.revision_height - 967n) % 11n)].pool_id,
       }));
@@ -1008,13 +1008,14 @@ describe('native epoch-boundary catch-up', () => {
         probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
       });
       const header = ProbabilisticHeader.decode(response.header!.value);
-      expect(header.anchor_block!.epoch).toBe(8n);
+      expect(header.anchor_block!.epoch).toBe(name === 'combined' ? 7n : 8n);
       expect(header.is_checkpoint).toBe(true);
       expect(header.descendant_blocks.length).toBeGreaterThanOrEqual(24);
       expect(response.header!.value.length).toBeLessThanOrEqual(5 * 1024 * 1024 / 2);
       if (name === 'control') expect(response.header!.value.length).toBeLessThan(768 * 1024);
       else expect(response.header!.value.length).toBeGreaterThan(768 * 1024);
       if (name === 'count') expect(header.bridge_blocks.length).toBeGreaterThan(32);
+      if (name === 'combined') { expect(header.anchor_block!.height!.revision_height).toBe(984n); expect(header.new_epoch_context!.epoch).toBe(8n); }
       if (process.env.UPDATE_NATIVE_BOUNDARY_FIXTURE === '1') writeFileSync(`${path}/gateway-boundary-${name}.pb.gz`, gzipSync(response.header!.value));
       expect(Buffer.from(response.header!.value)).toEqual(gunzipSync(readFileSync(`${path}/gateway-boundary-${name}.pb.gz`)));
  const get = (service as any).configService.get as jest.Mock;
@@ -1022,7 +1023,97 @@ describe('native epoch-boundary catch-up', () => {
  get.mockImplementation((key) => key === 'cardanoStabilityCheckpointMaxBridgeBlocks' ? 32 : key === 'cardanoStabilityCheckpointMaxHeaderBytes' ? 768 * 1024 : implementation(key));
  const oldAttempt=service.queryStabilityIBCHeader({height:1031n,trusted_height:trustedHeight,checkpoint_only:false,probabilistic_client_state:ClientStateProbabilistic.encode(client).finish()});
  if (name==='control') expect(ProbabilisticHeader.decode((await oldAttempt).header!.value).anchor_block!.epoch).toBe(8n);
- else await expect(oldAttempt).rejects.toThrow();
+ else { const earlier = ProbabilisticHeader.decode((await oldAttempt).header!.value); expect(earlier.anchor_block!.epoch).toBe(7n); expect(earlier.new_epoch_context!.epoch).toBe(8n); }
     });
   }
+});
+
+
+describe('bounded boundary workload', () => {
+  const workloads = [40, 80, 96].flatMap((kib) =>
+    [34, 64, 96].flatMap((tail) => [0, 12, 24].map((delay) => ({ kib, tail, delay }))),
+  );
+  it.each(workloads)(
+    'advances with $tail tail blocks, $kib KiB bodies and $delay delayed qualified blocks',
+    async ({ kib, tail, delay }) => {
+      const path = resolve(process.cwd(), '../../cosmos/cardano-probabilistic-light-client-core/testdata');
+      const fixture = JSON.parse(gunzipSync(readFileSync(`${path}/native-boundary-combined.json.gz`)).toString());
+      const client = ClientStateProbabilistic.fromJSON(fixture.client);
+      const original = ProbabilisticHeader.fromJSON(fixture.header);
+      const trusted = 966;
+      const firstNext = trusted + tail + 1;
+      const context = (epoch: number) => {
+        const row = epoch === 7 ? client.epoch_contexts[0] : original.new_epoch_context!;
+        return {
+          epoch,
+          stakeDistribution: row.stake_distribution.map((entry) => ({
+            poolId: entry.pool_id,
+            stake: entry.stake,
+            relativeStakeNumerator: entry.relative_stake_numerator,
+            relativeStakeDenominator: entry.relative_stake_denominator,
+            vrfKeyHash: Buffer.from(entry.vrf_key_hash).toString('hex'),
+            firstRegistrationSlot: entry.first_registration_slot,
+          })),
+          verificationContext: {
+            epochNonce: Buffer.from(row.epoch_nonce).toString('hex'),
+            slotsPerKesPeriod: Number(row.slots_per_kes_period),
+            maxKesEvolutions: 62,
+            activeSlotCoefficientNumerator: 1n,
+            activeSlotCoefficientDenominator: 20n,
+            currentEpochStartSlot: row.epoch_start_slot,
+            currentEpochEndSlotExclusive: row.epoch_end_slot_exclusive,
+          },
+        };
+      };
+      const at = (height: number) => {
+        const epoch = height < firstNext ? 7 : 8;
+        const slot = client.current_epoch_end_slot_exclusive + BigInt(height - firstNext) * 10n;
+        const index = epoch === 7 || height < firstNext + delay ? 0 : (height - firstNext - delay) % 11;
+        return {
+          height,
+          hash: `block-${height}`,
+          prevHash: `block-${height - 1}`,
+          slotNo: slot,
+          epochNo: epoch,
+          timestampUnixNs: client.system_start_unix_ns + slot * client.slot_length_ns,
+          slotLeader: client.epoch_stake_distribution[index].pool_id,
+        };
+      };
+      client.latest_checkpoint_slot = at(trusted).slotNo;
+      client.latest_checkpoint_timestamp = at(trusted).timestampUnixNs;
+      historyServiceMock.findBlockByHeight.mockImplementation(async (height) => at(Number(height)));
+      historyServiceMock.findBridgeBlocks.mockImplementation(async (from: bigint, to: bigint) =>
+        Array.from({ length: Number(to - from - 1n) }, (_, i) => at(Number(from) + i + 1)),
+      );
+      historyServiceMock.findDescendantBlocks.mockImplementation(async (height, limit) =>
+        Array.from({ length: limit }, (_, i) => at(Number(height) + i + 1)),
+      );
+      historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block) => context(block.epochNo));
+      miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks) =>
+        blocks.map(() => Buffer.alloc(kib * 1024)),
+      );
+      miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation(() => Buffer.alloc(1000));
+      const attempt = service.queryStabilityIBCHeader({
+        height: BigInt(firstNext),
+        trusted_height: 966n,
+        checkpoint_only: false,
+        probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+      });
+      if (tail + delay + 11 > 128) {
+        await expect(attempt).rejects.toThrow('bounded adjacent-epoch settlement window');
+        return;
+      }
+      const response = await attempt;
+      const header = ProbabilisticHeader.decode(response.header!.value);
+      expect(header.anchor_block!.height!.revision_height).toBeGreaterThan(966n);
+      expect(response.header!.value.length).toBeLessThanOrEqual((5 * 1024 * 1024) / 2);
+      expect(1 + header.bridge_blocks.length + header.descendant_blocks.length).toBeLessThanOrEqual(128);
+      if (header.anchor_block!.epoch === 7n) {
+        expect(header.new_epoch_context!.epoch).toBe(8n);
+        expect(
+          [...header.bridge_blocks, header.anchor_block!].reduce((sum, block) => sum + block.block_cbor.length, 0),
+        ).toBeLessThanOrEqual(1536 * 1024);
+      }
+    },
+  );
 });

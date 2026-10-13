@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	"encoding/hex"
+	"math/big"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -25,6 +26,8 @@ type authenticatedProbabilisticBlock struct {
 }
 
 type authenticatedProbabilisticHeader struct {
+	settlementStakeLimits                map[string]*big.Rat
+	settlementPoolRegistry               *PoolRegistryState
 	anchorBlock                          *authenticatedProbabilisticBlock
 	bridgeBlocks                         []*authenticatedProbabilisticBlock
 	descendantBlocks                     []*authenticatedProbabilisticBlock
@@ -126,6 +129,7 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 		anchorOperationalCertificateCounters: anchorCounters,
 		anchorNonceState:                     anchorNonceState,
 		anchorPoolRegistry:                   anchorPoolRegistry,
+		settlementPoolRegistry:               clonePoolRegistry(registry.state),
 	}, nil
 }
 

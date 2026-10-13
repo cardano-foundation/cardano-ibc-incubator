@@ -16,6 +16,7 @@ import {
 import {
   HistoryBlock,
   HistoryEpochVerificationContext,
+  HistoryEpochContextAtBlock,
   HistoryService,
   HistoryStakeDistributionEntry,
   HistoryTxEvidence,
@@ -66,6 +67,7 @@ export type StakeWeightedStabilityHeaderEvidence = {
   descendantBlocks: HistoryBlock[];
   epochStakeDistribution: HistoryStakeDistributionEntry[];
   epochVerificationContext: HistoryEpochVerificationContext;
+  nextEpochContext?: HistoryEpochContextAtBlock;
   trustedHeight: CardanoHeight;
   trustedEpoch: EpochNumber;
   bridgeBlocks: HistoryBlock[];
@@ -98,23 +100,6 @@ function findFirstEpochBoundaryViolation(
       block.epochNo !== expectedEpoch ||
       block.slotNo < epochVerificationContext.currentEpochStartSlot ||
       block.slotNo >= epochVerificationContext.currentEpochEndSlotExclusive,
-  );
-}
-
-function throwDescendantBoundaryViolation(
-  violatingBlock: HistoryBlock,
-  expectedEpoch: number,
-  epochVerificationContext: HistoryEpochVerificationContext,
-  anchorHeight: number,
-): never {
-  if (violatingBlock.epochNo !== expectedEpoch) {
-    throw new GrpcInternalException(
-      `Stake-weighted stability descendant window for anchor height ${anchorHeight} crosses epoch boundary at height ${violatingBlock.height}: expected epoch ${expectedEpoch}, got ${violatingBlock.epochNo}`,
-    );
-  }
-
-  throw new GrpcInternalException(
-    `Stake-weighted stability descendant window for anchor height ${anchorHeight} crosses trusted epoch slot bounds at height ${violatingBlock.height}: slot ${violatingBlock.slotNo.toString()} not in [${epochVerificationContext.currentEpochStartSlot.toString()}, ${epochVerificationContext.currentEpochEndSlotExclusive.toString()})`,
   );
 }
 
@@ -378,7 +363,10 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
 
   let acceptedDescendantBlocks = eligibleDescendantBlocks;
   // Historical checkpoint hints may omit immutable network parameters.
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock, settlementCreditClient?.slot_length_ns || undefined);
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(
+    anchorBlock,
+    settlementCreditClient?.slot_length_ns || undefined,
+  );
   const settlementCreditReference = settlementCreditClient
     ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
     : undefined;
@@ -426,21 +414,30 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       acceptedDescendantBlocks.length,
     );
     if (thresholdFailure) {
-      if (firstInvalidDescendantIndex >= 0) {
-        throwDescendantBoundaryViolation(
-          scoredDescendantBlocks[firstInvalidDescendantIndex],
-          anchorBlock.epochNo,
-          epochVerificationContext,
-          anchorBlock.height,
+      if (!scoredDescendantBlocks.some((block) => block.epochNo === anchorBlock.epochNo + 1))
+        assertStabilityThresholds(
+          metrics,
+          stabilityPolicy,
+          anchorBlock.height.toString(),
+          acceptedDescendantBlocks.length,
         );
-      }
-
-      assertStabilityThresholds(
-        metrics,
+      const extended = await crossEpochSettlementWindow(
+        historyService,
+        anchorBlock,
+        scoredDescendantBlocks,
+        hydratedEpochStakeDistribution,
+        epochVerificationContext,
         stabilityPolicy,
-        anchorBlock.height.toString(),
-        acceptedDescendantBlocks.length,
+        { poolRegistrationCutoffSlot, settlementCreditReference, poolProduction },
       );
+      acceptedDescendantBlocks = extended.descendants;
+      metrics = computeStabilityMetrics(acceptedDescendantBlocks, hydratedEpochStakeDistribution, stabilityPolicy, {
+        poolRegistrationCutoffSlot,
+        settlementCreditReference,
+        poolProduction,
+        qualificationEpoch: BigInt(anchorBlock.epochNo),
+        nextEpochStakeDistribution: extended.nextEpochContext.stakeDistribution,
+      });
     }
   }
 
@@ -498,6 +495,66 @@ export async function loadStakeWeightedStabilityEvidenceForTxHash({
     ...evidence,
     hostStateTxEvidence,
   };
+}
+
+async function crossEpochSettlementWindow(
+  historyService: HistoryService,
+  anchor: HistoryBlock,
+  descendants: HistoryBlock[],
+  stake: HistoryStakeDistributionEntry[],
+  anchorContext: HistoryEpochVerificationContext,
+  policy: StabilityPolicy,
+  options: Parameters<typeof computeStabilityMetrics>[3],
+): Promise<{ descendants: HistoryBlock[]; nextEpochContext: HistoryEpochContextAtBlock }> {
+  const firstNext = descendants.find((block) => block.epochNo === anchor.epochNo + 1);
+  if (!firstNext)
+    throw heightNotAccepted(
+      BigInt(anchor.height),
+      'Waiting for sufficient same-epoch or adjacent-epoch settlement evidence',
+    );
+  const context = await historyService.findEpochContextAtBlock(firstNext);
+  if (!context) throw historyNotReady('Next epoch context is unavailable for boundary settlement');
+  assertEpochVerificationContextAvailable(context.verificationContext, firstNext.epochNo, 'boundary settlement');
+  if (
+    context.epoch !== firstNext.epochNo ||
+    context.verificationContext.currentEpochStartSlot !== anchorContext.currentEpochEndSlotExclusive ||
+    context.verificationContext.currentEpochEndSlotExclusive - context.verificationContext.currentEpochStartSlot !==
+      anchorContext.currentEpochEndSlotExclusive - anchorContext.currentEpochStartSlot
+  ) {
+    throw new GrpcInternalException(
+      'Boundary settlement crosses epoch boundary with an invalid adjacent epoch schedule',
+    );
+  }
+  assertEpochStakeDistributionAvailable(context.stakeDistribution, 'boundary settlement');
+  const unsupported = descendants.findIndex((block) => block.epochNo > anchor.epochNo + 1);
+  const eligible = unsupported < 0 ? descendants : descendants.slice(0, unsupported);
+  assertBlocksRemainWithinEpochSlotBounds(
+    eligible.filter((block) => block.epochNo === anchor.epochNo),
+    anchorContext,
+    'Boundary settlement old-epoch descendants',
+  );
+  assertBlocksRemainWithinEpochSlotBounds(
+    eligible.filter((block) => block.epochNo === firstNext.epochNo),
+    context.verificationContext,
+    'Boundary settlement descendants',
+  );
+  const hydrated = await hydrateDescendantProducerRegistrationSlots(historyService, stake, eligible, anchor);
+  for (let length = Number(policy.threshold_depth); length <= eligible.length; length++) {
+    const candidate = eligible.slice(0, length);
+    if (!candidate.some((block) => block.epochNo === firstNext.epochNo)) continue;
+    const metrics = computeStabilityMetrics(candidate, hydrated, policy, {
+      ...options,
+      qualificationEpoch: BigInt(anchor.epochNo),
+      nextEpochStakeDistribution: context.stakeDistribution,
+    });
+    if (!getStabilityThresholdFailure(metrics, policy, anchor.height.toString(), candidate.length)) {
+      return { descendants: candidate, nextEpochContext: context };
+    }
+  }
+  throw heightNotAccepted(
+    BigInt(anchor.height),
+    'Waiting for qualified participation within the bounded adjacent-epoch settlement window',
+  );
 }
 
 export async function loadStakeWeightedStabilityHeaderEvidence({
@@ -639,9 +696,13 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     ? productionAtAnchor(settlementCreditClient, bridgeBlocks, anchorBlock)
     : await historyService.findObservedPoolProductionAtBlock?.(anchorBlock);
 
-  const acceptedDescendantBlocks = eligibleDescendantBlocks;
+  let acceptedDescendantBlocks = eligibleDescendantBlocks;
+  let nextEpochContext: HistoryEpochContextAtBlock | undefined;
   // Historical checkpoint hints may omit immutable network parameters.
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock, settlementCreditClient?.slot_length_ns || undefined);
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(
+    anchorBlock,
+    settlementCreditClient?.slot_length_ns || undefined,
+  );
   const settlementCreditReference = settlementCreditClient
     ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
     : undefined;
@@ -652,6 +713,25 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   });
 
   if (requireThresholds) {
+    for (let length = Number(stabilityPolicy.threshold_depth); length <= eligibleDescendantBlocks.length; length++) {
+      const candidate = eligibleDescendantBlocks.slice(0, length);
+      const candidateMetrics = computeStabilityMetrics(candidate, hydratedAnchorStakeDistribution, stabilityPolicy, {
+        poolRegistrationCutoffSlot,
+        settlementCreditReference,
+        poolProduction,
+      });
+      if (
+        !getStabilityThresholdFailure(
+          candidateMetrics,
+          stabilityPolicy,
+          anchorBlock.height.toString(),
+          candidate.length,
+        )
+      ) {
+        acceptedDescendantBlocks = candidate;
+        break;
+      }
+    }
     const thresholdFailure = getStabilityThresholdFailure(
       metrics,
       stabilityPolicy,
@@ -659,7 +739,22 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
       acceptedDescendantBlocks.length,
     );
     if (thresholdFailure) {
-      throw heightNotAccepted(BigInt(anchorBlock.height), thresholdFailure);
+      if (
+        anchorBlock.epochNo !== trustedBlock.epochNo ||
+        !descendantBlocks.some((block) => block.epochNo === anchorBlock.epochNo + 1)
+      )
+        throw heightNotAccepted(BigInt(anchorBlock.height), thresholdFailure);
+      const extended = await crossEpochSettlementWindow(
+        historyService,
+        anchorBlock,
+        descendantBlocks,
+        hydratedAnchorStakeDistribution,
+        epochVerificationContext,
+        stabilityPolicy,
+        { poolRegistrationCutoffSlot, settlementCreditReference, poolProduction },
+      );
+      acceptedDescendantBlocks = extended.descendants;
+      nextEpochContext = extended.nextEpochContext;
     }
   }
 
@@ -670,6 +765,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     descendantBlocks: acceptedDescendantBlocks,
     epochStakeDistribution: hydratedAnchorStakeDistribution,
     epochVerificationContext: anchorEpochContext.verificationContext,
+    nextEpochContext,
     trustedHeight: trustedHeight as CardanoHeight,
     trustedEpoch: trustedBlock.epochNo as EpochNumber,
     bridgeBlocks,
