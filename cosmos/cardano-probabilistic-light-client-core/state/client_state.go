@@ -328,7 +328,8 @@ func VerifyDelayPeriodPassed(ctx Context, clientStore storetypes.KVStore, height
 		return ErrProcessedTimeNotFound
 	}
 	currentTime := uint64(ctx.BlockTime().UnixNano())
-	if currentTime < processedTime+delayTimePeriod {
+	// A future deadline outside uint64 must not wrap into an elapsed deadline.
+	if delayTimePeriod > math.MaxUint64-processedTime || currentTime < processedTime+delayTimePeriod {
 		return ErrDelayPeriodNotPassed
 	}
 	processedHeight, found := GetProcessedHeight(clientStore, height)
@@ -336,7 +337,8 @@ func VerifyDelayPeriodPassed(ctx Context, clientStore storetypes.KVStore, height
 		return ErrProcessedHeightNotFound
 	}
 	currentHeight := uint64(ctx.BlockHeight())
-	if currentHeight < processedHeight.GetRevisionHeight()+delayBlockPeriod {
+	processedBlockHeight := processedHeight.GetRevisionHeight()
+	if delayBlockPeriod > math.MaxUint64-processedBlockHeight || currentHeight < processedBlockHeight+delayBlockPeriod {
 		return ErrDelayPeriodNotPassed
 	}
 	return nil
