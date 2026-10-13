@@ -217,11 +217,14 @@ func makeNativeBoundaryFixtureAtHeight(t *testing.T, countStall bool, paddingByt
 }
 
 func TestNativeBoundaryFixture(t *testing.T) {
-	for _, name := range []string{"size", "count", "control", "limit"} {
-		countStall := name == "count"
+	for _, name := range []string{"size", "count", "control", "limit", "combined"} {
+		countStall := name == "count" || name == "combined"
 		paddingBytes := 40 * 1024
 		if name == "control" {
 			paddingBytes = 1024
+		}
+		if name == "combined" {
+			paddingBytes = 80 * 1024
 		}
 		t.Run(name, func(t *testing.T) {
 			var fixture nativeBoundaryFixture
@@ -236,8 +239,15 @@ func TestNativeBoundaryFixture(t *testing.T) {
 			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
 			fixture.Client, _ = GetClientState(store, cdc)
 			ctx.Time = ctx.Time.Add(3 * time.Minute)
-			require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, fixture.Header))
-			require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, NewMisbehaviour(ModuleName+"-0", fixture.Header, fixture.Fork)))
+			if name == "combined" {
+				for _, evidence := range []*ProbabilisticHeader{fixture.Header, fixture.Fork} {
+					prefix := boundaryHeaderAtAnchor(t, evidence, 966, 984)
+					require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, prefix))
+				}
+			} else {
+				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, fixture.Header))
+				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, NewMisbehaviour(ModuleName+"-0", fixture.Header, fixture.Fork)))
+			}
 			if name == "size" || name == "control" {
 				intermediate := &ProbabilisticHeader{TrustedHeight: NewHeight(0, 966), BridgeBlocks: fixture.Header.BridgeBlocks[:9], AnchorBlock: fixture.Header.BridgeBlocks[9], DescendantBlocks: fixture.Header.BridgeBlocks[10:], IsCheckpoint: true}
 				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, intermediate))

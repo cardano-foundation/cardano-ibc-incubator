@@ -90,6 +90,23 @@ func (cs *ClientState) verifyHeaderWithMode(
 	if err := header.ValidateBasic(); err != nil {
 		return err
 	}
+	if mode.enforceForwardUpdate && header.NewEpochContext != nil && header.NewEpochContext.Epoch > header.AnchorBlock.Epoch {
+		size := len(header.AnchorBlock.BlockCbor)
+		for _, block := range header.BridgeBlocks {
+			if block != nil {
+				size += len(block.BlockCbor)
+			}
+		}
+		for _, block := range header.DescendantBlocks {
+			if block != nil {
+				size += len(block.BlockCbor)
+			}
+		}
+		if size > MaxCrossEpochBodyBytes {
+			return errorsmod.Wrap(ErrInvalidHeader, "cross-epoch body bytes exceed the reserved challenge capacity")
+		}
+	}
+
 	var startingGas uint64
 	if ctx.GasConsumed != nil {
 		startingGas = ctx.GasConsumed()
@@ -186,8 +203,16 @@ func (cs *ClientState) verifyHeaderWithMode(
 
 	// Do not let a speculative epoch roll over again and discard the original
 	// challenge checkpoint before observers have had their response window.
-	if mode.enforceForwardUpdate && authenticatedHeader.anchorBlock.epoch > trustedBlock.epoch {
+	if mode.enforceForwardUpdate && settlementEvidenceEpoch(authenticatedHeader) > trustedBlock.epoch {
 		if err := cs.verifyEpochUsable(ctx, trustedBlock.epoch); err != nil {
+			return err
+		}
+	}
+	// A cross-epoch proposal installs only its next stake table. No anchor
+	// depending on that table is committed until its response window elapsed.
+	if mode.enforceForwardUpdate && settlementEvidenceEpoch(authenticatedHeader) > authenticatedHeader.anchorBlock.epoch &&
+		cs.epochChallenge(settlementEvidenceEpoch(authenticatedHeader)) != nil {
+		if err := cs.verifyEpochUsable(ctx, settlementEvidenceEpoch(authenticatedHeader)); err != nil {
 			return err
 		}
 	}
@@ -221,6 +246,11 @@ func (cs *ClientState) verifyHeaderWithMode(
 	if err := verifyStakeTablePoolBindings(anchorEpochContext, authenticatedHeader.anchorPoolRegistry); err != nil {
 		return err
 	}
+	if settlementEvidenceEpoch(authenticatedHeader) > authenticatedHeader.anchorBlock.epoch {
+		if err := verifyStakeTablePoolBindings(epochContextByEpoch(epochContexts, settlementEvidenceEpoch(authenticatedHeader)), authenticatedHeader.settlementPoolRegistry); err != nil {
+			return err
+		}
+	}
 
 	// A table is an unsigned claim. Only historical challenge verification may
 	// use an alternative claim for an epoch later than the trusted checkpoint.
@@ -252,6 +282,19 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "invalid packet state progression: %v", err)
 	}
 
+	if settlementEvidenceEpoch(authenticatedHeader) > authenticatedHeader.anchorBlock.epoch && cs.epochChallenge(settlementEvidenceEpoch(authenticatedHeader)) == nil {
+		deadline, err := epochChallengeDeadline(ctx)
+		if err != nil {
+			return err
+		}
+		proposal := *cs
+		proposal.EpochContexts = epochContexts
+		proposal.EpochContextChallenges = append(append([]*EpochContextChallenge(nil), cs.EpochContextChallenges...), &EpochContextChallenge{Epoch: settlementEvidenceEpoch(authenticatedHeader), UsableAfterUnixNs: deadline})
+		if err := validateClientBytes(len(cdc.EncodeClientSnapshot(&proposal))); err != nil {
+			return err
+		}
+	}
+
 	if ctx.GasConsumed != nil && ctx.GasConsumed()-startingGas > MaxHeaderVerificationGas {
 		return errorsmod.Wrap(ErrInvalidHeader, "verification gas exceeds the challenge capacity bound")
 	}
@@ -275,6 +318,7 @@ func verifyHeaderEpochTransition(
 
 	trustedEpoch := trustedBlock.epoch
 	anchorEpoch := authenticatedHeader.anchorBlock.epoch
+	evidenceEpoch := settlementEvidenceEpoch(authenticatedHeader)
 
 	switch {
 	case anchorEpoch < trustedEpoch:
@@ -284,7 +328,7 @@ func verifyHeaderEpochTransition(
 			anchorEpoch,
 			trustedEpoch,
 		)
-	case anchorEpoch == trustedEpoch:
+	case evidenceEpoch == trustedEpoch:
 		if header.NewEpochContext != nil {
 			if header.NewEpochContext.Epoch != anchorEpoch {
 				return errorsmod.Wrapf(
@@ -295,19 +339,19 @@ func verifyHeaderEpochTransition(
 				)
 			}
 		}
-	case anchorEpoch == trustedEpoch+1:
+	case trustedEpoch != ^uint64(0) && evidenceEpoch == trustedEpoch+1:
 		if header.NewEpochContext == nil {
 			return errorsmod.Wrap(
 				ErrInvalidCurrentEpoch,
 				"new_epoch_context must be present for adjacent epoch rollover",
 			)
 		}
-		if header.NewEpochContext.Epoch != anchorEpoch {
+		if header.NewEpochContext.Epoch != evidenceEpoch {
 			return errorsmod.Wrapf(
 				ErrInvalidCurrentEpoch,
-				"new_epoch_context epoch %d must match accepted epoch %d",
+				"new_epoch_context epoch %d must match evidence epoch %d",
 				header.NewEpochContext.Epoch,
-				anchorEpoch,
+				evidenceEpoch,
 			)
 		}
 	default:
@@ -339,7 +383,7 @@ func verifyHeaderEpochTransition(
 		if block == nil {
 			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated descendant block missing")
 		}
-		if block.epoch != anchorEpoch {
+		if block.epoch < anchorEpoch || block.epoch > evidenceEpoch {
 			return errorsmod.Wrapf(
 				ErrInvalidCurrentEpoch,
 				"descendant block %d must remain in accepted epoch %d, got epoch %d",
@@ -487,7 +531,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		if block.height != prevHeight+1 {
 			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant height gap at block %s", block.hash)
 		}
-		if block.epoch != anchorEpoch {
+		if block.epoch < anchorEpoch || (block.epoch != anchorEpoch && (anchorEpoch == ^uint64(0) || block.epoch != anchorEpoch+1)) {
 			return 0, 0, 0, errorsmod.Wrapf(
 				ErrInvalidCurrentEpoch,
 				"descendant block %d must remain in accepted epoch %d, got %d",
@@ -501,6 +545,12 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		if poolID != "" {
 			if _, exists := seenPools[poolID]; !exists {
 				seenPools[poolID] = struct{}{}
+				// A later epoch can contain newly effective identities. They are
+				// valid producers but do not qualify under the frozen anchor view.
+				if registeredPools[poolID] == nil && block.epoch > anchorEpoch {
+					prevHash, prevHeight = block.hash, block.height
+					continue
+				}
 				eligible, err := poolRegisteredBeforeCutoff(poolRegistrationCutoffSlot, registeredPools[poolID])
 				if err != nil {
 					return 0, 0, 0, err
@@ -511,6 +561,14 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 					credit := credits[poolID]
 					if credit == nil {
 						return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "qualified producer missing from stake table")
+					}
+					if header.settlementStakeLimits != nil {
+						limit := header.settlementStakeLimits[poolID]
+						if limit == nil {
+							credit = new(big.Rat)
+						} else if credit.Cmp(limit) > 0 {
+							credit = limit
+						}
 					}
 					qualifiedUniqueStake.Add(qualifiedUniqueStake, credit)
 				}
@@ -639,6 +697,18 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 		panic(fmt.Errorf("missing anchor epoch context for verified ProbabilisticHeader epoch %d", authenticatedHeader.anchorBlock.epoch))
 	}
 
+	if settlementEvidenceEpoch(authenticatedHeader) > authenticatedHeader.anchorBlock.epoch &&
+		cs.epochChallenge(settlementEvidenceEpoch(authenticatedHeader)) == nil {
+		if err := cs.beginEpochChallenge(ctx, cdc, clientStore, settlementEvidenceEpoch(authenticatedHeader), trustedBlock); err != nil {
+			panic(err)
+		}
+		if err := syncCurrentEpochFields(cs, epochContexts, cs.CurrentEpoch); err != nil {
+			panic(err)
+		}
+		SetClientState(clientStore, cdc, cs)
+		return nil
+	}
+
 	snapshot, err := cs.advancePacketSnapshot(clientStore, cdc, header)
 	if err != nil {
 		panic(fmt.Errorf("verified packet state progression failed: %w", err))
@@ -692,6 +762,7 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 
 	keepEpochs := collectReferencedConsensusEpochs(clientStore, cdc)
 	keepEpochs[authenticatedHeader.anchorBlock.epoch] = struct{}{}
+	cs.retainProposedEpochs(epochContexts, keepEpochs)
 	retainedEpochContexts := retainEpochContexts(epochContexts, keepEpochs)
 	if err := syncCurrentEpochFields(cs, retainedEpochContexts, authenticatedHeader.anchorBlock.epoch); err != nil {
 		panic(fmt.Errorf("failed to persist rollover epoch contexts after verified ProbabilisticHeader: %w", err))

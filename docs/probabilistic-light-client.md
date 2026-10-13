@@ -214,7 +214,11 @@ The Gateway:
 6. decoding the HostState datum and extracting `ibc_state_root`
 7. serializing the probabilistic client state and consensus state
 
-Client creation still starts from one epoch context, but updates are no longer single-epoch-only. Gateway now supports ordinary `epoch N -> epoch N+1` rollover updates on the same client ID by attaching `new_epoch_context` to the header when the anchor moves into the next epoch. The scored descendant window still remains single-epoch: bridge continuity may span the boundary, but the anchor and scored descendants must all live in the same anchor epoch.
+Client creation still starts from one epoch context, but updates are no longer single-epoch-only. Gateway now supports ordinary `epoch N -> epoch N+1` rollover updates on the same client ID by attaching `new_epoch_context` to the header when the anchor moves into the next epoch. Verified settlement descendants can now continue into the following epoch when old-epoch participation is insufficient. The whole evidence bundle still crosses at most one epoch boundary from its trusted checkpoint. Gateway chooses the first sufficient descendant prefix and can return a smaller old-epoch anchor instead of requiring every remaining old-epoch body in one update.
+
+An old-epoch anchor using next-epoch descendants first proposes the next stake table without advancing its checkpoint or creating a consensus root. It can commit only after that table's three-minute challenge period. Qualification stays frozen at the anchor. Each producer receives the smaller of its capped anchor-epoch credit and its next-epoch share. Its next-epoch production does not qualify it for the anchor's epoch. Temporary descendants advance only working nonce and verification state. The stored state remains at the anchor.
+
+Cross-epoch updates reserve 1.5 MiB for complete bodies within the existing 2.5 MiB header limit. This leaves room for a challenger's complete table even when the proposal omits pools. Progress still requires a qualified contiguous window within the 128-block evidence bound. Waiting alone cannot resolve a longer fixed epoch tail. The [core capacity notes](../cosmos/cardano-probabilistic-light-client-core/README.md) state the supported workload and the explicit recovery limitation.
 
 The client derives a block's epoch from its signed slot and the stored current
 epoch boundaries. Those boundaries provide the network's epoch length and slot
@@ -253,9 +257,9 @@ configuration change before synchronization can continue. Existing clients
 without running nonce state need an explicit authenticated migration or a new
 bootstrap. The current epoch nonce alone cannot fill in the missing values.
 
-An accepted stake context remains canonical for its epoch. Different stake data
-for an already-known epoch can freeze the client after the evidence passes
-verification. The first supplied stake distribution still uses the challenge
+An installed stake allocation remains canonical for forward updates in its epoch.
+A different unsigned allocation rejects a normal update. Only incompatible
+verified settled histories can freeze the client. The first supplied stake distribution still uses the challenge
 model described below.
 
 The static local Caribic devnet explicitly sets
