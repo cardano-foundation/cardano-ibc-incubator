@@ -281,6 +281,9 @@ func (cs ClientState) Initialize(ctx Context, cdc StateCodec, clientStore storet
 	if err := cs.initializeCheckpoint(consensusState); err != nil {
 		return err
 	}
+	if err := validateClientBytes(len(cdc.EncodeClient(&cs))); err != nil {
+		return err
+	}
 	SetClientState(clientStore, cdc, &cs)
 	SetConsensusState(clientStore, cdc, consensusState, cs.LatestHeight)
 	setConsensusMetadata(ctx, clientStore, cs.LatestHeight)

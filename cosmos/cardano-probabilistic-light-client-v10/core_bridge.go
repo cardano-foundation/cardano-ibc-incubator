@@ -14,7 +14,7 @@ import (
 
 func coreContext(ctx sdk.Context) state.Context {
 	height := clienttypes.GetSelfHeight(ctx)
-	return state.Context{EmitEvent: func(name string, attributes ...state.EventAttribute) {
+	return state.Context{ConsumeGas: ctx.GasMeter().ConsumeGas, GasConsumed: ctx.GasMeter().GasConsumed, EmitEvent: func(name string, attributes ...state.EventAttribute) {
 		attrs := make([]sdk.Attribute, len(attributes))
 		for i, attribute := range attributes {
 			attrs[i] = sdk.NewAttribute(attribute.Key, attribute.Value)

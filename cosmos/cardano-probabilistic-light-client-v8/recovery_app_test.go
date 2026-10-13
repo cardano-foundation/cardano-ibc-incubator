@@ -493,3 +493,8 @@ func TestAppMisbehaviourUsesSettledPrefixes(t *testing.T) {
 		})
 	}
 }
+
+// Register the same client route as the compatibility profile's simd.
+func registerCapacityClient(app *simapp.SimApp) {
+	RegisterInterfaces(app.InterfaceRegistry())
+}

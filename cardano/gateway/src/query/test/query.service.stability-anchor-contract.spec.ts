@@ -774,10 +774,13 @@ describe('QueryService stability anchor contract', () => {
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
   });
 
-  it('reduces checkpoint distance to fit authenticated full blocks within the payload limit', async () => {
+  it.each([
+ { configured: 768 * 1024, effective: 768 * 1024, bodyBytes: 24 * 1024, maxDistance: 33, minimum: 700_000 },
+ { configured: 10 * 1024 * 1024, effective: 5 * 1024 * 1024 / 2, bodyBytes: 40 * 1024, maxDistance: 65, minimum: 2_500_000 },
+ ])('reserves challenge capacity when the configured header limit is $configured', async ({ configured, effective, bodyBytes, maxDistance, minimum }) => {
     const get = (service as any).configService.get as jest.Mock;
     const implementation = get.getMockImplementation()!;
-    get.mockImplementation((key) => key === 'cardanoStabilityCheckpointMaxHeaderBytes' ? 768 * 1024 : implementation(key));
+    get.mockImplementation((key) => key === 'cardanoStabilityCheckpointMaxHeaderBytes' ? configured : implementation(key));
     const blockAt = (height: number) => {
       const slot = 1000n + BigInt(height - 100) * 10n;
       return {
@@ -801,7 +804,7 @@ describe('QueryService stability anchor contract', () => {
       Array.from({ length: 24 }, (_, index) => blockAt(Number(anchorHeight) + index + 1)),
     );
     miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
-      blocks.map(() => Buffer.alloc(24 * 1024, 1)),
+      blocks.map(() => Buffer.alloc(bodyBytes, 1)),
     );
 
     const response = await service.queryIBCHeader({ height: 200n, trusted_height: 100n } as any);
@@ -810,16 +813,16 @@ describe('QueryService stability anchor contract', () => {
     expect(header.is_checkpoint).toBe(true);
     const distance = Number(header.anchor_block!.height!.revision_height - 100n);
     expect(distance).toBeGreaterThan(0);
-    expect(distance).toBeLessThan(33);
+    expect(distance).toBeLessThan(maxDistance);
     expect(header.bridge_blocks).toHaveLength(distance - 1);
-    expect(header.anchor_block!.block_cbor).toHaveLength(24 * 1024);
+    expect(header.anchor_block!.block_cbor).toHaveLength(bodyBytes);
     expect(header.anchor_block!.header_cbor).toHaveLength(0);
     expect(
-      header.bridge_blocks.every((block) => block.block_cbor.length === 24 * 1024 && block.header_cbor.length === 0),
+      header.bridge_blocks.every((block) => block.block_cbor.length === bodyBytes && block.header_cbor.length === 0),
     ).toBe(true);
     expect(response.header!.value).toHaveLength(ProbabilisticHeader.encode(header).finish().length);
-    expect(response.header!.value.length).toBeLessThanOrEqual(768 * 1024);
-    expect(response.header!.value.length).toBeGreaterThan(700_000);
+    expect(response.header!.value.length).toBeLessThanOrEqual(effective);
+    expect(response.header!.value.length).toBeGreaterThan(minimum);
     expect(miniProtocalsServiceMock.fetchBlocksCbor).toHaveBeenCalledTimes(2);
   });
 
@@ -1008,7 +1011,7 @@ describe('native epoch-boundary catch-up', () => {
       expect(header.anchor_block!.epoch).toBe(8n);
       expect(header.is_checkpoint).toBe(true);
       expect(header.descendant_blocks.length).toBeGreaterThanOrEqual(24);
-      expect(response.header!.value.length).toBeLessThanOrEqual(10 * 1024 * 1024);
+      expect(response.header!.value.length).toBeLessThanOrEqual(5 * 1024 * 1024 / 2);
       if (name === 'control') expect(response.header!.value.length).toBeLessThan(768 * 1024);
       else expect(response.header!.value.length).toBeGreaterThan(768 * 1024);
       if (name === 'count') expect(header.bridge_blocks.length).toBeGreaterThan(32);

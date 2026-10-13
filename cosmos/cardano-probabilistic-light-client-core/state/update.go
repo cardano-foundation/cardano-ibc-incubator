@@ -90,6 +90,14 @@ func (cs *ClientState) verifyHeaderWithMode(
 	if err := header.ValidateBasic(); err != nil {
 		return err
 	}
+	var startingGas uint64
+	if ctx.GasConsumed != nil {
+		startingGas = ctx.GasConsumed()
+	}
+	ctx.chargeNativeVerification(header)
+	if err := validateClientBytes(len(cdc.EncodeClientSnapshot(cs))); err != nil {
+		return err
+	}
 
 	anchor := header.AnchorBlock
 	if anchor == nil || anchor.Height == nil {
@@ -244,6 +252,9 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "invalid packet state progression: %v", err)
 	}
 
+	if ctx.GasConsumed != nil && ctx.GasConsumed()-startingGas > MaxHeaderVerificationGas {
+		return errorsmod.Wrap(ErrInvalidHeader, "verification gas exceeds the challenge capacity bound")
+	}
 	return nil
 }
 
@@ -573,10 +584,17 @@ func (cs *ClientState) UpdateState(
 
 // The authenticator seam matches verification tests; production always uses nil.
 func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec, clientStore storetypes.KVStore, clientMsg any, authenticateHeader headerAuthenticator) []HeightValue {
+	// The v8 redundant-relay ante handler calls UpdateState after verifying
+	// custom misbehaviour. Only the keeper's misbehaviour path freezes the
+	// client. Admission must leave the cached client unchanged.
+	if _, ok := clientMsg.(*Misbehaviour); ok {
+		return nil
+	}
 	header, ok := clientMsg.(*ProbabilisticHeader)
 	if !ok {
 		panic(fmt.Errorf("expected type %T, got %T", &ProbabilisticHeader{}, clientMsg))
 	}
+	ctx.chargeNativeVerification(header)
 	currentEpochContexts, err := cs.normalizedEpochContexts()
 	if err != nil {
 		panic(fmt.Errorf("failed to normalize epoch contexts for verified ProbabilisticHeader: %w", err))

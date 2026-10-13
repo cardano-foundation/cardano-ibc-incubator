@@ -1,0 +1,62 @@
+name: Probabilistic challenge capacity
+
+on:
+  pull_request:
+    paths:
+      - 'cosmos/cardano-probabilistic-light-client-*/**'
+      - 'cardano/gateway/src/query/**'
+      - 'cardano/gateway/src/config/**'
+      - 'caribic/src/chains/network_limits.rs'
+      - 'caribic/src/chains/cosmos_profiles/hermes.rs'
+      - 'chains/cosmos/**'
+      - 'tests/challenge-capacity-relayer/**'
+      - 'relayer'
+      - '.github/workflows/challenge-capacity.yml'
+  workflow_dispatch:
+
+jobs:
+  destination:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        major: ['8', '10']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client-v${{ matrix.major }}/go.sum
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: '1.91.1'
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tests/challenge-capacity-relayer/target
+          key: challenge-relayer-${{ runner.os }}-${{ hashFiles('tests/challenge-capacity-relayer/Cargo.lock') }}-${{ hashFiles('relayer/Cargo.lock') }}
+      - name: Build the pinned Hermes transaction probe
+        run: cargo build --locked --manifest-path tests/challenge-capacity-relayer/Cargo.toml
+      - name: Sign, simulate, admit and execute two-header challenges
+        shell: bash
+        env:
+          GOWORK: off
+        run: |
+          set -o pipefail
+          export CHALLENGE_RELAYER_PROBE="$GITHUB_WORKSPACE/tests/challenge-capacity-relayer/target/debug/challenge-capacity-relayer"
+          cd cosmos/cardano-probabilistic-light-client-v${{ matrix.major }}
+          go test -run 'TestDestinationChallengeCapacity|TestChallengeCapacityAdmission' -count=1 -v | tee "$RUNNER_TEMP/challenge-v${{ matrix.major }}.log"
+      - name: Build the destination image with the measured dependencies
+        run: >-
+          docker compose -f chains/cosmos/docker-compose.yml
+          --profile v${{ matrix.major }}-classic build v${{ matrix.major }}-classic
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: challenge-capacity-v${{ matrix.major }}
+          path: ${{ runner.temp }}/challenge-v${{ matrix.major }}.log

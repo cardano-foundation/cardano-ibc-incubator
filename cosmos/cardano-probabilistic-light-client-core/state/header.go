@@ -38,6 +38,9 @@ func (h ProbabilisticHeader) GetTime() time.Time {
 }
 
 func (h ProbabilisticHeader) ValidateBasic() error {
+	if len(h.BridgeBlocks) > MaxBridgeBlocks || 1+len(h.BridgeBlocks)+len(h.DescendantBlocks) > MaxHeaderBlocks {
+		return errorsmod.Wrap(ErrInvalidHeader, "block count exceeds the challenge capacity bound")
+	}
 	if h.TrustedHeight == nil {
 		return errorsmod.Wrap(ErrInvalidHeader, "trusted height must be present")
 	}
@@ -94,6 +97,9 @@ func (h ProbabilisticHeader) ValidateBasic() error {
 }
 
 func validateProbabilisticBlockWitness(block *ProbabilisticBlock, label string, requireFullBlock bool) error {
+	if len(block.BlockCbor) > MaxBlockCBORBytes || len(block.HeaderCbor) > MaxHeaderCBORBytes {
+		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s witness exceeds the challenge capacity bound", label)
+	}
 	hasFullBlock := len(block.BlockCbor) > 0
 	hasHeader := len(block.HeaderCbor) > 0
 	if hasFullBlock && hasHeader {

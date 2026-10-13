@@ -40,20 +40,32 @@ type nativeBoundaryProducer struct {
 // Fully signed synthetic Praos evidence exercises native cryptography and
 // complete body authentication. Deterministic keys exist only for this test.
 func makeNativeBoundaryFixture(t *testing.T, countStall bool, paddingBytes int) nativeBoundaryFixture {
+	return makeNativeBoundaryFixtureAtHeight(t, countStall, paddingBytes, 966)
+}
+
+func makeNativeBoundaryFixtureAtHeight(t *testing.T, countStall bool, paddingBytes int, trustedHeight uint64) nativeBoundaryFixture {
 	t.Helper()
 	cs := newProbabilisticTestClientState()
+	if trustedHeight == 904 {
+		cs.SlotsPerKesPeriod = 259200
+		cs.EpochContexts[0].SlotsPerKesPeriod = cs.SlotsPerKesPeriod
+	}
 	// Start more than six months after registration. The signing certificate
 	// begins in this KES period so its relative signing period remains zero.
-	slotOffset := uint64(160 * 129600)
+	slotOffset := 160 * cs.SlotsPerKesPeriod
 	cs.CurrentEpochStartSlot = slotOffset
 	cs.CurrentEpochEndSlotExclusive += slotOffset
 	cs.EpochContexts[0].EpochStartSlot = slotOffset
 	cs.EpochContexts[0].EpochEndSlotExclusive += slotOffset
-	cs.LatestHeight = NewHeight(0, 966)
+	cs.LatestHeight = NewHeight(0, trustedHeight)
 	cs.OperationalCertificateCounterHistoryStartHeight = cs.LatestHeight
 	cs.TrustingPeriod = 48 * time.Hour
-	cs.CurrentEpochEndSlotExclusive = slotOffset + 60000
-	cs.EpochContexts[0].EpochEndSlotExclusive = slotOffset + 60000
+	epochLength := uint64(60000)
+	if trustedHeight == 904 {
+		epochLength = 120000
+	}
+	cs.CurrentEpochEndSlotExclusive = slotOffset + epochLength
+	cs.EpochContexts[0].EpochEndSlotExclusive = slotOffset + epochLength
 	cs.LatestCheckpointNonceState.LastEpochBlockNonce = nil
 	cs.LatestCheckpointNonceState.CandidateNonce = bytes.Clone(cs.EpochNonce)
 	producers := make([]nativeBoundaryProducer, 13)
@@ -84,21 +96,29 @@ func makeNativeBoundaryFixture(t *testing.T, countStall bool, paddingBytes int) 
 	}
 	hash := testBlockHash("native-bootstrap")
 	setTestCheckpoint(t, cs, cs.LatestHeight, hash, 7, slotOffset+10)
-	consensus := newProbabilisticTestConsensusState(hash, 966)
+	consensus := newProbabilisticTestConsensusState(hash, trustedHeight)
 	consensus.Timestamp = cs.LatestCheckpointTimestamp
 	consensus.NonceState = clonePraosNonceState(cs.LatestCheckpointNonceState)
 	consensus.PoolRegistry = clonePoolRegistry(cs.LatestCheckpointPoolRegistry)
 	consensus.SettlementCredit = cloneSettlementCredit(cs.LatestCheckpointSettlementCredit)
 	consensus.PoolProduction = clonePoolProduction(cs.LatestCheckpointPoolProduction)
-	makeHeader := func(firstSlot uint64) *ProbabilisticHeader {
+	var header *ProbabilisticHeader
+	makeHeader := func(forkHeight uint64) *ProbabilisticHeader {
 		h := &ProbabilisticHeader{TrustedHeight: cs.LatestHeight, IsCheckpoint: true}
 		h.NewEpochContext = cloneEpochContext(cs.EpochContexts[0])
 		h.NewEpochContext.Epoch = 8
-		h.NewEpochContext.EpochStartSlot, h.NewEpochContext.EpochEndSlotExclusive = slotOffset+60000, slotOffset+120000
-		previous, slot := hash, firstSlot
+		h.NewEpochContext.EpochStartSlot, h.NewEpochContext.EpochEndSlotExclusive = slotOffset+epochLength, slotOffset+2*epochLength
+		previous, slot := hash, slotOffset+11
 		tracker, err := newNonceTracker(&trustedBlockState{height: cs.LatestHeight, blockHash: hash, slot: slotOffset + 10, epoch: 7, nonceState: cs.LatestCheckpointNonceState})
 		require.NoError(t, err)
-		for n := uint64(967); n <= 1031; n++ {
+		lastHeight := uint64(1031)
+		if trustedHeight == 904 {
+			lastHeight = 1032
+		}
+		for n := trustedHeight + 1; n <= lastHeight; n++ {
+			if n == forkHeight {
+				slot = header.BridgeBlocks[n-trustedHeight-1].Slot + 1
+			}
 			producerIndex := int((n - 967) % 11)
 			if countStall && n <= 1000 {
 				if n < 977 {
@@ -111,8 +131,8 @@ func makeNativeBoundaryFixture(t *testing.T, countStall bool, paddingBytes int) 
 			epoch := uint64(7)
 			if n >= 1001 {
 				epoch = 8
-				if slot < slotOffset+60000 {
-					slot = slotOffset + 60000
+				if slot < slotOffset+epochLength {
+					slot = slotOffset + epochLength
 				}
 			}
 			require.NoError(t, tracker.tick(cs, n, slot, epoch, previous))
@@ -187,28 +207,38 @@ func makeNativeBoundaryFixture(t *testing.T, countStall bool, paddingBytes int) 
 		}
 		return h
 	}
-	header := makeHeader(slotOffset + 11)
-	fork := header
+	header = makeHeader(0)
+	forkHeight := uint64(977)
+	if countStall || trustedHeight == 904 {
+		forkHeight = trustedHeight + 1
+	}
+	fork := makeHeader(forkHeight)
 	return nativeBoundaryFixture{Client: cs, Consensus: consensus, Header: header, Fork: fork}
 }
 
 func TestNativeBoundaryFixture(t *testing.T) {
-	for _, name := range []string{"size", "count", "control"} {
+	for _, name := range []string{"size", "count", "control", "limit"} {
 		countStall := name == "count"
 		paddingBytes := 40 * 1024
 		if name == "control" {
 			paddingBytes = 1024
 		}
 		t.Run(name, func(t *testing.T) {
-			fixture := makeNativeBoundaryFixture(t, countStall, paddingBytes)
+			var fixture nativeBoundaryFixture
+			if name == "limit" {
+				fixture = makeNativeBoundaryFixtureAtHeight(t, false, 21*1024, 904)
+			} else {
+				fixture = makeNativeBoundaryFixture(t, countStall, paddingBytes)
+			}
 			ctx, store := newProbabilisticTestClientStore(t, "native-boundary")
 			cdc := newProbabilisticTestCodec()
-			ctx.Time = time.Unix(0, int64(fixture.Header.DescendantBlocks[29].Timestamp))
+			ctx.Time = time.Unix(0, int64(max(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp, fixture.Fork.DescendantBlocks[len(fixture.Fork.DescendantBlocks)-1].Timestamp)))
 			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
 			fixture.Client, _ = GetClientState(store, cdc)
 			ctx.Time = ctx.Time.Add(3 * time.Minute)
 			require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, fixture.Header))
-			if !countStall {
+			require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, NewMisbehaviour(ModuleName+"-0", fixture.Header, fixture.Fork)))
+			if name == "size" || name == "control" {
 				intermediate := &ProbabilisticHeader{TrustedHeight: NewHeight(0, 966), BridgeBlocks: fixture.Header.BridgeBlocks[:9], AnchorBlock: fixture.Header.BridgeBlocks[9], DescendantBlocks: fixture.Header.BridgeBlocks[10:], IsCheckpoint: true}
 				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, intermediate))
 				working, _ := GetClientState(store, cdc)

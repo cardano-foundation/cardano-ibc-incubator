@@ -74,6 +74,9 @@ func validateEpochContext(ctx *EpochContext) error {
 	if ctx == nil {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch context must not be nil")
 	}
+	if len(ctx.StakeDistribution) > MaxStakeEntries {
+		return errorsmod.Wrap(ErrInvalidCurrentEpoch, "stake table exceeds the challenge capacity bound")
+	}
 	if len(ctx.StakeDistribution) == 0 {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must not be empty", ctx.Epoch)
 	}
