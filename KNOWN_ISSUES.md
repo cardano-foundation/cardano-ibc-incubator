@@ -110,7 +110,7 @@ Adding another counterparty requires compatible host wiring, allowed query paths
 
 ### Client Upgrade
 
-The Aiken Tendermint client hosted on Cardano now has a proof-backed upgrade path for both client deployments. It requires a fresh deployment and further live-chain testing and security review. See [Tendermint client upgrades](docs/tendermint-client-upgrades.md) for its supported transitions and limits.
+The Aiken Tendermint client hosted on Cardano now has a proof-backed upgrade path for both client deployments. It requires a fresh deployment and further live-chain testing and security review.
 
 Standard IBC client-state upgrades through `MsgUpgradeClient` are not currently supported for the Cardano light client: both the [v8](cosmos/cardano-probabilistic-light-client-v8/upgrade.go) and [v10](cosmos/cardano-probabilistic-light-client-v10/upgrade.go) adapters reject `VerifyUpgradeAndUpdateState`.
 

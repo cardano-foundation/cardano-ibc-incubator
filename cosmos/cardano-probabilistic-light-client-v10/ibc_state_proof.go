@@ -29,7 +29,7 @@ import (
 //   - Non-empty leaves commit to both sha256(key) and sha256(value).
 //   - The key also determines the path:
 //     we derive a 64-bit path selector from the first 8 bytes of sha256(key).
-//   - The proof path is always 64 steps (fixed-depth binary tree).
+//   - The path has 64 tree steps and an optional initial collision bucket descriptor.
 //
 // Proof encoding:
 //   - Preferred: standard protobuf `MerkleProof` bytes (IBC / ICS-23).
@@ -168,8 +168,8 @@ func decodeExistenceProof(proofBytes []byte) (*ics23.ExistenceProof, error) {
 	// Preferred: standard protobuf MerkleProof bytes.
 	var mp commitmenttypes.MerkleProof
 	if err := mp.Unmarshal(proofBytes); err == nil {
-		if len(mp.Proofs) == 0 {
-			return nil, fmt.Errorf("empty merkle proof")
+		if len(mp.Proofs) != 1 {
+			return nil, fmt.Errorf("expected exactly one merkle proof")
 		}
 		exist := mp.Proofs[0].GetExist()
 		if exist == nil {
@@ -185,8 +185,8 @@ func decodeExistenceProof(proofBytes []byte) (*ics23.ExistenceProof, error) {
 func decodeNonExistenceProof(proofBytes []byte) (*ics23.NonExistenceProof, error) {
 	var mp commitmenttypes.MerkleProof
 	if err := mp.Unmarshal(proofBytes); err == nil {
-		if len(mp.Proofs) == 0 {
-			return nil, fmt.Errorf("empty merkle proof")
+		if len(mp.Proofs) != 1 {
+			return nil, fmt.Errorf("expected exactly one merkle proof")
 		}
 		nonexist := mp.Proofs[0].GetNonexist()
 		if nonexist == nil {

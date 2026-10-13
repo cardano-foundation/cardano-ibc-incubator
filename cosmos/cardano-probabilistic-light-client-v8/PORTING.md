@@ -21,8 +21,8 @@ This document assumes the target chain uses `ibc-go/v8`. The exact port still de
 
 ## Existing-Client Software Upgrades
 
-Follow the [software-upgrade compatibility contract](../../docs/probabilistic-client-software-upgrades.md)
-and [external upgrade fixtures](../../tests/probabilistic-upgrade/README.md).
+Use the [external upgrade fixtures](../../tests/probabilistic-upgrade/)
+to check compatibility.
 A compatible host binary replacement uses the original client stores and keeps
 connections, channels, escrow and voucher identities. This requires stable
 client/type identities, safe historical-state decoding and defined verifier-rule

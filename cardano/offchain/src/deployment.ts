@@ -1,3 +1,13 @@
+import { Buffer } from "node:buffer";
+import {
+  type BucketEntry,
+  bucketHash,
+  encodeBucket,
+  hash as commitmentHash,
+  keyHash as commitmentKeyHash,
+  needsBucketWitness,
+  sortBucket,
+} from "../../../packages/cardano-ibc-tx-builder-runtime/src/ibcStateCommitment.ts";
 import {
   assertEmergencyAuthority,
   type Authority,
@@ -167,18 +177,6 @@ const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
   return bytesToHex(new Uint8Array(digest));
 };
 
-const leafHash = async (keyHash: string, valueHex: string): Promise<string> => {
-  if (valueHex.length === 0) return EMPTY_HASH;
-  const valueHash = await sha256Hex(hexToBytes(valueHex));
-  return sha256Hex(
-    concatBytes(
-      new Uint8Array([0]),
-      hexToBytes(keyHash),
-      hexToBytes(valueHash),
-    ),
-  );
-};
-
 const innerHash = (left: string, right: string): Promise<string> => {
   if (left === EMPTY_HASH && right === EMPTY_HASH) {
     return Promise.resolve(EMPTY_HASH);
@@ -188,13 +186,12 @@ const innerHash = (left: string, right: string): Promise<string> => {
   );
 };
 
-const keyIndex64 = async (key: string): Promise<bigint> => {
-  const hash = await sha256Hex(new TextEncoder().encode(key));
-  return BigInt(`0x${hash.slice(0, 16)}`);
-};
+const keyIndex64 = (key: string): Promise<bigint> =>
+  Promise.resolve(commitmentKeyHash(key).readBigUInt64BE());
 
 export class DeploymentIbcTree {
   private leaves = new Map<string, string>();
+  private buckets = new Map<bigint, BucketEntry[]>();
   private root = EMPTY_HASH;
   private dirty = true;
   private nodesByHeight: Array<Map<bigint, string>> = [];
@@ -215,7 +212,17 @@ export class DeploymentIbcTree {
       throw new Error("Cannot remove absent tree leaf");
     }
     let index = await keyIndex64(key);
-    this.nodesByHeight[0].delete(index);
+    const digest = commitmentKeyHash(key);
+    const remaining = (this.buckets.get(index) ?? []).filter((entry) =>
+      !entry.keyHash.equals(digest)
+    );
+    if (remaining.length) {
+      this.buckets.set(index, remaining);
+      this.nodesByHeight[0].set(index, bucketHash(remaining).toString("hex"));
+    } else {
+      this.buckets.delete(index);
+      this.nodesByHeight[0].delete(index);
+    }
     for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
       const parent = index >> 1n;
       const value = await innerHash(
@@ -236,8 +243,12 @@ export class DeploymentIbcTree {
 
   async getSiblings(key: string): Promise<string[]> {
     await this.rebuildIfNeeded();
-    const siblings: string[] = [];
-    let index = await keyIndex64(key);
+    const digest = commitmentKeyHash(key);
+    let index = digest.readBigUInt64BE();
+    const bucket = this.buckets.get(index) ?? [];
+    const siblings: string[] = needsBucketWitness(bucket, digest)
+      ? [encodeBucket(bucket).toString("hex")]
+      : [];
 
     for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
       const siblingIndex = index ^ 1n;
@@ -256,15 +267,21 @@ export class DeploymentIbcTree {
       () => new Map<bigint, string>(),
     );
 
+    const buckets = new Map<bigint, BucketEntry[]>();
     for (const [key, value] of this.leaves.entries()) {
-      const keyHash = await sha256Hex(new TextEncoder().encode(key));
-      const path = BigInt(`0x${keyHash.slice(0, 16)}`);
-      if (nodesByHeight[0].has(path)) {
-        throw new Error("Ambiguous tree key path");
-      }
+      const digest = commitmentKeyHash(key);
+      const path = digest.readBigUInt64BE();
+      const bucket = buckets.get(path) ?? [];
+      bucket.push({
+        keyHash: digest,
+        valueHash: commitmentHash(Buffer.from(value, "hex")),
+      });
+      buckets.set(path, bucket);
+    }
+    for (const [path, bucket] of buckets) {
       nodesByHeight[0].set(
         path,
-        await leafHash(keyHash, value),
+        bucketHash(sortBucket(bucket)).toString("hex"),
       );
     }
 
@@ -285,6 +302,7 @@ export class DeploymentIbcTree {
       }
     }
 
+    this.buckets = buckets;
     this.nodesByHeight = nodesByHeight;
     this.root = nodesByHeight[MERKLE_DEPTH_BITS].get(0n) ?? EMPTY_HASH;
     this.dirty = false;

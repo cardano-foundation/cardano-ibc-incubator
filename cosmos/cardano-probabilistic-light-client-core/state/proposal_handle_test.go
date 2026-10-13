@@ -533,3 +533,19 @@ func makeRecoveryEpochContext(epoch, startSlot, endSlot uint64, seed byte) *Epoc
 		},
 	}
 }
+
+func TestRecoveryClearsOrphanedProofAndPacketHistory(t *testing.T) {
+	_, store := newProbabilisticTestClientStore(t, "recovery-orphans")
+	height := NewHeight(3, 100)
+	SetConsensusState(store, newProbabilisticTestCodec(), newProbabilisticTestConsensusState(testBlockHash("disputed")), height)
+	SetConsensusMetadataWithValues(store, height, NewHeight(1, 99), 123)
+	store.Set(packetSnapshotKey(101), []byte("rootless checkpoint"))
+	// Recovery must also handle records without an iteration entry.
+	store.Delete(IterationKey(height))
+	store.Set([]byte("unrelated"), []byte("preserved"))
+	require.NoError(t, clearRecoveryProofHistory(store))
+	for _, key := range [][]byte{consensusStateKey(height), ProcessedTimeKey(height), ProcessedHeightKey(height), packetSnapshotKey(101)} {
+		require.Nil(t, store.Get(key))
+	}
+	require.Equal(t, []byte("preserved"), store.Get([]byte("unrelated")))
+}
