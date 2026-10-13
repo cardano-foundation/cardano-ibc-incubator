@@ -20,6 +20,9 @@ var (
 func SetClientState(clientStore storetypes.KVStore, cdc StateCodec, clientState *ClientState) {
 	key := []byte("clientState")
 	val := cdc.EncodeClient(clientState)
+	if err := validateClientBytes(len(val)); err != nil {
+		panic(err)
+	}
 	clientStore.Set(key, val)
 }
 

@@ -2405,6 +2405,10 @@ export class QueryService {
         evidence.epochStakeDistribution,
         evidence.epochVerificationContext,
       );
+      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader);
+      if (capacityError) {
+        throw new GrpcFailedPreconditionException(`Exact challenge header exceeds the destination capacity: ${capacityError}`);
+      }
       if (ProbabilisticHeader.encode(stabilityHeader).finish().length > this.getStabilityCheckpointMaxHeaderBytes()) {
         throw new GrpcFailedPreconditionException('Exact challenge header exceeds the configured header-size limit');
       }
@@ -2464,7 +2468,8 @@ export class QueryService {
 
       const stabilityHeader = await this.buildStabilityHeader(stabilityEvidence, isCheckpoint);
       const encodedHeaderBytes = ProbabilisticHeader.encode(stabilityHeader).finish().length;
-      if (encodedHeaderBytes <= maxHeaderBytes) {
+      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader);
+      if (encodedHeaderBytes <= maxHeaderBytes && !capacityError) {
         if (isCheckpoint) {
           this.logger.log(
             `Returning rootless stability checkpoint ${trustedHeight.toString()} -> ${stabilityEvidence.anchorHeight.toString()} while catching up to ${targetHeight.toString()} (${encodedHeaderBytes} bytes)`,
@@ -2481,7 +2486,7 @@ export class QueryService {
         throw new GrpcFailedPreconditionException(
           gatewayGrpcError(
             GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED,
-            `Even the smallest stability update from height ${trustedHeight.toString()} is ${encodedHeaderBytes} bytes, above the configured ${maxHeaderBytes}-byte checkpoint limit`,
+            `Even the smallest stability update from height ${trustedHeight.toString()} cannot reserve challenge capacity: ${capacityError ?? `${encodedHeaderBytes} bytes exceeds the ${maxHeaderBytes}-byte checkpoint limit`}`,
             {
               trustedHeight: trustedHeight.toString(),
               targetHeight: targetHeight.toString(),
@@ -2494,7 +2499,10 @@ export class QueryService {
 
       const proportionalDistance = Math.max(
         1,
-        Math.floor((Number(candidateDistance) * maxHeaderBytes) / encodedHeaderBytes),
+        Math.min(
+          Math.floor((Number(candidateDistance) * maxHeaderBytes) / encodedHeaderBytes),
+          128 - stabilityHeader.descendant_blocks.length,
+        ),
       );
       candidateDistance = BigInt(Math.min(Number(candidateDistance - 1n), proportionalDistance));
     }
@@ -2584,15 +2592,29 @@ export class QueryService {
     if (!Number.isSafeInteger(value) || value < 0) {
       throw new GrpcInternalException('Invalid Cardano stability checkpoint bridge-block limit');
     }
-    return value;
+    return Math.min(value, 96);
   }
 
   private getStabilityCheckpointMaxHeaderBytes(): number {
-    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? 10 * 1024 * 1024;
+    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? 5 * 1024 * 1024 / 2;
     if (!Number.isSafeInteger(value) || value <= 0) {
       throw new GrpcInternalException('Invalid Cardano stability checkpoint header-size limit');
     }
-    return value;
+    return Math.min(value, 5 * 1024 * 1024 / 2);
+  }
+
+  private stabilityHeaderCapacityError(header: ProbabilisticHeader): string | undefined {
+    if (header.bridge_blocks.length > 96 || 1 + header.bridge_blocks.length + header.descendant_blocks.length > 128) {
+      return 'block count exceeds the challenge capacity bound';
+    }
+    if ((header.new_epoch_context?.stake_distribution.length ?? 0) > 4000) {
+      return 'stake table exceeds the challenge capacity bound';
+    }
+    const blocks = [...header.bridge_blocks, header.anchor_block!, ...header.descendant_blocks];
+    if (blocks.some((block) => block.block_cbor.length > 96 * 1024 || block.header_cbor.length > 1100)) {
+      return 'block witness exceeds the challenge capacity bound';
+    }
+    return undefined;
   }
 
   private isRecoverableCheckpointCandidateError(error: unknown): boolean {

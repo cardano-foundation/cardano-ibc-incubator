@@ -232,4 +232,37 @@ else
   fi
 fi
 
+# Match the execution and transport dependencies measured by the adapter's
+# destination tests. Upstream simapp otherwise keeps older SDK/CometBFT
+# patches and a Sonic version incompatible with the adapter's toolchain.
+# Only the local compatibility profiles use this dependency selection.
+if [ "${APP_KIND}" = "ibc-go-simapp" ]; then
+  PROFILE_GO_VERSION="$(awk '$1 == "go" { print $2; exit }' "${SOURCE_CLIENT_DIR}/go.mod")"
+  test -n "${PROFILE_GO_VERSION}"
+  (
+    cd "${CHAIN_DIR}"
+    set -- "-go=${PROFILE_GO_VERSION}"
+    for profile_dependency in \
+      cosmossdk.io/core \
+      cosmossdk.io/api \
+      cosmossdk.io/store \
+      cosmossdk.io/x/tx \
+      github.com/cosmos/cosmos-sdk \
+      github.com/cometbft/cometbft \
+      github.com/cosmos/cosmos-db \
+      github.com/cosmos/gogoproto \
+      github.com/fxamacker/cbor/v2 \
+      google.golang.org/grpc \
+      google.golang.org/protobuf \
+      github.com/bytedance/sonic \
+      github.com/bytedance/sonic/loader; do
+      profile_version="$(awk -v dependency="${profile_dependency}" '$1 == dependency { print $2; exit }' "${SOURCE_CLIENT_DIR}/go.mod")"
+      if [ -n "${profile_version}" ]; then
+        set -- "$@" "-require=${profile_dependency}@${profile_version}"
+      fi
+    done
+    GOWORK=off go mod edit "$@"
+  )
+fi
+
 echo "[cardano-light-client-patch] patched ${APP_KIND} local app with ${CLIENT_IMPORT}"

@@ -1,6 +1,7 @@
 package probabilistic
 
 import (
+	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
 	"time"
 
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
@@ -32,5 +33,11 @@ func (misbehaviour Misbehaviour) GetTime() time.Time {
 }
 
 func (misbehaviour Misbehaviour) ValidateBasic() error {
-	return adapterError(toCoreMisbehaviour(&misbehaviour).ValidateBasic(host.ClientIdentifierValidator))
+	if err := toCoreMisbehaviour(&misbehaviour).ValidateBasic(host.ClientIdentifierValidator); err != nil {
+		return adapterError(err)
+	}
+	if err := state.ValidateHeaderBytes(misbehaviour.ProbabilisticHeader1.Size()); err != nil {
+		return adapterError(err)
+	}
+	return adapterError(state.ValidateHeaderBytes(misbehaviour.ProbabilisticHeader2.Size()))
 }

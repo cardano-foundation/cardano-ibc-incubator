@@ -31,7 +31,7 @@ services:
       context: ../..
       dockerfile: chains/cosmos/Dockerfile
       args:
-        GO_IMAGE: golang:1.21-alpine3.18
+        GO_IMAGE: golang:1.26.5-alpine
         PROFILE: v8-classic
         IBC_GO_MAJOR: "8"
         IBC_GO_VERSION: 8.7.0
@@ -61,7 +61,7 @@ services:
       context: ../..
       dockerfile: chains/cosmos/Dockerfile
       args:
-        GO_IMAGE: golang:1.23.8-alpine
+        GO_IMAGE: golang:1.26.5-alpine
         PROFILE: v10-classic
         IBC_GO_MAJOR: "10"
         IBC_GO_VERSION: 10.2.0
@@ -90,7 +90,7 @@ services:
       context: ../..
       dockerfile: chains/cosmos/Dockerfile
       args:
-        GO_IMAGE: golang:1.23.8-alpine
+        GO_IMAGE: golang:1.26.5-alpine
         PROFILE: v10-v2
         IBC_GO_MAJOR: "10"
         IBC_GO_VERSION: 10.2.0

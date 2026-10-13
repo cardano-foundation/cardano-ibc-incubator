@@ -1,0 +1,16 @@
+[package]
+name = "challenge-capacity-relayer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ibc-relayer = { path = "../../relayer/crates/relayer" }
+ibc-relayer-types = { path = "../../relayer/crates/relayer-types" }
+ibc-proto = "0.51.0"
+prost = "0.13"
+serde_json = "1.0"
+tendermint-rpc = { version = "0.40.0", features = ["http-client"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tendermint = "0.40.0"
+sha2 = "0.10"

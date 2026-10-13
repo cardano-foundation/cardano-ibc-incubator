@@ -510,3 +510,11 @@ func TestAppMisbehaviourUsesSettledPrefixes(t *testing.T) {
 		})
 	}
 }
+
+// Register the same client route as the compatibility profile's simd.
+func registerCapacityClient(app *simapp.SimApp) {
+	RegisterInterfaces(app.InterfaceRegistry())
+	provider := clienttypes.NewStoreProvider(runtime.NewKVStoreService(app.GetKey(exported.StoreKey)))
+	module := NewLightClientModule(app.AppCodec(), provider)
+	app.IBCKeeper.ClientKeeper.AddRoute(ModuleName, &module)
+}

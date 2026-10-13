@@ -22,6 +22,9 @@ func coreMessage(msg exported.ClientMessage) any {
 }
 
 func (cs *ClientState) VerifyClientMessage(ctx sdk.Context, cdc codec.BinaryCodec, store storetypes.KVStore, msg exported.ClientMessage) error {
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
 	return adapterError(toCoreClientState(cs).VerifyClientMessage(coreContext(ctx), coreCodec{cdc}, store, coreMessage(msg)))
 }
 

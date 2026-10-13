@@ -13,6 +13,7 @@ const v10Dir = path.join(root, "cosmos/cardano-probabilistic-light-client-v10");
 
 const sharedSourceFiles = [
   "adapter_test.go",
+  "challenge_capacity_test.go",
   "client_state.go",
   "client_state_path_test.go",
   "codec.go",
@@ -492,7 +493,7 @@ const adapterLineBudgets = {
   "packet_state.go": 85,
   "errors.go": 30,
   "events.go": 110,
-  "header.go": 40,
+  "header.go": 44,
   "height.go": 90,
   "heuristic_policy.go": 20,
   "host_state_commitment.go": 10,
@@ -502,9 +503,9 @@ const adapterLineBudgets = {
   "internal/cardanodatum/types.go": 30,
   "keys.go": 20,
   "light_client_module.go": 185,
-  "misbehavour.go": 40,
+  "misbehavour.go": 50,
   "module.go": 60,
-  "state_machine.go": 60,
+  "state_machine.go": 65,
   "store.go": 100,
   "upgrade.go": 30
 };
