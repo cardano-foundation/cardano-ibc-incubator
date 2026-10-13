@@ -10,6 +10,7 @@ import (
 	"time"
 
 	storetypes "cosmossdk.io/store/types"
+	"github.com/blinklabs-io/gouroboros/cbor"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -399,6 +400,107 @@ func TestAppUnsignedStakeDisagreementDoesNotFreeze(t *testing.T) {
 			require.ErrorContains(t, err, "cannot replace an installed epoch context")
 			// Genuine incompatible signed histories still freeze through the same handler.
 			challenge, err = clienttypes.NewMsgSubmitMisbehaviour(clientID, NewMisbehaviour(clientID, original, fixture.Fork), signer)
+			require.NoError(t, err)
+			_, err = app.MsgServiceRouter().Handler(challenge)(ctx, challenge)
+			require.NoError(t, err)
+			frozen, found := getClientState(store, cdc)
+			require.True(t, found)
+			require.Equal(t, exported.Frozen, frozen.Status(ctx, store, cdc))
+		})
+	}
+}
+
+// All synthetic blocks contain the same authenticated empty body. Restore
+// that body when promoting a descendant to an anchor or bridge block.
+func nativeSettlementHeaderAtAnchor(t *testing.T, original *ProbabilisticHeader, height uint64) *ProbabilisticHeader {
+	t.Helper()
+	encoded, err := json.Marshal(original)
+	require.NoError(t, err)
+	var header ProbabilisticHeader
+	require.NoError(t, json.Unmarshal(encoded, &header))
+	var fields []cbor.RawMessage
+	_, err = cbor.Decode(header.AnchorBlock.BlockCbor, &fields)
+	require.NoError(t, err)
+	blocks := append([]*ProbabilisticBlock{header.AnchorBlock}, header.DescendantBlocks...)
+	header.BridgeBlocks, header.DescendantBlocks = nil, nil
+	for _, block := range blocks {
+		if block.Height.RevisionHeight <= height {
+			if len(block.HeaderCbor) > 0 {
+				fields[0] = block.HeaderCbor
+				block.BlockCbor, err = cbor.Encode(fields)
+				require.NoError(t, err)
+				block.HeaderCbor = nil
+			}
+			if block.Height.RevisionHeight == height {
+				header.AnchorBlock = block
+			} else {
+				header.BridgeBlocks = append(header.BridgeBlocks, block)
+			}
+		} else {
+			header.DescendantBlocks = append(header.DescendantBlocks, block)
+		}
+	}
+	return &header
+}
+
+func TestAppMisbehaviourUsesSettledPrefixes(t *testing.T) {
+	for _, height := range []uint64{12, 13} {
+		t.Run(NewHeight(0, height).String(), func(t *testing.T) {
+			data, err := os.ReadFile("../cardano-probabilistic-light-client-core/testdata/native-settlement.json")
+			require.NoError(t, err)
+			var fixture struct {
+				Client       *ClientState
+				Consensus    *ConsensusState
+				Header, Fork *ProbabilisticHeader
+				TailFork     *ProbabilisticHeader `json:"tail_fork"`
+			}
+			require.NoError(t, json.Unmarshal(data, &fixture))
+			clientID := ModuleName + "-0"
+			app := simapp.Setup(t, false)
+			t.Cleanup(func() { require.NoError(t, app.Close()) })
+			RegisterInterfaces(app.InterfaceRegistry())
+			ctx := app.NewContextLegacy(false, cmtproto.Header{
+				ChainID: "settled-prefix-test-1", Height: 100,
+				Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp)),
+			})
+			cdc := app.AppCodec()
+			provider := clienttypes.NewStoreProvider(runtime.NewKVStoreService(app.GetKey(exported.StoreKey)))
+			module := NewLightClientModule(cdc, provider)
+			app.IBCKeeper.ClientKeeper.AddRoute(ModuleName, &module)
+			store := provider.ClientStore(ctx, clientID)
+			params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
+			params.AllowedClients = append(params.AllowedClients, ModuleName)
+			app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
+			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
+
+			later := nativeSettlementHeaderAtAnchor(t, fixture.TailFork, height)
+			// Both observations pass native cryptography, body authentication
+			// and the actual settlement policy before comparing their claims.
+			for _, header := range []*ProbabilisticHeader{fixture.Header, later} {
+				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, header))
+			}
+			signer := sdk.AccAddress(bytes.Repeat([]byte{9}, 20)).String()
+			challenge, err := clienttypes.NewMsgSubmitMisbehaviour(clientID, NewMisbehaviour(clientID, later, fixture.Header), signer)
+			require.NoError(t, err)
+			_, err = app.MsgServiceRouter().Handler(challenge)(ctx, challenge)
+			require.ErrorContains(t, err, "probabilistic headers do not conflict")
+			healthy, found := getClientState(store, cdc)
+			require.True(t, found)
+			require.Equal(t, exported.Active, healthy.Status(ctx, store, cdc))
+			// The rejected challenge must leave normal checkpoint progress working.
+			update, err := clienttypes.NewMsgUpdateClient(clientID, later, signer)
+			require.NoError(t, err)
+			_, err = app.MsgServiceRouter().Handler(update)(ctx, update)
+			require.NoError(t, err)
+			healthy, found = getClientState(store, cdc)
+			require.True(t, found)
+			require.Equal(t, height, healthy.LatestCheckpointHeight.RevisionHeight)
+			require.Equal(t, exported.Active, healthy.Status(ctx, store, cdc))
+
+			// A real conflict at the earlier settled anchor still freezes,
+			// including historical verification after the checkpoint advanced.
+			laterFork := nativeSettlementHeaderAtAnchor(t, fixture.Fork, height)
+			challenge, err = clienttypes.NewMsgSubmitMisbehaviour(clientID, NewMisbehaviour(clientID, laterFork, fixture.Header), signer)
 			require.NoError(t, err)
 			_, err = app.MsgServiceRouter().Handler(challenge)(ctx, challenge)
 			require.NoError(t, err)
