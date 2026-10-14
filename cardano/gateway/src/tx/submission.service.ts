@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Network } from '@lucid-evolution/lucid';
+import { isPublicCardanoNetwork } from '../config/constant.config';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '../exception/grpc_exceptions';
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
@@ -653,10 +654,20 @@ export class SubmissionService {
     return Number.isFinite(value) ? value : null;
   }
 
+  // Public testnets can go minutes without a block. Keep observing a submitted
+  // transaction longer than its validity window so inclusion is never mistaken
+  // for a failed submission just because history has not caught up yet.
+  private historyIndexingTimeoutMs(): number {
+    return isPublicCardanoNetwork(this.configService.get<string>('cardanoNetwork')) ? 10 * 60_000 : 180_000;
+  }
+
   /**
    * Wait for the submitted transaction to be indexed by the configured history backend.
    */
-  private async waitForIndexedConfirmation(txHash: string, timeoutMs: number = 180000): Promise<number> {
+  private async waitForIndexedConfirmation(
+    txHash: string,
+    timeoutMs: number = this.historyIndexingTimeoutMs(),
+  ): Promise<number> {
     const startTime = Date.now();
     const pollInterval = 2000; // 2 seconds
 
@@ -679,7 +690,7 @@ export class SubmissionService {
 
   private async waitForIndexedTransactionEvidence(
     txHash: string,
-    timeoutMs: number = 180000,
+    timeoutMs: number = this.historyIndexingTimeoutMs(),
   ): Promise<HistoryTxEvidence> {
     const startTime = Date.now();
     const pollInterval = 2000;

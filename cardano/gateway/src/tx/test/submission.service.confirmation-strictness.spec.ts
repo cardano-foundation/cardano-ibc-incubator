@@ -61,6 +61,14 @@ describe('SubmissionService confirmation strictness regressions', () => {
     );
   });
 
+  it('waits through public-network block gaps before treating indexing as timed out', () => {
+    const config = (service as any).configService;
+    config.get.mockReturnValueOnce('Preview');
+    expect((service as any).historyIndexingTimeoutMs()).toBe(10 * 60_000);
+    config.get.mockReturnValueOnce('Custom');
+    expect((service as any).historyIndexingTimeoutMs()).toBe(180_000);
+  });
+
   it('fails hard when history indexing confirmation times out', async () => {
     await expect((service as any).waitForIndexedConfirmation('tx-timeout', 0)).rejects.toThrow(
       'history indexing timeout',

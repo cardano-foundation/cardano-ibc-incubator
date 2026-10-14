@@ -15,7 +15,7 @@ import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
 import type { TraceRegistryInsertContext } from 'src/query/services/denom-trace.service';
 import { createUnsignedSendPacketEscrowTx } from '@cardano-ibc/tx-builder-runtime/sendPacketEscrow';
 import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
-import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '../../../config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, transactionTimeToLive } from '../../../config/constant.config';
 import { decodeHostStateDatum, encodeHostStateDatum, HostStateDatum } from '../../types/host-state-datum';
 import {
   GrpcInternalException,
@@ -2866,12 +2866,12 @@ export class LucidService implements OnModuleInit {
       const { validFromTime, validToTime } = await computeLedgerAnchoredValidityWindow(
         ogmiosEndpoint,
         slotConfig,
-        TRANSACTION_TIME_TO_LIVE,
+        transactionTimeToLive(cardanoNetwork),
       );
       tx.validFrom(validFromTime);
       tx.validTo(validToTime);
     } else {
-      tx.validTo(Date.now() + TRANSACTION_TIME_TO_LIVE);
+      tx.validTo(Date.now() + transactionTimeToLive(cardanoNetwork));
     }
 
     // Keep the rollover sizing probe aligned with the real tx runner. Using
