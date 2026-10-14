@@ -267,7 +267,12 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
       },
     }
 
-  let channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
+  let channel_redeemer =
+    ChanCloseConfirm {
+      proof_init,
+      proof_height,
+      counterparty_upgrade_sequence: 0,
+    }
   let module_redeemer =
     Callback(OnChanCloseConfirm { channel_id: mock.channel_id })
   let host_redeemer = UpdateChannel { channel_siblings: siblings }
@@ -498,7 +503,11 @@ test transfer_close_confirm_rejects_invalid_proof() fail {
   let invalid =
     with_channel_redeemer(
       f,
-      ChanCloseConfirm { proof_init: invalid_proof, proof_height: height },
+      ChanCloseConfirm {
+        proof_init: invalid_proof,
+        proof_height: height,
+        counterparty_upgrade_sequence: 0,
+      },
     )
   let tx =
     Transaction {
@@ -580,7 +589,7 @@ test transfer_close_confirm_rejects_close_init_redeemer() fail {
 
 test transfer_close_confirm_rejects_open_confirm_redeemer() fail {
   let f = fixture(Closed)
-  expect ChanCloseConfirm { proof_init, proof_height } = f.channel_redeemer
+  expect ChanCloseConfirm { proof_init, proof_height, .. } = f.channel_redeemer
   check_module(
     with_channel_redeemer(
       f,

@@ -2671,7 +2671,12 @@ test chan_close_confirm_succeed() {
 
   let proof_height = Height { revision_number: 1, revision_height: 13 }
 
-  let spend_channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
+  let spend_channel_redeemer =
+    ChanCloseConfirm {
+      proof_init,
+      proof_height,
+      counterparty_upgrade_sequence: 0,
+    }
 
   spending_channel.spend_channel.spend(
     #"",

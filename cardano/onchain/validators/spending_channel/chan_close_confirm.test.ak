@@ -34,6 +34,18 @@ use spending_channel/chan_close_confirm
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
 fn check_chan_close_confirm(module_redeemer: Redeemer, mint: Value) {
+  check_close_confirm_sequences(module_redeemer, mint, 0, 0, 0)
+}
+
+/// `claimed` is the redeemer's counterparty upgrade sequence and `proven` the
+/// one in the verified counterparty channel.
+fn check_close_confirm_sequences(
+  module_redeemer: Redeemer,
+  mint: Value,
+  own: Int,
+  claimed: Int,
+  proven: Int,
+) {
   let fake_data = setup()
 
   //========================arrange inputs=======================
@@ -47,7 +59,7 @@ fn check_chan_close_confirm(module_redeemer: Redeemer, mint: Value) {
       },
       connection_hops: [fake_data.connection_id],
       version: "fake version",
-      upgrade_sequence: 0,
+      upgrade_sequence: own,
     }
 
   let input_channel_datum =
@@ -121,7 +133,11 @@ fn check_chan_close_confirm(module_redeemer: Redeemer, mint: Value) {
   let proof_init = MerkleProof { proofs: [] }
 
   let spend_channel_redeemer: Redeemer =
-    ChanCloseConfirm { proof_init, proof_height }
+    ChanCloseConfirm {
+      proof_init,
+      proof_height,
+      counterparty_upgrade_sequence: claimed,
+    }
 
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
@@ -161,7 +177,7 @@ fn check_chan_close_confirm(module_redeemer: Redeemer, mint: Value) {
       counterparty: expected_counterparty,
       connection_hops: counterparty_hops,
       version: output_channel_datum.state.channel.version,
-      upgrade_sequence: 0,
+      upgrade_sequence: proven,
     }
 
   let channel_bz =
@@ -244,6 +260,30 @@ test chan_close_confirm_rejects_open_confirm_callback() fail {
   check_chan_close_confirm(
     module_redeemer,
     assets.from_asset(fake_data.chan_close_confirm_policy_id, "", 1),
+  )
+}
+
+// A cancelled counterparty upgrade leaves the two ends at different
+// sequences, so the relayer supplies the counterparty's.
+test chan_close_confirm_accepts_counterparty_upgrade_sequence() {
+  let fake_data = setup()
+  check_close_confirm_sequences(
+    Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id }),
+    assets.from_asset(fake_data.chan_close_confirm_policy_id, "", 1),
+    1,
+    2,
+    2,
+  )
+}
+
+test chan_close_confirm_rejects_unproven_counterparty_upgrade_sequence() fail {
+  let fake_data = setup()
+  check_close_confirm_sequences(
+    Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id }),
+    assets.from_asset(fake_data.chan_close_confirm_policy_id, "", 1),
+    1,
+    2,
+    1,
   )
 }
 

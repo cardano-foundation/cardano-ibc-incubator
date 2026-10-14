@@ -2734,6 +2734,7 @@ fn check_timeout_packet_mint_voucher(use_timeout_on_close: Bool) {
         proof_close: mock.proof,
         proof_height: mock.proof_height,
         next_sequence_recv: 1,
+        counterparty_upgrade_sequence: 0,
       }
     } else {
       TimeoutPacket {

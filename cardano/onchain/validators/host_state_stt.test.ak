@@ -3205,6 +3205,7 @@ test host_handle_packet_accepts_timeout_on_already_closed_channel() {
         proof_close: empty_proof(),
         proof_height: test_height(1),
         next_sequence_recv: 1,
+        counterparty_upgrade_sequence: 0,
       },
       test_channel_input_full(input_channel_datum),
       [test_host_input(old_state), test_channel_input_full(input_channel_datum)],

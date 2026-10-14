@@ -50,6 +50,26 @@ fn check_timeout_unordered_packet(
   callback_packet_matches: Bool,
   use_timeout_on_close: Bool,
 ) {
+  check_timeout_unordered_packet_sequences(
+    use_escrow_shard,
+    include_callback,
+    callback_packet_matches,
+    use_timeout_on_close,
+    0,
+    0,
+  )
+}
+
+/// `claimed` is the redeemer's counterparty upgrade sequence and `proven` the
+/// one in the verified closed counterparty channel.
+fn check_timeout_unordered_packet_sequences(
+  use_escrow_shard: Bool,
+  include_callback: Bool,
+  callback_packet_matches: Bool,
+  use_timeout_on_close: Bool,
+  claimed: Int,
+  proven: Int,
+) {
   let mock_data = setup()
 
   let pack_timeout_height =
@@ -296,6 +316,7 @@ fn check_timeout_unordered_packet(
         proof_close,
         proof_height,
         next_sequence_recv: 0,
+        counterparty_upgrade_sequence: claimed,
       }
     } else {
       TimeoutPacket {
@@ -366,7 +387,7 @@ fn check_timeout_unordered_packet(
             },
             connection_hops: [connection_datum.state.counterparty.connection_id],
             version: input_channel_datum.state.channel.version,
-            upgrade_sequence: 0,
+            upgrade_sequence: proven,
           }
         let close_membership =
           VerifyMembershipParams {
@@ -460,6 +481,16 @@ test succeed_timeout_unordered_packet() {
 
 test succeed_timeout_on_close_unordered_future_packet() {
   check_timeout_unordered_packet(False, True, True, True)
+}
+
+// The closed counterparty may sit at a later sequence after a cancelled
+// upgrade, which the relayer supplies.
+test timeout_on_close_accepts_counterparty_upgrade_sequence() {
+  check_timeout_unordered_packet_sequences(False, True, True, True, 3, 3)
+}
+
+test timeout_on_close_rejects_unproven_counterparty_upgrade_sequence() fail {
+  check_timeout_unordered_packet_sequences(False, True, True, True, 3, 0)
 }
 
 test timeout_packet_accepts_registered_escrow_shard_callback() {
@@ -794,6 +825,7 @@ test timeout_on_close_recovers_second_future_packet_from_closed_ordered_channel(
       proof_close,
       proof_height,
       next_sequence_recv,
+      counterparty_upgrade_sequence: 0,
     }
 
   let channel_id =

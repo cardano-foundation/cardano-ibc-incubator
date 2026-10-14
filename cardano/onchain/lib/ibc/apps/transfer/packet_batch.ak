@@ -114,6 +114,8 @@ pub type BatchOperation {
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
     proof_close: MerkleProof,
+    // The upgrade sequence of the proven closed counterparty channel.
+    counterparty_upgrade_sequence: Int,
   }
   RetireLanes
 }
@@ -453,7 +455,7 @@ pub fn validate_settlement(
   let expected_proof =
     if timeout {
       when op is {
-        TimeoutOnClose { proof_close, .. } -> {
+        TimeoutOnClose { proof_close, counterparty_upgrade_sequence, .. } -> {
           let expected_channel =
             Channel {
               state: Closed,
@@ -464,8 +466,7 @@ pub fn validate_settlement(
               },
               connection_hops: [connection.state.counterparty.connection_id],
               version: channel.state.channel.version,
-              // Both ends keep the sequence of their last completed upgrade.
-              upgrade_sequence: channel.state.channel.upgrade_sequence,
+              upgrade_sequence: counterparty_upgrade_sequence,
             }
           let membership =
             VerifyMembershipParams {
