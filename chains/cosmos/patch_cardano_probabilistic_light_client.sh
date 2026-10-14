@@ -252,13 +252,26 @@ if [ "${APP_KIND}" = "ibc-go-simapp" ]; then
     for profile_dependency in \
       cosmossdk.io/core \
       cosmossdk.io/api \
+      cosmossdk.io/math \
       cosmossdk.io/store \
       cosmossdk.io/x/tx \
+      github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream \
+      github.com/aws/aws-sdk-go-v2/service/s3 \
       github.com/cosmos/cosmos-sdk \
       github.com/cometbft/cometbft \
       github.com/cosmos/cosmos-db \
       github.com/cosmos/gogoproto \
+      github.com/ethereum/go-ethereum \
       github.com/fxamacker/cbor/v2 \
+      github.com/hashicorp/go-getter \
+      github.com/klauspost/compress \
+      github.com/ulikunitz/xz \
+      go.opentelemetry.io/otel \
+      go.opentelemetry.io/otel/metric \
+      go.opentelemetry.io/otel/sdk \
+      go.opentelemetry.io/otel/sdk/metric \
+      go.opentelemetry.io/otel/trace \
+      golang.org/x/net \
       google.golang.org/grpc \
       google.golang.org/protobuf \
       github.com/bytedance/sonic \

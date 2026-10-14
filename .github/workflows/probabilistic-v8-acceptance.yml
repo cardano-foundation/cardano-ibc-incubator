@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version-file: cosmos/cardano-probabilistic-light-client-core/go.mod
           cache-dependency-path: cosmos/cardano-probabilistic-light-client-core/go.sum
       - name: Check adapter parity
         run: node scripts/ci/check-light-client-parity.mjs
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version-file: cosmos/cardano-probabilistic-light-client-v8/go.mod
           cache-dependency-path: cosmos/cardano-probabilistic-light-client-v8/go.sum
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
