@@ -32,6 +32,9 @@ type DeploymentSpendChannelValidator = DeploymentValidator & {
         prune_packet_history: DeploymentRefValidator;
         send_packet: DeploymentRefValidator;
         timeout_packet: DeploymentRefValidator;
+        chan_upgrade?: DeploymentRefValidator;
+        chan_upgrade_handshake?: DeploymentRefValidator;
+        chan_upgrade_finish?: DeploymentRefValidator;
     };
 };
 type DeploymentModule = {
@@ -198,6 +201,27 @@ type BridgeManifest = {
                     };
                 };
                 timeout_packet: {
+                    script_hash: string;
+                    ref_utxo: {
+                        tx_hash: string;
+                        output_index: number;
+                    };
+                };
+                chan_upgrade?: {
+                    script_hash: string;
+                    ref_utxo: {
+                        tx_hash: string;
+                        output_index: number;
+                    };
+                };
+                chan_upgrade_handshake?: {
+                    script_hash: string;
+                    ref_utxo: {
+                        tx_hash: string;
+                        output_index: number;
+                    };
+                };
+                chan_upgrade_finish?: {
                     script_hash: string;
                     ref_utxo: {
                         tx_hash: string;

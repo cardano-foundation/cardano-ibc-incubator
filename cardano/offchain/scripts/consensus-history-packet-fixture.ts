@@ -134,6 +134,7 @@ export async function historyPacketFixture(
     record(fromText("transfer"), fromText("channel-0")),
     [fromText("connection-0")],
     fromText("ics20-1"),
+    0n,
   );
   const initialChannel = record(
     record(
@@ -146,6 +147,7 @@ export async function historyPacketFixture(
       new Map(),
       h(0n),
       h(0n),
+      new Constr(0, [new Constr(1, []), new Constr(1, []), 0n]),
     ),
     fromText("transfer"),
     channelToken,

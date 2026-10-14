@@ -25,6 +25,7 @@ export function smokeManifest() {
   validators.spend_channel.ref_validator = Object.fromEntries([
     'acknowledge_packet', 'chan_close_confirm', 'chan_close_init', 'chan_open_ack',
     'chan_open_confirm', 'recv_packet', 'prune_packet_history', 'send_packet', 'timeout_packet',
+    'chan_upgrade', 'chan_upgrade_handshake', 'chan_upgrade_finish',
   ].map(name => [name, validator()]));
   const packet_state = {
     format: 'packet-lanes-v1', lane_count: 16,

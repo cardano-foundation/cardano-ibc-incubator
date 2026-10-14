@@ -109,6 +109,9 @@ message BridgeManifestSpendChannelRefValidators {
   BridgeManifestReferredValidator send_packet = 7;
   BridgeManifestReferredValidator timeout_packet = 8;
   BridgeManifestReferredValidator prune_packet_history = 9;
+  BridgeManifestReferredValidator chan_upgrade = 10;
+  BridgeManifestReferredValidator chan_upgrade_handshake = 11;
+  BridgeManifestReferredValidator chan_upgrade_finish = 12;
 }
 
 message BridgeManifestSpendChannelValidator {

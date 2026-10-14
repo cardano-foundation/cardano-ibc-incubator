@@ -428,6 +428,7 @@ export async function deploymentScenario() {
           record(fromText("remote"), ""),
           [fromText(connectionId)],
           fromText("ics20-1"),
+          0n,
         );
         const key = `channelEnds/ports/mock/channels/${channelId}`;
         const channel_siblings = await tree.getSiblings(key);
@@ -461,6 +462,7 @@ export async function deploymentScenario() {
             new Map(),
             record(0n, 0n),
             record(0n, 0n),
+            new Constr(0, [new Constr(1, []), new Constr(1, []), 0n]),
           ),
           fromText("mock"),
           record(channelNft.policy_id, channelNft.name),

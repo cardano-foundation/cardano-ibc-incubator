@@ -345,6 +345,7 @@ export async function shutdownFixture(
       record(fromText("transfer"), fromText("channel-0")),
       [fromText("connection-0")],
       fromText("ics20-1"),
+      0n,
     ),
     BigInt(shape.settledPackets + 1),
     1n,
@@ -364,6 +365,7 @@ export async function shutdownFixture(
     ),
     record(0n, 0n),
     record(0n, 0n),
+    new Constr(0, [new Constr(1, []), new Constr(1, []), 0n]),
   );
   const channel = seed(
     spendChannel.address,

@@ -77,6 +77,10 @@ type DeploymentSpendChannelValidator = DeploymentValidator & {
     prune_packet_history: DeploymentRefValidator;
     send_packet: DeploymentRefValidator;
     timeout_packet: DeploymentRefValidator;
+    // Channel upgrades are not built by this runtime.
+    chan_upgrade?: DeploymentRefValidator;
+    chan_upgrade_handshake?: DeploymentRefValidator;
+    chan_upgrade_finish?: DeploymentRefValidator;
   };
 };
 
@@ -201,6 +205,18 @@ type BridgeManifest = {
           ref_utxo: { tx_hash: string; output_index: number };
         };
         timeout_packet: {
+          script_hash: string;
+          ref_utxo: { tx_hash: string; output_index: number };
+        };
+        chan_upgrade?: {
+          script_hash: string;
+          ref_utxo: { tx_hash: string; output_index: number };
+        };
+        chan_upgrade_handshake?: {
+          script_hash: string;
+          ref_utxo: { tx_hash: string; output_index: number };
+        };
+        chan_upgrade_finish?: {
           script_hash: string;
           ref_utxo: { tx_hash: string; output_index: number };
         };
@@ -535,6 +551,14 @@ export function normalizeBridgeManifest(manifest: BridgeManifest): {
               scriptHash: manifest.validators.spend_channel.ref_validator.timeout_packet.script_hash,
               refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.timeout_packet.ref_utxo),
             },
+            ...Object.fromEntries(
+              (['chan_upgrade', 'chan_upgrade_handshake', 'chan_upgrade_finish'] as const).flatMap((name) => {
+                const validator = manifest.validators.spend_channel.ref_validator[name];
+                return validator
+                  ? [[name, { scriptHash: validator.script_hash, refUtxo: mapRefUtxo(validator.ref_utxo) }]]
+                  : [];
+              }),
+            ),
           },
         },
         ...(manifest.validators.spend_trace_registry

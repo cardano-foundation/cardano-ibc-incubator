@@ -535,6 +535,7 @@ export async function channelFixture(
       ),
       [fromText(CONNECTION)],
       fromText(VERSION),
+      0n,
     );
   const channelDatum = (state: number) =>
     record(
@@ -548,6 +549,8 @@ export async function channelFixture(
         new Map(),
         ZERO_HEIGHT,
         ZERO_HEIGHT,
+        // No upgrade has started.
+        record(variant(1), variant(1), 0n),
       ),
       fromText(PORT),
       channelToken,
@@ -687,7 +690,8 @@ export async function channelFixture(
       ? variant(1, membership.proof, HEIGHT)
       : action.name === "ChanCloseInit"
       ? variant(6)
-      : variant(7, membership.proof, HEIGHT);
+      // The closed counterparty never upgraded.
+      : variant(7, membership.proof, HEIGHT, 0n);
     const operation = channelScripts.referredScripts[action.policy];
     tx = tx.readFrom([
       reference(channelScripts.base.script),
