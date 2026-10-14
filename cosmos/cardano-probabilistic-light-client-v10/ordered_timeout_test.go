@@ -33,7 +33,7 @@ func TestOrderedTimeoutWithCardanoNextSequenceRecv(t *testing.T) {
 			key := storetypes.NewKVStoreKey("ibc")
 			testContext := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient"))
 			t.Cleanup(func() { require.NoError(t, testContext.DB.Close()) })
-			ctx := testContext.Ctx.WithChainID("cosmos-1").WithBlockHeight(100).WithBlockTime(time.Unix(1_700_000_000, 0))
+			ctx := withTestHostProgress(testContext.Ctx).WithChainID("cosmos-1").WithBlockHeight(100).WithBlockTime(time.Unix(1_700_000_000, 0))
 			cdc := newProbabilisticTestCodec()
 			storeService := runtime.NewKVStoreService(key)
 
@@ -46,7 +46,7 @@ func TestOrderedTimeoutWithCardanoNextSequenceRecv(t *testing.T) {
 			consensus.IbcStateRoot = nextSequenceRecvHex(t, vector.Root)
 			setTestPacketSnapshot(t, consensus, 10)
 			require.NoError(t, client.Initialize(ctx, cdc, clients.ClientStore(ctx, clientID), consensus))
-			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(EpochContextChallengePeriod))
+			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(EpochContextChallengePeriod + 2*time.Nanosecond))
 
 			connections := connectionkeeper.NewKeeper(cdc, storeService, nil, clients)
 			connections.SetParams(ctx, connectiontypes.DefaultParams())

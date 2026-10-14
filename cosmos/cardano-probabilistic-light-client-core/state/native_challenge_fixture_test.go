@@ -164,7 +164,7 @@ func TestNativeChallengeFixture(t *testing.T) {
 	ctx.Time = time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp))
 	require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
 	fixture.Client, _ = GetClientState(store, cdc)
-	ctx.Time = ctx.Time.Add(3 * time.Minute)
+	ctx.Time = ctx.Time.Add(3*time.Minute + 2*time.Nanosecond)
 	for _, header := range []*ProbabilisticHeader{fixture.Header, fixture.Fork} {
 		require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, header))
 	}

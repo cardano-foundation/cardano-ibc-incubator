@@ -24,6 +24,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
+	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
 )
 
 func newProbabilisticTestCodec() codec.BinaryCodec {
@@ -48,7 +49,7 @@ func newProbabilisticTestClientStore(t *testing.T, keyName string) (sdk.Context,
 		Time:    time.Unix(1_700_000_000, 0),
 	}, false, log.NewNopLogger())
 
-	return ctx, stateStore.GetKVStore(key)
+	return withTestHostProgress(ctx), stateStore.GetKVStore(key)
 }
 
 func newProbabilisticTestClientState() *ClientState {
@@ -76,7 +77,7 @@ func newProbabilisticTestClientState() *ClientState {
 		EpochStakeDistribution:             cloneStakeDistributionEntries(epochStakeDistribution),
 		EpochNonce:                         bytes.Clone(epochNonce),
 		LatestCheckpointSettlementCredit:   &SettlementCreditState{Epoch: 7, Reference: []*PoolSettlementCredit{{PoolId: "pool-a", Numerator: []byte{1}, Denominator: []byte{1}}}},
-		LatestCheckpointPoolProduction: &PoolProductionHistory{Epoch: 7, Pools: []*PoolProductionRecord{{PoolId: "pool-a", CompletedEpochsBitmap: 1}}},
+		LatestCheckpointPoolProduction:     &PoolProductionHistory{Epoch: 7, Pools: []*PoolProductionRecord{{PoolId: "pool-a", CompletedEpochsBitmap: 1}}},
 		LatestCheckpointPoolRegistry:       testAdapterPoolRegistry(7, epochStakeDistribution),
 		LatestCheckpointNonceState:         &PraosNonceState{EpochNonce: bytes.Clone(epochNonce), EvolvingNonce: bytes.Repeat([]byte{0x41}, 32), CandidateNonce: bytes.Repeat([]byte{0x42}, 32), LastAppliedBlockNonce: bytes.Repeat([]byte{0x43}, 32), LastEpochBlockNonce: bytes.Repeat([]byte{0x44}, 32)},
 		RandomnessStabilisationWindowSlots: 10,
@@ -117,7 +118,7 @@ func newProbabilisticTestConsensusState(acceptedBlockHash string, heights ...uin
 		NonceState:          newProbabilisticTestClientState().LatestCheckpointNonceState,
 		PoolRegistry:        newProbabilisticTestClientState().LatestCheckpointPoolRegistry,
 		SettlementCredit:    newProbabilisticTestClientState().LatestCheckpointSettlementCredit,
-		PoolProduction: newProbabilisticTestClientState().LatestCheckpointPoolProduction,
+		PoolProduction:      newProbabilisticTestClientState().LatestCheckpointPoolProduction,
 		Timestamp:           uint64(time.Unix(1_700_000_000, 0).UnixNano()),
 		IbcStateRoot:        bytes.Repeat([]byte{0x11}, 32),
 		AcceptedBlockHash:   acceptedBlockHash,
@@ -336,4 +337,16 @@ func testAdapterPoolRegistry(epoch uint64, entries []*StakeDistributionEntry) *P
 		result.Effective = append(result.Effective, binding)
 	}
 	return result
+}
+
+// Unit tests advance a virtual uninterrupted clock. Live hosts use InstallHostLiveness.
+func withTestHostProgress(ctx sdk.Context) sdk.Context {
+	return ctx.WithValue(hostProgressContextKey{}, hostProgressProvider(func(current sdk.Context) *state.HostProgress {
+		return &state.HostProgress{Height: current.BlockHeight(), TimeUnixNs: uint64(current.BlockTime().UnixNano()), PreviousTimeUnixNs: uint64(current.BlockTime().UnixNano() - 1), ResumeUsableAfterUnixNs: 1}
+	}))
+}
+
+// Only explicitly trusted test genesis gets an elapsed host bootstrap window.
+func seedAcceptanceHostProgress(ctx sdk.Context, key *storetypes.KVStoreKey) {
+	ctx.KVStore(key).Set(hostProgressKey, encodeHostProgress(&state.HostProgress{Height: 0, TimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 1), PreviousTimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 2), ResumeUsableAfterUnixNs: 1}))
 }

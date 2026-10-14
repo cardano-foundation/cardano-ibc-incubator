@@ -25,8 +25,11 @@ pub(crate) async fn run(
     network: Option<&str>,
 ) -> Result<(), String> {
     let options = LightClientTestOptions::resolve(scenario, chain, network)?;
-    if scenario == LightClientTest::ChallengeRecovery {
-        return run_challenge_recovery(project_root_path, &options);
+    if matches!(
+        scenario,
+        LightClientTest::ChallengeRecovery | LightClientTest::DeadlineOrdering
+    ) {
+        return run_native_acceptance(project_root_path, &options);
     }
     if scenario == LightClientTest::SoftwareUpgrade {
         return run_software_upgrade(project_root_path, &options);
@@ -99,7 +102,9 @@ impl LightClientTestOptions {
         let network = network.unwrap_or("v8-classic");
         if matches!(
             scenario,
-            LightClientTest::ChallengeRecovery | LightClientTest::SoftwareUpgrade
+            LightClientTest::ChallengeRecovery
+                | LightClientTest::SoftwareUpgrade
+                | LightClientTest::DeadlineOrdering
         ) && network != "v8-classic"
         {
             return Err(
@@ -126,7 +131,9 @@ fn run_recover_client(
 ) -> Result<(), String> {
     match options.scenario {
         LightClientTest::RecoverClient => {}
-        LightClientTest::ChallengeRecovery | LightClientTest::SoftwareUpgrade => {
+        LightClientTest::ChallengeRecovery
+        | LightClientTest::SoftwareUpgrade
+        | LightClientTest::DeadlineOrdering => {
             unreachable!("dispatched before live route setup")
         }
     }
@@ -207,18 +214,27 @@ fn run_recover_client(
 
 // The acceptance binary owns an isolated host and watcher. It never takes over
 // the user's Hermes daemon or rewrites their Gateway configuration.
-fn run_challenge_recovery(
+fn run_native_acceptance(
     project_root: &Path,
     options: &LightClientTestOptions,
 ) -> Result<(), String> {
+    let deadlines = options.scenario == LightClientTest::DeadlineOrdering;
+    let scenario = if deadlines {
+        "deadline-ordering"
+    } else {
+        "challenge-recovery"
+    };
     let artifacts = project_root.join(".caribic/test-artifacts").join(format!(
-        "challenge-recovery-{}-{}",
+        "{scenario}-{}-{}",
         Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
         std::process::id()
     ));
     std::fs::create_dir_all(&artifacts)
         .map_err(|error| format!("Could not create acceptance artifacts: {error}"))?;
-    logger::log(&format!("Running {} challenge/recovery acceptance with real host deadlines. Allow about 10 minutes.", options.network));
+    logger::log(&format!(
+        "Running {} {scenario} acceptance with real host deadlines.",
+        options.network
+    ));
     logger::log(&format!(
         "Persistent host, watcher cursor and evidence: {}",
         artifacts.display()
@@ -228,25 +244,41 @@ fn run_challenge_recovery(
             "test",
             ".",
             "-run",
-            "^TestCaribicV8ChallengeRecovery$",
+            if deadlines {
+                "^TestCaribicV8DeadlineOrdering$"
+            } else {
+                "^TestCaribicV8ChallengeRecovery$"
+            },
             "-v",
             "-count=1",
             "-timeout=20m",
         ])
         .current_dir(project_root.join("cosmos/cardano-probabilistic-light-client-v8"))
-        .env("CARIBIC_V8_ACCEPTANCE", "1")
+        .arg(if deadlines {
+            "-parallel=5"
+        } else {
+            "-parallel=1"
+        })
+        .env(
+            if deadlines {
+                "CARIBIC_V8_DEADLINES"
+            } else {
+                "CARIBIC_V8_ACCEPTANCE"
+            },
+            "1",
+        )
         .env("CARIBIC_ACCEPTANCE_ARTIFACTS", &artifacts)
         .stdin(Stdio::null())
         .status()
         .map_err(|error| format!("Could not run local v8 acceptance: {error}"))?;
     if !status.success() {
         return Err(format!(
-            "Challenge/recovery acceptance failed ({status}). Evidence: {}",
+            "{scenario} acceptance failed ({status}). Evidence: {}",
             artifacts.display()
         ));
     }
     logger::log(&format!(
-        "PASS: challenge/recovery resumed authenticated packets. Evidence: {}",
+        "PASS: {scenario} acceptance. Evidence: {}",
         artifacts.display()
     ));
     Ok(())
@@ -487,6 +519,21 @@ mod tests {
         for profile in ["v10-classic", "v10-v2", "unknown"] {
             assert!(LightClientTestOptions::resolve(
                 LightClientTest::ChallengeRecovery,
+                None,
+                Some(profile)
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn deadline_ordering_accepts_only_the_local_v8_profile() {
+        assert!(
+            LightClientTestOptions::resolve(LightClientTest::DeadlineOrdering, None, None).is_ok()
+        );
+        for profile in ["v10-classic", "v10-v2", "unknown"] {
+            assert!(LightClientTestOptions::resolve(
+                LightClientTest::DeadlineOrdering,
                 None,
                 Some(profile)
             )

@@ -52,10 +52,13 @@ func (cs ClientState) verifyEpochUsable(ctx Context, epoch uint64) error {
 	if challenge == nil || challenge.UsableAfterUnixNs == 0 {
 		return errorsmod.Wrapf(ErrEpochContextPending, "epoch %d has no host-assigned challenge deadline", epoch)
 	}
-	if ctx.BlockTime().UnixNano() < 0 || uint64(ctx.BlockTime().UnixNano()) < challenge.UsableAfterUnixNs {
+	if ctx.BlockTime().UnixNano() < 0 || uint64(ctx.BlockTime().UnixNano()) <= challenge.UsableAfterUnixNs {
 		return errorsmod.Wrapf(ErrEpochContextPending, "epoch %d is pending until Unix nanoseconds %d", epoch, challenge.UsableAfterUnixNs)
 	}
-	return nil
+	if ctx.VerifyHostUsability == nil {
+		return errorsmod.Wrap(ErrEpochContextPending, "host continuity tracking is missing")
+	}
+	return ctx.VerifyHostUsability(ctx, challenge.UsableAfterUnixNs)
 }
 
 // resetEpochChallenges is used at bootstrap and authority-controlled recovery.

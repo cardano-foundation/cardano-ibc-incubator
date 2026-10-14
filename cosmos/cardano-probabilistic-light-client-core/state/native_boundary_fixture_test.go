@@ -238,7 +238,7 @@ func TestNativeBoundaryFixture(t *testing.T) {
 			ctx.Time = time.Unix(0, int64(max(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp, fixture.Fork.DescendantBlocks[len(fixture.Fork.DescendantBlocks)-1].Timestamp)))
 			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
 			fixture.Client, _ = GetClientState(store, cdc)
-			ctx.Time = ctx.Time.Add(3 * time.Minute)
+			ctx.Time = ctx.Time.Add(3*time.Minute + 2*time.Nanosecond)
 			if name == "combined" {
 				for _, evidence := range []*ProbabilisticHeader{fixture.Header, fixture.Fork} {
 					prefix := boundaryHeaderAtAnchor(t, evidence, 966, 984)
