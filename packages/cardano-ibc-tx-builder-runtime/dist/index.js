@@ -243,6 +243,12 @@ function normalizeBridgeManifest(manifest) {
                             scriptHash: manifest.validators.spend_channel.ref_validator.timeout_packet.script_hash,
                             refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.timeout_packet.ref_utxo),
                         },
+                        ...Object.fromEntries(['chan_upgrade', 'chan_upgrade_handshake', 'chan_upgrade_finish'].flatMap((name) => {
+                            const validator = manifest.validators.spend_channel.ref_validator[name];
+                            return validator
+                                ? [[name, { scriptHash: validator.script_hash, refUtxo: mapRefUtxo(validator.ref_utxo) }]]
+                                : [];
+                        })),
                     },
                 },
                 ...(manifest.validators.spend_trace_registry

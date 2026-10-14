@@ -195,9 +195,16 @@ export async function checkShutdownDrain(
       0n,
     );
     const channelState = record(
-      record(variant(3), variant(1), record(port, fromText("channel-7")), [
-        fromText("connection-0"),
-      ], fromText("ics20-1")),
+      record(
+        variant(3),
+        variant(1),
+        record(port, fromText("channel-7")),
+        [
+          fromText("connection-0"),
+        ],
+        fromText("ics20-1"),
+        0n,
+      ),
       1n,
       1n,
       1n,
@@ -206,6 +213,7 @@ export async function checkShutdownDrain(
       new Map(),
       record(0n, 0n),
       record(0n, 0n),
+      record(variant(1), variant(1), 0n),
     );
     const channelDatum = record(channelState, port, channelToken);
     const tree = new DeploymentIbcTree();

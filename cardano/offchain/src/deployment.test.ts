@@ -91,7 +91,7 @@ Deno.test("every deployed channel operation is a mint-only policy", async () => 
       benchmarkVoucherEnabled: false,
     },
   );
-  assertEquals(Object.keys(referredScripts).length, 9);
+  assertEquals(Object.keys(referredScripts).length, 12);
   for (const name of Object.keys(referredScripts)) {
     const prefix = `spending_channel/${name}.${name}`;
     assertEquals(

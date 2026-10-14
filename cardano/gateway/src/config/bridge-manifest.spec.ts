@@ -79,6 +79,15 @@ function buildHandlerJsonDeployment() {
           prune_packet_history: { scriptHash: 'prune-hash', refUtxo: { txHash: 'prune-tx', outputIndex: 10 } },
           send_packet: { scriptHash: 'send-hash', refUtxo: { txHash: 'send-tx', outputIndex: 8 } },
           timeout_packet: { scriptHash: 'timeout-hash', refUtxo: { txHash: 'timeout-tx', outputIndex: 9 } },
+          chan_upgrade: { scriptHash: 'upgrade-hash', refUtxo: { txHash: 'upgrade-tx', outputIndex: 11 } },
+          chan_upgrade_handshake: {
+            scriptHash: 'upgrade-handshake-hash',
+            refUtxo: { txHash: 'upgrade-handshake-tx', outputIndex: 12 },
+          },
+          chan_upgrade_finish: {
+            scriptHash: 'upgrade-finish-hash',
+            refUtxo: { txHash: 'upgrade-finish-tx', outputIndex: 13 },
+          },
         },
       },
       spendTraceRegistry: buildValidator('spendTraceRegistry'),

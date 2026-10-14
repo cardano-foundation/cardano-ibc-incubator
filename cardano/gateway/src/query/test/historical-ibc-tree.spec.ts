@@ -149,6 +149,9 @@ function migrationHandler() {
     'prune_packet_history',
     'send_packet',
     'timeout_packet',
+    'chan_upgrade',
+    'chan_upgrade_handshake',
+    'chan_upgrade_finish',
   ];
   return {
     packetState: {

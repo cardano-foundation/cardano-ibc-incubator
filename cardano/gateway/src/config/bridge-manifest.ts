@@ -37,6 +37,9 @@ type DeploymentSpendChannelValidator = DeploymentValidator & {
     prune_packet_history: DeploymentRefValidator;
     send_packet: DeploymentRefValidator;
     timeout_packet: DeploymentRefValidator;
+    chan_upgrade: DeploymentRefValidator;
+    chan_upgrade_handshake: DeploymentRefValidator;
+    chan_upgrade_finish: DeploymentRefValidator;
   };
 };
 
@@ -182,6 +185,9 @@ type BridgeManifestSpendChannelValidator = BridgeManifestValidator & {
     prune_packet_history: BridgeManifestRefValidator;
     send_packet: BridgeManifestRefValidator;
     timeout_packet: BridgeManifestRefValidator;
+    chan_upgrade: BridgeManifestRefValidator;
+    chan_upgrade_handshake: BridgeManifestRefValidator;
+    chan_upgrade_finish: BridgeManifestRefValidator;
   };
 };
 
@@ -430,6 +436,9 @@ function requireDeploymentSpendChannelValidator(value: unknown, path: string): D
       ),
       send_packet: requireDeploymentRefValidator(refValidator.send_packet, `${path}.refValidator.send_packet`),
       timeout_packet: requireDeploymentRefValidator(refValidator.timeout_packet, `${path}.refValidator.timeout_packet`),
+      chan_upgrade: requireDeploymentRefValidator(refValidator.chan_upgrade, `${path}.refValidator.chan_upgrade`),
+      chan_upgrade_handshake: requireDeploymentRefValidator(refValidator.chan_upgrade_handshake, `${path}.refValidator.chan_upgrade_handshake`),
+      chan_upgrade_finish: requireDeploymentRefValidator(refValidator.chan_upgrade_finish, `${path}.refValidator.chan_upgrade_finish`),
     },
   };
 }
@@ -465,6 +474,9 @@ function requireManifestSpendChannelValidator(value: unknown, path: string): Bri
       ),
       send_packet: requireManifestRefValidator(refValidator.send_packet, `${path}.ref_validator.send_packet`),
       timeout_packet: requireManifestRefValidator(refValidator.timeout_packet, `${path}.ref_validator.timeout_packet`),
+      chan_upgrade: requireManifestRefValidator(refValidator.chan_upgrade, `${path}.ref_validator.chan_upgrade`),
+      chan_upgrade_handshake: requireManifestRefValidator(refValidator.chan_upgrade_handshake, `${path}.ref_validator.chan_upgrade_handshake`),
+      chan_upgrade_finish: requireManifestRefValidator(refValidator.chan_upgrade_finish, `${path}.ref_validator.chan_upgrade_finish`),
     },
   };
 }
@@ -632,6 +644,9 @@ function deploymentSpendChannelToManifest(
       prune_packet_history: deploymentRefValidatorToManifest(validator.refValidator.prune_packet_history),
       send_packet: deploymentRefValidatorToManifest(validator.refValidator.send_packet),
       timeout_packet: deploymentRefValidatorToManifest(validator.refValidator.timeout_packet),
+      chan_upgrade: deploymentRefValidatorToManifest(validator.refValidator.chan_upgrade),
+      chan_upgrade_handshake: deploymentRefValidatorToManifest(validator.refValidator.chan_upgrade_handshake),
+      chan_upgrade_finish: deploymentRefValidatorToManifest(validator.refValidator.chan_upgrade_finish),
     },
   };
 }
@@ -651,6 +666,9 @@ function manifestSpendChannelToDeployment(
       prune_packet_history: manifestRefValidatorToDeployment(validator.ref_validator.prune_packet_history),
       send_packet: manifestRefValidatorToDeployment(validator.ref_validator.send_packet),
       timeout_packet: manifestRefValidatorToDeployment(validator.ref_validator.timeout_packet),
+      chan_upgrade: manifestRefValidatorToDeployment(validator.ref_validator.chan_upgrade),
+      chan_upgrade_handshake: manifestRefValidatorToDeployment(validator.ref_validator.chan_upgrade_handshake),
+      chan_upgrade_finish: manifestRefValidatorToDeployment(validator.ref_validator.chan_upgrade_finish),
     },
   };
 }
