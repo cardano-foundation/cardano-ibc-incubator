@@ -3,6 +3,7 @@ package probabilistic
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -137,10 +138,18 @@ func spareAddress(t *testing.T) string {
 // Run actual signed challenge transactions through a CometBFT validator and
 // the SDK gRPC service. The limits come from the destination setup script.
 func TestDestinationChallengeCapacity(t *testing.T) {
-	for _, name := range []string{"size", "count", "control", "limit", "combined"} {
+	for _, name := range []string{"size", "count", "control", "limit", "combined", "startup-restart"} {
 		t.Run(name, func(t *testing.T) {
-			f := capacityEvidence(t, name)
-			if name == "combined" {
+			startup := name == "startup-restart"
+			fixtureName := name
+			if startup {
+				if os.Getenv("STARTUP_MONITOR_PROBE") == "" {
+					t.Skip("STARTUP_MONITOR_PROBE is required for the Hermes restart regression")
+				}
+				fixtureName = "combined"
+			}
+			f := capacityEvidence(t, fixtureName)
+			if fixtureName == "combined" {
 				// Simulate an omitted future pool set. The independently
 				// authenticated challenger carries the complete 4,000 rows.
 				f.Header.NewEpochContext.StakeDistribution = fromCoreEpochContext(toCoreEpochContext(f.Header.NewEpochContext)).StakeDistribution[:13]
@@ -176,15 +185,24 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 			cfg.Mempool.MaxTxBytes = int(maxTx)
 			cfg.RPC.MaxBodyBytes = profileInteger(t, string(profile), "RPC_MAX_BODY_BYTES")
 			cfg.Consensus.TimeoutCommit = 200 * time.Millisecond
-			cfg.Consensus.CreateEmptyBlocks = false
+			cfg.Consensus.CreateEmptyBlocks = startup
 			cfg.Consensus.TimeoutPropose = time.Second
 			privVal := cmttypes.NewMockPV()
 			pubKey, err := privVal.GetPubKey()
 			require.NoError(t, err)
 			key := secp256k1.GenPrivKey()
 			account := authtypes.NewBaseAccount(sdk.AccAddress(key.PubKey().Address()), key.PubKey(), 0, 0)
-			app := simapp.NewSimApp(log.NewNopLogger(), dbm.NewMemDB(), nil, false, simtestutil.AppOptionsMap{flags.FlagHome: root, server.FlagInvCheckPeriod: uint(0)}, baseapp.SetChainID("challenge-capacity-1"))
-			registerCapacityClient(app)
+			openApp := func() *simapp.SimApp {
+				var db dbm.DB = dbm.NewMemDB()
+				if startup {
+					db, err = dbm.NewDB("application", dbm.PebbleDBBackend, filepath.Join(root, "data"))
+					require.NoError(t, err)
+				}
+				app := simapp.NewSimApp(log.NewNopLogger(), db, nil, false, simtestutil.AppOptionsMap{flags.FlagHome: root, server.FlagInvCheckPeriod: uint(0)}, baseapp.SetChainID("challenge-capacity-1"))
+				registerCapacityClient(app)
+				return app
+			}
+			app := openApp()
 			app.SetInitChainer(func(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
 				response, err := app.InitChainer(ctx, req)
 				if err != nil {
@@ -212,10 +230,31 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 			params.Block.MaxBytes = profileInteger(t, string(profile), "BLOCK_MAX_BYTES")
 			params.Block.MaxGas = maxGas
 			doc := &cmttypes.GenesisDoc{GenesisTime: time.Now(), ChainID: "challenge-capacity-1", ConsensusParams: params, AppState: appState, Validators: []cmttypes.GenesisValidator{{PubKey: pubKey, Power: 1}}}
-			n, err := node.NewNode(cfg, privVal, &p2p.NodeKey{PrivKey: cmted25519.GenPrivKey()}, proxy.NewLocalClientCreator(server.NewCometABCIWrapper(app)), func() (*cmttypes.GenesisDoc, error) { return doc, nil }, func(*cmtcfg.DBContext) (cmtdb.DB, error) { return cmtdb.NewMemDB(), nil }, node.DefaultMetricsProvider(cfg.Instrumentation), cmtlog.NewNopLogger())
-			require.NoError(t, err)
+			var indexDB cmtdb.DB
+			dbProvider := func(dbContext *cmtcfg.DBContext) (cmtdb.DB, error) {
+				if !startup {
+					return cmtdb.NewMemDB(), nil
+				}
+				db, err := cmtcfg.DefaultDBProvider(dbContext)
+				if dbContext.ID == "tx_index" {
+					indexDB = db
+				}
+				return db, err
+			}
+			openNode := func() *node.Node {
+				n, err := node.NewNode(cfg, privVal, &p2p.NodeKey{PrivKey: cmted25519.GenPrivKey()}, proxy.NewLocalClientCreator(server.NewCometABCIWrapper(app)), func() (*cmttypes.GenesisDoc, error) { return doc, nil }, dbProvider, node.DefaultMetricsProvider(cfg.Instrumentation), cmtlog.NewNopLogger())
+				require.NoError(t, err)
+				return n
+			}
+			n := openNode()
 			require.NoError(t, n.Start())
-			t.Cleanup(func() { require.NoError(t, n.Stop()); n.Wait() })
+			t.Cleanup(func() {
+				require.NoError(t, n.Stop())
+				n.Wait()
+				if indexDB != nil {
+					require.NoError(t, indexDB.Close())
+				}
+			})
 			rpc, err := rpchttp.NewWithTimeout("http://"+cfg.RPC.ListenAddress[len("tcp://"):], "/websocket", 10)
 			require.NoError(t, err)
 			clientCtx := client.Context{}.WithCodec(app.AppCodec()).WithInterfaceRegistry(app.InterfaceRegistry()).WithTxConfig(app.TxConfig()).WithClient(rpc).WithChainID(doc.ChainID)
@@ -237,6 +276,12 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			require.Eventually(t, func() bool { r, e := rpc.Status(ctx); return e == nil && r.SyncInfo.LatestBlockHeight > 0 }, 10*time.Second, 50*time.Millisecond)
+			if startup {
+				require.Eventually(t, func() bool {
+					_, err := query.ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: ModuleName + "-0"})
+					return err == nil
+				}, 10*time.Second, 50*time.Millisecond, "persisted application must be queryable")
+			}
 			sequence := uint64(0)
 			encode := func(msg sdk.Msg, gas uint64) []byte {
 				tx, err := simtestutil.GenSignedMockTx(rand.New(rand.NewSource(1)), app.TxConfig(), []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin(sdk.DefaultBondDenom, 1_500_000)), gas, doc.ChainID, []uint64{account.AccountNumber}, []uint64{sequence}, key)
@@ -348,14 +393,54 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 			update, err := clienttypes.NewMsgUpdateClient(ModuleName+"-0", f.Header, account.GetAddress().String())
 			require.NoError(t, err)
 			_, _, _ = submit(update, false)
-			if name == "combined" {
+			var deadline uint64
+			if fixtureName == "combined" {
 				response, err := query.ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: ModuleName + "-0"})
 				require.NoError(t, err)
 				proposed := &ClientState{}
 				require.NoError(t, proposed.Unmarshal(response.ClientState.Value))
 				require.Equal(t, uint64(966), proposed.LatestCheckpointHeight.RevisionHeight)
+				require.Equal(t, uint64(7), proposed.CurrentEpoch)
+				require.Equal(t, uint64(7), proposed.LatestCheckpointEpoch)
 				require.Len(t, proposed.EpochContextChallenges, 2)
 				require.Equal(t, uint64(8), proposed.EpochContextChallenges[1].Epoch)
+				deadline = proposed.EpochContextChallenges[1].UsableAfterUnixNs
+				if startup {
+					// Close every host component and reopen the application, block
+					// store and transaction index from their on-disk databases.
+					grpcServer.Stop()
+					require.NoError(t, conn.Close())
+					require.NoError(t, n.Stop())
+					n.Wait()
+					require.NoError(t, indexDB.Close())
+					require.NoError(t, app.Close())
+					app = openApp()
+					require.NoError(t, app.LoadLatestVersion())
+					n = openNode()
+					require.NoError(t, n.Start())
+					clientCtx = clientCtx.WithCodec(app.AppCodec()).WithInterfaceRegistry(app.InterfaceRegistry()).WithTxConfig(app.TxConfig())
+					app.RegisterTxService(clientCtx)
+					grpcServer, err = servergrpc.NewGRPCServer(clientCtx, app, grpcCfg)
+					require.NoError(t, err)
+					listener, err = net.Listen("tcp", "127.0.0.1:0")
+					require.NoError(t, err)
+					go func(s *grpc.Server, l net.Listener) { _ = s.Serve(l) }(grpcServer, listener)
+					t.Cleanup(grpcServer.Stop)
+					conn, err = grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16*1024*1024)))
+					require.NoError(t, err)
+					txClient = txtypes.NewServiceClient(conn)
+					query = clienttypes.NewQueryClient(conn)
+					var restored *clienttypes.QueryClientStateResponse
+					require.Eventually(t, func() bool {
+						restored, err = query.ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: ModuleName + "-0"})
+						return err == nil
+					}, 10*time.Second, 50*time.Millisecond, "restarted host must resume committed queries")
+					require.Equal(t, response.ClientState.Value, restored.ClientState.Value)
+					_, err = query.ConsensusState(ctx, &clienttypes.QueryConsensusStateRequest{ClientId: ModuleName + "-0", RevisionHeight: 966})
+					require.NoError(t, err, "trusted consensus root must survive restart")
+					_, err = query.ConsensusState(ctx, &clienttypes.QueryConsensusStateRequest{ClientId: ModuleName + "-0", RevisionHeight: 984})
+					require.ErrorContains(t, err, "consensus state not found", "proposal-only update must not create a consensus root")
+				}
 			}
 			evidence := NewMisbehaviour(ModuleName+"-0", f.Header, f.Fork)
 			challenge, err := clienttypes.NewMsgUpdateClient(ModuleName+"-0", evidence, account.GetAddress().String())
@@ -372,6 +457,57 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 			var active exported.ClientState
 			require.NoError(t, app.AppCodec().UnpackAny(stateBefore.ClientState, &active))
 			require.True(t, active.(*ClientState).FrozenHeight.IsZero())
+			if startup {
+				keyPath := binary.BigEndian.AppendUint64([]byte("clients/"+ModuleName+"-0/epochChallengeCheckpoint/"), 8)
+				saved, err := rpc.ABCIQuery(ctx, "/store/ibc/key", keyPath)
+				require.NoError(t, err)
+				require.Zero(t, saved.Response.Code)
+				checkpoint := &ClientState{}
+				require.NoError(t, checkpoint.Unmarshal(saved.Response.Value))
+				checkpoint.CurrentEpoch = checkpoint.LatestCheckpointEpoch
+				checkpoint.EpochContextChallenges = nil
+				checkpoint.EpochContexts = []*EpochContext{checkpoint.EpochContexts[0]}
+				contextBytes, err := checkpoint.Marshal()
+				require.NoError(t, err)
+				forkBytes, err := f.Fork.Marshal()
+				require.NoError(t, err)
+				contextFile, forkFile := filepath.Join(root, "checkpoint.pb"), filepath.Join(root, "fork.pb")
+				require.NoError(t, os.WriteFile(contextFile, contextBytes, 0600))
+				require.NoError(t, os.WriteFile(forkFile, forkBytes, 0600))
+				address := make([]int, len(key.PubKey().Address()))
+				for i, b := range key.PubKey().Address() {
+					address[i] = int(b)
+				}
+				input, err := json.Marshal(map[string]any{
+					"key":      map[string]any{"private_key": hex.EncodeToString(key.Bytes()), "public_key": hex.EncodeToString(key.PubKey().Bytes()), "address": address, "address_type": "Cosmos", "account": account.GetAddress().String()},
+					"chain_id": doc.ChainID, "max_gas": maxGas, "max_tx_bytes": maxRelayerTx,
+					"rpc": "http://" + cfg.RPC.ListenAddress[len("tcp://"):], "grpc": "http://" + listener.Addr().String(),
+					"epoch": 8, "trusted_height": 966, "deadline": deadline, "context_file": contextFile, "fork_file": forkFile,
+				})
+				require.NoError(t, err)
+				inputFile := filepath.Join(root, "startup-watcher.json")
+				require.NoError(t, os.WriteFile(inputFile, input, 0600))
+				output, err := exec.CommandContext(ctx, os.Getenv("STARTUP_MONITOR_PROBE"), inputFile).CombinedOutput()
+				require.NoError(t, err, string(output))
+				var observed struct {
+					Epochs  []uint64 `json:"proposal_epochs"`
+					Heights []uint64 `json:"trusted_heights"`
+					Checked int      `json:"checked"`
+				}
+				require.NoError(t, json.Unmarshal(output, &observed), string(output))
+				require.Equal(t, []uint64{8}, observed.Epochs)
+				require.Equal(t, []uint64{966}, observed.Heights)
+				require.Equal(t, 1, observed.Checked)
+				require.Less(t, uint64(time.Now().UnixNano()), deadline)
+				restarted, err := query.ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: ModuleName + "-0"})
+				require.NoError(t, err)
+				frozen := &ClientState{}
+				require.NoError(t, frozen.Unmarshal(restarted.ClientState.Value))
+				require.Equal(t, FrozenHeight, frozen.FrozenHeight)
+				require.Equal(t, active.(*ClientState).LatestCheckpointHeight, frozen.LatestCheckpointHeight)
+				t.Logf("fresh watcher recovered epoch 8 at checkpoint 966 after host restart and submitted verified evidence before deadline %d", deadline)
+				return
+			}
 			wire, gas, elapsed := submit(challenge, true)
 			result, err := query.ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: ModuleName + "-0"})
 			require.NoError(t, err)

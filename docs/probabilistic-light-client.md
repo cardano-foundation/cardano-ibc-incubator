@@ -321,6 +321,12 @@ construct a conflicting qualifying header, and submit `Misbehaviour` through
 independent Gateway/node and enable `require_update_event_headers_for_misbehaviour`.
 The primary Gateway fallback does not provide independent observation.
 
+On startup or restart Hermes scans the epochs in the stored challenge records
+before falling back to consensus heights. It checks the newest epoch first and
+also checks the current epoch. A proposal for the next epoch can be found while
+the current epoch and checkpoint stay unchanged. Its recovered header selects
+the saved pre-proposal checkpoint for the independent witness request.
+
 For probabilistic challenges, Hermes requests `QueryIBCHeader` with
 `checkpoint_only = true` and the production history and settlement credit saved
 at the header's trusted height. Hermes reads the destination client's private
