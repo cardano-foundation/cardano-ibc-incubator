@@ -1,6 +1,7 @@
 package probabilistic
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"testing"
@@ -43,7 +44,16 @@ func TestEpochChallengeBlocksValidProofsUntilHostDeadline(t *testing.T) {
 			}
 			require.ErrorIs(t, verify(0, 100), ErrEpochContextPending)
 			require.ErrorIs(t, verify(3*time.Minute-time.Nanosecond, 1_000_000), ErrEpochContextPending)
-			require.NoError(t, verify(3*time.Minute, 101))
+			require.ErrorIs(t, verify(3*time.Minute, 101), ErrEpochContextPending)
+			require.ErrorIs(t, verify(3*time.Minute+time.Nanosecond, 101), ErrEpochContextPending)
+			require.NoError(t, verify(3*time.Minute+2*time.Nanosecond, 101))
+			// Registering the client without the host hooks must fail closed.
+			unwired := ctx.WithContext(context.Background()).WithBlockTime(ctx.BlockTime().Add(time.Hour))
+			if membership {
+				require.ErrorIs(t, cs.VerifyMembership(unwired, store, cdc, cs.LatestHeight, 0, 0, proof, path, value), ErrEpochContextPending)
+			} else {
+				require.ErrorIs(t, cs.VerifyNonMembership(unwired, store, cdc, cs.LatestHeight, 0, 0, proof, path), ErrEpochContextPending)
+			}
 			// The IBC delay is an additional requirement, not a replacement.
 			host := ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute)).WithBlockHeight(101)
 			if membership {

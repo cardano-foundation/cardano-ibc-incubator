@@ -29,6 +29,7 @@ const sharedSourceFiles = [
   "header.go",
   "height.go",
   "heuristic_policy.go",
+  "host_continuity.go",
   "host_state_commitment.go",
   "host_state_datum.go",
   "ibc_state_proof.go",
@@ -255,6 +256,8 @@ function assertFileInventory() {
   const expectedV8 = [
     ...sharedSourceFiles,
     // Persistent live acceptance currently targets only the local v8 profile.
+    "acceptance_consensus_test.go",
+    "acceptance_deadline_test.go",
     "acceptance_driver_test.go",
     "acceptance_host_test.go",
     "acceptance_source_test.go",
@@ -504,6 +507,7 @@ const adapterLineBudgets = {
   "header.go": 44,
   "height.go": 90,
   "heuristic_policy.go": 20,
+  "host_continuity.go": 120,
   "host_state_commitment.go": 10,
   "host_state_datum.go": 10,
   "ibc_state_proof.go": 200,

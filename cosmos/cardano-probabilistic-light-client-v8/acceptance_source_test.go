@@ -272,7 +272,7 @@ func TestAcceptanceSourceContinuity(t *testing.T) {
 	ctx = ctx.WithBlockTime(time.Now())
 	cdc := newProbabilisticTestCodec()
 	require.NoError(t, history.Client.Initialize(ctx, cdc, store, history.Consensus))
-	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
 	trusted := uint64(966)
 	for _, anchor := range []uint64{967, 1001, 1032, 1063, 1094, 1125} {
 		state, found := getClientState(store, cdc)
@@ -289,7 +289,7 @@ func TestAcceptanceSourceContinuity(t *testing.T) {
 			require.ErrorContains(t, state.VerifyClientMessage(ctx, cdc, store, NewMisbehaviour(acceptanceSubject, header, tail)), "do not conflict")
 		}
 		if header.NewEpochContext != nil {
-			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
 		}
 		trusted = anchor
 	}

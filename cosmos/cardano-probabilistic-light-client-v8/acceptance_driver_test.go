@@ -151,7 +151,7 @@ func (d *acceptanceDriver) blockTime(height int64) uint64 {
 }
 func (d *acceptanceDriver) waitDeadline(deadline uint64) {
 	d.t.Helper()
-	d.t.Logf("waiting for committed host time >= %s", time.Unix(0, int64(deadline)).UTC())
+	d.t.Logf("waiting for committed host time > %s", time.Unix(0, int64(deadline)).UTC())
 	lastLog := time.Now()
 	require.Eventually(d.t, func() bool {
 		status, err := d.rpc.Status(context.Background())
@@ -162,7 +162,11 @@ func (d *acceptanceDriver) waitDeadline(deadline uint64) {
 			d.t.Logf("host height=%d, deadline in %s", status.SyncInfo.LatestBlockHeight, time.Until(time.Unix(0, int64(deadline))).Round(time.Second))
 			lastLog = time.Now()
 		}
-		return uint64(status.SyncInfo.LatestBlockTime.UnixNano()) >= deadline
+		if uint64(status.SyncInfo.LatestBlockTime.UnixNano()) <= deadline {
+			return false
+		}
+		progress := decodeHostProgress(d.store(string(hostProgressKey)))
+		return progress != nil && progress.PreviousTimeUnixNs > max(deadline, progress.ResumeUsableAfterUnixNs)
 	}, 4*time.Minute, 500*time.Millisecond)
 }
 func acceptanceDeadline(t *testing.T, state *ClientState, epoch uint64) uint64 {

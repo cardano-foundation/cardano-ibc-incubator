@@ -159,6 +159,13 @@ elif [ "${APP_KIND}" = "injective" ]; then
     perl -0pi -e 's#(\t\tibctm\.NewAppModule\(\),\n)#${1}\t\tcardanoprobabilistic.NewAppModule(),\n#' "${APP_FILE}"
   fi
 elif [ "${APP_KIND}" = "ibc-go-simapp" ]; then
+  if ! grep -q 'cardanoprobabilistic.InstallHostLiveness(app)' "${APP_FILE}"; then
+    perl -0pi -e 's#(app.SetAnteHandler\(anteHandler\))#${1}\n\tcardanoprobabilistic.InstallHostLiveness(app)#' "${APP_FILE}"
+  fi
+  if ! grep -q 'cardanoprobabilistic.InstallHostLiveness(app)' "${APP_FILE}"; then
+    echo "[cardano-light-client-patch] failed to install host continuity hooks" >&2
+    exit 1
+  fi
   if ! grep -q "${CLIENT_IMPORT}" "${APP_FILE}"; then
     perl -0pi -e "s#(ibctm \"github.com/cosmos/ibc-go/v${IBC_GO_MAJOR}/modules/light-clients/07-tendermint\"\n)#\$1\tcardanoprobabilistic \"${CLIENT_IMPORT}\"\n#" "${APP_FILE}"
   fi

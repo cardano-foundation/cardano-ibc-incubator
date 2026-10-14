@@ -50,6 +50,7 @@ func TestAppRecoverClient(t *testing.T) {
 				ChainID: "recovery-test-1", Height: 100,
 				Time: time.Unix(1_700_000_100, 0),
 			})
+			ctx = withTestHostProgress(ctx)
 			cdc := app.AppCodec()
 			ibcStore := ctx.KVStore(app.GetKey(exported.StoreKey))
 			clientStore := func(id string) storetypes.KVStore { return app.IBCKeeper.ClientKeeper.ClientStore(ctx, id) }
@@ -102,7 +103,7 @@ func TestAppRecoverClient(t *testing.T) {
 			}
 			if tc.name == "frozen pending subject" {
 				subject.TrustingPeriod = 24 * time.Hour
-				subject.EpochContextChallenges = []*EpochContextChallenge{{Epoch: 7, UsableAfterUnixNs: uint64(ctx.BlockTime().Add(3 * time.Minute).UnixNano())}}
+				subject.EpochContextChallenges = []*EpochContextChallenge{{Epoch: 7, UsableAfterUnixNs: uint64(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond).UnixNano())}}
 				setClientState(clientStore(subjectID), cdc, subject)
 				require.ErrorIs(t, subject.VerifyMembership(ctx, clientStore(subjectID), cdc, subject.LatestHeight, 0, 0, proof, path, value), ErrEpochContextPending)
 				subject.UpdateStateOnMisbehaviour(ctx, cdc, clientStore(subjectID), nil)
@@ -181,7 +182,7 @@ func TestAppRecoverClient(t *testing.T) {
 			_, oldHeightFound := GetProcessedHeight(clientStore(subjectID), subject.LatestHeight)
 			require.False(t, oldHeightFound)
 			require.Nil(t, clientStore(subjectID).Get(IterationKey(subject.LatestHeight)))
-			proofCtx := ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+			proofCtx := ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
 			require.Error(t, recovered.VerifyMembership(proofCtx, clientStore(subjectID), cdc, subject.LatestHeight, 0, 0, proof, path, value))
 			require.NoError(t, recovered.VerifyMembership(proofCtx, clientStore(subjectID), cdc, substitute.LatestHeight, 0, 0, proof, path, value))
 			require.Equal(t, substituteBefore, recoveryStoreSnapshot(t, clientStore(substituteID)))
@@ -205,6 +206,7 @@ func newBoundaryTestApp(t *testing.T, now time.Time) (*simapp.SimApp, sdk.Contex
 	t.Cleanup(func() { require.NoError(t, app.Close()) })
 	RegisterInterfaces(app.InterfaceRegistry())
 	ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: "boundary-test-1", Height: 100, Time: now})
+	ctx = withTestHostProgress(ctx)
 	store := app.IBCKeeper.ClientKeeper.ClientStore(ctx, ModuleName+"-0")
 	params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
 	params.AllowedClients = append(params.AllowedClients, ModuleName)
@@ -247,6 +249,7 @@ func TestAppWatcherChallenge(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, app.Close()) })
 			RegisterInterfaces(app.InterfaceRegistry())
 			ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: "watcher-test-1", Height: 100, Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp))})
+			ctx = withTestHostProgress(ctx)
 			cdc := app.AppCodec()
 			store := app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID)
 
@@ -254,7 +257,7 @@ func TestAppWatcherChallenge(t *testing.T) {
 			params.AllowedClients = append(params.AllowedClients, ModuleName)
 			app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
 			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
-			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
 			fixture.Header.IsCheckpoint = rootless
 			signer := sdk.AccAddress(bytes.Repeat([]byte{9}, 20)).String()
 			msg, err := clienttypes.NewMsgUpdateClient(clientID, fixture.Header, signer)
@@ -341,6 +344,7 @@ func TestAppUnsignedStakeDisagreementDoesNotFreeze(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, app.Close()) })
 			RegisterInterfaces(app.InterfaceRegistry())
 			ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: "challenge-test-1", Height: 100, Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp))})
+			ctx = withTestHostProgress(ctx)
 			cdc := app.AppCodec()
 			store := app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID)
 
@@ -449,6 +453,7 @@ func TestAppMisbehaviourUsesSettledPrefixes(t *testing.T) {
 				ChainID: "settled-prefix-test-1", Height: 100,
 				Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp)),
 			})
+			ctx = withTestHostProgress(ctx)
 			cdc := app.AppCodec()
 			store := app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID)
 			params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
@@ -496,5 +501,6 @@ func TestAppMisbehaviourUsesSettledPrefixes(t *testing.T) {
 
 // Register the same client route as the compatibility profile's simd.
 func registerCapacityClient(app *simapp.SimApp) {
+	InstallHostLiveness(app)
 	RegisterInterfaces(app.InterfaceRegistry())
 }

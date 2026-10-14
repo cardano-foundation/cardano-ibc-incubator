@@ -58,7 +58,7 @@ func acceptanceAddress(seed string) sdk.AccAddress {
 	return sdk.AccAddress(acceptanceKey(seed).PubKey().Address())
 }
 
-type acceptanceHostConfig struct{ Root, RPC, P2P, GRPC, History string }
+type acceptanceHostConfig struct{ Root, RPC, P2P, GRPC, History, ConsensusControl string }
 type acceptanceHistory struct {
 	Client            *ClientState
 	Consensus         *ConsensusState
@@ -86,6 +86,9 @@ func TestCaribicAcceptanceHost(t *testing.T) {
 	cfg.P2P.PexReactor = false
 	cfg.Consensus.TimeoutCommit = 200 * time.Millisecond
 	cfg.Consensus.TimeoutPropose = time.Second
+	if config.ConsensusControl != "" {
+		cfg.Consensus.TimeoutPropose = 10 * time.Minute
+	}
 	cfg.Consensus.CreateEmptyBlocks = true
 	profile, err := os.ReadFile("../../chains/cosmos/scripts/setup_profile.sh")
 	require.NoError(t, err)
@@ -103,13 +106,14 @@ func TestCaribicAcceptanceHost(t *testing.T) {
 		params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
 		params.AllowedClients = append(params.AllowedClients, ModuleName)
 		app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
+		seedAcceptanceHostProgress(ctx, app.GetKey("ibc"))
 		// Only the initial checkpoint and connection are trusted test genesis.
 		// Channels, packets, later clients, proposals, challenges and recovery all
 		// use signed transactions. The historical genesis checkpoint starts with an elapsed response window.
 		for _, id := range []string{acceptanceSubject, acceptanceControl} {
 			state := fromCoreClientState(toCoreClientState(history.Client))
 			store := app.IBCKeeper.ClientKeeper.ClientStore(ctx, id)
-			if err := state.Initialize(ctx, app.AppCodec(), store, history.Consensus); err != nil {
+			if err := state.Initialize(ctx.WithBlockTime(ctx.BlockTime().Add(-4*time.Minute)), app.AppCodec(), store, history.Consensus); err != nil {
 				return response, err
 			}
 
@@ -176,10 +180,14 @@ func TestCaribicAcceptanceHost(t *testing.T) {
 		params := cmttypes.DefaultConsensusParams()
 		params.Block.MaxBytes = profileInteger(t, string(profile), "BLOCK_MAX_BYTES")
 		params.Block.MaxGas = profileInteger(t, string(profile), "BLOCK_MAX_GAS")
-		doc := &cmttypes.GenesisDoc{GenesisTime: time.Now().Add(-4 * time.Minute), ChainID: acceptanceChainID, ConsensusParams: params, AppState: appState, Validators: []cmttypes.GenesisValidator{{PubKey: pub, Power: 1}}}
+		doc := &cmttypes.GenesisDoc{GenesisTime: time.Now(), ChainID: acceptanceChainID, ConsensusParams: params, AppState: appState, Validators: []cmttypes.GenesisValidator{{PubKey: pub, Power: 1}}}
 		require.NoError(t, doc.SaveAs(cfg.GenesisFile()))
 	}
-	validator := privval.LoadFilePV(cfg.PrivValidatorKeyFile(), cfg.PrivValidatorStateFile())
+	var validator cmttypes.PrivValidator = privval.LoadFilePV(cfg.PrivValidatorKeyFile(), cfg.PrivValidatorStateFile())
+	consensusStop := make(chan struct{})
+	if config.ConsensusControl != "" {
+		validator = &acceptanceConsensusValidator{PrivValidator: validator, control: config.ConsensusControl, stopped: consensusStop}
+	}
 	nodeKey, err := p2p.LoadOrGenNodeKey(cfg.NodeKeyFile())
 	require.NoError(t, err)
 	n, err := node.NewNode(cfg, validator, nodeKey, proxy.NewLocalClientCreator(server.NewCometABCIWrapper(app)), node.DefaultGenesisDocProviderFunc(cfg), func(c *cmtcfg.DBContext) (cmtdb.DB, error) { return cmtdb.NewGoLevelDB(c.ID, c.Config.DBDir()) }, node.DefaultMetricsProvider(cfg.Instrumentation), cmtlog.NewFilter(cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout)), cmtlog.AllowInfo()))
@@ -208,6 +216,7 @@ func TestCaribicAcceptanceHost(t *testing.T) {
 	stopped := make(chan os.Signal, 1)
 	signal.Notify(stopped, syscall.SIGTERM, os.Interrupt)
 	<-stopped
+	close(consensusStop)
 	signal.Stop(stopped)
 }
 

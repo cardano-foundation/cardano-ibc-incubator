@@ -587,3 +587,25 @@ What survives a spin-down: the contract deployment (`manifests/preprod/`), all k
 - `NotFound` account errors on Injective mean the relayer address is unfunded.
 - Hermes errors like `unknown header type: /ibc.lightclients.probabilistic.v1.ProbabilisticHeader` mean the compiled relayer binary is older than the `relayer/` submodule checkout — rebuild it with `cd relayer && cargo build --release --bin hermes`. (Hermes reports errors on stdout, so caribic may show such failures with an empty message.)
 - If client creation on Injective fails with an unsupported client type, re-check the `allowed_clients` query at the top of this section.
+
+`caribic test --light-client deadline-ordering --chain cosmos --network v8-classic`
+runs five isolated native v8 hosts through signed RPC/gRPC transactions. It tests
+both challenge-first and proof-first ordering after a real `SIGSTOP`/`SIGCONT`
+halt spanning the three-minute deadline. It repeats both orderings exactly at
+the deadline without a halt. A persistent validator signs a controlled vote
+timestamp for the equality cases. Ordinary CometBFT validation derives the next
+block time from that commit. The application clock and client deadlines are not
+replaced.
+
+The proof transaction batches a normal self-send with the packet receipt. This legal batch reaches committed execution without the IBC
+ante redundancy shortcut deciding packet usability first. The disputed root must already be stored. Both transactions must
+be in the mempool before release. The test asserts their committed height, order,
+timestamp and result and verifies that no packet receipt, acknowledgement or
+balance change escaped. The halt cases also assert a fresh host deadline. Exact
+deadline cases assert that no halt window was accidentally triggered. The hosts
+start from an explicitly trusted historical checkpoint. Later proposals and
+interruption windows use the real three-minute duration. Artifacts include the
+persistent databases, host logs and `ordering.json` results. A healthy fifth
+host restarts during quarantine and then waits for the full window to expire.
+It receives a packet, completes another native update and refunds a pending
+packet through its authenticated timeout path on the same channel.

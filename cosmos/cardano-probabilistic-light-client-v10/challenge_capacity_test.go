@@ -212,6 +212,7 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 				params.AllowedClients = append(params.AllowedClients, ModuleName)
 				app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
 				store := app.IBCKeeper.ClientKeeper.ClientStore(ctx, ModuleName+"-0")
+				seedAcceptanceHostProgress(ctx, app.GetKey("ibc"))
 				// Genesis installs an explicitly trusted checkpoint with an elapsed
 				// initial response window. The tested update opens its own new window.
 				return response, f.Client.Initialize(ctx.WithBlockTime(ctx.BlockTime().Add(-3*time.Minute)), app.AppCodec(), store, f.Consensus)
@@ -275,7 +276,7 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 			query := clienttypes.NewQueryClient(conn)
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			require.Eventually(t, func() bool { r, e := rpc.Status(ctx); return e == nil && r.SyncInfo.LatestBlockHeight > 0 }, 10*time.Second, 50*time.Millisecond)
+			require.Eventually(t, func() bool { r, e := rpc.Status(ctx); return e == nil && r.SyncInfo.LatestBlockHeight > 2 }, 10*time.Second, 50*time.Millisecond)
 			if startup {
 				require.Eventually(t, func() bool {
 					_, err := query.ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: ModuleName + "-0"})

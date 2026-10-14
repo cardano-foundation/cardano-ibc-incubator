@@ -39,6 +39,8 @@ pub(crate) enum LightClientTest {
     ChallengeRecovery,
     /// Upgrade the local v8 host through governance and resume packets on its retained route
     SoftwareUpgrade,
+    /// Stop a real v8 host across its deadline and test both committed transaction orderings
+    DeadlineOrdering,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]

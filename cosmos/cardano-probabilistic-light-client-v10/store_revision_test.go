@@ -124,7 +124,7 @@ func TestAppEpochBoundaryCatchUp(t *testing.T) {
 			app, ctx, store := newBoundaryTestApp(t, now)
 			cdc := app.AppCodec()
 			require.NoError(t, client.Initialize(ctx, cdc, store, fixture.Consensus))
-			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
 			submit := func(header *ProbabilisticHeader) error {
 				msg, err := clienttypes.NewMsgUpdateClient(ModuleName+"-0", header, sdk.AccAddress(bytes.Repeat([]byte{9}, 20)).String())
 				require.NoError(t, err)
@@ -220,7 +220,7 @@ func testAppCombinedBoundaryProgress(t *testing.T, checkpoint bool) {
 	app, ctx, store := newBoundaryTestApp(t, time.Unix(0, int64(latest)))
 	cdc := app.AppCodec()
 	require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
-	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
 	submit := func(header *ProbabilisticHeader) error {
 		msg, err := clienttypes.NewMsgUpdateClient(ModuleName+"-0", header, sdk.AccAddress(bytes.Repeat([]byte{9}, 20)).String())
 		require.NoError(t, err)
@@ -257,7 +257,7 @@ func testAppCombinedBoundaryProgress(t *testing.T, checkpoint bool) {
 		}
 	}
 	require.NotZero(t, deadline)
-	ctx = ctx.WithBlockTime(time.Unix(0, int64(deadline)))
+	ctx = ctx.WithBlockTime(time.Unix(0, int64(deadline)+2))
 	require.NoError(t, submit(header))
 	accepted, _ := getClientState(store, cdc)
 	require.Equal(t, uint64(984), accepted.LatestCheckpointHeight.RevisionHeight)

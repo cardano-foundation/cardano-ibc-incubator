@@ -210,7 +210,7 @@ func storedProofVerifier(t *testing.T, vector stateProofVector) func([]byte, []b
 	setTestPacketSnapshot(t, consensus, cs.LatestHeight.RevisionHeight)
 	require.NoError(t, cs.Initialize(ctx, cdc, store, consensus))
 	cs, _ = getClientState(store, cdc)
-	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute))
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
 	return func(key, value, proof []byte, membership bool) error {
 		path := commitmenttypes.NewMerklePath([]byte("ibc"), key)
 		if membership {
@@ -396,7 +396,7 @@ func TestIbcProofDelaysRejectOverflow(t *testing.T) {
 			cs, _ = getClientState(store, cdc)
 			// Finish the independent epoch challenge window before isolating
 			// the connection's time and block delays at a new processed point.
-			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute)).WithBlockHeight(200)
+			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond)).WithBlockHeight(200)
 			processedTime := uint64(ctx.BlockTime().UnixNano())
 			processedHeight := uint64(ctx.BlockHeight())
 			SetProcessedTime(store, cs.LatestHeight, processedTime)
