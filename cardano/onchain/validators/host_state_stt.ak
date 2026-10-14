@@ -12,6 +12,7 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   AuthorizeFinalization, BindPort, ClaimBackup, CreateChannel, CreateClient,
   CreateConnection, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
   HostStateRedeemer, RetireState, UpdateChannel, UpdateClient, UpdateConnection,
+  UpgradeChannel,
 }
 use ibc/implementation/host_state_stt.{
   decode_host_state_datum, find_host_state_input, find_host_state_output,
@@ -19,7 +20,7 @@ use ibc/implementation/host_state_stt.{
   validate_create_client_root, validate_create_connection_root,
   validate_handle_packet_root, validate_transfer_finalization_authorization,
   validate_update_channel_root, validate_update_client_root,
-  validate_update_connection_root,
+  validate_update_connection_root, validate_upgrade_channel,
 } as implementation
 use ibc/utils/validator_utils
 
@@ -187,6 +188,17 @@ validator host_state_stt(
                 spend_channel_script_hash,
                 channel_policy_id,
                 channel_siblings,
+              ),
+            }
+          UpgradeChannel -> and {
+              validate_update_only_root(old_datum, new_datum),
+              validate_upgrade_channel(
+                old_datum,
+                inputs,
+                outputs,
+                redeemers,
+                spend_channel_script_hash,
+                channel_policy_id,
               ),
             }
           HandlePacket {

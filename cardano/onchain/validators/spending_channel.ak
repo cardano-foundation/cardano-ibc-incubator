@@ -16,6 +16,9 @@ validator spend_channel(
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
   prune_packet_history_policy_id: PolicyId,
+  chan_upgrade_policy_id: PolicyId,
+  chan_upgrade_handshake_policy_id: PolicyId,
+  chan_upgrade_finish_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
 ) {
   spend(
@@ -46,6 +49,9 @@ validator spend_channel(
       timeout_packet_policy_id,
       acknowledge_packet_policy_id,
       prune_packet_history_policy_id,
+      chan_upgrade_policy_id,
+      chan_upgrade_handshake_policy_id,
+      chan_upgrade_finish_policy_id,
       host_state_nft_policy_id,
       optional_datum,
       redeemer,

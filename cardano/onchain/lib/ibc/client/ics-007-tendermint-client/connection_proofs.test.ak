@@ -113,6 +113,7 @@ test succeed_verify_channel_state() {
       counterparty: ChannelCounterparty { port_id: "mock", channel_id: "" },
       connection_hops: ["connection-0"],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let proof =

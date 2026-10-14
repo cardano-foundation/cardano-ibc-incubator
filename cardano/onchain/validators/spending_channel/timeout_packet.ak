@@ -400,6 +400,8 @@ fn validate_timeout_on_close_proofs(
       counterparty: expected_counterparty,
       connection_hops: [connection.counterparty.connection_id],
       version: cur_channel.version,
+      // Both ends keep the sequence of their last completed upgrade.
+      upgrade_sequence: cur_channel.upgrade_sequence,
     }
   let closed_channel_value =
     channel_pb.marshal_for_channel(

@@ -1,8 +1,9 @@
 use aiken/collection/pairs
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Ordered, Unordered}
@@ -51,6 +52,7 @@ fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
         packet_commitment: [Pair(packet.sequence, commitment)],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: "port-1",
       token: mock_auth_token,

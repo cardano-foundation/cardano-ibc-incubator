@@ -768,6 +768,34 @@ pub fn validate_update_channel_root(
   root_after_channel == new_datum.state.ibc_state_root
 }
 
+/// UpgradeChannel commits a channel-upgrade step. The channel validator
+/// requires the upgrade operation for a `ChanUpgrade` spend, and that
+/// operation checks the exact root transition. HostState binds the
+/// authenticated channel thread to that redeemer.
+pub fn validate_upgrade_channel(
+  old_datum: HostStateDatum,
+  inputs: List<Input>,
+  outputs: List<Output>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  channel_policy_id: PolicyId,
+) -> Bool {
+  let channel_output = find_state_output(outputs, spend_channel_script_hash)
+  let channel_input =
+    authenticate_state_thread(
+      inputs,
+      channel_output,
+      decode_channel_datum(channel_output).token,
+      channel_policy_id,
+      old_datum.nft_policy,
+      chan_id_keys.channel_prefix,
+    )
+  expect Some(channel_redeemer) =
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
+  // `ChanUpgrade` is SpendChannelRedeemer constructor 11.
+  builtin.fst_pair(builtin.un_constr_data(channel_redeemer)) == 11
+}
+
 /// Load a required packet-map entry, failing closed when it is absent.
 fn required_packet_entry(
   entries: Pairs<Int, ByteArray>,

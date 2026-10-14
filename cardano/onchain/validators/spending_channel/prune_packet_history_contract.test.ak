@@ -15,7 +15,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+}
 use ibc/core/ics_004/channel_redeemer.{PrunePacketHistory, SpendChannelRedeemer}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -246,6 +248,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       },
       connection_hops: [mock.connection_id],
       version: "ics20-1",
+      upgrade_sequence: 0,
     }
   let input_channel_datum =
     ChannelDatum {
@@ -273,6 +276,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
           revision_number: 1,
           revision_height: 10,
         },
+        upgrade: initial_upgrade_state,
       },
       port_id: mock.port_id,
       token: mock.channel_token,
@@ -510,6 +514,9 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       mock.timeout_packet_policy_id,
       mock.acknowledge_packet_policy_id,
       mock.prune_packet_history_policy_id,
+      mock.chan_upgrade_policy_id,
+      mock.chan_upgrade_handshake_policy_id,
+      mock.chan_upgrade_finish_policy_id,
       mock.host_state_nft_policy_id,
       Some(input_channel_datum),
       channel_redeemer,

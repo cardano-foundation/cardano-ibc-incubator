@@ -78,4 +78,6 @@ pub type HostStateRedeemer {
   // The single backup named in the deployed HostState script may claim the
   // deployer role. No replacement key is supplied by the transaction.
   ClaimBackup
+  // A channel-upgrade step. Its operation validates the root transition.
+  UpgradeChannel
 }

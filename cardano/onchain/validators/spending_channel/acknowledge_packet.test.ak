@@ -16,8 +16,9 @@ use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{AcknowledgePacket}
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -80,6 +81,7 @@ fn check_acknowledge_packet(
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -94,6 +96,7 @@ fn check_acknowledge_packet(
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,

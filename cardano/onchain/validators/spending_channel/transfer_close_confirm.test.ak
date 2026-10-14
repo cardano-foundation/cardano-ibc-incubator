@@ -24,7 +24,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyMembership, VerifyProofEnvelope, VerifyProofRedeemer,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+}
 use ibc/core/ics_004/channel_redeemer.{
   ChanCloseConfirm, ChanCloseInit, ChanOpenConfirm, SpendChannelRedeemer,
 }
@@ -121,6 +123,7 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
       },
       connection_hops: [mock.connection_id],
       version: "ics20-1",
+      upgrade_sequence: 0,
     }
   let input_datum =
     ChannelDatum {
@@ -134,6 +137,7 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
         packet_acknowledgement: [],
         minimum_receive_proof_height: height_mod.zero_height(),
         maximum_receive_proof_height: height_mod.zero_height(),
+        upgrade: initial_upgrade_state,
       },
       port_id: mock.port_id,
       token: mock.channel_token,
@@ -426,6 +430,9 @@ test transfer_close_confirm_composed_transaction_succeeds() {
       mock.timeout_packet_policy_id,
       mock.acknowledge_packet_policy_id,
       mock.prune_packet_history_policy_id,
+      mock.chan_upgrade_policy_id,
+      mock.chan_upgrade_handshake_policy_id,
+      mock.chan_upgrade_finish_policy_id,
       mock.host_state_nft_policy_id,
       Some(f.input_datum),
       f.channel_redeemer,
