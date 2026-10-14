@@ -689,7 +689,9 @@ describe('proof-bearing services with captured query heights', () => {
         },
       ]);
       deps.historicalTree.get.mockImplementation((path) =>
-        path === `clients/07-tendermint-0/consensusStates/1-${height}` ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
+        path === `clients/07-tendermint-0/consensusStates/1-${height}`
+          ? Buffer.from(CONSENSUS_VALUE, 'hex')
+          : undefined,
       );
       const service = new QueryService(
         deps.logger,
@@ -1015,4 +1017,85 @@ describe('proof-bearing services with captured query heights', () => {
       });
     }
   }
+});
+
+describe('channel upgrade queries with captured query heights', () => {
+  beforeEach(resetProofServiceMocks);
+
+  it('serves an upgrade in progress and its error receipt with proofs at the requested height', async () => {
+    const deps = makeDeps();
+    const upgrade = {
+      fields: { ordering: 'Unordered', connection_hops: [toHex('connection-1')], version: toHex('ics20-1') },
+      timeout: { height: { revisionNumber: 0n, revisionHeight: 0n }, timestamp: 5n },
+      next_sequence_send: 4n,
+    };
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(
+      makeChannelDatum({
+        upgrade: {
+          pending: { upgrade, timeout_period: 3_600_000n, counterparty_upgrade: null, flushed_lanes: 0n },
+          error_receipt: { sequence: 2n, message: toHex('ABCI code: 28: restored channel to pre-upgrade state') },
+          recv_start_sequence: 0n,
+        },
+      }),
+    );
+    const service = new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      {} as KupoService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.treeStore,
+    );
+
+    const upgradeResponse = await service.queryUpgrade({ port_id: 'mock', channel_id: 'channel-0' } as any, {
+      queryHeight: HISTORICAL_HEIGHT,
+    });
+    const errorResponse = await service.queryUpgradeError({ port_id: 'mock', channel_id: 'channel-0' } as any, {
+      queryHeight: HISTORICAL_HEIGHT,
+    });
+
+    expect(upgradeResponse.upgrade).toEqual({
+      fields: { ordering: 1, connection_hops: ['connection-1'], version: 'ics20-1' },
+      timeout: { height: { revision_number: 0n, revision_height: 0n }, timestamp: 5n },
+      next_sequence_send: 4n,
+    });
+    expect(errorResponse.error_receipt).toEqual({
+      sequence: 2n,
+      message: 'ABCI code: 28: restored channel to pre-upgrade state',
+    });
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
+      'channelUpgrades/upgrades/ports/mock/channels/channel-0',
+    );
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
+      'channelUpgrades/upgradeError/ports/mock/channels/channel-0',
+    );
+    expect(upgradeResponse.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
+
+  it('reports a missing upgrade as not found, as ibc-go does', async () => {
+    const deps = makeDeps();
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(
+      makeChannelDatum({ upgrade: { pending: null, error_receipt: null, recv_start_sequence: 0n } }),
+    );
+    const service = new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      {} as KupoService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.treeStore,
+    );
+
+    await expect(service.queryUpgrade({ port_id: 'mock', channel_id: 'channel-0' } as any)).rejects.toThrow(
+      /no upgrade/,
+    );
+    await expect(service.queryUpgradeError({ port_id: 'mock', channel_id: 'channel-0' } as any)).rejects.toThrow(
+      /no upgrade error/,
+    );
+    expect(deps.historicalTree.generateProof).not.toHaveBeenCalled();
+  });
 });

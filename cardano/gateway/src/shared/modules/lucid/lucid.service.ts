@@ -91,6 +91,7 @@ import {
   UnsignedAckPacketUnescrowDto,
   UnsignedChannelCloseConfirmDto,
   UnsignedChannelCloseInitDto,
+  UnsignedChannelUpgradeDto,
   UnsignedChannelOpenAckDto,
   UnsignedChannelOpenConfirmDto,
   UnsignedChannelOpenInitDto,
@@ -193,6 +194,9 @@ type ReferenceScripts = {
   ackPacket: UTxO;
   sendPacket: UTxO;
   timeoutPacket: UTxO;
+  channelUpgrade: UTxO;
+  channelUpgradeHandshake: UTxO;
+  channelUpgradeFinish: UTxO;
   mintVoucher: UTxO;
   mintPort: UTxO;
   mintTransferEscrowShard: UTxO;
@@ -243,6 +247,9 @@ export class LucidService implements OnModuleInit {
       ackPacket: deploymentConfig.validators.spendChannel.refValidator.acknowledge_packet.refUtxo,
       sendPacket: deploymentConfig.validators.spendChannel.refValidator.send_packet.refUtxo,
       timeoutPacket: deploymentConfig.validators.spendChannel.refValidator.timeout_packet.refUtxo,
+      channelUpgrade: deploymentConfig.validators.spendChannel.refValidator.chan_upgrade?.refUtxo,
+      channelUpgradeHandshake: deploymentConfig.validators.spendChannel.refValidator.chan_upgrade_handshake?.refUtxo,
+      channelUpgradeFinish: deploymentConfig.validators.spendChannel.refValidator.chan_upgrade_finish?.refUtxo,
     };
   }
 
@@ -820,6 +827,8 @@ export class LucidService implements OnModuleInit {
                 token_name: LucidData.Bytes(),
               }),
             }),
+            LucidData.Literal('ClaimBackup'),
+            LucidData.Literal('UpgradeChannel'),
           ]);
           return LucidData.to(data as any, HostStateRedeemerSchema as any, {
             canonical: true,
@@ -1735,6 +1744,63 @@ export class LucidService implements OnModuleInit {
       );
 
     this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
+    return tx;
+  }
+
+  /**
+   * A channel-upgrade step. The transaction spends only the channel, HostState
+   * and wallet inputs, which the upgrade operations require.
+   */
+  public async createUnsignedChannelUpgradeTransaction(dto: UnsignedChannelUpgradeDto): Promise<TxBuilder> {
+    const deploymentConfig = this.configService.get('deployment');
+    const operationReference = this.referenceScripts[dto.operation];
+    if (!operationReference) {
+      throw new Error(`Deployment has no ${dto.operation} reference script, deploy the channel upgrade operations`);
+    }
+    const tx: TxBuilder = await this.newTxBuilder();
+    const hostStateUtxoWithRawDatum = {
+      ...dto.hostStateUtxo,
+      datum: dto.hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    tx.readFrom([
+      this.referenceScripts.spendChannel,
+      operationReference,
+      this.referenceScripts.hostStateStt,
+      ...(dto.proof ? [this.referenceScripts.verifyProof] : []),
+    ])
+      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .readFrom(dto.referenceInputs)
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        {
+          kind: 'inline',
+          value: dto.encodedUpdatedHostStateDatum,
+        },
+        hostStateUtxoWithRawDatum.assets,
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
+        },
+        dto.channelUtxo.assets,
+      )
+      .mintAssets(
+        {
+          [dto.operationPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
+    if (dto.proof) {
+      tx.mintAssets({ [dto.proof.policyId]: 1n }, dto.proof.encodedRedeemer);
+    }
+    if (dto.authorityKeyHash) {
+      tx.addSignerKey(dto.authorityKeyHash);
+    }
     return tx;
   }
 

@@ -1630,3 +1630,70 @@ test host_state_redeemer_index_is_stable() {
     builtin.fst_pair(builtin.un_constr_data(previous)) == 7,
   }
 }
+
+// The bytes are the Gateway's encodings, pinned in
+// cardano/gateway/src/shared/types/redeemer-encoding-regression.spec.ts.
+fn gateway_redeemer(step: ChannelUpgradeStep, siblings: List<ByteArray>) {
+  let upgrade: Data =
+    ChannelUpgradeRedeemer {
+      step,
+      channel_siblings: siblings,
+      upgrade_siblings: [],
+      error_receipt_siblings: [],
+    }
+  let redeemer: SpendChannelRedeemer = ChanUpgrade(upgrade)
+  let redeemer: Data = redeemer
+  Some(redeemer)
+}
+
+fn gateway_fields() {
+  UpgradeFields {
+    ordering: Unordered,
+    connection_hops: ["connection-1"],
+    version: "ics20-1",
+  }
+}
+
+test gateway_init_upgrade_redeemer_matches() {
+  cbor.deserialise(
+    #"d9050481d87984d87982d87983d87a80814c636f6e6e656374696f6e2d314769637332302d311a0036ee808141aa8080",
+  ) == gateway_redeemer(
+    InitUpgrade { fields: gateway_fields(), timeout_period: 3_600_000 },
+    [#"aa"],
+  )
+}
+
+test gateway_timeout_upgrade_redeemer_matches() {
+  cbor.deserialise(
+    #"d9050481d87984d87e83d87986d87e80d87a80d87982487472616e73666572496368616e6e656c2d30814c636f6e6e656374696f6e2d394769637332302d3102d8798180d87982010d808080",
+  ) == gateway_redeemer(
+    TimeoutUpgrade {
+      counterparty_channel: Channel {
+        state: Flushing,
+        ordering: Unordered,
+        counterparty: ChannelCounterparty {
+          port_id: "transfer",
+          channel_id: "channel-0",
+        },
+        connection_hops: ["connection-9"],
+        version: "ics20-1",
+        upgrade_sequence: 2,
+      },
+      proof_channel: merkle.MerkleProof { proofs: [] },
+      proof_height: Height { revision_number: 1, revision_height: 13 },
+    },
+    [],
+  )
+}
+
+test gateway_flush_upgrade_redeemer_matches() {
+  cbor.deserialise(#"d9050481d87984d905008104808080") == gateway_redeemer(
+    FlushUpgrade { lanes: 4 },
+    [],
+  )
+}
+
+test gateway_upgrade_channel_host_redeemer_matches() {
+  let redeemer: Data = UpgradeChannel
+  cbor.deserialise(#"d9050780") == Some(redeemer)
+}

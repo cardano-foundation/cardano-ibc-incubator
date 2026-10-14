@@ -2,10 +2,11 @@ import { Height } from '../height';
 import { Packet } from './packet';
 import { MerkleProof } from '../isc-23/merkle';
 import {
-  createHeightSchema,
-  createIcs23MerkleProofSchema,
-  createPacketSchema,
-} from '../schema-fragments';
+  ChannelUpgradeRedeemer,
+  channelUpgradeRedeemerData,
+  decodeChannelUpgradeRedeemer,
+} from './channel-upgrade-redeemer';
+import { createHeightSchema, createIcs23MerkleProofSchema, createPacketSchema } from '../schema-fragments';
 
 type LucidData = typeof import('@lucid-evolution/lucid').Data;
 
@@ -85,7 +86,9 @@ export type SpendChannelRedeemer =
         next_sequence_recv: bigint;
         counterparty_upgrade_sequence: bigint;
       };
-    };
+    }
+  | 'ReclaimChannel'
+  | { ChanUpgrade: ChannelUpgradeRedeemer };
 
 function buildMintChannelRedeemerSchema(Data: LucidData) {
   const HeightSchema = createHeightSchema(Data);
@@ -175,6 +178,9 @@ function buildSpendChannelRedeemerSchema(Data: LucidData) {
         counterparty_upgrade_sequence: Data.Integer(),
       }),
     }),
+    Data.Literal('ReclaimChannel'),
+    // The upgrade redeemer is opaque here, as on-chain.
+    Data.Object({ ChanUpgrade: Data.Tuple([Data.Any()]) }),
   ]);
 }
 
@@ -193,7 +199,11 @@ export async function encodeSpendChannelRedeemer(
 ) {
   const { Data } = Lucid;
   const SpendChannelRedeemerSchema = buildSpendChannelRedeemerSchema(Data);
-  return Data.to(spendChannelRedeemer, SpendChannelRedeemerSchema as unknown as SpendChannelRedeemer, {
+  const value =
+    typeof spendChannelRedeemer === 'object' && 'ChanUpgrade' in spendChannelRedeemer
+      ? { ChanUpgrade: [channelUpgradeRedeemerData(spendChannelRedeemer.ChanUpgrade, Lucid)] }
+      : spendChannelRedeemer;
+  return Data.to(value as any, SpendChannelRedeemerSchema as unknown as SpendChannelRedeemer, {
     canonical: true,
   });
 }
@@ -213,5 +223,9 @@ export function decodeSpendChannelRedeemer(
 ): SpendChannelRedeemer {
   const { Data } = Lucid;
   const SpendChannelRedeemerSchema = buildSpendChannelRedeemerSchema(Data);
-  return Data.from(spendChannelRedeemer, SpendChannelRedeemerSchema as unknown as SpendChannelRedeemer);
+  const decoded: any = Data.from(spendChannelRedeemer, SpendChannelRedeemerSchema as unknown as SpendChannelRedeemer);
+  if (typeof decoded === 'object' && 'ChanUpgrade' in decoded) {
+    return { ChanUpgrade: decodeChannelUpgradeRedeemer(decoded.ChanUpgrade[0], Lucid) };
+  }
+  return decoded;
 }

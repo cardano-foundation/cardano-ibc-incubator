@@ -9,7 +9,13 @@ import {
   QueryChannelsResponse,
   QueryConnectionChannelsRequest,
   QueryConnectionChannelsResponse,
+  QueryUpgradeErrorRequest,
+  QueryUpgradeErrorResponse,
+  QueryUpgradeRequest,
+  QueryUpgradeResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
+import { errorReceiptToProto, upgradeToProto } from '../../shared/helpers/channel-upgrade-proto';
+import { channelUpgradeErrorPath, channelUpgradePath } from '../../shared/helpers/channel';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import {
@@ -26,14 +32,22 @@ import { convertHex2String } from '../../shared/helpers/hex';
 import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
-import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { AuthToken } from '../../shared/types/auth-token';
 import { CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { getChannelIdByTokenName } from '../../shared/helpers/channel';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { assertProofContextHostState, resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
+import {
+  assertProofContextHostState,
+  resolveProofContextForQuery,
+  resolveProofHeightForCurrentRoot,
+} from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
 
@@ -219,6 +233,8 @@ export class ChannelService {
           ),
           /** opaque channel version, which is agreed upon during the handshake */
           version: convertHex2String(channelDatumDecoded.state.channel.version),
+          /** sequence of the last upgrade this channel started */
+          upgrade_sequence: channelDatumDecoded.state.channel.upgrade_sequence,
           /** port identifier */
           port_id: convertHex2String(channelDatumDecoded.port),
           /** channel identifier */
@@ -279,7 +295,10 @@ export class ChannelService {
       const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
       const channelTokenUnit = mintChannelPolicyId + channelTokenName;
       const proofContext = await this.getProofContext('queryChannel', options.queryHeight);
-      const utxo = await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, proofContext.proofHeight);
+      const utxo = await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(
+        channelTokenUnit,
+        proofContext.proofHeight,
+      );
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
 
       // Generate ICS-23 proof from the IBC state tree
@@ -322,6 +341,8 @@ export class ChannelService {
           ),
           /** opaque channel version, which is agreed upon during the handshake */
           version: convertHex2String(channelDatumDecoded.state.channel.version),
+          /** sequence of the last upgrade this channel started */
+          upgrade_sequence: channelDatumDecoded.state.channel.upgrade_sequence,
         } as unknown as Channel,
         proof: channelProof, // ICS-23 Merkle proof
         proof_height: {
@@ -334,6 +355,77 @@ export class ChannelService {
       this.logger.error(error.message, 'queryChannel');
       throw new GrpcInternalException(error.message);
     }
+  }
+
+  /** The channel's upgrade while it is in progress, as ibc-go's Query/Upgrade. */
+  async queryUpgrade(request: QueryUpgradeRequest, options: ProofQueryOptions = {}): Promise<QueryUpgradeResponse> {
+    const { datum, proof, proofHeight } = await this.provenUpgradeRecord(
+      'queryUpgrade',
+      request,
+      channelUpgradePath,
+      (state) => state.upgrade.pending !== null,
+      options,
+    );
+    return {
+      upgrade: upgradeToProto(datum.state.upgrade.pending!.upgrade),
+      proof,
+      proof_height: proofHeight,
+    } as unknown as QueryUpgradeResponse;
+  }
+
+  /** The channel's latest upgrade error receipt, as ibc-go's Query/UpgradeError. */
+  async queryUpgradeError(
+    request: QueryUpgradeErrorRequest,
+    options: ProofQueryOptions = {},
+  ): Promise<QueryUpgradeErrorResponse> {
+    const { datum, proof, proofHeight } = await this.provenUpgradeRecord(
+      'queryUpgradeError',
+      request,
+      channelUpgradeErrorPath,
+      (state) => state.upgrade.error_receipt !== null,
+      options,
+    );
+    return {
+      error_receipt: errorReceiptToProto(datum.state.upgrade.error_receipt!),
+      proof,
+      proof_height: proofHeight,
+    } as unknown as QueryUpgradeErrorResponse;
+  }
+
+  /** A channel-upgrade record and its ICS-23 existence proof at one proof height. */
+  private async provenUpgradeRecord(
+    context: string,
+    request: { port_id: string; channel_id: string },
+    path: (portId: string, channelId: string) => string,
+    present: (state: ChannelDatum['state']) => boolean,
+    options: ProofQueryOptions,
+  ) {
+    const { channel_id: channelSequence } = validQueryChannelParam({ ...request } as QueryChannelRequest);
+    const channelId = `${CHANNEL_ID_PREFIX}-${channelSequence}`;
+    this.logger.log(channelId, context);
+    const [policyId, tokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
+    const proofContext = await this.getProofContext(context, options.queryHeight);
+    const utxo = await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(
+      policyId + tokenName,
+      proofContext.proofHeight,
+    );
+    const datum: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    const portId = convertHex2String(datum.port);
+    if (portId !== request.port_id) {
+      throw new GrpcNotFoundException(`${channelId} is not bound to port ${request.port_id}`);
+    }
+    if (!present(datum.state)) {
+      throw new GrpcNotFoundException(
+        `no ${context === 'queryUpgrade' ? 'upgrade' : 'upgrade error'} for ${portId}/${channelId}`,
+      );
+    }
+    await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    const proof = serializeExistenceProof(proofContext.tree.generateProof(path(portId, channelId)));
+    return {
+      datum,
+      proof,
+      proofHeight: { revision_number: 0, revision_height: proofContext.proofHeight },
+    };
   }
 
   async queryConnectionChannels(request: QueryConnectionChannelsRequest): Promise<QueryConnectionChannelsResponse> {
@@ -388,6 +480,8 @@ export class ChannelService {
           ),
           /** opaque channel version, which is agreed upon during the handshake */
           version: convertHex2String(channelDatumDecoded.state.channel.version),
+          /** sequence of the last upgrade this channel started */
+          upgrade_sequence: channelDatumDecoded.state.channel.upgrade_sequence,
           /** port identifier */
           port_id: convertHex2String(channelDatumDecoded.port),
           /** channel identifier */

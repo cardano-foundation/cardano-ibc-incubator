@@ -1,6 +1,10 @@
 import { bootstrapSettlementCredit } from './settlement-credit';
 import { Cbor, CborArray, CborBytes, CborSimple } from '@harmoniclabs/cbor';
-import { loadTrustedPoolRegistryCheckpoint, loadTrustedPoolProductionCheckpoint, withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
+import {
+  loadTrustedPoolRegistryCheckpoint,
+  loadTrustedPoolProductionCheckpoint,
+  withAuthenticatedPoolBindings,
+} from './pool-registry-checkpoint';
 import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { PacketStateService, latestPacketProofHeight } from './packet-state.service';
@@ -98,6 +102,7 @@ import {
   normalizeTxsResultFromClientDatum,
   normalizeTxsResultFromConnDatum,
   normalizeTxsResultFromChannelRedeemer,
+  normalizeTxsResultFromChannelUpgrade,
   normalizeTxsResultFromModuleRedeemer,
   normalizeTxsResultFromRecvPacketSuccessAcknowledgement,
 } from '@shared/helpers/block-results';
@@ -1697,6 +1702,13 @@ export class QueryService {
           }
           if (spendRedeemer.hasOwnProperty('ChanCloseConfirm')) {
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_CONFIRM;
+          }
+          if (typeof spendRedeemer === 'object' && 'ChanUpgrade' in spendRedeemer) {
+            txsResult.events = normalizeTxsResultFromChannelUpgrade(
+              spendRedeemer.ChanUpgrade,
+              channelDatumDecoded,
+              currentChannelId,
+            ).events;
           }
           break;
         }

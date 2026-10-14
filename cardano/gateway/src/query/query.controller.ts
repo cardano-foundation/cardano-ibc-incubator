@@ -28,6 +28,10 @@ import {
 
 import {
   QueryChannelRequest,
+  QueryUpgradeErrorRequest,
+  QueryUpgradeErrorResponse,
+  QueryUpgradeRequest,
+  QueryUpgradeResponse,
   QueryChannelResponse,
   QueryChannelsRequest,
   QueryChannelsResponse,
@@ -192,6 +196,16 @@ export class QueryController {
       queryHeight: getQueryHeightFromMetadata(metadata),
     });
     return response as unknown as QueryChannelResponse;
+  }
+
+  @GrpcMethod('Query', 'Upgrade')
+  async queryUpgrade(request: QueryUpgradeRequest, metadata?: Metadata): Promise<QueryUpgradeResponse> {
+    return this.channelService.queryUpgrade(request, { queryHeight: getQueryHeightFromMetadata(metadata) });
+  }
+
+  @GrpcMethod('Query', 'UpgradeError')
+  async queryUpgradeError(request: QueryUpgradeErrorRequest, metadata?: Metadata): Promise<QueryUpgradeErrorResponse> {
+    return this.channelService.queryUpgradeError(request, { queryHeight: getQueryHeightFromMetadata(metadata) });
   }
 
   @GrpcMethod('Query', 'ConnectionChannels')
