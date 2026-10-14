@@ -1,0 +1,46 @@
+name: Local v8 probabilistic recovery acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'cosmos/cardano-probabilistic-light-client-core/**'
+      - 'cosmos/cardano-probabilistic-light-client-v8/**'
+      - 'caribic/**'
+      - 'chains/cosmos/**'
+      - '.github/workflows/probabilistic-v8-acceptance.yml'
+  workflow_dispatch:
+
+jobs:
+  challenge-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client-v8/go.sum
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: '1.91.1'
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            caribic/target
+          key: caribic-v8-acceptance-${{ runner.os }}-${{ hashFiles('caribic/Cargo.lock') }}
+      - name: Run through Caribic with real committed deadlines
+        run: |
+          set -o pipefail
+          cargo run --locked --manifest-path caribic/Cargo.toml -- test \
+            --light-client challenge-recovery --chain cosmos --network v8-classic \
+            2>&1 | tee /tmp/caribic-v8-acceptance.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: local-v8-challenge-recovery
+          include-hidden-files: true
+          path: |
+            .caribic/test-artifacts/
+            /tmp/caribic-v8-acceptance.log

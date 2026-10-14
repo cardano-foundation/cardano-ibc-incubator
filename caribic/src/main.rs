@@ -35,6 +35,8 @@ enum DemoType {
 pub(crate) enum LightClientTest {
     /// Recover an expired probabilistic client through the ibc-go governance authority path
     RecoverClient,
+    /// Challenge and recover a probabilistic client on an isolated persistent v8 validator
+    ChallengeRecovery,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
