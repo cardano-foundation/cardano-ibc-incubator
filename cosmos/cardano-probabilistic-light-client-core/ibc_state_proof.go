@@ -33,18 +33,16 @@ func VerifyIbcStateMembershipWithExistenceProof(
 		return fmt.Errorf("existence proof key mismatch")
 	}
 
-	if len(exist.Value) > 0 && !bytes.Equal(exist.Value, value) {
-		if verifyCommittedValueMatchesExpected == nil {
-			return fmt.Errorf("existence proof value mismatch")
-		}
-		if err := verifyCommittedValueMatchesExpected(key, value, exist.Value); err != nil {
-			return err
-		}
-	}
-
 	committedValue := value
 	if len(exist.Value) > 0 {
 		committedValue = exist.Value
+	}
+	if verifyCommittedValueMatchesExpected != nil {
+		if err := verifyCommittedValueMatchesExpected(key, value, committedValue); err != nil {
+			return err
+		}
+	} else if !bytes.Equal(committedValue, value) {
+		return fmt.Errorf("existence proof value mismatch")
 	}
 
 	computed, err := ComputeRootFromProofPath(key, committedValue, exist.Path)

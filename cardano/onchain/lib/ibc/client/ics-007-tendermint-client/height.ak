@@ -2,6 +2,8 @@ use aiken/primitive/bytearray
 use aiken/primitive/int
 use ibc/utils/text_bytes
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 pub type Height {
   // the revision that the client is currently on
   revision_number: Int,

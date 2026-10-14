@@ -5,6 +5,8 @@ use aiken/primitive/bytearray
 use cardano/assets.{AssetName, PolicyId, Value, tokens, zero}
 use cardano/transaction.{Output}
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 pub type AuthToken {
   policy_id: PolicyId,
   name: AssetName,

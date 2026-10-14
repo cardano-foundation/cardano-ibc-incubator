@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/fxamacker/cbor/v2"
 	"testing"
 
 	ics23 "github.com/cosmos/ics23/go"
@@ -13,7 +14,7 @@ import (
 )
 
 func TestVerifyIbcStateMembership_JSONProof(t *testing.T) {
-	key := []byte("clients/07-tendermint-0/clientState")
+	key := []byte("acks/ports/transfer/channels/channel-0/sequences/1")
 	value := []byte{0x01, 0x02, 0x03}
 
 	keyHash := sha256.Sum256(key)
@@ -40,14 +41,16 @@ func TestVerifyIbcStateMembership_JSONProof(t *testing.T) {
 		}
 	}
 
-	root, err := computeRootFromProofPath(key, value, path)
+	committed, err := cbor.Marshal(value)
+	require.NoError(t, err)
+	root, err := computeRootFromProofPath(key, committed, path)
 	require.NoError(t, err)
 
-	proofBytes := mustJSONExistenceProof(t, key, value, path)
+	proofBytes := mustJSONExistenceProof(t, key, committed, path)
 
 	require.NoError(t, VerifyIbcStateMembership(root, key, value, proofBytes))
 	require.Error(t, VerifyIbcStateMembership(root, key, []byte{0xFF}, proofBytes))
-	require.Error(t, VerifyIbcStateMembership(root, []byte("clients/07-tendermint-1/clientState"), value, proofBytes))
+	require.Error(t, VerifyIbcStateMembership(root, []byte("acks/ports/transfer/channels/channel-1/sequences/1"), value, proofBytes))
 }
 
 func TestLeafHashBindsNonEmptyValueToKey(t *testing.T) {
