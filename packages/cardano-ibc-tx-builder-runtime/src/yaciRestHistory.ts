@@ -15,6 +15,7 @@ import { CML } from "@lucid-evolution/lucid";
 import { YaciRestClient, type YaciRestBlock } from "./yaciRest.ts";
 import { YaciRestHistoryChangedError } from "./yaciRest.ts";
 type IbcTreeHostStateRef = { txHash: string; outputIndex: number };
+const MAX_HISTORY_PAGES = 100_000;
 
 export type RestOutput = {
   tx_hash: string;
@@ -124,28 +125,143 @@ export class YaciRestHistory {
     path: string,
     order: "asc" | "desc" = "asc",
   ): AsyncGenerator<any> {
+    yield* this.readPages(path, order);
+  }
+
+  private async readPage(
+    path: string,
+    order: "asc" | "desc",
+    page: number,
+  ): Promise<any[]> {
+    const rows = await this.api.json(
+      `${path}${path.includes("?") ? "&" : "?"}count=100&page=${page}&order=${order}`,
+    );
+    if (!Array.isArray(rows) || rows.length > 100)
+      throw new Error(`Invalid or unavailable Yaci history page: ${path}`);
+    if (new Set(rows.map((row) => JSON.stringify(row))).size !== rows.length)
+      throw new Error(`Yaci history pagination repeated a row: ${path}`);
+    return rows;
+  }
+
+  private async *readPages(
+    path: string,
+    order: "asc" | "desc",
+    options: {
+      startPage?: number;
+      firstPage?: any[];
+      bounded?: boolean;
+      allowDuplicate?: (row: any) => boolean;
+    } = {},
+  ): AsyncGenerator<any> {
     const seen = new Set<string>();
-    for (let page = 1; page <= 100_000; page++) {
-      const rows = await this.api.json(
-        `${path}${path.includes("?") ? "&" : "?"}count=100&page=${page}&order=${order}`,
-      );
-      if (!Array.isArray(rows) || rows.length > 100)
-        throw new Error(`Invalid or unavailable Yaci history page: ${path}`);
-      const identities = rows.map((row) => JSON.stringify(row));
-      if (new Set(identities).size !== rows.length)
-        throw new Error(`Yaci history pagination repeated a row: ${path}`);
+    const start = options.startPage ?? 1;
+    for (let page = start; page <= MAX_HISTORY_PAGES; page++) {
+      const rows =
+        page === start && options.firstPage !== undefined
+          ? options.firstPage
+          : await this.readPage(path, order, page);
       for (const row of rows) {
         const identity = JSON.stringify(row);
-        if (seen.has(identity))
+        if (seen.has(identity) && !options.allowDuplicate?.(row))
           throw new YaciRestPageDriftError(
             `Yaci history pagination repeated a row: ${path}`,
           );
         seen.add(identity);
         yield row;
       }
+      // Streaming readers also check block order. Retain just the last page
+      // for overlap detection instead of growing a history-sized identity set.
+      if (options.bounded) {
+        seen.clear();
+        for (const row of rows) seen.add(JSON.stringify(row));
+      }
       if (rows.length < 100) return;
     }
     throw new Error(`Yaci history pagination exceeded its limit: ${path}`);
+  }
+
+  private async firstTransactionPage(
+    path: string,
+    fromHeight: number,
+  ): Promise<{ page: number; rows: any[] }> {
+    let low = 1;
+    let high = 1;
+    let rows = await this.readPage(path, "asc", high);
+    const lastHeight = (page: any[]) =>
+      page.length
+        ? height(page.at(-1).block_height ?? page.at(-1).block_number)
+        : Infinity;
+    // Ascending offsets stay stable under appends. Locate the checkpoint page
+    // with bounded probes instead of enumerating every older index page.
+    while (lastHeight(rows) < fromHeight) {
+      if (rows.length < 100) return { page: high + 1, rows: [] };
+      if (high === MAX_HISTORY_PAGES)
+        throw new Error(`Yaci history pagination exceeded its limit: ${path}`);
+      low = high + 1;
+      high = Math.min(high * 2, MAX_HISTORY_PAGES);
+      rows = await this.readPage(path, "asc", high);
+    }
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      const candidate = await this.readPage(path, "asc", middle);
+      if (lastHeight(candidate) < fromHeight) low = middle + 1;
+      else {
+        high = middle;
+        rows = candidate;
+      }
+    }
+    return { page: high, rows };
+  }
+
+  async *transactionBlocksFor(
+    path: string,
+    at: number,
+    fromHeight = 0,
+  ): AsyncGenerator<RestTransaction[]> {
+    const first =
+      fromHeight > 0
+        ? await this.firstTransactionPage(path, fromHeight)
+        : undefined;
+    let previous: number | undefined;
+    let blockHeight: number | undefined;
+    let transactions: RestTransaction[] = [];
+    let blockRows = 0;
+    for await (const row of this.readPages(path, "asc", {
+      startPage: first?.page,
+      firstPage: first?.rows,
+      bounded: true,
+      // Same-slot ordering can shuffle rows across pages. The complete raw
+      // block already supplied its transactions, so those overlaps are safe.
+      allowDuplicate: (row) =>
+        (row.block_height ?? row.block_number) === blockHeight,
+    })) {
+      const number = height(row.block_height ?? row.block_number);
+      if (previous !== undefined && number < previous)
+        throw new YaciRestPageDriftError(
+          "Yaci transaction history moved backwards during pagination",
+        );
+      previous = number;
+      if (number < fromHeight) continue;
+      if (number > at) return;
+      const txHash = hash(row.tx_hash);
+      const newBlock = number !== blockHeight;
+      if (newBlock) {
+        transactions = await this.blockTransactions(number);
+        blockHeight = number;
+        blockRows = 0;
+      }
+      if (++blockRows > transactions.length)
+        throw new YaciRestPageDriftError(
+          "Yaci history repeated more rows than its raw block contains",
+        );
+      if (!transactions.some((tx) => tx.hash === txHash))
+        throw new Error(
+          "Yaci history transaction is missing from its raw block",
+        );
+      // A block can span index pages with unspecified same-slot row order.
+      // Yield its canonical transactions once as soon as its first row arrives.
+      if (newBlock) yield transactions;
+    }
   }
 
   async firstBlockInEpoch(epoch: number): Promise<RestEpochBlock | null> {
@@ -438,7 +554,10 @@ export class YaciRestHistory {
       try {
         await this.assertCanonical(anchor);
         const transactions = await this.readTransactionsFor(
-          path, at, fromHeight, "asc",
+          path,
+          at,
+          fromHeight,
+          "asc",
         );
         await this.assertCanonical(anchor);
         return transactions;

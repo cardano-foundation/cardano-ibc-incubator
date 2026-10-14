@@ -84,77 +84,81 @@ export function createRestHistorySource(
     ): AsyncGenerator<HistoryTransaction> {
       after = after ? { ...after } : undefined;
       source.reset();
-      const tip = await source.api.block("latest");
-      if (!tip) throw new Error("Yaci REST tip is unavailable");
-      if (after) {
-        if (after.blockHeight > tip.number)
-          throw new Error("Yaci REST tip is behind the resume point");
-        const block = await source.api.block(after.blockHeight);
-        if (!block || block.hash !== after.blockHash)
-          throw new HistoryIntersectionError(
-            "Yaci REST resume block is no longer canonical",
-          );
-        const tx = (await source.blockTransactions(after.blockHeight))[
-          after.transactionIndex
-        ];
-        if (
-          !tx?.valid ||
-          tx.hash !== after.txHash ||
-          tx.block.slot !== after.slot ||
-          !tx.outputs.some(
-            (output) =>
-              (deployment.allowScriptMigration ||
-                output.address === deployment.stateAddress) &&
-              output.amounts.some(
-                (amount) => amount.unit === unit && amount.quantity === "1",
-              ),
+      try {
+        const tip = await source.api.block("latest");
+        if (!tip) throw new Error("Yaci REST tip is unavailable");
+        if (after) {
+          if (after.blockHeight > tip.number)
+            throw new Error("Yaci REST tip is behind the resume point");
+          const block = await source.api.block(after.blockHeight);
+          if (!block || block.hash !== after.blockHash)
+            throw new HistoryIntersectionError(
+              "Yaci REST resume block is no longer canonical",
+            );
+          const tx = (await source.blockTransactions(after.blockHeight))[
+            after.transactionIndex
+          ];
+          if (
+            !tx?.valid ||
+            tx.hash !== after.txHash ||
+            tx.block.slot !== after.slot ||
+            !tx.outputs.some(
+              (output) =>
+                (deployment.allowScriptMigration ||
+                  output.address === deployment.stateAddress) &&
+                output.amounts.some(
+                  (amount) => amount.unit === unit && amount.quantity === "1",
+                ),
+            )
           )
-        )
-          throw new Error(
-            "Yaci REST resume transaction evidence is incomplete",
+            throw new Error(
+              "Yaci REST resume transaction evidence is incomplete",
+            );
+        }
+        for await (const transactions of source.transactionBlocksFor(
+          `assets/${unit}/transactions`,
+          tip.number,
+          after?.blockHeight ?? 0,
+        )) {
+          for (const tx of transactions) {
+            if (
+              !tx.valid ||
+              (after &&
+                tx.block.number === after.blockHeight &&
+                tx.index < after.transactionIndex)
+            )
+              continue;
+            const outputs = tx.outputs.filter(
+              (output) =>
+                (deployment.allowScriptMigration ||
+                  output.address === deployment.stateAddress) &&
+                output.amounts.some(
+                  (amount) => amount.unit === unit && amount.quantity === "1",
+                ),
+            );
+            if (!outputs.length) continue;
+            if (outputs.length !== 1)
+              throw new Error(
+                "Multiple client state outputs in a historical transaction",
+              );
+            source.api.signal?.throwIfAborted();
+            yield evidence(tx);
+          }
+        }
+        const canonical = await source.api.block(tip.number);
+        if (!canonical || canonical.hash !== tip.hash)
+          throw new HistorySnapshotChangedError(
+            "Yaci REST history changed during recovery",
           );
-      }
-      const outputs = await source.outputs(
-        {
-          policy: deployment.clientToken.policyId,
-          unit,
-          address: deployment.allowScriptMigration
-            ? undefined
-            : deployment.stateAddress,
-          unspent: false,
-        },
-        tip.number,
-        after?.blockHeight ?? 0,
-      ).catch((error: unknown) => {
+      } catch (error) {
         if (error instanceof YaciRestHistoryChangedError)
-          throw new HistorySnapshotChangedError(error.message, { cause: error });
+          throw new HistorySnapshotChangedError(error.message, {
+            cause: error,
+          });
         throw error;
-      });
-      const seen = new Set<string>();
-      for (const output of outputs) {
-        if (
-          after &&
-          (output.block < after.blockHeight ||
-            (output.block === after.blockHeight &&
-              output.tx_index < after.transactionIndex))
-        )
-          continue;
-        if (seen.has(output.tx_hash))
-          throw new Error(
-            "Multiple client state outputs in a historical transaction",
-          );
-        seen.add(output.tx_hash);
-        const tx = (await source.blockTransactions(output.block)).find(
-          (candidate) => candidate.hash === output.tx_hash,
-        )!;
-        source.api.signal?.throwIfAborted();
-        yield evidence(tx);
+      } finally {
+        source.reset();
       }
-      const canonical = await source.api.block(tip.number);
-      if (!canonical || canonical.hash !== tip.hash)
-        throw new HistorySnapshotChangedError(
-          "Yaci REST history changed during recovery",
-        );
     },
   };
 }

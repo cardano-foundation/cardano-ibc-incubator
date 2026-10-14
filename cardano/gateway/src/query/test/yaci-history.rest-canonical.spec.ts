@@ -159,7 +159,7 @@ describe('direct Yaci REST history', () => {
       blockHeight: 101, slot: next.metadata.slot, transactionIndex: 0 })) rows.push(row);
     expect(rows).toHaveLength(1);
     expect(request.mock.calls.some(([url]) => String(url).endsWith(`/blocks/${first.metadata.hash}/cbor`))).toBe(false);
-    expect(request.mock.calls.some(([url]) => String(url).includes('order=desc'))).toBe(true);
+    expect(request.mock.calls.some(([url]) => String(url).includes('order=asc'))).toBe(true);
   });
 
   it('discovers NFT creation and replays accepted client bodies through REST', async () => {
