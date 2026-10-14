@@ -1,6 +1,9 @@
 package cardanodatum
 
-import "github.com/blinklabs-io/gouroboros/ledger"
+import (
+	"github.com/blinklabs-io/gouroboros/ledger"
+	codec "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/commitmentcodec"
+)
 
 // This package contains CBOR/Plutus datum shapes used by the Cardano chain.
 //
@@ -39,70 +42,21 @@ type ExtractBlockOutput struct {
 // Struct types saved on the Cardano side (CBOR / PlutusData)
 
 // Client and consensus state
-type RootHashInDatum struct {
-	_    struct{} `cbor:",toarray"`
-	Hash []byte
-}
+type RootHashInDatum = codec.RootHashInDatum
 
-type ConsensusStateDatum struct {
-	_                  struct{} `cbor:",toarray"`
-	Timestamp          uint64
-	NextValidatorsHash []byte
-	Root               RootHashInDatum
-}
+type ConsensusStateDatum codec.ConsensusStateDatum
 
-type TrustLevelDatum struct {
-	_           struct{} `cbor:",toarray"`
-	Numerator   uint64
-	Denominator uint64
-}
+type TrustLevelDatum = codec.TrustLevelDatum
 
-type HeightDatum struct {
-	_              struct{} `cbor:",toarray"`
-	RevisionNumber uint64
-	RevisionHeight uint64
-}
+type HeightDatum = codec.HeightDatum
 
-type LeafSpecDatum struct {
-	_            struct{} `cbor:",toarray"`
-	Hash         int32
-	PrehashKey   int32
-	PrehashValue int32
-	Length       int32
-	Prefix       []byte
-}
+type LeafSpecDatum = codec.LeafSpecDatum
 
-type InnerSpecDatum struct {
-	_               struct{} `cbor:",toarray"`
-	ChildOrder      []int32
-	ChildSize       int32
-	MinPrefixLength int32
-	MaxPrefixLength int32
-	EmptyChild      []byte
-	Hash            int32
-}
+type InnerSpecDatum = codec.InnerSpecDatum
 
-type ProofSpecsDatum struct {
-	_         struct{} `cbor:",toarray"`
-	LeafSpec  LeafSpecDatum
-	InnerSpec InnerSpecDatum
-	MaxDepth  int32
-	MinDepth  int32
-	// (PrehashKeyBeforeComparison.(cbor.Tag)).Number => False: 121, True: 122
-	PrehashKeyBeforeComparison interface{}
-}
+type ProofSpecsDatum = codec.ProofSpecsDatum
 
-type ClientStateDatum struct {
-	_               struct{} `cbor:",toarray"`
-	ChainId         []byte
-	TrustLevel      TrustLevelDatum
-	TrustingPeriod  uint64
-	UnbondingPeriod uint64
-	MaxClockDrift   uint64
-	FrozenHeight    HeightDatum
-	LatestHeight    HeightDatum
-	ProofSpecs      []ProofSpecsDatum
-}
+type ClientStateDatum codec.ClientStateDatum
 
 type TokenDatum struct {
 	_        struct{} `cbor:",toarray"`
@@ -129,53 +83,17 @@ type ConnectionDatum struct {
 	Token TokenDatum
 }
 
-type ConnectionEndDatum struct {
-	_        struct{} `cbor:",toarray"`
-	ClientId []byte
-	Versions []VersionDatum
-	// Little hack with this kind of Enum
-	// (State.(cbor.Tag)).Number => UNINITIALIZED: 121, INIT: 122, TRYOPEN: 123, OPEN: 124
-	State        interface{}
-	Counterparty CounterpartyDatum
-	DelayPeriod  uint64
-}
+type ConnectionEndDatum codec.ConnectionEndDatum
 
-type VersionDatum struct {
-	_          struct{} `cbor:",toarray"`
-	Identifier []byte
-	Features   [][]byte
-}
+type VersionDatum = codec.VersionDatum
 
-type CounterpartyDatum struct {
-	_            struct{} `cbor:",toarray"`
-	ClientId     []byte
-	ConnectionId []byte
-	Prefix       MerklePrefixDatum
-}
+type CounterpartyDatum = codec.CounterpartyDatum
 
-type MerklePrefixDatum struct {
-	_         struct{} `cbor:",toarray"`
-	KeyPrefix []byte
-}
+type MerklePrefixDatum = codec.MerklePrefixDatum
 
-type ChannelCounterpartyDatum struct {
-	_         struct{} `cbor:",toarray"`
-	PortId    []byte
-	ChannelId []byte
-}
+type ChannelCounterpartyDatum = codec.ChannelCounterpartyDatum
 
-type ChannelDatum struct {
-	_ struct{} `cbor:",toarray"`
-	// Little hack with this kind of Enum
-	// (State.(cbor.Tag)).Number => UNINITIALIZED: 121, INIT: 122, TRYOPEN: 123, OPEN: 124, CLOSED: 125
-	State interface{}
-	// Little hack with this kind of Enum
-	// (Ordering.(cbor.Tag)).Number => None: 121, Unordered: 122, Ordered: 123
-	Ordering       interface{}
-	Counterparty   ChannelCounterpartyDatum
-	ConnectionHops [][]byte
-	Version        []byte
-}
+type ChannelDatum codec.ChannelDatum
 
 type ChannelDatumState struct {
 	_                     struct{} `cbor:",toarray"`

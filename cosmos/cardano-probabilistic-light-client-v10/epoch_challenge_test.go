@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"github.com/fxamacker/cbor/v2"
 	"testing"
 	"time"
 
@@ -73,9 +74,15 @@ func TestEpochChallengeBlocksValidProofsUntilHostDeadline(t *testing.T) {
 
 func challengeTestProof(t *testing.T, membership bool) ([]byte, []byte, []byte, []byte) {
 	t.Helper()
-	key, value := []byte("commitments/test"), []byte("packet-commitment")
+	key, value := []byte("nextSequenceRecv/ports/transfer/channels/channel-0"), []byte{0, 0, 0, 0, 0, 0, 0, 7}
 	if !membership {
 		value = nil
+	}
+	committed := value
+	if membership {
+		var err error
+		committed, err = cbor.Marshal(binary.BigEndian.Uint64(value))
+		require.NoError(t, err)
 	}
 	hash := sha256.Sum256(key)
 	index := binary.BigEndian.Uint64(hash[:8])
@@ -87,9 +94,9 @@ func challengeTestProof(t *testing.T, membership bool) ([]byte, []byte, []byte, 
 			path[depth] = &ics23.InnerOp{Prefix: append([]byte{1}, make([]byte, 32)...)}
 		}
 	}
-	root, err := probabilisticcore.ComputeRootFromProofPath(key, value, path)
+	root, err := probabilisticcore.ComputeRootFromProofPath(key, committed, path)
 	require.NoError(t, err)
-	existence := &ics23.ExistenceProof{Key: key, Value: value, Path: path}
+	existence := &ics23.ExistenceProof{Key: key, Value: committed, Path: path}
 	proof := &ics23.CommitmentProof{Proof: &ics23.CommitmentProof_Exist{Exist: existence}}
 	if !membership {
 		proof.Proof = &ics23.CommitmentProof_Nonexist{Nonexist: &ics23.NonExistenceProof{Key: key, Left: existence}}

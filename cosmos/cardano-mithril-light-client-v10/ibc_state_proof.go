@@ -17,9 +17,9 @@ import (
 	// not to protobuf bytes. The light client is responsible for bridging that
 	// encoding difference during verification.
 	cardanodatum "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/cardanodatum"
+	codec "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/commitmentcodec"
 
 	proto "github.com/cosmos/gogoproto/proto"
-	gogotypes "github.com/cosmos/gogoproto/types"
 	connectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
@@ -72,15 +72,12 @@ func VerifyIbcStateMembership(root []byte, key []byte, value []byte, proofBytes 
 	//
 	// If the proof carries a value, we (a) semantically compare it to the expected protobuf
 	// value, and (b) use the proof’s value bytes as the committed leaf when recomputing the root.
-	if len(exist.Value) > 0 && !bytes.Equal(exist.Value, value) {
-		if err := verifyCardanoValueMatchesExpected(key, value, exist.Value); err != nil {
-			return err
-		}
-	}
-
 	committedValue := value
 	if len(exist.Value) > 0 {
 		committedValue = exist.Value
+	}
+	if err := verifyCardanoValueMatchesExpected(key, value, committedValue); err != nil {
+		return err
 	}
 
 	computed, err := computeRootFromProofPath(key, committedValue, exist.Path)
@@ -104,10 +101,11 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		if err := proto.Unmarshal(expectedValue, &expected); err != nil {
 			return fmt.Errorf("failed to decode expected ConnectionEnd protobuf: %w", err)
 		}
-		var committed cardanodatum.ConnectionEndDatum
-		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+		decoded, err := codec.DecodeConnectionEnd(committedValue)
+		if err != nil {
 			return fmt.Errorf("failed to decode committed ConnectionEnd CBOR: %w", err)
 		}
+		committed := cardanodatum.ConnectionEndDatum(decoded)
 		if err := committed.Cmp(expected); err != nil {
 			return err
 		}
@@ -122,10 +120,9 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		//  1) unwrap the Any from the expected IBC store value
 		//  2) decode the inner Tendermint ClientState protobuf
 		//  3) semantically compare it with the committed CBOR datum
-		var expectedAny gogotypes.Any
-		innerExpectedValue := expectedValue
-		if err := proto.Unmarshal(expectedValue, &expectedAny); err == nil && len(expectedAny.Value) > 0 {
-			innerExpectedValue = expectedAny.Value
+		innerExpectedValue, err := codec.ExpectedTendermintValue(expectedValue, "/ibc.lightclients.tendermint.v1.ClientState")
+		if err != nil {
+			return err
 		}
 
 		var expected tmtypes.ClientState
@@ -143,20 +140,20 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 
 	case strings.HasPrefix(keyStr, "clients/") && strings.Contains(keyStr, "/consensusStates/"):
 		// Consensus states are also stored as a protobuf `Any` value in the IBC store.
-		var expectedAny gogotypes.Any
-		innerExpectedValue := expectedValue
-		if err := proto.Unmarshal(expectedValue, &expectedAny); err == nil && len(expectedAny.Value) > 0 {
-			innerExpectedValue = expectedAny.Value
+		innerExpectedValue, err := codec.ExpectedTendermintValue(expectedValue, "/ibc.lightclients.tendermint.v1.ConsensusState")
+		if err != nil {
+			return err
 		}
 
 		var expected tmtypes.ConsensusState
 		if err := proto.Unmarshal(innerExpectedValue, &expected); err != nil {
 			return fmt.Errorf("failed to decode expected Tendermint ConsensusState protobuf: %w", err)
 		}
-		var committed cardanodatum.ConsensusStateDatum
-		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+		decoded, err := codec.DecodeConsensusState(committedValue)
+		if err != nil {
 			return fmt.Errorf("failed to decode committed Tendermint ConsensusState CBOR: %w", err)
 		}
+		committed := cardanodatum.ConsensusStateDatum(decoded)
 		if err := committed.Cmp(&expected); err != nil {
 			return err
 		}
@@ -167,32 +164,18 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		if err := proto.Unmarshal(expectedValue, &expected); err != nil {
 			return fmt.Errorf("failed to decode expected Channel protobuf: %w", err)
 		}
-		var committed cardanodatum.ChannelDatum
-		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+		decoded, err := codec.DecodeChannel(committedValue)
+		if err != nil {
 			return fmt.Errorf("failed to decode committed Channel CBOR: %w", err)
 		}
+		committed := cardanodatum.ChannelDatum(decoded)
 		if err := committed.Cmp(expected); err != nil {
 			return err
 		}
 		return nil
 
 	case strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
-		// Cardano commits the Plutus integer, while ibc-go expects eight
-		// big-endian bytes. Compare the numbers without changing the leaf bytes.
-		if len(expectedValue) != 8 {
-			return fmt.Errorf("invalid expected nextSequenceRecv length: %d (want 8)", len(expectedValue))
-		}
-		if len(committedValue) == 0 || committedValue[0]>>5 != 0 {
-			return fmt.Errorf("committed nextSequenceRecv must be a CBOR unsigned integer")
-		}
-		var committedSequence uint64
-		if err := cbor.Unmarshal(committedValue, &committedSequence); err != nil {
-			return fmt.Errorf("failed to decode committed nextSequenceRecv CBOR: %w", err)
-		}
-		if committedSequence != binary.BigEndian.Uint64(expectedValue) {
-			return fmt.Errorf("existence proof value mismatch")
-		}
-		return nil
+		return codec.CompareNextSequenceRecv(committedValue, expectedValue)
 
 	case strings.HasPrefix(keyStr, "commitments/ports/"),
 		strings.HasPrefix(keyStr, "acks/ports/"):
@@ -200,14 +183,7 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		// as raw bytes (not protobuf-encoded). Cardano commits to the CBOR-serialised
 		// Plutus `ByteArray` for these values, so we need to unwrap the committed
 		// CBOR bytestring and compare the underlying bytes.
-		var committedBytes []byte
-		if err := cbor.Unmarshal(committedValue, &committedBytes); err != nil {
-			return fmt.Errorf("failed to decode committed packet bytes CBOR: %w", err)
-		}
-		if !bytes.Equal(committedBytes, expectedValue) {
-			return fmt.Errorf("existence proof value mismatch")
-		}
-		return nil
+		return codec.ComparePacketBytes(committedValue, expectedValue)
 	}
 
 	return fmt.Errorf("existence proof value mismatch")

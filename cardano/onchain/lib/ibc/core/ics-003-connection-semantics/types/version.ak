@@ -1,6 +1,8 @@
 use aiken/collection/list
 use ibc/utils/text_bytes
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 pub type Version {
   identifier: ByteArray,
   features: List<ByteArray>,
