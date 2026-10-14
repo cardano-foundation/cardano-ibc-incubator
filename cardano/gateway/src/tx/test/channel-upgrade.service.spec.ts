@@ -416,6 +416,23 @@ describe('ChannelUpgradeService', () => {
     await expectRootWitnesses(lucidService, before, encoded(lucidService, 'channel'), tree);
   });
 
+  it('reports a flush with every lane certified', async () => {
+    const init = initUpgrade(baseChannel(), UPGRADE_FIELDS, 3_600_000n);
+    const before: ChannelDatum = {
+      ...init,
+      state: {
+        ...init.state,
+        channel: { ...init.state.channel, state: ChannelState.Flushing },
+        upgrade: { ...init.state.upgrade, pending: { ...init.state.upgrade.pending!, flushed_lanes: 16n } },
+      },
+    };
+    const { service } = await setup(before);
+
+    await expect(
+      service.channelUpgradeFlush({ port_id: 'transfer', channel_id: 'channel-0', signer: 'addr' }),
+    ).rejects.toThrow(/already certified/);
+  });
+
   it('opens only after the counterparty opened', async () => {
     const { service } = await setup(baseChannel());
 

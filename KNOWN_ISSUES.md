@@ -60,7 +60,7 @@ The following IBC features are not currently supported by the Cardano bridge pat
 
 ### Channel Upgrades
 
-Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake. Note that this affects token redemption and lifecycle. This is something that is planned to be addressed prior to main net launch.
+A transfer channel can move to a replacement connection with an ICS-04 upgrade, which keeps its identifiers, vouchers and escrow. See [Channel upgrades](docs/channel-upgrades.md). Other parameters stay fixed: a different version or ordering still needs a new channel and migrated application routing, which affects token redemption and lifecycle. The upgrade requires a fresh deployment and has not yet run against a live counterparty.
 
 `ibc-go` v8.1.0 introduced channel upgradability. Compatible applications could change the channel version, ordering, or connection without replacing the channel. Upstream v10 later removed channel upgradability and ICS-29 fee middleware. Support on a Cosmos counterparty therefore depends on its version and application stack. See the [v8.1 migration guide](https://github.com/cosmos/ibc-go/blob/main/docs/docs/05-migrations/12-v8-to-v8_1.md) and [v10 changelog](https://github.com/cosmos/ibc-go/blob/v10.2.0/CHANGELOG.md).
 
@@ -80,11 +80,11 @@ therefore requires a fresh bridge deployment and new channels. Existing
 Channel and HostState UTxOs cannot be migrated to the new validator addresses
 in place.
 
-Adding channel upgrades here would require a compatible counterparty implementation. A newer `ibc-go` version does not by itself imply support for that handshake.
+Channel upgrades require a compatible counterparty implementation. A newer `ibc-go` version does not by itself imply support for that handshake.
 
-The probabilistic clients already verify the Cardano records that a connection-hop upgrade needs. `ibc-go` v8 verifies every upgrade step through the channel's existing connection, so the client being replaced must understand these records before it is deployed. Cardano channel ends may append `upgrade_sequence` and use the FLUSHING and FLUSHCOMPLETE states. Upgrade and error records use `ibc-go`'s `channelUpgrades` paths. [`channel-upgrade.json`](tests/ibc-state-commitment/channel-upgrade.json) fixes these encodings. A five-field channel end only proves upgrade sequence zero. The v10 client verifies upgradable channel ends without comparing the sequence, because v10 has none. Cardano validators, the Gateway and Hermes do not implement the handshake yet.
+The probabilistic clients already verify the Cardano records that a connection-hop upgrade needs. `ibc-go` v8 verifies every upgrade step through the channel's existing connection, so the client being replaced must understand these records before it is deployed. Cardano channel ends may append `upgrade_sequence` and use the FLUSHING and FLUSHCOMPLETE states. Upgrade and error records use `ibc-go`'s `channelUpgrades` paths. [`channel-upgrade.json`](tests/ibc-state-commitment/channel-upgrade.json) fixes these encodings. A five-field channel end only proves upgrade sequence zero. The v10 client verifies upgradable channel ends without comparing the sequence, because v10 has none.
 
-`ibc-go` v8.7.0 treats a counterparty as already upgraded only if its own new connection ID equals the counterparty's ID for that connection. Cardano and a Cosmos chain use different IDs, so a Cosmos channel end in FLUSHCOMPLETE can still time out after Cardano has opened with the new connection. A Cardano implementation must therefore not open before its counterparty.
+`ibc-go` v8.7.0 treats a counterparty as already upgraded only if its own new connection ID equals the counterparty's ID for that connection. Cardano and a Cosmos chain use different IDs, so a Cosmos channel end in FLUSHCOMPLETE can still time out after Cardano has opened with the new connection. Cardano therefore opens only after its counterparty.
 
 ### ICS-29 Fee Middleware
 
