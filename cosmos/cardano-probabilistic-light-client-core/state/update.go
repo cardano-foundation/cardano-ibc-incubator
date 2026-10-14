@@ -753,10 +753,8 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 		qualifiedUniquePools,
 		qualifiedUniqueStakeBps,
 		securityScoreBps,
+		snapshotBytes,
 	)
-	consensus, _ := GetConsensusState(clientStore, cdc, header.GetHeight())
-	consensus.PacketStateSnapshot = snapshotBytes
-	SetConsensusState(clientStore, cdc, consensus, header.GetHeight())
 	setConsensusMetadata(ctx, clientStore, header.GetHeight())
 	clientStore.Set(ProbabilisticScoreKey(height.RevisionHeight), uint64ToBigEndian(securityScoreBps))
 	clientStore.Set(UniquePoolsKey(height.RevisionHeight), uint64ToBigEndian(qualifiedUniquePools))
@@ -806,19 +804,25 @@ func setAuthenticatedConsensusState(
 	qualifiedUniquePools uint64,
 	qualifiedUniqueStakeBps uint64,
 	securityScoreBps uint64,
+	packetSnapshot ...[]byte,
 ) {
+	var packet []byte
+	if len(packetSnapshot) != 0 {
+		packet = packetSnapshot[0]
+	}
 	SetConsensusState(clientStore, cdc, &ConsensusState{
-		Timestamp:         authenticatedHeader.anchorBlock.timestamp,
-		NonceState:        clonePraosNonceState(authenticatedHeader.anchorNonceState),
-		PoolRegistry:      clonePoolRegistry(authenticatedHeader.anchorPoolRegistry),
-		SettlementCredit:  cloneSettlementCredit(authenticatedHeader.anchorSettlementCredit),
-		PoolProduction:    clonePoolProduction(authenticatedHeader.anchorPoolProduction),
-		IbcStateRoot:      ibcStateRoot,
-		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
-		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,
-		UniquePoolsCount:  qualifiedUniquePools,
-		UniqueStakeBps:    qualifiedUniqueStakeBps,
-		SecurityScoreBps:  securityScoreBps,
+		Timestamp:           authenticatedHeader.anchorBlock.timestamp,
+		NonceState:          clonePraosNonceState(authenticatedHeader.anchorNonceState),
+		PoolRegistry:        clonePoolRegistry(authenticatedHeader.anchorPoolRegistry),
+		SettlementCredit:    cloneSettlementCredit(authenticatedHeader.anchorSettlementCredit),
+		PoolProduction:      clonePoolProduction(authenticatedHeader.anchorPoolProduction),
+		IbcStateRoot:        ibcStateRoot,
+		AcceptedBlockHash:   authenticatedHeader.anchorBlock.hash,
+		AcceptedEpoch:       authenticatedHeader.anchorBlock.epoch,
+		UniquePoolsCount:    qualifiedUniquePools,
+		UniqueStakeBps:      qualifiedUniqueStakeBps,
+		SecurityScoreBps:    securityScoreBps,
+		PacketStateSnapshot: packet,
 	}, height)
 }
 
