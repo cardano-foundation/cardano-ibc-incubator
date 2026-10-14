@@ -67,6 +67,12 @@ type ClientState struct {
 	LatestCheckpointPoolRegistry                    *PoolRegistryState               `protobuf:"bytes,34,opt,name=latest_checkpoint_pool_registry,json=latestCheckpointPoolRegistry,proto3" json:"latest_checkpoint_pool_registry,omitempty"`
 	LatestCheckpointSettlementCredit                *SettlementCreditState           `protobuf:"bytes,35,opt,name=latest_checkpoint_settlement_credit,json=latestCheckpointSettlementCredit,proto3" json:"latest_checkpoint_settlement_credit,omitempty"`
 	LatestCheckpointPoolProduction                  *PoolProductionHistory           `protobuf:"bytes,36,opt,name=latest_checkpoint_pool_production,json=latestCheckpointPoolProduction,proto3" json:"latest_checkpoint_pool_production,omitempty"`
+	StorageVersion                                  uint32                           `protobuf:"varint,37,opt,name=storage_version,json=storageVersion,proto3" json:"storage_version,omitempty"`
+	VerificationGeneration                          uint64                           `protobuf:"varint,38,opt,name=verification_generation,json=verificationGeneration,proto3" json:"verification_generation,omitempty"`
+	CheckpointReference                             []byte                           `protobuf:"bytes,39,opt,name=checkpoint_reference,json=checkpointReference,proto3" json:"checkpoint_reference,omitempty"`
+	StorageNamespace                                []byte                           `protobuf:"bytes,40,opt,name=storage_namespace,json=storageNamespace,proto3" json:"storage_namespace,omitempty"`
+	BootstrapObjects                                []byte                           `protobuf:"bytes,41,opt,name=bootstrap_objects,json=bootstrapObjects,proto3" json:"bootstrap_objects,omitempty"`
+	BootstrapPending                                bool                             `protobuf:"varint,42,opt,name=bootstrap_pending,json=bootstrapPending,proto3" json:"bootstrap_pending,omitempty"`
 }
 
 type PoolProductionHistory struct {
@@ -126,24 +132,29 @@ type EpochContextChallenge struct {
 }
 
 type ConsensusState struct {
-	Timestamp           uint64                 `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	IbcStateRoot        []byte                 `protobuf:"bytes,2,opt,name=ibc_state_root,json=ibcStateRoot,proto3" json:"ibc_state_root,omitempty"`
-	AcceptedBlockHash   string                 `protobuf:"bytes,3,opt,name=accepted_block_hash,json=acceptedBlockHash,proto3" json:"accepted_block_hash,omitempty"`
-	AcceptedEpoch       uint64                 `protobuf:"varint,4,opt,name=accepted_epoch,json=acceptedEpoch,proto3" json:"accepted_epoch,omitempty"`
-	UniquePoolsCount    uint64                 `protobuf:"varint,5,opt,name=unique_pools_count,json=uniquePoolsCount,proto3" json:"unique_pools_count,omitempty"`
-	UniqueStakeBps      uint64                 `protobuf:"varint,6,opt,name=unique_stake_bps,json=uniqueStakeBps,proto3" json:"unique_stake_bps,omitempty"`
-	SecurityScoreBps    uint64                 `protobuf:"varint,7,opt,name=security_score_bps,json=securityScoreBps,proto3" json:"security_score_bps,omitempty"`
-	PacketStateSnapshot []byte                 `protobuf:"bytes,8,opt,name=packet_state_snapshot,json=packetStateSnapshot,proto3" json:"packet_state_snapshot,omitempty"`
-	NonceState          *PraosNonceState       `protobuf:"bytes,9,opt,name=nonce_state,json=nonceState,proto3" json:"nonce_state,omitempty"`
-	PoolRegistry        *PoolRegistryState     `protobuf:"bytes,10,opt,name=pool_registry,json=poolRegistry,proto3" json:"pool_registry,omitempty"`
-	SettlementCredit    *SettlementCreditState `protobuf:"bytes,11,opt,name=settlement_credit,json=settlementCredit,proto3" json:"settlement_credit,omitempty"`
-	PoolProduction      *PoolProductionHistory `protobuf:"bytes,12,opt,name=pool_production,json=poolProduction,proto3" json:"pool_production,omitempty"`
+	Timestamp              uint64                 `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	IbcStateRoot           []byte                 `protobuf:"bytes,2,opt,name=ibc_state_root,json=ibcStateRoot,proto3" json:"ibc_state_root,omitempty"`
+	AcceptedBlockHash      string                 `protobuf:"bytes,3,opt,name=accepted_block_hash,json=acceptedBlockHash,proto3" json:"accepted_block_hash,omitempty"`
+	AcceptedEpoch          uint64                 `protobuf:"varint,4,opt,name=accepted_epoch,json=acceptedEpoch,proto3" json:"accepted_epoch,omitempty"`
+	UniquePoolsCount       uint64                 `protobuf:"varint,5,opt,name=unique_pools_count,json=uniquePoolsCount,proto3" json:"unique_pools_count,omitempty"`
+	UniqueStakeBps         uint64                 `protobuf:"varint,6,opt,name=unique_stake_bps,json=uniqueStakeBps,proto3" json:"unique_stake_bps,omitempty"`
+	SecurityScoreBps       uint64                 `protobuf:"varint,7,opt,name=security_score_bps,json=securityScoreBps,proto3" json:"security_score_bps,omitempty"`
+	PacketStateSnapshot    []byte                 `protobuf:"bytes,8,opt,name=packet_state_snapshot,json=packetStateSnapshot,proto3" json:"packet_state_snapshot,omitempty"`
+	NonceState             *PraosNonceState       `protobuf:"bytes,9,opt,name=nonce_state,json=nonceState,proto3" json:"nonce_state,omitempty"`
+	PoolRegistry           *PoolRegistryState     `protobuf:"bytes,10,opt,name=pool_registry,json=poolRegistry,proto3" json:"pool_registry,omitempty"`
+	SettlementCredit       *SettlementCreditState `protobuf:"bytes,11,opt,name=settlement_credit,json=settlementCredit,proto3" json:"settlement_credit,omitempty"`
+	PoolProduction         *PoolProductionHistory `protobuf:"bytes,12,opt,name=pool_production,json=poolProduction,proto3" json:"pool_production,omitempty"`
+	VerificationGeneration uint64                 `protobuf:"varint,13,opt,name=verification_generation,json=verificationGeneration,proto3" json:"verification_generation,omitempty"`
+	CheckpointReference    []byte                 `protobuf:"bytes,14,opt,name=checkpoint_reference,json=checkpointReference,proto3" json:"checkpoint_reference,omitempty"`
+	PacketStateReference   []byte                 `protobuf:"bytes,15,opt,name=packet_state_reference,json=packetStateReference,proto3" json:"packet_state_reference,omitempty"`
 }
 
 type Misbehaviour struct {
-	ClientId             string               `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	ProbabilisticHeader1 *ProbabilisticHeader `protobuf:"bytes,2,opt,name=probabilistic_header_1,json=probabilisticHeader1,proto3" json:"probabilistic_header_1,omitempty"`
-	ProbabilisticHeader2 *ProbabilisticHeader `protobuf:"bytes,3,opt,name=probabilistic_header_2,json=probabilisticHeader2,proto3" json:"probabilistic_header_2,omitempty"`
+	ClientId              string               `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ProbabilisticHeader1  *ProbabilisticHeader `protobuf:"bytes,2,opt,name=probabilistic_header_1,json=probabilisticHeader1,proto3" json:"probabilistic_header_1,omitempty"`
+	ProbabilisticHeader2  *ProbabilisticHeader `protobuf:"bytes,3,opt,name=probabilistic_header_2,json=probabilisticHeader2,proto3" json:"probabilistic_header_2,omitempty"`
+	VerifiedObservation_1 []byte               `protobuf:"bytes,4,opt,name=verified_observation_1,json=verifiedObservation1,proto3" json:"verified_observation_1,omitempty"`
+	VerifiedObservation_2 []byte               `protobuf:"bytes,5,opt,name=verified_observation_2,json=verifiedObservation2,proto3" json:"verified_observation_2,omitempty"`
 }
 
 type ProbabilisticBlock struct {
@@ -165,4 +176,57 @@ type ProbabilisticHeader struct {
 	BridgeBlocks           []*ProbabilisticBlock `protobuf:"bytes,10,rep,name=bridge_blocks,json=bridgeBlocks,proto3" json:"bridge_blocks,omitempty"`
 	NewEpochContext        *EpochContext         `protobuf:"bytes,11,opt,name=new_epoch_context,json=newEpochContext,proto3" json:"new_epoch_context,omitempty"`
 	IsCheckpoint           bool                  `protobuf:"varint,12,opt,name=is_checkpoint,json=isCheckpoint,proto3" json:"is_checkpoint,omitempty"`
+	ObservationChunk       *ObservationChunk     `protobuf:"bytes,13,opt,name=observation_chunk,json=observationChunk,proto3" json:"observation_chunk,omitempty"`
+}
+
+type ObservationChunk struct {
+	Operation               uint32                `protobuf:"varint,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	SessionId               []byte                `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	BaseCheckpointReference []byte                `protobuf:"bytes,3,opt,name=base_checkpoint_reference,json=baseCheckpointReference,proto3" json:"base_checkpoint_reference,omitempty"`
+	OriginalReceipt         []byte                `protobuf:"bytes,4,opt,name=original_receipt,json=originalReceipt,proto3" json:"original_receipt,omitempty"`
+	AnchorHeight            uint64                `protobuf:"varint,5,opt,name=anchor_height,json=anchorHeight,proto3" json:"anchor_height,omitempty"`
+	BlockCount              uint32                `protobuf:"varint,6,opt,name=block_count,json=blockCount,proto3" json:"block_count,omitempty"`
+	TableContext            *EpochContext         `protobuf:"bytes,7,opt,name=table_context,json=tableContext,proto3" json:"table_context,omitempty"`
+	StakeRows               []byte                `protobuf:"bytes,8,opt,name=stake_rows,json=stakeRows,proto3" json:"stake_rows,omitempty"`
+	Blocks                  []*ProbabilisticBlock `protobuf:"bytes,9,rep,name=blocks,proto3" json:"blocks,omitempty"`
+	Objects                 []byte                `protobuf:"bytes,10,opt,name=objects,proto3" json:"objects,omitempty"`
+	OtherReceipt            []byte                `protobuf:"bytes,11,opt,name=other_receipt,json=otherReceipt,proto3" json:"other_receipt,omitempty"`
+	IsCheckpoint            bool                  `protobuf:"varint,12,opt,name=is_checkpoint,json=isCheckpoint,proto3" json:"is_checkpoint,omitempty"`
+	HostStateTxHash         string                `protobuf:"bytes,13,opt,name=host_state_tx_hash,json=hostStateTxHash,proto3" json:"host_state_tx_hash,omitempty"`
+	TableRows               uint32                `protobuf:"varint,14,opt,name=table_rows,json=tableRows,proto3" json:"table_rows,omitempty"`
+	TableTotal              uint64                `protobuf:"varint,15,opt,name=table_total,json=tableTotal,proto3" json:"table_total,omitempty"`
+	EvidenceDigest          []byte                `protobuf:"bytes,16,opt,name=evidence_digest,json=evidenceDigest,proto3" json:"evidence_digest,omitempty"`
+	TableDigest             []byte                `protobuf:"bytes,17,opt,name=table_digest,json=tableDigest,proto3" json:"table_digest,omitempty"`
+	Sequence                uint32                `protobuf:"varint,18,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Isolated                bool                  `protobuf:"varint,19,opt,name=isolated,proto3" json:"isolated,omitempty"`
+}
+
+type QueryVerificationRequest struct {
+	Namespace           []byte `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Generation          uint64 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	CheckpointReference []byte `protobuf:"bytes,3,opt,name=checkpoint_reference,json=checkpointReference,proto3" json:"checkpoint_reference,omitempty"`
+	Kind                uint32 `protobuf:"varint,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	After               []byte `protobuf:"bytes,5,opt,name=after,proto3" json:"after,omitempty"`
+	Limit               uint32 `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
+	SessionId           []byte `protobuf:"bytes,7,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ReceiptId           []byte `protobuf:"bytes,8,opt,name=receipt_id,json=receiptId,proto3" json:"receipt_id,omitempty"`
+}
+
+type QueryVerificationResponse struct {
+	Data []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+}
+
+type MsgContinueClient struct {
+	Signer    string `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
+	ClientId  string `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	Operation uint32 `protobuf:"varint,3,opt,name=operation,proto3" json:"operation,omitempty"`
+}
+
+type MsgContinueClientResponse struct {
+}
+
+type UnimplementedQueryServer struct {
+}
+
+type UnimplementedMsgServer struct {
 }

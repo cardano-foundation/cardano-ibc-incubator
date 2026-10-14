@@ -1,0 +1,175 @@
+package state
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+
+	storetypes "cosmossdk.io/store/types"
+)
+
+func (ctx Context) snapshotStore() (storetypes.KVStore, error) {
+	if ctx.Snapshots == nil {
+		return nil, fmt.Errorf("the application has not enabled authenticated shared snapshot storage")
+	}
+	return ctx.Snapshots()
+}
+func namespaceKey(namespace []byte) []byte {
+	return append([]byte("snapshots/v2/clients/"), namespace...)
+}
+func namespaceOwner(namespace []byte, generation uint64, role byte, id []byte) []byte {
+	raw := binary.BigEndian.AppendUint64(bytes.Clone(namespace), generation)
+	raw = append(raw, role)
+	return append(raw, id...)
+}
+func generationKey() []byte { return []byte("verificationGeneration") }
+func ownedCheckpointKey(generation, height uint64) []byte {
+	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64([]byte("verifiedCheckpoints/"), generation), height)
+}
+func validateThinClient(cs *ClientState) error {
+	if cs.StorageVersion != StorageVersionSharedSnapshots || cs.VerificationGeneration == 0 || len(cs.CheckpointReference) != 32 || len(cs.StorageNamespace) != 32 {
+		return fmt.Errorf("compact client requires a version, generation, namespace and checkpoint")
+	}
+	if len(cs.BootstrapObjects) > MaxOperationSignedBytes {
+		return fmt.Errorf("bootstrap objects exceed the bounded transport envelope")
+	}
+	if len(cs.EpochStakeDistribution) > 0 || len(cs.EpochContexts) > 0 || cs.LatestCheckpointPoolRegistry != nil || cs.LatestCheckpointSettlementCredit != nil || cs.LatestCheckpointPoolProduction != nil || len(cs.LatestCheckpointOperationalCertificateCounters) > 0 {
+		return fmt.Errorf("compact public client state cannot embed verification collections")
+	}
+	if cs.LatestHeight == nil || cs.LatestCheckpointHeight == nil || cs.LatestHeight.IsZero() || cs.LatestCheckpointHeight.IsZero() || cs.ChainId == "" || cs.TrustingPeriod <= 0 || cs.MaxClockDrift <= 0 {
+		return fmt.Errorf("compact client configuration and cursors must be complete")
+	}
+	if err := cs.validateNonceConfiguration(); err != nil {
+		return err
+	}
+	if _, err := verificationScope(cs); err != nil {
+		return err
+	}
+	return nil
+}
+func validateThinConsensus(cs *ConsensusState) error {
+	if cs.VerificationGeneration == 0 || len(cs.CheckpointReference) != 32 || len(cs.PacketStateReference) != 32 || cs.Timestamp == 0 || len(cs.IbcStateRoot) != 32 {
+		return fmt.Errorf("compact consensus state requires bounded authenticated references")
+	}
+	if _, err := decodeBlockHash(cs.AcceptedBlockHash); err != nil {
+		return err
+	}
+	if cs.PoolRegistry != nil || cs.SettlementCredit != nil || cs.PoolProduction != nil || cs.NonceState != nil || len(cs.PacketStateSnapshot) > 0 {
+		return fmt.Errorf("compact consensus state cannot embed historical verification state")
+	}
+	return nil
+}
+func writeThinClient(ctx Context, cdc StateCodec, private storetypes.KVStore, cs *ClientState) error {
+	if err := validateThinClient(cs); err != nil {
+		return err
+	}
+	raw := cdc.EncodeClient(cs)
+	if len(raw) > MaxCompactClientBytes {
+		return fmt.Errorf("public client record exceeds %d bytes", MaxCompactClientBytes)
+	}
+	shared, err := ctx.snapshotStore()
+	if err != nil {
+		return err
+	}
+	private.Set([]byte("clientState"), raw)
+	private.Set(generationKey(), binary.BigEndian.AppendUint64(nil, cs.VerificationGeneration))
+	shared.Set(namespaceKey(cs.StorageNamespace), raw)
+	for _, challenge := range cs.EpochContextChallenges {
+		value := binary.BigEndian.AppendUint64(nil, challenge.UsableAfterUnixNs)
+		key := proofEpochDeadlineKey(cs, challenge.Epoch)
+		if existing := shared.Get(key); len(existing) > 0 && !bytes.Equal(existing, value) {
+			return fmt.Errorf("an installed proof deadline is immutable within a generation")
+		} else if len(existing) == 0 {
+			shared.Set(key, value)
+		}
+	}
+	return nil
+}
+func currentVerificationCheckpoint(ctx Context, cs *ClientState) (*verificationCheckpoint, storetypes.KVStore, error) {
+	store, err := ctx.snapshotStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	scope, err := verificationScope(cs)
+	if err != nil {
+		return nil, nil, err
+	}
+	checkpoint, err := loadVerificationCheckpoint(store, scope, cs.CheckpointReference)
+	if err != nil {
+		return nil, nil, err
+	}
+	if checkpoint.Height != cs.LatestCheckpointHeight.RevisionHeight || checkpoint.Epoch != cs.CurrentEpoch || checkpoint.Slot != cs.LatestCheckpointSlot || checkpoint.Timestamp != cs.LatestCheckpointTimestamp {
+		return nil, nil, fmt.Errorf("public cursor disagrees with its immutable checkpoint")
+	}
+	if !praosNonceStatesEqual(checkpoint.Nonce, cs.LatestCheckpointNonceState) {
+		return nil, nil, fmt.Errorf("public nonce disagrees with its immutable checkpoint")
+	}
+	return checkpoint, store, nil
+}
+
+// EnableSharedSnapshots is called by the bootstrap builder with explicit trusted
+// starting data. It never constructs missing nonce, registration or production
+// history. Pages are destination objects and can be shared by other checkpoints.
+func EnableSharedSnapshots(ctx Context, cdc StateCodec, private storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, error) {
+	store, err := ctx.snapshotStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	checkpoint, err := legacyVerificationCheckpoint(store, client, consensus)
+	if err != nil {
+		return nil, nil, err
+	}
+	reference, err := saveVerificationCheckpoint(store, checkpoint)
+	if err != nil {
+		return nil, nil, err
+	}
+	sequenceRaw := store.Get([]byte("snapshots/v2/nextNamespace"))
+	var sequence uint64
+	if len(sequenceRaw) > 0 {
+		if len(sequenceRaw) != 8 {
+			return nil, nil, fmt.Errorf("invalid snapshot namespace sequence")
+		}
+		sequence = binary.BigEndian.Uint64(sequenceRaw)
+	}
+	if sequence == ^uint64(0) {
+		return nil, nil, fmt.Errorf("snapshot namespace sequence overflow")
+	}
+	sequence++
+	namespace := sha256.Sum256(binary.BigEndian.AppendUint64(append([]byte("cardano-ibc.namespace/v2\x00"), checkpoint.Scope[:]...), sequence))
+	store.Set([]byte("snapshots/v2/nextNamespace"), binary.BigEndian.AppendUint64(nil, sequence))
+	thin := thinClientState(client, namespace[:], checkpoint, reference)
+	if err := thin.resetThinEpochDeadline(ctx, checkpoint.Epoch); err != nil {
+		return nil, nil, err
+	}
+	if err := pinVerificationCheckpoint(store, checkpoint, namespaceOwner(thin.StorageNamespace, thin.VerificationGeneration, 1, nil)); err != nil {
+		return nil, nil, err
+	}
+	private.Set(ownedCheckpointKey(thin.VerificationGeneration, checkpoint.Height), reference[:])
+	if err := retainCheckpoint(store, thin, checkpoint, reference[:]); err != nil {
+		return nil, nil, err
+	}
+	if err := writeThinClient(ctx, cdc, private, thin); err != nil {
+		return nil, nil, err
+	}
+	compactConsensus := thinConsensusState(consensus, checkpoint, reference, thin.VerificationGeneration)
+	encoded := cdc.EncodeConsensus(compactConsensus)
+	if len(encoded) > MaxCompactConsensusBytes {
+		return nil, nil, fmt.Errorf("public consensus record exceeds %d bytes", MaxCompactConsensusBytes)
+	}
+	SetConsensusState(private, cdc, compactConsensus, client.LatestHeight)
+	setConsensusMetadata(ctx, private, client.LatestHeight)
+	return thin, compactConsensus, nil
+}
+func (cs *ClientState) resetThinEpochDeadline(ctx Context, epoch uint64) error {
+	deadline, err := sharedSnapshotChallengeDeadline(ctx)
+	if err != nil {
+		return err
+	}
+	cs.EpochContextChallenges = []*EpochContextChallenge{{Epoch: epoch, UsableAfterUnixNs: deadline}}
+	return nil
+}
+
+func proofEpochDeadlineKey(cs *ClientState, epoch uint64) []byte {
+	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(append([]byte("snapshots/v2/proofDeadlines/"), cs.StorageNamespace...), cs.VerificationGeneration), epoch)
+}

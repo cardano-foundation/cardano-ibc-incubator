@@ -55,6 +55,16 @@ func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc St
 	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return Frozen
 	}
+	if cs.StorageVersion == StorageVersionSharedSnapshots {
+		if err := validateThinClient(&cs); err != nil {
+			return Expired
+		}
+		consensus, found := GetConsensusState(clientStore, cdc, cs.LatestHeight)
+		if !found || consensus.VerificationGeneration != cs.VerificationGeneration || cs.IsExpired(consensus.Timestamp, ctx.BlockTime()) {
+			return Expired
+		}
+		return Active
+	}
 	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {
 		return Expired
 	}
@@ -111,6 +121,9 @@ func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
 }
 
 func (cs ClientState) Validate() error {
+	if cs.StorageVersion != 0 {
+		return validateThinClient(&cs)
+	}
 	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {
 		return err
 	}
@@ -252,6 +265,9 @@ func (cs ClientState) Initialize(ctx Context, cdc StateCodec, clientStore storet
 	consensusState, ok := consState.(*ConsensusState)
 	if !ok {
 		return errorsmod.Wrapf(ErrIBCInvalidConsensus, "invalid initial consensus state. expected type: %T, got: %T", &ConsensusState{}, consState)
+	}
+	if cs.StorageVersion == StorageVersionSharedSnapshots {
+		return cs.initializeCompact(ctx, cdc, clientStore, consensusState)
 	}
 	if err := cs.validateNonceConfiguration(); err != nil {
 		return err

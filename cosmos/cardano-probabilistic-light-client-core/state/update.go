@@ -17,6 +17,12 @@ func (cs *ClientState) VerifyClientMessage(
 ) error {
 	switch msg := clientMsg.(type) {
 	case *ProbabilisticHeader:
+		if cs.StorageVersion == StorageVersionSharedSnapshots {
+			return cs.verifyObservationOperation(ctx, cdc, clientStore, msg)
+		}
+		if msg.ObservationChunk != nil {
+			return fmt.Errorf("bounded operation requires versioned client storage")
+		}
 		return cs.verifyHeader(ctx, clientStore, cdc, msg)
 	case *Misbehaviour:
 		return cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
@@ -645,6 +651,13 @@ func (cs *ClientState) UpdateState(
 
 // The authenticator seam matches verification tests; production always uses nil.
 func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec, clientStore storetypes.KVStore, clientMsg any, authenticateHeader headerAuthenticator) []HeightValue {
+	if cs.StorageVersion == StorageVersionSharedSnapshots {
+		header, ok := clientMsg.(*ProbabilisticHeader)
+		if !ok {
+			panic("bounded update requires an observation operation")
+		}
+		return cs.consumeObservationResult(ctx, cdc, clientStore, header)
+	}
 	// The v8 redundant-relay ante handler calls UpdateState after verifying
 	// custom misbehaviour. Only the keeper's misbehaviour path freezes the
 	// client. Admission must leave the cached client unchanged.
@@ -850,5 +863,11 @@ func (cs ClientState) pruneOldestConsensusState(ctx Context, cdc StateCodec, cli
 
 func (cs ClientState) UpdateStateOnMisbehaviour(ctx Context, cdc StateCodec, clientStore storetypes.KVStore, _ any) {
 	cs.FrozenHeight = FrozenHeight
+	if cs.StorageVersion == StorageVersionSharedSnapshots {
+		if err := writeThinClient(ctx, cdc, clientStore, &cs); err != nil {
+			panic(err)
+		}
+		return
+	}
 	clientStore.Set([]byte("clientState"), cdc.EncodeClient(&cs))
 }

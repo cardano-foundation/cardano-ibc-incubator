@@ -1,6 +1,7 @@
 package state
 
 import (
+	storetypes "cosmossdk.io/store/types"
 	"encoding/binary"
 	"fmt"
 	"strconv"
@@ -18,6 +19,10 @@ type Context struct {
 	ConsumeGas          func(uint64, string)
 	GasConsumed         func() uint64
 	VerifyHostUsability func(Context, uint64) error
+	// RequiredResponseWindow extends the host resumption guard for staged clients.
+	RequiredResponseWindow time.Duration
+	// The host resolves destination snapshot storage lazily for versioned clients.
+	Snapshots func() (storetypes.KVStore, error)
 }
 
 func (c Context) BlockTime() time.Time              { return c.Time }

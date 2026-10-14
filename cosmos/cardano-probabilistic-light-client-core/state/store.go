@@ -20,6 +20,9 @@ var (
 func SetClientState(clientStore storetypes.KVStore, cdc StateCodec, clientState *ClientState) {
 	key := []byte("clientState")
 	val := cdc.EncodeClient(clientState)
+	if clientState.StorageVersion == StorageVersionSharedSnapshots && len(val) > MaxCompactClientBytes {
+		panic(fmt.Errorf("compact client record exceeds its bounded size"))
+	}
 	if err := validateClientBytes(len(val)); err != nil {
 		panic(err)
 	}
@@ -47,6 +50,10 @@ func GetConsensusState(store storetypes.KVStore, cdc StateCodec, height HeightVa
 		return nil, false
 	}
 	consensusStateI := mustDecodeConsensus(cdc, bz)
+	generation := store.Get(generationKey())
+	if len(generation) != 0 && (len(generation) != 8 || consensusStateI.VerificationGeneration != binary.BigEndian.Uint64(generation)) {
+		return nil, false
+	}
 	return consensusStateI, true
 }
 
@@ -164,6 +171,10 @@ func getProbabilisticConsensusState(clientStore storetypes.KVStore, cdc StateCod
 	}
 	consensusStateI, err := cdc.DecodeConsensus(bz)
 	if err != nil {
+		return nil, false
+	}
+	generation := clientStore.Get(generationKey())
+	if len(generation) != 0 && (len(generation) != 8 || consensusStateI.VerificationGeneration != binary.BigEndian.Uint64(generation)) {
 		return nil, false
 	}
 	consensusState, ok := consensusStateI, consensusStateI != nil

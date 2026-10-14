@@ -215,6 +215,45 @@ cardanoprobabilistic.NewAppModule(cardanoLightClientModule)"
   fi
 fi
 
+# Versioned snapshots are part of the application's authenticated state.
+# Store keys must be the exact mounted SDK key objects, not matching names.
+python3 - "${APP_FILE}" "${APP_KIND}" "${IBC_GO_MAJOR}" <<'PY_SHARED_STORE'
+import re
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+kind, major = sys.argv[2:]
+source = path.read_text()
+if kind in ("injective", "ibc-go-simapp"):
+    mounted = re.search(r"\bapp\.MountKVStores\((app\.keys|keys)\)", source)
+    if mounted is None:
+        raise SystemExit("Cannot identify the destination snapshot store mount")
+    assignment = mounted.group(1) + "[cardanoprobabilistic.ModuleName] = cardanoprobabilistic.SharedStoreKey"
+    if assignment not in source:
+        source = source[:mounted.start()] + assignment + "\n\t" + source[mounted.start():]
+    if major == "8":
+        source = source.replace("cardanoprobabilistic.NewAppModule(),", "cardanoprobabilistic.NewAppModule().WithStorage(app.AppCodec(), &app.IBCKeeper.ClientKeeper),")
+    source = source.replace(".WithStorage(appCodec,", ".WithStorage(app.AppCodec(),")
+    # Both applications specify the initialization order explicitly.
+    if kind == "injective":
+        start = source.index("func initGenesisOrder()")
+        prefix, order = source[:start], source[start:]
+        if "cardanoprobabilistic.ModuleName," not in order:
+            order = order.replace("ibcexported.ModuleName,", "cardanoprobabilistic.ModuleName,\n\t\tibcexported.ModuleName,", 1)
+        source = prefix + order
+    else:
+        start = source.index(".SetOrderInitGenesis(")
+        end = source.index("\n\t)", start) if "\n\t)" in source[start:] else source.index(")", start)
+        order = source[start:end]
+        if "cardanoprobabilistic.ModuleName" not in order:
+            match = re.search(r"(ibcexported|ibctypes)\.ModuleName,", order)
+            if match is None:
+                raise SystemExit("Cannot identify IBC in the destination genesis order")
+            order = order[:match.start()] + "cardanoprobabilistic.ModuleName,\n\t\t" + order[match.start():]
+            source = source[:start] + order + source[end:]
+path.write_text(source)
+PY_SHARED_STORE
+
 if command -v gofmt >/dev/null 2>&1; then
   gofmt -w "${CLIENT_DIR}" "${APP_FILE}"
 fi

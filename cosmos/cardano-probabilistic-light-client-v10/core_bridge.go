@@ -1,6 +1,7 @@
 package probabilistic
 
 import (
+	storetypes "cosmossdk.io/store/types"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,7 +15,19 @@ import (
 
 func coreContext(ctx sdk.Context) state.Context {
 	height := clienttypes.GetSelfHeight(ctx)
-	return state.Context{VerifyHostUsability: func(current state.Context, deadline uint64) error { return verifyHostUsability(ctx, current, deadline) }, ConsumeGas: ctx.GasMeter().ConsumeGas, GasConsumed: ctx.GasMeter().GasConsumed, EmitEvent: func(name string, attributes ...state.EventAttribute) {
+	return state.Context{VerifyHostUsability: func(current state.Context, deadline uint64) error { return verifyHostUsability(ctx, current, deadline) }, Snapshots: func() (storetypes.KVStore, error) {
+		var result storetypes.KVStore
+		var err error
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					err = fmt.Errorf("shared snapshot store is not mounted: %v", recovered)
+				}
+			}()
+			result = ctx.KVStore(SharedStoreKey)
+		}()
+		return result, err
+	}, ConsumeGas: ctx.GasMeter().ConsumeGas, GasConsumed: ctx.GasMeter().GasConsumed, EmitEvent: func(name string, attributes ...state.EventAttribute) {
 		attrs := make([]sdk.Attribute, len(attributes))
 		for i, attribute := range attributes {
 			attrs[i] = sdk.NewAttribute(attribute.Key, attribute.Value)

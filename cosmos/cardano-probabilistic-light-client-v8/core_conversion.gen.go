@@ -94,6 +94,12 @@ func toCoreClientState(value *ClientState) *state.ClientState {
 		LatestCheckpointPoolRegistry:                    toCorePoolRegistryState(value.LatestCheckpointPoolRegistry),
 		LatestCheckpointSettlementCredit:                toCoreSettlementCreditState(value.LatestCheckpointSettlementCredit),
 		LatestCheckpointPoolProduction:                  toCorePoolProductionHistory(value.LatestCheckpointPoolProduction),
+		StorageVersion:                                  value.StorageVersion,
+		VerificationGeneration:                          value.VerificationGeneration,
+		CheckpointReference:                             bytes.Clone(value.CheckpointReference),
+		StorageNamespace:                                bytes.Clone(value.StorageNamespace),
+		BootstrapObjects:                                bytes.Clone(value.BootstrapObjects),
+		BootstrapPending:                                value.BootstrapPending,
 	}
 }
 
@@ -203,18 +209,21 @@ func toCoreConsensusState(value *ConsensusState) *state.ConsensusState {
 		return nil
 	}
 	return &state.ConsensusState{
-		Timestamp:           value.Timestamp,
-		IbcStateRoot:        bytes.Clone(value.IbcStateRoot),
-		AcceptedBlockHash:   value.AcceptedBlockHash,
-		AcceptedEpoch:       value.AcceptedEpoch,
-		UniquePoolsCount:    value.UniquePoolsCount,
-		UniqueStakeBps:      value.UniqueStakeBps,
-		SecurityScoreBps:    value.SecurityScoreBps,
-		PacketStateSnapshot: bytes.Clone(value.PacketStateSnapshot),
-		NonceState:          toCorePraosNonceState(value.NonceState),
-		PoolRegistry:        toCorePoolRegistryState(value.PoolRegistry),
-		SettlementCredit:    toCoreSettlementCreditState(value.SettlementCredit),
-		PoolProduction:      toCorePoolProductionHistory(value.PoolProduction),
+		Timestamp:              value.Timestamp,
+		IbcStateRoot:           bytes.Clone(value.IbcStateRoot),
+		AcceptedBlockHash:      value.AcceptedBlockHash,
+		AcceptedEpoch:          value.AcceptedEpoch,
+		UniquePoolsCount:       value.UniquePoolsCount,
+		UniqueStakeBps:         value.UniqueStakeBps,
+		SecurityScoreBps:       value.SecurityScoreBps,
+		PacketStateSnapshot:    bytes.Clone(value.PacketStateSnapshot),
+		NonceState:             toCorePraosNonceState(value.NonceState),
+		PoolRegistry:           toCorePoolRegistryState(value.PoolRegistry),
+		SettlementCredit:       toCoreSettlementCreditState(value.SettlementCredit),
+		PoolProduction:         toCorePoolProductionHistory(value.PoolProduction),
+		VerificationGeneration: value.VerificationGeneration,
+		CheckpointReference:    bytes.Clone(value.CheckpointReference),
+		PacketStateReference:   bytes.Clone(value.PacketStateReference),
 	}
 }
 
@@ -223,9 +232,11 @@ func toCoreMisbehaviour(value *Misbehaviour) *state.Misbehaviour {
 		return nil
 	}
 	return &state.Misbehaviour{
-		ClientId:             value.ClientId,
-		ProbabilisticHeader1: toCoreProbabilisticHeader(value.ProbabilisticHeader1),
-		ProbabilisticHeader2: toCoreProbabilisticHeader(value.ProbabilisticHeader2),
+		ClientId:              value.ClientId,
+		ProbabilisticHeader1:  toCoreProbabilisticHeader(value.ProbabilisticHeader1),
+		ProbabilisticHeader2:  toCoreProbabilisticHeader(value.ProbabilisticHeader2),
+		VerifiedObservation_1: bytes.Clone(value.VerifiedObservation_1),
+		VerifiedObservation_2: bytes.Clone(value.VerifiedObservation_2),
 	}
 }
 
@@ -257,7 +268,92 @@ func toCoreProbabilisticHeader(value *ProbabilisticHeader) *state.ProbabilisticH
 		BridgeBlocks:           mapCoreSlice(value.BridgeBlocks, toCoreProbabilisticBlock),
 		NewEpochContext:        toCoreEpochContext(value.NewEpochContext),
 		IsCheckpoint:           value.IsCheckpoint,
+		ObservationChunk:       toCoreObservationChunk(value.ObservationChunk),
 	}
+}
+
+func toCoreObservationChunk(value *ObservationChunk) *state.ObservationChunk {
+	if value == nil {
+		return nil
+	}
+	return &state.ObservationChunk{
+		Operation:               value.Operation,
+		SessionId:               bytes.Clone(value.SessionId),
+		BaseCheckpointReference: bytes.Clone(value.BaseCheckpointReference),
+		OriginalReceipt:         bytes.Clone(value.OriginalReceipt),
+		AnchorHeight:            value.AnchorHeight,
+		BlockCount:              value.BlockCount,
+		TableContext:            toCoreEpochContext(value.TableContext),
+		StakeRows:               bytes.Clone(value.StakeRows),
+		Blocks:                  mapCoreSlice(value.Blocks, toCoreProbabilisticBlock),
+		Objects:                 bytes.Clone(value.Objects),
+		OtherReceipt:            bytes.Clone(value.OtherReceipt),
+		IsCheckpoint:            value.IsCheckpoint,
+		HostStateTxHash:         value.HostStateTxHash,
+		TableRows:               value.TableRows,
+		TableTotal:              value.TableTotal,
+		EvidenceDigest:          bytes.Clone(value.EvidenceDigest),
+		TableDigest:             bytes.Clone(value.TableDigest),
+		Sequence:                value.Sequence,
+		Isolated:                value.Isolated,
+	}
+}
+
+func toCoreQueryVerificationRequest(value *QueryVerificationRequest) *state.QueryVerificationRequest {
+	if value == nil {
+		return nil
+	}
+	return &state.QueryVerificationRequest{
+		Namespace:           bytes.Clone(value.Namespace),
+		Generation:          value.Generation,
+		CheckpointReference: bytes.Clone(value.CheckpointReference),
+		Kind:                value.Kind,
+		After:               bytes.Clone(value.After),
+		Limit:               value.Limit,
+		SessionId:           bytes.Clone(value.SessionId),
+		ReceiptId:           bytes.Clone(value.ReceiptId),
+	}
+}
+
+func toCoreQueryVerificationResponse(value *QueryVerificationResponse) *state.QueryVerificationResponse {
+	if value == nil {
+		return nil
+	}
+	return &state.QueryVerificationResponse{
+		Data: bytes.Clone(value.Data),
+	}
+}
+
+func toCoreMsgContinueClient(value *MsgContinueClient) *state.MsgContinueClient {
+	if value == nil {
+		return nil
+	}
+	return &state.MsgContinueClient{
+		Signer:    value.Signer,
+		ClientId:  value.ClientId,
+		Operation: value.Operation,
+	}
+}
+
+func toCoreMsgContinueClientResponse(value *MsgContinueClientResponse) *state.MsgContinueClientResponse {
+	if value == nil {
+		return nil
+	}
+	return &state.MsgContinueClientResponse{}
+}
+
+func toCoreUnimplementedQueryServer(value *UnimplementedQueryServer) *state.UnimplementedQueryServer {
+	if value == nil {
+		return nil
+	}
+	return &state.UnimplementedQueryServer{}
+}
+
+func toCoreUnimplementedMsgServer(value *UnimplementedMsgServer) *state.UnimplementedMsgServer {
+	if value == nil {
+		return nil
+	}
+	return &state.UnimplementedMsgServer{}
 }
 
 func fromCoreHeight(value *state.Height) *Height {
@@ -347,6 +443,12 @@ func fromCoreClientState(value *state.ClientState) *ClientState {
 		LatestCheckpointPoolRegistry:                    fromCorePoolRegistryState(value.LatestCheckpointPoolRegistry),
 		LatestCheckpointSettlementCredit:                fromCoreSettlementCreditState(value.LatestCheckpointSettlementCredit),
 		LatestCheckpointPoolProduction:                  fromCorePoolProductionHistory(value.LatestCheckpointPoolProduction),
+		StorageVersion:                                  value.StorageVersion,
+		VerificationGeneration:                          value.VerificationGeneration,
+		CheckpointReference:                             bytes.Clone(value.CheckpointReference),
+		StorageNamespace:                                bytes.Clone(value.StorageNamespace),
+		BootstrapObjects:                                bytes.Clone(value.BootstrapObjects),
+		BootstrapPending:                                value.BootstrapPending,
 	}
 }
 
@@ -456,18 +558,21 @@ func fromCoreConsensusState(value *state.ConsensusState) *ConsensusState {
 		return nil
 	}
 	return &ConsensusState{
-		Timestamp:           value.Timestamp,
-		IbcStateRoot:        bytes.Clone(value.IbcStateRoot),
-		AcceptedBlockHash:   value.AcceptedBlockHash,
-		AcceptedEpoch:       value.AcceptedEpoch,
-		UniquePoolsCount:    value.UniquePoolsCount,
-		UniqueStakeBps:      value.UniqueStakeBps,
-		SecurityScoreBps:    value.SecurityScoreBps,
-		PacketStateSnapshot: bytes.Clone(value.PacketStateSnapshot),
-		NonceState:          fromCorePraosNonceState(value.NonceState),
-		PoolRegistry:        fromCorePoolRegistryState(value.PoolRegistry),
-		SettlementCredit:    fromCoreSettlementCreditState(value.SettlementCredit),
-		PoolProduction:      fromCorePoolProductionHistory(value.PoolProduction),
+		Timestamp:              value.Timestamp,
+		IbcStateRoot:           bytes.Clone(value.IbcStateRoot),
+		AcceptedBlockHash:      value.AcceptedBlockHash,
+		AcceptedEpoch:          value.AcceptedEpoch,
+		UniquePoolsCount:       value.UniquePoolsCount,
+		UniqueStakeBps:         value.UniqueStakeBps,
+		SecurityScoreBps:       value.SecurityScoreBps,
+		PacketStateSnapshot:    bytes.Clone(value.PacketStateSnapshot),
+		NonceState:             fromCorePraosNonceState(value.NonceState),
+		PoolRegistry:           fromCorePoolRegistryState(value.PoolRegistry),
+		SettlementCredit:       fromCoreSettlementCreditState(value.SettlementCredit),
+		PoolProduction:         fromCorePoolProductionHistory(value.PoolProduction),
+		VerificationGeneration: value.VerificationGeneration,
+		CheckpointReference:    bytes.Clone(value.CheckpointReference),
+		PacketStateReference:   bytes.Clone(value.PacketStateReference),
 	}
 }
 
@@ -476,9 +581,11 @@ func fromCoreMisbehaviour(value *state.Misbehaviour) *Misbehaviour {
 		return nil
 	}
 	return &Misbehaviour{
-		ClientId:             value.ClientId,
-		ProbabilisticHeader1: fromCoreProbabilisticHeader(value.ProbabilisticHeader1),
-		ProbabilisticHeader2: fromCoreProbabilisticHeader(value.ProbabilisticHeader2),
+		ClientId:              value.ClientId,
+		ProbabilisticHeader1:  fromCoreProbabilisticHeader(value.ProbabilisticHeader1),
+		ProbabilisticHeader2:  fromCoreProbabilisticHeader(value.ProbabilisticHeader2),
+		VerifiedObservation_1: bytes.Clone(value.VerifiedObservation_1),
+		VerifiedObservation_2: bytes.Clone(value.VerifiedObservation_2),
 	}
 }
 
@@ -510,7 +617,92 @@ func fromCoreProbabilisticHeader(value *state.ProbabilisticHeader) *Probabilisti
 		BridgeBlocks:           mapCoreSlice(value.BridgeBlocks, fromCoreProbabilisticBlock),
 		NewEpochContext:        fromCoreEpochContext(value.NewEpochContext),
 		IsCheckpoint:           value.IsCheckpoint,
+		ObservationChunk:       fromCoreObservationChunk(value.ObservationChunk),
 	}
+}
+
+func fromCoreObservationChunk(value *state.ObservationChunk) *ObservationChunk {
+	if value == nil {
+		return nil
+	}
+	return &ObservationChunk{
+		Operation:               value.Operation,
+		SessionId:               bytes.Clone(value.SessionId),
+		BaseCheckpointReference: bytes.Clone(value.BaseCheckpointReference),
+		OriginalReceipt:         bytes.Clone(value.OriginalReceipt),
+		AnchorHeight:            value.AnchorHeight,
+		BlockCount:              value.BlockCount,
+		TableContext:            fromCoreEpochContext(value.TableContext),
+		StakeRows:               bytes.Clone(value.StakeRows),
+		Blocks:                  mapCoreSlice(value.Blocks, fromCoreProbabilisticBlock),
+		Objects:                 bytes.Clone(value.Objects),
+		OtherReceipt:            bytes.Clone(value.OtherReceipt),
+		IsCheckpoint:            value.IsCheckpoint,
+		HostStateTxHash:         value.HostStateTxHash,
+		TableRows:               value.TableRows,
+		TableTotal:              value.TableTotal,
+		EvidenceDigest:          bytes.Clone(value.EvidenceDigest),
+		TableDigest:             bytes.Clone(value.TableDigest),
+		Sequence:                value.Sequence,
+		Isolated:                value.Isolated,
+	}
+}
+
+func fromCoreQueryVerificationRequest(value *state.QueryVerificationRequest) *QueryVerificationRequest {
+	if value == nil {
+		return nil
+	}
+	return &QueryVerificationRequest{
+		Namespace:           bytes.Clone(value.Namespace),
+		Generation:          value.Generation,
+		CheckpointReference: bytes.Clone(value.CheckpointReference),
+		Kind:                value.Kind,
+		After:               bytes.Clone(value.After),
+		Limit:               value.Limit,
+		SessionId:           bytes.Clone(value.SessionId),
+		ReceiptId:           bytes.Clone(value.ReceiptId),
+	}
+}
+
+func fromCoreQueryVerificationResponse(value *state.QueryVerificationResponse) *QueryVerificationResponse {
+	if value == nil {
+		return nil
+	}
+	return &QueryVerificationResponse{
+		Data: bytes.Clone(value.Data),
+	}
+}
+
+func fromCoreMsgContinueClient(value *state.MsgContinueClient) *MsgContinueClient {
+	if value == nil {
+		return nil
+	}
+	return &MsgContinueClient{
+		Signer:    value.Signer,
+		ClientId:  value.ClientId,
+		Operation: value.Operation,
+	}
+}
+
+func fromCoreMsgContinueClientResponse(value *state.MsgContinueClientResponse) *MsgContinueClientResponse {
+	if value == nil {
+		return nil
+	}
+	return &MsgContinueClientResponse{}
+}
+
+func fromCoreUnimplementedQueryServer(value *state.UnimplementedQueryServer) *UnimplementedQueryServer {
+	if value == nil {
+		return nil
+	}
+	return &UnimplementedQueryServer{}
+}
+
+func fromCoreUnimplementedMsgServer(value *state.UnimplementedMsgServer) *UnimplementedMsgServer {
+	if value == nil {
+		return nil
+	}
+	return &UnimplementedMsgServer{}
 }
 
 func mapCoreSlice[A, B any](values []A, convert func(A) B) []B {
