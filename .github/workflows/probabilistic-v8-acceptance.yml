@@ -5,12 +5,27 @@ on:
     paths:
       - 'cosmos/cardano-probabilistic-light-client-core/**'
       - 'cosmos/cardano-probabilistic-light-client-v8/**'
+      - 'cosmos/cardano-probabilistic-light-client-v10/**'
       - 'caribic/**'
       - 'chains/cosmos/**'
       - '.github/workflows/probabilistic-v8-acceptance.yml'
   workflow_dispatch:
 
 jobs:
+  host-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client-core/go.sum
+      - name: Check adapter parity
+        run: node scripts/ci/check-light-client-parity.mjs
+      - name: Test the shared verifier and host interruption policy
+        working-directory: cosmos/cardano-probabilistic-light-client-core
+        run: go test ./...
   challenge-recovery:
     runs-on: ubuntu-latest
     timeout-minutes: 30
