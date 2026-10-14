@@ -5,6 +5,8 @@ exports.encodeClientStateValue = encodeClientStateValue;
 exports.encodeConsensusStateValue = encodeConsensusStateValue;
 exports.encodeConnectionEndValue = encodeConnectionEndValue;
 exports.encodeChannelEndValue = encodeChannelEndValue;
+exports.encodeChannelUpgradeValue = encodeChannelUpgradeValue;
+exports.encodeChannelUpgradeErrorValue = encodeChannelUpgradeErrorValue;
 exports.encodeModuleRegistration = encodeModuleRegistration;
 const ics23MerkleTree_1 = require("./ics23MerkleTree");
 const plutusSerialise_1 = require("./plutusSerialise");
@@ -117,24 +119,63 @@ async function encodeChannelEndValue(channelEnd, Lucid) {
         Data.Literal('TryOpen'),
         Data.Literal('Open'),
         Data.Literal('Close'),
-    ]);
-    const OrderSchema = Data.Enum([
-        Data.Literal('None'),
-        Data.Literal('Unordered'),
-        Data.Literal('Ordered'),
+        Data.Literal('Flushing'),
+        Data.Literal('FlushComplete'),
     ]);
     const ChannelCounterpartySchema = Data.Object({
         port_id: Data.Bytes(),
         channel_id: Data.Bytes(),
     });
-    const ChannelSchema = Data.Object({
+    const fields = {
         state: StateSchema,
-        ordering: OrderSchema,
+        ordering: channelOrderSchema(Lucid),
         counterparty: ChannelCounterpartySchema,
         connection_hops: Data.Array(Data.Bytes()),
         version: Data.Bytes(),
-    });
+    };
+    // Channel upgrades append upgrade_sequence. Channels without it keep the
+    // five-field encoding that existing deployments committed.
+    const ChannelSchema = channelEnd.upgrade_sequence === undefined
+        ? Data.Object(fields)
+        : Data.Object({ ...fields, upgrade_sequence: Data.Integer() });
     return Data.to(channelEnd, ChannelSchema);
+}
+// Committed under channelUpgrades/upgrades/ports/{port}/channels/{channel}.
+async function encodeChannelUpgradeValue(upgrade, Lucid) {
+    const { Data } = Lucid;
+    const UpgradeSchema = Data.Object({
+        fields: Data.Object({
+            ordering: channelOrderSchema(Lucid),
+            connection_hops: Data.Array(Data.Bytes()),
+            version: Data.Bytes(),
+        }),
+        timeout: Data.Object({
+            height: Data.Object({
+                revision_number: Data.Integer(),
+                revision_height: Data.Integer(),
+            }),
+            timestamp: Data.Integer(),
+        }),
+        next_sequence_send: Data.Integer(),
+    });
+    return Data.to(upgrade, UpgradeSchema);
+}
+// Committed under channelUpgrades/upgradeError/ports/{port}/channels/{channel}.
+async function encodeChannelUpgradeErrorValue(receipt, Lucid) {
+    const { Data } = Lucid;
+    const ErrorReceiptSchema = Data.Object({
+        sequence: Data.Integer(),
+        message: Data.Bytes(),
+    });
+    return Data.to(receipt, ErrorReceiptSchema);
+}
+function channelOrderSchema(Lucid) {
+    const { Data } = Lucid;
+    return Data.Enum([
+        Data.Literal('None'),
+        Data.Literal('Unordered'),
+        Data.Literal('Ordered'),
+    ]);
 }
 async function encodeModuleRegistration(registration, Lucid) {
     const { Data } = Lucid;

@@ -4,22 +4,27 @@ import { resolve } from 'node:path';
 import { ICS23MerkleTree } from './ics23-merkle-tree';
 import { serializeExistenceProof, serializeNonExistenceProof } from './ics23-proof-serialization';
 
-const fixture = JSON.parse(readFileSync(resolve(
-  __dirname, '../../../../../tests/ibc-state-commitment/proofs.json',
-), 'utf8')) as {
+type ProofFixture = {
   version: number;
   vectors: Array<{ name: string; key: string; committed: string; root: string; protobuf: string }>;
 };
 
-describe('Cardano proof bytes shared with Go and Aiken', () => {
+const loadFixture = (name: string) => JSON.parse(readFileSync(resolve(
+  __dirname, '../../../../../tests/ibc-state-commitment', name,
+), 'utf8')) as ProofFixture;
+
+it('regenerates the fixed CBOR values, roots and witnesses with the runtime', () => {
+  execFileSync(process.execPath, [resolve(__dirname, '../../../../../tests/ibc-state-commitment/generate.mjs'), '--check'], { stdio: 'pipe' });
+});
+
+// Channel-upgrade records have their own tree. Counterparty clients must
+// verify them before Cardano validators commit them.
+describe.each(['proofs.json', 'channel-upgrade.json'])('Cardano proof bytes shared with Go and Aiken: %s', (name) => {
+  const fixture = loadFixture(name);
   const tree = new ICS23MerkleTree();
   for (const vector of fixture.vectors) {
     if (vector.committed) tree.set(vector.key, vector.committed);
   }
-
-  it('regenerates the fixed CBOR values, roots and witnesses with the runtime', () => {
-    execFileSync(process.execPath, [resolve(__dirname, '../../../../../tests/ibc-state-commitment/generate.mjs'), '--check'], { stdio: 'pipe' });
-  });
 
   it.each(fixture.vectors)('serializes the exact Go fixture: $name', (vector) => {
     expect(fixture.version).toBe(1);

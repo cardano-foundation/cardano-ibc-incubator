@@ -121,6 +121,8 @@ export declare function encodeClientStateValue(clientState: any, Lucid: typeof i
 export declare function encodeConsensusStateValue(consensusState: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeConnectionEndValue(connectionEnd: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeChannelEndValue(channelEnd: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
+export declare function encodeChannelUpgradeValue(upgrade: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
+export declare function encodeChannelUpgradeErrorValue(receipt: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeModuleRegistration(registration: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 /**
  * One deployment's working tree and the readers used to rebuild it.
