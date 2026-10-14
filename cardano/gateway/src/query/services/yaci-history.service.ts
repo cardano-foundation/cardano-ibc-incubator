@@ -1751,24 +1751,20 @@ export class YaciHistoryService implements HistoryService {
   async findIntentSpendingTransaction(hash: string, address: string): Promise<HistoryTxEvidence | null> {
     const source = this.restHistory();
     return source.snapshot('latest', async (tip) => {
+      const creation = await source.transaction(hash);
+      if (!creation) return null;
+      const intentOutputIndexes = new Set(
+        creation.outputs.filter((output) => output.address === address).map((output) => output.output_index),
+      );
+      if (intentOutputIndexes.size === 0) return null;
       const transactions = await source.transactionsFor(
         `addresses/${encodeURIComponent(address)}/transactions`,
         tip.number,
       );
-      const matches = transactions.filter((tx) => tx.inputs.some((input) => input.txHash === hash.toLowerCase()));
+      const matches = transactions.filter((tx) =>
+        tx.inputs.some((input) => input.txHash === creation.hash && intentOutputIndexes.has(input.outputIndex)),
+      );
       if (matches.length !== 1) return null;
-      // Authenticate the address of the consumed output, not merely another input.
-      const creation = await source.transaction(hash);
-      if (
-        !creation?.outputs.some(
-          (output) =>
-            output.address === address &&
-            matches[0].inputs.some(
-              (input) => input.txHash === hash.toLowerCase() && input.outputIndex === output.output_index,
-            ),
-        )
-      )
-        return null;
       return this.transactionEvidence(matches[0]);
     });
   }
