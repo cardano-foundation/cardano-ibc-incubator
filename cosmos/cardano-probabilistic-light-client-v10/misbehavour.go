@@ -25,16 +25,15 @@ func (Misbehaviour) ClientType() string {
 }
 
 func (misbehaviour Misbehaviour) GetTime() time.Time {
-	t1, t2 := misbehaviour.ProbabilisticHeader1.GetTime(), misbehaviour.ProbabilisticHeader2.GetTime()
-	if t1.After(t2) {
-		return t1
-	}
-	return t2
+	return toCoreMisbehaviour(&misbehaviour).GetTime()
 }
 
 func (misbehaviour Misbehaviour) ValidateBasic() error {
 	if err := toCoreMisbehaviour(&misbehaviour).ValidateBasic(host.ClientIdentifierValidator); err != nil {
 		return adapterError(err)
+	}
+	if len(misbehaviour.VerifiedObservation_1) > 0 {
+		return nil
 	}
 	if err := state.ValidateHeaderBytes(misbehaviour.ProbabilisticHeader1.Size()); err != nil {
 		return adapterError(err)

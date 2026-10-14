@@ -48,7 +48,20 @@ func (cs ClientState) verifyEpochUsable(ctx Context, epoch uint64) error {
 	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return errorsmod.Wrap(ErrIBCClientFrozen, "epoch roots cannot be used after a challenge freeze")
 	}
+	if cs.StorageVersion == StorageVersionSharedSnapshots && cs.BootstrapPending {
+		return errorsmod.Wrap(ErrEpochContextPending, "trusted bootstrap has not completed")
+	}
 	challenge := cs.epochChallenge(epoch)
+	if cs.StorageVersion == StorageVersionSharedSnapshots && challenge == nil {
+		shared, err := ctx.snapshotStore()
+		if err != nil {
+			return err
+		}
+		raw := shared.Get(proofEpochDeadlineKey(&cs, epoch))
+		if len(raw) == 8 {
+			challenge = &EpochContextChallenge{Epoch: epoch, UsableAfterUnixNs: binary.BigEndian.Uint64(raw)}
+		}
+	}
 	if challenge == nil || challenge.UsableAfterUnixNs == 0 {
 		return errorsmod.Wrapf(ErrEpochContextPending, "epoch %d has no host-assigned challenge deadline", epoch)
 	}

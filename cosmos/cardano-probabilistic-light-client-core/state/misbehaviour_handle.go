@@ -8,6 +8,13 @@ import (
 )
 
 func (cs ClientState) CheckForMisbehaviour(ctx Context, cdc StateCodec, clientStore storetypes.KVStore, msg any) bool {
+	if cs.StorageVersion == StorageVersionSharedSnapshots {
+		if evidence, ok := msg.(*Misbehaviour); ok {
+			conflict, err := cs.verifiedReceiptConflict(ctx, evidence)
+			return err == nil && conflict
+		}
+		return false
+	}
 	switch msg := msg.(type) {
 	case *ProbabilisticHeader:
 		return headerConflictsWithStoredConsensus(clientStore, cdc, msg)
@@ -21,6 +28,16 @@ func (cs ClientState) CheckForMisbehaviour(ctx Context, cdc StateCodec, clientSt
 }
 
 func (cs *ClientState) verifyMisbehaviour(ctx Context, clientStore storetypes.KVStore, cdc StateCodec, misbehaviour *Misbehaviour) error {
+	if cs.StorageVersion == StorageVersionSharedSnapshots {
+		conflict, err := cs.verifiedReceiptConflict(ctx, misbehaviour)
+		if err != nil {
+			return err
+		}
+		if !conflict {
+			return ErrIBCInvalidMisbehaviour
+		}
+		return nil
+	}
 	return cs.verifyMisbehaviourWithAuthenticator(ctx, clientStore, cdc, misbehaviour, nil)
 }
 

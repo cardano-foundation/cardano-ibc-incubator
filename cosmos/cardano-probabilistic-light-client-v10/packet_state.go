@@ -5,6 +5,7 @@ import (
 	"fmt"
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func packetSnapshotKey(height uint64) []byte { return []byte(fmt.Sprintf("packetState/%020d", height)) }
@@ -47,6 +48,32 @@ func verifyPacketNonMembership(consensus *ConsensusState, height uint64, key, pr
 		return err
 	}
 	root, err := snapshot.PacketRoot(key, height)
+	if err != nil {
+		return err
+	}
+	absence, err := decodeNonExistenceProof(proof)
+	if err != nil {
+		return err
+	}
+	return probabilisticcore.VerifyPacketLaneNonMembership(root, height, key, absence)
+}
+
+func (cs *ClientState) verifyPagedPacketMembership(ctx sdk.Context, consensus *ConsensusState, height uint64, key, value, proof []byte) error {
+	if bytes.HasPrefix(key, []byte("receipts/ports/")) {
+		return fmt.Errorf("packet receipt membership is unsupported")
+	}
+	root, err := toCoreClientState(cs).PacketRoot(coreContext(ctx), toCoreConsensusState(consensus), height, key)
+	if err != nil {
+		return err
+	}
+	existence, err := decodeExistenceProof(proof)
+	if err != nil {
+		return err
+	}
+	return probabilisticcore.VerifyPacketLaneMembership(root, height, key, value, existence)
+}
+func (cs *ClientState) verifyPagedPacketNonMembership(ctx sdk.Context, consensus *ConsensusState, height uint64, key, proof []byte) error {
+	root, err := toCoreClientState(cs).PacketRoot(coreContext(ctx), toCoreConsensusState(consensus), height, key)
 	if err != nil {
 		return err
 	}

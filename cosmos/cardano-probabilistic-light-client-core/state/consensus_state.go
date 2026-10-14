@@ -23,6 +23,9 @@ func (cs ConsensusState) GetTime() time.Time {
 }
 
 func (cs ConsensusState) ValidateBasic() error {
+	if cs.VerificationGeneration != 0 {
+		return validateThinConsensus(&cs)
+	}
 	if _, err := productionRecordMap(cs.PoolProduction, cs.AcceptedEpoch); err != nil {
 		return errorsmod.Wrap(ErrIBCInvalidConsensus, err.Error())
 	}

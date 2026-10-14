@@ -3,6 +3,7 @@ package ibc.lightclients.probabilistic.v1;
 
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
+import "cosmos/msg/v1/msg.proto";
 
 option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10;probabilistic";
 
@@ -117,6 +118,14 @@ message ClientState {
   SettlementCreditState latest_checkpoint_settlement_credit = 35;
   // Verified production history positioned at this committed checkpoint.
   PoolProductionHistory latest_checkpoint_pool_production = 36;
+  // Version 2 keeps verification collections in authenticated destination storage.
+  uint32 storage_version = 37;
+  uint64 verification_generation = 38;
+  bytes checkpoint_reference = 39;
+  bytes storage_namespace = 40;
+  // Explicitly trusted compact bootstrap objects. Removed from stored ClientState.
+  bytes bootstrap_objects = 41;
+  bool bootstrap_pending = 42;
 }
 
 // Production observed through the checkpoint. Bit 0 represents epoch-1 and
@@ -235,6 +244,9 @@ message ConsensusState {
   SettlementCreditState settlement_credit = 11;
   // History at this accepted block, excluding temporary settlement descendants.
   PoolProductionHistory pool_production = 12;
+  uint64 verification_generation = 13;
+  bytes checkpoint_reference = 14;
+  bytes packet_state_reference = 15;
 }
 
 message Misbehaviour {
@@ -243,6 +255,9 @@ message Misbehaviour {
   string client_id = 1 [deprecated = true];
   ProbabilisticHeader probabilistic_header_1 = 2 [(gogoproto.customname) = "ProbabilisticHeader1"];
   ProbabilisticHeader probabilistic_header_2 = 3 [(gogoproto.customname) = "ProbabilisticHeader2"];
+  // Receipts are produced by the verifier. They are bound to this client and generation.
+  bytes verified_observation_1 = 4;
+  bytes verified_observation_2 = 5;
 }
 
 message ProbabilisticBlock {
@@ -279,4 +294,71 @@ message ProbabilisticHeader {
   // Checkpoints authenticate Cardano chain progression without creating an
   // IBC consensus state or renewing the trusting period.
   bool is_checkpoint = 12;
+  // Bounded operations share the normal IBC client-message entry point.
+  ObservationChunk observation_chunk = 13;
+}
+
+// Intermediate verification remains isolated from the trusted checkpoint.
+// Operation codes and canonical payloads are defined by the versioned shared core.
+message ObservationChunk {
+  option (gogoproto.goproto_getters) = false;
+  uint32 operation = 1;
+  bytes session_id = 2;
+  bytes base_checkpoint_reference = 3;
+  bytes original_receipt = 4;
+  uint64 anchor_height = 5;
+  uint32 block_count = 6;
+  EpochContext table_context = 7;
+  // Canonical binary pool identifiers and uint64 amounts, in strict order.
+  bytes stake_rows = 8;
+  repeated ProbabilisticBlock blocks = 9;
+  bytes objects = 10;
+  bytes other_receipt = 11;
+  bool is_checkpoint = 12;
+  string host_state_tx_hash = 13;
+  uint32 table_rows = 14;
+  uint64 table_total = 15;
+  bytes evidence_digest = 16;
+  bytes table_digest = 17;
+  uint32 sequence = 18;
+  // Isolated observations can be compared without activating either as an update.
+  bool isolated = 19;
+
+}
+
+// Queries return bounded pages from destination storage. They do not create
+// authority for references that are absent from the client's accepted context.
+service Query {
+  rpc Verification(QueryVerificationRequest) returns (QueryVerificationResponse);
+}
+message QueryVerificationRequest {
+  option (gogoproto.goproto_getters) = false;
+  bytes namespace = 1;
+  uint64 generation = 2;
+  bytes checkpoint_reference = 3;
+  uint32 kind = 4;
+  bytes after = 5;
+  uint32 limit = 6;
+  bytes session_id = 7;
+  bytes receipt_id = 8;
+}
+message QueryVerificationResponse {
+  option (gogoproto.goproto_getters) = false;
+  // Versioned JSON metadata or records. Values use canonical binary encoding.
+  bytes data = 1;
+}
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+  rpc ContinueClient(MsgContinueClient) returns (MsgContinueClientResponse);
+}
+message MsgContinueClient {
+  option (gogoproto.goproto_getters) = false;
+  option (cosmos.msg.v1.signer) = "signer";
+  string signer = 1;
+  string client_id = 2;
+  // Permissionless bounded cleanup or continuation of already authorized recovery.
+  uint32 operation = 3;
+}
+message MsgContinueClientResponse {
+  option (gogoproto.goproto_getters) = false;
 }

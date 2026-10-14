@@ -34,6 +34,9 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	if !ok {
 		return errorsmod.Wrapf(ErrIBCInvalidClient, "expected type %T, got %T", &ClientState{}, substituteClient)
 	}
+	if cs.StorageVersion != 0 || substituteClientState.StorageVersion != 0 {
+		return (&cs).beginCompactRecovery(ctx, cdc, subjectClientStore, substituteClientStore, substituteClientState)
+	}
 	if err := substituteClientState.Validate(); err != nil {
 		return errorsmod.Wrap(ErrIBCInvalidSubstitute, err.Error())
 	}

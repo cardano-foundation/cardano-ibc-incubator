@@ -21,6 +21,9 @@ func (Misbehaviour) ClientType() string {
 }
 
 func (misbehaviour Misbehaviour) GetTime() time.Time {
+	if misbehaviour.ProbabilisticHeader1 == nil || misbehaviour.ProbabilisticHeader2 == nil {
+		return time.Time{}
+	}
 	t1, t2 := misbehaviour.ProbabilisticHeader1.GetTime(), misbehaviour.ProbabilisticHeader2.GetTime()
 	if t1.After(t2) {
 		return t1
@@ -29,6 +32,12 @@ func (misbehaviour Misbehaviour) GetTime() time.Time {
 }
 
 func (misbehaviour Misbehaviour) ValidateBasic(validateClientID func(string) error) error {
+	if len(misbehaviour.VerifiedObservation_1) > 0 || len(misbehaviour.VerifiedObservation_2) > 0 {
+		if len(misbehaviour.VerifiedObservation_1) != 32 || len(misbehaviour.VerifiedObservation_2) != 32 || misbehaviour.ProbabilisticHeader1 != nil || misbehaviour.ProbabilisticHeader2 != nil {
+			return ErrIBCInvalidMisbehaviour
+		}
+		return validateClientID(misbehaviour.ClientId)
+	}
 	if misbehaviour.ProbabilisticHeader1 == nil {
 		return errorsmod.Wrap(ErrInvalidHeader, "misbehaviour ProbabilisticHeader1 cannot be nil")
 	}

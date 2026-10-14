@@ -7,6 +7,9 @@ import (
 )
 
 func (h ProbabilisticHeader) ConsensusState() *ConsensusState {
+	if h.AnchorBlock == nil {
+		return &ConsensusState{}
+	}
 	// This is only an interface placeholder. The verified consensus state for
 	// probabilistic updates is derived inside the authenticated update path, not from
 	// these untrusted relayed header fields.
@@ -26,10 +29,19 @@ func (ProbabilisticHeader) ClientType() string {
 }
 
 func (h ProbabilisticHeader) GetHeight() *Height {
+	if h.ObservationChunk != nil {
+		return NewHeight(0, h.ObservationChunk.AnchorHeight)
+	}
+	if h.AnchorBlock == nil || h.AnchorBlock.Height == nil {
+		return ZeroHeight()
+	}
 	return NewHeight(0, h.AnchorBlock.Height.RevisionHeight)
 }
 
 func (h ProbabilisticHeader) GetTimestamp() uint64 {
+	if h.AnchorBlock == nil {
+		return 0
+	}
 	return h.AnchorBlock.Timestamp
 }
 
@@ -38,6 +50,9 @@ func (h ProbabilisticHeader) GetTime() time.Time {
 }
 
 func (h ProbabilisticHeader) ValidateBasic() error {
+	if h.ObservationChunk != nil {
+		return h.validateObservationChunk()
+	}
 	if len(h.BridgeBlocks) > MaxBridgeBlocks || 1+len(h.BridgeBlocks)+len(h.DescendantBlocks) > MaxHeaderBlocks {
 		return errorsmod.Wrap(ErrInvalidHeader, "block count exceeds the challenge capacity bound")
 	}
