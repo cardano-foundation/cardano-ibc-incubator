@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   CML,
   Constr,
@@ -24,6 +27,9 @@ import {
   verifyIbcTreeWitness,
 } from "./incrementalIbcTree.ts";
 import { discoverYaciHistoryBootstrap } from "./consensusHistoryYaci.ts";
+import { createRestHistorySource } from "./consensusHistoryRest.ts";
+import { YaciRestClient, type YaciRestBlock } from "./yaciRest.ts";
+import { YaciRestHistory, type RestTransaction } from "./yaciRestHistory.ts";
 
 const token = { policyId: "11".repeat(28), name: "22".repeat(24) + "30" };
 const unit = token.policyId + token.name;
@@ -165,6 +171,176 @@ function recovery(items: Publication[]) {
     bootstrap: { txHash: items[0].output.txHash, outputIndex: 0 },
   });
 }
+
+function restSource(items: Publication[]) {
+  const api = new YaciRestClient("https://yaci.example");
+  const metadata = (index: number): YaciRestBlock => ({
+    number: items[index].transaction.blockHeight,
+    hash: items[index].transaction.blockHash,
+    previous_block: index ? items[index - 1].transaction.blockHash : null,
+    slot: items[index].transaction.slot,
+    epoch: 0,
+    time: index,
+    slot_leader: "fixture",
+    tx_count: 1,
+  });
+  api.block = async (at) =>
+    at === "latest"
+      ? metadata(items.length - 1)
+      : items[Number(at) - 1]
+        ? metadata(Number(at) - 1)
+        : null;
+  api.json = async (path) => {
+    const url = new URL(path, "https://yaci.example");
+    const start = (Number(url.searchParams.get("page")) - 1) * 100;
+    return items.slice(start, start + 100).map((item) => ({
+      tx_hash: item.output.txHash,
+      block_height: item.transaction.blockHeight,
+    }));
+  };
+  const rest = new YaciRestHistory(api);
+  const loads: number[] = [];
+  let failureAt: number | undefined;
+  rest.blockTransactions = async (number): Promise<RestTransaction[]> => {
+    loads.push(number);
+    if (number === failureAt)
+      throw new Error(`block ${number} unavailable after transport retries`);
+    const item = items[number - 1];
+    const transaction = CML.Transaction.from_cbor_hex(item.transaction.cbor);
+    const body = transaction.body();
+    return [
+      {
+        hash: item.output.txHash,
+        block: metadata(number - 1),
+        index: 0,
+        valid: true,
+        body,
+        bodyCborHex: body.to_cbor_hex(),
+        cborHex: item.transaction.cbor,
+        transaction,
+        inputs: [
+          {
+            txHash: body.inputs().get(0).transaction_id().to_hex(),
+            outputIndex: 0,
+          },
+        ],
+        outputs: [
+          {
+            tx_hash: item.output.txHash,
+            output_index: 0,
+            block: number,
+            tx_index: 0,
+            address: item.output.address,
+            inline_datum: item.output.datum!,
+            data_hash: null,
+            amounts: Object.entries(item.output.assets).map(
+              ([unit, quantity]) => ({ unit, quantity: quantity.toString() }),
+            ),
+          },
+        ],
+      },
+    ];
+  };
+  const deployment = {
+    clientToken: token,
+    stateAddress: address,
+    bootstrap: { txHash: items[0].output.txHash, outputIndex: 0 },
+  };
+  let liveReads = 0;
+  const history = createRestHistorySource(rest, deployment, async () => {
+    liveReads++;
+    return structuredClone(items.at(-1)!.output);
+  });
+  return {
+    history,
+    deployment,
+    loads,
+    failAt: (number?: number) => {
+      failureAt = number;
+    },
+    liveReads: () => liveReads,
+    api,
+  };
+}
+
+test("REST recovery persists a late-failure prefix in SQLite and resumes after reopening the cache", async () => {
+  const items = publications(
+    Array.from({ length: 200 }, (_, index) => BigInt(index + 1)),
+  );
+  const provider = restSource(items);
+  const directory = mkdtempSync(join(tmpdir(), "rest-history-progress-"));
+  const file = join(directory, "history.sqlite");
+  let index = new ConsensusHistoryRecovery(file, provider.deployment);
+  try {
+    provider.failAt(199);
+    await assert.rejects(
+      index.recover(provider.history),
+      /block 199 unavailable/,
+    );
+    assert.equal(provider.liveReads(), 0);
+    assert.throws(
+      () => index.witness(token, items[0].record.height),
+      /not been matched to the live state/,
+    );
+    index.close();
+    const saved = new DatabaseSync(file);
+    try {
+      assert.equal(
+        saved.prepare("SELECT COUNT(*) AS count FROM history_journal").get()!
+          .count,
+        198,
+      );
+      assert.equal(
+        saved
+          .prepare(
+            "SELECT block_height FROM history_journal ORDER BY sequence DESC LIMIT 1",
+          )
+          .get()!.block_height,
+        198,
+      );
+    } finally {
+      saved.close();
+    }
+    index = new ConsensusHistoryRecovery(file, provider.deployment);
+    provider.failAt();
+    provider.loads.length = 0;
+    const result = await index.recover(provider.history);
+    assert.equal(result.transactions, 2);
+    assert(provider.loads.every((height) => height >= 198));
+    assert.equal(index.current().point.blockHeight, 200);
+    const proof = index.witness(token, items[0].record.height);
+    assert(
+      verifyIbcTreeWitness(proof.key, proof.value, proof.siblings, result.root),
+    );
+  } finally {
+    index.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("REST recovery saves replay progress but cannot serve proofs until the pinned tip is revalidated", async () => {
+  const items = publications([1n, 2n]);
+  const provider = restSource(items);
+  const index = new ConsensusHistoryRecovery(":memory:", provider.deployment);
+  const block = provider.api.block.bind(provider.api);
+  provider.api.block = async (at) => {
+    const found = await block(at);
+    return at === 2 ? { ...found!, hash: "ff".repeat(32) } : found;
+  };
+  try {
+    await assert.rejects(
+      index.recover(provider.history, { maxPasses: 1 }),
+      /progress saved/,
+    );
+    assert.equal(provider.liveReads(), 0);
+    assert.throws(
+      () => index.witness(token, items[0].record.height),
+      /not been matched to the live state/,
+    );
+  } finally {
+    index.close();
+  }
+});
 
 function replaceDatum(
   item: Publication,
