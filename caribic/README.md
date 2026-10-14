@@ -318,6 +318,37 @@ Caribic exit with an error. These artifacts certify this local fixture scenario.
 They do not approve public network profiles or the availability of challenge
 evidence for arbitrary admitted source histories.
 
+### Local v8 software upgrade acceptance
+
+```sh
+caribic test --light-client software-upgrade --chain cosmos --network v8-classic
+```
+
+This command builds and runs two native ibc-go v8 applications. Only the
+successor contains the upgrade handler and the new application store. The
+scenario uses signed governance transactions to approve an upgrade height.
+The old application halts there because it cannot execute that upgrade.
+Caribic then starts the successor against the same database and validator keys.
+The SDK adds the store and records the completed upgrade at the approved height.
+
+The original probabilistic client, private proof history, route, balances and
+pending packet must survive unchanged. An existing epoch response deadline
+must remain enforced. After it elapses the test receives another packet and
+refunds the pending transfer through its valid timeout proof. Native updates
+cross another epoch and packet processing continues after a successor restart.
+
+Go 1.26.5 is required. Allow about seven minutes for the real three-minute
+response windows. No Docker services are required. This uses the same local
+profile limits and signed Cardano fixture source as `challenge-recovery`.
+The Cardano devnet, Gateway and production Hermes are outside this scenario.
+Both applications retain the current checkout's verifier. This certifies the
+host application upgrade and does not certify migration from an older verifier
+release that lacks required authenticated checkpoint state.
+
+Caribic retains the actual executables, database, process logs and accounting
+evidence under `.caribic/test-artifacts/software-upgrade-*/`. CI invokes this
+same command. Failed assertions make the command exit with an error.
+
 ### What the numbered suite tests
 
 The legacy numbered suite is ordered and will **skip** later tests if prerequisites are not met, for example if no direct channel exists or if a known limitation is hit.

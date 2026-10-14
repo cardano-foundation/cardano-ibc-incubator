@@ -1,42 +1,46 @@
-name: Probabilistic software-upgrade compatibility
+name: Caribic v8 software upgrade
 
 on:
   pull_request:
     paths:
-      - 'tests/probabilistic-upgrade/**'
-      - 'chains/cosmos/scripts/run_light_client_*.sh'
+      - 'cosmos/cardano-probabilistic-light-client-core/**'
+      - 'cosmos/cardano-probabilistic-light-client-v8/**'
+      - 'caribic/**'
+      - 'chains/cosmos/**'
       - '.github/workflows/probabilistic-upgrade.yml'
   workflow_dispatch:
 
 jobs:
-  published-store:
+  software-upgrade:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        major: ['8', '10']
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.25.13'
-          cache: false
-      - name: Retain published-module client stores across host replacement
-        run: >-
-          python3 tests/probabilistic-upgrade/run_store_compatibility.py
-          --major ${{ matrix.major }} --output "$RUNNER_TEMP/upgrade-evidence"
+          go-version: '1.26.5'
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client-v8/go.sum
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: '1.91.1'
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            caribic/target
+          key: caribic-v8-upgrade-${{ runner.os }}-${{ hashFiles('caribic/Cargo.lock') }}
+      - name: Upgrade through Caribic and resume authenticated packets
+        run: |
+          set -o pipefail
+          cargo run --locked --manifest-path caribic/Cargo.toml -- test \
+            --light-client software-upgrade --chain cosmos --network v8-classic \
+            2>&1 | tee /tmp/caribic-v8-upgrade.log
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: published-store-v${{ matrix.major }}
-          path: ${{ runner.temp }}/upgrade-evidence
-  orchestration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - name: Test upgrade assertions
-        run: python3 -m unittest discover -s tests/probabilistic-upgrade -p 'test_*.py' -v
-      - name: Check recovery scenario after helper reuse
-        run: bash chains/cosmos/scripts/test_run_light_client_recovery.sh
+          name: caribic-v8-software-upgrade
+          include-hidden-files: true
+          path: |
+            .caribic/test-artifacts/software-upgrade-*/
+            /tmp/caribic-v8-upgrade.log

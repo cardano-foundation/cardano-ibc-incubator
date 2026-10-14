@@ -28,6 +28,9 @@ pub(crate) async fn run(
     if scenario == LightClientTest::ChallengeRecovery {
         return run_challenge_recovery(project_root_path, &options);
     }
+    if scenario == LightClientTest::SoftwareUpgrade {
+        return run_software_upgrade(project_root_path, &options);
+    }
     let relayer_path = project_root_path.join("relayer");
     let relayer_was_running = matches!(
         start::check_health_target(project_root_path, HealthTarget::Core(CoreServiceId::Hermes)),
@@ -94,9 +97,13 @@ impl LightClientTestOptions {
         }
 
         let network = network.unwrap_or("v8-classic");
-        if scenario == LightClientTest::ChallengeRecovery && network != "v8-classic" {
+        if matches!(
+            scenario,
+            LightClientTest::ChallengeRecovery | LightClientTest::SoftwareUpgrade
+        ) && network != "v8-classic"
+        {
             return Err(
-                "challenge-recovery requires the local v8-classic destination profile".into(),
+                "This acceptance scenario requires the local v8-classic destination profile".into(),
             );
         }
         if cosmos_profiles::semantics(network)? != IbcSemantics::Classic {
@@ -119,7 +126,9 @@ fn run_recover_client(
 ) -> Result<(), String> {
     match options.scenario {
         LightClientTest::RecoverClient => {}
-        LightClientTest::ChallengeRecovery => unreachable!("dispatched before live route setup"),
+        LightClientTest::ChallengeRecovery | LightClientTest::SoftwareUpgrade => {
+            unreachable!("dispatched before live route setup")
+        }
     }
 
     logger::log(&format!(
@@ -238,6 +247,71 @@ fn run_challenge_recovery(
     }
     logger::log(&format!(
         "PASS: challenge/recovery resumed authenticated packets. Evidence: {}",
+        artifacts.display()
+    ));
+    Ok(())
+}
+
+fn run_software_upgrade(
+    project_root: &Path,
+    options: &LightClientTestOptions,
+) -> Result<(), String> {
+    let artifacts = project_root.join(".caribic/test-artifacts").join(format!(
+        "software-upgrade-{}-{}",
+        Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&artifacts)
+        .map_err(|error| format!("Could not create upgrade artifacts: {error}"))?;
+    logger::log(&format!(
+        "Running {} software upgrade through governance, the scheduled halt and host replacement.",
+        options.network
+    ));
+    logger::log("The verifier comes from this checkout in both applications. This does not migrate an older verifier release.");
+    logger::log(&format!(
+        "Host binaries, database and evidence: {}",
+        artifacts.display()
+    ));
+    let module = project_root.join("cosmos/cardano-probabilistic-light-client-v8");
+    let before = artifacts.join("host-before");
+    let after = artifacts.join("host-after");
+    for (binary, successor) in [(&before, false), (&after, true)] {
+        let mut build = Command::new("go");
+        build.args(["test", "-c", "-o"]).arg(binary);
+        if successor {
+            build.arg("-tags=caribic_v8_upgrade");
+        }
+        let status = build
+            .current_dir(&module)
+            .stdin(Stdio::null())
+            .status()
+            .map_err(|error| format!("Could not build v8 upgrade host: {error}"))?;
+        if !status.success() {
+            return Err(format!("Could not build {} ({status})", binary.display()));
+        }
+    }
+    let status = Command::new(&after)
+        .args([
+            "-test.run=^TestCaribicV8SoftwareUpgrade$",
+            "-test.v",
+            "-test.timeout=20m",
+        ])
+        .current_dir(&module)
+        .env("CARIBIC_V8_SOFTWARE_UPGRADE", "1")
+        .env("CARIBIC_ACCEPTANCE_ARTIFACTS", &artifacts)
+        .env("CARIBIC_UPGRADE_BEFORE", &before)
+        .env("CARIBIC_UPGRADE_AFTER", &after)
+        .stdin(Stdio::null())
+        .status()
+        .map_err(|error| format!("Could not run v8 software upgrade: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "Software upgrade failed ({status}). Evidence: {}",
+            artifacts.display()
+        ));
+    }
+    logger::log(&format!(
+        "PASS: upgraded host resumed authenticated packets on its retained route. Evidence: {}",
         artifacts.display()
     ));
     Ok(())
@@ -418,6 +492,27 @@ mod tests {
             )
             .is_err());
         }
+    }
+
+    #[test]
+    fn software_upgrade_accepts_only_the_local_v8_profile() {
+        assert!(
+            LightClientTestOptions::resolve(LightClientTest::SoftwareUpgrade, None, None).is_ok()
+        );
+        for profile in ["v10-classic", "v10-v2", "unknown"] {
+            assert!(LightClientTestOptions::resolve(
+                LightClientTest::SoftwareUpgrade,
+                None,
+                Some(profile)
+            )
+            .is_err());
+        }
+        assert!(LightClientTestOptions::resolve(
+            LightClientTest::SoftwareUpgrade,
+            Some(OptionalChainId::Osmosis),
+            None
+        )
+        .is_err());
     }
 
     #[test]

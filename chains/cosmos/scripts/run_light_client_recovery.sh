@@ -970,7 +970,6 @@ wait_for_cardano_escrow_replacement() {
     sleep "$POLL_INTERVAL_SECONDS"
   done
 }
-# The software-upgrade scenario reuses the same query and transfer assertions.
 # Sourcing defines helpers only; executing still runs the recovery scenario.
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
   return 0

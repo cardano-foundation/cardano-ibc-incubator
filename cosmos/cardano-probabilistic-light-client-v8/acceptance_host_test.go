@@ -142,7 +142,9 @@ func TestCaribicAcceptanceHost(t *testing.T) {
 		app.IBCKeeper.ConnectionKeeper.SetClientConnectionPaths(ctx, acceptanceSubject, []string{"connection-0"})
 		return response, nil
 	})
+	configureAcceptanceUpgrade(t, app, config.Root)
 	require.NoError(t, app.LoadLatestVersion())
+	loadedHeight := app.LastBlockHeight()
 	defer func() { require.NoError(t, app.Close()) }()
 	if _, err := os.Stat(cfg.GenesisFile()); os.IsNotExist(err) {
 		validator := privval.GenFilePV(cfg.PrivValidatorKeyFile(), cfg.PrivValidatorStateFile())
@@ -183,6 +185,7 @@ func TestCaribicAcceptanceHost(t *testing.T) {
 	n, err := node.NewNode(cfg, validator, nodeKey, proxy.NewLocalClientCreator(server.NewCometABCIWrapper(app)), node.DefaultGenesisDocProviderFunc(cfg), func(c *cmtcfg.DBContext) (cmtdb.DB, error) { return cmtdb.NewGoLevelDB(c.ID, c.Config.DBDir()) }, node.DefaultMetricsProvider(cfg.Instrumentation), cmtlog.NewFilter(cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout)), cmtlog.AllowInfo()))
 	require.NoError(t, err)
 	startHeight := app.LastBlockHeight()
+	acceptanceWriteJSON(t, filepath.Join(config.Root, "startup.json"), map[string]int64{"loaded_height": loadedHeight})
 	require.NoError(t, n.Start())
 	defer func() { require.NoError(t, n.Stop()); n.Wait() }()
 	rpc, err := rpchttp.New("http://"+config.RPC, "/websocket")
