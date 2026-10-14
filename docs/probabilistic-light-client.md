@@ -386,9 +386,21 @@ Software upgrades require stable type URLs, safe historical-state decoding,
 compatible private store keys and defined verifier activation. Test the exact
 old and new artifacts and apply any required host app migration before normal
 operation.
-The [external fixtures](../tests/probabilistic-upgrade/) test published
-modules without changing their runtime code. This software-upgrade path is
-separate from substitute recovery and the unsupported IBC `MsgUpgradeClient`.
+Run `caribic test --light-client software-upgrade --chain cosmos --network v8-classic`
+to exercise the local v8 host application upgrade. Caribic builds two real v8
+applications. Only the successor contains the approved upgrade handler and its
+new application store. A signed governance proposal makes the old application
+halt. The successor loads the retained database, runs the SDK migration path and
+resumes authenticated updates and ICS-20 packets on the original client and channel.
+CI runs that command and retains its binaries, host logs and accounting evidence.
+
+Both applications use the current checkout's verifier. This test does not certify
+migration from a previous verifier release. Older clients can lack authenticated
+nonce, registry and production state required by the current verifier. Those
+transitions need an explicitly defined migration and their own acceptance run.
+The local source uses deterministic signed Cardano fixtures rather than a Cardano
+devnet, Gateway or production Hermes. This host application upgrade is separate
+from substitute recovery and the unsupported IBC `MsgUpgradeClient`.
 
 ## Substitute-Client Recovery
 
