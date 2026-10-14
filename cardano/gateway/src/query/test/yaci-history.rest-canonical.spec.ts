@@ -1,4 +1,5 @@
 import * as cbor from 'cbor';
+import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
 import { Cbor, LazyCborArray } from '@harmoniclabs/cbor';
 import { blake2b } from '@noble/hashes/blake2b';
 import { restProvider as provider, restGateway as gateway } from '../../test-config/rest-provider';
@@ -52,6 +53,42 @@ describe('direct Yaci REST history', () => {
   it('returns no confirmation when REST has not indexed the transaction', async () => {
     const fixture = restBlockFixture(); provider([fixture]);
     await expect(gateway(fixture).service.findTxByHash('ff'.repeat(32))).resolves.toBeNull();
+  });
+
+  it('finds the intent settlement when its change output later funds another intent at the same guard', async () => {
+    const replaceFirstBody = (fixture: ReturnType<typeof restBlockFixture>, body: CML.TransactionBody) => {
+      const raw = cbor.decode(fixture.bytes);
+      raw[1][0] = cbor.decode(body.to_cbor_bytes());
+      fixture.bytes = cbor.encode(raw);
+      fixture.bodies[0] = body;
+      fixture.hashes[0] = CML.hash_transaction(body).to_hex();
+    };
+
+    const original = restBlockFixture(100);
+    const changeAddress = CML.Address.from_raw_bytes(Buffer.from('60' + '66'.repeat(28), 'hex'));
+    const outputs = original.bodies[0].outputs();
+    outputs.add(CML.TransactionOutput.new(changeAddress, CML.Value.from_coin(100n)));
+    replaceFirstBody(original, CML.TransactionBody.new(original.bodies[0].inputs(), outputs, 1n));
+
+    // Settlement spends T#0 at the guard. A later intent spends T#1 at the user's change address.
+    const settlement = restBlockFixture(101, original.metadata.hash, [1], 3, original.hashes[0]);
+    const nextIntent = restBlockFixture(102, settlement.metadata.hash, [1], 5);
+    const changeInput = CML.TransactionInputList.new();
+    changeInput.add(CML.TransactionInput.new(CML.TransactionHash.from_hex(original.hashes[0]), 1n));
+    replaceFirstBody(nextIntent, CML.TransactionBody.new(changeInput, nextIntent.bodies[0].outputs(), 5n));
+
+    const { source } = provider([original, settlement, nextIntent]);
+    const { service, query } = gateway(original);
+    const history = await source.transactionsFor(`addresses/${original.address}/transactions`, 102);
+    expect(history.map((tx) => tx.hash)).toContain(settlement.hashes[0]);
+    expect(history.map((tx) => tx.hash)).toContain(nextIntent.hashes[0]);
+
+    await expect(service.findIntentSpendingTransaction(original.hashes[0], original.address)).resolves.toMatchObject({
+      txHash: settlement.hashes[0],
+      blockNo: 101,
+      txBodyCborHex: settlement.bodies[0].to_cbor_hex(),
+    });
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('rejects transaction metadata that disagrees with the raw block', async () => {
