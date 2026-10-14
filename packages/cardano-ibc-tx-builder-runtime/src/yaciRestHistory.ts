@@ -84,6 +84,8 @@ function mapValue(value: CborObj, key: bigint): CborObj | undefined {
     : undefined;
 }
 
+class YaciRestPageDriftError extends YaciRestHistoryChangedError {}
+
 /** Request-scoped reads from native REST indexes. No chain database or persistent raw cache. */
 export class YaciRestHistory {
   private readonly blocks = new Map<number, Promise<RestTransaction[]>>();
@@ -103,15 +105,19 @@ export class YaciRestHistory {
     try {
       const result = await read(block);
       this.api.signal?.throwIfAborted();
-      const canonical = await this.api.block(block.number);
-      if (!canonical || canonical.hash !== block.hash)
-        throw new YaciRestHistoryChangedError(
-          "Yaci history changed during the REST read, retry",
-        );
+      await this.assertCanonical(block);
       return result;
     } finally {
       this.reset();
     }
+  }
+
+  private async assertCanonical(block: YaciRestBlock): Promise<void> {
+    const canonical = await this.api.block(block.number);
+    if (!canonical || canonical.hash !== block.hash)
+      throw new YaciRestHistoryChangedError(
+        "Yaci history changed during the REST read, retry",
+      );
   }
 
   async *pages(
@@ -125,10 +131,15 @@ export class YaciRestHistory {
       );
       if (!Array.isArray(rows) || rows.length > 100)
         throw new Error(`Invalid or unavailable Yaci history page: ${path}`);
+      const identities = rows.map((row) => JSON.stringify(row));
+      if (new Set(identities).size !== rows.length)
+        throw new Error(`Yaci history pagination repeated a row: ${path}`);
       for (const row of rows) {
         const identity = JSON.stringify(row);
         if (seen.has(identity))
-          throw new Error(`Yaci history pagination repeated a row: ${path}`);
+          throw new YaciRestPageDriftError(
+            `Yaci history pagination repeated a row: ${path}`,
+          );
         seen.add(identity);
         yield row;
       }
@@ -413,18 +424,54 @@ export class YaciRestHistory {
     at: number,
     fromHeight = 0,
   ): Promise<RestTransaction[]> {
+    if (fromHeight === 0)
+      return this.readTransactionsFor(path, at, fromHeight, "asc");
+    const anchor = await this.api.block(at);
+    if (!anchor) throw new Error(`Yaci does not retain required block ${at}`);
+    try {
+      return await this.readTransactionsFor(path, at, fromHeight, "desc");
+    } catch (error) {
+      if (!(error instanceof YaciRestPageDriftError)) throw error;
+      // New rows shift descending LIMIT/OFFSET pages. Discard that scan and
+      // restart forwards, where appends leave existing offsets unchanged.
+      this.reset();
+      try {
+        await this.assertCanonical(anchor);
+        const transactions = await this.readTransactionsFor(
+          path, at, fromHeight, "asc",
+        );
+        await this.assertCanonical(anchor);
+        return transactions;
+      } finally {
+        this.reset();
+      }
+    }
+  }
+
+  private async readTransactionsFor(
+    path: string,
+    at: number,
+    fromHeight: number,
+    order: "asc" | "desc",
+  ): Promise<RestTransaction[]> {
     const transactions = new Map<string, RestTransaction>();
     let previous: number | undefined;
-    for await (const row of this.pages(path, fromHeight > 0 ? "desc" : "asc")) {
+    for await (const row of this.pages(path, order)) {
       const number = height(row.block_height ?? row.block_number);
       if (
         previous !== undefined &&
-        (fromHeight > 0 ? number > previous : number < previous)
+        (order === "desc" ? number > previous : number < previous)
       )
         throw new Error("Yaci transaction history is not ordered");
       previous = number;
-      if (number < fromHeight) break;
-      if (number > at) continue;
+      if (number < fromHeight) {
+        if (order === "desc") break;
+        continue;
+      }
+      if (number > at) {
+        if (order === "asc") break;
+        continue;
+      }
       const txHash = hash(row.tx_hash);
       const tx = (await this.blockTransactions(number)).find(
         (candidate) => candidate.hash === txHash,
