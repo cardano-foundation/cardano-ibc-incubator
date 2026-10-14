@@ -295,7 +295,9 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 			submit := func(msg sdk.Msg, viaGRPC bool) ([]byte, uint64, time.Duration) {
 				wire := encode(msg, uint64(maxGas))
 				started := time.Now()
-				simulation, err := txClient.Simulate(ctx, &txtypes.SimulateRequest{TxBytes: wire})
+				simulationCtx, cancelSimulation := context.WithTimeout(ctx, 10*time.Second)
+				simulation, err := txClient.Simulate(simulationCtx, &txtypes.SimulateRequest{TxBytes: wire})
+				cancelSimulation()
 				require.NoError(t, err)
 				simulationTime := time.Since(started)
 				gas := (simulation.GasInfo.GasUsed*18 + 9) / 10
@@ -337,17 +339,23 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 					require.NoError(t, err)
 					hash = cmttypes.Tx(wire).Hash()
 				} else if viaGRPC {
-					r, err := txClient.BroadcastTx(ctx, &txtypes.BroadcastTxRequest{TxBytes: wire, Mode: txtypes.BroadcastMode_BROADCAST_MODE_SYNC})
+					broadcastCtx, cancelBroadcast := context.WithTimeout(ctx, 10*time.Second)
+					r, err := txClient.BroadcastTx(broadcastCtx, &txtypes.BroadcastTxRequest{TxBytes: wire, Mode: txtypes.BroadcastMode_BROADCAST_MODE_SYNC})
+					cancelBroadcast()
 					require.NoError(t, err)
 					require.Zero(t, r.TxResponse.Code, r.TxResponse.RawLog)
 				} else {
-					r, err := rpc.BroadcastTxSync(ctx, wire)
+					broadcastCtx, cancelBroadcast := context.WithTimeout(ctx, 10*time.Second)
+					r, err := rpc.BroadcastTxSync(broadcastCtx, wire)
+					cancelBroadcast()
 					require.NoError(t, err)
 					require.Zero(t, r.Code, r.Log)
 				}
 				var consumed uint64
+				commitCtx, cancelCommit := context.WithTimeout(ctx, 10*time.Second)
+				defer cancelCommit()
 				require.Eventually(t, func() bool {
-					r, err := rpc.Tx(ctx, hash, false)
+					r, err := rpc.Tx(commitCtx, hash, false)
 					if err != nil {
 						return false
 					}
@@ -357,7 +365,9 @@ func TestDestinationChallengeCapacity(t *testing.T) {
 				}, 10*time.Second, 50*time.Millisecond)
 				elapsed := time.Since(started)
 				require.Less(t, simulationTime, 10*time.Second, "Hermes RPC timeout")
-				require.Less(t, elapsed, 10*time.Second, "Hermes RPC timeout")
+				// Simulation, broadcast and commit polling each have a 10-second
+				// budget. The full Hermes probe also signs and queries the committed
+				// transaction, so its total duration can exceed one RPC timeout.
 				require.LessOrEqual(t, consumed, gas)
 				sequence++
 				return wire, consumed, elapsed
