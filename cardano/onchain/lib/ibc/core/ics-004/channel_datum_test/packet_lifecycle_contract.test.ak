@@ -5,8 +5,9 @@ use cardano/assets as assets
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Spend}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{SendPacket, SpendChannelRedeemer}
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement.{Acknowledgement}
@@ -91,6 +92,7 @@ fn base_datum(ordering: Order, next_sequence_send: Int) -> ChannelDatum {
       packet_commitment: [],
       packet_receipt: [],
       packet_acknowledgement: [],
+      upgrade: initial_upgrade_state,
     },
     port_id: "port-1",
     token: mock_token(),

@@ -166,6 +166,8 @@ fn validate_chan_close_confirm_proof(
       counterparty: expected_counterparty,
       connection_hops: counterparty_hops,
       version: channel_datum.state.channel.version,
+      // Both ends keep the sequence of their last completed upgrade.
+      upgrade_sequence: channel_datum.state.channel.upgrade_sequence,
     }
 
   let verify_proof_redeemer =

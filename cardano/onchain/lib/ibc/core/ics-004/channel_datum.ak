@@ -8,6 +8,7 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state as channel_state
+use ibc/core/ics_004/types/upgrade.{ErrorReceipt, Upgrade}
 use ibc/core/ics_005/types/keys as port_keys_mod
 use ibc/core/ics_024_host_requirements/validate as host_validate_mod
 
@@ -36,6 +37,71 @@ pub type ChannelDatumState {
   /// must reach this high-water mark so its absence proof cannot predate a
   /// packet whose retained history it deletes.
   maximum_receive_proof_height: Height,
+  /// Channel-upgrade state that is not part of the committed channel end, a
+  /// `ChannelUpgradeState`. It stays opaque here so the many validators that
+  /// only carry it forward do not pay for decoding it.
+  upgrade: Data,
+}
+
+pub type ChannelUpgradeState {
+  /// The upgrade this end has initialized, until it opens or is restored.
+  pending: Option<PendingUpgrade>,
+  /// The latest error receipt, committed under
+  /// `channelUpgrades/upgradeError/ports/{portId}/channels/{channelId}`.
+  /// Its sequence only increases.
+  error_receipt: Option<ErrorReceipt>,
+  /// Packets with a lower sequence were settled before the last upgrade
+  /// opened, so they can no longer be received.
+  recv_start_sequence: Int,
+}
+
+pub type PendingUpgrade {
+  /// Committed under `channelUpgrades/upgrades/ports/{portId}/channels/{channelId}`.
+  upgrade: Upgrade,
+  /// Milliseconds added to the flush start to set the upgrade timeout.
+  timeout_period: Int,
+  /// The counterparty upgrade proven by ACK or CONFIRM. Its send sequence
+  /// bounds the packets this end may still receive before opening.
+  counterparty_upgrade: Option<Upgrade>,
+  /// Packet lanes below this index had no commitments while flushing.
+  /// Flushing channels cannot send, so a drained lane stays drained.
+  flushed_lanes: Int,
+}
+
+/// A channel starts without an upgrade.
+pub const initial_upgrade_state: Data =
+  ChannelUpgradeState {
+    pending: None,
+    error_receipt: None,
+    recv_start_sequence: 0,
+  }
+
+pub fn upgrade_state(state: ChannelDatumState) -> ChannelUpgradeState {
+  expect upgrade: ChannelUpgradeState = state.upgrade
+  upgrade
+}
+
+/// Whether the channel may receive a packet with this sequence. While
+/// flushing, it receives only packets the counterparty sent before its
+/// upgrade. After an upgrade opens, it never receives a packet that was
+/// settled before.
+pub fn can_receive(state: ChannelDatumState, sequence: Int) -> Bool {
+  let upgrade = upgrade_state(state)
+  let below_send_boundary =
+    when upgrade.pending is {
+      Some(PendingUpgrade { counterparty_upgrade: Some(counterparty), .. }) ->
+        sequence < counterparty.next_sequence_send
+      _ -> True
+    }
+  and {
+    when state.channel.state is {
+      channel_state.Open | channel_state.Flushing | channel_state.FlushComplete ->
+        True
+      _ -> False
+    },
+    sequence >= upgrade.recv_start_sequence,
+    below_send_boundary,
+  }
 }
 
 /// Ledger-safe upper bound for all packet entries retained in a channel datum.
@@ -86,6 +152,7 @@ pub fn validate_chan_open_init(
     packet_commitment,
     packet_receipt,
     packet_acknowledgement,
+    upgrade,
   } = state
 
   let Channel { state: chan_state, counterparty, .. } = channel
@@ -100,6 +167,8 @@ pub fn validate_chan_open_init(
       next_sequence_ack == 1,
       minimum_receive_proof_height == height_mod.zero_height(),
       maximum_receive_proof_height == height_mod.zero_height(),
+      upgrade == initial_upgrade_state,
+      channel.upgrade_sequence == 0,
     },
     and {
       list.is_empty(packet_commitment),
@@ -126,6 +195,7 @@ pub fn validate_chan_open_try(
     packet_commitment,
     packet_receipt,
     packet_acknowledgement,
+    upgrade,
   } = state
 
   let Channel { state: chan_state, counterparty, .. } = channel
@@ -141,6 +211,8 @@ pub fn validate_chan_open_try(
       next_sequence_ack == 1,
       minimum_receive_proof_height == height_mod.zero_height(),
       maximum_receive_proof_height == height_mod.zero_height(),
+      upgrade == initial_upgrade_state,
+      channel.upgrade_sequence == 0,
     },
     and {
       list.is_empty(packet_commitment),

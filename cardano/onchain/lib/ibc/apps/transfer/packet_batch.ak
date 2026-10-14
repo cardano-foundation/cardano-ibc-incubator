@@ -25,7 +25,7 @@ use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
 }
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify
-use ibc/core/ics_004/channel_datum.{ChannelDatum}
+use ibc/core/ics_004/channel_datum.{ChannelDatum} as channel_datum
 use ibc/core/ics_004/packet_lane_datum.{
   CommitPacket, CompletePacket, LaneUpdate, PacketLaneDatum, PrunePacket,
   ReceivePacket,
@@ -37,7 +37,7 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/order.{Unordered}
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
-use ibc/core/ics_004/types/state.{Closed, Open}
+use ibc/core/ics_004/types/state.{Closed, FlushComplete, Flushing, Open}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/channel_keys as channel_paths
 use ibc/core/ics_024_host_requirements/packet_keys
@@ -213,8 +213,12 @@ fn channel_reference(transaction: Transaction, token: AuthToken) -> ChannelDatum
   expect datum: ChannelDatum = validator_utils.get_inline_datum(input.output)
   expect datum.token == token
   expect datum.port_id == "transfer"
+  // Packets sent before an upgrade still settle while the channel flushes.
   expect
-    datum.state.channel.state == Open || datum.state.channel.state == Closed
+    when datum.state.channel.state is {
+      Open | Closed | Flushing | FlushComplete -> True
+      _ -> False
+    }
   expect datum.state.channel.ordering == Unordered
   expect datum.state.channel.version == "ics20-1"
   datum
@@ -460,6 +464,8 @@ pub fn validate_settlement(
               },
               connection_hops: [connection.state.counterparty.connection_id],
               version: channel.state.channel.version,
+              // Both ends keep the sequence of their last completed upgrade.
+              upgrade_sequence: channel.state.channel.upgrade_sequence,
             }
           let membership =
             VerifyMembershipParams {
@@ -624,7 +630,7 @@ pub fn validate_receive(
 ) -> Bool {
   expect Receive { packet, proof_height, proof, lane, .. } = op
   let channel = channel_reference(transaction, channel_token)
-  expect channel.state.channel.state == Open
+  expect channel_datum.can_receive(channel.state, packet.sequence)
   let local_channel =
     channel_keys.format_channel_identifier(
       auth.extract_token_sequence(channel.token.name),

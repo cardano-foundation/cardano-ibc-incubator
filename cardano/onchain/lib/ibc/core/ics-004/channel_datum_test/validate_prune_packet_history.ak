@@ -1,8 +1,9 @@
 use aiken/collection/pairs
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Ordered, Unordered}
@@ -39,6 +40,7 @@ fn input_datum() -> ChannelDatum {
       packet_acknowledgement: [Pair(sequence, acknowledgement)],
       minimum_receive_proof_height: height_mod.new_height(1, 5),
       maximum_receive_proof_height: height_mod.new_height(1, 10),
+      upgrade: initial_upgrade_state,
     },
     port_id: "transfer",
     token: AuthToken { policy_id: "policy", name: "channel token" },

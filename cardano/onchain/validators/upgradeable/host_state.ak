@@ -6,6 +6,7 @@ use ibc/core/ics_025_handler_interface/host_state as host
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, CreateChannel, CreateClient, CreateConnection, HandlePacket,
   Heartbeat, HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
+  UpgradeChannel,
 }
 use ibc/implementation/host_state_stt
 use ibc/migration/auth as migration
@@ -240,6 +241,17 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
               packet_commitment_siblings,
               packet_receipt_siblings,
               packet_acknowledgement_siblings,
+            ),
+          }
+        UpgradeChannel -> and {
+            host.validate_update_only_root(old_datum, new_datum),
+            host_state_stt.validate_upgrade_channel(
+              old_datum,
+              inputs,
+              outputs,
+              redeemers,
+              spend_channel_script_hash,
+              channel_policy_id,
             ),
           }
         Heartbeat ->

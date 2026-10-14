@@ -17,7 +17,9 @@ use cardano/transaction.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Unordered}
@@ -146,6 +148,7 @@ fn projection(model: Model) -> ChannelDatum {
         },
         connection_hops: ["connection-0"],
         version: "ics20-1",
+        upgrade_sequence: 0,
       },
       next_sequence_send: list.length(model.sent) + 1,
       next_sequence_recv: 1,
@@ -169,6 +172,7 @@ fn projection(model: Model) -> ChannelDatum {
         revision_number: 0,
         revision_height: high_water(model),
       },
+      upgrade: initial_upgrade_state,
     },
   }
 }

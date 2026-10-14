@@ -1,7 +1,7 @@
 // Frozen public commitment primitive. Keep its constructors and order unchanged.
 // See docs/cardano-commitment-codec.md.
 /// ChannelState defines if a channel is in one of the following states:
-/// CLOSED, INIT, TRYOPEN, OPEN or UNINITIALIZED.
+/// CLOSED, INIT, TRYOPEN, OPEN, FLUSHING, FLUSHCOMPLETE or UNINITIALIZED.
 pub type ChannelState {
   /// Default ChannelState
   Uninitialized
@@ -14,4 +14,8 @@ pub type ChannelState {
   Open
   /// A channel has been closed and can no longer be used to send or receive packets.
   Closed
+  /// A channel is settling packets sent before its upgrade. It cannot send.
+  Flushing
+  /// A channel has no packets in flight and waits to open with its upgrade.
+  FlushComplete
 }

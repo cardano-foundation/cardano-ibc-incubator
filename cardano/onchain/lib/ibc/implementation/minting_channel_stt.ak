@@ -278,6 +278,7 @@ fn validate_chan_open_try_proof(
       counterparty: expected_counterparty,
       connection_hops: counterparty_hops,
       version: counterparty_version,
+      upgrade_sequence: 0,
     }
 
   let time_delay = connection.delay_period

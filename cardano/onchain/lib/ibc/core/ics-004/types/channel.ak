@@ -1,13 +1,14 @@
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb.{
-  CLOSED, Channel as ChannelProto, Counterparty as CounterpartyProto, INIT, NONE,
-  OPEN, ORDERED, Order as OrderProto, State as StateProto, TRYOPEN,
-  UNINITIALIZED, UNORDERED,
+  CLOSED, Channel as ChannelProto, Counterparty as CounterpartyProto,
+  FLUSHCOMPLETE, FLUSHING, INIT, NONE, OPEN, ORDERED, Order as OrderProto,
+  State as StateProto, TRYOPEN, UNINITIALIZED, UNORDERED,
 }
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{None, Order, Ordered, Unordered}
 use ibc/core/ics_004/types/state.{
-  ChannelState, Closed, Init, Open, TryOpen, Uninitialized,
+  ChannelState, Closed, FlushComplete, Flushing, Init, Open, TryOpen,
+  Uninitialized,
 }
 
 // Frozen public commitment primitive. Keep its fields and order unchanged.
@@ -27,6 +28,9 @@ pub type Channel {
   connection_hops: List<ByteArray>,
   /// opaque channel version, which is agreed upon during the handshake
   version: ByteArray,
+  /// number of the latest upgrade attempt. It is committed with the channel
+  /// end, never decreases and is not reset when an upgrade opens.
+  upgrade_sequence: Int,
 }
 
 pub fn convert_to_channel_proto(channel: Channel) -> ChannelProto {
@@ -36,7 +40,7 @@ pub fn convert_to_channel_proto(channel: Channel) -> ChannelProto {
     counterparty: convert_to_counterparty_proto(channel.counterparty),
     connection_hops: channel.connection_hops,
     version: channel.version,
-    upgrade_sequence: 0,
+    upgrade_sequence: channel.upgrade_sequence,
   }
 }
 
@@ -47,6 +51,8 @@ pub fn convert_to_state_proto(state: ChannelState) -> StateProto {
     TryOpen -> TRYOPEN
     Open -> OPEN
     Closed -> CLOSED
+    Flushing -> FLUSHING
+    FlushComplete -> FLUSHCOMPLETE
   }
 }
 
@@ -89,6 +95,7 @@ pub fn null_channel() -> Channel {
     counterparty: ChannelCounterparty { port_id: "", channel_id: "" },
     connection_hops: [],
     version: "",
+    upgrade_sequence: 0,
   }
 }
 
@@ -99,5 +106,12 @@ pub fn new(
   connection_hops: List<ByteArray>,
   version: ByteArray,
 ) -> Channel {
-  Channel { state, ordering, counterparty, connection_hops, version }
+  Channel {
+    state,
+    ordering,
+    counterparty,
+    connection_hops,
+    version,
+    upgrade_sequence: 0,
+  }
 }

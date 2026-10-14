@@ -37,7 +37,8 @@ use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_004/channel_datum.{
-  ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+  max_packet_entries_per_channel,
 }
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
@@ -266,6 +267,7 @@ fn test_channel(state: channel_state.ChannelState) -> Channel {
     },
     connection_hops: ["connection-0"],
     version: "ics20-1",
+    upgrade_sequence: 0,
   }
 }
 
@@ -285,6 +287,7 @@ fn test_channel_datum(
       packet_commitment,
       packet_receipt: [],
       packet_acknowledgement: [],
+      upgrade: initial_upgrade_state,
     },
     port_id: "transfer",
     token: test_channel_token(),
@@ -1116,6 +1119,7 @@ fn test_channel_datum_full(
       packet_acknowledgement,
       minimum_receive_proof_height: height_mod.zero_height(),
       maximum_receive_proof_height: height_mod.zero_height(),
+      upgrade: initial_upgrade_state,
     },
     port_id: "transfer",
     token: test_channel_token(),

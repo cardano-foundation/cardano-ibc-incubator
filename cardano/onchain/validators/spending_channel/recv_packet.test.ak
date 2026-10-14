@@ -30,8 +30,9 @@ use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as c
 use ibc/core/ics_003_connection_semantics/types/state.{Open}
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{RecvPacket}
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -255,6 +256,7 @@ fn check_recv_packet_with_proof(
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -273,6 +275,7 @@ fn check_recv_packet_with_proof(
           []
         },
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -837,6 +840,7 @@ test recv_packet_fails_when_channel_is_closed() fail {
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -851,6 +855,7 @@ test recv_packet_fails_when_channel_is_closed() fail {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -945,6 +950,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
           },
           connection_hops: ["connection-0"],
           version: "ics20-1",
+          upgrade_sequence: 0,
         },
         next_sequence_send: 1,
         next_sequence_recv: 1,
@@ -952,6 +958,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: "port-100",
       token: channel_token,
