@@ -279,13 +279,20 @@ function assertFileInventory() {
     "acceptance_upgrade_test.go",
     "acceptance_watcher_test.go",
     "internal/cardanodatum/channel_upgrade_sequence.go",
+    // Channel upgrades exist only in ibc-go v8. v10 must still verify
+    // upgradable Cardano channel ends.
+    "channel_upgrade_app_test.go",
+    "channel_upgrade_proof_test.go",
+    "internal/cardanodatum/channel.go",
     "module.go",
     "recovery_app_test.go",
     protoFile,
   ].sort();
   const expectedV10 = [
     ...sharedSourceFiles,
+    "channel_upgrade_proof_test.go",
     "events_test.go",
+    "internal/cardanodatum/channel.go",
     "ordered_timeout_test.go",
     "light_client_module.go",
     "internal/cardanodatum/channel_upgrade_sequence.go",
@@ -531,6 +538,7 @@ const adapterLineBudgets = {
   "ibc_state_proof.go": 200,
   "internal/cardanodatum/tm_helper.go": 85,
   "internal/cardanodatum/channel_upgrade_sequence.go": 10,
+  "internal/cardanodatum/channel.go": 80,
   "internal/cardanodatum/types.go": 30,
   "keys.go": 20,
   "light_client_module.go": 185,
