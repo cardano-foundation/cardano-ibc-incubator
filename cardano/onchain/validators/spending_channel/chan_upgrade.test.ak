@@ -2,6 +2,7 @@ use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
+use aiken/primitive/bytearray
 use cardano/address.{from_script}
 use cardano/assets
 use cardano/transaction.{
@@ -223,6 +224,10 @@ fn replacement_connection(state: connection_state.State) -> Input {
 }
 
 fn config() -> Input {
+  config_for(lane_count)
+}
+
+fn config_for(lane_count: Int) -> Input {
   reference(
     2,
     assets.from_asset(packet_config_policy, config_token_name, 1),
@@ -256,6 +261,14 @@ fn sequencer() -> Input {
 }
 
 fn lane(lane: Int, commitments: Pairs<Int, ByteArray>) -> Input {
+  lane_of(lane_count, lane, commitments)
+}
+
+fn lane_of(
+  lane_count: Int,
+  lane: Int,
+  commitments: Pairs<Int, ByteArray>,
+) -> Input {
   let mock = setup()
   reference(
     10 + lane,
@@ -662,12 +675,27 @@ fn run_host(tx: Transaction, redeemer: HostStateRedeemer) -> Bool {
 
 /// The upgrade operation, the channel validator and HostState all accept it.
 fn accepted(step: Step) -> Bool {
+  run_step(step, True)
+}
+
+/// Builds the step's transaction without validating it. Budget reports
+/// subtract this from `accepted` to measure the three validators alone.
+fn fixture_only(step: Step) -> Bool {
+  run_step(step, False)
+}
+
+fn run_step(step: Step, validate: Bool) -> Bool {
   let upgrade_redeemer = redeemer(step)
   let tx = transaction(step, upgrade_redeemer)
-  and {
-    run_operation(step, tx)?,
-    run_channel(step, tx, ChanUpgrade(upgrade_redeemer))?,
-    run_host(tx, UpgradeChannel)?,
+  expect bytearray.length(cbor.serialise(tx)) > 0
+  if validate {
+    and {
+      run_operation(step, tx)?,
+      run_channel(step, tx, ChanUpgrade(upgrade_redeemer))?,
+      run_host(tx, UpgradeChannel)?,
+    }
+  } else {
+    True
   }
 }
 
@@ -1696,4 +1724,63 @@ test gateway_flush_upgrade_redeemer_matches() {
 test gateway_upgrade_channel_host_redeemer_matches() {
   let redeemer: Data = UpgradeChannel
   cbor.deserialise(#"d9050780") == Some(redeemer)
+}
+
+// Fixture baselines for the budget report, one per accepted step above.
+test init_fixture_setup_baseline() {
+  fixture_only(init_step())
+}
+
+test try_fixture_setup_baseline() {
+  fixture_only(try_step(1))
+}
+
+test ack_fixture_setup_baseline() {
+  fixture_only(ack_step())
+}
+
+test confirm_fixture_setup_baseline() {
+  fixture_only(confirm_step(lane_count, FlushComplete))
+}
+
+test open_fixture_setup_baseline() {
+  fixture_only(open_step(1))
+}
+
+test flush_fixture_setup_baseline() {
+  fixture_only(deployment_flush_step())
+}
+
+test timeout_fixture_setup_baseline() {
+  fixture_only(
+    timeout_step(counterparty_end(Flushing, counterparty_current(), 1)),
+  )
+}
+
+test cancel_fixture_setup_baseline() {
+  fixture_only(cancel_step(Flushing))
+}
+
+/// FLUSH at the Gateway's per-transaction limit of a 16-lane deployment.
+fn deployment_flush_step() -> Step {
+  let mock = setup()
+  let step =
+    flush_step(
+      8,
+      list.map(list.range(0, 7), fn(index) { lane_of(16, index, []) }),
+      Some(counterparty_upgrade()),
+      Flushing,
+    )
+  Step {
+    ..step,
+    references: [
+      mock.connection_input,
+      config_for(16),
+      ..list.map(list.range(0, 7), fn(index) { lane_of(16, index, []) })
+    ],
+  }
+}
+
+test flush_certifies_eight_lanes_of_a_deployment() {
+  accepted(deployment_flush_step())
 }
