@@ -1,6 +1,6 @@
 import * as Lucid from '@lucid-evolution/lucid';
 
-import { ChannelDatum, encodeChannelEndValue } from '../types/channel/channel-datum';
+import { ChannelDatum, encodeChannelEndValue, initialChannelUpgradeState } from '../types/channel/channel-datum';
 import { Order } from '../types/channel/order';
 import { ChannelState } from '../types/channel/state';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from '../types/client-datum';
@@ -84,6 +84,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
           },
           connection_hops: [toHex('connection-0')],
           version: toHex('ics20-1'),
+          upgrade_sequence: 0n,
         },
         next_sequence_send: 3n,
         next_sequence_recv: 1n,
@@ -93,6 +94,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
         packet_acknowledgement: new Map([[6n, 'ccdd']]),
         minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 42n },
         maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 40n },
+        upgrade: initialChannelUpgradeState(),
       },
       port: toHex('transfer'),
       token: { policyId: '51'.repeat(28), name: '52' },
@@ -134,8 +136,9 @@ describe('IBC state root recovery after packet-history pruning', () => {
     liveTree.set('commitments/ports/transfer/channels/channel-0/sequences/2', packetValue('aabb'));
     liveTree.set('receipts/ports/transfer/channels/channel-0/sequences/6', packetValue(''));
     liveTree.set('acks/ports/transfer/channels/channel-0/sequences/6', packetValue('ccdd'));
-    // Committed values include the upgrade path and full revision-height key.
-    expect(liveTree.getRoot()).toBe('9a123a86efcde215c2d6e6f6d177303041011ef138547ccaf1abbd83ec28784f');
+    // Committed values include the upgrade path, the channel upgrade sequence and
+    // full revision-height key.
+    expect(liveTree.getRoot()).toBe('47b1f2a32247e0095e37cb0917050d47485e4309b556508aa3aa99cc90ef6237');
 
     const prunedReceiptPath = 'receipts/ports/transfer/channels/channel-0/sequences/7';
     const prunedAcknowledgementPath = 'acks/ports/transfer/channels/channel-0/sequences/7';

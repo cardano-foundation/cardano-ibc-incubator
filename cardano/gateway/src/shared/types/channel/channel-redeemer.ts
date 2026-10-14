@@ -66,6 +66,7 @@ export type SpendChannelRedeemer =
       ChanCloseConfirm: {
         proof_init: MerkleProof;
         proof_height: Height;
+        counterparty_upgrade_sequence: bigint;
       };
     }
   | {
@@ -82,6 +83,7 @@ export type SpendChannelRedeemer =
         proof_close: MerkleProof;
         proof_height: Height;
         next_sequence_recv: bigint;
+        counterparty_upgrade_sequence: bigint;
       };
     };
 
@@ -153,6 +155,7 @@ function buildSpendChannelRedeemerSchema(Data: LucidData) {
       ChanCloseConfirm: Data.Object({
         proof_init: MerkleProofSchema,
         proof_height: HeightSchema,
+        counterparty_upgrade_sequence: Data.Integer(),
       }),
     }),
     Data.Object({
@@ -169,6 +172,7 @@ function buildSpendChannelRedeemerSchema(Data: LucidData) {
         proof_close: MerkleProofSchema,
         proof_height: HeightSchema,
         next_sequence_recv: Data.Integer(),
+        counterparty_upgrade_sequence: Data.Integer(),
       }),
     }),
   ]);

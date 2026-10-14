@@ -8,6 +8,7 @@ import "gogoproto/gogo.proto";
 import "ibc/core/client/v1/client.proto";
 import "ibc/core/channel/v1/channel.proto";
 import "google/protobuf/any.proto";
+import "ibc/core/channel/v1/upgrade.proto";
 
 // Msg defines the ibc/channel Msg service.
 service Msg {
@@ -44,6 +45,31 @@ service Msg {
 
   // Transfer defines a rpc handler method for MsgTransfer.
   rpc Transfer(MsgTransfer) returns (MsgTransferResponse);
+
+  // ChannelUpgradeInit defines a rpc handler method for MsgChannelUpgradeInit.
+  rpc ChannelUpgradeInit(MsgChannelUpgradeInit) returns (MsgChannelUpgradeInitResponse);
+
+  // ChannelUpgradeTry defines a rpc handler method for MsgChannelUpgradeTry.
+  rpc ChannelUpgradeTry(MsgChannelUpgradeTry) returns (MsgChannelUpgradeTryResponse);
+
+  // ChannelUpgradeAck defines a rpc handler method for MsgChannelUpgradeAck.
+  rpc ChannelUpgradeAck(MsgChannelUpgradeAck) returns (MsgChannelUpgradeAckResponse);
+
+  // ChannelUpgradeConfirm defines a rpc handler method for MsgChannelUpgradeConfirm.
+  rpc ChannelUpgradeConfirm(MsgChannelUpgradeConfirm) returns (MsgChannelUpgradeConfirmResponse);
+
+  // ChannelUpgradeOpen defines a rpc handler method for MsgChannelUpgradeOpen.
+  rpc ChannelUpgradeOpen(MsgChannelUpgradeOpen) returns (MsgChannelUpgradeOpenResponse);
+
+  // ChannelUpgradeTimeout defines a rpc handler method for MsgChannelUpgradeTimeout.
+  rpc ChannelUpgradeTimeout(MsgChannelUpgradeTimeout) returns (MsgChannelUpgradeTimeoutResponse);
+
+  // ChannelUpgradeCancel defines a rpc handler method for MsgChannelUpgradeCancel.
+  rpc ChannelUpgradeCancel(MsgChannelUpgradeCancel) returns (MsgChannelUpgradeCancelResponse);
+
+  // ChannelUpgradeFlush records drained Cardano packet lanes of a flushing
+  // channel. It has no ibc-go counterpart.
+  rpc ChannelUpgradeFlush(MsgChannelUpgradeFlush) returns (MsgChannelUpgradeFlushResponse);
 }
 
 // ResponseResultType defines the possible outcomes of the execution of a message
@@ -56,6 +82,8 @@ enum ResponseResultType {
   RESPONSE_RESULT_TYPE_NOOP = 1 [(gogoproto.enumvalue_customname) = "NOOP"];
   // The message was executed successfully
   RESPONSE_RESULT_TYPE_SUCCESS = 2 [(gogoproto.enumvalue_customname) = "SUCCESS"];
+  // The message was executed unsuccessfully
+  RESPONSE_RESULT_TYPE_FAILURE = 3 [(gogoproto.enumvalue_customname) = "FAILURE"];
 }
 
 // MsgChannelOpenInit defines an sdk.Msg to initialize a channel handshake. It
@@ -170,6 +198,7 @@ message MsgChannelCloseConfirm {
   ibc.core.client.v1.Height proof_height = 4
       [(gogoproto.moretags) = "yaml:\"proof_height\"", (gogoproto.nullable) = false];
   string signer = 5;
+  uint64 counterparty_upgrade_sequence = 6;
 }
 
 // MsgChannelCloseConfirmResponse defines the Msg/ChannelCloseConfirm response
@@ -232,6 +261,7 @@ message MsgTimeoutOnClose {
       [(gogoproto.moretags) = "yaml:\"proof_height\"", (gogoproto.nullable) = false];
   uint64 next_sequence_recv = 5 [(gogoproto.moretags) = "yaml:\"next_sequence_recv\""];
   string signer             = 6;
+  uint64 counterparty_upgrade_sequence = 7;
 }
 
 // MsgTimeoutOnCloseResponse defines the Msg/TimeoutOnClose response type.
@@ -285,4 +315,153 @@ message MsgTransferResponse {
 
   ResponseResultType result = 1;
   google.protobuf.Any unsigned_tx = 2;
+}
+
+// Channel upgrade messages follow ibc-go v8. Each response also carries the
+// unsigned Cardano transaction that the Gateway built for the message.
+
+// MsgChannelUpgradeInit is the deployment authority's proposal to upgrade a channel.
+message MsgChannelUpgradeInit {
+  option (gogoproto.goproto_getters) = false;
+
+  string        port_id    = 1;
+  string        channel_id = 2;
+  UpgradeFields fields     = 3 [(gogoproto.nullable) = false];
+  string        signer     = 4;
+  // Cardano: milliseconds from the start of flushing until the upgrade times
+  // out on the counterparty.
+  uint64 timeout_period_ms = 5;
+}
+
+message MsgChannelUpgradeInitResponse {
+  option (gogoproto.goproto_getters) = false;
+
+  Upgrade             upgrade          = 1 [(gogoproto.nullable) = false];
+  uint64              upgrade_sequence = 2;
+  google.protobuf.Any unsigned_tx      = 3;
+}
+
+message MsgChannelUpgradeTry {
+  option (gogoproto.goproto_getters) = false;
+
+  string                    port_id                          = 1;
+  string                    channel_id                       = 2;
+  repeated string           proposed_upgrade_connection_hops = 3;
+  UpgradeFields             counterparty_upgrade_fields      = 4 [(gogoproto.nullable) = false];
+  uint64                    counterparty_upgrade_sequence    = 5;
+  bytes                     proof_channel                    = 6;
+  bytes                     proof_upgrade                    = 7;
+  ibc.core.client.v1.Height proof_height                     = 8 [(gogoproto.nullable) = false];
+  string                    signer                           = 9;
+}
+
+message MsgChannelUpgradeTryResponse {
+  option (gogoproto.goproto_getters) = false;
+
+  Upgrade             upgrade          = 1 [(gogoproto.nullable) = false];
+  uint64              upgrade_sequence = 2;
+  ResponseResultType  result           = 3;
+  google.protobuf.Any unsigned_tx      = 4;
+}
+
+message MsgChannelUpgradeAck {
+  option (gogoproto.goproto_getters) = false;
+
+  string                    port_id              = 1;
+  string                    channel_id           = 2;
+  Upgrade                   counterparty_upgrade = 3 [(gogoproto.nullable) = false];
+  bytes                     proof_channel        = 4;
+  bytes                     proof_upgrade        = 5;
+  ibc.core.client.v1.Height proof_height         = 6 [(gogoproto.nullable) = false];
+  string                    signer               = 7;
+}
+
+message MsgChannelUpgradeAckResponse {
+  option (gogoproto.goproto_getters) = false;
+
+  ResponseResultType  result      = 1;
+  google.protobuf.Any unsigned_tx = 2;
+}
+
+message MsgChannelUpgradeConfirm {
+  option (gogoproto.goproto_getters) = false;
+
+  string                    port_id                    = 1;
+  string                    channel_id                 = 2;
+  State                     counterparty_channel_state = 3;
+  Upgrade                   counterparty_upgrade       = 4 [(gogoproto.nullable) = false];
+  bytes                     proof_channel              = 5;
+  bytes                     proof_upgrade              = 6;
+  ibc.core.client.v1.Height proof_height               = 7 [(gogoproto.nullable) = false];
+  string                    signer                     = 8;
+}
+
+message MsgChannelUpgradeConfirmResponse {
+  option (gogoproto.goproto_getters) = false;
+
+  ResponseResultType  result      = 1;
+  google.protobuf.Any unsigned_tx = 2;
+}
+
+message MsgChannelUpgradeOpen {
+  option (gogoproto.goproto_getters) = false;
+
+  string                    port_id                       = 1;
+  string                    channel_id                    = 2;
+  State                     counterparty_channel_state    = 3;
+  uint64                    counterparty_upgrade_sequence = 4;
+  bytes                     proof_channel                 = 5;
+  ibc.core.client.v1.Height proof_height                  = 6 [(gogoproto.nullable) = false];
+  string                    signer                        = 7;
+}
+
+message MsgChannelUpgradeOpenResponse {
+  google.protobuf.Any unsigned_tx = 1;
+}
+
+message MsgChannelUpgradeTimeout {
+  option (gogoproto.goproto_getters) = false;
+
+  string                    port_id              = 1;
+  string                    channel_id           = 2;
+  Channel                   counterparty_channel = 3 [(gogoproto.nullable) = false];
+  bytes                     proof_channel        = 4;
+  ibc.core.client.v1.Height proof_height         = 5 [(gogoproto.nullable) = false];
+  string                    signer               = 6;
+}
+
+message MsgChannelUpgradeTimeoutResponse {
+  google.protobuf.Any unsigned_tx = 1;
+}
+
+message MsgChannelUpgradeCancel {
+  option (gogoproto.goproto_getters) = false;
+
+  string                    port_id             = 1;
+  string                    channel_id          = 2;
+  ErrorReceipt              error_receipt       = 3 [(gogoproto.nullable) = false];
+  bytes                     proof_error_receipt = 4;
+  ibc.core.client.v1.Height proof_height        = 5 [(gogoproto.nullable) = false];
+  string                    signer              = 6;
+}
+
+message MsgChannelUpgradeCancelResponse {
+  google.protobuf.Any unsigned_tx = 1;
+}
+
+// MsgChannelUpgradeFlush certifies the drained packet lanes of a flushing
+// Cardano channel.
+message MsgChannelUpgradeFlush {
+  option (gogoproto.goproto_getters) = false;
+
+  string port_id    = 1;
+  string channel_id = 2;
+  string signer     = 3;
+}
+
+message MsgChannelUpgradeFlushResponse {
+  // Packet lanes certified so far, out of the deployment's lane count.
+  uint64              flushed_lanes = 1;
+  uint64              lane_count    = 2;
+  google.protobuf.Any unsigned_tx   = 3;
 }

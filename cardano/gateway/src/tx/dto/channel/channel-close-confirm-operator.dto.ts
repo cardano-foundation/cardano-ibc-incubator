@@ -6,4 +6,6 @@ export type ChannelCloseConfirmOperator = {
   channelSequence: string;
   proofInit: MerkleProof;
   proofHeight: Height;
+  // Upgrade sequence of the closed counterparty channel that proofInit proves.
+  counterpartyUpgradeSequence: bigint;
 };

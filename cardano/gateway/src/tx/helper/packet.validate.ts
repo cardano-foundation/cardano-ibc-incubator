@@ -287,6 +287,7 @@ export function validateAndFormatTimeoutOnClosePacketParams(
     timeoutOnClosePacketOperator: {
       ...timeoutPacketOperator,
       proofClose: initializeMerkleProof(decodedProofClose),
+      counterpartyUpgradeSequence: BigInt(data.counterparty_upgrade_sequence ?? 0n),
     },
   };
 }

@@ -275,7 +275,8 @@ async function packetProof(
       protobufBytes(2, String(packet.fields[2]));
     const closedChannel = "08041001" + protobufBytes(3, counterpart) +
       protobufBytes(4, String(counterparty.fields[1])) +
-      protobufBytes(5, String(end.fields[4]));
+      protobufBytes(5, String(end.fields[4])) +
+      protobufUint(6, op.fields[7] as bigint);
     const closePath = record([
       prefix,
       fromText(
@@ -312,6 +313,21 @@ async function packetProof(
       ),
     );
   return variant(0, ...common, proof, path, value);
+}
+
+function protobufVarint(value: bigint): string {
+  let encoded = "";
+  do {
+    const next = Number(value % 128n);
+    value /= 128n;
+    encoded += (next | (value ? 128 : 0)).toString(16).padStart(2, "0");
+  } while (value);
+  return encoded;
+}
+
+// proto3 omits a zero integer field.
+function protobufUint(field: number, value: bigint): string {
+  return value === 0n ? "" : protobufVarint(BigInt(field * 8)) + protobufVarint(value);
 }
 
 function protobufBytes(field: number, hex: string): string {
@@ -687,7 +703,7 @@ async function buildPacketCompletion(
   validTo: number,
   liquidity?: UTxO[],
   rejection?: string,
-  proofClose?: Constr<Data>,
+  close?: { proof: Constr<Data>; counterpartyUpgradeSequence: bigint },
 ) {
   const { port, channelId } = channelIdentity(deployment);
   const sequence = packet.fields[0] as bigint;
@@ -760,7 +776,7 @@ async function buildPacketCompletion(
     );
     delete mint[deployment.batchPolicy + fromText("acknowledge")];
     mint[deployment.batchPolicy + fromText("timeout")] = 1n;
-    if (proofClose) {
+    if (close) {
       operation = variant(
         8,
         packet,
@@ -769,7 +785,8 @@ async function buildPacketCompletion(
         proof,
         update,
         liquidity.map(outRef),
-        proofClose,
+        close.proof,
+        close.counterpartyUpgradeSequence,
       );
     }
     if (rejection !== undefined) {
@@ -1387,6 +1404,8 @@ export const buildPacketTimeoutOnClose = (
   proofHeight: Constr<Data>,
   proof: Constr<Data>,
   proofClose: Constr<Data>,
+  // The upgrade sequence of the closed counterparty channel that proofClose proves.
+  counterpartyUpgradeSequence: bigint,
   liquidity: UTxO[],
   validFrom: number,
   validTo: number,
@@ -1401,7 +1420,7 @@ export const buildPacketTimeoutOnClose = (
     validTo,
     liquidity,
     undefined,
-    proofClose,
+    { proof: proofClose, counterpartyUpgradeSequence },
   );
 
 /** Admission is permissionless, so batch discovery must reject unfunded or malformed datums. */

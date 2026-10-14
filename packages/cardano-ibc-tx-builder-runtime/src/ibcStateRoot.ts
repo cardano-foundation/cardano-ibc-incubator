@@ -1,5 +1,6 @@
 import type { UTxO } from '@lucid-evolution/lucid';
 import { ICS23MerkleTree } from './ics23MerkleTree';
+import { channelSchemas } from './channelDatum';
 import { publicClientCommitmentValues } from './plutusSerialise';
 
 export type IbcTreeDeployment = Readonly<{
@@ -92,6 +93,7 @@ type ChannelStateLike = {
     revisionNumber: bigint;
     revisionHeight: bigint;
   };
+  upgrade?: any;
 };
 
 type ChannelDatumLike = {
@@ -144,6 +146,12 @@ export interface BindPortStateRootResult extends StateRootResult {
 
 export interface UpdateChannelStateRootResult extends StateRootResult {
   channelSiblings: string[];
+}
+
+export interface UpgradeChannelStateRootResult extends StateRootResult {
+  channelSiblings: string[];
+  upgradeSiblings: string[];
+  errorReceiptSiblings: string[];
 }
 
 export interface UpdateClientStateRootResult extends StateRootResult {
@@ -300,24 +308,7 @@ export async function encodeChannelUpgradeValue(
   upgrade: any,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): Promise<string> {
-  const { Data } = Lucid;
-  const UpgradeSchema = Data.Object({
-    fields: Data.Object({
-      ordering: channelOrderSchema(Lucid),
-      connection_hops: Data.Array(Data.Bytes()),
-      version: Data.Bytes(),
-    }),
-    timeout: Data.Object({
-      height: Data.Object({
-        revision_number: Data.Integer(),
-        revision_height: Data.Integer(),
-      }),
-      timestamp: Data.Integer(),
-    }),
-    next_sequence_send: Data.Integer(),
-  });
-
-  return Data.to(upgrade, UpgradeSchema as any);
+  return Lucid.Data.to(upgrade, channelSchemas(Lucid).Upgrade as any);
 }
 
 // Committed under channelUpgrades/upgradeError/ports/{port}/channels/{channel}.
@@ -325,13 +316,25 @@ export async function encodeChannelUpgradeErrorValue(
   receipt: any,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): Promise<string> {
-  const { Data } = Lucid;
-  const ErrorReceiptSchema = Data.Object({
-    sequence: Data.Integer(),
-    message: Data.Bytes(),
-  });
+  return Lucid.Data.to(receipt, channelSchemas(Lucid).ErrorReceipt as any);
+}
 
-  return Data.to(receipt, ErrorReceiptSchema as any);
+/**
+ * The committed upgrade and error-receipt values of a channel's upgrade state.
+ * An absent record commits the empty value, which removes its key.
+ */
+export async function encodeChannelUpgradeRecords(
+  upgrade: any,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): Promise<{ upgrade: Buffer; errorReceipt: Buffer }> {
+  return {
+    upgrade: upgrade?.pending
+      ? Buffer.from(await encodeChannelUpgradeValue(upgrade.pending.upgrade, Lucid), 'hex')
+      : Buffer.alloc(0),
+    errorReceipt: upgrade?.error_receipt
+      ? Buffer.from(await encodeChannelUpgradeErrorValue(upgrade.error_receipt, Lucid), 'hex')
+      : Buffer.alloc(0),
+  };
 }
 
 function channelOrderSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
@@ -826,6 +829,12 @@ export class IbcTreeStateStore {
         'hex',
       );
       tree.set(`channelEnds/ports/${portId}/channels/${channelId}`, channelValue);
+      const upgradeRecords = await encodeChannelUpgradeRecords(
+        channelDatum.state.upgrade,
+        lucidService.LucidImporter,
+      );
+      tree.set(`channelUpgrades/upgrades/ports/${portId}/channels/${channelId}`, upgradeRecords.upgrade);
+      tree.set(`channelUpgrades/upgradeError/ports/${portId}/channels/${channelId}`, upgradeRecords.errorReceipt);
 
       const { Data } = lucidService.LucidImporter;
       tree.set(
@@ -1034,6 +1043,56 @@ export class IbcTreeStateStore {
     return {
       ...this.preparePublication(speculativeTree, version),
       channelSiblings,
+    };
+  }
+
+  /**
+   * Witnesses for an UpgradeChannel step: the channel end, upgrade and error
+   * receipt keys are updated in that order. Unchanged keys take no witness.
+   */
+  computeRootWithUpgradeChannelUpdate(
+    oldRoot: string,
+    portId: string,
+    channelId: string,
+    values: {
+      oldChannel: Buffer;
+      newChannel: Buffer;
+      oldUpgrade: Buffer;
+      newUpgrade: Buffer;
+      oldErrorReceipt: Buffer;
+      newErrorReceipt: Buffer;
+    },
+  ): UpgradeChannelStateRootResult {
+    const version = this.version;
+    const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
+    const update = (path: string, oldValue: Buffer, newValue: Buffer): string[] => {
+      if (oldValue.equals(newValue)) {
+        return [];
+      }
+      const siblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
+      speculativeTree.set(path, newValue);
+      return siblings;
+    };
+    const channelSiblings = update(
+      `channelEnds/ports/${portId}/channels/${channelId}`,
+      values.oldChannel,
+      values.newChannel,
+    );
+    const upgradeSiblings = update(
+      `channelUpgrades/upgrades/ports/${portId}/channels/${channelId}`,
+      values.oldUpgrade,
+      values.newUpgrade,
+    );
+    const errorReceiptSiblings = update(
+      `channelUpgrades/upgradeError/ports/${portId}/channels/${channelId}`,
+      values.oldErrorReceipt,
+      values.newErrorReceipt,
+    );
+    return {
+      ...this.preparePublication(speculativeTree, version),
+      channelSiblings,
+      upgradeSiblings,
+      errorReceiptSiblings,
     };
   }
 

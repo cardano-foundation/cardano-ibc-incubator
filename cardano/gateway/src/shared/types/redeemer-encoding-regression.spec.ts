@@ -114,13 +114,14 @@ describe('Redeemer encoding regression', () => {
         proof_close: EMPTY_PROOF,
         proof_height: HEIGHT,
         next_sequence_recv: 2n,
+        counterparty_upgrade_sequence: 4n,
       },
     } as const;
 
     const encoded = await encodeSpendChannelRedeemer(redeemer as any, Lucid);
 
     expect(encoded).toBe(
-      'd9050285d8798803487472616e73666572496368616e6e656c2d30487472616e73666572496368616e6e656c2d31427b7dd8798200186300d8798180d8798180d87982000b02',
+      'd9050286d8798803487472616e73666572496368616e6e656c2d30487472616e73666572496368616e6e656c2d31427b7dd8798200186300d8798180d8798180d87982000b0204',
     );
     expect(decodeSpendChannelRedeemer(encoded, Lucid)).toEqual(redeemer);
   });
