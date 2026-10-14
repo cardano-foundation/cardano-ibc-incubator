@@ -478,6 +478,9 @@ export class ChannelUpgradeService {
       const pending = this.pending(datum);
       const lanes = await this.packetLanes();
       laneCount = BigInt(lanes.laneCount);
+      if (pending.flushed_lanes >= laneCount) {
+        throw new GrpcInvalidArgumentException('channel upgrade: every packet lane is already certified');
+      }
       const drained: UTxO[] = [];
       for (
         let lane = Number(pending.flushed_lanes);
