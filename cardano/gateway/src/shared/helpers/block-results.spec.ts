@@ -224,6 +224,7 @@ describe('normalizeTxsResultFromChannelRedeemer', () => {
           proof_close: { proofs: [] },
           proof_height: { revisionNumber: 0n, revisionHeight: 50n },
           next_sequence_recv: 2n,
+          counterparty_upgrade_sequence: 0n,
         },
       },
       channelDatum,

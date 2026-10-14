@@ -760,7 +760,7 @@ describe('channel upgrade commitment values', () => {
     const fields = { ordering: 'Unordered', connection_hops: [hex('connection-1')], version: hex('ics20-1') };
     assert.equal(
       await encodeChannelUpgradeValue({
-        fields, timeout: { height: { revision_number: 0n, revision_height: 0n }, timestamp: 0n }, next_sequence_send: 0n,
+        fields, timeout: { height: { revisionNumber: 0n, revisionHeight: 0n }, timestamp: 0n }, next_sequence_send: 0n,
       }, Lucid),
       'd8799fd8799fd87a809f4c636f6e6e656374696f6e2d31ff4769637332302d31ffd8799fd8799f0000ff00ff00ff',
     );

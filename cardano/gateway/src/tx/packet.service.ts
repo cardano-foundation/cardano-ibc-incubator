@@ -2230,17 +2230,16 @@ export class PacketService {
     timeoutOnClosePacketOperator: TimeoutOnClosePacketOperator,
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
-    return this.buildUnsignedTimeoutLikePacketTx(
-      timeoutOnClosePacketOperator,
-      constructedAddress,
-      timeoutOnClosePacketOperator.proofClose,
-    );
+    return this.buildUnsignedTimeoutLikePacketTx(timeoutOnClosePacketOperator, constructedAddress, {
+      proofClose: timeoutOnClosePacketOperator.proofClose,
+      counterpartyUpgradeSequence: timeoutOnClosePacketOperator.counterpartyUpgradeSequence,
+    });
   }
 
   private async buildUnsignedTimeoutLikePacketTx(
     timeoutPacketOperator: TimeoutPacketOperator,
     constructedAddress: string,
-    proofClose: TimeoutOnClosePacketOperator['proofClose'] | null,
+    close: Pick<TimeoutOnClosePacketOperator, 'proofClose' | 'counterpartyUpgradeSequence'> | null,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const channelSequence = parseChannelSequence(convertHex2String(timeoutPacketOperator.packet.source_channel));
     // Get the token unit associated with the client
@@ -2280,7 +2279,7 @@ export class PacketService {
     }
     const packetSequence: bigint = timeoutPacketOperator.packet.sequence;
     const packet: Packet = timeoutPacketOperator.packet;
-    const isTimeoutOnClose = proofClose !== null;
+    const isTimeoutOnClose = close !== null;
     const channelOrder = ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering];
     const isOrdered = channelOrder === ChannelOrder.ORDER_ORDERED;
     const isUnordered = channelOrder === ChannelOrder.ORDER_UNORDERED;
@@ -2315,9 +2314,10 @@ export class PacketService {
           TimeoutOnClose: {
             packet,
             proof_unreceived: timeoutPacketOperator.proofUnreceived,
-            proof_close: proofClose,
+            proof_close: close.proofClose,
             proof_height: timeoutPacketOperator.proofHeight,
             next_sequence_recv: timeoutPacketOperator.nextSequenceRecv,
+            counterparty_upgrade_sequence: close.counterpartyUpgradeSequence,
           },
         }
       : {
@@ -2453,10 +2453,11 @@ export class PacketService {
         },
         connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
         version: convertHex2String(channelDatum.state.channel.version),
+        upgrade_sequence: close.counterpartyUpgradeSequence,
       };
       const closedChannelMembership = {
         ...proofContext,
-        proof: proofClose,
+        proof: close.proofClose,
         path: {
           key_path: [proofPrefix, convertString2Hex(channelPath(counterpartyPortId, counterpartyChannelId))],
         },

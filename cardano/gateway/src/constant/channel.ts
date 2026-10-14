@@ -27,6 +27,8 @@ export const STATE_MAPPING_CHANNEL = {
   [State.Open]: ChannelState.STATE_OPEN,
   [State.Close]: ChannelState.STATE_CLOSED,
   [State.Uninitialized]: ChannelState.STATE_UNINITIALIZED_UNSPECIFIED,
+  [State.Flushing]: ChannelState.STATE_FLUSHING,
+  [State.FlushComplete]: ChannelState.STATE_FLUSHCOMPLETE,
 };
 
 export const ORDER_MAPPING_CHANNEL = {

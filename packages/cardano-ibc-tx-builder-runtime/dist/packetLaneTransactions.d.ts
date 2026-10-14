@@ -97,7 +97,7 @@ export declare function buildPacketPrune(lucid: LucidEvolution, deployment: Pack
     tx: import("@lucid-evolution/lucid").TxBuilder;
     input: UTxO;
 }>;
-export declare const buildPacketTimeoutOnClose: (lucid: LucidEvolution, deployment: PacketLaneDeployment, packet: Constr<Data>, proofHeight: Constr<Data>, proof: Constr<Data>, proofClose: Constr<Data>, liquidity: UTxO[], validFrom: number, validTo: number) => Promise<{
+export declare const buildPacketTimeoutOnClose: (lucid: LucidEvolution, deployment: PacketLaneDeployment, packet: Constr<Data>, proofHeight: Constr<Data>, proof: Constr<Data>, proofClose: Constr<Data>, counterpartyUpgradeSequence: bigint, liquidity: UTxO[], validFrom: number, validTo: number) => Promise<{
     tx: import("@lucid-evolution/lucid").TxBuilder;
     input: UTxO;
 }>;

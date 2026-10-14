@@ -604,6 +604,7 @@ export class PacketLaneService {
           height,
           proof,
           this.proof(request.proof_close),
+          BigInt(request.counterparty_upgrade_sequence ?? 0n),
           liquidity,
           from,
           to,

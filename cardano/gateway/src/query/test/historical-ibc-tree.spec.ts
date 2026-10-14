@@ -16,7 +16,12 @@ import {
   encodeConnectionDatum,
   decodeConnectionDatum,
 } from '../../shared/types/connection/connection-datum';
-import { ChannelDatum, encodeChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
+import {
+  ChannelDatum,
+  encodeChannelDatum,
+  decodeChannelDatum,
+  initialChannelUpgradeState,
+} from '../../shared/types/channel/channel-datum';
 import { HostStateDatum, encodeHostStateDatum, decodeHostStateDatum } from '../../shared/types/host-state-datum';
 import { ChannelState } from '../../shared/types/channel/state';
 import { Order } from '../../shared/types/channel/order';
@@ -73,6 +78,7 @@ function channel(n: number): ChannelDatum {
         counterparty: { port_id: hex('transfer'), channel_id: hex('channel-1') },
         connection_hops: [hex('connection-0')],
         version: hex('ics20-1'),
+        upgrade_sequence: 0n,
       },
       next_sequence_send: BigInt(n + 1),
       next_sequence_recv: 1n,
@@ -82,6 +88,7 @@ function channel(n: number): ChannelDatum {
       packet_acknowledgement: new Map([[BigInt(n), 'ccdd']]),
       minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: BigInt(n) },
       maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: BigInt(n) },
+      upgrade: initialChannelUpgradeState(),
     },
   };
 }

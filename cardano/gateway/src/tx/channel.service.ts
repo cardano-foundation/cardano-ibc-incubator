@@ -24,7 +24,7 @@ import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { MintChannelRedeemer, SpendChannelRedeemer } from 'src/shared/types/channel/channel-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { AuthToken } from 'src/shared/types/auth-token';
-import { ChannelDatum, encodeChannelEndValue } from 'src/shared/types/channel/channel-datum';
+import { ChannelDatum, encodeChannelEndValue, initialChannelUpgradeState } from 'src/shared/types/channel/channel-datum';
 import { ChannelState } from 'src/shared/types/channel/state';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
@@ -575,6 +575,7 @@ export class ChannelService {
           ordering: channelOpenInitOperator.ordering,
           connection_hops: [convertString2Hex(channelOpenInitOperator.connectionId)],
           version: convertString2Hex(channelOpenInitOperator.version),
+          upgrade_sequence: 0n,
         },
         next_sequence_send: 1n,
         next_sequence_recv: 1n,
@@ -584,6 +585,7 @@ export class ChannelService {
         packet_commitment: new Map(),
         packet_receipt: new Map(),
         packet_acknowledgement: new Map(),
+        upgrade: initialChannelUpgradeState(),
       },
       port: convertString2Hex(channelOpenInitOperator.port_id),
       token: channelToken,
@@ -756,6 +758,7 @@ export class ChannelService {
           ordering: channelOpenTryOperator.ordering,
           connection_hops: [convertString2Hex(channelOpenTryOperator.connectionId)],
           version: convertString2Hex(channelOpenTryOperator.version),
+          upgrade_sequence: 0n,
         },
         next_sequence_send: 1n,
         next_sequence_recv: 1n,
@@ -765,6 +768,7 @@ export class ChannelService {
         packet_commitment: new Map(),
         packet_receipt: new Map(),
         packet_acknowledgement: new Map(),
+        upgrade: initialChannelUpgradeState(),
       },
       port: convertString2Hex(channelOpenTryOperator.port_id),
       token: channelToken,
@@ -778,6 +782,7 @@ export class ChannelService {
       },
       connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
       version: channelOpenTryOperator.counterpartyVersion,
+      upgrade_sequence: 0n,
     };
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyMembership: {
@@ -1041,6 +1046,7 @@ export class ChannelService {
       // committed version is the counterparty_version supplied in MsgChannelOpenAck,
       // not our local channel version.
       version: channelOpenAckOperator.counterpartyVersion,
+      upgrade_sequence: 0n,
     };
 
     const verifyProofRedeemer: VerifyProofRedeemer = {
@@ -1263,6 +1269,7 @@ export class ChannelService {
       },
       connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
       version: convertHex2String(updatedChannelDatum.state.channel.version),
+      upgrade_sequence: 0n,
     };
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyMembership: {
@@ -1564,6 +1571,7 @@ export class ChannelService {
       ChanCloseConfirm: {
         proof_init: channelCloseConfirmOperator.proofInit,
         proof_height: channelCloseConfirmOperator.proofHeight,
+        counterparty_upgrade_sequence: channelCloseConfirmOperator.counterpartyUpgradeSequence,
       },
     };
     const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
@@ -1609,6 +1617,7 @@ export class ChannelService {
       },
       connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
       version: convertHex2String(updatedChannelDatum.state.channel.version),
+      upgrade_sequence: channelCloseConfirmOperator.counterpartyUpgradeSequence,
     };
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyMembership: {
