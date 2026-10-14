@@ -5,6 +5,8 @@ import {
   encodeClientStateValue,
   encodeConsensusStateValue,
   encodeChannelEndValue,
+  encodeChannelUpgradeErrorValue,
+  encodeChannelUpgradeValue,
   IbcTreeStateStore,
   StaleIbcTreeStateError,
   type IbcTreeHostStateRef,
@@ -726,5 +728,45 @@ describe('guarded tree publication', () => {
     readers.setLive(pending.newRoot, hostRef(1));
     assert.equal((await pending.commit(hostRef(1))).published, false);
     assert.equal(store.getCurrentRoot(), emptyRoot);
+  });
+});
+
+describe('channel upgrade commitment values', () => {
+  const hex = (text: string) => Buffer.from(text).toString('hex');
+  const channel = {
+    state: 'Open', ordering: 'Unordered',
+    counterparty: { port_id: hex('transfer'), channel_id: hex('channel-2') },
+    connection_hops: [hex('connection-0')], version: hex('ics20-1'),
+  };
+  const legacyChannel =
+    'd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff';
+
+  it('keeps the committed five-field channel without an upgrade sequence', async () => {
+    assert.equal(await encodeChannelEndValue(channel, Lucid), legacyChannel);
+  });
+
+  it('appends the upgrade sequence and places flushing states after the current states', async () => {
+    const withSequence = (state: string, sequence: string) =>
+      legacyChannel.replace(/^d8799fd87c80/, `d8799f${state}`).replace(/ff$/, `${sequence}ff`);
+    assert.equal(await encodeChannelEndValue({ ...channel, upgrade_sequence: 0n }, Lucid), withSequence('d87c80', '00'));
+    assert.equal(await encodeChannelEndValue({ ...channel, state: 'Flushing', upgrade_sequence: 3n }, Lucid), withSequence('d87e80', '03'));
+    assert.equal(
+      await encodeChannelEndValue({ ...channel, state: 'FlushComplete', upgrade_sequence: 2n ** 32n }, Lucid),
+      withSequence('d87f80', '1b0000000100000000'),
+    );
+  });
+
+  it('encodes upgrade and error records as Aiken records', async () => {
+    const fields = { ordering: 'Unordered', connection_hops: [hex('connection-1')], version: hex('ics20-1') };
+    assert.equal(
+      await encodeChannelUpgradeValue({
+        fields, timeout: { height: { revision_number: 0n, revision_height: 0n }, timestamp: 0n }, next_sequence_send: 0n,
+      }, Lucid),
+      'd8799fd8799fd87a809f4c636f6e6e656374696f6e2d31ff4769637332302d31ffd8799fd8799f0000ff00ff00ff',
+    );
+    assert.equal(
+      await encodeChannelUpgradeErrorValue({ sequence: 3n, message: hex('upgrade timed out') }, Lucid),
+      `d8799f0351${hex('upgrade timed out')}ff`,
+    );
   });
 });

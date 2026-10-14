@@ -271,25 +271,76 @@ export async function encodeChannelEndValue(
     Data.Literal('TryOpen'),
     Data.Literal('Open'),
     Data.Literal('Close'),
-  ]);
-  const OrderSchema = Data.Enum([
-    Data.Literal('None'),
-    Data.Literal('Unordered'),
-    Data.Literal('Ordered'),
+    Data.Literal('Flushing'),
+    Data.Literal('FlushComplete'),
   ]);
   const ChannelCounterpartySchema = Data.Object({
     port_id: Data.Bytes(),
     channel_id: Data.Bytes(),
   });
-  const ChannelSchema = Data.Object({
+  const fields = {
     state: StateSchema,
-    ordering: OrderSchema,
+    ordering: channelOrderSchema(Lucid),
     counterparty: ChannelCounterpartySchema,
     connection_hops: Data.Array(Data.Bytes()),
     version: Data.Bytes(),
-  });
+  };
+  // Channel upgrades append upgrade_sequence. Channels without it keep the
+  // five-field encoding that existing deployments committed.
+  const ChannelSchema =
+    channelEnd.upgrade_sequence === undefined
+      ? Data.Object(fields)
+      : Data.Object({ ...fields, upgrade_sequence: Data.Integer() });
 
   return Data.to(channelEnd, ChannelSchema as any);
+}
+
+// Committed under channelUpgrades/upgrades/ports/{port}/channels/{channel}.
+export async function encodeChannelUpgradeValue(
+  upgrade: any,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): Promise<string> {
+  const { Data } = Lucid;
+  const UpgradeSchema = Data.Object({
+    fields: Data.Object({
+      ordering: channelOrderSchema(Lucid),
+      connection_hops: Data.Array(Data.Bytes()),
+      version: Data.Bytes(),
+    }),
+    timeout: Data.Object({
+      height: Data.Object({
+        revision_number: Data.Integer(),
+        revision_height: Data.Integer(),
+      }),
+      timestamp: Data.Integer(),
+    }),
+    next_sequence_send: Data.Integer(),
+  });
+
+  return Data.to(upgrade, UpgradeSchema as any);
+}
+
+// Committed under channelUpgrades/upgradeError/ports/{port}/channels/{channel}.
+export async function encodeChannelUpgradeErrorValue(
+  receipt: any,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): Promise<string> {
+  const { Data } = Lucid;
+  const ErrorReceiptSchema = Data.Object({
+    sequence: Data.Integer(),
+    message: Data.Bytes(),
+  });
+
+  return Data.to(receipt, ErrorReceiptSchema as any);
+}
+
+function channelOrderSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
+  const { Data } = Lucid;
+  return Data.Enum([
+    Data.Literal('None'),
+    Data.Literal('Unordered'),
+    Data.Literal('Ordered'),
+  ]);
 }
 
 export async function encodeModuleRegistration(
