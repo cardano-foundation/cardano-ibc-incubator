@@ -62,7 +62,11 @@ validator chan_close_confirm(
     let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
-    expect ChanCloseConfirm { proof_init, proof_height } = channel_redeemer
+    expect ChanCloseConfirm {
+      proof_init,
+      proof_height,
+      counterparty_upgrade_sequence,
+    } = channel_redeemer
 
     trace @"chan_close_confirm: tx context extracted"
 
@@ -115,6 +119,7 @@ validator chan_close_confirm(
         updated_datum,
         proof_init,
         proof_height,
+        counterparty_upgrade_sequence,
         redeemers,
         verify_proof_policy_id,
       )
@@ -151,6 +156,7 @@ fn validate_chan_close_confirm_proof(
   channel_datum: ChannelDatum,
   proof: Data,
   proof_height: Height,
+  counterparty_upgrade_sequence: Int,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
@@ -166,8 +172,7 @@ fn validate_chan_close_confirm_proof(
       counterparty: expected_counterparty,
       connection_hops: counterparty_hops,
       version: channel_datum.state.channel.version,
-      // Both ends keep the sequence of their last completed upgrade.
-      upgrade_sequence: channel_datum.state.channel.upgrade_sequence,
+      upgrade_sequence: counterparty_upgrade_sequence,
     }
 
   let verify_proof_redeemer =

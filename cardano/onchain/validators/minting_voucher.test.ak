@@ -2002,6 +2002,7 @@ fn check_refund_voucher(use_timeout_on_close: Bool) {
         proof_close: mock_proof(),
         proof_height: Height { revision_number: 1, revision_height: 1 },
         next_sequence_recv: 1,
+        counterparty_upgrade_sequence: 0,
       }
     } else {
       TimeoutPacket {

@@ -31,6 +31,7 @@ validator packet_timeout_on_close(
       lane,
       liquidity_refs,
       proof_close,
+      counterparty_upgrade_sequence,
     } = authorized.operation
     let op =
       TimeoutOnClose {
@@ -41,6 +42,7 @@ validator packet_timeout_on_close(
         lane,
         liquidity_refs,
         proof_close,
+        counterparty_upgrade_sequence,
       }
     packet_batch.validate_settlement(
       transaction,

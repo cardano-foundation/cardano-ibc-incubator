@@ -35,7 +35,12 @@ pub type SpendChannelRedeemer {
   }
   SendPacket { packet: Packet }
   ChanCloseInit
-  ChanCloseConfirm { proof_init: Data, proof_height: Height }
+  ChanCloseConfirm {
+    proof_init: Data,
+    proof_height: Height,
+    // The upgrade sequence of the proven closed counterparty channel.
+    counterparty_upgrade_sequence: Int,
+  }
   PrunePacketHistory {
     sequence: Int,
     proof_commitment_absence: Data,
@@ -47,6 +52,8 @@ pub type SpendChannelRedeemer {
     proof_close: Data,
     proof_height: Height,
     next_sequence_recv: Int,
+    // The upgrade sequence of the proven closed counterparty channel.
+    counterparty_upgrade_sequence: Int,
   }
   ReclaimChannel
   /// An ICS-04 channel-upgrade step, a `ChannelUpgradeRedeemer`. Only the
