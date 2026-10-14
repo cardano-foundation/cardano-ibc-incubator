@@ -1,4 +1,7 @@
-import { State as ChannelState, Order as ChannelOrder } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
+import {
+  State as ChannelState,
+  Order as ChannelOrder,
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 import { Order } from '../shared/types/channel/order';
 import { ChannelState as State } from '../shared/types/channel/state';
 
@@ -10,6 +13,27 @@ export const EVENT_TYPE_CHANNEL = {
   CLOSE_INIT: 'channel_close_init',
   CLOSE_CONFIRM: 'channel_close_confirm',
   CLOSE: 'channel_close',
+  UPGRADE_INIT: 'channel_upgrade_init',
+  UPGRADE_TRY: 'channel_upgrade_try',
+  UPGRADE_ACK: 'channel_upgrade_ack',
+  UPGRADE_CONFIRM: 'channel_upgrade_confirm',
+  UPGRADE_OPEN: 'channel_upgrade_open',
+  UPGRADE_TIMEOUT: 'channel_upgrade_timeout',
+  UPGRADE_CANCEL: 'channel_upgrade_cancelled',
+  UPGRADE_ERROR: 'channel_upgrade_error',
+  FLUSH_COMPLETE: 'channel_flush_complete',
+};
+
+// ibc-go v8 channel-upgrade event attributes.
+export const ATTRIBUTE_KEY_CHANNEL_UPGRADE = {
+  UPGRADE_SEQUENCE: 'upgrade_sequence',
+  UPGRADE_CONNECTION_HOPS: 'upgrade_connection_hops',
+  UPGRADE_VERSION: 'upgrade_version',
+  UPGRADE_ORDERING: 'upgrade_ordering',
+  UPGRADE_TIMEOUT_HEIGHT: 'timeout_height',
+  UPGRADE_TIMEOUT_TIMESTAMP: 'timeout_timestamp',
+  CHANNEL_STATE: 'channel_state',
+  ERROR_RECEIPT: 'error_receipt',
 };
 
 export const ATTRIBUTE_KEY_CHANNEL = {

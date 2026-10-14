@@ -14,6 +14,8 @@ import {
 import { decodeIBCModuleRedeemer, encodeIBCModuleRedeemer } from './port/ibc_module_redeemer';
 import { decodeSpendClientRedeemer, encodeSpendClientRedeemer, findSpendClientRedeemer } from './client-redeemer';
 import { encodeRecoverClientWithdrawalRedeemer } from './recover-client-redeemer';
+import { ChannelState } from './channel/state';
+import { Order } from './channel/order';
 
 const EMPTY_PROOF = { proofs: [] } as const;
 const HEIGHT = { revisionNumber: 0n, revisionHeight: 11n } as const;
@@ -30,6 +32,12 @@ const PACKET = {
 } as const;
 
 const MITHRIL_CLIENT_STATE_HEX = 'aabbccdd';
+
+const UPGRADE_FIELDS = {
+  ordering: 'Unordered',
+  connection_hops: ['636f6e6e656374696f6e2d31'],
+  version: '69637332302d31',
+} as const;
 
 describe('Redeemer encoding regression', () => {
   it('keeps client recovery constructors aligned with Aiken', async () => {
@@ -124,6 +132,72 @@ describe('Redeemer encoding regression', () => {
       'd9050286d8798803487472616e73666572496368616e6e656c2d30487472616e73666572496368616e6e656c2d31427b7dd8798200186300d8798180d8798180d87982000b0204',
     );
     expect(decodeSpendChannelRedeemer(encoded, Lucid)).toEqual(redeemer);
+  });
+
+  // The on-chain decoding of these bytes is checked in
+  // cardano/onchain/validators/spending_channel/chan_upgrade.test.ak.
+  it.each([
+    [
+      'InitUpgrade',
+      {
+        step: {
+          InitUpgrade: {
+            fields: UPGRADE_FIELDS,
+            timeout_period: 3_600_000n,
+          },
+        },
+        channel_siblings: ['aa'],
+        upgrade_siblings: [],
+        error_receipt_siblings: [],
+      },
+      'd9050481d87984d87982d87983d87a80814c636f6e6e656374696f6e2d314769637332302d311a0036ee808141aa8080',
+    ],
+    [
+      'TimeoutUpgrade',
+      {
+        step: {
+          TimeoutUpgrade: {
+            counterparty_channel: {
+              state: ChannelState.Flushing,
+              ordering: Order.Unordered,
+              counterparty: { port_id: '7472616e73666572', channel_id: '6368616e6e656c2d30' },
+              connection_hops: ['636f6e6e656374696f6e2d39'],
+              version: '69637332302d31',
+              upgrade_sequence: 2n,
+            },
+            proof_channel: EMPTY_PROOF,
+            proof_height: { revisionNumber: 1n, revisionHeight: 13n },
+          },
+        },
+        channel_siblings: [],
+        upgrade_siblings: [],
+        error_receipt_siblings: [],
+      },
+      'd9050481d87984d87e83d87986d87e80d87a80d87982487472616e73666572496368616e6e656c2d30814c636f6e6e656374696f6e2d394769637332302d3102d8798180d87982010d808080',
+    ],
+    [
+      'FlushUpgrade',
+      {
+        step: { FlushUpgrade: { lanes: 4n } },
+        channel_siblings: [],
+        upgrade_siblings: [],
+        error_receipt_siblings: [],
+      },
+      'd9050481d87984d905008104808080',
+    ],
+  ])('encodes the %s channel upgrade step as SpendChannel constructor 11', async (_, upgrade, expected) => {
+    const redeemer = { ChanUpgrade: upgrade } as any;
+    const encoded = await encodeSpendChannelRedeemer(redeemer, Lucid);
+
+    expect(encoded).toBe(expected);
+    expect(decodeSpendChannelRedeemer(encoded, Lucid)).toEqual(redeemer);
+  });
+
+  it('keeps ReclaimChannel as SpendChannel constructor 10', async () => {
+    const encoded = await encodeSpendChannelRedeemer('ReclaimChannel', Lucid);
+
+    expect(encoded).toBe('d9050380');
+    expect(decodeSpendChannelRedeemer(encoded, Lucid)).toBe('ReclaimChannel');
   });
 
   it('keeps MintConnection redeemer encoding stable', async () => {

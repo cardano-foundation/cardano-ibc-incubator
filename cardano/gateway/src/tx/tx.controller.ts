@@ -47,6 +47,25 @@ import {
 import { ConnectionService } from './connection.service';
 import { ClientService } from './client.service';
 import { ChannelService } from './channel.service';
+import { ChannelUpgradeService } from './channel-upgrade.service';
+import {
+  MsgChannelUpgradeInit,
+  MsgChannelUpgradeInitResponse,
+  MsgChannelUpgradeTry,
+  MsgChannelUpgradeTryResponse,
+  MsgChannelUpgradeAck,
+  MsgChannelUpgradeAckResponse,
+  MsgChannelUpgradeConfirm,
+  MsgChannelUpgradeConfirmResponse,
+  MsgChannelUpgradeOpen,
+  MsgChannelUpgradeOpenResponse,
+  MsgChannelUpgradeTimeout,
+  MsgChannelUpgradeTimeoutResponse,
+  MsgChannelUpgradeCancel,
+  MsgChannelUpgradeCancelResponse,
+  MsgChannelUpgradeFlush,
+  MsgChannelUpgradeFlushResponse,
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { PacketLaneService, BuildPacketBatchRequest, BuildPacketBatchResponse } from './packet-lane.service';
 import { PacketService } from './packet.service';
 import { SubmissionService } from './submission.service';
@@ -70,6 +89,7 @@ export class TxController {
     private readonly clientService: ClientService,
     private readonly connectionService: ConnectionService,
     private readonly channelService: ChannelService,
+    private readonly channelUpgradeService: ChannelUpgradeService,
     private readonly packetService: PacketService,
     private readonly packetLaneService: PacketLaneService,
     private readonly submissionService: SubmissionService,
@@ -187,6 +207,39 @@ export class TxController {
   async ChannelCloseConfirm(data: MsgChannelCloseConfirm): Promise<MsgChannelCloseConfirmResponse> {
     const response: MsgChannelCloseConfirmResponse = await this.channelService.channelCloseConfirm(data);
     return response;
+  }
+
+  @GrpcMethod('Msg', 'ChannelUpgradeInit')
+  async ChannelUpgradeInit(data: MsgChannelUpgradeInit): Promise<MsgChannelUpgradeInitResponse> {
+    return this.channelUpgradeService.channelUpgradeInit(data);
+  }
+  @GrpcMethod('Msg', 'ChannelUpgradeTry')
+  async ChannelUpgradeTry(data: MsgChannelUpgradeTry): Promise<MsgChannelUpgradeTryResponse> {
+    return this.channelUpgradeService.channelUpgradeTry(data);
+  }
+  @GrpcMethod('Msg', 'ChannelUpgradeAck')
+  async ChannelUpgradeAck(data: MsgChannelUpgradeAck): Promise<MsgChannelUpgradeAckResponse> {
+    return this.channelUpgradeService.channelUpgradeAck(data);
+  }
+  @GrpcMethod('Msg', 'ChannelUpgradeConfirm')
+  async ChannelUpgradeConfirm(data: MsgChannelUpgradeConfirm): Promise<MsgChannelUpgradeConfirmResponse> {
+    return this.channelUpgradeService.channelUpgradeConfirm(data);
+  }
+  @GrpcMethod('Msg', 'ChannelUpgradeOpen')
+  async ChannelUpgradeOpen(data: MsgChannelUpgradeOpen): Promise<MsgChannelUpgradeOpenResponse> {
+    return this.channelUpgradeService.channelUpgradeOpen(data);
+  }
+  @GrpcMethod('Msg', 'ChannelUpgradeTimeout')
+  async ChannelUpgradeTimeout(data: MsgChannelUpgradeTimeout): Promise<MsgChannelUpgradeTimeoutResponse> {
+    return this.channelUpgradeService.channelUpgradeTimeout(data);
+  }
+  @GrpcMethod('Msg', 'ChannelUpgradeCancel')
+  async ChannelUpgradeCancel(data: MsgChannelUpgradeCancel): Promise<MsgChannelUpgradeCancelResponse> {
+    return this.channelUpgradeService.channelUpgradeCancel(data);
+  }
+  @GrpcMethod('Msg', 'ChannelUpgradeFlush')
+  async ChannelUpgradeFlush(data: MsgChannelUpgradeFlush): Promise<MsgChannelUpgradeFlushResponse> {
+    return this.channelUpgradeService.channelUpgradeFlush(data);
   }
 
   /**

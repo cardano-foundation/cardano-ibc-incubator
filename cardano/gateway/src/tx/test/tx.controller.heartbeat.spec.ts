@@ -2,6 +2,7 @@ import { PacketLaneService } from '../packet-lane.service';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { ChannelService } from '../channel.service';
+import { ChannelUpgradeService } from '../channel-upgrade.service';
 import { ClientService } from '../client.service';
 import { ConnectionService } from '../connection.service';
 import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
@@ -25,6 +26,7 @@ describe('TxController - HostState heartbeat', () => {
         { provide: ClientService, useValue: {} },
         { provide: ConnectionService, useValue: {} },
         { provide: ChannelService, useValue: {} },
+        { provide: ChannelUpgradeService, useValue: {} },
         { provide: PacketService, useValue: {} },
         { provide: SubmissionService, useValue: {} },
         { provide: HostStateHeartbeatService, useValue: heartbeatService },
