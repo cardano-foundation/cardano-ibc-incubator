@@ -9,6 +9,7 @@ import {
   type HistoryTransaction,
 } from "./consensusHistoryRecovery.ts";
 import { YaciRestHistory, type RestTransaction } from "./yaciRestHistory.ts";
+import { YaciRestHistoryChangedError } from "./yaciRest.ts";
 
 const evidence = (tx: RestTransaction): HistoryTransaction => ({
   txHash: tx.hash,
@@ -115,7 +116,11 @@ export function createRestHistorySource(
         },
         tip.number,
         after?.blockHeight ?? 0,
-      );
+      ).catch((error: unknown) => {
+        if (error instanceof YaciRestHistoryChangedError)
+          throw new HistorySnapshotChangedError(error.message, { cause: error });
+        throw error;
+      });
       const seen = new Set<string>();
       for (const output of outputs) {
         if (
