@@ -82,6 +82,10 @@ in place.
 
 Adding channel upgrades here would require a compatible counterparty implementation. A newer `ibc-go` version does not by itself imply support for that handshake.
 
+The probabilistic clients already verify the Cardano records that a connection-hop upgrade needs. `ibc-go` v8 verifies every upgrade step through the channel's existing connection, so the client being replaced must understand these records before it is deployed. Cardano channel ends may append `upgrade_sequence` and use the FLUSHING and FLUSHCOMPLETE states. Upgrade and error records use `ibc-go`'s `channelUpgrades` paths. [`channel-upgrade.json`](tests/ibc-state-commitment/channel-upgrade.json) fixes these encodings. A five-field channel end only proves upgrade sequence zero. The v10 client verifies upgradable channel ends without comparing the sequence, because v10 has none. Cardano validators, the Gateway and Hermes do not implement the handshake yet.
+
+`ibc-go` v8.7.0 treats a counterparty as already upgraded only if its own new connection ID equals the counterparty's ID for that connection. Cardano and a Cosmos chain use different IDs, so a Cosmos channel end in FLUSHCOMPLETE can still time out after Cardano has opened with the new connection. A Cardano implementation must therefore not open before its counterparty.
+
 ### ICS-29 Fee Middleware
 
 The Cardano relayer endpoint cannot query incentivized packets and its counterparty payee registration method does not register a payee. It therefore does not provide a Cardano-side ICS-29 fee interface.
