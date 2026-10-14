@@ -82,17 +82,23 @@ func acceptanceProof(t *testing.T, values map[string][]byte, key string) ([]byte
 	return encoded, root
 }
 func acceptancePacket(sequence uint64) channeltypes.Packet {
-	data := transfer.NewFungibleTokenPacketData("lovelace", "100", "cardano-local-sender", acceptanceAddress("operator").String(), "").GetBytes()
+	return acceptancePacketForReceiver(sequence, acceptanceAddress("operator").String())
+}
+func acceptancePacketForReceiver(sequence uint64, receiver string) channeltypes.Packet {
+	data := transfer.NewFungibleTokenPacketData("lovelace", "100", "cardano-local-sender", receiver, "").GetBytes()
 	return channeltypes.NewPacket(data, sequence, "transfer", "channel-0", "transfer", "channel-0", clienttypes.ZeroHeight(), uint64(time.Date(2090, 1, 1, 0, 0, 0, 0, time.UTC).UnixNano()))
 }
 func acceptanceCommitmentKey(sequence uint64) string {
 	return fmt.Sprintf("commitments/ports/transfer/channels/channel-0/sequences/%d", sequence)
 }
 func acceptanceLaneValues(t *testing.T, count uint64) map[string][]byte {
+	return acceptanceLaneValuesForReceiver(t, count, acceptanceAddress("operator").String())
+}
+func acceptanceLaneValuesForReceiver(t *testing.T, count uint64, receiver string) map[string][]byte {
 	t.Helper()
 	values := map[string][]byte{}
 	for n := uint64(1); n <= count; n++ {
-		values[acceptanceCommitmentKey(n)] = channeltypes.CommitPacket(nil, acceptancePacket(n))
+		values[acceptanceCommitmentKey(n)] = channeltypes.CommitPacket(nil, acceptancePacketForReceiver(n, receiver))
 	}
 	return values
 }
@@ -107,23 +113,26 @@ func acceptanceChannelValues(t *testing.T) map[string][]byte {
 	return map[string][]byte{"channelEnds/ports/transfer/channels/channel-0": acceptanceCBOR(t, channel)}
 }
 func acceptanceSource(t *testing.T, root string) acceptanceHistory {
+	return acceptanceSourceForReceiver(t, root, acceptanceAddress("operator").String(), false)
+}
+func acceptanceSourceForReceiver(t *testing.T, root, receiver string, export bool) acceptanceHistory {
 	t.Helper()
 	_, hostRoot := acceptanceProof(t, acceptanceChannelValues(t), "channelEnds/ports/transfer/channels/channel-0")
 	hash := blake2b.Sum256([]byte("native-bootstrap"))
 	name, err := core.PacketLaneTokenName("transfer", "channel-0", 0, 1)
 	require.NoError(t, err)
-	_, laneRoot := acceptanceProof(t, acceptanceLaneValues(t, 1), acceptanceCommitmentKey(1))
+	_, laneRoot := acceptanceProof(t, acceptanceLaneValuesForReceiver(t, 1, receiver), acceptanceCommitmentKey(1))
 	snapshot := core.PacketStateSnapshot{Height: 966, BlockHash: hex.EncodeToString(hash[:]), HostTxHash: fmt.Sprintf("%064x", 22), HostRoot: hostRoot, Lanes: map[string]core.TrackedPacketLane{hex.EncodeToString(name): {State: core.PacketLaneRoot{Height: 966, Port: "transfer", Channel: "channel-0", Lane: 0, LaneCount: 1, Version: 0, Root: laneRoot}, TxHash: fmt.Sprintf("%064x", 23), OutputIndex: 1}}}
 	rawSnapshot, err := core.EncodePacketStateSnapshot(snapshot)
 	require.NoError(t, err)
 	transactions := map[uint64][]byte{}
 	previousHost, previousLane := snapshot.HostTxHash, snapshot.Lanes[hex.EncodeToString(name)].TxHash
 	for version, point := range []struct{ height, count uint64 }{{967, 1}, {1001, 2}, {1032, 2}, {1063, 3}, {1094, 4}, {1125, 5}} {
-		_, laneRoot = acceptanceProof(t, acceptanceLaneValues(t, point.count), acceptanceCommitmentKey(1))
+		_, laneRoot = acceptanceProof(t, acceptanceLaneValuesForReceiver(t, point.count, receiver), acceptanceCommitmentKey(1))
 		heightDatum := cbor.Tag{Number: 121, Content: []uint64{0, 0}}
 		commitments := map[uint64][]byte{}
 		for n := uint64(1); n <= point.count; n++ {
-			commitments[n] = channeltypes.CommitPacket(nil, acceptancePacket(n))
+			commitments[n] = channeltypes.CommitPacket(nil, acceptancePacketForReceiver(n, receiver))
 		}
 		laneDatum := cbor.Tag{Number: 121, Content: []any{[]byte("transfer"), []byte("channel-0"), uint64(0), uint64(1), uint64(version + 1), laneRoot, commitments, []uint64{}, map[uint64][]byte{}, heightDatum, heightDatum, map[string]uint64{}}}
 		hostDatum := core.HostStateDatum{State: core.HostState{Version: 1, IbcStateRoot: hostRoot, BoundPort: []uint64{}}, NftPolicy: bytes.Repeat([]byte{1}, 28), Deployer: make([]byte, 28), Shutdown: cbor.RawMessage{0x80}}
@@ -146,7 +155,7 @@ func acceptanceSource(t *testing.T, root string) acceptanceHistory {
 	output := filepath.Join(root, "source-history.json")
 	acceptanceWriteJSON(t, input, map[string]any{"Transactions": transactions, "Snapshot": rawSnapshot})
 	var history acceptanceHistory
-	if os.Getenv("UPDATE_NATIVE_RECOVERY_FIXTURE") == "1" {
+	if export || os.Getenv("UPDATE_NATIVE_RECOVERY_FIXTURE") == "1" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		command := exec.CommandContext(ctx, "go", "test", "./state", "-run", "^TestExportAcceptanceHistory$", "-count=1", "-timeout=5m")
@@ -155,12 +164,14 @@ func acceptanceSource(t *testing.T, root string) acceptanceHistory {
 		log, err := command.CombinedOutput()
 		require.NoError(t, err, string(log))
 		acceptanceReadJSON(t, output, &history)
-		file, err := os.Create("../cardano-probabilistic-light-client-core/testdata/native-recovery.json.gz")
-		require.NoError(t, err)
-		writer := gzip.NewWriter(file)
-		require.NoError(t, json.NewEncoder(writer).Encode(history))
-		require.NoError(t, writer.Close())
-		require.NoError(t, file.Close())
+		if !export {
+			file, err := os.Create("../cardano-probabilistic-light-client-core/testdata/native-recovery.json.gz")
+			require.NoError(t, err)
+			writer := gzip.NewWriter(file)
+			require.NoError(t, json.NewEncoder(writer).Encode(history))
+			require.NoError(t, writer.Close())
+			require.NoError(t, file.Close())
+		}
 	} else {
 		require.NoError(t, json.Unmarshal(readBoundaryGzip(t, "native-recovery.json.gz"), &history))
 	}
@@ -178,6 +189,34 @@ func acceptanceSource(t *testing.T, root string) acceptanceHistory {
 	}
 	acceptanceWriteJSON(t, output, history)
 	return history
+}
+
+// The Injective node uses its own ethsecp256k1 address. Produce native signed
+// Cardano bodies containing commitments for that recipient before any node runs.
+func TestExportInjectiveLifecycleHistory(t *testing.T) {
+	root, receiver := os.Getenv("INJECTIVE_LIFECYCLE_FIXTURE_DIR"), os.Getenv("INJECTIVE_LIFECYCLE_RECEIVER")
+	if root == "" || receiver == "" {
+		t.Skip("called by the local Injective lifecycle driver")
+	}
+	require.NoError(t, os.MkdirAll(root, 0700))
+	history := acceptanceSourceForReceiver(t, root, receiver, true)
+	headers := map[string]*ProbabilisticHeader{}
+	for _, step := range []struct {
+		name, branch    string
+		trusted, anchor uint64
+	}{{"baseline", "honest", 966, 967}, {"proposal", "bad", 967, 1001}, {"honest", "honest", 967, 1001}, {"replacement", "honest", 1001, 1032}, {"ordinary", "honest", 1032, 1063}, {"boundary", "honest", 1063, 1094}, {"restart", "honest", 1094, 1125}} {
+		headers[step.name] = acceptanceHeader(t, history, step.branch, step.trusted, step.anchor)
+	}
+	acceptanceWriteJSON(t, filepath.Join(root, "headers.json"), headers)
+	channelProof, _ := acceptanceProof(t, acceptanceChannelValues(t), "channelEnds/ports/transfer/channels/channel-0")
+	acceptanceWriteJSON(t, filepath.Join(root, "channel-proof.json"), map[string]any{"proof": channelProof})
+	for _, point := range []struct{ anchor, count uint64 }{{967, 1}, {1001, 2}, {1032, 2}, {1063, 3}, {1094, 4}, {1125, 5}} {
+		for sequence := uint64(1); sequence <= point.count; sequence++ {
+			proof, _ := acceptanceProof(t, acceptanceLaneValuesForReceiver(t, point.count, receiver), acceptanceCommitmentKey(sequence))
+			acceptanceWriteJSON(t, filepath.Join(root, fmt.Sprintf("packet-%d-%d.json", point.anchor, sequence)), map[string]any{"packet": acceptancePacketForReceiver(sequence, receiver), "proof_commitment": proof, "proof_height": NewHeight(0, point.anchor), "signer": receiver})
+		}
+	}
+	acceptanceWriteJSON(t, filepath.Join(root, "fixture-metadata.json"), map[string]any{"receiver": receiver, "trusted_height": history.Client.LatestCheckpointHeight, "scope": "Native signed Cardano fixture bodies and headers for a disposable Injective node"})
 }
 func acceptanceHeader(t *testing.T, history acceptanceHistory, branch string, trusted, anchor uint64) *ProbabilisticHeader {
 	t.Helper()

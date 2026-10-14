@@ -176,8 +176,10 @@ submitting anything.
 ### Prepare and preflight
 
 First establish the Injective binary's provenance with the Injective node
-operators. Record the deployed `injectived version --long` result and source
-commit, and verify that build contains the recovery-capable version of the
+operators. Record the deployed `injectived version` result and source
+commit. The pinned release does not support `--long`. Also retain the binary
+hash and `go version -m` output because a local build can report `dev`.
+Verify that build contains the recovery-capable version of the
 Cardano probabilistic light client, including its current recovery invariants
 and store-state handling. Also query the IBC allowed-client parameters for
 `08-cardano-probabilistic`. Registration in `allowed_clients` by itself does not
