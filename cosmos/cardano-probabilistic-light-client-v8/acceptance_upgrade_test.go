@@ -3,6 +3,7 @@ package probabilistic
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -127,6 +128,17 @@ func acceptanceUpgradeDigest(t *testing.T, file string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// The SDK persists this counter when applying an upgrade. CometBFT's header
+// version can lag it during ABCI replay, so use the committed application key.
+func acceptanceUpgradeVersion(d *acceptanceDriver) uint64 {
+	raw := d.query("/store/upgrade/key", []byte{upgradetypes.ProtocolVersionByte})
+	if len(raw) == 0 {
+		return 0
+	}
+	require.Len(d.t, raw, 8)
+	return binary.BigEndian.Uint64(raw)
+}
+
 func acceptanceUpgradeProposal(t *testing.T, d *acceptanceDriver, plan upgradetypes.Plan) uint64 {
 	t.Helper()
 	signer := acceptanceAddress("operator").String()
@@ -200,9 +212,7 @@ func TestCaribicV8SoftwareUpgrade(t *testing.T) {
 	genesisHash := acceptanceUpgradeDigest(t, filepath.Join(config.Root, "config/genesis.json"))
 	status, err := d.rpc.Status(context.Background())
 	require.NoError(t, err)
-	block, err := d.rpc.Block(context.Background(), nil)
-	require.NoError(t, err)
-	protocolBefore := block.Block.Version.App
+	versionBefore := acceptanceUpgradeVersion(d)
 	plan := upgradetypes.Plan{Name: acceptanceUpgradeName, Height: status.SyncInfo.LatestBlockHeight + 100, Info: "Caribic v8 acceptance: add the successor application store"}
 	proposalID := acceptanceUpgradeProposal(t, d, plan)
 	require.Equal(t, retained, d.recoverySnapshot())
@@ -236,9 +246,8 @@ func TestCaribicV8SoftwareUpgrade(t *testing.T) {
 	require.Equal(t, versionsBefore, versionsAfter)
 	status, err = d.rpc.Status(context.Background())
 	require.NoError(t, err)
-	block, err = d.rpc.Block(context.Background(), nil)
-	require.NoError(t, err)
-	require.Equal(t, protocolBefore+1, block.Block.Version.App)
+	versionAfter := acceptanceUpgradeVersion(d)
+	require.Equal(t, versionBefore+1, versionAfter)
 	require.Less(t, uint64(status.SyncInfo.LatestBlockTime.UnixNano()), deadline)
 	acceptanceReceive(t, d, 2, 2, 1001, "pending")
 	acceptanceTimeout(t, d, 2, 1001, pending, "pending")
@@ -268,9 +277,7 @@ func TestCaribicV8SoftwareUpgrade(t *testing.T) {
 	require.Equal(t, sdk.Uint64ToBigEndian(uint64(plan.Height)), d.query("/store/"+acceptanceUpgradeStore+"/key", []byte("applied-height")))
 	status, err = d.rpc.Status(context.Background())
 	require.NoError(t, err)
-	block, err = d.rpc.Block(context.Background(), nil)
-	require.NoError(t, err)
-	require.Equal(t, protocolBefore+1, block.Block.Version.App, "the completed upgrade must not run twice")
+	require.Equal(t, versionBefore+1, acceptanceUpgradeVersion(d), "the completed upgrade must not run twice")
 	finalHeader := acceptanceHeader(t, history, "honest", 1094, 1125)
 	d.update(acceptanceSubject, finalHeader)
 	acceptanceReceive(t, d, 5, 5, 1125, "")
@@ -299,7 +306,7 @@ func TestCaribicV8SoftwareUpgrade(t *testing.T) {
 		"scope":         "local v8 host application upgrade with the checkout verifier retained and signed fixture Cardano history",
 		"before_sha256": beforeHash, "after_sha256": afterHash, "genesis_sha256": genesisHash,
 		"proposal_id": proposalID, "plan": plan, "successor_loaded_height": startup["loaded_height"],
-		"protocol_before": protocolBefore, "protocol_after": block.Block.Version.App,
+		"upgrade_sequence_before": versionBefore, "upgrade_sequence_after": versionAfter,
 		"retained_epoch8_deadline": deadline, "new_epoch9_deadline": deadline9,
 		"client": acceptanceSubject, "connection": "connection-0", "channel": "channel-0", "final_client": final,
 	})
