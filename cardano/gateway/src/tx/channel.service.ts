@@ -64,7 +64,7 @@ import {
   UnsignedChannelOpenConfirmDto,
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
-import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, transactionTimeToLive } from '~@/config/constant.config';
 import { IbcTreeStateStore, StateRootResult, StaleIbcTreeStateError } from '../shared/helpers/ibc-state-root';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
@@ -159,7 +159,7 @@ export class ChannelService {
       throw new GrpcInternalException(`channel tx failed: invalid slot configuration for network ${network}`);
     }
 
-    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE);
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, transactionTimeToLive(network));
   }
 
   /**

@@ -41,7 +41,7 @@ import {
   validateUpdateHeaderAdvancesLatestHeight,
 } from './helper/client.validate';
 import { sumLovelaceFromUtxos } from './helper/helper';
-import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, transactionTimeToLive } from '~@/config/constant.config';
 import { IbcTreeStateStore, StaleIbcTreeStateError } from '../shared/helpers/ibc-state-root';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
@@ -197,7 +197,7 @@ export class TendermintClientService {
 
   private async computeTxValidityWindow(
     backdateMs = 0,
-    timeToLiveMs = TRANSACTION_TIME_TO_LIVE,
+    timeToLiveMs?: number,
   ): Promise<{
     currentSlot: number;
     currentLedgerTime: number;
@@ -213,9 +213,12 @@ export class TendermintClientService {
       throw new GrpcInternalException(`client tx failed: invalid slot configuration for network ${network}`);
     }
 
-    const validity = await computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, timeToLiveMs, {
-      backdateMs,
-    });
+    const validity = await computeLedgerAnchoredValidityWindow(
+      ogmiosEndpoint,
+      slotConfig,
+      timeToLiveMs ?? transactionTimeToLive(network),
+      { backdateMs },
+    );
     // Lucid encodes slots, and validators see their start times. In particular,
     // the helper's end-of-slot validToTime is not the on-chain upper bound.
     const { slotToUnixTime, unixTimeToSlot } = this.lucidService.LucidImporter;
@@ -581,7 +584,9 @@ export class TendermintClientService {
       const safeBackdateMs = this.tendermintUpdateSafeBackdateMs(currentClientDatum);
       const validityWindow = await this.computeTxValidityWindow(
         safeBackdateMs,
-        stagedTendermintClient ? TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE : TRANSACTION_TIME_TO_LIVE,
+        stagedTendermintClient
+          ? TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE
+          : transactionTimeToLive(this.configService.get('cardanoNetwork')),
       );
       const validFromTimeMs = validityWindow.validFromTime;
       const validToTimeMs = validityWindow.validToTime;
@@ -1854,10 +1859,6 @@ export class TendermintClientService {
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
-      control: {
-        ...hostStateDatum.control,
-        live_clients: hostStateDatum.control.live_clients + 1n,
-      },
     };
 
     const hostStateRedeemer = {
@@ -2311,10 +2312,10 @@ export class TendermintClientService {
 
     // Create an updated HostState datum with:
     // - Incremented version (STT monotonicity requirement)
-    // - Incremented client sequence
+    // - Incremented client sequence and live client count
     // - Updated ibc_state_root
     // - Current timestamp
-    const updatedHostStateDatum = {
+    const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
       state: {
         ...hostStateDatum.state,
@@ -2322,6 +2323,10 @@ export class TendermintClientService {
         next_client_sequence: hostStateDatum.state.next_client_sequence + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
+      },
+      control: {
+        ...hostStateDatum.control,
+        live_clients: hostStateDatum.control.live_clients + 1n,
       },
     };
     const mintClientScriptHash = this.configService.get('deployment').validators.mintClientStt.scriptHash;

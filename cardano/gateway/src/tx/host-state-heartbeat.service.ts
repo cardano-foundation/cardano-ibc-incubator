@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
-import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, transactionTimeToLive } from '~@/config/constant.config';
 import {
   GrpcFailedPreconditionException,
   GrpcInternalException,
@@ -214,7 +214,7 @@ export class HostStateHeartbeatService {
     if (!ogmiosEndpoint || !slotConfig || slotConfig.slotLength <= 0) {
       throw new GrpcInternalException(`HostState heartbeat has no valid Ogmios/slot configuration for ${network}`);
     }
-    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE);
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, transactionTimeToLive(network));
   }
 
   private nextUpdateTime(previous: bigint, currentLedgerTime: number): bigint {

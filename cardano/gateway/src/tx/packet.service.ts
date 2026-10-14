@@ -70,7 +70,7 @@ import {
   GrpcInternalException,
   GrpcInvalidArgumentException,
 } from '~@/exception/grpc_exceptions';
-import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, transactionTimeToLive } from '~@/config/constant.config';
 import {
   AckPacketOperator,
   RecvPacketOperator,
@@ -778,7 +778,7 @@ export class PacketService {
       throw new GrpcInternalException(`send packet failed: invalid slot configuration for network ${network}`);
     }
 
-    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE);
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, transactionTimeToLive(network));
   }
 
   private async refreshWalletContext(

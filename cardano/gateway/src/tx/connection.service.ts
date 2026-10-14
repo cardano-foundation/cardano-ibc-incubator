@@ -48,7 +48,7 @@ import {
   ConnectionOpenTryOperator,
 } from './dto';
 import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
-import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, transactionTimeToLive } from '~@/config/constant.config';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
@@ -136,7 +136,7 @@ export class ConnectionService {
       throw new GrpcInternalException(`connection tx failed: invalid slot configuration for network ${network}`);
     }
 
-    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE);
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, transactionTimeToLive(network));
   }
 
   /**

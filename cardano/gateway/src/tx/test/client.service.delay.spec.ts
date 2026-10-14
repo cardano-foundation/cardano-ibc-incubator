@@ -1,6 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as Lucid from '@lucid-evolution/lucid';
+import {
+  PUBLIC_NETWORK_TRANSACTION_TIME_TO_LIVE,
+  TRANSACTION_TIME_TO_LIVE,
+  transactionTimeToLive,
+} from '../../config/constant.config';
 
 import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import * as time from '../../shared/helpers/time';
@@ -12,7 +17,7 @@ import {
   encodeConsensusStateValue,
 } from '../../shared/types/client-datum';
 import { initializeHeader } from '../../shared/types/header';
-import { HostStateDatum } from '../../shared/types/host-state-datum';
+import { HostStateDatum, decodeHostStateDatum } from '../../shared/types/host-state-datum';
 import {
   decodeMintSessionRedeemer,
   decodeSpendMultitxClientRedeemer,
@@ -74,7 +79,7 @@ async function context(input?: ClientDatum) {
   const hostDatum: HostStateDatum = {
     nft_policy: '22'.repeat(28),
     deployer: '33'.repeat(28),
-    control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
+    control: { port_registry: new Map(), shutdown: 'Active', live_clients: input ? 1n : 0n, live_connections: 0n, live_channels: 0n },
     state: {
       version: 1n,
       ibc_state_root: tree.getRoot(),
@@ -149,7 +154,7 @@ describe('ClientService connection-delay processing metadata', () => {
   it('normalizes validity bounds to the exact slot times seen on-chain', async () => {
     const { service } = await context();
     const { zeroTime, zeroSlot } = Lucid.SLOT_CONFIG_NETWORK.Preprod;
-    jest.spyOn(time, 'computeLedgerAnchoredValidityWindow').mockResolvedValue({
+    const computeValidity = jest.spyOn(time, 'computeLedgerAnchoredValidityWindow').mockResolvedValue({
       currentSlot: zeroSlot + 1000,
       currentLedgerTime: zeroTime + 1_000_000,
       validFromTime: zeroTime + 990_500,
@@ -160,9 +165,20 @@ describe('ClientService connection-delay processing metadata', () => {
 
     const result = await (service as any).computeTxValidityWindow(9500);
 
+    expect(computeValidity).toHaveBeenCalledWith(
+      'http://ogmios.test', Lucid.SLOT_CONFIG_NETWORK.Preprod,
+      PUBLIC_NETWORK_TRANSACTION_TIME_TO_LIVE, { backdateMs: 9500 },
+    );
     expect(result.validFromTime).toBe(zeroTime + 990_000);
     expect(result.validToTime).toBe(zeroTime + 1_600_000);
     expect(Lucid.unixTimeToSlot('Preprod', result.validToTime)).toBe(zeroSlot + 1600);
+  });
+
+  it('keeps the local validity window short', () => {
+    expect(transactionTimeToLive('Custom')).toBe(TRANSACTION_TIME_TO_LIVE);
+    expect(transactionTimeToLive(undefined)).toBe(TRANSACTION_TIME_TO_LIVE);
+    expect(transactionTimeToLive('Preview')).toBe(PUBLIC_NETWORK_TRANSACTION_TIME_TO_LIVE);
+    expect(transactionTimeToLive('Preprod')).toBe(PUBLIC_NETWORK_TRANSACTION_TIME_TO_LIVE);
   });
 
   it('records the upper bound when building the initial client datum', async () => {
@@ -259,6 +275,9 @@ describe('ClientService connection-delay processing metadata', () => {
         sessions as any,
       );
       const args = lucid.createUnsignedFinalizeTendermintSessionTransaction.mock.calls[0];
+      const updatedHostState = await decodeHostStateDatum(args[7], Lucid);
+      const originalHostState: HostStateDatum = await lucid.decodeDatum.mock.results[0].value;
+      expect(updatedHostState.control).toEqual(originalHostState.control);
       const output = await decodeClientDatum(args[8], Lucid);
       expect(output).toEqual({
         ...input,
