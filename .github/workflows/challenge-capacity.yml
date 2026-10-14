@@ -8,6 +8,8 @@ on:
       - 'cardano/gateway/src/config/**'
       - 'caribic/src/chains/network_limits.rs'
       - 'caribic/src/chains/cosmos_profiles/hermes.rs'
+      - 'caribic/config/hermes-config.example.toml'
+      - 'chains/*/configuration/hermes/config.toml'
       - 'chains/cosmos/**'
       - 'tests/challenge-capacity-relayer/**'
       - 'relayer'
@@ -42,6 +44,8 @@ jobs:
           key: challenge-relayer-${{ runner.os }}-${{ hashFiles('tests/challenge-capacity-relayer/Cargo.lock') }}-${{ hashFiles('relayer/Cargo.lock') }}
       - name: Build the pinned Hermes probes
         run: cargo build --locked --bins --manifest-path tests/challenge-capacity-relayer/Cargo.toml
+      - name: Load shipped configurations with the pinned Hermes parser
+        run: cargo test --locked --manifest-path tests/challenge-capacity-relayer/Cargo.toml --test shipped_configs
       - name: Sign challenges and recover future proposals after host restart
         shell: bash
         env:

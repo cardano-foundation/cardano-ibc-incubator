@@ -15,7 +15,7 @@ max_gas = 600000000
 gas_price = { price = 0.025, denom = 'inj' }
 gas_multiplier = 2.0
 max_msg_num = 20
-max_tx_size = 12582912
+max_tx_size = 8388608
 clock_drift = '20s'
 max_block_time = '10s'
 trusting_period = '10days'
@@ -40,7 +40,7 @@ max_gas = 600000000
 gas_price = { price = 0.025, denom = 'inj' }
 gas_multiplier = 1.8
 max_msg_num = 20
-max_tx_size = 12582912
+max_tx_size = 8388608
 clock_drift = '20s'
 max_block_time = '10s'
 trusting_period = '10days'
