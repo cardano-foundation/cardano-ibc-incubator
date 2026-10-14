@@ -7,7 +7,7 @@ use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order
 use ibc/core/ics_004/types/packet.{Packet}
-use ibc/core/ics_004/types/state as channel_state
+use ibc/core/ics_004/types/state.{ChannelState} as channel_state
 use ibc/core/ics_004/types/upgrade.{ErrorReceipt, Upgrade}
 use ibc/core/ics_005/types/keys as port_keys_mod
 use ibc/core/ics_024_host_requirements/validate as host_validate_mod
@@ -85,8 +85,8 @@ pub fn upgrade_state(state: ChannelDatumState) -> ChannelUpgradeState {
 /// flushing, it receives only packets the counterparty sent before its
 /// upgrade. After an upgrade opens, it never receives a packet that was
 /// settled before.
-pub fn can_receive(state: ChannelDatumState, sequence: Int) -> Bool {
-  let upgrade = upgrade_state(state)
+pub fn can_receive(state: ChannelState, upgrade: Data, sequence: Int) -> Bool {
+  expect upgrade: ChannelUpgradeState = upgrade
   let below_send_boundary =
     when upgrade.pending is {
       Some(PendingUpgrade { counterparty_upgrade: Some(counterparty), .. }) ->
@@ -94,7 +94,7 @@ pub fn can_receive(state: ChannelDatumState, sequence: Int) -> Bool {
       _ -> True
     }
   and {
-    when state.channel.state is {
+    when state is {
       channel_state.Open | channel_state.Flushing | channel_state.FlushComplete ->
         True
       _ -> False

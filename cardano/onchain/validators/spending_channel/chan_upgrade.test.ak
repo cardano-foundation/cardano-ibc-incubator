@@ -1585,28 +1585,32 @@ fn receive_state(
   }
 }
 
+fn can_receive_state(state: ChannelDatumState, sequence: Int) -> Bool {
+  channel_datum.can_receive(state.channel.state, state.upgrade, sequence)
+}
+
 test flushing_channels_receive_only_below_the_counterparty_boundary() {
   let state = receive_state(Flushing, Some(counterparty_upgrade()), 0)
   and {
-    channel_datum.can_receive(state, 8),
-    !channel_datum.can_receive(state, 9),
+    can_receive_state(state, 8),
+    !can_receive_state(state, 9),
   }
 }
 
 test flushing_channels_receive_before_the_counterparty_upgrade_is_known() {
-  channel_datum.can_receive(receive_state(Flushing, None, 0), 100)
+  can_receive_state(receive_state(Flushing, None, 0), 100)
 }
 
 test upgraded_channels_reject_packets_settled_before_opening() {
   let state = receive_state(Open, None, 9)
   and {
-    !channel_datum.can_receive(state, 8),
-    channel_datum.can_receive(state, 9),
+    !can_receive_state(state, 8),
+    can_receive_state(state, 9),
   }
 }
 
 test closed_channels_do_not_receive() {
-  !channel_datum.can_receive(receive_state(Closed, None, 0), 1)
+  !can_receive_state(receive_state(Closed, None, 0), 1)
 }
 
 test host_state_redeemer_index_is_stable() {
