@@ -40,14 +40,15 @@ jobs:
             ~/.cargo/git
             tests/challenge-capacity-relayer/target
           key: challenge-relayer-${{ runner.os }}-${{ hashFiles('tests/challenge-capacity-relayer/Cargo.lock') }}-${{ hashFiles('relayer/Cargo.lock') }}
-      - name: Build the pinned Hermes transaction probe
-        run: cargo build --locked --manifest-path tests/challenge-capacity-relayer/Cargo.toml
-      - name: Sign, simulate, admit and execute two-header challenges
+      - name: Build the pinned Hermes probes
+        run: cargo build --locked --bins --manifest-path tests/challenge-capacity-relayer/Cargo.toml
+      - name: Sign challenges and recover future proposals after host restart
         shell: bash
         env:
           GOWORK: off
         run: |
           set -o pipefail
+          export STARTUP_MONITOR_PROBE="$GITHUB_WORKSPACE/tests/challenge-capacity-relayer/target/debug/startup-watcher"
           export CHALLENGE_RELAYER_PROBE="$GITHUB_WORKSPACE/tests/challenge-capacity-relayer/target/debug/challenge-capacity-relayer"
           cd cosmos/cardano-probabilistic-light-client-v${{ matrix.major }}
           go test -run 'TestDestinationChallengeCapacity|TestChallengeCapacityAdmission' -count=1 -v | tee "$RUNNER_TEMP/challenge-v${{ matrix.major }}.log"
