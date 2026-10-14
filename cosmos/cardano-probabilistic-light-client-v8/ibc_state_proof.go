@@ -120,15 +120,10 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		if err := proto.Unmarshal(expectedValue, &expected); err != nil {
 			return fmt.Errorf("failed to decode expected Channel protobuf: %w", err)
 		}
-		decoded, err := codec.DecodeChannel(committedValue)
-		if err != nil {
-			return fmt.Errorf("failed to decode committed Channel CBOR: %w", err)
-		}
-		committed := cardanodatum.ChannelDatum(decoded)
-		if err := committed.Cmp(expected); err != nil {
-			return err
-		}
-		return nil
+		return cardanodatum.CompareChannelEnd(committedValue, expected)
+
+	case strings.HasPrefix(keyStr, "channelUpgrades/"):
+		return cardanodatum.CompareChannelUpgradeRecord(keyStr, expectedValue, committedValue)
 
 	case strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
 		return probabilisticcore.VerifyNextSequenceRecvValue(committedValue, expectedValue)

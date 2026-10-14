@@ -322,10 +322,12 @@ func TestMalformedCommittedConstructorsDoNotPanic(t *testing.T) {
 					state.ProofSpecs[0].PrehashKeyBeforeComparison = invalid
 					committed = state
 				case "channel":
-					var state datum.ChannelDatum
-					require.NoError(t, cbor.Unmarshal(original, &state))
-					state.Ordering = invalid
-					committed = state
+					// Edit the committed record so only the ordering is malformed.
+					var record cbor.Tag
+					require.NoError(t, cbor.Unmarshal(original, &record))
+					fields := record.Content.([]any)
+					fields[1] = invalid
+					committed = record
 				case "connection":
 					var state datum.ConnectionEndDatum
 					require.NoError(t, cbor.Unmarshal(original, &state))
