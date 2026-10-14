@@ -30,33 +30,42 @@ export async function discoverRestHistoryBootstrap(
 ): Promise<HistoryDeployment["bootstrap"]> {
   const unit = deployment.clientToken.policyId + deployment.clientToken.name;
   return source.snapshot("latest", async (tip) => {
+    const visited = new Set<number>();
     for await (const row of source.pages(`assets/${unit}/transactions`)) {
-      if (!Number.isSafeInteger(row.block_height ?? row.block_number))
+      const blockHeight = row.block_height ?? row.block_number;
+      if (!Number.isSafeInteger(blockHeight) || blockHeight < 0)
         throw new Error("Invalid Yaci creation history height");
-      if ((row.block_height ?? row.block_number) > tip.number) continue;
-      const tx = await source.transaction(row.tx_hash);
-      if (!tx)
+      if (blockHeight > tip.number || visited.has(blockHeight)) continue;
+      visited.add(blockHeight);
+      const indexed = await source.transaction(row.tx_hash);
+      if (!indexed || indexed.block.number !== blockHeight)
         throw new Error("Yaci client NFT creation transaction is unavailable");
-      if (!tx.valid) continue;
-      const outputs = tx.outputs.filter(
-        (output) =>
-          (deployment.allowScriptMigration ||
-            output.address === deployment.stateAddress) &&
-          output.amounts.some(
-            (amount) => amount.unit === unit && amount.quantity === "1",
-          ),
-      );
-      if (outputs.length !== 1)
-        throw new Error(
-          "Yaci client NFT creation output is absent or ambiguous",
+
+      // Asset history orders by slot only. The raw block gives canonical
+      // transaction order even when an update is listed before its mint.
+      for (const tx of await source.blockTransactions(blockHeight)) {
+        if (!tx.valid) continue;
+        const outputs = tx.outputs.filter(
+          (output) =>
+            (deployment.allowScriptMigration ||
+              output.address === deployment.stateAddress) &&
+            output.amounts.some(
+              (amount) => amount.unit === unit && amount.quantity === "1",
+            ),
         );
-      validateHistoryBootstrap(
-        evidence(tx),
-        deployment.clientToken,
-        outputs[0].output_index,
-        deployment.allowScriptMigration ? undefined : deployment.stateAddress,
-      );
-      return { txHash: tx.hash, outputIndex: outputs[0].output_index };
+        if (outputs.length === 0) continue;
+        if (outputs.length !== 1)
+          throw new Error(
+            "Yaci client NFT creation output is absent or ambiguous",
+          );
+        validateHistoryBootstrap(
+          evidence(tx),
+          deployment.clientToken,
+          outputs[0].output_index,
+          deployment.allowScriptMigration ? undefined : deployment.stateAddress,
+        );
+        return { txHash: tx.hash, outputIndex: outputs[0].output_index };
+      }
     }
     throw new Error("Yaci client NFT creation is unavailable through REST");
   });
