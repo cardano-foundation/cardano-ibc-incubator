@@ -279,6 +279,45 @@ local value is `315360000`), recreate the Gateway app with
 `docker compose -f cardano/gateway/docker-compose.yml up -d --force-recreate app`,
 and run `caribic start relayer --network local` before continuing.
 
+### Local v8 challenge and recovery acceptance
+
+```sh
+caribic test --light-client challenge-recovery --chain cosmos --network v8-classic
+```
+
+This command starts an isolated native ibc-go v8 application and a separate
+watcher process. Go 1.26.5 is required. It uses the local profile's transaction,
+RPC and gas limits. It takes about 10 minutes because it waits for the real
+three-minute host challenge windows. It does not require running Docker services
+and it does not take over the existing Hermes daemon.
+
+The initial Cardano checkpoint and open connection are explicit trusted genesis
+fixtures. The historical genesis starts with an elapsed bootstrap window. A signed channel handshake opens the ICS-20 channel. The Cardano source
+is deterministic signed Praos history with complete block bodies, packet lane
+continuations and escrow outputs. This makes incompatible settled histories
+reproducible without making a live devnet fork. It does not exercise Cardano
+script execution, the Gateway, or the production Hermes watcher.
+
+The test receives a baseline packet and keeps an outgoing transfer unreceived.
+It commits an epoch proposal and starts a watcher that recovers the actual
+transaction and historical context over RPC. Ordinary signed misbehaviour freezes
+the client before its stored deadline. Membership and non-membership transactions
+remain blocked before and after that deadline. Invalid evidence, unsigned table
+disagreement and temporary-tail forks leave a control client healthy.
+
+Signed governance proposals reject an incompatible replacement and recover from
+a valid newer one. Recovery preserves packet accounting and the original route.
+It deletes discarded proof history and starts a fresh response window even when
+the substitute's window has elapsed. Later native updates cross another epoch
+and resume transfers and an exact timeout refund. The host then restarts from
+disk and the watcher reloads its cursor before another update and packet proof.
+
+Logs, signed source history, host databases, watcher cursor and before/after
+accounting are retained under `.caribic/test-artifacts/`. A failed assertion makes
+Caribic exit with an error. These artifacts certify this local fixture scenario.
+They do not approve public network profiles or the availability of challenge
+evidence for arbitrary admitted source histories.
+
 ### What the numbered suite tests
 
 The legacy numbered suite is ordered and will **skip** later tests if prerequisites are not met, for example if no direct channel exists or if a known limitation is hit.

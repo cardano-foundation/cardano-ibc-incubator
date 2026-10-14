@@ -254,6 +254,11 @@ function assertFileInventory() {
   // Require both files without treating their adapter wiring as shared source.
   const expectedV8 = [
     ...sharedSourceFiles,
+    // Persistent live acceptance currently targets only the local v8 profile.
+    "acceptance_driver_test.go",
+    "acceptance_host_test.go",
+    "acceptance_source_test.go",
+    "acceptance_watcher_test.go",
     "module.go",
     "recovery_app_test.go",
     protoFile,
