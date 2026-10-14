@@ -270,6 +270,102 @@ const STAGED_TENDERMINT_EXECUTION_SCENARIOS: StagedExecutionScenario[] = [
       },
     ],
   },
+  {
+    id: 'channel_upgrade_init',
+    name: 'Channel upgrade INIT',
+    pairs: [
+      {
+        // Excludes the verify-proof mint of the steps that prove the counterparty.
+        name: 'upgrade operation, channel and HostState',
+        baselineTest: 'spending_channel/chan_upgrade.test.init_fixture_setup_baseline',
+        measuredTest: 'spending_channel/chan_upgrade.test.init_proposes_a_replacement_connection',
+      },
+    ],
+  },
+  {
+    id: 'channel_upgrade_try',
+    name: 'Channel upgrade crossing TRY',
+    pairs: [
+      {
+        // Excludes the verify-proof mint of the steps that prove the counterparty.
+        name: 'upgrade operation, channel and HostState',
+        baselineTest: 'spending_channel/chan_upgrade.test.try_fixture_setup_baseline',
+        measuredTest: 'spending_channel/chan_upgrade.test.try_answers_a_crossing_proposal_and_starts_flushing',
+      },
+    ],
+  },
+  {
+    id: 'channel_upgrade_ack',
+    name: 'Channel upgrade ACK starting the flush',
+    pairs: [
+      {
+        // Excludes the verify-proof mint of the steps that prove the counterparty.
+        name: 'upgrade operation, channel and HostState',
+        baselineTest: 'spending_channel/chan_upgrade.test.ack_fixture_setup_baseline',
+        measuredTest: 'spending_channel/chan_upgrade.test.ack_starts_flushing_and_records_the_counterparty_upgrade',
+      },
+    ],
+  },
+  {
+    id: 'channel_upgrade_confirm',
+    name: 'Channel upgrade CONFIRM completing the flush',
+    pairs: [
+      {
+        // Excludes the verify-proof mint of the steps that prove the counterparty.
+        name: 'upgrade operation, channel and HostState',
+        baselineTest: 'spending_channel/chan_upgrade.test.confirm_fixture_setup_baseline',
+        measuredTest: 'spending_channel/chan_upgrade.test.confirm_completes_a_certified_flush',
+      },
+    ],
+  },
+  {
+    id: 'channel_upgrade_flush',
+    name: 'Channel upgrade FLUSH of eight lanes',
+    pairs: [
+      {
+        // Excludes the verify-proof mint of the steps that prove the counterparty.
+        name: 'upgrade operation, channel and HostState',
+        baselineTest: 'spending_channel/chan_upgrade.test.flush_fixture_setup_baseline',
+        measuredTest: 'spending_channel/chan_upgrade.test.flush_certifies_eight_lanes_of_a_deployment',
+      },
+    ],
+  },
+  {
+    id: 'channel_upgrade_open',
+    name: 'Channel upgrade OPEN',
+    pairs: [
+      {
+        // Excludes the verify-proof mint of the steps that prove the counterparty.
+        name: 'upgrade operation, channel and HostState',
+        baselineTest: 'spending_channel/chan_upgrade.test.open_fixture_setup_baseline',
+        measuredTest: 'spending_channel/chan_upgrade.test.open_moves_the_channel_to_the_replacement_connection',
+      },
+    ],
+  },
+  {
+    id: 'channel_upgrade_timeout',
+    name: 'Channel upgrade TIMEOUT',
+    pairs: [
+      {
+        // Excludes the verify-proof mint of the steps that prove the counterparty.
+        name: 'upgrade operation, channel and HostState',
+        baselineTest: 'spending_channel/chan_upgrade.test.timeout_fixture_setup_baseline',
+        measuredTest: 'spending_channel/chan_upgrade.test.timeout_restores_the_channel_after_the_counterparty_deadline',
+      },
+    ],
+  },
+  {
+    id: 'channel_upgrade_cancel',
+    name: 'Channel upgrade authority CANCEL',
+    pairs: [
+      {
+        // Excludes the verify-proof mint of the steps that prove the counterparty.
+        name: 'upgrade operation, channel and HostState',
+        baselineTest: 'spending_channel/chan_upgrade.test.cancel_fixture_setup_baseline',
+        measuredTest: 'spending_channel/chan_upgrade.test.authority_cancels_while_flushing',
+      },
+    ],
+  },
 ];
 
 function readIntegerEnv(name: string, fallback: number): number {
