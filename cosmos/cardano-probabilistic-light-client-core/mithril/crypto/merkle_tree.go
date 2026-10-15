@@ -317,8 +317,10 @@ func (m *MerkleTreeCommitmentBatchCompat) ConcatWithMsg(msg []byte) []byte {
 // todo: Update doc.
 // todo: Simplify the algorithm.
 // todo: Maybe we want more granular errors, rather than only `BatchPathInvalid`
+// Check follows mithril-stm's verify_leaves_membership_from_batch_path,
+// including its checked arithmetic, and rejects malformed proofs without panicking.
 func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []MTLeaf, proof *BatchPath) error {
-	if len(batchVal) != len(proof.Indices) {
+	if proof == nil || len(batchVal) != len(proof.Indices) || len(batchVal) == 0 {
 		return fmt.Errorf("batch value length does not match proof indices length")
 	}
 
@@ -330,9 +332,16 @@ func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []MTLeaf, proof *BatchP
 		return fmt.Errorf("proof indices are not ordered")
 	}
 
-	nrNodes := m.NrLeaves + nextPowerOfTwo(m.NrLeaves) - 1
+	leavesPowerOfTwo := nextPowerOfTwo(m.NrLeaves)
+	if m.NrLeaves == 0 || leavesPowerOfTwo < m.NrLeaves || m.NrLeaves > ^uint64(0)-leavesPowerOfTwo+1 {
+		return fmt.Errorf("batch path tree size overflows")
+	}
+	nrNodes := m.NrLeaves + leavesPowerOfTwo - 1
 	for i, index := range orderedIndices {
-		orderedIndices[i] = index + nextPowerOfTwo(m.NrLeaves) - 1
+		if index > ^uint64(0)-leavesPowerOfTwo+1 {
+			return fmt.Errorf("batch path index overflows")
+		}
+		orderedIndices[i] = index + leavesPowerOfTwo - 1
 	}
 
 	idx := orderedIndices[0]
@@ -362,6 +371,9 @@ func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []MTLeaf, proof *BatchP
 			}
 			newIndices = append(newIndices, newIndex)
 			if orderedIndices[i]&1 == 0 {
+				if len(values) == 0 {
+					return fmt.Errorf("batch path has too few nodes")
+				}
 				m.Hasher.Reset()
 				m.Hasher.Write(values[0])
 				m.Hasher.Write(leaves[i])
@@ -379,6 +391,9 @@ func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []MTLeaf, proof *BatchP
 					newHashes = append(newHashes, m.Hasher.Sum(nil))
 					i++
 				} else if sibling < nrNodes {
+					if len(values) == 0 {
+						return fmt.Errorf("batch path has too few nodes")
+					}
 					m.Hasher.Reset()
 					m.Hasher.Write(leaves[i])
 					m.Hasher.Write(values[0])
