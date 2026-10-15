@@ -11,10 +11,14 @@ use cardano/transaction.{
 }
 use host_state_stt
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
+use ibc/client/ics_007_tendermint_client/client_datum.{
+  ClientDatum, ClientDatumState,
+}
+use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_upgrade_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
   BatchVerifyMembership, VerifyMembershipParams, VerifyProofEnvelope,
   VerifyProofRedeemer,
@@ -26,7 +30,7 @@ use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_004/channel_datum.{
   ChannelDatum, ChannelDatumState, ChannelUpgradeState, PendingUpgrade,
-}
+} as channel_datum
 use ibc/core/ics_004/channel_redeemer.{
   AckUpgrade, CancelUpgrade, ChanUpgrade, ChannelUpgradeRedeemer,
   ChannelUpgradeStep, ConfirmUpgrade, FlushUpgrade, InitUpgrade, OpenUpgrade,
@@ -195,6 +199,69 @@ fn reference(index: Int, value: assets.Value, data: Data) -> Input {
   }
 }
 
+fn replacement_client(frozen: Bool, expired: Bool) -> Input {
+  let mock = setup()
+  expect client: ClientDatum =
+    validator_utils.get_inline_datum(mock.client_input.output)
+  let token =
+    AuthToken {
+      policy_id: mock.client_minting_policy_id,
+      name: auth.generate_token_name(
+        mock.base_token,
+        client_keys.client_prefix,
+        "1",
+      ),
+    }
+  let client =
+    ClientDatum {
+      ..client,
+      token,
+      state: ClientDatumState {
+        ..client.state,
+        client_state: ClientState {
+          ..client.state.client_state,
+          frozen_height: if frozen {
+            Height { revision_number: 0, revision_height: 1 }
+          } else {
+            height_mod.zero_height()
+          },
+          trusting_period: if expired {
+            0
+          } else {
+            client.state.client_state.trusting_period
+          },
+        },
+      },
+    }
+  Input {
+    output_reference: OutputReference {
+      ..mock.client_input.output_reference,
+      output_index: 9,
+    },
+    output: Output {
+      ..mock.client_input.output,
+      value: assets.from_asset(token.policy_id, token.name, 1),
+      datum: InlineDatum(client),
+    },
+  }
+}
+
+fn replacement_health(step: Step, frozen: Bool, expired: Bool) -> Step {
+  Step {
+    ..step,
+    references: list.map(
+      step.references,
+      fn(input) {
+        if input.output_reference.output_index == 9 {
+          replacement_client(frozen, expired)
+        } else {
+          input
+        }
+      },
+    ),
+  }
+}
+
 fn replacement_connection(state: connection_state.State) -> Input {
   let mock = setup()
   expect current: ConnectionDatum =
@@ -212,6 +279,7 @@ fn replacement_connection(state: connection_state.State) -> Input {
     ConnectionDatum {
       state: ConnectionEnd {
         ..current.state,
+        client_id: "07-tendermint-1",
         state,
         counterparty: Counterparty {
           ..current.state.counterparty,
@@ -305,6 +373,7 @@ fn handshake_references() -> List<Input> {
     mock.connection_input,
     mock.client_input,
     replacement_connection(connection_state.Open),
+    replacement_client(False, False),
     config(),
     sequencer(),
   ]
@@ -714,7 +783,9 @@ fn init_step() -> Step {
     step: InitUpgrade { fields: fields(), timeout_period: period },
     references: [
       mock.connection_input,
+      mock.client_input,
       replacement_connection(connection_state.Open),
+      replacement_client(False, False),
     ],
     signatories: [deployer],
     proof: None,
@@ -723,6 +794,14 @@ fn init_step() -> Step {
 
 test init_proposes_a_replacement_connection() {
   accepted(init_step())
+}
+
+test init_rejects_a_frozen_replacement_client() fail {
+  operation_accepts(replacement_health(init_step(), True, False))
+}
+
+test init_rejects_an_expired_replacement_client() fail {
+  operation_accepts(replacement_health(init_step(), False, True))
 }
 
 test init_requires_the_deployment_authority() fail {
@@ -833,7 +912,9 @@ test reinit_invalidates_the_previous_proposal() {
       step: InitUpgrade { fields: fields(), timeout_period: period },
       references: [
         mock.connection_input,
+        mock.client_input,
         replacement_connection(connection_state.Open),
+        replacement_client(False, False),
       ],
       signatories: [deployer],
       proof: None,
@@ -1125,7 +1206,14 @@ fn flush_step(
       ),
     ),
     step: FlushUpgrade { lanes },
-    references: [mock.connection_input, config(), ..references],
+    references: [
+      mock.connection_input,
+      mock.client_input,
+      replacement_connection(connection_state.Open),
+      replacement_client(False, False),
+      config(),
+      ..references
+    ],
     signatories: [],
     proof: None,
   }
@@ -1166,6 +1254,38 @@ test flush_rejects_exact_counterparty_deadline() fail {
 
 test flush_rejects_after_counterparty_deadline() fail {
   flush_at_deadline(-1)
+}
+
+test final_flush_rejects_a_replacement_that_froze_after_preparation() fail {
+  expect accepted(init_step())
+  operation_accepts(
+    replacement_health(
+      flush_step(
+        2,
+        [lane(0, []), lane(1, [])],
+        Some(counterparty_upgrade()),
+        FlushComplete,
+      ),
+      True,
+      False,
+    ),
+  )
+}
+
+test final_flush_rejects_a_replacement_that_expired_after_preparation() fail {
+  expect accepted(init_step())
+  operation_accepts(
+    replacement_health(
+      flush_step(
+        2,
+        [lane(0, []), lane(1, [])],
+        Some(counterparty_upgrade()),
+        FlushComplete,
+      ),
+      False,
+      True,
+    ),
+  )
 }
 
 test flush_records_progress_one_lane_at_a_time() {
@@ -1222,6 +1342,7 @@ fn open_step(counterparty_sequence: Int) -> Step {
       mock.connection_input,
       mock.client_input,
       replacement_connection(connection_state.Open),
+      replacement_client(False, False),
     ],
     signatories: [],
     proof: Some(
@@ -1242,6 +1363,46 @@ fn open_step(counterparty_sequence: Int) -> Step {
 
 test open_moves_the_channel_to_the_replacement_connection() {
   accepted(open_step(1))
+}
+
+test open_finishes_a_partially_completed_handover_after_replacement_expiry() {
+  accepted(replacement_health(open_step(1), False, True))
+}
+
+test open_finishes_a_partially_completed_handover_after_replacement_freeze() {
+  accepted(replacement_health(open_step(1), True, False))
+}
+
+test open_remains_possible_after_the_recorded_deadline() {
+  let step = open_step(1)
+  let before_upgrade = channel_datum.upgrade_state(step.before.state)
+  expect Some(pending) = before_upgrade.pending
+  expect Some(counterparty) = pending.counterparty_upgrade
+  let before =
+    ChannelDatum {
+      ..step.before,
+      state: ChannelDatumState {
+        ..step.before.state,
+        upgrade: ChannelUpgradeState {
+          ..before_upgrade,
+          pending: Some(
+            PendingUpgrade {
+              ..pending,
+              counterparty_upgrade: Some(
+                Upgrade {
+                  ..counterparty,
+                  timeout: UpgradeTimeout {
+                    height: height_mod.zero_height(),
+                    timestamp: valid_to() * 1_000_000,
+                  },
+                },
+              ),
+            },
+          ),
+        },
+      },
+    }
+  accepted(Step { ..step, before })
 }
 
 test open_accepts_a_counterparty_that_proposed_again() {
@@ -1328,6 +1489,7 @@ fn timeout_step(counterparty: Channel) -> Step {
       mock.connection_input,
       mock.client_input,
       replacement_connection(connection_state.Open),
+      replacement_client(False, False),
     ],
     signatories: [],
     proof: Some(

@@ -297,6 +297,26 @@ pub fn replacement_connection(
   open_connection(context, fields.connection_hops)
 }
 
+/// Preparation and the first entry to FLUSHCOMPLETE require a usable
+/// replacement client. Its latest checkpoint is in the authenticated datum.
+/// OPEN must remain possible after the counterparty has already switched.
+pub fn require_replacement_ready(
+  context: Context,
+  connection: ConnectionEnd,
+) -> Bool {
+  let client =
+    validator_utils.validate_referred_client(
+      context.transaction.reference_inputs,
+      context.datum.token.name,
+      context.params.client_registry,
+      connection.client_id,
+      valid_to(context) * 1_000_000,
+      None,
+      None,
+    )
+  client.status == Active
+}
+
 /// The counterparty proposes the same parameters on the counterparty of this
 /// end's replacement connection.
 pub fn compatible(

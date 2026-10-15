@@ -68,6 +68,7 @@ fn transition(
       let connection = rules.current_connection(context)
       let replacement =
         rules.replacement_connection(context, pending.upgrade.fields)
+      expect rules.require_replacement_ready(context, replacement)
       expect
         rules.compatible(
           pending.upgrade.fields,
@@ -212,6 +213,7 @@ fn counterparty_upgrade_step(
   let connection = rules.current_connection(context)
   let replacement =
     rules.replacement_connection(context, pending.upgrade.fields)
+  expect rules.require_replacement_ready(context, replacement)
   expect
     rules.compatible(
       pending.upgrade.fields,

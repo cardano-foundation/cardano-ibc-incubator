@@ -62,9 +62,9 @@ fn transition(
           fields.version == channel.version,
           fields.connection_hops != channel.connection_hops,
         }
-      // As in ibc-go, the replacement connection must be open and support
-      // the ordering. Its client is checked when proofs use it.
+      // Preparation authenticates the replacement connection and its client.
       let replacement = rules.replacement_connection(context, fields)
+      expect rules.require_replacement_ready(context, replacement)
       expect [version] = replacement.versions
       expect list.has(version.features, "ORDER_UNORDERED")
       // A new proposal replaces one that has not started flushing.
@@ -120,7 +120,11 @@ fn transition(
       let state =
         if flushed_lanes == config.lane_count && pending.counterparty_upgrade != None {
           expect Some(counterparty) = pending.counterparty_upgrade
-          expect counterparty.timeout.timestamp > rules.valid_to(context) * 1_000_000
+          expect
+            counterparty.timeout.timestamp > rules.valid_to(context) * 1_000_000
+          let replacement =
+            rules.replacement_connection(context, pending.upgrade.fields)
+          expect rules.require_replacement_ready(context, replacement)
           FlushComplete
         } else {
           Flushing
