@@ -72,6 +72,9 @@
     "ws": "8.21.0"
   },
   "overrides": {
+    "@cardano-sdk/crypto@0.4.5": {
+      "libsodium-wrappers-sumo": "0.7.16"
+    },
     "@lucid-evolution/uplc": "0.2.23",
     "axios": "$axios",
     "ip-address": "10.4.0",
