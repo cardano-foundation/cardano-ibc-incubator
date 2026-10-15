@@ -50,7 +50,15 @@ func VerifyHostWindow(ctx Context, epochDeadline uint64, progress *HostProgress)
 		progress.ResumeUsableAfterUnixNs == 0 || progress.ResumeUsableAfterUnixNs > math.MaxInt64 {
 		return errorsmod.Wrapf(ErrEpochContextPending, "host continuity record is missing or stale at height %d time %d (record %+v)", ctx.Height, now, progress)
 	}
-	deadline := max(epochDeadline, progress.ResumeUsableAfterUnixNs)
+	resumeDeadline := progress.ResumeUsableAfterUnixNs
+	if ctx.RequiredResponseWindow > EpochContextChallengePeriod {
+		extra := uint64(ctx.RequiredResponseWindow - EpochContextChallengePeriod)
+		if resumeDeadline > math.MaxInt64-extra {
+			return errorsmod.Wrap(ErrEpochContextPending, "host resumption deadline cannot represent the staged response window")
+		}
+		resumeDeadline += extra
+	}
+	deadline := max(epochDeadline, resumeDeadline)
 	// Reserve a completed block after the cutoff for challenge inclusion. A
 	// transaction's presence in a mempool never satisfies this condition.
 	if uint64(now) <= deadline || progress.PreviousTimeUnixNs <= deadline {

@@ -26,7 +26,7 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 	digest := sha256.Sum256(append([]byte("cardano-ibc.observation/v2\x00"), cs.CheckpointReference...))
 	tableDigest := sha256.Sum256([]byte("cardano-ibc.stake-table/v2\x00"))
 	var rows []byte
-	if header.NewEpochContext != nil {
+	if header.NewEpochContext != nil && header.NewEpochContext.Epoch > cs.CurrentEpoch {
 		context := *header.NewEpochContext
 		context.StakeDistribution = nil
 		begin.TableContext = &context

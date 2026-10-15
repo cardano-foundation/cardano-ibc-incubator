@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	storetypes "cosmossdk.io/store/types"
 	"github.com/blinklabs-io/gouroboros/cbor"
 )
 
@@ -76,6 +77,45 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		}
 		return json.Marshal(epochs)
 	}
+	if request.Kind == 12 {
+		if request.Limit == 0 || request.Limit > 128 || len(request.After) > 32 {
+			return nil, fmt.Errorf("receipt query exceeds its page bound")
+		}
+		prefix := retentionKey(client, 2, nil)
+		start := prefix
+		if len(request.After) > 0 {
+			start = append(append(bytes.Clone(prefix), request.After...), 0)
+		}
+		iterator := store.Iterator(start, storetypes.PrefixEndBytes(prefix))
+		defer iterator.Close()
+		page := verificationPage{Records: []any{}}
+		for visited := uint32(0); iterator.Valid() && visited < request.Limit; iterator.Next() {
+			id := iterator.Key()[len(prefix):]
+			if len(id) != 32 {
+				return nil, fmt.Errorf("invalid receipt retention key")
+			}
+			page.Next = bytes.Clone(id)
+			visited++
+			receipt, err := loadVerifiedObservation(store, client, id)
+			if err != nil {
+				return nil, err
+			}
+			indexed := store.Get(retentionKey(client, 3, binary.BigEndian.AppendUint64(nil, receipt.AnchorHeight)))
+			if len(indexed) > 0 {
+				var retained retainedVerification
+				if err := decodeBoundedRecord(indexed, &retained); err != nil {
+					return nil, err
+				}
+				if bytes.Equal(retained.Reference, receipt.AnchorReference[:]) {
+					page.Records = append(page.Records, struct {
+						ID      []byte
+						Receipt *verifiedObservation
+					}{bytes.Clone(id), receipt})
+				}
+			}
+		}
+		return json.Marshal(page)
+	}
 	if request.Kind == 11 {
 		raw := store.Get(bootstrapProgressKey(client))
 		var progress bootstrapProgress
@@ -102,6 +142,19 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 	if err != nil {
 		return nil, err
 	}
+	if !bytes.Equal(ref, client.CheckpointReference) {
+		owned := store.Get(retentionKey(client, 3, binary.BigEndian.AppendUint64(nil, checkpoint.Height)))
+		var retained retainedVerification
+		if len(owned) == 0 {
+			return nil, fmt.Errorf("historical checkpoint is not owned by this verification generation")
+		}
+		if err := decodeBoundedRecord(owned, &retained); err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(retained.Reference, ref) {
+			return nil, fmt.Errorf("historical checkpoint reference is not authenticated by this generation")
+		}
+	}
 	if request.Kind == 0 {
 		return json.Marshal(verificationMetadata{Reference: bytes.Clone(ref), Generation: client.VerificationGeneration, Height: checkpoint.Height, Slot: checkpoint.Slot, Epoch: checkpoint.Epoch, Timestamp: checkpoint.Timestamp, BlockHash: hex.EncodeToString(checkpoint.BlockHash[:]), Nonce: clonePraosNonceState(checkpoint.Nonce), TotalStake: checkpoint.Stake.Total, StakeRows: checkpoint.Stake.Root.Rows})
 	}
@@ -126,6 +179,15 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 	case 4:
 		kind = snapshotProduction
 		root = checkpoint.Production
+	case 6:
+		kind = snapshotRegistry
+		root = checkpoint.Registry.Records
+	case 7:
+		kind = snapshotRegistry
+		root = checkpoint.Registry.Mark.Root
+		if checkpoint.Registry.Mark.Bindings {
+			kind = snapshotBindings
+		}
 	case 5:
 		kind = snapshotCounters
 		root = checkpoint.Counters
@@ -136,8 +198,12 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 	_, err = NewSnapshotMap(store, scope, kind).Visit(root, request.After, int(request.Limit), func(key, value []byte) error {
 		page.Next = bytes.Clone(key)
 		switch request.Kind {
-		case 1:
-			binding, found, err := lookupBinding(store, scope, checkpoint.Registry.Effective, key)
+		case 1, 7:
+			projection := checkpoint.Registry.Effective
+			if request.Kind == 7 {
+				projection = checkpoint.Registry.Mark
+			}
+			binding, found, err := lookupBinding(store, scope, projection, key)
 			if err != nil {
 				return err
 			}
@@ -170,6 +236,16 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 				return err
 			}
 			page.Records = append(page.Records, production)
+		case 6:
+			record, _, err := lookupRegistration(store, scope, checkpoint.Registry, key)
+			if err != nil {
+				return err
+			}
+			name, err := poolName(key)
+			if err != nil {
+				return err
+			}
+			page.Records = append(page.Records, &PoolRegistrationRecord{Registration: &PoolRegistrationBinding{PoolId: name, VrfKeyHash: bytes.Clone(record.VRF[:]), FirstRegistrationSlot: record.FirstSlot}, Registered: record.Registered, PendingVrfKeyHash: bytes.Clone(record.PendingVRF), PendingEffectiveEpoch: record.PendingEpoch, RetirementEpoch: record.RetirementEpoch})
 		case 5:
 			if len(value) != 8 {
 				return fmt.Errorf("invalid sealed counter")

@@ -135,7 +135,7 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 		return err
 	}
 	private.Set(operationResultKey, raw)
-	if ctx.GasConsumed != nil && ctx.GasConsumed()-before > MaxOperationGas {
+	if ctx.GasConsumed != nil && ctx.GasConsumed()-before > MaxVerificationWorkGas {
 		return fmt.Errorf("bounded verification operation exceeded its metered gas envelope")
 	}
 	return nil

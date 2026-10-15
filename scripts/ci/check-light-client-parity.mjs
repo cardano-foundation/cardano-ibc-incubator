@@ -17,6 +17,7 @@ const sharedSourceFiles = [
   "checkpoint_expiry_test.go",
   "client_state.go",
   "client_state_path_test.go",
+  "cmd/compact-bootstrap/main.go",
   "codec.go",
   "collision_buckets_test.go",
   "consensus_state.go",
@@ -46,7 +47,12 @@ const sharedSourceFiles = [
   "payload_size_test.go",
   "probabilistic.pb.go",
   "preparation.go",
+  "query.pb.go",
+  "tx.pb.go",
+  "proto/ibc/lightclients/probabilistic/v1/query.proto",
+  "proto/ibc/lightclients/probabilistic/v1/tx.proto",
   "receipt_proof_test.go",
+  "shared_snapshots_test.go",
   "state_machine.go",
   "storage_server.go",
   "store.go",
@@ -502,6 +508,7 @@ function assertSharedCoreExtraction() {
 // These are review budgets, not a reason to compress code. New validation or
 // transition logic belongs in core/state. Raise a budget only for host API work.
 const adapterLineBudgets = {
+  "cmd/compact-bootstrap/main.go": 100,
   "storage_server.go": 130,
   "preparation.go": 55,
   "client_state.go": 190,
@@ -526,7 +533,7 @@ const adapterLineBudgets = {
   "light_client_module.go": 185,
   "misbehavour.go": 50,
   "module.go": 125,
-  "state_machine.go": 65,
+  "state_machine.go": 75,
   "store.go": 100,
   "upgrade.go": 30
 };

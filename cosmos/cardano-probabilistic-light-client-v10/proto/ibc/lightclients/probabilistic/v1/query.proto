@@ -1,0 +1,25 @@
+syntax = "proto3";
+package ibc.lightclients.probabilistic.v1;
+import "gogoproto/gogo.proto";
+option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10;probabilistic";
+service Query {
+  rpc Verification(QueryVerificationRequest) returns (QueryVerificationResponse);
+}
+
+message QueryVerificationRequest {
+  option (gogoproto.goproto_getters) = false;
+  bytes namespace = 1;
+  uint64 generation = 2;
+  bytes checkpoint_reference = 3;
+  uint32 kind = 4;
+  bytes after = 5;
+  uint32 limit = 6;
+  bytes session_id = 7;
+  bytes receipt_id = 8;
+}
+
+message QueryVerificationResponse {
+  option (gogoproto.goproto_getters) = false;
+  // Versioned JSON metadata or records. Values use canonical binary encoding.
+  bytes data = 1;
+}

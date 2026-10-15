@@ -70,3 +70,19 @@ func TestHostWindowRequiresCommittedInclusionBlock(t *testing.T) {
 	_, err := AdvanceHostProgress(Context{Height: 1, Time: time.Unix(0, math.MaxInt64)}, nil)
 	require.ErrorIs(t, err, ErrInvalidTimestamp)
 }
+
+func TestStagedHostWindowIncludesFullResponseBudget(t *testing.T) {
+	start := time.Unix(1700000000, 0)
+	progress, err := AdvanceHostProgress(Context{Height: 1, Time: start}, nil)
+	require.NoError(t, err)
+	deadline := uint64(start.Add(SharedSnapshotChallengePeriod).UnixNano())
+	for _, offset := range []int64{0, 1, 2} {
+		ctx := Context{Height: 100, Time: time.Unix(0, int64(deadline)+offset), RequiredResponseWindow: SharedSnapshotChallengePeriod}
+		p := &HostProgress{Height: 100, TimeUnixNs: uint64(ctx.Time.UnixNano()), PreviousTimeUnixNs: uint64(ctx.Time.UnixNano() - 1), ResumeUsableAfterUnixNs: progress.ResumeUsableAfterUnixNs}
+		if offset < 2 {
+			require.ErrorIs(t, VerifyHostWindow(ctx, 1, p), ErrEpochContextPending)
+		} else {
+			require.NoError(t, VerifyHostWindow(ctx, 1, p))
+		}
+	}
+}

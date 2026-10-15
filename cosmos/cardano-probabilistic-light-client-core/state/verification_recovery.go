@@ -229,7 +229,7 @@ func (cs *ClientState) ContinueMaintenance(ctx Context, cdc StateCodec, private 
 	if err != nil {
 		return err
 	}
-	if ctx.GasConsumed != nil && ctx.GasConsumed()-before > MaxOperationGas {
+	if ctx.GasConsumed != nil && ctx.GasConsumed()-before > MaxVerificationWorkGas {
 		return fmt.Errorf("maintenance exceeded its bounded gas allowance")
 	}
 	return nil

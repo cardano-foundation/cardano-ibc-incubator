@@ -342,20 +342,6 @@ func toCoreMsgContinueClientResponse(value *MsgContinueClientResponse) *state.Ms
 	return &state.MsgContinueClientResponse{}
 }
 
-func toCoreUnimplementedQueryServer(value *UnimplementedQueryServer) *state.UnimplementedQueryServer {
-	if value == nil {
-		return nil
-	}
-	return &state.UnimplementedQueryServer{}
-}
-
-func toCoreUnimplementedMsgServer(value *UnimplementedMsgServer) *state.UnimplementedMsgServer {
-	if value == nil {
-		return nil
-	}
-	return &state.UnimplementedMsgServer{}
-}
-
 func fromCoreHeight(value *state.Height) *Height {
 	if value == nil {
 		return nil
@@ -689,20 +675,6 @@ func fromCoreMsgContinueClientResponse(value *state.MsgContinueClientResponse) *
 		return nil
 	}
 	return &MsgContinueClientResponse{}
-}
-
-func fromCoreUnimplementedQueryServer(value *state.UnimplementedQueryServer) *UnimplementedQueryServer {
-	if value == nil {
-		return nil
-	}
-	return &UnimplementedQueryServer{}
-}
-
-func fromCoreUnimplementedMsgServer(value *state.UnimplementedMsgServer) *UnimplementedMsgServer {
-	if value == nil {
-		return nil
-	}
-	return &UnimplementedMsgServer{}
 }
 
 func mapCoreSlice[A, B any](values []A, convert func(A) B) []B {
