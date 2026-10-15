@@ -1207,7 +1207,7 @@ pub async fn start_local_cardano_network(
     network: config::CoreCardanoNetwork,
 ) -> Result<Option<tokio::task::JoinHandle<Result<(), String>>>, Box<dyn std::error::Error>> {
     if with_mithril {
-        return Err("Mithril setup is deprecated, disabled, and not maintained. Use the default stake-weighted-stability light-client mode.".into());
+        return Err("The local Mithril devnet is disabled and not maintained.".into());
     }
     ensure_cardano_network_switch_is_safe(project_root_path, network)?;
     let cardano_dir = project_root_path.join("chains/cardano");
@@ -1251,7 +1251,7 @@ pub async fn start_local_cardano_network(
             .map_err(|_| "Public Cardano history did not become ready")?;
         }
     }
-    prepare_gateway(&cardano_dir, clean, network, "stake-weighted-stability")?;
+    prepare_gateway(&cardano_dir, clean, network)?;
     copy_cardano_env_file(&project_root_path.join("cardano"))?;
     Ok(None)
 }

@@ -1285,7 +1285,6 @@ fn write_gateway_env_for_network(
     cardano_dir: &Path,
     clean: bool,
     network: config::CoreCardanoNetwork,
-    light_client_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile = config::cardano_network_profile(network);
     let network_magic = profile.network_magic.to_string();
@@ -1345,12 +1344,6 @@ fn write_gateway_env_for_network(
         ("CARDANO_DOCKER_NETWORK", "cardano_ibc_net"),
         ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
         ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
-        ("CARDANO_LIGHT_CLIENT_MODE", light_client_mode),
-        ("MITHRIL_ENDPOINT", profile.mithril_aggregator_url.as_str()),
-        (
-            "MITHRIL_GENESIS_VERIFICATION_KEY",
-            profile.mithril_genesis_verification_key.as_str(),
-        ),
     ];
 
     for (key, value) in shared_gateway_network_defaults {
@@ -1759,9 +1752,8 @@ pub fn prepare_gateway(
     cardano_dir: &Path,
     clean: bool,
     network: config::CoreCardanoNetwork,
-    light_client_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    write_gateway_env_for_network(cardano_dir, clean, network, light_client_mode)?;
+    write_gateway_env_for_network(cardano_dir, clean, network)?;
     if network.is_public_testnet() {
         let gateway_env = cardano_dir.join("../../cardano/gateway/.env");
         resolve_public_testnet_yaci_checkpoint(&gateway_env, network)?;

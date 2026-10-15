@@ -18,7 +18,8 @@ use crate::{
 
 const HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS: u64 = 10;
 const HERMES_BUILD_POLL_INTERVAL_SECS: u64 = 2;
-const MITHRIL_DEPRECATED_ERROR: &str = "ERROR: Mithril setup is deprecated, disabled, and not maintained. Use the default stake-weighted-stability light-client mode. The Mithril source remains in-tree for historical reference only.";
+const MITHRIL_DISABLED_ERROR: &str =
+    "ERROR: The local Mithril devnet is disabled and not maintained.";
 const DEVKIT_DAPP_LIMITATION: &str = "The swap UI is not supported on the local network yet. Use `caribic demo token-swap --chain cosmos --network v8-classic`.";
 
 fn requires_injective_testnet_route(network: config::CoreCardanoNetwork) -> bool {
@@ -118,7 +119,7 @@ pub async fn run_start(
     let project_root_path = Path::new(&project_config.project_root);
 
     if with_mithril || target == Some(StartTarget::Mithril) {
-        return Err(MITHRIL_DEPRECATED_ERROR.to_string());
+        return Err(MITHRIL_DISABLED_ERROR.to_string());
     }
 
     // Determine what to start.
@@ -202,7 +203,6 @@ pub async fn run_start(
                 project_root_path.join("chains/cardano").as_path(),
                 clean,
                 core_cardano_network,
-                "stake-weighted-stability",
             )
             .map_err(|error| format!("ERROR: Failed to prepare gateway runtime: {}", error))?;
         }
@@ -348,7 +348,6 @@ pub async fn run_start(
                 project_root_path.join("chains/cardano").as_path(),
                 clean,
                 core_cardano_network,
-                "stake-weighted-stability",
             )
             .map_err(|error| {
                 format!(
