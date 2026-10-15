@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,22 @@ import (
 )
 
 const maxSupportedKesEvolutions = uint64(1 << 6)
+
+// ErrDecodePanicked marks a panic while decoding relayer-supplied Cardano
+// CBOR. gouroboros decoders panicked on malformed blocks before v0.205.4
+// (#687), so the entry points that decode such bytes return this error
+// instead of letting a panic escape client verification.
+var ErrDecodePanicked = errors.New("Cardano CBOR decoder panicked")
+
+// recoverDecodePanic must be deferred directly by a function with named
+// results. It turns a panic into ErrDecodePanicked and clears the value.
+func recoverDecodePanic[T any](value *T, err *error) {
+	if recovered := recover(); recovered != nil {
+		var zero T
+		*value = zero
+		*err = fmt.Errorf("%w: %v", ErrDecodePanicked, recovered)
+	}
+}
 
 type NativeBlockVerificationResult struct {
 	VerifiedVrfOutput                    []byte
@@ -115,7 +132,8 @@ func attachLegacyDatums(transactions []ledger.Transaction, datums [][]*common.Da
 	return transactions
 }
 
-func DecodeLedgerBlock(blockCbor []byte) (ledger.Block, error) {
+func DecodeLedgerBlock(blockCbor []byte) (block ledger.Block, err error) {
+	defer recoverDecodePanic(&block, &err)
 	blockType, err := ledger.DetermineBlockType(blockCbor)
 	if err == nil {
 		decodedBlock, decodeErr := ledger.NewBlockFromCbor(blockType, blockCbor)
@@ -141,7 +159,8 @@ func DecodeLedgerBlock(blockCbor []byte) (ledger.Block, error) {
 // DecodeLedgerHeader decodes the exact signed Praos header used by both
 // Babbage and Conway blocks. Cardano does not include the surrounding era in
 // the header itself, and both eras share this header layout.
-func DecodeLedgerHeader(headerCbor []byte) (*ledger.BabbageBlockHeader, error) {
+func DecodeLedgerHeader(headerCbor []byte) (decoded *ledger.BabbageBlockHeader, err error) {
+	defer recoverDecodePanic(&decoded, &err)
 	var header ledger.BabbageBlockHeader
 	decodedBytes, err := cbor.Decode(headerCbor, &header)
 	if err != nil {
@@ -991,13 +1010,17 @@ func cloneRawMessage(raw fxcbor.RawMessage) []byte {
 	return append([]byte(nil), raw...)
 }
 
-func ExtractHostStateTxBodyCborFromAnchorBlock(anchorBlockCbor []byte, hostStateTxHash string) ([]byte, error) {
+func ExtractHostStateTxBodyCborFromAnchorBlock(
+	anchorBlockCbor []byte,
+	hostStateTxHash string,
+) (txBodyCbor []byte, err error) {
+	defer recoverDecodePanic(&txBodyCbor, &err)
 	tx, _, err := findValidHostStateTransaction(anchorBlockCbor, hostStateTxHash)
 	if err != nil {
 		return nil, err
 	}
 
-	txBodyCbor, err := ExtractTransactionBodyCbor(tx)
+	txBodyCbor, err = ExtractTransactionBodyCbor(tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode host state tx body: %w", err)
 	}
