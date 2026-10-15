@@ -1,7 +1,7 @@
 a28753ffd3c15cc12b27e681950c88c83398a1ca58290cacdb348c56da01a5d7  /usr/local/bin/cardano-release-probe
 /usr/local/bin/cardano-release-probe: go1.26.5
 	path	github.com/InjectiveLabs/injective-core/cmd/cardano-release-probe
-	mod	github.com/InjectiveLabs/injective-core	(devel)	
+	mod	github.com/InjectiveLabs/injective-core	(devel)
 	dep	buf.build/gen/go/cometbft/cometbft/protocolbuffers/go	v1.36.5-20241120201313-68e42a58b301.1	h1:T7GfRb7UmP1xdEY3DMbtTDRLkHlRtOC+6OyVb+gL0sM=
 	dep	buf.build/gen/go/cosmos/gogo-proto/protocolbuffers/go	v1.36.5-20240130113600-88ef6483f90f.1	h1:4qKCPmc40FFUXzUjbDyiizHARMuC/vBSSA/Mzks8UJs=
 	dep	cel.dev/expr	v0.19.1	h1:NciYrtDRIR0lNCnH1LFJegdjspNx9fI59O7TWcua/W4=
@@ -14,40 +14,40 @@ a28753ffd3c15cc12b27e681950c88c83398a1ca58290cacdb348c56da01a5d7  /usr/local/bin
 	dep	cloud.google.com/go/storage	v1.49.0	h1:zenOPBOWHCnojRd9aJZAyQXBYqkJkdQS42dxL55CIMw=
 	dep	cosmossdk.io/api	v0.7.6
 	=>	github.com/InjectiveLabs/cosmos-sdk/api	v0.50.14-inj.4	h1:a1v0MiWEUK3RCMa7QChBJwajX2TkD1evuu1mbvk9taI=
-	
+
 	dep	cosmossdk.io/client/v2	v2.0.0-beta.8
 	=>	github.com/InjectiveLabs/cosmos-sdk/client/v2	v2.0.0-v0.50.14-inj.4	h1:9qUT5v+S8PtLE8hrZgkVb5Ws/lTqqal7YAOEc/WFtMQ=
-	
+
 	dep	cosmossdk.io/collections	v0.4.0	h1:PFmwj2W8szgpD5nOd8GWH6AbYNi1f2J6akWXJ7P5t9s=
 	dep	cosmossdk.io/core	v0.12.1-0.20231114100755-569e3ff6a0d7
 	=>	github.com/InjectiveLabs/cosmos-sdk/core	v0.50.14-inj.4	h1:n6lHOUR2/62KyRaOosOl0D+EAMr6NnoZw6GQPwTpurM=
-	
+
 	dep	cosmossdk.io/depinject	v1.1.0	h1:wLan7LG35VM7Yo6ov0jId3RHWCGRhe8E8bsuARorl5E=
 	dep	cosmossdk.io/errors	v1.0.1
 	=>	github.com/InjectiveLabs/cosmos-sdk/errors	v0.50.14-inj.4	h1:2Iljmx+Z88I9gX0G+EimGVWE5mjoNB2B2TT6Hq1k7dI=
-	
+
 	dep	cosmossdk.io/log	v1.4.1	h1:wKdjfDRbDyZRuWa8M+9nuvpVYxrEOwbD/CA8hvhU8QM=
 	dep	cosmossdk.io/math	v1.4.0	h1:XbgExXFnXmF/CccPPEto40gOO7FpWu9yWNAZPN3nkNQ=
 	dep	cosmossdk.io/store	v1.1.1
 	=>	github.com/InjectiveLabs/cosmos-sdk/store	v0.50.14-inj.4	h1:fy6KAfsk4WRgA3g5S4KV5UuoEcVHWjGayCipGqe/ppE=
-	
+
 	dep	cosmossdk.io/x/evidence	v0.1.1
 	=>	github.com/InjectiveLabs/cosmos-sdk/x/evidence	v0.50.14-inj.4	h1:NX9UWdq3ZhYMU21kcDzlWf4oRs4qb/REeGaJU0LF94s=
-	
+
 	dep	cosmossdk.io/x/feegrant	v0.1.1
 	=>	github.com/InjectiveLabs/cosmos-sdk/x/feegrant	v0.50.14-inj.4	h1:KxahR2doDkhBirwx8+jSgUH6UujuOt27kWVBFbEXmK4=
-	
+
 	dep	cosmossdk.io/x/tx	v0.13.8
 	=>	github.com/InjectiveLabs/cosmos-sdk/x/tx	v0.50.14-inj.4	h1:SsEPRGitmcV/utuIiKMkenKZ8aO6zwBBBvCmMGDvcD0=
-	
+
 	dep	cosmossdk.io/x/upgrade	v0.1.4
 	=>	github.com/InjectiveLabs/cosmos-sdk/x/upgrade	v0.50.14-inj.4	h1:esFo9T14Bj41enz4ZJEuG5RQS2P9dwUr4b95jvbiGoo=
-	
+
 	dep	filippo.io/edwards25519	v1.2.0	h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 	dep	github.com/99designs/keyring	v1.2.2	h1:pZd3neh/EmUzWONb35LxQfvuY7kiSXAq3HQd97+XBn0=
 	dep	github.com/CosmWasm/wasmd	v0.53.2
 	=>	github.com/InjectiveLabs/wasmd	v0.53.3-inj.2	h1:A4SRWe0YgGuPMLqDV7yG+eQxTHMWkmwgcYhlmV2zt5I=
-	
+
 	dep	github.com/CosmWasm/wasmvm/v2	v2.1.5	h1:cYI1Ook1IAA5DFA0IVvDQQboorNHZPAZ7emBBHFmXSQ=
 	dep	github.com/DataDog/appsec-internal-go	v1.5.0	h1:8kS5zSx5T49uZ8dZTdT19QVAvC/B8ByyZdhQKYQWHno=
 	dep	github.com/DataDog/datadog-agent/pkg/obfuscate	v0.48.0	h1:bUMSNsw1iofWiju9yc1f+kBd33E3hMJtq9GuU602Iy8=
@@ -67,7 +67,7 @@ a28753ffd3c15cc12b27e681950c88c83398a1ca58290cacdb348c56da01a5d7  /usr/local/bin
 	dep	github.com/aws/aws-sdk-go	v1.44.327	h1:ZS8oO4+7MOBLhkdwIhgtVeDzCeWOlTfKJS7EgggbIEY=
 	dep	github.com/bcp-innovations/hyperlane-cosmos	v1.0.1
 	=>	github.com/InjectiveLabs/hyperlane-cosmos	v1.0.1-inj	h1:FrfheY6aFibpFK+BRM7lcKfvZY129jeqykj17T6YGuk=
-	
+
 	dep	github.com/beorn7/perks	v1.0.1	h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 	dep	github.com/bgentry/go-netrc	v0.0.0-20140422174119-9fd32a8b3d3d	h1:xDfNPAt8lFiC1UJrqV3uuy861HCTo708pDMbjHHdCas=
 	dep	github.com/bgentry/speakeasy	v0.1.1-0.20220910012023-760eaf8b6816	h1:41iFGWnSlI2gVpmOtVTJZNodLdLQLn/KsJqFvXwnd/s=
@@ -90,37 +90,37 @@ a28753ffd3c15cc12b27e681950c88c83398a1ca58290cacdb348c56da01a5d7  /usr/local/bin
 	dep	github.com/cockroachdb/tokenbucket	v0.0.0-20230807174530-cc333fc44b06	h1:zuQyyAKVxetITBuuhv3BI9cMrmStnpT18zmgmTxunpo=
 	dep	github.com/coder/websocket	v1.8.13
 	=>	github.com/InjectiveLabs/websocket	v1.8.13	h1:GTVddOKEzC4EfXplkCN1a6ms4l/81pYP8tocqmddvR4=
-	
+
 	dep	github.com/cometbft/cometbft	v1.0.1
 	=>	github.com/InjectiveLabs/cometbft	v1.0.1-inj.6	h1:Q+uiKcth/gU2RKjFiFk+7BXlqW6hEUyqYoj3x2uD7ug=
-	
+
 	dep	github.com/cometbft/cometbft-db	v1.0.4	h1:cezb8yx/ZWcF124wqUtAFjAuDksS1y1yXedvtprUFxs=
 	dep	github.com/cometbft/cometbft/api	v1.0.0
 	=>	github.com/InjectiveLabs/cometbft/api	v1.0.0-inj.2	h1:uXsmBVeBickTjZ2GqPNYXShoboRw1m2Cq1bKv4QCe0o=
-	
+
 	dep	github.com/consensys/gnark-crypto	v0.21.0	h1:FDHibVIk4T5LkOKAkiN38g8gEvOxNcM10mLHOqvFTD0=
 	dep	github.com/cosmos/btcutil	v1.0.5	h1:t+ZFcX77LpKtDBhjucvnOH8C2l2ioGsBNEQ3jef8xFk=
 	dep	github.com/cosmos/cosmos-db	v1.1.1	h1:FezFSU37AlBC8S98NlSagL76oqBRWq/prTPvFcEJNCM=
 	dep	github.com/cosmos/cosmos-proto	v1.0.0-beta.5	h1:eNcayDLpip+zVLRLYafhzLvQlSmyab+RC5W7ZfmxJLA=
 	dep	github.com/cosmos/cosmos-sdk	v0.50.13
 	=>	github.com/InjectiveLabs/cosmos-sdk	v0.50.14-inj.4	h1:SZ14jD3yyTUnpSRSRkYvTNNdknPiJkdUgh4pXRsxY5A=
-	
+
 	dep	github.com/cosmos/go-bip39	v1.0.0	h1:pcomnQdrdH22njcAatO0yWojsUnCO3y2tNoV1cb6hHY=
 	dep	github.com/cosmos/gogogateway	v1.2.0	h1:Ae/OivNhp8DqBi/sh2A8a1D0y638GpL3tkmLQAiKxTE=
 	dep	github.com/cosmos/gogoproto	v1.7.0	h1:79USr0oyXAbxg3rspGh/m4SWNyoz/GLaAh0QlCe2fro=
 	dep	github.com/cosmos/iavl	v1.2.6	h1:Hs3LndJbkIB+rEvToKJFXZvKo6Vy0Ex1SJ54hhtioIs=
 	dep	github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v8	v8.0.2
 	=>	github.com/InjectiveLabs/ibc-apps/middleware/packet-forward-middleware/v8	v8.2.0-inj.3	h1:7lHv4fQbQmNqjaBxp2DSX7lmETb3O8l3djqEIuCMnlk=
-	
+
 	dep	github.com/cosmos/ibc-apps/modules/ibc-hooks/v8	v8.0.0-20240116210548-bd2492192d72
 	=>	github.com/InjectiveLabs/ibc-apps/modules/ibc-hooks/v8	v8.0.0-inj.3	h1:+2ygtYHDBRwN0XxXftIfzFLWEeqLeWi3v9Wcjzyl9rI=
-	
+
 	dep	github.com/cosmos/ibc-go/modules/capability	v1.0.1
 	=>	github.com/InjectiveLabs/ibc-go/modules/capability	v1.0.0-inj.3	h1:cgsP+ZYcyNX8EkQicK38acv4B+XtzX+x2EkdkX+Gges=
-	
+
 	dep	github.com/cosmos/ibc-go/v8	v8.6.1
 	=>	github.com/InjectiveLabs/ibc-go/v8	v8.7.0-inj.3	h1:VCzrjp0aljrGWG4nrXSOmzRf4ESjaNyUOJ04RF9o85w=
-	
+
 	dep	github.com/cosmos/ics23/go	v0.11.0	h1:jk5skjT0TqX5e5QJbEnwXIS2yI2vnmLOgpQPeM5RtnU=
 	dep	github.com/crate-crypto/go-eth-kzg	v1.3.0	h1:05GrhASN9kDAidaFJOda6A4BEvgvuXbazXg/0E3OOdI=
 	dep	github.com/crate-crypto/go-ipa	v0.0.0-20240724233137-53bbb0ceb27a	h1:W8mUrRp6NOVl3J+MYp5kPMoUZPp7aOYHtaua31lwRHg=
@@ -139,7 +139,7 @@ a28753ffd3c15cc12b27e681950c88c83398a1ca58290cacdb348c56da01a5d7  /usr/local/bin
 	dep	github.com/envoyproxy/protoc-gen-validate	v1.2.1	h1:DEo3O99U8j4hBFwbJfrz9VtgcDfUKS7KJ7spH3d86P8=
 	dep	github.com/ethereum/go-ethereum	v1.16.3
 	=>	github.com/InjectiveLabs/go-ethereum	v1.16.3-inj.2	h1:20SwI6J3SU2Y2NRq6kUVdBZbWuJU/hAd2+eDje50z2A=
-	
+
 	dep	github.com/ethereum/go-verkle	v0.2.2	h1:I2W0WjnrFUIzzVPwm8ykY+7pL2d4VhlsePn4j7cnFk8=
 	dep	github.com/fatih/color	v1.18.0	h1:S8gINlzdQ840/4pfAwic/ZE0djQEH3wM94VfqLTZcOM=
 	dep	github.com/felixge/httpsnoop	v1.0.4	h1:NFTV2Zj1bL4mc9sqWACXbQFVBBg2W3GPvqp8/ESS2Wg=
@@ -199,7 +199,7 @@ a28753ffd3c15cc12b27e681950c88c83398a1ca58290cacdb348c56da01a5d7  /usr/local/bin
 	dep	github.com/iancoleman/strcase	v0.3.0	h1:nTXanmYxhfFAMjZL34Ov6gkzEsSJZ5DbhxWjvSASxEI=
 	dep	github.com/improbable-eng/grpc-web	v0.15.0
 	=>	github.com/maxim-inj/grpc-web	v0.15.0-inj	h1:w0If63zpm1S0Hg9TYKr3F4+iI3U3MU8HTV+MnoJhZRo=
-	
+
 	dep	github.com/jackpal/go-nat-pmp	v1.0.2	h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=
 	dep	github.com/jinzhu/copier	v0.4.0	h1:w3ciUoD19shMCRargcpm0cm91ytaBhDvuRpz1ODO/U8=
 	dep	github.com/jmespath/go-jmespath	v0.4.0	h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
@@ -249,7 +249,7 @@ a28753ffd3c15cc12b27e681950c88c83398a1ca58290cacdb348c56da01a5d7  /usr/local/bin
 	dep	github.com/shopspring/decimal	v1.2.0	h1:abSATXmQEYyShuxI4/vyW3tV1MrKAJzCZ/0zLUXYbsQ=
 	dep	github.com/skip-mev/block-sdk/v2	v2.0.0-00010101000000-000000000000
 	=>	github.com/InjectiveLabs/block-sdk/v2	v2.5.1-inj.9	h1:9LN5cX2nRON+enLpdCugXZNkfeirSTaOhjZ1awpQOUA=
-	
+
 	dep	github.com/smartcontractkit/data-streams-sdk/go	v1.2.0	h1:wA5p2VdiITjfnVfmSVNi6R4cL+mGewXXssPE+Jzhd1k=
 	dep	github.com/spf13/afero	v1.12.0	h1:UcOPyRBYczmFn6yvphxkn9ZEOY65cpwGKb5mL36mrqs=
 	dep	github.com/spf13/cast	v1.7.1	h1:cuNEagBQEHWN1FnbGEjCXL2szYEXqfJPbP2HNUaca9Y=
@@ -260,7 +260,7 @@ a28753ffd3c15cc12b27e681950c88c83398a1ca58290cacdb348c56da01a5d7  /usr/local/bin
 	dep	github.com/subosito/gotenv	v1.6.0	h1:9NlTDc1FTs4qu0DDq7AEtTPNw6SVm7uBMsUCUjABIf8=
 	dep	github.com/syndtr/goleveldb	v1.0.1-0.20220721030215-126854af5e6v0d
 	=>	github.com/syndtr/goleveldb	v1.0.1-0.20210819022825-2ae1ddf74ef7	h1:epCh84lMvA70Z7CTTCmYQn2CKbY8j86K7/FAIr141uY=
-	
+
 	dep	github.com/tendermint/go-amino	v0.16.0	h1:GyhmgQKvqF82e2oZeuMSp9JTN0N09emoSZlb2lyGa2E=
 	dep	github.com/tidwall/btree	v1.7.0	h1:L1fkJH/AuEh5zBnnBbmTwQ5Lt+bRJ5A8EWecslvo9iI=
 	dep	github.com/tinylib/msgp	v1.1.8	h1:FCXC1xanKO4I8plpHGH2P7koL/RzZs12l/+r7vakfm0=
