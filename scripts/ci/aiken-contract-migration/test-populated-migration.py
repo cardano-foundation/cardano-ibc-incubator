@@ -140,6 +140,8 @@ def main():
     parser.add_argument('--retry-read-failure', metavar='STEP', help='Explicit one-step settlement retry after checking retained read-failure logs for construction/submission evidence; canonical pending state remains authoritative')
     args = parser.parse_args()
     runtime, artifacts = args.runtime.resolve(), args.artifacts_dir.resolve()
+    if (runtime / 'fresh-deployment-required.json').exists() and artifacts == runtime:
+        parser.error('This checkpoint restores chain history only. Deploy the selected contracts into a fresh artifact directory before rehearsing.')
     if any(not p.is_relative_to(ROOT / '.deployment-smoke') or not p.is_dir() for p in [runtime, artifacts]):
         parser.error('Explicit owned disposable runtime and artifacts required')
     if any(not re.fullmatch('migration_[a-z0-9_]+', s) for s in [args.history_schema, args.database_prefix]):
