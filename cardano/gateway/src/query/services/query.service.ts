@@ -32,6 +32,7 @@ import {
   PraosNonceState,
   OperationalCertificateCounter,
   EpochContext as ProbabilisticEpochContext,
+  MithrilStakeCertificates,
   ProbabilisticBlock,
   ProbabilisticHeader,
   StakeDistributionEntry,
@@ -67,6 +68,8 @@ import {
   QueryTransactionByHashResponse,
   QueryIBCHeaderRequest,
   QueryIBCHeaderResponse,
+  QueryMithrilStakeCertificatesRequest,
+  QueryMithrilStakeCertificatesResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
 import { UtxoDto } from '../dtos/utxo.dto';
 import {
@@ -131,6 +134,7 @@ import { reconstructStagedTendermintHeader } from '@shared/helpers/staged-tender
 import type { GatewayEvent } from '../../tx/tx-events.service';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
+import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import {
@@ -147,6 +151,12 @@ import {
   resolveProofContextForQuery,
   resolveProofHeightForCurrentRoot,
 } from './proof-context';
+import {
+  loadMithrilStakeCertificates,
+  MITHRIL_STAKE_CERTIFICATES_TYPE_URL,
+  MithrilStakeMismatchError,
+  requireMithrilStakeAgreement,
+} from './mithril-certified-stake';
 import {
   loadStakeWeightedStabilityHeaderEvidence,
   StakeWeightedStabilityHeaderEvidence,
@@ -234,6 +244,7 @@ export class QueryService {
     private readonly ibcTreeStore: IbcTreeStateStore,
     private readonly packetState: PacketStateService,
     @Optional() @Inject(MetricsService) metricsService?: MetricsService,
+    @Optional() @Inject(MithrilService) private readonly mithrilService?: MithrilService,
   ) {
     this.txEvidenceCache = new BoundedCache({
       maxEntries: TX_REDEEMER_CACHE_MAX_ENTRIES,
@@ -692,6 +703,9 @@ export class QueryService {
           revision_number: 0n,
           revision_height: BigInt(stabilityEvidence.anchorHeight),
         },
+        mithril_epoch: 0n,
+        mithril_aggregate_verification_key: '',
+        mithril_protocol_parameters_hash: '',
       };
 
       const consensusStateProbabilistic: ConsensusStateProbabilistic = {
@@ -731,6 +745,34 @@ export class QueryService {
             value: Buffer.from(plan.imports[sequence - 1], 'base64'),
           }
         : undefined,
+    };
+  }
+
+  // Hermes submits these before the rollover they cover, so the client checks
+  // the epoch's stake table against Mithril instead of a response window.
+  async queryMithrilStakeCertificates(
+    request: QueryMithrilStakeCertificatesRequest,
+  ): Promise<QueryMithrilStakeCertificatesResponse> {
+    const epoch = request.mithril_epoch;
+    if (!epoch || epoch > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "mithril_epoch" must be a positive epoch');
+    }
+    const mithril = this.mithrilStakeSource();
+    if (!mithril) {
+      throw new GrpcFailedPreconditionException('Mithril endpoint is not configured');
+    }
+    let certificates: string[];
+    try {
+      certificates = await loadMithrilStakeCertificates(mithril, Number(epoch));
+    } catch (error) {
+      throw new GrpcFailedPreconditionException(`Mithril stake certificates are unavailable: ${error.message}`);
+    }
+    if (!certificates.length) return {};
+    return {
+      client_message: {
+        type_url: MITHRIL_STAKE_CERTIFICATES_TYPE_URL,
+        value: MithrilStakeCertificates.encode({ certificates }).finish(),
+      },
     };
   }
 
@@ -2032,7 +2074,11 @@ export class QueryService {
         throw error;
       }
 
-      const stabilityHeader = await this.buildStabilityHeader(stabilityEvidence, isCheckpoint);
+      const stabilityHeader = await this.buildStabilityHeader(
+        stabilityEvidence,
+        isCheckpoint,
+        Boolean(settlementCreditClient?.mithril_epoch),
+      );
 
       const encodedHeaderBytes = ProbabilisticHeader.encode(stabilityHeader).finish().length;
       const capacityError = this.stabilityHeaderCapacityError(stabilityHeader);
@@ -2065,6 +2111,7 @@ export class QueryService {
   private async buildStabilityHeader(
     stabilityEvidence: StakeWeightedStabilityHeaderEvidence,
     isCheckpoint: boolean,
+    mithrilAnchored = false,
   ): Promise<ProbabilisticHeader> {
     // Complete bodies authenticate both changed lanes and unchanged roots.
     // The anchor need not contain a HostState transaction.
@@ -2102,6 +2149,9 @@ export class QueryService {
             stabilityEvidence.epochVerificationContext,
           )
         : undefined;
+    if (newEpochContext && mithrilAnchored) {
+      await this.requireMithrilStakeAgreement(newEpochContext);
+    }
 
     const stabilityHeader: ProbabilisticHeader = {
       trusted_height: {
@@ -2137,6 +2187,31 @@ export class QueryService {
     }
 
     return stabilityHeader;
+  }
+
+  // Mithril is optional. Without an aggregator, every epoch table takes the
+  // response window.
+  private mithrilStakeSource(): MithrilService | undefined {
+    return this.configService.get<string>('mithrilEndpoint') ? this.mithrilService : undefined;
+  }
+
+  // An anchored client freezes if it accepts a table that a later certificate
+  // contradicts, so a table that disagrees with Mithril is never proposed.
+  // Without a certified distribution the challenge period applies.
+  private async requireMithrilStakeAgreement(context: ProbabilisticEpochContext): Promise<void> {
+    const mithril = this.mithrilStakeSource();
+    if (!mithril) return;
+    let agreed: boolean;
+    try {
+      agreed = await requireMithrilStakeAgreement(mithril, Number(context.epoch), context.stake_distribution);
+    } catch (error) {
+      if (error instanceof MithrilStakeMismatchError) throw new GrpcFailedPreconditionException(error.message);
+      this.logger.warn(`Mithril stake check for epoch ${context.epoch} is unavailable: ${error.message}`);
+      return;
+    }
+    if (!agreed) {
+      this.logger.warn(`Mithril has not certified the epoch ${context.epoch} stake table, so it enters the challenge period`);
+    }
   }
 
   private getStabilityCheckpointMaxBridgeBlocks(): number {

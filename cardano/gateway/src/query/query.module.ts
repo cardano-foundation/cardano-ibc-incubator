@@ -17,9 +17,10 @@ import { GatewayReadinessService } from './services/gateway-readiness.service';
 import { YaciHistoryService } from './services/yaci-history.service';
 import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
+import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 
 @Module({
-  imports: [LucidModule, KupoModule, HealthModule, IbcTreeModule],
+  imports: [LucidModule, KupoModule, HealthModule, IbcTreeModule, MithrilModule],
   controllers: [QueryController, GatewayReadinessController],
   providers: [
     QueryService,
