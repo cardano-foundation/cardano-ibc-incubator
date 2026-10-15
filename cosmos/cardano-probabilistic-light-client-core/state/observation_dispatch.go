@@ -33,6 +33,9 @@ func operationDigest(header *ProbabilisticHeader) ([32]byte, error) {
 	return sha256.Sum256(raw), nil
 }
 func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, private storetypes.KVStore, header *ProbabilisticHeader) error {
+	if header == nil || header.ObservationChunk == nil {
+		return fmt.Errorf("compact clients require a bounded observation operation")
+	}
 	if err := header.ValidateBasic(); err != nil {
 		return err
 	}

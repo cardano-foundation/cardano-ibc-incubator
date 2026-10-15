@@ -121,6 +121,9 @@ func acceptanceSource(t *testing.T, root string) acceptanceHistory {
 	return acceptanceSourceForReceiver(t, root, acceptanceAddress("operator").String(), false)
 }
 func acceptanceSourceForReceiver(t *testing.T, root, receiver string, export bool) acceptanceHistory {
+	return acceptanceSourceWithActivity(t, root, receiver, export, false)
+}
+func acceptanceSourceWithActivity(t *testing.T, root, receiver string, export, idle bool) acceptanceHistory {
 	t.Helper()
 	_, hostRoot := acceptanceProof(t, acceptanceChannelValues(t), "channelEnds/ports/transfer/channels/channel-0")
 	hash := blake2b.Sum256([]byte("native-bootstrap"))
@@ -132,7 +135,11 @@ func acceptanceSourceForReceiver(t *testing.T, root, receiver string, export boo
 	require.NoError(t, err)
 	transactions := map[uint64][]byte{}
 	previousHost, previousLane := snapshot.HostTxHash, snapshot.Lanes[hex.EncodeToString(name)].TxHash
-	for version, point := range []struct{ height, count uint64 }{{967, 1}, {1001, 2}, {1032, 2}, {1063, 3}, {1094, 4}, {1125, 5}} {
+	points := []struct{ height, count uint64 }{{967, 1}, {1001, 2}, {1032, 2}, {1063, 3}, {1094, 4}, {1125, 5}}
+	if idle {
+		points = []struct{ height, count uint64 }{{1125, 2}}
+	}
+	for version, point := range points {
 		_, laneRoot = acceptanceProof(t, acceptanceLaneValuesForReceiver(t, point.count, receiver), acceptanceCommitmentKey(1))
 		heightDatum := cbor.Tag{Number: 121, Content: []uint64{0, 0}}
 		commitments := map[uint64][]byte{}
@@ -158,7 +165,13 @@ func acceptanceSourceForReceiver(t *testing.T, root, receiver string, export boo
 	}
 	input := filepath.Join(root, "source-input.json")
 	output := filepath.Join(root, "source-history.json")
-	acceptanceWriteJSON(t, input, map[string]any{"Transactions": transactions, "Snapshot": rawSnapshot})
+	request := map[string]any{"Transactions": transactions, "Snapshot": rawSnapshot}
+	fixtureName := "native-recovery.json.gz"
+	if idle {
+		request["SlotLengthNs"] = uint64(time.Second)
+		fixtureName = "native-idle.json.gz"
+	}
+	acceptanceWriteJSON(t, input, request)
 	var history acceptanceHistory
 	if export || os.Getenv("UPDATE_NATIVE_RECOVERY_FIXTURE") == "1" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -170,7 +183,7 @@ func acceptanceSourceForReceiver(t *testing.T, root, receiver string, export boo
 		require.NoError(t, err, string(log))
 		acceptanceReadJSON(t, output, &history)
 		if !export {
-			file, err := os.Create("../cardano-probabilistic-light-client-core/testdata/native-recovery.json.gz")
+			file, err := os.Create("../cardano-probabilistic-light-client-core/testdata/" + fixtureName)
 			require.NoError(t, err)
 			writer := gzip.NewWriter(file)
 			require.NoError(t, json.NewEncoder(writer).Encode(history))
@@ -178,7 +191,7 @@ func acceptanceSourceForReceiver(t *testing.T, root, receiver string, export boo
 			require.NoError(t, file.Close())
 		}
 	} else {
-		require.NoError(t, json.Unmarshal(readBoundaryGzip(t, "native-recovery.json.gz"), &history))
+		require.NoError(t, json.Unmarshal(readBoundaryGzip(t, fixtureName), &history))
 	}
 	// Source time is a trusted local deployment parameter. Slots and all native
 	// signatures are unchanged. Host challenge periods use real committed time.
@@ -187,7 +200,7 @@ func acceptanceSourceForReceiver(t *testing.T, root, receiver string, export boo
 	history.Client.SystemStartUnixNs = uint64(int64(history.Client.SystemStartUnixNs) + delta)
 	history.Client.LatestCheckpointTimestamp = uint64(int64(history.Client.LatestCheckpointTimestamp) + delta)
 	history.Consensus.Timestamp = uint64(int64(history.Consensus.Timestamp) + delta)
-	for _, blocks := range [][]*ProbabilisticBlock{history.Honest.Blocks, history.Bad.Blocks, history.Tail.Blocks} {
+	for _, blocks := range [][]*ProbabilisticBlock{history.Honest.Blocks, history.Bad.Blocks, history.Tail.Blocks, history.Later.Blocks} {
 		for _, block := range blocks {
 			block.Timestamp = uint64(int64(block.Timestamp) + delta)
 		}
@@ -224,6 +237,9 @@ func TestExportInjectiveLifecycleHistory(t *testing.T) {
 	acceptanceWriteJSON(t, filepath.Join(root, "fixture-metadata.json"), map[string]any{"receiver": receiver, "trusted_height": history.Client.LatestCheckpointHeight, "scope": "Native signed Cardano fixture bodies and headers for a disposable Injective node"})
 }
 func acceptanceHeader(t *testing.T, history acceptanceHistory, branch string, trusted, anchor uint64) *ProbabilisticHeader {
+	return acceptanceSourceHeader(t, history, branch, trusted, anchor, false)
+}
+func acceptanceSourceHeader(t *testing.T, history acceptanceHistory, branch string, trusted, anchor uint64, checkpoint bool) *ProbabilisticHeader {
 	t.Helper()
 	blocks, contexts := history.Honest.Blocks, history.Honest.Contexts
 	if branch == "bad" {
@@ -232,7 +248,10 @@ func acceptanceHeader(t *testing.T, history acceptanceHistory, branch string, tr
 	if branch == "tail" {
 		blocks, contexts = history.Tail.Blocks, history.Tail.Contexts
 	}
-	h := &ProbabilisticHeader{TrustedHeight: NewHeight(0, trusted)}
+	if branch == "later" {
+		blocks, contexts = history.Later.Blocks, history.Later.Contexts
+	}
+	h := &ProbabilisticHeader{TrustedHeight: NewHeight(0, trusted), IsCheckpoint: checkpoint}
 	for _, b := range blocks {
 		if b.Height.RevisionHeight <= trusted || b.Height.RevisionHeight > anchor+30 {
 			continue
@@ -242,6 +261,9 @@ func acceptanceHeader(t *testing.T, history acceptanceHistory, branch string, tr
 			h.BridgeBlocks = append(h.BridgeBlocks, copy)
 		} else if b.Height.RevisionHeight == anchor {
 			h.AnchorBlock = copy
+			if checkpoint {
+				continue
+			}
 			block, err := core.DecodeLedgerBlock(b.BlockCbor)
 			require.NoError(t, err)
 			require.Len(t, block.Transactions(), 1)
@@ -317,5 +339,51 @@ func TestAcceptanceSourceContinuity(t *testing.T) {
 		proof, _ = acceptanceProof(t, acceptanceLaneValues(t, point.count), acceptanceCommitmentKey(point.count))
 		require.NoError(t, state.VerifyMembership(ctx, store, cdc, NewHeight(0, anchor), 0, 0, proof, commitmenttypes.NewMerklePath("ibc", acceptanceCommitmentKey(point.count)), channeltypes.CommitPacket(nil, acceptancePacket(point.count))), "anchor %d", anchor)
 		trusted = anchor
+	}
+}
+
+func TestExportIdleCheckpointHistory(t *testing.T) {
+	root := os.Getenv("IDLE_CHECKPOINT_FIXTURE_DIR")
+	if root == "" {
+		t.Skip("called by the idle checkpoint acceptance driver")
+	}
+	require.NoError(t, os.MkdirAll(root, 0700))
+	receiver := os.Getenv("INJECTIVE_LIFECYCLE_RECEIVER")
+	if receiver == "" {
+		receiver = acceptanceAddress("operator").String()
+	}
+	history := acceptanceSourceWithActivity(t, root, receiver, os.Getenv("UPDATE_NATIVE_RECOVERY_FIXTURE") != "1", true)
+	clientBytes, err := history.Client.Marshal()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "source-client.pb"), clientBytes, 0600))
+	exportedBlocks := []map[string]any{}
+	for _, block := range history.Honest.Blocks {
+		raw, err := block.Marshal()
+		require.NoError(t, err)
+		exportedBlocks = append(exportedBlocks, map[string]any{"height": block.Height.RevisionHeight, "protobuf": hex.EncodeToString(raw)})
+	}
+	exportedContexts := []string{}
+	for _, context := range history.Honest.Contexts {
+		raw, err := context.Marshal()
+		require.NoError(t, err)
+		exportedContexts = append(exportedContexts, hex.EncodeToString(raw))
+	}
+	acceptanceWriteJSON(t, filepath.Join(root, "gateway-history.json"), map[string]any{"blocks": exportedBlocks, "contexts": exportedContexts})
+	headers := map[string]*ProbabilisticHeader{}
+	trusted := uint64(966)
+	for _, anchor := range []uint64{976, 1001, 1063, 1094, 1110, 1125} {
+		headers[fmt.Sprint(anchor)] = acceptanceSourceHeader(t, history, "honest", trusted, anchor, anchor != 1125)
+		if anchor == 976 {
+			headers[fmt.Sprint(anchor)].DescendantBlocks = headers[fmt.Sprint(anchor)].DescendantBlocks[:24]
+		}
+		trusted = anchor
+	}
+	headers["fork"] = acceptanceSourceHeader(t, history, "bad", 976, 1001, true)
+	acceptanceWriteJSON(t, filepath.Join(root, "headers.json"), headers)
+	for _, point := range []struct{ height, count uint64 }{{966, 1}, {1125, 2}} {
+		for seq := uint64(1); seq <= point.count; seq++ {
+			proof, _ := acceptanceProof(t, acceptanceLaneValuesForReceiver(t, point.count, receiver), acceptanceCommitmentKey(seq))
+			acceptanceWriteJSON(t, filepath.Join(root, fmt.Sprintf("packet-%d-%d.json", point.height, seq)), map[string]any{"packet": acceptancePacketForReceiver(seq, receiver), "proof_commitment": proof, "proof_height": NewHeight(0, point.height), "signer": receiver})
+		}
 	}
 }

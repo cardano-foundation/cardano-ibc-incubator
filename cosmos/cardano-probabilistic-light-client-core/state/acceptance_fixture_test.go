@@ -30,6 +30,7 @@ func TestExportAcceptanceHistory(t *testing.T) {
 	var request struct {
 		Transactions map[uint64][]byte
 		Snapshot     []byte
+		SlotLengthNs uint64
 	}
 	raw, err := os.ReadFile(input)
 	require.NoError(t, err)
@@ -38,8 +39,12 @@ func TestExportAcceptanceHistory(t *testing.T) {
 	f := makeNativeBoundaryFixture(t, false, 0)
 	cs, consensus := f.Client, f.Consensus
 	cs.SlotLengthNs = 1_000 // Accelerated local source clock, independent of host deadlines.
+	if request.SlotLengthNs != 0 {
+		cs.SlotLengthNs = request.SlotLengthNs
+	}
 	cs.SlotsPerKesPeriod = 1_000_000
-	offset := uint64(20_736_000_000_000) // 240 days of producer age at the local source slot length
+	offset := uint64(240*24*time.Hour) / cs.SlotLengthNs // Preserve producer age for either source clock.
+	offset = (offset + cs.SlotsPerKesPeriod - 1) / cs.SlotsPerKesPeriod * cs.SlotsPerKesPeriod
 	cs.CurrentEpochStartSlot, cs.CurrentEpochEndSlotExclusive = offset, offset+200_000
 	cs.EpochContexts[0].SlotsPerKesPeriod = cs.SlotsPerKesPeriod
 	cs.EpochContexts[0].EpochStartSlot, cs.EpochContexts[0].EpochEndSlotExclusive = offset, offset+200_000
@@ -72,6 +77,9 @@ func TestExportAcceptanceHistory(t *testing.T) {
 		last := uint64(1155)
 		if forkAt != 0 {
 			last = 1031
+			if forkAt >= 1063 {
+				last = 1124
+			}
 		}
 		for n := uint64(967); n <= last; n++ {
 			epoch := uint64(7)
@@ -162,11 +170,15 @@ func TestExportAcceptanceHistory(t *testing.T) {
 	honest := build(0, nil)
 	bad := build(980, &honest)
 	tail := build(1010, &honest)
+	later := history{}
+	if request.SlotLengthNs != 0 {
+		later = build(1070, &honest)
+	}
 	result := struct {
-		Client            *ClientState
-		Consensus         *ConsensusState
-		Honest, Bad, Tail history
-	}{cs, consensus, honest, bad, tail}
+		Client                   *ClientState
+		Consensus                *ConsensusState
+		Honest, Bad, Tail, Later history
+	}{cs, consensus, honest, bad, tail, later}
 	raw, err = json.Marshal(result)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(os.Getenv("CARIBIC_ACCEPTANCE_HISTORY_OUTPUT"), raw, 0600))
