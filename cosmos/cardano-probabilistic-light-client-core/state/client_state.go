@@ -90,14 +90,19 @@ func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc St
 	if !found {
 		return Expired
 	}
-	latestTrustedTimestamp := consState.Timestamp
-	if cs.LatestCheckpointTimestamp != 0 {
-		latestTrustedTimestamp = cs.LatestCheckpointTimestamp
-	}
-	if cs.IsExpired(latestTrustedTimestamp, ctx.BlockTime()) {
+	if cs.IsExpired(cs.latestTrustedTimestamp(consState.Timestamp), ctx.BlockTime()) {
 		return Expired
 	}
 	return Active
+}
+
+// latestTrustedTimestamp selects client liveness without changing proof timestamps.
+// Callers validate the storage-mode cursor before using the legacy root fallback.
+func (cs ClientState) latestTrustedTimestamp(consensusTimestamp uint64) uint64 {
+	if cs.LatestCheckpointTimestamp != 0 {
+		return cs.LatestCheckpointTimestamp
+	}
+	return consensusTimestamp
 }
 
 func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {

@@ -15,3 +15,5 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tendermint = "0.40.0"
 sha2 = "0.10"
 crossbeam-channel = "0.5"
+
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

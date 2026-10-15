@@ -564,6 +564,32 @@ describe('QueryService stability anchor contract', () => {
     expect(header.descendant_blocks.every((block) => block.header_cbor.length === 860)).toBe(true);
   });
 
+  it('selects an idle maintenance checkpoint from source blocks without a new proof anchor', async () => {
+    historyServiceMock.findLatestBlock.mockResolvedValue({ height: 124 });
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue(null);
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue(
+      Array.from({ length: 25 }, (_, index) => Buffer.from([index + 1])),
+    );
+    const context = ClientStateProbabilistic.fromPartial({
+      slot_length_ns: 1_000_000_000n,
+      current_epoch: 7n,
+      latest_checkpoint_height: { revision_height: 99n },
+      latest_checkpoint_settlement_credit: { epoch: 7n, reference: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, numerator: Uint8Array.of(1), denominator: Uint8Array.of(5) })) },
+      latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
+    });
+    const latestProof = jest.spyOn(service, 'latestCertifiedHeight');
+    const response = await service.queryIBCHeader({ height: 0n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() });
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.is_checkpoint).toBe(true);
+    expect(header.anchor_block?.height?.revision_height).toBe(100n);
+    expect(header.host_state_tx_hash).toBe('');
+    expect(header.new_epoch_context).toBeUndefined();
+    expect(latestProof).not.toHaveBeenCalled();
+    historyServiceMock.findLatestBlock.mockResolvedValue({ height: 123 });
+    expect((await service.queryIBCHeader({ height: 0n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() })).header).toBeUndefined();
+  });
+
   it('serves exact rootless challenge evidence when the real block has no HostState transaction', async () => {
     historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue(null);
     historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
@@ -1204,3 +1230,63 @@ describe('bounded boundary workload', () => {
     },
   );
 });
+
+// Opt-in process used by the native Injective checkpoint acceptance driver.
+// QueryService and the gRPC wire are real. Signed history replaces external
+// Cardano history and block-body services in this disposable fixture.
+(process.env.CHECKPOINT_ACCEPTANCE_DIR ? it : it.skip)(
+  'serves signed idle history for the Hermes checkpoint acceptance worker',
+  async () => {
+    const grpc = require('@grpc/grpc-js');
+    const { existsSync } = require('node:fs');
+    const q = require('@cardano-ibc/proto-types/build/ibc/core/types/v1/query');
+    const root = process.env.CHECKPOINT_ACCEPTANCE_DIR!;
+    const client = ClientStateProbabilistic.decode(readFileSync(`${root}/source-client.pb`));
+    const history = JSON.parse(readFileSync(`${root}/gateway-history.json`, 'utf8'));
+    const { ProbabilisticBlock, EpochContext } = require('@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic');
+    const blocks = history.blocks.map((entry: any) => ProbabilisticBlock.decode(Buffer.from(entry.protobuf, 'hex')));
+    const contexts = [client.epoch_contexts[0], ...history.contexts.map((raw: string) => EpochContext.decode(Buffer.from(raw, 'hex')))];
+    const records = blocks.map((block: any) => ({
+      height: Number(block.height.revision_height), hash: block.hash, prevHash: '', slotNo: block.slot,
+      epochNo: Number(block.epoch), timestampUnixNs: block.timestamp,
+      slotLeader: client.epoch_stake_distribution[Number((block.height.revision_height - 967n) % 11n)].pool_id,
+    }));
+    const trusted = { height: 966, hash: client.latest_checkpoint_block_hash, prevHash: '', slotNo: client.latest_checkpoint_slot,
+      epochNo: 7, timestampUnixNs: client.latest_checkpoint_timestamp, slotLeader: client.epoch_stake_distribution[0].pool_id };
+    const visible = () => Number(readFileSync(`${root}/source-tip`, 'utf8').trim());
+    historyServiceMock.findLatestBlock.mockImplementation(async () => records.find((block: any) => block.height === visible()) ?? trusted);
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) => height === 966n ? trusted : records.find((block: any) => BigInt(block.height) === height && block.height <= visible()) ?? null);
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (from: bigint, to: bigint) => records.filter((block: any) => BigInt(block.height) > from && BigInt(block.height) < to && block.height <= visible()));
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (height: bigint, limit: number) => records.filter((block: any) => BigInt(block.height) > height && block.height <= visible()).slice(0, limit));
+    historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block: any) => {
+      const context = contexts.find((context: any) => context.epoch === BigInt(block.epochNo));
+      return { epoch: block.epochNo, stakeDistribution: context.stake_distribution.map((row: any) => ({
+        poolId: row.pool_id, stake: row.stake, relativeStakeNumerator: row.relative_stake_numerator,
+        relativeStakeDenominator: row.relative_stake_denominator, vrfKeyHash: Buffer.from(row.vrf_key_hash).toString('hex'), firstRegistrationSlot: row.first_registration_slot,
+      })), verificationContext: { epochNonce: Buffer.from(context.epoch_nonce).toString('hex'), slotsPerKesPeriod: Number(context.slots_per_kes_period),
+        activeSlotCoefficientNumerator: client.active_slot_coefficient_numerator, activeSlotCoefficientDenominator: client.active_slot_coefficient_denominator,
+        maxKesEvolutions: Number(client.max_kes_evolutions), currentEpochStartSlot: context.epoch_start_slot, currentEpochEndSlotExclusive: context.epoch_end_slot_exclusive } };
+    });
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (requested: Array<{hash:string}>) => requested.map((block) => Buffer.from(blocks.find((witness: any) => witness.hash === block.hash).block_cbor)));
+    miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) => MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash));
+    const get = (service as any).configService.get as jest.Mock;
+    const fallback = get.getMockImplementation()!;
+    get.mockImplementation((key) => key === 'cardanoRandomnessStabilisationWindowSlots' ? String(client.randomness_stabilisation_window_slots) : fallback(key));
+    const server = new grpc.Server();
+    const method = { path: '/ibc.core.types.v1.Query/IBCHeader', requestStream:false, responseStream:false,
+      requestSerialize:(value: any) => Buffer.from(q.QueryIBCHeaderRequest.encode(value).finish()),
+      requestDeserialize:(bytes: Buffer) => q.QueryIBCHeaderRequest.decode(bytes),
+      responseSerialize:(value: any) => Buffer.from(q.QueryIBCHeaderResponse.encode(value).finish()),
+      responseDeserialize:(bytes: Buffer) => q.QueryIBCHeaderResponse.decode(bytes) };
+    server.addService({ IBCHeader:method }, { IBCHeader:async (call: any, callback: any) => {
+      try { callback(null, await service.queryStabilityIBCHeader(call.request)); }
+      catch(error) { callback({code:grpc.status.FAILED_PRECONDITION, message:String(error)}); }
+    }});
+    await new Promise<void>((resolve, reject) => server.bindAsync(`127.0.0.1:${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}`, grpc.ServerCredentials.createInsecure(), (error: Error) => error ? reject(error) : resolve()));
+    writeFileSync(`${root}/gateway.ready`, 'ready');
+    try {
+      while (!existsSync(`${root}/gateway.stop`)) await new Promise((resolve) => setTimeout(resolve, 100));
+    } finally { server.forceShutdown(); }
+  },
+  3_600_000,
+);
