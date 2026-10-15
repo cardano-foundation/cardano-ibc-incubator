@@ -104,7 +104,9 @@ func acceptanceLaneValuesForReceiver(t *testing.T, count uint64, receiver string
 }
 func acceptanceCBOR(t *testing.T, value any) []byte {
 	t.Helper()
-	raw, err := cbor.Marshal(value)
+	encoder, err := cbor.CanonicalEncOptions().EncMode()
+	require.NoError(t, err)
+	raw, err := encoder.Marshal(value)
 	require.NoError(t, err)
 	return raw
 }
@@ -193,6 +195,25 @@ func acceptanceSourceWithActivity(t *testing.T, root, receiver string, export, i
 		}
 	} else {
 		require.NoError(t, json.Unmarshal(readBoundaryGzip(t, fixtureName), &history))
+	}
+	// Proof values and the signed history must come from the same fixture.
+	// Regenerate signed blocks instead of patching authenticated roots.
+	require.Equal(t, hostRoot, history.Consensus.IbcStateRoot,
+		"channel commitment encoding differs from native-recovery.json.gz, regenerate with UPDATE_NATIVE_RECOVERY_FIXTURE=1")
+	loadedSnapshot, err := core.DecodePacketStateSnapshot(history.Consensus.PacketStateSnapshot)
+	require.NoError(t, err)
+	require.Equal(t, hostRoot, loadedSnapshot.HostRoot)
+	for _, branch := range [][]*ProbabilisticBlock{history.Honest.Blocks, history.Bad.Blocks, history.Tail.Blocks} {
+		for _, block := range branch {
+			if expected, ok := transactions[block.Height.RevisionHeight]; ok {
+				decoded, err := core.DecodeLedgerBlock(block.BlockCbor)
+				require.NoError(t, err)
+				require.Len(t, decoded.Transactions(), 1)
+				expectedHash := blake2b.Sum256(expected)
+				require.Equal(t, hex.EncodeToString(expectedHash[:]), decoded.Transactions()[0].Hash().String(),
+					"signed transaction at height %d differs from acceptance source", block.Height.RevisionHeight)
+			}
+		}
 	}
 	// Source time is a trusted local deployment parameter. Slots and all native
 	// signatures are unchanged. Host challenge periods use real committed time.
