@@ -33,6 +33,8 @@ def main():
     p.add_argument('--pool-aging', action='store_true', help='Before IBC bootstrap only: age the explicitly selected k=2160 fixture through real canonical blocks')
     args = p.parse_args()
     runtime = args.runtime.resolve()
+    if args.pool_aging and (runtime / 'fresh-deployment-required.json').exists():
+        p.error('A restored mature network must not repeat pool aging. Check its canonical maturity before creating the fresh bridge.')
     if not runtime.is_relative_to(ROOT/'.deployment-smoke') or not args.project.startswith('cardano-deployment-test-'):
         p.error('Only an explicit disposable deployment-test runtime is supported')
     max_advance = 20_000_000 if args.pool_aging else 172800
