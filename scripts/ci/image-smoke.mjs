@@ -75,7 +75,6 @@ try {
         '-e', 'POSTGRES_DB=gateway'], postgres);
       await docker('start', db);
       await waitFor(() => docker('exec', db, 'pg_isready', '-h', '127.0.0.1', '-U', 'smoke', '-d', 'gateway'), 'Postgres');
-      await docker('exec', db, 'createdb', '-U', 'smoke', 'history');
       const fixture = await create('fixture', ['--network-alias', 'fixture',
         '--entrypoint', 'node'], imageId, ['/tmp/image-smoke-fixture.mjs']);
       await docker('cp', join(scripts, 'image-smoke-fixture.mjs'), fixture + ':/tmp/image-smoke-fixture.mjs');
@@ -91,8 +90,6 @@ try {
         YACI_STORE_ENDPOINT: 'http://fixture:8080', MITHRIL_ENDPOINT: 'http://fixture:8080',
         GATEWAY_DB_HOST: 'db', GATEWAY_DB_PORT: '5432', GATEWAY_DB_USERNAME: 'smoke',
         GATEWAY_DB_PASSWORD: 'smoke-only', GATEWAY_DB_NAME: 'gateway',
-        HISTORY_DB_HOST: 'db', HISTORY_DB_PORT: '5432', HISTORY_DB_USERNAME: 'smoke',
-        HISTORY_DB_PASSWORD: 'smoke-only', HISTORY_DB_NAME: 'history',
       };
       app = await create('app', Object.entries(env).flatMap(([key, value]) => ['-e', key + '=' + value]));
       await docker('cp', manifest, app + ':/tmp/image-smoke-manifest.json');

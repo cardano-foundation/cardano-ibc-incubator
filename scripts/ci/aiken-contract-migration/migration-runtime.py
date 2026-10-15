@@ -26,14 +26,14 @@ def require_migration_witness(node):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=['services', 'init-history', 'gateway', 'history-sync', 'export', 'witness'])
+    p.add_argument('command', choices=['services', 'init-history', 'gateway', 'export', 'witness'])
     p.add_argument('--runtime', type=Path, required=True)
     p.add_argument('--project', required=True)
     p.add_argument('--clock-offset-seconds', type=int, required=True)
     p.add_argument('--handler', type=Path)
     p.add_argument('--out', type=Path, help='New activation witness file; only valid with witness')
     p.add_argument('--gateway-database', default='migration_gateway')
-    p.add_argument('--history-schema', help='Existing private bridge-projection schema sharing the canonical Yaci source tables')
+    p.add_argument('--history-schema', help='Private schema for the rehearsal Gateway application cache')
     args = p.parse_args()
     import re
     if not re.fullmatch(r'migration_[a-z0-9_]+', args.gateway_database):
@@ -54,6 +54,11 @@ def main():
     if len([name for name in config['services'] if name == 'devkit' or name.startswith('producer-')]) != 5:
         p.error('Counterparty rehearsal requires the actual five-pool network')
     compose = ['docker', 'compose', '-p', args.project, '-f', str(compose_file)]
+    gateway_ports = [port for port in config['services']['gateway-db']['ports'] if isinstance(port, dict)
+                     and port.get('host_ip') == '127.0.0.1' and int(port.get('target', 0)) == 5432]
+    if len(gateway_ports) != 1:
+        raise ValueError('Expected the owned Gateway application database on loopback')
+    gateway_port = int(gateway_ports[0]['published'])
     if args.command == 'services':
         require_migration_witness(config['services']['devkit'])
         base = json.loads(subprocess.check_output(['docker', 'compose', '-f', str(ROOT / 'chains/cosmos/docker-compose.yml'), '--profile', 'v8-classic', 'config', '--format', 'json']))['services']['v8-classic']
@@ -78,9 +83,10 @@ def main():
             config['volumes']['cosmos-data'] = {'driver': 'local', 'driver_opts': {
                 'type': 'none', 'o': 'bind', 'device': str(directory)}}
         compose_file.write_text(json.dumps(config, indent=2) + '\n')
-        for database in ['yaci_store', 'migration_gateway']:
-            exists = subprocess.check_output(compose + ['exec', '-T', 'history-db', 'psql', '-U', 'yaci', '-d', 'postgres', '-Atc', f"SELECT 1 FROM pg_database WHERE datname='{database}'"], text=True).strip()
-            if not exists: subprocess.run(compose + ['exec', '-T', 'history-db', 'createdb', '-U', 'yaci', database], check=True)
+        exists = subprocess.check_output(compose + ['exec', '-T', 'gateway-db', 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc',
+            f"SELECT 1 FROM pg_database WHERE datname='{args.gateway_database}'"], text=True).strip()
+        if not exists:
+            subprocess.run(compose + ['exec', '-T', 'gateway-db', 'createdb', '-U', 'postgres', args.gateway_database], check=True)
         subprocess.run(compose + ['up', '-d', 'cosmos'], check=True)
         return
     handler = args.handler.resolve() if args.handler else runtime / 'handler.json'
@@ -88,24 +94,21 @@ def main():
     if args.command == 'init-history':
         if not args.history_schema:
             p.error('init-history requires an explicit private --history-schema')
-        # A fresh bridge gets separate projections of the same canonical source
-        # transactions. Restrict search_path during DDL: including public here
-        # would make IF NOT EXISTS silently reuse another bridge\'s tables.
-        exists = subprocess.check_output(compose + ['exec', '-T', 'history-db', 'psql', '-U', 'yaci', '-d', 'postgres', '-Atc',
+        # Keep the rehearsal application cache separate from provider storage.
+        exists = subprocess.check_output(compose + ['exec', '-T', 'gateway-db', 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc',
             f"SELECT 1 FROM pg_database WHERE datname='{args.gateway_database}'"], text=True).strip()
         if not exists:
-            subprocess.run(compose + ['exec', '-T', 'history-db', 'createdb', '-U', 'yaci', args.gateway_database], check=True)
+            subprocess.run(compose + ['exec', '-T', 'gateway-db', 'createdb', '-U', 'postgres', args.gateway_database], check=True)
         initialization = r'''
 const fs = require('fs');
 const { Client } = require('pg');
-const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-history-sync.js');
 (async () => {
-  const [schema, handlerPath] = process.argv.slice(2);
+  const [schema, handlerPath, databaseName, databasePort] = process.argv.slice(2);
   if (!/^migration_[a-z0-9_]+$/.test(schema)) throw new Error('Invalid private schema');
   const handler = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
   const identity = handler.hostStateNFT.policyId + handler.hostStateNFT.name;
   if (!/^[0-9a-f]+$/.test(identity) || !handler.migration?.registryUnit) throw new Error('Expected upgrade-capable baseline');
-  const db = new Client({ host: '127.0.0.1', port: 27432, database: 'yaci_store', user: 'yaci', password: 'devkit' });
+  const db = new Client({ host: '127.0.0.1', port: Number(databasePort), database: databaseName, user: 'postgres', password: 'postgres' });
   await db.connect();
   try {
     await db.query('BEGIN');
@@ -117,7 +120,6 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
     if (rows.length !== 1 || rows[0].host_state_unit !== identity || rows[0].registry_unit !== handler.migration.registryUnit) {
       throw new Error('Projection schema belongs to another bridge; select a fresh private schema');
     }
-    await ensureBridgeHistoryTables(db);
     await db.query('COMMIT');
     console.log(JSON.stringify({ schema, hostStateUnit: identity, initialized: true }));
   } catch (error) {
@@ -126,13 +128,18 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
   } finally { await db.end(); }
 })().catch(error => { console.error(error.message); process.exitCode = 1; });
 '''
-        subprocess.run(['node', '-', args.history_schema, str(handler)], input=initialization,
+        subprocess.run(['node', '-', args.history_schema, str(handler), args.gateway_database, str(gateway_port)], input=initialization,
             text=True, cwd=ROOT / 'cardano/gateway', check=True)
         return
     genesis = json.loads((runtime / 'runtime/genesis-shelley.json').read_text())
+    nonce_ports = [port for port in config['services']['nonce']['ports'] if isinstance(port, dict)
+                   and port.get('host_ip') == '127.0.0.1' and int(port.get('target', 0)) == 8080]
+    if len(nonce_ports) != 1:
+        raise ValueError('Expected the owned local HTTP epoch provider on loopback')
+    nonce_port = int(nonce_ports[0]['published'])
     env = dict(os.environ)
     # Explicit local values; never load operator .env or Hermes home keys.
-    for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'HISTORY_DB_URL', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
+    for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
         env.pop(key, None)
     env.update({'PORT': '8800', 'GRPC_HOST': '127.0.0.1', 'GRPC_PORT': '5501', 'CARDANO_NETWORK_MAGIC': '42',
         'CARDANO_CHAIN_HOST': '127.0.0.1', 'CARDANO_CHAIN_PORT': '23001',
@@ -142,9 +149,9 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
         'CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS': str(math.ceil(4 * genesis['securityParam'] / Fraction(str(genesis['activeSlotsCoeff'])))),
         'CARDANO_LOCAL_EPOCH_SNAPSHOT_DIR': str(runtime / 'epoch-stake'),
         'CARDANO_EPOCH_NONCE_GENESIS': hashlib.blake2b((runtime / 'runtime/genesis-shelley.json').read_bytes(), digest_size=32).hexdigest(),
+        'CARDANO_EPOCH_PARAMS_ENDPOINT': f'http://127.0.0.1:{nonce_port}',
         'OGMIOS_ENDPOINT': 'http://127.0.0.1:2637', 'KUPO_ENDPOINT': 'http://127.0.0.1:2742', 'YACI_STORE_ENDPOINT': 'http://127.0.0.1:29083',
-        'HISTORY_DB_HOST': '127.0.0.1', 'HISTORY_DB_PORT': '27432', 'HISTORY_DB_NAME': 'yaci_store', 'HISTORY_DB_USERNAME': 'yaci', 'HISTORY_DB_PASSWORD': 'devkit',
-        'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': '27432', 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'yaci', 'GATEWAY_DB_PASSWORD': 'devkit', 'GATEWAY_DB_SYNCHRONIZE': 'true',
+        'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': str(gateway_port), 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'postgres', 'GATEWAY_DB_PASSWORD': 'postgres', 'GATEWAY_DB_SYNCHRONIZE': 'true',
         'HANDLER_JSON_PATH': str(handler), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
         'FAKETIME_DONT_FAKE_MONOTONIC': '1'})
     if args.command == 'gateway':
@@ -156,7 +163,7 @@ const { ensureBridgeHistoryTables } = require('./dist/scripts/yaci-bridge-histor
         env['PGOPTIONS'] = f'-c search_path={args.history_schema},public'
     else:
         env.pop('PGOPTIONS', None)
-    script = {'gateway': 'dist/main.js', 'history-sync': 'dist/scripts/yaci-bridge-history-sync.js', 'export': 'dist/scripts/export-bridge-manifest.js', 'witness': 'dist/scripts/export-migration-witness.js'}[args.command]
+    script = {'gateway': 'dist/main.js', 'export': 'dist/scripts/export-bridge-manifest.js', 'witness': 'dist/scripts/export-migration-witness.js'}[args.command]
     command = ['faketime', '-f', f'{args.clock_offset_seconds:+d}s', 'node', script]
     if args.command == 'export': command += [str(handler), str(handler.parent / f'bridge-manifest-{json.loads(handler.read_text())["migration"]["generation"]}.json')]
     if args.command == 'witness': command += [str(handler), str(args.out.resolve())]

@@ -199,9 +199,8 @@ class Runtime:
             "CARIBIC_OGMIOS_URL": ogmios, "CARIBIC_KUPO_URL": kupo,
             "YACI_STORE_ENDPOINT": self.endpoint("DEVKIT_HISTORY_PORT"),
             "DEVKIT_ADMIN_ENDPOINT": self.endpoint("DEVKIT_ADMIN_PORT"),
-            "HISTORY_DB_HOST": host, "HISTORY_DB_PORT": self.settings["DEVKIT_HISTORY_DB_PORT"],
-            "HISTORY_DB_NAME": "yaci_store", "HISTORY_DB_USERNAME": "yaci",
-            "HISTORY_DB_PASSWORD": "devkit", "CARDANO_EPOCH_LENGTH": str(genesis["shelley"]["epochLength"]),
+            "CARDANO_DOCKER_NETWORK_EXTERNAL": "true",
+            "CARDANO_EPOCH_LENGTH": str(genesis["shelley"]["epochLength"]),
             # This managed network starts in Conway. Its native window is 4*k/f.
             "CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS": str(math.ceil(
                 4 * genesis["shelley"]["securityParam"] / Fraction(str(genesis["shelley"]["activeSlotsCoeff"])))),
@@ -217,14 +216,12 @@ class Runtime:
                      "OGMIOS_URL": "http://devkit:1337", "KUPO_URL": "http://devkit:1442",
                      "CARDANO_CHAIN_HOST": "devkit", "CARDANO_CHAIN_PORT": "3001",
                      "YACI_STORE_ENDPOINT": "http://history:8080",
-                     "HISTORY_DB_HOST": "history-db", "HISTORY_DB_PORT": "5432",
                      "GATEWAY_DB_HOST": "gateway-db", "GATEWAY_DB_PORT": "5432",
                      "CARDANO_EPOCH_PARAMS_ENDPOINT": "http://nonce:8080",
                      "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT": "http://nonce:8080",
                      "CARDANO_DOCKER_NETWORK": self.project + "_default",
                      "GATEWAY_COMPOSE_PROJECT": self.project + "-gateway",
                      "GATEWAY_CONTAINER_NAME": self.project + "-gateway-app",
-                     "GATEWAY_HISTORY_CONTAINER_NAME": self.project + "-bridge-history-sync",
                      "DAPP_COMPOSE_PROJECT": self.project + "-dapps",
                      # All five producers are seeded in genesis.
                      "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT": "1"}

@@ -71,6 +71,8 @@ pub type ShutdownState {
   ShuttingDown { initiated_at: Int, grace_period_end: Int }
 }
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 /// The immutable authority registered for a bound IBC port.
 ///
 /// Callback validators use this record to distinguish the real application

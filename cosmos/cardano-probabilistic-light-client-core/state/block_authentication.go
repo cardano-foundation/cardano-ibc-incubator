@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"math/big"
 	"strings"
 
@@ -516,9 +517,19 @@ func verifyHostStateTxIncludedInAnchorBlock(header *ProbabilisticHeader) error {
 func extractHostStateTxBodyCborFromAnchorBlock(header *ProbabilisticHeader) ([]byte, error) {
 	txBodyCbor, err := probabilisticcore.ExtractHostStateTxBodyCborFromAnchorBlock(header.AnchorBlock.BlockCbor, header.HostStateTxHash)
 	if err != nil {
-		return nil, errorsmod.Wrap(ErrInvalidHostStateCommitment, err.Error())
+		return nil, hostStateExtractionError(err)
 	}
 	return txBodyCbor, nil
+}
+
+// hostStateExtractionError classifies a failure to read the HostState
+// transaction from the anchor block. A decoder panic means the block bytes are
+// malformed, not that the HostState commitment is wrong.
+func hostStateExtractionError(err error) error {
+	if errors.Is(err, probabilisticcore.ErrDecodePanicked) {
+		return errorsmod.Wrap(ErrInvalidAcceptedBlock, err.Error())
+	}
+	return errorsmod.Wrap(ErrInvalidHostStateCommitment, err.Error())
 }
 
 func extractTransactionBodyCbor(tx ledger.Transaction) ([]byte, error) {

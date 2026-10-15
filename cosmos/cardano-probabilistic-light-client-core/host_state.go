@@ -63,7 +63,8 @@ func ExtractIbcStateRootFromAnchorBlock(
 	outputIndex uint32,
 	hostStateNftPolicyId []byte,
 	hostStateNftTokenName []byte,
-) ([]byte, error) {
+) (ibcStateRoot []byte, err error) {
+	defer recoverDecodePanic(&ibcStateRoot, &err)
 	tx, _, err := findValidHostStateTransaction(anchorBlockCbor, txHash)
 	if err != nil {
 		return nil, err

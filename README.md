@@ -82,9 +82,9 @@ The repository is organized around these main areas:
 
 ![Architecture: users, Hermes and the Cosmos chain on top, the Cardano Gateway and Cardano data services in the middle, and the Cardano chain with its on-chain validators at the bottom](docs/assets/mechanics/architecture.png)
 
-Chain history comes from Yaci Store on every network. Yaci Store is an indexer rather than a node: it follows a Cardano node and writes each block into its own Postgres database as rows of blocks, transactions, inputs, UTxOs, pool registrations, and epoch nonces. A sidecar copies the bridge's own rows into `bridge_*` tables, and the Gateway reads all of it with plain SQL, plus Yaci's REST API for raw block bytes. On public networks Yaci syncs from a recent checkpoint, and Blockfrost supplies older epoch and pool history.
+Gateway reads chain history directly through Yaci Store's native REST API. Yaci follows a Cardano node and keeps its database private. Indexed asset and address history locate the transactions needed for proofs. Gateway reads their raw blocks on demand to check validity and reconstruct historical state. It rechecks the requested block before returning a proof. Gateway keeps application and proof caches but does not copy Yaci's chain tables. On public networks Blockfrost supplies older epoch and pool history. See the [REST history contract](docs/yaci-rest-history.md) for provider requirements.
 
-![Yaci Store following a Cardano node, writing blocks into Postgres tables, and the Gateway querying those tables with SQL](docs/assets/mechanics/yaci-store.gif)
+![Yaci Store exposing REST while its database stays private, with Gateway reading history directly through REST](docs/assets/mechanics/yaci-store.gif)
 
 All of the bridge's IBC state lives in one Merkle tree whose root sits in the HostState datum. Cardano validators check every update to that root, the light client carries it to Cosmos in an authenticated header, and each record is then proven against it with an ICS-23 membership proof. No step relies on trusting the Gateway or Hermes.
 

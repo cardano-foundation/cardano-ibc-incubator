@@ -19,17 +19,6 @@ describe('Yaci local epoch nonces', () => {
   let query: jest.Mock;
   let configuration: Record<string, unknown>;
 
-  const row = (epoch = 1, nonce = epochNonce) => ({
-    epoch,
-    nonce,
-    block_hash: '33'.repeat(32),
-    block_epoch: epoch,
-    genesis_nonce: genesisNonce,
-    genesis_block_hash: '44'.repeat(32),
-    genesis_block_epoch: 0,
-    canonical_epoch_count: (BigInt(epoch) + 1n).toString(),
-  });
-
   beforeEach(() => {
     process.env.CARDANO_CHAIN_ID = 'cardano-devnet';
     process.env.CARDANO_NETWORK_MAGIC = '42';
@@ -42,7 +31,7 @@ describe('Yaci local epoch nonces', () => {
       cardanoChainNetworkMagic: 42,
       cardanoNetwork: 'Custom',
     };
-    query = jest.fn().mockResolvedValue([row()]);
+    query = jest.fn().mockRejectedValue(new Error('Yaci PostgreSQL must not be queried'));
     service = new YaciHistoryService(
       { get: (key: string) => configuration[key] } as ConfigService,
       {} as never,
@@ -58,94 +47,19 @@ describe('Yaci local epoch nonces', () => {
     jest.restoreAllMocks();
   });
 
-  it('uses the requested replayed epoch and ignores the unscoped override', async () => {
-    await expect(service['fetchEpochNonce'](1)).resolves.toBe(epochNonce);
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE n.epoch = $1'), [1]);
-  });
-
-  it('uses the genuine genesis nonce only for unindexed epoch zero', async () => {
-    query.mockResolvedValue([]);
-    await expect(service['fetchEpochNonce'](0)).resolves.toBe(genesisNonce);
-    await expect(service['fetchEpochNonce'](1)).rejects.toThrow('replay Yaci from genesis');
-  });
-
-  it('validates the replayed epoch-zero value against the configured actual genesis', async () => {
-    query.mockResolvedValue([row(0, genesisNonce)]);
-    await expect(service['fetchEpochNonce'](0)).resolves.toBe(genesisNonce);
-    query.mockResolvedValue([row(0, epochNonce)]);
-    await expect(service['fetchEpochNonce'](0)).rejects.toThrow('invalid or belongs to another genesis');
-  });
-
-  it.each([
-    ['nonce', 'not-hex'],
-    ['epoch', 2],
-    ['block_epoch', 2],
-    ['block_hash', null],
-    ['genesis_nonce', '55'.repeat(32)],
-    ['genesis_block_hash', null],
-    ['genesis_block_epoch', 1],
-  ])('rejects invalid or rolled-back %s evidence', async (field, value) => {
-    query.mockResolvedValue([{ ...row(), [field as string]: value }]);
-    await expect(service['fetchEpochNonce'](1)).rejects.toThrow('invalid or belongs to another genesis');
-  });
-
-  it('rejects duplicate evidence', async () => {
-    query.mockResolvedValue([row(), row()]);
-    await expect(service['fetchEpochNonce'](1)).rejects.toThrow('invalid or belongs to another genesis');
-  });
-
-  it('rejects a later nonce when a middle epoch is missing despite valid requested and genesis rows', async () => {
-    query.mockResolvedValue([{ ...row(3), canonical_epoch_count: '3' }]);
-    await expect(service['fetchEpochNonce'](3)).rejects.toThrow('incomplete or non-canonical');
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('COUNT(DISTINCT history.epoch)::text'), [3]);
-    const sql = query.mock.calls[0][0];
-    expect(sql).toContain('history_block.number = history.block');
-    expect(sql).toContain('history_block.slot = history.slot');
-    expect(sql).toContain('history_block.epoch = history.epoch');
-    expect(sql).toContain('history.epoch BETWEEN 0 AND $1');
-    expect(sql).toContain("history.nonce ~* '^[0-9a-f]{64}$'");
-    expect(sql).toContain("history_block.hash ~* '^[0-9a-f]{64}$'");
-  });
-
-  it.each([undefined, null, '', 'x', '-1', '2.0', ' 2 ', '02', '0', '1', '3', 2, 2n])(
-    'rejects invalid or inconsistent canonical count %s',
-    async (canonicalEpochCount) => {
-      query.mockResolvedValue([{ ...row(), canonical_epoch_count: canonicalEpochCount }]);
-      await expect(service['fetchEpochNonce'](1)).rejects.toThrow('incomplete or non-canonical');
-    },
-  );
-
-  it('compares epoch plus one exactly beyond the safe integer boundary', async () => {
-    const epoch = Number.MAX_SAFE_INTEGER;
-    query.mockResolvedValue([row(epoch)]);
-    await expect(service['fetchEpochNonce'](epoch)).resolves.toBe(epochNonce);
-    query.mockResolvedValue([{ ...row(epoch), canonical_epoch_count: '9007199254740993' }]);
-    await expect(service['fetchEpochNonce'](epoch)).rejects.toThrow('incomplete or non-canonical');
-  });
-
-  it('does not cache continuity across a rollback that removes an intermediate epoch', async () => {
-    query.mockResolvedValue([row(3)]);
-    await expect(service['fetchEpochNonce'](3)).resolves.toBe(epochNonce);
-    query.mockResolvedValue([{ ...row(3), canonical_epoch_count: '3' }]);
-    await expect(service['fetchEpochNonce'](3)).rejects.toThrow('incomplete or non-canonical');
-  });
-
-  it('does not retain stale epoch cache values across rollback and replay', async () => {
-    await expect(service['fetchEpochNonce'](1)).resolves.toBe(epochNonce);
-    query.mockResolvedValue([]);
-    await expect(service['fetchEpochNonce'](1)).rejects.toThrow('not indexed');
-    query.mockResolvedValue([row(1, '66'.repeat(32))]);
-    await expect(service['fetchEpochNonce'](1)).resolves.toBe('66'.repeat(32));
-  });
-
-  it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid requested epoch %s', async (epoch) => {
-    await expect(service['fetchEpochNonce'](epoch)).rejects.toThrow('non-negative safe integer');
+  it.each([0, 1, 3])('requires an HTTP epoch provider for local epoch %s', async (epoch) => {
+    await expect(service['fetchEpochNonce'](epoch)).rejects.toThrow('CARDANO_EPOCH_PARAMS_ENDPOINT');
     expect(query).not.toHaveBeenCalled();
   });
 
-  it('requires an actual configured genesis nonce', async () => {
-    delete process.env.CARDANO_EPOCH_NONCE_GENESIS;
-    await expect(service['fetchEpochNonce'](1)).rejects.toThrow('actual node genesis hash');
+  it('reads local nonces from the configured HTTP provider', async () => {
+    configuration.cardanoEpochParamsEndpoint = 'http://nonce:8080';
+    const request = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true, json: async () => ({ epoch: 1, nonce: epochNonce }),
+    } as Response);
+    await expect(service['fetchEpochNonce'](1)).resolves.toBe(epochNonce);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(String(request.mock.calls[0][0])).toBe('http://nonce:8080/epochs/1/parameters');
     expect(query).not.toHaveBeenCalled();
   });
 

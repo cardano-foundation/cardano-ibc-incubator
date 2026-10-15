@@ -28,6 +28,7 @@ const sharedSourceFiles = [
   "errors.go",
   "events.go",
   "header.go",
+  "historical_codec_test.go",
   "height.go",
   "heuristic_policy.go",
   "host_continuity.go",
@@ -266,6 +267,7 @@ function assertFileInventory() {
     "acceptance_upgrade_before_test.go",
     "acceptance_upgrade_test.go",
     "acceptance_watcher_test.go",
+    "internal/cardanodatum/channel_upgrade_sequence.go",
     "module.go",
     "recovery_app_test.go",
     protoFile,
@@ -275,6 +277,7 @@ function assertFileInventory() {
     "events_test.go",
     "ordered_timeout_test.go",
     "light_client_module.go",
+    "internal/cardanodatum/channel_upgrade_sequence.go",
     "module.go",
     "recovery_app_test.go",
     protoFile,
@@ -429,7 +432,7 @@ function assertModuleTargets() {
     ],
     [
       v8Mod,
-      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.5",
+      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.6",
     ],
     [v8Mod, "github.com/cosmos/ibc-go/v8 v8.7.0"],
     [
@@ -438,7 +441,7 @@ function assertModuleTargets() {
     ],
     [
       v10Mod,
-      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.5",
+      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.6",
     ],
     [v10Mod, "github.com/cosmos/ibc-go/v10 v10.2.0"],
   ];
@@ -512,7 +515,8 @@ const adapterLineBudgets = {
   "host_state_commitment.go": 10,
   "host_state_datum.go": 10,
   "ibc_state_proof.go": 200,
-  "internal/cardanodatum/tm_helper.go": 310,
+  "internal/cardanodatum/tm_helper.go": 85,
+  "internal/cardanodatum/channel_upgrade_sequence.go": 10,
   "internal/cardanodatum/types.go": 30,
   "keys.go": 20,
   "light_client_module.go": 185,

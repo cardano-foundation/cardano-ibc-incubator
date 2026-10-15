@@ -58,3 +58,10 @@ These tests establish capacity for the enforced evidence envelope on the two loc
 
 Hosts now persist block continuity independently of client updates. The local profiles treat a gap greater than 10 seconds as an interruption and start a fresh three-minute window. Proof use requires a previously committed block strictly after both the epoch deadline and the host interruption deadline. Equality remains pending. Missing integration fails closed. Challenges do not depend on either deadline. See the adapters' porting notes for required host hooks and deployment assumptions.
 The [Injective application replay](../../tests/injective-probabilistic-lifecycle/README.md) builds the pinned `v1.18.0-1770939123` application with this client and its native SDK and IBC forks. A small signed challenge, governance recovery and subsequent packet delivery pass under captured testnet capacity parameters. The larger challenges fail under those same parameters. A 3.82 MB transaction runs out of gas and a 5.24 MB transaction exceeds the 4 MiB block envelope. Both execute under the larger local profile. Their larger proposals also fail under the testnet gas limit. This demonstrates a capacity mismatch rather than an admitted unchallengeable proposal. The recorded binary and parameter snapshot are local test choices. They do not certify the current public binary or a production deployment.
+
+Commitment values use the shared `commitmentcodec` package. It preserves the
+historical eight-field Tendermint client format and the release's nine-field
+format. The v8, v10 and historical Mithril adapters supply their protobuf fields
+and use the same decoding and comparison rules. See the
+[commitment codec specification](../../docs/cardano-commitment-codec.md) before
+changing a wire type.

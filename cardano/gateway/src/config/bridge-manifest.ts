@@ -255,7 +255,7 @@ export type BridgeManifest = {
 
 export type BridgeManifestCardanoIdentity = BridgeManifest['cardano'];
 
-export type LoadedBridgeConfig = {
+type LoadedBridgeConfig = {
   deployment: DeploymentConfig;
   bridgeManifest: BridgeManifest;
 };

@@ -1,3 +1,5 @@
+import { YaciRestHistory } from '../../shared/helpers/yaci-rest-history';
+import { YaciRestClient } from '../../shared/helpers/yaci-rest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -64,14 +66,16 @@ describe('actual local Praos ledger stake snapshots', () => {
   afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
   });
-  const load = () => readLocalEpochStake(directory, 0, genesis, { query } as never);
+  const api = new YaciRestClient('https://fixture.invalid');
+  api.block = jest.fn(async () => { const rows = await query(); return rows.length === 1 ? { ...rows[0], slot: 21, epoch: 0 } as never : null; });
+  const load = () => readLocalEpochStake(directory, 0, genesis, new YaciRestHistory(api));
   it('reads actual epoch fractions and rechecks canonical evidence on every read', async () => {
     expect((await load())[0]).toMatchObject({
       stake: 300n,
       relativeStakeNumerator: 300n,
       relativeStakeDenominator: 300n,
     });
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('epoch = $3 AND hash = $4'), ['7', '21', 0, block]);
+    expect(api.block).toHaveBeenCalledWith(7n);
     query.mockResolvedValue([]);
     await expect(load()).rejects.toThrow('not canonical');
   });
@@ -81,16 +85,14 @@ describe('actual local Praos ledger stake snapshots', () => {
     await expect(load()).rejects.toThrow('identity mismatch');
   });
   it('does not substitute another epoch when an archive is missing', async () => {
-    await expect(readLocalEpochStake(directory, 1, genesis, { query } as never)).rejects.toThrow('ENOENT');
+    await expect(readLocalEpochStake(directory, 1, genesis, new YaciRestHistory(api))).rejects.toThrow('ENOENT');
   });
   it('retains an older canonical capture after the newest capture rolls back across the epoch boundary', async () => {
     snapshot.blockHeight = '9';
     snapshot.blockHash = '77'.repeat(32);
     snapshot.slot = '25';
     await publish();
-    query.mockImplementation(async (_sql: string, parameters: string[]) =>
-      parameters[3] === block ? [{ hash: block }] : [],
-    );
+    query.mockResolvedValue([{ hash: block }]);
     expect((await load())[0].stake).toBe(300n);
     // If both captures disappear, fail closed rather than using another epoch.
     query.mockResolvedValue([]);
@@ -158,8 +160,11 @@ describe('actual local Praos ledger stake snapshots', () => {
         .mockResolvedValue({ currentEpochStartSlot: 0n, currentEpochEndSlotExclusive: 5000n });
       jest.spyOn(service as any, 'fetchEpochNonce').mockResolvedValue(genesis);
       jest.spyOn(service as any, 'findKnownPoolRegistrationSlots').mockResolvedValue(new Map());
+      config.yaciStoreEndpoint = 'https://yaci.example';
+      const remote = jest.spyOn(YaciRestClient.prototype, 'block').mockImplementation(async () => ({ ...(await query())[0], slot: 21, epoch: 0 }) as never);
       const result = await service.findEpochContextAtBlock({ epochNo: 0 } as never);
       expect(result?.stakeDistribution[0].poolId).toBe(bech32.encode('pool', bech32.toWords(Buffer.from(pool, 'hex'))));
+      remote.mockRestore();
       config.cardanoNetwork = 'Mainnet';
       await expect(service.findEpochContextAtBlock({ epochNo: 0 } as never)).rejects.toThrow('explicit magic-42');
     } finally {

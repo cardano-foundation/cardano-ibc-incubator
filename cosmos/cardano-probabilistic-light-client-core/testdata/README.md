@@ -22,10 +22,12 @@ anchor. Complete signed bodies include HostState and packet-lane continuations
 with five ICS-20 commitments and the corresponding source escrow outputs.
 The source uses an accelerated slot clock. Host deadlines still use real time.
 
-To regenerate it, run the acceptance test in the v8 module with
-`UPDATE_NATIVE_RECOVERY_FIXTURE=1`, `CARIBIC_V8_ACCEPTANCE=1` and
-`CARIBIC_ACCEPTANCE_ARTIFACTS` set to an empty absolute directory. Use
-`go test . -run '^TestCaribicV8ChallengeRecovery$' -count=1 -timeout=25m`.
+Regenerate it in the v8 module with
+`UPDATE_NATIVE_RECOVERY_FIXTURE=1 go test . -run '^TestAcceptanceSourceContinuity$' -count=1 -timeout=10m`.
+That test also runs in the normal Go suite and checks channel and packet proofs
+against the signed fixture's roots. Run
+`caribic test --light-client challenge-recovery --network v8-classic` to check the
+live host with the regenerated history.
 The v8 driver supplies packet transaction bodies to `TestExportAcceptanceHistory`
 in the core module. That generator signs every native header and derives the
 rollover nonces from the preceding signed history. The driver checks the proofs

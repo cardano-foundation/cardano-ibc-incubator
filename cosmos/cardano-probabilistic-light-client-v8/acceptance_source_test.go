@@ -16,7 +16,6 @@ import (
 	"time"
 
 	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
-	datum "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/cardanodatum"
 	transfer "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
@@ -109,7 +108,13 @@ func acceptanceCBOR(t *testing.T, value any) []byte {
 	return raw
 }
 func acceptanceChannelValues(t *testing.T) map[string][]byte {
-	channel := datum.ChannelDatum{State: cbor.Tag{Number: 123, Content: []any{}}, Ordering: cbor.Tag{Number: 122, Content: []any{}}, Counterparty: datum.ChannelCounterpartyDatum{PortId: []byte("transfer"), ChannelId: []byte("channel-0")}, ConnectionHops: [][]byte{[]byte("connection-0")}, Version: []byte("ics20-1")}
+	channel := cbor.Tag{Number: 121, Content: []any{
+		cbor.Tag{Number: 123, Content: []any{}},
+		cbor.Tag{Number: 122, Content: []any{}},
+		cbor.Tag{Number: 121, Content: []any{[]byte("transfer"), []byte("channel-0")}},
+		[][]byte{[]byte("connection-0")},
+		[]byte("ics20-1"),
+	}}
 	return map[string][]byte{"channelEnds/ports/transfer/channels/channel-0": acceptanceCBOR(t, channel)}
 }
 func acceptanceSource(t *testing.T, root string) acceptanceHistory {
@@ -263,9 +268,9 @@ func acceptanceHeader(t *testing.T, history acceptanceHistory, branch string, tr
 	return h
 }
 
-// Keep malformed or discontinuous signed fixtures from costing a full live
-// response window before failing. The acceptance run still uses signed RPC
-// transactions and the real destination keeper for every state change.
+// Check signed history and committed values before spending a full live response
+// window on the acceptance run. That run still uses signed RPC transactions and
+// the real destination keeper for every state change.
 func TestAcceptanceSourceContinuity(t *testing.T) {
 	history := acceptanceSource(t, t.TempDir())
 	ctx, store := newProbabilisticTestClientStore(t, "acceptance-source-continuity")
@@ -273,8 +278,24 @@ func TestAcceptanceSourceContinuity(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	require.NoError(t, history.Client.Initialize(ctx, cdc, store, history.Consensus))
 	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
+	channelKey := "channelEnds/ports/transfer/channels/channel-0"
+	proof, root := acceptanceProof(t, acceptanceChannelValues(t), channelKey)
+	require.Equal(t, history.Consensus.IbcStateRoot, root)
+	channel := channeltypes.Channel{
+		State:          channeltypes.TRYOPEN,
+		Ordering:       channeltypes.UNORDERED,
+		Counterparty:   channeltypes.Counterparty{PortId: "transfer", ChannelId: "channel-0"},
+		ConnectionHops: []string{"connection-0"},
+		Version:        "ics20-1",
+	}
+	channelBytes, err := channel.Marshal()
+	require.NoError(t, err)
+	state, found := getClientState(store, cdc)
+	require.True(t, found)
+	require.NoError(t, state.VerifyMembership(ctx, store, cdc, NewHeight(0, 966), 0, 0, proof, commitmenttypes.NewMerklePath("ibc", channelKey), channelBytes))
 	trusted := uint64(966)
-	for _, anchor := range []uint64{967, 1001, 1032, 1063, 1094, 1125} {
+	for _, point := range []struct{ anchor, count uint64 }{{967, 1}, {1001, 2}, {1032, 2}, {1063, 3}, {1094, 4}, {1125, 5}} {
+		anchor := point.anchor
 		state, found := getClientState(store, cdc)
 		require.True(t, found)
 		header := acceptanceHeader(t, history, "honest", trusted, anchor)
@@ -291,6 +312,10 @@ func TestAcceptanceSourceContinuity(t *testing.T) {
 		if header.NewEpochContext != nil {
 			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
 		}
+		state, found = getClientState(store, cdc)
+		require.True(t, found)
+		proof, _ = acceptanceProof(t, acceptanceLaneValues(t, point.count), acceptanceCommitmentKey(point.count))
+		require.NoError(t, state.VerifyMembership(ctx, store, cdc, NewHeight(0, anchor), 0, 0, proof, commitmenttypes.NewMerklePath("ibc", acceptanceCommitmentKey(point.count)), channeltypes.CommitPacket(nil, acceptancePacket(point.count))), "anchor %d", anchor)
 		trusted = anchor
 	}
 }

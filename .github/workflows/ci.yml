@@ -1107,6 +1107,12 @@ jobs:
 
       - name: Install gateway and runtime dependencies
         run: |
+          npm ci --prefix packages/cardano-ibc-tx-builder
+          npm run --prefix packages/cardano-ibc-tx-builder build
+          npm ci --prefix packages/cardano-ibc-trace-registry
+          npm run --prefix packages/cardano-ibc-trace-registry build
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
+          npm run --prefix packages/cardano-ibc-tx-builder-runtime build
           npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev
           npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev
           npm ci --prefix packages/cardano-ibc-tx-builder-runtime --omit=dev
@@ -1153,7 +1159,6 @@ jobs:
             cosmos/cardano-mithril-light-client-v10/go.sum
 
       - name: Setup Aiken
-        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: aiken-lang/setup-aiken@v1
         with:
           version: v1.1.24
@@ -1173,6 +1178,11 @@ jobs:
         env:
           WIRE_SCHEMA_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: node scripts/ci/check-aiken-wire-schema.mjs check --base-ref "${WIRE_SCHEMA_BASE_REF}"
+
+      - name: Check frozen commitment codec vectors
+        run: |
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
+          node tests/ibc-state-commitment/generate-codec.mjs --check
 
       - name: Check pinned ICS-20 JSON vectors
         run: node tests/ics20-json-vectors/generate.mjs --check
@@ -1224,6 +1234,16 @@ jobs:
         env:
           GOWORK: off
         run: go test ./...
+
+      # gouroboros decoders panicked on malformed relayer block bytes before
+      # v0.205.4 (#687). Fuzzing catches a regression after an upgrade.
+      - name: Fuzz Cardano block decoding
+        if: matrix.module.name == 'core'
+        env:
+          GOWORK: off
+        run: |
+          go test -run '^$' -fuzz '^FuzzDecodeLedgerBlock$' -fuzztime 60s .
+          go test -run '^$' -fuzz '^FuzzDecodeLedgerHeader$' -fuzztime 30s .
 
       - name: Vet non-generated packages
         env:

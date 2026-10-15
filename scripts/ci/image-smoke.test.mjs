@@ -47,6 +47,9 @@ test('fixture serves only expected startup reads and records unexpected requests
       assert.deepEqual(await get('/matches/' + manifest.validators[name].address + '?unspent'), []);
     }
     const references = await get('/matches/*@' + manifest.validators.host_state_stt.ref_utxo.tx_hash + '?unspent');
+    const tip = await get('/api/v1/blocks/latest');
+    assert.equal(tip.number, 1);
+    assert.equal(tip.hash, '88'.repeat(32));
     assert.equal(references.length, 35);
     assert.equal(new Set(references.map(ref => ref.output_index)).size, 35);
     for (const validator of [manifest.packet_state.state, manifest.packet_state.batch,
@@ -65,7 +68,7 @@ test('fixture serves only expected startup reads and records unexpected requests
     }
     const observed = await get('/__smoke/status');
     assert.deepEqual({ ...observed, unexpected: observed.unexpected.length },
-      { protocol: 1, timing: 2, references: 1, host: 2, datum: 1, entities: 3, unexpected: 8 });
+      { protocol: 1, timing: 2, references: 1, host: 2, datum: 1, entities: 3, history: 1, unexpected: 8 });
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
