@@ -8,7 +8,6 @@ import (
 	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	transfer "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
@@ -105,7 +104,8 @@ func idleCheckpointPacket(sequence uint64) channeltypes.Packet {
 }
 
 func idleCheckpointPacketForReceiver(sequence uint64, receiver string) channeltypes.Packet {
-	data := transfer.NewFungibleTokenPacketData("lovelace", "100", "cardano-local-sender", receiver, "").GetBytes()
+	// Preserve the exact classic JSON bytes in the signed source fixture.
+	data, _ := json.Marshal(map[string]string{"amount": "100", "denom": "lovelace", "receiver": receiver, "sender": "cardano-local-sender"})
 	return channeltypes.NewPacket(data, sequence, "transfer", "channel-0", "transfer", "channel-0", clienttypes.ZeroHeight(), uint64(time.Date(2090, 1, 1, 0, 0, 0, 0, time.UTC).UnixNano()))
 }
 
