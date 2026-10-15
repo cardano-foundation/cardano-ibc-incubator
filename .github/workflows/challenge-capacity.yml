@@ -46,7 +46,7 @@ jobs:
         run: cargo build --locked --bins --manifest-path tests/challenge-capacity-relayer/Cargo.toml
       - name: Load shipped configurations with the pinned Hermes parser
         run: cargo test --locked --manifest-path tests/challenge-capacity-relayer/Cargo.toml --test shipped_configs
-      - name: Sign challenges and recover future proposals after host restart
+      - name: Verify checkpoint expiry, challenge capacity and restart recovery
         shell: bash
         env:
           GOWORK: off
@@ -55,7 +55,7 @@ jobs:
           export STARTUP_MONITOR_PROBE="$GITHUB_WORKSPACE/tests/challenge-capacity-relayer/target/debug/startup-watcher"
           export CHALLENGE_RELAYER_PROBE="$GITHUB_WORKSPACE/tests/challenge-capacity-relayer/target/debug/challenge-capacity-relayer"
           cd cosmos/cardano-probabilistic-light-client-v${{ matrix.major }}
-          go test -run 'TestDestinationChallengeCapacity|TestChallengeCapacityAdmission|TestEpochChallenge' -count=1 -v | tee "$RUNNER_TEMP/challenge-v${{ matrix.major }}.log"
+          go test -run 'TestAppCheckpointProgressRefreshesExpiry|TestDestinationChallengeCapacity|TestChallengeCapacityAdmission|TestEpochChallenge' -count=1 -v | tee "$RUNNER_TEMP/challenge-v${{ matrix.major }}.log"
       - name: Build the destination image with the measured dependencies
         run: >-
           docker compose -f chains/cosmos/docker-compose.yml

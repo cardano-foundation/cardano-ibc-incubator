@@ -357,7 +357,7 @@ func TestInitializePersistsTemporalCursorAcrossReload(t *testing.T) {
 
 func TestLegacyTemporalCursorHandlingFailsClosedOnlyForRootlessCheckpoint(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
-	_, clientStore := newProbabilisticTestClientStore(t, "probabilistic-legacy-temporal-cursor")
+	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-legacy-temporal-cursor")
 	clientState := newProbabilisticTestClientState()
 	clientState.LatestCheckpointHeight = NewHeight(0, 20)
 	clientState.LatestCheckpointBlockHash = "legacy-rootless-checkpoint"
@@ -366,6 +366,7 @@ func TestLegacyTemporalCursorHandlingFailsClosedOnlyForRootlessCheckpoint(t *tes
 	err := clientState.validateCheckpointFields()
 	require.ErrorIs(t, err, ErrInvalidTimestamp)
 	require.ErrorContains(t, err, "app-state migration")
+	require.Equal(t, Expired, clientState.Status(ctx, clientStore, cdc))
 
 	clientState.LatestCheckpointHeight = NewHeight(0, 10)
 	clientState.LatestCheckpointBlockHash = "legacy-root-bearing-checkpoint"
@@ -378,6 +379,10 @@ func TestLegacyTemporalCursorHandlingFailsClosedOnlyForRootlessCheckpoint(t *tes
 	require.NoError(t, err)
 	require.Equal(t, uint64(77), trustedBlock.slot)
 	require.Equal(t, consensusState.Timestamp, trustedBlock.timestamp)
+	ctx = ctx.WithBlockTime(time.Unix(0, int64(consensusState.Timestamp)))
+	require.Equal(t, Active, clientState.Status(ctx, clientStore, cdc))
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(clientState.TrustingPeriod))
+	require.Equal(t, Expired, clientState.Status(ctx, clientStore, cdc))
 }
 
 func newTemporalTestHeader(

@@ -155,6 +155,9 @@ func (cs *ClientState) verifyHeaderWithMode(
 		if err != nil {
 			return err
 		}
+		if cs.IsExpired(trustedBlock.timestamp, ctx.BlockTime()) {
+			return errorsmod.Wrapf(ErrTrustingPeriodExpired, "trusted checkpoint at height %s has expired", trustedBlock.height.String())
+		}
 	} else {
 		trustedBlock, challengeContexts, err = cs.challengeTrustedBlock(clientStore, cdc, header)
 		if err != nil {

@@ -1214,7 +1214,7 @@ func TestStatusRejectsInvalidOperationalCertificateHistoryStart(t *testing.T) {
 	}
 }
 
-func TestCheckpointCursorDoesNotCreateConsensusStateOrRenewTrust(t *testing.T) {
+func TestCheckpointCursorRenewsTrustWithoutCreatingConsensusState(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-checkpoint-trust")
 	clientState := newProbabilisticTestClientState()
@@ -1223,6 +1223,7 @@ func TestCheckpointCursorDoesNotCreateConsensusStateOrRenewTrust(t *testing.T) {
 	clientState.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
 		{PoolId: bytes.Repeat([]byte{0x23}, 28), SequenceNumber: 4},
 	}
+	ctx = ctx.WithBlockTime(time.Unix(0, int64(clientState.LatestCheckpointTimestamp)))
 
 	expiredTimestamp := uint64(ctx.BlockTime().Add(-2 * time.Second).UnixNano())
 	consensusState := newProbabilisticTestConsensusState(testBlockHash("root-block-hash"))
@@ -1238,7 +1239,8 @@ func TestCheckpointCursorDoesNotCreateConsensusStateOrRenewTrust(t *testing.T) {
 
 	_, checkpointConsensusFound := GetConsensusState(clientStore, cdc, clientState.LatestCheckpointHeight)
 	require.False(t, checkpointConsensusFound)
-	require.Equal(t, Expired, clientState.Status(ctx, clientStore, cdc))
+	require.Equal(t, Active, clientState.Status(ctx, clientStore, cdc))
+	require.Equal(t, Expired, clientState.Status(ctx.WithBlockTime(ctx.BlockTime().Add(time.Second)), clientStore, cdc))
 }
 
 func TestTrustedBlockStateReconstructsHistoricalCounterSnapshot(t *testing.T) {
@@ -1482,7 +1484,7 @@ func TestPersistCheckpointAdvancesCursorWithoutAdvancingIbcRoot(t *testing.T) {
 	require.False(t, checkpointProcessedTimeFound)
 }
 
-func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTrust(t *testing.T) {
+func TestIdleEpochCheckpointSequenceMakesNextHostStateReachable(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-idle-epoch-checkpoints")
 	clientState := newProbabilisticTestClientState()
