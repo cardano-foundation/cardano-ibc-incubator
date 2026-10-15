@@ -331,6 +331,8 @@ message MsgChannelUpgradeInit {
   // Cardano: milliseconds from the start of flushing until the upgrade times
   // out on the counterparty.
   uint64 timeout_period_ms = 5;
+  // Cardano signing precondition captured before transaction construction.
+  optional uint64 expected_upgrade_sequence = 6;
 }
 
 message MsgChannelUpgradeInitResponse {

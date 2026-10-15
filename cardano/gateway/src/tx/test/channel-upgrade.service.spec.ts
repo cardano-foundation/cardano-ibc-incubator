@@ -275,6 +275,7 @@ describe('ChannelUpgradeService', () => {
       fields: { ordering: ProtoOrder.ORDER_UNORDERED, connection_hops: ['connection-1'], version: 'ics20-1' },
       signer: 'addr_test1authority',
       timeout_period_ms: 3_600_000n,
+      expected_upgrade_sequence: 0n,
     });
 
     const after = initUpgrade(before, UPGRADE_FIELDS, 3_600_000n);
