@@ -21,7 +21,7 @@ import { ChannelState } from '@shared/types/channel/state';
 // committed protobuf matches ibc-go's Marshal, which always writes the
 // non-nullable timeout height.
 
-export function orderFromProto(order: ProtoOrder): Order {
+function orderFromProto(order: ProtoOrder): Order {
   if (order === ProtoOrder.ORDER_UNORDERED) return Order.Unordered;
   if (order === ProtoOrder.ORDER_ORDERED) return Order.Ordered;
   throw new GrpcInvalidArgumentException('Invalid argument: ordering must be ordered or unordered');
@@ -42,7 +42,7 @@ export function upgradeFieldsFromProto(fields: ProtoUpgradeFields | undefined): 
   };
 }
 
-export function upgradeFieldsToProto(fields: UpgradeFieldsValue): ProtoUpgradeFields {
+function upgradeFieldsToProto(fields: UpgradeFieldsValue): ProtoUpgradeFields {
   return {
     ordering: ORDER_MAPPING_CHANNEL[fields.ordering as Order],
     connection_hops: fields.connection_hops.map(convertHex2String),
@@ -108,7 +108,7 @@ export function channelFromProto(channel: ProtoChannel | undefined): Channel {
   };
 }
 
-export function channelToProto(channel: Channel): ProtoChannel {
+function channelToProto(channel: Channel): ProtoChannel {
   return {
     state: STATE_MAPPING_CHANNEL[channel.state],
     ordering: ORDER_MAPPING_CHANNEL[channel.ordering],

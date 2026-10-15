@@ -15,8 +15,8 @@ import { ChannelState } from '@shared/types/channel/state';
 // builds the successor datum the validators expect, and rejects a step early
 // when a validator would fail.
 
-export const MIN_UPGRADE_TIMEOUT_PERIOD_MS = 3_600_000n;
-export const MAX_UPGRADE_TIMEOUT_PERIOD_MS = 2_592_000_000n;
+const MIN_UPGRADE_TIMEOUT_PERIOD_MS = 3_600_000n;
+const MAX_UPGRADE_TIMEOUT_PERIOD_MS = 2_592_000_000n;
 export const INVALID_UPGRADE_MESSAGE = 'ABCI code: 28: restored channel to pre-upgrade state';
 export const UPGRADE_TIMEOUT_MESSAGE = 'ABCI code: 34: restored channel to pre-upgrade state';
 
@@ -106,7 +106,7 @@ export function initUpgrade(datum: ChannelDatum, fields: UpgradeFieldsValue, tim
  * Flushing fixes the upgrade timeout from the transaction's upper validity
  * bound and the next sequence the send sequencer will assign.
  */
-export function startFlushing(
+function startFlushing(
   pending: PendingUpgradeValue,
   validToMs: bigint,
   nextSequenceSend: bigint,
@@ -264,7 +264,7 @@ export function openUpgrade(datum: ChannelDatum, counterpartyUpgradeSequence: bi
 }
 
 /** TIMEOUT and CANCEL restore the pre-upgrade channel and record why. */
-export function restoreChannel(datum: ChannelDatum, sequence: bigint, message: string): ChannelDatum {
+function restoreChannel(datum: ChannelDatum, sequence: bigint, message: string): ChannelDatum {
   requirePending(datum);
   const upgrade = datum.state.upgrade;
   return successor(

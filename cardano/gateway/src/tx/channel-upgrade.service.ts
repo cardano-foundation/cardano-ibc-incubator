@@ -68,7 +68,7 @@ import {
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 /** FLUSH certifies at most this many lanes per transaction. */
-export const MAX_FLUSH_LANES_PER_TX = 8;
+const MAX_FLUSH_LANES_PER_TX = 8;
 
 type Connection = { utxo: UTxO; datum: ConnectionDatum; id: string };
 

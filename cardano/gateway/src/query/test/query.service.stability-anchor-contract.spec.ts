@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { resolve } from 'node:path';
-import { QueryIBCHeaderRequest } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
+import { QueryIBCHeaderRequest, QueryIBCHeaderResponse } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
+import * as grpc from '@grpc/grpc-js';
 import { Cbor, CborArray, CborBytes, CborUInt, CborSimple } from '@harmoniclabs/cbor';
 import { loadTrustedPoolRegistryCheckpoint, loadTrustedPoolProductionCheckpoint } from '../services/pool-registry-checkpoint';
 jest.mock('../services/pool-registry-checkpoint', () => ({
@@ -23,6 +24,8 @@ import {
   ConsensusState as ConsensusStateProbabilistic,
   ProbabilisticHeader,
   PoolRegistrationBinding,
+  ProbabilisticBlock,
+  EpochContext,
 } from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
@@ -1266,16 +1269,9 @@ describe('bounded boundary workload', () => {
 (process.env.CHECKPOINT_ACCEPTANCE_DIR ? it : it.skip)(
   'serves signed idle history for the Hermes checkpoint acceptance worker',
   async () => {
-    const grpc = require('@grpc/grpc-js');
-    const { existsSync } = require('node:fs');
-    const q = require('@cardano-ibc/proto-types/build/ibc/core/types/v1/query');
     const root = process.env.CHECKPOINT_ACCEPTANCE_DIR!;
     const client = ClientStateProbabilistic.decode(readFileSync(`${root}/source-client.pb`));
     const history = JSON.parse(readFileSync(`${root}/gateway-history.json`, 'utf8'));
-    const {
-      ProbabilisticBlock,
-      EpochContext,
-    } = require('@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic');
     let blocks = history.blocks.map((entry: any) => ProbabilisticBlock.decode(Buffer.from(entry.protobuf, 'hex')));
     let contexts = [
       client.epoch_contexts[0],
@@ -1373,10 +1369,10 @@ describe('bounded boundary workload', () => {
       path: '/ibc.core.types.v1.Query/IBCHeader',
       requestStream: false,
       responseStream: false,
-      requestSerialize: (value: any) => Buffer.from(q.QueryIBCHeaderRequest.encode(value).finish()),
-      requestDeserialize: (bytes: Buffer) => q.QueryIBCHeaderRequest.decode(bytes),
-      responseSerialize: (value: any) => Buffer.from(q.QueryIBCHeaderResponse.encode(value).finish()),
-      responseDeserialize: (bytes: Buffer) => q.QueryIBCHeaderResponse.decode(bytes),
+      requestSerialize: (value: any) => Buffer.from(QueryIBCHeaderRequest.encode(value).finish()),
+      requestDeserialize: (bytes: Buffer) => QueryIBCHeaderRequest.decode(bytes),
+      responseSerialize: (value: any) => Buffer.from(QueryIBCHeaderResponse.encode(value).finish()),
+      responseDeserialize: (bytes: Buffer) => QueryIBCHeaderResponse.decode(bytes),
     };
     server.addService(
       { IBCHeader: method },
@@ -1387,7 +1383,7 @@ describe('bounded boundary workload', () => {
             const response = await service.queryStabilityIBCHeader(call.request);
             if (response.header) {
               const header = ProbabilisticHeader.decode(response.header.value);
-              require('node:fs').appendFileSync(
+              appendFileSync(
                 `${root}/gateway-${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}.jsonl`,
                 JSON.stringify({
                   trusted: String(header.trusted_height?.revision_height),

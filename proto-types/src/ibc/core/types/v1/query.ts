@@ -87,7 +87,11 @@ export interface QueryIBCHeaderRequest {
   trusted_height: bigint;
   height: bigint;
   /**
-   * Exact rootless evidence for independent probabilistic misbehaviour checks.
+   * Rootless probabilistic evidence. With a nonzero height, return exact
+   * historical evidence for independent misbehaviour checks. With height zero,
+   * select a newer settled checkpoint for client maintenance. This does not
+   * change the packet-proof height returned by QueryLatestHeight. Maintenance
+   * returns an empty header when no newer settled checkpoint is available.
    */
   checkpoint_only: boolean;
   /**
