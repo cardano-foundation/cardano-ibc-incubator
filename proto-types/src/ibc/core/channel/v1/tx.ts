@@ -482,6 +482,7 @@ export interface MsgChannelUpgradeCancel {
   proof_error_receipt: Uint8Array;
   proof_height: Height;
   signer: string;
+  expected_upgrade_sequence?: bigint;
 }
 /**
  * @name MsgChannelUpgradeCancelResponse
@@ -2473,7 +2474,8 @@ export const MsgChannelUpgradeInit = {
     if (isSet(object.fields)) obj.fields = UpgradeFields.fromJSON(object.fields);
     if (isSet(object.signer)) obj.signer = String(object.signer);
     if (isSet(object.timeout_period_ms)) obj.timeout_period_ms = BigInt(object.timeout_period_ms.toString());
-    if (isSet(object.expected_upgrade_sequence)) obj.expected_upgrade_sequence = BigInt(object.expected_upgrade_sequence.toString());
+    if (isSet(object.expected_upgrade_sequence))
+      obj.expected_upgrade_sequence = BigInt(object.expected_upgrade_sequence.toString());
     return obj;
   },
   toJSON(message: MsgChannelUpgradeInit): unknown {
@@ -2485,7 +2487,8 @@ export const MsgChannelUpgradeInit = {
     message.signer !== undefined && (obj.signer = message.signer);
     message.timeout_period_ms !== undefined &&
       (obj.timeout_period_ms = (message.timeout_period_ms || BigInt(0)).toString());
-    if (message.expected_upgrade_sequence !== undefined) obj.expected_upgrade_sequence = message.expected_upgrade_sequence.toString();
+    if (message.expected_upgrade_sequence !== undefined)
+      obj.expected_upgrade_sequence = message.expected_upgrade_sequence.toString();
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgChannelUpgradeInit>, I>>(object: I): MsgChannelUpgradeInit {
@@ -3598,6 +3601,7 @@ function createBaseMsgChannelUpgradeCancel(): MsgChannelUpgradeCancel {
     proof_error_receipt: new Uint8Array(),
     proof_height: Height.fromPartial({}),
     signer: "",
+    expected_upgrade_sequence: undefined,
   };
 }
 /**
@@ -3626,6 +3630,9 @@ export const MsgChannelUpgradeCancel = {
     if (message.signer !== "") {
       writer.uint32(50).string(message.signer);
     }
+    if (message.expected_upgrade_sequence !== undefined) {
+      writer.uint32(56).uint64(message.expected_upgrade_sequence);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgChannelUpgradeCancel {
@@ -3653,6 +3660,9 @@ export const MsgChannelUpgradeCancel = {
         case 6:
           message.signer = reader.string();
           break;
+        case 7:
+          message.expected_upgrade_sequence = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -3669,6 +3679,8 @@ export const MsgChannelUpgradeCancel = {
       obj.proof_error_receipt = bytesFromBase64(object.proof_error_receipt);
     if (isSet(object.proof_height)) obj.proof_height = Height.fromJSON(object.proof_height);
     if (isSet(object.signer)) obj.signer = String(object.signer);
+    if (isSet(object.expected_upgrade_sequence))
+      obj.expected_upgrade_sequence = BigInt(object.expected_upgrade_sequence.toString());
     return obj;
   },
   toJSON(message: MsgChannelUpgradeCancel): unknown {
@@ -3684,6 +3696,8 @@ export const MsgChannelUpgradeCancel = {
     message.proof_height !== undefined &&
       (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
     message.signer !== undefined && (obj.signer = message.signer);
+    message.expected_upgrade_sequence !== undefined &&
+      (obj.expected_upgrade_sequence = message.expected_upgrade_sequence.toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgChannelUpgradeCancel>, I>>(object: I): MsgChannelUpgradeCancel {
@@ -3698,6 +3712,10 @@ export const MsgChannelUpgradeCancel = {
       message.proof_height = Height.fromPartial(object.proof_height);
     }
     message.signer = object.signer ?? "";
+    message.expected_upgrade_sequence =
+      object.expected_upgrade_sequence !== undefined && object.expected_upgrade_sequence !== null
+        ? BigInt(object.expected_upgrade_sequence.toString())
+        : undefined;
     return message;
   },
 };

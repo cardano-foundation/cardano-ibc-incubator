@@ -44,6 +44,8 @@ Upgrade transactions may spend only the channel, HostState and key-locked inputs
 
 `CLOSED` is terminal. Close-confirm preserves any pending upgrade and its `HostState` commitment as inert history. Cancellation and every restoration path accept only `OPEN`, `FLUSHING` or `FLUSHCOMPLETE`. They cannot reopen a closed channel.
 
+Authority cancellation captures the operator's observed `upgrade_sequence`. The Gateway checks that precondition and Hermes checks it again against the independently resolved channel input before signing. A newer attempt requires a fresh request. Receipt-backed cancellation follows the authenticated counterparty receipt instead.
+
 ## Planned migration
 
 1. Create replacement clients and open a replacement connection between the two chains with the usual handshake. Its Cardano end must support unordered channels. Both clients must be active. Hermes checks both replacement endpoints before TRY and again before the first OPEN. Cardano authenticates its replacement client at INIT and before completing flushing.

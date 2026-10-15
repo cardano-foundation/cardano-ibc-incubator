@@ -445,6 +445,9 @@ message MsgChannelUpgradeCancel {
   bytes                     proof_error_receipt = 4;
   ibc.core.client.v1.Height proof_height        = 5 [(gogoproto.nullable) = false];
   string                    signer              = 6;
+  // Required for Cardano authority cancellation. Receipt-backed cancellation
+  // follows its authenticated receipt instead.
+  optional uint64 expected_upgrade_sequence = 7;
 }
 
 message MsgChannelUpgradeCancelResponse {
