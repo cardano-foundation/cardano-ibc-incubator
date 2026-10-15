@@ -60,7 +60,7 @@ func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc St
 			return Expired
 		}
 		consensus, found := GetConsensusState(clientStore, cdc, cs.LatestHeight)
-		if !found || consensus.VerificationGeneration != cs.VerificationGeneration || cs.IsExpired(consensus.Timestamp, ctx.BlockTime()) {
+		if !found || consensus.VerificationGeneration != cs.VerificationGeneration || cs.IsExpired(cs.latestTrustedTimestamp(consensus.Timestamp), ctx.BlockTime()) {
 			return Expired
 		}
 		return Active

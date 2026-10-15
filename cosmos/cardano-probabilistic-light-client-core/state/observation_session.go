@@ -178,8 +178,13 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 			if !bytes.Equal(private.Get(ownedCheckpointKey(cs.VerificationGeneration, base.Height)), chunk.BaseCheckpointReference) {
 				return zero, fmt.Errorf("isolated observation requires an owned historical checkpoint")
 			}
-		} else if !bytes.Equal(chunk.BaseCheckpointReference, cs.CheckpointReference) {
-			return zero, fmt.Errorf("forward observation must start at the current checkpoint")
+		} else {
+			if !bytes.Equal(chunk.BaseCheckpointReference, cs.CheckpointReference) {
+				return zero, fmt.Errorf("forward observation must start at the current checkpoint")
+			}
+			if cs.IsExpired(base.Timestamp, ctx.BlockTime()) {
+				return zero, ErrTrustingPeriodExpired
+			}
 		}
 	} else {
 		original, err := loadVerifiedObservation(store, cs, chunk.OriginalReceipt)
