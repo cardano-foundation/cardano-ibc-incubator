@@ -139,8 +139,7 @@ resolution path.
 
 The Cardano Go light clients support only non-membership proofs for packet
 receipts under the current commitment codec. `VerifyIbcStateMembership` rejects
-`receipts/ports/` keys in the probabilistic v8 and v10 clients and the retired
-Mithril v10 client.
+`receipts/ports/` keys in the probabilistic v8 and v10 clients.
 
 Cardano stores an empty receipt bytestring and commits its CBOR encoding `0x40`.
 ibc-go stores the receipt sentinel `0x01`. Unordered packet timeouts verify
@@ -195,6 +194,6 @@ portable trust anchor. Certificate cadence and distance from the chain tip made
 that design unsuitable for the latency expected from the maintained bridge
 path. New deployments use the experimental `08-cardano-probabilistic` client,
 which trades the portable Mithril certificate chain for configurable settlement
-heuristics and stronger observer/data-source assumptions. The old design and
-its operational tradeoffs remain in
-[Mithril Light Client Design](mithril-light-client.md) as historical reference.
+heuristics and stronger observer/data-source assumptions. The Mithril client
+has since been removed. Its design and operational tradeoffs are described in
+[`docs/mithril-light-client.md` at `08bb4386`](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/08bb438615cc9c0d6bbb06738aabb760a98df088/docs/mithril-light-client.md).

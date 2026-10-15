@@ -7,7 +7,7 @@ values, modeled networks, and clean-state requirement.
 `caribic` is a local CLI used to bootstrap, run, and validate the Cardano <-> IBC bridge demo environment in this repo. For those familiar with Hermes, caribic cli also wraps that interface with equivalent commands that allow manual interaction with the relayer. The expected workflow is that keys would be addded to hermes via caribic, i.e, either you can enter via I/O when prompted, or refer to a mnemonic file as prompted, but there is no need to manually configure hermes. 
 
 > [!WARNING]
-> Mithril setup is deprecated, disabled, and not maintained. `caribic start --with-mithril` and `caribic start mithril` now fail fast; use the default stake-weighted-stability light-client mode.
+> The local Mithril devnet is disabled and not maintained. `caribic start --with-mithril` and `caribic start mithril` fail fast.
 
 ## Build and run
 
@@ -49,7 +49,7 @@ caribic install
 
 Starts services. Run `caribic --help` to see an actively maintained exhaustive list of targets and commands.
 
-- **Targets**: `all`, `network`, `bridge`, `gateway`, `dapp`, `relayer`; `mithril` is retained only to return the deprecation error.
+- **Targets**: `all`, `network`, `bridge`, `gateway`, `dapp`, `relayer`; `mithril` only returns an error, because the local Mithril devnet is disabled.
 
 With no target, `caribic start` behaves like `caribic start all`: it starts the
 network and bridge stack (including Gateway and Hermes), then starts the IBC
@@ -135,7 +135,7 @@ caribic chain stop --chain injective --network local
 
 ### `caribic health-check [--service <name>]`
 
-Checks whether key services appear to be up (gateway, cardano, postgres, Yaci, Kupo, Ogmios, Hermes, Osmosis, Redis, cheqd, and Injective). Deprecated Mithril services are not part of the maintained aggregate health check. Use this before running tests if you are unsure about your current state.
+Checks whether key services appear to be up (gateway, cardano, postgres, Yaci, Kupo, Ogmios, Hermes, Osmosis, Redis, cheqd, and Injective). The disabled local Mithril services are not checked. Use this before running tests if you are unsure about your current state.
 
 ```bash
 caribic health-check

@@ -20,7 +20,7 @@ i.e, If you insist on fast acceptance and do not want to implement native Cardan
 2. trust your own small committee / pinned operators,
 3. or trust a single Gateway / operator.
 
-The probabilistic light client is implemented as client type `08-cardano-probabilistic`. This is an alternative to the deprecated Mithril light client, whose client type is `08-cardano-mithril`. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC settlement by making certain risk tradeoffs via a heuristic notion of Cardano settlement. The exact parameters and thereby strength of the heuristic are tunable, and some are epoch context dependent.
+The probabilistic light client is implemented as client type `08-cardano-probabilistic`. It replaced the Mithril light client, client type `08-cardano-mithril`, which has been removed. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC settlement by making certain risk tradeoffs via a heuristic notion of Cardano settlement. The exact parameters and thereby strength of the heuristic are tunable, and some are epoch context dependent.
 
 The Mithril light client was effectively non-viable from a UX perspective. Under the cadence assumptions evaluated before that client was retired, simple IBC swaps or transfers could take hundreds of Cardano blocks.
 
@@ -327,7 +327,7 @@ The client:
 
 That extracted root becomes the authenticated root in `ConsensusState`, and later ICS-23 proofs are checked against it.
 
-The current probabilistic client reuses some existing Mithril helper logic for HostState datum decoding and ICS-23 proof verification. That is fine architecturally because the proof model is the same, only the trust anchor used to authenticate the root is changing.
+The HostState datum decoding and ICS-23 proof verification were carried over from the Mithril client. The proof model is the same; only the trust anchor that authenticates the root changed.
 
 ## Finality Parameters
 
