@@ -120,6 +120,12 @@ export async function decodeChannelDatum<T = any>(
   encoded: string,
   Lucid: LucidModule,
 ): Promise<T> {
+  const raw = Lucid.Data.from(encoded) as any;
+  if (raw?.index !== 0 || raw?.fields?.length !== 3 ||
+      raw.fields[0]?.index !== 0 || raw.fields[0]?.fields?.length !== 10 ||
+      raw.fields[0].fields[0]?.index !== 0 || raw.fields[0].fields[0]?.fields?.length !== 6) {
+    throw new Error('Incompatible channel datum schema: this runtime requires a fresh schema 5 deployment with channel upgrade state');
+  }
   return Lucid.Data.from(encoded, channelSchemas(Lucid).Datum as any) as T;
 }
 
