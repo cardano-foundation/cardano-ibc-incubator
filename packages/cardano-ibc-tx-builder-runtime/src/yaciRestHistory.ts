@@ -77,6 +77,26 @@ function epochSummary(row: any, epoch: number): RestEpochBlock {
   };
 }
 
+function epochPageRows(data: any, epoch: number): any[] {
+  if (!data || !Array.isArray(data.blocks) || data.blocks.length > 100)
+    throw new Error("Invalid Yaci epoch block page");
+  // Yaci indexes genesis distribution as an empty row at -1. It has no
+  // producer or raw block and cannot contribute stability evidence.
+  return data.blocks.filter(
+    (row: any) =>
+      !(
+        epoch === 0 &&
+        row.epoch === 0 &&
+        row.number === -1 &&
+        row.slot === -1 &&
+        row.tx_count === 0 &&
+        row.slot_leader === null &&
+        row.issuer_vkey === null &&
+        row.size === 0
+      )
+  );
+}
+
 function mapValue(value: CborObj, key: bigint): CborObj | undefined {
   return value instanceof CborMap
     ? value.map.find(
@@ -271,15 +291,14 @@ export class YaciRestHistory {
         const data = await this.api.json(
           `blocks/epoch/${epoch}?count=100&page=${page}`,
         );
-        if (!data || !Array.isArray(data.blocks) || data.blocks.length > 100)
-          throw new Error("Invalid Yaci epoch block page");
-        if (!data.blocks.length) return null;
+        const summaries = epochPageRows(data, epoch);
+        if (!summaries.length) return null;
         const lastPage = height(data.total_pages);
         if (lastPage > page) {
           page = lastPage;
           continue;
         }
-        const rows = data.blocks.filter(
+        const rows = summaries.filter(
           (row: any) => height(row.number) <= tip.number,
         );
         const first = rows.sort(
@@ -300,9 +319,7 @@ export class YaciRestHistory {
       const data = await this.api.json(
         `blocks/epoch/${epoch}?count=100&page=1`,
       );
-      if (!data || !Array.isArray(data.blocks) || data.blocks.length > 100)
-        throw new Error("Invalid Yaci epoch block page");
-      const rows = data.blocks.filter(
+      const rows = epochPageRows(data, epoch).filter(
         (row: any) => height(row.number) <= tip.number,
       );
       const last = rows.sort(
@@ -333,9 +350,7 @@ export class YaciRestHistory {
       const data = await this.api.json(
         `blocks/epoch/${epoch}?count=100&page=${page}`,
       );
-      if (!data || !Array.isArray(data.blocks) || data.blocks.length > 100)
-        throw new Error("Invalid Yaci epoch block page");
-      for (const summary of data.blocks) {
+      for (const summary of epochPageRows(data, epoch)) {
         const number = height(summary.number ?? summary.height);
         if (seen.has(number))
           throw new Error("Yaci epoch pagination repeated a block");
