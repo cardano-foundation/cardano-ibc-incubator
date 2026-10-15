@@ -12,20 +12,16 @@ use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend,
 }
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/height
+use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_002_client_semantics/registry
 use ibc/core/ics_002_client_semantics/types/keys as client_id_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
-use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
-  SendPacket, SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
-}
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_004/types/order.{Ordered}
-use ibc/core/ics_004/types/packet as packet_mod
+use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
@@ -877,11 +873,18 @@ pub fn validate_handle_packet_root(
 
   expect Some(channel_redeemer_data) =
     pairs.get_first(redeemers, Spend(channel_input.output_reference))
-  // Dispatch on the stable SpendChannelRedeemer tag, then decode only that
-  // exact constructor. Every accepted branch retains the typed packet/height
-  // checks; unrelated handshake proof constructors are not needed here.
-  let channel_redeemer_tag =
-    builtin.fst_pair(builtin.un_constr_data(channel_redeemer_data))
+  // Dispatch on the stable SpendChannelRedeemer tag and decode only the fields
+  // used here. The channel validator spent in this transaction decodes its
+  // whole redeemer, so validating every constructor again only costs bytes.
+  let channel_redeemer = builtin.un_constr_data(channel_redeemer_data)
+  let channel_redeemer_tag = builtin.fst_pair(channel_redeemer)
+  let channel_redeemer_fields = builtin.snd_pair(channel_redeemer)
+  // Every packet constructor carries its packet first.
+  let redeemer_packet =
+    fn() {
+      expect packet: Packet = builtin.head_list(channel_redeemer_fields)
+      packet
+    }
 
   let old_root = old_datum.state.ibc_state_root
   let is_ordered = channel_input_datum.state.channel.ordering == Ordered
@@ -917,8 +920,7 @@ pub fn validate_handle_packet_root(
   let expected_root =
     when channel_redeemer_tag is {
       5 -> {
-        expect SendPacket { packet }: SpendChannelRedeemer =
-          channel_redeemer_data
+        let packet = redeemer_packet()
         let commitment = packet_mod.commit_packet(packet)
         expect
           channel_datum_mod.validate_send_packet(
@@ -948,8 +950,10 @@ pub fn validate_handle_packet_root(
         )
       }
       2 -> {
-        expect RecvPacket { packet, proof_height, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
+        let packet = redeemer_packet()
+        // RecvPacket { packet, proof_commitment, proof_height }
+        expect [_, _, proof_height] = channel_redeemer_fields
+        expect proof_height: Height = proof_height
         let acknowledgement =
           required_packet_entry(
             channel_output_datum.state.packet_acknowledgement,
@@ -1008,8 +1012,7 @@ pub fn validate_handle_packet_root(
         )
       }
       4 -> {
-        expect AcknowledgePacket { packet, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
+        let packet = redeemer_packet()
         expect
           channel_datum_mod.validate_acknowledge_packet(
             channel_input_datum,
@@ -1039,22 +1042,15 @@ pub fn validate_handle_packet_root(
           packet_commitment_siblings,
         )
       }
-      3 -> {
-        expect TimeoutPacket { packet, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
-        timeout_root(packet, is_ordered)
-      }
-      9 -> {
-        expect TimeoutOnClose { packet, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
+      3 -> timeout_root(redeemer_packet(), is_ordered)
+      9 ->
         timeout_root(
-          packet,
+          redeemer_packet(),
           channel_input_datum.state.channel != channel_output_datum.state.channel,
         )
-      }
       8 -> {
-        expect PruneChannelPacketHistory { sequence, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
+        // PrunePacketHistory { sequence, .. }
+        expect sequence: Int = builtin.head_list(channel_redeemer_fields)
         // The prune marker validates the complete successor datum and the
         // authenticated absence proof. The HostState side binds that typed
         // operation to the same sequence and commits the ordering-specific
