@@ -1,6 +1,9 @@
-import { Manrope } from 'next/font/google';
+import localFont from 'next/font/local';
 
-export const manrope = Manrope({
-  weight: ['400', '600', '700'],
-  subsets: ['latin'],
+// google/fonts at b31870aff700ab7a1d74fa0c6887d95beb9e0037, ofl/manrope.
+// Keep the SIL Open Font License with the bundled font.
+export const manrope = localFont({
+  src: './fonts/Manrope.ttf',
+  weight: '200 800',
+  display: 'swap',
 });
