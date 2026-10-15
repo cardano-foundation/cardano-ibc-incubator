@@ -261,7 +261,7 @@ func testSignedStagedUpload(t *testing.T, initial *ClientState, consensus *Conse
 	deadline := client.EpochContextChallenges[len(client.EpochContextChallenges)-1].UsableAfterUnixNs
 	assertNoProgress()
 	before = querySession()
-	send(&ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: state.ObservationActivate, SessionId: sessionID, Sequence: sequence + 1}}, 1, "inside its response window")
+	send(&ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: state.ObservationActivate, SessionId: sessionID, Sequence: sequence + 1}}, 1, "epoch context challenge window has not elapsed")
 	require.Equal(t, before, querySession())
 	// Commit uninterrupted empty blocks so the real host continuity gate elapses.
 	for uint64(now.UnixNano()) <= deadline {
