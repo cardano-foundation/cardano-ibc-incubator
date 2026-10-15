@@ -178,6 +178,8 @@ func TestSignedIdleCheckpointLifecycle(t *testing.T) {
 
 			// A genuine HostState transaction creates a new proof-bearing height.
 			next := idleCheckpointHeader(t, history, "honest", trusted, 1125)
+			// Gateway supplies full bodies without an optional transaction hint.
+			next.HostStateTxHash = ""
 			if timestamp := time.Unix(0, int64(next.DescendantBlocks[len(next.DescendantBlocks)-1].Timestamp)); timestamp.After(ctx.BlockTime()) {
 				ctx = ctx.WithBlockTime(timestamp)
 			}
