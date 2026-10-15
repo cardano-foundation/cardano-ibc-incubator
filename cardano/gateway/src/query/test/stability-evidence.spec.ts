@@ -2,6 +2,8 @@ import { Logger } from '@nestjs/common';
 import { status } from '@grpc/grpc-js';
 import { HistoryService } from '../services/history.service';
 import {
+  assertCompletePoolRegistrationHistory,
+  backfillPoolRegistrationHistory,
   loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityEvidenceForTxHash,
   loadStakeWeightedStabilityHeaderEvidence,
@@ -176,6 +178,40 @@ describe('stability-evidence', () => {
       redeemers: [],
     }),
   } as Partial<HistoryService>;
+
+  it('requires verified slots for every pool, even one not selected as a descendant producer', async () => {
+    const entries = [
+      { poolId: 'pool-a', stake: 1n, vrfKeyHash: 'aa', relativeStakeNumerator: 1n, relativeStakeDenominator: 2n, firstRegistrationSlot: 697397n },
+      { poolId: 'pool-never-produced', stake: 1n, vrfKeyHash: 'bb', relativeStakeNumerator: 1n, relativeStakeDenominator: 2n, firstRegistrationSlot: null },
+    ];
+    expect(() => assertCompletePoolRegistrationHistory(entries, 7)).toThrow('pool-never-produced');
+    entries[1].firstRegistrationSlot = 0n;
+    await expectGrpcError(
+      Promise.resolve().then(() => assertCompletePoolRegistrationHistory(entries, 7)),
+      status.FAILED_PRECONDITION, 'HISTORY_NOT_READY',
+    );
+    entries[1].firstRegistrationSlot = 1n;
+    expect(() => assertCompletePoolRegistrationHistory(entries, 7)).not.toThrow();
+  });
+
+  it('backfills missing epoch pool slots in bounded batches and rejects incomplete history', async () => {
+    const entries = Array.from({ length: 7 }, (_, index) => ({
+      poolId: `pool-${index}`, stake: 1n, vrfKeyHash: 'aa',
+      relativeStakeNumerator: 1n, relativeStakeDenominator: 7n,
+      firstRegistrationSlot: index === 0 ? 42n : null as bigint | null,
+    }));
+    const lookup = jest.fn().mockImplementation(async (ids: string[]) =>
+      new Map(ids.map((id) => [id, 697397n])));
+    const history = { findFirstPoolRegistrationSlots: lookup } as unknown as HistoryService;
+    await backfillPoolRegistrationHistory(history, anchorBlock, entries);
+    expect(lookup.mock.calls.map(([ids]) => ids)).toEqual([
+      ['pool-1', 'pool-2', 'pool-3', 'pool-4', 'pool-5'], ['pool-6'],
+    ]);
+    expect(lookup).toHaveBeenCalledWith(expect.any(Array), anchorBlock);
+    lookup.mockResolvedValue(new Map());
+    await expectGrpcError(backfillPoolRegistrationHistory(history, anchorBlock, entries),
+      status.FAILED_PRECONDITION, 'HISTORY_NOT_READY');
+  });
 
   it('loads a canonical stability evidence object from a height', async () => {
     const evidence = await loadStakeWeightedStabilityEvidenceByHeight({

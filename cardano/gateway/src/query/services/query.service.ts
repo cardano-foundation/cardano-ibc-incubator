@@ -162,6 +162,7 @@ import {
   resolveProofHeightForCurrentRoot,
 } from './proof-context';
 import {
+  assertCompletePoolRegistrationHistory,
   loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityHeaderEvidence,
   StakeWeightedStabilityHeaderEvidence,
@@ -2677,6 +2678,7 @@ export class QueryService {
       currentEpochEndSlotExclusive: bigint;
     },
   ): ProbabilisticEpochContext {
+    assertCompletePoolRegistrationHistory(stakeDistribution, epoch);
     return {
       epoch: BigInt(epoch),
       stake_distribution: stakeDistribution.map(
@@ -2684,7 +2686,7 @@ export class QueryService {
           pool_id: entry.poolId,
           stake: this.toProtoUint64(entry.stake, `stake_distribution[${entry.poolId}].stake`),
           vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'),
-          first_registration_slot: entry.firstRegistrationSlot ?? 0n,
+          first_registration_slot: entry.firstRegistrationSlot!,
           relative_stake_numerator: this.toProtoUint64(
             entry.relativeStakeNumerator,
             `stake_distribution[${entry.poolId}].relative_stake_numerator`,

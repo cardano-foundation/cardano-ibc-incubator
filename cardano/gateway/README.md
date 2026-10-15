@@ -126,6 +126,20 @@ Blockfrost pool updates for cache misses. Public-network epoch nonces, stake sna
 also come from Blockfrost. Set `CARDANO_BLOCKFROST_PROJECT_ID` for the hosted API. The local devnet instead uses its
 own Ogmios and Yaci data, including the Yaci epoch-nonce index.
 
+Before creating a **new** probabilistic client on a public network, prefill the full epoch's verified pool ages
+from inside the deployed Gateway container (with its normal history DB and Blockfrost environment):
+
+```bash
+node dist/scripts/prefill-pool-registration-history.js [anchor-block-height]
+```
+
+Without a height, this uses the latest Yaci block. You can supply the same anchor height used by new-client
+creation. The job only writes validated external registration slots to `bridge_pool_registration_cache`; it is
+safe to rerun after interruption. Client creation and epoch-rollover updates fail with `HISTORY_NOT_READY` if
+**any** pool in the epoch's stake snapshot still lacks a slot. Rerun the job for a new epoch before a rollover
+update if new pools are missing. Never substitute an assumed slot on Preview/Preprod. The Gateway re-reads pool
+ages even when the historical epoch context is cached.
+
 ## Installation
 
 ```bash

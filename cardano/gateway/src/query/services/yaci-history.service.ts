@@ -1077,7 +1077,18 @@ export class YaciHistoryService implements HistoryService {
     const cacheKey = this.epochNonceCacheKey(block.epochNo);
     const cached = this.historicalEpochContextCache.get(cacheKey);
     if (cached) {
-      return cached;
+      // Registration history may have been backfilled by the maintenance job
+      // after this epoch's stake snapshot was cached. Never pin unknown slots.
+      const knownSlots = await this.findKnownPoolRegistrationSlots(
+        cached.stakeDistribution.map((entry) => entry.poolId),
+      );
+      return {
+        ...cached,
+        stakeDistribution: cached.stakeDistribution.map((entry) => ({
+          ...entry,
+          firstRegistrationSlot: knownSlots.get(entry.poolId) ?? entry.firstRegistrationSlot,
+        })),
+      };
     }
 
     const pendingLookup = this.historicalEpochContextLookups.get(cacheKey);

@@ -286,6 +286,7 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.epoch_nonce).toHaveLength(32);
     expect(clientState.epoch_nonce).toEqual(clientState.epoch_contexts[0].epoch_nonce);
     expect(clientState.epoch_stake_distribution).toEqual(clientState.epoch_contexts[0].stake_distribution);
+    expect(clientState.epoch_stake_distribution.every((entry) => entry.first_registration_slot > 0n)).toBe(true);
     expect(clientState.slots_per_kes_period).toBe(129600n);
     expect(clientState.active_slot_coefficient_numerator).toBe(1n);
     expect(clientState.active_slot_coefficient_denominator).toBe(20n);
@@ -316,6 +317,34 @@ describe('QueryService stability anchor contract', () => {
     expect(historyServiceMock.findOperationalCertificateCountersAtBlock).toHaveBeenCalledWith(
       expect.objectContaining({ height: 100, hash: 'anchor-hash' }),
     );
+  });
+
+  it('rejects new-client bootstrap when a non-producing active pool has no verified registration slot', async () => {
+    const epochContext = await historyServiceMock.findEpochContextAtBlock({} as any);
+    historyServiceMock.findEpochContextAtBlock.mockResolvedValue({
+      ...epochContext,
+      stakeDistribution: [...epochContext.stakeDistribution, {
+        ...epochContext.stakeDistribution[0], poolId: 'pool-never-produced',
+        stake: 1n, vrfKeyHash: 'ff'.repeat(32), firstRegistrationSlot: null,
+      }],
+    });
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+      txHash: 'host-state-tx', datum: 'datum-cbor', blockNo: 100,
+    });
+    lucidServiceMock.decodeDatum.mockResolvedValue({ state: { ibc_state_root: 'ab'.repeat(32) } });
+
+    await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow(
+      'missing verified first registration slots for 1/6 pools',
+    );
+  });
+
+  it('rejects rollover epoch contexts with an unknown registration slot', async () => {
+    const epochContext = await historyServiceMock.findEpochContextAtBlock({} as any);
+    const missingDistribution = epochContext.stakeDistribution.map((entry: { poolId: string }) =>
+      entry.poolId === 'pool-e' ? { ...entry, firstRegistrationSlot: null } : entry,
+    );
+    expect(() => service['toStabilityEpochContext'](8, missingDistribution, epochContext.verificationContext))
+      .toThrow('Epoch 8 is missing verified first registration slots');
   });
 
   it('rejects stability new-client creation without an exact operational certificate response', async () => {

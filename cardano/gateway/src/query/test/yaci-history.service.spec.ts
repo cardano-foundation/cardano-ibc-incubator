@@ -62,6 +62,82 @@ const registrationResponse = (
   return undefined;
 };
 
+async function expectHistoricallyBackfilledEpochContext(
+  service: YaciHistoryService,
+  configServiceMock: { get: jest.Mock },
+  entityManagerMock: { query: jest.Mock },
+  block: Parameters<YaciHistoryService['findEpochContextAtBlock']>[0],
+): Promise<void> {
+  configServiceMock.get.mockImplementation((key: string) => ({
+    ogmiosEndpoint: 'ws://ogmios.local',
+    cardanoEpochParamsEndpoint: 'https://cardano-preview.blockfrost.io/api/v0',
+    cardanoPoolRegistrationHistoryEndpoint: 'https://cardano-preview.blockfrost.io/api/v0',
+    cardanoEpochLength: 432000,
+  })[key]);
+  let cachedSlot: string | undefined;
+  entityManagerMock.query.mockImplementation(async (sql: string, args: unknown[]) => {
+    if (sql.includes('MIN(slot) AS start_slot')) {
+      return [{ start_slot: args[0] === 7 ? '1000' : '1200' }];
+    }
+    if (sql.includes('INSERT INTO bridge_pool_registration_cache')) {
+      cachedSlot = '42';
+      return [];
+    }
+    if (sql.includes('FROM bridge_pool_registration_cache')) {
+      return cachedSlot ? [{ pool_id: 'pool1oldpool', first_registration_slot: cachedSlot }] : [];
+    }
+    return [];
+  });
+  (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+    ...defaultVerificationData,
+    stakeDistribution: [{ poolId: 'pool1oldpool', ...exactStake(900n), vrfKeyHash: 'aa'.repeat(32) }],
+  });
+  (global.fetch as jest.Mock).mockImplementation(async (url: URL) =>
+    registrationResponse(url, [{ poolId: 'pool1oldpool', txHash: 'ab'.repeat(32), vrf: 'aa'.repeat(32), slot: 42 }]) ??
+    { ok: true, json: async () => ({ epoch: 7, nonce: '11'.repeat(32) }) },
+  );
+
+  const before = await service.findEpochContextAtBlock(block);
+  expect(before?.stakeDistribution[0].firstRegistrationSlot).toBeNull();
+  await service.findFirstPoolRegistrationSlots(['pool1oldpool'], block);
+  const after = await service.findEpochContextAtBlock(block);
+  expect(after?.stakeDistribution[0].firstRegistrationSlot).toBe(42n);
+  expect(cachedSlot).toBe('42');
+}
+
+async function expectCachedHistoricalContextToSeeBackfill(
+  service: YaciHistoryService,
+  entityManagerMock: { query: jest.Mock },
+  block: Parameters<YaciHistoryService['findEpochContextAtBlock']>[0],
+): Promise<void> {
+  const key = service['epochNonceCacheKey'](block.epochNo);
+  service['historicalEpochContextCache'].set(key, {
+    epoch: block.epochNo,
+    stakeDistribution: [{
+      poolId: 'pool1oldpool', stake: 1n, vrfKeyHash: 'aa'.repeat(32),
+      relativeStakeNumerator: 1n, relativeStakeDenominator: 1n, firstRegistrationSlot: null,
+    }],
+    verificationContext: {
+      epochNonce: '11'.repeat(32), slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62, ...activeSlotCoefficient,
+      currentEpochStartSlot: 1000n, currentEpochEndSlotExclusive: 1200n,
+    },
+  });
+  entityManagerMock.query.mockImplementation(async (sql: string) =>
+    sql.includes('FROM bridge_pool_registration_cache')
+      ? [{ pool_id: 'pool1oldpool', first_registration_slot: '42' }]
+      : [],
+  );
+  const context = await service['findHistoricalEpochContextFallback'](
+    block, { currentEpochStartSlot: 1000n, currentEpochEndSlotExclusive: 1200n },
+    'ws://ogmios.local', '11'.repeat(32), 'https://cardano-preview.blockfrost.io/api/v0',
+  );
+  expect(context.stakeDistribution[0].firstRegistrationSlot).toBe(42n);
+  expect(entityManagerMock.query).toHaveBeenCalledWith(
+    expect.stringContaining('bridge_pool_registration_cache'), expect.any(Array),
+  );
+}
+
 describe('YaciHistoryService', () => {
   let service: YaciHistoryService;
   let configServiceMock: { get: jest.Mock };
@@ -349,6 +425,14 @@ describe('YaciHistoryService', () => {
       expect.stringContaining('INSERT INTO bridge_pool_registration_cache'),
       [JSON.stringify([{ pool_id: 'pool1externalpool', first_registration_slot: '200' }]), 'external'],
     );
+  });
+
+  it('uses a historically backfilled registration slot when rebuilding the epoch context', async () => {
+    await expectHistoricallyBackfilledEpochContext(service, configServiceMock, entityManagerMock, block);
+  });
+
+  it('refreshes unknown registration slots in an already cached historical epoch context', async () => {
+    await expectCachedHistoricalContextToSeeBackfill(service, entityManagerMock, block);
   });
 
   it('uses the direct epoch snapshot when the latest completed pool-history row is absent', async () => {

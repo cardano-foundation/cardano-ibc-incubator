@@ -213,6 +213,51 @@ function historyNotReady(message: string): GrpcFailedPreconditionException {
   return new GrpcFailedPreconditionException(gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY, message));
 }
 
+// Scoring only needs registration slots for descendant producers. A verifier
+// epoch context contains every active pool; unknown slots must not become 0.
+export function assertCompletePoolRegistrationHistory(
+  stakeDistribution: HistoryStakeDistributionEntry[],
+  epoch: number,
+): void {
+  const missing = stakeDistribution.filter((entry) =>
+    entry.firstRegistrationSlot == null || entry.firstRegistrationSlot <= 0n,
+  );
+  if (missing.length > 0) {
+    throw historyNotReady(
+      `Epoch ${epoch} is missing verified first registration slots for ${missing.length}/${stakeDistribution.length} pools ` +
+      `(e.g. ${missing.slice(0, 3).map((entry) => entry.poolId).join(', ')}). ` +
+      'Backfill the pool registration cache before creating or updating the client',
+    );
+  }
+}
+
+// Run explicitly before client creation on public networks. Keep lookups bounded
+// so a historical provider outage cannot fan out to hundreds of requests.
+export async function backfillPoolRegistrationHistory(
+  historyService: HistoryService,
+  block: HistoryBlock,
+  stakeDistribution: HistoryStakeDistributionEntry[],
+  onProgress?: (resolved: number, total: number) => void,
+): Promise<void> {
+  const missing = [...new Set(stakeDistribution.filter((entry) =>
+    entry.firstRegistrationSlot == null || entry.firstRegistrationSlot <= 0n,
+  ).map((entry) => entry.poolId))];
+  const resolved = new Map<string, bigint>();
+  for (let i = 0; i < missing.length; i += 5) {
+    const batch = missing.slice(i, i + 5);
+    const slots = await historyService.findFirstPoolRegistrationSlots(batch, block);
+    for (const poolId of batch) {
+      const slot = slots.get(poolId);
+      if (slot !== undefined) resolved.set(poolId, slot);
+    }
+    onProgress?.(i + batch.length, missing.length);
+  }
+  assertCompletePoolRegistrationHistory(stakeDistribution.map((entry) => ({
+    ...entry,
+    firstRegistrationSlot: resolved.get(entry.poolId) ?? entry.firstRegistrationSlot,
+  })), block.epochNo);
+}
+
 function invalidTrustedHeight(trustedHeight: bigint, height: bigint, message: string): GrpcInvalidArgumentException {
   return new GrpcInvalidArgumentException(
     gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.INVALID_TRUSTED_HEIGHT, message, {
