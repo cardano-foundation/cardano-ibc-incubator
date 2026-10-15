@@ -127,6 +127,7 @@ export class ChannelUpgradeService {
       }
       const fields = upgradeFieldsFromProto(msg.fields);
       const replacement = await this.connection(fields.connection_hops[0], true);
+      const replacementClient = await this.readyClient(replacement, context.validToTime);
       const [version] = replacement.datum.state.versions;
       if (
         replacement.datum.state.versions.length !== 1 ||
@@ -139,7 +140,7 @@ export class ChannelUpgradeService {
         step: { InitUpgrade: { fields, timeout_period: BigInt(msg.timeout_period_ms ?? 0n) } },
         updated,
         operation: 'channelUpgrade',
-        referenceInputs: [replacement.utxo],
+        referenceInputs: this.uniqueReferences([replacement.utxo, replacementClient]),
         authority: true,
       };
     }).then(({ unsigned_tx, updated }) => ({
@@ -166,6 +167,7 @@ export class ChannelUpgradeService {
       const counterpartyFields = upgradeFieldsFromProto(msg.counterparty_upgrade_fields);
       const counterpartySequence = BigInt(msg.counterparty_upgrade_sequence ?? 0n);
       const { current, replacement } = await this.connections(datum, pending.upgrade.fields.connection_hops[0]);
+      const replacementClient = await this.readyClient(replacement, context.validToTime);
       upgrade.requireCompatibleUpgrade(
         pending.upgrade.fields,
         counterpartyFields,
@@ -203,7 +205,7 @@ export class ChannelUpgradeService {
         },
         updated,
         operation: 'channelUpgradeHandshake',
-        referenceInputs: [current.utxo, replacement.utxo, client.utxo, lanes.config, sequencer.utxo],
+        referenceInputs: this.uniqueReferences([current.utxo, replacement.utxo, client.utxo, lanes.config, sequencer.utxo, replacementClient]),
         proof: this.channelAndUpgradeProof(context, client, proofChannel, counterpartyChannel, proofUpgrade, {
           fields: counterpartyFields,
           timeout: { height: { revisionNumber: 0n, revisionHeight: 0n }, timestamp: 0n },
@@ -224,6 +226,7 @@ export class ChannelUpgradeService {
       const pending = this.pending(datum);
       const counterpartyUpgrade = upgradeFromProto(msg.counterparty_upgrade);
       const { current, replacement } = await this.connections(datum, pending.upgrade.fields.connection_hops[0]);
+      const replacementClient = await this.readyClient(replacement, context.validToTime);
       upgrade.requireCompatibleUpgrade(
         pending.upgrade.fields,
         counterpartyUpgrade.fields,
@@ -255,13 +258,14 @@ export class ChannelUpgradeService {
         },
         updated,
         operation: 'channelUpgradeHandshake',
-        referenceInputs: [
+        referenceInputs: this.uniqueReferences([
           current.utxo,
           replacement.utxo,
           client.utxo,
           lanes.config,
           ...(sequencer ? [sequencer.utxo] : []),
-        ],
+          replacementClient,
+        ]),
         proof: this.channelAndUpgradeProof(
           context,
           client,
@@ -288,6 +292,7 @@ export class ChannelUpgradeService {
       const counterpartyState = channelStateFromProto(msg.counterparty_channel_state);
       const counterpartyUpgrade = upgradeFromProto(msg.counterparty_upgrade);
       const { current, replacement } = await this.connections(datum, pending.upgrade.fields.connection_hops[0]);
+      const replacementClient = await this.readyClient(replacement, context.validToTime);
       upgrade.requireCompatibleUpgrade(
         pending.upgrade.fields,
         counterpartyUpgrade.fields,
@@ -317,7 +322,7 @@ export class ChannelUpgradeService {
         },
         updated,
         operation: 'channelUpgradeHandshake',
-        referenceInputs: [current.utxo, replacement.utxo, client.utxo, lanes.config],
+        referenceInputs: this.uniqueReferences([current.utxo, replacement.utxo, client.utxo, lanes.config, replacementClient]),
         proof: this.channelAndUpgradeProof(
           context,
           client,
@@ -505,11 +510,16 @@ export class ChannelUpgradeService {
         );
       }
       const lanesFlushed = BigInt(drained.length);
+      const readiness: UTxO[] = [];
+      if (pending.flushed_lanes + lanesFlushed === laneCount && pending.counterparty_upgrade) {
+        const replacement = await this.connection(pending.upgrade.fields.connection_hops[0], true);
+        readiness.push(replacement.utxo, await this.readyClient(replacement, context.validToTime));
+      }
       return {
         step: { FlushUpgrade: { lanes: lanesFlushed } },
         updated: upgrade.flushUpgrade(datum, lanesFlushed, laneCount, BigInt(context.validToTime)),
         operation: 'channelUpgrade',
-        referenceInputs: [lanes.config, ...drained],
+        referenceInputs: this.uniqueReferences([lanes.config, ...drained, ...readiness]),
       };
     }).then(({ unsigned_tx, updated }) => ({
       flushed_lanes: updated.state.upgrade.pending?.flushed_lanes ?? laneCount,
@@ -703,6 +713,26 @@ export class ChannelUpgradeService {
       current: await this.connection(datum.state.channel.connection_hops[0], true),
       replacement: await this.connection(replacementHop, true),
     };
+  }
+
+  private uniqueReferences(inputs: UTxO[]): UTxO[] {
+    return inputs.filter((input, index) => inputs.findIndex((other) =>
+      other.txHash === input.txHash && other.outputIndex === input.outputIndex) === index);
+  }
+
+  private async readyClient(connection: Connection, validToMs: number): Promise<UTxO> {
+    const utxo = await this.lucidService.findUtxoByUnit(
+      this.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connection.datum.state.client_id))),
+    );
+    const resolved = await this.lucidService.resolveClientAtHeights(utxo, []);
+    const state = resolved.clientDatum.state;
+    const client = state.clientState;
+    const consensus = getHeightMapValue(state.consensusStates, client.latestHeight);
+    if (client.frozenHeight.revisionHeight !== 0n || client.frozenHeight.revisionNumber !== 0n ||
+        !consensus || BigInt(consensus.timestamp) + client.trustingPeriod <= BigInt(validToMs) * 1_000_000n) {
+      throw new GrpcInvalidArgumentException('channel upgrade: replacement client is frozen or expired, refresh it before completing flushing');
+    }
+    return resolved.clientUtxo;
   }
 
   private async proofClient(connection: Connection, height: Height): Promise<ProofClient> {

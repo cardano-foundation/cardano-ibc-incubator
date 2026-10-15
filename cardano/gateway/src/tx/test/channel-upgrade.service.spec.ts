@@ -147,7 +147,7 @@ async function setup(datum: ChannelDatum, laneCommitments: number[] = []) {
   const consensusHeight = { ...proofHeight };
   const clientDatum = {
     state: {
-      clientState: { latestHeight: proofHeight },
+      clientState: { latestHeight: proofHeight, frozenHeight: { revisionNumber: 0n, revisionHeight: 0n }, trustingPeriod: 2_000_000_000_000_000_000n },
       consensusStates: new Map([
         [consensusHeight, { timestamp: 10n, next_validators_hash: 'aa', root: { hash: 'bb' } }],
       ]),
@@ -214,7 +214,7 @@ async function setup(datum: ChannelDatum, laneCommitments: number[] = []) {
   );
   // The emulator slot configuration is not part of this unit.
   (Lucid as any).SLOT_CONFIG_NETWORK.Custom = { zeroTime: 0, zeroSlot: 0, slotLength: 1000 };
-  return { service, lucidService, runner, tree };
+  return { service, lucidService, runner, tree, clientDatum };
 }
 
 function encoded(lucidService: any, type: string): any {
@@ -265,7 +265,7 @@ async function expectRootWitnesses(
 }
 
 describe('ChannelUpgradeService', () => {
-  it('builds an authority-signed INIT that only references the replacement connection', async () => {
+  it('builds an authority-signed INIT with the replacement connection and client', async () => {
     const before = baseChannel();
     const { service, lucidService, tree } = await setup(before);
 
@@ -285,7 +285,7 @@ describe('ChannelUpgradeService', () => {
       expect.objectContaining({
         operation: 'channelUpgrade',
         operationPolicyId: 'upgrade-policy',
-        referenceInputs: [expect.objectContaining({ txHash: 'connection-1' })],
+        referenceInputs: [expect.objectContaining({ txHash: 'connection-1' }), expect.objectContaining({ txHash: 'client' })],
         authorityKeyHash: DEPLOYER,
         proof: undefined,
       }),
@@ -415,6 +415,25 @@ describe('ChannelUpgradeService', () => {
     expect(response.flushed_lanes).toBe(5n);
     expect(response.lane_count).toBe(16n);
     await expectRootWitnesses(lucidService, before, encoded(lucidService, 'channel'), tree);
+  });
+
+  it.each(['frozen', 'expired'])('rejects a replacement that becomes %s before the final FLUSH', async (health) => {
+    const init = initUpgrade(baseChannel(), UPGRADE_FIELDS, 3_600_000n);
+    const before: ChannelDatum = {
+      ...init, state: { ...init.state, channel: { ...init.state.channel, state: ChannelState.Flushing },
+        upgrade: { ...init.state.upgrade, pending: { ...init.state.upgrade.pending!, flushed_lanes: 8n,
+          counterparty_upgrade: { ...init.state.upgrade.pending!.upgrade,
+            timeout: { height: { revisionNumber: 0n, revisionHeight: 0n }, timestamp: (VALID_TO + 3_600_000n) * 1_000_000n },
+            next_sequence_send: 9n,
+          },
+        } },
+      },
+    };
+    const { service, clientDatum, lucidService } = await setup(before);
+    if (health === 'frozen') clientDatum.state.clientState.frozenHeight.revisionHeight = 1n;
+    else clientDatum.state.clientState.trustingPeriod = 1n;
+    await expect(service.channelUpgradeFlush({ port_id: 'transfer', channel_id: 'channel-0', signer: 'addr' })).rejects.toThrow(/replacement client is frozen or expired/);
+    expect(lucidService.createUnsignedChannelUpgradeTransaction).not.toHaveBeenCalled();
   });
 
   it('reports a flush with every lane certified', async () => {
