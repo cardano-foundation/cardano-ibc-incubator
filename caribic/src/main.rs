@@ -160,7 +160,7 @@ enum Commands {
         /// Cleans up the local environment before starting the services
         #[arg(long, default_value_t = false)]
         clean: bool,
-        /// Deprecated and disabled; use the default stake-weighted-stability light-client mode
+        /// Disabled: the local Mithril devnet is not maintained
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
         /// Optional network profile for the managed Cardano runtime (local, preprod, preview)
