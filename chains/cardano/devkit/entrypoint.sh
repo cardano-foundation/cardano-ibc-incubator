@@ -9,6 +9,11 @@ else
     export FAKETIME="${DEVKIT_CLOCK_OFFSET:?Missing persisted local network clock}"
 fi
 DEVKIT_EPOCH_LENGTH="${DEVKIT_EPOCH_LENGTH:-5000}"
+DEVKIT_BLOCK_TIME="${DEVKIT_BLOCK_TIME:-4}"
+case "$DEVKIT_BLOCK_TIME:${DEVKIT_SECURITY_PARAM:-48}" in
+    4:48|20:2160) ;;
+    *) exit 1 ;;
+esac
 case "$DEVKIT_EPOCH_LENGTH" in
     *[!0-9]*|'') exit 1 ;;
 esac
@@ -30,6 +35,6 @@ elif [ "${DEVKIT_PEER:-false}" = true ]; then
     cp /bootstrap/"${DEVKIT_PRODUCER}"/* /clusters/pool-keys/default/
     printf 'join --admin-url http://devkit.local:10000 --bp\nstart\n' > /tmp/devkit.commands
 else
-    printf 'create-node --slot-length 1 --block-time 4 --epoch-length %s --era conway --start\n' "$DEVKIT_EPOCH_LENGTH" > /tmp/devkit.commands
+    printf 'create-node --slot-length 1 --block-time %s --epoch-length %s --era conway --start\n' "$DEVKIT_BLOCK_TIME" "$DEVKIT_EPOCH_LENGTH" > /tmp/devkit.commands
 fi
 exec /app/yaci-cli script --file /tmp/devkit.commands

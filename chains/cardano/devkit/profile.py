@@ -334,7 +334,10 @@ class Runtime:
         self.compose("up", "-d", "--build", *nodes)
         admin = self.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/admin/devnet"
         wait_for("DevKit genesis", lambda: http(admin + "/genesis/shelley"))
-        wait_for("Ogmios block production", lambda: block_production_ready(self.endpoint("DEVKIT_OGMIOS_PORT")))
+        if getattr(self, "start_all_producers_before_blocks", False):
+            self.compose("up", "-d", "--build", *PRODUCERS)
+        wait_for("Ogmios block production", lambda: block_production_ready(self.endpoint("DEVKIT_OGMIOS_PORT")),
+                 timeout=getattr(self, "block_readiness_timeout", 180))
         self.compose("up", "-d", "--build", "nonce", "gateway-db")
         self.compose("exec", "-T", "devkit", "sh", "-c",
                      "for era in byron shelley alonzo conway; do "
@@ -347,7 +350,8 @@ class Runtime:
                  timeout=180)
         wait_for("Kupo", lambda: http(self.endpoint("DEVKIT_KUPO_PORT") + "/health"))
         self.compose("up", "-d", "--build", *PRODUCERS)
-        wait_for("five active block producers", self.producers_ready, timeout=300)
+        wait_for("five active block producers", self.producers_ready,
+                 timeout=getattr(self, "producer_readiness_timeout", 300))
         wait_for("Yaci history", lambda:
                  http(self.endpoint("DEVKIT_HISTORY_PORT") + "/api/v1/blocks/latest").get("height", 0) > 0, timeout=600)
         genesis = {era: http(admin + "/genesis/" + era) for era in ("byron", "shelley", "alonzo", "conway")}
