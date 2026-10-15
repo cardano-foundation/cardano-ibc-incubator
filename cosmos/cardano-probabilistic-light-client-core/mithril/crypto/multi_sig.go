@@ -105,11 +105,11 @@ func (vk *VerificationKey) ToBytes() []byte {
 // This function fails if the bytes do not represent a compressed point of the prime
 // order subgroup of the curve Bls12-381.
 func (vk *VerificationKey) FromBytes(bytes []byte) (*VerificationKey, error) {
-	if len(bytes) < 96 {
-		return nil, fmt.Errorf("byte slice is too short to represent a valid VerificationKey")
+	if len(bytes) != 96 {
+		return nil, fmt.Errorf("verification key must be exactly 96 bytes")
 	}
 
-	vk.BlstVk = new(BlstVk).Uncompress(bytes[:96])
+	vk.BlstVk = new(BlstVk).Uncompress(bytes)
 	if vk.BlstVk == nil || !vk.BlstVk.KeyValidate() {
 		return nil, fmt.Errorf("verification key: invalid verification key bytes, %v", bytes)
 	}
@@ -314,8 +314,9 @@ func (s *Signature) Eval(msg []byte, index Index) ([]byte, error) {
 	}
 	hasher.Write([]byte("map"))
 	hasher.Write(msg)
+	// mithril-stm hashes the index little-endian.
 	indexBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(indexBytes, uint64(index))
+	binary.LittleEndian.PutUint64(indexBytes, uint64(index))
 	hasher.Write(indexBytes)
 	hasher.Write(s.ToBytes())
 
@@ -339,7 +340,11 @@ func (s *Signature) FromBytes(data []byte) (*Signature, error) {
 	if len(data) != 48 {
 		return nil, fmt.Errorf("data must be exactly 48 bytes")
 	}
+	// As mithril-stm's sig_validate: a subgroup point other than infinity.
 	s.BlstSig = new(BlstSig).Uncompress(data)
+	if s.BlstSig == nil || !s.BlstSig.SigValidate(true) {
+		return nil, fmt.Errorf("signature is not a valid compressed G1 subgroup point")
+	}
 	return s, nil
 }
 
