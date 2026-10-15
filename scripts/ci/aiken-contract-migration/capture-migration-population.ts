@@ -23,7 +23,7 @@ import {
 import { escrowShardName } from "../../../cardano/offchain/src/migration-transactions.ts";
 import { DeploymentIbcTree } from "../../../cardano/offchain/src/deployment.ts";
 import { canonicalMigrationJson } from "../../../cardano/offchain/src/migration-plan.ts";
-import { validateOwnedRuntime } from "./owned-migration-runtime.ts";
+import { ownedRuntimeProviders } from "./owned-migration-runtime.ts";
 
 const root = resolve(import.meta.dirname!, "../../..");
 const [runtimeArg, handlerArg, outputArg] = Deno.args;
@@ -46,7 +46,8 @@ const genesis = JSON.parse(
 if (genesis.networkMagic !== 42) {
   throw new Error("Only owned magic-42 rehearsal data is supported");
 }
-const genesisSha256 = await validateOwnedRuntime(runtime, true);
+const providers = ownedRuntimeProviders(runtime, true);
+const { genesisSha256 } = providers;
 for (
   const name of [
     "DEPLOYER_SK",
@@ -55,8 +56,8 @@ for (
     "OGMIOS_API_KEY",
   ]
 ) Deno.env.delete(name);
-Deno.env.set("KUPO_URL", "http://127.0.0.1:2742");
-Deno.env.set("OGMIOS_URL", "http://127.0.0.1:2637");
+Deno.env.set("KUPO_URL", `http://${providers.kupo}`);
+Deno.env.set("OGMIOS_URL", `http://${providers.ogmios}`);
 Deno.env.set("CARDANO_NETWORK_MAGIC", "42");
 const lucid = await buildOperationalLucid({ readOnly: true });
 const deployment: DeploymentTemplate = JSON.parse(
