@@ -17,6 +17,7 @@ RUN apk add --no-cache \
     make \
     musl-dev \
     perl \
+    python3 \
     tar
 
 RUN test -n "${IBC_GO_MAJOR}" \
