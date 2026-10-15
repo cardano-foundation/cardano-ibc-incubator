@@ -67,6 +67,7 @@ jobs:
           node --test scripts/ci/aiken-contract-migration/test-rehearsal-json.cjs
           node --test scripts/ci/aiken-contract-migration/test-owned-sdk-rehearsal.cjs
           python3 scripts/ci/aiken-contract-migration/test-deployment-references.py
+          python3 scripts/ci/aiken-contract-migration/test-migration-checkpoint.py
 
       - name: Restore relayer build cache
         uses: actions/cache@v6
