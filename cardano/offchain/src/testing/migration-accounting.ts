@@ -505,6 +505,7 @@ export async function accountingFixture(seedNumber = 462, options: {
       live_clients: 0n,
       live_connections: 0n,
       live_channels: channelCount,
+      last_heartbeat_time: 0n,
     },
   };
   const hostUnit = plan.hostNft.hash + fromText("ibc_host_state");

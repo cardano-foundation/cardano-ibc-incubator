@@ -226,10 +226,7 @@ validator host_state_stt(
                 validator_utils.get_tx_valid_to(validity_range),
               ),
             }
-          Heartbeat -> and {
-              list.has(extra_signatories, old_datum.deployer),
-              validate_heartbeat(old_datum, new_datum),
-            }
+          Heartbeat -> validate_heartbeat(old_datum, new_datum, validity_range)
           AuthorizeFinalization ->
             validate_transfer_finalization_authorization(
               old_datum,

@@ -287,6 +287,7 @@ export async function shutdownFixture(
       live_clients: 1n,
       live_connections: 1n,
       live_channels: 1n,
+      last_heartbeat_time: 0n,
     },
   };
   const hostUtxo = seed(host.address, {

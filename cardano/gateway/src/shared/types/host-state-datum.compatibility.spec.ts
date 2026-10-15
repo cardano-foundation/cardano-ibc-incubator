@@ -6,11 +6,19 @@ import * as Lucid from '@lucid-evolution/lucid';
 import { decodeHostStateDatum, encodeHostStateDatum, HostStateDatum } from './host-state-datum';
 
 const INJECTIVE_COMPATIBILITY_FIXTURE = readFileSync(
-  resolve(__dirname, '../../../../../tests/injective-light-client-compat/host_state_datum_with_counts.hex'),
+  resolve(__dirname, '../../../../../tests/injective-light-client-compat/host_state_datum_with_heartbeat.hex'),
   'utf8',
 ).trim();
 
 describe('HostState datum Injective compatibility', () => {
+  it('reads historical control data before the heartbeat clock was added', async () => {
+    const legacy = readFileSync(
+      resolve(__dirname, '../../../../../tests/injective-light-client-compat/host_state_datum_with_counts.hex'),
+      'utf8',
+    ).trim();
+    const decoded = await decodeHostStateDatum(legacy, Lucid);
+    expect(decoded.control.last_heartbeat_time).toBe(0n);
+  });
   it('keeps the deployed light-client wire fields stable while carrying the textual port registry', async () => {
     const datum: HostStateDatum = {
       state: {
@@ -39,6 +47,7 @@ describe('HostState datum Injective compatibility', () => {
         live_clients: 0n,
         live_connections: 0n,
         live_channels: 0n,
+        last_heartbeat_time: 0n,
       },
     };
 

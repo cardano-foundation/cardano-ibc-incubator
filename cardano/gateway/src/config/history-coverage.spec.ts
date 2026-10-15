@@ -71,7 +71,7 @@ const url = process.env.BRIDGE_HISTORY_TEST_DATABASE_URL;
         },
         nft_policy: policy,
         deployer: 'bb'.repeat(28),
-        control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
+        control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
       },
       Lucid,
     );

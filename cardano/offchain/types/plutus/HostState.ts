@@ -54,6 +54,7 @@ export const HostStateControlSchema = Data.Object({
   live_clients: Data.Integer(),
   live_connections: Data.Integer(),
   live_channels: Data.Integer(),
+  last_heartbeat_time: Data.Integer(),
 });
 
 export type HostStateControl = Data.Static<typeof HostStateControlSchema>;

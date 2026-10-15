@@ -30,10 +30,8 @@ route and enable unauthorized escrow releases or unbacked voucher minting.
 Recovery cannot replace an active client. See
 [Tendermint client recovery](tendermint-update-capacity.md#expired-or-frozen-client-recovery).
 
-Other powers are registering previously unbound ports and submitting
-`HostState` heartbeats. An attacker can occupy unused ports or exhaust the
-bounded registry. Existing port registrations cannot be overwritten.
-Heartbeats leave the IBC commitment root unchanged. The key does not provide
+Another power is registering previously unbound ports. An attacker can occupy unused ports or exhaust the bounded registry. Existing port registrations cannot be overwritten.
+Heartbeats are permissionless and leave the IBC commitment root unchanged. Any funded relayer can submit one after the on-chain six-hour cooldown. The key does not provide
 a general contract upgrade or arbitrary state-editing capability. A deployment
 can name one backup operator before deployment. That key can claim the deployer
 role at any time, so it must be trusted as an administrator. The backup cannot
@@ -48,8 +46,7 @@ signers and relayers while their clients remain usable. Any funds held directly
 by the lost-key wallet become inaccessible.
 
 Without a named backup, the deployment loses its administrative operations: binding new ports,
-recovering expired or frozen Cardano-side Tendermint clients, submitting
-heartbeats, and entering or finalizing shutdown. Deployment deposits that
+recovering expired or frozen Cardano-side Tendermint clients, and entering or finalizing shutdown. Deployment deposits that
 require this authority to reclaim also become inaccessible. A deployment made
 without a backup has no on-chain replacement-key procedure.
 
@@ -65,9 +62,7 @@ route. If its Cardano-side client expires or freezes, normal proof-based
 redemption and refunds may remain blocked without recovery. Escrow stays locked
 and vouchers remain in wallets but continued possession does not guarantee
 redemption. Creating a new deployment or client does not automatically migrate
-existing channels, escrow, or vouchers. Losing heartbeat authority also removes
-the dedicated way to advance `HostState` during quiet periods for counterparty
-client updates. Valid ordinary activity can still advance it.
+existing channels, escrow, or vouchers. Independent relayers can still submit heartbeats and advance counterparty clients during quiet periods without the deployer key.
 
 If the key is lost after shutdown has already begun, shutdown remains in effect.
 The grace-period deadline does not automatically destroy `HostState`. Remaining

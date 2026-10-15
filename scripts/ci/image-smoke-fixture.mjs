@@ -168,7 +168,7 @@ async function main() {
       next_connection_sequence: 0n, next_channel_sequence: 0n, bound_port: [], last_update_time: 0n },
     nft_policy: manifest.host_state_nft.policy_id, deployer: '66'.repeat(28),
     control: { port_registry: new Map(), shutdown: 'Active',
-      live_clients: 0n, live_connections: 0n, live_channels: 0n },
+      live_clients: 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
   }, lucid);
   const handler = fixtureHandler(manifest, datum, protocolParameters(lucid.PROTOCOL_PARAMETERS_DEFAULT.costModels));
   const server = createServer(handler);

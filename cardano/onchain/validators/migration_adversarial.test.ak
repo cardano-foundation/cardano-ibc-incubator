@@ -182,6 +182,7 @@ fn host() -> HostStateDatum {
       last_update_time: 1_000,
     },
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [Pair("transfer", registration())],
       shutdown: Active,
       live_clients: 2,

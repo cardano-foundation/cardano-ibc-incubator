@@ -1,3 +1,4 @@
+import { MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS } from './constant.config';
 import { Network } from '@lucid-evolution/lucid';
 import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
@@ -167,6 +168,15 @@ export default (): Partial<Config> => {
     validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);
   }
 
+  const cardanoClientTrustingPeriodSeconds = Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400);
+  if (
+    cardanoLightClientMode === 'stake-weighted-stability' &&
+    (!Number.isSafeInteger(cardanoClientTrustingPeriodSeconds) ||
+      cardanoClientTrustingPeriodSeconds < MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS)
+  ) {
+    throw new Error('CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS must be at least 86400 for six-hour HostState heartbeats');
+  }
+
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     ogmiosApiKey: process.env.OGMIOS_API_KEY,
@@ -188,7 +198,7 @@ export default (): Partial<Config> => {
     ),
     cardanoRandomnessStabilisationWindowSlots: process.env.CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS,
     cardanoPoolRegistryCheckpointFile: process.env.CARDANO_POOL_REGISTRY_CHECKPOINT_FILE,
-    cardanoClientTrustingPeriodSeconds: Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400),
+    cardanoClientTrustingPeriodSeconds,
     cardanoClientMaxClockDriftSeconds: positiveGoDurationSecondsEnv(
       'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS',
       10,

@@ -454,13 +454,26 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     (await lucid.utxoByUnit(deployment.modules.transfer.identifier)).address,
     deployment.validators.spendTransferModule.address,
   );
+  const waitForHeartbeat = async () => {
+    const hostUtxo = await lucid.utxoByUnit(
+      deployment.hostStateNFT!.policyId + deployment.hostStateNFT!.name,
+    );
+    const host = Data.from(hostUtxo.datum!, HostStateDatum);
+    const next = Number(host.control.last_heartbeat_time) + 21_600_000;
+    if (host.control.last_heartbeat_time > 0n && emulator.now() < next) {
+      emulator.awaitSlot(Math.ceil((next - emulator.now()) / 1_000));
+      lucid.clearUTxOOverride();
+    }
+  };
   const heartbeat = async (window: number) => {
+    await waitForHeartbeat();
     const hostUtxo = await lucid.utxoByUnit(
       deployment.hostStateNFT!.policyId + deployment.hostStateNFT!.name,
     );
     const host = Data.from(hostUtxo.datum!, HostStateDatum);
     host.state.version += 1n;
     host.state.last_update_time = BigInt(emulator.now() + window);
+    host.control.last_heartbeat_time = host.state.last_update_time;
     const tx = await withMigrationReference(
       lucid,
       lucid.newTx(),
@@ -477,7 +490,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       );
   };
   // Valid before the release, rejected by the successor's new code constraint.
-  await (await heartbeat(7_200_000)).complete({ localUPLCEval: true });
+  await (await heartbeat(60_000)).complete({ localUPLCEval: true });
   const releasePaths = [
     Deno.env.get("MIGRATION_SUCCESSOR_V2_BLUEPRINT"),
     Deno.env.get("MIGRATION_SUCCESSOR_V3_BLUEPRINT"),
@@ -562,7 +575,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     )).tx.complete({ localUPLCEval: true });
     // A real accepted ordinary continuation changes the HostState outref and
     // version but not the reviewed identity, inventory or implementation epoch.
-    await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
+    await (await (await heartbeat(10_000)).complete({ localUPLCEval: true }))
       .sign.withWallet().complete().then((tx) => tx.submit());
     lucid.clearUTxOOverride();
     assertNotEquals(
@@ -621,13 +634,14 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
         lucid.utxoByUnit = lookup;
       }
     }
+    await waitForHeartbeat();
     const approved = await authorizeMigration(lucid, deployment, artifact, {
       validFrom: emulator.now(),
       validTo: emulator.now() + 60_000,
       expiresAt: BigInt(emulator.now() + 3 * 86_400_000),
     }, [authority]);
     // Authorization construction/signing must not pin ordinary state either.
-    await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
+    await (await (await heartbeat(10_000)).complete({ localUPLCEval: true }))
       .sign.withWallet().complete().then((tx) => tx.submit());
     lucid.clearUTxOOverride();
     await (await (await approved.tx.complete({ localUPLCEval: true })).sign
@@ -639,7 +653,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       "New state objects are paused",
     );
     // The same intent survives turnover between authorization and Begin.
-    await (await (await heartbeat(60_000)).complete({ localUPLCEval: true }))
+    await (await (await heartbeat(10_000)).complete({ localUPLCEval: true }))
       .sign.withWallet().complete().then((tx) => tx.submit());
     lucid.clearUTxOOverride();
     emulator.awaitSlot(86_500);
@@ -747,13 +761,12 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     assert(await migrationReference(lucid, runtimeDeployment()));
     if (release) {
       await assertRejects(
-        async () =>
-          (await heartbeat(7_200_000)).complete({ localUPLCEval: true }),
+        async () => (await heartbeat(60_000)).complete({ localUPLCEval: true }),
         Error,
         "failed script execution",
       );
     }
-    await (await (await (await heartbeat(60_000)).complete({
+    await (await (await (await heartbeat(10_000)).complete({
       localUPLCEval: true,
     })).sign.withWallet().complete()).submit();
     const forged = structuredClone(artifact);

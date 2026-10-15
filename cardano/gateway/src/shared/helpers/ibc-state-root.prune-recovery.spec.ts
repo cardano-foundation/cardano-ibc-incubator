@@ -150,7 +150,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
         version: 12n,
         bound_port: [],
       },
-      control: { port_registry: new Map([[toHex('Transfer-v2'), registration]]), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
+      control: { port_registry: new Map([[toHex('Transfer-v2'), registration]]), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
     };
     const clientUtxo = {
       txHash: '11'.repeat(32), outputIndex: 0,

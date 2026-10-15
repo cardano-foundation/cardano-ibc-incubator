@@ -67,7 +67,7 @@ pub type HostStateRedeemer {
   }
   FinalizeShutdown
   // Re-create the HostState UTxO without changing the IBC commitment. This
-  // provides one proof anchor per Cardano epoch when no ordinary IBC state
+  // provides fresh proof anchors during quiet periods when no ordinary IBC state
   // transition occurs.
   Heartbeat
   // Remove the authenticated transfer registration only while atomically

@@ -16,6 +16,9 @@ var originalHostStateDatumHex string
 //go:embed host_state_datum_with_counts.hex
 var countedHostStateDatumHex string
 
+//go:embed host_state_datum_with_heartbeat.hex
+var heartbeatHostStateDatumHex string
+
 func TestGatewayHostStateDatumDecodesWithInjectivePinnedCore(t *testing.T) {
 	wantPolicy := bytes.Repeat([]byte{0x24}, 28)
 	wantRoot := bytes.Repeat([]byte{0x42}, 32)
@@ -25,6 +28,7 @@ func TestGatewayHostStateDatumDecodesWithInjectivePinnedCore(t *testing.T) {
 	}{
 		{name: "original", hex: originalHostStateDatumHex},
 		{name: "with_counts", hex: countedHostStateDatumHex},
+		{name: "with_heartbeat", hex: heartbeatHostStateDatumHex},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			datum, err := hex.DecodeString(strings.TrimSpace(fixture.hex))

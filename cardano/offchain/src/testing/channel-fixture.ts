@@ -596,6 +596,7 @@ export async function channelFixture(
       live_clients: 1n,
       live_connections: 1n,
       live_channels: isCreate ? 0n : 1n,
+      last_heartbeat_time: 0n,
     },
   };
   const newHostDatum: HostStateDatum = {

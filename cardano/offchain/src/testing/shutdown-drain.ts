@@ -283,6 +283,7 @@ export async function checkShutdownDrain(
           live_clients: 1n,
           live_connections: 1n,
           live_channels: 1n,
+          last_heartbeat_time: 0n,
         },
       },
       HostStateDatum,
