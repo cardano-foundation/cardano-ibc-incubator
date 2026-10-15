@@ -114,6 +114,7 @@ def restore(checkpoint, runtime, project, blueprint, network_only=False):
         return value
     config = relocate(config)
     config['name'] = project
+    config['services']['cosmos']['environment']['MIGRATION_REHEARSAL_CLOCK_OFFSET_SECONDS'] = str(metadata['clockState']['offset'])
     for logical, volume in volumes.items():
         config['volumes'][logical] = {'name': volume}
     for service, image in images.items():
