@@ -1,0 +1,57 @@
+{
+  "host_execution": "native InjectiveApp in a separate socket ABCI process",
+  "fixture": "native-boundary-size.json.gz",
+  "release_base_commit": "c57d0895b54139168d5c03c984a2c9d0a9959254",
+  "controlled_host_clock": true,
+  "verification_source_sha256": "0ace560dcd8dcc9225b8ef34d207e0e54312c5ede85e98cb12be6abc201f0fd5",
+  "harness_sha256": "ff45c8669138e37c00b71587bf3d2a074dccb5546872882849eb6db10d67c907",
+  "native_probe_sha256": "85faed4aa1b945a32d2653640744ccf78f25e9f3cefb90c8d17410e9c8657a83",
+  "go_version": "go1.26.9",
+  "result": {
+    "active_cleanup_preserved_progress": true,
+    "attacker": "inj1ggzer9tghas6drjf0kfu8khyxfeyrdxrx7tn04",
+    "challenger": "inj14mhvr9emwpfarks8q824gv0nk7z5wltgklnr3r",
+    "controlled_host_clock": true,
+    "deadline": 1792167614000000000,
+    "expired_cleanup": true,
+    "expired_discard": true,
+    "freeze_before_deadline": true,
+    "freeze_committed": true,
+    "freeze_time": 1792127084000000000,
+    "honest_challenge_completed": true,
+    "rejected_discards": 131
+  },
+  "rejected_at_check_tx": 131,
+  "rejected_during_execution": 131,
+  "max_discard_execution_gas": 110198,
+  "freeze_margin_seconds": 40530,
+  "transactions": {
+    "freeze": {
+      "signer": "inj14mhvr9emwpfarks8q824gv0nk7z5wltgklnr3r",
+      "height": 4723,
+      "time_unix_ns": 1792127084000000000,
+      "signed_bytes": 520,
+      "simulation_gas": 155997,
+      "gas_wanted": 280795,
+      "execution_gas": 160977
+    },
+    "discard-expired-abandoned-session": {
+      "signer": "inj1ggzer9tghas6drjf0kfu8khyxfeyrdxrx7tn04",
+      "height": 13105,
+      "time_unix_ns": 1792210904000000000,
+      "signed_bytes": 465,
+      "simulation_gas": 196482,
+      "gas_wanted": 353668,
+      "execution_gas": 201462
+    },
+    "cleanup-expired-challenge-session": {
+      "signer": "inj1ggzer9tghas6drjf0kfu8khyxfeyrdxrx7tn04",
+      "height": 13106,
+      "time_unix_ns": 1792210914000000000,
+      "signed_bytes": 382,
+      "simulation_gas": 784303,
+      "gas_wanted": 1411746,
+      "execution_gas": 789283
+    }
+  }
+}

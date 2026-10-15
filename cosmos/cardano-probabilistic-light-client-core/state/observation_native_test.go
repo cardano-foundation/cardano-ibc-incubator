@@ -242,6 +242,75 @@ func TestStagingRetriesAndOrderingDoNotChangeDeadlines(t *testing.T) {
 	require.Equal(t, fixture.Client.LatestCheckpointHeight, client.LatestCheckpointHeight)
 }
 
+func TestObservationDiscardRequiresExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		offset time.Duration
+	}{
+		{"active", -time.Nanosecond},
+		{"at expiry", 0},
+		{"after expiry", time.Nanosecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newCompactExpiryFixture(t)
+			plan, err := BuildObservationPlan(f.client, f.evidence.Header, nil, 13, 4)
+			require.NoError(t, err)
+			for _, step := range plan.Steps[:2] {
+				runObservationStep(t, f.ctx, f.cdc, f.private, f.client, step)
+			}
+			session, err := loadObservationSession(f.shared, f.client, plan.SessionID[:])
+			require.NoError(t, err)
+			f.ctx.Time = time.Unix(0, int64(session.ExpiresAt)).Add(tc.offset)
+			discard := &ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: ObservationDiscard, SessionId: plan.SessionID[:], Sequence: session.Sequence + 1}}
+			if tc.offset < 0 {
+				before := observationStoreContents(t, f.shared)
+				require.ErrorContains(t, f.client.VerifyClientMessage(f.ctx, f.cdc, f.private, discard), "live observation")
+				require.Equal(t, before, observationStoreContents(t, f.shared), "rejected discard must preserve progress and snapshot owners")
+				return
+			}
+			require.ErrorContains(t, f.client.VerifyClientMessage(f.ctx, f.cdc, f.private, plan.Steps[2]), "observation session has expired")
+			runObservationStep(t, f.ctx, f.cdc, f.private, f.client, discard)
+			require.False(t, f.shared.Has(observationSessionKey(f.client.StorageNamespace, f.client.VerificationGeneration, plan.SessionID[:])))
+			require.False(t, f.shared.Has(retentionKey(f.client, 1, plan.SessionID[:])))
+			_, _, err = currentVerificationCheckpoint(f.ctx, f.client)
+			require.NoError(t, err, "discard must preserve the client's committed checkpoint")
+		})
+	}
+}
+
+func TestObservationCleanupPreservesActiveSessions(t *testing.T) {
+	f := newCompactExpiryFixture(t)
+	plan, err := BuildObservationPlan(f.client, f.evidence.Header, nil, 13, 4)
+	require.NoError(t, err)
+	for _, step := range plan.Steps[:2] {
+		runObservationStep(t, f.ctx, f.cdc, f.private, f.client, step)
+	}
+	session, err := loadObservationSession(f.shared, f.client, plan.SessionID[:])
+	require.NoError(t, err)
+	f.ctx.Time = time.Unix(0, int64(session.ExpiresAt)).Add(-time.Nanosecond)
+	require.NoError(t, f.client.ContinueMaintenance(f.ctx, f.cdc, f.private, ObservationCleanup))
+	retained, err := loadObservationSession(f.shared, f.client, plan.SessionID[:])
+	require.NoError(t, err)
+	require.Equal(t, session, retained)
+	f.ctx.Time = f.ctx.Time.Add(time.Nanosecond)
+	require.NoError(t, f.client.ContinueMaintenance(f.ctx, f.cdc, f.private, ObservationCleanup))
+	require.False(t, f.shared.Has(observationSessionKey(f.client.StorageNamespace, f.client.VerificationGeneration, plan.SessionID[:])))
+	require.False(t, f.shared.Has(retentionKey(f.client, 1, plan.SessionID[:])))
+	_, _, err = currentVerificationCheckpoint(f.ctx, f.client)
+	require.NoError(t, err)
+}
+
+func observationStoreContents(t *testing.T, store storetypes.KVStore) map[string][]byte {
+	t.Helper()
+	values := make(map[string][]byte)
+	iterator := store.Iterator(nil, nil)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		values[string(iterator.Key())] = bytes.Clone(iterator.Value())
+	}
+	return values
+}
+
 func stagedTestHostWindow(current Context, deadline uint64) error {
 	return VerifyHostWindow(current, deadline, &HostProgress{Height: current.Height, TimeUnixNs: uint64(current.BlockTime().UnixNano()), PreviousTimeUnixNs: uint64(current.BlockTime().Add(-time.Nanosecond).UnixNano()), ResumeUsableAfterUnixNs: 1})
 }

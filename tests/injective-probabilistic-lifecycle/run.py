@@ -142,7 +142,16 @@ class Node:
         text = re.sub(r"^max-recv-msg-size = .*", "max-recv-msg-size = 16777216", text, flags=re.M)
         text = re.sub(r"^rpc-max-body-bytes = .*", "rpc-max-body-bytes = 20000000", text, flags=re.M)
         write_text(app, text)
-        self.cli("genesis", "validate")
+        for attempt in range(5):
+            validation = self.cli("genesis", "validate", check=False)
+            if validation.returncode == 0:
+                break
+            error = validation.stderr or validation.stdout
+            # Retry the transient TOML read failure observed after atomic
+            # config replacements on shared Docker mounts.
+            if 'toml: basic string not terminated' not in error or attempt == 4:
+                raise RuntimeError(error)
+            time.sleep(0.2)
 
     def start(self):
         subprocess.run(["docker", "run", "-d", "--name", self.name, "-p", f"127.0.0.1:{self.port}:26657",

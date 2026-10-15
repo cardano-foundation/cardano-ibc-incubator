@@ -131,15 +131,24 @@ func boundedPrepare(encoding injcodec.EncodingConfig, address string) {
 }
 
 type boundedDriver struct {
-	client     abcicli.Client
-	encoding   injcodec.EncodingConfig
-	key        *ethsecp256k1.PrivKey
-	address    string
-	height     int64
-	now        time.Time
-	validators []abci.ValidatorUpdate
-	output     string
-	evidence   []map[string]any
+	client          abcicli.Client
+	encoding        injcodec.EncodingConfig
+	key             *ethsecp256k1.PrivKey
+	address         string
+	height          int64
+	now             time.Time
+	validators      []abci.ValidatorUpdate
+	output          string
+	evidence        []map[string]any
+	discardAttacker *ethsecp256k1.PrivKey
+	discardAttempts uint32
+}
+
+func (d *boundedDriver) as(key *ethsecp256k1.PrivKey, action func()) {
+	previousKey, previousAddress := d.key, d.address
+	d.key, d.address = key, sdk.AccAddress(key.PubKey().Address()).String()
+	defer func() { d.key, d.address = previousKey, previousAddress }()
+	action()
 }
 
 func (d *boundedDriver) query(path string, input, output interface {
@@ -237,7 +246,7 @@ func (d *boundedDriver) send(label string, message sdk.Msg) {
 	}
 	check, err := d.client.CheckTx(context.Background(), &abci.CheckTxRequest{Tx: raw, Type: 2})
 	must(err)
-	record := map[string]any{"label": label, "signed_bytes": len(raw), "simulation_gas": simulation.GasInfo.GasUsed, "gas_wanted": gas, "check_tx": check}
+	record := map[string]any{"label": label, "signer": d.address, "signed_bytes": len(raw), "simulation_gas": simulation.GasInfo.GasUsed, "gas_wanted": gas, "check_tx": check}
 	if check.Code == 0 {
 		result := d.block(raw).TxResults[0]
 		record["execution"] = result
@@ -273,7 +282,13 @@ func (d *boundedDriver) stage(id string, header *lc.ProbabilisticHeader, origina
 		}
 		message, err := clienttypes.NewMsgUpdateClient(id, step, d.address)
 		must(err)
+		if d.discardAttacker != nil && len(original) > 0 && step.ObservationChunk.Operation != 1 {
+			d.rejectSessionDiscard(id, session)
+		}
 		d.send(fmt.Sprintf("%s-%d-%d", label, step.ObservationChunk.Operation, step.ObservationChunk.Sequence), message)
+	}
+	if d.discardAttacker != nil && len(original) > 0 {
+		d.rejectSessionDiscard(id, session)
 	}
 	state := d.verification(d.state(id), 8, session)
 	var receipt []byte
@@ -393,6 +408,35 @@ func boundedRun(encoding injcodec.EncodingConfig, key *ethsecp256k1.PrivKey, add
 	if !bytesEqual(before.CheckpointReference, proposed.CheckpointReference) {
 		panic("proposal advanced checkpoint before deadline")
 	}
+	var abandonedSession []byte
+	if _, err := os.Stat(filepath.Join(dir, "test-session-discard")); err == nil {
+		attackerBytes := sha256.Sum256([]byte("cardano-ibc/injective-release/session-discard-attacker"))
+		d.discardAttacker = &ethsecp256k1.PrivKey{Key: attackerBytes[:]}
+		attackerAddress := sdk.AccAddress(d.discardAttacker.PubKey().Address()).String()
+		if attackerAddress == d.address {
+			panic("session discard test requires two distinct accounts")
+		}
+		d.send("fund-discard-attacker", banktypes.NewMsgSend(sdk.MustAccAddressFromBech32(d.address), sdk.MustAccAddressFromBech32(attackerAddress), sdk.NewCoins(sdk.NewCoin("inj", sdkmath.NewIntWithDecimal(100, 18)))))
+		control := lc.ModuleName + "-1"
+		steps, session, err := lc.BuildObservationPlan(d.state(control), f.Header, nil, 4000, 1)
+		must(err)
+		abandonedSession = session
+		for _, step := range steps[:2] {
+			message, err := clienttypes.NewMsgUpdateClient(control, step, d.address)
+			must(err)
+			d.send("abandoned-session-start", message)
+		}
+		progress, err := json.Marshal(d.verification(d.state(control), 8, session))
+		must(err)
+		d.as(d.discardAttacker, func() {
+			d.send("cleanup-preserves-active-session", &lc.MsgContinueClient{ClientId: control, Signer: d.address, Operation: 9})
+		})
+		retained, err := json.Marshal(d.verification(d.state(control), 8, session))
+		must(err)
+		if !bytesEqual(progress, retained) {
+			panic("permissionless cleanup changed an active session")
+		}
+	}
 	alternative := d.stage(id, f.Fork, receipt, "alternative")
 	evidence := &lc.Misbehaviour{ClientId: id, VerifiedObservation_1: receipt, VerifiedObservation_2: alternative}
 	message, err := clienttypes.NewMsgSubmitMisbehaviour(id, evidence, address)
@@ -413,6 +457,16 @@ func boundedRun(encoding injcodec.EncodingConfig, key *ethsecp256k1.PrivKey, add
 		panic("challenge missed response deadline")
 	}
 	write(filepath.Join(dir, "bounded-result.json"), map[string]any{"accepted_proposal": true, "freeze_committed": true, "freeze_before_deadline": true, "deadline": deadline, "freeze_time": d.now.UnixNano(), "client_bytes": frozen.Size(), "generation": frozen.VerificationGeneration, "controlled_host_clock": true})
+	if d.discardAttacker != nil {
+		if d.discardAttempts == 0 {
+			panic("session discard test did not attempt an attack")
+		}
+		freezeTime := d.now.UnixNano()
+		_, challengeSession, err := lc.BuildObservationPlan(proposed, f.Fork, receipt, 4000, 1)
+		must(err)
+		d.checkExpiredSessionCleanup(id, challengeSession, abandonedSession)
+		write(filepath.Join(dir, "bounded-session-discard-result.json"), map[string]any{"challenger": address, "attacker": sdk.AccAddress(d.discardAttacker.PubKey().Address()).String(), "rejected_discards": d.discardAttempts, "honest_challenge_completed": true, "freeze_committed": true, "freeze_before_deadline": freezeTime < int64(deadline), "freeze_time": freezeTime, "deadline": deadline, "expired_discard": true, "expired_cleanup": true, "active_cleanup_preserved_progress": true, "controlled_host_clock": true})
+	}
 	if _, err := os.Stat(filepath.Join(dir, "headers.json")); err == nil {
 		d.finishLifecycle(dir)
 	}
@@ -522,16 +576,22 @@ func (d *boundedDriver) finishLifecycle(dir string) {
 }
 
 func (d *boundedDriver) reject(label string, message sdk.Msg, expected string) {
+	d.rejectTransaction(label, message, expected, false)
+}
+
+func (d *boundedDriver) rejectTransaction(label string, message sdk.Msg, expected string, deliver bool) {
 	before, err := d.state(lc.ModuleName + "-0").Marshal()
 	must(err)
 	raw := d.sign(message, 75000000)
 	check, err := d.client.CheckTx(context.Background(), &abci.CheckTxRequest{Tx: raw, Type: 2})
 	must(err)
-	record := map[string]any{"label": label, "signed_bytes": len(raw), "check_tx": check, "expected_rejection": expected}
+	record := map[string]any{"label": label, "signer": d.address, "signed_bytes": len(raw), "check_tx": check, "expected_rejection": expected}
 	text := check.Log
-	if check.Code == 0 {
+	if check.Code == 0 || deliver {
 		result := d.block(raw).TxResults[0]
 		record["execution"] = result
+		record["height"] = d.height
+		record["time_unix_ns"] = d.now.UnixNano()
 		text = result.Log
 		if result.Code == 0 {
 			panic(label + " unexpectedly succeeded")
@@ -548,6 +608,57 @@ func (d *boundedDriver) reject(label string, message sdk.Msg, expected string) {
 	d.evidence = append(d.evidence, record)
 	write(d.output, d.evidence)
 	fmt.Println(label + ": expected rejection")
+}
+
+func (d *boundedDriver) rejectSessionDiscard(id string, session []byte) {
+	progress := d.verification(d.state(id), 8, session)
+	before, err := json.Marshal(progress)
+	must(err)
+	var sequence uint32
+	must(json.Unmarshal(progress["Sequence"], &sequence))
+	d.as(d.discardAttacker, func() {
+		message, err := clienttypes.NewMsgUpdateClient(id, &lc.ProbabilisticHeader{ObservationChunk: &lc.ObservationChunk{Operation: 8, SessionId: session, Sequence: sequence + 1}}, d.address)
+		must(err)
+		d.rejectTransaction(fmt.Sprintf("reject-active-session-discard-%d", sequence), message, "live observation", true)
+	})
+	after, err := json.Marshal(d.verification(d.state(id), 8, session))
+	must(err)
+	if !bytesEqual(before, after) {
+		panic("rejected discard changed the challenger's persisted progress")
+	}
+	d.discardAttempts++
+}
+
+func (d *boundedDriver) requireSessionMissing(id string, session []byte) {
+	cs := d.state(id)
+	request := &lc.QueryVerificationRequest{Namespace: cs.StorageNamespace, Generation: cs.VerificationGeneration, Kind: 8, SessionId: session}
+	raw, err := request.Marshal()
+	must(err)
+	response, err := d.client.Query(context.Background(), &abci.QueryRequest{Path: "/ibc.lightclients.probabilistic.v1.Query/Verification", Data: raw})
+	must(err)
+	if response.Code == 0 || !strings.Contains(response.Log, "observation session is missing") {
+		panic("expired session was not removed: " + response.Log)
+	}
+}
+
+func (d *boundedDriver) checkExpiredSessionCleanup(id string, challengeSession, abandonedSession []byte) {
+	control := lc.ModuleName + "-1"
+	challenge := d.verification(d.state(id), 8, challengeSession)
+	abandoned := d.verification(d.state(control), 8, abandonedSession)
+	var challengeExpiry, abandonedExpiry uint64
+	var sequence uint32
+	must(json.Unmarshal(challenge["ExpiresAt"], &challengeExpiry))
+	must(json.Unmarshal(abandoned["ExpiresAt"], &abandonedExpiry))
+	must(json.Unmarshal(abandoned["Sequence"], &sequence))
+	d.until(max(challengeExpiry, abandonedExpiry))
+	d.as(d.discardAttacker, func() {
+		message, err := clienttypes.NewMsgUpdateClient(control, &lc.ProbabilisticHeader{ObservationChunk: &lc.ObservationChunk{Operation: 8, SessionId: abandonedSession, Sequence: sequence + 1}}, d.address)
+		must(err)
+		d.send("discard-expired-abandoned-session", message)
+		d.send("cleanup-expired-challenge-session", &lc.MsgContinueClient{ClientId: id, Signer: d.address, Operation: 9})
+	})
+	d.requireSessionMissing(control, abandonedSession)
+	d.requireSessionMissing(id, challengeSession)
 }
 func (d *boundedDriver) rejectPrepared(dir, name, expected, label string) {
 	raw, err := os.ReadFile(filepath.Join(dir, name+".json"))

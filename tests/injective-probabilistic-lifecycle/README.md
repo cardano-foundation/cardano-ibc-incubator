@@ -41,7 +41,12 @@ python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-
 python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-combined" --fixture combined --small-proposal
 python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-lifecycle" --fixture lifecycle
 python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-lifecycle" --fixture lifecycle --resume
+python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-session-discard" --fixture size --discard-attacks
 ```
+
+The discard regression funds a second account and interleaves its signed discard attempts with every step of an honest challenge. It checks transaction admission and sends each attempt into a block to require rejection during consensus execution. Each attempt must fail without changing the persisted session. The challenger must finish and commit the freeze before the proposal's deadline. The driver then advances the controlled host clock past the sessions' expiry. The second account must be able to discard an abandoned session and clean up the expired challenge session while the subject client is frozen. `bounded-session-discard-result.json` records the two accounts and the committed results.
+
+The [captured run](evidence/session-discard-results.json) rejected all 131 discard attempts during admission and block execution. The honest freeze committed with 40,530 seconds left before the deadline. Both expired cleanup transactions then committed under the second account.
 
 The size and near-limit observations now admit their proposals and commit honest challenges on the resulting state. One case gives the proposal 13 pool rows and the alternative 4,000 rows. Including the approximately 80 KiB body case, their largest signed transaction is 83,360 bytes. Peak execution is about 2.48 million gas. The largest requested allowance is about 4.45 million gas after the `1.8` multiplier. Their public client is 531 bytes and the final receipt challenge uses about 161,000 execution gas. These are measurements of these fixtures rather than worst-case certification for every supported mutation pattern.
 
