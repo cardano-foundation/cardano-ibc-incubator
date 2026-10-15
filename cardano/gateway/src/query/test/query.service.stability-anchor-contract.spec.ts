@@ -991,6 +991,35 @@ describe('QueryService stability anchor contract', () => {
     expect(header.host_state_tx_hash).toBe('');
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
   });
+
+  it('keeps the logical catch-up window for staged observations with large bodies', async () => {
+    const blockAt = (height: number) => {
+      const slot = 1000n + BigInt(height - 100) * 10n;
+      return { height, hash: `hash-${height}`, prevHash: `hash-${height - 1}`, slotNo: MATURE_POOL_SLOT + slot,
+        epochNo: 7, timestampUnixNs: timestampForSlot(slot), slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}` };
+    };
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) => blockAt(Number(height)));
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (trusted: bigint, anchor: bigint) =>
+      Array.from({ length: Number(anchor - trusted - 1n) }, (_, index) => blockAt(Number(trusted) + index + 1)));
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (anchor: bigint) =>
+      Array.from({ length: 24 }, (_, index) => blockAt(Number(anchor) + index + 1)));
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
+      blocks.map(() => Buffer.alloc(80 * 1024, 1)));
+    const context = ClientStateProbabilistic.fromPartial({ storage_version: 2, current_epoch: 7n,
+      slot_length_ns: 1_000_000_000n, latest_checkpoint_height: { revision_height: 100n },
+      latest_checkpoint_settlement_credit: { epoch: 7n, reference: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, numerator: Uint8Array.of(1), denominator: Uint8Array.of(5) })) },
+      latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
+    });
+    const response = await service.queryIBCHeader({ height: 200n, trusted_height: 100n, checkpoint_only: false,
+      probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() });
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.anchor_block!.height!.revision_height).toBe(197n);
+    expect(header.bridge_blocks).toHaveLength(96);
+    expect(response.header!.value.length).toBeGreaterThan(5 * 1024 * 1024 / 2);
+    expect(header.descendant_blocks).toHaveLength(24);
+    expect(header.descendant_blocks.every((block) => block.block_cbor.length === 0)).toBe(true);
+    expect(historyServiceMock.findObservedPoolProductionAtBlock).not.toHaveBeenCalled();
+  });
 });
 
 describe('historical Hermes challenge request', () => {

@@ -164,6 +164,18 @@ export interface ClientState {
    * Verified production history positioned at this committed checkpoint.
    */
   latest_checkpoint_pool_production?: PoolProductionHistory;
+  /**
+   * Version 2 keeps verification collections in authenticated destination storage.
+   */
+  storage_version: number;
+  verification_generation: bigint;
+  checkpoint_reference: Uint8Array;
+  storage_namespace: Uint8Array;
+  /**
+   * Explicitly trusted compact bootstrap objects. Removed from stored ClientState.
+   */
+  bootstrap_objects: Uint8Array;
+  bootstrap_pending: boolean;
 }
 /**
  * Production observed through the checkpoint. Bit 0 represents epoch-1 and
@@ -316,6 +328,9 @@ export interface ConsensusState {
    * History at this accepted block, excluding temporary settlement descendants.
    */
   pool_production?: PoolProductionHistory;
+  verification_generation: bigint;
+  checkpoint_reference: Uint8Array;
+  packet_state_reference: Uint8Array;
 }
 /**
  * @name Misbehaviour
@@ -329,6 +344,11 @@ export interface Misbehaviour {
   client_id: string;
   probabilistic_header1?: ProbabilisticHeader;
   probabilistic_header2?: ProbabilisticHeader;
+  /**
+   * Receipts are produced by the verifier. They are bound to this client and generation.
+   */
+  verified_observation1: Uint8Array;
+  verified_observation2: Uint8Array;
 }
 /**
  * @name ProbabilisticBlock
@@ -370,6 +390,44 @@ export interface ProbabilisticHeader {
    * IBC consensus state or renewing the trusting period.
    */
   is_checkpoint: boolean;
+  /**
+   * Bounded operations share the normal IBC client-message entry point.
+   */
+  observation_chunk?: ObservationChunk;
+}
+/**
+ * Intermediate verification remains isolated from the trusted checkpoint.
+ * Operation codes and canonical payloads are defined by the versioned shared core.
+ * @name ObservationChunk
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ObservationChunk
+ */
+export interface ObservationChunk {
+  operation: number;
+  session_id: Uint8Array;
+  base_checkpoint_reference: Uint8Array;
+  original_receipt: Uint8Array;
+  anchor_height: bigint;
+  block_count: number;
+  table_context?: EpochContext;
+  /**
+   * Canonical binary pool identifiers and uint64 amounts, in strict order.
+   */
+  stake_rows: Uint8Array;
+  blocks: ProbabilisticBlock[];
+  objects: Uint8Array;
+  other_receipt: Uint8Array;
+  is_checkpoint: boolean;
+  host_state_tx_hash: string;
+  table_rows: number;
+  table_total: bigint;
+  evidence_digest: Uint8Array;
+  table_digest: Uint8Array;
+  sequence: number;
+  /**
+   * Isolated observations can be compared without activating either as an update.
+   */
+  isolated: boolean;
 }
 function createBaseHeight(): Height {
   return {
@@ -789,6 +847,12 @@ function createBaseClientState(): ClientState {
     latest_checkpoint_pool_registry: undefined,
     latest_checkpoint_settlement_credit: undefined,
     latest_checkpoint_pool_production: undefined,
+    storage_version: 0,
+    verification_generation: BigInt(0),
+    checkpoint_reference: new Uint8Array(),
+    storage_namespace: new Uint8Array(),
+    bootstrap_objects: new Uint8Array(),
+    bootstrap_pending: false,
   };
 }
 /**
@@ -910,6 +974,24 @@ export const ClientState = {
         writer.uint32(290).fork(),
       ).ldelim();
     }
+    if (message.storage_version !== 0) {
+      writer.uint32(296).uint32(message.storage_version);
+    }
+    if (message.verification_generation !== BigInt(0)) {
+      writer.uint32(304).uint64(message.verification_generation);
+    }
+    if (message.checkpoint_reference.length !== 0) {
+      writer.uint32(314).bytes(message.checkpoint_reference);
+    }
+    if (message.storage_namespace.length !== 0) {
+      writer.uint32(322).bytes(message.storage_namespace);
+    }
+    if (message.bootstrap_objects.length !== 0) {
+      writer.uint32(330).bytes(message.bootstrap_objects);
+    }
+    if (message.bootstrap_pending === true) {
+      writer.uint32(336).bool(message.bootstrap_pending);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ClientState {
@@ -1026,6 +1108,24 @@ export const ClientState = {
         case 36:
           message.latest_checkpoint_pool_production = PoolProductionHistory.decode(reader, reader.uint32());
           break;
+        case 37:
+          message.storage_version = reader.uint32();
+          break;
+        case 38:
+          message.verification_generation = reader.uint64();
+          break;
+        case 39:
+          message.checkpoint_reference = reader.bytes();
+          break;
+        case 40:
+          message.storage_namespace = reader.bytes();
+          break;
+        case 41:
+          message.bootstrap_objects = reader.bytes();
+          break;
+        case 42:
+          message.bootstrap_pending = reader.bool();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1112,6 +1212,14 @@ export const ClientState = {
       obj.latest_checkpoint_pool_production = PoolProductionHistory.fromJSON(
         object.latest_checkpoint_pool_production,
       );
+    if (isSet(object.storage_version)) obj.storage_version = Number(object.storage_version);
+    if (isSet(object.verification_generation))
+      obj.verification_generation = BigInt(object.verification_generation.toString());
+    if (isSet(object.checkpoint_reference))
+      obj.checkpoint_reference = bytesFromBase64(object.checkpoint_reference);
+    if (isSet(object.storage_namespace)) obj.storage_namespace = bytesFromBase64(object.storage_namespace);
+    if (isSet(object.bootstrap_objects)) obj.bootstrap_objects = bytesFromBase64(object.bootstrap_objects);
+    if (isSet(object.bootstrap_pending)) obj.bootstrap_pending = Boolean(object.bootstrap_pending);
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -1236,6 +1344,22 @@ export const ClientState = {
       (obj.latest_checkpoint_pool_production = message.latest_checkpoint_pool_production
         ? PoolProductionHistory.toJSON(message.latest_checkpoint_pool_production)
         : undefined);
+    message.storage_version !== undefined && (obj.storage_version = Math.round(message.storage_version));
+    message.verification_generation !== undefined &&
+      (obj.verification_generation = (message.verification_generation || BigInt(0)).toString());
+    message.checkpoint_reference !== undefined &&
+      (obj.checkpoint_reference = base64FromBytes(
+        message.checkpoint_reference !== undefined ? message.checkpoint_reference : new Uint8Array(),
+      ));
+    message.storage_namespace !== undefined &&
+      (obj.storage_namespace = base64FromBytes(
+        message.storage_namespace !== undefined ? message.storage_namespace : new Uint8Array(),
+      ));
+    message.bootstrap_objects !== undefined &&
+      (obj.bootstrap_objects = base64FromBytes(
+        message.bootstrap_objects !== undefined ? message.bootstrap_objects : new Uint8Array(),
+      ));
+    message.bootstrap_pending !== undefined && (obj.bootstrap_pending = message.bootstrap_pending);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1363,6 +1487,14 @@ export const ClientState = {
         object.latest_checkpoint_pool_production,
       );
     }
+    message.storage_version = object.storage_version ?? 0;
+    if (object.verification_generation !== undefined && object.verification_generation !== null) {
+      message.verification_generation = BigInt(object.verification_generation.toString());
+    }
+    message.checkpoint_reference = object.checkpoint_reference ?? new Uint8Array();
+    message.storage_namespace = object.storage_namespace ?? new Uint8Array();
+    message.bootstrap_objects = object.bootstrap_objects ?? new Uint8Array();
+    message.bootstrap_pending = object.bootstrap_pending ?? false;
     return message;
   },
 };
@@ -2145,6 +2277,9 @@ function createBaseConsensusState(): ConsensusState {
     pool_registry: undefined,
     settlement_credit: undefined,
     pool_production: undefined,
+    verification_generation: BigInt(0),
+    checkpoint_reference: new Uint8Array(),
+    packet_state_reference: new Uint8Array(),
   };
 }
 /**
@@ -2191,6 +2326,15 @@ export const ConsensusState = {
     if (message.pool_production !== undefined) {
       PoolProductionHistory.encode(message.pool_production, writer.uint32(98).fork()).ldelim();
     }
+    if (message.verification_generation !== BigInt(0)) {
+      writer.uint32(104).uint64(message.verification_generation);
+    }
+    if (message.checkpoint_reference.length !== 0) {
+      writer.uint32(114).bytes(message.checkpoint_reference);
+    }
+    if (message.packet_state_reference.length !== 0) {
+      writer.uint32(122).bytes(message.packet_state_reference);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -2236,6 +2380,15 @@ export const ConsensusState = {
         case 12:
           message.pool_production = PoolProductionHistory.decode(reader, reader.uint32());
           break;
+        case 13:
+          message.verification_generation = reader.uint64();
+          break;
+        case 14:
+          message.checkpoint_reference = reader.bytes();
+          break;
+        case 15:
+          message.packet_state_reference = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -2262,6 +2415,12 @@ export const ConsensusState = {
       obj.settlement_credit = SettlementCreditState.fromJSON(object.settlement_credit);
     if (isSet(object.pool_production))
       obj.pool_production = PoolProductionHistory.fromJSON(object.pool_production);
+    if (isSet(object.verification_generation))
+      obj.verification_generation = BigInt(object.verification_generation.toString());
+    if (isSet(object.checkpoint_reference))
+      obj.checkpoint_reference = bytesFromBase64(object.checkpoint_reference);
+    if (isSet(object.packet_state_reference))
+      obj.packet_state_reference = bytesFromBase64(object.packet_state_reference);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
@@ -2298,6 +2457,16 @@ export const ConsensusState = {
       (obj.pool_production = message.pool_production
         ? PoolProductionHistory.toJSON(message.pool_production)
         : undefined);
+    message.verification_generation !== undefined &&
+      (obj.verification_generation = (message.verification_generation || BigInt(0)).toString());
+    message.checkpoint_reference !== undefined &&
+      (obj.checkpoint_reference = base64FromBytes(
+        message.checkpoint_reference !== undefined ? message.checkpoint_reference : new Uint8Array(),
+      ));
+    message.packet_state_reference !== undefined &&
+      (obj.packet_state_reference = base64FromBytes(
+        message.packet_state_reference !== undefined ? message.packet_state_reference : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -2332,6 +2501,11 @@ export const ConsensusState = {
     if (object.pool_production !== undefined && object.pool_production !== null) {
       message.pool_production = PoolProductionHistory.fromPartial(object.pool_production);
     }
+    if (object.verification_generation !== undefined && object.verification_generation !== null) {
+      message.verification_generation = BigInt(object.verification_generation.toString());
+    }
+    message.checkpoint_reference = object.checkpoint_reference ?? new Uint8Array();
+    message.packet_state_reference = object.packet_state_reference ?? new Uint8Array();
     return message;
   },
 };
@@ -2340,6 +2514,8 @@ function createBaseMisbehaviour(): Misbehaviour {
     client_id: "",
     probabilistic_header1: undefined,
     probabilistic_header2: undefined,
+    verified_observation1: new Uint8Array(),
+    verified_observation2: new Uint8Array(),
   };
 }
 /**
@@ -2359,6 +2535,12 @@ export const Misbehaviour = {
     if (message.probabilistic_header2 !== undefined) {
       ProbabilisticHeader.encode(message.probabilistic_header2, writer.uint32(26).fork()).ldelim();
     }
+    if (message.verified_observation1.length !== 0) {
+      writer.uint32(34).bytes(message.verified_observation1);
+    }
+    if (message.verified_observation2.length !== 0) {
+      writer.uint32(42).bytes(message.verified_observation2);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): Misbehaviour {
@@ -2377,6 +2559,12 @@ export const Misbehaviour = {
         case 3:
           message.probabilistic_header2 = ProbabilisticHeader.decode(reader, reader.uint32());
           break;
+        case 4:
+          message.verified_observation1 = reader.bytes();
+          break;
+        case 5:
+          message.verified_observation2 = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -2391,6 +2579,10 @@ export const Misbehaviour = {
       obj.probabilistic_header1 = ProbabilisticHeader.fromJSON(object.probabilistic_header1);
     if (isSet(object.probabilistic_header2))
       obj.probabilistic_header2 = ProbabilisticHeader.fromJSON(object.probabilistic_header2);
+    if (isSet(object.verified_observation1))
+      obj.verified_observation1 = bytesFromBase64(object.verified_observation1);
+    if (isSet(object.verified_observation2))
+      obj.verified_observation2 = bytesFromBase64(object.verified_observation2);
     return obj;
   },
   toJSON(message: Misbehaviour): unknown {
@@ -2404,6 +2596,14 @@ export const Misbehaviour = {
       (obj.probabilistic_header2 = message.probabilistic_header2
         ? ProbabilisticHeader.toJSON(message.probabilistic_header2)
         : undefined);
+    message.verified_observation1 !== undefined &&
+      (obj.verified_observation1 = base64FromBytes(
+        message.verified_observation1 !== undefined ? message.verified_observation1 : new Uint8Array(),
+      ));
+    message.verified_observation2 !== undefined &&
+      (obj.verified_observation2 = base64FromBytes(
+        message.verified_observation2 !== undefined ? message.verified_observation2 : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Misbehaviour>, I>>(object: I): Misbehaviour {
@@ -2415,6 +2615,8 @@ export const Misbehaviour = {
     if (object.probabilistic_header2 !== undefined && object.probabilistic_header2 !== null) {
       message.probabilistic_header2 = ProbabilisticHeader.fromPartial(object.probabilistic_header2);
     }
+    message.verified_observation1 = object.verified_observation1 ?? new Uint8Array();
+    message.verified_observation2 = object.verified_observation2 ?? new Uint8Array();
     return message;
   },
 };
@@ -2553,6 +2755,7 @@ function createBaseProbabilisticHeader(): ProbabilisticHeader {
     bridge_blocks: [],
     new_epoch_context: undefined,
     is_checkpoint: false,
+    observation_chunk: undefined,
   };
 }
 /**
@@ -2587,6 +2790,9 @@ export const ProbabilisticHeader = {
     if (message.is_checkpoint === true) {
       writer.uint32(96).bool(message.is_checkpoint);
     }
+    if (message.observation_chunk !== undefined) {
+      ObservationChunk.encode(message.observation_chunk, writer.uint32(106).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ProbabilisticHeader {
@@ -2620,6 +2826,9 @@ export const ProbabilisticHeader = {
         case 12:
           message.is_checkpoint = reader.bool();
           break;
+        case 13:
+          message.observation_chunk = ObservationChunk.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -2641,6 +2850,8 @@ export const ProbabilisticHeader = {
     if (isSet(object.new_epoch_context))
       obj.new_epoch_context = EpochContext.fromJSON(object.new_epoch_context);
     if (isSet(object.is_checkpoint)) obj.is_checkpoint = Boolean(object.is_checkpoint);
+    if (isSet(object.observation_chunk))
+      obj.observation_chunk = ObservationChunk.fromJSON(object.observation_chunk);
     return obj;
   },
   toJSON(message: ProbabilisticHeader): unknown {
@@ -2669,6 +2880,10 @@ export const ProbabilisticHeader = {
         ? EpochContext.toJSON(message.new_epoch_context)
         : undefined);
     message.is_checkpoint !== undefined && (obj.is_checkpoint = message.is_checkpoint);
+    message.observation_chunk !== undefined &&
+      (obj.observation_chunk = message.observation_chunk
+        ? ObservationChunk.toJSON(message.observation_chunk)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ProbabilisticHeader>, I>>(object: I): ProbabilisticHeader {
@@ -2687,6 +2902,280 @@ export const ProbabilisticHeader = {
       message.new_epoch_context = EpochContext.fromPartial(object.new_epoch_context);
     }
     message.is_checkpoint = object.is_checkpoint ?? false;
+    if (object.observation_chunk !== undefined && object.observation_chunk !== null) {
+      message.observation_chunk = ObservationChunk.fromPartial(object.observation_chunk);
+    }
+    return message;
+  },
+};
+function createBaseObservationChunk(): ObservationChunk {
+  return {
+    operation: 0,
+    session_id: new Uint8Array(),
+    base_checkpoint_reference: new Uint8Array(),
+    original_receipt: new Uint8Array(),
+    anchor_height: BigInt(0),
+    block_count: 0,
+    table_context: undefined,
+    stake_rows: new Uint8Array(),
+    blocks: [],
+    objects: new Uint8Array(),
+    other_receipt: new Uint8Array(),
+    is_checkpoint: false,
+    host_state_tx_hash: "",
+    table_rows: 0,
+    table_total: BigInt(0),
+    evidence_digest: new Uint8Array(),
+    table_digest: new Uint8Array(),
+    sequence: 0,
+    isolated: false,
+  };
+}
+/**
+ * Intermediate verification remains isolated from the trusted checkpoint.
+ * Operation codes and canonical payloads are defined by the versioned shared core.
+ * @name ObservationChunk
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ObservationChunk
+ */
+export const ObservationChunk = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.ObservationChunk",
+  encode(message: ObservationChunk, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.operation !== 0) {
+      writer.uint32(8).uint32(message.operation);
+    }
+    if (message.session_id.length !== 0) {
+      writer.uint32(18).bytes(message.session_id);
+    }
+    if (message.base_checkpoint_reference.length !== 0) {
+      writer.uint32(26).bytes(message.base_checkpoint_reference);
+    }
+    if (message.original_receipt.length !== 0) {
+      writer.uint32(34).bytes(message.original_receipt);
+    }
+    if (message.anchor_height !== BigInt(0)) {
+      writer.uint32(40).uint64(message.anchor_height);
+    }
+    if (message.block_count !== 0) {
+      writer.uint32(48).uint32(message.block_count);
+    }
+    if (message.table_context !== undefined) {
+      EpochContext.encode(message.table_context, writer.uint32(58).fork()).ldelim();
+    }
+    if (message.stake_rows.length !== 0) {
+      writer.uint32(66).bytes(message.stake_rows);
+    }
+    for (const v of message.blocks) {
+      ProbabilisticBlock.encode(v!, writer.uint32(74).fork()).ldelim();
+    }
+    if (message.objects.length !== 0) {
+      writer.uint32(82).bytes(message.objects);
+    }
+    if (message.other_receipt.length !== 0) {
+      writer.uint32(90).bytes(message.other_receipt);
+    }
+    if (message.is_checkpoint === true) {
+      writer.uint32(96).bool(message.is_checkpoint);
+    }
+    if (message.host_state_tx_hash !== "") {
+      writer.uint32(106).string(message.host_state_tx_hash);
+    }
+    if (message.table_rows !== 0) {
+      writer.uint32(112).uint32(message.table_rows);
+    }
+    if (message.table_total !== BigInt(0)) {
+      writer.uint32(120).uint64(message.table_total);
+    }
+    if (message.evidence_digest.length !== 0) {
+      writer.uint32(130).bytes(message.evidence_digest);
+    }
+    if (message.table_digest.length !== 0) {
+      writer.uint32(138).bytes(message.table_digest);
+    }
+    if (message.sequence !== 0) {
+      writer.uint32(144).uint32(message.sequence);
+    }
+    if (message.isolated === true) {
+      writer.uint32(152).bool(message.isolated);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): ObservationChunk {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseObservationChunk();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.operation = reader.uint32();
+          break;
+        case 2:
+          message.session_id = reader.bytes();
+          break;
+        case 3:
+          message.base_checkpoint_reference = reader.bytes();
+          break;
+        case 4:
+          message.original_receipt = reader.bytes();
+          break;
+        case 5:
+          message.anchor_height = reader.uint64();
+          break;
+        case 6:
+          message.block_count = reader.uint32();
+          break;
+        case 7:
+          message.table_context = EpochContext.decode(reader, reader.uint32());
+          break;
+        case 8:
+          message.stake_rows = reader.bytes();
+          break;
+        case 9:
+          message.blocks.push(ProbabilisticBlock.decode(reader, reader.uint32()));
+          break;
+        case 10:
+          message.objects = reader.bytes();
+          break;
+        case 11:
+          message.other_receipt = reader.bytes();
+          break;
+        case 12:
+          message.is_checkpoint = reader.bool();
+          break;
+        case 13:
+          message.host_state_tx_hash = reader.string();
+          break;
+        case 14:
+          message.table_rows = reader.uint32();
+          break;
+        case 15:
+          message.table_total = reader.uint64();
+          break;
+        case 16:
+          message.evidence_digest = reader.bytes();
+          break;
+        case 17:
+          message.table_digest = reader.bytes();
+          break;
+        case 18:
+          message.sequence = reader.uint32();
+          break;
+        case 19:
+          message.isolated = reader.bool();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): ObservationChunk {
+    const obj = createBaseObservationChunk();
+    if (isSet(object.operation)) obj.operation = Number(object.operation);
+    if (isSet(object.session_id)) obj.session_id = bytesFromBase64(object.session_id);
+    if (isSet(object.base_checkpoint_reference))
+      obj.base_checkpoint_reference = bytesFromBase64(object.base_checkpoint_reference);
+    if (isSet(object.original_receipt)) obj.original_receipt = bytesFromBase64(object.original_receipt);
+    if (isSet(object.anchor_height)) obj.anchor_height = BigInt(object.anchor_height.toString());
+    if (isSet(object.block_count)) obj.block_count = Number(object.block_count);
+    if (isSet(object.table_context)) obj.table_context = EpochContext.fromJSON(object.table_context);
+    if (isSet(object.stake_rows)) obj.stake_rows = bytesFromBase64(object.stake_rows);
+    if (Array.isArray(object?.blocks))
+      obj.blocks = object.blocks.map((e: any) => ProbabilisticBlock.fromJSON(e));
+    if (isSet(object.objects)) obj.objects = bytesFromBase64(object.objects);
+    if (isSet(object.other_receipt)) obj.other_receipt = bytesFromBase64(object.other_receipt);
+    if (isSet(object.is_checkpoint)) obj.is_checkpoint = Boolean(object.is_checkpoint);
+    if (isSet(object.host_state_tx_hash)) obj.host_state_tx_hash = String(object.host_state_tx_hash);
+    if (isSet(object.table_rows)) obj.table_rows = Number(object.table_rows);
+    if (isSet(object.table_total)) obj.table_total = BigInt(object.table_total.toString());
+    if (isSet(object.evidence_digest)) obj.evidence_digest = bytesFromBase64(object.evidence_digest);
+    if (isSet(object.table_digest)) obj.table_digest = bytesFromBase64(object.table_digest);
+    if (isSet(object.sequence)) obj.sequence = Number(object.sequence);
+    if (isSet(object.isolated)) obj.isolated = Boolean(object.isolated);
+    return obj;
+  },
+  toJSON(message: ObservationChunk): unknown {
+    const obj: any = {};
+    message.operation !== undefined && (obj.operation = Math.round(message.operation));
+    message.session_id !== undefined &&
+      (obj.session_id = base64FromBytes(
+        message.session_id !== undefined ? message.session_id : new Uint8Array(),
+      ));
+    message.base_checkpoint_reference !== undefined &&
+      (obj.base_checkpoint_reference = base64FromBytes(
+        message.base_checkpoint_reference !== undefined
+          ? message.base_checkpoint_reference
+          : new Uint8Array(),
+      ));
+    message.original_receipt !== undefined &&
+      (obj.original_receipt = base64FromBytes(
+        message.original_receipt !== undefined ? message.original_receipt : new Uint8Array(),
+      ));
+    message.anchor_height !== undefined &&
+      (obj.anchor_height = (message.anchor_height || BigInt(0)).toString());
+    message.block_count !== undefined && (obj.block_count = Math.round(message.block_count));
+    message.table_context !== undefined &&
+      (obj.table_context = message.table_context ? EpochContext.toJSON(message.table_context) : undefined);
+    message.stake_rows !== undefined &&
+      (obj.stake_rows = base64FromBytes(
+        message.stake_rows !== undefined ? message.stake_rows : new Uint8Array(),
+      ));
+    if (message.blocks) {
+      obj.blocks = message.blocks.map((e) => (e ? ProbabilisticBlock.toJSON(e) : undefined));
+    } else {
+      obj.blocks = [];
+    }
+    message.objects !== undefined &&
+      (obj.objects = base64FromBytes(message.objects !== undefined ? message.objects : new Uint8Array()));
+    message.other_receipt !== undefined &&
+      (obj.other_receipt = base64FromBytes(
+        message.other_receipt !== undefined ? message.other_receipt : new Uint8Array(),
+      ));
+    message.is_checkpoint !== undefined && (obj.is_checkpoint = message.is_checkpoint);
+    message.host_state_tx_hash !== undefined && (obj.host_state_tx_hash = message.host_state_tx_hash);
+    message.table_rows !== undefined && (obj.table_rows = Math.round(message.table_rows));
+    message.table_total !== undefined && (obj.table_total = (message.table_total || BigInt(0)).toString());
+    message.evidence_digest !== undefined &&
+      (obj.evidence_digest = base64FromBytes(
+        message.evidence_digest !== undefined ? message.evidence_digest : new Uint8Array(),
+      ));
+    message.table_digest !== undefined &&
+      (obj.table_digest = base64FromBytes(
+        message.table_digest !== undefined ? message.table_digest : new Uint8Array(),
+      ));
+    message.sequence !== undefined && (obj.sequence = Math.round(message.sequence));
+    message.isolated !== undefined && (obj.isolated = message.isolated);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<ObservationChunk>, I>>(object: I): ObservationChunk {
+    const message = createBaseObservationChunk();
+    message.operation = object.operation ?? 0;
+    message.session_id = object.session_id ?? new Uint8Array();
+    message.base_checkpoint_reference = object.base_checkpoint_reference ?? new Uint8Array();
+    message.original_receipt = object.original_receipt ?? new Uint8Array();
+    if (object.anchor_height !== undefined && object.anchor_height !== null) {
+      message.anchor_height = BigInt(object.anchor_height.toString());
+    }
+    message.block_count = object.block_count ?? 0;
+    if (object.table_context !== undefined && object.table_context !== null) {
+      message.table_context = EpochContext.fromPartial(object.table_context);
+    }
+    message.stake_rows = object.stake_rows ?? new Uint8Array();
+    message.blocks = object.blocks?.map((e) => ProbabilisticBlock.fromPartial(e)) || [];
+    message.objects = object.objects ?? new Uint8Array();
+    message.other_receipt = object.other_receipt ?? new Uint8Array();
+    message.is_checkpoint = object.is_checkpoint ?? false;
+    message.host_state_tx_hash = object.host_state_tx_hash ?? "";
+    message.table_rows = object.table_rows ?? 0;
+    if (object.table_total !== undefined && object.table_total !== null) {
+      message.table_total = BigInt(object.table_total.toString());
+    }
+    message.evidence_digest = object.evidence_digest ?? new Uint8Array();
+    message.table_digest = object.table_digest ?? new Uint8Array();
+    message.sequence = object.sequence ?? 0;
+    message.isolated = object.isolated ?? false;
     return message;
   },
 };

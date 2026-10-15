@@ -825,6 +825,7 @@ export class QueryService {
     }
 
     const clientStateProbabilistic: ClientStateProbabilistic = {
+      storage_version: 0, verification_generation: 0n, checkpoint_reference: new Uint8Array(), storage_namespace: new Uint8Array(), bootstrap_objects: new Uint8Array(), bootstrap_pending: false,
       chain_id: cardanoChainId,
       latest_height: {
         revision_number: 0n,
@@ -885,6 +886,7 @@ export class QueryService {
     };
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
+      verification_generation: 0n, checkpoint_reference: new Uint8Array(), packet_state_reference: new Uint8Array(),
       nonce_state: nonceState,
       pool_registry: poolRegistry,
       pool_production: poolProduction,
@@ -2445,6 +2447,7 @@ export class QueryService {
 
     const maxBridgeBlocks = this.getStabilityCheckpointMaxBridgeBlocks();
     const maxHeaderBytes = this.getStabilityCheckpointMaxHeaderBytes();
+    const staged = settlementCreditClient?.storage_version === 2;
     const maxAdvance = BigInt(maxBridgeBlocks) + 1n;
     let candidateDistance = targetDistance < maxAdvance ? targetDistance : maxAdvance;
 
@@ -2470,7 +2473,7 @@ export class QueryService {
       }
 
       const stabilityHeader = await this.buildStabilityHeader(stabilityEvidence, isCheckpoint);
-      if (challenge && !stabilityEvidence.nextEpochContext) {
+      if (challenge && !staged && !stabilityEvidence.nextEpochContext) {
         stabilityHeader.new_epoch_context = this.toStabilityEpochContext(
           Number(stabilityEvidence.anchorEpoch),
           stabilityEvidence.epochStakeDistribution,
@@ -2478,8 +2481,8 @@ export class QueryService {
         );
       }
       const encodedHeaderBytes = ProbabilisticHeader.encode(stabilityHeader).finish().length;
-      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader, !challenge);
-      if (encodedHeaderBytes <= maxHeaderBytes && !capacityError) {
+      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader, !challenge, staged);
+      if ((staged || encodedHeaderBytes <= maxHeaderBytes) && !capacityError) {
         if (isCheckpoint) {
           this.logger.log(
             `Returning rootless stability checkpoint ${trustedHeight.toString()} -> ${stabilityEvidence.anchorHeight.toString()} while catching up to ${targetHeight.toString()} (${encodedHeaderBytes} bytes)`,
@@ -2623,7 +2626,7 @@ export class QueryService {
     return Math.min(value, (5 * 1024 * 1024) / 2);
   }
 
-  private stabilityHeaderCapacityError(header: ProbabilisticHeader, forward = true): string | undefined {
+  private stabilityHeaderCapacityError(header: ProbabilisticHeader, forward = true, staged = false): string | undefined {
     if (header.bridge_blocks.length > 96 || 1 + header.bridge_blocks.length + header.descendant_blocks.length > 128) {
       return 'block count exceeds the challenge capacity bound';
     }
@@ -2633,6 +2636,7 @@ export class QueryService {
     const blocks = [...header.bridge_blocks, header.anchor_block!, ...header.descendant_blocks];
     if (
       forward &&
+      !staged &&
       header.new_epoch_context &&
       header.new_epoch_context.epoch > header.anchor_block!.epoch &&
       blocks.reduce((sum, block) => sum + block.block_cbor.length, 0) > 1536 * 1024
