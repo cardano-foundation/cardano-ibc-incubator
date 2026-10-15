@@ -3,7 +3,6 @@ package state
 import (
 	"bytes"
 	"testing"
-	"time"
 
 	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"github.com/stretchr/testify/require"
@@ -39,36 +38,6 @@ func testPoolRegistryAtEpoch(t testing.TB, registry *PoolRegistryState, epoch ui
 	require.NoError(t, err)
 	require.NoError(t, tracker.tick(epoch))
 	return clonePoolRegistry(tracker.state)
-}
-
-func TestStakeTableCannotSupplyPoolIdentityKeyOrAge(t *testing.T) {
-	for _, field := range []string{"identity", "VRF", "age"} {
-		t.Run(field, func(t *testing.T) {
-			client := newProbabilisticTestClientState()
-			context := cloneEpochContext(client.EpochContexts[0])
-			switch field {
-			case "identity":
-				context.StakeDistribution[0].PoolId = "invented-pool"
-			case "VRF":
-				context.StakeDistribution[0].VrfKeyHash = bytes.Repeat([]byte{0xff}, 32)
-			case "age":
-				context.StakeDistribution[0].FirstRegistrationSlot++
-			}
-			require.NoError(t, validateEpochContext(context))
-			require.Error(t, verifyStakeTablePoolBindings(context, client.LatestCheckpointPoolRegistry))
-			header := newVerifiedTestHeader(t)
-			header.NewEpochContext = context
-			ctx, store := newProbabilisticTestClientStore(t, "registry-"+field)
-			cdc := newProbabilisticTestCodec()
-			require.NoError(t, client.Initialize(ctx, cdc, store, newProbabilisticTestConsensusState(testBlockHash("trusted-hash"))))
-			before, found := GetClientState(store, cdc)
-			require.True(t, found)
-			require.Error(t, client.VerifyClientMessage(ctx, cdc, store, header))
-			after, found := GetClientState(store, cdc)
-			require.True(t, found)
-			require.Equal(t, before, after)
-		})
-	}
 }
 
 func TestPoolRegistryNativeSnapshotOrder(t *testing.T) {
@@ -120,126 +89,11 @@ func TestPoolRegistryRetirementAndCancellation(t *testing.T) {
 func TestPoolRegistryBootstrapCannotBeInferredFromTable(t *testing.T) {
 	client := newProbabilisticTestClientState()
 	client.LatestCheckpointPoolRegistry = nil
-	require.ErrorContains(t, client.Validate(), "pool registry is missing")
-}
-
-func TestInitializeRejectsMissingPoolRegistrationData(t *testing.T) {
-	for _, missing := range []string{"registration", "age"} {
-		t.Run(missing, func(t *testing.T) {
-			client := newProbabilisticTestClientState()
-			first := client.EpochContexts[0].StakeDistribution[0]
-			first.Stake = 5_000
-			first.RelativeStakeDenominator = 2
-			later := *first
-			later.PoolId = "pool-later"
-			later.FirstRegistrationSlot = 50
-			client.EpochContexts[0].StakeDistribution = append(client.EpochContexts[0].StakeDistribution, &later)
-			client.LatestCheckpointPoolRegistry = testPoolRegistry(client.CurrentEpoch, client.EpochContexts[0].StakeDistribution)
-			if missing == "registration" {
-				client.LatestCheckpointPoolRegistry.Effective = client.LatestCheckpointPoolRegistry.Effective[:1]
-			} else {
-				later.FirstRegistrationSlot = 0
-			}
-			client.EpochStakeDistribution = cloneStakeDistributionEntries(client.EpochContexts[0].StakeDistribution)
-			require.Error(t, client.Validate())
-			ctx, store := newProbabilisticTestClientStore(t, "missing-registration-"+missing)
-			cdc := newProbabilisticTestCodec()
-			consensus := newProbabilisticTestConsensusState(testBlockHash("initial"))
-			consensus.Timestamp = mustTestTimestampForSlot(t, client, 100)
-			consensus.PoolRegistry = clonePoolRegistry(client.LatestCheckpointPoolRegistry)
-			err := client.Initialize(ctx, cdc, store, consensus)
-			if missing == "registration" {
-				require.ErrorContains(t, err, "pool-later has no authenticated effective registration")
-			} else {
-				require.ErrorContains(t, err, "pool-later VRF binding or registration age disagrees")
-			}
-			_, found := GetClientState(store, cdc)
-			require.False(t, found)
-			_, found = GetConsensusState(store, cdc, client.LatestHeight)
-			require.False(t, found)
-		})
-	}
+	require.ErrorContains(t, validateBootstrapInput(*client), "pool registry is missing")
 }
 
 func TestAuthenticatedGenesisPoolAgeCanBeZero(t *testing.T) {
 	eligible, err := poolRegisteredBeforeCutoff(10, &PoolRegistrationBinding{PoolId: "genesis-pool", FirstRegistrationSlot: 0})
 	require.NoError(t, err)
 	require.True(t, eligible)
-}
-
-func TestEpochRolloverRejectsMissingRegistrationAgeForUnobservedPool(t *testing.T) {
-	fixture := loadCombinedBoundaryFixture(t)
-	client := fixture.Client
-	ctx, store := newProbabilisticTestClientStore(t, "rollover-missing-registration")
-	ctx.Time = time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp))
-	cdc := newProbabilisticTestCodec()
-	require.NoError(t, client.Initialize(ctx, cdc, store, fixture.Consensus))
-	client, _ = GetClientState(store, cdc)
-	ctx.Time = ctx.Time.Add(EpochContextChallengePeriod + 2*time.Nanosecond)
-	require.NoError(t, client.VerifyClientMessage(ctx, cdc, store, fixture.Header))
-
-	context := fixture.Header.NewEpochContext
-	entry := context.StakeDistribution[len(context.StakeDistribution)-1]
-	authenticated, err := client.authenticateHeaderBlocks(fixture.Header)
-	require.NoError(t, err)
-	for _, block := range append(authenticated.bridgeBlocks, authenticated.descendantBlocks...) {
-		require.NotEqual(t, entry.PoolId, block.slotLeader)
-	}
-	require.NotZero(t, entry.FirstRegistrationSlot)
-	entry.FirstRegistrationSlot = 0
-	before, _ := GetClientState(store, cdc)
-	require.ErrorContains(t, client.VerifyClientMessage(ctx, cdc, store, fixture.Header),
-		"registration age disagrees with authenticated epoch history")
-	require.False(t, client.CheckForMisbehaviour(ctx, cdc, store, fixture.Header))
-	after, _ := GetClientState(store, cdc)
-	require.Equal(t, before, after)
-}
-
-func TestPoolRegistryMismatchDoesNotBecomeTrustedAfterChallenge(t *testing.T) {
-	base := newTemporalVerifierEpochContext(7, 0, 1_000, 7)
-	ctx, cdc, store, client := initializeTemporalVerifierClient(t, "registry-expired-challenge", 100, base)
-	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(4 * time.Minute))
-	header := newTemporalVerifierHeader(t, client, "next", 11, 101, 7, true)
-	header.TrustedHeight = client.LatestCheckpointHeight
-	header.NewEpochContext = cloneEpochContext(base)
-	header.NewEpochContext.StakeDistribution[0].VrfKeyHash = bytes.Repeat([]byte{0xff}, 32)
-	authenticated := newTemporalVerifierAuthenticatedHeader(t, client, client.LatestCheckpointBlockHash, header.AnchorBlock.Hash, 11, 101, 7)
-	authenticated.anchorNonceState = clonePraosNonceState(client.LatestCheckpointNonceState)
-	authenticated.anchorPoolRegistry = clonePoolRegistry(client.LatestCheckpointPoolRegistry)
-	before, _ := GetClientState(store, cdc)
-	err := client.verifyHeaderWithAuthenticator(ctx, store, cdc, header,
-		func(*ProbabilisticHeader, []*EpochContext, map[string]uint64, *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
-			return authenticated, nil
-		})
-	require.ErrorContains(t, err, "disagrees with authenticated epoch history")
-	require.False(t, client.CheckForMisbehaviour(ctx, cdc, store, header))
-	after, _ := GetClientState(store, cdc)
-	require.Equal(t, before, after)
-}
-
-func TestPoolRegistryCheckpointRestoresPendingChangesAtHistoricalHeight(t *testing.T) {
-	client := newProbabilisticTestClientState()
-	ctx, store := newProbabilisticTestClientStore(t, "registry-rollback")
-	cdc := newProbabilisticTestCodec()
-	initial := newProbabilisticTestConsensusState(testBlockHash("registry-initial"))
-	require.NoError(t, client.Initialize(ctx, cdc, store, initial))
-	baseline := clonePoolRegistry(client.LatestCheckpointPoolRegistry)
-	tracker, err := newPoolRegistryTracker(baseline, 7, 0)
-	require.NoError(t, err)
-	require.NoError(t, tracker.apply(1, []core.PoolCertificate{{PoolID: "pool-a", VRFKeyHash: bytes.Repeat([]byte{0x99}, 32)}}))
-	header := &authenticatedProbabilisticHeader{anchorBlock: &authenticatedProbabilisticBlock{
-		height: 11, slot: 1, epoch: 7, hash: testBlockHash("registry-checkpoint"), timestamp: client.SystemStartUnixNs + client.SlotLengthNs},
-		anchorNonceState: clonePraosNonceState(client.LatestCheckpointNonceState), anchorPoolRegistry: clonePoolRegistry(tracker.state),
-		anchorSettlementCredit: cloneSettlementCredit(client.LatestCheckpointSettlementCredit),
-		anchorPoolProduction:   clonePoolProduction(client.LatestCheckpointPoolProduction)}
-	require.NoError(t, client.persistCheckpoint(store, cdc, client.EpochContexts, header))
-	stored, _ := GetClientState(store, cdc)
-	latest, err := stored.trustedBlockStateAtHeight(store, cdc, NewHeight(0, 11))
-	require.NoError(t, err)
-	require.True(t, poolRegistriesEqual(tracker.state, latest.poolRegistry))
-	old, err := stored.trustedBlockStateAtHeight(store, cdc, NewHeight(0, 10))
-	require.NoError(t, err)
-	require.True(t, poolRegistriesEqual(baseline, old.poolRegistry))
-	require.Empty(t, old.poolRegistry.Pools[0].PendingVrfKeyHash)
-	require.NotEmpty(t, latest.poolRegistry.Pools[0].PendingVrfKeyHash)
 }

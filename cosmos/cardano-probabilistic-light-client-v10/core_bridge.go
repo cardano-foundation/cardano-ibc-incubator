@@ -1,10 +1,11 @@
 package probabilistic
 
 import (
-	storetypes "cosmossdk.io/store/types"
 	"errors"
 	"fmt"
 	"strings"
+
+	storetypes "cosmossdk.io/store/types"
 
 	errorsmod "cosmossdk.io/errors"
 	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
@@ -92,15 +93,4 @@ var ibcErrors = []struct{ core, host error }{
 	{state.ErrIBCInvalidMisbehaviour, clienttypes.ErrInvalidMisbehaviour},
 	{state.ErrIBCInvalidSubstitute, clienttypes.ErrInvalidSubstitute},
 	{state.ErrIBCUpdateClientFailed, clienttypes.ErrUpdateClientFailed},
-}
-
-func (c coreCodec) EncodeClientSnapshot(value *state.ClientState) []byte {
-	return c.MustMarshal(fromCoreClientState(value))
-}
-func (c coreCodec) DecodeClientSnapshot(data []byte) (*state.ClientState, error) {
-	value := new(ClientState)
-	if err := c.Unmarshal(data, value); err != nil {
-		return nil, err
-	}
-	return toCoreClientState(value), nil
 }

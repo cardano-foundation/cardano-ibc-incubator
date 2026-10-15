@@ -12,7 +12,7 @@ import (
 const ObservationContinueRecovery uint32 = 12
 const recoveryCounterRowsPerStep = 32
 
-type compactRecovery struct {
+type recoveryPreparation struct {
 	Generation      uint64
 	Subject         *verificationCheckpoint
 	Replacement     *ClientState
@@ -23,12 +23,12 @@ type compactRecovery struct {
 	Checked         uint64
 }
 
-func compactRecoveryKey(cs *ClientState) []byte {
+func recoveryPreparationKey(cs *ClientState) []byte {
 	return append([]byte("snapshots/v2/recovery/"), cs.StorageNamespace...)
 }
-func (cs *ClientState) beginCompactRecovery(ctx Context, cdc StateCodec, private, substitutePrivate storetypes.KVStore, substitute *ClientState) error {
-	if cs.StorageVersion != StorageVersionSharedSnapshots || substitute.StorageVersion != StorageVersionSharedSnapshots || substitute.BootstrapPending || cs.BootstrapPending {
-		return fmt.Errorf("recovery requires two completely initialized compact clients")
+func (cs *ClientState) beginRecovery(ctx Context, cdc StateCodec, private, substitutePrivate storetypes.KVStore, substitute *ClientState) error {
+	if cs.StorageVersion != StorageVersion || substitute.StorageVersion != StorageVersion || substitute.BootstrapPending || cs.BootstrapPending {
+		return fmt.Errorf("recovery requires two completely initialized clients")
 	}
 	if !IsMatchingClientState(*cs, *substitute) {
 		return ErrIBCInvalidSubstitute
@@ -75,7 +75,7 @@ func (cs *ClientState) beginCompactRecovery(ctx Context, cdc StateCodec, private
 			return err
 		}
 	}
-	recovery := &compactRecovery{Generation: cs.VerificationGeneration, Subject: subject, Replacement: substitute, Checkpoint: replacement, ProofCheckpoint: proof, Consensus: consensus}
+	recovery := &recoveryPreparation{Generation: cs.VerificationGeneration, Subject: subject, Replacement: substitute, Checkpoint: replacement, ProofCheckpoint: proof, Consensus: consensus}
 	raw, err := cbor.Encode(recovery)
 	if err != nil {
 		return err
@@ -83,21 +83,21 @@ func (cs *ClientState) beginCompactRecovery(ctx Context, cdc StateCodec, private
 	if len(raw) > maxSessionBytes {
 		return fmt.Errorf("recovery preparation exceeds its bounded metadata")
 	}
-	shared.Set(compactRecoveryKey(cs), raw)
+	shared.Set(recoveryPreparationKey(cs), raw)
 	cs.FrozenHeight = NewHeight(0, 1)
-	if err := writeThinClient(ctx, cdc, private, cs); err != nil {
+	if err := writeClientState(ctx, cdc, private, cs); err != nil {
 		return err
 	}
 	if subject.Counters == replacement.Counters {
 		recovery.Checked = subject.Counters.Rows
-		return cs.activateCompactRecovery(ctx, cdc, private, shared, recovery)
+		return cs.activateRecovery(ctx, cdc, private, shared, recovery)
 	}
 	ctx.emitEvent("probabilistic_recovery_pending", newEventAttribute("generation", fmt.Sprint(cs.VerificationGeneration)))
 	return nil
 }
-func (cs *ClientState) continueCompactRecovery(ctx Context, cdc StateCodec, private, shared storetypes.KVStore) error {
-	raw := shared.Get(compactRecoveryKey(cs))
-	var recovery compactRecovery
+func (cs *ClientState) continueRecovery(ctx Context, cdc StateCodec, private, shared storetypes.KVStore) error {
+	raw := shared.Get(recoveryPreparationKey(cs))
+	var recovery recoveryPreparation
 	if len(raw) == 0 || len(raw) > maxSessionBytes {
 		return fmt.Errorf("no authorized recovery is awaiting continuation")
 	}
@@ -127,7 +127,7 @@ func (cs *ClientState) continueCompactRecovery(ctx Context, cdc StateCodec, priv
 	}
 	recovery.Checked += uint64(n)
 	if recovery.Checked == recovery.Subject.Counters.Rows {
-		return cs.activateCompactRecovery(ctx, cdc, private, shared, &recovery)
+		return cs.activateRecovery(ctx, cdc, private, shared, &recovery)
 	}
 	if n == 0 {
 		return fmt.Errorf("recovery counter scan did not reach all retained rows")
@@ -136,19 +136,19 @@ func (cs *ClientState) continueCompactRecovery(ctx Context, cdc StateCodec, priv
 	if err != nil {
 		return err
 	}
-	shared.Set(compactRecoveryKey(cs), raw)
+	shared.Set(recoveryPreparationKey(cs), raw)
 	return nil
 }
-func (cs *ClientState) activateCompactRecovery(ctx Context, cdc StateCodec, private, shared storetypes.KVStore, recovery *compactRecovery) error {
+func (cs *ClientState) activateRecovery(ctx Context, cdc StateCodec, private, shared storetypes.KVStore, recovery *recoveryPreparation) error {
 	if recovery.Checked != recovery.Subject.Counters.Rows || recovery.Generation != cs.VerificationGeneration {
 		return fmt.Errorf("authorized recovery has unfinished checks")
 	}
 	// The pinned objects are immutable, but their source generation can be
-	// invalidated while counter batches commit. Every compact freeze/recovery
+	// invalidated while counter batches commit. Every freeze/recovery
 	// updates this authenticated namespace record alongside the private client.
 	// A newer checkpoint in the same healthy generation keeps the pin valid.
 	raw := shared.Get(namespaceKey(recovery.Replacement.StorageNamespace))
-	if len(raw) == 0 || len(raw) > MaxCompactClientBytes {
+	if len(raw) == 0 || len(raw) > MaxClientBytes {
 		return fmt.Errorf("recovery substitute record is missing or oversized")
 	}
 	live := cdc.DecodeClient(raw)
@@ -175,7 +175,7 @@ func (cs *ClientState) activateCompactRecovery(ctx Context, cdc StateCodec, priv
 	replacement.VerificationGeneration = cs.VerificationGeneration + 1
 	replacement.FrozenHeight = ZeroHeight()
 	replacement.BootstrapObjects = nil
-	if err := replacement.resetThinEpochDeadline(ctx, replacement.CurrentEpoch); err != nil {
+	if err := replacement.resetEpochDeadline(ctx, replacement.CurrentEpoch); err != nil {
 		return err
 	}
 	deadline := replacement.EpochContextChallenges[0].UsableAfterUnixNs
@@ -202,7 +202,7 @@ func (cs *ClientState) activateCompactRecovery(ctx Context, cdc StateCodec, priv
 	consensus.VerificationGeneration = replacement.VerificationGeneration
 	SetConsensusState(private, cdc, &consensus, replacement.LatestHeight)
 	setConsensusMetadata(ctx, private, replacement.LatestHeight)
-	if err := writeThinClient(ctx, cdc, private, &replacement); err != nil {
+	if err := writeClientState(ctx, cdc, private, &replacement); err != nil {
 		return err
 	}
 	for role := byte(0); role < 2; role++ {
@@ -213,7 +213,7 @@ func (cs *ClientState) activateCompactRecovery(ctx Context, cdc StateCodec, priv
 	if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: recovery.Checkpoint.Scope}, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 1, nil)); err != nil {
 		return err
 	}
-	shared.Delete(compactRecoveryKey(cs))
+	shared.Delete(recoveryPreparationKey(cs))
 	*cs = replacement
 	ctx.emitEvent("probabilistic_recovery_activated", newEventAttribute("generation", fmt.Sprint(cs.VerificationGeneration)))
 	return nil
@@ -222,8 +222,8 @@ func (cs *ClientState) activateCompactRecovery(ctx Context, cdc StateCodec, priv
 // Maintenance never creates authority. Recovery steps can only finish the exact
 // replacement pinned by an authorized recovery. Cleanup can run while frozen.
 func (cs *ClientState) ContinueMaintenance(ctx Context, cdc StateCodec, private storetypes.KVStore, operation uint32) error {
-	if cs.StorageVersion != StorageVersionSharedSnapshots {
-		return fmt.Errorf("maintenance requires compact storage")
+	if cs.StorageVersion != StorageVersion {
+		return fmt.Errorf("maintenance requires snapshot storage")
 	}
 	shared, err := ctx.snapshotStore()
 	if err != nil {
@@ -235,7 +235,7 @@ func (cs *ClientState) ContinueMaintenance(ctx Context, cdc StateCodec, private 
 	}
 	switch operation {
 	case ObservationContinueRecovery:
-		err = cs.continueCompactRecovery(ctx, cdc, private, shared)
+		err = cs.continueRecovery(ctx, cdc, private, shared)
 	case ObservationCleanup:
 		if err := cleanupRetainedVerification(ctx, shared, private, cs); err != nil {
 			return err

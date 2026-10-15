@@ -143,12 +143,8 @@ func TestNonceBatchSizesSettlementAndRollbackMatchNode(t *testing.T) {
 	for _, batchSize := range []int{1, 2, 7, 24} {
 		t.Run(fmt.Sprintf("batch=%d", batchSize), func(t *testing.T) {
 			ref, cs, contexts, trusted := loadNonceReference(t)
-			_, store := newProbabilisticTestClientStore(t, "nonce-reference-batches")
-			cdc := newProbabilisticTestCodec()
-			baseline := clonePraosNonceState(trusted.nonceState)
-			SetConsensusState(store, cdc, &ConsensusState{Timestamp: trusted.timestamp, AcceptedBlockHash: trusted.blockHash,
-				AcceptedEpoch: trusted.epoch, NonceState: baseline, PoolRegistry: clonePoolRegistry(trusted.poolRegistry),
-				SettlementCredit: cloneSettlementCredit(trusted.settlementCredit), PoolProduction: clonePoolProduction(trusted.poolProduction)}, trusted.height)
+			baseline := *trusted
+			baseline.nonceState = clonePraosNonceState(trusted.nonceState)
 			for start := 1; start < len(ref.Blocks); {
 				anchor := minInt(start+batchSize-1, len(ref.Blocks)-1)
 				// Every stored anchor is compared with a node observation.
@@ -171,19 +167,16 @@ func TestNonceBatchSizesSettlementAndRollbackMatchNode(t *testing.T) {
 				// test nonce evolution and can cross several epochs at once.
 				auth.anchorSettlementCredit = mustTestSettlementCredit(epochContextByEpoch(contexts, auth.anchorBlock.epoch))
 				auth.anchorPoolProduction = testPoolProduction(epochContextByEpoch(contexts, auth.anchorBlock.epoch))
-				require.NoError(t, cs.persistCheckpoint(store, cdc, contexts, auth))
-				require.Equal(t, auth.anchorNonceState, cs.LatestCheckpointNonceState)
-				require.True(t, poolRegistriesEqual(auth.anchorPoolRegistry, cs.LatestCheckpointPoolRegistry))
-				trusted, err = cs.trustedBlockStateAtHeight(store, cdc, cs.LatestCheckpointHeight)
-				require.NoError(t, err)
+				trusted = &trustedBlockState{height: NewHeight(0, auth.anchorBlock.height), slot: auth.anchorBlock.slot, epoch: auth.anchorBlock.epoch, blockHash: auth.anchorBlock.hash, timestamp: auth.anchorBlock.timestamp, nonceState: clonePraosNonceState(auth.anchorNonceState), poolRegistry: clonePoolRegistry(auth.anchorPoolRegistry), settlementCredit: cloneSettlementCredit(auth.anchorSettlementCredit), poolProduction: clonePoolProduction(auth.anchorPoolProduction), operationalCertificateCounters: map[string]uint64{}}
+				cs.LatestCheckpointNonceState = clonePraosNonceState(trusted.nonceState)
+				cs.LatestCheckpointPoolRegistry = clonePoolRegistry(trusted.poolRegistry)
 				start = anchor + 1
 			}
 			finalState := clonePraosNonceState(cs.LatestCheckpointNonceState)
 			// Loading the historical point must restore its nonce state rather
 			// than use the state of the current checkpoint.
-			rollback, err := cs.trustedBlockStateAtHeight(store, cdc, NewHeight(0, ref.Blocks[0].Height))
-			require.NoError(t, err)
-			require.Equal(t, baseline, rollback.nonceState)
+			rollback := &baseline
+			require.Equal(t, baseline.nonceState, rollback.nonceState)
 			tracker, err := newNonceTracker(rollback)
 			require.NoError(t, err)
 			registry, err := newPoolRegistryTracker(rollback.poolRegistry, rollback.epoch, rollback.slot)

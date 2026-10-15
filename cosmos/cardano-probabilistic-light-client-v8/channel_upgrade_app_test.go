@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	corestate "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
+
 	sdkmath "cosmossdk.io/math"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -86,7 +88,7 @@ type cardanoCommit struct {
 
 func newUpgradeHarness(t *testing.T) *upgradeHarness {
 	t.Helper()
-	app := simapp.Setup(t, false)
+	app := newSnapshotTestApp(t)
 	t.Cleanup(func() { require.NoError(t, app.Close()) })
 	RegisterInterfaces(app.InterfaceRegistry())
 	ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: "injective-1", Height: 100, Time: time.Unix(1_700_000_100, 0)})
@@ -123,12 +125,10 @@ func (h *upgradeHarness) installClient(id string) {
 	setTestCheckpoint(h.t, state, state.LatestHeight, testBlockHash("checkpoint-"+id), 7, state.LatestHeight.RevisionHeight)
 	state.OperationalCertificateCounterHistoryStartHeight = state.LatestHeight
 	state.EpochContextChallenges = []*EpochContextChallenge{{Epoch: 7, UsableAfterUnixNs: uint64(h.ctx.BlockTime().Add(-time.Second).UnixNano())}}
-	require.NoError(h.t, state.Validate())
-	setClientState(store, cdc, state)
 	consensus := newProbabilisticTestConsensusState(state.LatestCheckpointBlockHash, state.LatestHeight.RevisionHeight)
 	consensus.Timestamp = state.LatestCheckpointTimestamp
 	setTestPacketSnapshot(h.t, consensus, state.LatestHeight.RevisionHeight)
-	setConsensusState(store, cdc, consensus, state.LatestHeight)
+	state, _ = installTestCheckpoint(h.t, h.ctx.WithBlockTime(h.ctx.BlockTime().Add(-corestate.SharedSnapshotChallengePeriod-time.Second)), cdc, store, state, consensus)
 	setConsensusMetadataWithValues(store, state.LatestHeight, clienttypes.NewHeight(1, 99), uint64(h.ctx.BlockTime().UnixNano()))
 }
 
@@ -212,7 +212,10 @@ func (h *upgradeHarness) commit(timestamp time.Time, clients ...string) cardanoC
 		consensus.IbcStateRoot = hostRoot
 		consensus.PacketStateSnapshot = snapshot
 		height := NewHeight(0, h.height)
-		setConsensusState(store, cdc, consensus, height)
+		input := newProbabilisticTestClientState()
+		input.LatestHeight = height
+		input.OperationalCertificateCounterHistoryStartHeight = height
+		installTestCheckpoint(h.t, h.ctx.WithBlockTime(h.ctx.BlockTime().Add(-corestate.SharedSnapshotChallengePeriod-time.Second)), cdc, store, input, consensus)
 		setConsensusMetadataWithValues(store, height, clienttypes.NewHeight(1, uint64(h.ctx.BlockHeight())), uint64(h.ctx.BlockTime().UnixNano()))
 	}
 	return commit

@@ -38,7 +38,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		return nil, err
 	}
 	raw := store.Get(namespaceKey(request.Namespace))
-	if len(raw) == 0 || len(raw) > MaxCompactClientBytes {
+	if len(raw) == 0 || len(raw) > MaxClientBytes {
 		return nil, fmt.Errorf("client namespace does not exist")
 	}
 	client := cdc.DecodeClient(raw)
@@ -66,7 +66,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 			if len(raw) == 0 {
 				continue
 			}
-			if len(raw) > MaxCompactClientBytes {
+			if len(raw) > MaxClientBytes {
 				return nil, fmt.Errorf("oversized epoch proposal")
 			}
 			var epoch activatedEpochTable

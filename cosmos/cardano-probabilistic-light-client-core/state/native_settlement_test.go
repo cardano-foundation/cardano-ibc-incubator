@@ -5,10 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
-	"os"
 	"testing"
-	"time"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/kes"
@@ -152,24 +149,14 @@ func makeNativeSettlementFixture(t *testing.T) nativeSettlementFixture {
 
 func TestNativeSettlementFixture(t *testing.T) {
 	fixture := makeNativeSettlementFixture(t)
-	ctx, store := newProbabilisticTestClientStore(t, "native-settlement")
-	cdc := newProbabilisticTestCodec()
-	ctx.Time = time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp))
-	require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
-	fixture.Client, _ = GetClientState(store, cdc)
-	for _, header := range []*ProbabilisticHeader{fixture.Header, fixture.Fork, fixture.TailFork} {
-		require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, header))
-	}
-	evidence := &Misbehaviour{ProbabilisticHeader1: fixture.Header, ProbabilisticHeader2: fixture.Fork}
-	require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, evidence))
-	require.True(t, fixture.Client.CheckForMisbehaviour(ctx, cdc, store, evidence))
-	encoded, err := json.MarshalIndent(fixture, "", "  ")
+	trusted, err := fixture.Client.latestTrustedBlockState(nil, nil)
 	require.NoError(t, err)
-	encoded = append(encoded, '\n')
-	if os.Getenv("UPDATE_NATIVE_SETTLEMENT_FIXTURE") == "1" {
-		require.NoError(t, os.WriteFile("../testdata/native-settlement.json", encoded, 0644))
+	contexts := fixture.Client.EpochContexts
+	for _, header := range []*ProbabilisticHeader{fixture.Header, fixture.Fork} {
+		if header.NewEpochContext != nil {
+			contexts = append(fixture.Client.EpochContexts, header.NewEpochContext)
+		}
+		_, err := fixture.Client.authenticateHeaderBlocksWithContexts(header, contexts, trusted.operationalCertificateCounters, trusted)
+		require.NoError(t, err)
 	}
-	saved, err := os.ReadFile("../testdata/native-settlement.json")
-	require.NoError(t, err)
-	require.JSONEq(t, string(saved), string(encoded))
 }

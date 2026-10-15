@@ -20,11 +20,11 @@ var (
 func SetClientState(clientStore storetypes.KVStore, cdc StateCodec, clientState *ClientState) {
 	key := []byte("clientState")
 	val := cdc.EncodeClient(clientState)
-	if clientState.StorageVersion == StorageVersionSharedSnapshots && len(val) > MaxCompactClientBytes {
-		panic(fmt.Errorf("compact client record exceeds its bounded size"))
-	}
-	if err := validateClientBytes(len(val)); err != nil {
+	if err := clientState.Validate(); err != nil {
 		panic(err)
+	}
+	if len(val) > MaxClientBytes {
+		panic(fmt.Errorf("client record exceeds its bounded size"))
 	}
 	clientStore.Set(key, val)
 }
@@ -35,12 +35,22 @@ func GetClientState(store storetypes.KVStore, cdc StateCodec) (*ClientState, boo
 		return nil, false
 	}
 
-	return cdc.DecodeClient(bz), true
+	client := cdc.DecodeClient(bz)
+	if client.Validate() != nil {
+		return nil, false
+	}
+	return client, true
 }
 
 func SetConsensusState(clientStore storetypes.KVStore, cdc StateCodec, consensusState *ConsensusState, height HeightValue) {
 	key := consensusStateKey(height)
+	if err := consensusState.ValidateBasic(); err != nil {
+		panic(err)
+	}
 	val := cdc.EncodeConsensus(consensusState)
+	if len(val) > MaxConsensusBytes {
+		panic(fmt.Errorf("consensus record exceeds its bounded size"))
+	}
 	clientStore.Set(key, val)
 }
 
@@ -51,7 +61,7 @@ func GetConsensusState(store storetypes.KVStore, cdc StateCodec, height HeightVa
 	}
 	consensusStateI := mustDecodeConsensus(cdc, bz)
 	generation := store.Get(generationKey())
-	if len(generation) != 0 && (len(generation) != 8 || consensusStateI.VerificationGeneration != binary.BigEndian.Uint64(generation)) {
+	if consensusStateI.ValidateBasic() != nil || len(generation) != 8 || consensusStateI.VerificationGeneration != binary.BigEndian.Uint64(generation) {
 		return nil, false
 	}
 	return consensusStateI, true
@@ -174,7 +184,7 @@ func getProbabilisticConsensusState(clientStore storetypes.KVStore, cdc StateCod
 		return nil, false
 	}
 	generation := clientStore.Get(generationKey())
-	if len(generation) != 0 && (len(generation) != 8 || consensusStateI.VerificationGeneration != binary.BigEndian.Uint64(generation)) {
+	if consensusStateI.ValidateBasic() != nil || len(generation) != 8 || consensusStateI.VerificationGeneration != binary.BigEndian.Uint64(generation) {
 		return nil, false
 	}
 	consensusState, ok := consensusStateI, consensusStateI != nil
@@ -209,23 +219,4 @@ func deleteConsensusMetadata(clientStore storetypes.KVStore, height HeightValue)
 	deleteProcessedTime(clientStore, height)
 	deleteProcessedHeight(clientStore, height)
 	deleteIterationKey(clientStore, height)
-}
-
-// Recovery deliberately discards all subject proof history. This also removes
-// metadata without an iteration entry and packet snapshots at rootless heights.
-func clearRecoveryProofHistory(store storetypes.KVStore) error {
-	var keys [][]byte
-	for _, keyPrefix := range []string{"consensusStates/", KeyIterateConsensusStatePrefix, "packetState/"} {
-		iterator := storetypes.KVStorePrefixIterator(store, []byte(keyPrefix))
-		for ; iterator.Valid(); iterator.Next() {
-			keys = append(keys, bytes.Clone(iterator.Key()))
-		}
-		if err := iterator.Close(); err != nil {
-			return fmt.Errorf("closing recovery proof history iterator: %w", err)
-		}
-	}
-	for _, key := range keys {
-		store.Delete(key)
-	}
-	return nil
 }

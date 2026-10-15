@@ -1,4 +1,4 @@
-// compact-bootstrap converts an explicitly trusted starting checkpoint into a
+// bootstrap converts an explicitly trusted starting checkpoint into a
 // small MsgCreateClient input and bounded on-chain import messages. It does not
 // establish that the starting ledger or stake allocation is correct.
 package main
@@ -10,7 +10,7 @@ import (
 	"os"
 
 	"cosmossdk.io/store/dbadapter"
-	lc "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10"
+	lc "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8"
 	dbm "github.com/cosmos/cosmos-db"
 )
 
@@ -35,7 +35,7 @@ func run() error {
 	if trusted.Client == nil || trusted.Consensus == nil {
 		return fmt.Errorf("trusted client and consensus are required")
 	}
-	client, consensus, steps, err := lc.BuildCompactBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, trusted.Client, trusted.Consensus)
+	client, consensus, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, trusted.Client, trusted.Consensus)
 	if err != nil {
 		return err
 	}

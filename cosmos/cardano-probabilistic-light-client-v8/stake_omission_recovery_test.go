@@ -80,7 +80,7 @@ func TestStakeOmissionExpiresAndRecoversThroughAuthority(t *testing.T) {
 		return execute(msg)
 	}
 	bootstrap := func(id string, full *ClientState, consensus *ConsensusState) {
-		compact, initial, steps, err := BuildCompactBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, full, consensus)
+		compact, initial, steps, err := BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, full, consensus)
 		require.NoError(t, err)
 		require.NoError(t, compact.Initialize(ctx, cdc, clientStore(id), initial))
 		require.Empty(t, client(id).EpochContextChallenges, "imports cannot install a previous destination deadline")

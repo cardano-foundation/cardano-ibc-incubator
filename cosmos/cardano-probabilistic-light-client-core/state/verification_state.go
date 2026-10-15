@@ -27,31 +27,31 @@ func generationKey() []byte { return []byte("verificationGeneration") }
 func ownedCheckpointKey(generation, height uint64) []byte {
 	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64([]byte("verifiedCheckpoints/"), generation), height)
 }
-func validateThinClient(cs *ClientState) error {
-	if cs.StorageVersion != StorageVersionSharedSnapshots || cs.VerificationGeneration == 0 || len(cs.CheckpointReference) != 32 || len(cs.StorageNamespace) != 32 {
-		return fmt.Errorf("compact client requires a version, generation, namespace and checkpoint")
+func validateClientState(cs *ClientState) error {
+	if cs.StorageVersion != StorageVersion || cs.VerificationGeneration == 0 || len(cs.CheckpointReference) != 32 || len(cs.StorageNamespace) != 32 {
+		return fmt.Errorf("client requires a version, generation, namespace and checkpoint")
 	}
 	if len(cs.BootstrapObjects) > MaxOperationSignedBytes {
 		return fmt.Errorf("bootstrap objects exceed the bounded transport envelope")
 	}
 	if len(cs.EpochStakeDistribution) > 0 || len(cs.EpochContexts) > 0 || cs.LatestCheckpointPoolRegistry != nil || cs.LatestCheckpointSettlementCredit != nil || cs.LatestCheckpointPoolProduction != nil || len(cs.LatestCheckpointOperationalCertificateCounters) > 0 {
-		return fmt.Errorf("compact public client state cannot embed verification collections")
+		return fmt.Errorf("public client state cannot embed verification collections")
 	}
 	if cs.LatestHeight == nil || cs.LatestCheckpointHeight == nil || cs.LatestHeight.IsZero() || cs.LatestCheckpointHeight.IsZero() || cs.ChainId == "" || cs.TrustingPeriod <= 0 || cs.MaxClockDrift <= 0 {
-		return fmt.Errorf("compact client configuration and cursors must be complete")
+		return fmt.Errorf("client configuration and cursors must be complete")
 	}
 	if len(cs.ChainId) > 50 || len(cs.HostStateNftPolicyId) != 28 || len(cs.PacketLanePolicyId) != 28 || len(cs.HostStateNftTokenName) == 0 || len(cs.HostStateNftTokenName) > 32 || cs.SlotLengthNs == 0 || cs.SystemStartUnixNs == 0 || cs.SlotsPerKesPeriod == 0 || cs.MaxKesEvolutions == 0 || cs.MaxKesEvolutions > maxSupportedKesEvolutions || cs.ActiveSlotCoefficientNumerator == 0 || cs.ActiveSlotCoefficientDenominator == 0 || cs.ActiveSlotCoefficientNumerator > cs.ActiveSlotCoefficientDenominator {
-		return fmt.Errorf("compact client has invalid immutable network rules")
+		return fmt.Errorf("client has invalid immutable network rules")
 	}
 	if cs.LatestHeight.RevisionNumber != 0 || cs.LatestCheckpointHeight.RevisionNumber != 0 || cs.LatestCheckpointHeight.LT(cs.LatestHeight) || cs.CurrentEpoch != cs.LatestCheckpointEpoch {
-		return fmt.Errorf("compact client checkpoint position is invalid")
+		return fmt.Errorf("client checkpoint position is invalid")
 	}
 	if _, err := decodeBlockHash(cs.LatestCheckpointBlockHash); err != nil {
 		return err
 	}
 	derived, err := cs.DeriveTimestampFromSlot(cs.LatestCheckpointSlot)
 	if err != nil || derived != cs.LatestCheckpointTimestamp {
-		return fmt.Errorf("compact checkpoint timestamp is not derived from its slot")
+		return fmt.Errorf("checkpoint timestamp is not derived from its slot")
 	}
 	if err := cs.validateNonceConfiguration(); err != nil {
 		return err
@@ -61,25 +61,25 @@ func validateThinClient(cs *ClientState) error {
 	}
 	return nil
 }
-func validateThinConsensus(cs *ConsensusState) error {
+func validateConsensusState(cs *ConsensusState) error {
 	if cs.VerificationGeneration == 0 || len(cs.CheckpointReference) != 32 || len(cs.PacketStateReference) != 32 || cs.Timestamp == 0 || len(cs.IbcStateRoot) != 32 {
-		return fmt.Errorf("compact consensus state requires bounded authenticated references")
+		return fmt.Errorf("consensus state requires bounded authenticated references")
 	}
 	if _, err := decodeBlockHash(cs.AcceptedBlockHash); err != nil {
 		return err
 	}
 	if cs.PoolRegistry != nil || cs.SettlementCredit != nil || cs.PoolProduction != nil || cs.NonceState != nil || len(cs.PacketStateSnapshot) > 0 {
-		return fmt.Errorf("compact consensus state cannot embed historical verification state")
+		return fmt.Errorf("consensus state cannot embed historical verification state")
 	}
 	return nil
 }
-func writeThinClient(ctx Context, cdc StateCodec, private storetypes.KVStore, cs *ClientState) error {
-	if err := validateThinClient(cs); err != nil {
+func writeClientState(ctx Context, cdc StateCodec, private storetypes.KVStore, cs *ClientState) error {
+	if err := validateClientState(cs); err != nil {
 		return err
 	}
 	raw := cdc.EncodeClient(cs)
-	if len(raw) > MaxCompactClientBytes {
-		return fmt.Errorf("public client record exceeds %d bytes", MaxCompactClientBytes)
+	if len(raw) > MaxClientBytes {
+		return fmt.Errorf("public client record exceeds %d bytes", MaxClientBytes)
 	}
 	shared, err := ctx.snapshotStore()
 	if err != nil {
@@ -121,15 +121,15 @@ func currentVerificationCheckpoint(ctx Context, cs *ClientState) (*verificationC
 	return checkpoint, store, nil
 }
 
-// EnableSharedSnapshots is called by the bootstrap builder with explicit trusted
+// InitializeFromTrustedCheckpoint is called by the bootstrap builder with explicit trusted
 // starting data. It never constructs missing nonce, registration or production
 // history. Pages are destination objects and can be shared by other checkpoints.
-func EnableSharedSnapshots(ctx Context, cdc StateCodec, private storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, error) {
+func InitializeFromTrustedCheckpoint(ctx Context, cdc StateCodec, private storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, error) {
 	store, err := ctx.snapshotStore()
 	if err != nil {
 		return nil, nil, err
 	}
-	checkpoint, err := legacyVerificationCheckpoint(store, client, consensus)
+	checkpoint, err := buildTrustedCheckpoint(store, client, consensus)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -151,8 +151,8 @@ func EnableSharedSnapshots(ctx Context, cdc StateCodec, private storetypes.KVSto
 	sequence++
 	namespace := sha256.Sum256(binary.BigEndian.AppendUint64(append([]byte("cardano-ibc.namespace/v2\x00"), checkpoint.Scope[:]...), sequence))
 	store.Set([]byte("snapshots/v2/nextNamespace"), binary.BigEndian.AppendUint64(nil, sequence))
-	thin := thinClientState(client, namespace[:], checkpoint, reference)
-	if err := thin.resetThinEpochDeadline(ctx, checkpoint.Epoch); err != nil {
+	thin := referenceClientState(client, namespace[:], checkpoint, reference)
+	if err := thin.resetEpochDeadline(ctx, checkpoint.Epoch); err != nil {
 		return nil, nil, err
 	}
 	if err := pinVerificationCheckpoint(store, checkpoint, namespaceOwner(thin.StorageNamespace, thin.VerificationGeneration, 1, nil)); err != nil {
@@ -162,19 +162,19 @@ func EnableSharedSnapshots(ctx Context, cdc StateCodec, private storetypes.KVSto
 	if err := retainCheckpoint(store, thin, checkpoint, reference[:]); err != nil {
 		return nil, nil, err
 	}
-	if err := writeThinClient(ctx, cdc, private, thin); err != nil {
+	if err := writeClientState(ctx, cdc, private, thin); err != nil {
 		return nil, nil, err
 	}
-	compactConsensus := thinConsensusState(consensus, checkpoint, reference, thin.VerificationGeneration)
+	compactConsensus := referenceConsensusState(consensus, checkpoint, reference, thin.VerificationGeneration)
 	encoded := cdc.EncodeConsensus(compactConsensus)
-	if len(encoded) > MaxCompactConsensusBytes {
-		return nil, nil, fmt.Errorf("public consensus record exceeds %d bytes", MaxCompactConsensusBytes)
+	if len(encoded) > MaxConsensusBytes {
+		return nil, nil, fmt.Errorf("public consensus record exceeds %d bytes", MaxConsensusBytes)
 	}
 	SetConsensusState(private, cdc, compactConsensus, client.LatestHeight)
 	setConsensusMetadata(ctx, private, client.LatestHeight)
 	return thin, compactConsensus, nil
 }
-func (cs *ClientState) resetThinEpochDeadline(ctx Context, epoch uint64) error {
+func (cs *ClientState) resetEpochDeadline(ctx Context, epoch uint64) error {
 	deadline, err := sharedSnapshotChallengeDeadline(ctx)
 	if err != nil {
 		return err

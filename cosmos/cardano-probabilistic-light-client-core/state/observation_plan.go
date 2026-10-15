@@ -19,7 +19,7 @@ type ObservationPlan struct {
 }
 
 func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, originalReceipt []byte, priorTableRows uint64, blocksPerStep int) (*ObservationPlan, error) {
-	if cs.StorageVersion != StorageVersionSharedSnapshots || header == nil || header.AnchorBlock == nil || blocksPerStep < 1 || blocksPerStep > maxObservationBlocksPerStep {
+	if cs.StorageVersion != StorageVersion || header == nil || header.AnchorBlock == nil || blocksPerStep < 1 || blocksPerStep > maxObservationBlocksPerStep {
 		return nil, fmt.Errorf("invalid staged observation plan inputs")
 	}
 	begin := &ObservationChunk{Operation: ObservationBegin, BaseCheckpointReference: bytes.Clone(cs.CheckpointReference), OriginalReceipt: bytes.Clone(originalReceipt), AnchorHeight: header.AnchorBlock.Height.RevisionHeight, BlockCount: uint32(len(header.BridgeBlocks) + 1 + len(header.DescendantBlocks)), IsCheckpoint: header.IsCheckpoint, HostStateTxHash: header.HostStateTxHash}

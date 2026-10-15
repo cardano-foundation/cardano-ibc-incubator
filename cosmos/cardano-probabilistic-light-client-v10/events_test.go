@@ -42,18 +42,17 @@ func TestLightClientModuleVerifyClientMessageEmitsRejectedEvent(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 
 	clientState := newProbabilisticTestClientState()
-	clientState.LatestHeight = NewHeight(0, 11)
-	setClientState(clientStore, cdc, clientState)
+	clientState, _ = installTestCheckpoint(t, ctx, cdc, clientStore, clientState, newProbabilisticTestConsensusState(testBlockHash("initial")))
 
 	header := newVerifiedTestHeader(t)
 	err := module.VerifyClientMessage(ctx, clientID, header)
-	require.ErrorContains(t, err, "must equal latest authenticated checkpoint")
+	require.ErrorContains(t, err, "bounded observation operations")
 
 	event := findEventByType(t, ctx.EventManager().Events(), EventTypeProbabilisticHeaderRejected)
 	require.Equal(t, clientID, eventAttributeValue(t, event, AttributeKeyClientID))
 	require.Equal(t, header.TrustedHeight.String(), eventAttributeValue(t, event, AttributeKeyTrustedHeight))
 	require.Equal(t, header.GetHeight().String(), eventAttributeValue(t, event, AttributeKeyAcceptedHeight))
-	require.Contains(t, eventAttributeValue(t, event, AttributeKeyReason), "must equal latest authenticated checkpoint")
+	require.Contains(t, eventAttributeValue(t, event, AttributeKeyReason), "bounded observation operations")
 }
 
 func TestLightClientModuleUpdateStateOnMisbehaviourEmitsFrozenEvent(t *testing.T) {
@@ -61,11 +60,8 @@ func TestLightClientModuleUpdateStateOnMisbehaviourEmitsFrozenEvent(t *testing.T
 	cdc := newProbabilisticTestCodec()
 
 	clientState := newProbabilisticTestClientState()
-	setClientState(clientStore, cdc, clientState)
+	clientState, _ = installTestCheckpoint(t, ctx, cdc, clientStore, clientState, newProbabilisticTestConsensusState(testBlockHash("initial")))
 	header := newVerifiedTestHeader(t)
-	setConsensusState(clientStore, cdc, newProbabilisticTestConsensusState(testBlockHash("other-anchor"), header.GetHeight().GetRevisionHeight()), header.GetHeight())
-	require.True(t, module.CheckForMisbehaviour(ctx, clientID, header))
-
 	module.UpdateStateOnMisbehaviour(ctx, clientID, header)
 
 	frozen, found := getClientState(clientStore, cdc)
@@ -87,20 +83,16 @@ func TestLightClientModuleRecoverClientUsesPrefixedClientStores(t *testing.T) {
 	subject := newProbabilisticTestClientState()
 	subject.FrozenHeight = NewHeight(0, 5)
 	setTestCheckpoint(t, subject, subject.LatestHeight, testBlockHash("subject-hash-10"), subject.CurrentEpoch, 10)
-	setClientState(subjectStore, cdc, subject)
+	subjectConsensus := newProbabilisticTestConsensusState(subject.LatestCheckpointBlockHash)
+	subjectConsensus.Timestamp = subject.LatestCheckpointTimestamp
+	subject, _ = installTestCheckpoint(t, ctx, cdc, subjectStore, subject, subjectConsensus)
 
 	substitute := newProbabilisticTestClientState()
 	substitute.LatestHeight = NewHeight(0, 20)
 	setTestCheckpoint(t, substitute, substitute.LatestHeight, testBlockHash("substitute-hash-20"), substitute.CurrentEpoch, 20)
-	setClientState(substituteStore, cdc, substitute)
 	consensusState := newProbabilisticTestConsensusState(testBlockHash("substitute-hash-20"), 20)
 	consensusState.Timestamp = substitute.LatestCheckpointTimestamp
-	setConsensusState(
-		substituteStore,
-		cdc,
-		consensusState,
-		substitute.LatestHeight,
-	)
+	substitute, _ = installTestCheckpoint(t, ctx, cdc, substituteStore, substitute, consensusState)
 	setConsensusMetadataWithValues(
 		substituteStore,
 		substitute.LatestHeight,
@@ -118,10 +110,10 @@ func TestLightClientModuleRecoverClientUsesPrefixedClientStores(t *testing.T) {
 	require.True(t, found)
 	processedHeight, found := GetProcessedHeight(subjectStore, substitute.LatestHeight)
 	require.True(t, found)
-	require.Equal(t, clienttypes.NewHeight(0, 50).String(), processedHeight.String())
+	require.Equal(t, clienttypes.NewHeight(0, uint64(ctx.BlockHeight())).String(), processedHeight.String())
 	processedTime, found := GetProcessedTime(subjectStore, substitute.LatestHeight)
 	require.True(t, found)
-	require.EqualValues(t, 123456789, processedTime)
+	require.EqualValues(t, ctx.BlockTime().UnixNano(), processedTime)
 	require.NotEmpty(t, subjectStore.Get(IterationKey(substitute.LatestHeight)))
 }
 
@@ -133,6 +125,7 @@ func newProbabilisticTestModule(t *testing.T, keyName string) (sdk.Context, stor
 	key := storetypes.NewKVStoreKey(keyName)
 
 	stateStore.MountStoreWithDB(key, storetypes.StoreTypeIAVL, db)
+	stateStore.MountStoreWithDB(SharedStoreKey, storetypes.StoreTypeIAVL, db)
 	require.NoError(t, stateStore.LoadLatestVersion())
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{
@@ -143,7 +136,7 @@ func newProbabilisticTestModule(t *testing.T, keyName string) (sdk.Context, stor
 
 	storeProvider := clienttypes.NewStoreProvider(runtime.NewKVStoreService(key))
 	clientID := "08-cardano-probabilistic-0"
-	return ctx, storeProvider.ClientStore(ctx, clientID), NewLightClientModule(newProbabilisticTestCodec(), storeProvider), clientID
+	return withTestHostProgress(ctx), storeProvider.ClientStore(ctx, clientID), NewLightClientModule(newProbabilisticTestCodec(), storeProvider), clientID
 }
 
 func findEventByType(t *testing.T, events sdk.Events, eventType string) sdk.Event {

@@ -41,20 +41,20 @@ func recoveryRetryClient(t *testing.T, ctx Context, cdc StateCodec, heightOffset
 			&OperationalCertificateCounter{PoolId: key, SequenceNumber: value})
 	}
 	private := dbadapter.Store{DB: dbm.NewMemDB()}
-	compact, _, err := EnableSharedSnapshots(ctx, cdc, private, client, consensus)
+	compact, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, client, consensus)
 	require.NoError(t, err)
 	return compact, private
 }
 
-func pendingRecovery(t *testing.T, shared storetypes.KVStore, client *ClientState) compactRecovery {
+func pendingRecovery(t *testing.T, shared storetypes.KVStore, client *ClientState) recoveryPreparation {
 	t.Helper()
-	var pending compactRecovery
-	_, err := cbor.Decode(shared.Get(compactRecoveryKey(client)), &pending)
+	var pending recoveryPreparation
+	_, err := cbor.Decode(shared.Get(recoveryPreparationKey(client)), &pending)
 	require.NoError(t, err)
 	return pending
 }
 
-func TestFailedCompactRecoveryCanBeReplacedByAuthorizedRetry(t *testing.T) {
+func TestFailedSnapshotRecoveryCanBeReplacedByAuthorizedRetry(t *testing.T) {
 	_, consensus := compactTrustedFixture(t, 65)
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
@@ -71,9 +71,9 @@ func TestFailedCompactRecoveryCanBeReplacedByAuthorizedRetry(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		require.NoError(t, subject.ContinueMaintenance(ctx, cdc, private, ObservationContinueRecovery))
 	}
-	before := bytes.Clone(shared.Get(compactRecoveryKey(subject)))
+	before := bytes.Clone(shared.Get(recoveryPreparationKey(subject)))
 	require.ErrorContains(t, subject.ContinueMaintenance(ctx, cdc, private, ObservationContinueRecovery), "rolls back")
-	require.Equal(t, before, shared.Get(compactRecoveryKey(subject)))
+	require.Equal(t, before, shared.Get(recoveryPreparationKey(subject)))
 	require.Equal(t, uint64(1), subject.VerificationGeneration)
 	require.Equal(t, Frozen, subject.Status(ctx, private, cdc))
 	// Only a new authorized recovery can change the pinned substitute. A fresh
@@ -91,7 +91,7 @@ func TestFailedCompactRecoveryCanBeReplacedByAuthorizedRetry(t *testing.T) {
 	require.Equal(t, Active, subject.Status(ctx, private, cdc))
 	require.Equal(t, uint64(2), subject.VerificationGeneration)
 	require.Equal(t, good.CheckpointReference, subject.CheckpointReference)
-	require.False(t, shared.Has(compactRecoveryKey(subject)))
+	require.False(t, shared.Has(recoveryPreparationKey(subject)))
 	checkpoint, _, err := currentVerificationCheckpoint(ctx, subject)
 	require.NoError(t, err)
 	_, err = NewSnapshotMap(shared, checkpoint.Scope, snapshotCounters).Visit(checkpoint.Counters, nil, 128, func(_ []byte, value []byte) error {
@@ -101,7 +101,7 @@ func TestFailedCompactRecoveryCanBeReplacedByAuthorizedRetry(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestCompactRecoveryRechecksExpiryAndAllowsFreshAuthorization(t *testing.T) {
+func TestSnapshotRecoveryRechecksExpiryAndAllowsFreshAuthorization(t *testing.T) {
 	_, consensus := compactTrustedFixture(t, 65)
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
@@ -131,7 +131,7 @@ func TestCompactRecoveryRechecksExpiryAndAllowsFreshAuthorization(t *testing.T) 
 	require.Equal(t, uint64(2), subject.VerificationGeneration)
 }
 
-func TestCompactRecoveryRejectsSubstituteGenerationChange(t *testing.T) {
+func TestSnapshotRecoveryRejectsSubstituteGenerationChange(t *testing.T) {
 	_, consensus := compactTrustedFixture(t, 65)
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
@@ -163,9 +163,9 @@ func TestCompactRecoveryRejectsSubstituteGenerationChange(t *testing.T) {
 	}
 	require.Equal(t, Active, substitute.Status(ctx, substitutePrivate, cdc))
 	require.Equal(t, uint64(2), substitute.VerificationGeneration)
-	before := bytes.Clone(shared.Get(compactRecoveryKey(subject)))
+	before := bytes.Clone(shared.Get(recoveryPreparationKey(subject)))
 	require.ErrorContains(t, subject.ContinueMaintenance(ctx, cdc, private, ObservationContinueRecovery), "substitute generation")
-	require.Equal(t, before, shared.Get(compactRecoveryKey(subject)))
+	require.Equal(t, before, shared.Get(recoveryPreparationKey(subject)))
 	subject, _ = GetClientState(private, cdc)
 	require.Equal(t, Frozen, subject.Status(ctx, private, cdc))
 	require.Equal(t, uint64(1), subject.VerificationGeneration)

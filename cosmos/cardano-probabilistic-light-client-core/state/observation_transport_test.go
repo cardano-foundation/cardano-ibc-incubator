@@ -3,8 +3,9 @@ package state
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCrossLanguageSessionEncoding(t *testing.T) {
@@ -20,7 +21,7 @@ func TestCrossLanguageObservationSegmentCommitments(t *testing.T) {
 	require.NoError(t, err)
 	second, err := poolName(bytes.Repeat([]byte{2}, 28))
 	require.NoError(t, err)
-	client := &ClientState{StorageVersion: StorageVersionSharedSnapshots, CurrentEpoch: 7, CheckpointReference: bytes.Repeat([]byte{2}, 32), StorageNamespace: bytes.Repeat([]byte{1}, 32), VerificationGeneration: 7}
+	client := &ClientState{StorageVersion: StorageVersion, CurrentEpoch: 7, CheckpointReference: bytes.Repeat([]byte{2}, 32), StorageNamespace: bytes.Repeat([]byte{1}, 32), VerificationGeneration: 7}
 	header := &ProbabilisticHeader{
 		AnchorBlock:      &ProbabilisticBlock{Height: NewHeight(0, 42), Slot: 100, Epoch: 8, Timestamp: 1234, Hash: hex.EncodeToString(bytes.Repeat([]byte{3}, 32)), HeaderCbor: []byte{4, 5}},
 		DescendantBlocks: []*ProbabilisticBlock{{Height: NewHeight(0, 43), Slot: 101, Epoch: 8, Timestamp: 1235, Hash: hex.EncodeToString(bytes.Repeat([]byte{6}, 32)), HeaderCbor: []byte{7, 8}}},

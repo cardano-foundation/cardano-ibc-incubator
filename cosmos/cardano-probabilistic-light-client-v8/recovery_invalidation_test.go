@@ -59,11 +59,11 @@ func TestAppStagedRecoveryRechecksSubstituteInvalidation(t *testing.T) {
 				require.True(t, found)
 				return cs
 			}
-			_, _, err := EnableSharedSnapshots(ctx, cdc, private(subjectID), subject, history.Consensus)
+			_, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private(subjectID), subject, history.Consensus)
 			require.NoError(t, err)
 			// This helper authenticates signed canonical and conflicting histories.
 			// The challenge disputes B's committed epoch-9 ancestry, not its table.
-			challenge, staged := stageCompactChallenge(t, ctx, cdc, private(substituteID), substituteID, history)
+			challenge, staged := stageSnapshotChallenge(t, ctx, cdc, private(substituteID), substituteID, history)
 			ctx = ctx.WithBlockTime(staged)
 			payer := sdk.AccAddress(bytes.Repeat([]byte{7}, 20)).String()
 			execute := func(message sdk.Msg) error {

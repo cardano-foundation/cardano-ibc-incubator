@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -113,59 +112,6 @@ func TestSettlementCreditRoundsOnlyTheAggregate(t *testing.T) {
 	total := new(big.Rat).Add(credits["a"], credits["b"])
 	total.Add(total, credits["c"])
 	require.Equal(t, uint64(511), settlementCreditBps(total))
-}
-
-func TestSettlementCreditSurvivesCheckpointUpdatesAndKeepsHistoricalReference(t *testing.T) {
-	base := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1_000, 7)
-	for i, stake := range []uint64{2, 2499, 2499, 2500, 2500} {
-		entry := base.StakeDistribution[i]
-		entry.Stake = stake
-		entry.RelativeStakeNumerator, entry.RelativeStakeDenominator = stake, 10_000
-	}
-	ctx, cdc, store, cs := initializeTemporalVerifierClient(t, "settlement-credit-checkpoints", testMaturePoolSlot+999, base)
-	initial := cloneSettlementCredit(cs.LatestCheckpointSettlementCredit)
-	for i, point := range []struct{ epoch, slot uint64 }{{8, testMaturePoolSlot + 1000}, {8, testMaturePoolSlot + 1001}, {9, testMaturePoolSlot + 2000}} {
-		height := uint64(11 + i)
-		ctx = ctx.WithBlockTime(time.Unix(0, int64(mustTestTimestampForSlot(t, cs, point.slot+24))))
-		header := newTemporalVerifierHeader(t, cs, "checkpoint", height, point.slot, point.epoch, true)
-		header.TrustedHeight = cs.LatestCheckpointHeight
-		full := makeTestProbabilisticBlock(t, height, point.slot, cs.LatestCheckpointBlockHash)
-		header.AnchorBlock.BlockCbor, header.AnchorBlock.Hash = full.BlockCbor, full.Hash
-		if point.epoch != cs.CurrentEpoch {
-			header.NewEpochContext = newTemporalVerifierEpochContext(point.epoch, testMaturePoolSlot+(point.epoch-7)*1000, testMaturePoolSlot+(point.epoch-6)*1000, byte(point.epoch))
-		}
-		authenticated := newTemporalVerifierAuthenticatedHeader(t, cs, cs.LatestCheckpointBlockHash, full.Hash, height, point.slot, point.epoch)
-		authenticate := temporalVerifierAuthenticator(t, map[string]*authenticatedProbabilisticHeader{full.Hash: authenticated})
-		require.NoError(t, cs.verifyHeaderWithAuthenticator(ctx, store, cdc, header, authenticate))
-		require.Empty(t, cs.updateStateWithAuthenticator(ctx, cdc, store, header, authenticate))
-		var found bool
-		cs, found = GetClientState(store, cdc)
-		require.True(t, found)
-		reference, err := settlementCreditMap(cs.LatestCheckpointSettlementCredit.Reference)
-		require.NoError(t, err)
-		expected := big.NewRat(1, 5000)
-		if point.epoch == 9 {
-			expected = big.NewRat(26, 5000)
-		}
-		require.Zero(t, reference["pool-a"].Cmp(expected))
-		require.Equal(t, point.epoch, cs.LatestCheckpointSettlementCredit.Epoch)
-	}
-	// The rootless cursor advances, but an older consensus point retains its
-	// original reference for historical verification instead of inheriting it.
-	historical, err := cs.trustedBlockStateAtHeight(store, cdc, NewHeight(0, 10))
-	require.NoError(t, err)
-	require.True(t, settlementCreditsEqual(initial, historical.settlementCredit))
-	history, err := productionRecordMap(historical.poolProduction, 7)
-	require.NoError(t, err)
-	require.False(t, history["pool-a"].ProducedCurrentEpoch)
-	require.Equal(t, uint32(1), history["pool-a"].CompletedEpochsBitmap)
-	latest, err := cs.latestTrustedBlockState(store, cdc)
-	require.NoError(t, err)
-	require.True(t, settlementCreditsEqual(cs.LatestCheckpointSettlementCredit, latest.settlementCredit))
-	latestHistory, err := productionRecordMap(latest.poolProduction, 9)
-	require.NoError(t, err)
-	require.True(t, latestHistory["pool-a"].ProducedCurrentEpoch)
-	require.Equal(t, uint32(5), latestHistory["pool-a"].CompletedEpochsBitmap)
 }
 
 func TestSettlementCreditRejectsMissingOrMalformedReference(t *testing.T) {

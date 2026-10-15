@@ -4,6 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"testing"
+	"time"
+
+	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
 
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -66,9 +69,12 @@ func TestClientStateProofPathNamespace(t *testing.T) {
 			ctx, clientStore := newProbabilisticTestClientStore(t, "proof-path")
 			cdc := newProbabilisticTestCodec()
 			height := clienttypes.NewHeight(0, 10)
-			setConsensusState(clientStore, cdc, &ConsensusState{IbcStateRoot: root}, height)
-			setConsensusMetadata(ctx, clientStore, height)
-			cs := ClientState{EpochContextChallenges: []*EpochContextChallenge{{Epoch: 0, UsableAfterUnixNs: 1}}}
+			input := newProbabilisticTestClientState()
+			consensus := newProbabilisticTestConsensusState(testBlockHash("path-proof"))
+			consensus.IbcStateRoot = root
+			setTestPacketSnapshot(t, consensus, height.RevisionHeight)
+			cs, _ := installTestCheckpoint(t, ctx.WithBlockTime(ctx.BlockTime().Add(-state.SharedSnapshotChallengePeriod-time.Second)), cdc, clientStore, input, consensus)
+
 			verify := func(path exported.Path) error {
 				if membership {
 					return cs.VerifyMembership(ctx, clientStore, cdc, height, 0, 0, proof, path, []byte{0x01})

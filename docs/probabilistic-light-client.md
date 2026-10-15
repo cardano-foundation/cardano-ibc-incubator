@@ -1,6 +1,6 @@
 ## Probabilistic Light Client Design
 
-Storage version `2` adds small public records, shared destination snapshots and bounded observation verification. Its twelve-hour response window and per-transaction resource limits are described in [the storage and verification design](probabilistic-bounded-verification.md). The earlier single-transaction limits and three-minute window below describe storage version `0`.
+The client has one storage format. Small public records refer to shared authenticated snapshots and verification runs through bounded transactions. The wire marker is `storage_version = 2`. The former inline format is removed and version `0` is rejected. See [the storage and verification design](probabilistic-bounded-verification.md) for the resource bounds and twelve-hour response window.
 
 Author: Julius Tranquilli, https://github.com/floor-licker
 
@@ -171,7 +171,7 @@ That study used the earlier fixed January 2026 registration cutoff. It does not 
 
 ### Header
 
-The `ProbabilisticHeader` carries:
+Gateway returns logical observation evidence with the following fields. Hermes commits that evidence through `observation_chunk` operations. A full logical header cannot execute as a client update. The logical evidence carries:
 
 - `trusted_height`
 - `bridge_blocks`
@@ -191,7 +191,7 @@ The important thing to notice is that the header does **not** try to prove arbit
 
 The header no longer carries relayed score metrics or a relayed HostState transaction body. The verifier recomputes the probabilistic metrics locally for storage/telemetry, and it recovers the HostState transaction body directly from the authenticated anchor block witness before extracting `ibc_state_root`. On an adjacent epoch rollover update, the header also carries the authenticated epoch context for the new anchor epoch so the client can continue on the same client ID without operational redeployment.
 
-Each relayed `ProbabilisticBlock` carries the evidence its role needs. A root-bearing `anchor_block` carries full `block_cbor` so the verifier can authenticate the HostState transaction against the signed block body, while `bridge_blocks`, `descendant_blocks`, and rootless checkpoint anchors carry compact `header_cbor`. The verifier derives the signed block metadata from that evidence and cross-checks the claimed block hash, previous hash, height, slot, and issuer pool identity before accepting the update.
+Each relayed `ProbabilisticBlock` carries the evidence its role needs. A root-bearing `anchor_block` carries full `block_cbor` so the verifier can authenticate the HostState transaction against the signed block body, and full bridge bodies and checkpoint anchors authenticate certificate and packet transitions. Settlement descendants can carry only `header_cbor`. The verifier derives the signed block metadata from that evidence and cross-checks the claimed block hash, previous hash, height, slot, and issuer pool identity before accepting the update.
 
 ### Latest Height
 
@@ -208,21 +208,9 @@ The Gateway:
 
 ### New Client
 
-`QueryNewClient` in probabilistic mode constructs a `ClientState` and `ConsensusState` for a chosen Cardano height by:
+Create a client from an explicitly trusted checkpoint using `cmd/bootstrap` and configure the resulting bundle as Hermes's `probabilistic_bootstrap_file`. The full checkpoint supplies nonce accumulators, registrations, production, credit, certificate counters and packet state. Those collections become shared snapshot pages. The creation records contain references only. Bounded imports must finish before proofs are usable. Gateway refuses probabilistic `QueryNewClient` requests instead of emitting an inline client.
 
-1. loading the anchor block at the requested height
-2. loading its descendant window
-3. loading epoch stake distribution
-4. computing the score and enforcing the thresholds
-5. locating the HostState UTxO at or before that height
-6. decoding the HostState datum and extracting `ibc_state_root`
-7. serializing the probabilistic client state and consensus state
-
-Client creation still starts from one epoch context, but updates are no longer single-epoch-only. Gateway now supports ordinary `epoch N -> epoch N+1` rollover updates on the same client ID by attaching `new_epoch_context` to the header when the anchor moves into the next epoch. Verified settlement descendants can now continue into the following epoch when old-epoch participation is insufficient. The whole evidence bundle still crosses at most one epoch boundary from its trusted checkpoint. Gateway chooses the first sufficient descendant prefix and can return a smaller old-epoch anchor instead of requiring every remaining old-epoch body in one update.
-
-An old-epoch anchor using next-epoch descendants first proposes the next stake table without advancing its checkpoint or creating a consensus root. It can commit only after that table's three-minute challenge period. Qualification stays frozen at the anchor. Each producer receives the smaller of its capped anchor-epoch credit and its next-epoch share. Its next-epoch production does not qualify it for the anchor's epoch. Temporary descendants advance only working nonce and verification state. The stored state remains at the anchor.
-
-Cross-epoch updates reserve 1.5 MiB for complete bodies within the existing 2.5 MiB header limit. This leaves room for a challenger's complete table even when the proposal omits pools. Progress still requires a qualified contiguous window within the 128-block evidence bound. Waiting alone cannot resolve a longer fixed epoch tail. The [core capacity notes](../cosmos/cardano-probabilistic-light-client-core/README.md) state the supported workload and the explicit recovery limitation.
+An observation may cross one epoch boundary from its trusted checkpoint. A future table starts a twelve-hour response window when its verified receipt is activated. Until that window and a subsequent committed host block have passed, an observation using that epoch cannot advance the checkpoint or publish a proof root. Qualification remains positioned at the anchor. Temporary descendants advance working verification state only. The committed checkpoint retains the anchor's nonce, registry, production and certificate counters.
 
 The client derives a block's epoch from its signed slot and the stored current
 epoch boundaries. Those boundaries provide the network's epoch length and slot
@@ -252,8 +240,7 @@ match the locally derived value. An incorrect nonce rejects an update. It does
 not by itself count as misbehaviour or become accepted after the challenge delay.
 
 Bootstrap requires an explicitly trusted starting checkpoint with all these
-running values. Gateway queries Ogmios nonces at that exact point and reads the
-last applied block nonce from the signed header's previous-block hash. Operators
+running values. The checkpoint provider must obtain the running values at that exact point. The epoch nonce alone is insufficient. Operators
 must set `CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS` from the network's
 protocol rules. The supported Praos rules use `3*k/f` for Babbage and `4*k/f` for
 Conway. A transition that changes this rule requires an authenticated client
@@ -279,104 +266,11 @@ change.
 
 ## Epoch Context Challenge Window
 
-The v8 and v10 adapters enforce a compiled `3 * time.Minute` delay before an
-epoch's roots can verify IBC membership or non-membership proofs. It is measured
-using Cosmos host block timestamps, independently of Cardano slots, relayer
-clocks, packet connection delays, or the number of host blocks.
+The response window is twelve hours of committed host time. It budgets bounded evidence verification and challenge submission. Repeated proposals do not reset it. A host interruption starts the full window again. Both activation and proof verification require a completed host block after the relevant epoch and host deadlines.
 
-When the first verified update introducing an epoch commits, the client records
-`epoch_context_challenges = [{epoch, usable_after_unix_ns}, ...]` in its client
-state. The deadline is the inclusion block's Unix-nanosecond timestamp plus
-180 seconds. Subsequent updates in that epoch can advance the checkpoint and
-store consensus roots, but those roots remain unusable for IBC until the
-original deadline. Matching resubmissions do not reset it. Older epochs with
-elapsed deadlines remain usable. At the deadline, an unfrozen client's roots
-become eligible for proof verification without a separate activation transaction.
-The usual proof, trusting-period and connection-delay requirements still apply.
-Connection delay checks reject time or block deadlines that exceed the stored
-integer range. An overflowing deadline cannot make a proof usable. A delay is
-satisfied exactly at a representable deadline.
-`LatestHeight` and consensus-state queries can therefore expose a **pending**
-root; they alone are not evidence that a packet proof is usable.
+Hermes expands the exact saved checkpoint through pinned snapshot queries. It stages the alternative history and submits two verified receipt references as misbehaviour. It never uses the latest history in place of the proposal's original checkpoint. Different temporary tails or an unsigned table disagreement alone cannot freeze the client. Sessions have no signer owner. Any signer can relay authentic progress, but a live session cannot be discarded. Permissionless cleanup is allowed after its fixed expiry.
 
-Before advancing into a new epoch, the verifier saves the previous checkpoint,
-its epoch context, nonce state and operational-certificate counters in private client-store
-metadata (`epochChallengeCheckpoint/<8-byte big-endian epoch>`). Misbehaviour
-verification can use that snapshot even after ordinary updates move beyond a
-rootless checkpoint. Competing histories need not cross the epoch boundary at
-the same block height. The snapshot is exported with IBC client metadata and
-retained while its proposed epoch context is retained. Another epoch rollover
-is prohibited while the previous epoch is pending.
-
-### Relayers and independent challengers
-
-Hermes commits epoch proposals as standalone updates before preparing packet
-transactions. Otherwise a packet rejected during the window would roll back the
-proposal and its deadline in the same Cosmos transaction. Hermes queries the
-stored deadlines and waits for the destination chain's committed timestamp;
-local wall-clock passage never releases a pending proof. It checks client status
-while waiting so a challenge freeze stops packet preparation. Proposals can be
-submitted ahead of packet activity with ordinary client-update operations when
-the required history is available; this change does not add an epoch scheduler.
-
-An independent, continuously running witness must monitor client updates,
-construct a conflicting qualifying header, and submit `Misbehaviour` through
-`MsgUpdateClient`. Configure Hermes' `misbehaviour_witness_gateway_url` to an
-independent Gateway/node and enable `require_update_event_headers_for_misbehaviour`.
-The primary Gateway fallback does not provide independent observation.
-
-On startup or restart Hermes scans the epochs in the stored challenge records
-before falling back to consensus heights. It checks the newest epoch first and
-also checks the current epoch. A proposal for the next epoch can be found while
-the current epoch and checkpoint stay unchanged. Its recovered header selects
-the saved pre-proposal checkpoint for the independent witness request.
-
-For probabilistic challenges, Hermes requests `QueryIBCHeader` with
-`checkpoint_only = true` and the production history and settlement credit saved
-at the header's trusted height. Hermes reads the destination client's private
-pre-proposal snapshot first. This also works when that checkpoint has no IBC
-root. Otherwise it uses the matching current checkpoint or a retained consensus
-state. It never substitutes the latest post-proposal history. Missing checkpoint
-history stops evidence construction instead of using observer estimates.
-Gateway requires this context for challenge queries and applies the same credit
-cap and recent-production rule as Cosmos. Gateway returns exact-height rootless
-evidence and its epoch context, even if the actual block at the disputed height has no
-HostState transaction. It does not truncate that request to a different catch-up
-height. Block/epoch conflicts count as evidence; omission of HostState fields
-in an otherwise matching rootless witness does not.
-
-This is an operational mitigation, **not epoch authentication**. An honest
-observer must have qualifying evidence and obtain transaction inclusion before
-fraudulent proof use. Three minutes may be shorter than evidence production:
-the existing challenge path still enforces 24 descendants, five qualifying
-pools, and 511 basis points of stake. Outages, host-chain halts, censorship and
-transaction congestion can consume the response window. No challenge within
-180 seconds is not proof that the context is genuine. An attacker can also
-submit internally consistent conflicting evidence against an honest proposal
-and freeze the bridge. A freeze cannot unwind earlier IBC operations.
-
-### Bootstrap, recovery and deployment
-
-`Initialize` discards caller-supplied challenge deadlines and assigns fresh
-host-clock deadlines to the initial contexts. This prevents immediate use of
-bootstrap roots, but the bootstrap checkpoint and context still require an
-independent trust decision: there is no earlier trusted checkpoint from which
-the verifier can prove that a fabricated initial checkpoint is wrong.
-Authority-controlled substitute recovery likewise starts new windows on the
-subject client and clears its previous challenge checkpoints. It cannot copy
-an elapsed substitute deadline to make imported roots immediately usable.
-
-Deploy the new Cosmos binary, Gateway/protobuf bindings and companion Hermes
-change together. Existing protobuf states still decode, but roots with no
-host-assigned deadline fail closed. An existing active client can establish a
-window with a verified update in its current checkpoint epoch before rolling
-onward; if such an update is unavailable, use an audited host app-state
-migration or authority-controlled recovery/recreation. Do not populate elapsed
-deadlines from untrusted relayer input. Genesis export/import must preserve
-both `epoch_context_challenges` and the private checkpoint metadata.
-
-This change mitigates #715's operational race and intentionally leaves its
-native epoch-authentication requirement open.
+An independent observer still needs qualifying native evidence and transaction inclusion within the supported window. The delay does not authenticate the stake allocation. Censorship, missing evidence or a false allocation may prevent progress. See [the verification design](probabilistic-bounded-verification.md) for the workload calculation and authorized recovery limitation.
 
 ## Host-Chain Software Upgrades
 
@@ -390,21 +284,7 @@ Software upgrades require stable type URLs, safe historical-state decoding,
 compatible private store keys and defined verifier activation. Test the exact
 old and new artifacts and apply any required host app migration before normal
 operation.
-Run `caribic test --light-client software-upgrade --chain cosmos --network v8-classic`
-to exercise the local v8 host application upgrade. Caribic builds two real v8
-applications. Only the successor contains the approved upgrade handler and its
-new application store. A signed governance proposal makes the old application
-halt. The successor loads the retained database, runs the SDK migration path and
-resumes authenticated updates and ICS-20 packets on the original client and channel.
-CI runs that command and retains its binaries, host logs and accounting evidence.
-
-Both applications use the current checkout's verifier. This test does not certify
-migration from a previous verifier release. Older clients can lack authenticated
-nonce, registry and production state required by the current verifier. Those
-transitions need an explicitly defined migration and their own acceptance run.
-The local source uses deterministic signed Cardano fixtures rather than a Cardano
-devnet, Gateway or production Hermes. This host application upgrade is separate
-from substitute recovery and the unsupported IBC `MsgUpgradeClient`.
+The supported client format and authenticated snapshot objects must survive any compatible host replacement. Migration from the removed inline format is not implemented by this client. Standard IBC `MsgUpgradeClient` is deliberately unsupported because this client defines no authenticated on-chain commitment authorizing state replacement.
 
 ## Substitute-Client Recovery
 
@@ -423,13 +303,7 @@ metadata must be present, and its operational-certificate counters may not
 regress. Recovery cannot be used to cross client types or move a route to a
 different HostState NFT deployment.
 
-The recovery handler installs the substitute's latest consensus state,
-processed time and height, consensus iteration entry, checkpoint cursor, epoch
-context, chain ID, trusting period, and operational-certificate counter snapshot
-on the subject. The first ordinary update after recovery is an important
-verification step: it proves that the copied checkpoint, epoch, and certificate
-state can authenticate a new Cardano header rather than only returning an
-active status.
+Recovery pins the substitute's verified checkpoint. Bounded continuations reject certificate-counter rollback before activation advances the subject's generation. Old proof roots and sessions become unusable immediately. The replacement receives a fresh response window. Collection cleanup runs separately through bounded maintenance.
 
 See the [probabilistic-client recovery runbook](./probabilistic-client-recovery.md)
 for the local v8/v10 Classic test, its membership and non-membership assertions,
@@ -475,6 +349,6 @@ Rootless checkpoints can keep an idle client active without a Cardano heartbeat 
 
 The contract keeps `last_heartbeat_time` in the Cardano-owned control datum. A heartbeat sets it to the finite validity upper bound and requires the next heartbeat's lower bound to be at least six hours later. Its validity window may be at most two minutes. Ordinary operations preserve this clock. The IBC root, sequence counters, authority, lifecycle state and HostState value remain protected. Heartbeats remain disabled during shutdown and by the existing heartbeat restriction bit.
 
-Gateway requires a trusting period of at least 24 hours in probabilistic mode. The six-hour cadence leaves time for Cardano confirmation and destination client updates. Operators must still relay those updates before expiry. Clients created outside Gateway need a compatible trusting period too.
+Bootstrap and Hermes require a trusting period that leaves time for bounded maintenance and the response window. Use at least 48 hours for the maintained profiles. The six-hour cadence leaves time for Cardano confirmation and destination client updates. Operators must still relay those updates before expiry. Clients created outside Gateway need a compatible trusting period too.
 
 This changes the Cardano HostState control schema to wire version 5 and requires the matching validators and builders. Existing deployed scripts retain their old behavior. Existing deployments need a fresh deployment or a schema-aware upgrade before using these heartbeats. Historical five-field control datums remain readable by Gateway. Counterparty light clients treat the control field opaquely, so their HostState root decoding does not change.

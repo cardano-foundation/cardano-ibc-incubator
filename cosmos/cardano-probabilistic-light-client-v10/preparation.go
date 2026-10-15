@@ -9,8 +9,8 @@ import (
 
 // Preparation tools build explicit trusted bootstrap inputs and transport plans.
 // These helpers do not authenticate a starting checkpoint or accept a proposal.
-func BuildCompactBootstrap(store storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, []*ProbabilisticHeader, error) {
-	compact, initial, steps, err := state.BuildCompactBootstrap(store, toCoreClientState(client), toCoreConsensusState(consensus))
+func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, []*ProbabilisticHeader, error) {
+	compact, initial, steps, err := state.BuildBootstrap(store, toCoreClientState(client), toCoreConsensusState(consensus))
 	return fromCoreClientState(compact), fromCoreConsensusState(initial), mapCoreSlice(steps, fromCoreProbabilisticHeader), err
 }
 func BuildObservationPlan(client *ClientState, header *ProbabilisticHeader, original []byte, priorRows uint64, blocksPerStep int) ([]*ProbabilisticHeader, []byte, error) {
@@ -22,8 +22,8 @@ func BuildObservationPlan(client *ClientState, header *ProbabilisticHeader, orig
 }
 
 // Genesis builders use a completely trusted starting snapshot. Runtime imports
-// use BuildCompactBootstrap and verify bounded pages before becoming usable.
-func EnableSharedSnapshots(ctx sdk.Context, cdc codec.BinaryCodec, store storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, error) {
-	compact, initial, err := state.EnableSharedSnapshots(coreContext(ctx), coreCodec{cdc}, store, toCoreClientState(client), toCoreConsensusState(consensus))
+// use BuildBootstrap and verify bounded pages before becoming usable.
+func InitializeFromTrustedCheckpoint(ctx sdk.Context, cdc codec.BinaryCodec, store storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, error) {
+	compact, initial, err := state.InitializeFromTrustedCheckpoint(coreContext(ctx), coreCodec{cdc}, store, toCoreClientState(client), toCoreConsensusState(consensus))
 	return fromCoreClientState(compact), fromCoreConsensusState(initial), err
 }

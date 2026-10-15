@@ -3,7 +3,6 @@ package state
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"math/big"
 	"slices"
 	"strings"
@@ -184,59 +183,6 @@ func bootstrapSettlementCredit(context *EpochContext) (*SettlementCreditState, e
 	}
 	zero.Reference = creditsFromMap(values)
 	return zero, validateSettlementCredit(zero, context.Epoch)
-}
-
-func advanceSettlementCredit(trusted *trustedBlockState, contexts []*EpochContext, epoch uint64) (*SettlementCreditState, error) {
-	if trusted == nil {
-		return nil, errorsmod.Wrap(ErrIBCInvalidClient, "settlement trusted checkpoint is missing")
-	}
-	if err := validateSettlementCredit(trusted.settlementCredit, trusted.epoch); err != nil {
-		return nil, err
-	}
-	if epoch == trusted.epoch {
-		return cloneSettlementCredit(trusted.settlementCredit), nil
-	}
-	if trusted.epoch == math.MaxUint64 || epoch != trusted.epoch+1 {
-		return nil, errorsmod.Wrap(ErrInvalidCurrentEpoch, "settlement reference advances only at an adjacent epoch transition")
-	}
-	// Advance all pool references using their old capped credit. Neither a raw
-	// table claim nor another update within the same epoch grants an allowance.
-	credits, err := currentSettlementCredits(trusted.settlementCredit, epochContextByEpoch(contexts, trusted.epoch))
-	if err != nil {
-		return nil, err
-	}
-	result := &SettlementCreditState{Epoch: epoch, Reference: creditsFromMap(credits)}
-	return result, validateSettlementCredit(result, epoch)
-}
-
-func attachSettlementCredit(header *authenticatedProbabilisticHeader, trusted *trustedBlockState, contexts []*EpochContext) error {
-	credit, err := advanceSettlementCredit(trusted, contexts, header.anchorBlock.epoch)
-	if err != nil {
-		return err
-	}
-	header.anchorSettlementCredit = credit
-	if settlementEvidenceEpoch(header) > header.anchorBlock.epoch {
-		context := epochContextByEpoch(contexts, settlementEvidenceEpoch(header))
-		if context == nil {
-			return errorsmod.Wrap(ErrInvalidCurrentEpoch, "next epoch settlement context is missing")
-		}
-		var total uint64
-		for _, entry := range context.StakeDistribution {
-			var ok bool
-			total, ok = checkedAddStake(total, entry.Stake)
-			if !ok {
-				return errorsmod.Wrap(ErrInvalidCurrentEpoch, "next epoch stake total overflows uint64")
-			}
-		}
-		if total == 0 {
-			return errorsmod.Wrap(ErrInvalidCurrentEpoch, "next epoch stake total is zero")
-		}
-		header.settlementStakeLimits = make(map[string]*big.Rat, len(context.StakeDistribution))
-		for _, entry := range context.StakeDistribution {
-			header.settlementStakeLimits[strings.ToLower(entry.PoolId)] = new(big.Rat).SetFrac(new(big.Int).SetUint64(entry.Stake), new(big.Int).SetUint64(total))
-		}
-	}
-	return nil
 }
 
 func settlementCreditBps(credit *big.Rat) uint64 {

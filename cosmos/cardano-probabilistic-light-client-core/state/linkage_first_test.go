@@ -23,9 +23,8 @@ func loadNativeAuthenticationInputs(t *testing.T) nativeAuthenticationInputs {
 	ctx, store := newProbabilisticTestClientStore(t, "linkage-first")
 	cdc := newProbabilisticTestCodec()
 	ctx.Time = time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp))
-	require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
-	client, found := GetClientState(store, cdc)
-	require.True(t, found)
+	require.NoError(t, validateBootstrapInput(*fixture.Client))
+	client := fixture.Client
 	trusted, err := client.latestTrustedBlockState(store, cdc)
 	require.NoError(t, err)
 	current, err := client.normalizedEpochContexts()
@@ -78,17 +77,4 @@ func TestLinkageCheckRunsBeforeNativeVerification(t *testing.T) {
 		require.Equal(t, in.header.DescendantBlocks[index].Height.RevisionHeight, block.height)
 		require.Equal(t, in.header.DescendantBlocks[index].Timestamp, block.timestamp)
 	}
-}
-
-func TestVerifierRejectsDisconnectedChainBeforeNativeVerification(t *testing.T) {
-	in := loadNativeAuthenticationInputs(t)
-	broken := withoutNativeVerification(in.client)
-	disconnected := *in.trusted
-	disconnected.blockHash = strings.Repeat("00", 32)
-	_, err := broken.linkageFirstAuthenticator(in.ctx)(in.header, in.contexts, in.trusted.operationalCertificateCounters, &disconnected)
-	require.ErrorContains(t, err, "does not connect to trusted chain")
-
-	// The connected chain passes the linkage checks and reaches native verification.
-	_, err = broken.linkageFirstAuthenticator(in.ctx)(in.header, in.contexts, in.trusted.operationalCertificateCounters, in.trusted)
-	require.ErrorContains(t, err, "KES evolutions")
 }

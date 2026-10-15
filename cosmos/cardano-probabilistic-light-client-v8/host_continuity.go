@@ -8,8 +8,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-var hostProgressKey = []byte("probabilisticHost/continuity")
-var previousHostProgressKey = []byte("probabilisticHost/previousContinuity")
+var hostProgressKey = []byte("probabilisticHost/v2/continuity")
+var previousHostProgressKey = []byte("probabilisticHost/v2/previousContinuity")
 
 type hostProgressContextKey struct{}
 type hostProgressProvider func(sdk.Context) *state.HostProgress

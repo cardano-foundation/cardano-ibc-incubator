@@ -29,6 +29,7 @@ func NewClientState(
 ) *ClientState {
 	zeroHeight := ZeroHeight()
 	return &ClientState{
+		StorageVersion: state.StorageVersion,
 		ChainId:        chainID,
 		LatestHeight:   latestHeight,
 		FrozenHeight:   zeroHeight,
@@ -75,14 +76,11 @@ func (cs ClientState) VerifyMembership(
 	if err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
 	}
-	if cs.StorageVersion == state.StorageVersionSharedSnapshots && consState.VerificationGeneration != cs.VerificationGeneration {
+	if cs.StorageVersion != state.StorageVersion || consState.VerificationGeneration == 0 || consState.VerificationGeneration != cs.VerificationGeneration {
 		return fmt.Errorf("consensus belongs to a discarded generation")
 	}
 	if isPacketStateKey(key) {
-		if cs.StorageVersion == state.StorageVersionSharedSnapshots {
-			return cs.verifyPagedPacketMembership(ctx, consState, height.GetRevisionHeight(), key, value, proof)
-		}
-		return verifyPacketMembership(consState, height.GetRevisionHeight(), key, value, proof)
+		return cs.verifyPagedPacketMembership(ctx, consState, height.GetRevisionHeight(), key, value, proof)
 	}
 	if err := VerifyIbcStateMembership(consState.IbcStateRoot, key, value, proof); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
@@ -114,14 +112,11 @@ func (cs ClientState) VerifyNonMembership(
 	if err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
 	}
-	if cs.StorageVersion == state.StorageVersionSharedSnapshots && consState.VerificationGeneration != cs.VerificationGeneration {
+	if cs.StorageVersion != state.StorageVersion || consState.VerificationGeneration == 0 || consState.VerificationGeneration != cs.VerificationGeneration {
 		return fmt.Errorf("consensus belongs to a discarded generation")
 	}
 	if isPacketStateKey(key) {
-		if cs.StorageVersion == state.StorageVersionSharedSnapshots {
-			return cs.verifyPagedPacketNonMembership(ctx, consState, height.GetRevisionHeight(), key, proof)
-		}
-		return verifyPacketNonMembership(consState, height.GetRevisionHeight(), key, proof)
+		return cs.verifyPagedPacketNonMembership(ctx, consState, height.GetRevisionHeight(), key, proof)
 	}
 	if err := VerifyIbcStateNonMembership(consState.IbcStateRoot, key, proof); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())

@@ -180,7 +180,7 @@ func TestClientStateRejectsUnsupportedKesConfiguration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			clientState := newProbabilisticTestClientState()
 			tc.mutate(clientState)
-			require.ErrorContains(t, clientState.Validate(), tc.want)
+			require.ErrorContains(t, validateBootstrapInput(*clientState), tc.want)
 		})
 	}
 }
@@ -203,7 +203,7 @@ func TestClientStateValidateRejectsInvalidActiveSlotCoefficient(t *testing.T) {
 			clientState.ActiveSlotCoefficientNumerator = testCase.numerator
 			clientState.ActiveSlotCoefficientDenominator = testCase.denominator
 
-			err := clientState.Validate()
+			err := validateBootstrapInput(*clientState)
 			require.ErrorContains(t, err, testCase.errorText)
 		})
 	}

@@ -9,7 +9,7 @@ tests/injective-probabilistic-lifecycle/prepare_checkpoint.sh "$OUTPUT"
 cargo build --locked --bins --manifest-path tests/challenge-capacity-relayer/Cargo.toml
 ```
 
-Run the primary and independent witness Gateway processes in separate terminals from `cardano/gateway`. Use ports `15001` and `15002` for the legacy run. Set `CHECKPOINT_GATEWAY_WITNESS=1` only on the witness process. Each process writes a ready file after binding. The checked-in manifest contains public fixture addresses for endpoint initialization.
+Run the primary and independent witness Gateway processes in separate terminals from `cardano/gateway`. Use ports `15001` and `15002` for the run. Set `CHECKPOINT_GATEWAY_WITNESS=1` only on the witness process. Each process writes a ready file after binding. The checked-in manifest contains public fixture addresses for endpoint initialization.
 
 ```sh
 CHECKPOINT_ACCEPTANCE_DIR="$OUTPUT" CHECKPOINT_GATEWAY_PORT=15001 \
@@ -28,10 +28,10 @@ python3 tests/injective-probabilistic-lifecycle/run_checkpoint_lifecycle.py "$OU
   --worker "$WORKER"
 ```
 
-Repeat from a fresh output directory for compact storage. Pass `--mode compact --rpc-port 18958 --grpc-port 19091` to both Python commands. Also pass `--gateway-port 15011` to the first command and use Gateway ports `15011` and `15012`.
+
 
 The second phase reopens the native store and exports and imports the application at the retained host height. It compares the retained root and its original processing metadata. It receives a valid packet at that root and rejects an early timeout despite newer checkpoint progress. The real watcher submits conflicting signed history and freezes the active client after the original root's trusting period. Ordinary checkpoints cannot unfreeze it. The substitute then gains a genuine newer proof root through Hermes. Expedited destination governance recovers the expired and frozen clients. This uses the ordinary IBC recovery gate which requires a newer substitute proof height. Packet delivery and a valid timeout resume after the response window.
 
-Finally maintenance is deliberately stopped. Hermes and the destination must agree on actual checkpoint expiry. Compact mode stages a verified session before expiry and tries activation afterward. Uploads and completion leave the checkpoint timestamp unchanged. SDK tests cover the exact nanosecond cutoff in both storage modes. Native checks use the first observed committed block at or beyond that cutoff.
+Finally maintenance is deliberately stopped. Hermes and the destination must agree on actual checkpoint expiry. The test stages a verified session before expiry and tries activation afterward. Uploads and completion leave the checkpoint timestamp unchanged. SDK tests cover the exact nanosecond cutoff in the sole snapshot format. Native checks use the first observed committed block at or beyond that cutoff.
 
 The output directory retains signed transactions and simulation results alongside committed RPC results. It also contains `maintenance-result.json`, `maintenance-progress.json`, `checkpoint-lifecycle.json`, `checkpoint-export.json`, Gateway header request logs and the Hermes worker and watcher logs. Touch `gateway.stop` in that directory to end the opt-in Gateway processes. Each Python driver stops only its own disposable Injective container. `--data-volume auto` keeps the databases in Docker volumes derived from the output path. Their names are saved in `data-volume.txt`. Export/import uses a second volume with the `-imported` suffix. The output directory and those volumes can be retained together for inspection.

@@ -1,0 +1,30 @@
+{
+  "storage_version": 2,
+  "base_commit": "c88a1cc55d212177dcf90eb0f4e695c6dcab5655",
+  "application": "InjectiveApp 6632cef271f7482f39f9c5d4b085adc1370e8b7e with sole snapshot-format client",
+  "helper_image": "local/injective-pr873-single-format-probe",
+  "result": {
+    "accepted_proposal": true,
+    "client_bytes": 531,
+    "controlled_host_clock": true,
+    "deadline": 1792219015000000000,
+    "freeze_before_deadline": true,
+    "freeze_committed": true,
+    "freeze_time": 1792178485000000000,
+    "generation": 1
+  },
+  "two_account_challenge": {
+    "active_cleanup_preserved_progress": true,
+    "attacker": "inj1ggzer9tghas6drjf0kfu8khyxfeyrdxrx7tn04",
+    "challenger": "inj14mhvr9emwpfarks8q824gv0nk7z5wltgklnr3r",
+    "controlled_host_clock": true,
+    "deadline": 1792219015000000000,
+    "expired_cleanup": true,
+    "expired_discard": true,
+    "freeze_before_deadline": true,
+    "freeze_committed": true,
+    "freeze_time": 1792178485000000000,
+    "honest_challenge_completed": true,
+    "rejected_discards": 131
+  }
+}

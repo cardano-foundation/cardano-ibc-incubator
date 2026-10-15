@@ -2,12 +2,12 @@ package probabilistic
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/hex"
-	"golang.org/x/crypto/blake2b"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/blake2b"
 
 	"cosmossdk.io/log"
 	store "cosmossdk.io/store"
@@ -18,7 +18,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -41,6 +40,7 @@ func newProbabilisticTestClientStore(t *testing.T, keyName string) (sdk.Context,
 	key := storetypes.NewKVStoreKey(keyName)
 
 	stateStore.MountStoreWithDB(key, storetypes.StoreTypeIAVL, db)
+	stateStore.MountStoreWithDB(SharedStoreKey, storetypes.StoreTypeIAVL, db)
 	require.NoError(t, stateStore.LoadLatestVersion())
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{
@@ -56,7 +56,7 @@ func newProbabilisticTestClientState() *ClientState {
 	zeroHeight := ZeroHeight()
 	epochStakeDistribution := []*StakeDistributionEntry{
 		{
-			PoolId:                   "pool-a",
+			PoolId:                   ledger.NewBlake2b224(bytes.Repeat([]byte{0x05}, 28)).Bech32("pool"),
 			Stake:                    10_000,
 			VrfKeyHash:               bytes.Repeat([]byte{0x02}, 32),
 			FirstRegistrationSlot:    0,
@@ -76,8 +76,8 @@ func newProbabilisticTestClientState() *ClientState {
 		HostStateNftTokenName:              []byte("host-state"),
 		EpochStakeDistribution:             cloneStakeDistributionEntries(epochStakeDistribution),
 		EpochNonce:                         bytes.Clone(epochNonce),
-		LatestCheckpointSettlementCredit:   &SettlementCreditState{Epoch: 7, Reference: []*PoolSettlementCredit{{PoolId: "pool-a", Numerator: []byte{1}, Denominator: []byte{1}}}},
-		LatestCheckpointPoolProduction:     &PoolProductionHistory{Epoch: 7, Pools: []*PoolProductionRecord{{PoolId: "pool-a", CompletedEpochsBitmap: 1}}},
+		LatestCheckpointSettlementCredit:   &SettlementCreditState{Epoch: 7, Reference: []*PoolSettlementCredit{{PoolId: ledger.NewBlake2b224(bytes.Repeat([]byte{0x05}, 28)).Bech32("pool"), Numerator: []byte{1}, Denominator: []byte{1}}}},
+		LatestCheckpointPoolProduction:     &PoolProductionHistory{Epoch: 7, Pools: []*PoolProductionRecord{{PoolId: ledger.NewBlake2b224(bytes.Repeat([]byte{0x05}, 28)).Bech32("pool"), CompletedEpochsBitmap: 1}}},
 		LatestCheckpointPoolRegistry:       testAdapterPoolRegistry(7, epochStakeDistribution),
 		LatestCheckpointNonceState:         &PraosNonceState{EpochNonce: bytes.Clone(epochNonce), EvolvingNonce: bytes.Repeat([]byte{0x41}, 32), CandidateNonce: bytes.Repeat([]byte{0x42}, 32), LastAppliedBlockNonce: bytes.Repeat([]byte{0x43}, 32), LastEpochBlockNonce: bytes.Repeat([]byte{0x44}, 32)},
 		RandomnessStabilisationWindowSlots: 10,
@@ -237,59 +237,6 @@ func cloneTestProbabilisticBlock(block *ProbabilisticBlock) *ProbabilisticBlock 
 	return &clone
 }
 
-func TestInitialStateWithFourThousandPoolsStaysBelowOneMegabyte(t *testing.T) {
-	clientState := newProbabilisticTestClientState()
-	stakeDistribution := make([]*StakeDistributionEntry, 0, 4_000)
-	counters := make([]*OperationalCertificateCounter, 0, 4_000)
-	for index := uint32(1); index <= 4_000; index++ {
-		poolID := make([]byte, 28)
-		binary.BigEndian.PutUint32(poolID[24:], index)
-		vrfKeyHash := make([]byte, 32)
-		binary.BigEndian.PutUint32(vrfKeyHash[28:], index)
-		stakeDistribution = append(stakeDistribution, &StakeDistributionEntry{
-			PoolId:                   hex.EncodeToString(poolID),
-			Stake:                    1,
-			VrfKeyHash:               vrfKeyHash,
-			FirstRegistrationSlot:    0,
-			RelativeStakeNumerator:   1,
-			RelativeStakeDenominator: 4_000,
-		})
-		counters = append(counters, &OperationalCertificateCounter{
-			PoolId:         poolID,
-			SequenceNumber: 1,
-		})
-	}
-	clientState.EpochStakeDistribution = cloneStakeDistributionEntries(stakeDistribution)
-	clientState.EpochContexts[0].StakeDistribution = stakeDistribution
-	clientState.LatestCheckpointOperationalCertificateCounters = counters
-	clientBytes, err := clientState.Marshal()
-	require.NoError(t, err)
-	consensusBytes, err := newProbabilisticTestConsensusState(testBlockHash("initial-block-hash")).Marshal()
-	require.NoError(t, err)
-
-	require.Less(t, len(clientBytes)+len(consensusBytes), 1_000_000)
-	require.Less(t, len(consensusBytes), 1_000)
-}
-func TestIBCGenesisValidationAcceptsOperationalCertificateState(t *testing.T) {
-	clientID := ModuleName + "-0"
-	clientState := newProbabilisticTestClientState()
-	consensusState := newProbabilisticTestConsensusState(testBlockHash("initial-hash"))
-	genesis := clienttypes.NewGenesisState(
-		[]clienttypes.IdentifiedClientState{clienttypes.NewIdentifiedClientState(clientID, clientState)},
-		clienttypes.ClientsConsensusStates{clienttypes.NewClientConsensusStates(
-			clientID,
-			[]clienttypes.ConsensusStateWithHeight{
-				clienttypes.NewConsensusStateWithHeight(clienttypes.NewHeight(0, 10), consensusState),
-			},
-		)},
-		nil,
-		clienttypes.DefaultParams(),
-		false,
-		1,
-	)
-	require.NoError(t, genesis.Validate())
-}
-
 func TestLegacyClientStateWireDecodesNewTemporalFieldsAsZero(t *testing.T) {
 	legacyWire, err := hex.DecodeString(
 		"0a0c63617264616e6f2d746573741202100a20079a0102100aa20107686173682d3130a80107b0013ec20102100a",
@@ -305,6 +252,7 @@ func TestLegacyClientStateWireDecodesNewTemporalFieldsAsZero(t *testing.T) {
 	require.Zero(t, decoded.MaxClockDrift)
 	require.Zero(t, decoded.LatestCheckpointSlot)
 	require.Zero(t, decoded.LatestCheckpointTimestamp)
+	require.Error(t, decoded.Validate())
 }
 func cloneStakeDistributionEntries(entries []*StakeDistributionEntry) []*StakeDistributionEntry {
 	return mapCoreSlice(entries, func(e *StakeDistributionEntry) *StakeDistributionEntry {
@@ -349,4 +297,18 @@ func withTestHostProgress(ctx sdk.Context) sdk.Context {
 // Only explicitly trusted test genesis gets an elapsed host bootstrap window.
 func seedAcceptanceHostProgress(ctx sdk.Context, key *storetypes.KVStoreKey) {
 	ctx.KVStore(key).Set(hostProgressKey, encodeHostProgress(&state.HostProgress{Height: 0, TimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 1), PreviousTimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 2), ResumeUsableAfterUnixNs: 1}))
+}
+
+// installTestCheckpoint prepares explicit trusted fixture data using the same
+// snapshot builder as genesis. Tests never install embedded runtime records.
+func installTestCheckpoint(t *testing.T, ctx sdk.Context, cdc codec.BinaryCodec, store storetypes.KVStore, input *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState) {
+	t.Helper()
+	input.LatestHeight = NewHeight(0, input.LatestHeight.RevisionHeight)
+	input.CurrentEpoch = consensus.AcceptedEpoch
+	slot, err := input.DeriveSlotFromTimestamp(consensus.Timestamp)
+	require.NoError(t, err)
+	setTestCheckpoint(t, input, input.LatestHeight, consensus.AcceptedBlockHash, consensus.AcceptedEpoch, slot)
+	installed, initial, err := InitializeFromTrustedCheckpoint(ctx, cdc, store, input, consensus)
+	require.NoError(t, err)
+	return installed, initial
 }

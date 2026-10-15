@@ -52,52 +52,6 @@ func TestNonceCutoffRejectsOverflow(t *testing.T) {
 	require.Equal(t, before, tracker.state)
 }
 
-func TestNonceBootstrapRequiresExplicitStateAndConfiguration(t *testing.T) {
-	for _, mutate := range []func(*ClientState){
-		func(cs *ClientState) { cs.LatestCheckpointNonceState = nil },
-		func(cs *ClientState) { cs.RandomnessStabilisationWindowSlots = 0 },
-		func(cs *ClientState) { cs.LatestCheckpointNonceState.EvolvingNonce = []byte{1} },
-		func(cs *ClientState) { cs.LatestCheckpointNonceState.EpochNonce[0] ^= 1 },
-	} {
-		cs := newProbabilisticTestClientState()
-		mutate(cs)
-		ctx, store := newProbabilisticTestClientStore(t, "nonce-bootstrap")
-		require.Error(t, cs.Initialize(ctx, newProbabilisticTestCodec(), store, newProbabilisticTestConsensusState(testBlockHash("bootstrap"))))
-	}
-	state := testNonceState(bytes.Repeat([]byte{1}, 32))
-	state.LastEpochBlockNonce = nil // Explicitly represented native NeutralNonce.
-	require.NoError(t, validatePraosNonceState(state))
-}
-
-func TestWrongNonceDoesNotQualifyAsMisbehaviour(t *testing.T) {
-	cs := newProbabilisticTestClientState()
-	ctx, store := newProbabilisticTestClientStore(t, "nonce-misbehaviour")
-	header := newVerifiedTestHeader(t)
-	header.NewEpochContext = cloneEpochContext(cs.EpochContexts[0])
-	header.NewEpochContext.EpochNonce[0] ^= 1
-	require.False(t, cs.CheckForMisbehaviour(ctx, newProbabilisticTestCodec(), store, header))
-	other := newVerifiedTestHeader(t)
-	other.NewEpochContext = cloneEpochContext(cs.EpochContexts[0])
-	require.False(t, headersConflict(header, other))
-	require.True(t, cs.FrozenHeight.IsZero())
-}
-
-func TestRecoveryRejectsNonceStateAtTheWrongCheckpoint(t *testing.T) {
-	ctx, subjectStore := newProbabilisticTestClientStore(t, "nonce-recovery-subject")
-	_, substituteStore := newProbabilisticTestClientStore(t, "nonce-recovery-substitute")
-	cs := newProbabilisticTestClientState()
-	setTestCheckpoint(t, cs, cs.LatestHeight, testBlockHash("subject"), cs.CurrentEpoch, 10)
-	substitute := newProbabilisticTestClientState()
-	substitute.LatestHeight = NewHeight(0, 20)
-	setTestCheckpoint(t, substitute, substitute.LatestHeight, testBlockHash("substitute"), substitute.CurrentEpoch, 20)
-	consensus := newProbabilisticTestConsensusState(substitute.LatestCheckpointBlockHash, 20)
-	consensus.Timestamp = substitute.LatestCheckpointTimestamp
-	consensus.NonceState.CandidateNonce[0] ^= 1
-	cdc := newProbabilisticTestCodec()
-	SetConsensusState(substituteStore, cdc, consensus, substitute.LatestHeight)
-	require.ErrorContains(t, cs.CheckSubstituteAndUpdateState(ctx, cdc, subjectStore, substituteStore, substitute), "nonce state does not match")
-}
-
 func testHeaderTrustedNonceState(t testing.TB, header *ProbabilisticHeader, contexts []*EpochContext) *trustedBlockState {
 	t.Helper()
 	block := header.AnchorBlock

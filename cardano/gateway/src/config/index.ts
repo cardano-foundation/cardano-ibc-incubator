@@ -140,7 +140,6 @@ interface Config {
   cardanoRandomnessStabilisationWindowSlots?: string;
   cardanoPoolRegistryCheckpointFile?: string;
   cardanoStabilityCheckpointMaxBridgeBlocks: number;
-  cardanoStabilityCheckpointMaxHeaderBytes: number;
   cardanoEpochParamsEndpoint?: string;
   cardanoLocalEpochContextEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
@@ -206,9 +205,6 @@ export default (): Partial<Config> => {
     ),
     cardanoStabilityCheckpointMaxBridgeBlocks: Number(
       process.env.CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS || 96,
-    ),
-    cardanoStabilityCheckpointMaxHeaderBytes: Number(
-      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 5 * 1024 * 1024 / 2,
     ),
     cardanoEpochParamsEndpoint,
     cardanoLocalEpochContextEndpoint: cardanoNetwork === 'Custom'

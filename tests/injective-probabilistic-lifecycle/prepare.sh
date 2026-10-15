@@ -23,7 +23,7 @@ docker build --build-arg GO_VERSION=1.26.5 -f "$REPO_DIR/chains/injective/config
   -t "$APP_IMAGE" "$OUTPUT_DIR/injective-source"
 docker build --target builder --build-arg GO_VERSION=1.26.5 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" \
   -t "$BUILDER_IMAGE" "$OUTPUT_DIR/injective-source"
-docker build --target "${INJECTIVE_PROBE_TARGET:-probe}" --build-arg "INJECTIVE_BUILDER_IMAGE=$BUILDER_IMAGE" --build-arg "INJECTIVE_IMAGE=$APP_IMAGE" \
+docker build --target "${INJECTIVE_PROBE_TARGET:-bounded-probe}" --build-arg "INJECTIVE_BUILDER_IMAGE=$BUILDER_IMAGE" --build-arg "INJECTIVE_IMAGE=$APP_IMAGE" \
   -f "$REPO_DIR/tests/injective-probabilistic-lifecycle/Dockerfile.probe" -t "$HELPER_IMAGE" \
   "$REPO_DIR/tests/injective-probabilistic-lifecycle"
 cp -R "$REPO_DIR/tests/injective-probabilistic-lifecycle/evidence/network-snapshot" "$OUTPUT_DIR/network-snapshot"
@@ -31,7 +31,7 @@ docker run --rm "$HELPER_IMAGE" address > "$OUTPUT_DIR/operator-address.txt"
 docker run --rm -v "$OUTPUT_DIR:/out" "$HELPER_IMAGE" key /out/operator-key.hex
 for fixture in limit size; do
   cp "$REPO_DIR/cosmos/cardano-probabilistic-light-client-core/testdata/native-boundary-$fixture.json.gz" "$OUTPUT_DIR/"
-  docker run --rm -v "$OUTPUT_DIR:/out" "$HELPER_IMAGE" prepare \
+  docker run --rm -v "$OUTPUT_DIR:/out" "$HELPER_IMAGE" bounded-prepare \
     "/out/native-boundary-$fixture.json.gz" expanded "/out/$fixture"
 done
 (

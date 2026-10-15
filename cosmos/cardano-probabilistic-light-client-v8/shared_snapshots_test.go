@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSDKCompactBootstrapAndFreeze4000Pools(t *testing.T) {
+func TestSDKSnapshotBootstrapAndFreeze4000Pools(t *testing.T) {
 	file, err := os.Open("../cardano-probabilistic-light-client-core/testdata/native-recovery.json.gz")
 	require.NoError(t, err)
 	defer file.Close()
@@ -57,7 +57,7 @@ func TestSDKCompactBootstrapAndFreeze4000Pools(t *testing.T) {
 	require.NoError(t, err)
 	fixture.Consensus.PoolRegistry = &PoolRegistryState{}
 	require.NoError(t, fixture.Consensus.PoolRegistry.Unmarshal(registryBytes))
-	compact, initial, steps, err := BuildCompactBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, client, fixture.Consensus)
+	compact, initial, steps, err := BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, client, fixture.Consensus)
 	require.NoError(t, err)
 	database := dbm.NewMemDB()
 	multistore := store.NewCommitMultiStore(database, log.NewNopLogger(), metrics.NewNoOpMetrics())
@@ -80,10 +80,10 @@ func TestSDKCompactBootstrapAndFreeze4000Pools(t *testing.T) {
 		require.Equal(t, before, ctx.KVStore(privateKey).Get([]byte("clientState")))
 	}
 	require.False(t, compact.BootstrapPending)
-	require.LessOrEqual(t, compact.Size(), state.MaxCompactClientBytes)
+	require.LessOrEqual(t, compact.Size(), state.MaxClientBytes)
 	consensus, found := GetConsensusState(ctx.KVStore(privateKey), cdc, compact.LatestHeight)
 	require.True(t, found)
-	require.LessOrEqual(t, consensus.Size(), state.MaxCompactConsensusBytes)
+	require.LessOrEqual(t, consensus.Size(), state.MaxConsensusBytes)
 	ctx = ctx.WithGasMeter(storetypes.NewGasMeter(1000000))
 	compact.UpdateStateOnMisbehaviour(ctx, cdc, ctx.KVStore(privateKey), nil)
 	frozen, found := getClientState(ctx.KVStore(privateKey), cdc)

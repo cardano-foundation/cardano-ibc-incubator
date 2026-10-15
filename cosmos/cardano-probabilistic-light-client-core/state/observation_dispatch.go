@@ -34,7 +34,7 @@ func operationDigest(header *ProbabilisticHeader) ([32]byte, error) {
 }
 func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, private storetypes.KVStore, header *ProbabilisticHeader) error {
 	if header == nil || header.ObservationChunk == nil {
-		return fmt.Errorf("compact clients require a bounded observation operation")
+		return fmt.Errorf("clients require a bounded observation operation")
 	}
 	if err := header.ValidateBasic(); err != nil {
 		return err
@@ -60,7 +60,7 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 	chunk := header.ObservationChunk
 	var heights []HeightValue
 	if chunk.Operation >= ObservationBootstrapImport {
-		if err := cs.continueCompactBootstrap(ctx, cdc, private, shared, chunk, digest); err != nil {
+		if err := cs.continueBootstrap(ctx, cdc, private, shared, chunk, digest); err != nil {
 			return err
 		}
 	} else if chunk.Operation == ObservationBegin {
@@ -179,7 +179,7 @@ func (cs *ClientState) consumeObservationResult(ctx Context, cdc StateCodec, pri
 	}
 	private.Delete(operationResultKey)
 	fresh, found := GetClientState(private, cdc)
-	if !found || fresh.StorageVersion != StorageVersionSharedSnapshots || !bytes.Equal(fresh.StorageNamespace, cs.StorageNamespace) {
+	if !found || fresh.StorageVersion != StorageVersion || !bytes.Equal(fresh.StorageNamespace, cs.StorageNamespace) {
 		panic("bounded client disappeared during execution")
 	}
 	*cs = *fresh
@@ -226,7 +226,7 @@ func releaseObservationSession(store storetypes.KVStore, cs *ClientState, id []b
 }
 func (cs *ClientState) verifiedReceiptConflict(ctx Context, msg *Misbehaviour) (bool, error) {
 	if msg == nil || len(msg.VerifiedObservation_1) != 32 || len(msg.VerifiedObservation_2) != 32 || msg.ProbabilisticHeader1 != nil || msg.ProbabilisticHeader2 != nil {
-		return false, fmt.Errorf("compact misbehaviour requires two verified receipt references")
+		return false, fmt.Errorf("misbehaviour requires two verified receipt references")
 	}
 	shared, err := ctx.snapshotStore()
 	if err != nil {

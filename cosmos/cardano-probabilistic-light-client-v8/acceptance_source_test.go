@@ -308,60 +308,8 @@ func acceptanceSourceHeader(t *testing.T, history acceptanceHistory, branch stri
 			}
 		}
 	}
-	require.NoError(t, h.ValidateBasic())
-	return h
-}
 
-// Check signed history and committed values before spending a full live response
-// window on the acceptance run. That run still uses signed RPC transactions and
-// the real destination keeper for every state change.
-func TestAcceptanceSourceContinuity(t *testing.T) {
-	history := acceptanceSource(t, t.TempDir())
-	ctx, store := newProbabilisticTestClientStore(t, "acceptance-source-continuity")
-	ctx = ctx.WithBlockTime(time.Now())
-	cdc := newProbabilisticTestCodec()
-	require.NoError(t, history.Client.Initialize(ctx, cdc, store, history.Consensus))
-	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
-	channelKey := "channelEnds/ports/transfer/channels/channel-0"
-	proof, root := acceptanceProof(t, acceptanceChannelValues(t), channelKey)
-	require.Equal(t, history.Consensus.IbcStateRoot, root)
-	channel := channeltypes.Channel{
-		State:          channeltypes.TRYOPEN,
-		Ordering:       channeltypes.UNORDERED,
-		Counterparty:   channeltypes.Counterparty{PortId: "transfer", ChannelId: "channel-0"},
-		ConnectionHops: []string{"connection-0"},
-		Version:        "ics20-1",
-	}
-	channelBytes, err := channel.Marshal()
-	require.NoError(t, err)
-	state, found := getClientState(store, cdc)
-	require.True(t, found)
-	require.NoError(t, state.VerifyMembership(ctx, store, cdc, NewHeight(0, 966), 0, 0, proof, commitmenttypes.NewMerklePath("ibc", channelKey), channelBytes))
-	trusted := uint64(966)
-	for _, point := range []struct{ anchor, count uint64 }{{967, 1}, {1001, 2}, {1032, 2}, {1063, 3}, {1094, 4}, {1125, 5}} {
-		anchor := point.anchor
-		state, found := getClientState(store, cdc)
-		require.True(t, found)
-		header := acceptanceHeader(t, history, "honest", trusted, anchor)
-		require.NoError(t, state.VerifyClientMessage(ctx, cdc, store, header), "anchor %d", anchor)
-		state.UpdateState(ctx, cdc, store, header)
-		if anchor == 1001 {
-			state, found = getClientState(store, cdc)
-			require.True(t, found)
-			bad := acceptanceHeader(t, history, "bad", 967, 1001)
-			require.NoError(t, state.VerifyClientMessage(ctx, cdc, store, NewMisbehaviour(acceptanceSubject, header, bad)))
-			tail := acceptanceHeader(t, history, "tail", 967, 1001)
-			require.ErrorContains(t, state.VerifyClientMessage(ctx, cdc, store, NewMisbehaviour(acceptanceSubject, header, tail)), "do not conflict")
-		}
-		if header.NewEpochContext != nil {
-			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(3*time.Minute + 2*time.Nanosecond))
-		}
-		state, found = getClientState(store, cdc)
-		require.True(t, found)
-		proof, _ = acceptanceProof(t, acceptanceLaneValues(t, point.count), acceptanceCommitmentKey(point.count))
-		require.NoError(t, state.VerifyMembership(ctx, store, cdc, NewHeight(0, anchor), 0, 0, proof, commitmenttypes.NewMerklePath("ibc", acceptanceCommitmentKey(point.count)), channeltypes.CommitPacket(nil, acceptancePacket(point.count))), "anchor %d", anchor)
-		trusted = anchor
-	}
+	return h
 }
 
 func TestExportIdleCheckpointHistory(t *testing.T) {

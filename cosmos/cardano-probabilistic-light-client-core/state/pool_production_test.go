@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -129,39 +128,6 @@ func TestProductionRecordsCommittedBlocksAndIsolatesDescendants(t *testing.T) {
 		require.False(t, completed[pool].ProducedCurrentEpoch)
 	}
 	require.Zero(t, completed["pool-d"].CompletedEpochsBitmap)
-}
-
-func TestProductionPersistsAtOrdinaryAndRootlessAnchors(t *testing.T) {
-	for _, checkpoint := range []bool{false, true} {
-		t.Run(fmt.Sprint(checkpoint), func(t *testing.T) {
-			context := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1000, 7)
-			ctx, cdc, store, client := initializeTemporalVerifierClient(t, "production-checkpoint", testMaturePoolSlot+100, context)
-			ctx = ctx.WithBlockTime(time.Unix(0, int64(mustTestTimestampForSlot(t, client, testMaturePoolSlot+150))))
-			header := newTemporalVerifierHeader(t, client, "production-anchor", 11, testMaturePoolSlot+101, 7, checkpoint)
-			authenticated := newTemporalVerifierAuthenticatedHeader(t, client, client.LatestCheckpointBlockHash, header.AnchorBlock.Hash, 11, testMaturePoolSlot+101, 7)
-			authenticate := temporalVerifierAuthenticator(t, map[string]*authenticatedProbabilisticHeader{header.AnchorBlock.Hash: authenticated})
-			require.NoError(t, client.verifyHeaderWithAuthenticator(ctx, store, cdc, header, authenticate))
-			heights := client.updateStateWithAuthenticator(ctx, cdc, store, header, authenticate)
-			if checkpoint {
-				require.Empty(t, heights)
-			} else {
-				require.Len(t, heights, 1)
-				consensus, found := GetConsensusState(store, cdc, NewHeight(0, 11))
-				require.True(t, found)
-				require.True(t, poolProductionsEqual(client.LatestCheckpointPoolProduction, consensus.PoolProduction))
-			}
-			saved, found := GetClientState(store, cdc)
-			require.True(t, found)
-			records, err := productionRecordMap(saved.LatestCheckpointPoolProduction, 7)
-			require.NoError(t, err)
-			require.True(t, records["pool-a"].ProducedCurrentEpoch)
-			// These pools appeared only among temporary descendants. Their old
-			// completed bits remain, but no current production is persisted.
-			for _, pool := range []string{"pool-b", "pool-c", "pool-d", "pool-e"} {
-				require.False(t, records[pool].ProducedCurrentEpoch)
-			}
-		})
-	}
 }
 
 func TestProductionRejectsMissingAndMalformedHistory(t *testing.T) {

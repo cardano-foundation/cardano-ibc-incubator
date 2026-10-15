@@ -1,11 +1,3 @@
-import { bootstrapSettlementCredit } from './settlement-credit';
-import { Cbor, CborArray, CborBytes, CborSimple } from '@harmoniclabs/cbor';
-import {
-  loadTrustedPoolRegistryCheckpoint,
-  loadTrustedPoolProductionCheckpoint,
-  withAuthenticatedPoolBindings,
-} from './pool-registry-checkpoint';
-import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { PacketStateService, latestPacketProofHeight } from './packet-state.service';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -37,12 +29,7 @@ import {
 } from '@cardano-ibc/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import {
   ClientState as ClientStateProbabilistic,
-  ConsensusState as ConsensusStateProbabilistic,
   EpochContext as ProbabilisticEpochContext,
-  OperationalCertificateCounter,
-  PraosNonceState,
-  PoolRegistryState,
-  PoolProductionHistory,
   ProbabilisticBlock,
   ProbabilisticHeader,
   StakeDistributionEntry,
@@ -143,7 +130,6 @@ import type { GatewayEvent } from '../../tx/tx-events.service';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { operationalCertificatePoolIdBytes } from '../../shared/helpers/ogmios';
 import { doubleToFraction } from '../../shared/helpers/number';
 import {
   normalizeMithrilStakeDistribution,
@@ -166,7 +152,6 @@ import {
   resolveProofHeightForCurrentRoot,
 } from './proof-context';
 import {
-  loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityHeaderEvidence,
   StakeWeightedStabilityHeaderEvidence,
 } from './stability-evidence';
@@ -712,210 +697,10 @@ export class QueryService {
     return this.queryNewMithrilClient(request);
   }
 
-  async queryNewStabilityClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
-    const { height } = request;
-    if (!height) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
-    }
-    const cardanoChainId = this.configService.get<string>('cardanoChainId');
-    if (!cardanoChainId) {
-      throw new GrpcInternalException('Cardano chain ID is not configured');
-    }
-
-    const registryFile = this.configService.get<string>('cardanoPoolRegistryCheckpointFile');
-    let poolRegistry: PoolRegistryState | undefined;
-    let poolProduction: PoolProductionHistory | undefined;
-    const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
-      historyService: this.historyService,
-      height: BigInt(height),
-      logger: this.logger,
-      resolveProductionHistory: (block) => {
-        if (!registryFile) throw new GrpcFailedPreconditionException('Trusted production bootstrap is unavailable');
-        try {
-          poolProduction = loadTrustedPoolProductionCheckpoint(registryFile, {
-            chainId: cardanoChainId,
-            height: BigInt(block.height),
-            slot: block.slotNo,
-            hash: block.hash,
-            epoch: BigInt(block.epochNo),
-          });
-          return poolProduction;
-        } catch (error) {
-          throw new GrpcFailedPreconditionException(`Production bootstrap failed: ${error.message}`);
-        }
-      },
-      resolvePoolBindings: (block, entries) => {
-        if (!registryFile) {
-          throw new GrpcFailedPreconditionException(
-            'Configure CARDANO_POOL_REGISTRY_CHECKPOINT_FILE from authenticated history or an explicitly trusted checkpoint',
-          );
-        }
-        try {
-          poolRegistry = loadTrustedPoolRegistryCheckpoint(registryFile, {
-            chainId: cardanoChainId,
-            height: BigInt(block.height),
-            slot: block.slotNo,
-            hash: block.hash,
-            epoch: BigInt(block.epochNo),
-          });
-          const bindings = new Map(poolRegistry.effective.map((binding) => [binding.pool_id, binding]));
-          return entries.map((entry) => {
-            const binding = bindings.get(entry.poolId);
-            if (!binding) throw new Error(`Pool ${entry.poolId} has no authenticated effective registration`);
-            return {
-              ...entry,
-              vrfKeyHash: Buffer.from(binding.vrf_key_hash).toString('hex'),
-              firstRegistrationSlot: binding.first_registration_slot,
-            };
-          });
-        } catch (error) {
-          throw new GrpcFailedPreconditionException(`Pool registry bootstrap failed: ${error.message}`);
-        }
-      },
-    });
-
-    if (!poolRegistry) {
-      throw new GrpcFailedPreconditionException('Authenticated bootstrap pool registry is unavailable');
-    }
-
-    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(stabilityEvidence.anchorHeight);
-    if (!hostStateUtxo?.datum) {
-      throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
-    }
-
-    const operationalCertificateCounters = this.toStabilityOperationalCertificateCounters(
-      await this.historyService.findOperationalCertificateCountersAtBlock(stabilityEvidence.anchorBlock),
+  async queryNewStabilityClient(_request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
+    throw new GrpcFailedPreconditionException(
+      'Probabilistic client creation requires a trusted bootstrap bundle. Build it with the bootstrap command and configure probabilistic_bootstrap_file in Hermes.',
     );
-
-    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-    const hostStateRootBytes = Buffer.from(hostStateDatum.state.ibc_state_root, 'hex');
-    const stabilitySlotTiming = this.getStabilitySlotTiming(stabilityEvidence.anchorBlock);
-    const currentEpochContext = withAuthenticatedPoolBindings(
-      this.toStabilityEpochContext(
-        Number(stabilityEvidence.anchorEpoch),
-        stabilityEvidence.epochStakeDistribution,
-        stabilityEvidence.epochVerificationContext,
-      ),
-      poolRegistry,
-    );
-
-    const window = this.configService.get<string>('cardanoRandomnessStabilisationWindowSlots');
-    if (!window || !/^[1-9][0-9]*$/.test(window) || BigInt(window) > (1n << 64n) - 1n) {
-      throw new GrpcFailedPreconditionException(
-        'Configure CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS from the network protocol rules',
-      );
-    }
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
-    if (!ogmiosEndpoint) throw new GrpcFailedPreconditionException('Ogmios endpoint is required for Praos bootstrap');
-    const nodeNonces = await queryPraosNoncesAtPoint(ogmiosEndpoint, {
-      slot: stabilityEvidence.anchorBlock.slotNo,
-      hash: stabilityEvidence.anchorBlock.hash,
-    });
-    const rawBlock = await this.miniProtocalsService.fetchBlockCbor(stabilityEvidence.anchorBlock);
-    const header = Cbor.parse(
-      this.miniProtocalsService.extractBlockHeaderCbor(rawBlock, stabilityEvidence.anchorBlock.hash),
-    );
-    const previousHash =
-      header instanceof CborArray && header.array[0] instanceof CborArray ? header.array[0].array[2] : undefined;
-    const genesisParent = previousHash instanceof CborSimple && previousHash.simple === null;
-    if (!genesisParent && (!(previousHash instanceof CborBytes) || previousHash.buffer.length !== 32)) {
-      throw new GrpcFailedPreconditionException('Bootstrap header previous-block hash is unavailable');
-    }
-    const nonceState = PraosNonceState.fromPartial({
-      ...nodeNonces,
-      last_applied_block_nonce: previousHash instanceof CborBytes ? previousHash.buffer : new Uint8Array(),
-    });
-    if (!Buffer.from(nonceState.epoch_nonce).equals(Buffer.from(currentEpochContext.epoch_nonce))) {
-      throw new GrpcFailedPreconditionException('Bootstrap node nonce disagrees with epoch context');
-    }
-
-    const clientStateProbabilistic: ClientStateProbabilistic = {
-      storage_version: 0, verification_generation: 0n, checkpoint_reference: new Uint8Array(), storage_namespace: new Uint8Array(), bootstrap_objects: new Uint8Array(), bootstrap_pending: false,
-      chain_id: cardanoChainId,
-      latest_height: {
-        revision_number: 0n,
-        revision_height: stabilityEvidence.anchorHeight,
-      },
-      frozen_height: {
-        revision_number: 0n,
-        revision_height: 0n,
-      },
-      current_epoch: BigInt(stabilityEvidence.anchorEpoch),
-      trusting_period: {
-        seconds: BigInt(this.configService.get<number>('cardanoClientTrustingPeriodSeconds') ?? 86_400),
-        nanos: 0,
-      },
-      max_clock_drift: {
-        seconds: BigInt(this.configService.get<number>('cardanoClientMaxClockDriftSeconds') ?? 10),
-        nanos: 0,
-      },
-      upgrade_path: [],
-      packet_lane_policy_id: Buffer.from(this.configService.get('deployment').packetState.state.scriptHash, 'hex'),
-      host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
-      host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
-      // epoch_contexts is the canonical verification source, but the current
-      // probabilistic payload also carries these flattened fields for verifier input.
-      epoch_stake_distribution: currentEpochContext.stake_distribution,
-      epoch_nonce: currentEpochContext.epoch_nonce,
-      slots_per_kes_period: currentEpochContext.slots_per_kes_period,
-      current_epoch_start_slot: currentEpochContext.epoch_start_slot,
-      current_epoch_end_slot_exclusive: currentEpochContext.epoch_end_slot_exclusive,
-      system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
-      slot_length_ns: stabilitySlotTiming.slotLengthNs,
-      epoch_contexts: [currentEpochContext],
-      latest_checkpoint_nonce_state: nonceState,
-      latest_checkpoint_pool_registry: poolRegistry,
-      latest_checkpoint_pool_production: poolProduction,
-      latest_checkpoint_settlement_credit: bootstrapSettlementCredit(
-        BigInt(stabilityEvidence.anchorEpoch),
-        stabilityEvidence.epochStakeDistribution,
-      ),
-      randomness_stabilisation_window_slots: BigInt(window),
-      epoch_context_challenges: [], // Assigned by the Cosmos host during Initialize.
-      active_slot_coefficient_numerator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientNumerator,
-      active_slot_coefficient_denominator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientDenominator,
-      latest_checkpoint_height: {
-        revision_number: 0n,
-        revision_height: stabilityEvidence.anchorHeight,
-      },
-      latest_checkpoint_block_hash: stabilityEvidence.anchorBlock.hash,
-      latest_checkpoint_epoch: BigInt(stabilityEvidence.anchorEpoch),
-      latest_checkpoint_slot: stabilityEvidence.anchorBlock.slotNo,
-      latest_checkpoint_timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
-      max_kes_evolutions: BigInt(stabilityEvidence.epochVerificationContext.maxKesEvolutions),
-      latest_checkpoint_operational_certificate_counters: operationalCertificateCounters,
-      operational_certificate_counter_history_start_height: {
-        revision_number: 0n,
-        revision_height: BigInt(stabilityEvidence.anchorHeight),
-      },
-    };
-
-    const consensusStateProbabilistic: ConsensusStateProbabilistic = {
-      verification_generation: 0n, checkpoint_reference: new Uint8Array(), packet_state_reference: new Uint8Array(),
-      nonce_state: nonceState,
-      pool_registry: poolRegistry,
-      pool_production: poolProduction,
-      settlement_credit: clientStateProbabilistic.latest_checkpoint_settlement_credit,
-      packet_state_snapshot: await this.packetState.snapshot(stabilityEvidence.anchorHeight),
-      timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
-      ibc_state_root: hostStateRootBytes,
-      accepted_block_hash: stabilityEvidence.anchorBlock.hash,
-      accepted_epoch: BigInt(stabilityEvidence.anchorEpoch),
-      unique_pools_count: BigInt(stabilityEvidence.metrics.qualifiedUniquePoolsCount),
-      unique_stake_bps: BigInt(stabilityEvidence.metrics.qualifiedUniqueStakeBps),
-      security_score_bps: BigInt(stabilityEvidence.metrics.securityScoreBps),
-    };
-
-    return {
-      client_state: {
-        type_url: '/ibc.lightclients.probabilistic.v1.ClientState',
-        value: ClientStateProbabilistic.encode(clientStateProbabilistic).finish(),
-      },
-      consensus_state: {
-        type_url: '/ibc.lightclients.probabilistic.v1.ConsensusState',
-        value: ConsensusStateProbabilistic.encode(consensusStateProbabilistic).finish(),
-      },
-    };
   }
 
   async latestHeight(_request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
@@ -2396,6 +2181,9 @@ export class QueryService {
     if (request.probabilistic_client_state?.length) {
       try {
         settlementCreditClient = ClientStateProbabilistic.decode(request.probabilistic_client_state);
+        if (settlementCreditClient.storage_version !== 2) {
+          throw new Error('Unsupported probabilistic client storage format. Expected version 2.');
+        }
         const checkpoint = settlementCreditClient.latest_checkpoint_height ?? settlementCreditClient.latest_height;
         if (
           !checkpoint ||
@@ -2458,8 +2246,6 @@ export class QueryService {
     }
 
     const maxBridgeBlocks = this.getStabilityCheckpointMaxBridgeBlocks();
-    const maxHeaderBytes = this.getStabilityCheckpointMaxHeaderBytes();
-    const staged = settlementCreditClient?.storage_version === 2;
     const maxAdvance = BigInt(maxBridgeBlocks) + 1n;
     let candidateDistance = targetDistance < maxAdvance ? targetDistance : maxAdvance;
 
@@ -2485,16 +2271,10 @@ export class QueryService {
       }
 
       const stabilityHeader = await this.buildStabilityHeader(stabilityEvidence, isCheckpoint);
-      if (challenge && !staged && !stabilityEvidence.nextEpochContext) {
-        stabilityHeader.new_epoch_context = this.toStabilityEpochContext(
-          Number(stabilityEvidence.anchorEpoch),
-          stabilityEvidence.epochStakeDistribution,
-          stabilityEvidence.epochVerificationContext,
-        );
-      }
+
       const encodedHeaderBytes = ProbabilisticHeader.encode(stabilityHeader).finish().length;
-      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader, !challenge, staged);
-      if ((staged || encodedHeaderBytes <= maxHeaderBytes) && !capacityError) {
+      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader);
+      if (!capacityError) {
         if (isCheckpoint) {
           this.logger.log(
             `Returning rootless stability checkpoint ${trustedHeight.toString()} -> ${stabilityEvidence.anchorHeight.toString()} while catching up to ${targetHeight.toString()} (${encodedHeaderBytes} bytes)`,
@@ -2503,38 +2283,13 @@ export class QueryService {
         return stabilityHeader;
       }
 
-      this.logger.warn(
-        `Stability ${isCheckpoint ? 'checkpoint' : 'root-bearing'} header ${trustedHeight.toString()} -> ${stabilityEvidence.anchorHeight.toString()} is ${encodedHeaderBytes} bytes, above the configured ${maxHeaderBytes}-byte limit`,
-      );
-
-      if (candidateDistance === 1n || targetDistance === 1n) {
+      if (candidateDistance === 1n) {
         throw new GrpcFailedPreconditionException(
-          gatewayGrpcError(
-            GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED,
-            `Even the smallest stability update from height ${trustedHeight.toString()} cannot reserve challenge capacity: ${capacityError ?? `${encodedHeaderBytes} bytes exceeds the ${maxHeaderBytes}-byte checkpoint limit`}`,
-            {
-              trustedHeight: trustedHeight.toString(),
-              targetHeight: targetHeight.toString(),
-              encodedHeaderBytes,
-              maxHeaderBytes,
-            },
-          ),
+          gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED,
+            `The minimum observation after height ${trustedHeight.toString()} exceeds the supported workload: ${capacityError}`),
         );
       }
-
-      const fullBodyBytes = [
-        stabilityHeader.anchor_block!,
-        ...stabilityHeader.bridge_blocks,
-        ...stabilityHeader.descendant_blocks,
-      ].reduce((sum, block) => sum + block.block_cbor.length, 0);
-      const byteRatio = capacityError?.startsWith('cross-epoch body bytes')
-        ? (1536 * 1024) / fullBodyBytes
-        : maxHeaderBytes / encodedHeaderBytes;
-      const proportionalDistance = Math.max(
-        1,
-        Math.min(Math.floor(Number(candidateDistance) * byteRatio), 128 - stabilityHeader.descendant_blocks.length),
-      );
-      candidateDistance = BigInt(Math.min(Number(candidateDistance - 1n), proportionalDistance));
+      candidateDistance -= 1n;
     }
 
     throw new GrpcFailedPreconditionException(
@@ -2630,15 +2385,9 @@ export class QueryService {
     return Math.min(value, 96);
   }
 
-  private getStabilityCheckpointMaxHeaderBytes(): number {
-    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? (5 * 1024 * 1024) / 2;
-    if (!Number.isSafeInteger(value) || value <= 0) {
-      throw new GrpcInternalException('Invalid Cardano stability checkpoint header-size limit');
-    }
-    return Math.min(value, (5 * 1024 * 1024) / 2);
-  }
 
-  private stabilityHeaderCapacityError(header: ProbabilisticHeader, forward = true, staged = false): string | undefined {
+
+  private stabilityHeaderCapacityError(header: ProbabilisticHeader): string | undefined {
     if (header.bridge_blocks.length > 96 || 1 + header.bridge_blocks.length + header.descendant_blocks.length > 128) {
       return 'block count exceeds the challenge capacity bound';
     }
@@ -2646,15 +2395,7 @@ export class QueryService {
       return 'stake table exceeds the challenge capacity bound';
     }
     const blocks = [...header.bridge_blocks, header.anchor_block!, ...header.descendant_blocks];
-    if (
-      forward &&
-      !staged &&
-      header.new_epoch_context &&
-      header.new_epoch_context.epoch > header.anchor_block!.epoch &&
-      blocks.reduce((sum, block) => sum + block.block_cbor.length, 0) > 1536 * 1024
-    ) {
-      return 'cross-epoch body bytes exceed the reserved challenge capacity';
-    }
+
     if (blocks.some((block) => block.block_cbor.length > 96 * 1024 || block.header_cbor.length > 1100)) {
       return 'block witness exceeds the challenge capacity bound';
     }
@@ -2735,47 +2476,6 @@ export class QueryService {
     );
   }
 
-  private getStabilitySlotTiming(referenceBlock?: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>): {
-    systemStartUnixNs: bigint;
-    slotLengthNs: bigint;
-  } {
-    const network = this.configService.get<string>('cardanoNetwork');
-    const slotConfigs = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK;
-    const slotConfig =
-      network && slotConfigs && Object.prototype.hasOwnProperty.call(slotConfigs, network)
-        ? slotConfigs[network as keyof typeof slotConfigs]
-        : undefined;
-    if (
-      !slotConfig ||
-      !Number.isFinite(slotConfig.zeroTime) ||
-      slotConfig.zeroTime <= 0 ||
-      !Number.isFinite(slotConfig.slotLength) ||
-      slotConfig.slotLength <= 0
-    ) {
-      throw new GrpcInternalException(`Invalid Cardano slot timing configuration for network ${network ?? 'unknown'}`);
-    }
-
-    const slotLengthNs = BigInt(Math.trunc(slotConfig.slotLength)) * 1_000_000n;
-    let systemStartUnixNs = BigInt(Math.trunc(slotConfig.zeroTime)) * 1_000_000n;
-
-    if (referenceBlock) {
-      // The verifier checks timestamp = origin + absolute_slot * slot_length.
-      // Derive that origin from indexed chain time so nonzero zeroSlot / network-era
-      // offsets do not make fresh Cardano blocks look stale to the counterparty chain.
-      systemStartUnixNs = referenceBlock.timestampUnixNs - referenceBlock.slotNo * slotLengthNs;
-      if (systemStartUnixNs <= 0n) {
-        throw new GrpcInternalException(
-          `Invalid Cardano slot timing derived from indexed block ${referenceBlock.slotNo.toString()}`,
-        );
-      }
-    }
-
-    return {
-      systemStartUnixNs,
-      slotLengthNs,
-    };
-  }
-
   private toStabilityEpochContext(
     epoch: number,
     stakeDistribution: Array<{
@@ -2828,29 +2528,7 @@ export class QueryService {
     };
   }
 
-  private toStabilityOperationalCertificateCounters(counters: Map<string, bigint>): OperationalCertificateCounter[] {
-    if (!(counters instanceof Map)) {
-      throw new GrpcInternalException(
-        'IBC infrastructure error: operational certificate counter snapshot is unavailable',
-      );
-    }
 
-    return [...counters.entries()]
-      .filter(([, sequenceNumber]) => sequenceNumber !== 0n)
-      .map(([poolId, sequenceNumber]) => ({
-        poolId,
-        poolIdBytes: operationalCertificatePoolIdBytes(poolId),
-        sequenceNumber,
-      }))
-      .sort((left, right) => Buffer.compare(left.poolIdBytes, right.poolIdBytes))
-      .map(({ poolId, poolIdBytes, sequenceNumber }) => ({
-        pool_id: poolIdBytes,
-        sequence_number: this.toProtoUint64(
-          sequenceNumber,
-          `operational_certificate_counters[${poolId}].sequence_number`,
-        ),
-      }));
-  }
 
   private toStabilityBlock(block: HistoryBlock, blockCbor?: Buffer, headerCbor?: Buffer): ProbabilisticBlock {
     return {

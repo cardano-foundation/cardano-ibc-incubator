@@ -13,10 +13,10 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger/common"
 )
 
-const StorageVersionSharedSnapshots uint32 = 2
+const StorageVersion uint32 = 2
 const VerificationPolicyVersion uint32 = 1
-const MaxCompactClientBytes = 4096
-const MaxCompactConsensusBytes = 1024
+const MaxClientBytes = 4096
+const MaxConsensusBytes = 1024
 const MaxOperationSignedBytes = 900000
 const MaxOperationGas = uint64(36000000)
 const MaxRetainedPoolIdentities = uint64(65536)
@@ -285,7 +285,7 @@ func saveVerificationCheckpoint(store storetypes.KVStore, checkpoint *verificati
 	if err != nil {
 		return zero, err
 	}
-	if len(raw) > MaxCompactClientBytes {
+	if len(raw) > MaxClientBytes {
 		return zero, fmt.Errorf("checkpoint exceeds its bounded metadata size")
 	}
 	hash := checkpointDigest(checkpoint.Scope, raw)
@@ -308,7 +308,7 @@ func loadVerificationCheckpoint(store storetypes.KVStore, scope [32]byte, hash [
 	}
 	id := [32]byte(hash)
 	raw := store.Get(checkpointKey(scope, id))
-	if len(raw) == 0 || len(raw) > MaxCompactClientBytes || checkpointDigest(scope, raw) != id {
+	if len(raw) == 0 || len(raw) > MaxClientBytes || checkpointDigest(scope, raw) != id {
 		return nil, fmt.Errorf("verification checkpoint is missing or its context hash disagrees")
 	}
 	var value verificationCheckpoint

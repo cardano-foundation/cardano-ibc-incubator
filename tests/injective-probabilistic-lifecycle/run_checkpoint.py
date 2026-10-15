@@ -10,7 +10,7 @@ import contextlib
 import subprocess
 import time
 from pathlib import Path
-from run import Node, read, write, write_text
+from harness import Node, read, write, write_text
 
 p=argparse.ArgumentParser()
 p.add_argument('output',type=Path)
@@ -19,7 +19,7 @@ p.add_argument('--data-volume')
 p.add_argument('--maintain-substitute',action='store_true')
 p.add_argument('--auto-clock',action='store_true')
 p.add_argument('--profile-suffix',default='')
-p.add_argument('--mode',choices=['legacy','compact'],default='legacy')
+
 p.add_argument('--rpc-port',type=int,default=18957)
 p.add_argument('--grpc-port',type=int,default=19090)
 p.add_argument('--worker',type=Path,required=True)
@@ -40,13 +40,13 @@ if not (root/'network-snapshot').exists():
     shutil.copytree(Path(__file__).parent/'evidence/network-snapshot',root/'network-snapshot')
 (root/'operator-address.txt').write_text(helper('address'))
 helper('key','/out/operator-key.hex')
-helper('checkpoint-prepare','/out',args.mode)
+helper('checkpoint-prepare','/out','snapshots')
 b=read(root/'bootstrap.json')
 b.update(client=b['clients'][0],consensus=b['consensuses'][0],metadata=b['metadatas'][0])
 history=read(root/'source-history.json')
 initial=int(history['Consensus']['timestamp'])
-node=Node(root,'local/injective-checkpoint-expiry','testnet',args.rpc_port,scenario='checkpoint-'+args.mode+('-'+args.profile_suffix if args.profile_suffix else ''))
-if args.data_volume=='auto': args.data_volume='checkpoint-'+args.mode+'-'+hashlib.sha256(str(root).encode()).hexdigest()[:12]
+node=Node(root,'local/injective-checkpoint-expiry','testnet',args.rpc_port,scenario='checkpoint-snapshots'+('-'+args.profile_suffix if args.profile_suffix else ''))
+if args.data_volume=='auto': args.data_volume='checkpoint-snapshots'+'-'+hashlib.sha256(str(root).encode()).hexdigest()[:12]
 node.data_volume=args.data_volume
 if args.data_volume: write_text(root/'data-volume.txt',args.data_volume)
 if not (node.home/'config/genesis.json').exists():
@@ -113,7 +113,7 @@ try:
                     assert result['committed'] and result['committed']['tx_result']['code']==0,result
                 write(root/'route-setup-status.json',node.rpc('status'))
             if args.maintain_substitute and not node.store('clients/08-cardano-probabilistic-2/clientState'):
-                helper('checkpoint-add-maintainer','/out',args.mode)
+                helper('checkpoint-add-maintainer','/out','snapshots')
                 for filename in read(root/'maintainer-plan.json')['files']:
                     result=node.send(root/filename,Path(filename).stem,75000000)
                     assert result['committed'] and result['committed']['tx_result']['code']==0,result
