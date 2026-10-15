@@ -69,6 +69,18 @@ describe('trusted pool registration checkpoint', () => {
     }
   });
 
+  it.each(['pools', 'mark', 'effective'] as const)(
+    'rejects a missing registration slot in the trusted %s snapshot',
+    (snapshot) => {
+      const document = JSON.parse(JSON.stringify(manifest()));
+      const entry = snapshot === 'pools'
+        ? document.registry.pools[0].registration
+        : document.registry[snapshot][0];
+      delete entry.first_registration_slot;
+      expect(() => load(document)).toThrow('Registry integers must be unsigned decimal strings');
+    },
+  );
+
   it('requires explicit trusted production history at the same bootstrap point', () => {
     const document = { ...manifest(), production: { epoch: '7', pools: [
       { pool_id: 'pool-a', completed_epochs_bitmap: '17', produced_current_epoch: true },

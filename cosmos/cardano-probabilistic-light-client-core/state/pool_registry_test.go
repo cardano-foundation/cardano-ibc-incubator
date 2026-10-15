@@ -123,10 +123,76 @@ func TestPoolRegistryBootstrapCannotBeInferredFromTable(t *testing.T) {
 	require.ErrorContains(t, client.Validate(), "pool registry is missing")
 }
 
+func TestInitializeRejectsMissingPoolRegistrationData(t *testing.T) {
+	for _, missing := range []string{"registration", "age"} {
+		t.Run(missing, func(t *testing.T) {
+			client := newProbabilisticTestClientState()
+			first := client.EpochContexts[0].StakeDistribution[0]
+			first.Stake = 5_000
+			first.RelativeStakeDenominator = 2
+			later := *first
+			later.PoolId = "pool-later"
+			later.FirstRegistrationSlot = 50
+			client.EpochContexts[0].StakeDistribution = append(client.EpochContexts[0].StakeDistribution, &later)
+			client.LatestCheckpointPoolRegistry = testPoolRegistry(client.CurrentEpoch, client.EpochContexts[0].StakeDistribution)
+			if missing == "registration" {
+				client.LatestCheckpointPoolRegistry.Effective = client.LatestCheckpointPoolRegistry.Effective[:1]
+			} else {
+				later.FirstRegistrationSlot = 0
+			}
+			client.EpochStakeDistribution = cloneStakeDistributionEntries(client.EpochContexts[0].StakeDistribution)
+			require.Error(t, client.Validate())
+			ctx, store := newProbabilisticTestClientStore(t, "missing-registration-"+missing)
+			cdc := newProbabilisticTestCodec()
+			consensus := newProbabilisticTestConsensusState(testBlockHash("initial"))
+			consensus.Timestamp = mustTestTimestampForSlot(t, client, 100)
+			consensus.PoolRegistry = clonePoolRegistry(client.LatestCheckpointPoolRegistry)
+			err := client.Initialize(ctx, cdc, store, consensus)
+			if missing == "registration" {
+				require.ErrorContains(t, err, "pool-later has no authenticated effective registration")
+			} else {
+				require.ErrorContains(t, err, "pool-later VRF binding or registration age disagrees")
+			}
+			_, found := GetClientState(store, cdc)
+			require.False(t, found)
+			_, found = GetConsensusState(store, cdc, client.LatestHeight)
+			require.False(t, found)
+		})
+	}
+}
+
 func TestAuthenticatedGenesisPoolAgeCanBeZero(t *testing.T) {
 	eligible, err := poolRegisteredBeforeCutoff(10, &PoolRegistrationBinding{PoolId: "genesis-pool", FirstRegistrationSlot: 0})
 	require.NoError(t, err)
 	require.True(t, eligible)
+}
+
+func TestEpochRolloverRejectsMissingRegistrationAgeForUnobservedPool(t *testing.T) {
+	fixture := loadCombinedBoundaryFixture(t)
+	client := fixture.Client
+	ctx, store := newProbabilisticTestClientStore(t, "rollover-missing-registration")
+	ctx.Time = time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp))
+	cdc := newProbabilisticTestCodec()
+	require.NoError(t, client.Initialize(ctx, cdc, store, fixture.Consensus))
+	client, _ = GetClientState(store, cdc)
+	ctx.Time = ctx.Time.Add(EpochContextChallengePeriod + 2*time.Nanosecond)
+	require.NoError(t, client.VerifyClientMessage(ctx, cdc, store, fixture.Header))
+
+	context := fixture.Header.NewEpochContext
+	entry := context.StakeDistribution[len(context.StakeDistribution)-1]
+	authenticated, err := client.authenticateHeaderBlocks(fixture.Header)
+	require.NoError(t, err)
+	for _, block := range append(authenticated.bridgeBlocks, authenticated.descendantBlocks...) {
+		require.NotEqual(t, entry.PoolId, block.slotLeader)
+	}
+	require.NotZero(t, entry.FirstRegistrationSlot)
+	entry.FirstRegistrationSlot = 0
+	before, _ := GetClientState(store, cdc)
+	require.ErrorContains(t, client.VerifyClientMessage(ctx, cdc, store, fixture.Header),
+		"registration age disagrees with authenticated epoch history")
+	require.False(t, client.CheckForMisbehaviour(ctx, cdc, store, fixture.Header))
+	after, _ := GetClientState(store, cdc)
+	require.Equal(t, before, after)
 }
 
 func TestPoolRegistryMismatchDoesNotBecomeTrustedAfterChallenge(t *testing.T) {
