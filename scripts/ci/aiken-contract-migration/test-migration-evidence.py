@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from migration_endpoints import loopback_address
 
 DIRECTORY = Path(__file__).resolve().parent
 
@@ -25,6 +26,20 @@ oracle = load('verify-migration-traffic-balances')
 traffic = load('migration-rehearsal-traffic')
 funding = load('verify-migration-funding')
 rehearsal = load('test-populated-migration')
+
+
+class ProviderBindings(unittest.TestCase):
+    def test_selected_loopback_port(self):
+        runtime = {'services': {'devkit': {'ports': [
+            {'target': 1337, 'published': '49152', 'host_ip': '127.0.0.1'},
+            {'target': 1442, 'published': '49153', 'host_ip': '127.0.0.1'},
+        ]}}}
+        self.assertEqual(loopback_address(runtime, 'devkit', 1337), '127.0.0.1:49152')
+        for ports in [[], [{'target': 1337, 'published': 49152, 'host_ip': '0.0.0.0'}],
+                      [{'target': 1337, 'published': 0, 'host_ip': '127.0.0.1'}],
+                      [runtime['services']['devkit']['ports'][0]] * 2]:
+            with self.subTest(ports=ports), self.assertRaises(ValueError):
+                loopback_address({'services': {'devkit': {'ports': ports}}}, 'devkit', 1337)
 
 
 def fixture():
